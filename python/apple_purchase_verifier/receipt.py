@@ -311,7 +311,8 @@ def _parse_attribute_set(der, what):
 
 
 def _int_value(contents):
-    if len(contents) > 6:
+    # 8-byte cap: real receipts carry 7-byte integers (web_order_line_item_id).
+    if len(contents) > 8:
         raise _fmt_error("attribute integer out of range")
     if contents and contents[0] >= 0x80:
         raise _fmt_error("negative receipt integer")

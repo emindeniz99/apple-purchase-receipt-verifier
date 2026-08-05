@@ -360,3 +360,45 @@ extension ReviewFixesTests {
         XCTAssertEqual(receipt.appVersion, "1.2.3")
     }
 }
+
+/// Genuine Apple-signed receipts vs the REAL pinned Apple root.
+final class PublicReceiptsTests: XCTestCase {
+    func receipt(_ name: String) throws -> String {
+        try String(contentsOf: VerifierTests.fixturesDir
+            .appendingPathComponent("public-receipts").appendingPathComponent("\(name).b64"),
+            encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func testVerifiesGenuineProductionReceipt() async throws {
+        let verifier = try ReceiptVerifier(trustedRoots: appleReceiptRoots(),
+                                           bundleId: "redacted.example.app")
+        let fields = try await verifier.verify(base64Receipt: try receipt("receipt-production"))
+        XCTAssertEqual(fields.receiptType, "Production")
+        XCTAssertEqual(fields.inAppPurchases.count, 4)
+    }
+
+    func testVerifiesGenuineSandboxReceipt() async throws {
+        let verifier = try ReceiptVerifier(trustedRoots: appleReceiptRoots(),
+                                           bundleId: "dev.bonzer.weeka.app")
+        let fields = try await verifier.verify(base64Receipt: try receipt("receipt-sandbox-g5"))
+        XCTAssertEqual(fields.receiptType, "ProductionSandbox")
+    }
+
+    func testVerifiesGenuineLegacySha1ChainReceipt() async throws {
+        let verifier = try ReceiptVerifier(trustedRoots: appleReceiptRoots(),
+                                           bundleId: "com.nutcall.alert")
+        let fields = try await verifier.verify(base64Receipt: try receipt("receipt-sandbox-legacy"))
+        XCTAssertEqual(fields.inAppPurchases.count, 187)
+    }
+
+    func testRejectsXcodeSignedPublicReceipt() async throws {
+        let verifier = try ReceiptVerifier(trustedRoots: appleReceiptRoots(), bundleId: "*")
+        do {
+            _ = try await verifier.verify(
+                base64Receipt: try receipt("receipt-xcode-with-purchases"))
+            XCTFail("expected INVALID_CHAIN")
+        } catch let error as VerificationError {
+            XCTAssertEqual(error.reason, .invalidChain)
+        }
+    }
+}

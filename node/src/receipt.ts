@@ -390,18 +390,23 @@ function parseAttributeSet(der: Buffer, what: string): Array<{ type: number; val
 }
 
 function integerValue(node: ASN1Node): number {
-  if (node.contents.length > 6) {
+  // 8-byte cap: real receipts carry 7-byte integers (web_order_line_item_id).
+  if (node.contents.length > 8) {
     throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'attribute integer out of range');
   }
   // Negative attribute types/values never occur in receipts; reject them.
   if (node.contents.length > 0 && node.contents[0]! >= 0x80) {
     throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'negative receipt integer');
   }
-  let value = 0;
+  let value = 0n;
   for (const byte of node.contents) {
-    value = value * 256 + byte;
+    value = value * 256n + BigInt(byte);
   }
-  return value;
+  if (value > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT,
+      'receipt integer exceeds JS safe-integer range');
+  }
+  return Number(value);
 }
 
 function decodeNested(der: Buffer, what: string): ASN1Node {

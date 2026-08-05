@@ -401,7 +401,8 @@ private func parseAttributeSet(_ der: [UInt8]) throws -> [(Int, [UInt8])] {
 }
 
 private func intValue(_ contents: [UInt8]) throws -> Int {
-    guard contents.count <= 6 else {
+    // 8-byte cap: real receipts carry 7-byte integers (web_order_line_item_id).
+    guard contents.count <= 8 else {
         throw VerificationError(.invalidReceiptFormat, "attribute integer out of range")
     }
     if let first = contents.first, first >= 0x80 {

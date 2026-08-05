@@ -10,7 +10,8 @@ Anchors are trusted by fiat (their own expiry is not checked).
 from datetime import datetime, timezone
 
 from cryptography import x509
-from cryptography.exceptions import InvalidSignature
+from cryptography.exceptions import InvalidSignature, UnsupportedAlgorithm
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from .exceptions import Reason, VerificationError
 
@@ -46,7 +47,24 @@ def _issued_by(cert, issuer):
     try:
         cert.verify_directly_issued_by(issuer)
         return True
-    except (ValueError, TypeError, InvalidSignature):
+    except (TypeError, InvalidSignature):
+        return False
+    except ValueError as e:
+        if "Unsupported signature algorithm" not in str(e):
+            return False
+    # cryptography's helper refuses SHA-1 signature algorithms, but genuine
+    # Apple legacy receipt chains are SHA-1 end-to-end; verify manually,
+    # matching the Java (PKIX), Node and Swift implementations.
+    if cert.issuer != issuer.subject:
+        return False
+    public_key = issuer.public_key()
+    if not isinstance(public_key, rsa.RSAPublicKey):
+        return False
+    try:
+        public_key.verify(cert.signature, cert.tbs_certificate_bytes,
+                          padding.PKCS1v15(), cert.signature_hash_algorithm)
+        return True
+    except (InvalidSignature, TypeError, ValueError, UnsupportedAlgorithm):
         return False
 
 

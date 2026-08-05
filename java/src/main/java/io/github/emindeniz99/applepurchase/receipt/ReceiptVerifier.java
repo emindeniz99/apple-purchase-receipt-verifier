@@ -435,9 +435,9 @@ public final class ReceiptVerifier {
         }
     }
 
-    /** Receipt integers are capped at 6 bytes in every implementation (PLAN 2.3). */
+    /** Non-negative, <= 8 bytes — real receipts carry 7-byte integers. */
     private static long boundedInt(BigInteger value) throws VerificationException {
-        if (value.signum() < 0 || value.bitLength() > 47) {
+        if (value.signum() < 0 || value.bitLength() > 63) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT,
                     "receipt integer out of range");
         }

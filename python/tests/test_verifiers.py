@@ -285,3 +285,32 @@ class ReviewFixesTest(unittest.TestCase):
         verifier = ReceiptVerifier([cert("generated", "receipt-root.der")], BUNDLE)
         receipt = verifier.verify(fixture("generated", "receipt-double-wrapped.der"))
         self.assertEqual(receipt.app_version, "1.2.3")
+
+
+class PublicReceiptsTest(unittest.TestCase):
+    """Genuine Apple-signed receipts vs the REAL pinned Apple root."""
+
+    def receipt(self, name):
+        return (FIXTURES / "public-receipts" / f"{name}.b64").read_text().strip()
+
+    def test_verifies_genuine_production_receipt(self):
+        verifier = ReceiptVerifier(apple_receipt_roots(), "redacted.example.app")
+        fields = verifier.verify(self.receipt("receipt-production"))
+        self.assertEqual(fields.receipt_type, "Production")
+        self.assertEqual(len(fields.in_app_purchases), 4)
+
+    def test_verifies_genuine_sandbox_receipt(self):
+        verifier = ReceiptVerifier(apple_receipt_roots(), "dev.bonzer.weeka.app")
+        self.assertEqual(verifier.verify(self.receipt("receipt-sandbox-g5")).receipt_type,
+                         "ProductionSandbox")
+
+    def test_verifies_genuine_legacy_sha1_chain_receipt(self):
+        verifier = ReceiptVerifier(apple_receipt_roots(), "com.nutcall.alert")
+        receipt = verifier.verify(self.receipt("receipt-sandbox-legacy"))
+        self.assertEqual(len(receipt.in_app_purchases), 187)
+
+    def test_rejects_xcode_signed_public_receipt(self):
+        verifier = ReceiptVerifier(apple_receipt_roots(), "*")
+        with self.assertRaises(VerificationError) as ctx:
+            verifier.verify(self.receipt("receipt-xcode-with-purchases"))
+        self.assertEqual(ctx.exception.reason, "INVALID_CHAIN")
