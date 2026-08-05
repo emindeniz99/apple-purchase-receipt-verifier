@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { JwsVerifier, ReceiptVerifier } from '../src/index.js';
+import { JwsVerifier, ReceiptVerifier } from '../dist/index.js';
 
 const BUNDLE = 'com.example.app';
 

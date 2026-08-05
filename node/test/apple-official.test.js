@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { JwsVerifier, ReceiptVerifier, appleReceiptRoots } from '../src/index.js';
+import { JwsVerifier, ReceiptVerifier, appleReceiptRoots } from '../dist/index.js';
 
 const BUNDLE = 'com.example';
 const XCODE_BUNDLE = 'com.example.naturelab.backyardbirds.example';
