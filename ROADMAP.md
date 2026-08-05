@@ -8,6 +8,9 @@ Delete an item in the same commit that ships it.
 - **Real receipt fixtures** (PLAN D6): owner to supply real production +
   sandbox receipts (and ideally a StoreKit-Test/Xcode receipt) as checked-in
   fixtures; add byte-level regression tests over them in all four suites.
+  Also use the corpus to confirm undocumented attribute ids
+  (`is_trial_period`, `adam_id`, `version_external_identifier`) so
+  COMPARISON.md's "not produced" list can shrink.
 - **CI**: per-language workflow under `.github/workflows/` running each
   test suite on the D2 version floors (Java 8/11/17/21 matrix, Node
   20/22/24, Python 3.9–3.13, Swift 6 on Linux) — match the existing

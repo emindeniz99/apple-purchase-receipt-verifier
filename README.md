@@ -11,6 +11,12 @@ implementations, one normative algorithm, one shared fixture set they all
 verify byte-for-byte: **Java** (8+), **Node** (20+, zero runtime deps),
 **Python** (3.9+), **Swift** (6).
 
+Each implementation also ships **`VerifyReceiptEndpoint`** — a drop-in
+local replacement for the deprecated `verifyReceipt` endpoint speaking
+Apple's exact request/response/status-code wire contract (incl. local
+21007/21008 sandbox routing); see [COMPARISON.md](./COMPARISON.md) for the
+field-by-field fidelity account and the gaps only Apple's servers can fill.
+
 Start with [INTENT.md](./INTENT.md) (why + trust model), then
 [PLAN.md](./PLAN.md) (algorithms + decisions + API shape), then
 [ROADMAP.md](./ROADMAP.md) (what's next).
@@ -21,8 +27,8 @@ Start with [INTENT.md](./INTENT.md) (why + trust model), then
 # Java (library targets Java 8; build with any modern JDK + Maven)
 cd java && mvn test
 
-# Node (zero dependencies; Node >= 20)
-cd node && npm test          # = node --test
+# Node (strict TypeScript, zero runtime deps; Node >= 20)
+cd node && npm install && npm test    # = tsc && node --test
 
 # Python (>= 3.9; needs: pip install cryptography asn1crypto)
 cd python && python3 -m unittest discover -s tests

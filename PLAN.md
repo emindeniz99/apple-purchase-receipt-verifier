@@ -37,6 +37,23 @@ recorded here.
 - **D6 — Real receipt corpus pending**: owner will supply real production +
   sandbox receipts as fixtures later; until then generated fake-Apple-PKI
   fixtures carry the tests (tracked in ROADMAP.md).
+- **D7 — Full type safety** (2026-08-05): Node is strict TypeScript
+  (compiled to `dist/` with declarations; still zero runtime deps), Python
+  ships annotations + `py.typed`, Java and Swift are typed by language.
+- **D8 — Dependencies stay minimal, hand-rolled parsers stay** (2026-08-05):
+  evaluated replacing the Node DER/BER parser with `pkijs`/`node-forge` and
+  the JWS handling with `jose` — rejected. `jose` cannot do x5c chain
+  validation to a custom pinned root (the security-critical part stays
+  manual either way), `node-forge` is effectively unmaintained, and `pkijs`
+  pulls a large dependency surface into a security library to replace ~300
+  audited lines that Apple's own fixture bytes exercise. Java (BouncyCastle),
+  Python (`cryptography`+`asn1crypto`) and Swift (apple/swift-*) already sit
+  on the strongest maintained options for their ecosystems.
+- **D9 — verifyReceipt wire-compat endpoint** (2026-08-05): each language
+  ships `VerifyReceiptEndpoint` speaking Apple's exact request/response/
+  status-code contract, with 21007/21008 routing reproduced locally from
+  the receipt's `receipt_type` attribute. Fidelity and unavoidable gaps:
+  [COMPARISON.md](./COMPARISON.md).
 
 ## 1. Existing solutions (research, 2026-08)
 
