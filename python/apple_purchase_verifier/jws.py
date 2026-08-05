@@ -184,3 +184,16 @@ class JwsVerifier:
             raise VerificationError(
                 Reason.WRONG_ENVIRONMENT, f"payload environment {claim} not in accepted set")
         return claim
+
+
+def is_transaction_active_at(payload: Dict[str, Any], now_millis: int) -> bool:
+    """Entitlement helper for a verified transaction payload: not revoked,
+    and (for subscriptions) not expired at ``now_millis``. Point-in-time on
+    the signed claims only — later refunds or renewals are invisible."""
+    revocation = payload.get("revocationDate")
+    if isinstance(revocation, (int, float)) and now_millis >= revocation:
+        return False
+    expires = payload.get("expiresDate")
+    if isinstance(expires, (int, float)):
+        return now_millis < expires
+    return True

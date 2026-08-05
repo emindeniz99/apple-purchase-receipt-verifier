@@ -62,6 +62,8 @@ class InAppPurchase:
     """One in-app purchase from the receipt (attribute 17)."""
 
     def __init__(self):
+        #: Raw unmodeled attributes by type — forward compatibility (PLAN D10).
+        self.unknown_attributes = {}
         self.quantity = None
         self.product_id = None
         self.transaction_id = None
@@ -79,6 +81,10 @@ class AppReceipt:
     :class:`ReceiptVerifier` should be trusted."""
 
     def __init__(self):
+        #: Raw values of attribute types this library does not model, keyed
+        #: by type — forward compatibility for fields Apple may add (PLAN
+        #: D10). Values are raw octet-string contents, verified but undecoded.
+        self.unknown_attributes = {}
         self.receipt_type = None
         self.original_purchase_date = None
         self.bundle_id = None
@@ -162,7 +168,7 @@ def verify_receipt_core(der: bytes, trusted_roots) -> "AppReceipt":
 
 def _parse_cms(der):
     try:
-        info = asn1cms.ContentInfo.load(der)
+        info = asn1cms.ContentInfo.load(der, strict=True)  # rejects trailing bytes (PLAN 2.3)
         if info["content_type"].native != "signed_data":
             raise ValueError("not CMS SignedData")
         signed_data = info["content"]
@@ -360,7 +366,8 @@ def _parse_payload(content):
             receipt.original_app_version = _decode_string(value)
         elif attr_type == _ATTR_EXPIRATION_DATE:
             receipt.expiration_date = _decode_date(value)
-        # else: receipts carry undocumented attribute types — ignored
+        else:
+            receipt.unknown_attributes.setdefault(attr_type, []).append(value)
     return receipt
 
 
@@ -369,6 +376,7 @@ def _parse_in_app(value):
     for attr_type, attr_value in _parse_attribute_set(value, "in-app purchase attribute"):
         spec = _IAP_FIELDS.get(attr_type)
         if spec is None:
+            purchase.unknown_attributes.setdefault(attr_type, []).append(attr_value)
             continue
         name, kind = spec
         if kind == "str":

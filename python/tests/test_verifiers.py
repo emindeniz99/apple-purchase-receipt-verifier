@@ -239,3 +239,44 @@ class VerifyReceiptEndpointTest(unittest.TestCase):
             "receipt-data": base64.b64encode(
                 fixture("generated", "receipt-foreign.der")).decode()})
         self.assertEqual(response["status"], 21003)
+
+
+class ReviewFixesTest(unittest.TestCase):
+    """Regression tests for the adversarial-review findings + PLAN D10."""
+
+    def test_routes_receipt_type_variants_per_apple_matrix(self):
+        from apple_purchase_verifier import VerifyReceiptEndpoint
+        cases = [
+            ("receipt-type-production.der", True),
+            ("receipt-type-vpp.der", True),
+            ("receipt-type-vpp-sandbox.der", False),
+            ("receipt-no-type.der", False),
+        ]
+        roots = [cert("generated", "receipt-root.der")]
+        for name, is_production in cases:
+            body = {"receipt-data": base64.b64encode(fixture("generated", name)).decode()}
+            self.assertEqual(
+                VerifyReceiptEndpoint(roots, "Production").verify_receipt(body)["status"],
+                0 if is_production else 21007, f"{name} on Production")
+            self.assertEqual(
+                VerifyReceiptEndpoint(roots, "Sandbox").verify_receipt(body)["status"],
+                21008 if is_production else 0, f"{name} on Sandbox")
+
+    def test_rejects_trailing_bytes_after_cms(self):
+        verifier = ReceiptVerifier([cert("generated", "receipt-root.der")], BUNDLE)
+        padded = fixture("generated", "receipt.der") + b"\x00\xde\xad\xbe"
+        with self.assertRaises(VerificationError) as ctx:
+            verifier.verify(padded)
+        self.assertEqual(ctx.exception.reason, "INVALID_RECEIPT_FORMAT")
+
+    def test_exposes_unknown_attributes_for_forward_compatibility(self):
+        verifier = ReceiptVerifier([cert("generated", "receipt-root.der")], BUNDLE)
+        receipt = verifier.verify(fixture("generated", "receipt.der"))
+        self.assertEqual(receipt.unknown_attributes[9999], [b"\x01\x02\x03"])
+
+    def test_is_transaction_active_at_helper(self):
+        from apple_purchase_verifier import is_transaction_active_at
+        self.assertTrue(is_transaction_active_at({}, 1000))
+        self.assertFalse(is_transaction_active_at({"revocationDate": 500}, 1000))
+        self.assertFalse(is_transaction_active_at({"expiresDate": 900}, 1000))
+        self.assertTrue(is_transaction_active_at({"expiresDate": 2000}, 1000))

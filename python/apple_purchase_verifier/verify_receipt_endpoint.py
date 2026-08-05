@@ -70,16 +70,15 @@ class VerifyReceiptEndpoint:
         except Exception:
             return {"status": STATUS_INTERNAL}
 
-        # 21007/21008 environment routing from the receipt_type attribute
-        # ("Production" / "ProductionSandbox" / … / "Xcode"). Absent in some
-        # receipts — then no routing is possible and we answer in place.
-        if fields.receipt_type is not None:
-            sandbox_receipt = fields.receipt_type != "Production" \
-                and not fields.receipt_type.startswith("ProductionVPP")
-            if self._production and sandbox_receipt:
-                return {"status": STATUS_SANDBOX_RECEIPT_ON_PRODUCTION}
-            if not self._production and not sandbox_receipt:
-                return {"status": STATUS_PRODUCTION_RECEIPT_ON_SANDBOX}
+        # 21007/21008 environment routing from the receipt_type attribute.
+        # Production types are exactly "Production" and "ProductionVPP";
+        # everything else ("ProductionSandbox", "ProductionVPPSandbox",
+        # "Xcode", or a missing attribute) fails closed as non-production.
+        production_receipt = fields.receipt_type in ("Production", "ProductionVPP")
+        if self._production and not production_receipt:
+            return {"status": STATUS_SANDBOX_RECEIPT_ON_PRODUCTION}
+        if not self._production and production_receipt:
+            return {"status": STATUS_PRODUCTION_RECEIPT_ON_SANDBOX}
         return {
             "status": STATUS_OK,
             "environment": "Production" if self._production else "Sandbox",
