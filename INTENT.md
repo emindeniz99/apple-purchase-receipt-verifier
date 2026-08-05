@@ -29,6 +29,7 @@ language** (all inside this folder):
 | [`java/`](./java) | Java 8+ | first implementation |
 | [`node/`](./node) | Node.js 20+ | planned |
 | [`python/`](./python) | Python 3.9+ | planned |
+| [`swift/`](./swift) | Swift 6+ | planned |
 
 Each implementation provides the same two capabilities:
 

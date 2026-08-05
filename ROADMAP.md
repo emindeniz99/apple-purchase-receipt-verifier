@@ -17,6 +17,8 @@ Delete an item in the same commit that ships it.
   PKI generator and the failure-mode test matrix from `java/`.
 - **Python implementation** (`python/`): same, on the `cryptography` package
   (+ `asn1crypto` if needed for the receipt payload).
+- **Swift implementation** (`swift/`, Swift 6, SwiftPM): same algorithms —
+  Apple's own family has a Swift library, ours shouldn't be missing it.
 - **Cross-language fixture parity**: generate one checked-in fixture set
   (fake-Apple PKI + signed JWS + signed PKCS#7 receipt) all three
   implementations must verify byte-identically.
@@ -34,8 +36,8 @@ Our verified legacy-receipt validation is a natural upstream feature:
   to the upstream codebase. Upstream requires Java 11+, so the PR is a
   Java 11-idiom port; our Java 8-compatible build stays canonical in this
   repo for enterprise consumers upstream won't serve (PLAN D2).
-- **PRs into `-node` and `-python`**: same contribution once our Node and
-  Python implementations are done and fixture-parity-proven.
+- **PRs into `-node`, `-python`, and `-swift`**: same contribution once our
+  Node, Python, and Swift implementations are done and fixture-parity-proven.
 
 ## Later / hardening
 

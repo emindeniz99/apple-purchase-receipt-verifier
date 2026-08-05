@@ -15,7 +15,8 @@ recorded here.
   license required at publish time (MIT assumed — *unconfirmed, ask before
   publishing*).
 - **D2 — Enterprise-reality version floors**, not upstream-support floors:
-  **Java 8**, **Node ≥20**, **Python ≥3.9**. Java is built `--release 8`
+  **Java 8**, **Node ≥20**, **Python ≥3.9**, **Swift 6** (server-side Swift
+  has no Java-8-style long tail; Apple's own Swift library requires 6). Java is built `--release 8`
   (no records/`var`/`List.of`; ES256 raw-signature conversion done manually
   since `SHA256withECDSAinP1363Format` is Java 9+). CI should matrix-test
   oldest + current LTS.
@@ -41,7 +42,7 @@ recorded here.
 
 | Solution | Local verify? | Notes |
 |----------|--------------|-------|
-| [apple/app-store-server-library-java](https://github.com/apple/app-store-server-library-java) (also [-node](https://github.com/apple/app-store-server-library-node), [-python](https://github.com/apple/app-store-server-library-python)) | **Yes** (JWS only) | Official. `SignedDataVerifier` validates JWS `x5c` chains against caller-supplied Apple roots, offline by default (optional OCSP "online checks"). Does **not** validate legacy PKCS#7 receipts — `ReceiptUtility` only *extracts* a transaction ID from a receipt, unverified. Heavy: bundles the full App Store Server API client. |
+| [apple/app-store-server-library-java](https://github.com/apple/app-store-server-library-java) (also [-node](https://github.com/apple/app-store-server-library-node), [-python](https://github.com/apple/app-store-server-library-python), [-swift](https://github.com/apple/app-store-server-library-swift)) | **Yes** (JWS only) | Official. `SignedDataVerifier` validates JWS `x5c` chains against caller-supplied Apple roots, offline by default (optional OCSP "online checks"). Does **not** validate legacy PKCS#7 receipts — `ReceiptUtility` only *extracts* a transaction ID from a receipt, unverified. Heavy: bundles the full App Store Server API client. |
 | `node-apple-receipt-verify`, `itunes-iap`, `django-receipt-validator`, … | No | All wrappers around the deprecated `verifyReceipt` endpoint — the thing we're replacing. |
 | objc.io ["Receipt Validation"](https://www.objc.io/issues/17-security/receipt-validation/), [Kodeco tutorial](https://www.kodeco.com/9257-in-app-purchases-receipt-validation-tutorial), [nick.zoic.org PKCS#7 notes](https://nick.zoic.org/art/apple-signed-receipt-verification-pkcs7/) | Yes (on-device, C/Swift/OpenSSL) | Document the PKCS#7 + ASN.1 receipt format we port to server-side. |
 
@@ -175,6 +176,9 @@ so tests need no real Apple secrets and prove the anchor pinning works.
 3. **Node** (`node/`): same algorithms, `node:crypto` (X509Certificate),
    minimal deps; port the test-fixture generator.
 4. **Python** (`python/`): `cryptography` package; same tests.
-5. **Cross-language fixture parity**: one shared set of generated fixtures
-   checked in so all three implementations verify identical bytes.
-6. CI workflow per language (mirror existing `.github/workflows/*` style).
+5. **Swift** (`swift/`, SwiftPM, Swift 6): same algorithms on swift-crypto /
+   Security; same tests.
+6. **Cross-language fixture parity**: one shared fixture set (generated +
+   the vendored Apple-official set in `fixtures/apple-official/`) so every
+   implementation verifies identical bytes.
+7. CI workflow per language (mirror existing `.github/workflows/*` style).

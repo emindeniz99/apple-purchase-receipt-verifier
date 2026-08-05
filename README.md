@@ -7,8 +7,8 @@ a replacement for the deprecated `verifyReceipt` endpoint. Cryptographically
 proves that purchase data a client presents (StoreKit 2 signed JWS
 transactions, or legacy PKCS#7 app receipts) was signed by Apple, by
 validating the certificate chain against pinned Apple root CAs. One
-implementation per backend language: `java/` (done), `node/` and `python/`
-(planned).
+implementation per backend language: `java/` (done), `node/`, `python/`
+and `swift/` (planned).
 
 Start with [INTENT.md](./INTENT.md) (why + trust model), then
 [PLAN.md](./PLAN.md) (algorithms + API shape), then
