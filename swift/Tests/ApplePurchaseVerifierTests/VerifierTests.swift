@@ -297,3 +297,55 @@ final class VerifyReceiptEndpointTests: XCTestCase {
         XCTAssertEqual(response["status"] as? Int, 21003)
     }
 }
+
+/// Regression tests for the adversarial-review findings + PLAN D10.
+final class ReviewFixesTests: XCTestCase {
+    func fixture(_ segments: String...) throws -> Data {
+        try Data(contentsOf: segments.reduce(VerifierTests.fixturesDir) {
+            $0.appendingPathComponent($1)
+        })
+    }
+
+    func testRoutesReceiptTypeVariantsPerAppleMatrix() async throws {
+        let cases: [(String, Bool)] = [
+            ("receipt-type-production.der", true),
+            ("receipt-type-vpp.der", true),
+            ("receipt-type-vpp-sandbox.der", false),
+            ("receipt-no-type.der", false),
+        ]
+        let roots = [try fixture("generated", "receipt-root.der")]
+        for (name, isProduction) in cases {
+            let body = ["receipt-data": try fixture("generated", name).base64EncodedString()]
+            let onProduction = await (try VerifyReceiptEndpoint(
+                trustedRoots: roots, production: true)).verifyReceipt(body)
+            XCTAssertEqual(onProduction["status"] as? Int,
+                           isProduction ? 0 : 21007, "\(name) on Production")
+            let onSandbox = await (try VerifyReceiptEndpoint(
+                trustedRoots: roots, production: false)).verifyReceipt(body)
+            XCTAssertEqual(onSandbox["status"] as? Int,
+                           isProduction ? 21008 : 0, "\(name) on Sandbox")
+        }
+    }
+
+    func testRejectsTrailingBytesAfterCms() async throws {
+        let verifier = try ReceiptVerifier(
+            trustedRoots: [try fixture("generated", "receipt-root.der")],
+            bundleId: "com.example.app")
+        var padded = try fixture("generated", "receipt.der")
+        padded.append(contentsOf: [0x00, 0xde, 0xad, 0xbe])
+        do {
+            _ = try await verifier.verify(receipt: padded)
+            XCTFail("expected INVALID_RECEIPT_FORMAT")
+        } catch let error as VerificationError {
+            XCTAssertEqual(error.reason, .invalidReceiptFormat)
+        }
+    }
+
+    func testExposesUnknownAttributesForForwardCompatibility() async throws {
+        let verifier = try ReceiptVerifier(
+            trustedRoots: [try fixture("generated", "receipt-root.der")],
+            bundleId: "com.example.app")
+        let receipt = try await verifier.verify(receipt: try fixture("generated", "receipt.der"))
+        XCTAssertEqual(receipt.unknownAttributes[9999], [Data([1, 2, 3])])
+    }
+}

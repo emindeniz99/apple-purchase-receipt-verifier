@@ -54,18 +54,17 @@ public struct VerifyReceiptEndpoint: Sendable {
             return ["status": Self.statusInternal]
         }
 
-        // 21007/21008 environment routing from the receipt_type attribute
-        // ("Production" / "ProductionSandbox" / … / "Xcode"). Absent in some
-        // receipts — then no routing is possible and we answer in place.
-        if let receiptType = fields.receiptType {
-            let sandboxReceipt = receiptType != "Production"
-                && !receiptType.hasPrefix("ProductionVPP")
-            if production && sandboxReceipt {
-                return ["status": Self.statusSandboxReceiptOnProduction]
-            }
-            if !production && !sandboxReceipt {
-                return ["status": Self.statusProductionReceiptOnSandbox]
-            }
+        // 21007/21008 environment routing from the receipt_type attribute.
+        // Production types are exactly "Production" and "ProductionVPP";
+        // everything else ("ProductionSandbox", "ProductionVPPSandbox",
+        // "Xcode", or a missing attribute) fails closed as non-production.
+        let productionReceipt = fields.receiptType == "Production"
+            || fields.receiptType == "ProductionVPP"
+        if production && !productionReceipt {
+            return ["status": Self.statusSandboxReceiptOnProduction]
+        }
+        if !production && productionReceipt {
+            return ["status": Self.statusProductionReceiptOnSandbox]
         }
         return [
             "status": Self.statusOK,

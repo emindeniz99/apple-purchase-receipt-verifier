@@ -148,8 +148,8 @@ public struct JwsVerifier: Sendable {
         guard let x5c = header["x5c"] as? [String], x5c.count == 3 else {
             throw VerificationError(.invalidJwsFormat, "x5c must contain exactly 3 certificates")
         }
-        guard let leafDER = Data(base64Encoded: x5c[0]),
-              let intermediateDER = Data(base64Encoded: x5c[1]),
+        guard let leafDER = Data(base64Encoded: x5c[0], options: [.ignoreUnknownCharacters]),
+              let intermediateDER = Data(base64Encoded: x5c[1], options: [.ignoreUnknownCharacters]),
               let leaf = try? Certificate(derEncoded: [UInt8](leafDER)),
               let intermediate = try? Certificate(derEncoded: [UInt8](intermediateDER)) else {
             throw VerificationError(.invalidCertificate, "x5c entry is not a valid certificate")

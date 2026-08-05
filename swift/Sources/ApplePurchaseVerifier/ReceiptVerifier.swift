@@ -6,6 +6,8 @@ import X509
 
 /// One in-app purchase from a legacy app receipt (attribute 17).
 public struct InAppPurchase: Sendable {
+    /// Raw unmodeled attributes by type — forward compatibility (PLAN D10).
+    public var unknownAttributes: [Int: [Data]] = [:]
     public var quantity: Int64?
     public var productId: String?
     public var transactionId: String?
@@ -21,6 +23,10 @@ public struct InAppPurchase: Sendable {
 /// A verified legacy app receipt. Only receipts returned by
 /// ``ReceiptVerifier`` should be trusted.
 public struct AppReceipt: Sendable {
+    /// Raw values of attribute types this library does not model, keyed by
+    /// type — forward compatibility for fields Apple may add (PLAN D10).
+    /// Values are the raw octet-string contents, verified but undecoded.
+    public var unknownAttributes: [Int: [Data]] = [:]
     /// Attribute 0, e.g. "Production" / "ProductionSandbox" (undocumented).
     public var receiptType: String?
     /// Attribute 18 (undocumented; community-established).
@@ -337,7 +343,7 @@ private func parsePayload(_ content: [UInt8]) throws -> AppReceipt {
         case attrInApp: receipt.inAppPurchases.append(try parseInApp(value))
         case attrOriginalAppVersion: receipt.originalAppVersion = try decodeString(value)
         case attrExpirationDate: receipt.expirationDate = try decodeDate(value)
-        default: break // receipts carry undocumented attribute types
+        default: receipt.unknownAttributes[type, default: []].append(Data(value))
         }
     }
     return receipt
@@ -357,7 +363,7 @@ private func parseInApp(_ value: [UInt8]) throws -> InAppPurchase {
         case 1711: purchase.webOrderLineItemId = try decodeInteger(v)
         case 1712: purchase.cancellationDate = try decodeDate(v)
         case 1719: purchase.isInIntroOfferPeriod = try decodeInteger(v)
-        default: break
+        default: purchase.unknownAttributes[type, default: []].append(Data(v))
         }
     }
     return purchase
