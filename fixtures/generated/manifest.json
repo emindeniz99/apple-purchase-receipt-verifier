@@ -1,0 +1,44 @@
+{
+  "comment" : "Shared cross-language fixtures. Regenerate only via FixtureGeneratorTest (-Dfixtures.generate=true); see file javadoc.",
+  "bundleId" : "com.example.app",
+  "environment" : "Sandbox",
+  "appAppleId" : 123456789,
+  "transaction" : {
+    "bundleId" : "com.example.app",
+    "environment" : "Sandbox",
+    "signedDate" : 1722945600000,
+    "purchaseDate" : 1722945600000,
+    "originalPurchaseDate" : 1722945600000,
+    "productId" : "com.example.app.pro",
+    "transactionId" : "2000000000000001",
+    "originalTransactionId" : "2000000000000001",
+    "quantity" : 1,
+    "type" : "Non-Consumable",
+    "inAppOwnershipType" : "PURCHASED"
+  },
+  "appTransaction" : {
+    "bundleId" : "com.example.app",
+    "receiptType" : "Sandbox",
+    "appAppleId" : 123456789,
+    "applicationVersion" : "1.2.3",
+    "originalApplicationVersion" : "1.0",
+    "receiptCreationDate" : 1722945600000
+  },
+  "expiredChain" : {
+    "historicalSignedDate" : 1590969600000,
+    "freshSignedDate" : 1722945600000,
+    "expectHistorical" : "verifies",
+    "expectFresh" : "INVALID_CHAIN"
+  },
+  "receipt" : {
+    "bundleId" : "com.example.app",
+    "appVersion" : "1.2.3",
+    "originalAppVersion" : "1.0",
+    "creationDate" : "2024-08-06T12:00:00Z",
+    "deviceGuidHex" : "112233445566778899aabbccddeeff00",
+    "opaqueHex" : "0102030405060708",
+    "inAppProductIds" : [ "com.example.app.coins100", "com.example.app.vip" ],
+    "vipExpiresDate" : "2030-02-01T09:30:00Z",
+    "expectForeign" : "INVALID_CHAIN"
+  }
+}
