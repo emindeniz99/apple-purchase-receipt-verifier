@@ -47,3 +47,19 @@ test('reports unauthentic receipts as 21003', () => {
   });
   assert.equal(response.status, 21003);
 });
+
+test('routes receipt_type variants per the Apple matrix (incl. VPP sandbox)', () => {
+  const cases = [
+    ['receipt-type-production.der', true],
+    ['receipt-type-vpp.der', true],
+    ['receipt-type-vpp-sandbox.der', false],
+    ['receipt-no-type.der', false],
+  ];
+  for (const [name, isProduction] of cases) {
+    const body = { 'receipt-data': fixture(name).toString('base64') };
+    assert.equal(endpoint('Production').verifyReceipt(body).status,
+      isProduction ? 0 : 21007, `${name} on Production`);
+    assert.equal(endpoint('Sandbox').verifyReceipt(body).status,
+      isProduction ? 21008 : 0, `${name} on Sandbox`);
+  }
+});

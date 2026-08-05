@@ -89,18 +89,17 @@ export class VerifyReceiptEndpoint {
       return { status: Status.INTERNAL };
     }
 
-    // 21007/21008 environment routing from the receipt_type attribute
-    // ("Production" / "ProductionSandbox" / … / "Xcode"). Absent in some
-    // receipts — then no routing is possible and we answer in place.
-    if (fields.receiptType !== null) {
-      const sandboxReceipt = fields.receiptType !== 'Production'
-        && !fields.receiptType.startsWith('ProductionVPP');
-      if (this.#environment === 'Production' && sandboxReceipt) {
-        return { status: Status.SANDBOX_RECEIPT_ON_PRODUCTION };
-      }
-      if (this.#environment === 'Sandbox' && !sandboxReceipt) {
-        return { status: Status.PRODUCTION_RECEIPT_ON_SANDBOX };
-      }
+    // 21007/21008 environment routing from the receipt_type attribute.
+    // Production types are exactly "Production" and "ProductionVPP";
+    // everything else ("ProductionSandbox", "ProductionVPPSandbox",
+    // "Xcode", or a missing attribute) fails closed as non-production.
+    const productionReceipt = fields.receiptType === 'Production'
+      || fields.receiptType === 'ProductionVPP';
+    if (this.#environment === 'Production' && !productionReceipt) {
+      return { status: Status.SANDBOX_RECEIPT_ON_PRODUCTION };
+    }
+    if (this.#environment === 'Sandbox' && productionReceipt) {
+      return { status: Status.PRODUCTION_RECEIPT_ON_SANDBOX };
     }
     return {
       status: Status.OK,

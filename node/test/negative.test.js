@@ -97,3 +97,20 @@ test('bundled Apple roots load and look right', () => {
   assert.match(appleJwsRoots()[0].subject, /Apple Root CA - G3/);
   assert.match(appleReceiptRoots()[0].subject, /Apple Root CA/);
 });
+
+test('rejects trailing bytes after the CMS blob', () => {
+  const receiptVerifier = new ReceiptVerifier({
+    trustedRoots: [fixture('receipt-root.der')], bundleId: BUNDLE,
+  });
+  const padded = Buffer.concat([fixture('receipt.der'), Buffer.from([0, 0xde, 0xad, 0xbe])]);
+  assert.throws(() => receiptVerifier.verify(padded),
+    (e) => e.reason === 'INVALID_RECEIPT_FORMAT');
+});
+
+test('exposes unknown attributes for forward compatibility', () => {
+  const receiptVerifier = new ReceiptVerifier({
+    trustedRoots: [fixture('receipt-root.der')], bundleId: BUNDLE,
+  });
+  const receipt = receiptVerifier.verify(fixture('receipt.der'));
+  assert.deepEqual(receipt.unknownAttributes.get(9999), [Buffer.from([1, 2, 3])]);
+});

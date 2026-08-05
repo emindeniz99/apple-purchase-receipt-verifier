@@ -32,6 +32,8 @@ const IAP = {
 
 /** One in-app purchase from a legacy app receipt (attribute 17). */
 export interface InAppPurchase {
+  /** Raw unmodeled attributes by type — forward compatibility (PLAN D10). */
+  unknownAttributes: Map<number, Buffer[]>;
   quantity: number | null;
   productId: string | null;
   transactionId: string | null;
@@ -49,6 +51,12 @@ export interface InAppPurchase {
  * {@link ReceiptVerifier} (or {@link verifyReceiptCore}) should be trusted.
  */
 export interface AppReceipt {
+  /**
+   * Raw values of attribute types this library does not model, keyed by
+   * type — forward compatibility for fields Apple may add (PLAN D10).
+   * Values are the raw octet-string contents, verified but undecoded.
+   */
+  unknownAttributes: Map<number, Buffer[]>;
   /** Attribute 0, e.g. "Production" / "ProductionSandbox" (undocumented). */
   receiptType: string | null;
   bundleId: string | null;
@@ -288,6 +296,7 @@ function verifyDeviceHash(fields: AppReceipt, deviceGuid: Buffer): void {
 function parsePayload(content: Buffer): AppReceipt {
   const attributes = parseAttributeSet(content, 'receipt payload');
   const fields: AppReceipt = {
+    unknownAttributes: new Map(),
     receiptType: null, bundleId: null, bundleIdBytes: null, appVersion: null,
     opaqueValue: null, sha1Hash: null, creationDate: null, originalPurchaseDate: null,
     originalAppVersion: null, expirationDate: null, inAppPurchases: [],
@@ -307,15 +316,22 @@ function parsePayload(content: Buffer): AppReceipt {
       case ATTR.ORIGINAL_PURCHASE_DATE: fields.originalPurchaseDate = decodeDate(value); break;
       case ATTR.ORIGINAL_APP_VERSION: fields.originalAppVersion = decodeString(value); break;
       case ATTR.EXPIRATION_DATE: fields.expirationDate = decodeDate(value); break;
-      default: break; // receipts carry undocumented attribute types
+      default: recordUnknown(fields.unknownAttributes, type, value); break;
     }
   }
   return fields;
 }
 
+function recordUnknown(unknown: Map<number, Buffer[]>, type: number, value: Buffer): void {
+  const values = unknown.get(type) ?? [];
+  values.push(value);
+  unknown.set(type, values);
+}
+
 function parseInApp(value: Buffer): InAppPurchase {
   const attributes = parseAttributeSet(value, 'in-app purchase attribute');
   const purchase: InAppPurchase = {
+    unknownAttributes: new Map(),
     quantity: null, productId: null, transactionId: null, originalTransactionId: null,
     purchaseDate: null, originalPurchaseDate: null, expiresDate: null,
     cancellationDate: null, webOrderLineItemId: null, isInIntroOfferPeriod: null,
@@ -332,7 +348,7 @@ function parseInApp(value: Buffer): InAppPurchase {
       case IAP.WEB_ORDER_LINE_ITEM_ID: purchase.webOrderLineItemId = decodeInteger(v); break;
       case IAP.CANCELLATION_DATE: purchase.cancellationDate = decodeDate(v); break;
       case IAP.IS_IN_INTRO_OFFER_PERIOD: purchase.isInIntroOfferPeriod = decodeInteger(v); break;
-      default: break;
+      default: recordUnknown(purchase.unknownAttributes, type, v); break;
     }
   }
   return purchase;
