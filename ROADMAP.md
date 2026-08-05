@@ -23,7 +23,31 @@ Delete an item in the same commit that ships it.
 - **CI**: per-language workflow under `.github/workflows/` running each
   test suite (match the existing per-project workflow style).
 
+## Upstream contribution (after all languages ship)
+
+Apple's official `app-store-server-library-{java,node,python}` verify JWS
+locally but their `ReceiptUtility` only *extracts* transaction ids from
+legacy PKCS#7 receipts — docstrings state "NO validation is performed".
+Our verified legacy-receipt validation is a natural upstream feature:
+
+- **PR into `apple/app-store-server-library-java`**: port `ReceiptVerifier`
+  to the upstream codebase. Upstream requires Java 11+, so the PR is a
+  Java 11-idiom port; our Java 8-compatible build stays canonical in this
+  repo for enterprise consumers upstream won't serve (PLAN D2).
+- **PRs into `-node` and `-python`**: same contribution once our Node and
+  Python implementations are done and fixture-parity-proven.
+
 ## Later / hardening
+
+- **Xcode/StoreKit-Test receipt quirks** (seen in upstream
+  `receipt_utility.py`): Xcode-generated receipts double-wrap the payload
+  octet string — handle that shape; also decide whether to support the
+  ancient `transactionReceipt` (purchase-info) format at all.
+- **Dev-mode environments**: Apple's `SignedDataVerifier` deliberately
+  skips signature verification for XCODE / LOCAL_TESTING payloads (they
+  aren't Apple-signed). Our verifier hard-fails them on chain validation.
+  If local-testing support is ever needed, add an explicit, loudly-gated
+  insecure dev mode — never reachable from production config.
 
 - Optional OCSP revocation checking (opt-in "online mode", like the official
   library) for consumers who accept Apple calls.
