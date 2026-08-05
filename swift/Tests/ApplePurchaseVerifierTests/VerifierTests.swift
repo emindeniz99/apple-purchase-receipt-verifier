@@ -240,3 +240,60 @@ extension Data {
         self.init(bytes)
     }
 }
+
+/// verifyReceipt-compat semantics over the shared receipt fixture.
+final class VerifyReceiptEndpointTests: XCTestCase {
+    func fixture(_ segments: String...) throws -> Data {
+        try Data(contentsOf: segments.reduce(VerifierTests.fixturesDir) {
+            $0.appendingPathComponent($1)
+        })
+    }
+
+    func endpoint(production: Bool) throws -> VerifyReceiptEndpoint {
+        try VerifyReceiptEndpoint(
+            trustedRoots: [try fixture("generated", "receipt-root.der")],
+            production: production)
+    }
+
+    func request() throws -> [String: Any] {
+        ["receipt-data": try fixture("generated", "receipt.der").base64EncodedString()]
+    }
+
+    func testAnswersLikeVerifyReceiptForValidSandboxReceipt() async throws {
+        let response = await (try endpoint(production: false)).verifyReceipt(try request())
+        XCTAssertEqual(response["status"] as? Int, 0)
+        XCTAssertEqual(response["environment"] as? String, "Sandbox")
+        let receipt = response["receipt"] as! [String: Any]
+        XCTAssertEqual(receipt["receipt_type"] as? String, "ProductionSandbox")
+        XCTAssertEqual(receipt["bundle_id"] as? String, "com.example.app")
+        XCTAssertEqual(receipt["receipt_creation_date"] as? String,
+                       "2024-08-06 12:00:00 Etc/GMT")
+        XCTAssertEqual(receipt["receipt_creation_date_ms"] as? String, "1722945600000")
+        XCTAssertEqual(receipt["receipt_creation_date_pst"] as? String,
+                       "2024-08-06 05:00:00 America/Los_Angeles")
+        let inApp = receipt["in_app"] as! [[String: Any]]
+        XCTAssertEqual(inApp.count, 2)
+        XCTAssertEqual(inApp[0]["quantity"] as? String, "1")
+        XCTAssertEqual(inApp[0]["web_order_line_item_id"] as? String, "42")
+    }
+
+    func testRoutesSandboxReceiptOnProductionTo21007() async throws {
+        let response = await (try endpoint(production: true)).verifyReceipt(try request())
+        XCTAssertEqual(response["status"] as? Int, 21007)
+    }
+
+    func testReportsMalformedRequestsAs21002() async throws {
+        let endpoint = try endpoint(production: false)
+        let empty = await endpoint.verifyReceipt([:])
+        XCTAssertEqual(empty["status"] as? Int, 21002)
+        let garbage = await endpoint.verifyReceipt(["receipt-data": "AQIDBA=="])
+        XCTAssertEqual(garbage["status"] as? Int, 21002)
+    }
+
+    func testReportsUnauthenticReceiptsAs21003() async throws {
+        let foreign = try self.fixture("generated", "receipt-foreign.der")
+        let response = await (try endpoint(production: false))
+            .verifyReceipt(["receipt-data": foreign.base64EncodedString()])
+        XCTAssertEqual(response["status"] as? Int, 21003)
+    }
+}

@@ -21,6 +21,10 @@ public struct InAppPurchase: Sendable {
 /// A verified legacy app receipt. Only receipts returned by
 /// ``ReceiptVerifier`` should be trusted.
 public struct AppReceipt: Sendable {
+    /// Attribute 0, e.g. "Production" / "ProductionSandbox" (undocumented).
+    public var receiptType: String?
+    /// Attribute 18 (undocumented; community-established).
+    public var originalPurchaseDate: Date?
     public var bundleId: String?
     public var bundleIdBytes: Data?
     public var appVersion: String?
@@ -65,6 +69,22 @@ public struct ReceiptVerifier: Sendable {
     /// enforces the device-hash binding: SHA1(guid ‖ opaqueValue ‖
     /// bundleIdBytes) must equal attribute 5 (optional — PLAN.md D4).
     public func verify(receipt: Data, deviceGuid: Data? = nil) async throws -> AppReceipt {
+        let fields = try await verifyCore(receipt: receipt)
+        guard fields.bundleId == bundleId else {
+            throw VerificationError(.wrongBundleId,
+                "expected \(bundleId) but receipt has \(fields.bundleId ?? "nil")")
+        }
+        if let deviceGuid {
+            try verifyDeviceHash(fields, deviceGuid: deviceGuid)
+        }
+        return fields
+    }
+
+    /// Chain + signature verification WITHOUT the bundle-id claim check —
+    /// the primitive under both ``verify(receipt:deviceGuid:)`` and the
+    /// verifyReceipt-compat endpoint (which, like Apple's endpoint, accepts
+    /// any bundle).
+    func verifyCore(receipt: Data) async throws -> AppReceipt {
         let cms = try CMSReceipt(parsing: [UInt8](receipt))
 
         // Parsed before signature verification only to learn the creation
@@ -85,14 +105,6 @@ public struct ReceiptVerifier: Sendable {
                 "signer chain does not validate to a pinned root")
         }
         try cms.verifySignature(signerCert: signerCert)
-
-        guard fields.bundleId == bundleId else {
-            throw VerificationError(.wrongBundleId,
-                "expected \(bundleId) but receipt has \(fields.bundleId ?? "nil")")
-        }
-        if let deviceGuid {
-            try verifyDeviceHash(fields, deviceGuid: deviceGuid)
-        }
         return fields
     }
 
@@ -298,6 +310,8 @@ private struct CMSReceipt {
 
 // MARK: - Receipt payload (strict DER)
 
+private let attrReceiptType = 0
+private let attrOriginalPurchaseDate = 18
 private let attrBundleId = 2
 private let attrAppVersion = 3
 private let attrOpaqueValue = 4
@@ -311,6 +325,8 @@ private func parsePayload(_ content: [UInt8]) throws -> AppReceipt {
     var receipt = AppReceipt()
     for (type, value) in try parseAttributeSet(content) {
         switch type {
+        case attrReceiptType: receipt.receiptType = try decodeString(value)
+        case attrOriginalPurchaseDate: receipt.originalPurchaseDate = try decodeDate(value)
         case attrBundleId:
             receipt.bundleId = try decodeString(value)
             receipt.bundleIdBytes = Data(value)
