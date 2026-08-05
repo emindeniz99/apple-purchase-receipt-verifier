@@ -11,20 +11,24 @@ import java.util.List;
  */
 public final class AppReceipt {
 
+    private final String receiptType;
     private final String bundleId;
     private final byte[] bundleIdBytes;
     private final String appVersion;
     private final byte[] opaqueValue;
     private final byte[] sha1Hash;
     private final Instant creationDate;
+    private final Instant originalPurchaseDate;
     private final String originalAppVersion;
     private final Instant expirationDate;
     private final List<InAppPurchase> inAppPurchases;
 
-    AppReceipt(String bundleId, byte[] bundleIdBytes, String appVersion,
+    AppReceipt(String receiptType, String bundleId, byte[] bundleIdBytes, String appVersion,
                byte[] opaqueValue, byte[] sha1Hash, Instant creationDate,
-               String originalAppVersion, Instant expirationDate,
-               List<InAppPurchase> inAppPurchases) {
+               Instant originalPurchaseDate, String originalAppVersion,
+               Instant expirationDate, List<InAppPurchase> inAppPurchases) {
+        this.receiptType = receiptType;
+        this.originalPurchaseDate = originalPurchaseDate;
         this.bundleId = bundleId;
         this.bundleIdBytes = bundleIdBytes;
         this.appVersion = appVersion;
@@ -34,6 +38,16 @@ public final class AppReceipt {
         this.originalAppVersion = originalAppVersion;
         this.expirationDate = expirationDate;
         this.inAppPurchases = Collections.unmodifiableList(inAppPurchases);
+    }
+
+    /** Attribute 0, e.g. "Production" / "ProductionSandbox" (undocumented). */
+    public String receiptType() {
+        return receiptType;
+    }
+
+    /** Attribute 18 (undocumented; community-established). */
+    public Instant originalPurchaseDate() {
+        return originalPurchaseDate;
     }
 
     public String bundleId() {

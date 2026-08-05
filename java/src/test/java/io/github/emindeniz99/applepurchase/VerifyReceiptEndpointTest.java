@@ -1,0 +1,83 @@
+package io.github.emindeniz99.applepurchase;
+
+import io.github.emindeniz99.applepurchase.receipt.VerifyReceiptEndpoint;
+import org.junit.jupiter.api.Test;
+
+import java.io.ByteArrayInputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
+import java.util.Base64;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+
+/** verifyReceipt-compat semantics over the shared receipt fixture. */
+class VerifyReceiptEndpointTest {
+
+    private static final Path FIXTURES = Paths.get("..", "fixtures", "generated");
+
+    private static VerifyReceiptEndpoint endpoint(boolean production) throws Exception {
+        byte[] der = Files.readAllBytes(FIXTURES.resolve("receipt-root.der"));
+        X509Certificate root = (X509Certificate) CertificateFactory.getInstance("X.509")
+                .generateCertificate(new ByteArrayInputStream(der));
+        return new VerifyReceiptEndpoint(Collections.singleton(root), production);
+    }
+
+    private static Map<String, Object> request() throws Exception {
+        byte[] receipt = Files.readAllBytes(FIXTURES.resolve("receipt.der"));
+        return Collections.singletonMap("receipt-data",
+                Base64.getEncoder().encodeToString(receipt));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void answersLikeVerifyReceiptForAValidSandboxReceipt() throws Exception {
+        Map<String, Object> response = endpoint(false).verifyReceipt(request());
+        assertEquals(0, response.get("status"));
+        assertEquals("Sandbox", response.get("environment"));
+        Map<String, Object> receipt = (Map<String, Object>) response.get("receipt");
+        assertEquals("ProductionSandbox", receipt.get("receipt_type"));
+        assertEquals("com.example.app", receipt.get("bundle_id"));
+        assertEquals("1.2.3", receipt.get("application_version"));
+        assertEquals("1.0", receipt.get("original_application_version"));
+        assertEquals("2024-08-06 12:00:00 Etc/GMT", receipt.get("receipt_creation_date"));
+        assertEquals("1722945600000", receipt.get("receipt_creation_date_ms"));
+        assertEquals("2024-08-06 05:00:00 America/Los_Angeles",
+                receipt.get("receipt_creation_date_pst"));
+        List<Map<String, Object>> inApp = (List<Map<String, Object>>) receipt.get("in_app");
+        assertEquals(2, inApp.size());
+        Map<String, Object> first = inApp.get(0);
+        assertEquals("1", first.get("quantity"));
+        assertEquals("42", first.get("web_order_line_item_id"));
+    }
+
+    @Test
+    void routesSandboxReceiptOnProductionTo21007() throws Exception {
+        Map<String, Object> response = endpoint(true).verifyReceipt(request());
+        assertEquals(21007, response.get("status"));
+        assertNull(response.get("receipt"));
+    }
+
+    @Test
+    void reportsMalformedRequestsAs21002() throws Exception {
+        assertEquals(21002, endpoint(false)
+                .verifyReceipt(Collections.<String, Object>emptyMap()).get("status"));
+        assertEquals(21002, endpoint(false)
+                .verifyReceipt(Collections.singletonMap("receipt-data", "AQIDBA==")).get("status"));
+    }
+
+    @Test
+    void reportsUnauthenticReceiptsAs21003() throws Exception {
+        byte[] foreign = Files.readAllBytes(FIXTURES.resolve("receipt-foreign.der"));
+        Map<String, Object> response = endpoint(false).verifyReceipt(
+                Collections.singletonMap("receipt-data",
+                        Base64.getEncoder().encodeToString(foreign)));
+        assertEquals(21003, response.get("status"));
+    }
+}

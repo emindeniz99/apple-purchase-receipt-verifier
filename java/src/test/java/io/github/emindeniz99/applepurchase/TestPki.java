@@ -212,8 +212,10 @@ final class TestPki {
                                  byte[] sha1Hash, String creationDate,
                                  List<byte[]> inAppSets) throws Exception {
         ASN1EncodableVector attrs = new ASN1EncodableVector();
+        attrs.add(attr(0, new DERUTF8String("ProductionSandbox").getEncoded()));
         attrs.add(attr(2, new DERUTF8String(bundleId).getEncoded()));
         attrs.add(attr(3, new DERUTF8String(appVersion).getEncoded()));
+        attrs.add(attr(18, new DERIA5String(creationDate).getEncoded()));
         attrs.add(attr(4, opaque));
         attrs.add(attr(5, sha1Hash));
         attrs.add(attr(12, new DERIA5String(creationDate).getEncoded()));

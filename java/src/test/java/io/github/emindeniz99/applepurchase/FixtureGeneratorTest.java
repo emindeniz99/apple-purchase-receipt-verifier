@@ -122,6 +122,7 @@ class FixtureGeneratorTest {
                         "expectHistorical", "verifies",
                         "expectFresh", "INVALID_CHAIN"),
                 "receipt", TestPki.claims(
+                        "receiptType", "ProductionSandbox",
                         "bundleId", BUNDLE,
                         "appVersion", "1.2.3",
                         "originalAppVersion", "1.0",

@@ -51,7 +51,11 @@ import java.util.Set;
  */
 public final class ReceiptVerifier {
 
-    // Receipt attribute types (Apple, "Validating receipts on the device").
+    // Receipt attribute types (Apple, "Validating receipts on the device"),
+    // plus two community-established ones (0: receipt type, 18: original
+    // purchase date) needed for verifyReceipt response compatibility.
+    private static final int ATTR_RECEIPT_TYPE = 0;
+    private static final int ATTR_ORIGINAL_PURCHASE_DATE = 18;
     private static final int ATTR_BUNDLE_ID = 2;
     private static final int ATTR_APP_VERSION = 3;
     private static final int ATTR_OPAQUE_VALUE = 4;
@@ -124,6 +128,23 @@ public final class ReceiptVerifier {
      * every device presents its own receipt.
      */
     public AppReceipt verify(byte[] receiptDer, byte[] deviceGuid) throws VerificationException {
+        AppReceipt receipt = verifyCore(receiptDer);
+        if (!bundleId.equals(receipt.bundleId())) {
+            throw new VerificationException(Reason.WRONG_BUNDLE_ID,
+                    "expected " + bundleId + " but receipt has " + receipt.bundleId());
+        }
+        if (deviceGuid != null) {
+            verifyDeviceHash(receipt, deviceGuid);
+        }
+        return receipt;
+    }
+
+    /**
+     * Chain + signature verification WITHOUT the bundle-id claim check — the
+     * primitive under both {@link #verify} and {@link VerifyReceiptEndpoint}
+     * (which, like Apple's endpoint, accepts any bundle).
+     */
+    AppReceipt verifyCore(byte[] receiptDer) throws VerificationException {
         if (receiptDer == null) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "receipt is null");
         }
@@ -146,14 +167,6 @@ public final class ReceiptVerifier {
 
         X509Certificate signerCert = validateChain(cms, at);
         verifyCmsSignature(cms, signerCert);
-
-        if (!bundleId.equals(receipt.bundleId())) {
-            throw new VerificationException(Reason.WRONG_BUNDLE_ID,
-                    "expected " + bundleId + " but receipt has " + receipt.bundleId());
-        }
-        if (deviceGuid != null) {
-            verifyDeviceHash(receipt, deviceGuid);
-        }
         return receipt;
     }
 
@@ -234,12 +247,14 @@ public final class ReceiptVerifier {
 
     private static AppReceipt parsePayload(byte[] payload) throws VerificationException {
         ASN1Set attributes = parseAttributeSet(payload, "receipt payload");
+        String receiptType = null;
         String parsedBundleId = null;
         byte[] bundleIdBytes = null;
         String appVersion = null;
         byte[] opaqueValue = null;
         byte[] sha1Hash = null;
         Instant creationDate = null;
+        Instant originalPurchaseDate = null;
         String originalAppVersion = null;
         Instant expirationDate = null;
         List<InAppPurchase> purchases = new ArrayList<InAppPurchase>();
@@ -247,6 +262,12 @@ public final class ReceiptVerifier {
         for (ASN1Encodable element : attributes) {
             Attribute attr = Attribute.of(element);
             switch (attr.type) {
+                case ATTR_RECEIPT_TYPE:
+                    receiptType = decodeString(attr.value);
+                    break;
+                case ATTR_ORIGINAL_PURCHASE_DATE:
+                    originalPurchaseDate = decodeDate(attr.value);
+                    break;
                 case ATTR_BUNDLE_ID:
                     parsedBundleId = decodeString(attr.value);
                     bundleIdBytes = attr.value;
@@ -277,8 +298,9 @@ public final class ReceiptVerifier {
                     break;
             }
         }
-        return new AppReceipt(parsedBundleId, bundleIdBytes, appVersion, opaqueValue,
-                sha1Hash, creationDate, originalAppVersion, expirationDate, purchases);
+        return new AppReceipt(receiptType, parsedBundleId, bundleIdBytes, appVersion,
+                opaqueValue, sha1Hash, creationDate, originalPurchaseDate,
+                originalAppVersion, expirationDate, purchases);
     }
 
     private static InAppPurchase parseInApp(byte[] inAppSet) throws VerificationException {
