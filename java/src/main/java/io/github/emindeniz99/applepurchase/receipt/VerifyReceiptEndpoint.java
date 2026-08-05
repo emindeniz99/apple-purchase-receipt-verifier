@@ -87,18 +87,17 @@ public final class VerifyReceiptEndpoint {
             return status(STATUS_INTERNAL);
         }
 
-        // 21007/21008 environment routing from the receipt_type attribute
-        // ("Production" / "ProductionSandbox" / … / "Xcode"). Absent in some
-        // receipts — then no routing is possible and we answer in place.
-        if (receipt.receiptType() != null) {
-            boolean sandboxReceipt = !receipt.receiptType().equals("Production")
-                    && !receipt.receiptType().startsWith("ProductionVPP");
-            if (production && sandboxReceipt) {
-                return status(STATUS_SANDBOX_RECEIPT_ON_PRODUCTION);
-            }
-            if (!production && !sandboxReceipt) {
-                return status(STATUS_PRODUCTION_RECEIPT_ON_SANDBOX);
-            }
+        // 21007/21008 environment routing from the receipt_type attribute.
+        // Production types are exactly "Production" and "ProductionVPP";
+        // everything else ("ProductionSandbox", "ProductionVPPSandbox",
+        // "Xcode", or a missing attribute) fails closed as non-production.
+        boolean productionReceipt = "Production".equals(receipt.receiptType())
+                || "ProductionVPP".equals(receipt.receiptType());
+        if (production && !productionReceipt) {
+            return status(STATUS_SANDBOX_RECEIPT_ON_PRODUCTION);
+        }
+        if (!production && productionReceipt) {
+            return status(STATUS_PRODUCTION_RECEIPT_ON_SANDBOX);
         }
 
         Map<String, Object> response = new LinkedHashMap<String, Object>();

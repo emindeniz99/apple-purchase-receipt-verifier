@@ -1,6 +1,9 @@
 package io.github.emindeniz99.applepurchase.receipt;
 
 import java.time.Instant;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 
 /**
  * One in-app purchase from a legacy app receipt (attribute 17). Field set
@@ -19,12 +22,14 @@ public final class InAppPurchase {
     private final Instant cancellationDate;
     private final Long webOrderLineItemId;
     private final Long isInIntroOfferPeriod;
+    private final Map<Integer, List<byte[]>> unknownAttributes;
 
     InAppPurchase(Long quantity, String productId, String transactionId,
                   String originalTransactionId, Instant purchaseDate,
                   Instant originalPurchaseDate, Instant expiresDate,
                   Instant cancellationDate, Long webOrderLineItemId,
-                  Long isInIntroOfferPeriod) {
+                  Long isInIntroOfferPeriod,
+                  Map<Integer, List<byte[]>> unknownAttributes) {
         this.quantity = quantity;
         this.productId = productId;
         this.transactionId = transactionId;
@@ -35,6 +40,7 @@ public final class InAppPurchase {
         this.cancellationDate = cancellationDate;
         this.webOrderLineItemId = webOrderLineItemId;
         this.isInIntroOfferPeriod = isInIntroOfferPeriod;
+        this.unknownAttributes = Collections.unmodifiableMap(unknownAttributes);
     }
 
     public Long quantity() {
@@ -77,5 +83,10 @@ public final class InAppPurchase {
 
     public Long isInIntroOfferPeriod() {
         return isInIntroOfferPeriod;
+    }
+
+    /** Raw unmodeled attributes by type — forward compatibility (PLAN D10). */
+    public Map<Integer, List<byte[]>> unknownAttributes() {
+        return unknownAttributes;
     }
 }

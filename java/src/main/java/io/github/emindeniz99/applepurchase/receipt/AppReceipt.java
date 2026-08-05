@@ -3,6 +3,7 @@ package io.github.emindeniz99.applepurchase.receipt;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 /**
  * A verified legacy app receipt (PKCS#7 payload). Only receipts returned by
@@ -22,11 +23,13 @@ public final class AppReceipt {
     private final String originalAppVersion;
     private final Instant expirationDate;
     private final List<InAppPurchase> inAppPurchases;
+    private final Map<Integer, List<byte[]>> unknownAttributes;
 
     AppReceipt(String receiptType, String bundleId, byte[] bundleIdBytes, String appVersion,
                byte[] opaqueValue, byte[] sha1Hash, Instant creationDate,
                Instant originalPurchaseDate, String originalAppVersion,
-               Instant expirationDate, List<InAppPurchase> inAppPurchases) {
+               Instant expirationDate, List<InAppPurchase> inAppPurchases,
+               Map<Integer, List<byte[]>> unknownAttributes) {
         this.receiptType = receiptType;
         this.originalPurchaseDate = originalPurchaseDate;
         this.bundleId = bundleId;
@@ -38,6 +41,7 @@ public final class AppReceipt {
         this.originalAppVersion = originalAppVersion;
         this.expirationDate = expirationDate;
         this.inAppPurchases = Collections.unmodifiableList(inAppPurchases);
+        this.unknownAttributes = Collections.unmodifiableMap(unknownAttributes);
     }
 
     /** Attribute 0, e.g. "Production" / "ProductionSandbox" (undocumented). */
@@ -90,5 +94,14 @@ public final class AppReceipt {
 
     public List<InAppPurchase> inAppPurchases() {
         return inAppPurchases;
+    }
+
+    /**
+     * Raw values of attribute types this library does not model, keyed by
+     * type — forward compatibility for fields Apple may add (PLAN D10).
+     * Values are the raw octet-string contents, verified but undecoded.
+     */
+    public Map<Integer, List<byte[]>> unknownAttributes() {
+        return unknownAttributes;
     }
 }

@@ -211,8 +211,18 @@ final class TestPki {
     static byte[] receiptPayload(String bundleId, String appVersion, byte[] opaque,
                                  byte[] sha1Hash, String creationDate,
                                  List<byte[]> inAppSets) throws Exception {
+        return receiptPayload("ProductionSandbox", bundleId, appVersion, opaque, sha1Hash,
+                creationDate, inAppSets);
+    }
+
+    /** Same, with an explicit receipt_type (attr 0); {@code null} omits the attribute. */
+    static byte[] receiptPayload(String receiptType, String bundleId, String appVersion,
+                                 byte[] opaque, byte[] sha1Hash, String creationDate,
+                                 List<byte[]> inAppSets) throws Exception {
         ASN1EncodableVector attrs = new ASN1EncodableVector();
-        attrs.add(attr(0, new DERUTF8String("ProductionSandbox").getEncoded()));
+        if (receiptType != null) {
+            attrs.add(attr(0, new DERUTF8String(receiptType).getEncoded()));
+        }
         attrs.add(attr(2, new DERUTF8String(bundleId).getEncoded()));
         attrs.add(attr(3, new DERUTF8String(appVersion).getEncoded()));
         attrs.add(attr(18, new DERIA5String(creationDate).getEncoded()));
@@ -220,6 +230,7 @@ final class TestPki {
         attrs.add(attr(5, sha1Hash));
         attrs.add(attr(12, new DERIA5String(creationDate).getEncoded()));
         attrs.add(attr(19, new DERUTF8String("1.0").getEncoded()));
+        attrs.add(attr(9999, new byte[]{1, 2, 3}));  // unknown attr for D10 tests
         for (byte[] inApp : inAppSets) {
             attrs.add(attr(17, inApp));
         }

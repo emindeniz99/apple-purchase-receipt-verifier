@@ -38,7 +38,9 @@ import java.util.Collection;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -147,6 +149,14 @@ public final class ReceiptVerifier {
     AppReceipt verifyCore(byte[] receiptDer) throws VerificationException {
         if (receiptDer == null) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "receipt is null");
+        }
+        try {
+            // Rejects trailing bytes after the CMS blob (PLAN 2.3) - BC's
+            // fromByteArray throws when parsing does not exhaust the input.
+            ASN1Primitive.fromByteArray(receiptDer);
+        } catch (IOException e) {
+            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT,
+                    "receipt has trailing or unparseable bytes", e);
         }
         CMSSignedData cms;
         try {
@@ -258,6 +268,7 @@ public final class ReceiptVerifier {
         String originalAppVersion = null;
         Instant expirationDate = null;
         List<InAppPurchase> purchases = new ArrayList<InAppPurchase>();
+        Map<Integer, List<byte[]>> unknown = new LinkedHashMap<Integer, List<byte[]>>();
 
         for (ASN1Encodable element : attributes) {
             Attribute attr = Attribute.of(element);
@@ -294,13 +305,15 @@ public final class ReceiptVerifier {
                     expirationDate = decodeDate(attr.value);
                     break;
                 default:
-                    // Receipts carry undocumented attribute types; ignore them.
+                    // Undocumented attribute types stay accessible for
+                    // forward compatibility (PLAN D10).
+                    recordUnknown(unknown, attr);
                     break;
             }
         }
         return new AppReceipt(receiptType, parsedBundleId, bundleIdBytes, appVersion,
                 opaqueValue, sha1Hash, creationDate, originalPurchaseDate,
-                originalAppVersion, expirationDate, purchases);
+                originalAppVersion, expirationDate, purchases, unknown);
     }
 
     private static InAppPurchase parseInApp(byte[] inAppSet) throws VerificationException {
@@ -315,6 +328,7 @@ public final class ReceiptVerifier {
         Instant cancellationDate = null;
         Long webOrderLineItemId = null;
         Long isInIntroOfferPeriod = null;
+        Map<Integer, List<byte[]>> unknown = new LinkedHashMap<Integer, List<byte[]>>();
 
         for (ASN1Encodable element : attributes) {
             Attribute attr = Attribute.of(element);
@@ -350,12 +364,22 @@ public final class ReceiptVerifier {
                     isInIntroOfferPeriod = decodeInteger(attr.value);
                     break;
                 default:
+                    recordUnknown(unknown, attr);
                     break;
             }
         }
         return new InAppPurchase(quantity, productId, transactionId, originalTransactionId,
                 purchaseDate, originalPurchaseDate, expiresDate, cancellationDate,
-                webOrderLineItemId, isInIntroOfferPeriod);
+                webOrderLineItemId, isInIntroOfferPeriod, unknown);
+    }
+
+    private static void recordUnknown(Map<Integer, List<byte[]>> unknown, Attribute attr) {
+        List<byte[]> values = unknown.get(attr.type);
+        if (values == null) {
+            values = new ArrayList<byte[]>();
+            unknown.put(attr.type, values);
+        }
+        values.add(attr.value);
     }
 
     private static ASN1Set parseAttributeSet(byte[] der, String what) throws VerificationException {
@@ -390,7 +414,7 @@ public final class ReceiptVerifier {
                 }
                 BigInteger type = ASN1Integer.getInstance(seq.getObjectAt(0)).getValue();
                 byte[] value = ASN1OctetString.getInstance(seq.getObjectAt(2)).getOctets();
-                return new Attribute(type.intValueExact(), value);
+                return new Attribute((int) boundedInt(type), value);
             } catch (IllegalArgumentException e) {
                 throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT,
                         "malformed receipt attribute", e);
@@ -399,6 +423,15 @@ public final class ReceiptVerifier {
                         "receipt attribute type out of range", e);
             }
         }
+    }
+
+    /** Receipt integers are capped at 6 bytes in every implementation (PLAN 2.3). */
+    private static long boundedInt(BigInteger value) throws VerificationException {
+        if (value.signum() < 0 || value.bitLength() > 47) {
+            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT,
+                    "receipt integer out of range");
+        }
+        return value.longValue();
     }
 
     private static String decodeString(byte[] der) throws VerificationException {
@@ -422,7 +455,7 @@ public final class ReceiptVerifier {
                 throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT,
                         "attribute value is not an ASN.1 integer");
             }
-            return ((ASN1Integer) parsed).getValue().longValueExact();
+            return Long.valueOf(boundedInt(((ASN1Integer) parsed).getValue()));
         } catch (IOException e) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT,
                     "attribute value is not valid ASN.1", e);

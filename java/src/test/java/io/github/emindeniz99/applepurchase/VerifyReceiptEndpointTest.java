@@ -73,6 +73,28 @@ class VerifyReceiptEndpointTest {
     }
 
     @Test
+    void routesReceiptTypeVariantsPerAppleMatrix() throws Exception {
+        // production types answer in Production and 21008 in Sandbox;
+        // sandbox/missing types answer in Sandbox and 21007 in Production.
+        String[][] cases = {
+                {"receipt-type-production.der", "production"},
+                {"receipt-type-vpp.der", "production"},
+                {"receipt-type-vpp-sandbox.der", "sandbox"},
+                {"receipt-no-type.der", "sandbox"},
+        };
+        for (String[] c : cases) {
+            byte[] receipt = Files.readAllBytes(FIXTURES.resolve(c[0]));
+            Map<String, Object> body = Collections.singletonMap("receipt-data",
+                    Base64.getEncoder().encodeToString(receipt));
+            boolean isProduction = c[1].equals("production");
+            assertEquals(isProduction ? 0 : 21007,
+                    endpoint(true).verifyReceipt(body).get("status"), c[0] + " on Production");
+            assertEquals(isProduction ? 21008 : 0,
+                    endpoint(false).verifyReceipt(body).get("status"), c[0] + " on Sandbox");
+        }
+    }
+
+    @Test
     void reportsUnauthenticReceiptsAs21003() throws Exception {
         byte[] foreign = Files.readAllBytes(FIXTURES.resolve("receipt-foreign.der"));
         Map<String, Object> response = endpoint(false).verifyReceipt(

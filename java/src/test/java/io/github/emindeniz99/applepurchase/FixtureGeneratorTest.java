@@ -107,6 +107,18 @@ class FixtureGeneratorTest {
         TestPki foreignPki = TestPki.receipt(new Date(CHAIN_NOT_BEFORE), new Date(CHAIN_NOT_AFTER));
         write("receipt-foreign.der", foreignPki.signReceipt(payload, new Date(SIGNED_DATE)));
 
+        // receipt_type variants for verifyReceipt-endpoint environment
+        // routing tests (21007/21008 matrix incl. the VPP sandbox case).
+        for (String[] variant : new String[][]{
+                {"receipt-type-production.der", "Production"},
+                {"receipt-type-vpp.der", "ProductionVPP"},
+                {"receipt-type-vpp-sandbox.der", "ProductionVPPSandbox"},
+                {"receipt-no-type.der", null}}) {
+            byte[] variantPayload = TestPki.receiptPayload(variant[1], BUNDLE, "1.2.3",
+                    OPAQUE, hash, CREATION_DATE, Arrays.<byte[]>asList());
+            write(variant[0], receiptPki.signReceipt(variantPayload, new Date(SIGNED_DATE)));
+        }
+
         // --- Manifest -----------------------------------------------------
         Map<String, Object> manifest = TestPki.claims(
                 "comment", "Shared cross-language fixtures. Regenerate only via "

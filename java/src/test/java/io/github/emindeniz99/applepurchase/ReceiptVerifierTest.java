@@ -130,6 +130,22 @@ class ReceiptVerifierTest {
     }
 
     @Test
+    void rejectsTrailingBytesAfterCms() {
+        byte[] padded = new byte[receiptDer.length + 4];
+        System.arraycopy(receiptDer, 0, padded, 0, receiptDer.length);
+        VerificationException e = assertThrows(VerificationException.class,
+                () -> verifier(pki, BUNDLE).verify(padded));
+        assertEquals(Reason.INVALID_RECEIPT_FORMAT, e.reason());
+    }
+
+    @Test
+    void exposesUnknownAttributesForForwardCompatibility() throws Exception {
+        AppReceipt receipt = verifier(pki, BUNDLE).verify(receiptDer);
+        assertArrayEquals(new byte[]{1, 2, 3},
+                receipt.unknownAttributes().get(9999).get(0));
+    }
+
+    @Test
     void rejectsGarbageBytes() {
         VerificationException e = assertThrows(VerificationException.class,
                 () -> verifier(pki, BUNDLE).verify(new byte[]{1, 2, 3, 4}));
