@@ -17,7 +17,7 @@ Start with [INTENT.md](./INTENT.md) (why + trust model), then
 ## How to run
 
 ```bash
-# Java (requires JDK 17+, Maven)
+# Java (library targets Java 8; build with any modern JDK + Maven)
 cd java
 mvn test          # full suite incl. generated fake-Apple-PKI fixtures
 ```

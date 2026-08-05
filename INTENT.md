@@ -26,9 +26,9 @@ language** (all inside this folder):
 
 | Folder | Language | Status |
 |--------|----------|--------|
-| [`java/`](./java) | Java 17+ | first implementation |
-| [`node/`](./node) | Node.js | planned |
-| [`python/`](./python) | Python 3.11+ | planned |
+| [`java/`](./java) | Java 8+ | first implementation |
+| [`node/`](./node) | Node.js 20+ | planned |
+| [`python/`](./python) | Python 3.9+ | planned |
 
 Each implementation provides the same two capabilities:
 

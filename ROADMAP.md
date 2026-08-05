@@ -5,6 +5,13 @@ Delete an item in the same commit that ships it.
 
 ## Next
 
+- **Real receipt fixtures** (PLAN D6): owner to supply real production +
+  sandbox receipts (and ideally a StoreKit-Test/Xcode receipt) as checked-in
+  fixtures; add byte-level regression tests over them.
+- **Publishing prep** (PLAN D1): confirm license (MIT assumed), finalize
+  coordinates (`io.github.emindeniz99` / npm / PyPI names), CI matrix on the
+  D2 version floors (Java 8/11/17/21; Node 20/22/24; Python 3.9–3.13).
+
 - **Node implementation** (`node/`): port the two verifiers per PLAN §2 with
   `node:crypto` (`X509Certificate`, `verify`), minimal deps; port the test
   PKI generator and the failure-mode test matrix from `java/`.

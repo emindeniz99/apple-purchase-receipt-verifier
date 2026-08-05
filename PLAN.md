@@ -4,6 +4,39 @@ Read [INTENT.md](./INTENT.md) first for the "why". This file records the
 research, the verification algorithms every implementation must follow, and
 the shared API shape.
 
+## 0. Decisions (design grill, 2026-08-05)
+
+Settled with the project owner; treat as ADRs — changing one needs a reason
+recorded here.
+
+- **D1 — Published libraries, not internal-only.** Each implementation will
+  be published (Maven Central, npm, PyPI) when the project graduates.
+  Consequences: stable API, semver, dependency-light ("vendoring is ok"),
+  license required at publish time (MIT assumed — *unconfirmed, ask before
+  publishing*).
+- **D2 — Enterprise-reality version floors**, not upstream-support floors:
+  **Java 8**, **Node ≥20**, **Python ≥3.9**. Java is built `--release 8`
+  (no records/`var`/`List.of`; ES256 raw-signature conversion done manually
+  since `SHA256withECDSAinP1363Format` is Java 9+). CI should matrix-test
+  oldest + current LTS.
+- **D3 — Environment routing is an accept-set** (grill Q4, option A): the
+  verifier takes a *set* of accepted environments and reports which one
+  matched. Rationale: App Review runs production builds against sandbox —
+  a single-environment hard fail would reject purchases during review
+  (the old `verifyReceipt` 21007 retry-on-sandbox problem, solved locally).
+- **D4 — Device-hash check stays optional, off by default.**
+  `identifierForVendor` differs per device but each device carries its own
+  receipt with its own GUID, so the check is sound — still, requiring it
+  would force client changes. Replay defense = server-side transaction-id
+  bookkeeping (owner confirmed the server can keep them).
+- **D5 — Subscriptions supported**: payloads expose `expiresDate` /
+  `revocationDate` with an `isActiveAt(now)` helper, and the JWS verifier
+  takes an optional max-signed-age (staleness) policy. Refund/renewal
+  *state* still requires Apple's server API — out of scope (INTENT.md).
+- **D6 — Real receipt corpus pending**: owner will supply real production +
+  sandbox receipts as fixtures later; until then generated fake-Apple-PKI
+  fixtures carry the tests (tracked in ROADMAP.md).
+
 ## 1. Existing solutions (research, 2026-08)
 
 | Solution | Local verify? | Notes |
@@ -110,10 +143,11 @@ Root CA), optional device GUID.
 ```
 Environment = { PRODUCTION, SANDBOX, XCODE, LOCAL_TESTING }
 
-JwsVerifier(trustedRoots, bundleId, environment, appAppleId?)
-  .verifyTransaction(jws)      -> TransactionPayload   (decoded fields + raw claims)
+JwsVerifier(trustedRoots, bundleId, acceptedEnvironments, appAppleId?, maxSignedAge?)
+  .verifyTransaction(jws)      -> TransactionPayload   (decoded fields + isActiveAt helper)
   .verifyAppTransaction(jws)   -> AppTransactionPayload
-  .verifyNotification(jws)     -> NotificationPayload
+  .verifyRaw(jws)              -> claims map — signature/chain only, caller checks
+                                  claims (covers renewal-info / notification JWS)
 
 ReceiptVerifier(trustedRoots, bundleId)
   .verify(receiptBytes|base64) -> AppReceipt { bundleId, appVersion, opaqueValue,
@@ -136,8 +170,8 @@ so tests need no real Apple secrets and prove the anchor pinning works.
 ## 4. Milestones
 
 1. **Docs** — this folder: INTENT / PLAN / ROADMAP / README. ✅
-2. **Java** (`java/`, Maven, Java 17+, BouncyCastle + Jackson):
-   JWS verifier + PKCS#7 receipt verifier + test PKI + full test suite.
+2. **Java** (`java/`, Maven, Java 8+, BouncyCastle + Jackson):
+   JWS verifier + PKCS#7 receipt verifier + test PKI + full test suite. ✅
 3. **Node** (`node/`): same algorithms, `node:crypto` (X509Certificate),
    minimal deps; port the test-fixture generator.
 4. **Python** (`python/`): `cryptography` package; same tests.
