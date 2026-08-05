@@ -389,6 +389,16 @@ public final class ReceiptVerifier {
         } catch (IOException e) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, what + " is not valid ASN.1", e);
         }
+        if (parsed instanceof ASN1OctetString) {
+            // Xcode receipts double-wrap the payload in an extra OCTET
+            // STRING (upstream receipt_utility handles the same shape).
+            try {
+                parsed = ASN1Primitive.fromByteArray(((ASN1OctetString) parsed).getOctets());
+            } catch (IOException e) {
+                throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT,
+                        what + " double-wrap is not valid ASN.1", e);
+            }
+        }
         if (!(parsed instanceof ASN1Set)) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, what + " is not an ASN.1 SET");
         }

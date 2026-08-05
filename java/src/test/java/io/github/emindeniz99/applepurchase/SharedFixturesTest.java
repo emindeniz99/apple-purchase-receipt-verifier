@@ -95,6 +95,13 @@ class SharedFixturesTest {
     }
 
     @Test
+    void unwrapsDoubleWrappedReceiptPayload() throws Exception {
+        ReceiptVerifier verifier = new ReceiptVerifier(Collections.singleton(cert("receipt-root.der")), BUNDLE);
+        AppReceipt receipt = verifier.verify(bytes("receipt-double-wrapped.der"));
+        assertEquals("1.2.3", receipt.appVersion());
+    }
+
+    @Test
     void rejectsSharedForeignReceiptFixture() throws Exception {
         ReceiptVerifier verifier = new ReceiptVerifier(Collections.singleton(cert("receipt-root.der")), BUNDLE);
         VerificationException e = assertThrows(VerificationException.class,

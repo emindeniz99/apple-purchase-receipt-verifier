@@ -362,6 +362,15 @@ function parseAttributeSet(der: Buffer, what: string): Array<{ type: number; val
     throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT,
       `${what} is not valid ASN.1`, cause);
   }
+  if (isOctetString(node)) {
+    // Xcode receipts double-wrap the payload in an extra OCTET STRING.
+    try {
+      node = parse(octetStringValue(node));
+    } catch (cause) {
+      throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT,
+        `${what} double-wrap is not valid ASN.1`, cause);
+    }
+  }
   if (node.tag !== Tag.SET) {
     throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, `${what} is not an ASN.1 SET`);
   }

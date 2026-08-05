@@ -1,0 +1,62 @@
+# CI for apple-purchase-verification. Lives INSIDE the project folder on
+# purpose: it does not run from the monorepo (GitHub only reads workflows at
+# the repository root), but works unchanged once this project graduates to
+# its own repository (PLAN D1). To run it in the monorepo meanwhile, copy it
+# to the repo-root .github/workflows/ with `working-directory` prefixes.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  java:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Build needs javac 9+ for --release 8; the artifact is Java 8
+        # bytecode (major version 52). Running the suite on a real JDK 8
+        # runtime needs a surefire jvm override — tracked in ROADMAP.
+        jdk: ["11", "17", "21"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.jdk }}
+      - run: mvn -B test
+        working-directory: java
+
+  node:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: ["20", "22", "24"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm install && npm test
+        working-directory: node
+
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install cryptography asn1crypto && python -m unittest discover -s tests
+        working-directory: python
+
+  swift:
+    runs-on: ubuntu-latest
+    container: swift:6.0
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift test
+        working-directory: swift

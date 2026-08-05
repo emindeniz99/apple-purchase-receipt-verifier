@@ -64,3 +64,10 @@ test('rejects shared foreign-root receipt fixture', () => {
   assert.throws(() => verifier.verify(fixture('receipt-foreign.der')),
     (e) => e.reason === 'INVALID_CHAIN');
 });
+
+test('unwraps a double-wrapped (Xcode-style) receipt payload', () => {
+  const verifier = new ReceiptVerifier({
+    trustedRoots: [fixture('receipt-root.der')], bundleId: BUNDLE,
+  });
+  assert.equal(verifier.verify(fixture('receipt-double-wrapped.der')).appVersion, '1.2.3');
+});

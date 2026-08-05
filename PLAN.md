@@ -12,8 +12,8 @@ recorded here.
 - **D1 — Published libraries, not internal-only.** Each implementation will
   be published (Maven Central, npm, PyPI) when the project graduates.
   Consequences: stable API, semver, dependency-light ("vendoring is ok"),
-  license required at publish time (MIT assumed — *unconfirmed, ask before
-  publishing*).
+  license: **MIT, confirmed by the owner 2026-08-05** (LICENSE at the
+  project root).
 - **D2 — Enterprise-reality version floors**, not upstream-support floors:
   **Java 8**, **Node ≥20**, **Python ≥3.9**, **Swift 6** (server-side Swift
   has no Java-8-style long tail; Apple's own Swift library requires 6). Java is built `--release 8`
@@ -49,6 +49,22 @@ recorded here.
   audited lines that Apple's own fixture bytes exercise. Java (BouncyCastle),
   Python (`cryptography`+`asn1crypto`) and Swift (apple/swift-*) already sit
   on the strongest maintained options for their ecosystems.
+- **D11 — Observability is the caller's job** (owner decision,
+  2026-08-05): this is a library; it exposes machine-readable reason codes
+  and nothing else — no logging, no metrics, no callbacks. Integrators wire
+  `VerificationException`/`VerificationError` reasons into their own
+  telemetry and decide reject/alert policy.
+- **D12 — Trust anchors are NEVER fetched at runtime** (owner question,
+  2026-08-05): periodic runtime download of Apple's roots was considered
+  and rejected — it would convert pinned trust into trust-the-network (a
+  MITM on the fetch could inject a root), couple verification availability
+  to apple.com, and Apple's PKI page is not an API. Policy instead:
+  (1) roots ship pinned with each release (current roots are valid to
+  2035/2039 — rotation is a once-a-decade event announced years ahead);
+  (2) the scheduled `apple-root-watch` CI workflow diffs Apple's published
+  certs weekly and fails loudly on change → cut a release; (3) constructors
+  accept caller-supplied anchors, so an integrator who wants their own
+  rotation pipeline can inject roots from config — at their own risk.
 - **D10 — Forward-compatible ("dynamic") receipt parsing** (2026-08-05):
   attribute types the library does not model are exposed raw on
   `unknownAttributes` (type → verified-but-undecoded value bytes) in every

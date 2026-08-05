@@ -255,6 +255,11 @@ final class TestPki {
         return new DERSet(attrs).getEncoded();
     }
 
+    /** Xcode-style double wrap: the payload SET inside an extra OCTET STRING. */
+    static byte[] doubleWrap(byte[] payload) throws Exception {
+        return new DEROctetString(payload).getEncoded();
+    }
+
     /** The device hash a genuine receipt would carry for this GUID (PLAN §2.2 step 5). */
     static byte[] deviceHash(byte[] guid, byte[] opaque, String bundleId) throws Exception {
         MessageDigest sha1 = MessageDigest.getInstance("SHA-1");

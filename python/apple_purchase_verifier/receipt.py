@@ -293,6 +293,10 @@ def _children(contents):
 
 def _parse_attribute_set(der, what):
     tag, contents, end = _read_tlv(der, 0)
+    if tag == _TAG_OCTET_STRING and end == len(der):
+        # Xcode receipts double-wrap the payload in an extra OCTET STRING.
+        der = contents
+        tag, contents, end = _read_tlv(der, 0)
     if tag != _TAG_SET or end != len(der):
         raise _fmt_error(f"{what} is not an ASN.1 SET")
     attributes = []

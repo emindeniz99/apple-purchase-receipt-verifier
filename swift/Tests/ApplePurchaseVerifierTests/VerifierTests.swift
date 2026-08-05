@@ -349,3 +349,14 @@ final class ReviewFixesTests: XCTestCase {
         XCTAssertEqual(receipt.unknownAttributes[9999], [Data([1, 2, 3])])
     }
 }
+
+extension ReviewFixesTests {
+    func testUnwrapsDoubleWrappedReceiptPayload() async throws {
+        let verifier = try ReceiptVerifier(
+            trustedRoots: [try fixture("generated", "receipt-root.der")],
+            bundleId: "com.example.app")
+        let receipt = try await verifier.verify(
+            receipt: try fixture("generated", "receipt-double-wrapped.der"))
+        XCTAssertEqual(receipt.appVersion, "1.2.3")
+    }
+}

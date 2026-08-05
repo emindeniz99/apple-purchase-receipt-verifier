@@ -1,0 +1,24 @@
+# Watches Apple's published root certificates and fails (= notifies) when
+# they change, so a new root (e.g. a future G4) triggers a library release.
+# Trust anchors are deliberately NEVER fetched at runtime (PLAN D12) — this
+# scheduled diff is the rotation-monitoring mechanism instead.
+name: apple-root-watch
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # weekly, Monday 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare pinned roots against Apple PKI
+        run: |
+          set -euo pipefail
+          curl -sSL -o /tmp/AppleIncRootCertificate.cer https://www.apple.com/appleca/AppleIncRootCertificate.cer
+          curl -sSL -o /tmp/AppleRootCA-G3.cer https://www.apple.com/certificateauthority/AppleRootCA-G3.cer
+          diff <(sha256sum < certs/AppleIncRootCertificate.cer) <(sha256sum < /tmp/AppleIncRootCertificate.cer)
+          diff <(sha256sum < certs/AppleRootCA-G3.cer) <(sha256sum < /tmp/AppleRootCA-G3.cer)
+          echo "pinned roots match Apple PKI"

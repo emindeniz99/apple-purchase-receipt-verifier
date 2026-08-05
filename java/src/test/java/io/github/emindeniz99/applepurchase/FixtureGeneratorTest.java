@@ -107,6 +107,11 @@ class FixtureGeneratorTest {
         TestPki foreignPki = TestPki.receipt(new Date(CHAIN_NOT_BEFORE), new Date(CHAIN_NOT_AFTER));
         write("receipt-foreign.der", foreignPki.signReceipt(payload, new Date(SIGNED_DATE)));
 
+        // Xcode receipts double-wrap the payload in an extra OCTET STRING
+        // (seen in Apple's receipt_utility); parsers must unwrap it.
+        write("receipt-double-wrapped.der",
+                receiptPki.signReceipt(TestPki.doubleWrap(payload), new Date(SIGNED_DATE)));
+
         // receipt_type variants for verifyReceipt-endpoint environment
         // routing tests (21007/21008 matrix incl. the VPP sandbox case).
         for (String[] variant : new String[][]{

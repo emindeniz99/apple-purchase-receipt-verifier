@@ -280,3 +280,8 @@ class ReviewFixesTest(unittest.TestCase):
         self.assertFalse(is_transaction_active_at({"revocationDate": 500}, 1000))
         self.assertFalse(is_transaction_active_at({"expiresDate": 900}, 1000))
         self.assertTrue(is_transaction_active_at({"expiresDate": 2000}, 1000))
+
+    def test_unwraps_double_wrapped_receipt_payload(self):
+        verifier = ReceiptVerifier([cert("generated", "receipt-root.der")], BUNDLE)
+        receipt = verifier.verify(fixture("generated", "receipt-double-wrapped.der"))
+        self.assertEqual(receipt.app_version, "1.2.3")

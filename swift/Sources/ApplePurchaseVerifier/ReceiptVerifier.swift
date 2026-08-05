@@ -370,11 +370,19 @@ private func parseInApp(_ value: [UInt8]) throws -> InAppPurchase {
 }
 
 private func parseAttributeSet(_ der: [UInt8]) throws -> [(Int, [UInt8])] {
-    let root: ASN1Node
+    var root: ASN1Node
     do {
         root = try DER.parse(der)
     } catch {
         throw VerificationError(.invalidReceiptFormat, "attribute set is not valid ASN.1")
+    }
+    if root.identifier == .octetString {
+        // Xcode receipts double-wrap the payload in an extra OCTET STRING.
+        do {
+            root = try DER.parse(try CMSReceipt.primitive(root))
+        } catch {
+            throw VerificationError(.invalidReceiptFormat, "double-wrap is not valid ASN.1")
+        }
     }
     guard root.identifier == .set else {
         throw VerificationError(.invalidReceiptFormat, "attribute set is not an ASN.1 SET")

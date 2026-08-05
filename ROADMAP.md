@@ -11,12 +11,19 @@ Delete an item in the same commit that ships it.
   Also use the corpus to confirm undocumented attribute ids
   (`is_trial_period`, `adam_id`, `version_external_identifier`) so
   COMPARISON.md's "not produced" list can shrink.
-- **CI**: per-language workflow under `.github/workflows/` running each
-  test suite on the D2 version floors (Java 8/11/17/21 matrix, Node
-  20/22/24, Python 3.9–3.13, Swift 6 on Linux) — match the existing
-  per-project workflow style.
-- **Publishing prep** (PLAN D1): confirm license (MIT assumed), finalize
-  coordinates (`io.github.emindeniz99` / npm / PyPI / SwiftPM names).
+- **Harvest public real-receipt fixtures**: MIT-licensed test suites
+  (e.g. TPInAppReceipt) ship genuine iOS and Mac App Store receipts —
+  vendor usable ones (license-checked) to cover Mac receipts and shrink
+  COMPARISON.md's unknown-attribute list without waiting on the owner
+  corpus.
+- **Java 8 runtime CI leg**: the artifact is verified Java 8 bytecode and
+  CI tests on JDK 11/17/21; add a surefire `jvm` override leg that runs
+  the suite on a real Temurin 8 runtime.
+- **Publishing prep** (PLAN D1): finalize coordinates
+  (`io.github.emindeniz99` / npm / PyPI / SwiftPM names) and publish at
+  graduation. CI + license are in place (`.github/workflows/`, LICENSE) —
+  the workflows live inside this folder deliberately and activate when the
+  project graduates to its own repository.
 
 ## Upstream contribution (after publishing)
 
@@ -49,10 +56,8 @@ Our verified legacy-receipt validation is a natural upstream feature:
 
 ## Later / hardening
 
-- **Xcode/StoreKit-Test receipt quirks** (seen in upstream
-  `receipt_utility.py`): Xcode-generated receipts double-wrap the payload
-  octet string — handle that shape; also decide whether to support the
-  ancient `transactionReceipt` (purchase-info) format at all.
+- Decide whether to support the ancient `transactionReceipt`
+  (purchase-info) format at all (double-wrapped payloads are handled ✅).
 - **Dev-mode environments**: Apple's `SignedDataVerifier` deliberately
   skips signature verification for XCODE / LOCAL_TESTING payloads (they
   aren't Apple-signed). Our verifiers hard-fail them on chain validation.
