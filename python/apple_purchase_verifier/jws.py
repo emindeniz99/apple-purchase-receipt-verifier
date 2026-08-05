@@ -7,6 +7,7 @@ import base64
 import binascii
 import json
 import time
+from typing import Any, Dict, Iterable, Optional
 
 from cryptography import x509
 from cryptography.exceptions import InvalidSignature
@@ -61,8 +62,10 @@ class JwsVerifier:
         this (PLAN.md D5)
     """
 
-    def __init__(self, trusted_roots, bundle_id, accepted_environments,
-                 app_apple_id=None, max_signed_age_millis=None):
+    def __init__(self, trusted_roots: Iterable[Any], bundle_id: str,
+                 accepted_environments: Iterable[str],
+                 app_apple_id: Optional[int] = None,
+                 max_signed_age_millis: Optional[int] = None):
         roots = list(trusted_roots)
         if not roots:
             raise ValueError("trusted_roots must not be empty")
@@ -77,14 +80,14 @@ class JwsVerifier:
         self._app_apple_id = app_apple_id
         self._max_signed_age_millis = max_signed_age_millis
 
-    def verify_transaction(self, jws):
+    def verify_transaction(self, jws: str) -> Dict[str, Any]:
         """Verifies a signed transaction and checks bundle id + environment."""
         payload = self._verify_signature(jws)
         self._require_bundle_id(payload.get("bundleId"))
         self._require_accepted_environment(payload.get("environment"))
         return payload
 
-    def verify_app_transaction(self, jws):
+    def verify_app_transaction(self, jws: str) -> Dict[str, Any]:
         """Verifies a signed AppTransaction and checks bundle id, environment
         (``receiptType``), and — in Production — the app Apple id."""
         payload = self._verify_signature(jws)
@@ -98,14 +101,14 @@ class JwsVerifier:
                 f"expected {self._app_apple_id} but payload has {payload.get('appAppleId')}")
         return payload
 
-    def verify_raw(self, jws):
+    def verify_raw(self, jws: str) -> Dict[str, Any]:
         """Verifies the signature/chain only and returns the raw claims — for
         payload types without a dedicated model (renewal info, notification
         envelopes). The caller must check bundle id / environment /
         app Apple id in the returned claims itself."""
         return self._verify_signature(jws)
 
-    def _verify_signature(self, jws):
+    def _verify_signature(self, jws: str) -> Dict[str, Any]:
         if not isinstance(jws, str):
             raise VerificationError(Reason.INVALID_JWS_FORMAT, "jws must be a string")
         parts = jws.split(".")

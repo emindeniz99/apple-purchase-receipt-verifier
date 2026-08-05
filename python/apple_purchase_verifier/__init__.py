@@ -4,7 +4,8 @@ normative algorithms; this package mirrors the Java implementation."""
 
 from .exceptions import ENVIRONMENTS, Reason, VerificationError
 from .jws import JwsVerifier
-from .receipt import AppReceipt, InAppPurchase, ReceiptVerifier
+from .receipt import AppReceipt, InAppPurchase, ReceiptVerifier, verify_receipt_core
+from .verify_receipt_endpoint import VerifyReceiptEndpoint
 from .roots import apple_jws_roots, apple_receipt_roots
 
 __all__ = [
@@ -13,6 +14,8 @@ __all__ = [
     "VerificationError",
     "JwsVerifier",
     "ReceiptVerifier",
+    "VerifyReceiptEndpoint",
+    "verify_receipt_core",
     "AppReceipt",
     "InAppPurchase",
     "apple_jws_roots",

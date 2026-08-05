@@ -194,3 +194,48 @@ class NegativeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VerifyReceiptEndpointTest(unittest.TestCase):
+    """verifyReceipt-compat semantics over the shared receipt fixture."""
+
+    def endpoint(self, environment):
+        from apple_purchase_verifier import VerifyReceiptEndpoint
+        return VerifyReceiptEndpoint(
+            [cert("generated", "receipt-root.der")], environment)
+
+    def request(self):
+        return {"receipt-data": base64.b64encode(
+            fixture("generated", "receipt.der")).decode()}
+
+    def test_answers_like_verify_receipt_for_valid_sandbox_receipt(self):
+        response = self.endpoint("Sandbox").verify_receipt(self.request())
+        self.assertEqual(response["status"], 0)
+        self.assertEqual(response["environment"], "Sandbox")
+        receipt = response["receipt"]
+        self.assertEqual(receipt["receipt_type"], "ProductionSandbox")
+        self.assertEqual(receipt["bundle_id"], BUNDLE)
+        self.assertEqual(receipt["receipt_creation_date"], "2024-08-06 12:00:00 Etc/GMT")
+        self.assertEqual(receipt["receipt_creation_date_ms"], "1722945600000")
+        self.assertEqual(receipt["receipt_creation_date_pst"],
+                         "2024-08-06 05:00:00 America/Los_Angeles")
+        self.assertEqual(len(receipt["in_app"]), 2)
+        self.assertEqual(receipt["in_app"][0]["quantity"], "1")
+        self.assertEqual(receipt["in_app"][0]["web_order_line_item_id"], "42")
+
+    def test_routes_sandbox_receipt_on_production_to_21007(self):
+        self.assertEqual(
+            self.endpoint("Production").verify_receipt(self.request())["status"], 21007)
+
+    def test_reports_malformed_requests_as_21002(self):
+        endpoint = self.endpoint("Sandbox")
+        self.assertEqual(endpoint.verify_receipt({})["status"], 21002)
+        self.assertEqual(endpoint.verify_receipt(None)["status"], 21002)
+        self.assertEqual(
+            endpoint.verify_receipt({"receipt-data": "AQIDBA=="})["status"], 21002)
+
+    def test_reports_unauthentic_receipts_as_21003(self):
+        response = self.endpoint("Sandbox").verify_receipt({
+            "receipt-data": base64.b64encode(
+                fixture("generated", "receipt-foreign.der")).decode()})
+        self.assertEqual(response["status"], 21003)

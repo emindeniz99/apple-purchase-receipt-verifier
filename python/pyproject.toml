@@ -18,4 +18,4 @@ dependencies = [
 packages = ["apple_purchase_verifier"]
 
 [tool.setuptools.package-data]
-apple_purchase_verifier = ["certs/*.cer"]
+apple_purchase_verifier = ["certs/*.cer", "py.typed"]

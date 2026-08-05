@@ -30,7 +30,11 @@ _DIGESTS = {
     "sha512": hashes.SHA512,
 }
 
-# Receipt attribute types — Apple, "Validating receipts on the device".
+# Receipt attribute types — Apple, "Validating receipts on the device",
+# plus two community-established ones (0: receipt type, 18: original
+# purchase date) needed for verifyReceipt response compatibility.
+_ATTR_RECEIPT_TYPE = 0
+_ATTR_ORIGINAL_PURCHASE_DATE = 18
 _ATTR_BUNDLE_ID = 2
 _ATTR_APP_VERSION = 3
 _ATTR_OPAQUE_VALUE = 4
@@ -75,6 +79,8 @@ class AppReceipt:
     :class:`ReceiptVerifier` should be trusted."""
 
     def __init__(self):
+        self.receipt_type = None
+        self.original_purchase_date = None
         self.bundle_id = None
         self.bundle_id_bytes = None
         self.app_version = None
@@ -103,7 +109,8 @@ class ReceiptVerifier:
         self._roots = roots
         self._bundle_id = bundle_id
 
-    def verify(self, receipt, device_guid=None):
+    def verify(self, receipt: "bytes | str",
+               device_guid: "bytes | None" = None) -> "AppReceipt":
         """Verifies a receipt (DER ``bytes``, or its base64 string — the
         usual client transport form). Passing ``device_guid`` additionally
         enforces the device-hash binding: SHA1(guid ‖ opaqueValue ‖
@@ -116,22 +123,7 @@ class ReceiptVerifier:
                     Reason.INVALID_RECEIPT_FORMAT, "receipt is not valid base64") from e
         else:
             der = receipt
-        if not der:
-            raise VerificationError(Reason.INVALID_RECEIPT_FORMAT, "receipt is empty")
-
-        content, certificates, signer = _parse_cms(der)
-
-        # Parsed before signature verification only to learn the creation
-        # date (chain validity anchors at signing time); nothing from it is
-        # trusted until the chain + signature checks pass.
-        fields = _parse_payload(content)
-        at = fields.creation_date if fields.creation_date is not None \
-            else as_utc(time.time() * 1000)
-
-        signer_cert = _find_signer_cert(certificates, signer)
-        build_and_validate_path(signer_cert, [c for _, c in certificates], self._roots, at)
-        _verify_cms_signature(content, signer, signer_cert)
-
+        fields = verify_receipt_core(der, self._roots)
         if fields.bundle_id != self._bundle_id:
             raise VerificationError(
                 Reason.WRONG_BUNDLE_ID,
@@ -139,6 +131,33 @@ class ReceiptVerifier:
         if device_guid is not None:
             _verify_device_hash(fields, device_guid)
         return fields
+
+
+def verify_receipt_core(der: bytes, trusted_roots) -> "AppReceipt":
+    """Chain + signature verification WITHOUT the bundle-id claim check —
+    the primitive under both :class:`ReceiptVerifier` and the
+    verifyReceipt-compat endpoint (which, like Apple's endpoint, accepts any
+    bundle). Callers that unlock products must check ``bundle_id``
+    themselves or use :class:`ReceiptVerifier`."""
+    roots = list(trusted_roots)
+    if not roots:
+        raise ValueError("trusted_roots must not be empty")
+    if not der:
+        raise VerificationError(Reason.INVALID_RECEIPT_FORMAT, "receipt is empty")
+
+    content, certificates, signer = _parse_cms(der)
+
+    # Parsed before signature verification only to learn the creation
+    # date (chain validity anchors at signing time); nothing from it is
+    # trusted until the chain + signature checks pass.
+    fields = _parse_payload(content)
+    at = fields.creation_date if fields.creation_date is not None \
+        else as_utc(time.time() * 1000)
+
+    signer_cert = _find_signer_cert(certificates, signer)
+    build_and_validate_path(signer_cert, [c for _, c in certificates], roots, at)
+    _verify_cms_signature(content, signer, signer_cert)
+    return fields
 
 
 def _parse_cms(der):
@@ -320,7 +339,11 @@ def _decode_date(der):
 def _parse_payload(content):
     receipt = AppReceipt()
     for attr_type, value in _parse_attribute_set(content, "receipt payload"):
-        if attr_type == _ATTR_BUNDLE_ID:
+        if attr_type == _ATTR_RECEIPT_TYPE:
+            receipt.receipt_type = _decode_string(value)
+        elif attr_type == _ATTR_ORIGINAL_PURCHASE_DATE:
+            receipt.original_purchase_date = _decode_date(value)
+        elif attr_type == _ATTR_BUNDLE_ID:
             receipt.bundle_id = _decode_string(value)
             receipt.bundle_id_bytes = value
         elif attr_type == _ATTR_APP_VERSION:
