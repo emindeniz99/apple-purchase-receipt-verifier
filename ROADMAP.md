@@ -7,28 +7,18 @@ Delete an item in the same commit that ships it.
 
 - **Real receipt fixtures** (PLAN D6): owner to supply real production +
   sandbox receipts (and ideally a StoreKit-Test/Xcode receipt) as checked-in
-  fixtures; add byte-level regression tests over them.
-- **Publishing prep** (PLAN D1): confirm license (MIT assumed), finalize
-  coordinates (`io.github.emindeniz99` / npm / PyPI names), CI matrix on the
-  D2 version floors (Java 8/11/17/21; Node 20/22/24; Python 3.9–3.13).
-
-- **Node implementation** (`node/`): port the two verifiers per PLAN §2 with
-  `node:crypto` (`X509Certificate`, `verify`), minimal deps; port the test
-  PKI generator and the failure-mode test matrix from `java/`.
-- **Python implementation** (`python/`): same, on the `cryptography` package
-  (+ `asn1crypto` if needed for the receipt payload).
-- **Swift implementation** (`swift/`, Swift 6, SwiftPM): same algorithms —
-  Apple's own family has a Swift library, ours shouldn't be missing it.
-- **Cross-language fixture parity**: generate one checked-in fixture set
-  (fake-Apple PKI + signed JWS + signed PKCS#7 receipt) all three
-  implementations must verify byte-identically.
+  fixtures; add byte-level regression tests over them in all four suites.
 - **CI**: per-language workflow under `.github/workflows/` running each
-  test suite (match the existing per-project workflow style).
+  test suite on the D2 version floors (Java 8/11/17/21 matrix, Node
+  20/22/24, Python 3.9–3.13, Swift 6 on Linux) — match the existing
+  per-project workflow style.
+- **Publishing prep** (PLAN D1): confirm license (MIT assumed), finalize
+  coordinates (`io.github.emindeniz99` / npm / PyPI / SwiftPM names).
 
-## Upstream contribution (after all languages ship)
+## Upstream contribution (after publishing)
 
-Apple's official `app-store-server-library-{java,node,python}` verify JWS
-locally but their `ReceiptUtility` only *extracts* transaction ids from
+Apple's official `app-store-server-library-{java,node,python,swift}` verify
+JWS locally but their `ReceiptUtility` only *extracts* transaction ids from
 legacy PKCS#7 receipts — docstrings state "NO validation is performed".
 Our verified legacy-receipt validation is a natural upstream feature:
 
@@ -36,8 +26,23 @@ Our verified legacy-receipt validation is a natural upstream feature:
   to the upstream codebase. Upstream requires Java 11+, so the PR is a
   Java 11-idiom port; our Java 8-compatible build stays canonical in this
   repo for enterprise consumers upstream won't serve (PLAN D2).
-- **PRs into `-node`, `-python`, and `-swift`**: same contribution once our
-  Node, Python, and Swift implementations are done and fixture-parity-proven.
+- **PRs into `-node`, `-python`, and `-swift`**: same contribution, now that
+  all four of our implementations are fixture-parity-proven.
+
+### Issues worth filing upstream (notes from reading their sources)
+
+- **Feature request (all four libs)**: validated legacy-receipt parsing.
+  `ReceiptUtility.extractTransactionId*` returns attacker-controllable data
+  from an unverified blob; the docstring warns, but the API shape invites
+  misuse (extract → trust). Filing this frames our PRs.
+- **Foot-gun report**: `SignedDataVerifier` silently skips ALL signature
+  verification when the configured environment is XCODE / LOCAL_TESTING.
+  A production service misconfigured to a test environment would accept
+  forged payloads with no error. An explicit opt-in flag (e.g.
+  `allowUnverifiedTestPayloads`) would make the danger visible.
+- **Java 8 support question**: upstream requires Java 11; large enterprise
+  fleets still run 8 (why our Java build targets it). Worth asking if a
+  lowered floor or a maintained 8-compatible artifact would be accepted.
 
 ## Later / hardening
 
@@ -47,16 +52,16 @@ Our verified legacy-receipt validation is a natural upstream feature:
   ancient `transactionReceipt` (purchase-info) format at all.
 - **Dev-mode environments**: Apple's `SignedDataVerifier` deliberately
   skips signature verification for XCODE / LOCAL_TESTING payloads (they
-  aren't Apple-signed). Our verifier hard-fails them on chain validation.
+  aren't Apple-signed). Our verifiers hard-fail them on chain validation.
   If local-testing support is ever needed, add an explicit, loudly-gated
   insecure dev mode — never reachable from production config.
-
 - Optional OCSP revocation checking (opt-in "online mode", like the official
   library) for consumers who accept Apple calls.
 - Check a receipt-signing marker OID on the PKCS#7 signer cert as an extra
-  purpose check (mirror of the JWS marker-OID rule; needs a corpus of real
-  receipts to confirm which OID Apple stamps consistently).
-- `AppTransaction` / renewal-info convenience types beyond the core
-  transaction payload fields.
+  purpose check (mirror of the JWS marker-OID rule; needs the real-receipt
+  corpus to confirm which OID Apple stamps consistently).
+- Notification-envelope convenience (typed `verifyNotification` that also
+  verifies nested `signedTransactionInfo` / `signedRenewalInfo`) — today
+  `verifyRaw` covers notifications with caller-side claim checks.
 - Example integration snippet: "client sends `jwsRepresentation` → backend
   verifies → backend records transactionId (replay guard) → unlock product".

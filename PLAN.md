@@ -44,11 +44,16 @@ recorded here.
 |----------|--------------|-------|
 | [apple/app-store-server-library-java](https://github.com/apple/app-store-server-library-java) (also [-node](https://github.com/apple/app-store-server-library-node), [-python](https://github.com/apple/app-store-server-library-python), [-swift](https://github.com/apple/app-store-server-library-swift)) | **Yes** (JWS only) | Official. `SignedDataVerifier` validates JWS `x5c` chains against caller-supplied Apple roots, offline by default (optional OCSP "online checks"). Does **not** validate legacy PKCS#7 receipts — `ReceiptUtility` only *extracts* a transaction ID from a receipt, unverified. Heavy: bundles the full App Store Server API client. |
 | `node-apple-receipt-verify`, `itunes-iap`, `django-receipt-validator`, … | No | All wrappers around the deprecated `verifyReceipt` endpoint — the thing we're replacing. |
+| [SilentCircle/iap-local-receipt](https://github.com/SilentCircle/iap-local-receipt) (Python) | Yes (PKCS#7 only) | The one prior server-side local validator we found. Abandoned (~2016, pyOpenSSL, Python 2 era), no JWS, no device-hash binding. Proves demand; not usable today. |
+| [tikhop/TPInAppReceipt](https://github.com/tikhop/TPInAppReceipt) (Swift), [SwiftyLocalReceiptValidator](https://github.com/andrewcbancroft/SwiftyLocalReceiptValidator) | Yes (PKCS#7, on-device) | Client-side focus (`identifierForVendor`, bundle receipt URL); TPInAppReceipt is maintained. Same crypto, different deployment target. |
 | objc.io ["Receipt Validation"](https://www.objc.io/issues/17-security/receipt-validation/), [Kodeco tutorial](https://www.kodeco.com/9257-in-app-purchases-receipt-validation-tutorial), [nick.zoic.org PKCS#7 notes](https://nick.zoic.org/art/apple-signed-receipt-verification-pkcs7/) | Yes (on-device, C/Swift/OpenSSL) | Document the PKCS#7 + ASN.1 receipt format we port to server-side. |
 
-**Conclusion**: no single library covers both paths locally in all three of
-our languages. The official libraries are the reference for the JWS
-algorithm (we mirror their checks); the PKCS#7 path we implement from
+**Conclusion** (re-verified 2026-08): no maintained library covers both
+paths (JWS + legacy PKCS#7) server-side in any language, let alone across
+our four. Server-side legacy validation appears to simply not exist for
+Java and Node; the only Python attempt is a decade stale. The official
+libraries are the reference for the JWS algorithm (we mirror their checks,
+and verify their exact test fixtures); the PKCS#7 path we implement from
 Apple's on-device validation spec. Building it ourselves also keeps each
 implementation dependency-light and auditable — appropriate for
 security-critical code we must be able to reason about.
@@ -173,12 +178,13 @@ so tests need no real Apple secrets and prove the anchor pinning works.
 1. **Docs** — this folder: INTENT / PLAN / ROADMAP / README. ✅
 2. **Java** (`java/`, Maven, Java 8+, BouncyCastle + Jackson):
    JWS verifier + PKCS#7 receipt verifier + test PKI + full test suite. ✅
-3. **Node** (`node/`): same algorithms, `node:crypto` (X509Certificate),
-   minimal deps; port the test-fixture generator.
-4. **Python** (`python/`): `cryptography` package; same tests.
-5. **Swift** (`swift/`, SwiftPM, Swift 6): same algorithms on swift-crypto /
-   Security; same tests.
-6. **Cross-language fixture parity**: one shared fixture set (generated +
-   the vendored Apple-official set in `fixtures/apple-official/`) so every
-   implementation verifies identical bytes.
+3. **Node** (`node/`, Node ≥20, ESM, zero runtime deps — hand-rolled
+   bounded DER/BER parser + `node:crypto`). ✅
+4. **Python** (`python/`, ≥3.9, `cryptography` + `asn1crypto`). ✅
+5. **Swift** (`swift/`, SwiftPM, Swift 6, swift-certificates +
+   swift-crypto + swift-asn1 only). ✅
+6. **Cross-language fixture parity**: one shared fixture set
+   (`fixtures/generated/` + the vendored Apple-official set in
+   `fixtures/apple-official/`) verified byte-identically by all four
+   suites. ✅
 7. CI workflow per language (mirror existing `.github/workflows/*` style).

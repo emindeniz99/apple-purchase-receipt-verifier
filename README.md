@@ -6,37 +6,63 @@ Verifies Apple in-app purchases **locally, with zero Apple server calls** —
 a replacement for the deprecated `verifyReceipt` endpoint. Cryptographically
 proves that purchase data a client presents (StoreKit 2 signed JWS
 transactions, or legacy PKCS#7 app receipts) was signed by Apple, by
-validating the certificate chain against pinned Apple root CAs. One
-implementation per backend language: `java/` (done), `node/`, `python/`
-and `swift/` (planned).
+validating the certificate chain against pinned Apple root CAs. Four
+implementations, one normative algorithm, one shared fixture set they all
+verify byte-for-byte: **Java** (8+), **Node** (20+, zero runtime deps),
+**Python** (3.9+), **Swift** (6).
 
 Start with [INTENT.md](./INTENT.md) (why + trust model), then
-[PLAN.md](./PLAN.md) (algorithms + API shape), then
-[ROADMAP.md](./ROADMAP.md) (status).
+[PLAN.md](./PLAN.md) (algorithms + decisions + API shape), then
+[ROADMAP.md](./ROADMAP.md) (what's next).
 
-## How to run
+## How to run the test suites
 
 ```bash
 # Java (library targets Java 8; build with any modern JDK + Maven)
-cd java
-mvn test          # full suite incl. generated fake-Apple-PKI fixtures
+cd java && mvn test
+
+# Node (zero dependencies; Node >= 20)
+cd node && npm test          # = node --test
+
+# Python (>= 3.9; needs: pip install cryptography asn1crypto)
+cd python && python3 -m unittest discover -s tests
+
+# Swift (Swift 6; Linux or macOS 13+)
+cd swift && swift test
 ```
+
+Every suite verifies the same three fixture tiers:
+
+1. `fixtures/generated/` — deterministic cross-language fixtures (fake
+   Apple PKI) written by the Java `FixtureGeneratorTest`; regenerate only
+   deliberately, then re-run **all four** suites.
+2. `fixtures/apple-official/` — Apple's own library test fixtures
+   (vendored, MIT): their test-CA-signed JWS mocks verify, their negative
+   cases fail with our exact reason codes, and their genuine Xcode
+   receipts/payloads are **rejected** against the real pinned Apple roots
+   (anchor-pinning proof).
+3. Java additionally generates a fresh random PKI per run (`TestPki`) for
+   the full attack matrix.
 
 Production trust anchors are the two Apple root certificates in
 [`certs/`](./certs) (from [Apple PKI](https://www.apple.com/certificateauthority/)):
 `AppleRootCA-G3.cer` for JWS signed data, `AppleIncRootCertificate.cer` for
-legacy PKCS#7 receipts. Tests never use them — they generate their own fake
-Apple PKI, which also proves anchor pinning rejects foreign chains.
+legacy PKCS#7 receipts. Each language bundles its own copy as packaged
+resources; verifiers also accept caller-supplied anchors.
 
 ## Notes / learnings
 
-- Apple's official [app-store-server-library](https://github.com/apple/app-store-server-library-java)
-  verifies JWS locally but not legacy PKCS#7 receipts; wrappers like
-  `node-apple-receipt-verify` just call the deprecated endpoint. Hence this
-  project (survey in PLAN.md §1).
-- Signature validity ≠ entitlement: replay protection (transaction-id
+- **Both paths are first-class**: StoreKit 2 JWS requires iOS 15+ *and* a
+  migrated app — iOS ≤14 devices and unmigrated StoreKit 1 apps still send
+  PKCS#7 receipts. Chain validity is checked at *signing time* (JWS
+  `signedDate` / receipt creation date), not "now", so old payloads survive
+  Apple's certificate rotations.
+- **Prior art** (survey in PLAN.md §1, re-verified 2026-08): Apple's
+  official libraries verify JWS but only *extract* from legacy receipts
+  without validation; the sole server-side legacy validator we found
+  (Python `iap-local-receipt`) has been abandoned since ~2016. No
+  maintained library does both paths server-side in any of our languages.
+- **Signature validity ≠ entitlement**: replay protection (transaction-id
   bookkeeping) and refund/status tracking are deliberately out of scope —
-  see INTENT.md.
-- Chain validity is checked at *signing time* (JWS `signedDate` / receipt
-  creation date), not "now" — Apple rotates signing certs and old payloads
-  must stay verifiable.
+  see INTENT.md. `isActiveAt`/`isActive` helpers + the optional
+  max-signed-age policy cover subscription expiry from the signed claims.

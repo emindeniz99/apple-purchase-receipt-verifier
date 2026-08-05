@@ -26,10 +26,10 @@ language** (all inside this folder):
 
 | Folder | Language | Status |
 |--------|----------|--------|
-| [`java/`](./java) | Java 8+ | first implementation |
-| [`node/`](./node) | Node.js 20+ | planned |
-| [`python/`](./python) | Python 3.9+ | planned |
-| [`swift/`](./swift) | Swift 6+ | planned |
+| [`java/`](./java) | Java 8+ | ✅ done |
+| [`node/`](./node) | Node.js 20+ | ✅ done |
+| [`python/`](./python) | Python 3.9+ | ✅ done |
+| [`swift/`](./swift) | Swift 6+ | ✅ done |
 
 Each implementation provides the same two capabilities:
 
