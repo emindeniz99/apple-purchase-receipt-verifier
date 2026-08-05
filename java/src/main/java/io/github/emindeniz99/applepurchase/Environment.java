@@ -21,4 +21,14 @@ public enum Environment {
     public String value() {
         return value;
     }
+
+    /** Maps a payload claim value to an Environment, or {@code null} if unknown. */
+    public static Environment fromValue(String value) {
+        for (Environment e : values()) {
+            if (e.value.equals(value)) {
+                return e;
+            }
+        }
+        return null;
+    }
 }

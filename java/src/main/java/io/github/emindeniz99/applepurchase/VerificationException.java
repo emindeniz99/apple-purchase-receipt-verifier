@@ -27,7 +27,9 @@ public class VerificationException extends Exception {
         /** Receipt is not parseable PKCS#7/CMS or its payload is malformed. */
         INVALID_RECEIPT_FORMAT,
         /** SHA-1 device-hash binding check failed. */
-        DEVICE_HASH_MISMATCH
+        DEVICE_HASH_MISMATCH,
+        /** Payload is older than the verifier's configured max signed age. */
+        STALE_PAYLOAD
     }
 
     private final Reason reason;

@@ -6,6 +6,7 @@ import java.io.UncheckedIOException;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
+import java.util.Collections;
 import java.util.Set;
 
 /**
@@ -20,12 +21,12 @@ public final class AppleRootCerts {
 
     /** Apple Root CA - G3 — anchors StoreKit 2 / App Store Server JWS chains. */
     public static Set<X509Certificate> jwsRoots() {
-        return Set.of(load("/certs/AppleRootCA-G3.cer"));
+        return Collections.singleton(load("/certs/AppleRootCA-G3.cer"));
     }
 
     /** Apple Inc. Root CA — anchors legacy PKCS#7 app-receipt chains. */
     public static Set<X509Certificate> receiptRoots() {
-        return Set.of(load("/certs/AppleIncRootCertificate.cer"));
+        return Collections.singleton(load("/certs/AppleIncRootCertificate.cer"));
     }
 
     private static X509Certificate load(String resource) {
