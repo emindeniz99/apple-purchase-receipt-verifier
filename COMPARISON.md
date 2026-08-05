@@ -35,7 +35,7 @@ the first part — cryptographically verified.
 | 21004 | shared secret mismatch | ❌ never produced (see `password`) |
 | 21005 / is-retryable | Apple server unavailable | ❌ never produced — there is no server to be unavailable; this is a *benefit* |
 | 21006 | valid but subscription expired (iOS 6 style only) | ❌ never produced (legacy iOS 6 transaction receipts unsupported) |
-| 21007 / 21008 | sandbox↔production routing | ✅ reproduced locally from the receipt's `receipt_type` attribute — the classic "try production, retry sandbox on 21007" dance still works unchanged |
+| 21007 / 21008 | sandbox↔production routing | ✅ reproduced locally from the receipt's `receipt_type` attribute — the classic "try production, retry sandbox on 21007" dance still works unchanged. Fails closed: only `Production`/`ProductionVPP` count as production; sandbox variants, `Xcode`, and a missing attribute are treated as sandbox |
 | 21009 / 21010 | internal error / account not found | 21009 on unexpected internal errors; 21010 never (no account database) |
 
 ## Response body

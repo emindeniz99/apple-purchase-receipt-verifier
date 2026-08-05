@@ -49,6 +49,16 @@ recorded here.
   audited lines that Apple's own fixture bytes exercise. Java (BouncyCastle),
   Python (`cryptography`+`asn1crypto`) and Swift (apple/swift-*) already sit
   on the strongest maintained options for their ecosystems.
+- **D10 — Forward-compatible ("dynamic") receipt parsing** (2026-08-05):
+  attribute types the library does not model are exposed raw on
+  `unknownAttributes` (type → verified-but-undecoded value bytes) in every
+  language, so fields Apple adds later remain accessible without a library
+  update. The JWS side was already dynamic (`verifyRaw` returns all claims).
+  Endpoint environment routing fails closed: only `Production` /
+  `ProductionVPP` receipt types count as production; sandbox variants
+  (incl. `ProductionVPPSandbox`), `Xcode`, and a missing attribute route
+  as non-production — a VPP-sandbox misroute found by the adversarial
+  review drove this tightening.
 - **D9 — verifyReceipt wire-compat endpoint** (2026-08-05): each language
   ships `VerifyReceiptEndpoint` speaking Apple's exact request/response/
   status-code contract, with 21007/21008 routing reproduced locally from
