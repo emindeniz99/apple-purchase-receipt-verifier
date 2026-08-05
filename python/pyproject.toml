@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "apple-purchase-verifier"
+version = "0.1.0"
+description = "Verify Apple in-app purchases locally (StoreKit 2 JWS + legacy PKCS#7 receipts) with zero Apple server calls"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+dependencies = [
+    "cryptography>=40",
+    "asn1crypto>=1.5",
+]
+
+[tool.setuptools]
+packages = ["apple_purchase_verifier"]
+
+[tool.setuptools.package-data]
+apple_purchase_verifier = ["certs/*.cer"]
