@@ -63,3 +63,17 @@ test('routes receipt_type variants per the Apple matrix (incl. VPP sandbox)', ()
       isProduction ? 21008 : 0, `${name} on Sandbox`);
   }
 });
+
+test('endpoint response carries every field COMPARISON.md advertises as full-fidelity', () => {
+  const receipt = endpoint('Sandbox').verifyReceipt(request()).receipt;
+  assert.ok(receipt.request_date && receipt.request_date_ms && receipt.request_date_pst);
+  assert.equal(receipt.original_application_version, '1.0');
+  const coins = receipt.in_app.find((p) => p.product_id === 'com.example.app.coins100');
+  assert.equal(coins.transaction_id, '70000000000001');
+  assert.equal(coins.original_transaction_id, '70000000000001');
+  assert.ok(coins.purchase_date && coins.purchase_date_ms && coins.purchase_date_pst);
+  assert.ok(coins.original_purchase_date_ms);
+  const vip = receipt.in_app.find((p) => p.product_id === 'com.example.app.vip');
+  assert.equal(vip.expires_date, '2030-02-01 09:30:00 Etc/GMT');
+  assert.ok(vip.expires_date_ms && vip.expires_date_pst);
+});

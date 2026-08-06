@@ -78,6 +78,14 @@ public final class ReceiptVerifier {
     private static final int IAP_CANCELLATION_DATE = 1712;
     private static final int IAP_IS_IN_INTRO_OFFER_PERIOD = 1719;
 
+    /**
+     * Apple marker OID stamped on the receipt-signing leaf certificate. The
+     * chain check alone is not enough: developer "Apple Distribution" certs
+     * chain through the same WWDR intermediate to the same pinned root, so
+     * without this purpose check any developer could sign a forged receipt.
+     */
+    private static final String RECEIPT_SIGNER_OID = "1.2.840.113635.100.6.11.1";
+
     private final Set<TrustAnchor> trustAnchors;
     private final String bundleId;
     private final BouncyCastleProvider provider = new BouncyCastleProvider();
@@ -176,6 +184,11 @@ public final class ReceiptVerifier {
         Date at = receipt.creationDate() != null ? Date.from(receipt.creationDate()) : new Date();
 
         X509Certificate signerCert = validateChain(cms, at);
+        if (signerCert.getExtensionValue(RECEIPT_SIGNER_OID) == null) {
+            throw new VerificationException(Reason.INVALID_CERTIFICATE_PURPOSE,
+                    "receipt signer certificate lacks Apple receipt-signing marker OID "
+                            + RECEIPT_SIGNER_OID);
+        }
         verifyCmsSignature(cms, signerCert);
         return receipt;
     }
@@ -422,9 +435,12 @@ public final class ReceiptVerifier {
                     throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT,
                             "receipt attribute has " + seq.size() + " fields, expected 3");
                 }
-                BigInteger type = ASN1Integer.getInstance(seq.getObjectAt(0)).getValue();
+                long type = boundedInt(ASN1Integer.getInstance(seq.getObjectAt(0)).getValue());
                 byte[] value = ASN1OctetString.getInstance(seq.getObjectAt(2)).getOctets();
-                return new Attribute((int) boundedInt(type), value);
+                // A type beyond int range matches no known attribute; -1 routes
+                // it to unknownAttributes instead of aliasing via a truncating cast.
+                int typeInt = (type >= 0 && type <= Integer.MAX_VALUE) ? (int) type : -1;
+                return new Attribute(typeInt, value);
             } catch (IllegalArgumentException e) {
                 throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT,
                         "malformed receipt attribute", e);

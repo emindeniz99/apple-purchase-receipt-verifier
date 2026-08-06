@@ -75,6 +75,18 @@ recorded here.
   (incl. `ProductionVPPSandbox`), `Xcode`, and a missing attribute route
   as non-production — a VPP-sandbox misroute found by the adversarial
   review drove this tightening.
+- **D13 — Receipt signer-purpose OID is mandatory** (adversarial review,
+  2026-08-06): the legacy PKCS#7 path now requires OID
+  `1.2.840.113635.100.6.11.1` on the signer leaf (all four languages),
+  checked after chain validation. Verified against genuine production +
+  sandbox + legacy receipts (all carry it) and a no-OID negative fixture
+  (rejected). This closed a CRITICAL forgery hole: chain-to-pinned-root
+  alone let any developer certificate sign an accepted receipt. Also
+  hardened the same review's findings: Swift CMS parsing is now
+  bounds-checked (was an uncatchable out-of-bounds trap → DoS), and the
+  cross-language anti-forgery test matrix (marker-OID rejection, Production
+  appAppleId binding, receipt signing-time validity) is now covered in all
+  four languages, not just Java.
 - **D9 — verifyReceipt wire-compat endpoint** (2026-08-05): each language
   ships `VerifyReceiptEndpoint` speaking Apple's exact request/response/
   status-code contract, with 21007/21008 routing reproduced locally from
@@ -117,10 +129,13 @@ roots (Apple Root CA – G3).
      (Apple in-app-purchase / receipt signing marker);
    - intermediate must carry OID `1.2.840.113635.100.6.2.1`
      (Apple WWDR CA marker) and `CA: true`.
-4. Path-validate leaf → intermediate → pinned root (standard PKIX: signatures,
-   issuer/subject chaining, basic constraints, validity window), **revocation
-   disabled** (no OCSP — offline by design; the x5c root must byte-match a
-   pinned trust anchor).
+4. Path-validate leaf → intermediate → **our pinned root** (standard PKIX:
+   signatures, issuer/subject chaining, basic constraints, validity window),
+   **revocation disabled** (no OCSP — offline by design). The chain must
+   terminate at a pinned trust anchor; the x5c-supplied root (`x5c[2]`) is
+   **not** trusted or byte-compared — only the intermediate being signed by
+   one of our pinned anchors counts, so an attacker swapping in their own
+   `x5c[2]` changes nothing.
    - Validity is checked at the payload's `signedDate` (fall back to
      `receiptCreationDate`, else current time), so historical payloads
      signed with since-rotated certs still verify — same model as Apple's
@@ -147,10 +162,20 @@ Root CA), optional device GUID.
      Apple's receipt-signing certs expire and rotate; a receipt is valid if
      its chain was valid when Apple signed it. (Requires parsing the payload
      before trusting it — parse defensively, trust only after step 3.)
-3. Verify the CMS signature over the content with the signer's public key
+3. **Signer purpose check (critical):** require the signer leaf to carry
+   extension OID `1.2.840.113635.100.6.11.1` (the Apple receipt-signing
+   marker, present on the genuine "Mac App Store and iTunes Store Receipt
+   Signing" leaf, absent on developer certs). Without this, any certificate
+   chaining to the pinned Apple root — including any Apple developer's own
+   "Apple Distribution"/"Apple Development" leaf, which chains through the
+   same WWDR intermediate — could sign a fully forged receipt. This mirrors
+   the JWS leaf marker check (§2.1 step 3). Checked **after** chain validation
+   so a foreign chain still reports `INVALID_CHAIN` first.
+4. Verify the CMS signature over the content with the signer's public key
    (Apple signs receipts with SHA-1/RSA or SHA-256/RSA — accept what the CMS
-   `SignerInfo` declares, but only after the chain anchored at our pinned root).
-4. Parse the payload: `SET OF ReceiptAttribute ::= SEQUENCE { type INTEGER,
+   `SignerInfo` declares, but only after the chain anchored at our pinned root
+   and the signer-purpose check). Require the signer key to be RSA.
+5. Parse the payload: `SET OF ReceiptAttribute ::= SEQUENCE { type INTEGER,
    version INTEGER, value OCTET STRING }`. App-level attributes:
    | type | field | value encoding |
    |------|-------|----------------|
@@ -166,10 +191,10 @@ Root CA), optional device GUID.
    1704 purchase date, 1705 original transaction id, 1706 original purchase
    date, 1708 subscription expiration date, 1711 web order line item id,
    1712 cancellation date, 1719 is-in-intro-offer-period.
-5. Enforce `bundleId` matches. If the caller supplies the device GUID:
+6. Enforce `bundleId` matches. If the caller supplies the device GUID:
    check `SHA1(guid ‖ opaqueValue ‖ bundleIdRawBytes) == attribute 5`
    (device binding — optional because servers don't always have the GUID).
-6. Return the typed receipt (app fields + list of in-app purchases); throw
+7. Return the typed receipt (app fields + list of in-app purchases); throw
    on any failure, as in 2.1.
 
 ### 2.3 Threat model notes
@@ -177,7 +202,10 @@ Root CA), optional device GUID.
 - **Pinned anchors, not system trust store** — a cert chain to any public CA
   must fail; only `certs/*.cer` count.
 - **Marker OIDs** stop "valid Apple-issued cert, wrong purpose" attacks on
-  the JWS path.
+  **both** paths: the JWS leaf must carry `…6.11.1` and the intermediate
+  `…6.2.1`; the receipt signer leaf must carry `…6.11.1`. Without the receipt
+  check, any developer cert chaining to the pinned root could sign a forged
+  receipt (a real hole found by adversarial review, 2026-08-06, now closed).
 - **No revocation checking** is the accepted trade-off for offline
   verification (Apple's official offline mode does the same). Compromised
   signing certs are handled by Apple rotating them; consumers concerned

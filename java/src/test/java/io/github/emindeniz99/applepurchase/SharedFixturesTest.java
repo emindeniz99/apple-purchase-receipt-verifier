@@ -108,4 +108,25 @@ class SharedFixturesTest {
                 () -> verifier.verify(bytes("receipt-foreign.der")));
         assertEquals(Reason.INVALID_CHAIN, e.reason());
     }
+
+    @Test
+    void rejectsReceiptWhoseSignerLacksTheAppleMarkerOid() throws Exception {
+        // A valid chain to a pinned root but a signer without the
+        // receipt-signing OID (like a developer cert) must be rejected.
+        ReceiptVerifier verifier = new ReceiptVerifier(
+                Collections.singleton(cert("receipt-no-signer-oid-root.der")), BUNDLE);
+        VerificationException e = assertThrows(VerificationException.class,
+                () -> verifier.verify(bytes("receipt-no-signer-oid.der")));
+        assertEquals(Reason.INVALID_CERTIFICATE_PURPOSE, e.reason());
+    }
+
+    @Test
+    void receiptSigningTimeCertValidityBehavesAsManifested() throws Exception {
+        ReceiptVerifier verifier = new ReceiptVerifier(
+                Collections.singleton(cert("receipt-expired-root.der")), BUNDLE);
+        assertEquals("1.2.3", verifier.verify(bytes("receipt-expired-historical.der")).appVersion());
+        VerificationException e = assertThrows(VerificationException.class,
+                () -> verifier.verify(bytes("receipt-expired-fresh.der")));
+        assertEquals(Reason.INVALID_CHAIN, e.reason());
+    }
 }

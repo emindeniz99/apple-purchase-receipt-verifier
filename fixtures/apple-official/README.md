@@ -13,6 +13,11 @@ Apple's own test suite uses — cross-library parity for free.
 | `mock_signed_data/` | Compact JWS fixtures signed by the test CA: `transactionInfo`, `renewalInfo`, `testNotification` (bundle `com.example`, Sandbox), `wrongBundleId`, `missingX5CHeaderClaim`, `legacyTransaction` | Positive + negative JWS verification cases |
 | `xcode/` | Genuine Xcode/StoreKit-Test-generated receipts and signed payloads (bundle `com.example.naturelab.backyardbirds.example`) | Prove pinning: none of these may verify against real Apple roots (Xcode signs locally — 1-cert x5c, local receipt signer) |
 
+Currently exercised: the `mock_signed_data/*` JWS fixtures (positive +
+negative) and the `xcode/*` receipts/payloads (pinning rejection). The
+`certs/testInvalid*` variants and `mock_signed_data/legacyTransaction` are
+vendored for potential future use but are **not** referenced by any test yet.
+
 These complement (not replace) the generated fake-Apple-PKI fixtures in
-each language's test suite, and the real production/sandbox receipt corpus
-still to come (ROADMAP / PLAN D6).
+each language's test suite, and the real receipts in
+[`../public-receipts/`](../public-receipts/).

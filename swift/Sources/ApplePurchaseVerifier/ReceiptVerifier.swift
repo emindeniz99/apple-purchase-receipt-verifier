@@ -110,6 +110,16 @@ public struct ReceiptVerifier: Sendable {
             throw VerificationError(.invalidChain,
                 "signer chain does not validate to a pinned root")
         }
+        // Apple marker OID on the receipt-signing leaf, checked after chain
+        // validation (parity with the other three: a foreign chain reports
+        // INVALID_CHAIN first). The chain check alone does not distinguish
+        // signer purpose — developer certs chain through the same WWDR
+        // intermediate to the same pinned root.
+        let receiptSignerOID: ASN1ObjectIdentifier = [1, 2, 840, 113635, 100, 6, 11, 1]
+        guard signerCert.extensions.contains(where: { $0.oid == receiptSignerOID }) else {
+            throw VerificationError(.invalidCertificatePurpose,
+                "receipt signer certificate lacks Apple receipt-signing marker OID")
+        }
         try cms.verifySignature(signerCert: signerCert)
         return fields
     }
@@ -156,14 +166,14 @@ private struct CMSReceipt {
         }
         do {
             let contentInfo = try Self.children(root)
-            let contentType = try ASN1ObjectIdentifier(derEncoded: contentInfo[0])
+            let contentType = try ASN1ObjectIdentifier(derEncoded: contentInfo.at(0))
             guard contentType == [1, 2, 840, 113549, 1, 7, 2] else {
                 throw VerificationError(.invalidReceiptFormat, "not CMS SignedData")
             }
-            let signedData = try Self.children(try Self.explicit(contentInfo[1]))
+            let signedData = try Self.children(try Self.explicit(contentInfo.at(1)))
 
             // encapContentInfo: SEQ { OID, [0] EXPLICIT OCTET STRING }
-            let encap = try Self.children(signedData[2])
+            let encap = try Self.children(signedData.at(2))
             guard encap.count >= 2 else {
                 throw VerificationError(.invalidReceiptFormat, "no encapsulated payload")
             }
@@ -178,9 +188,9 @@ private struct CMSReceipt {
                     certificates.append(try Certificate(derEncoded: der))
                     let tbs = try Self.children(try Self.children(DER.parse(der))[0])
                     var index = 0
-                    if tbs[0].identifier.tagClass == .contextSpecific { index = 1 }
-                    certificateNodes.append((serial: try Self.primitive(tbs[index]),
-                                             issuer: [UInt8](tbs[index + 2].encodedBytes)))
+                    if let first = tbs.first, first.identifier.tagClass == .contextSpecific { index = 1 }
+                    certificateNodes.append((serial: try Self.primitive(tbs.at(index)),
+                                             issuer: [UInt8]((try tbs.at(index + 2)).encodedBytes)))
                 }
             }
             self.certificates = certificates
@@ -192,12 +202,12 @@ private struct CMSReceipt {
                 throw VerificationError(.invalidReceiptFormat, "no signer info")
             }
             let signerFields = try Self.children(signerInfo)
-            let sid = try Self.children(signerFields[1])
-            self.signerIssuer = [UInt8](sid[0].encodedBytes)
-            self.signerSerial = try Self.primitive(sid[1])
+            let sid = try Self.children(signerFields.at(1))
+            self.signerIssuer = [UInt8]((try sid.at(0)).encodedBytes)
+            self.signerSerial = try Self.primitive(sid.at(1))
 
             let digestAlgOid = try ASN1ObjectIdentifier(
-                derEncoded: try Self.children(signerFields[2])[0])
+                derEncoded: try Self.children(signerFields.at(2)).at(0))
             switch digestAlgOid {
             case [1, 3, 14, 3, 2, 26]: self.digestName = "sha1"
             case [2, 16, 840, 1, 101, 3, 4, 2, 1]: self.digestName = "sha256"
@@ -206,20 +216,24 @@ private struct CMSReceipt {
             }
 
             var index = 3
-            if signerFields[index].identifier.tagClass == .contextSpecific
-                && signerFields[index].identifier.tagNumber == 0 {
+            if index < signerFields.count,
+               signerFields[index].identifier.tagClass == .contextSpecific,
+               signerFields[index].identifier.tagNumber == 0 {
                 let attrsNode = signerFields[index]
                 // Signature covers the signedAttrs re-encoded as an explicit
                 // SET (RFC 5652 §5.4): swap the IMPLICIT [0] tag for SET.
                 var reencoded = [UInt8](attrsNode.encodedBytes)
+                guard !reencoded.isEmpty else {
+                    throw VerificationError(.invalidReceiptFormat, "empty signed attributes")
+                }
                 reencoded[0] = 0x31
                 self.signedAttrsBytes = reencoded
                 var digest: [UInt8]? = nil
                 for attr in try Self.children(attrsNode) {
                     let parts = try Self.children(attr)
-                    if try ASN1ObjectIdentifier(derEncoded: parts[0])
+                    if try ASN1ObjectIdentifier(derEncoded: parts.at(0))
                         == [1, 2, 840, 113549, 1, 9, 4] {
-                        digest = try Self.primitive(try Self.children(parts[1])[0])
+                        digest = try Self.primitive(try Self.children(parts.at(1)).at(0))
                     }
                 }
                 self.messageDigest = digest
@@ -229,7 +243,7 @@ private struct CMSReceipt {
                 self.messageDigest = nil
             }
             index += 1 // signatureAlgorithm — RSA PKCS#1 v1.5, digest drives the hash
-            self.signature = try Self.primitive(signerFields[index])
+            self.signature = try Self.primitive(signerFields.at(index))
         } catch let error as VerificationError {
             throw error
         } catch {
@@ -311,6 +325,18 @@ private struct CMSReceipt {
             }
             return out
         }
+    }
+}
+
+/// Bounds-checked element access that throws a VerificationError instead of
+/// triggering Swift's fatal (uncatchable) out-of-bounds trap on attacker-
+/// controlled ASN.1 structures.
+private extension Array {
+    func at(_ index: Int) throws -> Element {
+        guard index >= 0, index < count else {
+            throw VerificationError(.invalidReceiptFormat, "truncated ASN.1 structure")
+        }
+        return self[index]
     }
 }
 

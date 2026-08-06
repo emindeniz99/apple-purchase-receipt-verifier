@@ -23,6 +23,11 @@ from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from ._chain import as_utc, build_and_validate_path
 from .exceptions import Reason, VerificationError
 
+# Apple marker OID on the receipt-signing leaf. The chain check alone does not
+# distinguish signer purpose: developer certs chain through the same WWDR
+# intermediate to the same pinned root, so this OID must be required too.
+_RECEIPT_SIGNER_OID = x509.ObjectIdentifier("1.2.840.113635.100.6.11.1")
+
 _DIGESTS = {
     "sha1": hashes.SHA1,
     "sha256": hashes.SHA256,
@@ -162,6 +167,13 @@ def verify_receipt_core(der: bytes, trusted_roots) -> "AppReceipt":
 
     signer_cert = _find_signer_cert(certificates, signer)
     build_and_validate_path(signer_cert, [c for _, c in certificates], roots, at)
+    try:
+        signer_cert.extensions.get_extension_for_oid(_RECEIPT_SIGNER_OID)
+    except x509.ExtensionNotFound:
+        raise VerificationError(
+            Reason.INVALID_CERTIFICATE_PURPOSE,
+            "receipt signer certificate lacks Apple receipt-signing marker OID "
+            f"{_RECEIPT_SIGNER_OID.dotted_string}")
     _verify_cms_signature(content, signer, signer_cert)
     return fields
 

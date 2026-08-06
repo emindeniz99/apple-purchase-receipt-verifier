@@ -79,6 +79,26 @@ class FixtureGeneratorTest {
                 "receiptCreationDate", SIGNED_DATE);
         write("app-transaction.jws", jwsPki.signJws(appTransaction).getBytes(StandardCharsets.US_ASCII));
 
+        Map<String, Object> appTransactionProduction = TestPki.claims(
+                "bundleId", BUNDLE,
+                "receiptType", "Production",
+                "appAppleId", 123456789L,
+                "applicationVersion", "1.2.3",
+                "originalApplicationVersion", "1.0",
+                "receiptCreationDate", SIGNED_DATE);
+        write("app-transaction-production.jws",
+                jwsPki.signJws(appTransactionProduction).getBytes(StandardCharsets.US_ASCII));
+
+        // --- JWS: missing Apple marker OIDs (must be rejected) -----------
+        TestPki noLeafOidPki = TestPki.jws(false, true, new Date(CHAIN_NOT_BEFORE), new Date(CHAIN_NOT_AFTER));
+        write("jws-no-leaf-oid-root.der", noLeafOidPki.root.getEncoded());
+        write("transaction-no-leaf-oid.jws",
+                noLeafOidPki.signJws(transaction).getBytes(StandardCharsets.US_ASCII));
+        TestPki noIntermediateOidPki = TestPki.jws(true, false, new Date(CHAIN_NOT_BEFORE), new Date(CHAIN_NOT_AFTER));
+        write("jws-no-intermediate-oid-root.der", noIntermediateOidPki.root.getEncoded());
+        write("transaction-no-intermediate-oid.jws",
+                noIntermediateOidPki.signJws(transaction).getBytes(StandardCharsets.US_ASCII));
+
         // --- JWS: expired chain (historical passes, fresh fails) ---------
         TestPki oldPki = TestPki.jws(true, true, new Date(OLD_NOT_BEFORE), new Date(OLD_NOT_AFTER));
         write("jws-expired-root.der", oldPki.root.getEncoded());
@@ -123,6 +143,27 @@ class FixtureGeneratorTest {
                     OPAQUE, hash, CREATION_DATE, Arrays.<byte[]>asList());
             write(variant[0], receiptPki.signReceipt(variantPayload, new Date(SIGNED_DATE)));
         }
+
+        // Receipt signer WITHOUT the Apple receipt-signing marker OID (like a
+        // developer cert chaining to the same root) — must be rejected even
+        // though the chain is otherwise valid. Its own root is emitted so the
+        // rejection is the OID check, not chain failure.
+        TestPki noSignerOidPki = TestPki.receipt(
+                new Date(CHAIN_NOT_BEFORE), new Date(CHAIN_NOT_AFTER), false);
+        write("receipt-no-signer-oid-root.der", noSignerOidPki.root.getEncoded());
+        write("receipt-no-signer-oid.der", noSignerOidPki.signReceipt(payload, new Date(SIGNED_DATE)));
+
+        // Receipt signed by a now-expired cert: historical (creation date in
+        // the cert window) verifies; fresh (creation date now) fails INVALID_CHAIN.
+        TestPki expiredReceiptPki = TestPki.receipt(
+                new Date(OLD_NOT_BEFORE), new Date(OLD_NOT_AFTER), true);
+        write("receipt-expired-root.der", expiredReceiptPki.root.getEncoded());
+        byte[] oldPayload = TestPki.receiptPayload(BUNDLE, "1.2.3", OPAQUE, hash,
+                "2020-06-01T00:00:00Z", Arrays.<byte[]>asList());
+        write("receipt-expired-historical.der",
+                expiredReceiptPki.signReceipt(oldPayload, new Date(OLD_SIGNED_DATE)));
+        write("receipt-expired-fresh.der",
+                expiredReceiptPki.signReceipt(payload, new Date(SIGNED_DATE)));
 
         // --- Manifest -----------------------------------------------------
         Map<String, Object> manifest = TestPki.claims(

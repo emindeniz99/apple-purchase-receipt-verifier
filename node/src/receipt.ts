@@ -1,12 +1,16 @@
 import { X509Certificate, createHash, timingSafeEqual, verify as cryptoVerify } from 'node:crypto';
 import { Reason, VerificationError } from './errors.js';
 import {
-  ParseError, Tag, encodeOidContents, isOctetString, octetStringValue, parse, tbsParts,
-  type ASN1Node,
+  ParseError, Tag, encodeOidContents, hasExtension, isOctetString, octetStringValue, parse,
+  tbsParts, type ASN1Node,
 } from './der.js';
 import { buildAndValidatePath, normalizeRoots, type RootInput } from './chain.js';
 
 const OID_SIGNED_DATA = encodeOidContents('1.2.840.113549.1.7.2');
+// Apple marker OID on the receipt-signing leaf. Without this purpose check,
+// any developer cert chaining to the same pinned root could sign a forged
+// receipt (the chain check alone does not distinguish signer purpose).
+const RECEIPT_SIGNER_OID = '1.2.840.113635.100.6.11.1';
 const OID_MESSAGE_DIGEST = encodeOidContents('1.2.840.113549.1.9.4');
 
 const DIGEST_ALGORITHMS = new Map<string, string>([
@@ -102,6 +106,14 @@ export function verifyReceiptCore(der: Buffer, trustedRoots: RootInput[]): AppRe
   const embedded = cms.certificates.map((raw) => new X509Certificate(raw));
   const signerCert = findSignerCert(cms, embedded);
   buildAndValidatePath(signerCert, embedded, roots, at);
+  let signerHasOid = false;
+  try {
+    signerHasOid = hasExtension(signerCert.raw, RECEIPT_SIGNER_OID);
+  } catch { signerHasOid = false; }
+  if (!signerHasOid) {
+    throw new VerificationError(Reason.INVALID_CERTIFICATE_PURPOSE,
+      `receipt signer certificate lacks Apple receipt-signing marker OID ${RECEIPT_SIGNER_OID}`);
+  }
   verifyCmsSignature(cms, signerCert);
   return fields;
 }
@@ -245,6 +257,9 @@ function findSignerCert(cms: ParsedCms, embedded: X509Certificate[]): X509Certif
 
 function verifyCmsSignature(cms: ParsedCms, signerCert: X509Certificate): void {
   const { digest, signedAttrs, signature } = cms.signerInfo;
+  if (signerCert.publicKey.asymmetricKeyType !== 'rsa') {
+    throw new VerificationError(Reason.INVALID_SIGNATURE, 'receipt signer key is not RSA');
+  }
   let valid: boolean;
   if (signedAttrs !== null) {
     const contentDigest = createHash(digest).update(cms.content).digest();

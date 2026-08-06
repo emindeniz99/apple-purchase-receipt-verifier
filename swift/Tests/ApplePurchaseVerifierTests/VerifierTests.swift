@@ -402,3 +402,56 @@ final class PublicReceiptsTests: XCTestCase {
         }
     }
 }
+
+/// Anti-forgery controls, signing-time behaviour, and malformed-input safety.
+final class ParityTests: XCTestCase {
+    static let bundle = "com.example.app"
+    func fx(_ n: String) throws -> Data {
+        try Data(contentsOf: VerifierTests.fixturesDir.appendingPathComponent("generated").appendingPathComponent(n))
+    }
+    func txt(_ n: String) throws -> String {
+        String(data: try fx(n), encoding: .utf8)!.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    func expect(_ reason: VerificationError.Reason, _ body: () async throws -> Void) async {
+        do { try await body(); XCTFail("expected \(reason.rawValue)") }
+        catch let e as VerificationError { XCTAssertEqual(e.reason, reason, e.description) }
+        catch { XCTFail("unexpected \(error)") }
+    }
+
+    func testRejectsReceiptSignerWithoutMarkerOid() async throws {
+        let v = try ReceiptVerifier(trustedRoots: [try fx("receipt-no-signer-oid-root.der")], bundleId: Self.bundle)
+        await expect(.invalidCertificatePurpose) { _ = try await v.verify(receipt: try self.fx("receipt-no-signer-oid.der")) }
+    }
+
+    func testRejectsJwsWithoutLeafOrIntermediateOid() async throws {
+        let leaf = try JwsVerifier(trustedRoots: [try fx("jws-no-leaf-oid-root.der")], bundleId: Self.bundle, acceptedEnvironments: [.sandbox])
+        await expect(.invalidCertificatePurpose) { _ = try await leaf.verifyTransaction(try self.txt("transaction-no-leaf-oid.jws")) }
+        let inter = try JwsVerifier(trustedRoots: [try fx("jws-no-intermediate-oid-root.der")], bundleId: Self.bundle, acceptedEnvironments: [.sandbox])
+        await expect(.invalidCertificatePurpose) { _ = try await inter.verifyTransaction(try self.txt("transaction-no-intermediate-oid.jws")) }
+    }
+
+    func testProductionAppTransactionEnforcesAppAppleId() async throws {
+        let good = try JwsVerifier(trustedRoots: [try fx("jws-root.der")], bundleId: Self.bundle, acceptedEnvironments: [.production], appAppleId: 123_456_789)
+        let p = try await good.verifyAppTransaction(try txt("app-transaction-production.jws"))
+        XCTAssertEqual(p.appAppleId, 123_456_789)
+        let bad = try JwsVerifier(trustedRoots: [try fx("jws-root.der")], bundleId: Self.bundle, acceptedEnvironments: [.production], appAppleId: 999)
+        await expect(.wrongAppAppleId) { _ = try await bad.verifyAppTransaction(try self.txt("app-transaction-production.jws")) }
+    }
+
+    func testReceiptSigningTimeCertValidity() async throws {
+        let v = try ReceiptVerifier(trustedRoots: [try fx("receipt-expired-root.der")], bundleId: Self.bundle)
+        let hist = try await v.verify(receipt: try fx("receipt-expired-historical.der"))
+        XCTAssertEqual(hist.appVersion, "1.2.3")
+        await expect(.invalidChain) { _ = try await v.verify(receipt: try self.fx("receipt-expired-fresh.der")) }
+    }
+
+    func testMalformedReceiptThrowsInsteadOfCrashing() async throws {
+        // SEQUENCE containing only the CMS OID — previously an uncatchable trap.
+        let malformed = Data([0x30, 0x0B, 0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x02])
+        let v = try ReceiptVerifier(trustedRoots: [try fx("receipt-root.der")], bundleId: Self.bundle)
+        await expect(.invalidReceiptFormat) { _ = try await v.verify(receipt: malformed) }
+        let ep = try VerifyReceiptEndpoint(trustedRoots: [try fx("receipt-root.der")], production: false)
+        let resp = await ep.verifyReceipt(["receipt-data": malformed.base64EncodedString()])
+        XCTAssertEqual(resp["status"] as? Int, 21002)
+    }
+}

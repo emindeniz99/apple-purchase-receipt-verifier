@@ -63,9 +63,6 @@ Our verified legacy-receipt validation is a natural upstream feature:
   insecure dev mode — never reachable from production config.
 - Optional OCSP revocation checking (opt-in "online mode", like the official
   library) for consumers who accept Apple calls.
-- Check a receipt-signing marker OID on the PKCS#7 signer cert as an extra
-  purpose check (mirror of the JWS marker-OID rule; needs the real-receipt
-  corpus to confirm which OID Apple stamps consistently).
 - Notification-envelope convenience (typed `verifyNotification` that also
   verifies nested `signedTransactionInfo` / `signedRenewalInfo`) — today
   `verifyRaw` covers notifications with caller-side claim checks.

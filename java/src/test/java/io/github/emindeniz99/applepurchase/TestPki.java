@@ -113,6 +113,11 @@ final class TestPki {
     }
 
     static TestPki receipt(Date notBefore, Date notAfter) throws Exception {
+        return receipt(notBefore, notAfter, true);
+    }
+
+    /** RSA receipt chain; {@code signerOid} stamps the Apple receipt-signing marker on the leaf. */
+    static TestPki receipt(Date notBefore, Date notAfter, boolean signerOid) throws Exception {
         KeyPair rootKp = rsaKeyPair();
         KeyPair interKp = rsaKeyPair();
         KeyPair signerKp = rsaKeyPair();
@@ -121,7 +126,9 @@ final class TestPki {
         X509Certificate interCert = cert("CN=Fake WWDR CA", interKp, "CN=Fake Apple Inc Root",
                 rootKp.getPrivate(), true, null, notBefore, notAfter, "SHA256withRSA");
         X509Certificate signerCert = cert("CN=Fake Receipt Signing", signerKp, "CN=Fake WWDR CA",
-                interKp.getPrivate(), false, null, notBefore, notAfter, "SHA256withRSA");
+                interKp.getPrivate(), false,
+                signerOid ? "1.2.840.113635.100.6.11.1" : null,
+                notBefore, notAfter, "SHA256withRSA");
         return new TestPki(rootCert, interCert, signerCert, signerKp.getPrivate());
     }
 

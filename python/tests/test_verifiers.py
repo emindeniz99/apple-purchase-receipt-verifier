@@ -314,3 +314,39 @@ class PublicReceiptsTest(unittest.TestCase):
         with self.assertRaises(VerificationError) as ctx:
             verifier.verify(self.receipt("receipt-xcode-with-purchases"))
         self.assertEqual(ctx.exception.reason, "INVALID_CHAIN")
+
+
+class ParityTest(unittest.TestCase):
+    """Anti-forgery controls and signing-time behaviour, at parity with Java."""
+
+    def test_rejects_receipt_signer_without_marker_oid(self):
+        v = ReceiptVerifier([cert("generated", "receipt-no-signer-oid-root.der")], BUNDLE)
+        with self.assertRaises(VerificationError) as ctx:
+            v.verify(fixture("generated", "receipt-no-signer-oid.der"))
+        self.assertEqual(ctx.exception.reason, "INVALID_CERTIFICATE_PURPOSE")
+
+    def test_rejects_jws_without_leaf_or_intermediate_oid(self):
+        leaf = JwsVerifier([cert("generated", "jws-no-leaf-oid-root.der")], BUNDLE, ["Sandbox"])
+        with self.assertRaises(VerificationError) as ctx:
+            leaf.verify_transaction(text("generated", "transaction-no-leaf-oid.jws"))
+        self.assertEqual(ctx.exception.reason, "INVALID_CERTIFICATE_PURPOSE")
+        inter = JwsVerifier([cert("generated", "jws-no-intermediate-oid-root.der")], BUNDLE, ["Sandbox"])
+        with self.assertRaises(VerificationError) as ctx:
+            inter.verify_transaction(text("generated", "transaction-no-intermediate-oid.jws"))
+        self.assertEqual(ctx.exception.reason, "INVALID_CERTIFICATE_PURPOSE")
+
+    def test_production_app_transaction_enforces_app_apple_id(self):
+        good = JwsVerifier([cert("generated", "jws-root.der")], BUNDLE, ["Production"], app_apple_id=123456789)
+        self.assertEqual(good.verify_app_transaction(
+            text("generated", "app-transaction-production.jws"))["appAppleId"], 123456789)
+        bad = JwsVerifier([cert("generated", "jws-root.der")], BUNDLE, ["Production"], app_apple_id=999)
+        with self.assertRaises(VerificationError) as ctx:
+            bad.verify_app_transaction(text("generated", "app-transaction-production.jws"))
+        self.assertEqual(ctx.exception.reason, "WRONG_APP_APPLE_ID")
+
+    def test_receipt_signing_time_cert_validity(self):
+        v = ReceiptVerifier([cert("generated", "receipt-expired-root.der")], BUNDLE)
+        self.assertEqual(v.verify(fixture("generated", "receipt-expired-historical.der")).app_version, "1.2.3")
+        with self.assertRaises(VerificationError) as ctx:
+            v.verify(fixture("generated", "receipt-expired-fresh.der"))
+        self.assertEqual(ctx.exception.reason, "INVALID_CHAIN")
