@@ -13,11 +13,11 @@ const OID_SIGNED_DATA = encodeOidContents('1.2.840.113549.1.7.2');
 const RECEIPT_SIGNER_OID = '1.2.840.113635.100.6.11.1';
 const OID_MESSAGE_DIGEST = encodeOidContents('1.2.840.113549.1.9.4');
 
+// Only the digests Apple uses for receipts (SHA-1 / SHA-256), matching the
+// other three implementations; anything else is rejected.
 const DIGEST_ALGORITHMS = new Map<string, string>([
   ['1.3.14.3.2.26', 'sha1'],
   ['2.16.840.1.101.3.4.2.1', 'sha256'],
-  ['2.16.840.1.101.3.4.2.2', 'sha384'],
-  ['2.16.840.1.101.3.4.2.3', 'sha512'],
 ].map(([oid, name]) => [encodeOidContents(oid!).toString('hex'), name!]));
 
 // Receipt attribute types — Apple, "Validating receipts on the device",

@@ -275,11 +275,28 @@ final class VerifyReceiptEndpointTests: XCTestCase {
         XCTAssertEqual(inApp.count, 2)
         XCTAssertEqual(inApp[0]["quantity"] as? String, "1")
         XCTAssertEqual(inApp[0]["web_order_line_item_id"] as? String, "42")
+        // Full COMPARISON.md "full fidelity" field set (parity with Node).
+        XCTAssertEqual(receipt["original_application_version"] as? String, "1.0")
+        XCTAssertNotNil(receipt["request_date"])
+        XCTAssertNotNil(receipt["request_date_ms"])
+        XCTAssertNotNil(receipt["request_date_pst"])
+        let coins = inApp.first { ($0["product_id"] as? String) == "com.example.app.coins100" }!
+        XCTAssertEqual(coins["transaction_id"] as? String, "70000000000001")
+        XCTAssertEqual(coins["original_transaction_id"] as? String, "70000000000001")
+        XCTAssertNotNil(coins["purchase_date"])
+        XCTAssertNotNil(coins["purchase_date_ms"])
+        XCTAssertNotNil(coins["purchase_date_pst"])
+        let vip = inApp.first { ($0["product_id"] as? String) == "com.example.app.vip" }!
+        XCTAssertEqual(vip["expires_date"] as? String, "2030-02-01 09:30:00 Etc/GMT")
+        XCTAssertNotNil(vip["expires_date_ms"])
+        XCTAssertNotNil(vip["expires_date_pst"])
     }
 
     func testRoutesSandboxReceiptOnProductionTo21007() async throws {
         let response = await (try endpoint(production: true)).verifyReceipt(try request())
         XCTAssertEqual(response["status"] as? Int, 21007)
+        XCTAssertNil(response["receipt"])
+        XCTAssertNil(response["environment"])
     }
 
     func testReportsMalformedRequestsAs21002() async throws {

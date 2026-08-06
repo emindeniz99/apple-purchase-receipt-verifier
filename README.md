@@ -37,7 +37,7 @@ cd python && python3 -m unittest discover -s tests
 cd swift && swift test
 ```
 
-Every suite verifies the same three fixture tiers:
+All four suites verify the same three shared fixture tiers:
 
 1. `fixtures/generated/` — deterministic cross-language fixtures (fake
    Apple PKI) written by the Java `FixtureGeneratorTest`; regenerate only
@@ -47,8 +47,13 @@ Every suite verifies the same three fixture tiers:
    cases fail with our exact reason codes, and their genuine Xcode
    receipts/payloads are **rejected** against the real pinned Apple roots
    (anchor-pinning proof).
-3. Java additionally generates a fresh random PKI per run (`TestPki`) for
-   the full attack matrix.
+3. `fixtures/public-receipts/` — **genuine Apple-signed** production,
+   sandbox, and legacy receipts (vendored, MIT) that must verify against
+   the real pinned Apple root, plus an Xcode receipt that must be rejected
+   — the strongest tier (real Apple bytes).
+
+Java additionally generates a fresh random PKI per run (`TestPki`) for the
+full attack matrix (Java-only, not a shared tier).
 
 Production trust anchors are the two Apple root certificates in
 [`certs/`](./certs) (from [Apple PKI](https://www.apple.com/certificateauthority/)):

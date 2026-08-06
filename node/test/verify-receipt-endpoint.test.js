@@ -31,8 +31,11 @@ test('answers like verifyReceipt for a valid sandbox receipt', () => {
   assert.equal(response.receipt.in_app[0].web_order_line_item_id, '42');
 });
 
-test('routes a sandbox receipt on Production to 21007', () => {
-  assert.equal(endpoint('Production').verifyReceipt(request()).status, 21007);
+test('routes a sandbox receipt on Production to 21007 and leaks no receipt', () => {
+  const response = endpoint('Production').verifyReceipt(request());
+  assert.equal(response.status, 21007);
+  assert.equal(response.receipt, undefined);
+  assert.equal(response.environment, undefined);
 });
 
 test('reports malformed requests as 21002', () => {

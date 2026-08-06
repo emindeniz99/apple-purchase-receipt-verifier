@@ -222,10 +222,25 @@ class VerifyReceiptEndpointTest(unittest.TestCase):
         self.assertEqual(len(receipt["in_app"]), 2)
         self.assertEqual(receipt["in_app"][0]["quantity"], "1")
         self.assertEqual(receipt["in_app"][0]["web_order_line_item_id"], "42")
+        # Full COMPARISON.md "full fidelity" field set (parity with Node).
+        self.assertEqual(receipt["original_application_version"], "1.0")
+        for key in ("request_date", "request_date_ms", "request_date_pst"):
+            self.assertIn(key, receipt)
+        coins = next(p for p in receipt["in_app"] if p["product_id"] == "com.example.app.coins100")
+        self.assertEqual(coins["transaction_id"], "70000000000001")
+        self.assertEqual(coins["original_transaction_id"], "70000000000001")
+        for key in ("purchase_date", "purchase_date_ms", "purchase_date_pst"):
+            self.assertIn(key, coins)
+        vip = next(p for p in receipt["in_app"] if p["product_id"] == "com.example.app.vip")
+        self.assertEqual(vip["expires_date"], "2030-02-01 09:30:00 Etc/GMT")
+        self.assertIn("expires_date_ms", vip)
+        self.assertIn("expires_date_pst", vip)
 
     def test_routes_sandbox_receipt_on_production_to_21007(self):
-        self.assertEqual(
-            self.endpoint("Production").verify_receipt(self.request())["status"], 21007)
+        response = self.endpoint("Production").verify_receipt(self.request())
+        self.assertEqual(response["status"], 21007)
+        self.assertNotIn("receipt", response)
+        self.assertNotIn("environment", response)
 
     def test_reports_malformed_requests_as_21002(self):
         endpoint = self.endpoint("Sandbox")

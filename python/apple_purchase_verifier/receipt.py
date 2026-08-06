@@ -28,11 +28,11 @@ from .exceptions import Reason, VerificationError
 # intermediate to the same pinned root, so this OID must be required too.
 _RECEIPT_SIGNER_OID = x509.ObjectIdentifier("1.2.840.113635.100.6.11.1")
 
+# Only the digests Apple uses for receipts (SHA-1 / SHA-256), matching the
+# other three implementations; anything else is rejected.
 _DIGESTS = {
     "sha1": hashes.SHA1,
     "sha256": hashes.SHA256,
-    "sha384": hashes.SHA384,
-    "sha512": hashes.SHA512,
 }
 
 # Receipt attribute types — Apple, "Validating receipts on the device",

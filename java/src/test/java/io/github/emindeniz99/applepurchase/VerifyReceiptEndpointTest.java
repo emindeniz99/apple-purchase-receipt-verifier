@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 /** verifyReceipt-compat semantics over the shared receipt fixture. */
@@ -50,11 +51,27 @@ class VerifyReceiptEndpointTest {
         assertEquals("1722945600000", receipt.get("receipt_creation_date_ms"));
         assertEquals("2024-08-06 05:00:00 America/Los_Angeles",
                 receipt.get("receipt_creation_date_pst"));
+        // Full COMPARISON.md "full fidelity" field set (parity with Node).
+        assertEquals("1.0", receipt.get("original_application_version"));
+        assertNotNull(receipt.get("request_date_ms"));
+        assertNotNull(receipt.get("request_date"));
+        assertNotNull(receipt.get("request_date_pst"));
         List<Map<String, Object>> inApp = (List<Map<String, Object>>) receipt.get("in_app");
         assertEquals(2, inApp.size());
-        Map<String, Object> first = inApp.get(0);
-        assertEquals("1", first.get("quantity"));
-        assertEquals("42", first.get("web_order_line_item_id"));
+        Map<String, Object> coins = inApp.get(0).get("product_id").equals("com.example.app.coins100")
+                ? inApp.get(0) : inApp.get(1);
+        assertEquals("1", coins.get("quantity"));
+        assertEquals("70000000000001", coins.get("transaction_id"));
+        assertEquals("70000000000001", coins.get("original_transaction_id"));
+        assertNotNull(coins.get("purchase_date"));
+        assertNotNull(coins.get("purchase_date_ms"));
+        assertNotNull(coins.get("purchase_date_pst"));
+        Map<String, Object> vip = inApp.get(0).get("product_id").equals("com.example.app.vip")
+                ? inApp.get(0) : inApp.get(1);
+        assertEquals("2030-02-01 09:30:00 Etc/GMT", vip.get("expires_date"));
+        assertNotNull(vip.get("expires_date_ms"));
+        assertNotNull(vip.get("expires_date_pst"));
+        assertEquals("42", vip.get("web_order_line_item_id"));
     }
 
     @Test

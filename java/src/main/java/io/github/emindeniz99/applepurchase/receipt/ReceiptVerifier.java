@@ -230,8 +230,19 @@ public final class ReceiptVerifier {
 
     private void verifyCmsSignature(CMSSignedData cms, X509Certificate signerCert)
             throws VerificationException {
+        if (!(signerCert.getPublicKey() instanceof java.security.interfaces.RSAPublicKey)) {
+            throw new VerificationException(Reason.INVALID_SIGNATURE, "receipt signer key is not RSA");
+        }
         try {
             SignerInformation signer = cms.getSignerInfos().getSigners().iterator().next();
+            // Restrict to the digests Apple actually uses for receipts
+            // (SHA-1 / SHA-256), matching the other three implementations.
+            String digestOid = signer.getDigestAlgOID();
+            if (!"1.3.14.3.2.26".equals(digestOid)
+                    && !"2.16.840.1.101.3.4.2.1".equals(digestOid)) {
+                throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT,
+                        "unsupported receipt digest algorithm " + digestOid);
+            }
             boolean valid = signer.verify(new JcaSimpleSignerInfoVerifierBuilder()
                     .setProvider(provider)
                     .build(signerCert));
