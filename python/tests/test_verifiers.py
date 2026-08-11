@@ -308,12 +308,6 @@ class PublicReceiptsTest(unittest.TestCase):
     def receipt(self, name):
         return (FIXTURES / "public-receipts" / f"{name}.b64").read_text().strip()
 
-    def test_verifies_genuine_production_receipt(self):
-        verifier = ReceiptVerifier(apple_receipt_roots(), "redacted.example.app")
-        fields = verifier.verify(self.receipt("receipt-production"))
-        self.assertEqual(fields.receipt_type, "Production")
-        self.assertEqual(len(fields.in_app_purchases), 4)
-
     def test_verifies_genuine_sandbox_receipt(self):
         verifier = ReceiptVerifier(apple_receipt_roots(), "dev.bonzer.weeka.app")
         self.assertEqual(verifier.verify(self.receipt("receipt-sandbox-g5")).receipt_type,

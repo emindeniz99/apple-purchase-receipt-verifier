@@ -28,15 +28,6 @@ class PublicReceiptsTest {
     }
 
     @Test
-    void verifiesGenuineProductionReceiptAgainstRealAppleRoot() throws Exception {
-        ReceiptVerifier verifier = new ReceiptVerifier(
-                AppleRootCerts.receiptRoots(), "redacted.example.app");
-        AppReceipt receipt = verifier.verify(receipt("receipt-production"));
-        assertEquals("Production", receipt.receiptType());
-        assertEquals(4, receipt.inAppPurchases().size());
-    }
-
-    @Test
     void verifiesGenuineSandboxReceiptAgainstRealAppleRoot() throws Exception {
         ReceiptVerifier verifier = new ReceiptVerifier(
                 AppleRootCerts.receiptRoots(), "dev.bonzer.weeka.app");

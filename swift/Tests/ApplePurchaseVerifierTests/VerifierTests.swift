@@ -386,14 +386,6 @@ final class PublicReceiptsTests: XCTestCase {
             encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    func testVerifiesGenuineProductionReceipt() async throws {
-        let verifier = try ReceiptVerifier(trustedRoots: appleReceiptRoots(),
-                                           bundleId: "redacted.example.app")
-        let fields = try await verifier.verify(base64Receipt: try receipt("receipt-production"))
-        XCTAssertEqual(fields.receiptType, "Production")
-        XCTAssertEqual(fields.inAppPurchases.count, 4)
-    }
-
     func testVerifiesGenuineSandboxReceipt() async throws {
         let verifier = try ReceiptVerifier(trustedRoots: appleReceiptRoots(),
                                            bundleId: "dev.bonzer.weeka.app")

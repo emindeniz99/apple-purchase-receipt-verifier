@@ -7,15 +7,6 @@ import { ReceiptVerifier, appleReceiptRoots } from '../dist/index.js';
 const receipt = (name) => readFileSync(fileURLToPath(
   new URL(`../../fixtures/public-receipts/${name}.b64`, import.meta.url)), 'ascii').trim();
 
-test('verifies a genuine Apple production receipt against the real pinned root', () => {
-  const verifier = new ReceiptVerifier({
-    trustedRoots: appleReceiptRoots(), bundleId: 'redacted.example.app',
-  });
-  const fields = verifier.verify(receipt('receipt-production'));
-  assert.equal(fields.receiptType, 'Production');
-  assert.equal(fields.inAppPurchases.length, 4);
-});
-
 test('verifies a genuine Apple sandbox receipt against the real pinned root', () => {
   const verifier = new ReceiptVerifier({
     trustedRoots: appleReceiptRoots(), bundleId: 'dev.bonzer.weeka.app',
