@@ -5,11 +5,11 @@
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>io.github.emindeniz99</groupId>
-  <artifactId>apple-purchase-verifier</artifactId>
-  <version>0.1.0-SNAPSHOT</version>
+  <artifactId>apple-purchase-receipt-verifier</artifactId>
+  <version>0.1.0</version>
   <packaging>jar</packaging>
 
-  <name>apple-purchase-verifier</name>
+  <name>apple-purchase-receipt-verifier</name>
   <description>Verify Apple in-app purchases locally (StoreKit 2 JWS + legacy PKCS#7 receipts) with zero Apple server calls</description>
 
   <properties>

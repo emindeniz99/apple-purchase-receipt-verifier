@@ -1,4 +1,4 @@
-# Plan — apple-purchase-verification
+# Plan — apple-purchase-receipt-verifier
 
 Read [INTENT.md](./INTENT.md) first for the "why". This file records the
 research, the verification algorithms every implementation must follow, and
@@ -92,6 +92,32 @@ recorded here.
   status-code contract, with 21007/21008 routing reproduced locally from
   the receipt's `receipt_type` attribute. Fidelity and unavoidable gaps:
   [COMPARISON.md](./COMPARISON.md).
+- **D14 — Published as `apple-purchase-receipt-verifier`** (owner decision,
+  2026-08-11): one registry name on all four registries, replacing the
+  working name `apple-purchase-verifier`. Two constraints settled it.
+  Maven Central indexes only groupId and artifactId, matching whole tokens
+  with AND, so a developer searching "apple receipt" finds this library
+  only if both words sit in the coordinates. And a store-neutral name
+  (covering Google Play as well) would over-promise, because Play's
+  offline verification cannot express expiry or revocation, so nothing
+  here generalizes past Apple.
+  - Coordinates: `io.github.emindeniz99:apple-purchase-receipt-verifier`
+    (Maven Central), `apple-purchase-receipt-verifier` (npm, PyPI), and a
+    SwiftPM repository of the same name shipping the
+    `ApplePurchaseReceiptVerifier` product.
+  - Import namespaces drop the trailing `verifier`: Java package
+    `io.github.emindeniz99.applepurchasereceiptverifier`, Python import package
+    `apple_purchase_receipt_verifier`, Swift module `ApplePurchaseReceiptVerifier`. The
+    types inside already say `JwsVerifier` and `ReceiptVerifier`, and
+    Python callers would otherwise type 31 characters per import.
+  - Version is `0.1.0` in all four manifests. The pom said
+    `0.1.0-SNAPSHOT`; no release automation exists yet that needs a
+    SNAPSHOT cycle, and the other three manifests already declared 0.1.0.
+    Whoever wires up the Maven release flow decides then whether to move
+    the working version back to SNAPSHOT between releases.
+  - The monorepo folder stays `projects/apple-purchase-verification/`. The
+    split-repo export maps folder name to repository name at graduation,
+    the way every prior graduation did.
 
 ## 1. Existing solutions (research, 2026-08)
 

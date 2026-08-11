@@ -9,7 +9,7 @@ from pathlib import Path
 
 from cryptography import x509
 
-from apple_purchase_verifier import (
+from apple_purchase_receipt_verifier import (
     JwsVerifier,
     ReceiptVerifier,
     VerificationError,
@@ -200,7 +200,7 @@ class VerifyReceiptEndpointTest(unittest.TestCase):
     """verifyReceipt-compat semantics over the shared receipt fixture."""
 
     def endpoint(self, environment):
-        from apple_purchase_verifier import VerifyReceiptEndpoint
+        from apple_purchase_receipt_verifier import VerifyReceiptEndpoint
         return VerifyReceiptEndpoint(
             [cert("generated", "receipt-root.der")], environment)
 
@@ -260,7 +260,7 @@ class ReviewFixesTest(unittest.TestCase):
     """Regression tests for the adversarial-review findings + PLAN D10."""
 
     def test_routes_receipt_type_variants_per_apple_matrix(self):
-        from apple_purchase_verifier import VerifyReceiptEndpoint
+        from apple_purchase_receipt_verifier import VerifyReceiptEndpoint
         cases = [
             ("receipt-type-production.der", True),
             ("receipt-type-vpp.der", True),
@@ -290,7 +290,7 @@ class ReviewFixesTest(unittest.TestCase):
         self.assertEqual(receipt.unknown_attributes[9999], [b"\x01\x02\x03"])
 
     def test_is_transaction_active_at_helper(self):
-        from apple_purchase_verifier import is_transaction_active_at
+        from apple_purchase_receipt_verifier import is_transaction_active_at
         self.assertTrue(is_transaction_active_at({}, 1000))
         self.assertFalse(is_transaction_active_at({"revocationDate": 500}, 1000))
         self.assertFalse(is_transaction_active_at({"expiresDate": 900}, 1000))

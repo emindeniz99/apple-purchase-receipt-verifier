@@ -1,4 +1,4 @@
-# CI for apple-purchase-verification. Lives INSIDE the project folder on
+# CI for apple-purchase-receipt-verifier. Lives INSIDE the project folder on
 # purpose: it does not run from the monorepo (GitHub only reads workflows at
 # the repository root), but works unchanged once this project graduates to
 # its own repository (PLAN D1). To run it in the monorepo meanwhile, copy it

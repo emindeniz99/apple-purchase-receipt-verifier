@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "ApplePurchaseVerifier",
+    name: "apple-purchase-receipt-verifier",
     platforms: [
         .macOS(.v13), // and Linux server environments
     ],
     products: [
-        .library(name: "ApplePurchaseVerifier", targets: ["ApplePurchaseVerifier"]),
+        .library(name: "ApplePurchaseReceiptVerifier", targets: ["ApplePurchaseReceiptVerifier"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-certificates.git", from: "1.5.0"),
@@ -16,7 +16,7 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "ApplePurchaseVerifier",
+            name: "ApplePurchaseReceiptVerifier",
             dependencies: [
                 .product(name: "X509", package: "swift-certificates"),
                 .product(name: "SwiftASN1", package: "swift-asn1"),
@@ -25,7 +25,7 @@ let package = Package(
             ],
             resources: [.copy("certs")]),
         .testTarget(
-            name: "ApplePurchaseVerifierTests",
-            dependencies: ["ApplePurchaseVerifier"]),
+            name: "ApplePurchaseReceiptVerifierTests",
+            dependencies: ["ApplePurchaseReceiptVerifier"]),
     ]
 )

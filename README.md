@@ -1,4 +1,4 @@
-# apple-purchase-verification
+# apple-purchase-receipt-verifier
 
 ## What it does
 
@@ -20,6 +20,29 @@ field-by-field fidelity account and the gaps only Apple's servers can fill.
 Start with [INTENT.md](./INTENT.md) (why + trust model), then
 [PLAN.md](./PLAN.md) (algorithms + decisions + API shape), then
 [ROADMAP.md](./ROADMAP.md) (what's next).
+
+## Package names
+
+All four implementations publish as **`apple-purchase-receipt-verifier`**.
+**Nothing has been uploaded to any registry yet.** These are the
+coordinates each manifest already carries and the names the project will
+claim when it graduates into its own repository (PLAN.md D1); until then,
+build from the source in this folder.
+
+| Registry | Coordinates | How you import it |
+|---|---|---|
+| Maven Central | `io.github.emindeniz99` : `apple-purchase-receipt-verifier` : `0.1.0` | `import io.github.emindeniz99.applepurchasereceiptverifier.jws.JwsVerifier;` |
+| npm | `apple-purchase-receipt-verifier` | `import { JwsVerifier } from 'apple-purchase-receipt-verifier';` |
+| PyPI | `apple-purchase-receipt-verifier` | `from apple_purchase_receipt_verifier import JwsVerifier` |
+| SwiftPM | repo `apple-purchase-receipt-verifier`, product `ApplePurchaseReceiptVerifier` | `import ApplePurchaseReceiptVerifier` |
+
+Import namespaces drop the trailing `verifier` that the registry names
+carry. A caller writing `ApplePurchaseReceiptVerifier.ReceiptVerifier`
+says "verifier" twice, and the Python import would run to 31 characters;
+`apple_purchase_receipt_verifier` is shorter than the `apple_purchase_verifier` it
+replaces. Registry name and import name differ in every ecosystem here
+already (`python-dateutil` imports as `dateutil`, Apple's own
+`app-store-server-library-swift` imports as `AppStoreServerLibrary`).
 
 ## How to run the test suites
 

@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "apple-purchase-verifier"
+name = "apple-purchase-receipt-verifier"
 version = "0.1.0"
 description = "Verify Apple in-app purchases locally (StoreKit 2 JWS + legacy PKCS#7 receipts) with zero Apple server calls"
 readme = "README.md"
@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["apple_purchase_verifier"]
+packages = ["apple_purchase_receipt_verifier"]
 
 [tool.setuptools.package-data]
-apple_purchase_verifier = ["certs/*.cer", "py.typed"]
+apple_purchase_receipt_verifier = ["certs/*.cer", "py.typed"]

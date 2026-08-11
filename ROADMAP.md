@@ -1,4 +1,4 @@
-# Roadmap — apple-purchase-verification
+# Roadmap — apple-purchase-receipt-verifier
 
 Milestone status lives here (see [PLAN.md](./PLAN.md) §4 for the full plan).
 Delete an item in the same commit that ships it.
@@ -17,11 +17,18 @@ Delete an item in the same commit that ships it.
 - **Java 8 runtime CI leg**: the artifact is verified Java 8 bytecode and
   CI tests on JDK 11/17/21; add a surefire `jvm` override leg that runs
   the suite on a real Temurin 8 runtime.
-- **Publishing prep** (PLAN D1): finalize coordinates
-  (`io.github.emindeniz99` / npm / PyPI / SwiftPM names) and publish at
-  graduation. CI + license are in place (`.github/workflows/`, LICENSE) —
-  the workflows live inside this folder deliberately and activate when the
-  project graduates to its own repository.
+- **Publishing prep** (PLAN D1, D14): coordinates are settled and written
+  into all four manifests as `apple-purchase-receipt-verifier` 0.1.0;
+  nothing is uploaded yet. What still blocks a first release:
+  - `python/pyproject.toml` declares `readme = "README.md"` but `python/`
+    has no README, so `pip install .` and any sdist build fail there.
+    Same for npm and Maven Central, which want a package-level README and
+    (for Central) `licenses`, `developers`, `scm`, plus sources/javadoc
+    jars and GPG signing in the pom.
+  - Release automation: no publish workflow exists for any of the four.
+  - CI + license are in place (`.github/workflows/`, LICENSE); those
+    workflows live inside this folder deliberately and activate when the
+    project graduates to its own repository.
 
 ## Upstream contribution (after publishing)
 

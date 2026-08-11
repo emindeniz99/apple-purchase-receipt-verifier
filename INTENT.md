@@ -1,4 +1,4 @@
-# Intent — apple-purchase-verification
+# Intent — apple-purchase-receipt-verifier
 
 ## Why this project exists
 
