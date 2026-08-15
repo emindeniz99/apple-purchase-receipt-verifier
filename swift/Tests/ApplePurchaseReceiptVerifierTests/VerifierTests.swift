@@ -222,9 +222,14 @@ final class VerifierTests: XCTestCase {
         }
     }
 
-    func testBundledAppleRootsLoad() {
-        XCTAssertFalse(appleJwsRoots()[0].isEmpty)
-        XCTAssertFalse(appleReceiptRoots()[0].isEmpty)
+    func testBundledAppleRootsAreAllThreePublishedRoots() {
+        // Both sets carry all three published Apple roots (PLAN D15).
+        for roots in [appleJwsRoots(), appleReceiptRoots()] {
+            XCTAssertEqual(3, roots.count)
+            for root in roots {
+                XCTAssertFalse(root.isEmpty)
+            }
+        }
     }
 }
 

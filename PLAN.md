@@ -115,6 +115,41 @@ recorded here.
     SNAPSHOT cycle, and the other three manifests already declared 0.1.0.
     Whoever wires up the Maven release flow decides then whether to move
     the working version back to SNAPSHOT between releases.
+- **D15 — All three published Apple roots are pinned, superseding the
+  two-root choice inside D12** (owner decision, 2026-08-16, after a
+  primary-source research pass): both `jwsRoots`/`receiptRoots` sets now
+  contain Apple Inc. Root, Apple Root CA - G2, and Apple Root CA - G3.
+  What forced the change: Apple deliberately does not commit to a
+  specific root for either verification path, and G2 is already
+  published — if Apple ever issued a WWDR intermediate under it, the
+  `apple-root-watch` workflow would see no change on the PKI page and
+  our fail-closed verifiers would start rejecting genuine receipts with
+  zero warning. Evidence:
+  - JWS: the `JWSDecodedHeader` doc specifies the intermediate by OID but
+    calls the third element only "An Apple root certificate"
+    (<https://developer.apple.com/documentation/appstoreserverapi/jwsdecodedheader>),
+    and an App Store Commerce Engineer answered the "always G3?" question
+    directly with "use all Apple Root CAs"
+    (<https://developer.apple.com/forums/thread/742525>). WWDC23 session
+    10143 uses the same set-membership framing ("one of the certificates
+    you stored as an Apple Root Certificate Authority").
+  - Legacy receipts: Apple's Dec 2022 signing-certificate notice names the
+    Apple Inc. Root and warns against hardcoding the *intermediate*
+    (<https://developer.apple.com/news/?id=ytb7qj0x>). Real Mac App Store
+    receipts verify against it (and fail against G2/G3).
+  - Today's chains: no published WWDR intermediate is signed by G2 — the
+    ones checked chain to Apple Inc. Root (WWDR G3/G4/G5/G7/G8 and the
+    expired original) or to Apple Root CA - G3 (WWDR "- G2" and "- G6";
+    the WWDR names do not track their root's name). So G2 anchors nothing
+    *currently* — pinning it is insurance against re-anchoring, at zero
+    trust cost since it sits at the same assurance level on the same page.
+  - Contrast that shows the omission is deliberate: where Apple wants a
+    single-root guarantee it writes one — the Apple Pay payment-token doc
+    says "Ensure that the root CA is the Apple Root CA - G3". No such
+    sentence exists for App Store JWS or receipts.
+  What still holds from D12: anchors ship pinned (never fetched at
+  runtime), the weekly watch diffs both the pinned bytes and the PKI
+  page's root listing, and callers can inject their own anchors.
 
 ## 1. Existing solutions (research, 2026-08)
 

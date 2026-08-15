@@ -6,27 +6,49 @@ import java.io.UncheckedIOException;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
-import java.util.Collections;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Loads the Apple root certificates bundled with this library (copies of the
  * public roots from <a href="https://www.apple.com/certificateauthority/">Apple PKI</a>).
  * These are the production trust anchors; tests use a generated fake PKI instead.
+ *
+ * <p>Both sets contain all three published Apple roots. Apple deliberately
+ * documents the JWS chain as ending in "an Apple root certificate" (not a
+ * specific one) and its guidance is to trust every root on the PKI page, so
+ * anchoring on a single root would break silently if Apple re-anchored a
+ * path — see PLAN.md D15.
  */
 public final class AppleRootCerts {
 
     private AppleRootCerts() {
     }
 
-    /** Apple Root CA - G3 — anchors StoreKit 2 / App Store Server JWS chains. */
+    /**
+     * Trust anchors for StoreKit 2 / App Store Server JWS chains.
+     * Production chains currently end at Apple Root CA - G3.
+     */
     public static Set<X509Certificate> jwsRoots() {
-        return Collections.singleton(load("/certs/AppleRootCA-G3.cer"));
+        return allRoots();
     }
 
-    /** Apple Inc. Root CA — anchors legacy PKCS#7 app-receipt chains. */
+    /**
+     * Trust anchors for legacy PKCS#7 app-receipt chains.
+     * Production chains currently end at the Apple Inc. Root CA.
+     */
     public static Set<X509Certificate> receiptRoots() {
-        return Collections.singleton(load("/certs/AppleIncRootCertificate.cer"));
+        return allRoots();
+    }
+
+    private static Set<X509Certificate> allRoots() {
+        return Arrays.stream(new String[] {
+                "/certs/AppleIncRootCertificate.cer",
+                "/certs/AppleRootCA-G2.cer",
+                "/certs/AppleRootCA-G3.cer",
+        }).map(AppleRootCerts::load).collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
     private static X509Certificate load(String resource) {

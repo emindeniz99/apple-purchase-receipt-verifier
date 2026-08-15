@@ -80,11 +80,14 @@ All four suites verify the same three shared fixture tiers:
 Java additionally generates a fresh random PKI per run (`TestPki`) for the
 full attack matrix (Java-only, not a shared tier).
 
-Production trust anchors are the two Apple root certificates in
+Production trust anchors are all three published Apple root certificates in
 [`certs/`](./certs) (from [Apple PKI](https://www.apple.com/certificateauthority/)):
-`AppleRootCA-G3.cer` for JWS signed data, `AppleIncRootCertificate.cer` for
-legacy PKCS#7 receipts. Each language bundles its own copy as packaged
-resources; verifiers also accept caller-supplied anchors.
+`AppleIncRootCertificate.cer`, `AppleRootCA-G2.cer` and `AppleRootCA-G3.cer`.
+Today's chains end at Apple Inc. Root (legacy PKCS#7 receipts) and Apple Root
+CA - G3 (JWS signed data), but Apple's own guidance is to trust every root on
+its PKI page rather than a specific one — see PLAN.md D15 for the sourced
+rationale. Each language bundles its own copy as packaged resources;
+verifiers also accept caller-supplied anchors.
 
 ## Notes / learnings
 

@@ -185,11 +185,15 @@ class NegativeTest(unittest.TestCase):
             verifier.verify(b"\x01\x02\x03\x04")
         self.assertEqual(ctx.exception.reason, "INVALID_RECEIPT_FORMAT")
 
-    def test_bundled_apple_roots_load(self):
-        self.assertIn("Apple Root CA - G3",
-                      apple_jws_roots()[0].subject.rfc4514_string())
-        self.assertIn("Apple Root CA",
-                      apple_receipt_roots()[0].subject.rfc4514_string())
+    def test_bundled_apple_roots_are_all_three_published_roots(self):
+        # Both sets carry all three published Apple roots (PLAN D15).
+        for roots in (apple_jws_roots(), apple_receipt_roots()):
+            subjects = [c.subject.rfc4514_string() for c in roots]
+            self.assertEqual(3, len(subjects), subjects)
+            self.assertTrue(any("Apple Root CA - G2" in s for s in subjects), subjects)
+            self.assertTrue(any("Apple Root CA - G3" in s for s in subjects), subjects)
+            # The file Apple labels "Apple Inc. Root" has subject CN=Apple Root CA.
+            self.assertTrue(any(s.startswith("CN=Apple Root CA,") for s in subjects), subjects)
 
 
 if __name__ == "__main__":

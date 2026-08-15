@@ -93,9 +93,16 @@ test('rejects garbage receipt bytes', () => {
     (e) => e.reason === 'INVALID_RECEIPT_FORMAT');
 });
 
-test('bundled Apple roots load and look right', () => {
-  assert.match(appleJwsRoots()[0].subject, /Apple Root CA - G3/);
-  assert.match(appleReceiptRoots()[0].subject, /Apple Root CA/);
+test('bundled Apple roots are all three published roots', () => {
+  // Both sets carry all three published Apple roots (PLAN D15).
+  for (const roots of [appleJwsRoots(), appleReceiptRoots()]) {
+    const subjects = roots.map((c) => c.subject);
+    assert.equal(subjects.length, 3);
+    assert.ok(subjects.some((s) => /Apple Root CA - G2/.test(s)), subjects);
+    assert.ok(subjects.some((s) => /Apple Root CA - G3/.test(s)), subjects);
+    // The file Apple labels "Apple Inc. Root" has subject CN=Apple Root CA.
+    assert.ok(subjects.some((s) => /CN=Apple Root CA$/m.test(s)), subjects);
+  }
 });
 
 test('rejects trailing bytes after the CMS blob', () => {

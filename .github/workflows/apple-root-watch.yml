@@ -3,8 +3,9 @@
 # Apple lists on its PKI page (so a future G4 is caught the week it appears,
 # not when it breaks a customer). Trust anchors are deliberately NEVER
 # fetched at runtime (PLAN D12) — this scheduled diff is the
-# rotation-monitoring mechanism instead. AppleRootCA-G2 is known here but
-# deliberately unpinned: neither verification path chains to it.
+# rotation-monitoring mechanism instead. All three published roots are
+# pinned (PLAN D15), so this job checks the bytes of all three plus the
+# set of roots the PKI page lists.
 name: apple-root-watch
 
 on:
@@ -26,8 +27,10 @@ jobs:
         run: |
           set -euo pipefail
           curl -sSL -o /tmp/AppleIncRootCertificate.cer https://www.apple.com/appleca/AppleIncRootCertificate.cer
+          curl -sSL -o /tmp/AppleRootCA-G2.cer https://www.apple.com/certificateauthority/AppleRootCA-G2.cer
           curl -sSL -o /tmp/AppleRootCA-G3.cer https://www.apple.com/certificateauthority/AppleRootCA-G3.cer
           diff <(sha256sum < certs/AppleIncRootCertificate.cer) <(sha256sum < /tmp/AppleIncRootCertificate.cer)
+          diff <(sha256sum < certs/AppleRootCA-G2.cer) <(sha256sum < /tmp/AppleRootCA-G2.cer)
           diff <(sha256sum < certs/AppleRootCA-G3.cer) <(sha256sum < /tmp/AppleRootCA-G3.cer)
           echo "pinned roots match Apple PKI"
       - name: Check for newly published roots on the PKI page
