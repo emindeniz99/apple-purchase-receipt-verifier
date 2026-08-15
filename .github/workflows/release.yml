@@ -8,8 +8,9 @@
 #           Never rename this file. The very first npm publish must be done
 #           manually by the owner (OIDC cannot create a package); this job
 #           takes over from the next version.
-#   Maven — not here yet: Central needs the owner's GPG key + portal token
-#           as secrets before a publish job can exist.
+#   Maven — token + GPG based (Central has no OIDC): CENTRAL_USERNAME /
+#           CENTRAL_PASSWORD (portal token pair), GPG_PRIVATE_KEY (armored,
+#           passphrase-protected) and GPG_PASSPHRASE repo secrets.
 #   Swift — nothing to publish; SwiftPM consumes the tag itself.
 #
 # Both jobs skip (loudly) when the registry already has the tag's version,
@@ -99,3 +100,49 @@ jobs:
           else
             npm publish
           fi
+
+  publish-maven:
+    name: publish java to Maven Central
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Skip if this version is already on Maven Central
+        id: gate
+        run: |
+          set -euo pipefail
+          VERSION=$(cat version.txt)
+          if curl -fsSL "https://repo1.maven.org/maven2/io/github/emindeniz99/apple-purchase-receipt-verifier/$VERSION/" >/dev/null 2>&1; then
+            echo "Central already has $VERSION — skipping publish."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # setup-java writes the settings.xml server entry (id `central`, the
+      # pom's publishingServerId) with env-var placeholders and imports the
+      # GPG key; the actual values only ever exist as env vars on the mvn
+      # step below.
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        if: steps.gate.outputs.publish == 'true'
+        with:
+          distribution: temurin
+          java-version: '21'
+          server-id: central
+          server-username: CENTRAL_USERNAME
+          server-password: CENTRAL_PASSWORD
+          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+
+      - name: Deploy to Central (tests, sources, javadoc, GPG, upload)
+        if: steps.gate.outputs.publish == 'true'
+        working-directory: java
+        env:
+          CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
+          CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: mvn -B -P central deploy
