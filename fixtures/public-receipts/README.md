@@ -13,7 +13,7 @@ These are **real Apple-signed bytes** — the strongest fixture tier:
 
 ## Why there is no production receipt here
 
-There was one (`receipt-production.b64`, bundle `redacted.example.app`).
+There was one (`receipt-production.b64`, a consumer dating app's receipt).
 It was removed before this project became public.
 
 A genuine *production* receipt necessarily contains one real end user's

@@ -70,8 +70,8 @@ All four suites verify the same three shared fixture tiers:
    cases fail with our exact reason codes, and their genuine Xcode
    receipts/payloads are **rejected** against the real pinned Apple roots
    (anchor-pinning proof).
-3. `fixtures/public-receipts/` — **genuine Apple-signed** production,
-   sandbox, and legacy receipts (vendored, MIT) that must verify against
+3. `fixtures/public-receipts/` — **genuine Apple-signed**
+   sandbox and legacy receipts (vendored, MIT) that must verify against
    the real pinned Apple root, plus an Xcode receipt that must be rejected
    — the strongest tier (real Apple bytes).
 

@@ -12,7 +12,7 @@ Delete an item in the same commit that ships it.
   (`is_trial_period`, `adam_id`, `version_external_identifier`) so
   COMPARISON.md's "not produced" list can shrink.
 - **Mac App Store receipt fixture**: the harvest (fixtures/public-receipts/,
-  done ✅ — genuine production + sandbox + legacy receipts verify in all four
+  done ✅ — genuine sandbox + legacy receipts verify in all four
   languages) covered iOS; a genuine macOS receipt is still missing.
 - **Java 8 runtime CI leg**: the artifact is verified Java 8 bytecode and
   CI tests on JDK 11/17/21; add a surefire `jvm` override leg that runs

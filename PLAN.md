@@ -115,9 +115,6 @@ recorded here.
     SNAPSHOT cycle, and the other three manifests already declared 0.1.0.
     Whoever wires up the Maven release flow decides then whether to move
     the working version back to SNAPSHOT between releases.
-  - The monorepo folder stays `projects/apple-purchase-verification/`. The
-    split-repo export maps folder name to repository name at graduation,
-    the way every prior graduation did.
 
 ## 1. Existing solutions (research, 2026-08)
 
