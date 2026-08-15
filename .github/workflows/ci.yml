@@ -20,10 +20,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # Build needs javac 9+ for --release 8; the artifact is Java 8
-        # bytecode (major version 52). Running the suite on a real JDK 8
-        # runtime needs a surefire jvm override — tracked in ROADMAP.
-        jdk: ["11", "17", "21"]
+        # Every current LTS line (endoflife.date/eclipse-temurin). The
+        # build itself needs javac 9+ for --release 8; the artifact is
+        # Java 8 bytecode (major version 52), and the java-runtime-8 job
+        # below runs the suite on a real Temurin 8 JVM.
+        jdk: ["11", "17", "21", "25"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -35,11 +36,36 @@ jobs:
       - run: mvn -B test
         working-directory: java
 
+  # The floor check: build with a modern javac, run the tests on a real
+  # Temurin 8 JVM via surefire's jvm override — the `java 8` claim in the
+  # pom is verified, not asserted (the toolchain itself can't build on 8).
+  java-runtime-8:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Two JDKs: 8 for the test JVM (exposed as JAVA_HOME_8_X64), then 25
+      # last so it wins JAVA_HOME and drives Maven itself.
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '8'
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '25'
+      - run: mvn -B test -Pjdk8-runtime "-Djdk8.jvm=${JAVA_HOME_8_X64}/bin/java"
+        working-directory: java
+
   node:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node: ["20", "22", "24"]
+        # Every supported LTS line plus current (endoflife.date/nodejs);
+        # the engines floor (20) stays tested even after its EOL because
+        # the package still claims it.
+        node: ["20", "22", "24", "26"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -57,7 +83,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        # Every supported line (endoflife.date/python) plus 3.9: EOL, but
+        # it is the requires-python floor and stays tested while claimed.
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

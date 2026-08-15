@@ -14,9 +14,6 @@ Delete an item in the same commit that ships it.
 - **Mac App Store receipt fixture**: the harvest (fixtures/public-receipts/,
   done ✅ — genuine sandbox + legacy receipts verify in all four
   languages) covered iOS; a genuine macOS receipt is still missing.
-- **Java 8 runtime CI leg**: the artifact is verified Java 8 bytecode and
-  CI tests on JDK 11/17/21; add a surefire `jvm` override leg that runs
-  the suite on a real Temurin 8 runtime.
 - **Publishing prep** (PLAN D1, D14): coordinates are settled and written
   into all four manifests as `apple-purchase-receipt-verifier` 0.1.0;
   nothing is uploaded yet. What still blocks a first release:

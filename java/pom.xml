@@ -95,6 +95,24 @@
   </build>
 
   <profiles>
+    <!-- Runs the suite on a real Java 8 JVM (the artifact's floor) while
+         Maven and javac stay modern. CI passes the JVM path:
+         mvn test -Pjdk8-runtime -Djdk8.jvm=/path/to/jdk8/bin/java -->
+    <profile>
+      <id>jdk8-runtime</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration>
+              <jvm>${jdk8.jvm}</jvm>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
     <!-- Everything Maven Central demands beyond a plain build: sources jar,
          javadoc jar, GPG signatures, and the Central Portal uploader.
          Activated only at release (mvn -P central deploy) so day-to-day
