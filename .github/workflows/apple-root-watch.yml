@@ -34,11 +34,16 @@ jobs:
           diff <(sha256sum < certs/AppleRootCA-G3.cer) <(sha256sum < /tmp/AppleRootCA-G3.cer)
           echo "pinned roots match Apple PKI"
       - name: Check for newly published roots on the PKI page
+        # Scoped to the page's "Apple Root Certificates" section rather than
+        # a filename pattern, so a future root is caught whatever Apple names
+        # it. If Apple restructures the page the extraction comes up empty
+        # and the diff fails — loud either way.
         run: |
           set -euo pipefail
           curl -sSL https://www.apple.com/certificateauthority/ \
-            | grep -oE 'href="[^"]*/(AppleIncRootCertificate|AppleRootCA-[A-Za-z0-9]+)\.cer"' \
-            | grep -oE '(AppleIncRootCertificate|AppleRootCA-[A-Za-z0-9]+)\.cer' \
+            | sed -n '/<h2>Apple Root Certificates<\/h2>/,/<h2>Apple Intermediate Certificates<\/h2>/p' \
+            | grep -oE 'href="[^"]*\.cer"' \
+            | grep -oE '[^/"]+\.cer' \
             | sort -u > /tmp/published-roots.txt
           printf '%s\n' AppleIncRootCertificate.cer AppleRootCA-G2.cer AppleRootCA-G3.cer \
             | sort > /tmp/known-roots.txt
