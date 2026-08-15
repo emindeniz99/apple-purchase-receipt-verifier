@@ -10,6 +10,13 @@ updates:
     directory: /node
     schedule:
       interval: weekly
+    ignore:
+      # @types/node deliberately tracks the ENGINES FLOOR (node >=20), not
+      # the newest Node: typing against a newer API surface would let code
+      # use APIs Node 20 lacks without tsc noticing. Bump it only when the
+      # engines floor itself is raised (a semver-major decision).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: pip
     directory: /python
     schedule:
