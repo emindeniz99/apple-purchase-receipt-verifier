@@ -36,15 +36,20 @@ jobs:
       - name: Check for newly published roots on the PKI page
         # Scoped to the page's "Apple Root Certificates" section rather than
         # a filename pattern, so a future root is caught whatever Apple names
-        # it. If Apple restructures the page the extraction comes up empty
-        # and the diff fails — loud either way.
+        # it. The greps tolerate zero matches so the empty-extraction case
+        # reaches the explicit guard below and fails with a diagnosis instead
+        # of a cryptic pipe error.
         run: |
           set -euo pipefail
           curl -sSL https://www.apple.com/certificateauthority/ \
             | sed -n '/<h2>Apple Root Certificates<\/h2>/,/<h2>Apple Intermediate Certificates<\/h2>/p' \
-            | grep -oE 'href="[^"]*\.cer"' \
-            | grep -oE '[^/"]+\.cer' \
+            | { grep -oE 'href="[^"]*\.cer"' || true; } \
+            | { grep -oE '[^/"]+\.cer' || true; } \
             | sort -u > /tmp/published-roots.txt
+          if ! [ -s /tmp/published-roots.txt ]; then
+            echo "::error::Apple PKI page structure changed: the 'Apple Root Certificates' section yielded no .cer links — update the sed anchors in this workflow"
+            exit 1
+          fi
           printf '%s\n' AppleIncRootCertificate.cer AppleRootCA-G2.cer AppleRootCA-G3.cer \
             | sort > /tmp/known-roots.txt
           diff /tmp/known-roots.txt /tmp/published-roots.txt
