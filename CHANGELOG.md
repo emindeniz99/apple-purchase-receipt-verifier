@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.1.1...v0.2.0) (2026-08-15)
+
+
+### Features
+
+* **certs:** pin all three published Apple roots, adding Apple Root CA - G2 ([00e191b](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/00e191ba5623b0b91622778ffc330f06298685d0))
+
+
+### Bug Fixes
+
+* **ci:** detect newly published Apple roots, not just pinned-cert changes ([715f473](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/715f47345d011eed10c941791d0c91bcb2f84acf))
+
 ## [0.1.1](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.1.0...v0.1.1) (2026-08-15)
 
 
