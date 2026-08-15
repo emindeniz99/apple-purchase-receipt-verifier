@@ -1,7 +1,10 @@
 # Watches Apple's published root certificates and fails (= notifies) when
-# they change, so a new root (e.g. a future G4) triggers a library release.
-# Trust anchors are deliberately NEVER fetched at runtime (PLAN D12) — this
-# scheduled diff is the rotation-monitoring mechanism instead.
+# anything changes: the bytes of the two pinned roots, OR the set of roots
+# Apple lists on its PKI page (so a future G4 is caught the week it appears,
+# not when it breaks a customer). Trust anchors are deliberately NEVER
+# fetched at runtime (PLAN D12) — this scheduled diff is the
+# rotation-monitoring mechanism instead. AppleRootCA-G2 is known here but
+# deliberately unpinned: neither verification path chains to it.
 name: apple-root-watch
 
 on:
@@ -27,3 +30,14 @@ jobs:
           diff <(sha256sum < certs/AppleIncRootCertificate.cer) <(sha256sum < /tmp/AppleIncRootCertificate.cer)
           diff <(sha256sum < certs/AppleRootCA-G3.cer) <(sha256sum < /tmp/AppleRootCA-G3.cer)
           echo "pinned roots match Apple PKI"
+      - name: Check for newly published roots on the PKI page
+        run: |
+          set -euo pipefail
+          curl -sSL https://www.apple.com/certificateauthority/ \
+            | grep -oE 'href="[^"]*/(AppleIncRootCertificate|AppleRootCA-[A-Za-z0-9]+)\.cer"' \
+            | grep -oE '(AppleIncRootCertificate|AppleRootCA-[A-Za-z0-9]+)\.cer' \
+            | sort -u > /tmp/published-roots.txt
+          printf '%s\n' AppleIncRootCertificate.cer AppleRootCA-G2.cer AppleRootCA-G3.cer \
+            | sort > /tmp/known-roots.txt
+          diff /tmp/known-roots.txt /tmp/published-roots.txt
+          echo "no new roots published"
