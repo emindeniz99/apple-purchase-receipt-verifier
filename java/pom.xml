@@ -4,7 +4,7 @@
 
   <groupId>io.github.emindeniz99</groupId>
   <artifactId>apple-purchase-receipt-verifier</artifactId>
-  <version>0.1.1</version>
+  <version>0.2.0</version>
   <packaging>jar</packaging>
 
   <name>apple-purchase-receipt-verifier</name>
