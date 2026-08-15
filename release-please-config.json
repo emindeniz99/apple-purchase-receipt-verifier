@@ -1,0 +1,16 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "simple",
+  "include-component-in-tag": false,
+  "bootstrap-sha": "29f0f47c33b32ffe0abee2ca11364efee14e2d55",
+  "packages": {
+    ".": {
+      "package-name": "apple-purchase-receipt-verifier",
+      "extra-files": [
+        { "type": "json", "path": "node/package.json", "jsonpath": "$.version" },
+        { "type": "toml", "path": "python/pyproject.toml", "jsonpath": "$.project.version" },
+        { "type": "pom", "path": "java/pom.xml" }
+      ]
+    }
+  }
+}

@@ -1,0 +1,30 @@
+# Opens/updates the release PR from Conventional Commits on main; merging
+# that PR creates the vX.Y.Z tag, and the tag fires release.yml (publish).
+# One version for all four languages: extra-files bump node/package.json,
+# python/pyproject.toml and java/pom.xml in the same PR; SwiftPM reads the
+# tag itself.
+#
+# Permission model (deliberate): the repo default token stays READ-ONLY;
+# only this job elevates to contents+pull-requests write. The repo setting
+# "Allow GitHub Actions to create and approve pull requests" must be ON
+# for the bot to open its PR.
+name: release-please
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
