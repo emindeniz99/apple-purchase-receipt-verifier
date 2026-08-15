@@ -1,5 +1,12 @@
 # apple-purchase-receipt-verifier
 
+[![ci](https://github.com/emindeniz99/apple-purchase-receipt-verifier/actions/workflows/ci.yml/badge.svg)](https://github.com/emindeniz99/apple-purchase-receipt-verifier/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/apple-purchase-receipt-verifier?logo=npm)](https://www.npmjs.com/package/apple-purchase-receipt-verifier)
+[![PyPI](https://img.shields.io/pypi/v/apple-purchase-receipt-verifier?logo=python&logoColor=white)](https://pypi.org/project/apple-purchase-receipt-verifier/)
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.emindeniz99/apple-purchase-receipt-verifier?logo=apachemaven)](https://central.sonatype.com/artifact/io.github.emindeniz99/apple-purchase-receipt-verifier)
+[![SwiftPM](https://img.shields.io/github/v/tag/emindeniz99/apple-purchase-receipt-verifier?label=SwiftPM&logo=swift)](https://github.com/emindeniz99/apple-purchase-receipt-verifier/tags)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+
 ## What it does
 
 Verifies Apple in-app purchases **locally, with zero Apple server calls** —
@@ -21,28 +28,21 @@ Start with [INTENT.md](./INTENT.md) (why + trust model), then
 [PLAN.md](./PLAN.md) (algorithms + decisions + API shape), then
 [ROADMAP.md](./ROADMAP.md) (what's next).
 
-## Package names
+## Installing
 
-All four implementations publish as **`apple-purchase-receipt-verifier`**.
-**Nothing has been uploaded to any registry yet.** These are the
-coordinates each manifest already carries and the names the project will
-claim when it graduates into its own repository (PLAN.md D1); until then,
-build from the source in this folder.
+All four implementations publish as **`apple-purchase-receipt-verifier`**,
+in lockstep versions cut from this repository's tags.
 
-| Registry | Coordinates | How you import it |
+| Registry | Install | How you import it |
 |---|---|---|
-| Maven Central | `io.github.emindeniz99` : `apple-purchase-receipt-verifier` : `0.1.0` | `import io.github.emindeniz99.applepurchasereceiptverifier.jws.JwsVerifier;` |
-| npm | `apple-purchase-receipt-verifier` | `import { JwsVerifier } from 'apple-purchase-receipt-verifier';` |
-| PyPI | `apple-purchase-receipt-verifier` | `from apple_purchase_receipt_verifier import JwsVerifier` |
-| SwiftPM | repo `apple-purchase-receipt-verifier`, product `ApplePurchaseReceiptVerifier` | `import ApplePurchaseReceiptVerifier` |
+| [Maven Central](https://central.sonatype.com/artifact/io.github.emindeniz99/apple-purchase-receipt-verifier) | `io.github.emindeniz99:apple-purchase-receipt-verifier` | `import io.github.emindeniz99.applepurchasereceiptverifier.jws.JwsVerifier;` |
+| [npm](https://www.npmjs.com/package/apple-purchase-receipt-verifier) | `npm install apple-purchase-receipt-verifier` | `import { JwsVerifier } from 'apple-purchase-receipt-verifier';` |
+| [PyPI](https://pypi.org/project/apple-purchase-receipt-verifier/) | `pip install apple-purchase-receipt-verifier` | `from apple_purchase_receipt_verifier import JwsVerifier` |
+| SwiftPM | `.package(url: "https://github.com/emindeniz99/apple-purchase-receipt-verifier.git", from: "0.1.0")` | `import ApplePurchaseReceiptVerifier` |
 
-Import namespaces drop the trailing `verifier` that the registry names
-carry. A caller writing `ApplePurchaseReceiptVerifier.ReceiptVerifier`
-says "verifier" twice, and the Python import would run to 31 characters;
-`apple_purchase_receipt_verifier` is shorter than the `apple_purchase_verifier` it
-replaces. Registry name and import name differ in every ecosystem here
-already (`python-dateutil` imports as `dateutil`, Apple's own
-`app-store-server-library-swift` imports as `AppStoreServerLibrary`).
+The import namespace is the registry name in each ecosystem's casing
+convention (`applepurchasereceiptverifier` / `apple_purchase_receipt_verifier` /
+`ApplePurchaseReceiptVerifier`) — one name everywhere.
 
 ## How to run the test suites
 
@@ -56,8 +56,8 @@ cd node && npm install && npm test    # = tsc && node --test
 # Python (>= 3.9; needs: pip install cryptography asn1crypto)
 cd python && python3 -m unittest discover -s tests
 
-# Swift (Swift 6; Linux or macOS 13+)
-cd swift && swift test
+# Swift (Swift 6; Linux or macOS 13+; manifest lives at the repo root)
+swift test
 ```
 
 All four suites verify the same three shared fixture tiers:
