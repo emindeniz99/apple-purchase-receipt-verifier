@@ -47,6 +47,12 @@ for the full picture and
 [COMPARISON.md](https://github.com/emindeniz99/apple-purchase-receipt-verifier/blob/main/COMPARISON.md)
 for how it differs from Apple's official libraries.
 
+## Changelog
+
+One version across all four languages —
+[CHANGELOG.md](https://github.com/emindeniz99/apple-purchase-receipt-verifier/blob/main/CHANGELOG.md)
+/ [releases](https://github.com/emindeniz99/apple-purchase-receipt-verifier/releases).
+
 ## Licence
 
 MIT — see [LICENSE](./LICENSE).

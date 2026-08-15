@@ -14,6 +14,13 @@ dependencies = [
     "asn1crypto>=1.5",
 ]
 
+# PyPI renders these as sidebar links; Changelog is the one registries
+# don't surface on their own.
+[project.urls]
+Homepage = "https://github.com/emindeniz99/apple-purchase-receipt-verifier"
+Repository = "https://github.com/emindeniz99/apple-purchase-receipt-verifier"
+Changelog = "https://github.com/emindeniz99/apple-purchase-receipt-verifier/blob/main/CHANGELOG.md"
+
 [tool.setuptools]
 packages = ["apple_purchase_receipt_verifier"]
 license-files = ["LICENSE"]
