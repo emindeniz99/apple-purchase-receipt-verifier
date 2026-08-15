@@ -33,6 +33,7 @@ jobs:
         with:
           distribution: temurin
           java-version: ${{ matrix.jdk }}
+          cache: maven
       - run: mvn -B test
         working-directory: java
 
@@ -55,6 +56,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
+          cache: maven
       - run: mvn -B test -Pjdk8-runtime "-Djdk8.jvm=${JAVA_HOME_8_X64}/bin/java"
         working-directory: java
 
