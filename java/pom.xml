@@ -41,7 +41,7 @@
     <!-- Java 8 baseline (PLAN.md D2): enterprise consumers still run 8. -->
     <maven.compiler.release>8</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <bouncycastle.version>1.80</bouncycastle.version>
+    <bouncycastle.version>1.85</bouncycastle.version>
     <jackson.version>2.18.2</jackson.version>
     <junit.version>5.11.4</junit.version>
   </properties>
