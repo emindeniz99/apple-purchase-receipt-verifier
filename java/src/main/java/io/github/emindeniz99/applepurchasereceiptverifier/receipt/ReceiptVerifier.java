@@ -508,11 +508,24 @@ public final class ReceiptVerifier {
         if (text.isEmpty()) {
             return null;
         }
+        Instant instant;
         try {
-            return Instant.parse(text);
+            instant = Instant.parse(text);
         } catch (DateTimeParseException e) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT,
                     "unparseable receipt date: " + text, e);
         }
+        // Instant.parse accepts expanded years (e.g. +1000000000-...) that no
+        // longer fit an epoch-milli long; toEpochMilli overflows on those, and
+        // that conversion happens (via Date.from) before verification, so a
+        // hostile date is rejected here rather than escaping as an
+        // ArithmeticException past the declared VerificationException contract.
+        try {
+            instant.toEpochMilli();
+        } catch (ArithmeticException e) {
+            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT,
+                    "receipt date out of representable range: " + text, e);
+        }
+        return instant;
     }
 }

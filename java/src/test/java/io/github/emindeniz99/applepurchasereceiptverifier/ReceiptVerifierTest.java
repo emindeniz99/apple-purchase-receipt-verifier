@@ -153,6 +153,18 @@ class ReceiptVerifierTest {
     }
 
     @Test
+    void rejectsDateOutsideRepresentableRange() throws Exception {
+        // Instant.parse accepts an expanded year (+1000000000-...) whose epoch
+        // millis overflow a long; that conversion runs before verification, so it
+        // must surface as the library's VerificationException, not escape as a raw
+        // runtime exception past the declared throws clause.
+        byte[] receipt = pki.signReceipt(payload(BUNDLE, "+1000000000-01-01T00:00:00Z"));
+        VerificationException e = assertThrows(VerificationException.class,
+                () -> verifier(pki, BUNDLE).verify(receipt));
+        assertEquals(Reason.INVALID_RECEIPT_FORMAT, e.reason());
+    }
+
+    @Test
     void rejectsUnsignedBase64Garbage() {
         VerificationException e = assertThrows(VerificationException.class,
                 () -> verifier(pki, BUNDLE).verify("!!!not-base64!!!"));
