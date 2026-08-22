@@ -1,0 +1,221 @@
+# Verifies what consumers actually receive, after a release has been published.
+#
+# The CI suite tests the working tree; this tests the artifact. That gap shipped
+# two broken npm releases (0.1.1 and 0.2.0 contained no JavaScript at all, so
+# every `npm i` + import died on ERR_MODULE_NOT_FOUND) while every check was
+# green, because nothing ever installed the published package. Each job here
+# installs by name/coordinates from the real registry, into a directory outside
+# the checkout, and verifies a genuine Apple-signed receipt with it.
+#
+# Registries do not publish atomically, so each job polls for the version to
+# appear. Maven Central's sync is the slow one and gets the longest budget.
+name: post-publish-smoke
+
+# zizmor flags workflow_run as fundamentally dangerous, and normally it is: it
+# runs in the base repository with a write-capable token and access to secrets,
+# which is how fork pull requests get privilege-escalated through it. None of
+# that applies here. This workflow requests contents: read only, uses no
+# secrets, downloads no artifacts from the triggering run, and checks out a tag
+# that the resolve job validates as a release version. workflow_run also only
+# fires for runs in this repository, and `release` itself only runs on a v* tag
+# push or a manual dispatch — both of which already require write access.
+on: # zizmor: ignore[dangerous-triggers]
+  workflow_run:
+    workflows: [release]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Published version to smoke-test, without the v (e.g. 0.2.1)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    name: resolve the published version
+    runs-on: ubuntu-latest
+    # A failed release has nothing to smoke-test.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    outputs:
+      version: ${{ steps.pick.outputs.version }}
+      ref: ${{ steps.pick.outputs.ref }}
+    steps:
+      # Event fields go through the environment, never into the script body:
+      # interpolating them directly is the GitHub Actions script-injection sink.
+      - id: pick
+        env:
+          DISPATCH_VERSION: ${{ inputs.version }}
+          RELEASE_REF: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          if [ -n "${DISPATCH_VERSION:-}" ]; then
+            VERSION="$DISPATCH_VERSION"
+          else
+            VERSION="${RELEASE_REF#v}"
+          fi
+          case "$VERSION" in
+            [0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::'$VERSION' is not a release version; nothing to smoke-test"; exit 1 ;;
+          esac
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "ref=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "smoke-testing $VERSION"
+
+  npm:
+    name: npm — install the published package and verify a receipt
+    needs: resolve
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.ref }}
+          persist-credentials: false
+
+      # The engines floor, not the newest runtime: a consumer on the oldest
+      # version we claim is the one most likely to hit a packaging problem.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+
+      # Installing outside a lockfile is the entire point: the subject under
+      # test is the tarball the registry just started serving, which by
+      # definition no lockfile in this repository can pin.
+      - name: install from the registry, outside the checkout # zizmor: ignore[adhoc-packages]
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          SMOKE="$RUNNER_TEMP/npm-smoke"
+          mkdir -p "$SMOKE"
+          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
+          cp .github/smoke/npm-smoke.mjs "$SMOKE/"
+          cd "$SMOKE"
+          npm init -y > /dev/null
+          installed=false
+          for attempt in $(seq 1 10); do
+            if npm install "apple-purchase-receipt-verifier@$VERSION"; then
+              installed=true
+              break
+            fi
+            echo "not on the registry yet (attempt $attempt of 10); waiting 30s"
+            sleep 30
+          done
+          if [ "$installed" != true ]; then
+            echo "::error::apple-purchase-receipt-verifier@$VERSION never became installable from npm"
+            exit 1
+          fi
+          node npm-smoke.mjs
+
+  pypi:
+    name: pypi — install the published wheel and verify a receipt
+    needs: resolve
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.ref }}
+          persist-credentials: false
+
+      # requires-python floor, same reasoning as the node job.
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.9'
+
+      - name: install from the registry, outside the checkout
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          SMOKE="$RUNNER_TEMP/pypi-smoke"
+          mkdir -p "$SMOKE"
+          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
+          cp .github/smoke/pypi-smoke.py "$SMOKE/"
+          cd "$SMOKE"
+          python3 -m venv venv
+          installed=false
+          for attempt in $(seq 1 10); do
+            if venv/bin/pip install "apple-purchase-receipt-verifier==$VERSION"; then
+              installed=true
+              break
+            fi
+            echo "not on the index yet (attempt $attempt of 10); waiting 30s"
+            sleep 30
+          done
+          if [ "$installed" != true ]; then
+            echo "::error::apple-purchase-receipt-verifier==$VERSION never became installable from PyPI"
+            exit 1
+          fi
+          venv/bin/python pypi-smoke.py
+
+  maven:
+    name: maven central — resolve the published jar and verify a receipt
+    needs: resolve
+    runs-on: ubuntu-latest
+    # Central's sync lags the portal release by tens of minutes.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.ref }}
+          persist-credentials: false
+
+      # The jar is Java 8 bytecode; run it on a current LTS, as consumers do.
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: resolve from Central, outside the checkout
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          SMOKE="$RUNNER_TEMP/maven-smoke"
+          mkdir -p "$SMOKE"
+          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
+          cp .github/smoke/maven-smoke/pom.xml .github/smoke/maven-smoke/Smoke.java "$SMOKE/"
+          cd "$SMOKE"
+          resolved=false
+          for attempt in $(seq 1 30); do
+            if mvn -B -q -Dsmoke.version="$VERSION" -Dmdep.outputFile=cp.txt dependency:build-classpath; then
+              resolved=true
+              break
+            fi
+            echo "not on Central yet (attempt $attempt of 30); waiting 60s"
+            sleep 60
+          done
+          if [ "$resolved" != true ]; then
+            echo "::error::io.github.emindeniz99:apple-purchase-receipt-verifier:$VERSION never appeared on Central"
+            exit 1
+          fi
+          javac -cp "$(cat cp.txt)" Smoke.java -d .
+          java -cp ".:$(cat cp.txt)" Smoke
+
+  swiftpm:
+    name: swiftpm — resolve the published tag and verify a receipt
+    needs: resolve
+    runs-on: ubuntu-latest
+    # Same digest-pinned image as the CI swift job.
+    container: swift:6.0@sha256:af41101d281e41b824529901e88afe848bf3edb67d180aea3e1d963e53fbe56b
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.ref }}
+          persist-credentials: false
+
+      - name: resolve the published tag, outside the checkout
+        env:
+          SMOKE_VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          SMOKE="$RUNNER_TEMP/swiftpm-smoke"
+          mkdir -p "$SMOKE"
+          cp -R .github/smoke/swiftpm-smoke/. "$SMOKE/"
+          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
+          cd "$SMOKE"
+          # The tag is pushed before this workflow can run, so there is nothing
+          # to wait for; a resolve failure here is a real broken tag.
+          swift run Smoke
