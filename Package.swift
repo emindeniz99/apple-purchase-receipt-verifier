@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.1
 // At the repository root because SwiftPM resolves a package's manifest
 // only from the root of the cloned repo (PLAN D6) — the Swift sources
 // themselves stay under swift/.

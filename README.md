@@ -73,7 +73,7 @@ cd node && npm install && npm test    # = tsc && node --test
 # Python (>= 3.9; needs: pip install cryptography asn1crypto)
 cd python && python3 -m unittest discover -s tests
 
-# Swift (Swift 6; Linux or macOS 13+; manifest lives at the repo root)
+# Swift (Swift 6.1+; Linux or macOS 13+; manifest lives at the repo root)
 swift test
 ```
 

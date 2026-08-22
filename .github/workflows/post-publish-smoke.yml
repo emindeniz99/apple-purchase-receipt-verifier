@@ -199,7 +199,7 @@ jobs:
     needs: resolve
     runs-on: ubuntu-latest
     # Same digest-pinned image as the CI swift job.
-    container: swift:6.0@sha256:af41101d281e41b824529901e88afe848bf3edb67d180aea3e1d963e53fbe56b
+    container: swift:6.1@sha256:98ee3a8469ce2a9c2f543ef2577939ab44e2dfc9b5ed710732a59e5dd64f9c4a
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
