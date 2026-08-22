@@ -30,6 +30,21 @@ Start with [INTENT.md](./INTENT.md) (why + trust model), then
 [PLAN.md](./PLAN.md) (algorithms + decisions + API shape), then
 [ROADMAP.md](./ROADMAP.md) (what's next).
 
+## Upstream
+
+The legacy-receipt half of this design has been proposed to Apple's official
+app-store-server-library in all four languages — an `AppReceiptVerifier`
+alongside each library's `ReceiptUtility`, reusing their existing chain
+verification:
+[java#268](https://github.com/apple/app-store-server-library-java/pull/268),
+[swift#133](https://github.com/apple/app-store-server-library-swift/pull/133),
+[python#208](https://github.com/apple/app-store-server-library-python/pull/208),
+[node#427](https://github.com/apple/app-store-server-library-node/pull/427).
+If your project already depends on Apple's library and a PR lands there, use
+the official implementation. This repository stays maintained regardless: the
+`verifyReceipt`-compatible endpoint, the bundled Apple root pinning, the
+Java 8 floor and the zero-dependency Node build exist only here.
+
 ## Installing
 
 All four implementations publish as **`apple-purchase-receipt-verifier`**,
