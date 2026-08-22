@@ -4,9 +4,11 @@ fixtures/generated/ (cross-language parity) and fixtures/apple-official/
 
 import base64
 import json
+import random
 import unittest
 from pathlib import Path
 
+from asn1crypto import cms as asn1cms
 from cryptography import x509
 
 from apple_purchase_receipt_verifier import (
@@ -184,6 +186,14 @@ class NegativeTest(unittest.TestCase):
         with self.assertRaises(VerificationError) as ctx:
             verifier.verify(b"\x01\x02\x03\x04")
         self.assertEqual(ctx.exception.reason, "INVALID_RECEIPT_FORMAT")
+
+    def test_rejects_receipt_issued_for_another_app(self):
+        # The control that stops app A's genuine receipt from unlocking app B:
+        # everything below the bundle id verifies, only the claim differs.
+        verifier = ReceiptVerifier([cert("generated", "receipt-root.der")], "com.other.app")
+        with self.assertRaises(VerificationError) as ctx:
+            verifier.verify(fixture("generated", "receipt.der"))
+        self.assertEqual(ctx.exception.reason, "WRONG_BUNDLE_ID")
 
     def test_bundled_apple_roots_are_all_three_published_roots(self):
         # Both sets carry all three published Apple roots (PLAN D15).
@@ -363,3 +373,171 @@ class ParityTest(unittest.TestCase):
         with self.assertRaises(VerificationError) as ctx:
             v.verify(fixture("generated", "receipt-expired-fresh.der"))
         self.assertEqual(ctx.exception.reason, "INVALID_CHAIN")
+
+
+def tlv(tag, contents):
+    """DER tag-length-value — these builders emit structures no encoder would
+    produce for them (empty value sets, wrong tags, 5000-deep nesting)."""
+    if len(contents) < 0x80:
+        return bytes([tag, len(contents)]) + contents
+    length = len(contents).to_bytes((len(contents).bit_length() + 7) // 8, "big")
+    return bytes([tag, 0x80 | len(length)]) + length + contents
+
+
+def date_payload(value):
+    """A receipt payload SET carrying only attribute 12 (creation date)."""
+    attribute = tlv(0x02, b"\x0c") + tlv(0x02, b"\x01") + tlv(0x04, tlv(0x16, value.encode()))
+    return tlv(0x31, tlv(0x30, attribute))
+
+
+# An anonymous 162-byte blob: no certificates, no signature, one creation date
+# of 0001-01-01T00:00:00+10:00. The payload is parsed before the chain check,
+# so this reaches the date decoder against the real pinned Apple roots.
+OUT_OF_RANGE_DATE_RECEIPT = (
+    "MIGfBgkqhkiG9w0BBwKggZEwgY4CAQExDzANBglghkgBZQMEAgEFADA2BgkqhkiG9w0BBwGgKQQnMSUw"
+    "IwIBDAIBAQQbFhkwMDAxLTAxLTAxVDAwOjAwOjAwKzEwOjAwMUAwPgIBATARMAwxCjAIBgNVBAMMAXgC"
+    "AQEwDQYJYIZIAWUDBAIBBQAwDQYJKoZIhvcNAQEBBQAECAAAAAAAAAAA")
+
+_OID_MESSAGE_DIGEST = b"\x06\x09\x2a\x86\x48\x86\xf7\x0d\x01\x09\x04"
+_OID_SIGNING_TIME = b"\x06\x09\x2a\x86\x48\x86\xf7\x0d\x01\x09\x05"
+_OID_UNKNOWN = b"\x06\x03\x2a\x03\x04"
+
+
+def hostile_attribute_sets():
+    """signedAttrs an attacker can splice in, one per raw exception class."""
+    nested = b""
+    for _ in range(5000):
+        nested = tlv(0x30, nested)
+    return {
+        "empty messageDigest value set":
+            tlv(0x31, tlv(0x30, _OID_MESSAGE_DIGEST + tlv(0x31, b""))),
+        "two messageDigest values":
+            tlv(0x31, tlv(0x30, _OID_MESSAGE_DIGEST
+                          + tlv(0x31, tlv(0x04, b"\x00" * 32) + tlv(0x04, b"\x01" * 32)))),
+        "messageDigest that is not an octet string":
+            tlv(0x31, tlv(0x30, _OID_MESSAGE_DIGEST + tlv(0x31, tlv(0x02, b"\x01")))),
+        "signingTime with month 13":
+            tlv(0x31, tlv(0x30, _OID_SIGNING_TIME
+                          + tlv(0x31, tlv(0x17, b"241301000000Z")))),
+        "unknown attribute holding invalid UTF-8":
+            tlv(0x31, tlv(0x30, _OID_UNKNOWN + tlv(0x31, tlv(0x0C, b"\xff\xfe")))),
+        "unknown attribute nested 5000 deep":
+            tlv(0x31, tlv(0x30, _OID_UNKNOWN + tlv(0x31, nested))),
+        "integer where the attribute OID belongs":
+            tlv(0x31, tlv(0x30, tlv(0x02, b"\x01") + tlv(0x31, b""))),
+    }
+
+
+def spliced_receipt(signed_attrs=None, digest_algorithm=None, signature=None):
+    """The shared receipt with attacker-supplied SignerInfo fields spliced in.
+    Its certificates and payload are untouched, so the chain and marker-OID
+    checks still pass and the decoder runs on hostile bytes before the
+    signature check gets to reject them."""
+    info = asn1cms.ContentInfo.load(fixture("generated", "receipt.der"))
+    signed_data = info["content"]
+    signer = signed_data["signer_infos"][0]
+    spliced = tlv(0x30, signer["version"].dump()
+                  + signer["sid"].dump()
+                  + (digest_algorithm or signer["digest_algorithm"].dump())
+                  + (b"\xa0" + signed_attrs[1:] if signed_attrs  # SET tag -> implicit [0]
+                     else signer["signed_attrs"].dump())
+                  + signer["signature_algorithm"].dump()
+                  + (signature or signer["signature"].dump()))
+    body = (signed_data["version"].dump()
+            + signed_data["digest_algorithms"].dump()
+            + signed_data["encap_content_info"].dump()
+            + signed_data["certificates"].dump()
+            + signed_data["crls"].dump()
+            + tlv(0x31, spliced))
+    return tlv(0x30, info["content_type"].dump() + tlv(0xA0, tlv(0x30, body)))
+
+
+class HostileInputTest(unittest.TestCase):
+    """The payload and the signedAttrs are decoded BEFORE any signature check,
+    so an attacker reaches both decoders with arbitrary bytes and neither may
+    leak a raw Python exception."""
+
+    def test_rejects_a_date_astimezone_cannot_convert(self):
+        verifier = ReceiptVerifier(apple_receipt_roots(), "com.anything")
+        with self.assertRaises(VerificationError) as ctx:
+            verifier.verify(OUT_OF_RANGE_DATE_RECEIPT)
+        self.assertEqual(ctx.exception.reason, "INVALID_RECEIPT_FORMAT")
+
+    def test_rejects_a_date_without_a_timezone_designator(self):
+        # Driven through the payload parser directly: an unsigned blob fails
+        # the same way whether or not the date is rejected, so only the parser
+        # can show that a naive date is not silently read as server-local time
+        # (a 26-hour spread across hosts, and creation_date is where chain
+        # validity is anchored).
+        from apple_purchase_receipt_verifier.receipt import _parse_payload
+        self.assertEqual(
+            _parse_payload(date_payload("2024-08-06T12:00:00Z")).creation_date.isoformat(),
+            "2024-08-06T12:00:00+00:00")
+        with self.assertRaises(VerificationError) as ctx:
+            _parse_payload(date_payload("2024-08-06T12:00:00"))
+        self.assertEqual(ctx.exception.reason, "INVALID_RECEIPT_FORMAT")
+
+    def test_contains_hostile_signed_attrs(self):
+        verifier = ReceiptVerifier([cert("generated", "receipt-root.der")], BUNDLE)
+        for name, attributes in hostile_attribute_sets().items():
+            with self.subTest(name):
+                with self.assertRaises(VerificationError):
+                    verifier.verify(spliced_receipt(signed_attrs=attributes))
+
+    def test_rejects_a_message_digest_with_more_than_one_value(self):
+        # RFC 5652 §5.3 allows exactly one value; unguarded, the decoder
+        # silently takes the first of whatever list the attacker supplied.
+        verifier = ReceiptVerifier([cert("generated", "receipt-root.der")], BUNDLE)
+        with self.assertRaises(VerificationError) as ctx:
+            verifier.verify(spliced_receipt(
+                signed_attrs=hostile_attribute_sets()["two messageDigest values"]))
+        self.assertEqual(ctx.exception.reason, "INVALID_RECEIPT_FORMAT")
+
+    def test_verify_raises_nothing_but_verification_error(self):
+        # The absent test that let the two crashes above ship: any other
+        # exception type propagates out of assertRaises and fails the subtest.
+        # Covers the payload and SignerInfo decoders; a mutated embedded
+        # certificate reaches other decoders that this corpus does not exercise.
+        pinned = ReceiptVerifier(apple_receipt_roots(), "com.anything")
+        generated = ReceiptVerifier([cert("generated", "receipt-root.der")], BUNDLE)
+        hostile = hostile_attribute_sets()
+        corpus = [
+            ("empty", pinned, b""),
+            ("garbage", pinned, b"\x01\x02\x03\x04"),
+            ("not base64", pinned, "!!!not-base64!!!"),
+            ("truncated receipt", generated, fixture("generated", "receipt.der")[:200]),
+            ("out-of-range date", pinned, OUT_OF_RANGE_DATE_RECEIPT),
+            ("base64 hostile signedAttrs", generated, base64.b64encode(spliced_receipt(
+                signed_attrs=hostile["empty messageDigest value set"])).decode()),
+            ("nested signedAttrs", generated, spliced_receipt(
+                signed_attrs=hostile["unknown attribute nested 5000 deep"])),
+            ("digest algorithm that is not an OID", generated, spliced_receipt(
+                digest_algorithm=tlv(0x30, tlv(0x02, b"\x01")))),
+            ("signature that is not an octet string", generated, spliced_receipt(
+                signature=tlv(0x02, b"\x01"))),
+        ]
+        for name, verifier, blob in corpus:
+            with self.subTest(name):
+                with self.assertRaises(VerificationError):
+                    verifier.verify(blob)
+
+    def test_mutations_of_a_genuine_receipt_raise_nothing_else_either(self):
+        # The corpus above says in its own comment that it does not reach the
+        # decoders behind a mutated embedded certificate, and it does not: this
+        # sweep found 115 escapes it missed, out of chain building
+        # (UnsupportedAlgorithm, ValueError) and SignerInfo parsing. Mutating a
+        # receipt that is otherwise valid is what carries the input deep enough
+        # to reach them, so the corpus and this sweep are not redundant.
+        verifier = ReceiptVerifier([cert("generated", "receipt-root.der")], BUNDLE)
+        genuine = fixture("generated", "receipt.der")
+        rnd = random.Random(1234)  # fixed seed: a failure must be reproducible
+        for i in range(2000):
+            mutant = bytearray(genuine)
+            for _ in range(rnd.randint(1, 3)):
+                mutant[rnd.randrange(len(mutant))] = rnd.randrange(256)
+            try:
+                verifier.verify(bytes(mutant))
+            except VerificationError:
+                pass
+            except Exception as e:  # noqa: BLE001 - the assertion is the point
+                self.fail(f"mutation {i} leaked {type(e).__name__}: {e}")

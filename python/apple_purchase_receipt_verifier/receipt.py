@@ -14,6 +14,7 @@ import time
 from datetime import datetime, timezone
 
 from asn1crypto import cms as asn1cms
+from asn1crypto import core as asn1core
 from asn1crypto import x509 as asn1x509
 from cryptography import x509
 from cryptography.exceptions import InvalidSignature
@@ -156,6 +157,22 @@ def verify_receipt_core(der: bytes, trusted_roots) -> "AppReceipt":
     if not der:
         raise VerificationError(Reason.INVALID_RECEIPT_FORMAT, "receipt is empty")
 
+    # asn1crypto and cryptography report malformed input with whatever the
+    # failing layer happens to raise, and which exceptions those are is neither
+    # documented nor stable, so hostile bytes are contained by category rather
+    # than by type. Guarding individual call sites was tried first and missed
+    # four of them: fuzzing a genuine receipt still leaked UnsupportedAlgorithm
+    # and ValueError out of chain building and signer parsing.
+    try:
+        return _verify_receipt_core_unguarded(der, roots)
+    except VerificationError:
+        raise
+    except Exception as e:
+        raise VerificationError(
+            Reason.INVALID_RECEIPT_FORMAT, f"malformed receipt: {e}") from e
+
+
+def _verify_receipt_core_unguarded(der, roots):
     content, certificates, signer = _parse_cms(der)
 
     # Parsed before signature verification only to learn the creation
@@ -218,7 +235,11 @@ def _find_signer_cert(certificates, signer):
 
 
 def _verify_cms_signature(content, signer, signer_cert):
-    digest_name = signer["digest_algorithm"]["algorithm"].native
+    try:
+        digest_name = signer["digest_algorithm"]["algorithm"].native
+        signature = signer["signature"].native
+    except Exception as e:  # attacker-chosen tags, decoded before the signature check
+        raise VerificationError(Reason.INVALID_RECEIPT_FORMAT, "malformed signer info") from e
     digest_cls = _DIGESTS.get(digest_name)
     if digest_cls is None:
         raise VerificationError(
@@ -226,27 +247,45 @@ def _verify_cms_signature(content, signer, signer_cert):
     public_key = signer_cert.public_key()
     if not isinstance(public_key, rsa.RSAPublicKey):
         raise VerificationError(Reason.INVALID_SIGNATURE, "signer key is not RSA")
-    signature = signer["signature"].native
     signed_attrs = signer["signed_attrs"]
-    if signed_attrs.native is not None:
+    if isinstance(signed_attrs, asn1core.Void):
+        data = content
+    else:
+        data = _signed_attrs_to_sign(signed_attrs, digest_name, content)
+    try:
+        public_key.verify(signature, data, padding.PKCS1v15(), digest_cls())
+    except InvalidSignature as e:
+        raise VerificationError(Reason.INVALID_SIGNATURE, "CMS signature check failed") from e
+
+
+def _signed_attrs_to_sign(signed_attrs, digest_name, content):
+    """The bytes the signature must cover when signedAttrs are present. Their
+    OIDs, types and nesting are attacker-chosen and are decoded here, before
+    the signature check that would reject them, so every decoding failure has
+    to surface as a format error instead of escaping verify() raw."""
+    try:
         content_digest = hashlib.new(digest_name, content).digest()
         message_digest = None
         for attr in signed_attrs:
             if attr["type"].native == "message_digest":
-                message_digest = attr["values"][0].native
+                values = attr["values"]
+                if len(values) != 1:  # RFC 5652 §5.3: exactly one value
+                    raise VerificationError(
+                        Reason.INVALID_RECEIPT_FORMAT,
+                        "messageDigest attribute must carry exactly one value")
+                message_digest = values[0].native
         if message_digest is None or not hmac.compare_digest(message_digest, content_digest):
             raise VerificationError(
                 Reason.INVALID_SIGNATURE, "messageDigest attribute does not match content")
         # Signature covers the signedAttrs re-encoded as an explicit SET
         # (RFC 5652 §5.4): swap the IMPLICIT [0] tag for SET.
         raw = signed_attrs.dump()
-        data = b"\x31" + raw[1:]
-    else:
-        data = content
-    try:
-        public_key.verify(signature, data, padding.PKCS1v15(), digest_cls())
-    except InvalidSignature as e:
-        raise VerificationError(Reason.INVALID_SIGNATURE, "CMS signature check failed") from e
+        return b"\x31" + raw[1:]
+    except VerificationError:
+        raise
+    except Exception as e:  # asn1crypto raises broadly on malformed input
+        raise VerificationError(
+            Reason.INVALID_RECEIPT_FORMAT, f"unparseable signed attributes: {e}") from e
 
 
 def _verify_device_hash(fields, device_guid):
@@ -354,8 +393,17 @@ def _decode_date(der):
     if text == "":
         return None
     try:
-        return datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(timezone.utc)
-    except ValueError as e:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            # Assuming a zone would read the date as the server's local time,
+            # so the same receipt would anchor chain validity up to 26 hours
+            # apart on two hosts. Apple always emits a designator, and the
+            # Java and Swift implementations reject a date without one.
+            raise ValueError("no timezone designator")
+        # astimezone() raises OverflowError — an ArithmeticError, not a
+        # ValueError — for offsets that push the value past datetime.min/max.
+        return parsed.astimezone(timezone.utc)
+    except (ValueError, OverflowError) as e:
         raise _fmt_error(f"unparseable receipt date: {text}") from e
 
 

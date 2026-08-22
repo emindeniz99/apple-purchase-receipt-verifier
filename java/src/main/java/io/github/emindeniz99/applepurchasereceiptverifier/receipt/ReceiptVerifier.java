@@ -158,6 +158,21 @@ public final class ReceiptVerifier {
         if (receiptDer == null) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "receipt is null");
         }
+        // BouncyCastle's ASN.1 and CMS entry points report malformed input with
+        // UNCHECKED exceptions, and which ones is neither documented nor stable
+        // across releases, so hostile input is contained by category instead of
+        // by type — enumerating the types is exactly what let eleven characters
+        // of attacker base64 escape the declared VerificationException contract.
+        try {
+            return verifyCoreUnguarded(receiptDer);
+        } catch (VerificationException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "malformed receipt: " + e, e);
+        }
+    }
+
+    private AppReceipt verifyCoreUnguarded(byte[] receiptDer) throws VerificationException {
         try {
             // Rejects trailing bytes after the CMS blob (PLAN 2.3) - BC's
             // fromByteArray throws when parsing does not exhaust the input.

@@ -75,6 +75,14 @@ test('rejects a tampered receipt payload byte', () => {
     (e) => e.reason === 'INVALID_SIGNATURE');
 });
 
+test('rejects a receipt whose bundle id is not the configured one', () => {
+  const receiptVerifier = new ReceiptVerifier({
+    trustedRoots: [fixture('receipt-root.der')], bundleId: 'com.other.app',
+  });
+  assert.throws(() => receiptVerifier.verify(fixture('receipt.der')),
+    (e) => e.reason === 'WRONG_BUNDLE_ID');
+});
+
 test('rejects a wrong device GUID', () => {
   const receiptVerifier = new ReceiptVerifier({
     trustedRoots: [fixture('receipt-root.der')], bundleId: BUNDLE,

@@ -199,17 +199,46 @@ final class TestPki {
      * cert's validity window like a genuine old receipt's would.
      */
     byte[] signReceipt(byte[] payload, Date signingTime) throws Exception {
+        return sign(payload, signingTime, leafKey, leaf, Arrays.asList(leaf, intermediate, root));
+    }
+
+    /**
+     * A receipt signed by an attacker key whose certificate clones the genuine
+     * leaf's issuer, serial and subject and is embedded first, so it is the one
+     * a verifier picks out of the CMS. Only pinning the PKIX target to that exact
+     * certificate rejects it: pinning by subject instead lets the builder path to
+     * the genuine leaf while the signature is checked against the twin's key.
+     */
+    byte[] signReceiptWithTwinCert(byte[] payload) throws Exception {
+        KeyPair rogueKp = rsaKeyPair();
+        X509v3CertificateBuilder builder = new JcaX509v3CertificateBuilder(
+                leaf.getIssuerX500Principal(), leaf.getSerialNumber(),
+                leaf.getNotBefore(), leaf.getNotAfter(),
+                leaf.getSubjectX500Principal(), rogueKp.getPublic());
+        builder.addExtension(Extension.basicConstraints, true, new BasicConstraints(false));
+        builder.addExtension(new ASN1ObjectIdentifier("1.2.840.113635.100.6.11.1"), false,
+                DERNull.INSTANCE);
+        X509Certificate twin = new JcaX509CertificateConverter().getCertificate(
+                builder.build(new JcaContentSignerBuilder("SHA256withRSA")
+                        .build(rogueKp.getPrivate())));
+        return sign(payload, new Date(), rogueKp.getPrivate(), twin,
+                Arrays.asList(twin, leaf, intermediate, root));
+    }
+
+    private byte[] sign(byte[] payload, Date signingTime, PrivateKey signingKey,
+                        X509Certificate signerCert, List<X509Certificate> embedded)
+            throws Exception {
         ASN1EncodableVector baseAttrs = new ASN1EncodableVector();
         baseAttrs.add(new org.bouncycastle.asn1.cms.Attribute(CMSAttributes.signingTime,
                 new DERSet(new Time(signingTime))));
         CMSSignedDataGenerator gen = new CMSSignedDataGenerator();
-        ContentSigner cs = new JcaContentSignerBuilder("SHA256withRSA").build(leafKey);
+        ContentSigner cs = new JcaContentSignerBuilder("SHA256withRSA").build(signingKey);
         gen.addSignerInfoGenerator(new JcaSignerInfoGeneratorBuilder(
                 new JcaDigestCalculatorProviderBuilder().setProvider(BC).build())
                 .setSignedAttributeGenerator(
                         new DefaultSignedAttributeTableGenerator(new AttributeTable(baseAttrs)))
-                .build(cs, leaf));
-        gen.addCertificates(new JcaCertStore(Arrays.asList(leaf, intermediate, root)));
+                .build(cs, signerCert));
+        gen.addCertificates(new JcaCertStore(embedded));
         CMSSignedData signed = gen.generate(new CMSProcessableByteArray(payload), true);
         return signed.getEncoded();
     }
@@ -260,6 +289,11 @@ final class TestPki {
         }
         attrs.add(attr(1711, new ASN1Integer(42).getEncoded()));
         return new DERSet(attrs).getEncoded();
+    }
+
+    /** A payload SET holding one raw attribute — for hostile attribute-value tests. */
+    static byte[] singleAttributePayload(int type, byte[] valueOctets) throws Exception {
+        return new DERSet(attr(type, valueOctets)).getEncoded();
     }
 
     /** Xcode-style double wrap: the payload SET inside an extra OCTET STRING. */

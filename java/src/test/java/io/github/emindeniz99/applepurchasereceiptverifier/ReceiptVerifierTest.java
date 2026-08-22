@@ -4,6 +4,7 @@ import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.AppReceipt;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.InAppPurchase;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifier;
+import org.bouncycastle.cms.CMSSignedData;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -115,6 +116,35 @@ class ReceiptVerifierTest {
         VerificationException e = assertThrows(VerificationException.class,
                 () -> verifier(pki, BUNDLE).verify(forged));
         assertEquals(Reason.INVALID_CHAIN, e.reason());
+    }
+
+    @Test
+    void rejectsTwinCertificateForgery() throws Exception {
+        // The chain check must validate the exact certificate that later verifies
+        // the signature. Selecting the PKIX target by subject instead would path to
+        // the genuine leaf while the attacker's twin — same issuer, serial and
+        // subject, different key, embedded first so it is the one picked — supplies
+        // the key the signature is checked against, and the forgery is accepted.
+        byte[] forged = pki.signReceiptWithTwinCert(payload(BUNDLE, creationDate.toString()));
+        VerificationException e = assertThrows(VerificationException.class,
+                () -> verifier(pki, BUNDLE).verify(forged));
+        assertEquals(Reason.INVALID_CHAIN, e.reason());
+    }
+
+    @Test
+    void rejectsCorruptedSignatureBytes() throws Exception {
+        // Chain, payload and message digest all stay genuine here, so the CMS
+        // signature check is the only thing left that can reject this receipt —
+        // every other negative test trips a BouncyCastle CMSException first.
+        byte[] corrupted = receiptDer.clone();
+        byte[] signature = new CMSSignedData(receiptDer).getSignerInfos()
+                .getSigners().iterator().next().getSignature();
+        // A mid-signature bit keeps the value below the modulus, so the RSA check
+        // returns false rather than erroring out as a CMSException.
+        corrupted[indexOf(corrupted, signature) + signature.length / 2] ^= 0x01;
+        VerificationException e = assertThrows(VerificationException.class,
+                () -> verifier(pki, BUNDLE).verify(corrupted));
+        assertEquals(Reason.INVALID_SIGNATURE, e.reason());
     }
 
     @Test

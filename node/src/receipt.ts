@@ -103,18 +103,29 @@ export function verifyReceiptCore(der: Buffer, trustedRoots: RootInput[]): AppRe
   const fields = parsePayload(cms.content);
   const at = fields.creationDate === null ? new Date() : fields.creationDate;
 
-  const embedded = cms.certificates.map((raw) => new X509Certificate(raw));
-  const signerCert = findSignerCert(cms, embedded);
-  buildAndValidatePath(signerCert, embedded, roots, at);
-  let signerHasOid = false;
+  // Everything below walks attacker-supplied DER through OpenSSL and through
+  // child lists that may be any shape. Callers discriminate on
+  // VerificationError.reason, and an OpenSSL Error carries a `.reason` of its
+  // own, so no foreign error type may escape from here.
   try {
-    signerHasOid = hasExtension(signerCert.raw, RECEIPT_SIGNER_OID);
-  } catch { signerHasOid = false; }
-  if (!signerHasOid) {
-    throw new VerificationError(Reason.INVALID_CERTIFICATE_PURPOSE,
-      `receipt signer certificate lacks Apple receipt-signing marker OID ${RECEIPT_SIGNER_OID}`);
+    const embedded = cms.certificates.map((raw) => new X509Certificate(raw));
+    const signerCert = findSignerCert(cms, embedded);
+    buildAndValidatePath(signerCert, embedded, roots, at);
+    let signerHasOid = false;
+    try {
+      signerHasOid = hasExtension(signerCert.raw, RECEIPT_SIGNER_OID);
+    } catch { signerHasOid = false; }
+    if (!signerHasOid) {
+      throw new VerificationError(Reason.INVALID_CERTIFICATE_PURPOSE,
+        `receipt signer certificate lacks Apple receipt-signing marker OID ${RECEIPT_SIGNER_OID}`);
+    }
+    verifyCmsSignature(cms, signerCert);
+  } catch (cause) {
+    if (cause instanceof VerificationError) {
+      throw cause;
+    }
+    throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'malformed CMS structure', cause);
   }
-  verifyCmsSignature(cms, signerCert);
   return fields;
 }
 
@@ -282,8 +293,16 @@ function verifyCmsSignature(cms: ParsedCms, signerCert: X509Certificate): void {
 
 function findMessageDigestAttribute(signedAttrs: ASN1Node): Buffer | null {
   for (const attr of children(signedAttrs)) {
-    if (children(attr)[0]!.contents.equals(OID_MESSAGE_DIGEST)) {
-      return children(children(attr)[1]!)[0]!.contents;
+    // Every signed attribute is SEQUENCE { OID, SET OF value }; a shape that
+    // is missing either part is a malformed structure rather than an
+    // attribute we simply are not looking for.
+    const [type, values] = children(attr);
+    const value = values === undefined ? undefined : children(values)[0];
+    if (type === undefined || value === undefined) {
+      throw new ParseError('malformed signed attribute');
+    }
+    if (type.contents.equals(OID_MESSAGE_DIGEST)) {
+      return value.contents;
     }
   }
   return null;
@@ -451,6 +470,13 @@ function decodeInteger(der: Buffer): number {
   return integerValue(node);
 }
 
+// The timezone designator is mandatory: `new Date` reads a naive date as the
+// server's LOCAL time, and the creation date is the instant the chain's
+// validity is judged at, so the same receipt would verify on one host and
+// fail on another. Java (Instant.parse) and Swift (ISO8601DateFormatter)
+// reject a naive date too — requiring it here keeps all four in agreement.
+const RFC_3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+
 /** RFC 3339 date in an IA5String; empty means absent (real receipts do this). */
 function decodeDate(der: Buffer): Date | null {
   const text = decodeString(der);
@@ -458,7 +484,7 @@ function decodeDate(der: Buffer): Date | null {
     return null;
   }
   const date = new Date(text);
-  if (!/^\d{4}-\d{2}-\d{2}T/.test(text) || Number.isNaN(date.getTime())) {
+  if (!RFC_3339.test(text) || Number.isNaN(date.getTime())) {
     throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT,
       `unparseable receipt date: ${text}`);
   }
