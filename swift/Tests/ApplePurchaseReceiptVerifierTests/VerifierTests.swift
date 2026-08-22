@@ -370,6 +370,91 @@ final class ReviewFixesTests: XCTestCase {
         let receipt = try await verifier.verify(receipt: try fixture("generated", "receipt.der"))
         XCTAssertEqual(receipt.unknownAttributes[9999], [Data([1, 2, 3])])
     }
+
+    func testRejectsAReceiptDateOutsideTheRepresentableRange() async throws {
+        let verifier = try ReceiptVerifier(
+            trustedRoots: [try fixture("generated", "receipt-root.der")],
+            bundleId: "com.example.app")
+        do {
+            _ = try await verifier.verify(receipt: Self.outOfRangeDateReceipt)
+            XCTFail("expected INVALID_RECEIPT_FORMAT")
+        } catch let error as VerificationError {
+            XCTAssertEqual(error.reason, .invalidReceiptFormat)
+        }
+    }
+
+    func testRejectsAnEmbeddedCertificateWhoseRsaKeyIsUnparseable() async throws {
+        // One byte of the signer certificate's modulus, made even. The DER
+        // stays well formed so swift-asn1 passes it through to BoringSSL,
+        // which rejects it — and swift-crypto before 4.5.1 freed the EVP_PKEY
+        // in its catch block and again in deinit, corrupting the heap and
+        // aborting the process before any chain or signature check. This test
+        // crashes the whole runner rather than failing if that floor is ever
+        // lowered, which is the loudest signal available for a double free.
+        let verifier = try ReceiptVerifier(
+            trustedRoots: [try fixture("generated", "receipt-root.der")],
+            bundleId: "com.example.app")
+        var mutated = try fixture("generated", "receipt.der")
+        XCTAssertEqual(mutated[1121], 0x35, "fixture layout changed; re-locate the modulus byte")
+        mutated[1121] = 0x00
+        // Repeated because a double free does not abort every time: a single
+        // call returns cleanly often enough that a one-shot test reports
+        // success against a vulnerable dependency. Verified: with the floor
+        // lowered to swift-crypto 3.15.1 the one-shot version passed and this
+        // one kills the runner with signal 5.
+        for _ in 0..<200 {
+            do {
+                _ = try await verifier.verify(receipt: mutated)
+                XCTFail("expected a verification failure")
+            } catch is VerificationError {
+                // Throwing is the whole assertion.
+            }
+        }
+    }
+
+    func testRejectsAReceiptIssuedForAnotherBundleId() async throws {
+        // The control that stops app A's receipt from unlocking app B. Both
+        // existing wrong-bundle-id tests drive the JWS verifier, so disabling
+        // this one on the receipt path left the suite green.
+        let verifier = try ReceiptVerifier(
+            trustedRoots: [try fixture("generated", "receipt-root.der")],
+            bundleId: "com.other.app")
+        do {
+            _ = try await verifier.verify(receipt: try fixture("generated", "receipt.der"))
+            XCTFail("expected WRONG_BUNDLE_ID")
+        } catch let error as VerificationError {
+            XCTAssertEqual(error.reason, .wrongBundleId)
+        }
+    }
+
+    /// A receipt whose creation date is `999999-12-31T23:59:59Z`, carrying the
+    /// shared fixture's own signer certificate so the parse reaches the policy.
+    /// `ISO8601DateFormatter` accepts a six-digit year; GeneralizedTime holds
+    /// only four, and X509's `Time` converts with `try!`, so before the range
+    /// check this aborted the process instead of throwing. Rebuilt from
+    /// fixtures/generated/receipt.der with the payload replaced; the signature
+    /// no longer matches, which is the point — the crash came first.
+    static let outOfRangeDateReceipt = Data(base64Encoded:
+        "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")!
 }
 
 extension ReviewFixesTests {

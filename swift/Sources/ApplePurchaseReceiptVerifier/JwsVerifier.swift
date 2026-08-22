@@ -169,6 +169,13 @@ public struct JwsVerifier: Sendable {
         let signedAtMillis = (claims["signedDate"] as? Double)
             ?? (claims["receiptCreationDate"] as? Double)
         let validationTime = signedAtMillis.map { Date(timeIntervalSince1970: $0 / 1000) } ?? Date()
+        // The claim is attacker-supplied JSON and is read before the signature
+        // check, so a large enough number would trap inside the policy rather
+        // than fail the payload.
+        guard isRepresentableAsCertificateValidationTime(validationTime) else {
+            throw VerificationError(.invalidJwsFormat,
+                                    "signed date out of representable range")
+        }
         try await Self.validateChain(leaf: leaf, intermediate: intermediate,
                                      roots: roots, at: validationTime)
 

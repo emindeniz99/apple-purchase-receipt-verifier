@@ -462,16 +462,39 @@ private func decodeInteger(_ der: [UInt8]) throws -> Int64 {
     return Int64(try intValue(try CMSReceipt.primitive(node)))
 }
 
+/// Whether swift-certificates can express this instant as a policy's
+/// validation time.
+///
+/// GeneralizedTime holds only years 0...9999, and building one outside that
+/// range hits a `try!` inside X509's `Time` that traps the process instead of
+/// throwing. `ISO8601DateFormatter` accepts a six-digit year, and the dates it
+/// parses here come out of an unverified payload and reach the policy before
+/// any chain or signature check — so without this bound a receipt carrying
+/// "999999-12-31T23:59:59Z" aborts the caller's process. NaN compares false
+/// against both bounds, which is also the answer we want for it.
+func isRepresentableAsCertificateValidationTime(_ date: Date) -> Bool {
+    // 0001-01-01T00:00:00Z ... 9999-12-31T23:59:59Z
+    date >= Date(timeIntervalSince1970: -62_135_596_800)
+        && date <= Date(timeIntervalSince1970: 253_402_300_799)
+}
+
 /// RFC 3339 date in an IA5String; empty means absent (real receipts do this).
 private func decodeDate(_ der: [UInt8]) throws -> Date? {
     let text = try decodeString(der)
     if text.isEmpty { return nil }
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    if let date = formatter.date(from: text) { return date }
-    formatter.formatOptions = [.withInternetDateTime]
-    guard let date = formatter.date(from: text) else {
+    var parsed = formatter.date(from: text)
+    if parsed == nil {
+        formatter.formatOptions = [.withInternetDateTime]
+        parsed = formatter.date(from: text)
+    }
+    guard let date = parsed else {
         throw VerificationError(.invalidReceiptFormat, "unparseable receipt date: \(text)")
+    }
+    guard isRepresentableAsCertificateValidationTime(date) else {
+        throw VerificationError(.invalidReceiptFormat,
+                                "receipt date out of representable range: \(text)")
     }
     return date
 }
