@@ -19,6 +19,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "prepack": "tsc",
     "test": "tsc && node --test"
   },
   "license": "MIT",

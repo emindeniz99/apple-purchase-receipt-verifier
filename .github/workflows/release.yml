@@ -98,6 +98,26 @@ jobs:
           if npm view "apple-purchase-receipt-verifier@$VERSION" version >/dev/null 2>&1; then
             echo "npm already has $VERSION — skipping publish."
           else
+            npm ci
+            npm run build
+            # 0.1.1 and 0.2.0 shipped with no JavaScript at all: "files" lists
+            # dist/, but nothing here built it, and a fresh checkout has no dist/.
+            # npm packs what is on disk, so the tarball was LICENSE + certs +
+            # README and every install failed on ERR_MODULE_NOT_FOUND. Prove the
+            # entry point is in the tarball before it reaches the registry.
+            npm pack --dry-run --json | node -e '
+              let raw = ""
+              process.stdin.on("data", (d) => { raw += d }).on("end", () => {
+                const packed = JSON.parse(raw)[0].files.map((f) => f.path)
+                const missing = ["dist/index.js", "dist/index.d.ts"].filter((f) => !packed.includes(f))
+                if (missing.length > 0) {
+                  console.error(`refusing to publish: tarball is missing ${missing.join(", ")}`)
+                  console.error(`packed instead: ${packed.join(", ")}`)
+                  process.exit(1)
+                }
+                console.log(`tarball carries ${packed.length} files, entry point included`)
+              })
+            '
             npm publish
           fi
 
