@@ -57,3 +57,16 @@ Fully automated — do not publish from a laptop:
 Every publish job is version-gated: it skips loudly if the registry already
 has that version, so re-runs are safe. **Never rename `release.yml`** — npm
 and PyPI trusted publishing match the workflow filename.
+
+Maven Central's Usage Center caps `io.github.emindeniz99` at 7 releases per
+calendar month, and every release-please PR merge spends one, since
+`release.yml` publishes to Central on every tag. Merge a release PR only for
+a consumer-visible change — a fix, a feature, a docs correction that
+registries display, or a security bump of a shipped dependency — not for a
+`Package.resolved`/lockfile or CI-only bump; let release-please accumulate
+those into the next real release instead. Before merging, check the month's
+count on https://central.sonatype.com (Usage Center) or `git tag
+--sort=-creatordate | head`, and keep at least 2 releases in reserve for an
+emergency fix. Note that SwiftPM consumers never see `Package.resolved` —
+they resolve from `Package.swift`'s `from:` floors — so a `Package.resolved`
+bump alone changes nothing for them.

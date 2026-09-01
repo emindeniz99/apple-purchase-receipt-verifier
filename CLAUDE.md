@@ -34,6 +34,25 @@ human-facing version; where they overlap, they agree.
   that's why `release-please.yml` explicitly dispatches `release.yml`. Don't
   remove that step as "redundant".
 
+## Release budget
+
+- Maven Central's Usage Center caps `io.github.emindeniz99` at **7 releases
+  per calendar month** (also 80 MB/release, 1,000 files). Every
+  release-please PR merge spends one — `release.yml` publishes to Central on
+  every tag, no dry-run.
+- Merge a release PR only for a consumer-visible change: a fix, a feature, a
+  docs correction that registries display, or a security bump of a shipped
+  dependency. A `Package.resolved`/lockfile or CI-only bump is not one of
+  these — let release-please keep accumulating those commits into the next
+  real release instead of cutting a release for them.
+- Before merging a release PR, check the month's count on
+  https://central.sonatype.com (Usage Center) or count this month's tags
+  (`git tag --sort=-creatordate | head`). Keep at least 2 releases in
+  reserve for an emergency fix.
+- SwiftPM consumers never see `Package.resolved` — they resolve from
+  `Package.swift`'s `from:` floors — so a `Package.resolved` bump alone
+  changes nothing for them and isn't release-worthy on its own.
+
 ## Behavior changes
 
 The four implementations are one product. A verification behavior change
