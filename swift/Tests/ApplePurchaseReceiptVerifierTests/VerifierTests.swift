@@ -623,8 +623,10 @@ final class ChainBuildingBoundTests: XCTestCase {
                 try certs.serialize(certificate)
             }
         }
-        return Data(bytes[..<range.startIndex] + serializer.serializedBytes
-            + bytes[range.endIndex...])
+        // Explicit Arrays: Swift 6.1 (the CI container) cannot type
+        // ArraySlice + [UInt8] + ArraySlice, 6.3 can.
+        return Data(Array(bytes[..<range.startIndex]) + serializer.serializedBytes
+            + Array(bytes[range.endIndex...]))
     }
 
     static func certificate(subject: DistinguishedName, issuer: DistinguishedName,
