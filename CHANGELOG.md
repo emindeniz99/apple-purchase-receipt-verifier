@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.2.1](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.2.0...v0.2.1) (2026-09-01)
+
+
+### Bug Fixes
+
+* **ci:** fail the root watch with a diagnosis when the PKI page changes shape ([3fc8674](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/3fc86741f238dd1c5b0a6626b66bf54b8e8e8dc1))
+* **ci:** scope the new-root check to the PKI page's root section ([c56496e](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/c56496e5eceeecbdcbc402ea33194d898afa4105))
+* **receipt:** cap embedded certificates and bound attribute integers ([8b954df](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/8b954df5c80b530749d787f0d2e91de82e0874a0))
+* **receipt:** contain a receipt date that overflows epoch millis ([d88d98d](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/d88d98dec469cb20e5c4c84e35222691b6b5d156))
+* **receipt:** keep hostile input behind the declared exception type ([b626782](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b6267826a5a5963ca6c913d7cbc74d665b4fa022))
+* **release:** build node before publishing so the tarball has code in it ([61bee39](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/61bee399e806957c7eef2427e3da818daee21467))
+* **swift:** stop a single receipt byte from killing the process ([feb8acd](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/feb8acdb68b63b365cdff74e82e0e4f98f6dda52))
+* **swift:** walk one signature-selected path instead of searching the bag ([4ba160a](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/4ba160a7af612c444f6ee1d4012004bb4c27c798))
+
+
+### Build & Dependencies
+
+* **deps:** Bump actions/setup-java from 5.7.0 to 6.0.0 ([33aab6d](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/33aab6dc85be187087296d398d7803d3b4f22503))
+* **deps:** Bump actions/setup-java from 5.7.0 to 6.0.0 ([d2766d7](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/d2766d79a64e673a67143a220812203f2156814d))
+* **deps:** Bump com.fasterxml.jackson.core:jackson-databind from 2.22.1 to 2.22.2 in /java ([b0fc796](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b0fc79662edab85e9339a77495857857ef3aeea1))
+* **deps:** Bump com.fasterxml.jackson.core:jackson-databind in /java ([18ce6bc](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/18ce6bc9f58bdb2b2b2a0462844b1d3afd542d85))
+* **swift:** require Swift 6.1, which the swift-crypto fix pulls in ([ea62fad](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/ea62fad5fadfd1c5c6b6f433f587271bea3b6c4a))
+
 ## [0.2.0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.1.1...v0.2.0) (2026-08-15)
 
 
