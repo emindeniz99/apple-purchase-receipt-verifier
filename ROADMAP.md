@@ -14,39 +14,27 @@ Delete an item in the same commit that ships it.
 - **Mac App Store receipt fixture**: the harvest (fixtures/public-receipts/,
   done ✅ — genuine sandbox + legacy receipts verify in all four
   languages) covered iOS; a genuine macOS receipt is still missing.
-- **Publishing prep** (PLAN D1, D14): coordinates are settled and written
-  into all four manifests as `apple-purchase-receipt-verifier` 0.1.0;
-  nothing is uploaded yet. What still blocks a first release:
-  - `python/pyproject.toml` declares `readme = "README.md"` but `python/`
-    has no README, so `pip install .` and any sdist build fail there.
-    Same for npm and Maven Central, which want a package-level README and
-    (for Central) `licenses`, `developers`, `scm`, plus sources/javadoc
-    jars and GPG signing in the pom.
-  - Release automation: no publish workflow exists for any of the four.
-  - CI + license are in place (`.github/workflows/`, LICENSE); those
-    workflows live inside this folder deliberately and activate when the
-    project graduates to its own repository.
+- **Node 20 floor**: Node 20 reached end of life on 2026-04-30; raising the
+  engines floor to 22 is a semver-major decision, nothing in the code needs
+  it yet. Revisit when @types/node's pin (see .github/dependabot.yml) starts
+  blocking a needed update.
+- **Dependency bumps inside the seven-day cooldown** land via dependabot on
+  their own; swift-certificates 1.20.0 and swift-asn1 1.7.2 (released
+  2026-09-01) will arrive that way.
 
-## Upstream contribution (after publishing)
+## Upstream
 
-Apple's official `app-store-server-library-{java,node,python,swift}` verify
-JWS locally but their `ReceiptUtility` only *extracts* transaction ids from
-legacy PKCS#7 receipts — docstrings state "NO validation is performed".
-Our verified legacy-receipt validation is a natural upstream feature:
+Proposed our verified legacy-receipt validation as a PR in all four
+languages (java#268, swift#133, python#208, node#427, filed against
+issues #267/#132/#207/#426). Apple closed all four on 2026-08-27 as
+"deprecated format, not adding this level of verification"
+(https://github.com/apple/app-store-server-library-java/issues/267#issuecomment-5433242622).
+The fork branches `app-receipt-verification` are kept current with
+upstream main (merged 2026-09-02) so the PRs can be reopened if Apple
+reconsiders.
 
-- **PR into `apple/app-store-server-library-java`**: port `ReceiptVerifier`
-  to the upstream codebase. Upstream requires Java 11+, so the PR is a
-  Java 11-idiom port; our Java 8-compatible build stays canonical in this
-  repo for enterprise consumers upstream won't serve (PLAN D2).
-- **PRs into `-node`, `-python`, and `-swift`**: same contribution, now that
-  all four of our implementations are fixture-parity-proven.
+Still worth filing as issues:
 
-### Issues worth filing upstream (notes from reading their sources)
-
-- **Feature request (all four libs)**: validated legacy-receipt parsing.
-  `ReceiptUtility.extractTransactionId*` returns attacker-controllable data
-  from an unverified blob; the docstring warns, but the API shape invites
-  misuse (extract → trust). Filing this frames our PRs.
 - **Foot-gun report**: `SignedDataVerifier` silently skips ALL signature
   verification when the configured environment is XCODE / LOCAL_TESTING.
   A production service misconfigured to a test environment would accept
