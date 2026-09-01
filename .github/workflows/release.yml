@@ -31,9 +31,37 @@ permissions:
   contents: read
 
 jobs:
+  # Nothing publishes until the ci workflow has passed on this exact commit.
+  # release-please tags the merge commit and dispatches this workflow while
+  # ci is still running on it, so the gate waits for that run rather than
+  # trusting the merge.
+  ci-passed:
+    name: wait for ci on this commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: poll the ci workflow run for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 80); do
+            state=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" \
+              --json status,conclusion --jq '.[0] | "\(.status)/\(.conclusion)"' 2>/dev/null || echo "none/")
+            case "$state" in
+              completed/success) echo "ci passed on $GITHUB_SHA"; exit 0 ;;
+              completed/*) echo "::error::ci concluded '${state#completed/}' on $GITHUB_SHA; not publishing"; exit 1 ;;
+              *) echo "ci is $state on $GITHUB_SHA (attempt $attempt of 80); waiting 30s"; sleep 30 ;;
+            esac
+          done
+          echo "::error::ci never completed on $GITHUB_SHA; not publishing"
+          exit 1
+
   publish-pypi:
     name: publish python to PyPI
     runs-on: ubuntu-latest
+    needs: ci-passed
+    timeout-minutes: 20
     environment: pypi
     permissions:
       contents: read
@@ -75,6 +103,8 @@ jobs:
   publish-npm:
     name: publish node to npm
     runs-on: ubuntu-latest
+    needs: ci-passed
+    timeout-minutes: 20
     permissions:
       contents: read
       id-token: write
@@ -124,6 +154,8 @@ jobs:
   publish-maven:
     name: publish java to Maven Central
     runs-on: ubuntu-latest
+    needs: ci-passed
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -166,3 +198,25 @@ jobs:
           CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: mvn -B -P central deploy
+
+  # workflow_run does not fire for a run that was itself dispatched with the
+  # workflow token (the same suppression that hid the tag push from this
+  # workflow), so the smoke test is dispatched explicitly once every
+  # registry has been published.
+  smoke:
+    name: dispatch the post-publish smoke test
+    needs: [publish-pypi, publish-npm, publish-maven]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: dispatch post-publish-smoke for this version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh workflow run post-publish-smoke.yml --repo "$GITHUB_REPOSITORY" \
+            --ref "$REF" -f "version=${REF#v}"

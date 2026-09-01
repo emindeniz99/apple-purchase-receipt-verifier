@@ -18,6 +18,7 @@ concurrency:
 jobs:
   java:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       matrix:
         # Every current LTS line (endoflife.date/eclipse-temurin). The
@@ -42,6 +43,7 @@ jobs:
   # pom is verified, not asserted (the toolchain itself can't build on 8).
   java-runtime-8:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -62,6 +64,7 @@ jobs:
 
   node:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       matrix:
         # Every supported LTS line plus current (endoflife.date/nodejs);
@@ -83,6 +86,7 @@ jobs:
 
   python:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       matrix:
         # Every supported line (endoflife.date/python) plus 3.9: EOL, but
@@ -98,11 +102,26 @@ jobs:
       - run: pip install cryptography asn1crypto && python -m unittest discover -s tests
         working-directory: python
 
+  # Every Swift the manifest admits (tools 6.1 is the floor swift-crypto
+  # 4.5.1 needs), on Linux, plus the Xcode toolchain on macOS. A test helper
+  # once compiled on 6.3 locally and failed on the 6.1 container; one
+  # compiler is not a matrix.
   swift:
     runs-on: ubuntu-latest
-    # Digest-pinned (mutable tags are the container flavor of action
-    # retagging); dependabot bumps the digest, the comment names the tag.
-    container: swift:6.1@sha256:98ee3a8469ce2a9c2f543ef2577939ab44e2dfc9b5ed710732a59e5dd64f9c4a
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # Digest-pinned (mutable tags are the container flavor of action
+        # retagging); dependabot bumps the digests, the comments name the tags.
+        include:
+          - swift: "6.1"
+            image: swift:6.1@sha256:98ee3a8469ce2a9c2f543ef2577939ab44e2dfc9b5ed710732a59e5dd64f9c4a
+          - swift: "6.2"
+            image: swift:6.2@sha256:29b983751c605c2d3102d2ab93438c6e0cadf110d9d2aa6e929b6dec9dcb7cbc
+          - swift: "6.3"
+            image: swift:6.3@sha256:56ef1be2c1ca36f4c52440357dc1fcdfdb5e113587134fcadeef57c225c71b54
+    container: ${{ matrix.image }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -110,9 +129,18 @@ jobs:
       # Manifest lives at the repo root (SwiftPM requirement); no
       # working-directory needed.
       - run: swift test
+  swift-macos:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: swift --version && swift test
 
   zizmor:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

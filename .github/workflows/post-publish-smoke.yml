@@ -37,6 +37,7 @@ jobs:
   resolve:
     name: resolve the published version
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     # A failed release has nothing to smoke-test.
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     outputs:
@@ -68,6 +69,7 @@ jobs:
     name: npm — install the published package and verify a receipt
     needs: resolve
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -113,6 +115,7 @@ jobs:
     name: pypi — install the published wheel and verify a receipt
     needs: resolve
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -198,6 +201,7 @@ jobs:
     name: swiftpm — resolve the published tag and verify a receipt
     needs: resolve
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # Same digest-pinned image as the CI swift job.
     container: swift:6.1@sha256:98ee3a8469ce2a9c2f543ef2577939ab44e2dfc9b5ed710732a59e5dd64f9c4a
     steps:
@@ -207,6 +211,8 @@ jobs:
           persist-credentials: false
 
       - name: resolve the published tag, outside the checkout
+        # The swift image's /bin/sh is dash, which has no `pipefail`.
+        shell: bash
         env:
           SMOKE_VERSION: ${{ needs.resolve.outputs.version }}
         run: |
