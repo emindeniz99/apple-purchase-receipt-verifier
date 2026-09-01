@@ -32,7 +32,7 @@ Start with [INTENT.md](./INTENT.md) (why + trust model), then
 
 ## Upstream
 
-The legacy-receipt half of this design has been proposed to Apple's official
+The legacy-receipt half of this design was proposed to Apple's official
 app-store-server-library in all four languages — an `AppReceiptVerifier`
 alongside each library's `ReceiptUtility`, reusing their existing chain
 verification:
@@ -40,10 +40,14 @@ verification:
 [swift#133](https://github.com/apple/app-store-server-library-swift/pull/133),
 [python#208](https://github.com/apple/app-store-server-library-python/pull/208),
 [node#427](https://github.com/apple/app-store-server-library-node/pull/427).
-If your project already depends on Apple's library and a PR lands there, use
-the official implementation. This repository stays maintained regardless: the
-`verifyReceipt`-compatible endpoint, the bundled Apple root pinning, the
-Java 8 floor and the zero-dependency Node build exist only here.
+Apple closed all four: the receipt format is deprecated and they are not
+adding this level of verification to their libraries
+([maintainer's comment](https://github.com/apple/app-store-server-library-java/issues/267#issuecomment-5433242622)).
+So there is no official implementation to wait for. This repository is
+where signature verification of legacy receipts lives, in the four
+languages of Apple's libraries and against the same root certificates:
+the chain check to Apple's pinned roots, the `verifyReceipt`-compatible
+endpoint, the Java 8 floor and the zero-dependency Node build.
 
 ## Installing
 
