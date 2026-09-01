@@ -176,6 +176,22 @@ class ReceiptVerifierTest {
     }
 
     @Test
+    void countsEmbeddedCertificatesBeforeResolvingTheSigner() throws Exception {
+        // Where the count guard sits relative to the signer lookup is the one
+        // ordering the tests above cannot see, since neither step decodes a
+        // certificate. This bag is over the bound AND omits the signer, so the
+        // guard where it is reports the bound, while a guard that runs after
+        // the lookup tells the caller the receipt is malformed instead — the
+        // same test swift carries as testTheCountGuardRunsBeforeTheSignerIsResolved.
+        byte[] flooded = pki.signReceiptOmittingSigner(payload(BUNDLE, creationDate.toString()), 11);
+        VerificationException e = assertThrows(VerificationException.class,
+                () -> verifier(pki, BUNDLE).verify(flooded));
+        assertEquals(Reason.INVALID_CHAIN, e.reason());
+        assertTrue(e.getMessage().contains("11 certificates, more than the maximum of 10"),
+                e.getMessage());
+    }
+
+    @Test
     void rejectsCrossSignedCertificateMeshWithoutWalkingIt() throws Exception {
         // Fourteen layers of two cross-signed certificates each: the pair in a
         // layer shares a subject name and a key, so either is a valid issuer for

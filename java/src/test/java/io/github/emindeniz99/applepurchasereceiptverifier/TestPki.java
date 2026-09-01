@@ -258,6 +258,22 @@ final class TestPki {
      * combinations to reject this — the shape that costs swift-certificates
      * 3.9 s at layers=14, branching=2 in under 8 KB of receipt.
      */
+    /**
+     * Signed by the leaf, but embedding only {@code paddingCertificates}
+     * strangers — the signer itself is not in the bag.
+     */
+    byte[] signReceiptOmittingSigner(byte[] payload, int paddingCertificates) throws Exception {
+        Date notBefore = new Date(System.currentTimeMillis() - 86_400_000L);
+        Date notAfter = new Date(System.currentTimeMillis() + 365L * 86_400_000L);
+        KeyPair paddingKp = rsaKeyPair();
+        List<X509Certificate> embedded = new ArrayList<X509Certificate>();
+        for (int i = 0; i < paddingCertificates; i++) {
+            embedded.add(cert("CN=Padding " + i, paddingKp, "CN=Padding " + i,
+                    paddingKp.getPrivate(), false, null, notBefore, notAfter, "SHA256withRSA"));
+        }
+        return sign(payload, new Date(), leafKey, leaf, embedded);
+    }
+
     byte[] signReceiptWithCrossSignedMesh(byte[] payload, int layers, int branching)
             throws Exception {
         Date notBefore = new Date(System.currentTimeMillis() - 86_400_000L);
