@@ -1,15 +1,21 @@
 # Keeps the SHA-pinned actions (and the digest-pinned swift container)
-# current — pins without updates just rot.
+# current — pins without updates just rot. Every ecosystem waits seven days
+# after a release before proposing it, so a version pulled or patched in its
+# first week (the common shape of a hijacked package) never reaches a PR.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
   - package-ecosystem: npm
     directory: /node
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     ignore:
       # @types/node deliberately tracks the ENGINES FLOOR (node >=20), not
       # the newest Node: typing against a newer API surface would let code
@@ -21,10 +27,14 @@ updates:
     directory: /python
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
   - package-ecosystem: maven
     directory: /java
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     ignore:
       # JUnit 6 raised its baseline above Java 8/11 while this suite must
       # execute on a real JDK 8 JVM (the java-runtime-8 CI leg) — the
@@ -33,3 +43,9 @@ updates:
       # Revisit only if the artifact's Java 8 floor is ever raised.
       - dependency-name: "org.junit.jupiter:junit-jupiter"
         update-types: ["version-update:semver-major"]
+  - package-ecosystem: swift
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
