@@ -29,6 +29,18 @@ from .exceptions import Reason, VerificationError
 # intermediate to the same pinned root, so this OID must be required too.
 _RECEIPT_SIGNER_OID = x509.ObjectIdentifier("1.2.840.113635.100.6.11.1")
 
+# Every embedded certificate is loaded and offered to path building before
+# anything about the receipt has been verified, and each one whose subject
+# matches an issuer name in the chain costs a full RSA signature check there.
+# Genuine receipts carry 1 to 3 (fixtures/public-receipts: 1, 3, 3), and
+# _chain.py walks at most 6 of them, so 10 is well clear of any real receipt
+# while bounding the flood: 56 decoy certificates in 44 KB measured at 4.4 ms
+# and 224 in 163 KB at 21 ms, against 1.3 ms for the genuine receipt they were
+# spliced into. A caller-side size limit cannot bound this on its own — the
+# genuine legacy receipt under fixtures/public-receipts is 79,104 bytes, so any
+# cap that admits it admits ~90 decoys too.
+_MAX_EMBEDDED_CERTIFICATES = 10
+
 # Only the digests Apple uses for receipts (SHA-1 / SHA-256), matching the
 # other three implementations; anything else is rejected.
 _DIGESTS = {
@@ -204,8 +216,14 @@ def _parse_cms(der):
         content = signed_data["encap_content_info"]["content"].native
         if not isinstance(content, bytes):
             raise ValueError("no encapsulated payload")
+        embedded = signed_data["certificates"] or []
+        if len(embedded) > _MAX_EMBEDDED_CERTIFICATES:
+            raise VerificationError(
+                Reason.INVALID_CHAIN,
+                f"receipt embeds {len(embedded)} certificates, more than the "
+                f"{_MAX_EMBEDDED_CERTIFICATES} a chain can hold")
         certificates = []
-        for choice in signed_data["certificates"] or []:
+        for choice in embedded:
             raw = choice.chosen.dump()
             certificates.append((raw, x509.load_der_x509_certificate(raw)))
         signer_infos = signed_data["signer_infos"]

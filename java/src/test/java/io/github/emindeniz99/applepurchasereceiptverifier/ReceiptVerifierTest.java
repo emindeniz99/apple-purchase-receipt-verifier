@@ -4,10 +4,12 @@ import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.AppReceipt;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.InAppPurchase;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifier;
+import org.bouncycastle.asn1.DERUTF8String;
 import org.bouncycastle.cms.CMSSignedData;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -22,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ReceiptVerifierTest {
 
@@ -132,6 +135,82 @@ class ReceiptVerifierTest {
     }
 
     @Test
+    void rejectsReceiptEmbeddingMoreCertificatesThanTheLimit() throws Exception {
+        // Genuine receipts embed one to three certificates, so eleven is a flood.
+        // Everything else about this receipt is valid — unbounded it verifies —
+        // so what rejects it is the count and nothing else. That the count is
+        // checked before any of the eleven is decoded is the test below.
+        byte[] flooded = pki.signReceiptWithPadding(payload(BUNDLE, creationDate.toString()), 8);
+        VerificationException e = assertThrows(VerificationException.class,
+                () -> verifier(pki, BUNDLE).verify(flooded));
+        assertEquals(Reason.INVALID_CHAIN, e.reason());
+        assertTrue(e.getMessage().contains("11 certificates, more than the maximum of 10"),
+                e.getMessage());
+    }
+
+    @Test
+    void admitsAReceiptEmbeddingExactlyTheMaximum() throws Exception {
+        // Seven padding certificates and the chain's own three is exactly the
+        // maximum, so the count stands aside and the receipt verifies as it
+        // would without them.
+        byte[] padded = pki.signReceiptWithPadding(payload(BUNDLE, creationDate.toString()), 7);
+        assertEquals(10, new CMSSignedData(padded).getCertificates().getMatches(null).size());
+        assertEquals(BUNDLE, verifier(pki, BUNDLE).verify(padded).bundleId());
+    }
+
+    @Test
+    void countsEmbeddedCertificatesBeforeDecodingAnyOfThem() throws Exception {
+        // Eight of the eleven are certificates the JCA refuses to decode, so
+        // where the count is checked decides which rejection a caller sees:
+        // counting first names the count, decoding first dies in the converter
+        // and reports "chain validation unavailable" instead. That is the only
+        // difference the two orderings have — the cost they differ by is not
+        // observable from a test (see the mesh below).
+        byte[] flooded = pki.signReceiptWithUndecodablePadding(
+                payload(BUNDLE, creationDate.toString()), 8);
+        VerificationException e = assertThrows(VerificationException.class,
+                () -> verifier(pki, BUNDLE).verify(flooded));
+        assertEquals(Reason.INVALID_CHAIN, e.reason());
+        assertTrue(e.getMessage().contains("11 certificates, more than the maximum of 10"),
+                e.getMessage());
+    }
+
+    @Test
+    void rejectsCrossSignedCertificateMeshWithoutWalkingIt() throws Exception {
+        // Fourteen layers of two cross-signed certificates each: the pair in a
+        // layer shares a subject name and a key, so either is a valid issuer for
+        // the layer below, and the top layer names an issuer that is not embedded.
+        // A verifier that explores paths before it bounds anything walks 2^14 of
+        // them to reject this — the shape swift-certificates spends seconds on.
+        // It costs the sender almost nothing to send: 29 certificates in 21,655
+        // bytes, a quarter of the genuine legacy receipt under
+        // fixtures/public-receipts (79,104 bytes), so no caller-side size limit
+        // can substitute for the count bound.
+        byte[] mesh = pki.signReceiptWithCrossSignedMesh(
+                payload(BUNDLE, creationDate.toString()), 14, 2);
+
+        VerificationException e = assertThrows(VerificationException.class,
+                () -> verifier(pki, BUNDLE).verify(mesh));
+        // Rejected on the count, so no path is built at all.
+        assertEquals(Reason.INVALID_CHAIN, e.reason());
+        assertTrue(e.getMessage().contains("more than the maximum of 10"), e.getMessage());
+        // No wall-clock budget here: on this JDK the mesh is not expensive to
+        // walk, so a timing assertion could not fail. Measured through this
+        // same verify() with the count guard removed, on Temurin 17.0.3 —
+        // javac has no optimizing build mode, the JIT does that work, so these
+        // are medians of 50 calls after 200 warm-up rounds: 1.0 ms at fourteen
+        // layers, 1.4 at eighteen, 1.5 at twenty-two (cold, the first call in
+        // a fresh JVM, each is 6-24 ms of JIT). The cost tracks the
+        // certificates decoded — 29, 37 and 45 of them — rather than
+        // 2^layers, because PKIXBuilderParameters defaults maxPathLength to 5
+        // and abandons every path early. Java's real protection against this
+        // shape is that depth bound, not the count; the count bound is what
+        // makes the rejection independent of a JDK default this class never
+        // states and does not control, and what keeps the four implementations
+        // agreeing on what a receipt may embed.
+    }
+
+    @Test
     void rejectsCorruptedSignatureBytes() throws Exception {
         // Chain, payload and message digest all stay genuine here, so the CMS
         // signature check is the only thing left that can reject this receipt —
@@ -192,6 +271,58 @@ class ReceiptVerifierTest {
         VerificationException e = assertThrows(VerificationException.class,
                 () -> verifier(pki, BUNDLE).verify(receipt));
         assertEquals(Reason.INVALID_RECEIPT_FORMAT, e.reason());
+    }
+
+    @Test
+    void rejectsAttributeTypeTooWideToHoldRatherThanTruncatingIt() throws Exception {
+        // 2^64 + 2 is the bundle-id attribute type with a 65th bit set, and the
+        // parser holds the type in a long: keeping the low 64 bits would make
+        // this attribute the bundle id, and the receipt would verify as
+        // com.example.app on a type the parser never proved it could hold. It is
+        // rejected on its width instead, before the switch that assigns meaning.
+        byte[] receipt = pki.signReceipt(TestPki.singleAttributePayload(
+                BigInteger.ONE.shiftLeft(64).add(BigInteger.valueOf(2)),
+                new DERUTF8String(BUNDLE).getEncoded()));
+        VerificationException e = assertThrows(VerificationException.class,
+                () -> verifier(pki, BUNDLE).verify(receipt));
+        assertEquals(Reason.INVALID_RECEIPT_FORMAT, e.reason());
+        assertTrue(e.getMessage().contains("out of range"), e.getMessage());
+    }
+
+    @Test
+    void rejectsAttributeTypeBeyondIntRangeRatherThanAliasingIt() throws Exception {
+        // One level down from the test above: 2^32 + 2 fits the long the parser
+        // holds the type in, and its low 32 bits are the bundle-id type, so a
+        // truncating cast to int would make this attribute the bundle id and
+        // the receipt would verify as com.example.app. Routed to the unknown
+        // attributes instead, the receipt has no bundle id at all.
+        byte[] receipt = pki.signReceipt(TestPki.singleAttributePayload(
+                BigInteger.ONE.shiftLeft(32).add(BigInteger.valueOf(2)),
+                new DERUTF8String(BUNDLE).getEncoded()));
+        VerificationException e = assertThrows(VerificationException.class,
+                () -> verifier(pki, BUNDLE).verify(receipt));
+        assertEquals(Reason.WRONG_BUNDLE_ID, e.reason());
+    }
+
+    @Test
+    void boundsAttributeIntegersAtTheEdgeOfALong() throws Exception {
+        // Long.MAX_VALUE is the widest value the parser holds, 2^63 is one past
+        // it and -1 the first negative; a comparison one step wider lets each
+        // of those two through, 2^63 as Long.MIN_VALUE and -1 as itself.
+        for (BigInteger type : Arrays.asList(BigInteger.ONE.shiftLeft(63), BigInteger.valueOf(-1))) {
+            byte[] receipt = pki.signReceipt(TestPki.singleAttributePayload(type, new byte[0]));
+            VerificationException e = assertThrows(VerificationException.class,
+                    () -> verifier(pki, BUNDLE).verify(receipt), type.toString());
+            assertEquals(Reason.INVALID_RECEIPT_FORMAT, e.reason(), type.toString());
+            assertTrue(e.getMessage().contains("out of range"), e.getMessage());
+        }
+        List<byte[]> inApps = Collections.singletonList(TestPki.inAppPurchase(Long.MAX_VALUE,
+                "com.example.app.coins100", "70000000000001", "70000000000001",
+                "2024-01-15T12:00:00Z", null));
+        byte[] receipt = pki.signReceipt(TestPki.receiptPayload(BUNDLE, "1.2.3", OPAQUE,
+                TestPki.deviceHash(GUID, OPAQUE, BUNDLE), creationDate.toString(), inApps));
+        InAppPurchase coins = byProduct(verifier(pki, BUNDLE).verify(receipt), "com.example.app.coins100");
+        assertEquals(Long.valueOf(Long.MAX_VALUE), coins.quantity());
     }
 
     @Test

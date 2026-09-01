@@ -20,6 +20,7 @@ import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.BasicConstraints;
 import org.bouncycastle.asn1.x509.Extension;
 import org.bouncycastle.cms.DefaultSignedAttributeTableGenerator;
+import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.X509v3CertificateBuilder;
 import org.bouncycastle.cert.jcajce.JcaCertStore;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
@@ -32,6 +33,8 @@ import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
+import org.bouncycastle.util.CollectionStore;
+import org.bouncycastle.util.Store;
 
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
@@ -42,6 +45,7 @@ import java.security.PrivateKey;
 import java.security.Signature;
 import java.security.cert.X509Certificate;
 import java.security.spec.ECGenParameterSpec;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Date;
@@ -225,8 +229,102 @@ final class TestPki {
                 Arrays.asList(twin, leaf, intermediate, root));
     }
 
+    /**
+     * A receipt embedding unrelated certificates on top of the genuine chain,
+     * as a receipt bloated to make chain assembly expensive carries. One key
+     * serves every padding certificate: the verifier bounds the count before it
+     * looks at any of them, so what the keys are does not matter.
+     */
+    byte[] signReceiptWithPadding(byte[] payload, int paddingCertificates) throws Exception {
+        Date notBefore = new Date(System.currentTimeMillis() - 86_400_000L);
+        Date notAfter = new Date(System.currentTimeMillis() + 365L * 86_400_000L);
+        KeyPair paddingKp = rsaKeyPair();
+        List<X509Certificate> embedded = new ArrayList<X509Certificate>(
+                Arrays.asList(leaf, intermediate, root));
+        for (int i = 0; i < paddingCertificates; i++) {
+            embedded.add(cert("CN=Padding " + i, paddingKp, "CN=Padding " + i,
+                    paddingKp.getPrivate(), false, null, notBefore, notAfter, "SHA256withRSA"));
+        }
+        return sign(payload, new Date(), leafKey, leaf, embedded);
+    }
+
+    /**
+     * A receipt whose embedded certificates form a cross-signed mesh: each of
+     * the {@code layers} layers carries {@code branching} certificates that
+     * share a subject name and a key, so every one of them is an equally valid
+     * issuer for the layer below it, and the topmost layer names an issuer that
+     * is not embedded, so no path ever reaches a trust anchor. A path builder
+     * that explores before it bounds anything walks branching^layers
+     * combinations to reject this — the shape that costs swift-certificates
+     * 3.9 s at layers=14, branching=2 in under 8 KB of receipt.
+     */
+    byte[] signReceiptWithCrossSignedMesh(byte[] payload, int layers, int branching)
+            throws Exception {
+        Date notBefore = new Date(System.currentTimeMillis() - 86_400_000L);
+        Date notAfter = new Date(System.currentTimeMillis() + 365L * 86_400_000L);
+        // keys[0] signs the top layer and is never embedded, so the mesh
+        // dead-ends there rather than at a certificate the builder can inspect.
+        KeyPair[] keys = new KeyPair[layers + 1];
+        for (int i = 0; i <= layers; i++) {
+            keys[i] = rsaKeyPair();
+        }
+        List<X509Certificate> embedded = new ArrayList<X509Certificate>();
+        for (int layer = 1; layer <= layers; layer++) {
+            String issuer = layer == 1 ? "CN=Mesh Trust" : "CN=Mesh Layer " + (layer - 1);
+            for (int variant = 0; variant < branching; variant++) {
+                embedded.add(cert("CN=Mesh Layer " + layer, keys[layer], issuer,
+                        keys[layer - 1].getPrivate(), true, null, notBefore, notAfter,
+                        "SHA256withRSA"));
+            }
+        }
+        KeyPair meshLeafKp = rsaKeyPair();
+        X509Certificate meshLeaf = cert("CN=Mesh Receipt Signing", meshLeafKp,
+                "CN=Mesh Layer " + layers, keys[layers].getPrivate(), false,
+                "1.2.840.113635.100.6.11.1", notBefore, notAfter, "SHA256withRSA");
+        embedded.add(0, meshLeaf);
+        return sign(payload, new Date(), meshLeafKp.getPrivate(), meshLeaf, embedded);
+    }
+
+    /**
+     * A receipt padded with certificates BouncyCastle holds as encoded but the
+     * JCA cannot decode, so the two possible orderings of the count check fail
+     * differently: counting first rejects on the count, decoding first dies in
+     * the converter. Which rejection arrives is what says where the count
+     * check sits.
+     */
+    byte[] signReceiptWithUndecodablePadding(byte[] payload, int paddingCertificates)
+            throws Exception {
+        Date notBefore = new Date(System.currentTimeMillis() - 86_400_000L);
+        Date notAfter = new Date(System.currentTimeMillis() + 365L * 86_400_000L);
+        KeyPair paddingKp = rsaKeyPair();
+        List<X509CertificateHolder> embedded = new ArrayList<X509CertificateHolder>();
+        for (X509Certificate cert : Arrays.asList(leaf, intermediate, root)) {
+            embedded.add(new X509CertificateHolder(cert.getEncoded()));
+        }
+        for (int i = 0; i < paddingCertificates; i++) {
+            X509v3CertificateBuilder builder = new JcaX509v3CertificateBuilder(
+                    new X500Name("CN=Undecodable " + i), BigInteger.valueOf(SERIAL.getAndIncrement()),
+                    notBefore, notAfter, new X500Name("CN=Undecodable " + i), paddingKp.getPublic());
+            // basicConstraints carrying an INTEGER instead of the SEQUENCE the
+            // extension is defined as: BouncyCastle keeps the extension as
+            // encoded, while the JCA's CertificateFactory parses every
+            // extension it recognises and rejects this one on sight.
+            builder.addExtension(Extension.basicConstraints, true, new ASN1Integer(1));
+            embedded.add(builder.build(new JcaContentSignerBuilder("SHA256withRSA")
+                    .build(paddingKp.getPrivate())));
+        }
+        return sign(payload, new Date(), leafKey, leaf,
+                new CollectionStore<X509CertificateHolder>(embedded));
+    }
+
     private byte[] sign(byte[] payload, Date signingTime, PrivateKey signingKey,
                         X509Certificate signerCert, List<X509Certificate> embedded)
+            throws Exception {
+        return sign(payload, signingTime, signingKey, signerCert, new JcaCertStore(embedded));
+    }
+
+    private byte[] sign(byte[] payload, Date signingTime, PrivateKey signingKey,
+                        X509Certificate signerCert, Store<X509CertificateHolder> embedded)
             throws Exception {
         ASN1EncodableVector baseAttrs = new ASN1EncodableVector();
         baseAttrs.add(new org.bouncycastle.asn1.cms.Attribute(CMSAttributes.signingTime,
@@ -238,7 +336,7 @@ final class TestPki {
                 .setSignedAttributeGenerator(
                         new DefaultSignedAttributeTableGenerator(new AttributeTable(baseAttrs)))
                 .build(cs, signerCert));
-        gen.addCertificates(new JcaCertStore(embedded));
+        gen.addCertificates(embedded);
         CMSSignedData signed = gen.generate(new CMSProcessableByteArray(payload), true);
         return signed.getEncoded();
     }
@@ -296,6 +394,11 @@ final class TestPki {
         return new DERSet(attr(type, valueOctets)).getEncoded();
     }
 
+    /** Same, with a type INTEGER too wide for the long the parser bounds it to. */
+    static byte[] singleAttributePayload(BigInteger type, byte[] valueOctets) throws Exception {
+        return new DERSet(attr(type, valueOctets)).getEncoded();
+    }
+
     /** Xcode-style double wrap: the payload SET inside an extra OCTET STRING. */
     static byte[] doubleWrap(byte[] payload) throws Exception {
         return new DEROctetString(payload).getEncoded();
@@ -311,6 +414,10 @@ final class TestPki {
     }
 
     private static ASN1Encodable attr(int type, byte[] valueOctets) {
+        return attr(BigInteger.valueOf(type), valueOctets);
+    }
+
+    private static ASN1Encodable attr(BigInteger type, byte[] valueOctets) {
         return new DERSequence(new ASN1Encodable[]{
                 new ASN1Integer(type), new ASN1Integer(1), new DEROctetString(valueOctets)});
     }

@@ -115,7 +115,45 @@ const UNPARSEABLE_CERTIFICATE = forge({
 });
 const NAIVE_CREATION_DATE = forge({ payload: payloadDated('2025-12-26T17:43:07') });
 
+/** Payload carrying the creation date and one attribute whose type INTEGER is `typeBytes`. */
+function payloadWithAttributeType(typeBytes) {
+  return tlv(SET,
+    tlv(SEQUENCE, tlv(INTEGER, Buffer.from([12])), tlv(INTEGER, Buffer.from([1])),
+      tlv(OCTET_STRING, tlv(IA5_STRING, Buffer.from(SIGNING_TIME, 'ascii')))),
+    tlv(SEQUENCE, tlv(INTEGER, Buffer.from(typeBytes)), tlv(INTEGER, Buffer.from([1])),
+      tlv(OCTET_STRING)));
+}
+
 const verifier = () => new ReceiptVerifier({ trustedRoots: appleReceiptRoots(), bundleId: BUNDLE });
+
+// Attribute INTEGERs the parser refuses, each at the edge of its guard: 0x80 is
+// the smallest leading byte of a negative two's-complement INTEGER, nine bytes
+// is one past the cap, and 2^53 is the first value a JS number cannot hold
+// exactly. A comparison one step wider lets each of these through.
+const REJECTED_ATTRIBUTE_INTEGERS = [
+  ['a leading byte of 0x80', [0x80], /negative receipt integer/],
+  ['nine bytes', [0, 0, 0, 0, 0, 0, 0, 0, 1], /out of range/],
+  ['2^53', [0x20, 0, 0, 0, 0, 0, 0], /safe-integer range/],
+];
+for (const [label, bytes, message] of REJECTED_ATTRIBUTE_INTEGERS) {
+  test(`rejects an attribute type INTEGER of ${label} as INVALID_RECEIPT_FORMAT`, () => {
+    assert.throws(() => verifier().verify(forge({ payload: payloadWithAttributeType(bytes) })), (e) => {
+      assert.equal(e.reason, 'INVALID_RECEIPT_FORMAT');
+      assert.match(e.message, message);
+      return true;
+    });
+  });
+}
+
+test('parses an attribute type INTEGER of 2^53 - 1, the largest exact JS integer', () => {
+  // The forged payload no longer matches the donor signature, so a receipt
+  // that gets past the parse is rejected by the signature check instead.
+  const largest = [0x1f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
+  assert.throws(() => verifier().verify(forge({ payload: payloadWithAttributeType(largest) })), (e) => {
+    assert.equal(e.reason, 'INVALID_SIGNATURE', e.message);
+    return true;
+  });
+});
 
 test('reports an unparseable embedded certificate as INVALID_RECEIPT_FORMAT', () => {
   // An OpenSSL Error carries a `.reason` of its own ('no start line'), so

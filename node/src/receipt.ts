@@ -20,6 +20,15 @@ const DIGEST_ALGORITHMS = new Map<string, string>([
   ['2.16.840.1.101.3.4.2.1', 'sha256'],
 ].map(([oid, name]) => [encodeOidContents(oid!).toString('hex'), name!]));
 
+// Genuine receipts embed a leaf, an intermediate and (for the legacy SHA-1
+// chain) a root: the public fixtures carry 1, 3 and 3. Ten leaves room for a
+// longer Apple chain while bounding what rejecting a receipt costs, because
+// every embedded certificate is converted and then RSA-checked as a candidate
+// issuer before any signature is checked: a 722 KB receipt carrying 1057 of
+// them measured 122-172 ms to reject, 26 to 45 times the cost of verifying
+// the genuine 79 KB legacy receipt.
+const MAX_EMBEDDED_CERTIFICATES = 10;
+
 // Receipt attribute types — Apple, "Validating receipts on the device",
 // plus two community-established ones (0: receipt type, 18: original
 // purchase date) needed for verifyReceipt response compatibility.
@@ -108,6 +117,14 @@ export function verifyReceiptCore(der: Buffer, trustedRoots: RootInput[]): AppRe
   // VerificationError.reason, and an OpenSSL Error carries a `.reason` of its
   // own, so no foreign error type may escape from here.
   try {
+    // The embedded certificates are attacker-supplied and are walked into a
+    // path below, before anything about the receipt has been verified, so a
+    // receipt carrying more of them than a chain can hold is rejected here
+    // rather than converted and searched.
+    if (cms.certificates.length > MAX_EMBEDDED_CERTIFICATES) {
+      throw new VerificationError(Reason.INVALID_CHAIN,
+        `receipt embeds more than ${MAX_EMBEDDED_CERTIFICATES} certificates`);
+    }
     const embedded = cms.certificates.map((raw) => new X509Certificate(raw));
     const signerCert = findSignerCert(cms, embedded);
     buildAndValidatePath(signerCert, embedded, roots, at);

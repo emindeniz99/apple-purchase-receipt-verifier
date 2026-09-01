@@ -86,6 +86,27 @@ public final class ReceiptVerifier {
      */
     private static final String RECEIPT_SIGNER_OID = "1.2.840.113635.100.6.11.1";
 
+    /**
+     * Ceiling on the certificates a receipt may embed. Genuine receipts carry
+     * one to three (fixtures/public-receipts: xcode-with-purchases 1,
+     * sandbox-g5 3, sandbox-legacy 3), so ten clears any chain Apple ships and
+     * still rejects a flood before a single certificate is decoded. With the
+     * bound, what is left of a flood is CMS parsing of the blob, which is
+     * proportional to the input a caller can already cap.
+     *
+     * <p>The exponential case is a cross-signed mesh — layers of certificates
+     * that each name several equally valid issuers, which an unbounded
+     * backtracking path builder spends 2^layers on. Here it stays flat at
+     * 1.0-1.5 ms from fourteen layers to twenty-two (measured in
+     * ReceiptVerifierTest#rejectsCrossSignedCertificateMeshWithoutWalkingIt),
+     * but only because {@link PKIXBuilderParameters} defaults
+     * {@code maxPathLength} to 5 and so abandons every path early: a JDK
+     * default this class never states and does not control. Bounding the
+     * count does not rely on it, and matches the node, python and swift
+     * implementations.</p>
+     */
+    private static final int MAXIMUM_EMBEDDED_CERTIFICATES = 10;
+
     private final Set<TrustAnchor> trustAnchors;
     private final String bundleId;
     private final BouncyCastleProvider provider = new BouncyCastleProvider();
@@ -215,6 +236,15 @@ public final class ReceiptVerifier {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "no signer info");
         }
         SignerInformation signer = signers.next();
+        // Bounded here, before a single embedded certificate is decoded or
+        // handed to the path builder — all of which an unverified receipt
+        // would otherwise get to pay for out of the caller's CPU.
+        Collection<X509CertificateHolder> holders = cms.getCertificates().getMatches(null);
+        if (holders.size() > MAXIMUM_EMBEDDED_CERTIFICATES) {
+            throw new VerificationException(Reason.INVALID_CHAIN, "receipt embeds "
+                    + holders.size() + " certificates, more than the maximum of "
+                    + MAXIMUM_EMBEDDED_CERTIFICATES);
+        }
         Collection<X509CertificateHolder> matches = cms.getCertificates().getMatches(signer.getSID());
         if (matches.isEmpty()) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "signer certificate not embedded");
@@ -223,7 +253,7 @@ public final class ReceiptVerifier {
             JcaX509CertificateConverter converter = new JcaX509CertificateConverter();
             X509Certificate signerCert = converter.getCertificate(matches.iterator().next());
             List<X509Certificate> embedded = new ArrayList<X509Certificate>();
-            for (X509CertificateHolder holder : cms.getCertificates().getMatches(null)) {
+            for (X509CertificateHolder holder : holders) {
                 embedded.add(converter.getCertificate(holder));
             }
             X509CertSelector target = new X509CertSelector();

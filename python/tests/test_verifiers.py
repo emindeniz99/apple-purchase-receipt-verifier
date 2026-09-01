@@ -3,13 +3,18 @@ fixtures/generated/ (cross-language parity) and fixtures/apple-official/
 (Apple's own library fixtures)."""
 
 import base64
+import datetime
 import json
 import random
+import time
 import unittest
 from pathlib import Path
 
 from asn1crypto import cms as asn1cms
 from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
 
 from apple_purchase_receipt_verifier import (
     JwsVerifier,
@@ -390,6 +395,14 @@ def date_payload(value):
     return tlv(0x31, tlv(0x30, attribute))
 
 
+def payload_with_attribute_type(type_bytes):
+    """A receipt payload SET carrying the creation date and one attribute
+    whose type INTEGER is ``type_bytes``."""
+    date = tlv(0x02, b"\x0c") + tlv(0x02, b"\x01") + tlv(0x04, tlv(0x16, b"2024-08-06T12:00:00Z"))
+    probe = tlv(0x02, type_bytes) + tlv(0x02, b"\x01") + tlv(0x04, b"")
+    return tlv(0x31, tlv(0x30, date) + tlv(0x30, probe))
+
+
 # An anonymous 162-byte blob: no certificates, no signature, one creation date
 # of 0001-01-01T00:00:00+10:00. The payload is parsed before the chain check,
 # so this reaches the date decoder against the real pinned Apple roots.
@@ -477,6 +490,23 @@ class HostileInputTest(unittest.TestCase):
             _parse_payload(date_payload("2024-08-06T12:00:00"))
         self.assertEqual(ctx.exception.reason, "INVALID_RECEIPT_FORMAT")
 
+    def test_rejects_attribute_integers_at_the_edge_of_each_guard(self):
+        # Driven through the payload parser like the date above. 0x80 is the
+        # smallest leading byte of a negative two's-complement INTEGER and
+        # nine bytes is one past the cap; a comparison one step wider admits
+        # each. Eight bytes under 0x80 is the largest value the cap admits.
+        from apple_purchase_receipt_verifier.receipt import _parse_payload
+        for name, type_bytes, message in (
+                ("leading byte 0x80", b"\x80", "negative receipt integer"),
+                ("nine bytes", b"\x00" * 8 + b"\x01", "out of range")):
+            with self.subTest(name):
+                with self.assertRaises(VerificationError) as ctx:
+                    _parse_payload(payload_with_attribute_type(type_bytes))
+                self.assertEqual(ctx.exception.reason, "INVALID_RECEIPT_FORMAT")
+                self.assertIn(message, str(ctx.exception))
+        largest = _parse_payload(payload_with_attribute_type(b"\x7f" + b"\xff" * 7))
+        self.assertEqual(largest.unknown_attributes, {2**63 - 1: [b""]})
+
     def test_contains_hostile_signed_attrs(self):
         verifier = ReceiptVerifier([cert("generated", "receipt-root.der")], BUNDLE)
         for name, attributes in hostile_attribute_sets().items():
@@ -541,3 +571,138 @@ class HostileInputTest(unittest.TestCase):
                 pass
             except Exception as e:  # noqa: BLE001 - the assertion is the point
                 self.fail(f"mutation {i} leaked {type(e).__name__}: {e}")
+
+
+# The two issuer names in the shared generated chain. Decoy certificates carry
+# them so each one stays a candidate the path builder must actually verify,
+# rather than one it can reject on a name comparison.
+MESH_NAMES = ("Fake WWDR CA", "Fake Apple Inc Root")
+
+
+def cross_signed_mesh(layers=14, branching=2):
+    """``branching`` CA certificates per layer, each cross-signed by every node
+    of the layer above and the top layer wrapped back onto the bottom, so no
+    path ever terminates — the shape that makes a path builder without a length
+    bound explore b**L paths (swift-certificates: 3.9 s at L=14, x3.8 per two
+    added layers). Every certificate is a CA, valid now, and named after the
+    layer's issuer, so nothing but the count disqualifies it as a candidate."""
+    now = datetime.datetime.now(datetime.timezone.utc)
+    keys = [[rsa.generate_private_key(public_exponent=65537, key_size=2048)
+             for _ in range(branching)] for _ in range(layers)]
+    certificates = []
+    for layer in range(layers):
+        name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, MESH_NAMES[layer % 2])])
+        above = x509.Name(
+            [x509.NameAttribute(NameOID.COMMON_NAME, MESH_NAMES[(layer + 1) % 2])])
+        for key in keys[layer]:
+            for issuer in keys[(layer + 1) % layers]:
+                certificates.append((x509.CertificateBuilder()
+                    .subject_name(name).issuer_name(above)
+                    .public_key(key.public_key())
+                    .serial_number(x509.random_serial_number())
+                    .not_valid_before(now - datetime.timedelta(days=3650))
+                    .not_valid_after(now + datetime.timedelta(days=3650))
+                    .add_extension(x509.BasicConstraints(ca=True, path_length=None),
+                                   critical=True)
+                    .sign(issuer, hashes.SHA256()))
+                    .public_bytes(serialization.Encoding.DER))
+    return certificates
+
+
+def receipt_with_extra_certificates(extra):
+    """The shared receipt with ``extra`` certificates spliced in ahead of its
+    own. Payload, chain and signature are untouched, so without a bound on the
+    count everything still verifies — after the extras have been parsed and
+    offered to path building."""
+    info = asn1cms.ContentInfo.load(fixture("generated", "receipt.der"))
+    signed_data = info["content"]
+    genuine = [choice.chosen.dump() for choice in signed_data["certificates"]]
+    body = (signed_data["version"].dump()
+            + signed_data["digest_algorithms"].dump()
+            + signed_data["encap_content_info"].dump()
+            + tlv(0xA0, b"".join(extra + genuine))
+            + signed_data["crls"].dump()
+            + signed_data["signer_infos"].dump())
+    return tlv(0x30, info["content_type"].dump() + tlv(0xA0, tlv(0x30, body)))
+
+
+# A SEQUENCE holding an INTEGER: enough of a certificate for asn1crypto to
+# count it among the CertificateChoices, and not enough for cryptography, which
+# rejects it on the first field of the TBSCertificate.
+NOT_A_CERTIFICATE = tlv(0x30, tlv(0x02, b"\x01"))
+
+
+def embedded_certificate_count(receipt):
+    der = base64.b64decode(receipt) if isinstance(receipt, str) else receipt
+    return len(asn1cms.ContentInfo.load(der)["content"]["certificates"])
+
+
+class EmbeddedCertificateFloodTest(unittest.TestCase):
+    """The embedded certificates are attacker-supplied and are parsed and
+    offered to path building before anything about the receipt has been
+    verified, so their count is bounded before any of that runs."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.mesh = cross_signed_mesh()
+
+    def verifier(self):
+        return ReceiptVerifier([cert("generated", "receipt-root.der")], BUNDLE)
+
+    def test_rejects_a_receipt_embedding_more_certificates_than_a_chain_holds(self):
+        receipt = receipt_with_extra_certificates(self.mesh[:8])  # 8 + the chain's own 3
+        self.assertEqual(11, embedded_certificate_count(receipt))
+        with self.assertRaises(VerificationError) as ctx:
+            self.verifier().verify(receipt)
+        self.assertEqual(ctx.exception.reason, "INVALID_CHAIN")
+        self.assertIn("11 certificates", str(ctx.exception))
+        self.assertIn("more than the 10", str(ctx.exception))
+
+    def test_admits_a_receipt_embedding_exactly_the_bound(self):
+        # Seven mesh certificates ahead of the chain's own three is exactly the
+        # bound, so the guard stands aside and the receipt verifies as it
+        # would without them.
+        receipt = receipt_with_extra_certificates(self.mesh[:7])
+        self.assertEqual(10, embedded_certificate_count(receipt))
+        self.verifier().verify(receipt)
+
+    def test_counts_the_embedded_certificates_before_parsing_any_of_them(self):
+        # Eight of the eleven are not certificates at all, so where the count is
+        # checked decides which rejection a caller gets: counting first names the
+        # count, parsing first reports a malformed PKCS#7 instead. That is the
+        # only difference the two orderings have that a test can see — the work
+        # the ordering saves is measured, not asserted (see the mesh below).
+        receipt = receipt_with_extra_certificates([NOT_A_CERTIFICATE] * 8)
+        self.assertEqual(11, embedded_certificate_count(receipt))
+        with self.assertRaises(VerificationError) as ctx:
+            self.verifier().verify(receipt)
+        self.assertEqual(ctx.exception.reason, "INVALID_CHAIN")
+        self.assertIn("11 certificates", str(ctx.exception))
+
+    def test_rejects_a_cross_signed_certificate_mesh_promptly(self):
+        # Why the bound exists: this mesh costs the sender nothing and is what
+        # a path builder that backtracks spends b**L on (swift-certificates:
+        # 3.9 s at L=14, and tens of seconds two layers further). This
+        # implementation walks at most 6 candidates deep, so uncapped it pays
+        # one RSA verification per decoy instead — 4.4 ms here, against 1.3 ms
+        # for the genuine receipt. The budget is ~4000x the genuine cost so a
+        # loaded runner cannot flake it, and only a combinatorial regression
+        # can exceed it.
+        receipt = receipt_with_extra_certificates(self.mesh)
+        self.assertEqual(59, embedded_certificate_count(receipt))
+        started = time.perf_counter()
+        with self.assertRaises(VerificationError) as ctx:
+            self.verifier().verify(receipt)
+        elapsed = time.perf_counter() - started
+        self.assertEqual(ctx.exception.reason, "INVALID_CHAIN")
+        self.assertLess(elapsed, 5.0, f"rejecting the mesh took {elapsed:.3f}s")
+
+    def test_limit_clears_the_genuine_receipts_it_has_to_admit(self):
+        # Read rather than asserted: the bound is only safe while it stays
+        # above what Apple actually embeds.
+        from apple_purchase_receipt_verifier.receipt import _MAX_EMBEDDED_CERTIFICATES
+        counts = {name: embedded_certificate_count(
+                      (FIXTURES / "public-receipts" / f"{name}.b64").read_text().strip())
+                  for name in ("receipt-sandbox-g5", "receipt-sandbox-legacy",
+                               "receipt-xcode-with-purchases")}
+        self.assertLess(max(counts.values()), _MAX_EMBEDDED_CERTIFICATES, counts)
