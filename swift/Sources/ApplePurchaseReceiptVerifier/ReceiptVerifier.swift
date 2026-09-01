@@ -48,6 +48,23 @@ public struct AppReceipt: Sendable {
 /// implementation. CMS parsing accepts BER (genuine Apple/Xcode receipts
 /// use indefinite lengths).
 public struct ReceiptVerifier: Sendable {
+    /// Upper bound on a receipt's embedded certificates, checked before the
+    /// path walk in ``verifyCore(receipt:)`` reaches them. Genuine receipts
+    /// embed 1 to 3 (fixtures/public-receipts: xcode-with-purchases 1,
+    /// sandbox-g5 3, sandbox-legacy 3), and Java, Node and Python bound the
+    /// same input at the same 10: the value is that parity plus headroom over
+    /// a genuine chain, not a complexity budget. The walk does not grow with
+    /// the square of it. `&&` short-circuits, so a certificate's signature is
+    /// checked only in the step whose `tip.issuer` is that certificate's
+    /// subject, and no two steps test the same issuer — the walk therefore
+    /// costs at most one signature check per embedded certificate, and only
+    /// the subject comparisons are quadratic. Measured on a release build with
+    /// this bound lifted, over the walk's worst case (a bag that is one
+    /// genuine n-long chain, so every step advances): 29.1 ms at 101
+    /// certificates, 136.3 ms at 401, 1,037.7 ms at 1,601 — x4.7 then x7.6 per
+    /// x4, against the x16 per x4 a quadratic cost would show.
+    static let maximumEmbeddedCertificates = 10
+
     private let roots: [Certificate]
     private let bundleId: String
 
@@ -92,6 +109,14 @@ public struct ReceiptVerifier: Sendable {
     /// any bundle).
     func verifyCore(receipt: Data) async throws -> AppReceipt {
         let cms = try CMSReceipt(parsing: [UInt8](receipt))
+        // The embedded certificates are attacker-supplied and every one of
+        // them is a walk candidate below, before anything about the receipt
+        // has been verified, so a flood is rejected here rather than walked.
+        guard cms.certificates.count <= Self.maximumEmbeddedCertificates else {
+            throw VerificationError(.invalidChain,
+                "receipt embeds \(cms.certificates.count) certificates, "
+                    + "more than the maximum of \(Self.maximumEmbeddedCertificates)")
+        }
 
         // Parsed before signature verification only to learn the creation
         // date (chain validity anchors at signing time); nothing from it is
@@ -100,12 +125,91 @@ public struct ReceiptVerifier: Sendable {
         let at = fields.creationDate ?? Date()
 
         let signerCert = try cms.signerCertificate()
+        // Hand chain building a single path instead of the whole certificate
+        // bag. swift-certificates' Verifier is a backtracking DFS whose
+        // candidate pool IS the intermediate store: every pop pushes one
+        // partial chain per store entry whose subject equals the current tip's
+        // issuer, and it recognises a repeat only by (subject, public key,
+        // SAN). k certificates sharing one subject and one key but carrying
+        // distinct SANs are therefore each a signature-valid parent of every
+        // other, and the search walks the sum over j of k!/(k-j)! paths before
+        // giving up: measured through this entry point on a release build, the
+        // k=9 receipt the chain-building tests below build cost 148.8 s handed
+        // to the Verifier whole, against 4.0 ms with the walk below in place.
+        // At about 4,300 bytes it is smaller than the genuine 79,104-byte
+        // legacy receipt, and its ten certificates are inside the count bound
+        // above, so neither a caller-side size limit nor that bound reaches it.
+        //
+        // Two properties of the walk below do the work:
+        //
+        //  - A step takes the certificate that actually SIGNED the tip, not
+        //    merely one carrying the issuer's name. Apple's own port of this
+        //    procedure matches on the name alone (app-store-server-library-swift
+        //    AppReceiptVerifier.verifyChain) and can afford to, because it also
+        //    demands the WWDR marker OID on the intermediate it picked. This
+        //    library does not require that OID — node, python and java do not —
+        //    so a name-only match here lets any self-signed certificate that
+        //    borrows the intermediate's subject displace the real one and turn
+        //    a VALID receipt into a rejected one. Selecting by signature is
+        //    also what node (chain.ts issuedBy) and python (_chain.py
+        //    _issued_by) do, so it is the cross-language shape as well.
+        //  - A subject is taken at most once. `subjectsTaken` holds the
+        //    subjects the walk has taken, and the candidate's subject IS
+        //    `tip.issuer`, so the guard and the insert name the same value and
+        //    the walk cannot revisit a subject — which is why it stops at the
+        //    first revisit on a signature cycle and why no two steps test the
+        //    same issuer. Downstream, the store is
+        //    `Dictionary(grouping:by: \.subject)`, so one entry per subject
+        //    means the Verifier's lookup returns at most one candidate: each
+        //    pop pushes at most one partial chain, the stack never grows past
+        //    one entry, and the whole search is at most as long as the path.
+        //    Without this the fanout above simply rebuilds itself inside the
+        //    store, because each of those k certificates signs the next.
+        //  - The walk is never longer than the bag. Every step appends one
+        //    certificate out of `cms.certificates`, so a walk that has
+        //    appended as many as the bag holds has revisited one, and the
+        //    count clause stops it there whatever the two clauses below do.
+        //    Without it, a 2-cycle whose issuer names point outside the bag
+        //    never trips the subject guard, and removing the `$0.subject ==
+        //    tip.issuer` clause made that bag loop forever (measured: the run
+        //    was killed at 120 s) — a bug that surfaced as a hang, not a red
+        //    test, and took the machine running the suite down with it.
+        //
+        // The walk only chooses the pool. Everything a chain must satisfy —
+        // validity at signing time, basic constraints, reaching a pinned root —
+        // stays with RFC5280Policy and the Verifier: a receipt whose embedded
+        // bag stops at the intermediate still validates against the pinned
+        // root, as it does in node, python and java. One verdict does move.
+        // A decoy that borrows the real intermediate's DN *and* its public key
+        // satisfies the predicate below, so the walk takes it and stops rather
+        // than backtracking to the real intermediate. Measured on a release
+        // build: with the whole bag handed to the Verifier that receipt was
+        // accepted at all four bag positions; it is now rejected when the
+        // decoy sits ahead of the real intermediate (positions 0 and 1) and
+        // still accepted behind it (2 and 3) — position for position what node
+        // and python do, while java accepts all four, a split that predates
+        // this walk. Only a receipt the attacker signed themselves has that
+        // shape, so the move costs no genuine receipt.
+        var intermediates: [Certificate] = []
+        var subjectsTaken: Set<DistinguishedName> = []
+        var tip = signerCert
+        while intermediates.count < cms.certificates.count,
+              !subjectsTaken.contains(tip.issuer),
+              let issuer = cms.certificates.first(where: {
+                  $0.subject == tip.issuer
+                      && $0.publicKey.isValidSignature(tip.signature, for: tip)
+              }) {
+            intermediates.append(issuer)
+            subjectsTaken.insert(issuer.subject)
+            tip = issuer
+        }
+
         var verifier = Verifier(rootCertificates: CertificateStore(roots)) {
             RFC5280Policy(validationTime: at)
         }
         let result = await verifier.validate(
             leafCertificate: signerCert,
-            intermediates: CertificateStore(cms.certificates))
+            intermediates: CertificateStore(intermediates))
         if case .couldNotValidate = result {
             throw VerificationError(.invalidChain,
                 "signer chain does not validate to a pinned root")

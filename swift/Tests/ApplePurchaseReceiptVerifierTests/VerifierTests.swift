@@ -1,4 +1,7 @@
+import Crypto
 import Foundation
+import SwiftASN1
+import X509
 import XCTest
 @testable import ApplePurchaseReceiptVerifier
 
@@ -552,5 +555,401 @@ final class ParityTests: XCTestCase {
         let ep = try VerifyReceiptEndpoint(trustedRoots: [try fx("receipt-root.der")], production: false)
         let resp = await ep.verifyReceipt(["receipt-data": malformed.base64EncodedString()])
         XCTAssertEqual(resp["status"] as? Int, 21002)
+    }
+}
+
+// MARK: - chain-building bound
+
+/// The bound on chain building. A receipt's embedded certificates are
+/// attacker-supplied and reach chain building before any signature is checked,
+/// and swift-certificates' Verifier searches whatever candidate pool it is
+/// handed, so both what goes into that pool and how much of it there can be
+/// are load-bearing. Every receipt here is the genuine
+/// fixtures/generated/receipt.der with a different certificate bag spliced in:
+/// the file is BER with indefinite lengths, so the splice needs no ancestor
+/// length fixups, and the CMS signature covers the signed attributes rather
+/// than the bag.
+final class ChainBuildingBoundTests: XCTestCase {
+    static let notValidBefore = Date(timeIntervalSince1970: 1_577_836_800) // 2020-01-01
+    static let notValidAfter = Date(timeIntervalSince1970: 2_051_222_400)  // 2035-01-01
+
+    func verifier() throws -> ReceiptVerifier {
+        try ReceiptVerifier(
+            trustedRoots: [try Data(contentsOf: VerifierTests.fixturesDir
+                .appendingPathComponent("generated")
+                .appendingPathComponent("receipt-root.der"))],
+            bundleId: VerifierTests.bundle)
+    }
+
+    func genuineReceipt() throws -> Data {
+        try Data(contentsOf: VerifierTests.fixturesDir
+            .appendingPathComponent("generated").appendingPathComponent("receipt.der"))
+    }
+
+    // MARK: certificate bag surgery
+
+    private static let contextZero = ASN1Identifier(tagWithNumber: 0, tagClass: .contextSpecific)
+
+    /// The SignedData `certificates [0]` node of a receipt.
+    private static func certificatesNode(_ receipt: [UInt8]) throws -> ASN1Node {
+        func children(_ node: ASN1Node) throws -> [ASN1Node] {
+            guard case .constructed(let nodes) = node.content else {
+                throw CocoaError(.formatting)
+            }
+            return Array(nodes)
+        }
+        let contentInfo = try children(try BER.parse(receipt))
+        let signedData = try children(try children(contentInfo[1])[0])
+        guard let node = signedData.dropFirst(3).first(where: {
+            $0.identifier.tagClass == .contextSpecific && $0.identifier.tagNumber == 0
+        }) else { throw CocoaError(.formatting) }
+        return node
+    }
+
+    static func embeddedCertificates(of receipt: Data) throws -> [Certificate] {
+        guard case .constructed(let nodes) = try certificatesNode([UInt8](receipt)).content else {
+            throw CocoaError(.formatting)
+        }
+        return try nodes.map { try Certificate(derEncoded: [UInt8]($0.encodedBytes)) }
+    }
+
+    static func replacingCertificates(of receipt: Data,
+                                      with certificates: [Certificate]) throws -> Data {
+        let bytes = [UInt8](receipt)
+        let range = try certificatesNode(bytes).encodedBytes
+        var serializer = DER.Serializer()
+        try serializer.appendConstructedNode(identifier: contextZero) { certs in
+            for certificate in certificates {
+                try certs.serialize(certificate)
+            }
+        }
+        return Data(bytes[..<range.startIndex] + serializer.serializedBytes
+            + bytes[range.endIndex...])
+    }
+
+    static func certificate(subject: DistinguishedName, issuer: DistinguishedName,
+                            serial: Certificate.SerialNumber,
+                            key: Certificate.PrivateKey,
+                            signedBy issuerKey: Certificate.PrivateKey,
+                            dnsName: String? = nil) throws -> Certificate {
+        try Certificate(
+            version: .v3, serialNumber: serial, publicKey: key.publicKey,
+            notValidBefore: notValidBefore, notValidAfter: notValidAfter,
+            issuer: issuer, subject: subject,
+            extensions: try Certificate.Extensions {
+                if let dnsName {
+                    SubjectAlternativeNames([.dnsName(dnsName)])
+                }
+            },
+            issuerPrivateKey: issuerKey)
+    }
+
+    static func name(_ commonName: String) throws -> DistinguishedName {
+        try DistinguishedName { CommonName(commonName) }
+    }
+
+    /// A bag whose certificates all claim to be issued by `issuer` and all
+    /// share one key, so each is a signature-valid parent of every other, told
+    /// apart only by a SubjectAlternativeName — which is the one field
+    /// swift-certificates' loop detection compares beyond subject and key.
+    /// The leaf keeps the genuine signer's issuer and serial so the CMS signer
+    /// id still resolves to it.
+    static func fanout(count: Int, signerOf genuine: [Certificate]) throws -> [Certificate] {
+        let shared = Certificate.PrivateKey(P256.Signing.PrivateKey())
+        let leaf = try certificate(
+            subject: try name("Fanout Leaf"), issuer: genuine[0].issuer,
+            serial: genuine[0].serialNumber,
+            key: Certificate.PrivateKey(P256.Signing.PrivateKey()), signedBy: shared)
+        return [leaf] + (0..<count).map { index in
+            try! certificate(subject: genuine[0].issuer, issuer: genuine[0].issuer,
+                             serial: .init(bytes: [0x10, UInt8(index)]),
+                             key: shared, signedBy: shared,
+                             dnsName: "ca\(index).example")
+        }
+    }
+
+    // MARK: the bounds
+
+    /// The certificate count bound, from every side: eleven certificates are
+    /// rejected before any of them is walked, with a message naming the bound,
+    /// the genuine three-certificate receipt still verifies, and so does a bag
+    /// of exactly ten. Red if the bound stops firing (raise it and the first
+    /// part fails), red if it is tightened below a genuine chain (lower it to
+    /// 2 and the second fails), and red if the comparison tightens by one
+    /// (`<` for `<=` fails the third).
+    ///
+    /// The bound is not what makes the walk cheap — the walk costs at most one
+    /// signature check per embedded certificate with or without it, measured
+    /// under `maximumEmbeddedCertificates`. It is what stops an unauthenticated
+    /// caller choosing how much of that work happens at all, at the same 10 as
+    /// node, python and java.
+    func testTheCertificateCountBoundFiresAndStillClearsAGenuineReceipt() async throws {
+        let genuine = try genuineReceipt()
+        let flooded = try Self.replacingCertificates(
+            of: genuine,
+            with: try Self.fanout(count: 10,
+                                  signerOf: try Self.embeddedCertificates(of: genuine)))
+        do {
+            _ = try await verifier().verify(receipt: flooded)
+            XCTFail("expected INVALID_CHAIN")
+        } catch let error as VerificationError {
+            XCTAssertEqual(error.reason, .invalidChain)
+            XCTAssertTrue(error.message.contains("11 certificates"), error.message)
+            XCTAssertTrue(
+                error.message.contains("maximum of \(ReceiptVerifier.maximumEmbeddedCertificates)"),
+                error.message)
+        }
+
+        _ = try await verifier().verify(receipt: genuine)
+
+        // Exactly the bound: seven self-signed certificates the walk never
+        // takes, ahead of the genuine three.
+        let genuineCertificates = try Self.embeddedCertificates(of: genuine)
+        let padding = try (0..<(ReceiptVerifier.maximumEmbeddedCertificates
+                                - genuineCertificates.count)).map { index -> Certificate in
+            let key = Certificate.PrivateKey(P256.Signing.PrivateKey())
+            return try Self.certificate(
+                subject: try Self.name("Padding \(index)"), issuer: try Self.name("Padding \(index)"),
+                serial: .init(bytes: [0x9A, UInt8(index)]), key: key, signedBy: key)
+        }
+        let exactly = padding + genuineCertificates
+        XCTAssertEqual(exactly.count, ReceiptVerifier.maximumEmbeddedCertificates)
+        _ = try await verifier().verify(
+            receipt: try Self.replacingCertificates(of: genuine, with: exactly))
+    }
+
+    /// A receipt whose bag stops at the intermediate, with the root coming
+    /// from the pinned store, verifies. Node, Python and Java all accept this
+    /// shape — their path builders stop as soon as the current certificate is
+    /// issued by a pinned anchor — and so did this library before the walk
+    /// existed. Red if the walk ever grows a fixed chain length again.
+    func testAcceptsAReceiptWhoseEmbeddedBagStopsAtTheIntermediate() async throws {
+        let genuine = try genuineReceipt()
+        let certificates = try Self.embeddedCertificates(of: genuine)
+        XCTAssertEqual(certificates.count, 3)
+        let receipt = try Self.replacingCertificates(of: genuine,
+                                                     with: Array(certificates.prefix(2)))
+        _ = try await verifier().verify(receipt: receipt)
+    }
+
+    /// A self-signed certificate that merely borrows the intermediate's
+    /// subject name must not displace the real intermediate, at any position
+    /// in the bag. This is what forces the walk to select by signature: a
+    /// name-only match takes whichever collides first, and this VALID receipt
+    /// is then rejected from bag index 0 and 1 (measured: accepted at 2 and 3,
+    /// rejected at 0 and 1, when the walk matched on the name alone).
+    func testAcceptsAGenuineReceiptCarryingAnIssuerNameCollisionAtAnyIndex() async throws {
+        let genuine = try genuineReceipt()
+        let certificates = try Self.embeddedCertificates(of: genuine)
+        let key = Certificate.PrivateKey(P256.Signing.PrivateKey())
+        let decoy = try Self.certificate(
+            subject: certificates[0].issuer, issuer: certificates[0].issuer,
+            serial: .init(bytes: [0xDE, 0xC0]), key: key, signedBy: key)
+        for index in 0...certificates.count {
+            var bag = certificates
+            bag.insert(decoy, at: index)
+            let receipt = try Self.replacingCertificates(of: genuine, with: bag)
+            do {
+                _ = try await verifier().verify(receipt: receipt)
+            } catch {
+                XCTFail("decoy at index \(index) flipped a valid receipt: \(error)")
+            }
+        }
+    }
+
+    /// The other half of the walk's predicate. A decoy that borrows the real
+    /// intermediate's public KEY under a different name did, as far as a
+    /// signature check can tell, sign the leaf — so a walk that selected by
+    /// signature alone would take it from ahead of the real intermediate,
+    /// hand the Verifier a path whose names do not chain, and reject this
+    /// VALID receipt from bag index 0 and 1. The `$0.subject == tip.issuer`
+    /// clause is what skips it; delete the clause and this goes red there.
+    func testAcceptsAGenuineReceiptCarryingAKeyOnlyCloneAtAnyIndex() async throws {
+        let genuine = try genuineReceipt()
+        let certificates = try Self.embeddedCertificates(of: genuine)
+        let attacker = Certificate.PrivateKey(P256.Signing.PrivateKey())
+        let clone = try Certificate(
+            version: .v3, serialNumber: .init(bytes: [0xC1, 0x0F]),
+            publicKey: certificates[1].publicKey,
+            notValidBefore: Self.notValidBefore, notValidAfter: Self.notValidAfter,
+            issuer: try Self.name("Attacker Root"), subject: try Self.name("Key Clone"),
+            extensions: try Certificate.Extensions {
+                BasicConstraints.isCertificateAuthority(maxPathLength: nil)
+            },
+            issuerPrivateKey: attacker)
+        for index in 0...certificates.count {
+            var bag = certificates
+            bag.insert(clone, at: index)
+            let receipt = try Self.replacingCertificates(of: genuine, with: bag)
+            do {
+                _ = try await verifier().verify(receipt: receipt)
+            } catch {
+                XCTFail("key clone at index \(index) flipped a valid receipt: \(error)")
+            }
+        }
+    }
+
+    /// The attack the certificate count cannot bound: ten certificates, inside
+    /// the count bound, and at about 4,300 bytes smaller than the genuine
+    /// 79,104-byte legacy fixture, so no caller-side size limit reaches it
+    /// either. Handing that bag to swift-certificates as intermediates cost
+    /// 148.8 s through this same entry point on a release build, against
+    /// 4.0 ms with the walk in place.
+    ///
+    /// What this pins is that the walk takes each subject at most ONCE.
+    /// Deduplicating by certificate instead — the obvious simplification —
+    /// puts all nine of these self-issued certificates in the store, where
+    /// they are once again each other's parents: measured under that mutation
+    /// this test takes 268.4 s on the debug build CI runs and 147.4 s on a
+    /// release build, against 0.009 s debug / 0.004 s release as written. That
+    /// puts the 2 s budget 222x above the working debug cost — a CI runner two
+    /// orders of magnitude slower than this laptop still passes — and 134x
+    /// below the broken one, which no runner is fast enough to sneak under.
+    ///
+    /// A sibling test ran the same fanout hidden behind a decoy chain. It went
+    /// red under this mutation and no other, and its own 2 s budget did not
+    /// survive it: measured just before it was removed, it PASSED in 1.855 s
+    /// under the mutation on a release build (3.08 s debug, a 1.5x margin) — a
+    /// green test over broken code. Deleted rather than re-budgeted, because
+    /// this test covers that mutation with the margins above and
+    /// `testAcceptsAGenuineReceiptCarryingAnIssuerNameCollisionAtAnyIndex`
+    /// already covers the walk stepping past a name-matching non-signer.
+    func testRejectsAFanoutOfSelfIssuedCertificatesWithoutSearchingIt() async throws {
+        let genuine = try genuineReceipt()
+        let receipt = try Self.replacingCertificates(
+            of: genuine,
+            with: try Self.fanout(count: 9,
+                                  signerOf: try Self.embeddedCertificates(of: genuine)))
+        let started = Date()
+        do {
+            _ = try await verifier().verify(receipt: receipt)
+            XCTFail("expected INVALID_CHAIN")
+        } catch let error as VerificationError {
+            XCTAssertEqual(error.reason, .invalidChain)
+        }
+        XCTAssertLessThan(-started.timeIntervalSinceNow, 2.0)
+    }
+
+    /// The count guard runs before anything else touches the bag. Moving it
+    /// down to just before the `Verifier` is built still rejects a flooded
+    /// receipt, and left every other test in this file green (measured), so
+    /// nothing else pins the position. This bag separates the two: it is over
+    /// the bound AND omits the signer certificate, so the guard where it is
+    /// reports the bound, while a guard that runs after `signerCertificate()`
+    /// tells the caller the receipt is malformed instead.
+    func testTheCountGuardRunsBeforeTheSignerIsResolved() async throws {
+        let genuine = try genuineReceipt()
+        let certificates = try Self.embeddedCertificates(of: genuine)
+        let key = Certificate.PrivateKey(P256.Signing.PrivateKey())
+        let bag = try (0...ReceiptVerifier.maximumEmbeddedCertificates).map { index in
+            try Self.certificate(
+                subject: certificates[0].issuer, issuer: certificates[0].issuer,
+                serial: .init(bytes: [0x70, UInt8(index)]), key: key, signedBy: key)
+        }
+        let receipt = try Self.replacingCertificates(of: genuine, with: bag)
+        do {
+            _ = try await verifier().verify(receipt: receipt)
+            XCTFail("expected INVALID_CHAIN")
+        } catch let error as VerificationError {
+            XCTAssertEqual(error.reason, .invalidChain)
+            XCTAssertTrue(
+                error.message.contains("maximum of \(ReceiptVerifier.maximumEmbeddedCertificates)"),
+                error.message)
+        }
+    }
+
+    /// The one verdict the walk moved. A decoy that borrows the real
+    /// intermediate's DN *and* its public key satisfies the walk's predicate —
+    /// the key it carries really did sign the leaf — so the walk takes it and
+    /// stops instead of backtracking to the real intermediate. Measured on a
+    /// release build: with the whole certificate bag handed to the Verifier
+    /// this receipt was accepted at all four positions; it is now rejected
+    /// from the two ahead of the real intermediate and still accepted from the
+    /// two behind it. That is position for position what node and python
+    /// answer on the same four receipts (measured); java accepts all four, a
+    /// java-vs-node/python split that predates this walk. Only a receipt whose
+    /// signer the attacker controls has this shape, so no genuine receipt pays
+    /// for it — but the record should not claim the walk moves nothing.
+    func testAKeyCloningDecoyDisplacesTheIntermediateOnlyFromAheadOfIt() async throws {
+        let genuine = try genuineReceipt()
+        let certificates = try Self.embeddedCertificates(of: genuine)
+        XCTAssertEqual(certificates[0].issuer, certificates[1].subject)
+        let attacker = Certificate.PrivateKey(P256.Signing.PrivateKey())
+        let clone = try Certificate(
+            version: .v3, serialNumber: .init(bytes: [0xC1, 0x0E]),
+            publicKey: certificates[1].publicKey,
+            notValidBefore: Self.notValidBefore, notValidAfter: Self.notValidAfter,
+            issuer: try Self.name("Attacker Root"), subject: certificates[1].subject,
+            extensions: try Certificate.Extensions {
+                BasicConstraints.isCertificateAuthority(maxPathLength: nil)
+            },
+            issuerPrivateKey: attacker)
+
+        for index in 0...certificates.count {
+            var bag = certificates
+            bag.insert(clone, at: index)
+            let receipt = try Self.replacingCertificates(of: genuine, with: bag)
+            do {
+                _ = try await verifier().verify(receipt: receipt)
+                XCTAssertGreaterThan(index, 1, "clone at index \(index) was not taken")
+            } catch let error as VerificationError {
+                XCTAssertLessThan(index, 2, "clone at index \(index) was taken: \(error)")
+                XCTAssertEqual(error.reason, .invalidChain)
+            }
+        }
+    }
+
+    /// A signature cycle among the embedded certificates is rejected, in both
+    /// shapes it comes in: leaf signed by A, A signed by B, B signed by A. With
+    /// the issuer names chaining inside the bag, `subjectsTaken` stops the walk
+    /// at B, whose issuer names a subject already taken. With the issuer names
+    /// pointing outside the bag, no subject the walk records is ever an issuer
+    /// it tests, that guard never fires, and the count clause stops the walk at
+    /// the size of the bag instead. Before the count clause existed, deleting
+    /// the `$0.subject == tip.issuer` clause made the second shape loop forever
+    /// (measured: the run was killed at 120 s, against 0.004 s as shipped), so
+    /// the mutation surfaced as a hang rather than a red test — and a test
+    /// that fails by hanging takes the machine down with it. Neither shape can
+    /// loop past the bag now; what the two pin is the verdict.
+    func testRejectsASignatureCycleAmongTheEmbeddedCertificates() async throws {
+        let genuine = try genuineReceipt()
+        let certificates = try Self.embeddedCertificates(of: genuine)
+        let keyA = Certificate.PrivateKey(P256.Signing.PrivateKey())
+        let keyB = Certificate.PrivateKey(P256.Signing.PrivateKey())
+        // The leaf keeps the genuine signer's issuer and serial so the CMS
+        // signer id still resolves to it, and A carries that same issuer name
+        // as its subject so the walk takes one real step before the cycle.
+        let leaf = try Self.certificate(
+            subject: try Self.name("Cycle Leaf"), issuer: certificates[0].issuer,
+            serial: certificates[0].serialNumber,
+            key: Certificate.PrivateKey(P256.Signing.PrivateKey()), signedBy: keyA)
+        let insideTheBag = [
+            leaf,
+            try Self.certificate(
+                subject: certificates[0].issuer, issuer: try Self.name("Cycle B"),
+                serial: .init(bytes: [0x41]), key: keyA, signedBy: keyB),
+            try Self.certificate(
+                subject: try Self.name("Cycle B"), issuer: certificates[0].issuer,
+                serial: .init(bytes: [0x42]), key: keyB, signedBy: keyA),
+        ]
+        let outsideTheBag = [
+            leaf,
+            try Self.certificate(
+                subject: certificates[0].issuer, issuer: try Self.name("Cycle A Issuer"),
+                serial: .init(bytes: [0x43]), key: keyA, signedBy: keyB),
+            try Self.certificate(
+                subject: try Self.name("Cycle B"), issuer: try Self.name("Cycle B Issuer"),
+                serial: .init(bytes: [0x44]), key: keyB, signedBy: keyA),
+        ]
+
+        for (shape, bag) in [("inside", insideTheBag), ("outside", outsideTheBag)] {
+            let receipt = try Self.replacingCertificates(of: genuine, with: bag)
+            do {
+                _ = try await verifier().verify(receipt: receipt)
+                XCTFail("expected INVALID_CHAIN for the cycle chaining \(shape) the bag")
+            } catch let error as VerificationError {
+                XCTAssertEqual(error.reason, .invalidChain, shape)
+            }
+        }
     }
 }
