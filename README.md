@@ -18,7 +18,7 @@ transactions, or legacy PKCS#7 app receipts) was signed by Apple, by
 validating the certificate chain against pinned Apple root CAs. Four
 implementations, one normative algorithm, one shared fixture set they all
 verify byte-for-byte: **Java** (8+), **Node** (20+, zero runtime deps),
-**Python** (3.9+), **Swift** (6).
+**Python** (3.9+), **Swift** (6.1+).
 
 Each implementation also ships **`VerifyReceiptEndpoint`** — a drop-in
 local replacement for the deprecated `verifyReceipt` endpoint speaking
@@ -59,7 +59,7 @@ in lockstep versions cut from this repository's tags.
 | [Maven Central](https://central.sonatype.com/artifact/io.github.emindeniz99/apple-purchase-receipt-verifier) | `io.github.emindeniz99:apple-purchase-receipt-verifier` | `import io.github.emindeniz99.applepurchasereceiptverifier.jws.JwsVerifier;` |
 | [npm](https://www.npmjs.com/package/apple-purchase-receipt-verifier) | `npm install apple-purchase-receipt-verifier` | `import { JwsVerifier } from 'apple-purchase-receipt-verifier';` |
 | [PyPI](https://pypi.org/project/apple-purchase-receipt-verifier/) | `pip install apple-purchase-receipt-verifier` | `from apple_purchase_receipt_verifier import JwsVerifier` |
-| [SwiftPM](https://swiftpackageindex.com/emindeniz99/apple-purchase-receipt-verifier) | `.package(url: "https://github.com/emindeniz99/apple-purchase-receipt-verifier.git", from: "0.1.0")` | `import ApplePurchaseReceiptVerifier` |
+| [SwiftPM](https://swiftpackageindex.com/emindeniz99/apple-purchase-receipt-verifier) | `.package(url: "https://github.com/emindeniz99/apple-purchase-receipt-verifier.git", from: "0.2.1")` | `import ApplePurchaseReceiptVerifier` |
 
 The import namespace is the registry name in each ecosystem's casing
 convention (`applepurchasereceiptverifier` / `apple_purchase_receipt_verifier` /
