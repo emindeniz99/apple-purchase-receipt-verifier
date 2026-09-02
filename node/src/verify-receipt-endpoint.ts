@@ -46,6 +46,8 @@ export const Status = {
   INTERNAL: 21009,
 } as const;
 
+const MALFORMED_JSON = `{"status":${Status.MALFORMED}}`;
+
 export interface VerifyReceiptEndpointOptions {
   /** Pinned roots (production: `appleReceiptRoots()`). */
   trustedRoots: RootInput[];
@@ -106,6 +108,36 @@ export class VerifyReceiptEndpoint {
       environment: this.#environment,
       receipt: receiptJson(fields, new Date()),
     };
+  }
+
+  /**
+   * Handles one verifyReceipt request body in its raw wire form: the JSON
+   * request body in, the JSON response body out, so an HTTP framework's
+   * body can be piped straight through without a DTO in between. A thin
+   * wrapper over `verifyReceipt` — every verification decision is made
+   * there.
+   *
+   * A body that is not a JSON object (unparseable, `null`, an array, a
+   * scalar) answers `{"status":21002}`. Apple has no status code for "that
+   * wasn't JSON"; 21002 ("The data in the receipt-data property was
+   * malformed or missing") is the closest, and it is what a JSON object
+   * without usable `receipt-data` gets anyway.
+   *
+   * Output is deterministic — the response object preserves insertion
+   * order, so equal inputs serialize to equal bytes. Key order is not part
+   * of the JSON contract.
+   */
+  verifyReceiptJson(body: string): string {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      return MALFORMED_JSON;
+    }
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      return MALFORMED_JSON;
+    }
+    return JSON.stringify(this.verifyReceipt(parsed));
   }
 }
 

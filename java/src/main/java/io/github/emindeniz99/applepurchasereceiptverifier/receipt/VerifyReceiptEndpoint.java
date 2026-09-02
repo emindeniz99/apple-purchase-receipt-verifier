@@ -1,8 +1,11 @@
 package io.github.emindeniz99.applepurchasereceiptverifier.receipt;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
 
+import java.io.IOException;
 import java.security.cert.X509Certificate;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -43,6 +46,8 @@ public final class VerifyReceiptEndpoint {
 
     private static final DateTimeFormatter FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final String MALFORMED_JSON = "{\"status\":" + STATUS_MALFORMED + "}";
     private static final ZoneId GMT = ZoneId.of("UTC");
     private static final ZoneId PACIFIC = ZoneId.of("America/Los_Angeles");
 
@@ -105,6 +110,48 @@ public final class VerifyReceiptEndpoint {
         response.put("environment", production ? "Production" : "Sandbox");
         response.put("receipt", receiptJson(receipt, Instant.now()));
         return response;
+    }
+
+    /**
+     * Handles one verifyReceipt request body in its raw wire form: the JSON
+     * request body in, the JSON response body out, so an HTTP framework's
+     * body can be piped straight through without a DTO in between. A thin
+     * wrapper over {@link #verifyReceipt(Map)} — every verification
+     * decision is made there.
+     *
+     * <p>A body that is not a JSON object (unparseable, {@code null}, an
+     * array, a scalar) answers <code>{"status":21002}</code>. Apple has no
+     * status code for "that wasn't JSON"; 21002 ("The data in the
+     * receipt-data property was malformed or missing") is the closest, and
+     * it is what a JSON object without usable {@code receipt-data} gets
+     * anyway.</p>
+     *
+     * <p>Output is deterministic — the response map preserves insertion
+     * order, so equal inputs serialize to equal bytes. Key order is not
+     * part of the JSON contract.</p>
+     *
+     * @param requestJson raw JSON request body
+     * @return raw JSON response body; never throws
+     */
+    public String verifyReceipt(String requestJson) {
+        Object parsed;
+        try {
+            parsed = MAPPER.readValue(requestJson, Object.class);
+        } catch (IOException e) {
+            return MALFORMED_JSON;
+        } catch (RuntimeException e) {
+            return MALFORMED_JSON;
+        }
+        if (!(parsed instanceof Map)) {
+            return MALFORMED_JSON;
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, ?> requestBody = (Map<String, ?>) parsed;
+        try {
+            return MAPPER.writeValueAsString(verifyReceipt(requestBody));
+        } catch (JsonProcessingException e) {
+            return "{\"status\":" + STATUS_INTERNAL + "}";
+        }
     }
 
     private static Map<String, Object> status(int code) {

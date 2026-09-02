@@ -321,6 +321,88 @@ final class VerifyReceiptEndpointTests: XCTestCase {
             .verifyReceipt(["receipt-data": foreign.base64EncodedString()])
         XCTAssertEqual(response["status"] as? Int, 21003)
     }
+
+    func requestJSON() throws -> String {
+        let base64 = try fixture("generated", "receipt.der").base64EncodedString()
+        return "{\"receipt-data\":\"\(base64)\"}"
+    }
+
+    /// request_date is "now": two calls legitimately disagree on it.
+    func withoutRequestDate(_ response: [String: Any]) -> [String: Any] {
+        var copy = response
+        if var receipt = copy["receipt"] as? [String: Any] {
+            for key in ["request_date", "request_date_ms", "request_date_pst"] {
+                receipt.removeValue(forKey: key)
+            }
+            copy["receipt"] = receipt
+        }
+        return copy
+    }
+
+    func testVerifyReceiptJSONPinsTheWireTypes() async throws {
+        let body = await (try endpoint(production: false)).verifyReceiptJSON(try requestJSON())
+        // Raw bytes, not just the parse: status is a JSON number and every
+        // number-shaped receipt field is a JSON string, as Apple sends them.
+        XCTAssertTrue(body.contains("\"status\":0"), body)
+        XCTAssertTrue(body.contains("\"quantity\":\"1\""), body)
+        XCTAssertTrue(body.contains("\"web_order_line_item_id\":\"42\""), body)
+        let parsed = try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: XCTUnwrap(body.data(using: .utf8))) as? [String: Any])
+        XCTAssertTrue(parsed["status"] is NSNumber)
+        XCTAssertEqual(parsed["environment"] as? String, "Sandbox")
+        let receipt = try XCTUnwrap(parsed["receipt"] as? [String: Any])
+        XCTAssertTrue(receipt["receipt_creation_date_ms"] is String)
+        XCTAssertTrue(receipt["request_date_ms"] is String)
+        for purchase in try XCTUnwrap(receipt["in_app"] as? [[String: Any]]) {
+            XCTAssertTrue(purchase["quantity"] is String)
+            XCTAssertTrue(purchase["web_order_line_item_id"] is String)
+            XCTAssertTrue(purchase["purchase_date_ms"] is String)
+        }
+    }
+
+    func testVerifyReceiptJSONRendersIsInIntroOfferPeriodAsAString() async throws {
+        let receiptData = try String(
+            contentsOf: VerifierTests.fixturesDir
+                .appendingPathComponent("public-receipts")
+                .appendingPathComponent("receipt-sandbox-g5.b64"),
+            encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let endpoint = try VerifyReceiptEndpoint(
+            trustedRoots: appleReceiptRoots(), production: false)
+        let body = await endpoint.verifyReceiptJSON("{\"receipt-data\":\"\(receiptData)\"}")
+        XCTAssertTrue(body.contains("\"is_in_intro_offer_period\":\"false\""), body)
+        let parsed = try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: XCTUnwrap(body.data(using: .utf8))) as? [String: Any])
+        let receipt = try XCTUnwrap(parsed["receipt"] as? [String: Any])
+        let purchases = try XCTUnwrap(receipt["in_app"] as? [[String: Any]])
+        XCTAssertFalse(purchases.isEmpty)
+        for purchase in purchases {
+            XCTAssertTrue(purchase["is_in_intro_offer_period"] is String)
+        }
+    }
+
+    func testVerifyReceiptJSONOmitsReceiptAndEnvironmentOnNonZeroStatus() async throws {
+        let body = await (try endpoint(production: true)).verifyReceiptJSON(try requestJSON())
+        XCTAssertEqual(body, "{\"status\":21007}")
+    }
+
+    func testVerifyReceiptJSONAnswers21002ForABodyThatIsNotAnObject() async throws {
+        let endpoint = try endpoint(production: false)
+        for body in ["", "not json", "{", "[]", "[{\"receipt-data\":\"x\"}]",
+                     "null", "3", "\"receipt\"", "true"] {
+            let response = await endpoint.verifyReceiptJSON(body)
+            XCTAssertEqual(response, "{\"status\":21002}", body)
+        }
+    }
+
+    func testVerifyReceiptJSONMatchesTheDictionaryApi() async throws {
+        let endpoint = try endpoint(production: false)
+        let viaDictionary = await endpoint.verifyReceipt(try request())
+        let body = await endpoint.verifyReceiptJSON(try requestJSON())
+        let viaJSON = try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: XCTUnwrap(body.data(using: .utf8))) as? [String: Any])
+        XCTAssertEqual(withoutRequestDate(viaJSON) as NSDictionary,
+                       withoutRequestDate(viaDictionary) as NSDictionary)
+    }
 }
 
 /// Regression tests for the adversarial-review findings + PLAN D10.

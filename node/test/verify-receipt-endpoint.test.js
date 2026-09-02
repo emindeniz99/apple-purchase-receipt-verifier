@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { VerifyReceiptEndpoint } from '../dist/index.js';
+import { VerifyReceiptEndpoint, appleReceiptRoots } from '../dist/index.js';
 
 function fixture(name) {
   return readFileSync(fileURLToPath(new URL(`../../fixtures/generated/${name}`, import.meta.url)));
@@ -14,7 +14,19 @@ function endpoint(environment) {
   });
 }
 
+const publicReceipt = (name) => readFileSync(fileURLToPath(
+  new URL(`../../fixtures/public-receipts/${name}.b64`, import.meta.url)), 'ascii').trim();
+
 const request = () => ({ 'receipt-data': fixture('receipt.der').toString('base64') });
+
+// request_date is "now": two calls legitimately disagree on it.
+function withoutRequestDate(response) {
+  const copy = structuredClone(response);
+  for (const key of ['request_date', 'request_date_ms', 'request_date_pst']) {
+    delete copy.receipt?.[key];
+  }
+  return copy;
+}
 
 test('answers like verifyReceipt for a valid sandbox receipt', () => {
   const response = endpoint('Sandbox').verifyReceipt(request());
@@ -79,4 +91,58 @@ test('endpoint response carries every field COMPARISON.md advertises as full-fid
   const vip = receipt.in_app.find((p) => p.product_id === 'com.example.app.vip');
   assert.equal(vip.expires_date, '2030-02-01 09:30:00 Etc/GMT');
   assert.ok(vip.expires_date_ms && vip.expires_date_pst);
+});
+
+test('verifyReceiptJson pins the wire types of the response body', () => {
+  const json = endpoint('Sandbox').verifyReceiptJson(JSON.stringify(request()));
+  // Raw bytes, not just the parse: status is a JSON number and every
+  // number-shaped receipt field is a JSON string, as Apple sends them.
+  assert.ok(json.includes('"status":0'), json);
+  assert.ok(json.includes('"quantity":"1"'), json);
+  assert.ok(json.includes('"web_order_line_item_id":"42"'), json);
+  const parsed = JSON.parse(json);
+  assert.equal(typeof parsed.status, 'number');
+  assert.equal(parsed.environment, 'Sandbox');
+  assert.equal(typeof parsed.receipt.receipt_creation_date_ms, 'string');
+  assert.equal(typeof parsed.receipt.request_date_ms, 'string');
+  for (const purchase of parsed.receipt.in_app) {
+    assert.equal(typeof purchase.quantity, 'string');
+    assert.equal(typeof purchase.web_order_line_item_id, 'string');
+    assert.equal(typeof purchase.purchase_date_ms, 'string');
+  }
+});
+
+test('verifyReceiptJson renders is_in_intro_offer_period as "true"/"false"', () => {
+  const ep = new VerifyReceiptEndpoint({
+    trustedRoots: appleReceiptRoots(), environment: 'Sandbox',
+  });
+  const json = ep.verifyReceiptJson(JSON.stringify({
+    'receipt-data': publicReceipt('receipt-sandbox-g5'),
+  }));
+  assert.ok(json.includes('"is_in_intro_offer_period":"false"'), json);
+  const { receipt } = JSON.parse(json);
+  assert.ok(receipt.in_app.length > 0);
+  for (const purchase of receipt.in_app) {
+    assert.equal(typeof purchase.is_in_intro_offer_period, 'string');
+  }
+});
+
+test('verifyReceiptJson omits receipt and environment on a non-zero status', () => {
+  assert.equal(endpoint('Production').verifyReceiptJson(JSON.stringify(request())),
+    '{"status":21007}');
+});
+
+test('verifyReceiptJson answers 21002 for a body that is not a JSON object', () => {
+  const ep = endpoint('Sandbox');
+  for (const body of ['', 'not json', '{', '[]', '[{"receipt-data":"x"}]', 'null',
+    '3', '"receipt"', 'true']) {
+    assert.equal(ep.verifyReceiptJson(body), '{"status":21002}', body);
+  }
+});
+
+test('verifyReceiptJson parses back to exactly what verifyReceipt returns', () => {
+  const ep = endpoint('Sandbox');
+  const viaMap = ep.verifyReceipt(request());
+  const viaJson = JSON.parse(ep.verifyReceiptJson(JSON.stringify(request())));
+  assert.deepEqual(withoutRequestDate(viaJson), withoutRequestDate(viaMap));
 });

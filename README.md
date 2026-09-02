@@ -23,8 +23,11 @@ verify byte-for-byte: **Java** (8+), **Node** (20+, zero runtime deps),
 Each implementation also ships **`VerifyReceiptEndpoint`** — a drop-in
 local replacement for the deprecated `verifyReceipt` endpoint speaking
 Apple's exact request/response/status-code wire contract (incl. local
-21007/21008 sandbox routing); see [COMPARISON.md](./COMPARISON.md) for the
-field-by-field fidelity account and the gaps only Apple's servers can fill.
+21007/21008 sandbox routing). Hand it a parsed request body, or hand it the
+raw JSON body as a string and get the JSON response body back, so an HTTP
+handler can pipe the bytes through untouched. See
+[COMPARISON.md](./COMPARISON.md) for the field-by-field fidelity account and
+the gaps only Apple's servers can fill.
 
 Start with [INTENT.md](./INTENT.md) (why + trust model), then
 [PLAN.md](./PLAN.md) (algorithms + decisions + API shape), then

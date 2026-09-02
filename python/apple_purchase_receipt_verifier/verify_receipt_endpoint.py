@@ -11,6 +11,7 @@ compares ``receipt["bundle_id"]``, exactly as with the real endpoint."""
 
 import base64
 import binascii
+import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Mapping, Optional
 from zoneinfo import ZoneInfo
@@ -31,6 +32,7 @@ STATUS_PRODUCTION_RECEIPT_ON_SANDBOX = 21008
 STATUS_INTERNAL = 21009
 
 _PACIFIC = ZoneInfo("America/Los_Angeles")
+_MALFORMED_JSON = json.dumps({"status": STATUS_MALFORMED}, separators=(",", ":"))
 
 
 class VerifyReceiptEndpoint:
@@ -84,6 +86,30 @@ class VerifyReceiptEndpoint:
             "environment": "Production" if self._production else "Sandbox",
             "receipt": _receipt_json(fields, datetime.now(timezone.utc)),
         }
+
+    def verify_receipt_json(self, body: str) -> str:
+        """Handles one verifyReceipt request body in its raw wire form: the
+        JSON request body in, the JSON response body out, so an HTTP
+        framework's body can be piped straight through without a DTO in
+        between. A thin wrapper over :meth:`verify_receipt` — every
+        verification decision is made there.
+
+        A body that is not a JSON object (unparseable, ``null``, an array,
+        a scalar) answers ``{"status":21002}``. Apple has no status code
+        for "that wasn't JSON"; 21002 ("The data in the receipt-data
+        property was malformed or missing") is the closest, and it is what
+        a JSON object without usable ``receipt-data`` gets anyway.
+
+        Output is deterministic — dicts preserve insertion order, so equal
+        inputs serialize to equal bytes. Key order is not part of the JSON
+        contract."""
+        try:
+            parsed = json.loads(body)
+        except (ValueError, TypeError):
+            return _MALFORMED_JSON
+        if not isinstance(parsed, dict):
+            return _MALFORMED_JSON
+        return json.dumps(self.verify_receipt(parsed), separators=(",", ":"))
 
 
 def _receipt_json(fields: AppReceipt, request_date: datetime) -> Dict[str, Any]:

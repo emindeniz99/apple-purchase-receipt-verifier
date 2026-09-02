@@ -6,9 +6,12 @@ wire contract of Apple's deprecated
 endpoint — same [request body](https://developer.apple.com/documentation/appstorereceipts/requestbody),
 same [response body](https://developer.apple.com/documentation/appstorereceipts/responsebody)
 shape, same [status codes](https://developer.apple.com/documentation/appstorereceipts/error) —
-verified offline instead of by calling Apple. This file is the honest
-field-by-field account of what is identical, what differs, and what is
-**impossible** to produce locally.
+verified offline instead of by calling Apple. Each one takes either a
+parsed request body or the raw JSON body as a string (`verifyReceipt(String)`
+in Java, `verifyReceiptJson` in Node, `verify_receipt_json` in Python,
+`verifyReceiptJSON` in Swift), answering in the same form it was given. This
+file is the honest field-by-field account of what is identical, what differs,
+and what is **impossible** to produce locally.
 
 The principle behind the gaps: the PKCS#7 receipt the client sends contains
 everything Apple *signed into it* — app identity, versions, dates, and every

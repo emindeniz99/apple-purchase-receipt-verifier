@@ -1,9 +1,13 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.VerifyReceiptEndpoint;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -17,6 +21,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** verifyReceipt-compat semantics over the shared receipt fixture. */
 class VerifyReceiptEndpointTest {
@@ -34,6 +39,18 @@ class VerifyReceiptEndpointTest {
         byte[] receipt = Files.readAllBytes(FIXTURES.resolve("receipt.der"));
         return Collections.singletonMap("receipt-data",
                 Base64.getEncoder().encodeToString(receipt));
+    }
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    /** request_date is "now": two calls legitimately disagree on it. */
+    private static JsonNode withoutRequestDate(JsonNode response) {
+        JsonNode receipt = response.get("receipt");
+        if (receipt != null) {
+            ((ObjectNode) receipt).remove(java.util.Arrays.asList(
+                    "request_date", "request_date_ms", "request_date_pst"));
+        }
+        return response;
     }
 
     @Test
@@ -118,5 +135,69 @@ class VerifyReceiptEndpointTest {
                 Collections.singletonMap("receipt-data",
                         Base64.getEncoder().encodeToString(foreign)));
         assertEquals(21003, response.get("status"));
+    }
+
+    @Test
+    void rawJsonOverloadPinsTheWireTypes() throws Exception {
+        String body = endpoint(false).verifyReceipt(MAPPER.writeValueAsString(request()));
+        // Raw bytes, not just the parse: status is a JSON number and every
+        // number-shaped receipt field is a JSON string, as Apple sends them.
+        assertTrue(body.contains("\"status\":0"), body);
+        assertTrue(body.contains("\"quantity\":\"1\""), body);
+        assertTrue(body.contains("\"web_order_line_item_id\":\"42\""), body);
+        JsonNode parsed = MAPPER.readTree(body);
+        assertTrue(parsed.get("status").isNumber(), body);
+        assertEquals("Sandbox", parsed.get("environment").asText());
+        JsonNode receipt = parsed.get("receipt");
+        assertTrue(receipt.get("receipt_creation_date_ms").isTextual());
+        assertTrue(receipt.get("request_date_ms").isTextual());
+        for (JsonNode purchase : receipt.get("in_app")) {
+            assertTrue(purchase.get("quantity").isTextual());
+            assertTrue(purchase.get("web_order_line_item_id").isTextual());
+            assertTrue(purchase.get("purchase_date_ms").isTextual());
+        }
+    }
+
+    @Test
+    void rawJsonOverloadRendersIsInIntroOfferPeriodAsAString() throws Exception {
+        Path publicReceipts = Paths.get("..", "fixtures", "public-receipts");
+        String receiptData = new String(
+                Files.readAllBytes(publicReceipts.resolve("receipt-sandbox-g5.b64")),
+                StandardCharsets.US_ASCII).trim();
+        String body = new VerifyReceiptEndpoint(AppleRootCerts.receiptRoots(), false)
+                .verifyReceipt(MAPPER.writeValueAsString(
+                        Collections.singletonMap("receipt-data", receiptData)));
+        assertTrue(body.contains("\"is_in_intro_offer_period\":\"false\""), body);
+        JsonNode purchases = MAPPER.readTree(body).get("receipt").get("in_app");
+        assertTrue(purchases.size() > 0);
+        for (JsonNode purchase : purchases) {
+            assertTrue(purchase.get("is_in_intro_offer_period").isTextual());
+        }
+    }
+
+    @Test
+    void rawJsonOverloadOmitsReceiptAndEnvironmentOnNonZeroStatus() throws Exception {
+        assertEquals("{\"status\":21007}",
+                endpoint(true).verifyReceipt(MAPPER.writeValueAsString(request())));
+    }
+
+    @Test
+    void rawJsonOverloadAnswers21002ForABodyThatIsNotAnObject() throws Exception {
+        VerifyReceiptEndpoint endpoint = endpoint(false);
+        String[] bodies = {"", "not json", "{", "[]", "[{\"receipt-data\":\"x\"}]",
+                "null", "3", "\"receipt\"", "true", null};
+        for (String body : bodies) {
+            assertEquals("{\"status\":21002}", endpoint.verifyReceipt(body),
+                    String.valueOf(body));
+        }
+    }
+
+    @Test
+    void rawJsonOverloadMatchesTheMapApi() throws Exception {
+        VerifyReceiptEndpoint endpoint = endpoint(false);
+        JsonNode viaMap = MAPPER.valueToTree(endpoint.verifyReceipt(request()));
+        JsonNode viaJson = MAPPER.readTree(
+                endpoint.verifyReceipt(MAPPER.writeValueAsString(request())));
+        assertEquals(withoutRequestDate(viaMap), withoutRequestDate(viaJson));
     }
 }

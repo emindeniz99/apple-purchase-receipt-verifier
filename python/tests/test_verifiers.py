@@ -227,6 +227,14 @@ class VerifyReceiptEndpointTest(unittest.TestCase):
         return {"receipt-data": base64.b64encode(
             fixture("generated", "receipt.der")).decode()}
 
+    @staticmethod
+    def without_request_date(response):
+        # request_date is "now": two calls legitimately disagree on it.
+        copy = json.loads(json.dumps(response))
+        for key in ("request_date", "request_date_ms", "request_date_pst"):
+            copy.get("receipt", {}).pop(key, None)
+        return copy
+
     def test_answers_like_verify_receipt_for_valid_sandbox_receipt(self):
         response = self.endpoint("Sandbox").verify_receipt(self.request())
         self.assertEqual(response["status"], 0)
@@ -273,6 +281,55 @@ class VerifyReceiptEndpointTest(unittest.TestCase):
             "receipt-data": base64.b64encode(
                 fixture("generated", "receipt-foreign.der")).decode()})
         self.assertEqual(response["status"], 21003)
+
+    def test_verify_receipt_json_pins_the_wire_types(self):
+        body = self.endpoint("Sandbox").verify_receipt_json(json.dumps(self.request()))
+        # Raw bytes, not just the parse: status is a JSON number and every
+        # number-shaped receipt field is a JSON string, as Apple sends them.
+        self.assertIn('"status":0', body)
+        self.assertIn('"quantity":"1"', body)
+        self.assertIn('"web_order_line_item_id":"42"', body)
+        parsed = json.loads(body)
+        self.assertIsInstance(parsed["status"], int)
+        self.assertNotIsInstance(parsed["status"], bool)
+        self.assertEqual(parsed["environment"], "Sandbox")
+        receipt = parsed["receipt"]
+        self.assertIsInstance(receipt["receipt_creation_date_ms"], str)
+        self.assertIsInstance(receipt["request_date_ms"], str)
+        for purchase in receipt["in_app"]:
+            self.assertIsInstance(purchase["quantity"], str)
+            self.assertIsInstance(purchase["web_order_line_item_id"], str)
+            self.assertIsInstance(purchase["purchase_date_ms"], str)
+
+    def test_verify_receipt_json_renders_is_in_intro_offer_period_as_a_string(self):
+        from apple_purchase_receipt_verifier import VerifyReceiptEndpoint
+        receipt_data = (FIXTURES / "public-receipts" / "receipt-sandbox-g5.b64") \
+            .read_text().strip()
+        body = VerifyReceiptEndpoint(apple_receipt_roots(), "Sandbox") \
+            .verify_receipt_json(json.dumps({"receipt-data": receipt_data}))
+        self.assertIn('"is_in_intro_offer_period":"false"', body)
+        purchases = json.loads(body)["receipt"]["in_app"]
+        self.assertTrue(purchases)
+        for purchase in purchases:
+            self.assertIsInstance(purchase["is_in_intro_offer_period"], str)
+
+    def test_verify_receipt_json_omits_receipt_and_environment_on_non_zero_status(self):
+        self.assertEqual(
+            self.endpoint("Production").verify_receipt_json(json.dumps(self.request())),
+            '{"status":21007}')
+
+    def test_verify_receipt_json_answers_21002_for_a_body_that_is_not_an_object(self):
+        endpoint = self.endpoint("Sandbox")
+        for body in ("", "not json", "{", "[]", '[{"receipt-data":"x"}]', "null",
+                     "3", '"receipt"', "true", None):
+            self.assertEqual(endpoint.verify_receipt_json(body), '{"status":21002}', body)
+
+    def test_verify_receipt_json_matches_the_mapping_api(self):
+        endpoint = self.endpoint("Sandbox")
+        via_map = endpoint.verify_receipt(self.request())
+        via_json = json.loads(endpoint.verify_receipt_json(json.dumps(self.request())))
+        self.assertEqual(self.without_request_date(via_json),
+                         self.without_request_date(via_map))
 
 
 class ReviewFixesTest(unittest.TestCase):

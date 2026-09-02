@@ -72,6 +72,37 @@ public struct VerifyReceiptEndpoint: Sendable {
             "receipt": receiptJson(fields, requestDate: Date()),
         ]
     }
+
+    /// Handles one verifyReceipt request body in its raw wire form: the
+    /// JSON request body in, the JSON response body out, so an HTTP
+    /// framework's body can be piped straight through without a DTO in
+    /// between. A thin wrapper over ``verifyReceipt(_:)`` — every
+    /// verification decision is made there.
+    ///
+    /// A body that is not a JSON object (unparseable, `null`, an array, a
+    /// scalar) answers `{"status":21002}`. Apple has no status code for
+    /// "that wasn't JSON"; 21002 ("The data in the receipt-data property
+    /// was malformed or missing") is the closest, and it is what a JSON
+    /// object without usable `receipt-data` gets anyway.
+    ///
+    /// Output is deterministic: Swift dictionaries have no insertion
+    /// order, so keys are serialized sorted (`.sortedKeys`). Key order is
+    /// not part of the JSON contract — only the bytes being reproducible
+    /// is.
+    public func verifyReceiptJSON(_ body: String) async -> String {
+        guard let data = body.data(using: .utf8),
+              let parsed = try? JSONSerialization.jsonObject(with: data),
+              let requestBody = parsed as? [String: Any] else {
+            return "{\"status\":\(Self.statusMalformed)}"
+        }
+        let response = await verifyReceipt(requestBody)
+        guard let encoded = try? JSONSerialization.data(
+                withJSONObject: response, options: [.sortedKeys]),
+              let json = String(data: encoded, encoding: .utf8) else {
+            return "{\"status\":\(Self.statusInternal)}"
+        }
+        return json
+    }
 }
 
 private func receiptJson(_ fields: AppReceipt, requestDate: Date) -> [String: Any] {
