@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.2.2...v0.3.0) (2026-09-02)
+
+
+### Features
+
+* **endpoint:** accept and answer the raw verifyReceipt JSON body ([d6e2853](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/d6e2853555c78180ae58bd140d9e8497ca2fddc2))
+
+
+### Bug Fixes
+
+* **endpoint:** correct the wire-contract account and close two parity gaps ([88857f9](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/88857f91b2a13c5bfea687f2ee5cd7e6b1796475))
+
 ## [0.2.2](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.2.1...v0.2.2) (2026-09-01)
 
 
