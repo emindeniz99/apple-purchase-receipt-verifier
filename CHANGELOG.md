@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.2](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.2.1...v0.2.2) (2026-09-01)
+
+
+### Build & Dependencies
+
+* **deps:** Bump github.com/apple/swift-asn1 from 1.6.0 to 1.7.1 ([b9c1ace](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b9c1acefc74b2b2e9baf5f22d570d5bd5872de7d))
+* **deps:** Bump github.com/apple/swift-asn1 from 1.6.0 to 1.7.1 ([8d65812](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/8d65812ea257f77d7d738aceb88d9b2754df6fd3))
+* **deps:** Bump github.com/apple/swift-certificates ([23a2e52](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/23a2e526fdb0efbce01b742cfc81a06747a5639d))
+* **deps:** Bump github.com/apple/swift-certificates from 1.18.0 to 1.19.4 ([37ff90c](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/37ff90c8cfb0c155b2a6b36074e96ae071680055))
+
 ## [0.2.1](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.2.0...v0.2.1) (2026-09-01)
 
 
