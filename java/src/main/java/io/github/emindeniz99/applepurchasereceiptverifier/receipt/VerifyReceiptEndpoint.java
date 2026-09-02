@@ -136,10 +136,15 @@ public final class VerifyReceiptEndpoint {
      * order, so equal inputs serialize to equal bytes. Key order is not
      * part of the JSON contract.</p>
      *
+     * <p>Deliberately a distinct name rather than a {@code verifyReceipt}
+     * overload: an overload would make an existing
+     * {@code verifyReceipt(null)} call ambiguous, and this is a published
+     * library.</p>
+     *
      * @param requestJson raw JSON request body
      * @return raw JSON response body; never throws
      */
-    public String verifyReceipt(String requestJson) {
+    public String verifyReceiptJson(String requestJson) {
         Object parsed;
         try {
             parsed = MAPPER.readValue(requestJson, Object.class);

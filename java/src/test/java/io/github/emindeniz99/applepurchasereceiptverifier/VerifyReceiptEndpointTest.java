@@ -105,7 +105,7 @@ class VerifyReceiptEndpointTest {
         assertEquals(21002, endpoint(false)
                 .verifyReceipt(Collections.<String, Object>emptyMap()).get("status"));
         assertEquals(21002, endpoint(false)
-                .verifyReceipt((Map<String, Object>) null).get("status"));
+                .verifyReceipt(null).get("status"));
         assertEquals(21002, endpoint(false)
                 .verifyReceipt(Collections.singletonMap("receipt-data", "AQIDBA==")).get("status"));
     }
@@ -149,7 +149,7 @@ class VerifyReceiptEndpointTest {
 
     @Test
     void rawJsonOverloadPinsTheWireTypes() throws Exception {
-        String body = endpoint(false).verifyReceipt(MAPPER.writeValueAsString(request()));
+        String body = endpoint(false).verifyReceiptJson(MAPPER.writeValueAsString(request()));
         // Raw bytes, not just the parse: status is a JSON number and every
         // number-shaped receipt field is a JSON string, as Apple sends them.
         assertTrue(body.contains("\"status\":0"), body);
@@ -175,7 +175,7 @@ class VerifyReceiptEndpointTest {
                 Files.readAllBytes(publicReceipts.resolve("receipt-sandbox-g5.b64")),
                 StandardCharsets.US_ASCII).trim();
         String body = new VerifyReceiptEndpoint(AppleRootCerts.receiptRoots(), false)
-                .verifyReceipt(MAPPER.writeValueAsString(
+                .verifyReceiptJson(MAPPER.writeValueAsString(
                         Collections.singletonMap("receipt-data", receiptData)));
         assertTrue(body.contains("\"is_in_intro_offer_period\":\"false\""), body);
         JsonNode purchases = MAPPER.readTree(body).get("receipt").get("in_app");
@@ -188,7 +188,7 @@ class VerifyReceiptEndpointTest {
     @Test
     void rawJsonOverloadOmitsReceiptAndEnvironmentOnNonZeroStatus() throws Exception {
         assertEquals("{\"status\":21007}",
-                endpoint(true).verifyReceipt(MAPPER.writeValueAsString(request())));
+                endpoint(true).verifyReceiptJson(MAPPER.writeValueAsString(request())));
     }
 
     @Test
@@ -197,7 +197,7 @@ class VerifyReceiptEndpointTest {
         String[] bodies = {"", "not json", "{", "[]", "[{\"receipt-data\":\"x\"}]",
                 "null", "3", "\"receipt\"", "true", null};
         for (String body : bodies) {
-            assertEquals("{\"status\":21002}", endpoint.verifyReceipt(body),
+            assertEquals("{\"status\":21002}", endpoint.verifyReceiptJson(body),
                     String.valueOf(body));
         }
     }
@@ -207,7 +207,7 @@ class VerifyReceiptEndpointTest {
         VerifyReceiptEndpoint endpoint = endpoint(false);
         JsonNode viaMap = MAPPER.valueToTree(endpoint.verifyReceipt(request()));
         JsonNode viaJson = MAPPER.readTree(
-                endpoint.verifyReceipt(MAPPER.writeValueAsString(request())));
+                endpoint.verifyReceiptJson(MAPPER.writeValueAsString(request())));
         assertEquals(withoutRequestDate(viaMap), withoutRequestDate(viaJson));
     }
 }
