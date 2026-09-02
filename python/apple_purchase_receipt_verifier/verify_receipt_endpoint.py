@@ -76,6 +76,9 @@ class VerifyReceiptEndpoint:
         # Production types are exactly "Production" and "ProductionVPP";
         # everything else ("ProductionSandbox", "ProductionVPPSandbox",
         # "Xcode", or a missing attribute) fails closed as non-production.
+        # "Xcode" is listed for completeness only: an Xcode-generated
+        # receipt is not Apple-signed, so it fails chain verification with
+        # 21003 above and never reaches this branch.
         production_receipt = fields.receipt_type in ("Production", "ProductionVPP")
         if self._production and not production_receipt:
             return {"status": STATUS_SANDBOX_RECEIPT_ON_PRODUCTION}

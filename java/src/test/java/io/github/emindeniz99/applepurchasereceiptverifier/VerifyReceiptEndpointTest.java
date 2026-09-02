@@ -21,6 +21,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** verifyReceipt-compat semantics over the shared receipt fixture. */
@@ -96,6 +97,7 @@ class VerifyReceiptEndpointTest {
         Map<String, Object> response = endpoint(true).verifyReceipt(request());
         assertEquals(21007, response.get("status"));
         assertNull(response.get("receipt"));
+        assertNull(response.get("environment"));
     }
 
     @Test
@@ -103,7 +105,15 @@ class VerifyReceiptEndpointTest {
         assertEquals(21002, endpoint(false)
                 .verifyReceipt(Collections.<String, Object>emptyMap()).get("status"));
         assertEquals(21002, endpoint(false)
+                .verifyReceipt((Map<String, Object>) null).get("status"));
+        assertEquals(21002, endpoint(false)
                 .verifyReceipt(Collections.singletonMap("receipt-data", "AQIDBA==")).get("status"));
+    }
+
+    @Test
+    void rejectsAnEmptyRootSet() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new VerifyReceiptEndpoint(Collections.<X509Certificate>emptySet(), false));
     }
 
     @Test

@@ -15,6 +15,7 @@ import java.util.Base64;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -44,8 +45,10 @@ public final class VerifyReceiptEndpoint {
     /** Internal error. */
     public static final int STATUS_INTERNAL = 21009;
 
+    // Locale.ROOT pinned so a JVM default locale can never reach the
+    // rendering, matching node (en-CA) and swift (en_US_POSIX).
     private static final DateTimeFormatter FORMAT =
-            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withLocale(Locale.ROOT);
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String MALFORMED_JSON = "{\"status\":" + STATUS_MALFORMED + "}";
     private static final ZoneId GMT = ZoneId.of("UTC");
@@ -96,6 +99,9 @@ public final class VerifyReceiptEndpoint {
         // Production types are exactly "Production" and "ProductionVPP";
         // everything else ("ProductionSandbox", "ProductionVPPSandbox",
         // "Xcode", or a missing attribute) fails closed as non-production.
+        // "Xcode" is listed for completeness only: an Xcode-generated
+        // receipt is not Apple-signed, so it fails chain verification with
+        // 21003 above and never reaches this branch.
         boolean productionReceipt = "Production".equals(receipt.receiptType())
                 || "ProductionVPP".equals(receipt.receiptType());
         if (production && !productionReceipt) {

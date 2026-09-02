@@ -311,6 +311,8 @@ final class VerifyReceiptEndpointTests: XCTestCase {
         let endpoint = try endpoint(production: false)
         let empty = await endpoint.verifyReceipt([:])
         XCTAssertEqual(empty["status"] as? Int, 21002)
+        let missing = await endpoint.verifyReceipt(nil)
+        XCTAssertEqual(missing["status"] as? Int, 21002)
         let garbage = await endpoint.verifyReceipt(["receipt-data": "AQIDBA=="])
         XCTAssertEqual(garbage["status"] as? Int, 21002)
     }

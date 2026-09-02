@@ -78,9 +78,34 @@ export class VerifyReceiptEndpoint {
       || typeof receiptData !== 'string' || receiptData.length === 0) {
       return { status: Status.MALFORMED };
     }
-    let fields: AppReceipt;
     try {
-      fields = verifyReceiptCore(Buffer.from(receiptData, 'base64'), this.#roots);
+      const fields: AppReceipt = verifyReceiptCore(
+        Buffer.from(receiptData, 'base64'), this.#roots);
+
+      // 21007/21008 environment routing from the receipt_type attribute.
+      // Production types are exactly "Production" and "ProductionVPP";
+      // everything else ("ProductionSandbox", "ProductionVPPSandbox",
+      // "Xcode", or a missing attribute) fails closed as non-production.
+      // "Xcode" is listed for completeness only: an Xcode-generated
+      // receipt is not Apple-signed, so it fails chain verification with
+      // 21003 above and never reaches this branch.
+      const productionReceipt = fields.receiptType === 'Production'
+        || fields.receiptType === 'ProductionVPP';
+      if (this.#environment === 'Production' && !productionReceipt) {
+        return { status: Status.SANDBOX_RECEIPT_ON_PRODUCTION };
+      }
+      if (this.#environment === 'Sandbox' && productionReceipt) {
+        return { status: Status.PRODUCTION_RECEIPT_ON_SANDBOX };
+      }
+      // Building the response stays inside the guard: receiptJson formats
+      // dates through Intl.DateTimeFormat with named time zones, which
+      // throws on a Node built without full ICU. Any such throw becomes
+      // 21009 instead of escaping the documented "never throws" contract.
+      return {
+        status: Status.OK,
+        environment: this.#environment,
+        receipt: receiptJson(fields, new Date()),
+      };
     } catch (error) {
       if (error instanceof VerificationError) {
         return {
@@ -90,24 +115,6 @@ export class VerifyReceiptEndpoint {
       }
       return { status: Status.INTERNAL };
     }
-
-    // 21007/21008 environment routing from the receipt_type attribute.
-    // Production types are exactly "Production" and "ProductionVPP";
-    // everything else ("ProductionSandbox", "ProductionVPPSandbox",
-    // "Xcode", or a missing attribute) fails closed as non-production.
-    const productionReceipt = fields.receiptType === 'Production'
-      || fields.receiptType === 'ProductionVPP';
-    if (this.#environment === 'Production' && !productionReceipt) {
-      return { status: Status.SANDBOX_RECEIPT_ON_PRODUCTION };
-    }
-    if (this.#environment === 'Sandbox' && productionReceipt) {
-      return { status: Status.PRODUCTION_RECEIPT_ON_SANDBOX };
-    }
-    return {
-      status: Status.OK,
-      environment: this.#environment,
-      receipt: receiptJson(fields, new Date()),
-    };
   }
 
   /**

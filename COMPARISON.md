@@ -5,7 +5,7 @@ wire contract of Apple's deprecated
 [`verifyReceipt`](https://developer.apple.com/documentation/appstorereceipts/verify-receipt)
 endpoint — same [request body](https://developer.apple.com/documentation/appstorereceipts/requestbody),
 same [response body](https://developer.apple.com/documentation/appstorereceipts/responsebody)
-shape, same [status codes](https://developer.apple.com/documentation/appstorereceipts/error) —
+shape, same [status codes](https://developer.apple.com/documentation/appstorereceipts/status) —
 verified offline instead of by calling Apple. Each one takes either a
 parsed request body or the raw JSON body as a string (`verifyReceipt(String)`
 in Java, `verifyReceiptJson` in Node, `verify_receipt_json` in Python,
@@ -25,27 +25,29 @@ the first part — cryptographically verified.
 | Field | Apple | Ours |
 |---|---|---|
 | `receipt-data` | required, base64 receipt | ✅ identical |
-| `password` (shared secret) | required for auto-renewable subs; wrong value → 21004 | ⚠️ accepted, **ignored** — the shared secret is verified against Apple's account database, which doesn't exist locally. We never return 21004. |
-| `exclude-old-transactions` | trims `latest_receipt_info` | ⚠️ accepted, no effect — we never produce `latest_receipt_info` (below). |
+| `password` (shared secret) | required for auto-renewable subs; wrong value → 21004 | ⚠️ **never read** — a shared secret can only be validated against Apple's account database, which doesn't exist locally. We never return 21004. |
+| `exclude-old-transactions` | trims `latest_receipt_info` | ⚠️ **never read** — there is nothing to trim, since we never produce `latest_receipt_info` (below). |
 
 ## Status codes
 
 | Code | Apple meaning | Ours |
 |---|---|---|
 | 0 | valid | ✅ same semantics (chain + signature to pinned Apple root) |
-| 21000 / 21002 | malformed request / receipt-data | ✅ we return 21002 for both malformed cases |
+| 21000 | the request didn't use HTTP POST | ❌ out of scope — this is a body-level API with no HTTP layer, so there is no request method to get wrong. Your framework decides what a non-POST gets |
+| 21002 | receipt-data malformed or missing | ✅ returned when `receipt-data` is absent, empty, not a string, not base64, or not a parseable receipt |
 | 21003 | receipt could not be authenticated | ✅ chain or signature failure |
 | 21004 | shared secret mismatch | ❌ never produced (see `password`) |
-| 21005 / is-retryable | Apple server unavailable | ❌ never produced — there is no server to be unavailable; this is a *benefit* |
+| 21005 | Apple's receipt server is unavailable | ❌ never produced — there is no server to be unavailable; this is a *benefit* |
 | 21006 | valid but subscription expired (iOS 6 style only) | ❌ never produced (legacy iOS 6 transaction receipts unsupported) |
-| 21007 / 21008 | sandbox↔production routing | ✅ reproduced locally from the receipt's `receipt_type` attribute — the classic "try production, retry sandbox on 21007" dance still works unchanged. Fails closed: only `Production`/`ProductionVPP` count as production; sandbox variants, `Xcode`, and a missing attribute are treated as sandbox |
+| 21007 / 21008 | sandbox↔production routing | ✅ reproduced locally from the receipt's `receipt_type` attribute — the classic "try production, retry sandbox on 21007" dance still works unchanged. Fails closed: only `Production`/`ProductionVPP` count as production; sandbox variants and a missing attribute are treated as sandbox. `Xcode` is in that fail-closed set for completeness only — an Xcode-generated receipt is not Apple-signed, so it stops at 21003 before routing is reached |
 | 21009 / 21010 | internal error / account not found | 21009 on unexpected internal errors; 21010 never (no account database) |
+| 21100–21199 (+ `is_retryable`) | Apple internal data access error; `is_retryable` says whether retrying may help | ❌ never produced, and we never emit an `is_retryable` field either — these codes report the state of Apple's own datastore, and there is no remote call here to retry |
 
 ## Response body
 
 ### Produced with full fidelity (from the verified receipt)
 
-`environment`; `receipt.receipt_type`, `bundle_id`, `application_version`,
+`receipt.receipt_type`, `bundle_id`, `application_version`,
 `original_application_version`, `receipt_creation_date` (+`_ms`, `_pst`),
 `request_date` (+`_ms`, `_pst`), `original_purchase_date` (+`_ms`, `_pst`),
 `expiration_date` (VPP receipts), and per-purchase `in_app` entries:
@@ -54,6 +56,12 @@ the first part — cryptographically verified.
 `cancellation_date` (each +`_ms`, `_pst`), `web_order_line_item_id`,
 `is_in_intro_offer_period`. Number-as-string and date-triplet formatting
 match Apple's (`"1"`, `"2024-08-06 12:00:00 Etc/GMT"`).
+
+`environment` is the one response field not read from the receipt: it echoes
+the environment this endpoint instance was configured to emulate. On a
+status-0 response the two agree by construction — a receipt that disagrees
+with the configured environment is what 21007/21008 report instead, and
+those responses carry no `environment` at all.
 
 ### Not produced — receipt attributes Apple documents in the response but that are absent or undocumented in the ASN.1 receipt
 

@@ -58,6 +58,9 @@ public struct VerifyReceiptEndpoint: Sendable {
         // Production types are exactly "Production" and "ProductionVPP";
         // everything else ("ProductionSandbox", "ProductionVPPSandbox",
         // "Xcode", or a missing attribute) fails closed as non-production.
+        // "Xcode" is listed for completeness only: an Xcode-generated
+        // receipt is not Apple-signed, so it fails chain verification with
+        // 21003 above and never reaches this branch.
         let productionReceipt = fields.receiptType == "Production"
             || fields.receiptType == "ProductionVPP"
         if production && !productionReceipt {
