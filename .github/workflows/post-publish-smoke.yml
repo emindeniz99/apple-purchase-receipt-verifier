@@ -181,13 +181,19 @@ jobs:
           cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
           cp .github/smoke/maven-smoke/pom.xml .github/smoke/maven-smoke/Smoke.java "$SMOKE/"
           cd "$SMOKE"
+          # Measured on 0.2.2: Central served the artifact by attempt 5, but the
+          # loop kept failing until attempt 27 — a failed lookup gets cached in
+          # ~/.m2 and Maven won't re-query a release repository until the update
+          # interval elapses, so each retry clears the cached miss and forces a
+          # remote check.
           resolved=false
-          for attempt in $(seq 1 30); do
-            if mvn -B -q -Dsmoke.version="$VERSION" -Dmdep.outputFile=cp.txt dependency:build-classpath; then
+          for attempt in $(seq 1 40); do
+            rm -rf ~/.m2/repository/io/github/emindeniz99/apple-purchase-receipt-verifier
+            if mvn -B -q -U -Dsmoke.version="$VERSION" -Dmdep.outputFile=cp.txt dependency:build-classpath; then
               resolved=true
               break
             fi
-            echo "not on Central yet (attempt $attempt of 30); waiting 60s"
+            echo "not on Central yet (attempt $attempt of 40); waiting 60s"
             sleep 60
           done
           if [ "$resolved" != true ]; then
