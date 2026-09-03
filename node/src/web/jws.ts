@@ -1,0 +1,115 @@
+import { Environment, Reason, VerificationError } from '../errors.js';
+import { asciiEncode, base64Decode } from '../bytes.js';
+import { parseCertificate, type ParsedCertificate } from '../x509.js';
+import {
+  INTERMEDIATE_OID, JwsClaimChecker, LEAF_OID, parseJsonSegment, signedAtMillisOf, splitJws,
+} from '../jws-claims.js';
+import { normalizeRoots, validatePair, type RootInput } from './chain.js';
+import { OID_EC_PUBLIC_KEY, verifyEs256 } from './crypto.js';
+
+export { isTransactionActiveAt } from '../jws-claims.js';
+export type { AppTransactionPayload, Claims, TransactionPayload } from '../jws-claims.js';
+
+import type { AppTransactionPayload, Claims, TransactionPayload } from '../jws-claims.js';
+
+export interface JwsVerifierOptions {
+  /** Pinned roots (production: `appleJwsRoots()`). */
+  trustedRoots: RootInput[];
+  /** Bundle id every payload must carry. */
+  bundleId: string;
+  /** Include `'Sandbox'` on endpoints App Review can hit (PLAN.md D3). */
+  acceptedEnvironments: Environment[];
+  /** Required to accept Production AppTransactions. */
+  appAppleId?: number | null;
+  /** Reject payloads signed longer ago than this (PLAN.md D5). */
+  maxSignedAgeMillis?: number | null;
+}
+
+/**
+ * The WebCrypto twin of the Node build's {@link JwsVerifier}: same options,
+ * same checks in the same order, same {@link VerificationError} reasons —
+ * every method returns a Promise because `crypto.subtle` is async.
+ */
+export class JwsVerifier {
+  #roots: ParsedCertificate[];
+  #claims: JwsClaimChecker;
+
+  constructor(options: JwsVerifierOptions) {
+    this.#roots = normalizeRoots(options.trustedRoots);
+    this.#claims = new JwsClaimChecker(options);
+  }
+
+  /** Verifies a signed transaction and checks bundle id + environment. */
+  async verifyTransaction(jws: string): Promise<TransactionPayload> {
+    const payload = await this.#verifySignature(jws) as TransactionPayload;
+    this.#claims.requireBundleId(payload.bundleId);
+    this.#claims.requireAcceptedEnvironment(payload.environment);
+    return payload;
+  }
+
+  /**
+   * Verifies a signed AppTransaction and checks bundle id, environment
+   * (`receiptType`), and — in Production — the app Apple id.
+   */
+  async verifyAppTransaction(jws: string): Promise<AppTransactionPayload> {
+    const payload = await this.#verifySignature(jws) as AppTransactionPayload;
+    this.#claims.requireBundleId(payload.bundleId);
+    const environment = this.#claims.requireAcceptedEnvironment(payload.receiptType);
+    this.#claims.requireAppAppleId(environment, payload.appAppleId);
+    return payload;
+  }
+
+  /**
+   * Verifies the signature/chain only and returns the raw claims — for
+   * payload types without a dedicated model (renewal info, notification
+   * envelopes). The caller must check bundle id / environment / app Apple
+   * id in the returned claims itself.
+   */
+  async verifyRaw(jws: string): Promise<Claims> {
+    return this.#verifySignature(jws);
+  }
+
+  async #verifySignature(jws: string): Promise<Claims> {
+    const { headerB64, payloadB64, signatureB64, x5c } = splitJws(jws);
+    let leaf: ParsedCertificate;
+    let intermediate: ParsedCertificate;
+    try {
+      leaf = parseCertificate(base64Decode(x5c[0]!));
+      intermediate = parseCertificate(base64Decode(x5c[1]!));
+    } catch (cause) {
+      throw new VerificationError(Reason.INVALID_CERTIFICATE,
+        'x5c entry is not a valid certificate', cause);
+    }
+    if (!leaf.hasExtension(LEAF_OID)) {
+      throw new VerificationError(Reason.INVALID_CERTIFICATE_PURPOSE,
+        `leaf certificate lacks Apple marker OID ${LEAF_OID}`);
+    }
+    if (!intermediate.hasExtension(INTERMEDIATE_OID)) {
+      throw new VerificationError(Reason.INVALID_CERTIFICATE_PURPOSE,
+        `intermediate certificate lacks Apple marker OID ${INTERMEDIATE_OID}`);
+    }
+
+    const payload = parseJsonSegment(payloadB64, 'payload');
+    // Chain validity is checked at signing time so payloads signed with
+    // since-rotated certificates keep verifying (PLAN.md §2.1 step 4).
+    const signedAtMillis = signedAtMillisOf(payload);
+    const effectiveDate = signedAtMillis === null ? new Date() : new Date(signedAtMillis);
+    await validatePair(leaf, intermediate, this.#roots, effectiveDate);
+
+    if (leaf.publicKeyAlgorithmOid !== OID_EC_PUBLIC_KEY) {
+      throw new VerificationError(Reason.INVALID_SIGNATURE, 'leaf key is not EC');
+    }
+    const signature = base64Decode(signatureB64);
+    if (signature.length !== 64) {
+      throw new VerificationError(Reason.INVALID_SIGNATURE,
+        `ES256 signature must be 64 bytes, got ${signature.length}`);
+    }
+    const signingInput = asciiEncode(`${headerB64}.${payloadB64}`);
+    if (!await verifyEs256(leaf.spki, signature, signingInput)) {
+      throw new VerificationError(Reason.INVALID_SIGNATURE, 'ES256 signature check failed');
+    }
+
+    this.#claims.requireFresh(signedAtMillis);
+    return payload;
+  }
+}
