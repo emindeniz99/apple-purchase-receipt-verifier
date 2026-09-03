@@ -12,7 +12,8 @@
   "type": "module",
   "main": "dist/index.js",
   "exports": {
-    ".": "./dist/index.js"
+    ".": "./dist/index.js",
+    "./web": "./dist/web/index.js"
   },
   "engines": {
     "node": ">=20"
@@ -20,7 +21,8 @@
   "scripts": {
     "build": "tsc",
     "prepack": "tsc",
-    "test": "tsc && node --test",
+    "test": "tsc && tsc -p tsconfig.web.json && node --test",
+    "test:runtimes:web": "tsc && node runtime-smoke/web-node.mjs && node --experimental-vm-modules runtime-smoke/web-edge.mjs && node runtime-smoke/run-web-workerd.mjs workerd@1.20260903.1",
     "test:runtimes": "tsc && node runtime-smoke/node-like.mjs && npx --yes bun@1.4.0 runtime-smoke/node-like.mjs && npx --yes deno@2.9.6 run --allow-read runtime-smoke/node-like.mjs && node runtime-smoke/run-workerd.mjs workerd@1.20260903.1 2024-09-23 nodejs_compat && node runtime-smoke/run-workerd.mjs workerd@1.20260903.1 2023-01-01 nodejs_compat_v2 && node runtime-smoke/run-workerd.mjs workerd@1.20260903.1 2026-08-01 nodejs_compat"
   },
   "license": "MIT",
@@ -29,6 +31,7 @@
     "certs"
   ],
   "devDependencies": {
+    "@edge-runtime/vm": "^5.0.0",
     "@types/node": "^20.19.0",
     "typescript": "^7.0.2"
   },

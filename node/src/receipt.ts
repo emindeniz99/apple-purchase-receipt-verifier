@@ -1,24 +1,17 @@
 import { X509Certificate, createHash, timingSafeEqual, verify as cryptoVerify } from 'node:crypto';
 import { Reason, VerificationError } from './errors.js';
 import {
-  ParseError, Tag, encodeOidContents, hasExtension, isOctetString, octetStringValue, parse,
-  tbsParts, type ASN1Node,
-} from './der.js';
+  findMessageDigestAttribute, findSignerCertIndex, parseCms, signedAttrsSignedBytes,
+  type ParsedCms,
+} from './cms.js';
+import { hasExtension } from './der.js';
+import { parseReceiptPayload, type RawAppReceipt, type RawInAppPurchase } from './receipt-payload.js';
 import { buildAndValidatePath, normalizeRoots, type RootInput } from './chain.js';
 
-const OID_SIGNED_DATA = encodeOidContents('1.2.840.113549.1.7.2');
 // Apple marker OID on the receipt-signing leaf. Without this purpose check,
 // any developer cert chaining to the same pinned root could sign a forged
 // receipt (the chain check alone does not distinguish signer purpose).
 const RECEIPT_SIGNER_OID = '1.2.840.113635.100.6.11.1';
-const OID_MESSAGE_DIGEST = encodeOidContents('1.2.840.113549.1.9.4');
-
-// Only the digests Apple uses for receipts (SHA-1 / SHA-256), matching the
-// other three implementations; anything else is rejected.
-const DIGEST_ALGORITHMS = new Map<string, string>([
-  ['1.3.14.3.2.26', 'sha1'],
-  ['2.16.840.1.101.3.4.2.1', 'sha256'],
-].map(([oid, name]) => [encodeOidContents(oid!).toString('hex'), name!]));
 
 // Genuine receipts embed a leaf, an intermediate and (for the legacy SHA-1
 // chain) a root: the public fixtures carry 1, 3 and 3. Ten leaves room for a
@@ -28,20 +21,6 @@ const DIGEST_ALGORITHMS = new Map<string, string>([
 // them measured 122-172 ms to reject, 26 to 45 times the cost of verifying
 // the genuine 79 KB legacy receipt.
 const MAX_EMBEDDED_CERTIFICATES = 10;
-
-// Receipt attribute types — Apple, "Validating receipts on the device",
-// plus two community-established ones (0: receipt type, 18: original
-// purchase date) needed for verifyReceipt response compatibility.
-const ATTR = {
-  RECEIPT_TYPE: 0, BUNDLE_ID: 2, APP_VERSION: 3, OPAQUE_VALUE: 4, SHA1_HASH: 5,
-  CREATION_DATE: 12, IN_APP: 17, ORIGINAL_PURCHASE_DATE: 18,
-  ORIGINAL_APP_VERSION: 19, EXPIRATION_DATE: 21,
-} as const;
-const IAP = {
-  QUANTITY: 1701, PRODUCT_ID: 1702, TRANSACTION_ID: 1703, PURCHASE_DATE: 1704,
-  ORIGINAL_TRANSACTION_ID: 1705, ORIGINAL_PURCHASE_DATE: 1706, EXPIRES_DATE: 1708,
-  WEB_ORDER_LINE_ITEM_ID: 1711, CANCELLATION_DATE: 1712, IS_IN_INTRO_OFFER_PERIOD: 1719,
-} as const;
 
 /** One in-app purchase from a legacy app receipt (attribute 17). */
 export interface InAppPurchase {
@@ -93,6 +72,30 @@ export interface ReceiptVerifierOptions {
   bundleId: string;
 }
 
+/** Zero-copy Buffer view over shared-parser output, which is Uint8Array. */
+function asBuffer(bytes: Uint8Array): Buffer {
+  return Buffer.isBuffer(bytes) ? bytes
+    : Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+}
+
+function bufferValues(unknown: Map<number, Uint8Array[]>): Map<number, Buffer[]> {
+  return new Map([...unknown].map(([type, values]) => [type, values.map(asBuffer)]));
+}
+
+function toAppReceipt(raw: RawAppReceipt): AppReceipt {
+  return {
+    ...raw,
+    unknownAttributes: bufferValues(raw.unknownAttributes),
+    bundleIdBytes: raw.bundleIdBytes === null ? null : asBuffer(raw.bundleIdBytes),
+    opaqueValue: raw.opaqueValue === null ? null : asBuffer(raw.opaqueValue),
+    sha1Hash: raw.sha1Hash === null ? null : asBuffer(raw.sha1Hash),
+    inAppPurchases: raw.inAppPurchases.map((purchase: RawInAppPurchase): InAppPurchase => ({
+      ...purchase,
+      unknownAttributes: bufferValues(purchase.unknownAttributes),
+    })),
+  };
+}
+
 /**
  * Chain + signature verification WITHOUT the bundle-id claim check — the
  * primitive under both {@link ReceiptVerifier} and the verifyReceipt-compat
@@ -109,7 +112,7 @@ export function verifyReceiptCore(der: Buffer, trustedRoots: RootInput[]): AppRe
   // Parsed before signature verification only to learn the creation date
   // (chain validity anchors at signing time); nothing from it is trusted
   // until the chain + signature checks pass.
-  const fields = parsePayload(cms.content);
+  const fields = parseReceiptPayload(cms.content);
   const at = fields.creationDate === null ? new Date() : fields.creationDate;
 
   // Everything below walks attacker-supplied DER through OpenSSL and through
@@ -126,7 +129,12 @@ export function verifyReceiptCore(der: Buffer, trustedRoots: RootInput[]): AppRe
         `receipt embeds more than ${MAX_EMBEDDED_CERTIFICATES} certificates`);
     }
     const embedded = cms.certificates.map((raw) => new X509Certificate(raw));
-    const signerCert = findSignerCert(cms, embedded);
+    const signerIndex = findSignerCertIndex(cms);
+    if (signerIndex < 0) {
+      throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT,
+        'signer certificate not embedded');
+    }
+    const signerCert = embedded[signerIndex]!;
     buildAndValidatePath(signerCert, embedded, roots, at);
     let signerHasOid = false;
     try {
@@ -143,7 +151,7 @@ export function verifyReceiptCore(der: Buffer, trustedRoots: RootInput[]): AppRe
     }
     throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'malformed CMS structure', cause);
   }
-  return fields;
+  return toAppReceipt(fields);
 }
 
 /**
@@ -184,105 +192,6 @@ export class ReceiptVerifier {
   }
 }
 
-interface SignerInfo {
-  issuerRaw: Buffer;
-  serialContents: Buffer;
-  digest: string;
-  signedAttrs: ASN1Node | null;
-  signature: Buffer;
-}
-
-interface ParsedCms {
-  content: Buffer;
-  certificates: Buffer[];
-  signerInfo: SignerInfo;
-}
-
-function children(node: ASN1Node): ASN1Node[] {
-  return node.children ?? [];
-}
-
-function parseCms(der: Buffer): ParsedCms {
-  let contentInfo: ASN1Node;
-  try {
-    contentInfo = parse(der);
-  } catch (cause) {
-    throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'not parseable ASN.1', cause);
-  }
-  try {
-    const info = children(contentInfo);
-    if (contentInfo.tag !== Tag.SEQUENCE
-      || !info[0]!.contents.equals(OID_SIGNED_DATA)
-      || info[1]!.tag !== Tag.CONTEXT_0) {
-      throw new ParseError('not a CMS SignedData');
-    }
-    const signedData = children(children(info[1]!)[0]!);
-    const encap = children(signedData[2]!);
-    if (encap.length < 2 || encap[1]!.tag !== Tag.CONTEXT_0) {
-      throw new ParseError('no encapsulated payload');
-    }
-    const contentNode = children(encap[1]!)[0]!;
-    if (!isOctetString(contentNode)) {
-      throw new ParseError('encapsulated payload is not an OCTET STRING');
-    }
-    const content = octetStringValue(contentNode);
-
-    let certificates: Buffer[] = [];
-    for (const child of signedData.slice(3, signedData.length - 1)) {
-      if (child.tag === Tag.CONTEXT_0) {
-        certificates = children(child).map((c) => c.raw);
-      }
-    }
-    const signerInfos = signedData[signedData.length - 1]!;
-    if (signerInfos.tag !== Tag.SET || children(signerInfos).length === 0) {
-      throw new ParseError('no signer info');
-    }
-    const signerInfo = parseSignerInfo(children(signerInfos)[0]!);
-    return { content, certificates, signerInfo };
-  } catch (cause) {
-    if (cause instanceof VerificationError) {
-      throw cause;
-    }
-    throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'malformed CMS structure', cause);
-  }
-}
-
-function parseSignerInfo(node: ASN1Node): SignerInfo {
-  const fields = children(node);
-  const sid = children(fields[1]!);
-  const issuerRaw = sid[0]!.raw;
-  const serialContents = sid[1]!.contents;
-  const digestOidHex = children(fields[2]!)[0]!.contents.toString('hex');
-  let index = 3;
-  let signedAttrs: ASN1Node | null = null;
-  if (fields[index]!.tag === Tag.CONTEXT_0) {
-    signedAttrs = fields[index]!;
-    index += 1;
-  }
-  index += 1; // signatureAlgorithm — RSA PKCS#1 v1.5 assumed, digest drives the hash
-  const signature = fields[index]!.contents;
-  const digest = DIGEST_ALGORITHMS.get(digestOidHex);
-  if (!digest) {
-    throw new ParseError('unsupported digest algorithm');
-  }
-  return { issuerRaw, serialContents, digest, signedAttrs, signature };
-}
-
-function findSignerCert(cms: ParsedCms, embedded: X509Certificate[]): X509Certificate {
-  for (let i = 0; i < cms.certificates.length; i++) {
-    try {
-      const { serialNumber, issuer } = tbsParts(cms.certificates[i]!);
-      if (serialNumber.contents.equals(cms.signerInfo.serialContents)
-        && issuer.raw.equals(cms.signerInfo.issuerRaw)) {
-        return embedded[i]!;
-      }
-    } catch {
-      // skip unparseable embedded certificate
-    }
-  }
-  throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'signer certificate not embedded');
-}
-
 function verifyCmsSignature(cms: ParsedCms, signerCert: X509Certificate): void {
   const { digest, signedAttrs, signature } = cms.signerInfo;
   if (signerCert.publicKey.asymmetricKeyType !== 'rsa') {
@@ -292,37 +201,18 @@ function verifyCmsSignature(cms: ParsedCms, signerCert: X509Certificate): void {
   if (signedAttrs !== null) {
     const contentDigest = createHash(digest).update(cms.content).digest();
     const messageDigest = findMessageDigestAttribute(signedAttrs);
-    if (messageDigest === null || !timingSafeEqualPadded(messageDigest, contentDigest)) {
+    if (messageDigest === null || !timingSafeEqualPadded(asBuffer(messageDigest), contentDigest)) {
       throw new VerificationError(Reason.INVALID_SIGNATURE,
         'messageDigest attribute does not match content');
     }
-    // Signature covers the signedAttrs re-encoded as an explicit SET
-    // (RFC 5652 §5.4): swap the IMPLICIT [0] tag for SET.
-    const signedBytes = Buffer.concat([Buffer.from([Tag.SET]), signedAttrs.raw.subarray(1)]);
-    valid = cryptoVerify(digest, signedBytes, signerCert.publicKey, signature);
+    valid = cryptoVerify(digest, signedAttrsSignedBytes(signedAttrs),
+      signerCert.publicKey, signature);
   } else {
     valid = cryptoVerify(digest, cms.content, signerCert.publicKey, signature);
   }
   if (!valid) {
     throw new VerificationError(Reason.INVALID_SIGNATURE, 'CMS signature check failed');
   }
-}
-
-function findMessageDigestAttribute(signedAttrs: ASN1Node): Buffer | null {
-  for (const attr of children(signedAttrs)) {
-    // Every signed attribute is SEQUENCE { OID, SET OF value }; a shape that
-    // is missing either part is a malformed structure rather than an
-    // attribute we simply are not looking for.
-    const [type, values] = children(attr);
-    const value = values === undefined ? undefined : children(values)[0];
-    if (type === undefined || value === undefined) {
-      throw new ParseError('malformed signed attribute');
-    }
-    if (type.contents.equals(OID_MESSAGE_DIGEST)) {
-      return value.contents;
-    }
-  }
-  return null;
 }
 
 function timingSafeEqualPadded(a: Buffer, b: Buffer): boolean {
@@ -340,170 +230,4 @@ function verifyDeviceHash(fields: AppReceipt, deviceGuid: Buffer): void {
     throw new VerificationError(Reason.DEVICE_HASH_MISMATCH,
       'computed device hash does not match attribute 5');
   }
-}
-
-// --- ASN.1 payload parsing ---------------------------------------------
-
-function parsePayload(content: Buffer): AppReceipt {
-  const attributes = parseAttributeSet(content, 'receipt payload');
-  const fields: AppReceipt = {
-    unknownAttributes: new Map(),
-    receiptType: null, bundleId: null, bundleIdBytes: null, appVersion: null,
-    opaqueValue: null, sha1Hash: null, creationDate: null, originalPurchaseDate: null,
-    originalAppVersion: null, expirationDate: null, inAppPurchases: [],
-  };
-  for (const { type, value } of attributes) {
-    switch (type) {
-      case ATTR.RECEIPT_TYPE: fields.receiptType = decodeString(value); break;
-      case ATTR.BUNDLE_ID:
-        fields.bundleId = decodeString(value);
-        fields.bundleIdBytes = value;
-        break;
-      case ATTR.APP_VERSION: fields.appVersion = decodeString(value); break;
-      case ATTR.OPAQUE_VALUE: fields.opaqueValue = value; break;
-      case ATTR.SHA1_HASH: fields.sha1Hash = value; break;
-      case ATTR.CREATION_DATE: fields.creationDate = decodeDate(value); break;
-      case ATTR.IN_APP: fields.inAppPurchases.push(parseInApp(value)); break;
-      case ATTR.ORIGINAL_PURCHASE_DATE: fields.originalPurchaseDate = decodeDate(value); break;
-      case ATTR.ORIGINAL_APP_VERSION: fields.originalAppVersion = decodeString(value); break;
-      case ATTR.EXPIRATION_DATE: fields.expirationDate = decodeDate(value); break;
-      default: recordUnknown(fields.unknownAttributes, type, value); break;
-    }
-  }
-  return fields;
-}
-
-function recordUnknown(unknown: Map<number, Buffer[]>, type: number, value: Buffer): void {
-  const values = unknown.get(type) ?? [];
-  values.push(value);
-  unknown.set(type, values);
-}
-
-function parseInApp(value: Buffer): InAppPurchase {
-  const attributes = parseAttributeSet(value, 'in-app purchase attribute');
-  const purchase: InAppPurchase = {
-    unknownAttributes: new Map(),
-    quantity: null, productId: null, transactionId: null, originalTransactionId: null,
-    purchaseDate: null, originalPurchaseDate: null, expiresDate: null,
-    cancellationDate: null, webOrderLineItemId: null, isInIntroOfferPeriod: null,
-  };
-  for (const { type, value: v } of attributes) {
-    switch (type) {
-      case IAP.QUANTITY: purchase.quantity = decodeInteger(v); break;
-      case IAP.PRODUCT_ID: purchase.productId = decodeString(v); break;
-      case IAP.TRANSACTION_ID: purchase.transactionId = decodeString(v); break;
-      case IAP.PURCHASE_DATE: purchase.purchaseDate = decodeDate(v); break;
-      case IAP.ORIGINAL_TRANSACTION_ID: purchase.originalTransactionId = decodeString(v); break;
-      case IAP.ORIGINAL_PURCHASE_DATE: purchase.originalPurchaseDate = decodeDate(v); break;
-      case IAP.EXPIRES_DATE: purchase.expiresDate = decodeDate(v); break;
-      case IAP.WEB_ORDER_LINE_ITEM_ID: purchase.webOrderLineItemId = decodeInteger(v); break;
-      case IAP.CANCELLATION_DATE: purchase.cancellationDate = decodeDate(v); break;
-      case IAP.IS_IN_INTRO_OFFER_PERIOD: purchase.isInIntroOfferPeriod = decodeInteger(v); break;
-      default: recordUnknown(purchase.unknownAttributes, type, v); break;
-    }
-  }
-  return purchase;
-}
-
-function parseAttributeSet(der: Buffer, what: string): Array<{ type: number; value: Buffer }> {
-  let node: ASN1Node;
-  try {
-    node = parse(der);
-  } catch (cause) {
-    throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT,
-      `${what} is not valid ASN.1`, cause);
-  }
-  if (isOctetString(node)) {
-    // Xcode receipts double-wrap the payload in an extra OCTET STRING.
-    try {
-      node = parse(octetStringValue(node));
-    } catch (cause) {
-      throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT,
-        `${what} double-wrap is not valid ASN.1`, cause);
-    }
-  }
-  if (node.tag !== Tag.SET) {
-    throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, `${what} is not an ASN.1 SET`);
-  }
-  const attributes: Array<{ type: number; value: Buffer }> = [];
-  for (const child of children(node)) {
-    const fields = children(child);
-    if (child.tag !== Tag.SEQUENCE || fields.length < 3
-      || fields[0]!.tag !== Tag.INTEGER || !isOctetString(fields[2]!)) {
-      throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'malformed receipt attribute');
-    }
-    attributes.push({
-      type: integerValue(fields[0]!),
-      value: octetStringValue(fields[2]!),
-    });
-  }
-  return attributes;
-}
-
-function integerValue(node: ASN1Node): number {
-  // 8-byte cap: real receipts carry 7-byte integers (web_order_line_item_id).
-  if (node.contents.length > 8) {
-    throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'attribute integer out of range');
-  }
-  // Negative attribute types/values never occur in receipts; reject them.
-  if (node.contents.length > 0 && node.contents[0]! >= 0x80) {
-    throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'negative receipt integer');
-  }
-  let value = 0n;
-  for (const byte of node.contents) {
-    value = value * 256n + BigInt(byte);
-  }
-  if (value > BigInt(Number.MAX_SAFE_INTEGER)) {
-    throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT,
-      'receipt integer exceeds JS safe-integer range');
-  }
-  return Number(value);
-}
-
-function decodeNested(der: Buffer, what: string): ASN1Node {
-  try {
-    return parse(der);
-  } catch (cause) {
-    throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT,
-      `${what} is not valid ASN.1`, cause);
-  }
-}
-
-function decodeString(der: Buffer): string {
-  const node = decodeNested(der, 'attribute value');
-  if (node.tag !== Tag.UTF8_STRING && node.tag !== Tag.IA5_STRING) {
-    throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT,
-      'attribute value is not an ASN.1 string');
-  }
-  return node.contents.toString('utf8');
-}
-
-function decodeInteger(der: Buffer): number {
-  const node = decodeNested(der, 'attribute value');
-  if (node.tag !== Tag.INTEGER) {
-    throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT,
-      'attribute value is not an ASN.1 integer');
-  }
-  return integerValue(node);
-}
-
-// The timezone designator is mandatory: `new Date` reads a naive date as the
-// server's LOCAL time, and the creation date is the instant the chain's
-// validity is judged at, so the same receipt would verify on one host and
-// fail on another. Java (Instant.parse) and Swift (ISO8601DateFormatter)
-// reject a naive date too — requiring it here keeps all four in agreement.
-const RFC_3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
-
-/** RFC 3339 date in an IA5String; empty means absent (real receipts do this). */
-function decodeDate(der: Buffer): Date | null {
-  const text = decodeString(der);
-  if (text === '') {
-    return null;
-  }
-  const date = new Date(text);
-  if (!RFC_3339.test(text) || Number.isNaN(date.getTime())) {
-    throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT,
-      `unparseable receipt date: ${text}`);
-  }
-  return date;
 }
