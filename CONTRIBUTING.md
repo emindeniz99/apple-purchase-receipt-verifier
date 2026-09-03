@@ -52,7 +52,8 @@ with the contract.
    A positive case carries `status: "ok"` plus the `fields` it pins; a field
    it does not list is not pinned. A negative case carries `status: "error"`
    plus a `reason` from the canonical vocabulary, and a `fault` naming its
-   single intentional defect.
+   single intentional defect. Add a `clock` if — and only if — the answer
+   depends on the current time; see below.
 3. Run `node tools/lint-cases.mjs`. It validates the file against
    `fixtures/cases.schema.json`, re-hashes every registered fixture, and
    fails on a fixture file no case registers or an `input` fixture no case
@@ -67,10 +68,27 @@ API names for the four library operations, the literal Apple wire keys for
 unset". The `comment` at the top of `cases.json` carries the full grammar and
 the sources every expectation was derived from.
 
-One case (`transaction/reject-stale-payload`) carries a `clock`. No library
-takes an injectable clock today, so Java, Python and Swift skip it and print
-why, while Node fakes time in its runner. A real clock seam would be a
-library change in all four languages.
+### The clock
+
+A case may carry a `clock`: one ISO-8601 UTC instant, the `now` the call is
+answered at. All four libraries take an optional clock — `java.time.Clock`, a
+`() => Date` supplier, a callable returning epoch seconds, a
+`@Sendable () -> Date` — and each adapter hands the case's instant to the
+verifier it builds. No runner fakes time and no runner skips a case for want
+of a seam. A case without a `clock` gets no clock argument, so the library
+reads the system clock exactly as a caller who never sets one does.
+
+Pin a clock only where the answer genuinely moves with time: the
+max-signed-age (`STALE_PAYLOAD`) rule, and the `request_date` triple of
+`verifyReceiptEndpoint`. Certificate validity is not such a place — it is
+judged at the payload's `signedDate` or the receipt's creation date (PLAN.md
+2.1 step 4, 2.2 step 2), so the expired-chain cases are deterministic, carry
+no clock, and no injected clock may move their verdict.
+
+`verifyReceipt` cases must not pin one. Three of the four ports give
+`ReceiptVerifier` no clock parameter, because no verdict on that path depends
+on the current time, and their adapters raise a harness error rather than
+quietly running the case against the system clock.
 
 ## Commits
 
