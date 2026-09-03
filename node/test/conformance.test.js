@@ -1,4 +1,4 @@
-import test, { mock } from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -57,7 +57,7 @@ function trustedRoots(spec) {
 const UNMATCHABLE_BUNDLE_ID = 'conformance.unset.bundle.id';
 const UNMATCHABLE_ENVIRONMENTS = ['LocalTesting'];
 
-function jwsVerifier(config) {
+function jwsVerifier(config, clock) {
   return new JwsVerifier({
     trustedRoots: trustedRoots(config.trustedRoots),
     bundleId: config.bundleId ?? UNMATCHABLE_BUNDLE_ID,
@@ -65,17 +65,23 @@ function jwsVerifier(config) {
     appAppleId: config.appAppleId ?? null,
     maxSignedAgeMillis: config.maxSignedAgeSeconds === undefined
       ? null : config.maxSignedAgeSeconds * 1000,
+    clock,
   });
 }
 
+// Each operation takes the case's clock (null when it pins none) and hands
+// it to the library's `clock` option. An operation whose API has no clock
+// seam rejects a case that pins one instead of silently running on the
+// system clock.
 const OPERATIONS = {
-  verifyTransaction: (config, input) =>
-    jwsVerifier(config).verifyTransaction(input.toString('utf8')),
-  verifyAppTransaction: (config, input) =>
-    jwsVerifier(config).verifyAppTransaction(input.toString('utf8')),
-  verifyRaw: (config, input) =>
-    jwsVerifier(config).verifyRaw(input.toString('utf8')),
-  verifyReceipt: (config, input) => {
+  verifyTransaction: (config, input, clock) =>
+    jwsVerifier(config, clock).verifyTransaction(input.toString('utf8')),
+  verifyAppTransaction: (config, input, clock) =>
+    jwsVerifier(config, clock).verifyAppTransaction(input.toString('utf8')),
+  verifyRaw: (config, input, clock) =>
+    jwsVerifier(config, clock).verifyRaw(input.toString('utf8')),
+  verifyReceipt: (config, input, clock) => {
+    requireNoClock(clock, 'verifyReceipt');
     const verifier = new ReceiptVerifier({
       trustedRoots: trustedRoots(config.trustedRoots), bundleId: config.bundleId,
     });
@@ -83,10 +89,16 @@ const OPERATIONS = {
       ? null : Buffer.from(config.deviceGuidHex, 'hex');
     return verifier.verify(input, guid);
   },
-  verifyReceiptEndpoint: (config, input) => new VerifyReceiptEndpoint({
-    trustedRoots: trustedRoots(config.trustedRoots), environment: config.environment,
+  verifyReceiptEndpoint: (config, input, clock) => new VerifyReceiptEndpoint({
+    trustedRoots: trustedRoots(config.trustedRoots), environment: config.environment, clock,
   }).verifyReceipt({ 'receipt-data': input.toString('base64') }),
 };
+
+function requireNoClock(clock, operation) {
+  if (clock !== null) {
+    throw new Error(`harness error: ${operation} has no clock seam, but the case pins one`);
+  }
+}
 
 // --- result normalization ----------------------------------------------
 
@@ -184,17 +196,19 @@ function resolvePath(root, path) {
 
 // --- one case -----------------------------------------------------------
 
-/** Injects the case's instant for the duration of the call, if it pins one. */
-function withClock(clock, run) {
-  if (clock === undefined) {
-    return run();
+/**
+ * The case's pinned instant as the library's `clock` option, or null when
+ * the case does not pin one (then the library uses the system clock).
+ */
+function caseClock(kase) {
+  if (kase.clock === undefined) {
+    return null;
   }
-  mock.timers.enable({ apis: ['Date'], now: new Date(clock.now) });
-  try {
-    return run();
-  } finally {
-    mock.timers.reset();
+  const now = new Date(kase.clock.now);
+  if (Number.isNaN(now.getTime())) {
+    throw new Error(`harness error: unparseable clock "${kase.clock.now}"`);
   }
+  return () => now;
 }
 
 function runCase(kase) {
@@ -205,7 +219,7 @@ function runCase(kase) {
   const input = fixtureBytes(kase.input.fixture);
   let result;
   try {
-    result = withClock(kase.clock, () => operation(kase.config, input));
+    result = operation(kase.config, input, caseClock(kase));
   } catch (error) {
     // Only a VerificationError carries a canonical Reason. Anything else is
     // a defect in the library or in this harness, and must never be read as
