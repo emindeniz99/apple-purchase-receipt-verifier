@@ -1,7 +1,7 @@
 {
   "$schema": "./cases.schema.json",
   "schemaVersion": 1,
-  "comment": "Normative cross-language conformance vectors for apple-purchase-receipt-verifier.\nOne case per semantic fact: java/, node/, python/ and swift/ each assert many of these under\ntheir own test names, and the duplicates are merged here.\nEvery expectation in this file was derived by hand from the four test-suite inventories,\nfrom PLAN.md sections 2.1-2.3, from COMPARISON.md and from the fixture generator\n(java/src/test/.../FixtureGeneratorTest.java) plus fixtures/generated/manifest.json.\nNOTHING here was produced by running an implementation and recording what it did:\na vector that disagrees with an implementation is a bug report against that implementation\nuntil a human decides otherwise.\n\nPaths in \"fields\" are language-neutral. Scalars use the shared API names from PLAN.md section 3\n(camelCase) for verifyTransaction/verifyAppTransaction/verifyRaw/verifyReceipt, and the literal\nApple wire keys (snake_case) for verifyReceiptEndpoint. \"x.length\" is a collection size.\n\"list[key=value].field\" selects the single element of list whose key equals value.\n\"unknownAttributes[9999][0]\" indexes the raw values recorded for receipt attribute type 9999,\nexpressed as a lowercase hex string. Dates are ISO-8601 UTC strings; claims that Apple ships as\nepoch milliseconds (signedDate, receiptCreationDate) stay numbers. null means \"absent or unset\".\nA field a case does not list is simply not pinned by that case.\n\nCertificate-validity windows are judged at the payload signedDate / receipt creationDate,\nnever at wall-clock time (PLAN.md 2.1 step 4, 2.2 step 2), so the expired-chain cases are\ndeterministic and carry no clock. \"clock\" appears only where the verdict genuinely moves with\ntime; today that is the max-signed-age staleness rule alone. No implementation accepts an\ninjected clock yet, so a runner must fake time for those cases until a clock seam exists.\n\n\"fault\" names the one intentional defect of a negative case. It is documentation, not an\nassertion: implementations are not required to report it, only to report the given reason.",
+  "comment": "Normative cross-language conformance vectors for apple-purchase-receipt-verifier.\nOne case per semantic fact: java/, node/, python/ and swift/ each assert many of these under\ntheir own test names, and the duplicates are merged here.\nEvery expectation in this file was derived by hand from the four test-suite inventories,\nfrom PLAN.md sections 2.1-2.3, from COMPARISON.md and from the fixture generator\n(java/src/test/.../FixtureGeneratorTest.java) plus fixtures/generated/manifest.json.\nNOTHING here was produced by running an implementation and recording what it did:\na vector that disagrees with an implementation is a bug report against that implementation\nuntil a human decides otherwise.\n\nPaths in \"fields\" are language-neutral. Scalars use the shared API names from PLAN.md section 3\n(camelCase) for verifyTransaction/verifyAppTransaction/verifyRaw/verifyReceipt, and the literal\nApple wire keys (snake_case) for verifyReceiptEndpoint. \"x.length\" is a collection size.\n\"list[key=value].field\" selects the single element of list whose key equals value.\n\"unknownAttributes[9999][0]\" indexes the raw values recorded for receipt attribute type 9999,\nexpressed as a lowercase hex string. Dates are ISO-8601 UTC strings; claims that Apple ships as\nepoch milliseconds (signedDate, receiptCreationDate) stay numbers. null means \"absent or unset\".\nA field a case does not list is simply not pinned by that case.\n\nCertificate-validity windows are judged at the payload signedDate / receipt creationDate,\nnever at wall-clock time (PLAN.md 2.1 step 4, 2.2 step 2), so the expired-chain cases are\ndeterministic and carry no clock. \"clock\" appears only where the answer genuinely moves with\ntime: the max-signed-age staleness rule, and the request_date triple of the verifyReceipt\nendpoint. Every implementation takes an optional clock, so a runner MUST hand a case's clock\nto the verifier rather than fake time; a case carrying a clock that is run against the system\nclock is not running the case.\n\n\"fault\" names the one intentional defect of a negative case. It is documentation, not an\nassertion: implementations are not required to report it, only to report the given reason.",
   "fixtures": {
     "generated-manifest": {
       "path": "generated/manifest.json",
@@ -374,7 +374,7 @@
     },
     {
       "id": "transaction/reject-stale-payload",
-      "description": "With a max signed age configured, a payload signed longer ago than that is rejected as stale. The only verdict in this file that depends on wall-clock time.",
+      "description": "With a max signed age configured, a payload signed longer ago than that is rejected as stale — here months before the pinned verification time. The staleness rule is the only verdict in this file that moves with the clock.",
       "operation": "verifyTransaction",
       "input": {
         "fixture": "transaction"
@@ -404,6 +404,125 @@
         "jws",
         "transaction",
         "negative",
+        "staleness",
+        "clock",
+        "generated"
+      ]
+    },
+    {
+      "id": "transaction/accept-payload-at-exact-max-signed-age",
+      "description": "The same payload and the same 60-second max age as the stale case, verified 60 seconds after its signedDate: an age exactly equal to the maximum is still fresh. Pins the rule as \"older than the maximum\", not \"at least as old as\".",
+      "operation": "verifyTransaction",
+      "input": {
+        "fixture": "transaction"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ],
+        "maxSignedAgeSeconds": 60
+      },
+      "clock": {
+        "now": "2024-08-06T12:01:00Z"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "bundleId": "com.example.app",
+          "environment": "Sandbox",
+          "productId": "com.example.app.pro",
+          "transactionId": "2000000000000001",
+          "signedDate": 1722945600000
+        }
+      },
+      "tags": [
+        "jws",
+        "transaction",
+        "positive",
+        "staleness",
+        "clock",
+        "generated"
+      ]
+    },
+    {
+      "id": "transaction/reject-payload-one-second-past-max-signed-age",
+      "description": "One second later the same payload under the same configuration is stale. This case and the one above differ in nothing but the injected clock, so together they pin the exact boundary of the max-signed-age rule and prove the clock is what decides it.",
+      "operation": "verifyTransaction",
+      "input": {
+        "fixture": "transaction"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ],
+        "maxSignedAgeSeconds": 60
+      },
+      "clock": {
+        "now": "2024-08-06T12:01:01Z"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "STALE_PAYLOAD"
+      },
+      "fault": "signed-date-older-than-max-signed-age",
+      "tags": [
+        "jws",
+        "transaction",
+        "negative",
+        "staleness",
+        "clock",
+        "generated"
+      ]
+    },
+    {
+      "id": "transaction/accept-payload-signed-after-the-clock",
+      "description": "A clock an hour before the signedDate leaves the payload fresh: age runs from the signing time to now, and a payload from the future is not stale. Catches an implementation that compares the magnitude of the difference instead of its sign.",
+      "operation": "verifyTransaction",
+      "input": {
+        "fixture": "transaction"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ],
+        "maxSignedAgeSeconds": 60
+      },
+      "clock": {
+        "now": "2024-08-06T11:00:00Z"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "bundleId": "com.example.app",
+          "environment": "Sandbox",
+          "signedDate": 1722945600000
+        }
+      },
+      "tags": [
+        "jws",
+        "transaction",
+        "positive",
         "staleness",
         "clock",
         "generated"
@@ -709,6 +828,86 @@
         "jws",
         "app-transaction",
         "positive",
+        "generated"
+      ]
+    },
+    {
+      "id": "app-transaction/accept-fresh-receipt-creation-date",
+      "description": "An AppTransaction carries no signedDate, so its age is measured from receiptCreationDate (PLAN.md 2.1 step 4). Thirty seconds after that date, under a 60-second max age, it is fresh.",
+      "operation": "verifyAppTransaction",
+      "input": {
+        "fixture": "app-transaction"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ],
+        "appAppleId": 123456789,
+        "maxSignedAgeSeconds": 60
+      },
+      "clock": {
+        "now": "2024-08-06T12:00:30Z"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "bundleId": "com.example.app",
+          "receiptType": "Sandbox",
+          "appAppleId": 123456789,
+          "receiptCreationDate": 1722945600000
+        }
+      },
+      "tags": [
+        "jws",
+        "app-transaction",
+        "positive",
+        "staleness",
+        "clock",
+        "generated"
+      ]
+    },
+    {
+      "id": "app-transaction/reject-stale-receipt-creation-date",
+      "description": "Sixty-one seconds after the same receiptCreationDate the AppTransaction is stale. An implementation that only ever ages a payload by signedDate would find no anchor here and accept it.",
+      "operation": "verifyAppTransaction",
+      "input": {
+        "fixture": "app-transaction"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ],
+        "appAppleId": 123456789,
+        "maxSignedAgeSeconds": 60
+      },
+      "clock": {
+        "now": "2024-08-06T12:01:01Z"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "STALE_PAYLOAD"
+      },
+      "fault": "receipt-creation-date-older-than-max-signed-age",
+      "tags": [
+        "jws",
+        "app-transaction",
+        "negative",
+        "staleness",
+        "clock",
         "generated"
       ]
     },
@@ -1282,7 +1481,7 @@
     },
     {
       "id": "endpoint/sandbox-receipt-on-sandbox-answers-0",
-      "description": "The verifyReceipt-compatible endpoint answers status 0 for a sandbox receipt on a sandbox instance, rendering numbers as strings and dates as Apple's three-field triple. request_date* is deliberately unasserted: it is the wall clock at call time.",
+      "description": "The verifyReceipt-compatible endpoint answers status 0 for a sandbox receipt on a sandbox instance, rendering numbers as strings and dates as Apple's three-field triple. This case pins no clock, so request_date* is whatever the system clock says and is left unasserted; endpoint/request-date-is-the-verification-clock pins it instead.",
       "operation": "verifyReceiptEndpoint",
       "input": {
         "fixture": "receipt"
@@ -1321,6 +1520,46 @@
         "receipt",
         "positive",
         "wire-format",
+        "generated"
+      ]
+    },
+    {
+      "id": "endpoint/request-date-is-the-verification-clock",
+      "description": "request_date is the instant the endpoint answered, so the clock drives it — and drives nothing else: the receipt's own creation date is read from the signed bytes and does not move. The three renderings are Apple's triple: Etc/GMT text, epoch milliseconds as a string, and the same instant in America/Los_Angeles.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "fixture": "receipt"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "environment": "Sandbox"
+      },
+      "clock": {
+        "now": "2025-01-01T00:00:00Z"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "status": 0,
+          "environment": "Sandbox",
+          "receipt.request_date": "2025-01-01 00:00:00 Etc/GMT",
+          "receipt.request_date_ms": "1735689600000",
+          "receipt.request_date_pst": "2024-12-31 16:00:00 America/Los_Angeles",
+          "receipt.receipt_creation_date": "2024-08-06 12:00:00 Etc/GMT",
+          "receipt.receipt_creation_date_ms": "1722945600000"
+        }
+      },
+      "tags": [
+        "endpoint",
+        "receipt",
+        "positive",
+        "wire-format",
+        "clock",
         "generated"
       ]
     },
