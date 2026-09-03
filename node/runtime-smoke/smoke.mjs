@@ -3,7 +3,7 @@
 // access, so the same module runs where `node:fs` does not exist. Fixture
 // bytes come in from the runner (node-like.mjs reads files, worker.mjs gets
 // them embedded by workerd.capnp).
-import { JwsVerifier, ReceiptVerifier, VerificationError } from '../dist/index.js';
+import { JwsVerifier, ReceiptVerifier, VerificationError, appleReceiptRoots } from '../dist/index.js';
 
 const BUNDLE = 'com.example.app';
 
@@ -15,6 +15,16 @@ const BUNDLE = 'com.example.app';
  */
 export function run(fx) {
   const out = [];
+
+  // appleReceiptRoots() must not touch the filesystem: the roots are
+  // inlined at build time so a bundled runtime can call it.
+  const builtin = new ReceiptVerifier({
+    trustedRoots: appleReceiptRoots(), bundleId: 'dev.bonzer.weeka.app',
+  });
+  if (builtin.verify(fx.sandboxReceiptB64.trim()).receiptType !== 'ProductionSandbox') {
+    throw new Error('builtin roots did not verify the genuine receipt');
+  }
+  out.push('appleReceiptRoots() works without a filesystem');
 
   const receipts = new ReceiptVerifier({
     trustedRoots: [fx.appleRootDer], bundleId: 'dev.bonzer.weeka.app',

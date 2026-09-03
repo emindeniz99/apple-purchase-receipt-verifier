@@ -25,6 +25,10 @@ human-facing version; where they overlap, they agree.
   floor, JUnit stays 5.x (JUnit 6 needs Java >8), the `java-runtime-8` CI job
   runs the suite on a real Temurin 8 JVM. Dependabot ignore rules encode
   this — don't "fix" them by upgrading.
+- **The Node package inlines the roots.** `node/src/roots-data.ts` is
+  generated from `certs/` by `node/scripts/gen-roots.mjs`; CI regenerates it
+  and fails on a diff. Change `certs/`, re-run the script in the same commit.
+  Reading the files at call time would break every bundled runtime.
 - **`certs/` pins exactly two Apple roots deliberately** (minimal trust
   anchors, PLAN.md D12). Don't add more because "the site lists many".
 - **One version, five files**: release-please's extra-files bump

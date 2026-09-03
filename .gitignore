@@ -5,3 +5,4 @@ build/
 .build/
 dist/
 *.egg-info/
+.workerd-run.capnp

@@ -69,14 +69,14 @@ convention (`applepurchasereceiptverifier` / `apple_purchase_receipt_verifier` /
 `ApplePurchaseReceiptVerifier`) — one name everywhere.
 
 **JavaScript runtimes.** The npm package needs `node:crypto`'s
-`X509Certificate`, not just WebCrypto. It runs on Node 20+, Bun, Deno,
-and Cloudflare Workers (`nodejs_compat` flag, compatibility date
-2025-09-01 or later); CI proves each one on every push
-(`cd node && npm run test:runtimes`). It does not run on the Vercel Edge
-runtime or other WebCrypto-only isolates. On Workers, pass the trust
-anchors in yourself (`trustedRoots: [rootDer]`): `appleReceiptRoots()` and
-`appleJwsRoots()` read the bundled `certs/` files from disk, which a
-Worker bundle does not carry.
+`X509Certificate`, not just WebCrypto, and nothing else — no filesystem,
+so `appleReceiptRoots()` and `appleJwsRoots()` work inside a bundle. It
+runs on Node 20+, Bun, Deno and Cloudflare Workers; CI proves each one on
+every push (`cd node && npm run test:runtimes`). On Workers set
+`nodejs_compat` with a compatibility date of **2024-09-23 or later**, or
+`nodejs_compat_v2` explicitly on an older date — that flag supplies the
+global `Buffer` the DER handling uses, and CI runs both spellings. It does
+not run on the Vercel Edge runtime or other WebCrypto-only isolates.
 
 ## How to run the test suites
 

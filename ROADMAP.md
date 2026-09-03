@@ -18,12 +18,6 @@ Delete an item in the same commit that ships it.
   engines floor to 22 is a semver-major decision, nothing in the code needs
   it yet. Revisit when @types/node's pin (see .github/dependabot.yml) starts
   blocking a needed update.
-- **Roots without the filesystem**: `appleReceiptRoots()` /
-  `appleJwsRoots()` read `certs/*.cer` at call time, so they throw inside
-  a Cloudflare Worker bundle (the runtime smoke passes roots in by hand).
-  Embedding the DER as constants in `roots.ts` fixes it and drops the
-  package's `node:fs` / `node:url` imports; the root-watch workflow then
-  has to regenerate the constants, not just the files.
 - **WebCrypto-only runtimes** (Vercel Edge, Fastly Compute): unsupported
   and documented as such. Supporting them means parsing X.509 with our own
   DER parser and verifying through `crypto.subtle`, which is async, so
