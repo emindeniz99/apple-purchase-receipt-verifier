@@ -6,8 +6,8 @@ import XCTest
 @testable import ApplePurchaseReceiptVerifier
 
 /// Behaviour over the shared fixture sets that fixtures/cases.json does not
-/// pin: the tampering negatives, the staleness rule (whose vector carries a
-/// "clock" this library cannot inject), and the bundled Apple roots.
+/// pin: the tampering negatives, the clock seam itself, and the bundled Apple
+/// roots.
 final class VerifierTests: XCTestCase {
     static let bundle = "com.example.app"
 
@@ -36,10 +36,12 @@ final class VerifierTests: XCTestCase {
                      bundleId: String = VerifierTests.bundle,
                      environments: Set<AppleEnvironment> = [.sandbox],
                      appAppleId: Int64? = nil,
-                     maxSignedAgeMillis: Int64? = nil) throws -> JwsVerifier {
+                     maxSignedAgeMillis: Int64? = nil,
+                     clock: (@Sendable () -> Date)? = nil) throws -> JwsVerifier {
         try JwsVerifier(trustedRoots: [try fixture("generated", root)], bundleId: bundleId,
                         acceptedEnvironments: environments, appAppleId: appAppleId,
-                        maxSignedAgeMillis: maxSignedAgeMillis)
+                        maxSignedAgeMillis: maxSignedAgeMillis,
+                        clock: clock)
     }
 
     func assertReason<T>(_ reason: VerificationError.Reason,
@@ -105,6 +107,74 @@ final class VerifierTests: XCTestCase {
         }
     }
 
+    // MARK: the clock seam
+
+    /// fixtures/generated/transaction.jws is signed at this instant, and both
+    /// expired-chain fixtures below sign at a fixed instant too — every
+    /// expectation in this section is arithmetic on those, not on "now".
+    static let transactionSignedAt = Date(timeIntervalSince1970: 1_722_945_600)
+
+    func testOmittedClockReadsTheSystemClock() async throws {
+        let jws = try text("generated", "transaction.jws")
+        // No clock supplied: the age is measured against the real now, so a
+        // max age well under the fixture's real age rejects and one well over
+        // it accepts. Both bounds are derived from the system clock at run
+        // time — an implementation that had quietly frozen "now" would fail
+        // one of them.
+        let realAgeMillis = Int64(Date().timeIntervalSince(Self.transactionSignedAt) * 1000)
+        XCTAssertGreaterThan(realAgeMillis, 0, "the fixture is signed in the past")
+        await assertReason(.stalePayload) {
+            try await self.jwsVerifier(maxSignedAgeMillis: realAgeMillis / 2)
+                .verifyTransaction(jws)
+        }
+        _ = try await jwsVerifier(maxSignedAgeMillis: realAgeMillis * 2).verifyTransaction(jws)
+    }
+
+    func testInjectedClockMovesTheStalenessVerdictDeterministically() async throws {
+        let jws = try text("generated", "transaction.jws")
+        let signedAt = Self.transactionSignedAt
+        // 30 s after signing, under a 60 s max age: accepted.
+        let fresh = try await jwsVerifier(
+            maxSignedAgeMillis: 60_000,
+            clock: { signedAt.addingTimeInterval(30) }).verifyTransaction(jws)
+        XCTAssertEqual(Self.bundle, fresh.bundleId)
+        // 61 s after signing, same policy: stale. Nothing but the clock moved.
+        await assertReason(.stalePayload) {
+            try await self.jwsVerifier(
+                maxSignedAgeMillis: 60_000,
+                clock: { signedAt.addingTimeInterval(61) }).verifyTransaction(jws)
+        }
+        // The instant fixtures/cases.json pins for transaction/reject-stale-payload.
+        await assertReason(.stalePayload) {
+            try await self.jwsVerifier(
+                maxSignedAgeMillis: 60_000,
+                clock: { Date(timeIntervalSince1970: 1_735_689_600) }).verifyTransaction(jws)
+        }
+    }
+
+    func testInjectedClockDoesNotMoveCertificateValidityVerdicts() async throws {
+        // Chain validity is judged at the payload's signedDate (PLAN.md 2.1
+        // step 4). Both verdicts must therefore be identical under a clock
+        // decades before and decades after the certificate's window, and
+        // identical again with no clock at all.
+        let historical = try text("generated", "expired-cert-historical.jws")
+        let freshPayload = try text("generated", "expired-cert-fresh.jws")
+        let clocks: [(@Sendable () -> Date)?] = [
+            nil,
+            { Date(timeIntervalSince1970: 0) },              // 1970
+            { Date(timeIntervalSince1970: 4_102_444_800) },  // 2100
+        ]
+        for clock in clocks {
+            let payload = try await jwsVerifier(root: "jws-expired-root.der", clock: clock)
+                .verifyTransaction(historical)
+            XCTAssertEqual(1_590_969_600_000, payload.signedDate)
+            await assertReason(.invalidChain) {
+                try await self.jwsVerifier(root: "jws-expired-root.der", clock: clock)
+                    .verifyTransaction(freshPayload)
+            }
+        }
+    }
+
     func testBundledAppleRootsAreAllThreePublishedRoots() {
         // Both sets carry all three published Apple roots (PLAN D15).
         for roots in [appleJwsRoots(), appleReceiptRoots()] {
@@ -151,6 +221,39 @@ final class VerifyReceiptEndpointTests: XCTestCase {
         let vip = inApp.first { ($0["product_id"] as? String) == "com.example.app.vip" }!
         XCTAssertNotNil(vip["expires_date_ms"])
         XCTAssertNotNil(vip["expires_date_pst"])
+    }
+
+    /// `request_date` is the response's one wall-clock field — Apple stamps
+    /// it with the time the request was served — so the clock drives it too,
+    /// for the same reason it drives staleness. It moves no verdict.
+    func testInjectedClockStampsRequestDateAndMovesNoVerdict() async throws {
+        let now = Date(timeIntervalSince1970: 1_735_689_600)  // 2025-01-01T00:00:00Z
+        let pinned = try VerifyReceiptEndpoint(
+            trustedRoots: [try fixture("generated", "receipt-root.der")],
+            production: false,
+            clock: { now })
+        let response = await pinned.verifyReceipt(try request())
+        let receipt = response["receipt"] as! [String: Any]
+        XCTAssertEqual(receipt["request_date_ms"] as? String, "1735689600000")
+        XCTAssertEqual(receipt["request_date"] as? String, "2025-01-01 00:00:00 Etc/GMT")
+
+        // Same request through the default (system-clock) endpoint: identical
+        // status and identical verified fields, only request_date differs.
+        let live = await (try endpoint(production: false)).verifyReceipt(try request())
+        XCTAssertEqual(response["status"] as? Int, live["status"] as? Int)
+        let liveReceipt = live["receipt"] as! [String: Any]
+        XCTAssertNotEqual(liveReceipt["request_date_ms"] as? String,
+                          receipt["request_date_ms"] as? String)
+        // Compared as sorted-key JSON: Swift dictionaries have no order, so
+        // describing them would compare orderings rather than content.
+        func withoutRequestDate(_ json: [String: Any]) throws -> String {
+            let kept = json.filter { !$0.key.hasPrefix("request_date") }
+            return String(decoding: try JSONSerialization.data(withJSONObject: kept,
+                                                               options: [.sortedKeys]),
+                          as: UTF8.self)
+        }
+        XCTAssertEqual(try withoutRequestDate(liveReceipt), try withoutRequestDate(receipt),
+                       "a verified field moved with the clock")
     }
 
     func testReportsMalformedRequestsAs21002() async throws {

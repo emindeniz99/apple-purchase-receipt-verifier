@@ -27,12 +27,25 @@ private let fixturesDirectory = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent()  // project root
     .appendingPathComponent("fixtures")
 
-/// Nothing in this library takes a clock: ``JwsVerifier`` reads the system
-/// clock directly for the max-signed-age check, so a case pinning "now"
-/// cannot be run faithfully without adding a clock seam — a library change,
-/// not a test change. Those cases are skipped and their ids printed.
-private let noClockSeam = "no clock seam in swift: the library reads the system clock directly, "
-    + "so a case pinning \"now\" cannot be run faithfully"
+/// A case's optional `clock.now` as an injectable time source. The verifiers
+/// take a `@Sendable () -> Date`, so a pinned "now" is a constant closure;
+/// a case without a clock passes `nil` and the library reads the system clock,
+/// exactly as a caller who omits the option does.
+private func clockSource(_ kase: [String: Any]) throws -> (@Sendable () -> Date)? {
+    guard let clock = kase["clock"] as? [String: Any] else { return nil }
+    guard let text = clock["now"] as? String else {
+        throw HarnessError("case clock has no \"now\"")
+    }
+    let formatter = ISO8601DateFormatter()
+    formatter.timeZone = TimeZone(identifier: "UTC")
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    guard let now = formatter.date(from: text)
+        ?? { formatter.formatOptions = [.withInternetDateTime]
+             return formatter.date(from: text) }() else {
+        throw HarnessError("clock.now \"\(text)\" is not an ISO-8601 instant")
+    }
+    return { now }
+}
 
 // verifyRaw enforces no claim, so its cases may omit bundleId and
 // acceptedEnvironments — but the initializer still demands both. These
@@ -109,7 +122,8 @@ private struct Vectors {
         throw HarnessError("unknown trustedRoots source \"\(source ?? "nil")\"")
     }
 
-    func jwsVerifier(_ config: [String: Any]) throws -> JwsVerifier {
+    func jwsVerifier(_ config: [String: Any],
+                     clock: (@Sendable () -> Date)?) throws -> JwsVerifier {
         var environments = unmatchableEnvironments
         if let names = config["acceptedEnvironments"] as? [String] {
             environments = Set(try names.map { name in
@@ -125,20 +139,24 @@ private struct Vectors {
             bundleId: config["bundleId"] as? String ?? unmatchableBundleId,
             acceptedEnvironments: environments,
             appAppleId: (config["appAppleId"] as? NSNumber)?.int64Value,
-            maxSignedAgeMillis: maxSignedAgeSeconds.map { $0 * 1000 })
+            maxSignedAgeMillis: maxSignedAgeSeconds.map { $0 * 1000 },
+            clock: clock)
     }
 
     /// Dispatches one case on its `operation`. Everything it returns is fed
     /// to ``normalize(_:)``; everything it throws is a verdict only when it
     /// is a ``VerificationError``.
-    func invoke(operation: String, config: [String: Any], input: Data) async throws -> Any {
+    func invoke(operation: String, config: [String: Any], input: Data,
+                clock: (@Sendable () -> Date)?) async throws -> Any {
         switch operation {
         case "verifyTransaction":
-            return try await jwsVerifier(config).verifyTransaction(try Self.text(input))
+            return try await jwsVerifier(config, clock: clock)
+                .verifyTransaction(try Self.text(input))
         case "verifyAppTransaction":
-            return try await jwsVerifier(config).verifyAppTransaction(try Self.text(input))
+            return try await jwsVerifier(config, clock: clock)
+                .verifyAppTransaction(try Self.text(input))
         case "verifyRaw":
-            return try await jwsVerifier(config).verifyRaw(try Self.text(input))
+            return try await jwsVerifier(config, clock: clock).verifyRaw(try Self.text(input))
         case "verifyReceipt":
             guard let bundleId = config["bundleId"] as? String else {
                 throw HarnessError("config.bundleId is missing")
@@ -153,7 +171,8 @@ private struct Vectors {
                 throw HarnessError("config.environment must be Production or Sandbox")
             }
             let endpoint = try VerifyReceiptEndpoint(trustedRoots: try trustedRoots(config),
-                                                     production: environment == "Production")
+                                                     production: environment == "Production",
+                                                     clock: clock)
             return await endpoint.verifyReceipt(["receipt-data": input.base64EncodedString()])
         default:
             throw HarnessError("no adapter for operation \"\(operation)\"")
@@ -391,21 +410,21 @@ final class ConformanceCasesTests: XCTestCase {
 
     func testVerifyReceiptEndpointCases() async { await run(operation: "verifyReceiptEndpoint") }
 
-    /// Prints the cases this implementation cannot run and why, and pins that
-    /// every operation in the file is claimed by a method above — a new
-    /// operation must not slip in unrun.
-    func testReportsItsCoverageAndTheCasesItCannotRun() throws {
+    /// Pins that every operation in the file is claimed by a method above — a
+    /// new operation must not slip in unrun — and that every case pinning a
+    /// "now" is runnable through the clock seam, so none is silently skipped.
+    func testReportsItsCoverageAndRunsEveryCase() throws {
         let vectors = try Vectors()
         XCTAssertEqual(Set(vectors.cases.compactMap { $0["operation"] as? String }),
                        Self.coveredOperations,
                        "cases.json carries an operation no test method runs")
-        let skipped = vectors.cases.filter { $0["clock"] != nil }
-            .compactMap { $0["id"] as? String }
-        for id in skipped {
-            print("conformance SKIP \(id): \(noClockSeam)")
+        let withClock = vectors.cases.filter { $0["clock"] != nil }
+        for kase in withClock {
+            let id = kase["id"] as? String ?? "<case without an id>"
+            XCTAssertNotNil(try clockSource(kase), "\(id): clock is not injectable")
         }
-        print("conformance: \(vectors.cases.count) cases, \(skipped.count) skipped for lack of "
-            + "a clock seam \(skipped)")
+        print("conformance: \(vectors.cases.count) cases, 0 skipped "
+            + "(\(withClock.count) run against an injected clock)")
     }
 
     private func run(operation: String) async {
@@ -433,14 +452,11 @@ final class ConformanceCasesTests: XCTestCase {
             XCTFail("harness error: \(id): the case is missing a required member")
             return
         }
-        if kase["clock"] != nil {
-            print("conformance SKIP \(id): \(noClockSeam)")
-            return
-        }
         let result: Any
         do {
             result = try await vectors.invoke(operation: operation, config: config,
-                                              input: try vectors.bytes(of: fixture))
+                                              input: try vectors.bytes(of: fixture),
+                                              clock: try clockSource(kase))
         } catch let error as VerificationError {
             guard status == "error" else {
                 XCTFail("\(id): expected success but threw \(error.reason.rawValue)")

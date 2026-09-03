@@ -25,16 +25,25 @@ public struct VerifyReceiptEndpoint: Sendable {
 
     private let verifier: ReceiptVerifier
     private let production: Bool
+    private let clock: @Sendable () -> Date
 
     /// - Parameters:
     ///   - trustedRoots: pinned DER roots (production: ``appleReceiptRoots()``)
     ///   - production: which environment this instance emulates
     ///     (drives 21007/21008 routing)
-    public init(trustedRoots: [Data], production: Bool) throws {
+    ///   - clock: the source of "now" for the response's `request_date`
+    ///     fields, which Apple's endpoint stamps with the wall-clock time the
+    ///     request was served. Same type and same meaning as
+    ///     ``JwsVerifier/init(trustedRoots:bundleId:acceptedEnvironments:appAppleId:maxSignedAgeMillis:clock:)``:
+    ///     omitted, the system clock is read. It moves no verdict — the
+    ///     status code and every verified field are unaffected.
+    public init(trustedRoots: [Data], production: Bool,
+                clock: (@Sendable () -> Date)? = nil) throws {
         // The bundle id is never consulted: verifyCore skips the claim
         // check, matching Apple's endpoint (callers compare bundle_id).
         self.verifier = try ReceiptVerifier(trustedRoots: trustedRoots, bundleId: "*")
         self.production = production
+        self.clock = clock ?? { Date() }
     }
 
     /// Handles one verifyReceipt request body. Never throws — like the real
@@ -72,7 +81,7 @@ public struct VerifyReceiptEndpoint: Sendable {
         return [
             "status": Self.statusOK,
             "environment": production ? "Production" : "Sandbox",
-            "receipt": receiptJson(fields, requestDate: Date()),
+            "receipt": receiptJson(fields, requestDate: clock()),
         ]
     }
 
