@@ -1,0 +1,1648 @@
+{
+  "$schema": "./cases.schema.json",
+  "schemaVersion": 1,
+  "comment": "Normative cross-language conformance vectors for apple-purchase-receipt-verifier.\nOne case per semantic fact: java/, node/, python/ and swift/ each assert many of these under\ntheir own test names, and the duplicates are merged here.\nEvery expectation in this file was derived by hand from the four test-suite inventories,\nfrom PLAN.md sections 2.1-2.3, from COMPARISON.md and from the fixture generator\n(java/src/test/.../FixtureGeneratorTest.java) plus fixtures/generated/manifest.json.\nNOTHING here was produced by running an implementation and recording what it did:\na vector that disagrees with an implementation is a bug report against that implementation\nuntil a human decides otherwise.\n\nPaths in \"fields\" are language-neutral. Scalars use the shared API names from PLAN.md section 3\n(camelCase) for verifyTransaction/verifyAppTransaction/verifyRaw/verifyReceipt, and the literal\nApple wire keys (snake_case) for verifyReceiptEndpoint. \"x.length\" is a collection size.\n\"list[key=value].field\" selects the single element of list whose key equals value.\n\"unknownAttributes[9999][0]\" indexes the raw values recorded for receipt attribute type 9999,\nexpressed as a lowercase hex string. Dates are ISO-8601 UTC strings; claims that Apple ships as\nepoch milliseconds (signedDate, receiptCreationDate) stay numbers. null means \"absent or unset\".\nA field a case does not list is simply not pinned by that case.\n\nCertificate-validity windows are judged at the payload signedDate / receipt creationDate,\nnever at wall-clock time (PLAN.md 2.1 step 4, 2.2 step 2), so the expired-chain cases are\ndeterministic and carry no clock. \"clock\" appears only where the verdict genuinely moves with\ntime; today that is the max-signed-age staleness rule alone. No implementation accepts an\ninjected clock yet, so a runner must fake time for those cases until a clock seam exists.\n\n\"fault\" names the one intentional defect of a negative case. It is documentation, not an\nassertion: implementations are not required to report it, only to report the given reason.",
+  "fixtures": {
+    "generated-manifest": {
+      "path": "generated/manifest.json",
+      "role": "support",
+      "codec": "raw",
+      "contentSha256": "a79ae87b81acf520aae7f91d38d077d7f6c3c570a7c402bb1c93e5bc4ec18102"
+    },
+    "device-guid": {
+      "path": "generated/device-guid.hex",
+      "role": "support",
+      "codec": "utf8",
+      "contentSha256": "a7fa296298cc81ad1f7be6f46a13800f29a9eddfacd26e2fcdd35c71e8d127c1"
+    },
+    "jws-root": {
+      "path": "generated/jws-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "2a0cf1fc3ecf91e5311efe205ee301c758aa9cfd3225cb0b95d5cd9827494618"
+    },
+    "jws-expired-root": {
+      "path": "generated/jws-expired-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "e48a0f7c95cd38be1d0cb2a14f105a0cc75bc3ddf95f0c695d5c057a50636203"
+    },
+    "jws-no-leaf-oid-root": {
+      "path": "generated/jws-no-leaf-oid-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "0de82999d3884edd623863ff6e039e7fd85142cd60ac814d72a0b25ea368d5d3"
+    },
+    "jws-no-intermediate-oid-root": {
+      "path": "generated/jws-no-intermediate-oid-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "175d547c09828470c72c035f413f038d68cc5ebb7f0bc7247c0067f64a226d0f"
+    },
+    "receipt-root": {
+      "path": "generated/receipt-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "f465414e070ae0fe1216a837c460f922e8539b160992a0a4df08e6a1b0b8efda"
+    },
+    "receipt-expired-root": {
+      "path": "generated/receipt-expired-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "f00d6df29d9cf521cc90e979aa44f6bdc2382780f8bb6d2e08b6ea43ff1500d7"
+    },
+    "receipt-no-signer-oid-root": {
+      "path": "generated/receipt-no-signer-oid-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "9c858c2196593717e4c9bf7fbcc5b1208fb15d0cfbd486d225ead2b38f1e2fdf"
+    },
+    "transaction": {
+      "path": "generated/transaction.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "afbeda44d1e1e6c403bc432fc0ade675f9c7b847e816b1942a8d1576b85b6da1"
+    },
+    "transaction-no-leaf-oid": {
+      "path": "generated/transaction-no-leaf-oid.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "18929966babda1f2d1481c0753776a6c1b09fc845a51f495f647f14b04a1c40d"
+    },
+    "transaction-no-intermediate-oid": {
+      "path": "generated/transaction-no-intermediate-oid.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "e5da2036f1f6a4d21317f9fa1683710885334ba991ba62718e999523298b9cda"
+    },
+    "app-transaction": {
+      "path": "generated/app-transaction.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "fe33b77b9d3217185dc80b183dccc97cc7531de6d3a1e57e772f08f6e8c025a4"
+    },
+    "app-transaction-production": {
+      "path": "generated/app-transaction-production.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "06dad1111353c38735147418d69205da655a3da6e41fb25c3ba9bf9e5794c48a"
+    },
+    "expired-cert-historical": {
+      "path": "generated/expired-cert-historical.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "8adb1a0630528b568aecda425fa80ac6066da9ea98ad5213a90f42b00beb67de"
+    },
+    "expired-cert-fresh": {
+      "path": "generated/expired-cert-fresh.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "6eef2964e12ecf6619114880d72ff25bea05ce195b5c808b88c1333b42a1bcdd"
+    },
+    "receipt": {
+      "path": "generated/receipt.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "89d593a372b8ac7cd3c90c0a56de5c287e2a7f96940d10ac0ce3c853eda7ef73"
+    },
+    "receipt-double-wrapped": {
+      "path": "generated/receipt-double-wrapped.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "75ad2a14d0bd8465422ad2476b3590c87ad777250815545bf113783a6cb172df"
+    },
+    "receipt-foreign": {
+      "path": "generated/receipt-foreign.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "fe30004971aee84524b157f17192f5d960def58b20d892a2fb9762c568f4e8ff"
+    },
+    "receipt-no-signer-oid": {
+      "path": "generated/receipt-no-signer-oid.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "5ec9c67e99ff80a480aa319ac57fc4f836a75a785e76e9d24951e8d010c52b82"
+    },
+    "receipt-expired-historical": {
+      "path": "generated/receipt-expired-historical.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "1629cad54b7e05c0466c73df7bcf08bc88977be01a68903e19349d927e1a2ff0"
+    },
+    "receipt-expired-fresh": {
+      "path": "generated/receipt-expired-fresh.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "a9c5e5bc41145f2bd07fa35c46082e1d04b151ca9cd9e4b58ed0ad9023672dd2"
+    },
+    "receipt-type-production": {
+      "path": "generated/receipt-type-production.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "17354adb951e1444ba7f2892d49c9a81ec2f2804cf3b6de6a0a702f64f431794"
+    },
+    "receipt-type-vpp": {
+      "path": "generated/receipt-type-vpp.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "ba36fa688ea9ea4b6340e8a251f25bc78db1aa39bc08f5a2b441809e7119118c"
+    },
+    "receipt-type-vpp-sandbox": {
+      "path": "generated/receipt-type-vpp-sandbox.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "7c6e40323388c79438de1096f58fe5262464c28a160078a496f0ad8e916a1fc2"
+    },
+    "receipt-no-type": {
+      "path": "generated/receipt-no-type.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "40bdc6b96dff30197a55374f59aac487942e4d4d6facb32853aa2f5c38420eda"
+    },
+    "public-receipts-readme": {
+      "path": "public-receipts/README.md",
+      "role": "support",
+      "codec": "raw",
+      "contentSha256": "9273982d7dc02de2053a67e4ee7067cb79ef185d92a1efb2cbe70da8abbd22ec"
+    },
+    "public-receipts-license": {
+      "path": "public-receipts/LICENSE-upstream",
+      "role": "support",
+      "codec": "raw",
+      "contentSha256": "2ffaa7b62f0a0fba3f7164ba7e15c505db33b71b51ca4746177e7342694299db"
+    },
+    "public-receipt-sandbox-g5": {
+      "path": "public-receipts/receipt-sandbox-g5.b64",
+      "role": "input",
+      "codec": "base64",
+      "contentSha256": "bebb16e2a17104d973eeef08177003f2c3303a19ddced83b42df349b4ac25ee0"
+    },
+    "public-receipt-sandbox-legacy": {
+      "path": "public-receipts/receipt-sandbox-legacy.b64",
+      "role": "input",
+      "codec": "base64",
+      "contentSha256": "ec62c6bd4a34bd8e56b11e675bf5a28319ce69b71d050e73344bab22f46799a8"
+    },
+    "public-receipt-xcode-with-purchases": {
+      "path": "public-receipts/receipt-xcode-with-purchases.b64",
+      "role": "input",
+      "codec": "base64",
+      "contentSha256": "920ed85d25c1e910c57383a3cdf5765b8682e901b01f5cb48c4af44367ce1864"
+    },
+    "apple-test-ca": {
+      "path": "apple-official/certs/testCA.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "48aa70550eab2cd71d51dced44e88f9143b6bc0e1a6f430c19ba9a7cf36654e6"
+    },
+    "apple-transaction-info": {
+      "path": "apple-official/mock_signed_data/transactionInfo",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "6f3027507d63abc7736c14642c7aa2ccc978510cba6f0d09244e657293ea7ce6"
+    },
+    "apple-renewal-info": {
+      "path": "apple-official/mock_signed_data/renewalInfo",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "d9b9f1e70277de27e73b1d0dd42558b62e29631c0dc094ebb65067991e66c71d"
+    },
+    "apple-test-notification": {
+      "path": "apple-official/mock_signed_data/testNotification",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "e1fc5e5795383a5d672a3f355b86407c95a0eb01eb35397dee7e6d76270ef579"
+    },
+    "apple-wrong-bundle-id": {
+      "path": "apple-official/mock_signed_data/wrongBundleId",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "5c79fcc46ce9bcc6f5b701ab83a63a17f7e1eb7d77fbf45cfb11aec637b4ef19"
+    },
+    "apple-missing-x5c": {
+      "path": "apple-official/mock_signed_data/missingX5CHeaderClaim",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "8fb8c5b52328adc06c3938268d3d7cca5fd1c27b2f590ddbb364a588dc43f5b2"
+    },
+    "xcode-signed-transaction": {
+      "path": "apple-official/xcode/xcode-signed-transaction",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "53090b903cdcd661a100ebfd41617103352ede6b3bcf91a34346ccdcc925c6d8"
+    },
+    "xcode-app-receipt-empty": {
+      "path": "apple-official/xcode/xcode-app-receipt-empty",
+      "role": "input",
+      "codec": "base64",
+      "contentSha256": "d33c449bcbbd7852556a3fb2d58faf856b58ee5dd44af8d5db302fb6aae10176"
+    }
+  },
+  "cases": [
+    {
+      "id": "transaction/verify-shared-sandbox",
+      "description": "The shared generated StoreKit 2 transaction JWS verifies against its own pinned root and decodes to the manifested claims.",
+      "operation": "verifyTransaction",
+      "input": {
+        "fixture": "transaction"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ]
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "bundleId": "com.example.app",
+          "environment": "Sandbox",
+          "productId": "com.example.app.pro",
+          "transactionId": "2000000000000001",
+          "originalTransactionId": "2000000000000001",
+          "quantity": 1,
+          "signedDate": 1722945600000
+        }
+      },
+      "tags": [
+        "jws",
+        "transaction",
+        "positive",
+        "generated"
+      ]
+    },
+    {
+      "id": "transaction/reject-wrong-bundle-id",
+      "description": "A transaction whose bundleId claim is not the configured one is rejected on the claim check, after the signature and chain pass.",
+      "operation": "verifyTransaction",
+      "input": {
+        "fixture": "transaction"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        },
+        "bundleId": "com.other.app",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "WRONG_BUNDLE_ID"
+      },
+      "fault": "configured-bundle-id-differs-from-claim",
+      "tags": [
+        "jws",
+        "transaction",
+        "negative",
+        "claims",
+        "generated"
+      ]
+    },
+    {
+      "id": "transaction/reject-environment-outside-accept-set",
+      "description": "A Sandbox transaction offered to a Production-only accept set is rejected (PLAN.md D3: environment routing is an accept-set).",
+      "operation": "verifyTransaction",
+      "input": {
+        "fixture": "transaction"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Production"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "WRONG_ENVIRONMENT"
+      },
+      "fault": "environment-claim-outside-accept-set",
+      "tags": [
+        "jws",
+        "transaction",
+        "negative",
+        "claims",
+        "generated"
+      ]
+    },
+    {
+      "id": "transaction/reject-foreign-root",
+      "description": "The generated test chain must not verify against the real pinned Apple JWS roots — anchor pinning, not system trust.",
+      "operation": "verifyTransaction",
+      "input": {
+        "fixture": "transaction"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "builtin",
+          "name": "apple-jws-roots"
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_CHAIN"
+      },
+      "fault": "chain-does-not-terminate-at-a-pinned-anchor",
+      "tags": [
+        "jws",
+        "transaction",
+        "negative",
+        "chain",
+        "pinning",
+        "generated"
+      ]
+    },
+    {
+      "id": "transaction/reject-stale-payload",
+      "description": "With a max signed age configured, a payload signed longer ago than that is rejected as stale. The only verdict in this file that depends on wall-clock time.",
+      "operation": "verifyTransaction",
+      "input": {
+        "fixture": "transaction"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ],
+        "maxSignedAgeSeconds": 60
+      },
+      "clock": {
+        "now": "2025-01-01T00:00:00Z"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "STALE_PAYLOAD"
+      },
+      "fault": "signed-date-older-than-max-signed-age",
+      "tags": [
+        "jws",
+        "transaction",
+        "negative",
+        "staleness",
+        "clock",
+        "generated"
+      ]
+    },
+    {
+      "id": "transaction/reject-leaf-without-apple-marker-oid",
+      "description": "A JWS leaf lacking marker OID 1.2.840.113635.100.6.11.1 is rejected even though its chain terminates at the pinned root shipped alongside the fixture (PLAN.md 2.1 step 3). Not exercised by the Java suite today, which asserts the same fact against a run-time generated PKI instead.",
+      "operation": "verifyTransaction",
+      "input": {
+        "fixture": "transaction-no-leaf-oid"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-no-leaf-oid-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_CERTIFICATE_PURPOSE"
+      },
+      "fault": "leaf-missing-apple-iap-marker-oid",
+      "tags": [
+        "jws",
+        "transaction",
+        "negative",
+        "oid",
+        "generated"
+      ]
+    },
+    {
+      "id": "transaction/reject-intermediate-without-wwdr-marker-oid",
+      "description": "A JWS intermediate lacking WWDR marker OID 1.2.840.113635.100.6.2.1 is rejected against its own pinned root. Not exercised by the Java suite today.",
+      "operation": "verifyTransaction",
+      "input": {
+        "fixture": "transaction-no-intermediate-oid"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-no-intermediate-oid-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_CERTIFICATE_PURPOSE"
+      },
+      "fault": "intermediate-missing-apple-wwdr-marker-oid",
+      "tags": [
+        "jws",
+        "transaction",
+        "negative",
+        "oid",
+        "generated"
+      ]
+    },
+    {
+      "id": "transaction/accept-historical-payload-under-expired-chain",
+      "description": "Chain validity is judged at the payload signedDate, not at verification time: a 2020-06-01 payload signed by a chain valid 2020-01-01..2021-01-01 still verifies (PLAN.md 2.1 step 4).",
+      "operation": "verifyTransaction",
+      "input": {
+        "fixture": "expired-cert-historical"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-expired-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ]
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "bundleId": "com.example.app",
+          "environment": "Sandbox",
+          "productId": "com.example.app.pro",
+          "signedDate": 1590969600000
+        }
+      },
+      "tags": [
+        "jws",
+        "transaction",
+        "positive",
+        "chain",
+        "validity-window",
+        "generated"
+      ]
+    },
+    {
+      "id": "transaction/reject-fresh-payload-under-expired-chain",
+      "description": "The same expired chain signing a 2024-08-06 payload is rejected: the signedDate falls outside the certificate validity window. Deterministic — the window is fixed and already in the past, so no clock is needed.",
+      "operation": "verifyTransaction",
+      "input": {
+        "fixture": "expired-cert-fresh"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-expired-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_CHAIN"
+      },
+      "fault": "signed-date-outside-certificate-validity-window",
+      "tags": [
+        "jws",
+        "transaction",
+        "negative",
+        "chain",
+        "validity-window",
+        "generated"
+      ]
+    },
+    {
+      "id": "transaction/verify-apple-official-transaction-info",
+      "description": "Apple's own app-store-server-library mock transactionInfo verifies against Apple's vendored test CA — cross-library parity on the exact upstream bytes.",
+      "operation": "verifyTransaction",
+      "input": {
+        "fixture": "apple-transaction-info"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "apple-test-ca"
+          ]
+        },
+        "bundleId": "com.example",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ]
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "bundleId": "com.example",
+          "environment": "Sandbox",
+          "signedDate": 1672956154000
+        }
+      },
+      "tags": [
+        "jws",
+        "transaction",
+        "positive",
+        "apple-official"
+      ]
+    },
+    {
+      "id": "transaction/reject-apple-official-wrong-bundle-id",
+      "description": "Apple's wrongBundleId mock fixture is rejected on the bundle-id claim check.",
+      "operation": "verifyTransaction",
+      "input": {
+        "fixture": "apple-wrong-bundle-id"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "apple-test-ca"
+          ]
+        },
+        "bundleId": "com.example",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "WRONG_BUNDLE_ID"
+      },
+      "fault": "bundle-id-claim-differs-from-configured",
+      "tags": [
+        "jws",
+        "transaction",
+        "negative",
+        "claims",
+        "apple-official"
+      ]
+    },
+    {
+      "id": "transaction/reject-apple-official-missing-x5c",
+      "description": "Apple's missingX5CHeaderClaim mock fixture is rejected at header parsing: no x5c means no chain to validate (PLAN.md 2.1 step 2).",
+      "operation": "verifyTransaction",
+      "input": {
+        "fixture": "apple-missing-x5c"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "apple-test-ca"
+          ]
+        },
+        "bundleId": "com.example",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_JWS_FORMAT"
+      },
+      "fault": "jws-header-has-no-x5c-claim",
+      "tags": [
+        "jws",
+        "transaction",
+        "negative",
+        "format",
+        "apple-official"
+      ]
+    },
+    {
+      "id": "transaction/reject-xcode-signed-transaction",
+      "description": "An Xcode/StoreKit-Test signed transaction carries a single self-signed certificate in x5c; requiring exactly three certificates rejects it before any chain work.",
+      "operation": "verifyTransaction",
+      "input": {
+        "fixture": "xcode-signed-transaction"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "apple-test-ca"
+          ]
+        },
+        "bundleId": "com.example",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_JWS_FORMAT"
+      },
+      "fault": "x5c-holds-one-certificate-not-three",
+      "tags": [
+        "jws",
+        "transaction",
+        "negative",
+        "format",
+        "pinning",
+        "apple-official"
+      ]
+    },
+    {
+      "id": "app-transaction/verify-shared-sandbox",
+      "description": "The shared generated Sandbox AppTransaction verifies and decodes to the manifested claims; a Sandbox receiptType needs no appAppleId binding.",
+      "operation": "verifyAppTransaction",
+      "input": {
+        "fixture": "app-transaction"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ],
+        "appAppleId": 123456789
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "bundleId": "com.example.app",
+          "receiptType": "Sandbox",
+          "appAppleId": 123456789,
+          "applicationVersion": "1.2.3",
+          "originalApplicationVersion": "1.0",
+          "receiptCreationDate": 1722945600000
+        }
+      },
+      "tags": [
+        "jws",
+        "app-transaction",
+        "positive",
+        "generated"
+      ]
+    },
+    {
+      "id": "app-transaction/verify-production-with-matching-apple-id",
+      "description": "A Production AppTransaction whose appAppleId claim matches the configured one verifies. Not exercised by the Java suite against this fixture; Java asserts the same fact against a run-time generated PKI.",
+      "operation": "verifyAppTransaction",
+      "input": {
+        "fixture": "app-transaction-production"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Production"
+        ],
+        "appAppleId": 123456789
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "bundleId": "com.example.app",
+          "receiptType": "Production",
+          "appAppleId": 123456789,
+          "applicationVersion": "1.2.3"
+        }
+      },
+      "tags": [
+        "jws",
+        "app-transaction",
+        "positive",
+        "generated"
+      ]
+    },
+    {
+      "id": "app-transaction/reject-production-with-wrong-apple-id",
+      "description": "In Production the appAppleId claim is binding: a mismatch is rejected (PLAN.md 2.1 step 6).",
+      "operation": "verifyAppTransaction",
+      "input": {
+        "fixture": "app-transaction-production"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Production"
+        ],
+        "appAppleId": 999
+      },
+      "expected": {
+        "status": "error",
+        "reason": "WRONG_APP_APPLE_ID"
+      },
+      "fault": "configured-app-apple-id-differs-from-claim",
+      "tags": [
+        "jws",
+        "app-transaction",
+        "negative",
+        "claims",
+        "generated"
+      ]
+    },
+    {
+      "id": "raw/skip-claim-checks-but-not-signature",
+      "description": "verifyRaw validates chain and signature but enforces no claim: a verifier configured for a different bundle id still returns the decoded claims unchanged.",
+      "operation": "verifyRaw",
+      "input": {
+        "fixture": "transaction"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        },
+        "bundleId": "com.whatever.else",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ]
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "bundleId": "com.example.app",
+          "environment": "Sandbox",
+          "productId": "com.example.app.pro"
+        }
+      },
+      "tags": [
+        "jws",
+        "raw",
+        "positive",
+        "generated"
+      ]
+    },
+    {
+      "id": "raw/verify-apple-official-renewal-info",
+      "description": "Apple's mock renewalInfo has no bundleId claim, so it is only reachable through verifyRaw; chain and signature still hold against Apple's test CA.",
+      "operation": "verifyRaw",
+      "input": {
+        "fixture": "apple-renewal-info"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "apple-test-ca"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "environment": "Sandbox"
+        }
+      },
+      "tags": [
+        "jws",
+        "raw",
+        "positive",
+        "apple-official"
+      ]
+    },
+    {
+      "id": "raw/verify-apple-official-test-notification",
+      "description": "Apple's mock App Store Server Notification V2 payload verifies through verifyRaw against Apple's test CA.",
+      "operation": "verifyRaw",
+      "input": {
+        "fixture": "apple-test-notification"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "apple-test-ca"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "notificationType": "TEST"
+        }
+      },
+      "tags": [
+        "jws",
+        "raw",
+        "positive",
+        "apple-official"
+      ]
+    },
+    {
+      "id": "receipt/verify-shared-with-device-hash",
+      "description": "The shared generated PKCS#7 receipt verifies, its SHA-1 device hash matches the supplied GUID, and every modelled attribute decodes to the manifested value.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "deviceGuidHex": "112233445566778899aabbccddeeff00"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "receiptType": "ProductionSandbox",
+          "bundleId": "com.example.app",
+          "appVersion": "1.2.3",
+          "originalAppVersion": "1.0",
+          "creationDate": "2024-08-06T12:00:00Z",
+          "expirationDate": null,
+          "opaqueValueHex": "0102030405060708",
+          "inAppPurchases.length": 2,
+          "inAppPurchases[productId=com.example.app.coins100].quantity": 1,
+          "inAppPurchases[productId=com.example.app.coins100].transactionId": "70000000000001",
+          "inAppPurchases[productId=com.example.app.coins100].originalTransactionId": "70000000000001",
+          "inAppPurchases[productId=com.example.app.coins100].purchaseDate": "2024-01-15T12:00:00Z",
+          "inAppPurchases[productId=com.example.app.coins100].expiresDate": null,
+          "inAppPurchases[productId=com.example.app.vip].transactionId": "70000000000002",
+          "inAppPurchases[productId=com.example.app.vip].purchaseDate": "2024-02-01T09:30:00Z",
+          "inAppPurchases[productId=com.example.app.vip].expiresDate": "2030-02-01T09:30:00Z",
+          "inAppPurchases[productId=com.example.app.vip].webOrderLineItemId": 42
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "positive",
+        "device-hash",
+        "generated"
+      ]
+    },
+    {
+      "id": "receipt/reject-wrong-device-guid",
+      "description": "Device binding is enforced when a GUID is supplied: flipping the low bit of the first GUID byte breaks SHA1(guid || opaque || bundleIdBytes) against attribute 5.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "deviceGuidHex": "102233445566778899aabbccddeeff00"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "DEVICE_HASH_MISMATCH"
+      },
+      "fault": "supplied-device-guid-is-not-the-one-hashed-into-the-receipt",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "negative",
+        "device-hash",
+        "generated"
+      ]
+    },
+    {
+      "id": "receipt/reject-wrong-bundle-id",
+      "description": "A receipt issued for another app is rejected on the bundle-id check, after chain, signer purpose and signature pass.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "bundleId": "com.other.app"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "WRONG_BUNDLE_ID"
+      },
+      "fault": "configured-bundle-id-differs-from-attribute-2",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "negative",
+        "claims",
+        "generated"
+      ]
+    },
+    {
+      "id": "receipt/reject-foreign-root",
+      "description": "A byte-identical payload signed by a second, independently generated receipt PKI is rejected against the first PKI root.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt-foreign"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "bundleId": "com.example.app"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_CHAIN"
+      },
+      "fault": "chain-terminates-at-an-unpinned-root",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "negative",
+        "chain",
+        "pinning",
+        "generated"
+      ]
+    },
+    {
+      "id": "receipt/accept-double-wrapped-payload",
+      "description": "Xcode-style receipts wrap the attribute SET in an extra OCTET STRING; parsers must unwrap it rather than reject the receipt.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt-double-wrapped"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "bundleId": "com.example.app"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "bundleId": "com.example.app",
+          "appVersion": "1.2.3",
+          "inAppPurchases.length": 2
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "positive",
+        "parsing",
+        "generated"
+      ]
+    },
+    {
+      "id": "receipt/reject-signer-without-receipt-signing-oid",
+      "description": "A signer leaf lacking OID 1.2.840.113635.100.6.11.1 is rejected even though its chain terminates at the pinned root shipped with the fixture (PLAN.md D13 — closes the developer-certificate forgery hole).",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt-no-signer-oid"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-no-signer-oid-root"
+          ]
+        },
+        "bundleId": "com.example.app"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_CERTIFICATE_PURPOSE"
+      },
+      "fault": "signer-leaf-missing-apple-receipt-signing-oid",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "negative",
+        "oid",
+        "generated"
+      ]
+    },
+    {
+      "id": "receipt/accept-historical-creation-date-under-expired-chain",
+      "description": "Receipt chain validity is judged at the receipt creation date (attribute 12): a 2020-06-01 receipt signed by a chain valid 2020-01-01..2021-01-01 still verifies (PLAN.md 2.2 step 2).",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt-expired-historical"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-expired-root"
+          ]
+        },
+        "bundleId": "com.example.app"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "bundleId": "com.example.app",
+          "appVersion": "1.2.3",
+          "creationDate": "2020-06-01T00:00:00Z",
+          "inAppPurchases.length": 0
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "positive",
+        "chain",
+        "validity-window",
+        "generated"
+      ]
+    },
+    {
+      "id": "receipt/reject-fresh-creation-date-under-expired-chain",
+      "description": "The same expired receipt chain signing a 2024-08-06 receipt is rejected: the creation date falls outside the certificate validity window. Deterministic — the window is fixed and already in the past.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt-expired-fresh"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-expired-root"
+          ]
+        },
+        "bundleId": "com.example.app"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_CHAIN"
+      },
+      "fault": "creation-date-outside-certificate-validity-window",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "negative",
+        "chain",
+        "validity-window",
+        "generated"
+      ]
+    },
+    {
+      "id": "receipt/expose-unknown-attributes",
+      "description": "Attribute types the library does not model are surfaced raw rather than dropped (PLAN.md D10): the shared receipt carries type 9999 with value bytes 01 02 03.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "bundleId": "com.example.app"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "bundleId": "com.example.app",
+          "unknownAttributes[9999].length": 1,
+          "unknownAttributes[9999][0]": "010203"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "positive",
+        "forward-compatibility",
+        "generated"
+      ]
+    },
+    {
+      "id": "receipt/verify-genuine-sandbox-g5-against-apple-roots",
+      "description": "A genuine Apple-signed sandbox receipt on the newer G5 signing chain verifies against the real pinned Apple receipt roots.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "public-receipt-sandbox-g5"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "builtin",
+          "name": "apple-receipt-roots"
+        },
+        "bundleId": "dev.bonzer.weeka.app"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "receiptType": "ProductionSandbox",
+          "bundleId": "dev.bonzer.weeka.app",
+          "inAppPurchases.length": 2
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "positive",
+        "genuine",
+        "public-receipts"
+      ]
+    },
+    {
+      "id": "receipt/verify-genuine-legacy-sha1-chain",
+      "description": "A genuine legacy receipt with a full SHA-1 signing chain and 187 in-app purchases verifies against the real pinned Apple receipt roots.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "public-receipt-sandbox-legacy"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "builtin",
+          "name": "apple-receipt-roots"
+        },
+        "bundleId": "com.nutcall.alert"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "bundleId": "com.nutcall.alert",
+          "inAppPurchases.length": 187
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "positive",
+        "genuine",
+        "sha1",
+        "public-receipts"
+      ]
+    },
+    {
+      "id": "receipt/reject-xcode-signed-public-receipt",
+      "description": "An Xcode-signed receipt carrying real purchases must not verify against the real Apple roots. The configured bundle id is the literal placeholder \"*\": the chain fails long before any bundle-id comparison.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "public-receipt-xcode-with-purchases"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "builtin",
+          "name": "apple-receipt-roots"
+        },
+        "bundleId": "*"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_CHAIN"
+      },
+      "fault": "locally-signed-chain-does-not-reach-a-pinned-apple-root",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "negative",
+        "chain",
+        "pinning",
+        "public-receipts"
+      ]
+    },
+    {
+      "id": "receipt/reject-xcode-app-receipt-against-apple-roots",
+      "description": "A genuine Xcode-generated app receipt from Apple's own test data is rejected against the real Apple roots. Chain validation runs before the signer-purpose check, so the reason is INVALID_CHAIN and not INVALID_CERTIFICATE_PURPOSE (PLAN.md 2.2 step 3).",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "xcode-app-receipt-empty"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "builtin",
+          "name": "apple-receipt-roots"
+        },
+        "bundleId": "com.example.naturelab.backyardbirds.example"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_CHAIN"
+      },
+      "fault": "locally-signed-chain-does-not-reach-a-pinned-apple-root",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "negative",
+        "chain",
+        "pinning",
+        "apple-official"
+      ]
+    },
+    {
+      "id": "endpoint/sandbox-receipt-on-sandbox-answers-0",
+      "description": "The verifyReceipt-compatible endpoint answers status 0 for a sandbox receipt on a sandbox instance, rendering numbers as strings and dates as Apple's three-field triple. request_date* is deliberately unasserted: it is the wall clock at call time.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "fixture": "receipt"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "environment": "Sandbox"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "status": 0,
+          "environment": "Sandbox",
+          "receipt.receipt_type": "ProductionSandbox",
+          "receipt.bundle_id": "com.example.app",
+          "receipt.application_version": "1.2.3",
+          "receipt.original_application_version": "1.0",
+          "receipt.receipt_creation_date": "2024-08-06 12:00:00 Etc/GMT",
+          "receipt.receipt_creation_date_ms": "1722945600000",
+          "receipt.receipt_creation_date_pst": "2024-08-06 05:00:00 America/Los_Angeles",
+          "receipt.in_app.length": 2,
+          "receipt.in_app[product_id=com.example.app.coins100].quantity": "1",
+          "receipt.in_app[product_id=com.example.app.coins100].transaction_id": "70000000000001",
+          "receipt.in_app[product_id=com.example.app.coins100].original_transaction_id": "70000000000001",
+          "receipt.in_app[product_id=com.example.app.vip].expires_date": "2030-02-01 09:30:00 Etc/GMT",
+          "receipt.in_app[product_id=com.example.app.vip].web_order_line_item_id": "42"
+        }
+      },
+      "tags": [
+        "endpoint",
+        "receipt",
+        "positive",
+        "wire-format",
+        "generated"
+      ]
+    },
+    {
+      "id": "endpoint/sandbox-receipt-on-production-answers-21007",
+      "description": "A sandbox receipt presented to a production instance routes to 21007 and the response carries neither receipt nor environment.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "fixture": "receipt"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "environment": "Production"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "status": 21007,
+          "receipt": null,
+          "environment": null
+        }
+      },
+      "tags": [
+        "endpoint",
+        "receipt",
+        "routing",
+        "generated"
+      ],
+      "fault": "receipt-environment-differs-from-endpoint-environment"
+    },
+    {
+      "id": "endpoint/foreign-root-answers-21003",
+      "description": "A receipt that does not chain to the endpoint trust anchors answers 21003 (could not be authenticated), never 21002.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "fixture": "receipt-foreign"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "environment": "Sandbox"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "status": 21003,
+          "receipt": null,
+          "environment": null
+        }
+      },
+      "tags": [
+        "endpoint",
+        "receipt",
+        "negative",
+        "chain",
+        "generated"
+      ],
+      "fault": "chain-terminates-at-an-unpinned-root"
+    },
+    {
+      "id": "endpoint/production-receipt-on-production-answers-0",
+      "description": "receipt_type \"Production\" on a production instance answers 0.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "fixture": "receipt-type-production"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "environment": "Production"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "status": 0,
+          "environment": "Production",
+          "receipt.receipt_type": "Production",
+          "receipt.bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "endpoint",
+        "receipt",
+        "routing",
+        "generated"
+      ]
+    },
+    {
+      "id": "endpoint/production-receipt-on-sandbox-answers-21008",
+      "description": "receipt_type \"Production\" on a sandbox instance answers 21008.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "fixture": "receipt-type-production"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "environment": "Sandbox"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "status": 21008,
+          "receipt": null,
+          "environment": null
+        }
+      },
+      "tags": [
+        "endpoint",
+        "receipt",
+        "routing",
+        "generated"
+      ],
+      "fault": "receipt-environment-differs-from-endpoint-environment"
+    },
+    {
+      "id": "endpoint/vpp-receipt-on-production-answers-0",
+      "description": "receipt_type \"ProductionVPP\" counts as production (PLAN.md D10 fail-closed routing set).",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "fixture": "receipt-type-vpp"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "environment": "Production"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "status": 0,
+          "environment": "Production",
+          "receipt.receipt_type": "ProductionVPP",
+          "receipt.bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "endpoint",
+        "receipt",
+        "routing",
+        "generated"
+      ]
+    },
+    {
+      "id": "endpoint/vpp-receipt-on-sandbox-answers-21008",
+      "description": "receipt_type \"ProductionVPP\" on a sandbox instance answers 21008.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "fixture": "receipt-type-vpp"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "environment": "Sandbox"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "status": 21008,
+          "receipt": null,
+          "environment": null
+        }
+      },
+      "tags": [
+        "endpoint",
+        "receipt",
+        "routing",
+        "generated"
+      ],
+      "fault": "receipt-environment-differs-from-endpoint-environment"
+    },
+    {
+      "id": "endpoint/vpp-sandbox-receipt-on-production-answers-21007",
+      "description": "receipt_type \"ProductionVPPSandbox\" is a sandbox type despite the prefix; on a production instance it answers 21007. The misroute this case pins was found by adversarial review.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "fixture": "receipt-type-vpp-sandbox"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "environment": "Production"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "status": 21007,
+          "receipt": null,
+          "environment": null
+        }
+      },
+      "tags": [
+        "endpoint",
+        "receipt",
+        "routing",
+        "generated"
+      ],
+      "fault": "receipt-environment-differs-from-endpoint-environment"
+    },
+    {
+      "id": "endpoint/vpp-sandbox-receipt-on-sandbox-answers-0",
+      "description": "receipt_type \"ProductionVPPSandbox\" on a sandbox instance answers 0.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "fixture": "receipt-type-vpp-sandbox"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "environment": "Sandbox"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "status": 0,
+          "environment": "Sandbox",
+          "receipt.receipt_type": "ProductionVPPSandbox",
+          "receipt.bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "endpoint",
+        "receipt",
+        "routing",
+        "generated"
+      ]
+    },
+    {
+      "id": "endpoint/missing-receipt-type-on-production-answers-21007",
+      "description": "A receipt with no receipt_type attribute routes as sandbox (fail closed), so a production instance answers 21007.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "fixture": "receipt-no-type"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "environment": "Production"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "status": 21007,
+          "receipt": null,
+          "environment": null
+        }
+      },
+      "tags": [
+        "endpoint",
+        "receipt",
+        "routing",
+        "generated"
+      ],
+      "fault": "receipt-environment-differs-from-endpoint-environment"
+    },
+    {
+      "id": "endpoint/missing-receipt-type-on-sandbox-answers-0",
+      "description": "A receipt with no receipt_type attribute routes as sandbox and answers 0 there.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "fixture": "receipt-no-type"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "environment": "Sandbox"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "status": 0,
+          "environment": "Sandbox",
+          "receipt.bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "endpoint",
+        "receipt",
+        "routing",
+        "generated"
+      ]
+    }
+  ]
+}
