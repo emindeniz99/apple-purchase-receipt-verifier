@@ -68,6 +68,16 @@ The import namespace is the registry name in each ecosystem's casing
 convention (`applepurchasereceiptverifier` / `apple_purchase_receipt_verifier` /
 `ApplePurchaseReceiptVerifier`) — one name everywhere.
 
+**JavaScript runtimes.** The npm package needs `node:crypto`'s
+`X509Certificate`, not just WebCrypto. It runs on Node 20+, Bun, Deno,
+and Cloudflare Workers (`nodejs_compat` flag, compatibility date
+2025-09-01 or later); CI proves each one on every push
+(`cd node && npm run test:runtimes`). It does not run on the Vercel Edge
+runtime or other WebCrypto-only isolates. On Workers, pass the trust
+anchors in yourself (`trustedRoots: [rootDer]`): `appleReceiptRoots()` and
+`appleJwsRoots()` read the bundled `certs/` files from disk, which a
+Worker bundle does not carry.
+
 ## How to run the test suites
 
 ```bash
@@ -76,6 +86,7 @@ cd java && mvn test
 
 # Node (strict TypeScript, zero runtime deps; Node >= 20)
 cd node && npm install && npm test    # = tsc && node --test
+cd node && npm run test:runtimes       # same build on Bun, Deno and Cloudflare workerd
 
 # Python (>= 3.9; needs: pip install cryptography asn1crypto)
 cd python && python3 -m unittest discover -s tests

@@ -20,7 +20,8 @@
   "scripts": {
     "build": "tsc",
     "prepack": "tsc",
-    "test": "tsc && node --test"
+    "test": "tsc && node --test",
+    "test:runtimes": "tsc && node runtime-smoke/node-like.mjs && npx --yes bun@1.4.0 runtime-smoke/node-like.mjs && npx --yes deno@2.9.6 run --allow-read runtime-smoke/node-like.mjs && npx --yes workerd@1.20260903.1 test runtime-smoke/workerd.capnp"
   },
   "license": "MIT",
   "files": [
