@@ -64,8 +64,8 @@ class NegativeTest(unittest.TestCase):
 
     def test_rejects_stale_payload(self):
         # The conformance case for this (transaction/reject-stale-payload)
-        # pins a clock, and nothing in this library takes one, so it is
-        # skipped there and asserted here against the real system clock.
+        # pins a clock and now runs there against an injected one; this keeps
+        # the same verdict asserted against the real system clock.
         with self.assertRaises(VerificationError) as ctx:
             jws_verifier(max_signed_age_millis=60_000).verify_transaction(
                 text("generated", "transaction.jws"))
@@ -559,3 +559,92 @@ class EmbeddedCertificateFloodTest(unittest.TestCase):
                   for name in ("receipt-sandbox-g5", "receipt-sandbox-legacy",
                                "receipt-xcode-with-purchases")}
         self.assertLess(max(counts.values()), _MAX_EMBEDDED_CERTIFICATES, counts)
+
+
+class ClockSeamTest(unittest.TestCase):
+    """The optional ``clock`` option: which verdicts it moves, and which it
+    must not. A clock is a zero-argument callable returning epoch seconds —
+    the same contract as ``time.time``, which is the default."""
+
+    # transaction.jws is signed at 2024-08-06T00:00:00Z. Every expectation
+    # below is derived from that instant, never from the machine's clock.
+    SIGNED_AT = 1722945600.0
+    MAX_AGE_MILLIS = 60_000
+
+    def transaction(self):
+        return text("generated", "transaction.jws")
+
+    def expired_chain_verifier(self, clock=None):
+        return jws_verifier(
+            trusted_roots=[cert("generated", "jws-expired-root.der")], clock=clock)
+
+    def test_omitted_clock_reads_the_actual_system_clock(self):
+        # Not "some fixed value": the accepted/rejected boundary is placed
+        # either side of the payload's real age right now, so a default that
+        # had frozen at import time (or ignored the clock entirely) would
+        # fail one of the two halves.
+        age_millis = time.time() * 1000 - self.SIGNED_AT * 1000
+        self.assertGreater(age_millis, 0, "fixture is signed in the future")
+        jws_verifier(max_signed_age_millis=int(age_millis) + 3_600_000) \
+            .verify_transaction(self.transaction())
+        with self.assertRaises(VerificationError) as ctx:
+            jws_verifier(max_signed_age_millis=int(age_millis) - 3_600_000) \
+                .verify_transaction(self.transaction())
+        self.assertEqual(ctx.exception.reason, "STALE_PAYLOAD")
+
+    def test_injected_clock_decides_the_stale_verdict(self):
+        # Same payload, same max age, two clocks: the STALE_PAYLOAD verdict
+        # follows the injected "now" and nothing else, which is what makes a
+        # staleness vector runnable on any machine at any date.
+        fresh = jws_verifier(max_signed_age_millis=self.MAX_AGE_MILLIS,
+                             clock=lambda: self.SIGNED_AT + 30)
+        self.assertEqual(BUNDLE, fresh.verify_transaction(self.transaction())["bundleId"])
+
+        stale = jws_verifier(max_signed_age_millis=self.MAX_AGE_MILLIS,
+                             clock=lambda: self.SIGNED_AT + 120)
+        with self.assertRaises(VerificationError) as ctx:
+            stale.verify_transaction(self.transaction())
+        self.assertEqual(ctx.exception.reason, "STALE_PAYLOAD")
+
+    def test_injected_clock_does_not_move_certificate_validity(self):
+        # PLAN.md 2.1 step 4: the chain window is judged at the payload's
+        # signedDate, never at wall-clock time. So a clock inside the expired
+        # certificate's validity window must not rescue the fresh payload, and
+        # a clock long past it must not condemn the historical one.
+        for now in (1590969600.0, 4102444800.0):   # 2020-06-01, 2100-01-01
+            with self.subTest(now=now):
+                clock = (lambda moment: lambda: moment)(now)
+                with self.assertRaises(VerificationError) as ctx:
+                    self.expired_chain_verifier(clock).verify_transaction(
+                        text("generated", "expired-cert-fresh.jws"))
+                self.assertEqual(ctx.exception.reason, "INVALID_CHAIN")
+
+                payload = self.expired_chain_verifier(clock).verify_transaction(
+                    text("generated", "expired-cert-historical.jws"))
+                self.assertEqual(1590969600000, payload["signedDate"])
+
+    def test_injected_clock_is_ignored_without_a_max_signed_age(self):
+        # The clock is not a second expiry policy: with no max age configured
+        # a payload signed a century "ago" still verifies.
+        verifier = jws_verifier(clock=lambda: 4102444800.0)
+        self.assertEqual(BUNDLE, verifier.verify_transaction(self.transaction())["bundleId"])
+
+    def test_endpoint_clock_drives_request_date(self):
+        # request_date is the one wall-clock field in a verifyReceipt
+        # response (every other date comes off the signed receipt), so the
+        # same seam covers it — consistency, and it makes the response
+        # byte-reproducible for a caller that pins the clock.
+        from apple_purchase_receipt_verifier import VerifyReceiptEndpoint
+        endpoint = VerifyReceiptEndpoint(
+            [cert("generated", "receipt-root.der")], "Sandbox",
+            clock=lambda: 1735689600.0)   # 2025-01-01T00:00:00Z
+        response = endpoint.verify_receipt({"receipt-data": base64.b64encode(
+            fixture("generated", "receipt.der")).decode()})
+        self.assertEqual(0, response["status"])
+        receipt = response["receipt"]
+        self.assertEqual("2025-01-01 00:00:00 Etc/GMT", receipt["request_date"])
+        self.assertEqual("1735689600000", receipt["request_date_ms"])
+        self.assertEqual("2024-12-31 16:00:00 America/Los_Angeles",
+                         receipt["request_date_pst"])
+        # The receipt's own dates are unaffected by the clock.
+        self.assertEqual("2024-08-06 12:00:00 Etc/GMT", receipt["receipt_creation_date"])

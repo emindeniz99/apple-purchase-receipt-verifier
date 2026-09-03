@@ -30,6 +30,7 @@ import java.security.cert.PKIXBuilderParameters;
 import java.security.cert.TrustAnchor;
 import java.security.cert.X509CertSelector;
 import java.security.cert.X509Certificate;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -109,6 +110,7 @@ public final class ReceiptVerifier {
 
     private final Set<TrustAnchor> trustAnchors;
     private final String bundleId;
+    private final Clock clock;
     private final BouncyCastleProvider provider = new BouncyCastleProvider();
 
     /**
@@ -117,6 +119,25 @@ public final class ReceiptVerifier {
      * @param bundleId     the app's bundle id the receipt must carry
      */
     public ReceiptVerifier(Set<X509Certificate> trustedRoots, String bundleId) {
+        this(trustedRoots, bundleId, null);
+    }
+
+    /**
+     * @param clock source of "now"; {@code null} (the two-argument
+     *              constructor's default) means {@link Clock#systemUTC()}, so
+     *              existing callers are unaffected. {@code java.time.Clock} is
+     *              the JDK's own injectable time source and matches
+     *              {@code JwsVerifier}'s seam.
+     *
+     *              <p>Receipt verification has no staleness rule, so the clock
+     *              is consulted in exactly one place: the "else current time"
+     *              fallback for the chain-validity instant of a receipt that
+     *              carries no creation date (attribute 12). A receipt that
+     *              carries one is still judged at that date (PLAN.md §2.2
+     *              step 2), so pinning the clock cannot move its chain
+     *              verdict.</p>
+     */
+    public ReceiptVerifier(Set<X509Certificate> trustedRoots, String bundleId, Clock clock) {
         if (trustedRoots == null || trustedRoots.isEmpty()) {
             throw new IllegalArgumentException("trustedRoots must not be empty");
         }
@@ -129,6 +150,7 @@ public final class ReceiptVerifier {
         }
         this.trustAnchors = anchors;
         this.bundleId = bundleId;
+        this.clock = clock == null ? Clock.systemUTC() : clock;
     }
 
     /** Verifies a base64-encoded receipt (the usual client transport form). */
@@ -217,7 +239,8 @@ public final class ReceiptVerifier {
         // date (chain validity is anchored at signing time); nothing from it
         // is trusted until after the chain + signature checks pass.
         AppReceipt receipt = parsePayload(payload);
-        Date at = receipt.creationDate() != null ? Date.from(receipt.creationDate()) : new Date();
+        Date at = receipt.creationDate() != null
+                ? Date.from(receipt.creationDate()) : new Date(clock.millis());
 
         X509Certificate signerCert = validateChain(cms, at);
         if (signerCert.getExtensionValue(RECEIPT_SIGNER_OID) == null) {

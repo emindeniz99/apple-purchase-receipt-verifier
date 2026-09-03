@@ -11,7 +11,6 @@ import io.github.emindeniz99.applepurchasereceiptverifier.receipt.AppReceipt;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.InAppPurchase;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifier;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.VerifyReceiptEndpoint;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.TestFactory;
 
@@ -23,7 +22,9 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collection;
@@ -56,11 +57,10 @@ import static org.junit.jupiter.api.Assertions.fail;
  * <p>Each case is its own {@link DynamicTest}, named by its case id, so a
  * failure names the vector that broke.</p>
  *
- * <p>Cases carrying a {@code clock} are skipped: nothing in this library takes
- * an injectable "now" — {@code JwsVerifier} reads
- * {@code System.currentTimeMillis()} directly for the max-signed-age check —
- * and inventing a clock seam is a library change, not a test change. The
- * skipped ids are printed when the factory runs.</p>
+ * <p>A case carrying a {@code clock} is run with that instant injected as the
+ * verifier's clock, so a verdict that moves with wall-clock time (today only
+ * the max-signed-age staleness rule) is deterministic. A case without one gets
+ * the library default, the system clock.</p>
  */
 class ConformanceCasesTest {
 
@@ -79,25 +79,17 @@ class ConformanceCasesTest {
         JsonNode document = MAPPER.readTree(FIXTURES.resolve("cases.json").toFile());
         final JsonNode fixtures = document.get("fixtures");
         List<DynamicTest> tests = new ArrayList<DynamicTest>();
-        List<String> skipped = new ArrayList<String>();
+        int pinned = 0;
         for (JsonNode node : document.get("cases")) {
             final JsonNode kase = node;
-            final String id = kase.get("id").asText();
             if (kase.has("clock")) {
-                final String why = "no clock seam in java: the library reads the system clock "
-                        + "directly, so \"clock\": {\"now\": \"" + kase.get("clock").get("now").asText()
-                        + "\"} cannot be injected without inventing an API";
-                skipped.add(id);
-                tests.add(DynamicTest.dynamicTest(id, () -> {
-                    System.out.println("conformance SKIP " + id + ": " + why);
-                    Assumptions.abort(why);
-                }));
-                continue;
+                pinned++;
             }
-            tests.add(DynamicTest.dynamicTest(id, () -> runCase(fixtures, kase)));
+            tests.add(DynamicTest.dynamicTest(kase.get("id").asText(),
+                    () -> runCase(fixtures, kase)));
         }
         System.out.println("conformance: " + tests.size() + " cases in fixtures/cases.json, "
-                + skipped.size() + " skipped for lack of a clock seam " + skipped);
+                + pinned + " with a pinned clock, 0 skipped");
         return tests;
     }
 
@@ -138,33 +130,47 @@ class ConformanceCasesTest {
         Set<X509Certificate> roots = trustedRoots(fixtures, config.get("trustedRoots"));
         byte[] input = fixtureBytes(fixtures, kase.get("input").get("fixture").asText());
         String operation = kase.get("operation").asText();
+        Clock clock = clock(kase);
         if ("verifyTransaction".equals(operation)) {
             return MAPPER.convertValue(
-                    jwsVerifier(roots, config).verifyTransaction(text(input)), MAP);
+                    jwsVerifier(roots, config, clock).verifyTransaction(text(input)), MAP);
         }
         if ("verifyAppTransaction".equals(operation)) {
             return MAPPER.convertValue(
-                    jwsVerifier(roots, config).verifyAppTransaction(text(input)), MAP);
+                    jwsVerifier(roots, config, clock).verifyAppTransaction(text(input)), MAP);
         }
         if ("verifyRaw".equals(operation)) {
-            return jwsVerifier(roots, config).verifyRaw(text(input));
+            return jwsVerifier(roots, config, clock).verifyRaw(text(input));
         }
         if ("verifyReceipt".equals(operation)) {
-            ReceiptVerifier verifier = new ReceiptVerifier(roots, config.get("bundleId").asText());
+            ReceiptVerifier verifier =
+                    new ReceiptVerifier(roots, config.get("bundleId").asText(), clock);
             byte[] deviceGuid = config.has("deviceGuidHex")
                     ? unhex(config.get("deviceGuidHex").asText()) : null;
             return normalize(verifier.verify(input, deviceGuid));
         }
         if ("verifyReceiptEndpoint".equals(operation)) {
             boolean production = "Production".equals(config.get("environment").asText());
-            return new VerifyReceiptEndpoint(roots, production).verifyReceipt(
+            return new VerifyReceiptEndpoint(roots, production, clock).verifyReceipt(
                     Collections.singletonMap("receipt-data",
                             Base64.getEncoder().encodeToString(input)));
         }
         throw new IllegalStateException("unknown operation " + operation);
     }
 
-    private static JwsVerifier jwsVerifier(Set<X509Certificate> roots, JsonNode config) {
+    /**
+     * The case's pinned "now", or null for the library default (the system
+     * clock). cases.json spells it as an ISO-8601 UTC instant.
+     */
+    private static Clock clock(JsonNode kase) {
+        if (!kase.has("clock")) {
+            return null;
+        }
+        return Clock.fixed(Instant.parse(kase.get("clock").get("now").asText()), ZoneOffset.UTC);
+    }
+
+    private static JwsVerifier jwsVerifier(Set<X509Certificate> roots, JsonNode config,
+                                           Clock clock) {
         // verifyRaw enforces no claim, so its cases need not pin a bundle id or
         // an accept set — but the constructor demands both. Neutral stand-ins
         // (a bundle id no payload can carry, every environment) keep that
@@ -189,7 +195,7 @@ class ConformanceCasesTest {
         if (config.has("maxSignedAgeSeconds")) {
             maxSignedAge = Long.valueOf(config.get("maxSignedAgeSeconds").asLong() * 1000L);
         }
-        return new JwsVerifier(roots, bundleId, environments, appAppleId, maxSignedAge);
+        return new JwsVerifier(roots, bundleId, environments, appAppleId, maxSignedAge, clock);
     }
 
     // ---------------------------------------------------------------- fixtures

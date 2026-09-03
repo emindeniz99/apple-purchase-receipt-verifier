@@ -27,6 +27,7 @@ import java.security.cert.CertificateFactory;
 import java.security.cert.PKIXParameters;
 import java.security.cert.TrustAnchor;
 import java.security.cert.X509Certificate;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
@@ -62,6 +63,7 @@ public final class JwsVerifier {
     private final Set<Environment> acceptedEnvironments;
     private final Long appAppleId;
     private final Long maxSignedAgeMillis;
+    private final Clock clock;
     private final ObjectMapper mapper;
 
     /**
@@ -73,7 +75,7 @@ public final class JwsVerifier {
      */
     public JwsVerifier(Set<X509Certificate> trustedRoots, String bundleId,
                        Set<Environment> acceptedEnvironments) {
-        this(trustedRoots, bundleId, acceptedEnvironments, null, null);
+        this(trustedRoots, bundleId, acceptedEnvironments, null, null, null);
     }
 
     /**
@@ -86,6 +88,32 @@ public final class JwsVerifier {
     public JwsVerifier(Set<X509Certificate> trustedRoots, String bundleId,
                        Set<Environment> acceptedEnvironments, Long appAppleId,
                        Long maxSignedAge) {
+        this(trustedRoots, bundleId, acceptedEnvironments, appAppleId, maxSignedAge, null);
+    }
+
+    /**
+     * @param clock source of "now" for the time-dependent checks; {@code null}
+     *              (the default of every other constructor) means
+     *              {@link Clock#systemUTC()}, so existing callers are
+     *              unaffected. {@code java.time.Clock} is the JDK's own
+     *              injectable time source — it supplies an instant rather than
+     *              a timestamp or a duration, {@link Clock#fixed} pins it for
+     *              a test, and it is available on the Java 8 baseline (PLAN.md
+     *              D2), so no bespoke supplier interface is needed.
+     *
+     *              <p>It drives only what genuinely moves with wall-clock
+     *              time: the {@code maxSignedAge} staleness rule, and the
+     *              "else current time" fallback of the chain-validity instant
+     *              for a payload that carries neither {@code signedDate} nor
+     *              {@code receiptCreationDate}. Certificate validity is still
+     *              judged at the payload's own signing date whenever the
+     *              payload states one (PLAN.md §2.1 step 4), so pinning the
+     *              clock cannot move a chain verdict for any payload that
+     *              carries a date.</p>
+     */
+    public JwsVerifier(Set<X509Certificate> trustedRoots, String bundleId,
+                       Set<Environment> acceptedEnvironments, Long appAppleId,
+                       Long maxSignedAge, Clock clock) {
         if (trustedRoots == null || trustedRoots.isEmpty()) {
             throw new IllegalArgumentException("trustedRoots must not be empty");
         }
@@ -104,6 +132,7 @@ public final class JwsVerifier {
         this.acceptedEnvironments = EnumSet.copyOf(acceptedEnvironments);
         this.appAppleId = appAppleId;
         this.maxSignedAgeMillis = maxSignedAge;
+        this.clock = clock == null ? Clock.systemUTC() : clock;
         this.mapper = new ObjectMapper()
                 .setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY);
     }
@@ -200,7 +229,7 @@ public final class JwsVerifier {
 
         if (maxSignedAgeMillis != null) {
             long signedAt = effectiveDate.getTime();
-            if (System.currentTimeMillis() - signedAt > maxSignedAgeMillis) {
+            if (clock.millis() - signedAt > maxSignedAgeMillis) {
                 throw new VerificationException(Reason.STALE_PAYLOAD,
                         "payload signed at " + signedAt + " exceeds max age " + maxSignedAgeMillis + "ms");
             }
@@ -244,11 +273,11 @@ public final class JwsVerifier {
     /**
      * Signing time of the payload: {@code signedDate} (transactions, renewal
      * info, notifications) or {@code receiptCreationDate} (AppTransaction),
-     * falling back to now. Chain validity is checked at this instant so
+     * falling back to the clock's now. Chain validity is checked at this instant so
      * payloads signed with since-rotated certificates keep verifying
      * (PLAN.md §2.1 step 4).
      */
-    private static Date effectiveDate(JsonNode payload) {
+    private Date effectiveDate(JsonNode payload) {
         JsonNode signedDate = payload.path("signedDate");
         if (signedDate.canConvertToLong()) {
             return new Date(signedDate.asLong());
@@ -257,7 +286,7 @@ public final class JwsVerifier {
         if (receiptCreationDate.canConvertToLong()) {
             return new Date(receiptCreationDate.asLong());
         }
-        return new Date();
+        return new Date(clock.millis());
     }
 
     private void validateChain(X509Certificate leaf, X509Certificate intermediate, Date at)

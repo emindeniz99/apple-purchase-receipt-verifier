@@ -14,6 +14,7 @@
 export {
   JwsVerifier, isTransactionActiveAt,
   type JwsVerifierOptions, type TransactionPayload, type AppTransactionPayload, type Claims,
+  type Clock,
 } from './jws.js';
 export {
   ReceiptVerifier, verifyReceiptCore,

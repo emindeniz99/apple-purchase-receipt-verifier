@@ -7,6 +7,7 @@ import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.
 
 import java.io.IOException;
 import java.security.cert.X509Certificate;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -56,6 +57,7 @@ public final class VerifyReceiptEndpoint {
 
     private final ReceiptVerifier verifier;
     private final boolean production;
+    private final Clock clock;
 
     /**
      * @param trustedRoots pinned roots (production:
@@ -64,10 +66,27 @@ public final class VerifyReceiptEndpoint {
      *                     (drives 21007/21008 routing)
      */
     public VerifyReceiptEndpoint(Set<X509Certificate> trustedRoots, boolean production) {
+        this(trustedRoots, production, null);
+    }
+
+    /**
+     * @param clock source of "now"; {@code null} (the two-argument
+     *              constructor's default) means {@link Clock#systemUTC()}, so
+     *              existing callers are unaffected. It drives the
+     *              {@code request_date} / {@code request_date_ms} /
+     *              {@code request_date_pst} response fields — Apple's endpoint
+     *              stamps them with the time the request was answered, which
+     *              is wall-clock by definition — and reaches the wrapped
+     *              {@link ReceiptVerifier} so the whole endpoint has one
+     *              notion of now.
+     */
+    public VerifyReceiptEndpoint(Set<X509Certificate> trustedRoots, boolean production,
+                                 Clock clock) {
         // The bundle id is never consulted: verifyCore skips the claim check,
         // matching Apple's endpoint (callers compare receipt.bundle_id).
-        this.verifier = new ReceiptVerifier(trustedRoots, "*");
+        this.verifier = new ReceiptVerifier(trustedRoots, "*", clock);
         this.production = production;
+        this.clock = clock == null ? Clock.systemUTC() : clock;
     }
 
     /**
@@ -114,7 +133,7 @@ public final class VerifyReceiptEndpoint {
         Map<String, Object> response = new LinkedHashMap<String, Object>();
         response.put("status", STATUS_OK);
         response.put("environment", production ? "Production" : "Sandbox");
-        response.put("receipt", receiptJson(receipt, Instant.now()));
+        response.put("receipt", receiptJson(receipt, clock.instant()));
         return response;
     }
 

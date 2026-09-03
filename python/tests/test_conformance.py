@@ -27,12 +27,16 @@ from apple_purchase_receipt_verifier import (
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures"
 CASES = json.loads((FIXTURES / "cases.json").read_text())
 
-#: Nothing in this library takes a clock: JwsVerifier's staleness check reads
-#: time.time() directly, so a case pinning "now" cannot be run without adding
-#: a clock seam — a library change, not a test change. Those cases are
-#: skipped, and the ids are printed when the suite runs.
-NO_CLOCK_SEAM = ("no clock seam in python: the library reads the system clock "
-                 "directly, so a case pinning \"now\" cannot be run faithfully")
+
+def case_clock(case):
+    """The ``clock.now`` of a case as this library's clock: a zero-argument
+    callable returning epoch seconds. None for a case that pins no time, in
+    which case the verifier falls back to the system clock."""
+    clock = case.get("clock")
+    if clock is None:
+        return None
+    moment = datetime.fromisoformat(clock["now"].replace("Z", "+00:00"))
+    return lambda: moment.timestamp()
 
 
 def fixture_bytes(fixture_id):
@@ -74,7 +78,7 @@ UNMATCHABLE_BUNDLE_ID = "conformance.unset.bundle.id"
 UNMATCHABLE_ENVIRONMENTS = ["LocalTesting"]
 
 
-def jws_verifier(config):
+def jws_verifier(config, clock):
     max_age = config.get("maxSignedAgeSeconds")
     return JwsVerifier(
         trusted_roots=trusted_roots(config["trustedRoots"]),
@@ -82,10 +86,13 @@ def jws_verifier(config):
         accepted_environments=config.get("acceptedEnvironments", UNMATCHABLE_ENVIRONMENTS),
         app_apple_id=config.get("appAppleId"),
         max_signed_age_millis=None if max_age is None else max_age * 1000,
+        clock=clock,
     )
 
 
-def _receipt(config, data):
+def _receipt(config, data, clock):
+    # ReceiptVerifier takes no clock: nothing on that path moves with the
+    # current time (chain validity anchors at the receipt creation date).
     verifier = ReceiptVerifier(trusted_roots(config["trustedRoots"]), config["bundleId"])
     guid_hex = config.get("deviceGuidHex")
     return verifier.verify(data, None if guid_hex is None else bytes.fromhex(guid_hex))
@@ -93,15 +100,18 @@ def _receipt(config, data):
 
 OPERATIONS = {
     "verifyTransaction":
-        lambda config, data: jws_verifier(config).verify_transaction(data.decode("utf-8")),
+        lambda config, data, clock:
+            jws_verifier(config, clock).verify_transaction(data.decode("utf-8")),
     "verifyAppTransaction":
-        lambda config, data: jws_verifier(config).verify_app_transaction(data.decode("utf-8")),
+        lambda config, data, clock:
+            jws_verifier(config, clock).verify_app_transaction(data.decode("utf-8")),
     "verifyRaw":
-        lambda config, data: jws_verifier(config).verify_raw(data.decode("utf-8")),
+        lambda config, data, clock:
+            jws_verifier(config, clock).verify_raw(data.decode("utf-8")),
     "verifyReceipt": _receipt,
     "verifyReceiptEndpoint":
-        lambda config, data: VerifyReceiptEndpoint(
-            trusted_roots(config["trustedRoots"]), config["environment"],
+        lambda config, data, clock: VerifyReceiptEndpoint(
+            trusted_roots(config["trustedRoots"]), config["environment"], clock,
         ).verify_receipt({"receipt-data": base64.b64encode(data).decode("ascii")}),
 }
 
@@ -209,8 +219,6 @@ class ConformanceCasesTest(unittest.TestCase):
     """One test method per case in fixtures/cases.json — generated below."""
 
     def run_case(self, case):
-        if "clock" in case:
-            self.skipTest(NO_CLOCK_SEAM)
         operation = OPERATIONS.get(case["operation"])
         if operation is None:
             raise AssertionError(
@@ -218,7 +226,7 @@ class ConformanceCasesTest(unittest.TestCase):
         data = fixture_bytes(case["input"]["fixture"])
         expected = case["expected"]
         try:
-            result = operation(case["config"], data)
+            result = operation(case["config"], data, case_clock(case))
         except VerificationError as e:
             # Only a VerificationError carries a canonical Reason.
             self.assertEqual(expected["status"], "error",
@@ -255,11 +263,9 @@ for _case in CASES["cases"]:
 
 
 def setUpModule():
-    skipped = [c["id"] for c in CASES["cases"] if "clock" in c]
-    for case_id in skipped:
-        print(f"conformance SKIP {case_id}: {NO_CLOCK_SEAM}")
-    print(f"conformance: {len(CASES['cases'])} cases, {len(skipped)} skipped "
-          f"for lack of a clock seam {skipped}")
+    clocked = [c["id"] for c in CASES["cases"] if "clock" in c]
+    print(f"conformance: {len(CASES['cases'])} cases, 0 skipped; "
+          f"{len(clocked)} run against an injected clock {clocked}")
 
 
 if __name__ == "__main__":

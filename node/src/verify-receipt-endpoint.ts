@@ -1,5 +1,6 @@
 import { Reason, VerificationError } from './errors.js';
 import { normalizeRoots, type RootInput } from './chain.js';
+import { normalizeClock, type Clock } from './jws-claims.js';
 import { verifyReceiptCore, type AppReceipt, type InAppPurchase } from './receipt.js';
 
 /**
@@ -53,19 +54,28 @@ export interface VerifyReceiptEndpointOptions {
   trustedRoots: RootInput[];
   /** Which environment this endpoint instance emulates (21007/21008 routing). */
   environment: 'Production' | 'Sandbox';
+  /**
+   * Optional source of "now", the same option the JWS verifier takes.
+   * The only wall-clock-dependent output here is the `request_date*` triple
+   * (the instant the request was answered), so that is what it drives.
+   * Omitted, the system clock is used.
+   */
+  clock?: Clock | null;
 }
 
 export class VerifyReceiptEndpoint {
   #roots: RootInput[];
   #environment: 'Production' | 'Sandbox';
+  #clock: Clock;
 
-  constructor({ trustedRoots, environment }: VerifyReceiptEndpointOptions) {
+  constructor({ trustedRoots, environment, clock = null }: VerifyReceiptEndpointOptions) {
     normalizeRoots(trustedRoots); // validate eagerly
     if (environment !== 'Production' && environment !== 'Sandbox') {
       throw new TypeError("environment must be 'Production' or 'Sandbox'");
     }
     this.#roots = trustedRoots;
     this.#environment = environment;
+    this.#clock = normalizeClock(clock);
   }
 
   /**
@@ -104,7 +114,7 @@ export class VerifyReceiptEndpoint {
       return {
         status: Status.OK,
         environment: this.#environment,
-        receipt: receiptJson(fields, new Date()),
+        receipt: receiptJson(fields, this.#clock()),
       };
     } catch (error) {
       if (error instanceof VerificationError) {

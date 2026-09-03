@@ -139,11 +139,31 @@ export function signedAtMillisOf(payload: Claims): number | null {
     ? payload['receiptCreationDate'] : null;
 }
 
+/**
+ * Injectable source of "now". A supplier rather than a fixed timestamp so a
+ * long-lived verifier keeps advancing; `Date` rather than a number because
+ * it is Node's point-in-time type and is what {@link isTransactionActiveAt}
+ * already takes. Omitted (or null), the system clock is used.
+ */
+export type Clock = () => Date;
+
+/** The default: the system clock, i.e. today's behaviour unchanged. */
+export function normalizeClock(clock: Clock | null | undefined): Clock {
+  if (clock === null || clock === undefined) {
+    return () => new Date();
+  }
+  if (typeof clock !== 'function') {
+    throw new TypeError('clock must be a function returning a Date');
+  }
+  return clock;
+}
+
 export interface ClaimCheckerOptions {
   bundleId: string;
   acceptedEnvironments: Environment[];
   appAppleId?: number | null;
   maxSignedAgeMillis?: number | null;
+  clock?: Clock | null;
 }
 
 /** The claim checks both entry points run, after the signature is verified. */
@@ -152,9 +172,10 @@ export class JwsClaimChecker {
   readonly #acceptedEnvironments: Set<string>;
   readonly #appAppleId: number | null;
   readonly #maxSignedAgeMillis: number | null;
+  readonly #clock: Clock;
 
   constructor({ bundleId, acceptedEnvironments, appAppleId = null,
-    maxSignedAgeMillis = null }: ClaimCheckerOptions) {
+    maxSignedAgeMillis = null, clock = null }: ClaimCheckerOptions) {
     if (typeof bundleId !== 'string' || bundleId.length === 0) {
       throw new TypeError('bundleId is required');
     }
@@ -166,6 +187,7 @@ export class JwsClaimChecker {
     this.#acceptedEnvironments = new Set(acceptedEnvironments);
     this.#appAppleId = appAppleId;
     this.#maxSignedAgeMillis = maxSignedAgeMillis;
+    this.#clock = normalizeClock(clock);
   }
 
   requireBundleId(actual: string | undefined): void {
@@ -193,9 +215,15 @@ export class JwsClaimChecker {
     }
   }
 
+  /**
+   * The one check that legitimately moves with wall-clock time, so the one
+   * the injected clock drives. Certificate validity is judged at the
+   * payload's signing date instead (PLAN.md §2.1 step 4) and is deliberately
+   * left on the system clock in its no-signing-date fallback.
+   */
   requireFresh(signedAtMillis: number | null): void {
     if (this.#maxSignedAgeMillis !== null && signedAtMillis !== null
-      && Date.now() - signedAtMillis > this.#maxSignedAgeMillis) {
+      && this.#clock().getTime() - signedAtMillis > this.#maxSignedAgeMillis) {
       throw new VerificationError(Reason.STALE_PAYLOAD,
         `payload signed at ${signedAtMillis} exceeds max age ${this.#maxSignedAgeMillis}ms`);
     }

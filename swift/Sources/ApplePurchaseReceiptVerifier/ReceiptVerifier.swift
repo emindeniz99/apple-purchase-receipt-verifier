@@ -122,6 +122,9 @@ public struct ReceiptVerifier: Sendable {
         // date (chain validity anchors at signing time); nothing from it is
         // trusted until the chain + signature checks pass.
         let fields = try parsePayload(cms.content)
+        // Wall-clock only as the stand-in for a missing creation date: chain
+        // validity is judged at the receipt's signing time (PLAN.md 2.2 step
+        // 2), so this is deliberately not routed through any injected clock.
         let at = fields.creationDate ?? Date()
 
         let signerCert = try cms.signerCertificate()

@@ -8,9 +8,9 @@ import { normalizeRoots, validatePair, type RootInput } from './chain.js';
 import { OID_EC_PUBLIC_KEY, verifyEs256 } from './crypto.js';
 
 export { isTransactionActiveAt } from '../jws-claims.js';
-export type { AppTransactionPayload, Claims, TransactionPayload } from '../jws-claims.js';
+export type { AppTransactionPayload, Claims, Clock, TransactionPayload } from '../jws-claims.js';
 
-import type { AppTransactionPayload, Claims, TransactionPayload } from '../jws-claims.js';
+import type { AppTransactionPayload, Claims, Clock, TransactionPayload } from '../jws-claims.js';
 
 export interface JwsVerifierOptions {
   /** Pinned roots (production: `appleJwsRoots()`). */
@@ -23,6 +23,13 @@ export interface JwsVerifierOptions {
   appAppleId?: number | null;
   /** Reject payloads signed longer ago than this (PLAN.md D5). */
   maxSignedAgeMillis?: number | null;
+  /**
+   * Optional source of "now" for the checks that depend on wall-clock time
+   * (today: the max-signed-age / STALE_PAYLOAD rule). Omitted, the system
+   * clock is used and behaviour is unchanged. Certificate validity is NOT
+   * driven by it — that is judged at the payload's signing date.
+   */
+  clock?: Clock | null;
 }
 
 /**

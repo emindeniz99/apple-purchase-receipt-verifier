@@ -232,6 +232,14 @@ const cases = [
     roots: [JWS_ROOT], options: { maxSignedAgeMillis: 60_000 }, jws: genText('transaction.jws'),
     expect: 'STALE_PAYLOAD',
   }),
+  // clock.test.js proves the seam per build; this proves the two builds read
+  // it the same way — the same payload flips to fresh in both.
+  jwsCase('stale payload judged by an injected clock', {
+    roots: [JWS_ROOT], jws: genText('transaction.jws'),
+    // transaction.jws is signed at 2024-08-06T12:00:00Z; 30s later.
+    options: { maxSignedAgeMillis: 60_000, clock: () => new Date(1722945630000) },
+    check: (payload) => assert.equal(payload.signedDate, 1722945600000),
+  }),
   jwsCase('garbage JWS input', {
     roots: [JWS_ROOT], jws: 'not-a-jws', expect: 'INVALID_JWS_FORMAT',
   }),

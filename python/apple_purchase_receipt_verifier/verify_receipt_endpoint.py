@@ -12,8 +12,9 @@ compares ``receipt["bundle_id"]``, exactly as with the real endpoint."""
 import base64
 import binascii
 import json
+import time
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional
 from zoneinfo import ZoneInfo
 
 from .exceptions import Reason, VerificationError
@@ -41,9 +42,18 @@ class VerifyReceiptEndpoint:
     :param trusted_roots: pinned roots
         (production: :func:`apple_purchase_receipt_verifier.apple_receipt_roots`)
     :param environment: ``"Production"`` or ``"Sandbox"``
+    :param clock: source of "now" for the ``request_date`` fields, as a
+        zero-argument callable returning epoch seconds — same shape and
+        default as :class:`~apple_purchase_receipt_verifier.JwsVerifier`'s
+        ``clock``. Optional; omitted, the system clock is used and behaviour
+        is unchanged. Apple stamps ``request_date`` with the time the request
+        was answered, which is wall-clock by definition, so the seam covers
+        it too; nothing else in a response moves with time (every other date
+        comes off the signed receipt).
     """
 
-    def __init__(self, trusted_roots, environment: str):
+    def __init__(self, trusted_roots, environment: str,
+                 clock: Optional[Callable[[], float]] = None):
         roots = list(trusted_roots)
         if not roots:
             raise ValueError("trusted_roots must not be empty")
@@ -51,6 +61,7 @@ class VerifyReceiptEndpoint:
             raise ValueError("environment must be 'Production' or 'Sandbox'")
         self._roots = roots
         self._production = environment == "Production"
+        self._clock = time.time if clock is None else clock
 
     def verify_receipt(self, request_body: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
         """Handles one verifyReceipt request body. Never raises — like the
@@ -87,7 +98,8 @@ class VerifyReceiptEndpoint:
         return {
             "status": STATUS_OK,
             "environment": "Production" if self._production else "Sandbox",
-            "receipt": _receipt_json(fields, datetime.now(timezone.utc)),
+            "receipt": _receipt_json(
+                fields, datetime.fromtimestamp(self._clock(), timezone.utc)),
         }
 
     def verify_receipt_json(self, body: str) -> str:
