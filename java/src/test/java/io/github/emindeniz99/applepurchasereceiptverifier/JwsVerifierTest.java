@@ -354,6 +354,66 @@ class JwsVerifierTest {
         }
     }
 
+    /**
+     * The other half of the rule above, and the half that used to be wrong:
+     * a payload carrying NEITHER {@code signedDate} NOR
+     * {@code receiptCreationDate} falls back to PLAN.md §2.1 step 4's "else
+     * current time" — and that "current time" is the system clock, never the
+     * injected one. Java used to route this fallback through the injected
+     * clock while node, python and swift did not, which made an injected
+     * clock able to decide a certificate-validity verdict: a caller pinning a
+     * clock to test staleness, or to paper over skew, could thereby accept a
+     * chain that is expired in real time. It cannot any more.
+     */
+    @Test
+    void injectedClockDoesNotMoveCertificateValidityForADatelessPayload() throws Exception {
+        long now = System.currentTimeMillis();
+        Date notBefore = new Date(now - 730L * 86_400_000L);
+        Date notAfter = new Date(now - 365L * 86_400_000L);
+        TestPki expired = TestPki.jws(true, true, notBefore, notAfter);
+        Map<String, Object> dateless = transactionClaims("Sandbox");
+        dateless.remove("signedDate");
+        assertFalse(dateless.containsKey("receiptCreationDate"));
+        String expiredJws = expired.signJws(dateless);
+        String currentJws = pki.signJws(dateless);
+        // Clocks planted squarely inside the expired window, and decades away
+        // from it: the verdict is the same every time, because none of them is
+        // consulted. verifyRaw so no claim check can mask the chain verdict.
+        for (Clock clock : Arrays.<Clock>asList(null,
+                at(notBefore.getTime() + 86_400_000L),
+                at(now - 3650L * 86_400_000L),
+                at(now + 3650L * 86_400_000L))) {
+            JwsVerifier verifier = new JwsVerifier(Collections.singleton(expired.root), BUNDLE,
+                    EnumSet.of(Environment.SANDBOX), null, null, clock);
+            VerificationException e = assertThrows(VerificationException.class,
+                    () -> verifier.verifyRaw(expiredJws), "dateless payload with clock " + clock);
+            assertEquals(Reason.INVALID_CHAIN, e.reason(), "clock " + clock);
+            // And it cannot fail a chain that is valid right now either.
+            JwsVerifier current = new JwsVerifier(Collections.singleton(pki.root), BUNDLE,
+                    EnumSet.of(Environment.SANDBOX), null, null, clock);
+            assertEquals(BUNDLE, current.verifyRaw(currentJws).get("bundleId"),
+                    "dateless payload with clock " + clock);
+        }
+    }
+
+    /**
+     * A payload that states no signing time has no age, so the max-signed-age
+     * rule does not apply to it — rather than being measured against the clock
+     * itself, which would make the answer depend on which clock. node and
+     * python skip it the same way.
+     */
+    @Test
+    void aPayloadWithoutASigningDateIsNeverStale() throws Exception {
+        Map<String, Object> dateless = transactionClaims("Sandbox");
+        dateless.remove("signedDate");
+        String jws = pki.signJws(dateless);
+        assertEquals(BUNDLE, strict(null).verifyRaw(jws).get("bundleId"));
+        assertEquals(BUNDLE, strict(at(System.currentTimeMillis() + 3650L * 86_400_000L))
+                .verifyRaw(jws).get("bundleId"));
+        assertEquals(BUNDLE, strict(at(System.currentTimeMillis() - 3650L * 86_400_000L))
+                .verifyRaw(jws).get("bundleId"));
+    }
+
     /** One-minute max age, optionally with a pinned clock. */
     private static JwsVerifier strict(Clock clock) {
         return new JwsVerifier(Collections.singleton(pki.root), BUNDLE,

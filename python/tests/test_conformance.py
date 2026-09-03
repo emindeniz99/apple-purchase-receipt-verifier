@@ -7,6 +7,7 @@ library is a bug report against one of the two; it is never something to
 special-case here."""
 
 import base64
+import hashlib
 import json
 import re
 import unittest
@@ -40,19 +41,37 @@ def case_clock(case):
 
 
 def fixture_bytes(fixture_id):
-    """Decodes a registered fixture to its logical bytes (fixture.codec)."""
+    """Decodes a registered fixture to its logical bytes (fixture.codec), and
+    checks them against the digest cases.json records for it.
+
+    The digest is the file's anti-drift guarantee: every port reads the same
+    fixtures off disk, so a fixture edited or regenerated without updating the
+    registry would silently change what the vectors mean in all of them at
+    once. Checking it here is what makes that guarantee hold at test time
+    rather than only on paper."""
     entry = CASES["fixtures"].get(fixture_id)
     if entry is None:
         raise AssertionError(f"harness error: cases.json registers no fixture {fixture_id!r}")
     raw = (FIXTURES / entry["path"]).read_bytes()
     codec = entry["codec"]
     if codec == "raw":
-        return raw
-    if codec == "base64":
-        return base64.b64decode(re.sub(r"\s+", "", raw.decode("ascii")))
-    if codec == "utf8":
-        return raw.decode("utf-8").strip().encode("utf-8")
-    raise AssertionError(f"harness error: unknown fixture codec {codec!r}")
+        content = raw
+    elif codec == "base64":
+        content = base64.b64decode(re.sub(r"\s+", "", raw.decode("ascii")))
+    elif codec == "utf8":
+        content = raw.decode("utf-8").strip().encode("utf-8")
+    else:
+        raise AssertionError(f"harness error: unknown fixture codec {codec!r}")
+    expected = entry.get("contentSha256")
+    if expected is None:
+        raise AssertionError(
+            f"harness error: fixture {fixture_id!r} records no contentSha256")
+    actual = hashlib.sha256(content).hexdigest()
+    if actual != expected:
+        raise AssertionError(
+            f"fixture {fixture_id!r} ({entry['path']}) does not match the digest "
+            f"cases.json records: expected {expected}, got {actual}")
+    return content
 
 
 BUILTIN_ROOTS = {
@@ -251,6 +270,20 @@ class ConformanceCasesTest(unittest.TestCase):
                               f"{case['id']}: {path}: expected absent, got {got!r}")
             else:
                 self.assertEqual(got, want, f"{case['id']}: {path}")
+
+
+class FixtureRegistryTest(unittest.TestCase):
+    """``fixture_bytes`` checks the digest of every fixture a case actually
+    reads. This sweeps the rest: a fixture registered but referenced by no
+    case still has to match, or the drift is only caught by whichever port
+    happens to add the first vector for it."""
+
+    def test_every_registered_fixture_matches_its_recorded_digest(self):
+        registry = CASES["fixtures"]
+        self.assertTrue(registry)
+        for fixture_id in registry:
+            with self.subTest(fixture_id):
+                fixture_bytes(fixture_id)   # raises on a digest mismatch
 
 
 def _method_name(case_id):

@@ -1,4 +1,5 @@
 import Foundation
+import X509
 
 /// Drop-in local replacement for Apple's deprecated `verifyReceipt`
 /// endpoint: same request body, same response body shape, same status
@@ -23,27 +24,56 @@ public struct VerifyReceiptEndpoint: Sendable {
     /// Internal error.
     public static let statusInternal = 21009
 
-    private let verifier: ReceiptVerifier
-    private let production: Bool
+    private let roots: [Certificate]
+    private let environment: AppleEnvironment
     private let clock: @Sendable () -> Date
 
     /// - Parameters:
     ///   - trustedRoots: pinned DER roots (production: ``appleReceiptRoots()``)
-    ///   - production: which environment this instance emulates
-    ///     (drives 21007/21008 routing)
+    ///   - environment: which environment this instance emulates
+    ///     (drives 21007/21008 routing). ``AppleEnvironment/production`` or
+    ///     ``AppleEnvironment/sandbox`` — Apple's verifyReceipt endpoint has
+    ///     no other environment to emulate, and the two it does not name
+    ///     (`Xcode`, `LocalTesting`) are rejected here rather than folded into
+    ///     one of them. This is the `environment` enum node, python and
+    ///     fixtures/cases.json use; the boolean overload below is the older
+    ///     spelling of the same option.
     ///   - clock: the source of "now" for the response's `request_date`
     ///     fields, which Apple's endpoint stamps with the wall-clock time the
     ///     request was served. Same type and same meaning as
     ///     ``JwsVerifier/init(trustedRoots:bundleId:acceptedEnvironments:appAppleId:maxSignedAgeMillis:clock:)``:
     ///     omitted, the system clock is read. It moves no verdict — the
-    ///     status code and every verified field are unaffected.
+    ///     status code and every verified field are unaffected. In particular
+    ///     it never reaches a certificate-validity decision: the receipt path
+    ///     takes no clock at all, and judges chain validity at the receipt's
+    ///     creation date, falling back to the system clock.
+    public init(trustedRoots: [Data], environment: AppleEnvironment,
+                clock: (@Sendable () -> Date)? = nil) throws {
+        guard environment == .production || environment == .sandbox else {
+            throw VerificationError(.wrongEnvironment,
+                "verifyReceipt emulates Production or Sandbox, not \(environment.rawValue)")
+        }
+        guard !trustedRoots.isEmpty else {
+            throw VerificationError(.invalidCertificate, "trustedRoots is required")
+        }
+        // No ReceiptVerifier, and so no bundle id: the endpoint accepts any
+        // bundle exactly as Apple's does (callers compare bundle_id), and
+        // ``ReceiptVerifier/verifyCore(receipt:trustedRoots:)`` is that
+        // primitive without the claim check. It used to hold a verifier built
+        // with a wildcard bundle id — a stand-in for a check that never ran.
+        self.roots = try trustedRoots.map { try Certificate(derEncoded: [UInt8]($0)) }
+        self.environment = environment
+        self.clock = clock ?? { Date() }
+    }
+
+    /// Boolean spelling of ``init(trustedRoots:environment:clock:)``, kept
+    /// working for callers written against it.
+    @available(*, deprecated,
+               message: "use init(trustedRoots:environment:clock:) with .production / .sandbox")
     public init(trustedRoots: [Data], production: Bool,
                 clock: (@Sendable () -> Date)? = nil) throws {
-        // The bundle id is never consulted: verifyCore skips the claim
-        // check, matching Apple's endpoint (callers compare bundle_id).
-        self.verifier = try ReceiptVerifier(trustedRoots: trustedRoots, bundleId: "*")
-        self.production = production
-        self.clock = clock ?? { Date() }
+        try self.init(trustedRoots: trustedRoots,
+                      environment: production ? .production : .sandbox, clock: clock)
     }
 
     /// Handles one verifyReceipt request body. Never throws — like the real
@@ -55,7 +85,7 @@ public struct VerifyReceiptEndpoint: Sendable {
         }
         let fields: AppReceipt
         do {
-            fields = try await verifier.verifyCore(receipt: der)
+            fields = try await ReceiptVerifier.verifyCore(receipt: der, roots: roots)
         } catch let error as VerificationError {
             return ["status": error.reason == .invalidReceiptFormat
                 ? Self.statusMalformed : Self.statusNotAuthenticated]
@@ -72,15 +102,15 @@ public struct VerifyReceiptEndpoint: Sendable {
         // 21003 above and never reaches this branch.
         let productionReceipt = fields.receiptType == "Production"
             || fields.receiptType == "ProductionVPP"
-        if production && !productionReceipt {
+        if environment == .production && !productionReceipt {
             return ["status": Self.statusSandboxReceiptOnProduction]
         }
-        if !production && productionReceipt {
+        if environment == .sandbox && productionReceipt {
             return ["status": Self.statusProductionReceiptOnSandbox]
         }
         return [
             "status": Self.statusOK,
-            "environment": production ? "Production" : "Sandbox",
+            "environment": environment.rawValue,
             "receipt": receiptJson(fields, requestDate: clock()),
         ]
     }

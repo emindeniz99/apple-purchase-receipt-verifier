@@ -2,6 +2,7 @@ package io.github.emindeniz99.applepurchasereceiptverifier.receipt;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.emindeniz99.applepurchasereceiptverifier.Environment;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
 
@@ -13,7 +14,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.Date;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -55,18 +56,20 @@ public final class VerifyReceiptEndpoint {
     private static final ZoneId GMT = ZoneId.of("UTC");
     private static final ZoneId PACIFIC = ZoneId.of("America/Los_Angeles");
 
-    private final ReceiptVerifier verifier;
-    private final boolean production;
+    private final Set<X509Certificate> trustedRoots;
+    private final Environment environment;
     private final Clock clock;
 
     /**
      * @param trustedRoots pinned roots (production:
      *                     {@code AppleRootCerts.receiptRoots()})
-     * @param production   which environment this instance emulates
-     *                     (drives 21007/21008 routing)
+     * @param environment  which environment this instance emulates (drives
+     *                     21007/21008 routing). Only {@link Environment#PRODUCTION}
+     *                     and {@link Environment#SANDBOX} exist on Apple's
+     *                     endpoint; anything else is rejected.
      */
-    public VerifyReceiptEndpoint(Set<X509Certificate> trustedRoots, boolean production) {
-        this(trustedRoots, production, null);
+    public VerifyReceiptEndpoint(Set<X509Certificate> trustedRoots, Environment environment) {
+        this(trustedRoots, environment, null);
     }
 
     /**
@@ -74,19 +77,48 @@ public final class VerifyReceiptEndpoint {
      *              constructor's default) means {@link Clock#systemUTC()}, so
      *              existing callers are unaffected. It drives the
      *              {@code request_date} / {@code request_date_ms} /
-     *              {@code request_date_pst} response fields — Apple's endpoint
-     *              stamps them with the time the request was answered, which
-     *              is wall-clock by definition — and reaches the wrapped
-     *              {@link ReceiptVerifier} so the whole endpoint has one
-     *              notion of now.
+     *              {@code request_date_pst} response fields, and nothing else:
+     *              Apple's endpoint stamps them with the time the request was
+     *              answered, which is wall-clock by definition. It deliberately
+     *              does NOT reach receipt verification, whose only use for a
+     *              "now" is a certificate-validity instant — see
+     *              {@link ReceiptVerifier}.
      */
+    public VerifyReceiptEndpoint(Set<X509Certificate> trustedRoots, Environment environment,
+                                 Clock clock) {
+        if (trustedRoots == null || trustedRoots.isEmpty()) {
+            throw new IllegalArgumentException("trustedRoots must not be empty");
+        }
+        if (environment != Environment.PRODUCTION && environment != Environment.SANDBOX) {
+            throw new IllegalArgumentException(
+                    "environment must be PRODUCTION or SANDBOX, got " + environment);
+        }
+        this.trustedRoots = new HashSet<X509Certificate>(trustedRoots);
+        this.environment = environment;
+        this.clock = clock == null ? Clock.systemUTC() : clock;
+    }
+
+    /**
+     * @param production which environment this instance emulates
+     * @deprecated use {@link #VerifyReceiptEndpoint(Set, Environment)} — the
+     *             environment is an enum in cases.json and in every other
+     *             port, and a boolean cannot say which of the two it means at
+     *             a call site. {@code true} is {@link Environment#PRODUCTION},
+     *             {@code false} is {@link Environment#SANDBOX}.
+     */
+    @Deprecated
+    public VerifyReceiptEndpoint(Set<X509Certificate> trustedRoots, boolean production) {
+        this(trustedRoots, production ? Environment.PRODUCTION : Environment.SANDBOX, null);
+    }
+
+    /**
+     * @param production which environment this instance emulates
+     * @deprecated use {@link #VerifyReceiptEndpoint(Set, Environment, Clock)}.
+     */
+    @Deprecated
     public VerifyReceiptEndpoint(Set<X509Certificate> trustedRoots, boolean production,
                                  Clock clock) {
-        // The bundle id is never consulted: verifyCore skips the claim check,
-        // matching Apple's endpoint (callers compare receipt.bundle_id).
-        this.verifier = new ReceiptVerifier(trustedRoots, "*", clock);
-        this.production = production;
-        this.clock = clock == null ? Clock.systemUTC() : clock;
+        this(trustedRoots, production ? Environment.PRODUCTION : Environment.SANDBOX, clock);
     }
 
     /**
@@ -106,7 +138,10 @@ public final class VerifyReceiptEndpoint {
         }
         AppReceipt receipt;
         try {
-            receipt = verifier.verifyCore(der);
+            // The primitive itself, not a ReceiptVerifier built around a
+            // wildcard bundle id: like Apple's endpoint, no bundle-id
+            // claim is checked here (callers compare receipt.bundle_id).
+            receipt = ReceiptVerifier.verifyReceiptCore(der, trustedRoots);
         } catch (VerificationException e) {
             return status(e.reason() == Reason.INVALID_RECEIPT_FORMAT
                     ? STATUS_MALFORMED : STATUS_NOT_AUTHENTICATED);
@@ -123,16 +158,16 @@ public final class VerifyReceiptEndpoint {
         // 21003 above and never reaches this branch.
         boolean productionReceipt = "Production".equals(receipt.receiptType())
                 || "ProductionVPP".equals(receipt.receiptType());
-        if (production && !productionReceipt) {
+        if (environment == Environment.PRODUCTION && !productionReceipt) {
             return status(STATUS_SANDBOX_RECEIPT_ON_PRODUCTION);
         }
-        if (!production && productionReceipt) {
+        if (environment == Environment.SANDBOX && productionReceipt) {
             return status(STATUS_PRODUCTION_RECEIPT_ON_SANDBOX);
         }
 
         Map<String, Object> response = new LinkedHashMap<String, Object>();
         response.put("status", STATUS_OK);
-        response.put("environment", production ? "Production" : "Sandbox");
+        response.put("environment", environment.value());
         response.put("receipt", receiptJson(receipt, clock.instant()));
         return response;
     }

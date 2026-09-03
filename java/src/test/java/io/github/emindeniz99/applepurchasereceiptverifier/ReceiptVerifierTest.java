@@ -9,8 +9,12 @@ import org.bouncycastle.cms.CMSSignedData;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
@@ -18,9 +22,11 @@ import java.util.Base64;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -306,18 +312,128 @@ class ReceiptVerifierTest {
     }
 
     @Test
-    void rejectsAttributeTypeBeyondIntRangeRatherThanAliasingIt() throws Exception {
-        // One level down from the test above: 2^32 + 2 fits the long the parser
-        // holds the type in, and its low 32 bits are the bundle-id type, so a
-        // truncating cast to int would make this attribute the bundle id and
-        // the receipt would verify as com.example.app. Routed to the unknown
-        // attributes instead, the receipt has no bundle id at all.
+    void rejectsAttributeTypeBeyondIntRangeRatherThanRenamingIt() throws Exception {
+        // One level down from the test above: these types fit the long the
+        // parser holds them in, but not the int an attribute type is. A
+        // truncating cast would alias 2^32 + 2 onto the bundle-id type; this
+        // parser used to avoid that by rewriting any such type to -1 and
+        // filing it under unknownAttributes, which is its own bug — -1 is not
+        // a valid attribute type, and reporting the receipt as carrying an
+        // attribute it does not carry is how two ports start disagreeing about
+        // what a receipt says. The receipt is rejected instead. node, python
+        // and swift agree.
+        for (BigInteger type : Arrays.asList(
+                BigInteger.ONE.shiftLeft(31),                                // 2^31, one past int
+                BigInteger.ONE.shiftLeft(32).add(BigInteger.valueOf(2)),     // aliases the bundle id
+                BigInteger.valueOf(Long.MAX_VALUE))) {                       // the widest long
+            byte[] receipt = pki.signReceipt(TestPki.singleAttributePayload(
+                    type, new DERUTF8String(BUNDLE).getEncoded()));
+            VerificationException e = assertThrows(VerificationException.class,
+                    () -> verifier(pki, BUNDLE).verify(receipt), type.toString());
+            assertEquals(Reason.INVALID_RECEIPT_FORMAT, e.reason(), type.toString());
+            assertTrue(e.getMessage().contains("out of range"), e.getMessage());
+        }
+    }
+
+    @Test
+    void keepsAnAttributeTypeAtIntMaxAsItselfRatherThanRejectingIt() throws Exception {
+        // The boundary the rule above draws, from the other side: 2^31 - 1 is
+        // representable, so it is kept as itself and reaches unknownAttributes
+        // under its own number — and nothing is ever filed under -1.
         byte[] receipt = pki.signReceipt(TestPki.singleAttributePayload(
-                BigInteger.ONE.shiftLeft(32).add(BigInteger.valueOf(2)),
-                new DERUTF8String(BUNDLE).getEncoded()));
+                BigInteger.valueOf(Integer.MAX_VALUE), new byte[]{1, 2, 3}));
+        AppReceipt parsed = ReceiptVerifier.verifyReceiptCore(
+                receipt, Collections.singleton(pki.root));
+        assertArrayEquals(new byte[]{1, 2, 3},
+                parsed.unknownAttributes().get(Integer.MAX_VALUE).get(0));
+        assertNull(parsed.unknownAttributes().get(-1));
+    }
+
+    // ------------------------------------- the certificate-validity clock (1)
+
+    /**
+     * Chain validity is judged at the receipt's creation date, and — for a
+     * receipt that carries none — at the system clock (PLAN.md §2.2 step 2's
+     * "else current time"). Both halves are asserted here with one receipt
+     * shape carrying no creation date at all: expired chain rejected, current
+     * chain accepted, on real time alone.
+     */
+    @Test
+    void receiptWithoutACreationDateIsJudgedAgainstTheSystemClock() throws Exception {
+        // An empty attribute-12 value is how a real receipt says "no date"
+        // (decodeDate maps it to null), so this is the fallback's real input.
+        byte[] datelessPayload = payload(BUNDLE, "");
+        Date notBefore = new Date(System.currentTimeMillis() - 730L * 86_400_000L);
+        Date notAfter = new Date(System.currentTimeMillis() - 365L * 86_400_000L);
+        TestPki expired = TestPki.receipt(notBefore, notAfter);
+
+        AppReceipt current = verifier(pki, BUNDLE).verify(pki.signReceipt(datelessPayload));
+        assertNull(current.creationDate(), "the fixture must carry no creation date");
+
+        byte[] stale = expired.signReceipt(datelessPayload);
         VerificationException e = assertThrows(VerificationException.class,
-                () -> verifier(pki, BUNDLE).verify(receipt));
-        assertEquals(Reason.WRONG_BUNDLE_ID, e.reason());
+                () -> verifier(expired, BUNDLE).verify(stale));
+        assertEquals(Reason.INVALID_CHAIN, e.reason());
+    }
+
+    /**
+     * And there is no way to point that fallback anywhere else: ReceiptVerifier
+     * takes no clock, in any constructor or method. Java used to offer one
+     * (a three-argument constructor) while node, python and swift did not,
+     * which made an injected clock able to decide a certificate-validity
+     * verdict — a caller pinning a clock to test staleness, or to work around
+     * skew, could thereby accept a chain expired in real time. The option is
+     * gone; this test is what keeps it gone.
+     */
+    @Test
+    void receiptVerifierExposesNoClockOption() {
+        for (Constructor<?> constructor : ReceiptVerifier.class.getConstructors()) {
+            for (Class<?> parameter : constructor.getParameterTypes()) {
+                assertNotEquals(Clock.class, parameter,
+                        "ReceiptVerifier constructor " + constructor + " takes a Clock");
+            }
+        }
+        for (Method method : ReceiptVerifier.class.getMethods()) {
+            for (Class<?> parameter : method.getParameterTypes()) {
+                assertNotEquals(Clock.class, parameter,
+                        "ReceiptVerifier." + method.getName() + " takes a Clock");
+            }
+        }
+    }
+
+    // ---------------------------------------- verifyReceiptCore is public (3)
+
+    /**
+     * The chain + signature primitive without the bundle-id claim check is
+     * public and static, the same surface node exports as
+     * {@code verifyReceiptCore} and python as {@code verify_receipt_core}. It
+     * used to be package-private here, which is why the endpoint had to build
+     * a ReceiptVerifier around a wildcard bundle id to reach it.
+     */
+    @Test
+    void verifyReceiptCoreIsPublicAndChecksNoBundleId() throws Exception {
+        Method core = ReceiptVerifier.class.getMethod("verifyReceiptCore", byte[].class, Set.class);
+        assertTrue(Modifier.isPublic(core.getModifiers()), "verifyReceiptCore must be public");
+        assertTrue(Modifier.isStatic(core.getModifiers()), "verifyReceiptCore must be static");
+
+        Set<java.security.cert.X509Certificate> roots = Collections.singleton(pki.root);
+        // The bundle id comes back unjudged: verify() with a different id
+        // rejects the very same receipt.
+        assertEquals(BUNDLE, ReceiptVerifier.verifyReceiptCore(receiptDer, roots).bundleId());
+        VerificationException wrong = assertThrows(VerificationException.class,
+                () -> verifier(pki, "com.example.other").verify(receiptDer));
+        assertEquals(Reason.WRONG_BUNDLE_ID, wrong.reason());
+
+        // Everything else is still enforced: an untrusted root does not verify,
+        // and an empty root set is refused rather than trusted.
+        TestPki stranger = TestPki.receipt();
+        VerificationException chain = assertThrows(VerificationException.class,
+                () -> ReceiptVerifier.verifyReceiptCore(receiptDer,
+                        Collections.singleton(stranger.root)));
+        assertEquals(Reason.INVALID_CHAIN, chain.reason());
+        assertThrows(IllegalArgumentException.class,
+                () -> ReceiptVerifier.verifyReceiptCore(receiptDer,
+                        Collections.<java.security.cert.X509Certificate>emptySet()));
     }
 
     @Test

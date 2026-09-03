@@ -256,6 +256,15 @@ def payload_with_attribute_type(type_bytes):
     return tlv(0x31, tlv(0x30, date) + tlv(0x30, probe))
 
 
+def payload_with_in_app_integer(attribute_type, value_bytes):
+    """A receipt payload SET carrying one in-app purchase (attribute 17) whose
+    only field is ``attribute_type`` holding the INTEGER ``value_bytes``."""
+    field = tlv(0x02, attribute_type.to_bytes(2, "big")) + tlv(0x02, b"\x01") \
+        + tlv(0x04, tlv(0x02, value_bytes))
+    in_app = tlv(0x02, b"\x11") + tlv(0x02, b"\x01") + tlv(0x04, tlv(0x31, tlv(0x30, field)))
+    return tlv(0x31, tlv(0x30, in_app))
+
+
 # An anonymous 162-byte blob: no certificates, no signature, one creation date
 # of 0001-01-01T00:00:00+10:00. The payload is parsed before the chain check,
 # so this reaches the date decoder against the real pinned Apple roots.
@@ -347,7 +356,7 @@ class HostileInputTest(unittest.TestCase):
         # Driven through the payload parser like the date above. 0x80 is the
         # smallest leading byte of a negative two's-complement INTEGER and
         # nine bytes is one past the cap; a comparison one step wider admits
-        # each. Eight bytes under 0x80 is the largest value the cap admits.
+        # each.
         from apple_purchase_receipt_verifier.receipt import _parse_payload
         for name, type_bytes, message in (
                 ("leading byte 0x80", b"\x80", "negative receipt integer"),
@@ -357,8 +366,37 @@ class HostileInputTest(unittest.TestCase):
                     _parse_payload(payload_with_attribute_type(type_bytes))
                 self.assertEqual(ctx.exception.reason, "INVALID_RECEIPT_FORMAT")
                 self.assertIn(message, str(ctx.exception))
-        largest = _parse_payload(payload_with_attribute_type(b"\x7f" + b"\xff" * 7))
-        self.assertEqual(largest.unknown_attributes, {2**63 - 1: [b""]})
+
+    def test_rejects_an_attribute_type_above_the_32_bit_signed_range(self):
+        # Cross-language decision: an attribute type is a 32-bit signed space
+        # in every port. Java used to map an unrepresentable type onto -1 and
+        # file it under unknownAttributes, and this port used to admit it up to
+        # 2^63-1; both let two ports report different contents for the same
+        # bytes, so every port now rejects it as a malformed receipt instead.
+        from apple_purchase_receipt_verifier.receipt import _parse_payload
+        largest = _parse_payload(payload_with_attribute_type(b"\x7f\xff\xff\xff"))
+        self.assertEqual(largest.unknown_attributes, {2**31 - 1: [b""]})
+        for name, type_bytes in (
+                ("one past 2^31-1", b"\x00\x80\x00\x00\x00"),
+                ("the old 8-byte ceiling", b"\x7f" + b"\xff" * 7)):
+            with self.subTest(name):
+                with self.assertRaises(VerificationError) as ctx:
+                    _parse_payload(payload_with_attribute_type(type_bytes))
+                self.assertEqual(ctx.exception.reason, "INVALID_RECEIPT_FORMAT")
+                self.assertIn("exceeds the 32-bit signed range", str(ctx.exception))
+
+    def test_attribute_values_keep_the_wider_integer_range(self):
+        # The 32-bit bound above is on the attribute TYPE only. Values stay on
+        # the 8-byte cap, because web_order_line_item_id is genuinely a 7-byte
+        # integer — a bound that narrowed both would reject real receipts.
+        from apple_purchase_receipt_verifier.receipt import _parse_payload
+        purchase = _parse_payload(
+            payload_with_in_app_integer(1711, b"\x7f" + b"\xff" * 7)).in_app_purchases[0]
+        self.assertEqual(purchase.web_order_line_item_id, 2**63 - 1)
+        with self.assertRaises(VerificationError) as ctx:
+            _parse_payload(payload_with_in_app_integer(1711, b"\x00" * 8 + b"\x01"))
+        self.assertEqual(ctx.exception.reason, "INVALID_RECEIPT_FORMAT")
+        self.assertIn("out of range", str(ctx.exception))
 
     def test_contains_hostile_signed_attrs(self):
         verifier = ReceiptVerifier([cert("generated", "receipt-root.der")], BUNDLE)
@@ -561,6 +599,91 @@ class EmbeddedCertificateFloodTest(unittest.TestCase):
         self.assertLess(max(counts.values()), _MAX_EMBEDDED_CERTIFICATES, counts)
 
 
+def receipt_without_creation_date(der):
+    """The given receipt with attribute 12 removed from its payload, so the
+    certificate-validity anchor has to fall back to "current time" (PLAN.md
+    §2.2 step 2). The chain is checked before the signature, so this reaches
+    the chain check even though dropping the attribute invalidates the
+    signature over the payload."""
+    from apple_purchase_receipt_verifier.receipt import _children, _read_tlv
+
+    info = asn1cms.ContentInfo.load(der)
+    signed_data = info["content"]
+    encap = signed_data["encap_content_info"]
+    tag, contents, end = _read_tlv(encap["content"].native, 0)
+    assert tag == 0x31 and end == len(encap["content"].native)
+    kept = b""
+    for child_tag, child_value in _children(contents):
+        if int.from_bytes(_children(child_value)[0][1], "big") == 12:
+            continue
+        kept += tlv(child_tag, child_value)
+    new_encap = tlv(0x30, encap["content_type"].dump() + tlv(0xA0, tlv(0x04, tlv(0x31, kept))))
+    body = (signed_data["version"].dump()
+            + signed_data["digest_algorithms"].dump()
+            + new_encap
+            + signed_data["certificates"].dump()
+            + signed_data["crls"].dump()
+            + signed_data["signer_infos"].dump())
+    return tlv(0x30, info["content_type"].dump() + tlv(0xA0, tlv(0x30, body)))
+
+
+def jws_without_signed_date(compact):
+    """The given JWS with ``signedDate`` and ``receiptCreationDate`` dropped
+    from its payload, so PLAN.md §2.1 step 4's "else current time" fallback is
+    what anchors chain validity. The chain is checked before the signature, so
+    this reaches the chain check."""
+    header, payload, signature = compact.split(".")
+    claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+    claims.pop("signedDate", None)
+    claims.pop("receiptCreationDate", None)
+    undated = base64.urlsafe_b64encode(json.dumps(claims).encode()).rstrip(b"=").decode()
+    return f"{header}.{undated}.{signature}"
+
+
+class CrossPortApiShapeTest(unittest.TestCase):
+    """The API decisions the four ports must agree on. Each of these was a
+    real divergence between two implementations of the same algorithm."""
+
+    def test_receipt_verifier_takes_no_clock(self):
+        # Nothing on the receipt path has a verdict that moves with the current
+        # time: chain validity anchors at the receipt creation date, and the
+        # "else current time" fallback is a certificate-validity judgement an
+        # injected clock must not be able to shift. So the option does not
+        # exist here — the seam lives on the JWS verifier (max signed age) and
+        # on the endpoint (request_date) only.
+        import inspect
+
+        from apple_purchase_receipt_verifier import verify_receipt_core
+        for callable_ in (ReceiptVerifier.__init__, ReceiptVerifier.verify,
+                          verify_receipt_core):
+            with self.subTest(callable_.__qualname__):
+                self.assertNotIn("clock", inspect.signature(callable_).parameters)
+
+    def test_verify_receipt_core_is_public(self):
+        # The endpoint accepts any bundle id, exactly as Apple's does. It gets
+        # that by calling the bundle-agnostic primitive, which is part of the
+        # published API — not by constructing a ReceiptVerifier with a wildcard
+        # bundle id, which would put a bundle-id check one typo away from
+        # passing for everyone.
+        import apple_purchase_receipt_verifier as package
+        self.assertIn("verify_receipt_core", package.__all__)
+        fields = package.verify_receipt_core(
+            fixture("generated", "receipt.der"), [cert("generated", "receipt-root.der")])
+        self.assertEqual(BUNDLE, fields.bundle_id)
+
+    def test_endpoint_environment_is_the_typed_enum(self):
+        # cases.json spells the endpoint's environment as the same enum the
+        # rest of the library uses, not as a boolean "production" flag.
+        from apple_purchase_receipt_verifier import VerifyReceiptEndpoint
+        roots = [cert("generated", "receipt-root.der")]
+        for environment in ("Production", "Sandbox"):
+            VerifyReceiptEndpoint(roots, environment)
+        for rejected in (True, False, "production", "sandbox", "", None):
+            with self.subTest(rejected):
+                with self.assertRaises(ValueError):
+                    VerifyReceiptEndpoint(roots, rejected)
+
+
 class ClockSeamTest(unittest.TestCase):
     """The optional ``clock`` option: which verdicts it moves, and which it
     must not. A clock is a zero-argument callable returning epoch seconds —
@@ -622,6 +745,65 @@ class ClockSeamTest(unittest.TestCase):
                 payload = self.expired_chain_verifier(clock).verify_transaction(
                     text("generated", "expired-cert-historical.jws"))
                 self.assertEqual(1590969600000, payload["signedDate"])
+
+    def test_injected_clock_does_not_move_certificate_validity_without_a_signed_date(self):
+        # The gap the test above cannot reach: with neither signedDate nor
+        # receiptCreationDate, PLAN.md §2.1 step 4 falls back to "current
+        # time", and that fallback is deliberately the system clock. The same
+        # payload WITH its signedDate verifies at 2020-06-01, so a fallback
+        # wired to self._clock would let a clock pinned there accept an expired
+        # chain — a caller injecting a clock for staleness, or around clock
+        # skew, must not thereby widen a certificate's validity window.
+        dated = text("generated", "expired-cert-historical.jws")
+        self.assertEqual(
+            1590969600000,
+            self.expired_chain_verifier(lambda: 1590969600.0)
+                .verify_transaction(dated)["signedDate"])
+        undated = jws_without_signed_date(dated)
+        for now in (None, 1590969600.0, 4102444800.0):   # system, 2020-06-01, 2100
+            with self.subTest(now=now):
+                clock = None if now is None else (lambda moment: lambda: moment)(now)
+                with self.assertRaises(VerificationError) as ctx:
+                    self.expired_chain_verifier(clock).verify_transaction(undated)
+                self.assertEqual(ctx.exception.reason, "INVALID_CHAIN")
+
+    def test_receipt_without_a_creation_date_anchors_on_the_system_clock(self):
+        # PLAN.md §2.2 step 2's fallback on the receipt path. The receipt
+        # verifier takes no clock at all (CrossPortApiShapeTest), so what this
+        # pins is that the fallback is real time: the same receipt WITH its
+        # 2020-06-01 creation date verifies against the expired chain, and
+        # stripped of it, it is rejected because the chain is long expired now.
+        expired_root = [cert("generated", "receipt-expired-root.der")]
+        verifier = ReceiptVerifier(expired_root, BUNDLE)
+        historical = fixture("generated", "receipt-expired-historical.der")
+        self.assertEqual(
+            "2020-06-01T00:00:00+00:00",
+            verifier.verify(historical).creation_date.isoformat())
+        with self.assertRaises(VerificationError) as ctx:
+            verifier.verify(receipt_without_creation_date(historical))
+        self.assertEqual(ctx.exception.reason, "INVALID_CHAIN")
+
+    def test_endpoint_clock_does_not_move_certificate_validity(self):
+        # The endpoint is the one place on the receipt path that takes a clock
+        # at all (request_date), so it is where a caller could hope to move the
+        # chain window. receipt-expired-fresh.der is intact and was created
+        # after its signing certificate expired; the sibling receipt created
+        # while that certificate was valid verifies, so a clock pinned to
+        # 2020-06-01 is inside the window and would rescue this one if it
+        # reached the anchor. It answers 21003 at every clock instead.
+        from apple_purchase_receipt_verifier import VerifyReceiptEndpoint
+        roots = [cert("generated", "receipt-expired-root.der")]
+        data = {"receipt-data": base64.b64encode(
+            fixture("generated", "receipt-expired-fresh.der")).decode()}
+        historical = {"receipt-data": base64.b64encode(
+            fixture("generated", "receipt-expired-historical.der")).decode()}
+        self.assertEqual(
+            0, VerifyReceiptEndpoint(roots, "Sandbox").verify_receipt(historical)["status"])
+        for now in (None, 1590969600.0, 4102444800.0):   # system, 2020-06-01, 2100
+            with self.subTest(now=now):
+                clock = None if now is None else (lambda moment: lambda: moment)(now)
+                endpoint = VerifyReceiptEndpoint(roots, "Sandbox", clock=clock)
+                self.assertEqual(21003, endpoint.verify_receipt(data)["status"])
 
     def test_injected_clock_is_ignored_without_a_max_signed_age(self):
         # The clock is not a second expiry policy: with no max age configured

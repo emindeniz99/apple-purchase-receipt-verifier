@@ -369,6 +369,23 @@ final class TestPki {
     static byte[] receiptPayload(String receiptType, String bundleId, String appVersion,
                                  byte[] opaque, byte[] sha1Hash, String creationDate,
                                  List<byte[]> inAppSets) throws Exception {
+        return receiptPayload(receiptType, bundleId, appVersion, opaque, sha1Hash, creationDate,
+                inAppSets, true, null);
+    }
+
+    /**
+     * Same, with the two knobs the port-divergence fixtures need (see
+     * {@link PortDivergenceFixtures}). {@code creationDateAttribute == false}
+     * omits attribute 12, the receipt creation date, so a verifier judging
+     * certificate validity has nothing to anchor on but "current time".
+     * {@code extraAttributeType}, when non-null, appends one attribute
+     * carrying that type INTEGER — the only way a type above 2^31-1 reaches
+     * a parser, since every modelled type is small.
+     */
+    static byte[] receiptPayload(String receiptType, String bundleId, String appVersion,
+                                 byte[] opaque, byte[] sha1Hash, String creationDate,
+                                 List<byte[]> inAppSets, boolean creationDateAttribute,
+                                 BigInteger extraAttributeType) throws Exception {
         ASN1EncodableVector attrs = new ASN1EncodableVector();
         if (receiptType != null) {
             attrs.add(attr(0, new DERUTF8String(receiptType).getEncoded()));
@@ -378,9 +395,14 @@ final class TestPki {
         attrs.add(attr(18, new DERIA5String(creationDate).getEncoded()));
         attrs.add(attr(4, opaque));
         attrs.add(attr(5, sha1Hash));
-        attrs.add(attr(12, new DERIA5String(creationDate).getEncoded()));
+        if (creationDateAttribute) {
+            attrs.add(attr(12, new DERIA5String(creationDate).getEncoded()));
+        }
         attrs.add(attr(19, new DERUTF8String("1.0").getEncoded()));
         attrs.add(attr(9999, new byte[]{1, 2, 3}));  // unknown attr for D10 tests
+        if (extraAttributeType != null) {
+            attrs.add(attr(extraAttributeType, new byte[]{1, 2, 3}));
+        }
         for (byte[] inApp : inAppSets) {
             attrs.add(attr(17, inApp));
         }

@@ -194,10 +194,10 @@ final class VerifyReceiptEndpointTests: XCTestCase {
         })
     }
 
-    func endpoint(production: Bool) throws -> VerifyReceiptEndpoint {
+    func endpoint(_ environment: AppleEnvironment) throws -> VerifyReceiptEndpoint {
         try VerifyReceiptEndpoint(
             trustedRoots: [try fixture("generated", "receipt-root.der")],
-            production: production)
+            environment: environment)
     }
 
     func request() throws -> [String: Any] {
@@ -205,7 +205,7 @@ final class VerifyReceiptEndpointTests: XCTestCase {
     }
 
     func testAnswersLikeVerifyReceiptForValidSandboxReceipt() async throws {
-        let response = await (try endpoint(production: false)).verifyReceipt(try request())
+        let response = await (try endpoint(.sandbox)).verifyReceipt(try request())
         XCTAssertEqual(response["status"] as? Int, 0)
         let receipt = response["receipt"] as! [String: Any]
         let inApp = receipt["in_app"] as! [[String: Any]]
@@ -230,7 +230,7 @@ final class VerifyReceiptEndpointTests: XCTestCase {
         let now = Date(timeIntervalSince1970: 1_735_689_600)  // 2025-01-01T00:00:00Z
         let pinned = try VerifyReceiptEndpoint(
             trustedRoots: [try fixture("generated", "receipt-root.der")],
-            production: false,
+            environment: .sandbox,
             clock: { now })
         let response = await pinned.verifyReceipt(try request())
         let receipt = response["receipt"] as! [String: Any]
@@ -239,7 +239,7 @@ final class VerifyReceiptEndpointTests: XCTestCase {
 
         // Same request through the default (system-clock) endpoint: identical
         // status and identical verified fields, only request_date differs.
-        let live = await (try endpoint(production: false)).verifyReceipt(try request())
+        let live = await (try endpoint(.sandbox)).verifyReceipt(try request())
         XCTAssertEqual(response["status"] as? Int, live["status"] as? Int)
         let liveReceipt = live["receipt"] as! [String: Any]
         XCTAssertNotEqual(liveReceipt["request_date_ms"] as? String,
@@ -257,7 +257,7 @@ final class VerifyReceiptEndpointTests: XCTestCase {
     }
 
     func testReportsMalformedRequestsAs21002() async throws {
-        let endpoint = try endpoint(production: false)
+        let endpoint = try endpoint(.sandbox)
         let empty = await endpoint.verifyReceipt([:])
         XCTAssertEqual(empty["status"] as? Int, 21002)
         let missing = await endpoint.verifyReceipt(nil)
@@ -284,7 +284,7 @@ final class VerifyReceiptEndpointTests: XCTestCase {
     }
 
     func testVerifyReceiptJSONPinsTheWireTypes() async throws {
-        let body = await (try endpoint(production: false)).verifyReceiptJSON(try requestJSON())
+        let body = await (try endpoint(.sandbox)).verifyReceiptJSON(try requestJSON())
         // Raw bytes, not just the parse: status is a JSON number and every
         // number-shaped receipt field is a JSON string, as Apple sends them.
         XCTAssertTrue(body.contains("\"status\":0"), body)
@@ -311,7 +311,7 @@ final class VerifyReceiptEndpointTests: XCTestCase {
                 .appendingPathComponent("receipt-sandbox-g5.b64"),
             encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         let endpoint = try VerifyReceiptEndpoint(
-            trustedRoots: appleReceiptRoots(), production: false)
+            trustedRoots: appleReceiptRoots(), environment: .sandbox)
         let body = await endpoint.verifyReceiptJSON("{\"receipt-data\":\"\(receiptData)\"}")
         XCTAssertTrue(body.contains("\"is_in_intro_offer_period\":\"false\""), body)
         let parsed = try XCTUnwrap(try JSONSerialization.jsonObject(
@@ -325,12 +325,12 @@ final class VerifyReceiptEndpointTests: XCTestCase {
     }
 
     func testVerifyReceiptJSONOmitsReceiptAndEnvironmentOnNonZeroStatus() async throws {
-        let body = await (try endpoint(production: true)).verifyReceiptJSON(try requestJSON())
+        let body = await (try endpoint(.production)).verifyReceiptJSON(try requestJSON())
         XCTAssertEqual(body, "{\"status\":21007}")
     }
 
     func testVerifyReceiptJSONAnswers21002ForABodyThatIsNotAnObject() async throws {
-        let endpoint = try endpoint(production: false)
+        let endpoint = try endpoint(.sandbox)
         for body in ["", "not json", "{", "[]", "[{\"receipt-data\":\"x\"}]",
                      "null", "3", "\"receipt\"", "true"] {
             let response = await endpoint.verifyReceiptJSON(body)
@@ -339,7 +339,7 @@ final class VerifyReceiptEndpointTests: XCTestCase {
     }
 
     func testVerifyReceiptJSONMatchesTheDictionaryApi() async throws {
-        let endpoint = try endpoint(production: false)
+        let endpoint = try endpoint(.sandbox)
         let viaDictionary = await endpoint.verifyReceipt(try request())
         let body = await endpoint.verifyReceiptJSON(try requestJSON())
         let viaJSON = try XCTUnwrap(try JSONSerialization.jsonObject(
@@ -459,7 +459,7 @@ final class ParityTests: XCTestCase {
         let malformed = Data([0x30, 0x0B, 0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x02])
         let v = try ReceiptVerifier(trustedRoots: [try fx("receipt-root.der")], bundleId: Self.bundle)
         await expect(.invalidReceiptFormat) { _ = try await v.verify(receipt: malformed) }
-        let ep = try VerifyReceiptEndpoint(trustedRoots: [try fx("receipt-root.der")], production: false)
+        let ep = try VerifyReceiptEndpoint(trustedRoots: [try fx("receipt-root.der")], environment: .sandbox)
         let resp = await ep.verifyReceipt(["receipt-data": malformed.base64EncodedString()])
         XCTAssertEqual(resp["status"] as? Int, 21002)
     }

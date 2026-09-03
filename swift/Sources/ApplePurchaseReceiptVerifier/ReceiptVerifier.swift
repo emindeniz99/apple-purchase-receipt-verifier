@@ -106,8 +106,27 @@ public struct ReceiptVerifier: Sendable {
     /// Chain + signature verification WITHOUT the bundle-id claim check —
     /// the primitive under both ``verify(receipt:deviceGuid:)`` and the
     /// verifyReceipt-compat endpoint (which, like Apple's endpoint, accepts
-    /// any bundle).
-    func verifyCore(receipt: Data) async throws -> AppReceipt {
+    /// any bundle). Public because node and python export the same primitive
+    /// as `verifyReceiptCore`; a caller that unlocks products must compare
+    /// ``AppReceipt/bundleId`` itself or use ``verify(receipt:deviceGuid:)``.
+    public func verifyCore(receipt: Data) async throws -> AppReceipt {
+        try await Self.verifyCore(receipt: receipt, roots: roots)
+    }
+
+    /// ``verifyCore(receipt:)`` for a caller that has no single bundle id to
+    /// check — the verifyReceipt-compat endpoint, which accepts any bundle.
+    /// Same primitive, pinned roots supplied per call.
+    public static func verifyCore(receipt: Data,
+                                  trustedRoots: [Data]) async throws -> AppReceipt {
+        guard !trustedRoots.isEmpty else {
+            throw VerificationError(.invalidCertificate, "trustedRoots is required")
+        }
+        return try await verifyCore(
+            receipt: receipt,
+            roots: try trustedRoots.map { try Certificate(derEncoded: [UInt8]($0)) })
+    }
+
+    static func verifyCore(receipt: Data, roots: [Certificate]) async throws -> AppReceipt {
         let cms = try CMSReceipt(parsing: [UInt8](receipt))
         // The embedded certificates are attacker-supplied and every one of
         // them is a walk candidate below, before anything about the receipt
@@ -527,8 +546,20 @@ private func parseAttributeSet(_ der: [UInt8]) throws -> [(Int, [UInt8])] {
               fields[0].identifier == .integer, fields[2].identifier == .octetString else {
             throw VerificationError(.invalidReceiptFormat, "malformed receipt attribute")
         }
-        attributes.append((try intValue(try CMSReceipt.primitive(fields[0])),
-                           try CMSReceipt.primitive(fields[2])))
+        // The attribute TYPE is bounded at a 32-bit signed integer, the width
+        // every port keys `unknownAttributes` by. A larger type is rejected
+        // rather than mapped onto some in-range stand-in: -1 (or any clamp) is
+        // not a valid attribute type, and filing an unrepresentable type under
+        // a representable one is how a parser starts disagreeing with itself
+        // and with the other ports. The attribute VALUE keeps its full 8-byte
+        // range — real receipts carry 7-byte integers (web_order_line_item_id)
+        // — so this bound is on the type alone.
+        let type = try intValue(try CMSReceipt.primitive(fields[0]))
+        guard type <= Int(Int32.max) else {
+            throw VerificationError(.invalidReceiptFormat,
+                "receipt attribute type \(type) exceeds the 32-bit signed range")
+        }
+        attributes.append((type, try CMSReceipt.primitive(fields[2])))
     }
     return attributes
 }
