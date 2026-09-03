@@ -5,6 +5,8 @@
  * and indefinite (BER) lengths because genuine Apple/Xcode receipts use both.
  */
 
+import { bytesEqual, concatBytes } from './bytes.js';
+
 const MAX_DEPTH = 32;
 
 export class ParseError extends Error {}
@@ -15,12 +17,12 @@ export interface ASN1Node {
   tag: number;
   constructed: boolean;
   /** Complete TLV slice. */
-  raw: Buffer;
-  contents: Buffer;
+  raw: Uint8Array;
+  contents: Uint8Array;
   children: ASN1Node[] | null;
 }
 
-export function parse(buf: Buffer): ASN1Node {
+export function parse(buf: Uint8Array): ASN1Node {
   const [node, end] = readNode(buf, 0, 0);
   if (end !== buf.length) {
     throw new ParseError(`trailing bytes after ASN.1 value (${buf.length - end})`);
@@ -28,7 +30,7 @@ export function parse(buf: Buffer): ASN1Node {
   return node;
 }
 
-function readNode(buf: Buffer, off: number, depth: number): [ASN1Node, number] {
+function readNode(buf: Uint8Array, off: number, depth: number): [ASN1Node, number] {
   if (depth > MAX_DEPTH) {
     throw new ParseError('maximum ASN.1 nesting depth exceeded');
   }
@@ -99,12 +101,12 @@ function readNode(buf: Buffer, off: number, depth: number): [ASN1Node, number] {
     tag,
     constructed: true,
     raw: buf.subarray(off, pos),
-    contents: Buffer.concat(children.map((c) => c.raw)),
+    contents: concatBytes(children.map((c) => c.raw)),
     children,
   }, pos];
 }
 
-function readChildren(contents: Buffer, depth: number): ASN1Node[] {
+function readChildren(contents: Uint8Array, depth: number): ASN1Node[] {
   const children: ASN1Node[] = [];
   let pos = 0;
   while (pos < contents.length) {
@@ -116,15 +118,15 @@ function readChildren(contents: Buffer, depth: number): ASN1Node[] {
 }
 
 /** Value bytes of an OCTET STRING, joining BER constructed chunks. */
-export function octetStringValue(node: ASN1Node): Buffer {
+export function octetStringValue(node: ASN1Node): Uint8Array {
   if (!node.constructed) {
     return node.contents;
   }
-  return Buffer.concat((node.children ?? []).map((c) => octetStringValue(c)));
+  return concatBytes((node.children ?? []).map((c) => octetStringValue(c)));
 }
 
 /** DER-encodes an OBJECT IDENTIFIER dotted string to its contents bytes. */
-export function encodeOidContents(oid: string): Buffer {
+export function encodeOidContents(oid: string): Uint8Array {
   const parts = oid.split('.').map(Number);
   const bytes: number[] = [40 * parts[0]! + parts[1]!];
   for (let i = 2; i < parts.length; i++) {
@@ -137,7 +139,7 @@ export function encodeOidContents(oid: string): Buffer {
     }
     bytes.push(...chunk);
   }
-  return Buffer.from(bytes);
+  return Uint8Array.from(bytes);
 }
 
 export const Tag = {
@@ -168,7 +170,7 @@ interface TbsParts {
  * X.509 helpers built on the parser: positions per RFC 5280
  * Certificate ::= SEQUENCE { tbsCertificate, signatureAlgorithm, signature }.
  */
-export function tbsParts(certRaw: Buffer): TbsParts {
+export function tbsParts(certRaw: Uint8Array): TbsParts {
   const cert = parse(certRaw);
   if (cert.tag !== Tag.SEQUENCE || (cert.children ?? []).length < 3) {
     throw new ParseError('not an X.509 certificate');
@@ -194,13 +196,13 @@ export function tbsParts(certRaw: Buffer): TbsParts {
 }
 
 /** Whether the certificate carries an extension with the given OID. */
-export function hasExtension(certRaw: Buffer, oid: string): boolean {
+export function hasExtension(certRaw: Uint8Array, oid: string): boolean {
   const { extensions } = tbsParts(certRaw);
   if (!extensions) {
     return false;
   }
   const wanted = encodeOidContents(oid);
   return (extensions.children ?? []).some(
-    (ext) => ext.children?.[0]?.tag === Tag.OID && ext.children[0].contents.equals(wanted),
+    (ext) => ext.children?.[0]?.tag === Tag.OID && bytesEqual(ext.children[0].contents, wanted),
   );
 }
