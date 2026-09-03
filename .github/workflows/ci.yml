@@ -101,6 +101,10 @@ jobs:
           package-manager-cache: false
       - run: npm ci && npm run test:runtimes
         working-directory: node
+      # roots-data.ts is generated from certs/; a certs change that forgets
+      # to regenerate it would ship stale trust anchors.
+      - run: node scripts/gen-roots.mjs && git diff --exit-code src/roots-data.ts
+        working-directory: node
 
   python:
     runs-on: ubuntu-latest
