@@ -191,6 +191,11 @@ def _verify_receipt_core_unguarded(der, roots):
     # date (chain validity anchors at signing time); nothing from it is
     # trusted until the chain + signature checks pass.
     fields = _parse_payload(content)
+    # No clock seam here, deliberately: this path has no verdict that moves
+    # with the current time. The chain window is anchored at the receipt
+    # creation date, and the system-clock fallback below only fires for a
+    # receipt carrying no creation date at all — a certificate-validity
+    # judgement, which an injected clock must not be able to shift.
     at = fields.creation_date if fields.creation_date is not None \
         else as_utc(time.time() * 1000)
 

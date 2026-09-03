@@ -7,7 +7,7 @@ import base64
 import binascii
 import json
 import time
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Callable, Dict, Iterable, Optional
 
 from cryptography import x509
 from cryptography.exceptions import InvalidSignature
@@ -60,12 +60,27 @@ class JwsVerifier:
     :param app_apple_id: required to accept Production AppTransactions
     :param max_signed_age_millis: reject payloads signed longer ago than
         this (PLAN.md D5)
+    :param clock: source of "now" for the max-signed-age rule, as a
+        zero-argument callable returning epoch seconds. Optional; omitted,
+        the system clock is used and behaviour is unchanged.
+
+        A zero-argument callable is Python's idiomatic injectable time
+        source, and ``time.time`` is itself exactly one — so the default is
+        the stdlib function and an injected clock is any drop-in for it
+        (``lambda: 1735689600.0``). Epoch seconds rather than a ``datetime``
+        because the staleness arithmetic is in epoch milliseconds and the
+        code already called ``time.time()``, so nothing is converted at the
+        seam; a caller holding a ``datetime`` passes ``moment.timestamp``.
+        The clock drives ONLY checks that genuinely depend on the current
+        time. Certificate validity is not one: it is judged at the payload
+        ``signedDate`` (PLAN.md §2.1 step 4) and never moves with the clock.
     """
 
     def __init__(self, trusted_roots: Iterable[Any], bundle_id: str,
                  accepted_environments: Iterable[str],
                  app_apple_id: Optional[int] = None,
-                 max_signed_age_millis: Optional[int] = None):
+                 max_signed_age_millis: Optional[int] = None,
+                 clock: Optional[Callable[[], float]] = None):
         roots = list(trusted_roots)
         if not roots:
             raise ValueError("trusted_roots must not be empty")
@@ -79,6 +94,7 @@ class JwsVerifier:
         self._accepted_environments = environments
         self._app_apple_id = app_apple_id
         self._max_signed_age_millis = max_signed_age_millis
+        self._clock = time.time if clock is None else clock
 
     def verify_transaction(self, jws: str) -> Dict[str, Any]:
         """Verifies a signed transaction and checks bundle id + environment."""
@@ -147,6 +163,11 @@ class JwsVerifier:
             signed_at = payload.get("receiptCreationDate")
         if not isinstance(signed_at, (int, float)):
             signed_at = None
+        # Deliberately the system clock, not self._clock: an injected clock
+        # must not be able to move a certificate-validity verdict. This
+        # fallback only fires for a payload carrying neither signedDate nor
+        # receiptCreationDate, where PLAN.md's "else current time" leaves the
+        # window anchored to real time.
         effective = as_utc(signed_at) if signed_at is not None else as_utc(time.time() * 1000)
         validate_pair(leaf, intermediate, self._roots, effective)
 
@@ -168,7 +189,7 @@ class JwsVerifier:
             raise VerificationError(Reason.INVALID_SIGNATURE, "ES256 signature check failed") from e
 
         if (self._max_signed_age_millis is not None and signed_at is not None
-                and time.time() * 1000 - signed_at > self._max_signed_age_millis):
+                and self._clock() * 1000 - signed_at > self._max_signed_age_millis):
             raise VerificationError(
                 Reason.STALE_PAYLOAD,
                 f"payload signed at {signed_at} exceeds max age {self._max_signed_age_millis}ms")
