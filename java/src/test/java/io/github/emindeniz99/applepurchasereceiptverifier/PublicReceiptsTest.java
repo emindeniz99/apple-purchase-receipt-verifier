@@ -1,7 +1,5 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
-import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
-import io.github.emindeniz99.applepurchasereceiptverifier.receipt.AppReceipt;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifier;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cms.CMSSignedData;
@@ -18,7 +16,6 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -26,6 +23,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * The strongest fixture tier: genuine Apple-signed receipts (vendored from
  * MIT-licensed public test suites — see fixtures/public-receipts/README.md)
  * verified against the REAL pinned Apple Inc. Root CA.
+ *
+ * <p>The verdicts on these receipts are pinned in {@code fixtures/cases.json}
+ * and asserted by {@link ConformanceCasesTest}. What is left here is the one
+ * thing a language-neutral vector cannot express: a bound read back out of the
+ * rejection message it produces.</p>
  */
 class PublicReceiptsTest {
 
@@ -34,23 +36,6 @@ class PublicReceiptsTest {
     private static String receipt(String name) throws Exception {
         return new String(Files.readAllBytes(FIXTURES.resolve(name + ".b64")),
                 StandardCharsets.US_ASCII).trim();
-    }
-
-    @Test
-    void verifiesGenuineSandboxReceiptAgainstRealAppleRoot() throws Exception {
-        ReceiptVerifier verifier = new ReceiptVerifier(
-                AppleRootCerts.receiptRoots(), "dev.bonzer.weeka.app");
-        AppReceipt receipt = verifier.verify(receipt("receipt-sandbox-g5"));
-        assertEquals("ProductionSandbox", receipt.receiptType());
-        assertEquals(2, receipt.inAppPurchases().size());
-    }
-
-    @Test
-    void verifiesGenuineLegacySha1ChainReceipt() throws Exception {
-        ReceiptVerifier verifier = new ReceiptVerifier(
-                AppleRootCerts.receiptRoots(), "com.nutcall.alert");
-        AppReceipt receipt = verifier.verify(receipt("receipt-sandbox-legacy"));
-        assertEquals(187, receipt.inAppPurchases().size());
     }
 
     @Test
@@ -98,13 +83,5 @@ class PublicReceiptsTest {
         assertTrue(Integer.parseInt(reported.group(1)) > largestGenuine,
                 "bound of " + reported.group(1) + " does not clear the largest genuine chain, "
                         + "which embeds " + largestGenuine + " certificates");
-    }
-
-    @Test
-    void rejectsXcodeSignedPublicReceipt() throws Exception {
-        ReceiptVerifier verifier = new ReceiptVerifier(AppleRootCerts.receiptRoots(), "*");
-        VerificationException e = assertThrows(VerificationException.class,
-                () -> verifier.verify(receipt("receipt-xcode-with-purchases")));
-        assertEquals(Reason.INVALID_CHAIN, e.reason());
     }
 }

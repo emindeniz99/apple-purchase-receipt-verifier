@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * <pre>mvn test -Dtest=FixtureGeneratorTest -Dfixtures.generate=true</pre>
  *
  * Fixtures are checked in and treated as stable bytes; every language's
- * suite (Java's {@code SharedFixturesTest}, Node, Python, Swift) must verify
+ * suite (Java's {@code ConformanceCasesTest}, Node, Python, Swift) must verify
  * the same files. Regenerating changes keys/bytes — do it only deliberately
  * and re-run every language's tests in the same change.
  */
