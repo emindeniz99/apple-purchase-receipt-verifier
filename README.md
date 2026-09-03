@@ -110,6 +110,16 @@ All four suites verify the same three shared fixture tiers:
    the real pinned Apple root, plus an Xcode receipt that must be rejected
    — the strongest tier (real Apple bytes).
 
+The vectors the four suites run those fixtures under live in
+[`fixtures/cases.json`](./fixtures/cases.json): one language-neutral case per
+semantic fact, giving the fixture bytes, the verifier config, and either the
+payload fields the call must return or the canonical reason it must raise.
+Each language reads it through a thin adapter, so the file is the contract and
+a behavior change means editing it. `node tools/lint-cases.mjs` validates it
+against `fixtures/cases.schema.json` and re-hashes every registered fixture;
+CI runs the same check. See [CONTRIBUTING.md](./CONTRIBUTING.md) for how to
+add a case.
+
 Java additionally generates a fresh random PKI per run (`TestPki`) for the
 full attack matrix (Java-only, not a shared tier).
 

@@ -13,12 +13,64 @@ cd java   && mvn test
 cd node   && npm ci && npm test
 cd python && pip install cryptography asn1crypto && python -m unittest discover -s tests
 swift test   # manifest is at the repo root
+
+node tools/lint-cases.mjs   # the shared conformance vectors, see below
 ```
 
 CI runs these on every supported runtime line (Java 8–25, Node 20–26,
 Python 3.9–3.14, Swift 6). The floors are claims we test, not decoration:
 `@types/node` stays on 20 and JUnit stays on 5.x on purpose — see the
 rationale comments in `.github/dependabot.yml` before "upgrading" them.
+
+## Conformance vectors
+
+`fixtures/cases.json` is the normative contract between the four
+implementations: one language-neutral case per semantic fact, each naming a
+registered fixture, the verifier config to build from it, and either the
+payload fields the call must return or the canonical reason it must raise.
+Each language reads the file through a thin adapter that knows nothing about
+any individual case — `java/src/test/.../ConformanceCasesTest.java`,
+`node/test/conformance.test.js`, `python/tests/test_conformance.py`,
+`swift/Tests/.../ConformanceCasesTests.swift`.
+
+**A behavior change means editing `cases.json` in the same commit.** The file
+records what was decided, not what an implementation happened to do, so a
+vector that disagrees with an implementation is a bug report against that
+implementation until a human rules otherwise. Changing a returned field or a
+raised reason without updating the vector leaves all four suites disagreeing
+with the contract.
+
+### Adding a case
+
+1. Register the fixture in the `fixtures` map if it is not there yet: `path`
+   relative to `fixtures/`, `role` (`input`, `trust-anchor` or `support`),
+   `codec` (`raw`, `base64` or `utf8`), and the file's `contentSha256`.
+2. Append the case: a unique `id` shaped `<area>/<what-it-pins>`, a
+   `description` of the fact it pins, the `operation` (`verifyTransaction`,
+   `verifyAppTransaction`, `verifyRaw`, `verifyReceipt` or
+   `verifyReceiptEndpoint`), `input.fixture`, the `config`, and `expected`.
+   A positive case carries `status: "ok"` plus the `fields` it pins; a field
+   it does not list is not pinned. A negative case carries `status: "error"`
+   plus a `reason` from the canonical vocabulary, and a `fault` naming its
+   single intentional defect.
+3. Run `node tools/lint-cases.mjs`. It validates the file against
+   `fixtures/cases.schema.json`, re-hashes every registered fixture, and
+   fails on a fixture file no case registers or an `input` fixture no case
+   uses. CI runs the same command in the `conformance` job.
+4. Run all four suites. The case must pass in every language; a disagreement
+   is the finding, not something to paper over in an adapter.
+
+Field paths in `expected.fields` are language-neutral: the shared camelCase
+API names for the four library operations, the literal Apple wire keys for
+`verifyReceiptEndpoint`, `x.length` for a collection size,
+`list[key=value].field` to select one element, and `null` for "absent or
+unset". The `comment` at the top of `cases.json` carries the full grammar and
+the sources every expectation was derived from.
+
+One case (`transaction/reject-stale-payload`) carries a `clock`. No library
+takes an injectable clock today, so Java, Python and Swift skip it and print
+why, while Node fakes time in its runner. A real clock seam would be a
+library change in all four languages.
 
 ## Commits
 
