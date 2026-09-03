@@ -68,15 +68,31 @@ The import namespace is the registry name in each ecosystem's casing
 convention (`applepurchasereceiptverifier` / `apple_purchase_receipt_verifier` /
 `ApplePurchaseReceiptVerifier`) — one name everywhere.
 
-**JavaScript runtimes.** The npm package needs `node:crypto`'s
-`X509Certificate`, not just WebCrypto, and nothing else — no filesystem,
-so `appleReceiptRoots()` and `appleJwsRoots()` work inside a bundle. It
-runs on Node 20+, Bun, Deno and Cloudflare Workers; CI proves each one on
-every push (`cd node && npm run test:runtimes`). On Workers set
+**JavaScript runtimes.** The npm package has two entry points.
+`apple-purchase-receipt-verifier` is the default and is unchanged:
+synchronous, needing `node:crypto`'s `X509Certificate` and nothing else. It
+runs on Node 20+, Bun, Deno and Cloudflare Workers; on Workers set
 `nodejs_compat` with a compatibility date of **2024-09-23 or later**, or
 `nodejs_compat_v2` explicitly on an older date — that flag supplies the
-global `Buffer` the DER handling uses, and CI runs both spellings. It does
-not run on the Vercel Edge runtime or other WebCrypto-only isolates.
+global `Buffer` the DER handling uses, and CI runs both spellings.
+
+`apple-purchase-receipt-verifier/web` is the same verification on
+`crypto.subtle` alone: same class names, same options, same
+`VerificationError` reasons, with every method returning a Promise. It
+imports no `node:` module and touches no `Buffer`, so it also runs where
+only WebCrypto exists: the Vercel Edge runtime, Next.js edge middleware and
+Cloudflare Workers with no compatibility flags, each of them exercised on
+every push, and — by the same property, though there is no local runtime to
+run it in — Fastly Compute and Akamai EdgeWorkers. Neither entry point reads
+a file, so `appleReceiptRoots()` and `appleJwsRoots()` work inside a bundle
+either way.
+
+CI proves the default build on Node, Bun, Deno and workerd (`cd node && npm
+run test:runtimes`) and the web build on Node, the Vercel Edge runtime and
+flagless workerd (`npm run test:runtimes:web`). The Node suite runs every
+shared fixture through both builds and fails on any difference of verdict;
+[node/README.md](node/README.md#webcrypto-only-runtimes) has the per-runtime
+table and the three places the web API is not just `await`.
 
 ## How to run the test suites
 
@@ -85,8 +101,9 @@ not run on the Vercel Edge runtime or other WebCrypto-only isolates.
 cd java && mvn test
 
 # Node (strict TypeScript, zero runtime deps; Node >= 20)
-cd node && npm install && npm test    # = tsc && node --test
-cd node && npm run test:runtimes       # same build on Bun, Deno and Cloudflare workerd
+cd node && npm install && npm test    # both entry points, every shared fixture
+cd node && npm run test:runtimes       # default build on Bun, Deno and Cloudflare workerd
+cd node && npm run test:runtimes:web   # /web build on Vercel Edge and flagless workerd
 
 # Python (>= 3.9; needs: pip install cryptography asn1crypto)
 cd python && python3 -m unittest discover -s tests

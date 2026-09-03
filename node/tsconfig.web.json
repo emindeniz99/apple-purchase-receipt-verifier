@@ -1,0 +1,26 @@
+// Type-check the web entry point the way its runtimes see it: no @types/node,
+// so a stray `Buffer`, `process` or `node:*` import is a compile error here
+// even though the main build (which has those types) would accept it. Emits
+// nothing — tsconfig.json builds dist/, including dist/web/.
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "noEmit": true,
+    "types": []
+  },
+  "include": [
+    "src/web",
+    "src/bytes.ts",
+    "src/cms.ts",
+    "src/der.ts",
+    "src/errors.ts",
+    "src/jws-claims.ts",
+    "src/receipt-payload.ts",
+    "src/roots-data.ts",
+    "src/x509.ts"
+  ]
+}

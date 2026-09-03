@@ -1,17 +1,16 @@
-import { X509Certificate, verify as cryptoVerify } from 'node:crypto';
-import { Environment, Reason, VerificationError } from './errors.js';
-import { hasExtension } from './der.js';
-import { normalizeRoots, validatePair, type RootInput } from './chain.js';
+import { Environment, Reason, VerificationError } from '../errors.js';
+import { asciiEncode, base64Decode } from '../bytes.js';
+import { parseCertificate, type ParsedCertificate } from '../x509.js';
 import {
   INTERMEDIATE_OID, JwsClaimChecker, LEAF_OID, parseJsonSegment, signedAtMillisOf, splitJws,
-} from './jws-claims.js';
+} from '../jws-claims.js';
+import { normalizeRoots, validatePair, type RootInput } from './chain.js';
+import { OID_EC_PUBLIC_KEY, verifyEs256 } from './crypto.js';
 
-export { isTransactionActiveAt } from './jws-claims.js';
-export type {
-  AppTransactionPayload, Claims, TransactionPayload,
-} from './jws-claims.js';
+export { isTransactionActiveAt } from '../jws-claims.js';
+export type { AppTransactionPayload, Claims, TransactionPayload } from '../jws-claims.js';
 
-import type { AppTransactionPayload, Claims, TransactionPayload } from './jws-claims.js';
+import type { AppTransactionPayload, Claims, TransactionPayload } from '../jws-claims.js';
 
 export interface JwsVerifierOptions {
   /** Pinned roots (production: `appleJwsRoots()`). */
@@ -27,13 +26,12 @@ export interface JwsVerifierOptions {
 }
 
 /**
- * Verifies Apple-signed JWS payloads (StoreKit 2 `jwsRepresentation`,
- * `signedTransactionInfo` / `signedRenewalInfo`, Server Notifications V2)
- * completely offline against pinned Apple roots — PLAN.md §2.1, mirroring
- * the Java implementation check-for-check.
+ * The WebCrypto twin of the Node build's {@link JwsVerifier}: same options,
+ * same checks in the same order, same {@link VerificationError} reasons —
+ * every method returns a Promise because `crypto.subtle` is async.
  */
 export class JwsVerifier {
-  #roots: X509Certificate[];
+  #roots: ParsedCertificate[];
   #claims: JwsClaimChecker;
 
   constructor(options: JwsVerifierOptions) {
@@ -42,8 +40,8 @@ export class JwsVerifier {
   }
 
   /** Verifies a signed transaction and checks bundle id + environment. */
-  verifyTransaction(jws: string): TransactionPayload {
-    const payload = this.#verifySignature(jws) as TransactionPayload;
+  async verifyTransaction(jws: string): Promise<TransactionPayload> {
+    const payload = await this.#verifySignature(jws) as TransactionPayload;
     this.#claims.requireBundleId(payload.bundleId);
     this.#claims.requireAcceptedEnvironment(payload.environment);
     return payload;
@@ -53,8 +51,8 @@ export class JwsVerifier {
    * Verifies a signed AppTransaction and checks bundle id, environment
    * (`receiptType`), and — in Production — the app Apple id.
    */
-  verifyAppTransaction(jws: string): AppTransactionPayload {
-    const payload = this.#verifySignature(jws) as AppTransactionPayload;
+  async verifyAppTransaction(jws: string): Promise<AppTransactionPayload> {
+    const payload = await this.#verifySignature(jws) as AppTransactionPayload;
     this.#claims.requireBundleId(payload.bundleId);
     const environment = this.#claims.requireAcceptedEnvironment(payload.receiptType);
     this.#claims.requireAppAppleId(environment, payload.appAppleId);
@@ -67,26 +65,26 @@ export class JwsVerifier {
    * envelopes). The caller must check bundle id / environment / app Apple
    * id in the returned claims itself.
    */
-  verifyRaw(jws: string): Claims {
+  async verifyRaw(jws: string): Promise<Claims> {
     return this.#verifySignature(jws);
   }
 
-  #verifySignature(jws: string): Claims {
+  async #verifySignature(jws: string): Promise<Claims> {
     const { headerB64, payloadB64, signatureB64, x5c } = splitJws(jws);
-    let leaf: X509Certificate;
-    let intermediate: X509Certificate;
+    let leaf: ParsedCertificate;
+    let intermediate: ParsedCertificate;
     try {
-      leaf = new X509Certificate(Buffer.from(x5c[0]!, 'base64'));
-      intermediate = new X509Certificate(Buffer.from(x5c[1]!, 'base64'));
+      leaf = parseCertificate(base64Decode(x5c[0]!));
+      intermediate = parseCertificate(base64Decode(x5c[1]!));
     } catch (cause) {
       throw new VerificationError(Reason.INVALID_CERTIFICATE,
         'x5c entry is not a valid certificate', cause);
     }
-    if (!safeHasExtension(leaf, LEAF_OID)) {
+    if (!leaf.hasExtension(LEAF_OID)) {
       throw new VerificationError(Reason.INVALID_CERTIFICATE_PURPOSE,
         `leaf certificate lacks Apple marker OID ${LEAF_OID}`);
     }
-    if (!safeHasExtension(intermediate, INTERMEDIATE_OID)) {
+    if (!intermediate.hasExtension(INTERMEDIATE_OID)) {
       throw new VerificationError(Reason.INVALID_CERTIFICATE_PURPOSE,
         `intermediate certificate lacks Apple marker OID ${INTERMEDIATE_OID}`);
     }
@@ -96,38 +94,22 @@ export class JwsVerifier {
     // since-rotated certificates keep verifying (PLAN.md §2.1 step 4).
     const signedAtMillis = signedAtMillisOf(payload);
     const effectiveDate = signedAtMillis === null ? new Date() : new Date(signedAtMillis);
-    validatePair(leaf, intermediate, this.#roots, effectiveDate);
+    await validatePair(leaf, intermediate, this.#roots, effectiveDate);
 
-    if (leaf.publicKey.asymmetricKeyType !== 'ec') {
+    if (leaf.publicKeyAlgorithmOid !== OID_EC_PUBLIC_KEY) {
       throw new VerificationError(Reason.INVALID_SIGNATURE, 'leaf key is not EC');
     }
-    const signature = Buffer.from(signatureB64, 'base64url');
+    const signature = base64Decode(signatureB64);
     if (signature.length !== 64) {
       throw new VerificationError(Reason.INVALID_SIGNATURE,
         `ES256 signature must be 64 bytes, got ${signature.length}`);
     }
-    const signingInput = Buffer.from(`${headerB64}.${payloadB64}`, 'ascii');
-    // The key goes in as SPKI DER rather than as the KeyObject itself:
-    // Cloudflare workerd's node:crypto rejects a KeyObject inside the
-    // options form of verify() (the form dsaEncoding needs), while Node,
-    // Bun and Deno accept both. Same key, same check.
-    const valid = cryptoVerify('sha256', signingInput, {
-      key: leaf.publicKey.export({ type: 'spki', format: 'der' }),
-      format: 'der', type: 'spki', dsaEncoding: 'ieee-p1363',
-    }, signature);
-    if (!valid) {
+    const signingInput = asciiEncode(`${headerB64}.${payloadB64}`);
+    if (!await verifyEs256(leaf.spki, signature, signingInput)) {
       throw new VerificationError(Reason.INVALID_SIGNATURE, 'ES256 signature check failed');
     }
 
     this.#claims.requireFresh(signedAtMillis);
     return payload;
-  }
-}
-
-function safeHasExtension(cert: X509Certificate, oid: string): boolean {
-  try {
-    return hasExtension(cert.raw, oid);
-  } catch {
-    return false;
   }
 }
