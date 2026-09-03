@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Not part of the published release. This module exists only to prove the
+  README's "usable from any JVM language through the jar" claim, by
+  running the shared fixture checks from Kotlin and Scala test sources
+  against the real published artifact coordinates. It is intentionally
+  NOT listed in any release-please config and NOT wired into java/pom.xml
+  as a <module> (there is no aggregator pom in this repo to begin with —
+  each language directory is its own standalone Maven/npm/etc. project).
+
+  How CI (or anyone) builds this:
+
+      cd java && mvn -B install -DskipTests   # publish the jar to ~/.m2
+      cd ../jvm-interop && mvn -B test         # resolve it as a real
+                                                # Maven Central-style
+                                                # coordinate and run the
+                                                # Kotlin + Scala tests
+
+  The version below must match java/pom.xml's <version>. There is no
+  reactor to keep them in sync automatically (see above), so a version
+  bump in java/pom.xml needs the same bump here.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>io.github.emindeniz99</groupId>
+  <artifactId>apple-purchase-receipt-verifier-jvm-interop</artifactId>
+  <version>0.0.0-not-for-publication</version>
+  <packaging>jar</packaging>
+
+  <name>apple-purchase-receipt-verifier-jvm-interop (internal, unpublished)</name>
+  <description>Kotlin + Scala consumer interop tests for apple-purchase-receipt-verifier. Not published.</description>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!-- The library artifact under test targets Java 8 bytecode
+         (java/pom.xml maven.compiler.release=8); this module targets a
+         modern JVM (17, the current LTS) because it is never shipped and
+         only needs to run wherever the Kotlin/Scala compilers here run
+         (JDK 21 in this environment). -->
+    <jvm.target>17</jvm.target>
+
+    <library.version>0.3.0</library.version>
+    <junit.version>5.14.4</junit.version>
+    <kotlin.version>2.0.21</kotlin.version>
+    <scala.version>3.3.4</scala.version>
+    <scala.binary.version>3</scala.binary.version>
+  </properties>
+
+  <dependencies>
+    <!-- The library, resolved as a Maven coordinate from the local repo
+         (installed by `mvn install` in java/ first) — exactly how a real
+         consumer's build would resolve it from Maven Central. -->
+    <dependency>
+      <groupId>io.github.emindeniz99</groupId>
+      <artifactId>apple-purchase-receipt-verifier</artifactId>
+      <version>${library.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-stdlib</artifactId>
+      <version>${kotlin.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.scala-lang</groupId>
+      <artifactId>scala3-library_3</artifactId>
+      <version>${scala.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <!-- Compiles src/test/kotlin. Pinned exact version — this plugin
+           fetches the Kotlin compiler itself from Maven Central. -->
+      <plugin>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>kotlin-maven-plugin</artifactId>
+        <version>${kotlin.version}</version>
+        <configuration>
+          <jvmTarget>${jvm.target}</jvmTarget>
+        </configuration>
+        <executions>
+          <execution>
+            <id>test-compile-kotlin</id>
+            <goals>
+              <goal>test-compile</goal>
+            </goals>
+            <configuration>
+              <sourceDirs>
+                <sourceDir>${project.basedir}/src/test/kotlin</sourceDir>
+              </sourceDirs>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Compiles src/test/scala. Pinned exact version — this plugin
+           fetches the Scala 3 compiler itself from Maven Central. -->
+      <plugin>
+        <groupId>net.alchim31.maven</groupId>
+        <artifactId>scala-maven-plugin</artifactId>
+        <version>4.9.2</version>
+        <configuration>
+          <scalaVersion>${scala.version}</scalaVersion>
+          <target>${jvm.target}</target>
+          <testSourceDir>${project.basedir}/src/test/scala</testSourceDir>
+        </configuration>
+        <executions>
+          <execution>
+            <id>test-compile-scala</id>
+            <goals>
+              <goal>testCompile</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- No src/main/java, src/test/java: this plugin has nothing to
+           compile and is a no-op, present only because surefire needs it
+           configured at a version matching java/pom.xml. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.15.0</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.5.6</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>
