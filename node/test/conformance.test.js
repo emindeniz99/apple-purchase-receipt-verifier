@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import {
   JwsVerifier, ReceiptVerifier, VerificationError, VerifyReceiptEndpoint,
@@ -20,11 +21,7 @@ const fixtureUrl = (path) => fileURLToPath(new URL(`../../fixtures/${path}`, imp
 const CASES = JSON.parse(readFileSync(fixtureUrl('cases.json'), 'utf8'));
 
 /** Decodes a registered fixture to its logical bytes (fixture.codec). */
-function fixtureBytes(id) {
-  const entry = CASES.fixtures[id];
-  if (entry === undefined) {
-    throw new Error(`harness error: cases.json registers no fixture "${id}"`);
-  }
+function decodeFixture(entry) {
   const raw = readFileSync(fixtureUrl(entry.path));
   switch (entry.codec) {
     case 'raw': return raw;
@@ -33,6 +30,50 @@ function fixtureBytes(id) {
     default: throw new Error(`harness error: unknown fixture codec "${entry.codec}"`);
   }
 }
+
+/**
+ * The decoded bytes of a registered fixture, checked against the digest the
+ * registry records for them. contentSha256 is the anti-drift guarantee for
+ * the vectors: a fixture that is regenerated, re-encoded or silently edited
+ * changes the bytes every port verifies, and the expected fields would then
+ * be pinned to something no other port ever saw. Verifying it here is what
+ * makes that guarantee load-bearing rather than documentary — the digest is
+ * over the LOGICAL bytes (post-codec), the same bytes handed to the library.
+ */
+function fixtureBytes(id) {
+  const entry = CASES.fixtures[id];
+  if (entry === undefined) {
+    throw new Error(`harness error: cases.json registers no fixture "${id}"`);
+  }
+  const cached = FIXTURE_CACHE.get(id);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const bytes = decodeFixture(entry);
+  if (typeof entry.contentSha256 !== 'string') {
+    throw new Error(`fixture "${id}" (${entry.path}) records no contentSha256`);
+  }
+  const actual = createHash('sha256').update(bytes).digest('hex');
+  if (actual !== entry.contentSha256) {
+    throw new Error(`fixture "${id}" (${entry.path}, codec ${entry.codec}) has drifted: `
+      + `cases.json records contentSha256 ${entry.contentSha256}, `
+      + `the decoded bytes hash to ${actual}`);
+  }
+  FIXTURE_CACHE.set(id, bytes);
+  return bytes;
+}
+
+const FIXTURE_CACHE = new Map();
+
+// Read before any case runs: a fixture no case happens to reference would
+// otherwise drift unnoticed, and the registry is the thing being guarded.
+test('every fixture cases.json registers matches its recorded contentSha256', () => {
+  const ids = Object.keys(CASES.fixtures);
+  assert.ok(ids.length > 0, 'cases.json must register fixtures');
+  for (const id of ids) {
+    fixtureBytes(id);
+  }
+});
 
 const BUILTIN_ROOTS = {
   'apple-jws-roots': appleJwsRoots,

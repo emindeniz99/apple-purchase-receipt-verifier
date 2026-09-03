@@ -101,15 +101,12 @@ public final class JwsVerifier {
      *              a test, and it is available on the Java 8 baseline (PLAN.md
      *              D2), so no bespoke supplier interface is needed.
      *
-     *              <p>It drives only what genuinely moves with wall-clock
-     *              time: the {@code maxSignedAge} staleness rule, and the
-     *              "else current time" fallback of the chain-validity instant
-     *              for a payload that carries neither {@code signedDate} nor
-     *              {@code receiptCreationDate}. Certificate validity is still
-     *              judged at the payload's own signing date whenever the
-     *              payload states one (PLAN.md §2.1 step 4), so pinning the
-     *              clock cannot move a chain verdict for any payload that
-     *              carries a date.</p>
+     *              <p>It drives exactly one thing: the {@code maxSignedAge}
+     *              staleness rule. Certificate validity is NEVER judged by it
+     *              — at the payload's own signing date when the payload states
+     *              one (PLAN.md §2.1 step 4), and at the system clock when it
+     *              states none — so an injected clock cannot move a
+     *              chain verdict for any payload at all.</p>
      */
     public JwsVerifier(Set<X509Certificate> trustedRoots, String bundleId,
                        Set<Environment> acceptedEnvironments, Long appAppleId,
@@ -221,14 +218,24 @@ public final class JwsVerifier {
         }
 
         JsonNode payload = parseJson(parts[1], "payload");
-        Date effectiveDate = effectiveDate(payload);
-        validateChain(leaf, intermediate, effectiveDate);
+        Long signedAtMillis = signedAtMillis(payload);
+        // Deliberately System.currentTimeMillis(), not this.clock: the instant
+        // below is a certificate-validity instant, and an injected clock must
+        // never be able to move a certificate-validity verdict. The fallback
+        // only fires for a payload carrying neither signedDate nor
+        // receiptCreationDate, where PLAN.md §2.1 step 4's "else current time"
+        // leaves the window anchored to real time. node and python agree.
+        validateChain(leaf, intermediate, signedAtMillis != null
+                ? new Date(signedAtMillis.longValue()) : new Date());
 
         byte[] signature = decodeBase64Url(parts[2], "signature");
         verifyEs256(leaf, parts[0] + "." + parts[1], signature);
 
-        if (maxSignedAgeMillis != null) {
-            long signedAt = effectiveDate.getTime();
+        // A payload that states no signing time has no age to be stale by, so
+        // the rule does not apply to it — rather than measuring the clock
+        // against itself.
+        if (maxSignedAgeMillis != null && signedAtMillis != null) {
+            long signedAt = signedAtMillis.longValue();
             if (clock.millis() - signedAt > maxSignedAgeMillis) {
                 throw new VerificationException(Reason.STALE_PAYLOAD,
                         "payload signed at " + signedAt + " exceeds max age " + maxSignedAgeMillis + "ms");
@@ -271,22 +278,22 @@ public final class JwsVerifier {
     }
 
     /**
-     * Signing time of the payload: {@code signedDate} (transactions, renewal
-     * info, notifications) or {@code receiptCreationDate} (AppTransaction),
-     * falling back to the clock's now. Chain validity is checked at this instant so
-     * payloads signed with since-rotated certificates keep verifying
-     * (PLAN.md §2.1 step 4).
+     * Signing time the payload states: {@code signedDate} (transactions,
+     * renewal info, notifications) or {@code receiptCreationDate}
+     * (AppTransaction), or {@code null} when it states neither. Chain validity
+     * is checked at this instant so payloads signed with since-rotated
+     * certificates keep verifying (PLAN.md §2.1 step 4).
      */
-    private Date effectiveDate(JsonNode payload) {
+    private static Long signedAtMillis(JsonNode payload) {
         JsonNode signedDate = payload.path("signedDate");
         if (signedDate.canConvertToLong()) {
-            return new Date(signedDate.asLong());
+            return Long.valueOf(signedDate.asLong());
         }
         JsonNode receiptCreationDate = payload.path("receiptCreationDate");
         if (receiptCreationDate.canConvertToLong()) {
-            return new Date(receiptCreationDate.asLong());
+            return Long.valueOf(receiptCreationDate.asLong());
         }
-        return new Date(clock.millis());
+        return null;
     }
 
     private void validateChain(X509Certificate leaf, X509Certificate intermediate, Date at)

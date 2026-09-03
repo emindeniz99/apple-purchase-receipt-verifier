@@ -30,7 +30,6 @@ import java.security.cert.PKIXBuilderParameters;
 import java.security.cert.TrustAnchor;
 import java.security.cert.X509CertSelector;
 import java.security.cert.X509Certificate;
-import java.time.Clock;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -108,49 +107,45 @@ public final class ReceiptVerifier {
      */
     private static final int MAXIMUM_EMBEDDED_CERTIFICATES = 10;
 
+    private static final BouncyCastleProvider PROVIDER = new BouncyCastleProvider();
+
     private final Set<TrustAnchor> trustAnchors;
     private final String bundleId;
-    private final Clock clock;
-    private final BouncyCastleProvider provider = new BouncyCastleProvider();
 
     /**
+     * <p>There is deliberately no clock option on this class, and there must
+     * not be one. Receipt verification has no staleness rule, so the only
+     * thing a clock could reach is the "else current time" fallback for the
+     * chain-validity instant of a receipt carrying no creation date (PLAN.md
+     * §2.2 step 2) — a certificate-validity verdict. A caller injecting a
+     * clock (to work around skew, or to pin a test) must not thereby be able
+     * to accept a chain that is expired in real time, so that fallback reads
+     * the system clock and nothing else. node, python and swift agree; the
+     * clock seam lives on {@code JwsVerifier} (max signed age) and on
+     * {@link VerifyReceiptEndpoint} (request_date stamping), where what it
+     * drives genuinely moves with wall-clock time.</p>
+     *
      * @param trustedRoots pinned root CAs (production:
      *                     {@code AppleRootCerts.receiptRoots()})
      * @param bundleId     the app's bundle id the receipt must carry
      */
     public ReceiptVerifier(Set<X509Certificate> trustedRoots, String bundleId) {
-        this(trustedRoots, bundleId, null);
-    }
-
-    /**
-     * @param clock source of "now"; {@code null} (the two-argument
-     *              constructor's default) means {@link Clock#systemUTC()}, so
-     *              existing callers are unaffected. {@code java.time.Clock} is
-     *              the JDK's own injectable time source and matches
-     *              {@code JwsVerifier}'s seam.
-     *
-     *              <p>Receipt verification has no staleness rule, so the clock
-     *              is consulted in exactly one place: the "else current time"
-     *              fallback for the chain-validity instant of a receipt that
-     *              carries no creation date (attribute 12). A receipt that
-     *              carries one is still judged at that date (PLAN.md §2.2
-     *              step 2), so pinning the clock cannot move its chain
-     *              verdict.</p>
-     */
-    public ReceiptVerifier(Set<X509Certificate> trustedRoots, String bundleId, Clock clock) {
-        if (trustedRoots == null || trustedRoots.isEmpty()) {
-            throw new IllegalArgumentException("trustedRoots must not be empty");
-        }
         if (bundleId == null) {
             throw new IllegalArgumentException("bundleId must not be null");
+        }
+        this.trustAnchors = anchors(trustedRoots);
+        this.bundleId = bundleId;
+    }
+
+    private static Set<TrustAnchor> anchors(Set<X509Certificate> trustedRoots) {
+        if (trustedRoots == null || trustedRoots.isEmpty()) {
+            throw new IllegalArgumentException("trustedRoots must not be empty");
         }
         Set<TrustAnchor> anchors = new HashSet<TrustAnchor>();
         for (X509Certificate root : trustedRoots) {
             anchors.add(new TrustAnchor(root, null));
         }
-        this.trustAnchors = anchors;
-        this.bundleId = bundleId;
-        this.clock = clock == null ? Clock.systemUTC() : clock;
+        return anchors;
     }
 
     /** Verifies a base64-encoded receipt (the usual client transport form). */
@@ -181,7 +176,7 @@ public final class ReceiptVerifier {
      * every device presents its own receipt.
      */
     public AppReceipt verify(byte[] receiptDer, byte[] deviceGuid) throws VerificationException {
-        AppReceipt receipt = verifyCore(receiptDer);
+        AppReceipt receipt = verifyCore(receiptDer, trustAnchors);
         if (!bundleId.equals(receipt.bundleId())) {
             throw new VerificationException(Reason.WRONG_BUNDLE_ID,
                     "expected " + bundleId + " but receipt has " + receipt.bundleId());
@@ -196,8 +191,26 @@ public final class ReceiptVerifier {
      * Chain + signature verification WITHOUT the bundle-id claim check — the
      * primitive under both {@link #verify} and {@link VerifyReceiptEndpoint}
      * (which, like Apple's endpoint, accepts any bundle).
+     *
+     * <p>Public, and static rather than an instance method, so that a caller
+     * emulating Apple's endpoint gets the primitive itself instead of having
+     * to build a {@link ReceiptVerifier} around a bundle id it does not want
+     * checked. Same name and same shape as node's {@code verifyReceiptCore}
+     * and python's {@code verify_receipt_core}.</p>
+     *
+     * <p>The receipt it returns has been proved Apple-signed, but NO claim in
+     * it has been checked: the bundle id in particular is whatever the receipt
+     * says. A caller unlocking products must compare it itself, or use
+     * {@link #verify(byte[])}.</p>
      */
-    AppReceipt verifyCore(byte[] receiptDer) throws VerificationException {
+    public static AppReceipt verifyReceiptCore(byte[] receiptDer,
+                                               Set<X509Certificate> trustedRoots)
+            throws VerificationException {
+        return verifyCore(receiptDer, anchors(trustedRoots));
+    }
+
+    private static AppReceipt verifyCore(byte[] receiptDer, Set<TrustAnchor> trustAnchors)
+            throws VerificationException {
         if (receiptDer == null) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "receipt is null");
         }
@@ -207,7 +220,7 @@ public final class ReceiptVerifier {
         // by type — enumerating the types is exactly what let eleven characters
         // of attacker base64 escape the declared VerificationException contract.
         try {
-            return verifyCoreUnguarded(receiptDer);
+            return verifyCoreUnguarded(receiptDer, trustAnchors);
         } catch (VerificationException e) {
             throw e;
         } catch (RuntimeException e) {
@@ -215,7 +228,9 @@ public final class ReceiptVerifier {
         }
     }
 
-    private AppReceipt verifyCoreUnguarded(byte[] receiptDer) throws VerificationException {
+    private static AppReceipt verifyCoreUnguarded(byte[] receiptDer,
+                                                  Set<TrustAnchor> trustAnchors)
+            throws VerificationException {
         try {
             // Rejects trailing bytes after the CMS blob (PLAN 2.3) - BC's
             // fromByteArray throws when parsing does not exhaust the input.
@@ -239,10 +254,16 @@ public final class ReceiptVerifier {
         // date (chain validity is anchored at signing time); nothing from it
         // is trusted until after the chain + signature checks pass.
         AppReceipt receipt = parsePayload(payload);
+        // Deliberately the system clock, with no seam to override it: this is
+        // a certificate-validity instant, and an injected clock must never be
+        // able to move a certificate-validity verdict. The fallback only fires
+        // for a receipt carrying no creation date (attribute 12), where
+        // PLAN.md §2.2 step 2's "else current time" leaves the window anchored
+        // to real time. node, python and swift read the system clock here too.
         Date at = receipt.creationDate() != null
-                ? Date.from(receipt.creationDate()) : new Date(clock.millis());
+                ? Date.from(receipt.creationDate()) : new Date();
 
-        X509Certificate signerCert = validateChain(cms, at);
+        X509Certificate signerCert = validateChain(cms, at, trustAnchors);
         if (signerCert.getExtensionValue(RECEIPT_SIGNER_OID) == null) {
             throw new VerificationException(Reason.INVALID_CERTIFICATE_PURPOSE,
                     "receipt signer certificate lacks Apple receipt-signing marker OID "
@@ -253,7 +274,9 @@ public final class ReceiptVerifier {
     }
 
     /** PKIX-builds signer → (intermediates from the CMS) → pinned root at {@code at}. */
-    private X509Certificate validateChain(CMSSignedData cms, Date at) throws VerificationException {
+    private static X509Certificate validateChain(CMSSignedData cms, Date at,
+                                                 Set<TrustAnchor> trustAnchors)
+            throws VerificationException {
         Iterator<SignerInformation> signers = cms.getSignerInfos().getSigners().iterator();
         if (!signers.hasNext()) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "no signer info");
@@ -296,7 +319,7 @@ public final class ReceiptVerifier {
         }
     }
 
-    private void verifyCmsSignature(CMSSignedData cms, X509Certificate signerCert)
+    private static void verifyCmsSignature(CMSSignedData cms, X509Certificate signerCert)
             throws VerificationException {
         if (!(signerCert.getPublicKey() instanceof java.security.interfaces.RSAPublicKey)) {
             throw new VerificationException(Reason.INVALID_SIGNATURE, "receipt signer key is not RSA");
@@ -312,7 +335,7 @@ public final class ReceiptVerifier {
                         "unsupported receipt digest algorithm " + digestOid);
             }
             boolean valid = signer.verify(new JcaSimpleSignerInfoVerifierBuilder()
-                    .setProvider(provider)
+                    .setProvider(PROVIDER)
                     .build(signerCert));
             if (!valid) {
                 throw new VerificationException(Reason.INVALID_SIGNATURE, "CMS signature check failed");
@@ -516,10 +539,17 @@ public final class ReceiptVerifier {
                 }
                 long type = boundedInt(ASN1Integer.getInstance(seq.getObjectAt(0)).getValue());
                 byte[] value = ASN1OctetString.getInstance(seq.getObjectAt(2)).getOctets();
-                // A type beyond int range matches no known attribute; -1 routes
-                // it to unknownAttributes instead of aliasing via a truncating cast.
-                int typeInt = (type >= 0 && type <= Integer.MAX_VALUE) ? (int) type : -1;
-                return new Attribute(typeInt, value);
+                // A type wider than a 32-bit signed integer is not a valid
+                // attribute type, so the receipt is rejected rather than
+                // reinterpreted. Renaming an unrepresentable type (this used to
+                // file it under -1) invents an attribute the receipt never
+                // carried, and is how two ports start disagreeing about what a
+                // receipt says. Fail closed; node, python and swift agree.
+                if (type > Integer.MAX_VALUE) {
+                    throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT,
+                            "receipt attribute type out of range: " + type);
+                }
+                return new Attribute((int) type, value);
             } catch (IllegalArgumentException e) {
                 throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT,
                         "malformed receipt attribute", e);

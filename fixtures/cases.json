@@ -1,7 +1,7 @@
 {
   "$schema": "./cases.schema.json",
   "schemaVersion": 1,
-  "comment": "Normative cross-language conformance vectors for apple-purchase-receipt-verifier.\nOne case per semantic fact: java/, node/, python/ and swift/ each assert many of these under\ntheir own test names, and the duplicates are merged here.\nEvery expectation in this file was derived by hand from the four test-suite inventories,\nfrom PLAN.md sections 2.1-2.3, from COMPARISON.md and from the fixture generator\n(java/src/test/.../FixtureGeneratorTest.java) plus fixtures/generated/manifest.json.\nNOTHING here was produced by running an implementation and recording what it did:\na vector that disagrees with an implementation is a bug report against that implementation\nuntil a human decides otherwise.\n\nPaths in \"fields\" are language-neutral. Scalars use the shared API names from PLAN.md section 3\n(camelCase) for verifyTransaction/verifyAppTransaction/verifyRaw/verifyReceipt, and the literal\nApple wire keys (snake_case) for verifyReceiptEndpoint. \"x.length\" is a collection size.\n\"list[key=value].field\" selects the single element of list whose key equals value.\n\"unknownAttributes[9999][0]\" indexes the raw values recorded for receipt attribute type 9999,\nexpressed as a lowercase hex string. Dates are ISO-8601 UTC strings; claims that Apple ships as\nepoch milliseconds (signedDate, receiptCreationDate) stay numbers. null means \"absent or unset\".\nA field a case does not list is simply not pinned by that case.\n\nCertificate-validity windows are judged at the payload signedDate / receipt creationDate,\nnever at wall-clock time (PLAN.md 2.1 step 4, 2.2 step 2), so the expired-chain cases are\ndeterministic and carry no clock. \"clock\" appears only where the answer genuinely moves with\ntime: the max-signed-age staleness rule, and the request_date triple of the verifyReceipt\nendpoint. Every implementation takes an optional clock, so a runner MUST hand a case's clock\nto the verifier rather than fake time; a case carrying a clock that is run against the system\nclock is not running the case.\n\n\"fault\" names the one intentional defect of a negative case. It is documentation, not an\nassertion: implementations are not required to report it, only to report the given reason.",
+  "comment": "Normative cross-language conformance vectors for apple-purchase-receipt-verifier.\nOne case per semantic fact: java/, node/, python/ and swift/ each assert many of these under\ntheir own test names, and the duplicates are merged here.\nEvery expectation in this file was derived by hand from the four test-suite inventories,\nfrom PLAN.md sections 2.1-2.3, from COMPARISON.md and from the fixture generator\n(java/src/test/.../FixtureGeneratorTest.java) plus fixtures/generated/manifest.json.\nNOTHING here was produced by running an implementation and recording what it did:\na vector that disagrees with an implementation is a bug report against that implementation\nuntil a human decides otherwise.\n\nPaths in \"fields\" are language-neutral. Scalars use the shared API names from PLAN.md section 3\n(camelCase) for verifyTransaction/verifyAppTransaction/verifyRaw/verifyReceipt, and the literal\nApple wire keys (snake_case) for verifyReceiptEndpoint. \"x.length\" is a collection size.\n\"list[key=value].field\" selects the single element of list whose key equals value.\n\"unknownAttributes[9999][0]\" indexes the raw values recorded for receipt attribute type 9999,\nexpressed as a lowercase hex string. Dates are ISO-8601 UTC strings; claims that Apple ships as\nepoch milliseconds (signedDate, receiptCreationDate) stay numbers. null means \"absent or unset\".\nA field a case does not list is simply not pinned by that case.\n\nCertificate-validity windows are judged at the payload signedDate / receipt creationDate, and\nwhere the input states neither, at the SYSTEM clock — never at an injected one (PLAN.md 2.1\nstep 4, 2.2 step 2). The expired-chain cases are therefore deterministic. \"clock\" appears where\nthe answer genuinely moves with time — the max-signed-age staleness rule and the request_date\ntriple of the verifyReceipt endpoint — and, on the four dateless inputs, precisely to pin that\nthe answer does NOT move: a receipt or payload carrying no date of its own, verified under a\nclock planted inside an expired certificate's window or far past a live one's, must reach the\nverdict it reaches on real time. A caller injecting a clock to test staleness, or to work\naround clock skew, must not thereby accept a chain that is expired. verifyReceipt cases cannot\ncarry a clock at all — the schema refuses one — because ReceiptVerifier takes no clock\nparameter in any port. Where the schema does allow one, a runner MUST hand the case's clock to\nthe verifier rather than fake time; a case carrying a clock that is run against the system\nclock is not running the case.\n\nEvery fixture records the SHA-256 of its DECODED logical bytes (post-codec: the file bytes for\nraw, the base64-decoded bytes for base64, the trimmed UTF-8 for utf8). contentSha256 is not\ndocumentation: tools/lint-cases.mjs re-hashes every registered fixture, and so does every\nadapter — over the whole registry before any case runs, and again for each fixture a case\nloads. A fixture that is regenerated, re-encoded or quietly edited fails loudly in all four\nlanguages instead of silently changing what these vectors mean.\n\nFour places where the ports had drifted apart were adjudicated and are pinned here: the\ncertificate-validity fallback clock (the dateless cases), the typed endpoint environment\n(config.environment is the enum, and both values are exercised), and a receipt attribute type\nabove 2^31-1, which every port must reject as INVALID_RECEIPT_FORMAT rather than rename or\nclamp. The fourth — verifyReceiptCore being public in every port, so no endpoint has to build a\nwildcard-bundle-id verifier to reach it — changes no observable answer, so no vector can hold\nit; the four native suites carry that one.\n\n\"fault\" names the one intentional defect of a negative case. It is documentation, not an\nassertion: implementations are not required to report it, only to report the given reason.",
   "fixtures": {
     "generated-manifest": {
       "path": "generated/manifest.json",
@@ -158,6 +158,60 @@
       "role": "input",
       "codec": "raw",
       "contentSha256": "40bdc6b96dff30197a55374f59aac487942e4d4d6facb32853aa2f5c38420eda"
+    },
+    "divergence-jws-root": {
+      "path": "generated/divergence-jws-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "0df1f72bbf5d433791a8372b53e50b892a6a9d1d6f96568ddb3ad3f9020724a1"
+    },
+    "divergence-jws-expired-root": {
+      "path": "generated/divergence-jws-expired-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "a8daee1438ae944e8ede6d731c8409a4de81f16e114c561641d5b10ff8a2f1fa"
+    },
+    "divergence-receipt-root": {
+      "path": "generated/divergence-receipt-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "3c840d78a9245ed6937206a4413d89316f8e65cb3f2c43cc791fb9e4dde02043"
+    },
+    "divergence-receipt-expired-root": {
+      "path": "generated/divergence-receipt-expired-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "548dc59c35ddd92e5a35f0d174d918408ab72735c726726050fe50e65a69004c"
+    },
+    "transaction-no-signed-date": {
+      "path": "generated/transaction-no-signed-date.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "206699255b7426395d30529ea8e8364136768e17a8f1ecef9dd0ff9e09a8f793"
+    },
+    "transaction-expired-chain-no-signed-date": {
+      "path": "generated/transaction-expired-chain-no-signed-date.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "f750a86f68d60067304638cf9f7f4ceb11c4eea7ca14d43664cf4bd8d06bfad6"
+    },
+    "receipt-attribute-type-overflow": {
+      "path": "generated/receipt-attribute-type-overflow.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "55d401205afaa433f8e0a29ee6bb776d6661ccc9907c81921cde2863dd1c3e28"
+    },
+    "receipt-no-creation-date": {
+      "path": "generated/receipt-no-creation-date.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "e3c3ec7d60b0906b96da323c3e462783977628c7b9aaa8391a4eadc66f810342"
+    },
+    "receipt-expired-no-creation-date": {
+      "path": "generated/receipt-expired-no-creation-date.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "45204c7e47f1a1cc61e287182c437b326216c5fb400f71f298838cf6f3ad747f"
     },
     "public-receipts-readme": {
       "path": "public-receipts/README.md",
@@ -1880,6 +1934,262 @@
         "endpoint",
         "receipt",
         "routing",
+        "generated"
+      ]
+    },
+    {
+      "id": "receipt/reject-attribute-type-above-int32-max",
+      "description": "A receipt attribute whose type INTEGER is 2^31 — one past the largest signed 32-bit value — is rejected as a malformed receipt. The receipt is sound in every other way: trusted chain, valid CMS signature, correct device hash, real bundle id, so the attribute type is the only thing left to object to. Failing closed is the decision: mapping an unrepresentable type onto a sentinel such as -1, or filing it under unknownAttributes under a renamed key, makes two ports disagree about what the same bytes contain.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt-attribute-type-overflow"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "divergence-receipt-root"
+          ]
+        },
+        "bundleId": "com.example.app"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "fault": "attribute-type-above-int32-max",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "negative",
+        "hostile-input",
+        "attribute-type",
+        "generated"
+      ]
+    },
+    {
+      "id": "endpoint/attribute-type-above-int32-max-answers-21002",
+      "description": "The same over-range attribute type reaches the endpoint as 21002 (malformed), not 21003: the receipt authenticates fine and it is the payload that cannot be represented. Pins the reason mapping as well as the rejection.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "fixture": "receipt-attribute-type-overflow"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "divergence-receipt-root"
+          ]
+        },
+        "environment": "Sandbox"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "status": 21002,
+          "receipt": null,
+          "environment": null
+        }
+      },
+      "fault": "attribute-type-above-int32-max",
+      "tags": [
+        "endpoint",
+        "receipt",
+        "negative",
+        "hostile-input",
+        "attribute-type",
+        "generated"
+      ]
+    },
+    {
+      "id": "receipt/accept-missing-creation-date",
+      "description": "A receipt carrying no attribute 12 verifies: the creation date is optional, and with none to anchor on, certificate validity is judged at current time (PLAN.md 2.2 step 2). This chain is valid until 2050, so the answer is deterministic until then. The companion endpoint cases pin the other half — that \"current time\" here means the system clock, not an injectable one.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt-no-creation-date"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "divergence-receipt-root"
+          ]
+        },
+        "bundleId": "com.example.app"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "receiptType": "ProductionSandbox",
+          "bundleId": "com.example.app",
+          "appVersion": "1.2.3",
+          "originalAppVersion": "1.0",
+          "creationDate": null,
+          "inAppPurchases.length": 0
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "positive",
+        "validity-window",
+        "generated"
+      ]
+    },
+    {
+      "id": "endpoint/injected-clock-cannot-authenticate-an-expired-chain",
+      "description": "The dateless receipt under a chain that expired in 2021, answered with the clock pinned to 2020-06-01 — inside that chain's validity window. It stays 21003. An injected clock reaches the request_date triple and the max-signed-age rule, never a certificate-validity instant: a caller who injects a clock to test staleness, or to paper over clock skew, must not thereby accept an expired chain. A port that routed the \"else current time\" fallback through its clock answers 0 here.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "fixture": "receipt-expired-no-creation-date"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "divergence-receipt-expired-root"
+          ]
+        },
+        "environment": "Sandbox"
+      },
+      "clock": {
+        "now": "2020-06-01T00:00:00Z"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "status": 21003,
+          "receipt": null,
+          "environment": null
+        }
+      },
+      "fault": "no-creation-date-under-an-expired-chain",
+      "tags": [
+        "endpoint",
+        "receipt",
+        "negative",
+        "chain",
+        "validity-window",
+        "clock",
+        "generated"
+      ]
+    },
+    {
+      "id": "endpoint/injected-clock-cannot-expire-a-valid-chain",
+      "description": "The other direction, on a chain valid until 2050: the same dateless receipt answered with the clock pinned to 2099 is still 0. The clock stamps request_date and nothing else, so it can neither authenticate an expired chain nor expire a live one. receipt_creation_date is absent from the body because the receipt states none — the endpoint does not substitute \"now\" for it.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "fixture": "receipt-no-creation-date"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "divergence-receipt-root"
+          ]
+        },
+        "environment": "Sandbox"
+      },
+      "clock": {
+        "now": "2099-01-01T00:00:00Z"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "status": 0,
+          "environment": "Sandbox",
+          "receipt.bundle_id": "com.example.app",
+          "receipt.receipt_creation_date": null,
+          "receipt.request_date_ms": "4070908800000"
+        }
+      },
+      "tags": [
+        "endpoint",
+        "receipt",
+        "positive",
+        "validity-window",
+        "clock",
+        "generated"
+      ]
+    },
+    {
+      "id": "transaction/injected-clock-cannot-authenticate-an-expired-chain",
+      "description": "The JWS half of the same rule. A payload carrying neither signedDate nor receiptCreationDate, signed by a chain that expired in 2021, verified with the clock pinned to 2020-06-01 — inside that window — and a max signed age configured, so the clock does have a legitimate consumer here. It is still INVALID_CHAIN: the staleness rule may read the injected clock, the certificate-validity fallback may not.",
+      "operation": "verifyTransaction",
+      "input": {
+        "fixture": "transaction-expired-chain-no-signed-date"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "divergence-jws-expired-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ],
+        "maxSignedAgeSeconds": 60
+      },
+      "clock": {
+        "now": "2020-06-01T00:00:00Z"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_CHAIN"
+      },
+      "fault": "no-signed-date-under-an-expired-chain",
+      "tags": [
+        "jws",
+        "transaction",
+        "negative",
+        "chain",
+        "validity-window",
+        "clock",
+        "generated"
+      ]
+    },
+    {
+      "id": "transaction/payload-without-a-signed-date-is-never-stale",
+      "description": "A payload that states no signing time cannot be measured against a maximum age, so the max-signed-age rule does not apply: 60 seconds configured and the clock pinned to 2099, and it still verifies. Measuring the clock against itself — treating \"now\" as the signing time — would make every such payload eternally fresh by accident rather than by rule, and routing the certificate-validity fallback through the same clock would instead make this INVALID_CHAIN, since the chain expires in 2050.",
+      "operation": "verifyTransaction",
+      "input": {
+        "fixture": "transaction-no-signed-date"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "divergence-jws-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ],
+        "maxSignedAgeSeconds": 60
+      },
+      "clock": {
+        "now": "2099-01-01T00:00:00Z"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "bundleId": "com.example.app",
+          "environment": "Sandbox",
+          "productId": "com.example.app.pro",
+          "transactionId": "2000000000000001",
+          "signedDate": null
+        }
+      },
+      "tags": [
+        "jws",
+        "transaction",
+        "positive",
+        "staleness",
+        "validity-window",
+        "clock",
         "generated"
       ]
     }

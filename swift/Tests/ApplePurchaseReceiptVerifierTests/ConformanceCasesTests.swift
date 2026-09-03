@@ -1,3 +1,4 @@
+import Crypto
 import Foundation
 import XCTest
 @testable import ApplePurchaseReceiptVerifier
@@ -75,8 +76,31 @@ private struct Vectors {
         self.cases = cases
     }
 
-    /// Decodes a registered fixture to its logical bytes (fixture.codec).
+    /// Decodes a registered fixture to its logical bytes (fixture.codec) and
+    /// checks them against the digest cases.json records.
+    ///
+    /// `contentSha256` is the file's anti-drift guarantee: it pins the bytes
+    /// every port is asserting against, so a fixture regenerated on one side
+    /// of the repo cannot quietly become a different test than the vectors
+    /// describe. A digest nothing verifies guarantees nothing, so every
+    /// fixture this adapter loads is hashed here — the decoded logical bytes,
+    /// the same thing the digest is taken over — and a mismatch is a harness
+    /// failure, never a verdict about a payload.
     func bytes(of id: String) throws -> Data {
+        let decoded = try decode(id)
+        guard let expected = (fixtures[id] as? [String: Any])?["contentSha256"] as? String else {
+            throw HarnessError("fixture \"\(id)\" registers no contentSha256")
+        }
+        let actual = hexString(Data(SHA256.hash(data: decoded)))
+        guard actual == expected.lowercased() else {
+            throw HarnessError("fixture \"\(id)\" has content sha256 \(actual), "
+                + "but cases.json records \(expected) — the fixture and the vectors "
+                + "have drifted apart")
+        }
+        return decoded
+    }
+
+    private func decode(_ id: String) throws -> Data {
         guard let entry = fixtures[id] as? [String: Any],
               let path = entry["path"] as? String,
               let codec = entry["codec"] as? String else {
@@ -166,12 +190,13 @@ private struct Vectors {
             let guid = try (config["deviceGuidHex"] as? String).map(Self.hexBytes)
             return try await verifier.verify(receipt: input, deviceGuid: guid)
         case "verifyReceiptEndpoint":
-            guard let environment = config["environment"] as? String,
-                  environment == "Production" || environment == "Sandbox" else {
+            guard let name = config["environment"] as? String,
+                  let environment = AppleEnvironment(rawValue: name),
+                  environment == .production || environment == .sandbox else {
                 throw HarnessError("config.environment must be Production or Sandbox")
             }
             let endpoint = try VerifyReceiptEndpoint(trustedRoots: try trustedRoots(config),
-                                                     production: environment == "Production",
+                                                     environment: environment,
                                                      clock: clock)
             return await endpoint.verifyReceipt(["receipt-data": input.base64EncodedString()])
         default:
@@ -425,6 +450,21 @@ final class ConformanceCasesTests: XCTestCase {
         }
         print("conformance: \(vectors.cases.count) cases, 0 skipped "
             + "(\(withClock.count) run against an injected clock)")
+    }
+
+    /// Every registered fixture matches the `contentSha256` cases.json records
+    /// for it — not only the ones some case happens to load. ``Vectors/bytes``
+    /// checks the digest of each fixture it resolves, which covers the file's
+    /// inputs and trust anchors as the cases run; this covers the rest of the
+    /// registry too, so a support fixture drifting out from under the vectors
+    /// is a red test rather than a silent change of what is being tested.
+    func testEveryRegisteredFixtureMatchesItsRecordedDigest() throws {
+        let vectors = try Vectors()
+        XCTAssertFalse(vectors.fixtures.isEmpty, "cases.json registers no fixtures")
+        for id in vectors.fixtures.keys.sorted() {
+            XCTAssertNoThrow(try vectors.bytes(of: id), "fixture \(id)")
+        }
+        print("conformance: \(vectors.fixtures.count) fixtures, all content digests verified")
     }
 
     private func run(operation: String) async {

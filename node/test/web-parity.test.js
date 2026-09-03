@@ -130,6 +130,16 @@ const WRONG_GUID = (() => {
   return copy;
 })();
 
+// Attribute 12 (creation date) renumbered in place to an unmodelled type,
+// so the verifier finds no date to anchor chain validity at and must fall
+// back. Both builds must fall back to the same clock — the system one
+// (port-divergences.test.js proves which clock; this proves they agree).
+function withoutCreationDate(der) {
+  const copy = Buffer.from(der);
+  copy[copy.indexOf(Buffer.from([0x02, 0x01, 0x0c, 0x02, 0x01, 0x01, 0x04])) + 2] = 0x63;
+  return copy;
+}
+
 const cases = [
   // shared-fixtures.test.js
   jwsCase('shared transaction fixture', {
@@ -214,6 +224,15 @@ const cases = [
   receiptCase('receipt with a fresh creation date and an expired chain', {
     roots: [gen('receipt-expired-root.der')], receipt: gen('receipt-expired-fresh.der'),
     expect: 'INVALID_CHAIN',
+  }),
+  receiptCase('dateless receipt on an expired chain falls back past the window', {
+    roots: [gen('receipt-expired-root.der')],
+    receipt: withoutCreationDate(gen('receipt-expired-historical.der')),
+    expect: 'INVALID_CHAIN',
+  }),
+  receiptCase('dateless receipt on a currently valid chain reaches the signature', {
+    roots: [RECEIPT_ROOT], receipt: withoutCreationDate(gen('receipt.der')),
+    expect: 'INVALID_SIGNATURE',
   }),
 
   // negative.test.js

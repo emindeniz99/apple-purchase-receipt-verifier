@@ -380,8 +380,26 @@ def _parse_attribute_set(der, what):
         fields = _children(child_value)
         if len(fields) < 3 or fields[0][0] != _TAG_INTEGER or fields[2][0] != _TAG_OCTET_STRING:
             raise _fmt_error("malformed receipt attribute")
-        attributes.append((_int_value(fields[0][1]), fields[2][1]))
+        attributes.append((_attribute_type(fields[0][1]), fields[2][1]))
     return attributes
+
+
+# Attribute *types* are a 32-bit signed space: every type Apple has ever
+# issued is a small number, and a value above 2^31-1 cannot be represented by
+# ports whose attribute-type field is an int. Mapping such a type onto a
+# sentinel (-1) and filing it under unknown_attributes would let two ports
+# disagree about what the same receipt says, so an unrepresentable type is a
+# malformed receipt in every port. Attribute *values* keep the wider range
+# _int_value allows: web_order_line_item_id is genuinely a 7-byte integer.
+_MAX_ATTRIBUTE_TYPE = 2147483647
+
+
+def _attribute_type(contents):
+    value = _int_value(contents)
+    if value > _MAX_ATTRIBUTE_TYPE:
+        raise _fmt_error(
+            f"receipt attribute type {value} exceeds the 32-bit signed range")
+    return value
 
 
 def _int_value(contents):

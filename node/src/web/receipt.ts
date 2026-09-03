@@ -50,6 +50,10 @@ export async function verifyReceiptCore(der: Uint8Array,
   // (chain validity anchors at signing time); nothing from it is trusted
   // until the chain + signature checks pass.
   const fields = parseReceiptPayload(cms.content);
+  // A receipt with no creation date falls back to the SYSTEM clock, never to
+  // an injected one: a caller injecting a clock (to test staleness, or to
+  // work around skew) must not thereby accept an expired chain. That is why
+  // the receipt path takes no clock option at all.
   const at = fields.creationDate === null ? new Date() : fields.creationDate;
 
   // Everything below walks attacker-supplied DER through the certificate

@@ -293,6 +293,7 @@
           "additionalProperties": false,
           "required": ["id", "description", "operation", "input", "config", "expected", "tags"],
           "allOf": [{ "$ref": "#/$defs/faultRequiredOnError" }],
+          "description": "No \"clock\": ReceiptVerifier takes none in any port. Its only \"now\" is the certificate-validity instant a receipt without a creation date falls back to, and an injected clock must not be able to move that — so a clock here is a schema error, not a runner detail.",
           "properties": {
             "id": { "$ref": "#/$defs/caseId" },
             "description": { "type": "string", "minLength": 1 },
@@ -308,7 +309,6 @@
                 "deviceGuidHex": { "type": "string", "pattern": "^([0-9a-f]{2})+$" }
               }
             },
-            "clock": { "$ref": "#/$defs/clock" },
             "expected": { "$ref": "#/$defs/expectedVerify" },
             "fault": { "$ref": "#/$defs/fault" },
             "tags": { "$ref": "#/$defs/tags" }

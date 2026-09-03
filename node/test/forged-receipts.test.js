@@ -134,6 +134,11 @@ const REJECTED_ATTRIBUTE_INTEGERS = [
   ['a leading byte of 0x80', [0x80], /negative receipt integer/],
   ['nine bytes', [0, 0, 0, 0, 0, 0, 0, 0, 1], /out of range/],
   ['2^53', [0x20, 0, 0, 0, 0, 0, 0], /safe-integer range/],
+  // 2^31, the first attribute type outside the signed 32-bit space. A port
+  // whose attribute-type field is an int cannot represent it, and mapping it
+  // onto a sentinel is how two ports start disagreeing about the same
+  // receipt, so every port fails closed here (leading 0x00 keeps it positive).
+  ['2^31', [0x00, 0x80, 0, 0, 0], /2147483648 exceeds the 32-bit signed range/],
 ];
 for (const [label, bytes, message] of REJECTED_ATTRIBUTE_INTEGERS) {
   test(`rejects an attribute type INTEGER of ${label} as INVALID_RECEIPT_FORMAT`, () => {
@@ -145,11 +150,31 @@ for (const [label, bytes, message] of REJECTED_ATTRIBUTE_INTEGERS) {
   });
 }
 
-test('parses an attribute type INTEGER of 2^53 - 1, the largest exact JS integer', () => {
-  // The forged payload no longer matches the donor signature, so a receipt
-  // that gets past the parse is rejected by the signature check instead.
-  const largest = [0x1f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
+test('parses an attribute type INTEGER of 2^31 - 1, the largest representable type', () => {
+  // The boundary the guard above is written against: one below it the parse
+  // succeeds, so a comparison one step wider would reject a legal type. The
+  // forged payload no longer matches the donor signature, so a receipt that
+  // gets past the parse is rejected by the signature check instead.
+  const largest = [0x7f, 0xff, 0xff, 0xff];
   assert.throws(() => verifier().verify(forge({ payload: payloadWithAttributeType(largest) })), (e) => {
+    assert.equal(e.reason, 'INVALID_SIGNATURE', e.message);
+    return true;
+  });
+});
+
+test('an attribute VALUE above 2^31 - 1 is still parsed — only the type is capped', () => {
+  // web_order_line_item_id is genuinely a 7-byte integer, so the 32-bit cap
+  // must not leak from the type field onto the value field. 2^31 as the
+  // value of a known in-app attribute must reach the model, not a reason.
+  const payload = tlv(SET,
+    tlv(SEQUENCE, tlv(INTEGER, Buffer.from([12])), tlv(INTEGER, Buffer.from([1])),
+      tlv(OCTET_STRING, tlv(IA5_STRING, Buffer.from(SIGNING_TIME, 'ascii')))),
+    tlv(SEQUENCE, tlv(INTEGER, Buffer.from([17])), tlv(INTEGER, Buffer.from([1])),
+      tlv(OCTET_STRING, tlv(SET, tlv(SEQUENCE,
+        // 1711 = web_order_line_item_id, carrying 2^31 as its value.
+        tlv(INTEGER, Buffer.from([0x06, 0xaf])), tlv(INTEGER, Buffer.from([1])),
+        tlv(OCTET_STRING, tlv(INTEGER, Buffer.from([0x00, 0x80, 0, 0, 0]))))))));
+  assert.throws(() => verifier().verify(forge({ payload })), (e) => {
     assert.equal(e.reason, 'INVALID_SIGNATURE', e.message);
     return true;
   });

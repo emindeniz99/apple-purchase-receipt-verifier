@@ -40,11 +40,24 @@ implementation until a human rules otherwise. Changing a returned field or a
 raised reason without updating the vector leaves all four suites disagreeing
 with the contract.
 
+One decision the vectors cannot hold: `verifyReceiptCore` (`verify_receipt_core`
+in Python, `verifyCore` in Swift) is public in all four ports, so the endpoint
+calls it directly instead of building a `ReceiptVerifier` with a wildcard
+bundle id. Both spellings answer identically, so no case can tell them apart —
+the four native suites pin that one, and Swift's `PublicApiTests` imports the
+module without `@testable` so the visibility is checked at compile time.
+
 ### Adding a case
 
 1. Register the fixture in the `fixtures` map if it is not there yet: `path`
    relative to `fixtures/`, `role` (`input`, `trust-anchor` or `support`),
-   `codec` (`raw`, `base64` or `utf8`), and the file's `contentSha256`.
+   `codec` (`raw`, `base64` or `utf8`), and the file's `contentSha256` — the
+   SHA-256 of the DECODED bytes, the ones the library is handed, not of the
+   file as stored. That digest is enforced, not recorded: `lint-cases.mjs`
+   re-hashes every registered fixture, and so does every adapter, over the
+   whole registry before any case runs and again for each fixture a case
+   loads. Regenerating or re-encoding a fixture without updating the digest
+   fails all four suites.
 2. Append the case: a unique `id` shaped `<area>/<what-it-pins>`, a
    `description` of the fact it pins, the `operation` (`verifyTransaction`,
    `verifyAppTransaction`, `verifyRaw`, `verifyReceipt` or
@@ -68,6 +81,25 @@ API names for the four library operations, the literal Apple wire keys for
 unset". The `comment` at the top of `cases.json` carries the full grammar and
 the sources every expectation was derived from.
 
+### Generating a fixture
+
+Fixtures under `fixtures/generated/` are signed by a fake Apple PKI built in
+`java/src/test/.../TestPki.java`, so no real Apple key material is needed.
+Two generators write them, both at fixed epoch instants so nothing depends on
+generation time:
+
+- `FixtureGeneratorTest` — the original set. Gated behind
+  `mvn test -Dtest=FixtureGeneratorTest -Dfixtures.generate=true`.
+- `PortDivergenceFixtures` — the receipt whose attribute type is above
+  2^31-1, and the receipts and payloads carrying no date of their own. It is
+  a `main`, not a test, so it costs the suite no permanently skipped test;
+  the class javadoc carries the exact command.
+
+Every run mints fresh keys, so regenerating changes every byte and every
+`contentSha256` that records it. The signing keys are deliberately not kept:
+a fixture cannot be re-signed under a root that is already published, which
+is why each generator emits its own roots beside its inputs.
+
 ### The clock
 
 A case may carry a `clock`: one ISO-8601 UTC instant, the `now` the call is
@@ -78,17 +110,29 @@ verifier it builds. No runner fakes time and no runner skips a case for want
 of a seam. A case without a `clock` gets no clock argument, so the library
 reads the system clock exactly as a caller who never sets one does.
 
-Pin a clock only where the answer genuinely moves with time: the
-max-signed-age (`STALE_PAYLOAD`) rule, and the `request_date` triple of
+Pin a clock where the answer genuinely moves with time: the max-signed-age
+(`STALE_PAYLOAD`) rule, and the `request_date` triple of
 `verifyReceiptEndpoint`. Certificate validity is not such a place — it is
-judged at the payload's `signedDate` or the receipt's creation date (PLAN.md
-2.1 step 4, 2.2 step 2), so the expired-chain cases are deterministic, carry
-no clock, and no injected clock may move their verdict.
+judged at the payload's `signedDate` or the receipt's creation date, and
+where the input states neither, at the system clock (PLAN.md 2.1 step 4, 2.2
+step 2). The expired-chain cases are deterministic and no injected clock may
+move their verdict.
 
-`verifyReceipt` cases must not pin one. Three of the four ports give
-`ReceiptVerifier` no clock parameter, because no verdict on that path depends
-on the current time, and their adapters raise a harness error rather than
-quietly running the case against the system clock.
+Pin a clock, too, to prove an answer does *not* move with it. Four cases run
+an input carrying no date of its own — `receipt-no-creation-date`,
+`receipt-expired-no-creation-date`, `transaction-no-signed-date`,
+`transaction-expired-chain-no-signed-date` — under a clock planted inside an
+expired certificate's window, or far past a live one's, and must reach the
+verdict real time gives. That is where the "else current time" fallback is
+held to the system clock: a caller who injects a clock to test staleness, or
+to work around skew, must not thereby accept a chain that has expired.
+
+`verifyReceipt` cases cannot pin one — the case shape in
+`cases.schema.json` has no `clock`, so the linter rejects it. No port gives
+`ReceiptVerifier` a clock parameter: no verdict on that path moves with the
+current time, and its one "now" is a certificate-validity instant an injected
+clock must not be able to shift. The clock option lives on the JWS verifier
+(max signed age) and on the endpoint (`request_date`), and nowhere else.
 
 ## Commits
 

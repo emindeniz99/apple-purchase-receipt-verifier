@@ -158,11 +158,29 @@ function parseAttributeSet(der: Uint8Array,
       throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'malformed receipt attribute');
     }
     attributes.push({
-      type: integerValue(fields[0]!),
+      type: attributeType(fields[0]!),
       value: octetStringValue(fields[2]!),
     });
   }
   return attributes;
+}
+
+// Attribute *types* are a 32-bit signed space: every type Apple has ever
+// issued is a small number, and a value above 2^31-1 cannot be represented
+// by ports whose attribute-type field is an int. Mapping such a type onto a
+// sentinel (-1) and filing it under unknownAttributes would let two ports
+// disagree about what the same receipt says, so an unrepresentable type is
+// a malformed receipt in every port. Attribute *values* keep the wider
+// 2^53-1 range: web_order_line_item_id is genuinely a 7-byte integer.
+const MAX_ATTRIBUTE_TYPE = 2147483647;
+
+function attributeType(node: ASN1Node): number {
+  const type = integerValue(node);
+  if (type > MAX_ATTRIBUTE_TYPE) {
+    throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT,
+      `receipt attribute type ${type} exceeds the 32-bit signed range`);
+  }
+  return type;
 }
 
 function integerValue(node: ASN1Node): number {

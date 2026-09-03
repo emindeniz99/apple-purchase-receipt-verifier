@@ -18,6 +18,8 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.Collections;
+import java.util.Date;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 
@@ -38,10 +40,14 @@ class VerifyReceiptEndpointTest {
     private static final Path FIXTURES = Paths.get("..", "fixtures", "generated");
 
     private static VerifyReceiptEndpoint endpoint(boolean production) throws Exception {
+        return new VerifyReceiptEndpoint(Collections.singleton(fixtureRoot()),
+                production ? Environment.PRODUCTION : Environment.SANDBOX);
+    }
+
+    private static X509Certificate fixtureRoot() throws Exception {
         byte[] der = Files.readAllBytes(FIXTURES.resolve("receipt-root.der"));
-        X509Certificate root = (X509Certificate) CertificateFactory.getInstance("X.509")
+        return (X509Certificate) CertificateFactory.getInstance("X.509")
                 .generateCertificate(new ByteArrayInputStream(der));
-        return new VerifyReceiptEndpoint(Collections.singleton(root), production);
     }
 
     private static Map<String, Object> request() throws Exception {
@@ -189,5 +195,106 @@ class VerifyReceiptEndpointTest {
         assertEquals(String.valueOf(now.toEpochMilli()), receipt.get("request_date_ms"));
         assertEquals("2025-01-01 00:00:00 Etc/GMT", receipt.get("request_date"));
         assertEquals("2024-12-31 16:00:00 America/Los_Angeles", receipt.get("request_date_pst"));
+    }
+
+    // ----------------------------------------- the typed environment (2)
+
+    /**
+     * The environment is an enum, as it is in cases.json and in node and
+     * python. Java (and swift) used to take only a boolean, which cannot say
+     * at a call site which of the two {@code true} means.
+     */
+    @Test
+    void takesTheTypedEnvironmentAndRoutesOnIt() throws Exception {
+        X509Certificate root = fixtureRoot();
+        Map<String, Object> sandbox = new VerifyReceiptEndpoint(
+                Collections.singleton(root), Environment.SANDBOX).verifyReceipt(request());
+        assertEquals(0, sandbox.get("status"));
+        assertEquals("Sandbox", sandbox.get("environment"));
+        // The fixture receipt is a ProductionSandbox one, so a production
+        // instance answers 21007 — the routing follows the enum.
+        assertEquals(21007, new VerifyReceiptEndpoint(
+                Collections.singleton(root), Environment.PRODUCTION)
+                .verifyReceipt(request()).get("status"));
+    }
+
+    /**
+     * The boolean constructor still works and still means exactly what it
+     * meant, byte for byte — it is deprecated, not broken, so no caller has to
+     * change.
+     */
+    @Test
+    void theDeprecatedBooleanConstructorStillDelegates() throws Exception {
+        X509Certificate root = fixtureRoot();
+        for (boolean production : new boolean[]{true, false}) {
+            Environment environment = production ? Environment.PRODUCTION : Environment.SANDBOX;
+            @SuppressWarnings("deprecation")
+            JsonNode viaBoolean = MAPPER.valueToTree(new VerifyReceiptEndpoint(
+                    Collections.singleton(root), production).verifyReceipt(request()));
+            JsonNode viaEnum = MAPPER.valueToTree(new VerifyReceiptEndpoint(
+                    Collections.singleton(root), environment).verifyReceipt(request()));
+            assertEquals(withoutRequestDate(viaEnum), withoutRequestDate(viaBoolean),
+                    String.valueOf(production));
+        }
+    }
+
+    /**
+     * Apple's endpoint has exactly two environments. The enum carries four
+     * (XCODE and LOCAL_TESTING exist for JWS payload claims), so the two that
+     * cannot route 21007/21008 are refused at construction rather than
+     * silently behaving like Sandbox.
+     */
+    @Test
+    void rejectsAnEnvironmentTheEndpointCannotEmulate() throws Exception {
+        java.util.Set<X509Certificate> roots = Collections.singleton(fixtureRoot());
+        for (Environment environment
+                : EnumSet.of(Environment.XCODE, Environment.LOCAL_TESTING)) {
+            assertThrows(IllegalArgumentException.class,
+                    () -> new VerifyReceiptEndpoint(roots, environment), environment.name());
+        }
+        assertThrows(IllegalArgumentException.class,
+                () -> new VerifyReceiptEndpoint(roots, (Environment) null));
+    }
+
+    // -------------------------------- the clock reaches request_date only (1)
+
+    /**
+     * The endpoint keeps its clock, because {@code request_date} genuinely is
+     * the wall clock at call time — but that clock must not reach a
+     * certificate-validity verdict. A receipt carrying no creation date is
+     * judged against the system clock (PLAN.md §2.2 step 2's "else current
+     * time"), so an expired chain stays 21003 no matter where the injected
+     * clock is pointed, including squarely inside the certificate's window.
+     */
+    @Test
+    void injectedClockCannotAuthenticateAnExpiredChain() throws Exception {
+        Date notBefore = new Date(System.currentTimeMillis() - 730L * 86_400_000L);
+        Date notAfter = new Date(System.currentTimeMillis() - 365L * 86_400_000L);
+        TestPki expired = TestPki.receipt(notBefore, notAfter);
+        // An empty attribute-12 value is how a real receipt says "no creation
+        // date", which is the only way to reach the "else current time"
+        // fallback at all.
+        byte[] payload = TestPki.receiptPayload("com.example.app", "1.2.3",
+                new byte[]{1, 2, 3, 4, 5, 6, 7, 8}, new byte[20], "",
+                Collections.<byte[]>emptyList());
+        byte[] receipt = expired.signReceipt(payload);
+        Map<String, Object> body = Collections.singletonMap("receipt-data",
+                Base64.getEncoder().encodeToString(receipt));
+        java.util.Set<X509Certificate> roots = Collections.singleton(expired.root);
+
+        // Control: the same dateless receipt under a chain that is valid right
+        // now answers 0, so the 21003s below are the expiry and not the shape.
+        TestPki current = TestPki.receipt();
+        assertEquals(0, new VerifyReceiptEndpoint(Collections.singleton(current.root),
+                Environment.SANDBOX).verifyReceipt(Collections.singletonMap("receipt-data",
+                        Base64.getEncoder().encodeToString(current.signReceipt(payload))))
+                .get("status"));
+        for (Clock clock : java.util.Arrays.<Clock>asList(null,
+                Clock.fixed(notBefore.toInstant().plusMillis(86_400_000L), ZoneOffset.UTC),
+                Clock.fixed(Instant.parse("2001-01-01T00:00:00Z"), ZoneOffset.UTC),
+                Clock.fixed(Instant.parse("2099-01-01T00:00:00Z"), ZoneOffset.UTC))) {
+            assertEquals(21003, new VerifyReceiptEndpoint(roots, Environment.SANDBOX, clock)
+                    .verifyReceipt(body).get("status"), "clock " + clock);
+        }
     }
 }

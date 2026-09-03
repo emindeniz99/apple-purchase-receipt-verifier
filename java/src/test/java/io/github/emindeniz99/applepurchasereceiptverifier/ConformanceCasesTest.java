@@ -12,6 +12,7 @@ import io.github.emindeniz99.applepurchasereceiptverifier.receipt.InAppPurchase;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifier;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.VerifyReceiptEndpoint;
 import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
 
 import java.io.ByteArrayInputStream;
@@ -20,6 +21,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.MessageDigest;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.time.Clock;
@@ -57,10 +59,17 @@ import static org.junit.jupiter.api.Assertions.fail;
  * <p>Each case is its own {@link DynamicTest}, named by its case id, so a
  * failure names the vector that broke.</p>
  *
- * <p>A case carrying a {@code clock} is run with that instant injected as the
- * verifier's clock, so a verdict that moves with wall-clock time (today only
- * the max-signed-age staleness rule) is deterministic. A case without one gets
+ * <p>A case carrying a {@code clock} is run with that instant injected, so a
+ * verdict that moves with wall-clock time is deterministic. Only two surfaces
+ * take one: the JWS verifier (the max-signed-age staleness rule) and the
+ * endpoint (request_date stamping). The receipt verifier takes none — its only
+ * "now" is a certificate-validity instant, which no injected clock may move —
+ * so a receipt case cannot pin a clock and none does. A case without one gets
  * the library default, the system clock.</p>
+ *
+ * <p>Every fixture the adapter loads is checked against the
+ * {@code contentSha256} the registry records for it, over the DECODED bytes,
+ * so fixture bytes and cases.json cannot drift apart unnoticed.</p>
  */
 class ConformanceCasesTest {
 
@@ -143,15 +152,23 @@ class ConformanceCasesTest {
             return jwsVerifier(roots, config, clock).verifyRaw(text(input));
         }
         if ("verifyReceipt".equals(operation)) {
+            // No clock: receipt verification has no verdict that moves with
+            // wall-clock time, and its one "now" is a certificate-validity
+            // instant that an injected clock must not be able to shift.
             ReceiptVerifier verifier =
-                    new ReceiptVerifier(roots, config.get("bundleId").asText(), clock);
+                    new ReceiptVerifier(roots, config.get("bundleId").asText());
             byte[] deviceGuid = config.has("deviceGuidHex")
                     ? unhex(config.get("deviceGuidHex").asText()) : null;
             return normalize(verifier.verify(input, deviceGuid));
         }
         if ("verifyReceiptEndpoint".equals(operation)) {
-            boolean production = "Production".equals(config.get("environment").asText());
-            return new VerifyReceiptEndpoint(roots, production, clock).verifyReceipt(
+            Environment environment =
+                    Environment.fromValue(config.get("environment").asText());
+            if (environment == null) {
+                throw new IllegalStateException(
+                        "unknown environment " + config.get("environment").asText());
+            }
+            return new VerifyReceiptEndpoint(roots, environment, clock).verifyReceipt(
                     Collections.singletonMap("receipt-data",
                             Base64.getEncoder().encodeToString(input)));
         }
@@ -221,7 +238,36 @@ class ConformanceCasesTest {
         return roots;
     }
 
-    /** A fixture id to its logical bytes, per the registry's {@code codec}. */
+    /**
+     * Every fixture in the registry hashes to the {@code contentSha256} it
+     * declares. {@link #fixtureBytes} checks the ones the cases actually load;
+     * this walks the whole registry, so a fixture that drifted while no case
+     * currently reaches it is still caught — which is the entire reason the
+     * field exists.
+     */
+    @Test
+    void everyFixtureMatchesItsRecordedContentDigest() throws Exception {
+        JsonNode fixtures = MAPPER.readTree(FIXTURES.resolve("cases.json").toFile())
+                .get("fixtures");
+        int checked = 0;
+        Iterator<String> ids = fixtures.fieldNames();
+        while (ids.hasNext()) {
+            fixtureBytes(fixtures, ids.next());
+            checked++;
+        }
+        assertTrue(checked > 0, "cases.json declares no fixtures");
+        System.out.println("conformance: " + checked
+                + " fixture content digests verified against cases.json");
+    }
+
+    /**
+     * A fixture id to its logical bytes, per the registry's {@code codec} —
+     * and only after those bytes hash to the {@code contentSha256} the
+     * registry records for them. The digest is over the DECODED bytes (the
+     * file itself for {@code raw}, the base64-decoded bytes for
+     * {@code base64}, the UTF-8 of the trimmed text for {@code utf8}), so it
+     * pins what the verifier is actually handed rather than how it is stored.
+     */
     private static byte[] fixtureBytes(JsonNode fixtures, String id) throws Exception {
         JsonNode fixture = fixtures.get(id);
         if (fixture == null) {
@@ -229,17 +275,31 @@ class ConformanceCasesTest {
         }
         byte[] stored = Files.readAllBytes(FIXTURES.resolve(fixture.get("path").asText()));
         String codec = fixture.get("codec").asText();
+        byte[] decoded;
         if ("raw".equals(codec)) {
-            return stored;
+            decoded = stored;
+        } else {
+            String text = new String(stored, StandardCharsets.UTF_8).trim();
+            if ("utf8".equals(codec)) {
+                decoded = text.getBytes(StandardCharsets.UTF_8);
+            } else if ("base64".equals(codec)) {
+                decoded = Base64.getMimeDecoder().decode(text);
+            } else {
+                throw new IllegalStateException("unknown codec " + codec + " on fixture " + id);
+            }
         }
-        String text = new String(stored, StandardCharsets.UTF_8).trim();
-        if ("utf8".equals(codec)) {
-            return text.getBytes(StandardCharsets.UTF_8);
+        JsonNode expected = fixture.get("contentSha256");
+        if (expected == null || !expected.isTextual()) {
+            throw new IllegalStateException("fixture " + id + " declares no contentSha256");
         }
-        if ("base64".equals(codec)) {
-            return Base64.getMimeDecoder().decode(text);
+        String actual = hex(MessageDigest.getInstance("SHA-256").digest(decoded));
+        if (!expected.textValue().equals(actual)) {
+            throw new AssertionError("fixture " + id + " (" + fixture.get("path").asText()
+                    + ", codec " + codec + ") hashes to " + actual
+                    + " but cases.json records " + expected.textValue()
+                    + " — the fixture bytes and the registry have drifted apart");
         }
-        throw new IllegalStateException("unknown codec " + codec + " on fixture " + id);
+        return decoded;
     }
 
     private static String text(byte[] bytes) {
