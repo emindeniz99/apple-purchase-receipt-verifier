@@ -206,8 +206,14 @@ export class JwsVerifier {
         `ES256 signature must be 64 bytes, got ${signature.length}`);
     }
     const signingInput = Buffer.from(`${parts[0]}.${parts[1]}`, 'ascii');
-    const valid = cryptoVerify('sha256', signingInput,
-      { key: leaf.publicKey, dsaEncoding: 'ieee-p1363' }, signature);
+    // The key goes in as SPKI DER rather than as the KeyObject itself:
+    // Cloudflare workerd's node:crypto rejects a KeyObject inside the
+    // options form of verify() (the form dsaEncoding needs), while Node,
+    // Bun and Deno accept both. Same key, same check.
+    const valid = cryptoVerify('sha256', signingInput, {
+      key: leaf.publicKey.export({ type: 'spki', format: 'der' }),
+      format: 'der', type: 'spki', dsaEncoding: 'ieee-p1363',
+    }, signature);
     if (!valid) {
       throw new VerificationError(Reason.INVALID_SIGNATURE, 'ES256 signature check failed');
     }
