@@ -13,6 +13,9 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
@@ -164,5 +167,27 @@ class VerifyReceiptEndpointTest {
         JsonNode viaJson = MAPPER.readTree(
                 endpoint.verifyReceiptJson(MAPPER.writeValueAsString(request())));
         assertEquals(withoutRequestDate(viaMap), withoutRequestDate(viaJson));
+    }
+
+    /**
+     * request_date is the wall clock at call time, so an injected clock drives
+     * it — the endpoint's only time-dependent output. Omitting the clock keeps
+     * the system clock (asserted by
+     * {@link #emitsTheRequestDateAndEveryDateCompanionField()}).
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void injectedClockDrivesTheRequestDate() throws Exception {
+        Instant now = Instant.parse("2025-01-01T00:00:00Z");
+        byte[] der = Files.readAllBytes(FIXTURES.resolve("receipt-root.der"));
+        X509Certificate root = (X509Certificate) CertificateFactory.getInstance("X.509")
+                .generateCertificate(new ByteArrayInputStream(der));
+        VerifyReceiptEndpoint pinned = new VerifyReceiptEndpoint(
+                Collections.singleton(root), false, Clock.fixed(now, ZoneOffset.UTC));
+        Map<String, Object> receipt = (Map<String, Object>)
+                pinned.verifyReceipt(request()).get("receipt");
+        assertEquals(String.valueOf(now.toEpochMilli()), receipt.get("request_date_ms"));
+        assertEquals("2025-01-01 00:00:00 Etc/GMT", receipt.get("request_date"));
+        assertEquals("2024-12-31 16:00:00 America/Los_Angeles", receipt.get("request_date_pst"));
     }
 }

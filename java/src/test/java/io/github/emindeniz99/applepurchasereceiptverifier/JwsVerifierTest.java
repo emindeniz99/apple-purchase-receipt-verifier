@@ -9,6 +9,9 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
@@ -284,5 +287,80 @@ class JwsVerifierTest {
         Set<java.security.cert.X509Certificate> empty = Collections.emptySet();
         assertThrows(IllegalArgumentException.class,
                 () -> new JwsVerifier(empty, BUNDLE, EnumSet.of(Environment.SANDBOX)));
+    }
+
+    // ------------------------------------------------------------ clock seam
+
+    /** A verifier built without a clock: "now" is the real system clock. */
+    @Test
+    void omittedClockUsesTheSystemClock() throws Exception {
+        Map<String, Object> claims = transactionClaims("Sandbox");
+        String fresh = pki.signJws(claims);
+        claims.put("signedDate", System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(10));
+        String old = pki.signJws(claims);
+        JwsVerifier strict = strict(null);
+        assertEquals(BUNDLE, strict.verifyTransaction(fresh).bundleId());
+        VerificationException e = assertThrows(VerificationException.class,
+                () -> strict.verifyTransaction(old));
+        assertEquals(Reason.STALE_PAYLOAD, e.reason());
+    }
+
+    /**
+     * The staleness verdict follows the injected clock, not the wall clock:
+     * one payload, one max age, three answers chosen by "now" alone.
+     */
+    @Test
+    void injectedClockDecidesStaleness() throws Exception {
+        Map<String, Object> claims = transactionClaims("Sandbox");
+        long signedAt = ((Number) claims.get("signedDate")).longValue();
+        String jws = pki.signJws(claims);
+        assertEquals(BUNDLE, strict(null).verifyTransaction(jws).bundleId());
+        assertEquals(BUNDLE, strict(at(signedAt + TimeUnit.SECONDS.toMillis(30)))
+                .verifyTransaction(jws).bundleId());
+        JwsVerifier late = strict(at(signedAt + TimeUnit.HOURS.toMillis(1)));
+        VerificationException e = assertThrows(VerificationException.class,
+                () -> late.verifyTransaction(jws));
+        assertEquals(Reason.STALE_PAYLOAD, e.reason());
+    }
+
+    /**
+     * Certificate validity is judged at the payload's signedDate (PLAN.md
+     * §2.1 step 4), so no injected "now" — decades before or after the
+     * certificate window — can move a chain verdict.
+     */
+    @Test
+    void injectedClockDoesNotMoveCertificateValidityVerdicts() throws Exception {
+        long now = System.currentTimeMillis();
+        Date notBefore = new Date(now - 730L * 86_400_000L);
+        Date notAfter = new Date(now - 365L * 86_400_000L);
+        TestPki expired = TestPki.jws(true, true, notBefore, notAfter);
+        Map<String, Object> historical = transactionClaims("Sandbox");
+        historical.put("signedDate", now - 547L * 86_400_000L);
+        String insideWindow = expired.signJws(historical);
+        String outsideWindow = expired.signJws(transactionClaims("Sandbox"));
+        // No max age: staleness must not confound the chain verdict.
+        for (Clock clock : Arrays.<Clock>asList(null,
+                at(now - 3650L * 86_400_000L),
+                at(notBefore.getTime() + 86_400_000L),
+                at(now + 3650L * 86_400_000L))) {
+            JwsVerifier verifier = new JwsVerifier(Collections.singleton(expired.root), BUNDLE,
+                    EnumSet.of(Environment.SANDBOX), null, null, clock);
+            assertEquals(BUNDLE, verifier.verifyTransaction(insideWindow).bundleId(),
+                    "historical payload with clock " + clock);
+            VerificationException e = assertThrows(VerificationException.class,
+                    () -> verifier.verifyTransaction(outsideWindow),
+                    "fresh payload with clock " + clock);
+            assertEquals(Reason.INVALID_CHAIN, e.reason());
+        }
+    }
+
+    /** One-minute max age, optionally with a pinned clock. */
+    private static JwsVerifier strict(Clock clock) {
+        return new JwsVerifier(Collections.singleton(pki.root), BUNDLE,
+                EnumSet.of(Environment.SANDBOX), null, TimeUnit.MINUTES.toMillis(1), clock);
+    }
+
+    private static Clock at(long epochMillis) {
+        return Clock.fixed(Instant.ofEpochMilli(epochMillis), ZoneOffset.UTC);
     }
 }
