@@ -19,6 +19,7 @@ const worker :Workerd.Worker = (
     (name = "dist/jws.js", esModule = embed "../dist/jws.js"),
     (name = "dist/receipt.js", esModule = embed "../dist/receipt.js"),
     (name = "dist/roots.js", esModule = embed "../dist/roots.js"),
+    (name = "dist/roots-data.js", esModule = embed "../dist/roots-data.js"),
     (name = "dist/verify-receipt-endpoint.js", esModule = embed "../dist/verify-receipt-endpoint.js"),
     (name = "fixtures/AppleIncRootCertificate.cer", data = embed "../certs/AppleIncRootCertificate.cer"),
     (name = "fixtures/receipt-sandbox-g5.b64", text = embed "../../fixtures/public-receipts/receipt-sandbox-g5.b64"),
