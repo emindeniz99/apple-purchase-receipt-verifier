@@ -20,11 +20,16 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** verifyReceipt-compat semantics over the shared receipt fixture. */
+/**
+ * verifyReceipt-compat semantics over the shared receipt fixture that
+ * {@code fixtures/cases.json} does not pin: the raw-JSON wire form, the
+ * malformed-request statuses, and the date fields that move with the clock.
+ * Every status-code routing verdict lives in cases.json instead, asserted by
+ * {@link ConformanceCasesTest}.
+ */
 class VerifyReceiptEndpointTest {
 
     private static final Path FIXTURES = Paths.get("..", "fixtures", "generated");
@@ -54,50 +59,31 @@ class VerifyReceiptEndpointTest {
         return response;
     }
 
+    /**
+     * The fixed values of this response are pinned in {@code cases.json}
+     * (endpoint/sandbox-receipt-on-sandbox-answers-0). What stays here is what
+     * a language-neutral vector cannot pin: {@code request_date}, which is
+     * "now", and the {@code _ms}/{@code _pst} companions of every date — the
+     * COMPARISON.md "full fidelity" field set, present in Node too.
+     */
     @Test
     @SuppressWarnings("unchecked")
-    void answersLikeVerifyReceiptForAValidSandboxReceipt() throws Exception {
+    void emitsTheRequestDateAndEveryDateCompanionField() throws Exception {
         Map<String, Object> response = endpoint(false).verifyReceipt(request());
-        assertEquals(0, response.get("status"));
-        assertEquals("Sandbox", response.get("environment"));
         Map<String, Object> receipt = (Map<String, Object>) response.get("receipt");
-        assertEquals("ProductionSandbox", receipt.get("receipt_type"));
-        assertEquals("com.example.app", receipt.get("bundle_id"));
-        assertEquals("1.2.3", receipt.get("application_version"));
-        assertEquals("1.0", receipt.get("original_application_version"));
-        assertEquals("2024-08-06 12:00:00 Etc/GMT", receipt.get("receipt_creation_date"));
-        assertEquals("1722945600000", receipt.get("receipt_creation_date_ms"));
-        assertEquals("2024-08-06 05:00:00 America/Los_Angeles",
-                receipt.get("receipt_creation_date_pst"));
-        // Full COMPARISON.md "full fidelity" field set (parity with Node).
-        assertEquals("1.0", receipt.get("original_application_version"));
         assertNotNull(receipt.get("request_date_ms"));
         assertNotNull(receipt.get("request_date"));
         assertNotNull(receipt.get("request_date_pst"));
         List<Map<String, Object>> inApp = (List<Map<String, Object>>) receipt.get("in_app");
-        assertEquals(2, inApp.size());
         Map<String, Object> coins = inApp.get(0).get("product_id").equals("com.example.app.coins100")
                 ? inApp.get(0) : inApp.get(1);
-        assertEquals("1", coins.get("quantity"));
-        assertEquals("70000000000001", coins.get("transaction_id"));
-        assertEquals("70000000000001", coins.get("original_transaction_id"));
         assertNotNull(coins.get("purchase_date"));
         assertNotNull(coins.get("purchase_date_ms"));
         assertNotNull(coins.get("purchase_date_pst"));
         Map<String, Object> vip = inApp.get(0).get("product_id").equals("com.example.app.vip")
                 ? inApp.get(0) : inApp.get(1);
-        assertEquals("2030-02-01 09:30:00 Etc/GMT", vip.get("expires_date"));
         assertNotNull(vip.get("expires_date_ms"));
         assertNotNull(vip.get("expires_date_pst"));
-        assertEquals("42", vip.get("web_order_line_item_id"));
-    }
-
-    @Test
-    void routesSandboxReceiptOnProductionTo21007() throws Exception {
-        Map<String, Object> response = endpoint(true).verifyReceipt(request());
-        assertEquals(21007, response.get("status"));
-        assertNull(response.get("receipt"));
-        assertNull(response.get("environment"));
     }
 
     @Test
@@ -114,37 +100,6 @@ class VerifyReceiptEndpointTest {
     void rejectsAnEmptyRootSet() {
         assertThrows(IllegalArgumentException.class,
                 () -> new VerifyReceiptEndpoint(Collections.<X509Certificate>emptySet(), false));
-    }
-
-    @Test
-    void routesReceiptTypeVariantsPerAppleMatrix() throws Exception {
-        // production types answer in Production and 21008 in Sandbox;
-        // sandbox/missing types answer in Sandbox and 21007 in Production.
-        String[][] cases = {
-                {"receipt-type-production.der", "production"},
-                {"receipt-type-vpp.der", "production"},
-                {"receipt-type-vpp-sandbox.der", "sandbox"},
-                {"receipt-no-type.der", "sandbox"},
-        };
-        for (String[] c : cases) {
-            byte[] receipt = Files.readAllBytes(FIXTURES.resolve(c[0]));
-            Map<String, Object> body = Collections.singletonMap("receipt-data",
-                    Base64.getEncoder().encodeToString(receipt));
-            boolean isProduction = c[1].equals("production");
-            assertEquals(isProduction ? 0 : 21007,
-                    endpoint(true).verifyReceipt(body).get("status"), c[0] + " on Production");
-            assertEquals(isProduction ? 21008 : 0,
-                    endpoint(false).verifyReceipt(body).get("status"), c[0] + " on Sandbox");
-        }
-    }
-
-    @Test
-    void reportsUnauthenticReceiptsAs21003() throws Exception {
-        byte[] foreign = Files.readAllBytes(FIXTURES.resolve("receipt-foreign.der"));
-        Map<String, Object> response = endpoint(false).verifyReceipt(
-                Collections.singletonMap("receipt-data",
-                        Base64.getEncoder().encodeToString(foreign)));
-        assertEquals(21003, response.get("status"));
     }
 
     @Test

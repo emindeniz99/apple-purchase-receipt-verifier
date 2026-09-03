@@ -160,6 +160,23 @@ jobs:
           persist-credentials: false
       - run: swift --version && swift test
 
+  # fixtures/cases.json is the normative cross-language contract: the four
+  # suites all read it, so a malformed vector file or an unregistered fixture
+  # breaks every language at once. The linter is dependency-free, so this job
+  # installs nothing.
+  conformance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - run: node tools/lint-cases.mjs
+
   zizmor:
     runs-on: ubuntu-latest
     timeout-minutes: 10

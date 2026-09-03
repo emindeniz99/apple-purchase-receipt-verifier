@@ -12,12 +12,11 @@ function fixture(name) {
 
 const text = (name) => fixture(name).toString('ascii').trim();
 
-function verifier(options = {}) {
+function verifier() {
   return new JwsVerifier({
     trustedRoots: [fixture('jws-root.der')],
     bundleId: BUNDLE,
     acceptedEnvironments: ['Sandbox'],
-    ...options,
   });
 }
 
@@ -30,37 +29,9 @@ test('rejects a tampered payload segment', () => {
     (e) => e.reason === 'INVALID_SIGNATURE');
 });
 
-test('rejects a bundle id mismatch', () => {
-  assert.throws(() => verifier({ bundleId: 'com.other.app' }).verifyTransaction(text('transaction.jws')),
-    (e) => e.reason === 'WRONG_BUNDLE_ID');
-});
-
-test('rejects an environment outside the accept set', () => {
-  assert.throws(() => verifier({ acceptedEnvironments: ['Production'] }).verifyTransaction(text('transaction.jws')),
-    (e) => e.reason === 'WRONG_ENVIRONMENT');
-});
-
-test('rejects a stale payload when maxSignedAgeMillis is set', () => {
-  assert.throws(() => verifier({ maxSignedAgeMillis: 60_000 }).verifyTransaction(text('transaction.jws')),
-    (e) => e.reason === 'STALE_PAYLOAD');
-});
-
 test('rejects garbage JWS input', () => {
   assert.throws(() => verifier().verifyTransaction('not-a-jws'),
     (e) => e.reason === 'INVALID_JWS_FORMAT');
-});
-
-test('rejects a chain from a foreign root (real Apple root as verifier anchor)', () => {
-  const pinned = new JwsVerifier({
-    trustedRoots: appleJwsRoots(), bundleId: BUNDLE, acceptedEnvironments: ['Sandbox'],
-  });
-  assert.throws(() => pinned.verifyTransaction(text('transaction.jws')),
-    (e) => e.reason === 'INVALID_CHAIN');
-});
-
-test('verifyRaw skips claim checks but not the signature', () => {
-  const claims = verifier({ bundleId: 'com.whatever.else' }).verifyRaw(text('transaction.jws'));
-  assert.equal(claims.bundleId, BUNDLE);
 });
 
 test('rejects a tampered receipt payload byte', () => {
@@ -73,24 +44,6 @@ test('rejects a tampered receipt payload byte', () => {
   });
   assert.throws(() => receiptVerifier.verify(tampered),
     (e) => e.reason === 'INVALID_SIGNATURE');
-});
-
-test('rejects a receipt whose bundle id is not the configured one', () => {
-  const receiptVerifier = new ReceiptVerifier({
-    trustedRoots: [fixture('receipt-root.der')], bundleId: 'com.other.app',
-  });
-  assert.throws(() => receiptVerifier.verify(fixture('receipt.der')),
-    (e) => e.reason === 'WRONG_BUNDLE_ID');
-});
-
-test('rejects a wrong device GUID', () => {
-  const receiptVerifier = new ReceiptVerifier({
-    trustedRoots: [fixture('receipt-root.der')], bundleId: BUNDLE,
-  });
-  const guid = Buffer.from(text('device-guid.hex'), 'hex');
-  guid[0] ^= 0x01;
-  assert.throws(() => receiptVerifier.verify(fixture('receipt.der'), guid),
-    (e) => e.reason === 'DEVICE_HASH_MISMATCH');
 });
 
 test('rejects garbage receipt bytes', () => {
@@ -122,10 +75,3 @@ test('rejects trailing bytes after the CMS blob', () => {
     (e) => e.reason === 'INVALID_RECEIPT_FORMAT');
 });
 
-test('exposes unknown attributes for forward compatibility', () => {
-  const receiptVerifier = new ReceiptVerifier({
-    trustedRoots: [fixture('receipt-root.der')], bundleId: BUNDLE,
-  });
-  const receipt = receiptVerifier.verify(fixture('receipt.der'));
-  assert.deepEqual(receipt.unknownAttributes.get(9999), [Buffer.from([1, 2, 3])]);
-});

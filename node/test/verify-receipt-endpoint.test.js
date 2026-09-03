@@ -28,26 +28,13 @@ function withoutRequestDate(response) {
   return copy;
 }
 
-test('answers like verifyReceipt for a valid sandbox receipt', () => {
+// The status, environment and field values for this response are pinned by
+// fixtures/cases.json, which selects in_app entries by product_id and so
+// pins nothing about their order. These two do.
+test('renders in_app in receipt attribute order', () => {
   const response = endpoint('Sandbox').verifyReceipt(request());
-  assert.equal(response.status, 0);
-  assert.equal(response.environment, 'Sandbox');
-  assert.equal(response.receipt.receipt_type, 'ProductionSandbox');
-  assert.equal(response.receipt.bundle_id, 'com.example.app');
-  assert.equal(response.receipt.receipt_creation_date, '2024-08-06 12:00:00 Etc/GMT');
-  assert.equal(response.receipt.receipt_creation_date_ms, '1722945600000');
-  assert.equal(response.receipt.receipt_creation_date_pst,
-    '2024-08-06 05:00:00 America/Los_Angeles');
-  assert.equal(response.receipt.in_app.length, 2);
   assert.equal(response.receipt.in_app[0].quantity, '1');
   assert.equal(response.receipt.in_app[0].web_order_line_item_id, '42');
-});
-
-test('routes a sandbox receipt on Production to 21007 and leaks no receipt', () => {
-  const response = endpoint('Production').verifyReceipt(request());
-  assert.equal(response.status, 21007);
-  assert.equal(response.receipt, undefined);
-  assert.equal(response.environment, undefined);
 });
 
 test('reports malformed requests as 21002', () => {
@@ -56,40 +43,16 @@ test('reports malformed requests as 21002', () => {
   assert.equal(endpoint('Sandbox').verifyReceipt({ 'receipt-data': 'AQIDBA==' }).status, 21002);
 });
 
-test('reports unauthentic receipts as 21003', () => {
-  const response = endpoint('Sandbox').verifyReceipt({
-    'receipt-data': fixture('receipt-foreign.der').toString('base64'),
-  });
-  assert.equal(response.status, 21003);
-});
-
-test('routes receipt_type variants per the Apple matrix (incl. VPP sandbox)', () => {
-  const cases = [
-    ['receipt-type-production.der', true],
-    ['receipt-type-vpp.der', true],
-    ['receipt-type-vpp-sandbox.der', false],
-    ['receipt-no-type.der', false],
-  ];
-  for (const [name, isProduction] of cases) {
-    const body = { 'receipt-data': fixture(name).toString('base64') };
-    assert.equal(endpoint('Production').verifyReceipt(body).status,
-      isProduction ? 0 : 21007, `${name} on Production`);
-    assert.equal(endpoint('Sandbox').verifyReceipt(body).status,
-      isProduction ? 21008 : 0, `${name} on Sandbox`);
-  }
-});
-
+// The values cases.json pins are asserted there; what is left here is the
+// presence of the renderings it deliberately does not pin — request_date
+// (the wall clock at call time) and the _ms / _pst companions.
 test('endpoint response carries every field COMPARISON.md advertises as full-fidelity', () => {
   const receipt = endpoint('Sandbox').verifyReceipt(request()).receipt;
   assert.ok(receipt.request_date && receipt.request_date_ms && receipt.request_date_pst);
-  assert.equal(receipt.original_application_version, '1.0');
   const coins = receipt.in_app.find((p) => p.product_id === 'com.example.app.coins100');
-  assert.equal(coins.transaction_id, '70000000000001');
-  assert.equal(coins.original_transaction_id, '70000000000001');
   assert.ok(coins.purchase_date && coins.purchase_date_ms && coins.purchase_date_pst);
   assert.ok(coins.original_purchase_date_ms);
   const vip = receipt.in_app.find((p) => p.product_id === 'com.example.app.vip');
-  assert.equal(vip.expires_date, '2030-02-01 09:30:00 Etc/GMT');
   assert.ok(vip.expires_date_ms && vip.expires_date_pst);
 });
 

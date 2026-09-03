@@ -1,0 +1,240 @@
+import test, { mock } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import {
+  JwsVerifier, ReceiptVerifier, VerificationError, VerifyReceiptEndpoint,
+  appleJwsRoots, appleReceiptRoots,
+} from '../dist/index.js';
+
+// Runs fixtures/cases.json — the normative cross-language conformance
+// vectors — against this implementation. The adapter below knows nothing
+// about any individual case: it loads the file, resolves fixture ids to
+// bytes, builds a verifier from the generic config, dispatches on
+// "operation", normalizes the result and reads the reason off a failure.
+// A vector that disagrees with the library is a bug report against one of
+// the two; it is never something to special-case here.
+
+const fixtureUrl = (path) => fileURLToPath(new URL(`../../fixtures/${path}`, import.meta.url));
+
+const CASES = JSON.parse(readFileSync(fixtureUrl('cases.json'), 'utf8'));
+
+/** Decodes a registered fixture to its logical bytes (fixture.codec). */
+function fixtureBytes(id) {
+  const entry = CASES.fixtures[id];
+  if (entry === undefined) {
+    throw new Error(`harness error: cases.json registers no fixture "${id}"`);
+  }
+  const raw = readFileSync(fixtureUrl(entry.path));
+  switch (entry.codec) {
+    case 'raw': return raw;
+    case 'base64': return Buffer.from(raw.toString('ascii').replace(/\s+/g, ''), 'base64');
+    case 'utf8': return Buffer.from(raw.toString('utf8').trim(), 'utf8');
+    default: throw new Error(`harness error: unknown fixture codec "${entry.codec}"`);
+  }
+}
+
+const BUILTIN_ROOTS = {
+  'apple-jws-roots': appleJwsRoots,
+  'apple-receipt-roots': appleReceiptRoots,
+};
+
+function trustedRoots(spec) {
+  if (spec.source === 'builtin') {
+    const roots = BUILTIN_ROOTS[spec.name];
+    if (roots === undefined) {
+      throw new Error(`harness error: unknown builtin root set "${spec.name}"`);
+    }
+    return roots();
+  }
+  return spec.fixtures.map(fixtureBytes);
+}
+
+// verifyRaw enforces no claim, so its cases may omit bundleId and
+// acceptedEnvironments — but this constructor still demands both. The
+// placeholders match nothing the fixtures carry, so a claim check that
+// leaked into verifyRaw would surface as a failure, not as a pass.
+const UNMATCHABLE_BUNDLE_ID = 'conformance.unset.bundle.id';
+const UNMATCHABLE_ENVIRONMENTS = ['LocalTesting'];
+
+function jwsVerifier(config) {
+  return new JwsVerifier({
+    trustedRoots: trustedRoots(config.trustedRoots),
+    bundleId: config.bundleId ?? UNMATCHABLE_BUNDLE_ID,
+    acceptedEnvironments: config.acceptedEnvironments ?? UNMATCHABLE_ENVIRONMENTS,
+    appAppleId: config.appAppleId ?? null,
+    maxSignedAgeMillis: config.maxSignedAgeSeconds === undefined
+      ? null : config.maxSignedAgeSeconds * 1000,
+  });
+}
+
+const OPERATIONS = {
+  verifyTransaction: (config, input) =>
+    jwsVerifier(config).verifyTransaction(input.toString('utf8')),
+  verifyAppTransaction: (config, input) =>
+    jwsVerifier(config).verifyAppTransaction(input.toString('utf8')),
+  verifyRaw: (config, input) =>
+    jwsVerifier(config).verifyRaw(input.toString('utf8')),
+  verifyReceipt: (config, input) => {
+    const verifier = new ReceiptVerifier({
+      trustedRoots: trustedRoots(config.trustedRoots), bundleId: config.bundleId,
+    });
+    const guid = config.deviceGuidHex === undefined
+      ? null : Buffer.from(config.deviceGuidHex, 'hex');
+    return verifier.verify(input, guid);
+  },
+  verifyReceiptEndpoint: (config, input) => new VerifyReceiptEndpoint({
+    trustedRoots: trustedRoots(config.trustedRoots), environment: config.environment,
+  }).verifyReceipt({ 'receipt-data': input.toString('base64') }),
+};
+
+// --- result normalization ----------------------------------------------
+
+/** ISO-8601 UTC, dropping milliseconds when they are zero. */
+const isoUtc = (date) => date.toISOString().replace(/\.000Z$/, 'Z');
+
+const isBytes = (value) => Buffer.isBuffer(value) || value instanceof Uint8Array;
+
+/**
+ * Renders a returned object into the language-neutral shape the field paths
+ * are written against: dates as ISO-8601 UTC, binary as lowercase hex (also
+ * under `<name>Hex`, the spelling cases.json uses for a byte field), maps as
+ * plain objects keyed by the stringified key.
+ */
+function normalize(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (value instanceof Date) {
+    return isoUtc(value);
+  }
+  if (isBytes(value)) {
+    return Buffer.from(value).toString('hex');
+  }
+  if (Array.isArray(value)) {
+    return value.map(normalize);
+  }
+  if (value instanceof Map) {
+    return Object.fromEntries([...value].map(([key, v]) => [String(key), normalize(v)]));
+  }
+  if (typeof value === 'object') {
+    const out = {};
+    for (const [key, v] of Object.entries(value)) {
+      out[key] = normalize(v);
+      if (isBytes(v)) {
+        out[`${key}Hex`] = out[key];
+      }
+    }
+    return out;
+  }
+  return value;
+}
+
+// --- field paths --------------------------------------------------------
+
+// A path step is either a name (`bundleId`, `length`) or a bracket
+// (`[9999]`, `[0]`, `[productId=com.example.app.vip]`). Bracket contents may
+// hold dots, so the split cannot be a plain `.split('.')`.
+const PATH_STEP = /\.?([^.[\]]+)|\[([^\]]+)\]/g;
+
+function pathSteps(path) {
+  const steps = [];
+  let consumed = 0;
+  for (const match of path.matchAll(PATH_STEP)) {
+    if (match.index !== consumed) {
+      throw new Error(`harness error: unparseable field path "${path}"`);
+    }
+    consumed += match[0].length;
+    steps.push(match[1] === undefined
+      ? { bracket: true, value: match[2] } : { bracket: false, value: match[1] });
+  }
+  if (consumed !== path.length) {
+    throw new Error(`harness error: unparseable field path "${path}"`);
+  }
+  return steps;
+}
+
+function resolvePath(root, path) {
+  let current = root;
+  for (const step of pathSteps(path)) {
+    if (current === null || current === undefined) {
+      return undefined;
+    }
+    if (!step.bracket) {
+      current = step.value === 'length' && Array.isArray(current)
+        ? current.length : current[step.value];
+      continue;
+    }
+    const separator = step.value.indexOf('=');
+    if (separator > 0) {
+      const key = step.value.slice(0, separator);
+      const wanted = step.value.slice(separator + 1);
+      assert.ok(Array.isArray(current), `${path}: [${step.value}] does not select from a list`);
+      const matches = current.filter(
+        (element) => element !== null && typeof element === 'object' && element[key] === wanted);
+      assert.equal(matches.length, 1,
+        `${path}: [${step.value}] must select exactly one element, selected ${matches.length}`);
+      current = matches[0];
+    } else {
+      current = Array.isArray(current) ? current[Number(step.value)] : current[step.value];
+    }
+  }
+  return current;
+}
+
+// --- one case -----------------------------------------------------------
+
+/** Injects the case's instant for the duration of the call, if it pins one. */
+function withClock(clock, run) {
+  if (clock === undefined) {
+    return run();
+  }
+  mock.timers.enable({ apis: ['Date'], now: new Date(clock.now) });
+  try {
+    return run();
+  } finally {
+    mock.timers.reset();
+  }
+}
+
+function runCase(kase) {
+  const operation = OPERATIONS[kase.operation];
+  if (operation === undefined) {
+    throw new Error(`harness error: no adapter for operation "${kase.operation}"`);
+  }
+  const input = fixtureBytes(kase.input.fixture);
+  let result;
+  try {
+    result = withClock(kase.clock, () => operation(kase.config, input));
+  } catch (error) {
+    // Only a VerificationError carries a canonical Reason. Anything else is
+    // a defect in the library or in this harness, and must never be read as
+    // one of the expected reasons.
+    if (!(error instanceof VerificationError)) {
+      throw new Error(`harness error: ${kase.operation} threw `
+        + `${error?.constructor?.name ?? typeof error} (${error?.message}), `
+        + 'which is not a VerificationError', { cause: error });
+    }
+    assert.equal(kase.expected.status, 'error',
+      `expected success but threw ${error.reason}`);
+    assert.equal(error.reason, kase.expected.reason, 'reason');
+    return;
+  }
+  assert.equal(kase.expected.status, 'ok',
+    `expected ${kase.expected.reason} but the call returned a value`);
+  const actual = normalize(result);
+  for (const [path, expected] of Object.entries(kase.expected.fields)) {
+    const value = resolvePath(actual, path);
+    if (expected === null) {
+      // null means "absent or unset".
+      assert.ok(value === null || value === undefined,
+        `${path}: expected absent, got ${JSON.stringify(value)}`);
+    } else {
+      assert.equal(value, expected, path);
+    }
+  }
+}
+
+for (const kase of CASES.cases) {
+  test(`cases.json ${kase.id}`, () => runCase(kase));
+}
