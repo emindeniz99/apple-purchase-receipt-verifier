@@ -7,7 +7,8 @@ import {
 import { parseReceiptPayload } from '../receipt-payload.js';
 import { parseCertificate, type ParsedCertificate } from '../x509.js';
 import { buildAndValidatePath, normalizeRoots, type RootInput } from './chain.js';
-import { OID_RSA_ENCRYPTION, digest, verifyRsaPkcs1 } from './crypto.js';
+import { digest, verifyRsaPkcs1 } from './crypto.js';
+import { OID_RSA_ENCRYPTION } from './jwk.js';
 
 export type {
   RawAppReceipt as AppReceipt, RawInAppPurchase as InAppPurchase,
