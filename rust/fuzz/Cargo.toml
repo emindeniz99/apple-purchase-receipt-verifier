@@ -1,0 +1,67 @@
+# Fuzz targets for the crate's hand-written parsers and the three public
+# verifiers. Not published — `..`'s `exclude` keeps this directory out of
+# the tarball — and run with `./run.sh <target> [seconds]`, which pairs each
+# target with the fixture directories that seed it. See README.md.
+[package]
+name = "apple-purchase-receipt-verifier-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.apple-purchase-receipt-verifier]
+path = ".."
+
+[[bin]]
+name = "parse-der"
+path = "fuzz_targets/parse-der.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parse-certificate"
+path = "fuzz_targets/parse-certificate.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parse-cms"
+path = "fuzz_targets/parse-cms.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "verify-receipt"
+path = "fuzz_targets/verify-receipt.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "verify-receipt-base64"
+path = "fuzz_targets/verify-receipt-base64.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "verify-transaction"
+path = "fuzz_targets/verify-transaction.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endpoint-json"
+path = "fuzz_targets/endpoint-json.rs"
+test = false
+doc = false
+bench = false
