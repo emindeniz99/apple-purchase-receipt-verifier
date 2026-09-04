@@ -1,0 +1,32 @@
+# frozen_string_literal: true
+
+require "rake/testtask"
+
+Rake::TestTask.new(:test) do |task|
+  task.libs << "test"
+  task.libs << "lib"
+  task.test_files = FileList["test/**/*_test.rb"]
+  task.warning = false
+end
+
+desc "Regenerate lib/apple_purchase_receipt_verifier/roots_data.rb from certs/"
+task :roots do
+  ruby "script/gen_roots.rb"
+end
+
+desc "Validate the RBS signatures in sig/"
+task :rbs do
+  ruby "-e", <<~SCRIPT
+    require "rbs"
+    require "rbs/cli"
+    exit RBS::CLI.new(stdout: $stdout, stderr: $stderr)
+                 .run(["-r", "openssl", "-r", "json", "-I", "sig", "validate"])
+  SCRIPT
+end
+
+desc "Build the gem and verify a genuine receipt with the installed artifact"
+task :consumer_smoke do
+  ruby "script/consumer_smoke.rb"
+end
+
+task default: :test

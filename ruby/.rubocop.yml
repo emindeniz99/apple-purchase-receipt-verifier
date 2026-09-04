@@ -1,0 +1,69 @@
+plugins:
+  - rubocop-minitest
+  - rubocop-rake
+
+AllCops:
+  TargetRubyVersion: 3.1
+  NewCops: enable
+  SuggestExtensions: false
+  Exclude:
+    - "lib/apple_purchase_receipt_verifier/roots_data.rb"
+
+# The library is written to read top to bottom; the order the checks run in is
+# normative, and splitting a verification routine to satisfy a length metric
+# would hide it.
+Metrics/MethodLength:
+  Enabled: false
+Metrics/AbcSize:
+  Enabled: false
+Metrics/CyclomaticComplexity:
+  Enabled: false
+Metrics/PerceivedComplexity:
+  Enabled: false
+Metrics/BlockLength:
+  Enabled: false
+Metrics/ClassLength:
+  Enabled: false
+Metrics/ModuleLength:
+  Enabled: false
+
+# Keyword arguments are named at the call site, which is the problem this cop
+# exists to prevent.
+Metrics/ParameterLists:
+  CountKeywordArgs: false
+
+Layout/LineLength:
+  Max: 108
+  Exclude:
+    - "test/api_shape_test.rb"
+
+Style/Documentation:
+  Enabled: false
+Style/StringLiterals:
+  EnforcedStyle: double_quotes
+Style/StringLiteralsInInterpolation:
+  EnforcedStyle: double_quotes
+
+# A DER reader is written in bit masks; `tag.allbits?(0x1F)` says less about
+# what the byte means than `(tag & 0x1F) == 0x1F` does.
+Style/BitwisePredicate:
+  Enabled: false
+
+Naming/FileName:
+  Exclude:
+    - "lib/apple-purchase-receipt-verifier.rb"
+Naming/MethodParameterName:
+  AllowedNames: ["ca", "at", "id", "to"]
+# Test methods are named after Apple status codes and RFC section numbers.
+Naming/VariableNumber:
+  Exclude:
+    - "test/**/*"
+
+# The tests build hostile inputs and assert on how they are rejected; the
+# shapes these cops want read worse than what is written.
+Minitest/EmptyLineBeforeAssertionMethods:
+  Enabled: false
+Minitest/MultipleAssertions:
+  Enabled: false
+Minitest/AssertionInLifecycleHook:
+  Enabled: false
