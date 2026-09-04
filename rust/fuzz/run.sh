@@ -18,25 +18,22 @@ fixtures="$here/../../fixtures"
 target="${1:?usage: run.sh <target>|all [seconds]}"
 seconds="${2:-60}"
 
-seeds() {
-  case "$1" in
-    parse-der|parse-certificate|parse-cms|verify-receipt)
-      echo "$fixtures/generated" "$fixtures/apple-official/certs" ;;
-    verify-receipt-base64)
-      echo "$fixtures/generated/receipt-b64" "$fixtures/public-receipts" "$fixtures/apple-official/xcode" ;;
-    verify-transaction)
-      echo "$fixtures/generated" "$fixtures/apple-official/mock_signed_data" "$fixtures/apple-official/xcode" ;;
-    endpoint-json)
-      echo "$here/seeds/endpoint-json" ;;
-    *) echo "unknown target: $1" >&2; exit 2 ;;
-  esac
-}
-
 run_one() {
   local name="$1"
+  local seeds
+  case "$name" in
+    parse-der|parse-certificate|parse-cms|verify-receipt)
+      seeds=("$fixtures/generated" "$fixtures/apple-official/certs") ;;
+    verify-receipt-base64)
+      seeds=("$fixtures/generated/receipt-b64" "$fixtures/public-receipts" "$fixtures/apple-official/xcode") ;;
+    verify-transaction)
+      seeds=("$fixtures/generated" "$fixtures/apple-official/mock_signed_data" "$fixtures/apple-official/xcode") ;;
+    endpoint-json)
+      seeds=("$here/seeds/endpoint-json") ;;
+    *) echo "unknown target: $name" >&2; exit 2 ;;
+  esac
   mkdir -p "$here/corpus/$name"
-  # shellcheck disable=SC2046
-  cargo +"${FUZZ_TOOLCHAIN:-nightly}" fuzz run "$name" "$here/corpus/$name" $(seeds "$name") -- -max_total_time="$seconds"
+  cargo +"${FUZZ_TOOLCHAIN:-nightly}" fuzz run "$name" "$here/corpus/$name" "${seeds[@]}" -- -max_total_time="$seconds"
 }
 
 if [ "$target" = all ]; then
