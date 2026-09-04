@@ -9,6 +9,7 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Jws\JwsVerifier;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Reason;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\MintedPki;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Shape;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\TestPki;
 use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationException;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -324,7 +325,9 @@ final class JwsVerifierTest extends TestCase
         );
         $signingInput = $header . '.' . $payload;
         openssl_sign($signingInput, $der, $pki->jwsLeafKey, OPENSSL_ALGO_SHA256);
-        $jws = $signingInput . '.' . TestPki::b64url(TestPki::derToP1363((string) $der));
+        $jws = $signingInput . '.' . TestPki::b64url(
+            TestPki::derToP1363(Shape::asString($der, 'openssl_sign output')),
+        );
 
         $result = $this->verifier()->verifyTransaction($jws);
         self::assertNull($result->signedDate);
@@ -394,6 +397,6 @@ final class JwsVerifierTest extends TestCase
     {
         $method = new ReflectionMethod(JwsVerifier::class, 'p1363ToDer');
 
-        self::assertSame($expectedHex, bin2hex((string) $method->invoke(null, $raw)));
+        self::assertSame($expectedHex, bin2hex(Shape::asString($method->invoke(null, $raw), 'p1363ToDer output')));
     }
 }

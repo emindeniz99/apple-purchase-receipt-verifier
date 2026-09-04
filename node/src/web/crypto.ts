@@ -1,24 +1,13 @@
 /**
  * The only place the web build touches cryptography: `crypto.subtle`, with
- * keys imported from the SubjectPublicKeyInfo the DER parser hands over. No
- * `node:crypto`, no `Buffer`, no polyfill — this file is what makes the
- * build run on WebCrypto-only isolates.
+ * keys imported as JWKs converted from the SubjectPublicKeyInfo the DER
+ * parser hands over (jwk.ts says why not "spki"). No `node:crypto`, no
+ * `Buffer`, no polyfill — this file is what makes the build run on
+ * WebCrypto-only isolates.
  */
 import { ParseError, Tag, parse } from '../der.js';
 import type { ParsedCertificate } from '../x509.js';
-
-/** rsaEncryption — the SPKI algorithm of every receipt-signing key. */
-export const OID_RSA_ENCRYPTION = '1.2.840.113549.1.1.1';
-/** id-ecPublicKey — the SPKI algorithm of every App Store JWS signing key. */
-export const OID_EC_PUBLIC_KEY = '1.2.840.10045.2.1';
-
-interface Curve { name: string; fieldSize: number }
-
-const CURVES = new Map<string, Curve>([
-  ['1.2.840.10045.3.1.7', { name: 'P-256', fieldSize: 32 }],
-  ['1.3.132.0.34', { name: 'P-384', fieldSize: 48 }],
-  ['1.3.132.0.35', { name: 'P-521', fieldSize: 66 }],
-]);
+import { CURVES, OID_EC_PUBLIC_KEY, OID_RSA_ENCRYPTION, spkiToJwk } from './jwk.js';
 
 interface CertSignatureAlgorithm { rsa: boolean; hash: string }
 
@@ -117,7 +106,7 @@ async function verifyWith(importAlgorithm: AlgorithmIdentifier | EcKeyImportPara
   | RsaHashedImportParams, verifyAlgorithm: AlgorithmIdentifier | EcdsaParams,
   spki: Uint8Array, signature: Uint8Array, data: Uint8Array): Promise<boolean> {
   try {
-    const key = await crypto.subtle.importKey('spki', source(spki), importAlgorithm,
+    const key = await crypto.subtle.importKey('jwk', spkiToJwk(spki), importAlgorithm,
       false, ['verify']);
     return await crypto.subtle.verify(verifyAlgorithm, key, source(signature), source(data));
   } catch {

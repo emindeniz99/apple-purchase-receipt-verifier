@@ -62,10 +62,11 @@ final class ReceiptVerifier
     private readonly array $trustedRoots;
 
     /**
-     * @param list<string> $trustedRoots DER bytes or PEM text of the pinned
+     * @param array<string> $trustedRoots DER bytes or PEM text of the pinned
      *        anchors. In production: {@see \EminDeniz99\ApplePurchaseReceiptVerifier\AppleRootCerts::receiptRoots()}.
      *        Never the operating system's trust store — this library has no
-     *        code path to it.
+     *        code path to it. Keys are ignored: the anchors are reindexed
+     *        into a list, so a caller may pass any string-keyed array.
      * @param string $bundleId the bundle id the receipt must carry
      * @param int $maxReceiptBytes input larger than this is rejected before
      *        parsing; raise it only for a genuinely unusual corpus
@@ -264,6 +265,7 @@ final class ReceiptVerifier
         }
     }
 
+    /** @param 'sha1'|'sha256' $digest the digest {@see Cms} accepted */
     private static function opensslAlgorithm(string $digest): int
     {
         return match ($digest) {

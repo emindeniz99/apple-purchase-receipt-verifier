@@ -5,7 +5,8 @@ import {
   INTERMEDIATE_OID, JwsClaimChecker, LEAF_OID, parseJsonSegment, signedAtMillisOf, splitJws,
 } from '../jws-claims.js';
 import { normalizeRoots, validatePair, type RootInput } from './chain.js';
-import { OID_EC_PUBLIC_KEY, verifyEs256 } from './crypto.js';
+import { verifyEs256 } from './crypto.js';
+import { OID_EC_PUBLIC_KEY } from './jwk.js';
 
 export { isTransactionActiveAt } from '../jws-claims.js';
 export type { AppTransactionPayload, Claims, Clock, TransactionPayload } from '../jws-claims.js';

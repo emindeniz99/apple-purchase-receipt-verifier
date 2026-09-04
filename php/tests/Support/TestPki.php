@@ -25,7 +25,6 @@ final class TestPki
     public const INTERMEDIATE_OID_HEX = '2a864886f76364060201';   // 1.2.840.113635.100.6.2.1
 
     private const OID_SHA256_RSA = '2a864886f70d01010b';
-    private const OID_SHA1_RSA = '2a864886f70d010105';
     private const OID_ECDSA_SHA256 = '2a8648ce3d040302';
     private const OID_COMMON_NAME = '550403';
     private const OID_BASIC_CONSTRAINTS = '551d13';
@@ -66,7 +65,10 @@ final class TestPki
         if ($details === false) {
             throw new RuntimeException('cannot read key details');
         }
-        $pem = $details['key'];
+        $pem = $details['key'] ?? null;
+        if (!is_string($pem)) {
+            throw new RuntimeException('cannot read key details');
+        }
         $body = preg_replace('/-----[A-Z ]+-----|\s+/', '', $pem) ?? '';
         $der = base64_decode($body, true);
         if ($der === false) {
@@ -166,9 +168,7 @@ final class TestPki
         }
         $tbs = DerWriter::tlv(DerWriter::SEQUENCE, ...$tbsParts);
 
-        if (!openssl_sign($tbs, $signature, $issuerKey, OPENSSL_ALGO_SHA256)) {
-            throw new RuntimeException('cannot sign the test certificate');
-        }
+        $signature = self::sign($tbs, $issuerKey, OPENSSL_ALGO_SHA256, 'the test certificate');
 
         return [
             'der' => DerWriter::tlv(
@@ -213,9 +213,10 @@ final class TestPki
                 self::OID_SHA256_HEX => OPENSSL_ALGO_SHA256,
                 default => OPENSSL_ALGO_SHA256,
             };
-            if ($signerKey === null || !openssl_sign($signedBytes, $signature, $signerKey, $algorithm)) {
+            if ($signerKey === null) {
                 throw new RuntimeException('cannot sign the test receipt');
             }
+            $signature = self::sign($signedBytes, $signerKey, $algorithm, 'the test receipt');
         }
 
         $signerFields = [
@@ -316,11 +317,28 @@ final class TestPki
     ): string {
         $header = ['alg' => $alg, 'x5c' => array_map(base64_encode(...), $x5cDer)];
         $signingInput = self::b64url((string) json_encode($header)) . '.' . self::b64url((string) json_encode($claims));
-        if (!openssl_sign($signingInput, $der, $leafKey, OPENSSL_ALGO_SHA256)) {
-            throw new RuntimeException('cannot sign the test JWS');
-        }
+        $der = self::sign($signingInput, $leafKey, OPENSSL_ALGO_SHA256, 'the test JWS');
 
         return $signingInput . '.' . self::b64url(self::derToP1363($der));
+    }
+
+    /**
+     * The signature `openssl_sign()` writes into its by-reference argument.
+     * It is only a string once the call has reported success, and reading it
+     * without checking is how a failed sign becomes a confusing DER error
+     * three frames later.
+     */
+    private static function sign(
+        string $data,
+        OpenSSLAsymmetricKey $key,
+        int $algorithm,
+        string $what,
+    ): string {
+        if (!openssl_sign($data, $signature, $key, $algorithm) || !is_string($signature)) {
+            throw new RuntimeException("cannot sign {$what}");
+        }
+
+        return $signature;
     }
 
     public static function b64url(string $bytes): string

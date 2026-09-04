@@ -127,6 +127,30 @@ jobs:
       - run: npm ci && npm run test:runtimes:web
         working-directory: node
 
+  # Fastly Compute is the fourth WebCrypto-only runtime, and the one that
+  # forced the /web build to import keys as JWK: Fastly's crypto.subtle has
+  # no 'spki' import format at all, so every chain failed there until the
+  # conversion landed. js-compute-runtime builds the smoke to wasm and
+  # viceroy, Fastly's own local runtime, serves it. viceroy is a Rust
+  # binary, not an npm package, which is why this is its own job and why it
+  # is slower than its siblings.
+  node-runtimes-fastly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      # --locked so the published lockfile decides the build, and a pinned
+      # version so a viceroy release cannot change what this job proves.
+      - run: cargo install viceroy --locked --version 0.20.1
+      - run: npm ci && npm run test:runtimes:fastly
+        working-directory: node
+
   # Proves jvm-interop/README.md's claim: the published jar is usable from
   # other JVM languages, not just Java. Builds java/ first with install,
   # not package, so jvm-interop resolves it as a real Maven coordinate the

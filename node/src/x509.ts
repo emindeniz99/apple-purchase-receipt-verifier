@@ -44,7 +44,7 @@ export interface ParsedCertificate {
   /** notBefore / notAfter as ms since epoch. */
   notBefore: number;
   notAfter: number;
-  /** SubjectPublicKeyInfo TLV — the SPKI `crypto.subtle.importKey` takes. */
+  /** SubjectPublicKeyInfo TLV — the key material, converted to a JWK to import. */
   spki: Uint8Array;
   /** SPKI algorithm OID (rsaEncryption / id-ecPublicKey). */
   publicKeyAlgorithmOid: string;
@@ -71,7 +71,8 @@ function children(node: ASN1Node): ASN1Node[] {
   return node.children ?? [];
 }
 
-function oidString(contents: Uint8Array): string {
+/** Dotted-decimal form of an OBJECT IDENTIFIER's contents bytes. */
+export function oidString(contents: Uint8Array): string {
   if (contents.length === 0) {
     throw new ParseError('empty OBJECT IDENTIFIER');
   }

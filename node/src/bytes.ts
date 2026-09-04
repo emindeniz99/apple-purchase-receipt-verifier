@@ -119,3 +119,31 @@ export function base64Decode(text: string): Uint8Array {
   }
   return out.subarray(0, length);
 }
+
+const BASE64URL_ALPHABET
+  = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+
+// Hand-rolled for the same reason base64Decode is, and one more: btoa()
+// takes a binary *string*, so bytes have to be walked into one first, and
+// it is not present in every runtime this build targets. Unpadded, because
+// that is the only form JWK members take (RFC 7515 §2).
+/** base64url encode, unpadded — the encoding every JWK member uses. */
+export function base64UrlEncode(bytes: Uint8Array): string {
+  let out = '';
+  let i = 0;
+  for (; i + 3 <= bytes.length; i += 3) {
+    const chunk = (bytes[i]! << 16) | (bytes[i + 1]! << 8) | bytes[i + 2]!;
+    out += BASE64URL_ALPHABET[(chunk >> 18) & 0x3f]! + BASE64URL_ALPHABET[(chunk >> 12) & 0x3f]!
+      + BASE64URL_ALPHABET[(chunk >> 6) & 0x3f]! + BASE64URL_ALPHABET[chunk & 0x3f]!;
+  }
+  const left = bytes.length - i;
+  if (left === 1) {
+    const chunk = bytes[i]! << 16;
+    out += BASE64URL_ALPHABET[(chunk >> 18) & 0x3f]! + BASE64URL_ALPHABET[(chunk >> 12) & 0x3f]!;
+  } else if (left === 2) {
+    const chunk = (bytes[i]! << 16) | (bytes[i + 1]! << 8);
+    out += BASE64URL_ALPHABET[(chunk >> 18) & 0x3f]! + BASE64URL_ALPHABET[(chunk >> 12) & 0x3f]!
+      + BASE64URL_ALPHABET[(chunk >> 6) & 0x3f]!;
+  }
+  return out;
+}
