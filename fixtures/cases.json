@@ -213,6 +213,42 @@
       "codec": "raw",
       "contentSha256": "45204c7e47f1a1cc61e287182c437b326216c5fb400f71f298838cf6f3ad747f"
     },
+    "gaps-jws-root": {
+      "path": "generated/gaps-jws-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "6af931b46785e0036ec8ee1e2ddfd3855c50baf7373dd209a605e74baa58eb56"
+    },
+    "transaction-tampered-payload": {
+      "path": "generated/transaction-tampered-payload.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "2f175d260583bb306ada0f245f93c43f82a5549c699ac64a21121a0d0b7508de"
+    },
+    "transaction-x5c-leaf-not-a-certificate": {
+      "path": "generated/transaction-x5c-leaf-not-a-certificate.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "ff300796073c09f80483d5f3121add31373047e1a70831539afaa46180843aa4"
+    },
+    "gaps-receipt-root": {
+      "path": "generated/gaps-receipt-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "f5f9eb2391a67dcad88c3dfae1d4b30b230d7eae97ee0dc378e70dba3c958b18"
+    },
+    "receipt-tampered-payload": {
+      "path": "generated/receipt-tampered-payload.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "fa170f1b4f7097788734ace9877cd05818030f86aa281d7d0d38281216bc4d55"
+    },
+    "receipt-attribute-type-truncates-to-bundle-id": {
+      "path": "generated/receipt-attribute-type-truncates-to-bundle-id.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "ad83618bb3e3f820302d3091af7bff9c6d42a48247842f6a4602cfd3c81605a5"
+    },
     "public-receipts-readme": {
       "path": "public-receipts/README.md",
       "role": "support",
@@ -2190,6 +2226,129 @@
         "staleness",
         "validity-window",
         "clock",
+        "generated"
+      ]
+    },
+    {
+      "id": "transaction/reject-tampered-payload",
+      "description": "One character of the payload segment was rewritten after the JWS was signed, so the ES256 signature no longer covers the bytes served. Everything a port checks before the signature is deliberately intact: the header is the original one, its three x5c entries parse, leaf and intermediate carry the Apple marker OIDs, the chain validates to the pinned root at the payload's own signedDate, and the payload is still valid base64url JSON naming the configured bundle id and an accepted environment. INVALID_SIGNATURE is therefore the first verdict reachable, and this is the vector that makes every port agree on the answer to \"these bytes were altered\" — until now each port only asserted it against bytes it mutated at run time, which no shared case could express.",
+      "operation": "verifyTransaction",
+      "input": {
+        "fixture": "transaction-tampered-payload"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "gaps-jws-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_SIGNATURE"
+      },
+      "fault": "payload-segment-altered-after-signing",
+      "tags": [
+        "jws",
+        "transaction",
+        "negative",
+        "signature",
+        "generated"
+      ]
+    },
+    {
+      "id": "transaction/reject-x5c-leaf-that-is-not-a-certificate",
+      "description": "The first x5c entry is base64 of the ASCII text \"not a certificate\" — well-formed base64 that decodes to bytes no X.509 parser can read. The header was signed in that state, so the signature genuinely covers what is served and the unparseable leaf is the only defect. The verdict is INVALID_CERTIFICATE rather than INVALID_JWS_FORMAT (the entry is present, is a string, and the array still holds exactly three) and rather than INVALID_CERTIFICATE_PURPOSE (nothing was parsed, so no marker OID could be looked for). The entry chosen is x5c[0] on purpose: Java parses the third entry and the other eight ports never touch it, so a vector built on x5c[2] would pin a divergence instead of a shared rule.",
+      "operation": "verifyTransaction",
+      "input": {
+        "fixture": "transaction-x5c-leaf-not-a-certificate"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "gaps-jws-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_CERTIFICATE"
+      },
+      "fault": "x5c-leaf-entry-is-not-a-certificate",
+      "tags": [
+        "jws",
+        "transaction",
+        "negative",
+        "certificate",
+        "generated"
+      ]
+    },
+    {
+      "id": "receipt/reject-tampered-payload",
+      "description": "One byte of the receipt's signed payload was flipped after signing, so the CMS content digest no longer matches the one the signature covers. The byte belongs to attribute 9999, which no port models, so the receipt still parses, still carries the configured bundle id, the same creation date and the same opaque value and device hash; the chain still builds to the pinned root at that creation date and the signer still carries the Apple receipt-signing OID. The CMS signature check is the only thing left to fail, which is what makes this a single-fault vector rather than an assertion about check ordering.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt-tampered-payload"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "gaps-receipt-root"
+          ]
+        },
+        "bundleId": "com.example.app"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_SIGNATURE"
+      },
+      "fault": "payload-byte-altered-after-signing",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "negative",
+        "signature",
+        "generated"
+      ]
+    },
+    {
+      "id": "receipt/reject-attribute-type-that-truncates-to-a-modelled-type",
+      "description": "A second point on the attribute-type ceiling. receipt/reject-attribute-type-above-int32-max pins 2^31; a port could put its own limit anywhere between there and 2^53 and no vector would notice. This attribute's type is 2^32 + 2, which lands in that band and is chosen rather than picked: truncated to 32 bits it becomes 2, the bundle id attribute, and its value is a well-formed UTF8String reading \"com.attacker.app\". A port that wrapped instead of rejecting would therefore read a second bundle id out of the receipt and answer WRONG_BUNDLE_ID, so the two verdicts are distinguishable. The receipt is otherwise sound — trusted chain, valid signature, correct bundle id — and INVALID_RECEIPT_FORMAT is the answer for the same reason as at 2^31: fail closed rather than let two ports disagree about what the bytes contain.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt-attribute-type-truncates-to-bundle-id"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "gaps-receipt-root"
+          ]
+        },
+        "bundleId": "com.example.app"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "fault": "attribute-type-above-int32-max",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "negative",
+        "hostile-input",
+        "attribute-type",
         "generated"
       ]
     }
