@@ -1,0 +1,221 @@
+module ApplePurchaseReceiptVerifier
+  VERSION: String
+
+  # Base64 DER of the three bundled Apple root certificates.
+  APPLE_ROOT_DER_BASE64: Array[String]
+
+  LEAF_MARKER_OID: String
+  INTERMEDIATE_MARKER_OID: String
+  RECEIPT_SIGNER_OID: String
+  MAX_EMBEDDED_CERTIFICATES: Integer
+
+  type root = OpenSSL::X509::Certificate | String
+  type roots = Array[root]
+  type clock = ^() -> Time
+  type claims = Hash[String, untyped]
+  type json_body = Hash[String, untyped]
+
+  module Reason
+    INVALID_JWS_FORMAT: Symbol
+    INVALID_CERTIFICATE: Symbol
+    INVALID_CERTIFICATE_PURPOSE: Symbol
+    INVALID_CHAIN: Symbol
+    INVALID_SIGNATURE: Symbol
+    WRONG_BUNDLE_ID: Symbol
+    WRONG_ENVIRONMENT: Symbol
+    WRONG_APP_APPLE_ID: Symbol
+    INVALID_RECEIPT_FORMAT: Symbol
+    DEVICE_HASH_MISMATCH: Symbol
+    STALE_PAYLOAD: Symbol
+    ALL: Array[Symbol]
+  end
+
+  module Environment
+    PRODUCTION: String
+    SANDBOX: String
+    XCODE: String
+    LOCAL_TESTING: String
+    ALL: Array[String]
+  end
+
+  class VerificationError < StandardError
+    attr_reader reason: Symbol
+    def initialize: (Symbol reason, String message) -> void
+  end
+
+  def self.apple_jws_roots: () -> Array[OpenSSL::X509::Certificate]
+  def self.apple_receipt_roots: () -> Array[OpenSSL::X509::Certificate]
+  def self.verify_receipt_core: (String der, trusted_roots: roots) -> AppReceipt
+
+  class Payload
+    attr_reader claims: claims
+    def initialize: (claims) -> void
+    def to_h: () -> claims
+    def []: (String) -> untyped
+  end
+
+  class TransactionPayload < Payload
+    def bundle_id: () -> String?
+    def environment: () -> String?
+    def product_id: () -> String?
+    def transaction_id: () -> String?
+    def original_transaction_id: () -> String?
+    def web_order_line_item_id: () -> String?
+    def subscription_group_identifier: () -> String?
+    def app_account_token: () -> String?
+    def in_app_ownership_type: () -> String?
+    def type: () -> String?
+    def transaction_reason: () -> String?
+    def storefront: () -> String?
+    def storefront_id: () -> String?
+    def currency: () -> String?
+    def offer_identifier: () -> String?
+    def app_transaction_id: () -> String?
+    def signed_date: () -> Integer?
+    def purchase_date: () -> Integer?
+    def original_purchase_date: () -> Integer?
+    def expires_date: () -> Integer?
+    def revocation_date: () -> Integer?
+    def quantity: () -> Integer?
+    def offer_type: () -> Integer?
+    def revocation_reason: () -> Integer?
+    def price: () -> Numeric?
+    def active_at?: (Time now) -> bool
+  end
+
+  class AppTransactionPayload < Payload
+    def bundle_id: () -> String?
+    def receipt_type: () -> String?
+    def application_version: () -> String?
+    def original_application_version: () -> String?
+    def device_verification: () -> String?
+    def device_verification_nonce: () -> String?
+    def app_transaction_id: () -> String?
+    def app_apple_id: () -> Integer?
+    def receipt_creation_date: () -> Integer?
+    def original_purchase_date: () -> Integer?
+    def preorder_date: () -> Integer?
+    def version_external_identifier: () -> Integer?
+  end
+
+  class JwsVerifier
+    def initialize: (trusted_roots: roots, bundle_id: String,
+                     accepted_environments: Array[String],
+                     ?app_apple_id: Integer?, ?max_signed_age_seconds: Numeric?,
+                     ?clock: clock?) -> void
+    def verify_transaction: (String jws) -> TransactionPayload
+    def verify_app_transaction: (String jws) -> AppTransactionPayload
+    def verify_raw: (String jws) -> claims
+  end
+
+  class InAppPurchase
+    ATTRIBUTES: Array[Symbol]
+    def initialize: (Hash[Symbol, untyped]) -> void
+    def quantity: () -> Integer?
+    def product_id: () -> String?
+    def transaction_id: () -> String?
+    def original_transaction_id: () -> String?
+    def purchase_date: () -> Time?
+    def original_purchase_date: () -> Time?
+    def expires_date: () -> Time?
+    def cancellation_date: () -> Time?
+    def web_order_line_item_id: () -> Integer?
+    def is_in_intro_offer_period: () -> Integer?
+    def unknown_attributes: () -> Hash[Integer, Array[String]]
+    def to_h: () -> Hash[String, untyped]
+  end
+
+  class AppReceipt
+    ATTRIBUTES: Array[Symbol]
+    def initialize: (Hash[Symbol, untyped]) -> void
+    def receipt_type: () -> String?
+    def bundle_id: () -> String?
+    def bundle_id_bytes: () -> String?
+    def app_version: () -> String?
+    def opaque_value: () -> String?
+    def sha1_hash: () -> String?
+    def creation_date: () -> Time?
+    def original_purchase_date: () -> Time?
+    def original_app_version: () -> String?
+    def expiration_date: () -> Time?
+    def in_app_purchases: () -> Array[InAppPurchase]
+    def unknown_attributes: () -> Hash[Integer, Array[String]]
+    def to_h: () -> Hash[String, untyped]
+  end
+
+  class ReceiptVerifier
+    def initialize: (trusted_roots: roots, bundle_id: String) -> void
+    def verify: (String receipt, ?device_guid: String?) -> AppReceipt
+    def verify_der: (String der, ?device_guid: String?) -> AppReceipt
+    def verify_base64: (String base64, ?device_guid: String?) -> AppReceipt
+  end
+
+  class VerifyReceiptEndpoint
+    PRODUCTION_RECEIPT_TYPES: Array[String]
+
+    module Status
+      OK: Integer
+      MALFORMED: Integer
+      NOT_AUTHENTICATED: Integer
+      SANDBOX_RECEIPT_ON_PRODUCTION: Integer
+      PRODUCTION_RECEIPT_ON_SANDBOX: Integer
+      INTERNAL: Integer
+    end
+
+    def initialize: (trusted_roots: roots, environment: String, ?clock: clock?) -> void
+    def verify_receipt: (untyped request_body) -> json_body
+    def verify_receipt_json: (String body) -> String
+  end
+
+  module Asn1
+    MAX_DEPTH: Integer
+    MAX_NODES: Integer
+
+    class Error < StandardError
+    end
+
+    def self.scan!: (String bytes) -> Integer
+    def self.parse: (String bytes, ?depth_limit: Integer) -> Node
+    def self.parse_scanned: (String bytes, ?depth_limit: Integer) -> Node
+    def self.read_single: (String bytes) -> [Integer, String]
+
+    class Node
+      attr_accessor buffer: String
+      attr_accessor tag: Integer
+      attr_accessor constructed: bool
+      attr_accessor start: Integer
+      attr_accessor finish: Integer
+      attr_accessor content_start: Integer
+      attr_accessor content_end: Integer
+      attr_accessor children: Array[Node]?
+      def raw: () -> String
+      def content: () -> String
+      def content_length: () -> Integer
+      def kids: () -> Array[Node]
+      def octet_string?: () -> bool
+      def octet_value: () -> String
+    end
+  end
+
+  module Chain
+    MAX_PATH_LENGTH: Integer
+    KEY_CERT_SIGN_BIT: Integer
+
+    def self.normalize_roots: (roots) -> Array[OpenSSL::X509::Certificate]
+    def self.valid_at?: (OpenSSL::X509::Certificate, Time) -> bool
+    def self.issued_by?: (OpenSSL::X509::Certificate, OpenSSL::X509::Certificate) -> bool
+    def self.ca?: (OpenSSL::X509::Certificate) -> bool
+    def self.validate_pair: (OpenSSL::X509::Certificate, OpenSSL::X509::Certificate,
+                             Array[OpenSSL::X509::Certificate], Time) -> void
+    def self.build_path: (OpenSSL::X509::Certificate, Array[OpenSSL::X509::Certificate],
+                          Array[OpenSSL::X509::Certificate], Time) -> void
+  end
+
+  module PacificTime
+    STANDARD_OFFSET: Integer
+    DAYLIGHT_OFFSET: Integer
+    ZONE_LABEL: String
+    def self.wall_clock: (Time) -> Time
+    def self.offset: (Time) -> Integer
+  end
+end

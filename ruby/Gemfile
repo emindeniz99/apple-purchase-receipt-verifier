@@ -1,0 +1,10 @@
+# frozen_string_literal: true
+
+source "https://rubygems.org"
+
+gemspec
+
+# minitest ships with Ruby as a bundled gem; naming it keeps `bundle exec`
+# honest on rubies where the bundled set changes.
+gem "minitest", "~> 5.0"
+gem "rake", "~> 13.0"

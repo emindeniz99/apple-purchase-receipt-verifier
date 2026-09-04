@@ -1,0 +1,12 @@
+# frozen_string_literal: true
+
+# Lint and type tooling, deliberately kept out of the test Gemfile: rubocop and
+# steep raise their own Ruby floors faster than this library does, and a tool
+# that cannot run on Ruby 3.1 must not be able to fail the 3.1 matrix leg.
+source "https://rubygems.org"
+
+gem "rbs", "~> 3.4"
+gem "rubocop", "~> 1.60"
+gem "rubocop-minitest", "~> 0.35"
+gem "rubocop-rake", "~> 0.6"
+gem "steep", "~> 1.6"
