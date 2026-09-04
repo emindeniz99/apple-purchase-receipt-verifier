@@ -30,14 +30,12 @@ Delete an item in the same commit that ships it.
   3. **Chain path length**: java lets the JDK PKIX builder cap it at 5
      while every hand-rolled walk uses 6.
 - **Fuzzing runs opposite to parser size.** go has three fuzz targets and
-  seed corpora on every build. rust hand-writes 4,380 lines including its
-  own ASN.1, CMS and JSON readers and has no fuzz target at all --
-  `Cargo.toml` excludes a `fuzz/**` directory that does not exist. dotnet
-  (3,896 lines) and php (3,271) likewise have none. The deterministic
-  mutation corpora node, rust and php do have are regression tests, not
-  fuzzing. The probe that preceded the rust port found a real
-  out-of-bounds panic in a CMS walk by mutating a genuine receipt, which
-  is the argument for `cargo fuzz` first.
+  seed corpora on every build; rust now has seven under `rust/fuzz/`
+  (the ASN.1, X.509 and CMS readers on their own, the three verifiers,
+  and the endpoint body), run for a fixed budget by the `rust-fuzz` CI
+  job. dotnet (3,896 lines) and php (3,271) still have none. The
+  deterministic mutation corpora node, rust and php do have are
+  regression tests, not fuzzing.
 - **No test proves the OS trust store is unreachable in swift, python,
   node or java.** go (`systemtrust_test.go`), rust (`trust_pinning.rs`),
   php (`PinnedAnchorsTest.php`) and ruby each install or point at a CA the

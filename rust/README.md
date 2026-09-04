@@ -357,6 +357,11 @@ mutation pass asserts the invariant that matters: a mutated receipt is
 either rejected or produces a byte-identical result — anything that changes
 what the caller is told must be refused.
 
+`fuzz/` holds seven `cargo fuzz` targets — the ASN.1, X.509 and CMS readers
+on their own, the three verifiers, and the endpoint body — seeded from the
+shared fixtures and run by CI for a fixed budget on every push. `fuzz/README.md`
+lists them and the invariant each asserts beyond "no panic".
+
 `tests/data/pacific-transitions.txt` carries every `America/Los_Angeles`
 offset transition from 1900 to 2100, taken from the IANA database via
 Python's `zoneinfo`, and the suite checks the rendering rules at the second

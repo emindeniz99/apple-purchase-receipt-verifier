@@ -602,9 +602,28 @@ jobs:
         working-directory: rust
       - run: cargo clippy --all-targets --all-features -- -D warnings
         working-directory: rust
+      - run: cargo fmt --check
+        working-directory: rust/fuzz
       # rust/certs/ is a copy of the repository's certs/, because cargo package
       # cannot reach outside the package directory. A copy that drifts ships
       # stale trust anchors.
+
+  # The exploratory pass over the hand-written ASN.1, CMS, X.509 and JWS
+  # readers and the three verifiers; rust/fuzz/README.md lists the targets
+  # and their invariants. Seeds come from fixtures/, so a crasher is a
+  # mutation of a genuine receipt or JWS, not of noise. It needs a nightly
+  # for the sanitizer flags, which is why it is not part of the `rust` matrix.
+  rust-fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install nightly --profile minimal
+      - run: cargo install cargo-fuzz --locked
+      - run: ./run.sh all 60
+        working-directory: rust/fuzz
 
   # Advisories, license policy, and the banned-crate list that is the
   # mechanised form of "pinned anchors only, no network ever": a dependency
