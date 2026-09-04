@@ -49,3 +49,54 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+  # The library module has no requirements and only follows the toolchain
+  # directive; /go/tools tracks staticcheck and govulncheck. Separate entries
+  # are what stops a linter bump from touching the published module graph.
+  - package-ecosystem: gomod
+    directory: /go
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+  - package-ecosystem: gomod
+    directory: /go/tools
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+  # ruby/Gemfile, not ruby/gemfiles/tools.gemfile: dependabot's bundler
+  # ecosystem only discovers a manifest named Gemfile or gems.rb, so the lint
+  # and type toolchain (rubocop, steep, rbs) is bumped by hand until that file
+  # is renamed. The library itself has no runtime dependencies.
+  - package-ecosystem: bundler
+    directory: /ruby
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+  # The MSRV floor is a claim this repository tests (the rust job's 1.74.0
+  # leg), so a bump that raises it is a deliberate decision and not a
+  # dependabot merge. When one of these needs a newer Rust, raise
+  # rust-version in rust/Cargo.toml in the same pull request, or ignore the
+  # bump with a comment saying which floor it would have forced.
+  - package-ecosystem: cargo
+    directory: /rust
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+  # No ignore rule: the multi-line PHPUnit constraint already lets each
+  # runtime resolve its own line, so the @types/node and JUnit pattern has no
+  # analogue here.
+  - package-ecosystem: composer
+    directory: /php
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+  - package-ecosystem: nuget
+    directory: /dotnet
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7

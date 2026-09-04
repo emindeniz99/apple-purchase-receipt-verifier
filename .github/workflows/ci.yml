@@ -1,5 +1,5 @@
 # CI for apple-purchase-receipt-verifier: the same shared fixture suite in
-# all four languages, on every runtime each artifact claims to support.
+# all nine languages, on every runtime each artifact claims to support.
 name: ci
 
 on:
@@ -204,8 +204,539 @@ jobs:
           persist-credentials: false
       - run: swift --version && swift test
 
-  # fixtures/cases.json is the normative cross-language contract: the four
-  # suites all read it, so a malformed vector file or an unregistered fixture
+  # Every Go line the module claims, down to the go.mod floor: a floor
+  # nothing executes is a claim, not a fact — the analogue of the
+  # java-runtime-8 job above.
+  go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ["1.22", "1.23", "1.24", "1.25", "1.26", "1.27"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: ${{ matrix.go }}
+          cache: true
+      # GOTOOLCHAIN=local is the whole point of the matrix. Without it Go
+      # downloads a newer toolchain whenever go.mod asks for one, and the
+      # "go 1.22" floor would be compiled by 1.27 on every leg.
+      - run: go version && go test ./...
+        working-directory: go
+        env:
+          GOTOOLCHAIN: local
+          GOFLAGS: -mod=readonly
+
+  # Windows earns its place: the conformance adapter walks the filesystem to
+  # find fixtures/, the .b64 fixtures pick up CRLF on checkout, and the
+  # whitespace-stripping base64 decode is what makes that survive. macOS earns
+  # its place because x509.Certificate.Verify falls back to the OS trust
+  # evaluation there, and this library must still never reach it. One Go
+  # version each, not a cross product.
+  go-platforms:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: "1.27"
+          cache: true
+      - run: go test ./...
+        working-directory: go
+        env:
+          GOFLAGS: -mod=readonly
+
+  # -count=2 so a second run in the same process catches state left behind by
+  # the first, which is what a cached buffer or a memoised location would be.
+  go-race:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: "1.27"
+          cache: true
+      - run: go test -race -count=2 ./...
+        working-directory: go
+
+  # The seed corpora already run on every `go test`; this is the exploratory
+  # pass. A crasher it finds is written under testdata/fuzz/ — commit that
+  # file, it becomes a permanent regression case.
+  go-fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: "1.27"
+          cache: true
+      - name: fuzz the DER reader
+        run: go test ./internal/der -run '^FuzzParseDER$' -fuzz '^FuzzParseDER$' -fuzztime=60s
+        working-directory: go
+      - name: fuzz the verifiers
+        run: |
+          set -euo pipefail
+          for target in FuzzVerifyReceipt FuzzVerifyReceiptBase64 FuzzVerifyTransaction; do
+            go test . -run "^${target}\$" -fuzz "^${target}\$" -fuzztime=60s
+          done
+        working-directory: go
+
+  # gofmt, vet, staticcheck and govulncheck. The linters are pinned in
+  # go/tools/go.mod, a module of its own so their Go floor (1.26, staticcheck
+  # v0.8.1's requirement) never becomes the library's. staticcheck cannot lint
+  # another module in place, so the binaries are built in go/tools and run
+  # from go/.
+  go-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: "1.27"
+          cache: true
+      - run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+        working-directory: go
+      - run: go vet ./...
+        working-directory: go
+      - name: build the pinned linters
+        run: |
+          set -euo pipefail
+          go build -o "$RUNNER_TEMP/staticcheck" honnef.co/go/tools/cmd/staticcheck
+          go build -o "$RUNNER_TEMP/govulncheck" golang.org/x/vuln/cmd/govulncheck
+        working-directory: go/tools
+      - run: "$RUNNER_TEMP/staticcheck ./..."
+        working-directory: go
+      # govulncheck reports only reachable vulnerabilities, and the library has
+      # no dependencies, so anything it reports is a standard-library advisory
+      # reached through x509.ParseCertificate on attacker-supplied bytes.
+      - run: "$RUNNER_TEMP/govulncheck ./..."
+        working-directory: go
+      # Structural gates: the library must never reach the OS trust store or
+      # the network. The authoritative versions are Go tests that parse the
+      # source (apisurface_test.go); this is a second, cruder opinion that
+      # fails even if someone deletes them.
+      - name: no system trust store, no network
+        run: |
+          set -euo pipefail
+          if grep -rn --include='*.go' \
+              -e 'x509\.SystemCertPool' -e 'x509\.NewCertPool' \
+              -e 'x509\.VerifyOptions' -e '"net/http"' -e '"net"' \
+              --exclude='*_test.go' --exclude-dir=tools --exclude-dir=gencerts .; then
+            echo "::error::forbidden API in the published module"
+            exit 1
+          fi
+        working-directory: go
+
+  # go/roots/certs is a copy of the repository's certs/, because an embed
+  # pattern may not reach outside its module directory. A copy that drifts
+  # ships stale trust anchors — the Go twin of node's roots-data.ts guard.
+  go-generate-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: "1.27"
+          cache: true
+      - run: go generate ./... && git diff --exit-code
+        working-directory: go
+
+  ruby:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # Every supported line (endoflife.date/ruby: 4.0, 3.4, 3.3) plus 3.2
+        # and 3.1. Both are EOL upstream, but 3.1 is the gemspec's
+        # required_ruby_version floor and Debian 12's system Ruby, so it stays
+        # tested while it is claimed — the java-runtime-8 / python-3.9 rule.
+        ruby: ["3.1", "3.2", "3.3", "3.4", "4.0"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          # Nothing to install: the library has no runtime dependencies and the
+          # suite uses only gems that ship with Ruby. Running without Bundler is
+          # also the strongest form of the zero-dependency claim — if anything
+          # crept in, this leg is where it fails.
+          bundler-cache: false
+          working-directory: ruby
+      # The OpenSSL a runner links decides whether the genuine SHA-1 legacy
+      # receipt chain verifies at all. Print it so a red leg on a distro with
+      # SHA-1 disabled is diagnosable from the log rather than from a bisect.
+      - run: ruby -v && ruby -ropenssl -e 'puts OpenSSL::OPENSSL_LIBRARY_VERSION'
+      - run: rake test
+        working-directory: ruby
+      # roots_data.rb inlines the anchors; ruby/certs is a copy of the
+      # repository roots. Either one drifting ships stale trust anchors.
+      - run: ruby script/gen_roots.rb && git diff --exit-code lib/apple_purchase_receipt_verifier/roots_data.rb
+        working-directory: ruby
+      - run: diff -r certs ruby/certs
+
+  # Test the artifact the consumer receives, not the working tree: the Ruby
+  # shape of the two broken npm releases is spec.files losing certs/, which
+  # ships a gem that loads cleanly and raises the first time anyone asks for a
+  # trust anchor. APRV_PACKAGING=1 builds the gem, installs it into a GEM_HOME
+  # outside the checkout and verifies a genuine receipt from a fresh process.
+  ruby-gem:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby: ["3.1", "4.0"]      # the floor and the newest line
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler-cache: false
+          working-directory: ruby
+      - run: APRV_PACKAGING=1 rake test TEST=test/packaging_test.rb
+        working-directory: ruby
+
+  # macOS links a different libcrypto than the Linux legs, and the SHA-1
+  # legacy chain plus OpenSSL::PKCS7's behaviour are exactly the kind of thing
+  # that differs between them. One current-Ruby leg is enough.
+  ruby-macos:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        with:
+          ruby-version: "3.4"
+          bundler-cache: false
+          working-directory: ruby
+      - run: ruby -ropenssl -e 'puts OpenSSL::OPENSSL_LIBRARY_VERSION'
+      - run: rake test
+        working-directory: ruby
+
+  # Lint and types on one modern Ruby, deliberately outside the matrix:
+  # RuboCop and Steep raise their own Ruby floors faster than this library
+  # does, and a tool that cannot run on 3.1 must not be able to fail the 3.1
+  # leg. Their gemfile is the only one in the port with dependencies.
+  ruby-tools:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BUNDLE_GEMFILE: gemfiles/tools.gemfile
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        with:
+          ruby-version: "3.4"
+          # No cache and an explicit install: gemfiles/tools.gemfile.lock is
+          # not committed, so there is no lockfile to key a cache on. Commit
+          # one and this becomes bundler-cache: true.
+          bundler-cache: false
+          working-directory: ruby
+      - run: bundle install --jobs 4
+        working-directory: ruby
+      - run: bundle exec rubocop
+        working-directory: ruby
+      - run: bundle exec rake rbs
+        working-directory: ruby
+      - run: bundle exec steep check
+        working-directory: ruby
+
+  # The toolchains come from the rustup already on the runner, so this port
+  # pins no action beyond the checkout and caches nothing: a clean debug build
+  # of the library and every test target is cheaper than restoring a cache.
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        # Rust has no LTS lines. 1.74.0 is the floor the manifest claims, so
+        # it is the one that needs proving; stable is what users have; beta
+        # is the early warning.
+        toolchain: ["1.74.0", "stable", "beta"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install ${{ matrix.toolchain }} --profile minimal
+      # The floor is proven, not declared. MSRV-aware resolution runs on a
+      # modern cargo: the env var is stable since 1.84 and, unlike
+      # `resolver = "3"` in the manifest, is invisible to consumers — cargo
+      # 1.82 refuses to parse a manifest carrying that key.
+      - name: pin dependencies to the floor
+        if: matrix.toolchain == '1.74.0'
+        working-directory: rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback cargo +stable generate-lockfile
+      - name: test on the floor
+        if: matrix.toolchain == '1.74.0'
+        working-directory: rust
+        run: cargo +1.74.0 test --locked --all-features
+      - name: test on ${{ matrix.toolchain }}
+        if: matrix.toolchain != '1.74.0'
+        working-directory: rust
+        run: |
+          cargo +${{ matrix.toolchain }} test --all-features
+          cargo +${{ matrix.toolchain }} test --no-default-features
+
+  rust-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
+      - run: cargo fmt --check
+        working-directory: rust
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+        working-directory: rust
+      # rust/certs/ is a copy of the repository's certs/, because cargo package
+      # cannot reach outside the package directory. A copy that drifts ships
+      # stale trust anchors.
+      - run: diff -r certs rust/certs
+
+  # Advisories, license policy, and the banned-crate list that is the
+  # mechanised form of "pinned anchors only, no network ever": a dependency
+  # bump cannot introduce a system trust store or an HTTP client, because
+  # cargo-deny refuses the crates that carry them. It runs on the default
+  # resolution, never on the MSRV lockfile, so a stale floor pin cannot hide
+  # an advisory.
+  rust-supply-chain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install stable --profile minimal
+      - run: cargo install cargo-deny --locked
+      - run: cargo deny check
+        working-directory: rust
+
+  # Every line the composer.json floor admits. 8.1 is the floor and is past
+  # its own security-support end; it stays here for exactly as long as the
+  # manifest claims it, the same rule as node 20 and python 3.9. That leg is
+  # not decoration: PHP gained zend.max_allowed_stack_size in 8.3, so on 8.1
+  # an unbounded recursive parser segfaults rather than raising, and this is
+  # the only leg where the DER reader's depth bound is what stands between
+  # hostile input and a crashed worker.
+  php:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ["8.1", "8.2", "8.3", "8.4", "8.5"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: openssl, json
+          coverage: none
+          ini-values: memory_limit=256M
+      # composer update, not install: no lockfile is committed, because a
+      # library spanning PHP 8.1-8.5 cannot express its dev toolchain in one
+      # lock. The php-lowest job below is the substitute for the
+      # reproducibility a lock would give.
+      - run: composer update --no-progress --no-interaction --prefer-dist
+        working-directory: php
+      - run: vendor/bin/phpunit
+        working-directory: php
+
+  # The floor is a claim about the constraints, not only about the runtime:
+  # this leg installs the oldest version of everything the manifest allows, so
+  # a change that quietly needs a newer psr/clock or PHPUnit fails here rather
+  # than on a consumer's machine.
+  php-lowest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: "8.1"
+          extensions: openssl, json
+          coverage: none
+      - run: composer update --no-progress --no-interaction --prefer-lowest --prefer-stable
+        working-directory: php
+      - run: vendor/bin/phpunit
+        working-directory: php
+
+  php-static:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: "8.4"
+          extensions: openssl, json
+          coverage: none
+      - run: composer update --no-progress --no-interaction
+        working-directory: php
+      - run: composer validate --strict
+        working-directory: php
+      - run: vendor/bin/phpstan analyse --no-progress
+        working-directory: php
+      # php/certs/ is a copy of the repository-root certs/, and
+      # src/Internal/RootsData.php is generated from that copy. A roots change
+      # that forgets either step would ship stale trust anchors.
+      - run: diff -r certs php/certs
+      - run: php php/tools/gen-roots.php && git diff --exit-code php/src/Internal/RootsData.php
+
+  # The mutation pass: ~1,500 mutated receipts and ~1,000 mutated JWS
+  # payloads, each verified through every public entry point. Its own job
+  # because it is the slow one and because a failure here means something
+  # different from a conformance failure.
+  php-mutation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: "8.4"
+          extensions: openssl, json
+          coverage: none
+      - run: composer update --no-progress --no-interaction
+        working-directory: php
+      - run: vendor/bin/phpunit --group mutation
+        working-directory: php
+
+  # The matrix that matters here is OS, not SDK: X.509 parsing, CNG versus
+  # OpenSSL versus SecureTransport, and the time-zone database all differ per
+  # platform, and this port touches all three. The netstandard2.0 floor gets
+  # its own jobs below.
+  dotnet:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+      - run: dotnet test -c Release
+        working-directory: dotnet
+
+  # The netstandard2.0 asset is what a .NET Framework, Mono or Unity consumer
+  # loads. The dotnet job above runs the floor project on CoreCLR against that
+  # asset; this one loads it under Mono, the closest a hosted runner gets to
+  # Unity's scripting backend.
+  dotnet-mono:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '9.0.x'
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends mono-complete
+      - name: Load the netstandard2.0 asset under Mono
+        working-directory: dotnet
+        run: |
+          set -euo pipefail
+          dotnet build -c Release src/ApplePurchaseReceiptVerifier
+          # A Mono host that cannot even load the assembly is the failure this
+          # job exists to catch; the full suite stays on CoreCLR.
+          monop -r:src/ApplePurchaseReceiptVerifier/bin/Release/netstandard2.0/ApplePurchaseReceiptVerifier.dll \
+            ApplePurchaseReceiptVerifier.Receipt.ReceiptVerifier
+
+  # certs/ is the reviewable source of truth for the pinned Apple roots;
+  # Internal/AppleRootData.cs is generated from it and compiled in. A certs
+  # change that forgets to regenerate would ship stale trust anchors — the
+  # same rule node's roots-data.ts already follows.
+  dotnet-roots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '9.0.x'
+      - run: dotnet run --project dotnet/tools/GenerateRootData -- "$GITHUB_WORKSPACE"
+      - run: git diff --exit-code dotnet/src/ApplePurchaseReceiptVerifier/Internal/AppleRootData.cs
+
+  # Trimming is the closest CI-runnable proxy for Unity IL2CPP's stripping: a
+  # reflection-based serializer, an embedded resource or a dynamic code path
+  # would surface here as an IL2xxx warning or as a runtime failure. The
+  # sample verifies a receipt and asserts a foreign chain is still rejected,
+  # so a trimmer that silently removed a check fails the job.
+  dotnet-trim:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '9.0.x'
+      - name: Publish fully trimmed and verify a receipt with it
+        working-directory: dotnet
+        run: |
+          set -euo pipefail
+          dotnet publish samples/TrimAotSmoke -c Release -r linux-x64 -o "$RUNNER_TEMP/trim" \
+            -warnaserror
+          "$RUNNER_TEMP/trim/TrimAotSmoke" "$GITHUB_WORKSPACE/fixtures"
+
+  # fixtures/cases.json is the normative cross-language contract: every
+  # suite reads it, so a malformed vector file or an unregistered fixture
   # breaks every language at once. The linter is dependency-free, so this job
   # installs nothing.
   conformance:
