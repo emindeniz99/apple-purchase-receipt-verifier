@@ -11,9 +11,15 @@ on:
 permissions:
   contents: read
 
+# Superseding a branch's run saves a runner; superseding main's destroys
+# evidence. Every commit on main is a release candidate -- release.yml's
+# ci-passed gate polls for a completed run on the exact tagged SHA -- so a
+# main commit whose run was cancelled has no record that its tree ever
+# passed. That is not hypothetical: run 132 was cancelled by a docs commit
+# pushed 43 seconds after it, and runs 123 and 125 went the same way.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   java:

@@ -72,11 +72,7 @@ Delete an item in the same commit that ships it.
   seven, so one unbootstrapped registry blocks post-publish verification
   of the four that are live. README.md reads as though those ports were
   merely waiting.
-- **`concurrency: cancel-in-progress` applies to main.** Two pushes in
-  quick succession cancel the first run, so a main commit can carry no
-  finished CI; runs 123 and 125 ended that way. release.yml's ci-passed
-  gate correctly refuses a cancelled run, so nothing ships unverified.
-  Scope the cancellation to non-main refs.
+
 - **No branch protection in practice.** main reports protected, yet an
   admin push lands directly, so either the pull-request requirement or
   admin enforcement is off. There is no CODEOWNERS, no commit signing,
