@@ -110,8 +110,8 @@ purchase can be honoured immediately and reconciled against the App Store
 Server API afterwards. Refunds and revocations still need that reconciliation
 pass — a signature proves what Apple signed, not what happened since.
 
-This is one of four implementations (Java, Node, Python, Swift) that share a
-single fixture suite, including Apple's own official test fixtures, and are
+This is one of nine implementations (Java, Node, Python, Swift, Go, Ruby,
+Rust, PHP, .NET) that share a single fixture suite, including Apple's own official test fixtures, and are
 required to agree byte for byte. See the
 [project README](https://github.com/emindeniz99/apple-purchase-receipt-verifier#readme)
 for the full picture and
@@ -120,7 +120,7 @@ for how it differs from Apple's official libraries.
 
 ## Changelog
 
-One version across all four languages —
+One version across every language —
 [CHANGELOG.md](https://github.com/emindeniz99/apple-purchase-receipt-verifier/blob/main/CHANGELOG.md)
 / [releases](https://github.com/emindeniz99/apple-purchase-receipt-verifier/releases).
 

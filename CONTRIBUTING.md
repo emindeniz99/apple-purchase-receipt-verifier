@@ -1,8 +1,9 @@
 # Contributing
 
-Four implementations of the same verifier — Java, Node, Python, Swift — kept
-in lockstep by one shared fixture suite. A behavior change lands in all four
-languages plus `fixtures/`, or it doesn't land.
+Nine implementations of the same verifier — Java, Node, Python, Swift, Go,
+Ruby, Rust, PHP and .NET — kept in lockstep by one shared fixture suite. A
+behavior change lands in all nine languages plus `fixtures/`, or it doesn't
+land.
 
 ## Running the tests
 
@@ -13,39 +14,50 @@ cd java   && mvn test
 cd node   && npm ci && npm test
 cd python && pip install cryptography asn1crypto && python -m unittest discover -s tests
 swift test   # manifest is at the repo root
+cd go     && go test ./...
+cd ruby   && rake test
+cd rust   && cargo test
+cd php    && composer update && vendor/bin/phpunit   # no lockfile is committed
+cd dotnet && dotnet test -c Release
 
 node tools/lint-cases.mjs   # the shared conformance vectors, see below
 ```
 
 CI runs these on every supported runtime line (Java 8–25, Node 20–26,
-Python 3.9–3.14, Swift 6). The floors are claims we test, not decoration:
-`@types/node` stays on 20 and JUnit stays on 5.x on purpose — see the
-rationale comments in `.github/dependabot.yml` before "upgrading" them.
+Python 3.9–3.14, Swift 6, Go 1.22–1.27, Ruby 3.1–4.0, Rust 1.74 through beta,
+PHP 8.1–8.5, .NET on Linux, Windows and macOS). The floors are claims we test,
+not decoration: `@types/node` stays on 20 and JUnit stays on 5.x on purpose —
+see the rationale comments in `.github/dependabot.yml` before "upgrading"
+them.
 
 ## Conformance vectors
 
-`fixtures/cases.json` is the normative contract between the four
+`fixtures/cases.json` is the normative contract between the nine
 implementations: one language-neutral case per semantic fact, each naming a
 registered fixture, the verifier config to build from it, and either the
 payload fields the call must return or the canonical reason it must raise.
 Each language reads the file through a thin adapter that knows nothing about
 any individual case — `java/src/test/.../ConformanceCasesTest.java`,
 `node/test/conformance.test.js`, `python/tests/test_conformance.py`,
-`swift/Tests/.../ConformanceCasesTests.swift`.
+`swift/Tests/.../ConformanceCasesTests.swift`, `go/conformance_test.go`,
+`ruby/test/conformance_test.rb`, `rust/tests/conformance.rs`,
+`php/tests/ConformanceCasesTest.php` and
+`dotnet/tests/ApplePurchaseReceiptVerifier.Tests/Conformance.cs`.
 
 **A behavior change means editing `cases.json` in the same commit.** The file
 records what was decided, not what an implementation happened to do, so a
 vector that disagrees with an implementation is a bug report against that
 implementation until a human rules otherwise. Changing a returned field or a
-raised reason without updating the vector leaves all four suites disagreeing
+raised reason without updating the vector leaves every suite disagreeing
 with the contract.
 
-One decision the vectors cannot hold: `verifyReceiptCore` (`verify_receipt_core`
-in Python, `verifyCore` in Swift) is public in all four ports, so the endpoint
-calls it directly instead of building a `ReceiptVerifier` with a wildcard
-bundle id. Both spellings answer identically, so no case can tell them apart —
-the four native suites pin that one, and Swift's `PublicApiTests` imports the
-module without `@testable` so the visibility is checked at compile time.
+One decision the vectors cannot hold: `verifyReceiptCore`
+(`verify_receipt_core` in Python, Ruby and Rust, `verifyCore` in Swift and
+.NET) is public in every port, so the endpoint calls it directly instead of
+building a `ReceiptVerifier` with a wildcard bundle id. Both spellings answer
+identically, so no case can tell them apart — the native suites pin that one,
+and Swift's `PublicApiTests` imports the module without `@testable` so the
+visibility is checked at compile time.
 
 ### Adding a case
 
@@ -57,7 +69,7 @@ module without `@testable` so the visibility is checked at compile time.
    re-hashes every registered fixture, and so does every adapter, over the
    whole registry before any case runs and again for each fixture a case
    loads. Regenerating or re-encoding a fixture without updating the digest
-   fails all four suites.
+   fails every suite.
 2. Append the case: a unique `id` shaped `<area>/<what-it-pins>`, a
    `description` of the fact it pins, the `operation` (`verifyTransaction`,
    `verifyAppTransaction`, `verifyRaw`, `verifyReceipt` or
@@ -71,11 +83,11 @@ module without `@testable` so the visibility is checked at compile time.
    `fixtures/cases.schema.json`, re-hashes every registered fixture, and
    fails on a fixture file no case registers or an `input` fixture no case
    uses. CI runs the same command in the `conformance` job.
-4. Run all four suites. The case must pass in every language; a disagreement
+4. Run all nine suites. The case must pass in every language; a disagreement
    is the finding, not something to paper over in an adapter.
 
 Field paths in `expected.fields` are language-neutral: the shared camelCase
-API names for the four library operations, the literal Apple wire keys for
+API names for the library operations, the literal Apple wire keys for
 `verifyReceiptEndpoint`, `x.length` for a collection size,
 `list[key=value].field` to select one element, and `null` for "absent or
 unset". The `comment` at the top of `cases.json` carries the full grammar and
@@ -103,10 +115,11 @@ is why each generator emits its own roots beside its inputs.
 ### The clock
 
 A case may carry a `clock`: one ISO-8601 UTC instant, the `now` the call is
-answered at. All four libraries take an optional clock — `java.time.Clock`, a
+answered at. Every library takes an optional clock — `java.time.Clock`, a
 `() => Date` supplier, a callable returning epoch seconds, a
-`@Sendable () -> Date` — and each adapter hands the case's instant to the
-verifier it builds. No runner fakes time and no runner skips a case for want
+`@Sendable () -> Date`, a `Clock` trait, a PSR-20 `ClockInterface`, an
+`IClock` — and each adapter hands the case's instant to the verifier it
+builds. No runner fakes time and no runner skips a case for want
 of a seam. A case without a `clock` gets no clock argument, so the library
 reads the system clock exactly as a caller who never sets one does.
 
@@ -143,8 +156,9 @@ Conventional Commits with a **mandatory scope**:
 ```
 
 - Types: `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `chore`, `build`, `ci`, `revert`.
-- Scopes are areas: `java`, `node`, `python`, `swift`, `fixtures`, `certs`,
-  `ci`, `release`, `docs`, `repo`.
+- Scopes are areas: `java`, `node`, `python`, `swift`, `go`, `ruby`, `rust`,
+  `php`, `dotnet`, `jvm-interop`, `fixtures`, `certs`, `ci`, `release`,
+  `docs`, `repo`.
 - Body explains *why* (constraint, incident, trade-off), not what the diff
   already shows. Wrap at 72 chars.
 - `feat`/`fix` drive release-please's version bump — use them only for
@@ -162,15 +176,24 @@ the repo settings.)
 Fully automated — do not publish from a laptop:
 
 1. Conventional Commits on `main` → release-please opens/updates a release PR
-   (one version for all four languages; extra-files bump every manifest).
+   (one version for every language; extra-files bump every manifest that
+   carries a version string).
 2. Merging that PR creates the tag + GitHub Release, and the workflow
    dispatches `release.yml` at the tag.
-3. `release.yml` publishes to npm (OIDC), PyPI (OIDC), and Maven Central
-   (token + GPG). SwiftPM consumes the tag directly.
+3. `release.yml` publishes to npm (OIDC), PyPI (OIDC), RubyGems (OIDC),
+   crates.io (OIDC), NuGet (OIDC) and Maven Central (token + GPG), and creates
+   the `go/vX.Y.Z` tag that publishes the Go module through
+   `proxy.golang.org`. SwiftPM consumes the plain tag directly. PHP is not
+   published from this repository — see `BOOTSTRAP.md`.
 
 Every publish job is version-gated: it skips loudly if the registry already
-has that version, so re-runs are safe. **Never rename `release.yml`** — npm
-and PyPI trusted publishing match the workflow filename.
+has that version, so re-runs are safe, and each one proves the built artifact
+carries the library before pushing it. **Never rename `release.yml`** — npm,
+PyPI, RubyGems, crates.io and NuGet trusted publishing all match the workflow
+filename.
+
+Four of the nine registries are not live yet: each needs a one-time owner
+action, listed per registry in [BOOTSTRAP.md](./BOOTSTRAP.md).
 
 Maven Central's Usage Center caps `io.github.emindeniz99` at 7 releases per
 calendar month, and every release-please PR merge spends one, since

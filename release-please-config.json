@@ -19,6 +19,20 @@
         {
           "type": "pom",
           "path": "java/pom.xml"
+        },
+        {
+          "type": "generic",
+          "path": "ruby/lib/apple_purchase_receipt_verifier/version.rb"
+        },
+        {
+          "type": "toml",
+          "path": "rust/Cargo.toml",
+          "jsonpath": "$.package.version"
+        },
+        {
+          "type": "xml",
+          "path": "dotnet/Directory.Build.props",
+          "xpath": "//project/propertyGroup/version"
         }
       ]
     }

@@ -15,9 +15,10 @@ initial response within a week.
 
 ## Supported versions
 
-Only the latest release is supported. There are four artifacts per release —
-npm, PyPI, Maven Central, SwiftPM — all built from the same tag; a fix ships
-to all four at once.
+Only the latest release is supported. Every artifact in a release — npm,
+PyPI, Maven Central, SwiftPM, and the registries listed in `BOOTSTRAP.md` as
+they come online — is built from the same tag, so a fix ships to all of them
+at once.
 
 ## What counts
 
@@ -26,6 +27,6 @@ Especially interesting:
 - Signature or certificate-chain validation bypasses (forged receipt accepted)
 - Trust-anchor confusion (accepting chains not rooted in the pinned Apple roots
   in `certs/`)
-- Parser differentials between the four language implementations — if two
+- Parser differentials between the nine language implementations — if two
   disagree on the same receipt, one of them is wrong
 - ASN.1/JWS parsing crashes on malformed input (DoS in a server context)

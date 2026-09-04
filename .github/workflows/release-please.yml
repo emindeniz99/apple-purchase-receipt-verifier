@@ -4,8 +4,9 @@
 # trigger it: events created with the default GITHUB_TOKEN never fire other
 # workflows (GitHub's recursion guard) — workflow_dispatch via the API is
 # the documented exception, so we dispatch explicitly.
-# One version for all four languages: extra-files bump node/package.json,
-# python/pyproject.toml and java/pom.xml in the same PR; SwiftPM reads the
+# One version for every language: extra-files bump node/package.json,
+# python/pyproject.toml, java/pom.xml, ruby's version.rb, rust/Cargo.toml and
+# dotnet/Directory.Build.props in the same PR; SwiftPM, Go and PHP read the
 # tag itself.
 #
 # Permission model (deliberate): the repo default token stays READ-ONLY;

@@ -7,9 +7,10 @@ endpoint — same [request body](https://developer.apple.com/documentation/appst
 same [response body](https://developer.apple.com/documentation/appstorereceipts/responsebody)
 shape, same [status codes](https://developer.apple.com/documentation/appstorereceipts/status) —
 verified offline instead of by calling Apple. Each one takes either a
-parsed request body or the raw JSON body as a string (`verifyReceiptJson`
-in Java, `verifyReceiptJson` in Node, `verify_receipt_json` in Python,
-`verifyReceiptJSON` in Swift), answering in the same form it was given. This
+parsed request body or the raw JSON body as a string — `verifyReceiptJson`
+in Java, Node and PHP, `verify_receipt_json` in Python, Ruby and Rust,
+`verifyReceiptJSON` in Swift, `VerifyReceiptJSON` in Go and
+`VerifyReceiptJson` in .NET — answering in the same form it was given. This
 file is the honest field-by-field account of what is identical, what differs,
 and what is **impossible** to produce locally.
 
