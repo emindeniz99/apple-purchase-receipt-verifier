@@ -2,22 +2,6 @@ package io.github.emindeniz99.applepurchasereceiptverifier.receipt;
 
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
-import org.bouncycastle.asn1.ASN1Encodable;
-import org.bouncycastle.asn1.ASN1Integer;
-import org.bouncycastle.asn1.ASN1OctetString;
-import org.bouncycastle.asn1.ASN1Primitive;
-import org.bouncycastle.asn1.ASN1Sequence;
-import org.bouncycastle.asn1.ASN1Set;
-import org.bouncycastle.asn1.ASN1String;
-import org.bouncycastle.cert.X509CertificateHolder;
-import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
-import org.bouncycastle.cms.CMSException;
-import org.bouncycastle.cms.CMSSignedData;
-import org.bouncycastle.cms.SignerInformation;
-import org.bouncycastle.cms.jcajce.JcaSimpleSignerInfoVerifierBuilder;
-import org.bouncycastle.jce.provider.BouncyCastleProvider;
-import org.bouncycastle.operator.OperatorCreationException;
-
 import java.io.IOException;
 import java.math.BigInteger;
 import java.security.GeneralSecurityException;
@@ -42,6 +26,21 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.bouncycastle.asn1.ASN1Encodable;
+import org.bouncycastle.asn1.ASN1Integer;
+import org.bouncycastle.asn1.ASN1OctetString;
+import org.bouncycastle.asn1.ASN1Primitive;
+import org.bouncycastle.asn1.ASN1Sequence;
+import org.bouncycastle.asn1.ASN1Set;
+import org.bouncycastle.asn1.ASN1String;
+import org.bouncycastle.cert.X509CertificateHolder;
+import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
+import org.bouncycastle.cms.CMSException;
+import org.bouncycastle.cms.CMSSignedData;
+import org.bouncycastle.cms.SignerInformation;
+import org.bouncycastle.cms.jcajce.JcaSimpleSignerInfoVerifierBuilder;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.bouncycastle.operator.OperatorCreationException;
 
 /**
  * Verifies legacy PKCS#7 app receipts (the blob apps used to send to the
@@ -178,8 +177,8 @@ public final class ReceiptVerifier {
     public AppReceipt verify(byte[] receiptDer, byte[] deviceGuid) throws VerificationException {
         AppReceipt receipt = verifyCore(receiptDer, trustAnchors);
         if (!bundleId.equals(receipt.bundleId())) {
-            throw new VerificationException(Reason.WRONG_BUNDLE_ID,
-                    "expected " + bundleId + " but receipt has " + receipt.bundleId());
+            throw new VerificationException(
+                    Reason.WRONG_BUNDLE_ID, "expected " + bundleId + " but receipt has " + receipt.bundleId());
         }
         if (deviceGuid != null) {
             verifyDeviceHash(receipt, deviceGuid);
@@ -203,8 +202,7 @@ public final class ReceiptVerifier {
      * says. A caller unlocking products must compare it itself, or use
      * {@link #verify(byte[])}.</p>
      */
-    public static AppReceipt verifyReceiptCore(byte[] receiptDer,
-                                               Set<X509Certificate> trustedRoots)
+    public static AppReceipt verifyReceiptCore(byte[] receiptDer, Set<X509Certificate> trustedRoots)
             throws VerificationException {
         return verifyCore(receiptDer, anchors(trustedRoots));
     }
@@ -228,16 +226,15 @@ public final class ReceiptVerifier {
         }
     }
 
-    private static AppReceipt verifyCoreUnguarded(byte[] receiptDer,
-                                                  Set<TrustAnchor> trustAnchors)
+    private static AppReceipt verifyCoreUnguarded(byte[] receiptDer, Set<TrustAnchor> trustAnchors)
             throws VerificationException {
         try {
             // Rejects trailing bytes after the CMS blob (PLAN 2.3) - BC's
             // fromByteArray throws when parsing does not exhaust the input.
             ASN1Primitive.fromByteArray(receiptDer);
         } catch (IOException e) {
-            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT,
-                    "receipt has trailing or unparseable bytes", e);
+            throw new VerificationException(
+                    Reason.INVALID_RECEIPT_FORMAT, "receipt has trailing or unparseable bytes", e);
         }
         CMSSignedData cms;
         try {
@@ -260,22 +257,20 @@ public final class ReceiptVerifier {
         // for a receipt carrying no creation date (attribute 12), where
         // PLAN.md §2.2 step 2's "else current time" leaves the window anchored
         // to real time. node, python and swift read the system clock here too.
-        Date at = receipt.creationDate() != null
-                ? Date.from(receipt.creationDate()) : new Date();
+        Date at = receipt.creationDate() != null ? Date.from(receipt.creationDate()) : new Date();
 
         X509Certificate signerCert = validateChain(cms, at, trustAnchors);
         if (signerCert.getExtensionValue(RECEIPT_SIGNER_OID) == null) {
-            throw new VerificationException(Reason.INVALID_CERTIFICATE_PURPOSE,
-                    "receipt signer certificate lacks Apple receipt-signing marker OID "
-                            + RECEIPT_SIGNER_OID);
+            throw new VerificationException(
+                    Reason.INVALID_CERTIFICATE_PURPOSE,
+                    "receipt signer certificate lacks Apple receipt-signing marker OID " + RECEIPT_SIGNER_OID);
         }
         verifyCmsSignature(cms, signerCert);
         return receipt;
     }
 
     /** PKIX-builds signer → (intermediates from the CMS) → pinned root at {@code at}. */
-    private static X509Certificate validateChain(CMSSignedData cms, Date at,
-                                                 Set<TrustAnchor> trustAnchors)
+    private static X509Certificate validateChain(CMSSignedData cms, Date at, Set<TrustAnchor> trustAnchors)
             throws VerificationException {
         Iterator<SignerInformation> signers = cms.getSignerInfos().getSigners().iterator();
         if (!signers.hasNext()) {
@@ -287,9 +282,11 @@ public final class ReceiptVerifier {
         // would otherwise get to pay for out of the caller's CPU.
         Collection<X509CertificateHolder> holders = cms.getCertificates().getMatches(null);
         if (holders.size() > MAXIMUM_EMBEDDED_CERTIFICATES) {
-            throw new VerificationException(Reason.INVALID_CHAIN, "receipt embeds "
-                    + holders.size() + " certificates, more than the maximum of "
-                    + MAXIMUM_EMBEDDED_CERTIFICATES);
+            throw new VerificationException(
+                    Reason.INVALID_CHAIN,
+                    "receipt embeds "
+                            + holders.size() + " certificates, more than the maximum of "
+                            + MAXIMUM_EMBEDDED_CERTIFICATES);
         }
         Collection<X509CertificateHolder> matches = cms.getCertificates().getMatches(signer.getSID());
         if (matches.isEmpty()) {
@@ -297,7 +294,8 @@ public final class ReceiptVerifier {
         }
         try {
             JcaX509CertificateConverter converter = new JcaX509CertificateConverter();
-            X509Certificate signerCert = converter.getCertificate(matches.iterator().next());
+            X509Certificate signerCert =
+                    converter.getCertificate(matches.iterator().next());
             List<X509Certificate> embedded = new ArrayList<X509Certificate>();
             for (X509CertificateHolder holder : holders) {
                 embedded.add(converter.getCertificate(holder));
@@ -305,34 +303,34 @@ public final class ReceiptVerifier {
             X509CertSelector target = new X509CertSelector();
             target.setCertificate(signerCert);
             PKIXBuilderParameters params = new PKIXBuilderParameters(trustAnchors, target);
-            params.addCertStore(CertStore.getInstance("Collection",
-                    new CollectionCertStoreParameters(embedded)));
+            params.addCertStore(CertStore.getInstance("Collection", new CollectionCertStoreParameters(embedded)));
             params.setRevocationEnabled(false);
             params.setDate(at);
             CertPathBuilder.getInstance("PKIX").build(params);
             return signerCert;
         } catch (CertPathBuilderException e) {
-            throw new VerificationException(Reason.INVALID_CHAIN,
-                    "signer chain does not validate to a pinned Apple root: " + e.getMessage(), e);
+            throw new VerificationException(
+                    Reason.INVALID_CHAIN,
+                    "signer chain does not validate to a pinned Apple root: " + e.getMessage(),
+                    e);
         } catch (GeneralSecurityException e) {
             throw new VerificationException(Reason.INVALID_CHAIN, "chain validation unavailable", e);
         }
     }
 
-    private static void verifyCmsSignature(CMSSignedData cms, X509Certificate signerCert)
-            throws VerificationException {
+    private static void verifyCmsSignature(CMSSignedData cms, X509Certificate signerCert) throws VerificationException {
         if (!(signerCert.getPublicKey() instanceof java.security.interfaces.RSAPublicKey)) {
             throw new VerificationException(Reason.INVALID_SIGNATURE, "receipt signer key is not RSA");
         }
         try {
-            SignerInformation signer = cms.getSignerInfos().getSigners().iterator().next();
+            SignerInformation signer =
+                    cms.getSignerInfos().getSigners().iterator().next();
             // Restrict to the digests Apple actually uses for receipts
             // (SHA-1 / SHA-256), matching the other three implementations.
             String digestOid = signer.getDigestAlgOID();
-            if (!"1.3.14.3.2.26".equals(digestOid)
-                    && !"2.16.840.1.101.3.4.2.1".equals(digestOid)) {
-                throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT,
-                        "unsupported receipt digest algorithm " + digestOid);
+            if (!"1.3.14.3.2.26".equals(digestOid) && !"2.16.840.1.101.3.4.2.1".equals(digestOid)) {
+                throw new VerificationException(
+                        Reason.INVALID_RECEIPT_FORMAT, "unsupported receipt digest algorithm " + digestOid);
             }
             boolean valid = signer.verify(new JcaSimpleSignerInfoVerifierBuilder()
                     .setProvider(PROVIDER)
@@ -347,12 +345,10 @@ public final class ReceiptVerifier {
         }
     }
 
-    private static void verifyDeviceHash(AppReceipt receipt, byte[] deviceGuid)
-            throws VerificationException {
-        if (receipt.opaqueValue() == null || receipt.sha1Hash() == null
-                || receipt.bundleIdBytes() == null) {
-            throw new VerificationException(Reason.DEVICE_HASH_MISMATCH,
-                    "receipt lacks the attributes needed for the device-hash check");
+    private static void verifyDeviceHash(AppReceipt receipt, byte[] deviceGuid) throws VerificationException {
+        if (receipt.opaqueValue() == null || receipt.sha1Hash() == null || receipt.bundleIdBytes() == null) {
+            throw new VerificationException(
+                    Reason.DEVICE_HASH_MISMATCH, "receipt lacks the attributes needed for the device-hash check");
         }
         try {
             MessageDigest sha1 = MessageDigest.getInstance("SHA-1");
@@ -360,8 +356,8 @@ public final class ReceiptVerifier {
             sha1.update(receipt.opaqueValue());
             sha1.update(receipt.bundleIdBytes());
             if (!MessageDigest.isEqual(sha1.digest(), receipt.sha1Hash())) {
-                throw new VerificationException(Reason.DEVICE_HASH_MISMATCH,
-                        "computed device hash does not match attribute 5");
+                throw new VerificationException(
+                        Reason.DEVICE_HASH_MISMATCH, "computed device hash does not match attribute 5");
             }
         } catch (GeneralSecurityException e) {
             throw new VerificationException(Reason.DEVICE_HASH_MISMATCH, "SHA-1 unavailable", e);
@@ -426,9 +422,19 @@ public final class ReceiptVerifier {
                     break;
             }
         }
-        return new AppReceipt(receiptType, parsedBundleId, bundleIdBytes, appVersion,
-                opaqueValue, sha1Hash, creationDate, originalPurchaseDate,
-                originalAppVersion, expirationDate, purchases, unknown);
+        return new AppReceipt(
+                receiptType,
+                parsedBundleId,
+                bundleIdBytes,
+                appVersion,
+                opaqueValue,
+                sha1Hash,
+                creationDate,
+                originalPurchaseDate,
+                originalAppVersion,
+                expirationDate,
+                purchases,
+                unknown);
     }
 
     private static InAppPurchase parseInApp(byte[] inAppSet) throws VerificationException {
@@ -483,9 +489,18 @@ public final class ReceiptVerifier {
                     break;
             }
         }
-        return new InAppPurchase(quantity, productId, transactionId, originalTransactionId,
-                purchaseDate, originalPurchaseDate, expiresDate, cancellationDate,
-                webOrderLineItemId, isInIntroOfferPeriod, unknown);
+        return new InAppPurchase(
+                quantity,
+                productId,
+                transactionId,
+                originalTransactionId,
+                purchaseDate,
+                originalPurchaseDate,
+                expiresDate,
+                cancellationDate,
+                webOrderLineItemId,
+                isInIntroOfferPeriod,
+                unknown);
     }
 
     private static void recordUnknown(Map<Integer, List<byte[]>> unknown, Attribute attr) {
@@ -510,8 +525,8 @@ public final class ReceiptVerifier {
             try {
                 parsed = ASN1Primitive.fromByteArray(((ASN1OctetString) parsed).getOctets());
             } catch (IOException e) {
-                throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT,
-                        what + " double-wrap is not valid ASN.1", e);
+                throw new VerificationException(
+                        Reason.INVALID_RECEIPT_FORMAT, what + " double-wrap is not valid ASN.1", e);
             }
         }
         if (!(parsed instanceof ASN1Set)) {
@@ -534,10 +549,12 @@ public final class ReceiptVerifier {
             try {
                 ASN1Sequence seq = ASN1Sequence.getInstance(element);
                 if (seq.size() < 3) {
-                    throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT,
+                    throw new VerificationException(
+                            Reason.INVALID_RECEIPT_FORMAT,
                             "receipt attribute has " + seq.size() + " fields, expected 3");
                 }
-                long type = boundedInt(ASN1Integer.getInstance(seq.getObjectAt(0)).getValue());
+                long type =
+                        boundedInt(ASN1Integer.getInstance(seq.getObjectAt(0)).getValue());
                 byte[] value = ASN1OctetString.getInstance(seq.getObjectAt(2)).getOctets();
                 // A type wider than a 32-bit signed integer is not a valid
                 // attribute type, so the receipt is rejected rather than
@@ -546,16 +563,15 @@ public final class ReceiptVerifier {
                 // carried, and is how two ports start disagreeing about what a
                 // receipt says. Fail closed; node, python and swift agree.
                 if (type > Integer.MAX_VALUE) {
-                    throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT,
-                            "receipt attribute type out of range: " + type);
+                    throw new VerificationException(
+                            Reason.INVALID_RECEIPT_FORMAT, "receipt attribute type out of range: " + type);
                 }
                 return new Attribute((int) type, value);
             } catch (IllegalArgumentException e) {
-                throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT,
-                        "malformed receipt attribute", e);
+                throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "malformed receipt attribute", e);
             } catch (ArithmeticException e) {
-                throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT,
-                        "receipt attribute type out of range", e);
+                throw new VerificationException(
+                        Reason.INVALID_RECEIPT_FORMAT, "receipt attribute type out of range", e);
             }
         }
     }
@@ -563,8 +579,7 @@ public final class ReceiptVerifier {
     /** Non-negative, <= 8 bytes — real receipts carry 7-byte integers. */
     private static long boundedInt(BigInteger value) throws VerificationException {
         if (value.signum() < 0 || value.bitLength() > 63) {
-            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT,
-                    "receipt integer out of range");
+            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "receipt integer out of range");
         }
         return value.longValue();
     }
@@ -573,13 +588,12 @@ public final class ReceiptVerifier {
         try {
             ASN1Primitive parsed = ASN1Primitive.fromByteArray(der);
             if (!(parsed instanceof ASN1String)) {
-                throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT,
-                        "attribute value is not an ASN.1 string");
+                throw new VerificationException(
+                        Reason.INVALID_RECEIPT_FORMAT, "attribute value is not an ASN.1 string");
             }
             return ((ASN1String) parsed).getString();
         } catch (IOException e) {
-            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT,
-                    "attribute value is not valid ASN.1", e);
+            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "attribute value is not valid ASN.1", e);
         }
     }
 
@@ -587,16 +601,14 @@ public final class ReceiptVerifier {
         try {
             ASN1Primitive parsed = ASN1Primitive.fromByteArray(der);
             if (!(parsed instanceof ASN1Integer)) {
-                throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT,
-                        "attribute value is not an ASN.1 integer");
+                throw new VerificationException(
+                        Reason.INVALID_RECEIPT_FORMAT, "attribute value is not an ASN.1 integer");
             }
             return Long.valueOf(boundedInt(((ASN1Integer) parsed).getValue()));
         } catch (IOException e) {
-            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT,
-                    "attribute value is not valid ASN.1", e);
+            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "attribute value is not valid ASN.1", e);
         } catch (ArithmeticException e) {
-            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT,
-                    "attribute integer out of range", e);
+            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "attribute integer out of range", e);
         }
     }
 
@@ -610,8 +622,7 @@ public final class ReceiptVerifier {
         try {
             instant = Instant.parse(text);
         } catch (DateTimeParseException e) {
-            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT,
-                    "unparseable receipt date: " + text, e);
+            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "unparseable receipt date: " + text, e);
         }
         // Instant.parse accepts expanded years (e.g. +1000000000-...) that no
         // longer fit an epoch-milli long; toEpochMilli overflows on those, and
@@ -621,8 +632,8 @@ public final class ReceiptVerifier {
         try {
             instant.toEpochMilli();
         } catch (ArithmeticException e) {
-            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT,
-                    "receipt date out of representable range: " + text, e);
+            throw new VerificationException(
+                    Reason.INVALID_RECEIPT_FORMAT, "receipt date out of representable range: " + text, e);
         }
         return instant;
     }

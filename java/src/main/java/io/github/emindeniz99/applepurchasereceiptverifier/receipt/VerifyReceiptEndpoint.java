@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.emindeniz99.applepurchasereceiptverifier.Environment;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
-
 import java.io.IOException;
 import java.security.cert.X509Certificate;
 import java.time.Clock;
@@ -84,14 +83,12 @@ public final class VerifyReceiptEndpoint {
      *              "now" is a certificate-validity instant — see
      *              {@link ReceiptVerifier}.
      */
-    public VerifyReceiptEndpoint(Set<X509Certificate> trustedRoots, Environment environment,
-                                 Clock clock) {
+    public VerifyReceiptEndpoint(Set<X509Certificate> trustedRoots, Environment environment, Clock clock) {
         if (trustedRoots == null || trustedRoots.isEmpty()) {
             throw new IllegalArgumentException("trustedRoots must not be empty");
         }
         if (environment != Environment.PRODUCTION && environment != Environment.SANDBOX) {
-            throw new IllegalArgumentException(
-                    "environment must be PRODUCTION or SANDBOX, got " + environment);
+            throw new IllegalArgumentException("environment must be PRODUCTION or SANDBOX, got " + environment);
         }
         this.trustedRoots = new HashSet<X509Certificate>(trustedRoots);
         this.environment = environment;
@@ -116,8 +113,7 @@ public final class VerifyReceiptEndpoint {
      * @deprecated use {@link #VerifyReceiptEndpoint(Set, Environment, Clock)}.
      */
     @Deprecated
-    public VerifyReceiptEndpoint(Set<X509Certificate> trustedRoots, boolean production,
-                                 Clock clock) {
+    public VerifyReceiptEndpoint(Set<X509Certificate> trustedRoots, boolean production, Clock clock) {
         this(trustedRoots, production ? Environment.PRODUCTION : Environment.SANDBOX, clock);
     }
 
@@ -143,8 +139,7 @@ public final class VerifyReceiptEndpoint {
             // claim is checked here (callers compare receipt.bundle_id).
             receipt = ReceiptVerifier.verifyReceiptCore(der, trustedRoots);
         } catch (VerificationException e) {
-            return status(e.reason() == Reason.INVALID_RECEIPT_FORMAT
-                    ? STATUS_MALFORMED : STATUS_NOT_AUTHENTICATED);
+            return status(e.reason() == Reason.INVALID_RECEIPT_FORMAT ? STATUS_MALFORMED : STATUS_NOT_AUTHENTICATED);
         } catch (RuntimeException e) {
             return status(STATUS_INTERNAL);
         }
@@ -156,8 +151,8 @@ public final class VerifyReceiptEndpoint {
         // "Xcode" is listed for completeness only: an Xcode-generated
         // receipt is not Apple-signed, so it fails chain verification with
         // 21003 above and never reaches this branch.
-        boolean productionReceipt = "Production".equals(receipt.receiptType())
-                || "ProductionVPP".equals(receipt.receiptType());
+        boolean productionReceipt =
+                "Production".equals(receipt.receiptType()) || "ProductionVPP".equals(receipt.receiptType());
         if (environment == Environment.PRODUCTION && !productionReceipt) {
             return status(STATUS_SANDBOX_RECEIPT_ON_PRODUCTION);
         }
@@ -255,8 +250,7 @@ public final class VerifyReceiptEndpoint {
         appleDates(json, "cancellation_date", purchase.cancellationDate());
         put(json, "web_order_line_item_id", stringOrNull(purchase.webOrderLineItemId()));
         if (purchase.isInIntroOfferPeriod() != null) {
-            json.put("is_in_intro_offer_period",
-                    String.valueOf(purchase.isInIntroOfferPeriod() == 1L));
+            json.put("is_in_intro_offer_period", String.valueOf(purchase.isInIntroOfferPeriod() == 1L));
         }
         return json;
     }

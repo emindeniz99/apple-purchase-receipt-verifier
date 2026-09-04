@@ -1,5 +1,10 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
+
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -11,10 +16,6 @@ import io.github.emindeniz99.applepurchasereceiptverifier.receipt.AppReceipt;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.InAppPurchase;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifier;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.VerifyReceiptEndpoint;
-import org.junit.jupiter.api.DynamicTest;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestFactory;
-
 import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -38,11 +39,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.fail;
+import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestFactory;
 
 /**
  * Runs every vector in {@code fixtures/cases.json} — the normative
@@ -76,12 +75,10 @@ class ConformanceCasesTest {
     private static final Path FIXTURES = Paths.get("..", "fixtures");
 
     /** FIELD visibility so the payload models normalize without accessors. */
-    private static final ObjectMapper MAPPER = new ObjectMapper()
-            .setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY);
+    private static final ObjectMapper MAPPER =
+            new ObjectMapper().setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY);
 
-    private static final TypeReference<Map<String, Object>> MAP =
-            new TypeReference<Map<String, Object>>() {
-            };
+    private static final TypeReference<Map<String, Object>> MAP = new TypeReference<Map<String, Object>>() {};
 
     @TestFactory
     List<DynamicTest> conformanceCases() throws Exception {
@@ -94,11 +91,10 @@ class ConformanceCasesTest {
             if (kase.has("clock")) {
                 pinned++;
             }
-            tests.add(DynamicTest.dynamicTest(kase.get("id").asText(),
-                    () -> runCase(fixtures, kase)));
+            tests.add(DynamicTest.dynamicTest(kase.get("id").asText(), () -> runCase(fixtures, kase)));
         }
-        System.out.println("conformance: " + tests.size() + " cases in fixtures/cases.json, "
-                + pinned + " with a pinned clock, 0 skipped");
+        System.out.println("conformance: " + tests.size() + " cases in fixtures/cases.json, " + pinned
+                + " with a pinned clock, 0 skipped");
         return tests;
     }
 
@@ -113,21 +109,21 @@ class ConformanceCasesTest {
             result = invoke(fixtures, kase);
         } catch (VerificationException e) {
             if (!expectError) {
-                throw new AssertionError(id + ": expected success but failed with "
-                        + e.reason() + ": " + e.getMessage(), e);
+                throw new AssertionError(
+                        id + ": expected success but failed with " + e.reason() + ": " + e.getMessage(), e);
             }
-            assertEquals(Reason.valueOf(expected.get("reason").asText()), e.reason(),
-                    id + ": " + e.getMessage());
+            assertEquals(Reason.valueOf(expected.get("reason").asText()), e.reason(), id + ": " + e.getMessage());
             return;
         } catch (Exception e) {
             // Never map an arbitrary failure onto an expected Reason: anything
             // other than a VerificationException is a harness/library defect.
-            throw new AssertionError(id + ": harness error — the operation raised "
-                    + e.getClass().getName() + " instead of a VerificationException", e);
+            throw new AssertionError(
+                    id + ": harness error — the operation raised "
+                            + e.getClass().getName() + " instead of a VerificationException",
+                    e);
         }
         if (expectError) {
-            fail(id + ": expected " + expected.get("reason").asText()
-                    + " but the operation succeeded");
+            fail(id + ": expected " + expected.get("reason").asText() + " but the operation succeeded");
         }
         assertFields(id, expected.get("fields"), result);
     }
@@ -141,12 +137,10 @@ class ConformanceCasesTest {
         String operation = kase.get("operation").asText();
         Clock clock = clock(kase);
         if ("verifyTransaction".equals(operation)) {
-            return MAPPER.convertValue(
-                    jwsVerifier(roots, config, clock).verifyTransaction(text(input)), MAP);
+            return MAPPER.convertValue(jwsVerifier(roots, config, clock).verifyTransaction(text(input)), MAP);
         }
         if ("verifyAppTransaction".equals(operation)) {
-            return MAPPER.convertValue(
-                    jwsVerifier(roots, config, clock).verifyAppTransaction(text(input)), MAP);
+            return MAPPER.convertValue(jwsVerifier(roots, config, clock).verifyAppTransaction(text(input)), MAP);
         }
         if ("verifyRaw".equals(operation)) {
             return jwsVerifier(roots, config, clock).verifyRaw(text(input));
@@ -158,7 +152,8 @@ class ConformanceCasesTest {
             ReceiptVerifier verifier =
                     new ReceiptVerifier(roots, config.get("bundleId").asText());
             byte[] deviceGuid = config.has("deviceGuidHex")
-                    ? unhex(config.get("deviceGuidHex").asText()) : null;
+                    ? unhex(config.get("deviceGuidHex").asText())
+                    : null;
             return normalize(verifier.verify(input, deviceGuid));
         }
         if ("verifyReceiptEndpoint".equals(operation)) {
@@ -168,9 +163,9 @@ class ConformanceCasesTest {
                 throw new IllegalStateException(
                         "unknown environment " + config.get("environment").asText());
             }
-            return new VerifyReceiptEndpoint(roots, environment, clock).verifyReceipt(
-                    Collections.singletonMap("receipt-data",
-                            Base64.getEncoder().encodeToString(input)));
+            return new VerifyReceiptEndpoint(roots, environment, clock)
+                    .verifyReceipt(Collections.singletonMap(
+                            "receipt-data", Base64.getEncoder().encodeToString(input)));
         }
         throw new IllegalStateException("unknown operation " + operation);
     }
@@ -186,8 +181,7 @@ class ConformanceCasesTest {
         return Clock.fixed(Instant.parse(kase.get("clock").get("now").asText()), ZoneOffset.UTC);
     }
 
-    private static JwsVerifier jwsVerifier(Set<X509Certificate> roots, JsonNode config,
-                                           Clock clock) {
+    private static JwsVerifier jwsVerifier(Set<X509Certificate> roots, JsonNode config, Clock clock) {
         // verifyRaw enforces no claim, so its cases need not pin a bundle id or
         // an accept set — but the constructor demands both. Neutral stand-ins
         // (a bundle id no payload can carry, every environment) keep that
@@ -217,8 +211,7 @@ class ConformanceCasesTest {
 
     // ---------------------------------------------------------------- fixtures
 
-    private static Set<X509Certificate> trustedRoots(JsonNode fixtures, JsonNode spec)
-            throws Exception {
+    private static Set<X509Certificate> trustedRoots(JsonNode fixtures, JsonNode spec) throws Exception {
         if ("builtin".equals(spec.get("source").asText())) {
             String name = spec.get("name").asText();
             if ("apple-receipt-roots".equals(name)) {
@@ -232,8 +225,8 @@ class ConformanceCasesTest {
         CertificateFactory factory = CertificateFactory.getInstance("X.509");
         Set<X509Certificate> roots = new HashSet<X509Certificate>();
         for (JsonNode id : spec.get("fixtures")) {
-            roots.add((X509Certificate) factory.generateCertificate(
-                    new ByteArrayInputStream(fixtureBytes(fixtures, id.asText()))));
+            roots.add((X509Certificate)
+                    factory.generateCertificate(new ByteArrayInputStream(fixtureBytes(fixtures, id.asText()))));
         }
         return roots;
     }
@@ -247,8 +240,8 @@ class ConformanceCasesTest {
      */
     @Test
     void everyFixtureMatchesItsRecordedContentDigest() throws Exception {
-        JsonNode fixtures = MAPPER.readTree(FIXTURES.resolve("cases.json").toFile())
-                .get("fixtures");
+        JsonNode fixtures =
+                MAPPER.readTree(FIXTURES.resolve("cases.json").toFile()).get("fixtures");
         int checked = 0;
         Iterator<String> ids = fixtures.fieldNames();
         while (ids.hasNext()) {
@@ -256,8 +249,7 @@ class ConformanceCasesTest {
             checked++;
         }
         assertTrue(checked > 0, "cases.json declares no fixtures");
-        System.out.println("conformance: " + checked
-                + " fixture content digests verified against cases.json");
+        System.out.println("conformance: " + checked + " fixture content digests verified against cases.json");
     }
 
     /**
@@ -294,10 +286,11 @@ class ConformanceCasesTest {
         }
         String actual = hex(MessageDigest.getInstance("SHA-256").digest(decoded));
         if (!expected.textValue().equals(actual)) {
-            throw new AssertionError("fixture " + id + " (" + fixture.get("path").asText()
-                    + ", codec " + codec + ") hashes to " + actual
-                    + " but cases.json records " + expected.textValue()
-                    + " — the fixture bytes and the registry have drifted apart");
+            throw new AssertionError(
+                    "fixture " + id + " (" + fixture.get("path").asText()
+                            + ", codec " + codec + ") hashes to " + actual
+                            + " but cases.json records " + expected.textValue()
+                            + " — the fixture bytes and the registry have drifted apart");
         }
         return decoded;
     }
@@ -398,9 +391,11 @@ class ConformanceCasesTest {
         if (expected.isNull()) {
             assertNull(actual, path);
         } else if (expected.isNumber()) {
-            assertTrue(actual instanceof Number,
+            assertTrue(
+                    actual instanceof Number,
                     path + ": expected the number " + expected + " but got " + describe(actual));
-            assertTrue(expected.decimalValue().compareTo(new BigDecimal(actual.toString())) == 0,
+            assertTrue(
+                    expected.decimalValue().compareTo(new BigDecimal(actual.toString())) == 0,
                     path + ": expected " + expected + " but got " + actual);
         } else if (expected.isBoolean()) {
             assertEquals(Boolean.valueOf(expected.booleanValue()), actual, path);
@@ -489,8 +484,7 @@ class ConformanceCasesTest {
             String key = selector.substring(0, equals);
             String value = selector.substring(equals + 1);
             if (!(current instanceof List)) {
-                throw new IllegalStateException(path + ": [" + selector + "] needs a list, got "
-                        + describe(current));
+                throw new IllegalStateException(path + ": [" + selector + "] needs a list, got " + describe(current));
             }
             for (Object element : (List<Object>) current) {
                 Object candidate = member(element, key, path);
@@ -506,8 +500,7 @@ class ConformanceCasesTest {
         if (current instanceof Map) {
             return ((Map<String, Object>) current).get(selector);
         }
-        throw new IllegalStateException(path + ": [" + selector + "] needs a list or map, got "
-                + describe(current));
+        throw new IllegalStateException(path + ": [" + selector + "] needs a list or map, got " + describe(current));
     }
 
     private static Object length(Object current, String path) {

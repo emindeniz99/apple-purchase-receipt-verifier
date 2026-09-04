@@ -1,11 +1,14 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.VerifyReceiptEndpoint;
-import org.junit.jupiter.api.Test;
-
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -22,11 +25,7 @@ import java.util.Date;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
 
 /**
  * verifyReceipt-compat semantics over the shared receipt fixture that
@@ -40,20 +39,19 @@ class VerifyReceiptEndpointTest {
     private static final Path FIXTURES = Paths.get("..", "fixtures", "generated");
 
     private static VerifyReceiptEndpoint endpoint(boolean production) throws Exception {
-        return new VerifyReceiptEndpoint(Collections.singleton(fixtureRoot()),
-                production ? Environment.PRODUCTION : Environment.SANDBOX);
+        return new VerifyReceiptEndpoint(
+                Collections.singleton(fixtureRoot()), production ? Environment.PRODUCTION : Environment.SANDBOX);
     }
 
     private static X509Certificate fixtureRoot() throws Exception {
         byte[] der = Files.readAllBytes(FIXTURES.resolve("receipt-root.der"));
-        return (X509Certificate) CertificateFactory.getInstance("X.509")
-                .generateCertificate(new ByteArrayInputStream(der));
+        return (X509Certificate)
+                CertificateFactory.getInstance("X.509").generateCertificate(new ByteArrayInputStream(der));
     }
 
     private static Map<String, Object> request() throws Exception {
         byte[] receipt = Files.readAllBytes(FIXTURES.resolve("receipt.der"));
-        return Collections.singletonMap("receipt-data",
-                Base64.getEncoder().encodeToString(receipt));
+        return Collections.singletonMap("receipt-data", Base64.getEncoder().encodeToString(receipt));
     }
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -62,8 +60,8 @@ class VerifyReceiptEndpointTest {
     private static JsonNode withoutRequestDate(JsonNode response) {
         JsonNode receipt = response.get("receipt");
         if (receipt != null) {
-            ((ObjectNode) receipt).remove(java.util.Arrays.asList(
-                    "request_date", "request_date_ms", "request_date_pst"));
+            ((ObjectNode) receipt)
+                    .remove(java.util.Arrays.asList("request_date", "request_date_ms", "request_date_pst"));
         }
         return response;
     }
@@ -84,30 +82,36 @@ class VerifyReceiptEndpointTest {
         assertNotNull(receipt.get("request_date"));
         assertNotNull(receipt.get("request_date_pst"));
         List<Map<String, Object>> inApp = (List<Map<String, Object>>) receipt.get("in_app");
-        Map<String, Object> coins = inApp.get(0).get("product_id").equals("com.example.app.coins100")
-                ? inApp.get(0) : inApp.get(1);
+        Map<String, Object> coins =
+                inApp.get(0).get("product_id").equals("com.example.app.coins100") ? inApp.get(0) : inApp.get(1);
         assertNotNull(coins.get("purchase_date"));
         assertNotNull(coins.get("purchase_date_ms"));
         assertNotNull(coins.get("purchase_date_pst"));
-        Map<String, Object> vip = inApp.get(0).get("product_id").equals("com.example.app.vip")
-                ? inApp.get(0) : inApp.get(1);
+        Map<String, Object> vip =
+                inApp.get(0).get("product_id").equals("com.example.app.vip") ? inApp.get(0) : inApp.get(1);
         assertNotNull(vip.get("expires_date_ms"));
         assertNotNull(vip.get("expires_date_pst"));
     }
 
     @Test
     void reportsMalformedRequestsAs21002() throws Exception {
-        assertEquals(21002, endpoint(false)
-                .verifyReceipt(Collections.<String, Object>emptyMap()).get("status"));
-        assertEquals(21002, endpoint(false)
-                .verifyReceipt(null).get("status"));
-        assertEquals(21002, endpoint(false)
-                .verifyReceipt(Collections.singletonMap("receipt-data", "AQIDBA==")).get("status"));
+        assertEquals(
+                21002,
+                endpoint(false)
+                        .verifyReceipt(Collections.<String, Object>emptyMap())
+                        .get("status"));
+        assertEquals(21002, endpoint(false).verifyReceipt(null).get("status"));
+        assertEquals(
+                21002,
+                endpoint(false)
+                        .verifyReceipt(Collections.singletonMap("receipt-data", "AQIDBA=="))
+                        .get("status"));
     }
 
     @Test
     void rejectsAnEmptyRootSet() {
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(
+                IllegalArgumentException.class,
                 () -> new VerifyReceiptEndpoint(Collections.<X509Certificate>emptySet(), false));
     }
 
@@ -136,11 +140,10 @@ class VerifyReceiptEndpointTest {
     void rawJsonOverloadRendersIsInIntroOfferPeriodAsAString() throws Exception {
         Path publicReceipts = Paths.get("..", "fixtures", "public-receipts");
         String receiptData = new String(
-                Files.readAllBytes(publicReceipts.resolve("receipt-sandbox-g5.b64")),
-                StandardCharsets.US_ASCII).trim();
+                        Files.readAllBytes(publicReceipts.resolve("receipt-sandbox-g5.b64")), StandardCharsets.US_ASCII)
+                .trim();
         String body = new VerifyReceiptEndpoint(AppleRootCerts.receiptRoots(), false)
-                .verifyReceiptJson(MAPPER.writeValueAsString(
-                        Collections.singletonMap("receipt-data", receiptData)));
+                .verifyReceiptJson(MAPPER.writeValueAsString(Collections.singletonMap("receipt-data", receiptData)));
         assertTrue(body.contains("\"is_in_intro_offer_period\":\"false\""), body);
         JsonNode purchases = MAPPER.readTree(body).get("receipt").get("in_app");
         assertTrue(purchases.size() > 0);
@@ -151,18 +154,17 @@ class VerifyReceiptEndpointTest {
 
     @Test
     void rawJsonOverloadOmitsReceiptAndEnvironmentOnNonZeroStatus() throws Exception {
-        assertEquals("{\"status\":21007}",
-                endpoint(true).verifyReceiptJson(MAPPER.writeValueAsString(request())));
+        assertEquals("{\"status\":21007}", endpoint(true).verifyReceiptJson(MAPPER.writeValueAsString(request())));
     }
 
     @Test
     void rawJsonOverloadAnswers21002ForABodyThatIsNotAnObject() throws Exception {
         VerifyReceiptEndpoint endpoint = endpoint(false);
-        String[] bodies = {"", "not json", "{", "[]", "[{\"receipt-data\":\"x\"}]",
-                "null", "3", "\"receipt\"", "true", null};
+        String[] bodies = {
+            "", "not json", "{", "[]", "[{\"receipt-data\":\"x\"}]", "null", "3", "\"receipt\"", "true", null
+        };
         for (String body : bodies) {
-            assertEquals("{\"status\":21002}", endpoint.verifyReceiptJson(body),
-                    String.valueOf(body));
+            assertEquals("{\"status\":21002}", endpoint.verifyReceiptJson(body), String.valueOf(body));
         }
     }
 
@@ -170,8 +172,7 @@ class VerifyReceiptEndpointTest {
     void rawJsonOverloadMatchesTheMapApi() throws Exception {
         VerifyReceiptEndpoint endpoint = endpoint(false);
         JsonNode viaMap = MAPPER.valueToTree(endpoint.verifyReceipt(request()));
-        JsonNode viaJson = MAPPER.readTree(
-                endpoint.verifyReceiptJson(MAPPER.writeValueAsString(request())));
+        JsonNode viaJson = MAPPER.readTree(endpoint.verifyReceiptJson(MAPPER.writeValueAsString(request())));
         assertEquals(withoutRequestDate(viaMap), withoutRequestDate(viaJson));
     }
 
@@ -186,12 +187,12 @@ class VerifyReceiptEndpointTest {
     void injectedClockDrivesTheRequestDate() throws Exception {
         Instant now = Instant.parse("2025-01-01T00:00:00Z");
         byte[] der = Files.readAllBytes(FIXTURES.resolve("receipt-root.der"));
-        X509Certificate root = (X509Certificate) CertificateFactory.getInstance("X.509")
-                .generateCertificate(new ByteArrayInputStream(der));
-        VerifyReceiptEndpoint pinned = new VerifyReceiptEndpoint(
-                Collections.singleton(root), false, Clock.fixed(now, ZoneOffset.UTC));
-        Map<String, Object> receipt = (Map<String, Object>)
-                pinned.verifyReceipt(request()).get("receipt");
+        X509Certificate root = (X509Certificate)
+                CertificateFactory.getInstance("X.509").generateCertificate(new ByteArrayInputStream(der));
+        VerifyReceiptEndpoint pinned =
+                new VerifyReceiptEndpoint(Collections.singleton(root), false, Clock.fixed(now, ZoneOffset.UTC));
+        Map<String, Object> receipt =
+                (Map<String, Object>) pinned.verifyReceipt(request()).get("receipt");
         assertEquals(String.valueOf(now.toEpochMilli()), receipt.get("request_date_ms"));
         assertEquals("2025-01-01 00:00:00 Etc/GMT", receipt.get("request_date"));
         assertEquals("2024-12-31 16:00:00 America/Los_Angeles", receipt.get("request_date_pst"));
@@ -207,15 +208,17 @@ class VerifyReceiptEndpointTest {
     @Test
     void takesTheTypedEnvironmentAndRoutesOnIt() throws Exception {
         X509Certificate root = fixtureRoot();
-        Map<String, Object> sandbox = new VerifyReceiptEndpoint(
-                Collections.singleton(root), Environment.SANDBOX).verifyReceipt(request());
+        Map<String, Object> sandbox =
+                new VerifyReceiptEndpoint(Collections.singleton(root), Environment.SANDBOX).verifyReceipt(request());
         assertEquals(0, sandbox.get("status"));
         assertEquals("Sandbox", sandbox.get("environment"));
         // The fixture receipt is a ProductionSandbox one, so a production
         // instance answers 21007 — the routing follows the enum.
-        assertEquals(21007, new VerifyReceiptEndpoint(
-                Collections.singleton(root), Environment.PRODUCTION)
-                .verifyReceipt(request()).get("status"));
+        assertEquals(
+                21007,
+                new VerifyReceiptEndpoint(Collections.singleton(root), Environment.PRODUCTION)
+                        .verifyReceipt(request())
+                        .get("status"));
     }
 
     /**
@@ -226,15 +229,14 @@ class VerifyReceiptEndpointTest {
     @Test
     void theDeprecatedBooleanConstructorStillDelegates() throws Exception {
         X509Certificate root = fixtureRoot();
-        for (boolean production : new boolean[]{true, false}) {
+        for (boolean production : new boolean[] {true, false}) {
             Environment environment = production ? Environment.PRODUCTION : Environment.SANDBOX;
             @SuppressWarnings("deprecation")
-            JsonNode viaBoolean = MAPPER.valueToTree(new VerifyReceiptEndpoint(
-                    Collections.singleton(root), production).verifyReceipt(request()));
-            JsonNode viaEnum = MAPPER.valueToTree(new VerifyReceiptEndpoint(
-                    Collections.singleton(root), environment).verifyReceipt(request()));
-            assertEquals(withoutRequestDate(viaEnum), withoutRequestDate(viaBoolean),
-                    String.valueOf(production));
+            JsonNode viaBoolean = MAPPER.valueToTree(
+                    new VerifyReceiptEndpoint(Collections.singleton(root), production).verifyReceipt(request()));
+            JsonNode viaEnum = MAPPER.valueToTree(
+                    new VerifyReceiptEndpoint(Collections.singleton(root), environment).verifyReceipt(request()));
+            assertEquals(withoutRequestDate(viaEnum), withoutRequestDate(viaBoolean), String.valueOf(production));
         }
     }
 
@@ -247,13 +249,13 @@ class VerifyReceiptEndpointTest {
     @Test
     void rejectsAnEnvironmentTheEndpointCannotEmulate() throws Exception {
         java.util.Set<X509Certificate> roots = Collections.singleton(fixtureRoot());
-        for (Environment environment
-                : EnumSet.of(Environment.XCODE, Environment.LOCAL_TESTING)) {
-            assertThrows(IllegalArgumentException.class,
-                    () -> new VerifyReceiptEndpoint(roots, environment), environment.name());
+        for (Environment environment : EnumSet.of(Environment.XCODE, Environment.LOCAL_TESTING)) {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> new VerifyReceiptEndpoint(roots, environment),
+                    environment.name());
         }
-        assertThrows(IllegalArgumentException.class,
-                () -> new VerifyReceiptEndpoint(roots, (Environment) null));
+        assertThrows(IllegalArgumentException.class, () -> new VerifyReceiptEndpoint(roots, (Environment) null));
     }
 
     // -------------------------------- the clock reaches request_date only (1)
@@ -274,27 +276,38 @@ class VerifyReceiptEndpointTest {
         // An empty attribute-12 value is how a real receipt says "no creation
         // date", which is the only way to reach the "else current time"
         // fallback at all.
-        byte[] payload = TestPki.receiptPayload("com.example.app", "1.2.3",
-                new byte[]{1, 2, 3, 4, 5, 6, 7, 8}, new byte[20], "",
+        byte[] payload = TestPki.receiptPayload(
+                "com.example.app",
+                "1.2.3",
+                new byte[] {1, 2, 3, 4, 5, 6, 7, 8},
+                new byte[20],
+                "",
                 Collections.<byte[]>emptyList());
         byte[] receipt = expired.signReceipt(payload);
-        Map<String, Object> body = Collections.singletonMap("receipt-data",
-                Base64.getEncoder().encodeToString(receipt));
+        Map<String, Object> body =
+                Collections.singletonMap("receipt-data", Base64.getEncoder().encodeToString(receipt));
         java.util.Set<X509Certificate> roots = Collections.singleton(expired.root);
 
         // Control: the same dateless receipt under a chain that is valid right
         // now answers 0, so the 21003s below are the expiry and not the shape.
         TestPki current = TestPki.receipt();
-        assertEquals(0, new VerifyReceiptEndpoint(Collections.singleton(current.root),
-                Environment.SANDBOX).verifyReceipt(Collections.singletonMap("receipt-data",
-                        Base64.getEncoder().encodeToString(current.signReceipt(payload))))
-                .get("status"));
-        for (Clock clock : java.util.Arrays.<Clock>asList(null,
+        assertEquals(
+                0,
+                new VerifyReceiptEndpoint(Collections.singleton(current.root), Environment.SANDBOX)
+                        .verifyReceipt(Collections.singletonMap(
+                                "receipt-data", Base64.getEncoder().encodeToString(current.signReceipt(payload))))
+                        .get("status"));
+        for (Clock clock : java.util.Arrays.<Clock>asList(
+                null,
                 Clock.fixed(notBefore.toInstant().plusMillis(86_400_000L), ZoneOffset.UTC),
                 Clock.fixed(Instant.parse("2001-01-01T00:00:00Z"), ZoneOffset.UTC),
                 Clock.fixed(Instant.parse("2099-01-01T00:00:00Z"), ZoneOffset.UTC))) {
-            assertEquals(21003, new VerifyReceiptEndpoint(roots, Environment.SANDBOX, clock)
-                    .verifyReceipt(body).get("status"), "clock " + clock);
+            assertEquals(
+                    21003,
+                    new VerifyReceiptEndpoint(roots, Environment.SANDBOX, clock)
+                            .verifyReceipt(body)
+                            .get("status"),
+                    "clock " + clock);
         }
     }
 }

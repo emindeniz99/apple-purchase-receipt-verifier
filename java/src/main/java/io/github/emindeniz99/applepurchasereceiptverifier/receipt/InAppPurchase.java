@@ -24,12 +24,18 @@ public final class InAppPurchase {
     private final Long isInIntroOfferPeriod;
     private final Map<Integer, List<byte[]>> unknownAttributes;
 
-    InAppPurchase(Long quantity, String productId, String transactionId,
-                  String originalTransactionId, Instant purchaseDate,
-                  Instant originalPurchaseDate, Instant expiresDate,
-                  Instant cancellationDate, Long webOrderLineItemId,
-                  Long isInIntroOfferPeriod,
-                  Map<Integer, List<byte[]>> unknownAttributes) {
+    InAppPurchase(
+            Long quantity,
+            String productId,
+            String transactionId,
+            String originalTransactionId,
+            Instant purchaseDate,
+            Instant originalPurchaseDate,
+            Instant expiresDate,
+            Instant cancellationDate,
+            Long webOrderLineItemId,
+            Long isInIntroOfferPeriod,
+            Map<Integer, List<byte[]>> unknownAttributes) {
         this.quantity = quantity;
         this.productId = productId;
         this.transactionId = transactionId;
