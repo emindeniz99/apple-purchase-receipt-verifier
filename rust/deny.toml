@@ -1,0 +1,77 @@
+# cargo-deny policy. This file is the mechanised form of two rules the
+# library states in prose and cannot enforce in code alone:
+#
+#   * anchors come only from the caller or from the three bundled Apple
+#     roots — never from an operating-system trust store;
+#   * nothing on any code path touches the network.
+#
+# A dependency bump cannot introduce either by accident, because the crates
+# that would carry them are refused here at build time.
+
+[graph]
+all-features = true
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+
+deny = [
+    # System trust stores.
+    { name = "rustls-native-certs" },
+    { name = "webpki-roots" },
+    { name = "openssl-sys" },
+    { name = "openssl" },
+    { name = "native-tls" },
+    { name = "schannel" },
+    { name = "security-framework" },
+    # Network clients.
+    { name = "reqwest" },
+    { name = "curl-sys" },
+    { name = "hyper" },
+    { name = "ureq" },
+    { name = "tokio" },
+    { name = "async-std" },
+]
+
+[advisories]
+version = 2
+yanked = "deny"
+ignore = [
+    # RUSTSEC-2023-0071 — "Marvin Attack: potential key recovery through
+    # timing sidechannels" in `rsa`. Still unpatched upstream (`patched =
+    # []` in the advisory as of rsa 0.9.10), and it does not reach this
+    # library.
+    #
+    # The advisory is about RSA *private-key* operations: information about
+    # the private key leaks through the timing of PKCS#1 v1.5 decryption.
+    # This crate never constructs an `RsaPrivateKey`, never decrypts and
+    # never signs. The only `rsa` API it touches is `RsaPublicKey::verify`
+    # over a public key taken out of a certificate, with no secret anywhere
+    # in the process and no oracle to time — the only observable is a
+    # `VerificationError` the caller already gets.
+    #
+    # This is asserted, not merely written down: the native suite's
+    # `no_source_file_constructs_an_rsa_private_key` fails the build if
+    # `RsaPrivateKey`, `.decrypt(`, `SigningKey` or `sign_with_rng` ever
+    # appears in src/.
+    #
+    # Keyed to the advisory id, never to the crate, so a different `rsa`
+    # advisory is not hidden behind this one. Revisit when rsa 0.10 lands.
+    "RUSTSEC-2023-0071",
+]
+
+[licenses]
+version = 2
+# Exactly the licences the current graph carries. cargo-deny warns on an
+# allowance nothing uses, so this list is kept honest rather than generous.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-3-Clause",
+]
+confidence-threshold = 0.9
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

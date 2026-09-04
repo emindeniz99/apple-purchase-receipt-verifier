@@ -1,0 +1,66 @@
+[package]
+name = "apple-purchase-receipt-verifier"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.74.0"
+description = "Offline verification of Apple App Store JWS payloads and legacy PKCS#7 app receipts against pinned Apple roots."
+license = "MIT"
+repository = "https://github.com/emindeniz99/apple-purchase-receipt-verifier"
+readme = "README.md"
+keywords = ["apple", "appstore", "receipt", "storekit", "verification"]
+categories = ["cryptography", "authentication"]
+# The published tarball is src/, certs/, README.md, LICENSE and the
+# manifest. The tests read ../../fixtures, which a registry consumer does
+# not have, and the two handoff documents describe this repository's CI and
+# release wiring rather than the crate.
+exclude = ["tests/**", "fuzz/**", "ci-job.md", "RELEASE.md", "rustfmt.toml", "deny.toml"]
+
+[lib]
+name = "apple_purchase_receipt_verifier"
+path = "src/lib.rs"
+
+[features]
+default = ["endpoint"]
+endpoint = []
+
+# Seven crates, all of them primitives. Every byte of attacker-supplied
+# ASN.1 — certificates, CMS, receipt payloads, keys, signatures — is parsed
+# by this crate's own bounded reader, so no third-party parser decides what a
+# key or a signature is. What is delegated is arithmetic: modular
+# exponentiation, two curves, three digests.
+#
+# `deny.toml` bans, as a build-breaking rule, every crate that could bring a
+# system trust store or a network client into the tree.
+[dependencies]
+rsa = { version = "0.9.10", default-features = false, features = ["std"] }
+p256 = { version = "0.13.2", default-features = false, features = ["ecdsa", "arithmetic", "std"] }
+p384 = { version = "0.13.1", default-features = false, features = ["ecdsa", "arithmetic", "std"] }
+sha1 = { version = "0.10.7", default-features = false, features = ["oid"] }
+sha2 = { version = "0.10.9", default-features = false, features = ["oid"] }
+digest = "0.10.7"
+subtle = "2.6"
+serde_json = "1"
+
+[dev-dependencies]
+libtest-mimic = "0.8.2"
+hex = "0.4.3"
+sha2 = "0.10.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# The conformance suite drives all five operations, and one of them is the
+# verifyReceipt endpoint. Declaring the requirement here rather than
+# #[cfg]-ing the cases away keeps a `--no-default-features` run honest: the
+# suite is not silently reduced, it is visibly not built.
+[[test]]
+name = "conformance"
+harness = false
+required-features = ["endpoint"]
+
+[[test]]
+name = "endpoint"
+required-features = ["endpoint"]
+
+[[test]]
+name = "public_receipts"
+required-features = ["endpoint"]

@@ -1,0 +1,6 @@
+/target
+# A library's lockfile is ignored by consumers, and committing it collides
+# with release-please: the file records this package's own version, so a
+# version bump that touches only Cargo.toml makes every `--locked` job fail.
+# CI generates an MSRV-pinned lockfile instead (see ci-job.md).
+Cargo.lock
