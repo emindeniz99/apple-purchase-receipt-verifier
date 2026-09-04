@@ -326,6 +326,24 @@
       "role": "input",
       "codec": "base64",
       "contentSha256": "d33c449bcbbd7852556a3fb2d58faf856b58ee5dd44af8d5db302fb6aae10176"
+    },
+    "transaction-sig-trailing-junk": {
+      "path": "generated/transaction-sig-trailing-junk.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "bb321e21ed6453035f9cd1e9a62085222b71bbd66b49c1f72c201b1f27f74853"
+    },
+    "transaction-sig-padded": {
+      "path": "generated/transaction-sig-padded.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "712a0a7a1e7c549850f72ece92207ff48db2e18311ab66f77df56dbe114cca06"
+    },
+    "transaction-sig-noncanonical": {
+      "path": "generated/transaction-sig-noncanonical.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "cd93f46faf47ad5d0d7677b5428bcd7b9bad8b0b45e4b0ee77986bb3306d02dd"
     }
   },
   "cases": [
@@ -2349,6 +2367,102 @@
         "negative",
         "hostile-input",
         "attribute-type",
+        "generated"
+      ]
+    },
+    {
+      "id": "transaction/reject-signature-segment-trailing-junk",
+      "description": "Four non-base64url characters are appended to the signature segment of an otherwise genuine, verifying transaction. Everything before the segment decode is intact, so the only question this pins is whether a port decodes a compact-JWS segment strictly. A lenient decoder drops the characters it does not recognise and recovers the original 64 signature bytes, so the payload verifies and the port answers ok; a strict one refuses the segment. This is pinned strict: RFC 7515 section 2 defines the segments as unpadded base64url, and accepting anything else means a port accepts bytes the signature does not cover.",
+      "operation": "verifyTransaction",
+      "input": {
+        "fixture": "transaction-sig-trailing-junk"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_JWS_FORMAT"
+      },
+      "fault": "signature-segment-carries-non-alphabet-bytes",
+      "tags": [
+        "jws",
+        "transaction",
+        "negative",
+        "format",
+        "generated"
+      ]
+    },
+    {
+      "id": "transaction/reject-signature-segment-padding",
+      "description": "The signature segment of a genuine, verifying transaction is padded to a multiple of four with '='. RFC 7515 section 2 specifies base64url with the padding omitted, so the padded spelling is not a compact JWS. As with the trailing-junk case the decoded signature bytes are unchanged, so a port that tolerates padding answers ok and a port that does not refuses the segment.",
+      "operation": "verifyTransaction",
+      "input": {
+        "fixture": "transaction-sig-padded"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_JWS_FORMAT"
+      },
+      "fault": "signature-segment-carries-base64-padding",
+      "tags": [
+        "jws",
+        "transaction",
+        "negative",
+        "format",
+        "generated"
+      ]
+    },
+    {
+      "id": "transaction/reject-signature-segment-noncanonical",
+      "description": "The final character of the signature segment is replaced by one that decodes to the same bytes with a different bit pattern in the trailing bits base64url does not use. The decoded signature is byte-identical to the genuine one, so the ES256 check passes wherever the segment decodes at all: this is the same signed transaction under a second spelling. That is what makes it the sharpest of the three. A caller that deduplicates on the JWS string rather than on transactionId (PLAN.md D4) gets a fresh cache key for a payload it has already honoured, so the lenient answer is an accept for every one of the sixteen spellings this substitution admits.",
+      "operation": "verifyTransaction",
+      "input": {
+        "fixture": "transaction-sig-noncanonical"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_JWS_FORMAT"
+      },
+      "fault": "signature-segment-final-character-has-non-zero-unused-bits",
+      "tags": [
+        "jws",
+        "transaction",
+        "negative",
+        "format",
         "generated"
       ]
     }

@@ -120,6 +120,23 @@ export function base64Decode(text: string): Uint8Array {
   return out.subarray(0, length);
 }
 
+/**
+ * Strict, canonical base64url decode — RFC 7515 §2's compact-JWS segment
+ * alphabet (`A-Za-z0-9-_`), no padding. Rejects a character outside that
+ * alphabet, an impossible length (`length % 4 === 1`), or a final character
+ * whose unused bits are non-zero, by re-encoding the decoded bytes with
+ * {@link base64UrlEncode} and requiring an exact match — the same test a
+ * lenient decode-then-skip pass cannot make. Returns null rather than
+ * throwing; JWS-format callers turn that into their own VerificationError.
+ */
+export function base64UrlDecodeStrict(text: string): Uint8Array | null {
+  if (!/^[A-Za-z0-9_-]*$/.test(text) || text.length % 4 === 1) {
+    return null;
+  }
+  const decoded = base64Decode(text);
+  return base64UrlEncode(decoded) === text ? decoded : null;
+}
+
 const BASE64URL_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 
 // Hand-rolled for the same reason base64Decode is, and one more: btoa()

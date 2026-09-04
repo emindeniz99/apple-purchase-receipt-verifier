@@ -5,7 +5,7 @@
  * builds return the same reason for the same payload.
  */
 import { Environment, Reason, VerificationError } from './errors.js';
-import { base64Decode, utf8Decode } from './bytes.js';
+import { base64UrlDecodeStrict, utf8Decode } from './bytes.js';
 
 /** Apple marker OID: leaf certificate used for App Store signing. */
 export const LEAF_OID = '1.2.840.113635.100.6.11.1';
@@ -120,9 +120,25 @@ export function splitJws(jws: string): JwsSegments {
   };
 }
 
+/**
+ * Strict, canonical base64url decode of one compact-JWS segment (header,
+ * payload, or signature) — RFC 7515 §2. Unlike the x5c entries and legacy
+ * receipt base64 elsewhere in this library, a compact-JWS segment must be
+ * unpadded canonical base64url: no character outside `A-Za-z0-9-_`, no `=`,
+ * no impossible length, and no final character with unused bits set.
+ */
+export function decodeJwsSegment(segment: string, what: string): Uint8Array {
+  const decoded = base64UrlDecodeStrict(segment);
+  if (decoded === null) {
+    throw new VerificationError(Reason.INVALID_JWS_FORMAT, `${what} is not canonical base64url`);
+  }
+  return decoded;
+}
+
 export function parseJsonSegment(segment: string, what: string): Claims {
+  const decoded = decodeJwsSegment(segment, what);
   try {
-    const parsed: unknown = JSON.parse(utf8Decode(base64Decode(segment)));
+    const parsed: unknown = JSON.parse(utf8Decode(decoded));
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
       throw new Error('not a JSON object');
     }

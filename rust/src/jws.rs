@@ -460,11 +460,13 @@ impl JwsVerifier {
         // transaction have unboundedly many accepted wire forms, so an
         // integrator deduping on the JWS string is defeated by one
         // character.
+        //
+        // A segment that isn't canonical base64url is a *format* failure,
+        // decided before any cryptography runs — the same class as a header
+        // that isn't base64url JSON, not a cryptographic verdict on a
+        // signature that was actually checked.
         let Some(signature) = decode_base64url_strict(segments.signature_b64) else {
-            return Err(VerificationError::new(
-                Reason::InvalidSignature,
-                "signature segment is not canonical base64url",
-            ));
+            return Err(invalid_jws("signature segment is not canonical base64url"));
         };
         if signature.len() != 64 {
             return Err(VerificationError::new(

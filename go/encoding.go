@@ -2,7 +2,6 @@ package applereceipt
 
 import (
 	"encoding/base64"
-	"strings"
 )
 
 // Base64 decoding, deliberately lenient in exactly the way the other
@@ -91,19 +90,22 @@ func decodeBase64(text string, limit int) []byte {
 // decodeBase64URLStrict decodes one compact-JWS segment.
 //
 // Unlike decodeBase64 this one FAILS on anything that is not canonical
-// base64url: a character outside the alphabet, a wrong length, or
-// non-zero bits in the final quantum. Trailing "=" padding is stripped
-// first, because RFC 7515 forbids it but tolerating it costs nothing.
+// base64url: a character outside the alphabet, "=" padding (RFC 7515 §2
+// requires the padding to be omitted), a wrong length, or non-zero bits
+// in the final quantum. base64.RawURLEncoding.Strict() rejects all four
+// on its own — "raw" means no padding accepted, and .Strict() adds the
+// alphabet and trailing-bits checks — so this is a direct call, nothing
+// is stripped first.
 //
 // It is deliberately stricter than Java's MIME decoder and Node's
 // Buffer.from(s, "base64url"), both of which skip characters they do not
-// recognise. The difference is observable in exactly one place: appending
-// junk to a compact JWS, or flipping the unused bits of a segment's last
-// character, leaves those ports' answer unchanged, and makes this one
-// answer INVALID_JWS_FORMAT. Strictness here can only turn an accept into
-// a reject, never the reverse, and it means every byte of a JWS this port
+// recognise and tolerate padding. The difference is observable in
+// exactly one place: appending junk to a compact JWS, padding a segment,
+// or flipping the unused bits of a segment's last character, leaves
+// those ports' answer unchanged, and makes this one answer
+// INVALID_JWS_FORMAT. Strictness here can only turn an accept into a
+// reject, never the reverse, and it means every byte of a JWS this port
 // accepts is a byte the signature covers.
 func decodeBase64URLStrict(segment string) ([]byte, error) {
-	trimmed := strings.TrimRight(segment, "=")
-	return base64.RawURLEncoding.Strict().DecodeString(trimmed)
+	return base64.RawURLEncoding.Strict().DecodeString(segment)
 }

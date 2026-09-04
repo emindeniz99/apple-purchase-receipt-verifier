@@ -275,7 +275,10 @@ final class JwsVerifier
         if ($leaf->publicKeyType() !== OPENSSL_KEYTYPE_EC) {
             throw new VerificationException(Reason::InvalidSignature, 'leaf key is not EC');
         }
-        $signature = Base64::decode($signatureB64);
+        $signature = Base64::decodeStrict($signatureB64);
+        if ($signature === null) {
+            throw new VerificationException(Reason::InvalidJwsFormat, 'signature segment is not valid base64url');
+        }
         if (strlen($signature) !== 64) {
             throw new VerificationException(
                 Reason::InvalidSignature,

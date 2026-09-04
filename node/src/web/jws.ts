@@ -2,6 +2,7 @@ import { Environment, Reason, VerificationError } from '../errors.js';
 import { asciiEncode, base64Decode } from '../bytes.js';
 import { parseCertificate, type ParsedCertificate } from '../x509.js';
 import {
+  decodeJwsSegment,
   INTERMEDIATE_OID,
   JwsClaimChecker,
   LEAF_OID,
@@ -119,7 +120,7 @@ export class JwsVerifier {
     if (leaf.publicKeyAlgorithmOid !== OID_EC_PUBLIC_KEY) {
       throw new VerificationError(Reason.INVALID_SIGNATURE, 'leaf key is not EC');
     }
-    const signature = base64Decode(signatureB64);
+    const signature = decodeJwsSegment(signatureB64, 'signature');
     if (signature.length !== 64) {
       throw new VerificationError(
         Reason.INVALID_SIGNATURE,

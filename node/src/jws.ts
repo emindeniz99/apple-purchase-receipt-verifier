@@ -3,6 +3,7 @@ import { Environment, Reason, VerificationError } from './errors.js';
 import { hasExtension } from './der.js';
 import { normalizeRoots, validatePair, type RootInput } from './chain.js';
 import {
+  decodeJwsSegment,
   INTERMEDIATE_OID,
   JwsClaimChecker,
   LEAF_OID,
@@ -118,7 +119,7 @@ export class JwsVerifier {
     if (leaf.publicKey.asymmetricKeyType !== 'ec') {
       throw new VerificationError(Reason.INVALID_SIGNATURE, 'leaf key is not EC');
     }
-    const signature = Buffer.from(signatureB64, 'base64url');
+    const signature = Buffer.from(decodeJwsSegment(signatureB64, 'signature'));
     if (signature.length !== 64) {
       throw new VerificationError(
         Reason.INVALID_SIGNATURE,

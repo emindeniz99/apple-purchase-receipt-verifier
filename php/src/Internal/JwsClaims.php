@@ -69,8 +69,12 @@ final class JwsClaims
      */
     public static function parseJsonSegment(string $segment, string $what): array
     {
+        $decoded = Base64::decodeStrict($segment);
+        if ($decoded === null) {
+            throw new VerificationException(Reason::InvalidJwsFormat, "{$what} is not valid base64url");
+        }
         try {
-            $parsed = json_decode(Base64::decode($segment), true, self::JSON_MAX_DEPTH, JSON_THROW_ON_ERROR);
+            $parsed = json_decode($decoded, true, self::JSON_MAX_DEPTH, JSON_THROW_ON_ERROR);
         } catch (\JsonException $e) {
             throw new VerificationException(Reason::InvalidJwsFormat, "{$what} is not valid base64url JSON", $e);
         }

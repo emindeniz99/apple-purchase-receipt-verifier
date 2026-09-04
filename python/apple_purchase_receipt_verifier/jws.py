@@ -6,6 +6,7 @@ mirroring the Java implementation check-for-check."""
 import base64
 import binascii
 import json
+import re
 import time
 from collections.abc import Iterable
 from typing import Any, Callable, Optional
@@ -25,11 +26,31 @@ LEAF_OID = x509.ObjectIdentifier("1.2.840.113635.100.6.11.1")
 INTERMEDIATE_OID = x509.ObjectIdentifier("1.2.840.113635.100.6.2.1")
 
 
+#: RFC 7515 section 2 compact-JWS segments are unpadded canonical base64url:
+#: this alphabet only, no "=" padding.
+_B64URL_RE = re.compile(r"^[A-Za-z0-9_-]*$")
+
+
 def _b64url(segment: str, what: str) -> bytes:
+    # Reject anything outside the base64url alphabet (incl. "=" padding) and
+    # any length base64 cannot represent, before decoding at all — Python's
+    # decoder silently discards non-alphabet characters otherwise, which
+    # would recover the original bytes from a corrupted segment.
+    if _B64URL_RE.match(segment) is None or len(segment) % 4 == 1:
+        raise VerificationError(Reason.INVALID_JWS_FORMAT, f"{what} is not valid base64url")
+    padded = segment + "=" * (-len(segment) % 4)
     try:
-        return base64.urlsafe_b64decode(segment + "=" * (-len(segment) % 4))
+        decoded = base64.urlsafe_b64decode(padded)
     except (binascii.Error, ValueError) as e:
         raise VerificationError(Reason.INVALID_JWS_FORMAT, f"{what} is not valid base64url") from e
+    # Canonical check: the decoder ignores unused bits in the final
+    # character, so a segment whose trailing bits are non-zero decodes to
+    # the same bytes as its canonical spelling. Re-encoding must round-trip
+    # to the original segment, or it isn't the canonical encoding of those
+    # bytes.
+    if base64.urlsafe_b64encode(decoded).rstrip(b"=").decode("ascii") != segment:
+        raise VerificationError(Reason.INVALID_JWS_FORMAT, f"{what} is not valid base64url")
+    return decoded
 
 
 def _json_segment(segment: str, what: str) -> "dict[str, Any]":

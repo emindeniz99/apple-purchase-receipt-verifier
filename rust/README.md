@@ -278,12 +278,12 @@ BER would reject Apple's own Xcode receipts.
 
 The JWS side is closed instead of merely documented. The three segments are
 decoded as unpadded canonical base64url (RFC 7515 §2), so one signed payload
-has exactly one accepted spelling. That is deliberately stricter than the
-shipped ports: Node and Python decode the segments leniently and accept junk
-appended to the signature segment, and Java and Swift accept the padded form
-and a final character whose unused bits are not zero. An `x5c` entry is a
-certificate container, not a segment, and stays leniently decoded — the same
-input Java hands to its MIME decoder.
+has exactly one accepted spelling; a segment that is not that exact spelling
+is `INVALID_JWS_FORMAT`, decided before any cryptography runs, the same class
+as a header that is not base64url JSON. An `x5c` entry is a certificate
+container, not a segment, and stays leniently decoded — the same input Java
+hands to its MIME decoder — so a padded or wrapped `x5c` entry keeps its own
+reason codes.
 
 One further deliberate difference, recorded because no shared vector covers
 it: `x5c[2]` is never decoded or parsed here. Node, Python and Swift agree;

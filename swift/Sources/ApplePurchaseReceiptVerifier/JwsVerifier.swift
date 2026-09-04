@@ -211,7 +211,10 @@ public struct JwsVerifier: Sendable {
         guard let publicKey = P256.Signing.PublicKey(leaf.publicKey) else {
             throw VerificationError(.invalidSignature, "leaf key is not EC P-256")
         }
-        guard let signatureBytes = base64URLDecode(segments[2]), signatureBytes.count == 64,
+        guard let signatureBytes = base64URLDecode(segments[2]) else {
+            throw VerificationError(.invalidJwsFormat, "signature segment is not valid base64url")
+        }
+        guard signatureBytes.count == 64,
             let signature = try? P256.Signing.ECDSASignature(rawRepresentation: signatureBytes)
         else {
             throw VerificationError(.invalidSignature, "ES256 signature must be 64 raw bytes")
@@ -275,9 +278,30 @@ public struct JwsVerifier: Sendable {
     }
 }
 
+/// The compact-JWS segment alphabet (RFC 7515 §2): unpadded base64url.
+private let base64URLAlphabet = CharacterSet(
+    charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
+
+/// Strict base64url decoding for the three compact-JWS segments (header,
+/// payload, signature). RFC 7515 §2 defines them as unpadded canonical
+/// base64url, so a segment is rejected when it has a character outside the
+/// alphabet above (which also excludes `=` padding), has an impossible
+/// length (`count % 4 == 1`), or its final character carries non-zero
+/// unused bits — checked by re-encoding the decoded bytes and requiring an
+/// exact match against the padded input.
+///
+/// x5c certificate entries and the legacy receipt's base64 are decoded
+/// elsewhere with `Data(base64Encoded:)` directly and keep their existing
+/// lenient behavior; only these three segments go through this function.
 func base64URLDecode(_ segment: String) -> Data? {
+    guard segment.unicodeScalars.allSatisfy(base64URLAlphabet.contains),
+        segment.utf8.count % 4 != 1
+    else { return nil }
     var base64 = segment.replacingOccurrences(of: "-", with: "+")
         .replacingOccurrences(of: "_", with: "/")
     while base64.count % 4 != 0 { base64.append("=") }
-    return Data(base64Encoded: base64)
+    guard let data = Data(base64Encoded: base64), data.base64EncodedString() == base64 else {
+        return nil
+    }
+    return data
 }

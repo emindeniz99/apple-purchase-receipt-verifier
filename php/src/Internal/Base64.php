@@ -43,6 +43,17 @@ namespace EminDeniz99\ApplePurchaseReceiptVerifier\Internal;
  * "succeeded" either — the bytes still have to be a parseable certificate,
  * CMS blob or JSON object.
  *
+ * ## The three compact-JWS segments no longer go through this leniency
+ *
+ * `decode()` above still serves `x5c` certificate entries and legacy receipt
+ * base64 (both PEM/CMS containers, not JWS segments) exactly as measured. The
+ * header, payload and signature segments of a compact JWS are decoded by
+ * {@see decodeStrict()} instead: RFC 7515 §2 defines them as unpadded
+ * canonical base64url, and `fixtures/cases.json` now pins that a byte outside
+ * the alphabet, a `=`, or a noncanonical final character in any of the three
+ * makes the JWS `INVALID_JWS_FORMAT` — the leniency table above is therefore
+ * about `decode()`'s remaining callers, not about compact-JWS segments.
+ *
  * @internal
  */
 final class Base64
@@ -70,6 +81,38 @@ final class Base64
         }
 
         return $out;
+    }
+
+    /**
+     * Strict base64url decode for one compact-JWS segment (RFC 7515 §2):
+     * the unpadded base64url alphabet only, and the canonical encoding of
+     * whatever bytes come out. Returns null — never throws — for anything
+     * else, so a caller attaches its own {@see \EminDeniz99\ApplePurchaseReceiptVerifier\VerificationException}
+     * message; unlike {@see decode()}, this never skips a character.
+     *
+     * Rejected: any byte outside `A-Za-z0-9-_` (including `=`), a length
+     * with `len % 4 === 1` (impossible for base64), and a final character
+     * whose unused low bits are not all zero — checked by re-encoding the
+     * decoded bytes and requiring the result to equal the input segment,
+     * since PHP's own `base64_decode($s, true)` does not enforce that.
+     */
+    public static function decodeStrict(string $segment): ?string
+    {
+        if (preg_match('/\A[A-Za-z0-9_-]*\z/', $segment) !== 1 || strlen($segment) % 4 === 1) {
+            return null;
+        }
+        $padded = strtr($segment, '-_', '+/');
+        $padded .= str_repeat('=', (4 - strlen($padded) % 4) % 4);
+        $decoded = base64_decode($padded, true);
+        if ($decoded === false) {
+            return null;
+        }
+        $reencoded = strtr(rtrim(base64_encode($decoded), '='), '+/', '-_');
+        if ($reencoded !== $segment) {
+            return null;
+        }
+
+        return $decoded;
     }
 
     /** @return array<int, int> */

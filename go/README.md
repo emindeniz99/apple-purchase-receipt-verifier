@@ -267,12 +267,14 @@ exercises.
 **Base64 strictness.** Receipt and `x5c` base64 is decoded leniently, matching
 Java's MIME decoder and Node's `Buffer.from`: whitespace, PEM line breaks and
 padding are skipped. Compact-JWS segments are decoded **strictly** — a
-character outside the base64url alphabet, a wrong length, or non-zero bits in
-the final quantum is `INVALID_JWS_FORMAT`. That is stricter than the other
-ports in one observable place: appending junk to a JWS, or flipping the unused
-bits of a segment's last character, leaves their answer unchanged and makes
-this one reject. Strictness there can only turn an accept into a reject, and
-it means every byte of a JWS this port accepts is a byte the signature covers.
+character outside the base64url alphabet, `=` padding, a wrong length, or
+non-zero bits in the final quantum is `INVALID_JWS_FORMAT`, for all three
+segments (header, payload, signature). This is the cross-port contract every
+implementation is held to, not a Go-specific choice: appending junk to a
+compact JWS, padding a segment, or flipping the unused bits of a segment's
+last character must make every port reject. Strictness here can only turn an
+accept into a reject, and it means every byte of a JWS a port accepts is a
+byte the signature covers.
 
 ## Tests
 
