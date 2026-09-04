@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.0;net8.0</TargetFrameworks>
+    <RootNamespace>ApplePurchaseReceiptVerifier</RootNamespace>
+    <AssemblyName>ApplePurchaseReceiptVerifier</AssemblyName>
+    <SignAssembly>false</SignAssembly>
+
+    <PackageId>ApplePurchaseReceiptVerifier</PackageId>
+    <Authors>emindeniz99</Authors>
+    <PackageProjectUrl>https://github.com/emindeniz99/apple-purchase-receipt-verifier</PackageProjectUrl>
+    <Description>Offline verification of Apple App Store JWS payloads (StoreKit 2, App Store Server Notifications V2) and legacy PKCS#7 app receipts, against pinned Apple roots. No network, no OS trust store.</Description>
+    <PackageTags>apple;appstore;receipt;storekit;in-app-purchase;iap;verification;jws;pkcs7</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/emindeniz99/apple-purchase-receipt-verifier</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net8.0'">
+    <IsAotCompatible>true</IsAotCompatible>
+    <IsTrimmable>true</IsTrimmable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="../../BannedSymbols.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
+    <PackageReference Include="System.Formats.Asn1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The test project dogfoods the hand-rolled JSON reader and asserts on
+         the internal parsing helpers; nothing else sees them. -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>ApplePurchaseReceiptVerifier.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" Visible="false" />
+  </ItemGroup>
+
+</Project>
