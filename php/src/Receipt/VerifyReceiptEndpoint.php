@@ -82,8 +82,10 @@ final class VerifyReceiptEndpoint
     private readonly ClockInterface $clock;
 
     /**
-     * @param list<string> $trustedRoots DER bytes or PEM text of the pinned
+     * @param array<string> $trustedRoots DER bytes or PEM text of the pinned
      *        anchors. In production: {@see \EminDeniz99\ApplePurchaseReceiptVerifier\AppleRootCerts::receiptRoots()}.
+     *        Keys are ignored: the anchors are reindexed into a list, so a
+     *        caller may pass any string-keyed array.
      * @param Environment $environment which environment this endpoint
      *        instance emulates; it drives the 21007/21008 routing. Only
      *        {@see Environment::Production} and {@see Environment::Sandbox}
