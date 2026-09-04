@@ -5,7 +5,12 @@
        entry. Everything below runs against the same assembly a .NET Framework,
        Mono or Unity consumer would load. -->
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <!-- Every runtime the library is meant to run on, not just the
+         one the SDK happens to be. net9.0 goes end of life in
+         November 2026; net8.0 and net10.0 are the LTS runtimes
+         consumers actually deploy on, and neither was executed
+         while this said net9.0 alone. -->
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
     <OutputType>Exe</OutputType>
     <RootNamespace>ApplePurchaseReceiptVerifier.Tests.Floor</RootNamespace>
     <IsPackable>false</IsPackable>
