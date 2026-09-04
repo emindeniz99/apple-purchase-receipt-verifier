@@ -34,6 +34,10 @@ function decodeFixture(entry) {
       return Buffer.from(raw.toString('ascii').replace(/\s+/g, ''), 'base64');
     case 'utf8':
       return Buffer.from(raw.toString('utf8').trim(), 'utf8');
+    case 'text':
+      // The file bytes verbatim, untrimmed — several vectors are about
+      // whitespace, and one is 0 bytes, so this must NOT trim like utf8.
+      return raw;
     default:
       throw new Error(`harness error: unknown fixture codec "${entry.codec}"`);
   }
@@ -123,7 +127,8 @@ function jwsVerifier(config, clock) {
 // Each operation takes the case's clock (null when it pins none) and hands
 // it to the library's `clock` option. An operation whose API has no clock
 // seam rejects a case that pins one instead of silently running on the
-// system clock.
+// system clock. `fixture` is the input's registry entry (codec included),
+// needed only by the two operations whose wire form depends on it.
 const OPERATIONS = {
   verifyTransaction: (config, input, clock) =>
     jwsVerifier(config, clock).verifyTransaction(input.toString('utf8')),
@@ -140,12 +145,34 @@ const OPERATIONS = {
       config.deviceGuidHex === undefined ? null : Buffer.from(config.deviceGuidHex, 'hex');
     return verifier.verify(input, guid);
   },
-  verifyReceiptEndpoint: (config, input, clock) =>
+  // The string entry point: the fixture must be a text fixture (the raw
+  // characters a client sent), handed to verify() as a string, never
+  // pre-decoded by this harness — that decoding is exactly what this
+  // operation pins.
+  verifyReceiptBase64: (config, input, clock, fixture) => {
+    requireNoClock(clock, 'verifyReceiptBase64');
+    if (fixture.codec !== 'text') {
+      throw new Error('harness error: verifyReceiptBase64 case must name a text fixture');
+    }
+    const verifier = new ReceiptVerifier({
+      trustedRoots: trustedRoots(config.trustedRoots),
+      bundleId: config.bundleId,
+    });
+    const guid =
+      config.deviceGuidHex === undefined ? null : Buffer.from(config.deviceGuidHex, 'hex');
+    return verifier.verify(input.toString('utf8'), guid);
+  },
+  verifyReceiptEndpoint: (config, input, clock, fixture) =>
     new VerifyReceiptEndpoint({
       trustedRoots: trustedRoots(config.trustedRoots),
       environment: config.environment,
       clock,
-    }).verifyReceipt({ 'receipt-data': input.toString('base64') }),
+    }).verifyReceipt({
+      // A text fixture's bytes ARE the client-sent string, verbatim; a
+      // raw/base64 fixture is DER, which this harness re-encodes as
+      // canonical base64 the way a normal client would.
+      'receipt-data': fixture.codec === 'text' ? input.toString('utf8') : input.toString('base64'),
+    }),
 };
 
 function requireNoClock(clock, operation) {
@@ -278,9 +305,10 @@ function runCase(kase) {
     throw new Error(`harness error: no adapter for operation "${kase.operation}"`);
   }
   const input = fixtureBytes(kase.input.fixture);
+  const fixture = CASES.fixtures[kase.input.fixture];
   let result;
   try {
-    result = operation(kase.config, input, caseClock(kase));
+    result = operation(kase.config, input, caseClock(kase), fixture);
   } catch (error) {
     // Only a VerificationError carries a canonical Reason. Anything else is
     // a defect in the library or in this harness, and must never be read as

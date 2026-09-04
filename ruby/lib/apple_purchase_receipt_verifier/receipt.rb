@@ -130,6 +130,83 @@ module ApplePurchaseReceiptVerifier
         input.b
       end
 
+      # The full allowed character set, as a String#count pattern (a trailing
+      # "-" in a count/tr pattern is literal, not a range). A receipt is
+      # attacker-controlled and unbounded in size (hostile_input_test.rb), so
+      # this is checked with #count and #index rather than a Regexp: on a
+      # multi-megabyte string a `\A...\z` match costs tens of milliseconds
+      # where #count costs a handful — measured, not assumed.
+      BASE64_DISALLOWED = "^A-Za-z0-9+/_=-"
+      private_constant :BASE64_DISALLOWED
+
+      # Decodes the base64 text a client actually sends `receipt-data` as, per
+      # Apple's rule: RFC 4648, the standard (`+/`) or base64url (`-_`)
+      # alphabet — never both in one string — with padding present or
+      # correctly omitted, and CR, LF, space and tab stripped from anywhere
+      # first. Foundation's `base64EncodedString(options:)` can emit any
+      # combination of those, and every one of them decodes to the same
+      # bytes. Nothing else is a receipt: a stray character, data after the
+      # padding, or an empty (or all-whitespace) string is rejected.
+      #
+      # @param text [String] the receipt's base64 text, as a client sent it
+      # @return [String] the decoded DER bytes
+      # @raise [VerificationError]
+      def decode_base64(text)
+        unless text.is_a?(String)
+          raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
+                                      "receipt must be a base64 String")
+        end
+
+        # One owned copy, mutated in place from here on (delete!/tr!/slice!
+        # never reallocate the whole buffer) — a receipt is attacker-sized
+        # and unbounded (hostile_input_test.rb), so this path is written to
+        # take one pass per check rather than build intermediate copies of
+        # it.
+        stripped = text.b
+        stripped.delete!("\r\n \t")
+        raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT, "receipt is empty") if stripped.empty?
+
+        if stripped.count(BASE64_DISALLOWED).positive?
+          raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
+                                      "receipt contains a character outside the base64 alphabet")
+        end
+
+        # `=` never starts a run of data, so its first occurrence is where
+        # padding begins; everything from there on must be padding too, or
+        # data resumed after it (a caller-hostile shape no encoder emits).
+        # The tail checked here is at most a few bytes — encoders pad to at
+        # most 2 `=` — so slicing it costs nothing.
+        pad_at = stripped.index("=") || stripped.length
+        if stripped[pad_at..].count("^=").positive?
+          raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
+                                      "receipt has data after its base64 padding")
+        end
+
+        # Counted over the whole string rather than a `data` slice of it:
+        # padding is already known to hold nothing but `=`, so it can only
+        # add zero to either count.
+        if stripped.count("+/").positive? && stripped.count("_-").positive?
+          raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
+                                      "receipt mixes the standard and base64url alphabets")
+        end
+        if (pad_at % 4) == 1
+          raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
+                                      "receipt has an invalid base64 length")
+        end
+
+        stripped.tr!("-_", "+/")
+        # Whatever padding the client sent is discarded and rebuilt to the
+        # canonical count for `pad_at` — "present or omitted" is accepted,
+        # not "present in any amount".
+        stripped.slice!(pad_at..)
+        stripped << ("=" * ((4 - (pad_at % 4)) % 4))
+        begin
+          stripped.unpack1("m0")
+        rescue ArgumentError
+          raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT, "receipt is not base64")
+        end
+      end
+
       def decode_certificates(ders)
         ders.map do |der|
           OpenSSL::X509::Certificate.new(der)
@@ -269,17 +346,7 @@ module ApplePurchaseReceiptVerifier
     # @param device_guid [String, nil]
     # @return [AppReceipt]
     def verify_base64(base64, device_guid: nil)
-      unless base64.is_a?(String)
-        raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
-                                    "receipt must be a base64 String")
-      end
-
-      der = begin
-        base64.unpack1("m") || ""
-      rescue ArgumentError
-        raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT, "receipt is not base64")
-      end
-      verify_der(der, device_guid: device_guid)
+      verify_der(Receipt.decode_base64(base64), device_guid: device_guid)
     end
 
     private

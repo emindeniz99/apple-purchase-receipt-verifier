@@ -74,9 +74,13 @@ module TestSupport
       raw = File.binread(File.join(fixtures_root, entry["path"]))
       bytes =
         case entry["codec"]
-        when "raw" then raw
         when "base64" then raw.gsub(/\s+/, "").unpack1("m")
         when "utf8" then raw.force_encoding(Encoding::UTF_8).strip.b
+        # raw = the file bytes are the bytes; text = the same, verbatim and
+        # untrimmed, handed to a STRING-taking entry point instead of a
+        # binary one. Identical here: File.binread already reads verbatim,
+        # untrimmed bytes for both, CRLF and the one 0-byte fixture included.
+        when "raw", "text" then raw
         else raise "harness error: unknown fixture codec #{entry["codec"].inspect}"
         end
 

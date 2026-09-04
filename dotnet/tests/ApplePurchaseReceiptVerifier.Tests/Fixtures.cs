@@ -73,6 +73,10 @@ internal static class Fixtures
             "raw" => raw,
             "base64" => Convert.FromBase64String(Strip(Encoding.ASCII.GetString(raw))),
             "utf8" => Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(raw).Trim()),
+            // Verbatim, untrimmed: the whole point of this codec is pinning
+            // what a port does with the whitespace and padding a client sent,
+            // so nothing here may normalize it away.
+            "text" => raw,
             _ => throw new InvalidOperationException($"harness error: unknown fixture codec \"{codec}\""),
         };
 
@@ -94,6 +98,17 @@ internal static class Fixtures
 
     /// <summary>The fixture's bytes as UTF-8 text — the JWS transport form.</summary>
     internal static string Text(string id) => Encoding.UTF8.GetString(Bytes(id));
+
+    /// <summary>The fixture's registered codec, e.g. to branch on <c>"text"</c>.</summary>
+    internal static string Codec(string id)
+    {
+        if (Registry[id] is not OrderedMap entry)
+        {
+            throw new InvalidOperationException($"harness error: cases.json registers no fixture \"{id}\"");
+        }
+
+        return Str(entry, "codec");
+    }
 
     private static string Strip(string text)
     {

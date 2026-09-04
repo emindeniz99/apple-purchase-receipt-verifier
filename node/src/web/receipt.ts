@@ -1,5 +1,5 @@
 import { Reason, VerificationError } from '../errors.js';
-import { base64Decode, concatBytes, timingSafeBytesEqual } from '../bytes.js';
+import { concatBytes, receiptBase64DecodeStrict, timingSafeBytesEqual } from '../bytes.js';
 import {
   findMessageDigestAttribute,
   findSignerCertIndex,
@@ -35,6 +35,20 @@ export interface ReceiptVerifierOptions {
   trustedRoots: RootInput[];
   /** Bundle id the receipt must carry. */
   bundleId: string;
+}
+
+/**
+ * Decodes a client-supplied `receipt-data` string to DER per the
+ * receipt-data contract, throwing {@link Reason.INVALID_RECEIPT_FORMAT}
+ * (rather than silently skipping bad characters) when it does not conform.
+ * Matches the Node build's function of the same name in `../receipt.js`.
+ */
+function decodeReceiptDataString(text: string): Uint8Array {
+  const decoded = receiptBase64DecodeStrict(text);
+  if (decoded === null) {
+    throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'receipt-data is not valid base64');
+  }
+  return decoded;
 }
 
 /**
@@ -121,15 +135,19 @@ export class ReceiptVerifier {
 
   /**
    * Verifies a receipt (DER bytes, or its base64 string — the usual client
-   * transport form). Passing `deviceGuid` additionally enforces the
-   * device-hash binding: SHA1(guid ‖ opaqueValue ‖ bundleIdBytes) must equal
-   * attribute 5 (optional — PLAN.md D4).
+   * transport form). A string is decoded per the receipt-data contract
+   * (RFC 4648, standard or base64url alphabet, not mixed, padding optional —
+   * see {@link receiptBase64DecodeStrict}, matching the Node build); anything
+   * that decode rejects throws {@link Reason.INVALID_RECEIPT_FORMAT}. Passing
+   * `deviceGuid` additionally enforces the device-hash binding:
+   * SHA1(guid ‖ opaqueValue ‖ bundleIdBytes) must equal attribute 5
+   * (optional — PLAN.md D4).
    */
   async verify(
     receipt: Uint8Array | string,
     deviceGuid: Uint8Array | null = null,
   ): Promise<RawAppReceipt> {
-    const der = typeof receipt === 'string' ? base64Decode(receipt) : receipt;
+    const der = typeof receipt === 'string' ? decodeReceiptDataString(receipt) : receipt;
     const fields = await verifyReceiptCore(der, this.#roots);
     if (fields.bundleId !== this.#bundleId) {
       throw new VerificationError(

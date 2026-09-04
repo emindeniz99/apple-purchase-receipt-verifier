@@ -183,6 +183,17 @@ namespace ApplePurchaseReceiptVerifier.Receipt
             }
         }
 
+        /// <summary>
+        /// Decodes the base64 text a client actually sends. <c>receipt-data</c>
+        /// is "Base64 as defined in RFC 4648", and Foundation's
+        /// <c>base64EncodedString(options:)</c> can emit either the standard
+        /// (<c>+/</c>) or the URL-safe (<c>-_</c>) alphabet, padded or not,
+        /// wrapped with CR/LF at 64 or 76 columns. Everything Foundation can
+        /// emit is accepted; a character outside both alphabets, both
+        /// alphabets in one string, anything but whitespace after the
+        /// padding, and an empty (or whitespace-only) string are rejected.
+        /// There is no canonical-trailing-bits check.
+        /// </summary>
         internal static byte[] DecodeBase64(string base64Receipt)
         {
             if (base64Receipt is null)
@@ -195,15 +206,70 @@ namespace ApplePurchaseReceiptVerifier.Receipt
             int length = 0;
             foreach (char c in base64Receipt)
             {
-                if (!char.IsWhiteSpace(c))
+                if (c != '\r' && c != '\n' && c != ' ' && c != '\t')
                 {
                     compact[length++] = c;
                 }
             }
 
+            // A trailing run of '=' is padding. Anything else there means a
+            // '=' sits before the run ends, which the alphabet scan below
+            // rejects: '=' is not a recognised data character.
+            int dataLength = length;
+            while (dataLength > 0 && compact[dataLength - 1] == '=')
+            {
+                dataLength--;
+            }
+
+            if (dataLength == 0)
+            {
+                throw new VerificationException(
+                    VerificationReason.InvalidReceiptFormat, "receipt is empty");
+            }
+
+            if (dataLength % 4 == 1)
+            {
+                throw new VerificationException(
+                    VerificationReason.InvalidReceiptFormat, "receipt has an impossible base64 length");
+            }
+
+            bool sawStandard = false;
+            bool sawUrlSafe = false;
+            for (int i = 0; i < dataLength; i++)
+            {
+                char c = compact[i];
+                if (c == '+' || c == '/')
+                {
+                    sawStandard = true;
+                }
+                else if (c == '-' || c == '_')
+                {
+                    sawUrlSafe = true;
+                    compact[i] = c == '-' ? '+' : '/';
+                }
+                else if (!IsBase64Alphanumeric(c))
+                {
+                    throw new VerificationException(
+                        VerificationReason.InvalidReceiptFormat,
+                        "receipt contains a character outside the base64 or base64url alphabet");
+                }
+            }
+
+            if (sawStandard && sawUrlSafe)
+            {
+                throw new VerificationException(
+                    VerificationReason.InvalidReceiptFormat,
+                    "receipt mixes the standard and URL-safe base64 alphabets");
+            }
+
+            int remainder = dataLength % 4;
+            string canonical = remainder == 0
+                ? new string(compact, 0, dataLength)
+                : new string(compact, 0, dataLength) + new string('=', 4 - remainder);
+
             try
             {
-                return Convert.FromBase64String(new string(compact, 0, length));
+                return Convert.FromBase64String(canonical);
             }
             catch (FormatException e)
             {
@@ -211,6 +277,9 @@ namespace ApplePurchaseReceiptVerifier.Receipt
                     VerificationReason.InvalidReceiptFormat, "receipt is not valid base64", e);
             }
         }
+
+        private static bool IsBase64Alphanumeric(char c) =>
+            (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
 
         /// <summary>
         /// Containment by category. <c>SignedCms</c> and <c>AsnReader</c> report

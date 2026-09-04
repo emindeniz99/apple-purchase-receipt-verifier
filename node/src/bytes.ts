@@ -120,6 +120,39 @@ export function base64Decode(text: string): Uint8Array {
   return out.subarray(0, length);
 }
 
+// receipt-data as Apple's own client can send it: RFC 4648, either the
+// standard (`+/`) or base64url (`-_`) alphabet — never both in the same
+// string — padding present or omitted, and CR/LF/space/tab anywhere
+// (Foundation's base64EncodedString(options:) line-wraps at 64 or 76
+// columns). Unlike base64UrlDecodeStrict this has no canonical-trailing-bits
+// check — that is not part of the receipt-data contract.
+const RECEIPT_BASE64_PATTERN = /^[A-Za-z0-9+/_-]*={0,2}$/;
+
+/**
+ * Strict receipt-data base64 decode (the `verifyReceiptBase64` / `receipt-data`
+ * contract, PLAN §receipt-base64). Strips CR, LF, space and tab first, then
+ * rejects: any other character; a string mixing the standard and base64url
+ * alphabets; anything (beyond the already-stripped whitespace) after the
+ * `=` padding; a stripped length congruent to 1 mod 4; and an empty or
+ * whitespace-only string. Returns null rather than throwing.
+ */
+export function receiptBase64DecodeStrict(text: string): Uint8Array | null {
+  const stripped = text.replace(/[\r\n \t]/g, '');
+  if (
+    stripped.length === 0 ||
+    stripped.length % 4 === 1 ||
+    !RECEIPT_BASE64_PATTERN.test(stripped)
+  ) {
+    return null;
+  }
+  const hasStandard = stripped.includes('+') || stripped.includes('/');
+  const hasUrlSafe = stripped.includes('-') || stripped.includes('_');
+  if (hasStandard && hasUrlSafe) {
+    return null;
+  }
+  return base64Decode(stripped);
+}
+
 /**
  * Strict, canonical base64url decode — RFC 7515 §2's compact-JWS segment
  * alphabet (`A-Za-z0-9-_`), no padding. Rejects a character outside that

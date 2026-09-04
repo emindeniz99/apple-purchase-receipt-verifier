@@ -303,7 +303,10 @@ final class ReceiptVerifier
         if (strlen($receipt) > $maxReceiptBytes) {
             throw new VerificationException(Reason::InvalidReceiptFormat, 'receipt exceeds the configured size limit');
         }
-        $der = $receipt[0] === "\x30" ? $receipt : Base64::decode($receipt);
+        $der = $receipt[0] === "\x30" ? $receipt : Base64::decodeReceipt($receipt);
+        if ($der === null) {
+            throw new VerificationException(Reason::InvalidReceiptFormat, 'receipt is not valid base64');
+        }
         if ($der === '') {
             throw new VerificationException(Reason::InvalidReceiptFormat, 'receipt is empty');
         }

@@ -81,11 +81,7 @@ public struct ReceiptVerifier: Sendable {
 
     /// Verifies a base64 receipt (the usual client transport form).
     public func verify(base64Receipt: String, deviceGuid: Data? = nil) async throws -> AppReceipt {
-        guard
-            let der = Data(
-                base64Encoded: base64Receipt,
-                options: [.ignoreUnknownCharacters])
-        else {
+        guard let der = decodeReceiptBase64(base64Receipt) else {
             throw VerificationError(.invalidReceiptFormat, "receipt is not valid base64")
         }
         return try await verify(receipt: der, deviceGuid: deviceGuid)
@@ -282,6 +278,85 @@ public struct ReceiptVerifier: Sendable {
                 "computed device hash does not match attribute 5")
         }
     }
+}
+
+// MARK: - receipt-data base64
+
+/// Decodes a `receipt-data` string exactly as a client transports one,
+/// shared by ``ReceiptVerifier/verify(base64Receipt:deviceGuid:)`` and
+/// ``VerifyReceiptEndpoint/verifyReceipt(_:)``. Apple's rule: `receipt-data`
+/// is Base64 as defined in RFC 4648, and Foundation's
+/// `base64EncodedString(options:)` can emit the standard (`+/`) or the
+/// base64url (`-_`) alphabet, with or without padding, with CR/LF line
+/// endings at 64 or 76 columns — so every one of those is accepted, with
+/// whitespace (CR, LF, space, tab) tolerated anywhere. Rejected (`nil`):
+/// a character outside both alphabets, both alphabets in one string,
+/// anything but whitespace after the padding, a stripped length congruent
+/// to 1 mod 4, and an empty or whitespace-only string. No canonical-
+/// trailing-bits check — that discipline is left to `Data(base64Encoded:)`.
+///
+/// Whitespace is stripped and the alphabet normalized to standard by
+/// walking UTF-8 bytes rather than `Character`s: Swift's `String` groups a
+/// `"\r\n"` pair into a single extended grapheme cluster, so comparing
+/// `Character`s against `"\r"` and `"\n"` individually never matches a
+/// PEM-wrapped receipt's line endings and rejects every 76-column input.
+/// Whatever padding the input carried is discarded and recomputed from the
+/// data length instead of validated in place: `Data(base64Encoded:
+/// options: [])` already accepts equal-or-more padding than a group
+/// strictly needs, so re-padding to the correct amount here is sufficient
+/// — a body length congruent to 1 mod 4 is rejected above and stays
+/// rejected however it is padded, and any smaller mismatch does not change
+/// which bytes decode to.
+func decodeReceiptBase64(_ text: String) -> Data? {
+    var body: [UInt8] = []
+    var sawPadding = false
+    var standardAlphabet = false
+    var urlsafeAlphabet = false
+    var strippedLength = 0
+
+    for byte in text.utf8 {
+        switch byte {
+        case 0x0D, 0x0A, 0x20, 0x09:  // \r \n space \t
+            continue
+        default:
+            break
+        }
+        strippedLength += 1
+        if sawPadding {
+            guard byte == 0x3D else { return nil }  // only '=' may follow padding
+            continue
+        }
+        switch byte {
+        case 0x3D:  // '='
+            sawPadding = true
+        case 0x2B:  // '+'
+            standardAlphabet = true
+            body.append(0x2B)
+        case 0x2F:  // '/'
+            standardAlphabet = true
+            body.append(0x2F)
+        case 0x2D:  // '-'
+            urlsafeAlphabet = true
+            body.append(0x2B)
+        case 0x5F:  // '_'
+            urlsafeAlphabet = true
+            body.append(0x2F)
+        case 0x30...0x39, 0x41...0x5A, 0x61...0x7A:  // 0-9 A-Z a-z
+            body.append(byte)
+        default:
+            return nil
+        }
+    }
+
+    guard !(standardAlphabet && urlsafeAlphabet) else { return nil }
+    guard !body.isEmpty else { return nil }
+    guard strippedLength % 4 != 1 else { return nil }
+
+    let remainder = body.count % 4
+    if remainder != 0 {
+        body.append(contentsOf: repeatElement(UInt8(ascii: "="), count: 4 - remainder))
+    }
+    return Data(base64Encoded: Data(body), options: [])
 }
 
 // MARK: - CMS SignedData (BER-tolerant)

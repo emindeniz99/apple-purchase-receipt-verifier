@@ -17,7 +17,6 @@ import java.security.cert.X509Certificate;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.Collection;
 import java.util.Date;
 import java.util.HashSet;
@@ -149,16 +148,15 @@ public final class ReceiptVerifier {
 
     /** Verifies a base64-encoded receipt (the usual client transport form). */
     public AppReceipt verify(String base64Receipt) throws VerificationException {
-        if (base64Receipt == null) {
-            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "receipt is null");
-        }
-        byte[] der;
-        try {
-            der = Base64.getMimeDecoder().decode(base64Receipt);
-        } catch (IllegalArgumentException e) {
-            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "receipt is not valid base64", e);
-        }
-        return verify(der);
+        return verify(base64Receipt, null);
+    }
+
+    /**
+     * Verifies a base64-encoded receipt and additionally enforces the
+     * device-hash binding; see {@link #verify(byte[], byte[])}.
+     */
+    public AppReceipt verify(String base64Receipt, byte[] deviceGuid) throws VerificationException {
+        return verify(ReceiptBase64.decode(base64Receipt), deviceGuid);
     }
 
     /** Verifies a DER-encoded PKCS#7 receipt. */

@@ -1,13 +1,20 @@
 //! Base64, in the three shapes this crate needs.
 //!
-//! There are two decoders, and which one a caller gets is a security
+//! There are three decoders, and which one a caller gets is a security
 //! decision rather than a convenience.
 //!
 //! [`decode_lenient`] skips everything outside both alphabets. That is what
 //! the *container* formats need — a PEM body carrying line breaks, an `x5c`
-//! entry, the whitespace a real `receipt-data` blob arrives with — and it
-//! matches Java's MIME decoder and Swift's `.ignoreUnknownCharacters`, which
-//! is what those ports use for exactly the same inputs.
+//! entry — and it matches Java's MIME decoder and Swift's
+//! `.ignoreUnknownCharacters`, which is what those ports use for exactly the
+//! same inputs.
+//!
+//! [`decode_receipt_base64`] is what `receipt-data` — the base64 string a
+//! client actually sends — is decoded with. It is not lenient in
+//! [`decode_lenient`]'s sense: a character neither alphabet defines, both
+//! alphabets in one string, or anything but whitespace once padding starts
+//! is a hard `None`, not a silently skipped byte. See its own docs for the
+//! accepted shape.
 //!
 //! [`decode_base64url_strict`] refuses anything that is not a canonical
 //! RFC 4648 §5 encoding. The three segments of a compact JWS are decoded
@@ -66,6 +73,59 @@ pub fn decode_lenient_bytes(text: &[u8]) -> Vec<u8> {
         }
     }
     out
+}
+
+/// Decodes `receipt-data` — the base64 string a client sends — exactly as
+/// Apple defines it: RFC 4648, as Foundation's
+/// `base64EncodedString(options:)` can emit it. Accepted: the standard
+/// alphabet (`+`/`/`) or base64url (`-`/`_`), not both in the same string;
+/// padding present or omitted; `CR`, `LF`, space or tab anywhere, stripped
+/// before anything else is checked.
+///
+/// Refused as [`None`]: a character neither alphabet defines; anything but
+/// whitespace once padding has started; a whitespace-stripped length of
+/// `4n + 1`; an empty or whitespace-only string. There is no
+/// canonical-trailing-bits check — that malleability matters for a JWS
+/// signature segment (see [`decode_base64url_strict`]), not for a receipt
+/// blob that is itself verified by a signature over its decoded bytes.
+///
+/// Unlike [`decode_lenient`], an unrecognised character is a hard failure
+/// here rather than something to skip: `receipt-data` is client-controlled,
+/// and the caller turns `None` into `Reason::InvalidReceiptFormat`.
+#[must_use]
+pub fn decode_receipt_base64(text: &str) -> Option<Vec<u8>> {
+    let mut seen_std = false;
+    let mut seen_url = false;
+    let mut padding_started = false;
+    let mut core_len: usize = 0;
+    let mut body: Vec<u8> = Vec::with_capacity(text.len());
+    for byte in text.bytes() {
+        if matches!(byte, b'\r' | b'\n' | b' ' | b'\t') {
+            continue;
+        }
+        core_len += 1;
+        if byte == b'=' {
+            padding_started = true;
+            continue;
+        }
+        if padding_started {
+            return None;
+        }
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' => {}
+            b'+' | b'/' => seen_std = true,
+            b'-' | b'_' => seen_url = true,
+            _ => return None,
+        }
+        if seen_std && seen_url {
+            return None;
+        }
+        body.push(byte);
+    }
+    if core_len == 0 || core_len % 4 == 1 {
+        return None;
+    }
+    Some(decode_lenient_bytes(&body))
 }
 
 /// Standard base64 with padding.

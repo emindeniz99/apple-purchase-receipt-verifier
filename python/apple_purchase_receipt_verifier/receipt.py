@@ -6,8 +6,6 @@ CMS parsing uses ``asn1crypto`` (BER-capable — genuine Apple/Xcode receipts
 use indefinite lengths); the receipt payload itself is parsed with a small
 strict DER reader below."""
 
-import base64
-import binascii
 import hashlib
 import hmac
 import time
@@ -24,6 +22,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from ._chain import as_utc, build_and_validate_path
+from ._receipt_base64 import decode_receipt_base64
 from .exceptions import Reason, VerificationError
 
 # Apple marker OID on the receipt-signing leaf. The chain check alone does not
@@ -140,15 +139,7 @@ class ReceiptVerifier:
         usual client transport form). Passing ``device_guid`` additionally
         enforces the device-hash binding: SHA1(guid ‖ opaqueValue ‖
         bundleIdBytes) must equal attribute 5 (optional — PLAN.md D4)."""
-        if isinstance(receipt, str):
-            try:
-                der = base64.b64decode(receipt)
-            except (binascii.Error, ValueError) as e:
-                raise VerificationError(
-                    Reason.INVALID_RECEIPT_FORMAT, "receipt is not valid base64"
-                ) from e
-        else:
-            der = receipt
+        der = decode_receipt_base64(receipt) if isinstance(receipt, str) else receipt
         fields = verify_receipt_core(der, self._roots)
         if fields.bundle_id != self._bundle_id:
             raise VerificationError(

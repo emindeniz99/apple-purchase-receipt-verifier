@@ -54,6 +54,10 @@ def fixture_bytes(fixture_id):
     entry = CASES["fixtures"].get(fixture_id)
     if entry is None:
         raise AssertionError(f"harness error: cases.json registers no fixture {fixture_id!r}")
+    # read_bytes(), not a text-mode open(): the "text" codec's contract is
+    # the file bytes VERBATIM, and a text-mode read on a platform whose
+    # default newline handling translates line endings would silently
+    # rewrite the CRLF fixtures before contentSha256 ever sees them.
     raw = (FIXTURES / entry["path"]).read_bytes()
     codec = entry["codec"]
     if codec == "raw":
@@ -62,6 +66,9 @@ def fixture_bytes(fixture_id):
         content = base64.b64decode(re.sub(r"\s+", "", raw.decode("ascii")))
     elif codec == "utf8":
         content = raw.decode("utf-8").strip().encode("utf-8")
+    elif codec == "text":
+        raw.decode("utf-8")  # validates; the codec is untrimmed, so raw IS the content
+        content = raw
     else:
         raise AssertionError(f"harness error: unknown fixture codec {codec!r}")
     expected = entry.get("contentSha256")
@@ -111,7 +118,7 @@ def jws_verifier(config, clock):
     )
 
 
-def _receipt(config, data, clock):
+def _receipt(config, data, clock, codec):
     # ReceiptVerifier takes no clock: nothing on that path moves with the
     # current time (chain validity anchors at the receipt creation date).
     verifier = ReceiptVerifier(trusted_roots(config["trustedRoots"]), config["bundleId"])
@@ -119,22 +126,44 @@ def _receipt(config, data, clock):
     return verifier.verify(data, None if guid_hex is None else bytes.fromhex(guid_hex))
 
 
-OPERATIONS = {
-    "verifyTransaction": lambda config, data, clock: jws_verifier(config, clock).verify_transaction(
-        data.decode("utf-8")
-    ),
-    "verifyAppTransaction": lambda config, data, clock: jws_verifier(
-        config, clock
-    ).verify_app_transaction(data.decode("utf-8")),
-    "verifyRaw": lambda config, data, clock: jws_verifier(config, clock).verify_raw(
-        data.decode("utf-8")
-    ),
-    "verifyReceipt": _receipt,
-    "verifyReceiptEndpoint": lambda config, data, clock: VerifyReceiptEndpoint(
+def _receipt_base64(config, data, clock, codec):
+    # verifyReceiptBase64 cases only ever name a "text" fixture (schema
+    # #/$defs/input): data is the fixture's bytes VERBATIM, handed to the
+    # string entry point exactly as a client's request body would.
+    verifier = ReceiptVerifier(trusted_roots(config["trustedRoots"]), config["bundleId"])
+    guid_hex = config.get("deviceGuidHex")
+    return verifier.verify(
+        data.decode("utf-8"), None if guid_hex is None else bytes.fromhex(guid_hex)
+    )
+
+
+def _receipt_endpoint(config, data, clock, codec):
+    # A "text" fixture goes into receipt-data verbatim, exactly as a client
+    # sent it; a "raw"/"base64" fixture is the DER the runner decoded, so it
+    # is re-encoded as canonical base64 the way today's cases always have.
+    receipt_data = (
+        data.decode("utf-8") if codec == "text" else base64.b64encode(data).decode("ascii")
+    )
+    return VerifyReceiptEndpoint(
         trusted_roots(config["trustedRoots"]),
         config["environment"],
         clock,
-    ).verify_receipt({"receipt-data": base64.b64encode(data).decode("ascii")}),
+    ).verify_receipt({"receipt-data": receipt_data})
+
+
+OPERATIONS = {
+    "verifyTransaction": lambda config, data, clock, codec: jws_verifier(
+        config, clock
+    ).verify_transaction(data.decode("utf-8")),
+    "verifyAppTransaction": lambda config, data, clock, codec: jws_verifier(
+        config, clock
+    ).verify_app_transaction(data.decode("utf-8")),
+    "verifyRaw": lambda config, data, clock, codec: jws_verifier(config, clock).verify_raw(
+        data.decode("utf-8")
+    ),
+    "verifyReceipt": _receipt,
+    "verifyReceiptBase64": _receipt_base64,
+    "verifyReceiptEndpoint": _receipt_endpoint,
 }
 
 
@@ -246,10 +275,12 @@ class ConformanceCasesTest(unittest.TestCase):
         operation = OPERATIONS.get(case["operation"])
         if operation is None:
             raise AssertionError(f"harness error: no adapter for operation {case['operation']!r}")
-        data = fixture_bytes(case["input"]["fixture"])
+        fixture_id = case["input"]["fixture"]
+        data = fixture_bytes(fixture_id)
+        codec = CASES["fixtures"][fixture_id]["codec"]
         expected = case["expected"]
         try:
-            result = operation(case["config"], data, case_clock(case))
+            result = operation(case["config"], data, case_clock(case), codec)
         except VerificationError as e:
             # Only a VerificationError carries a canonical Reason.
             self.assertEqual(

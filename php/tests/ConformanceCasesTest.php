@@ -93,6 +93,7 @@ final class ConformanceCasesTest extends TestCase
         /** @var array{fixture: string} $input */
         $input = $case['input'];
         $bytes = Fixtures::bytes($input['fixture']);
+        $inputCodec = Fixtures::registry()[$input['fixture']]['codec'];
         $clock = self::caseClock($case);
         // cases.schema.json makes these types normative, so a case that does
         // not have them is a harness failure rather than a verdict.
@@ -100,7 +101,7 @@ final class ConformanceCasesTest extends TestCase
         $expected = Shape::asArray($case['expected'], 'expected');
 
         try {
-            $result = $this->dispatch($operation, $config, $bytes, $clock);
+            $result = $this->dispatch($operation, $config, $bytes, $clock, $inputCodec);
         } catch (VerificationException $e) {
             self::assertSame(
                 'error',
@@ -164,13 +165,18 @@ final class ConformanceCasesTest extends TestCase
      *
      * @throws VerificationException
      */
-    private function dispatch(string $operation, array $config, string $input, ?ClockInterface $clock): mixed
-    {
+    private function dispatch(
+        string $operation,
+        array $config,
+        string $input,
+        ?ClockInterface $clock,
+        string $inputCodec,
+    ): mixed {
         return match ($operation) {
             'verifyTransaction' => $this->jwsVerifier($config, $clock)->verifyTransaction($input),
             'verifyAppTransaction' => $this->jwsVerifier($config, $clock)->verifyAppTransaction($input),
             'verifyRaw' => $this->jwsVerifier($config, $clock)->verifyRaw($input),
-            'verifyReceipt' => $this->receiptVerifier($config, $clock)->verify(
+            'verifyReceipt', 'verifyReceiptBase64' => $this->receiptVerifier($config, $clock)->verify(
                 $input,
                 isset($config['deviceGuidHex'])
                     ? (string) hex2bin(Shape::asString($config['deviceGuidHex'], 'deviceGuidHex'))
@@ -180,7 +186,12 @@ final class ConformanceCasesTest extends TestCase
                 self::trustedRoots($config),
                 Environment::from(Shape::asString($config['environment'], 'environment')),
                 $clock,
-            ))->verifyReceipt(['receipt-data' => base64_encode($input)]),
+            ))->verifyReceipt([
+                // A text fixture is the string a client would actually send;
+                // a raw/base64 fixture is decoded bytes this harness must
+                // re-encode to put back on the wire.
+                'receipt-data' => $inputCodec === 'text' ? $input : base64_encode($input),
+            ]),
             default => throw new RuntimeException("harness error: no adapter for operation \"{$operation}\""),
         };
     }

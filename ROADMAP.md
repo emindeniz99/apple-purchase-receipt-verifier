@@ -14,6 +14,9 @@ Delete an item in the same commit that ships it.
      untrusted by design everywhere, so no verdict about a well-formed JWS
      moves -- but the ports disagree about a malformed one and nothing
      pins it.
+     Since the receipt-base64 change, go additionally rejects junk inside
+     an x5c entry (its receipt decoder is shared with x5c), where the other
+     ports skip it -- the same open question, one port wider.
   2. **Resource bounds differ by an order of magnitude and are absent in
      five ports.** Measured: node budget 200,000 (ruby), 100,000 (rust,
      go), 20,000 (php), and no constant at all in node, python, java,

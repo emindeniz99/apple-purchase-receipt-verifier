@@ -133,7 +133,8 @@ class ConformanceCasesTest {
     private static Object invoke(JsonNode fixtures, JsonNode kase) throws Exception {
         JsonNode config = kase.get("config");
         Set<X509Certificate> roots = trustedRoots(fixtures, config.get("trustedRoots"));
-        byte[] input = fixtureBytes(fixtures, kase.get("input").get("fixture").asText());
+        String fixtureId = kase.get("input").get("fixture").asText();
+        byte[] input = fixtureBytes(fixtures, fixtureId);
         String operation = kase.get("operation").asText();
         Clock clock = clock(kase);
         if ("verifyTransaction".equals(operation)) {
@@ -156,6 +157,17 @@ class ConformanceCasesTest {
                     : null;
             return normalize(verifier.verify(input, deviceGuid));
         }
+        if ("verifyReceiptBase64".equals(operation)) {
+            // Same DER underneath as verifyReceipt, but the fixture is a text
+            // fixture: the verbatim string is what a client actually sends,
+            // and how it turns into DER is exactly what this operation pins.
+            ReceiptVerifier verifier =
+                    new ReceiptVerifier(roots, config.get("bundleId").asText());
+            byte[] deviceGuid = config.has("deviceGuidHex")
+                    ? unhex(config.get("deviceGuidHex").asText())
+                    : null;
+            return normalize(verifier.verify(text(input), deviceGuid));
+        }
         if ("verifyReceiptEndpoint".equals(operation)) {
             Environment environment =
                     Environment.fromValue(config.get("environment").asText());
@@ -163,9 +175,14 @@ class ConformanceCasesTest {
                 throw new IllegalStateException(
                         "unknown environment " + config.get("environment").asText());
             }
+            // A text fixture's bytes go into receipt-data verbatim, exactly
+            // as a client would send them; a raw or base64 fixture is
+            // re-encoded as canonical base64, as before.
+            String codec = fixtures.get(fixtureId).get("codec").asText();
+            String receiptData =
+                    "text".equals(codec) ? text(input) : Base64.getEncoder().encodeToString(input);
             return new VerifyReceiptEndpoint(roots, environment, clock)
-                    .verifyReceipt(Collections.singletonMap(
-                            "receipt-data", Base64.getEncoder().encodeToString(input)));
+                    .verifyReceipt(Collections.singletonMap("receipt-data", receiptData));
         }
         throw new IllegalStateException("unknown operation " + operation);
     }
@@ -256,9 +273,10 @@ class ConformanceCasesTest {
      * A fixture id to its logical bytes, per the registry's {@code codec} —
      * and only after those bytes hash to the {@code contentSha256} the
      * registry records for them. The digest is over the DECODED bytes (the
-     * file itself for {@code raw}, the base64-decoded bytes for
-     * {@code base64}, the UTF-8 of the trimmed text for {@code utf8}), so it
-     * pins what the verifier is actually handed rather than how it is stored.
+     * file itself for {@code raw} and for {@code text} — verbatim, untrimmed
+     * — the base64-decoded bytes for {@code base64}, the UTF-8 of the
+     * trimmed text for {@code utf8}), so it pins what the verifier is
+     * actually handed rather than how it is stored.
      */
     private static byte[] fixtureBytes(JsonNode fixtures, String id) throws Exception {
         JsonNode fixture = fixtures.get(id);
@@ -268,7 +286,10 @@ class ConformanceCasesTest {
         byte[] stored = Files.readAllBytes(FIXTURES.resolve(fixture.get("path").asText()));
         String codec = fixture.get("codec").asText();
         byte[] decoded;
-        if ("raw".equals(codec)) {
+        if ("raw".equals(codec) || "text".equals(codec)) {
+            // text = the file bytes verbatim, untrimmed -- unlike utf8 below,
+            // which trims. One registered fixture is 0 bytes and some carry
+            // CRLF; both must survive exactly as stored.
             decoded = stored;
         } else {
             String text = new String(stored, StandardCharsets.UTF_8).trim();
