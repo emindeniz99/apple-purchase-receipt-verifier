@@ -3,9 +3,9 @@
 declare(strict_types=1);
 
 return (new PhpCsFixer\Config())
-    ->setRiskyAllowed(false)
+    ->setRiskyAllowed(true)
     ->setRules([
-        '@PER-CS2.0' => true,
+        '@PSR12' => true,
         'declare_strict_types' => true,
         'ordered_imports' => ['sort_algorithm' => 'alpha'],
         'no_unused_imports' => true,
