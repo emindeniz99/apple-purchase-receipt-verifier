@@ -34,7 +34,7 @@ endpoint = []
 [dependencies]
 rsa = { version = "0.9.10", default-features = false, features = ["std"] }
 p256 = { version = "0.13.2", default-features = false, features = ["ecdsa", "arithmetic", "std"] }
-p384 = { version = "0.13.1", default-features = false, features = ["ecdsa", "arithmetic", "std"] }
+p384 = { version = "0.14.0", default-features = false, features = ["ecdsa", "arithmetic", "std"] }
 sha1 = { version = "0.10.7", default-features = false, features = ["oid"] }
 sha2 = { version = "0.10.9", default-features = false, features = ["oid"] }
 digest = "0.10.7"
