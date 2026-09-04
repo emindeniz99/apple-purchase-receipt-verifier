@@ -218,10 +218,21 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      # setup-uv provisions the interpreter too (uv python install), so this
+      # is one action where it used to be setup-python plus pip. uv builds
+      # every leg's Python from python-build-standalone, including the 3.9
+      # floor, so the matrix keeps proving exactly what it proved before.
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           python-version: ${{ matrix.python }}
-      - run: pip install cryptography asn1crypto && python -m unittest discover -s tests
+      # --no-project on purpose: this job tests the SOURCE TREE against the
+      # two runtime dependencies, not an installed wheel. `python -m` puts
+      # the working directory on sys.path, so the package still resolves
+      # from python/ exactly as it did under pip. Deliberately no lockfile
+      # and no pinned versions -- resolving cryptography fresh on every run
+      # is what makes this matrix able to catch an upstream release that
+      # breaks the >= 42 compatibility shim in _chain.py.
+      - run: uv run --no-project --with cryptography --with asn1crypto python -m unittest discover -s tests
         working-directory: python
 
   # Every Swift the manifest admits (tools 6.1 is the floor swift-crypto
@@ -839,10 +850,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.12'
-      - run: pip install zizmor && zizmor .github/workflows/
+      # uvx runs zizmor from an ephemeral environment and brings its own
+      # interpreter with it, so this job needs no setup-python and no
+      # install step. Version deliberately unpinned, as it was under pip:
+      # a new zizmor audit that fires on these workflows is a finding we
+      # want to see, not one to defer behind a pin.
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - run: uvx zizmor .github/workflows/
 
   # Lint and formatting for the Node port. Separate from the `node` job
   # because it is version-independent: oxlint and prettier read their own
@@ -879,10 +893,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           python-version: "3.13"
-      - run: pip install -e ".[dev]"
+          # ruff and mypy are invoked as bare commands below, so the venv uv
+          # creates has to be on PATH for the steps that follow. That is what
+          # activate-environment does; without it these would need `uv run`.
+          activate-environment: true
+      - run: uv pip install -e ".[dev]"
         working-directory: python
       - run: ruff check .
         working-directory: python
@@ -890,6 +908,25 @@ jobs:
         working-directory: python
       - run: mypy
         working-directory: python
+      # ty, Astral's type checker, is ADVISORY and must stay that way for
+      # now: it is 0.0.x preview software, and mypy above remains the gate.
+      #
+      # Scoped to the package rather than the whole port, because that is
+      # where it is honestly clean (0 diagnostics). Over tests/ it reports
+      # one false positive: test_endpoint_environment_is_the_typed_enum
+      # passes deliberately wrong types to assert the constructor rejects
+      # them, and ty honours only `# ty: ignore`, never the
+      # `# type: ignore[arg-type]` already on that line. Silencing a preview
+      # tool by adding a second suppression dialect to the source is worse
+      # than not running it there, so we don't.
+      #
+      # It resolves cryptography's types through VIRTUAL_ENV, which
+      # activate-environment exports; --python makes that explicit, because
+      # under continue-on-error a mis-resolved environment would look like
+      # findings rather than like the misconfiguration it is.
+      - run: uvx ty check --python "$VIRTUAL_ENV" apple_purchase_receipt_verifier
+        working-directory: python
+        continue-on-error: true
 
   # swift-format ships inside the toolchain from Swift 6.0 on, so there is
   # no SwiftPM dependency to resolve. Pinned to the 6.3 image and not the
