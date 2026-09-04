@@ -26,7 +26,10 @@ from apple_purchase_receipt_verifier import (
 )
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures"
-CASES = json.loads((FIXTURES / "cases.json").read_text())
+# Read as UTF-8 explicitly rather than in the locale encoding: the file
+# carries non-ASCII characters in its comments, and a machine whose
+# locale resolves to ASCII would fail here before a single vector runs.
+CASES = json.loads((FIXTURES / "cases.json").read_text(encoding="utf-8"))
 
 
 def case_clock(case):
