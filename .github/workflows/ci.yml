@@ -21,11 +21,13 @@ jobs:
     timeout-minutes: 20
     strategy:
       matrix:
-        # Every current LTS line (endoflife.date/eclipse-temurin). The
-        # build itself needs javac 9+ for --release 8; the artifact is
-        # Java 8 bytecode (major version 52), and the java-runtime-8 job
-        # below runs the suite on a real Temurin 8 JVM.
-        jdk: ["11", "17", "21", "25"]
+        # Every Temurin line still in support, LTS or not: 26 is the
+        # current feature release and was missing until an audit against
+        # api.adoptium.net found it. The build itself needs javac 9+ for
+        # --release 8; the artifact is Java 8 bytecode (major version 52),
+        # and the java-runtime-8 job below runs the suite on a real
+        # Temurin 8 JVM.
+        jdk: ["11", "17", "21", "25", "26"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -694,6 +696,11 @@ jobs:
             8.0.x
             9.0.x
             10.0.x
+      # The three SDKs above are not decoration: the test projects
+      # multi-target net8.0, net9.0 and net10.0, so this runs the suite on
+      # each runtime. It used to install all three and execute only .NET 9,
+      # which goes end of life in November 2026 while net8.0 and net10.0
+      # are the LTS runtimes consumers deploy on.
       - run: dotnet test -c Release
         working-directory: dotnet
 
