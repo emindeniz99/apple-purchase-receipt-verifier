@@ -10,6 +10,7 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Jws\JwsVerifier;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Reason;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\FrozenClock;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\MintedPki;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Shape;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\TestPki;
 use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationException;
 use OpenSSLAsymmetricKey;
@@ -70,7 +71,9 @@ final class JsonNumberClaimTest extends TestCase
         $signingInput = $header . '.' . TestPki::b64url($payloadJson);
         openssl_sign($signingInput, $der, $leafKey ?? $pki->jwsLeafKey, OPENSSL_ALGO_SHA256);
 
-        return $signingInput . '.' . TestPki::b64url(TestPki::derToP1363((string) $der));
+        return $signingInput . '.' . TestPki::b64url(
+            TestPki::derToP1363(Shape::asString($der, 'openssl_sign output')),
+        );
     }
 
     /** @return iterable<string, array{string}> */

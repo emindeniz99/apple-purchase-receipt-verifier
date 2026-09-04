@@ -14,6 +14,7 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\VerifyReceiptEndpoint;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Fixtures;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\FrozenClock;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Shape;
 use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationException;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -73,9 +74,10 @@ final class ConformanceCasesTest extends TestCase
         $ids = array_keys(Fixtures::registry());
         self::assertNotEmpty($ids, 'cases.json must register fixtures');
         foreach ($ids as $id) {
+            // Throws on a digest mismatch; one checked fixture, one assertion.
             Fixtures::bytes($id);
+            $this->addToAssertionCount(1);
         }
-        self::assertTrue(true);
     }
 
     /** @param array<string, mixed> $case */
@@ -92,16 +94,20 @@ final class ConformanceCasesTest extends TestCase
         $input = $case['input'];
         $bytes = Fixtures::bytes($input['fixture']);
         $clock = self::caseClock($case);
+        // cases.schema.json makes these types normative, so a case that does
+        // not have them is a harness failure rather than a verdict.
+        $operation = Shape::asString($case['operation'], 'operation');
+        $expected = Shape::asArray($case['expected'], 'expected');
 
         try {
-            $result = $this->dispatch((string) $case['operation'], $config, $bytes, $clock);
+            $result = $this->dispatch($operation, $config, $bytes, $clock);
         } catch (VerificationException $e) {
             self::assertSame(
                 'error',
-                $case['expected']['status'],
+                $expected['status'],
                 'expected success but threw ' . $e->reason->value,
             );
-            self::assertSame($case['expected']['reason'], $e->reason->value, 'reason');
+            self::assertSame($expected['reason'], $e->reason->value, 'reason');
 
             return;
         } catch (Throwable $e) {
@@ -110,7 +116,7 @@ final class ConformanceCasesTest extends TestCase
             // must never be read as one of the expected reasons.
             self::fail(sprintf(
                 'harness error: %s threw %s (%s), which is not a VerificationException',
-                (string) $case['operation'],
+                $operation,
                 $e::class,
                 $e->getMessage(),
             ));
@@ -118,12 +124,13 @@ final class ConformanceCasesTest extends TestCase
 
         self::assertSame(
             'ok',
-            $case['expected']['status'],
-            'expected ' . ($case['expected']['reason'] ?? '?') . ' but the call returned a value',
+            $expected['status'],
+            'expected ' . Shape::asString($expected['reason'] ?? '?', 'expected.reason')
+                . ' but the call returned a value',
         );
         $actual = self::normalize($result);
         /** @var array<string, scalar|null> $fields */
-        $fields = $case['expected']['fields'];
+        $fields = $expected['fields'];
         foreach ($fields as $path => $expected) {
             $value = self::resolvePath($actual, $path);
             if ($expected === null) {
@@ -145,7 +152,7 @@ final class ConformanceCasesTest extends TestCase
     {
         /** @var list<array<string, mixed>> $cases */
         $cases = Fixtures::cases()['cases'];
-        $ids = array_map(static fn (array $c): string => (string) $c['id'], $cases);
+        $ids = array_map(static fn (array $c): string => Shape::asString($c['id'], 'case id'), $cases);
         self::assertSame(count($ids), count(array_unique($ids)), 'case ids must be unique');
         $missing = array_values(array_diff($ids, array_keys(self::$executed)));
         self::assertSame([], $missing, 'cases in the file that never ran');
@@ -165,11 +172,13 @@ final class ConformanceCasesTest extends TestCase
             'verifyRaw' => $this->jwsVerifier($config, $clock)->verifyRaw($input),
             'verifyReceipt' => $this->receiptVerifier($config, $clock)->verify(
                 $input,
-                isset($config['deviceGuidHex']) ? (string) hex2bin((string) $config['deviceGuidHex']) : null,
+                isset($config['deviceGuidHex'])
+                    ? (string) hex2bin(Shape::asString($config['deviceGuidHex'], 'deviceGuidHex'))
+                    : null,
             ),
             'verifyReceiptEndpoint' => (new VerifyReceiptEndpoint(
                 self::trustedRoots($config),
-                Environment::from((string) $config['environment']),
+                Environment::from(Shape::asString($config['environment'], 'environment')),
                 $clock,
             ))->verifyReceipt(['receipt-data' => base64_encode($input)]),
             default => throw new RuntimeException("harness error: no adapter for operation \"{$operation}\""),
@@ -181,7 +190,9 @@ final class ConformanceCasesTest extends TestCase
     {
         $environments = isset($config['acceptedEnvironments'])
             ? array_map(
-                static fn (string $name): Environment => Environment::from($name),
+                static fn (mixed $name): Environment => Environment::from(
+                    Shape::asString($name, 'acceptedEnvironments entry'),
+                ),
                 (array) $config['acceptedEnvironments'],
             )
             // Unmatchable by design; see UNMATCHABLE_BUNDLE_ID.
@@ -189,12 +200,14 @@ final class ConformanceCasesTest extends TestCase
 
         return new JwsVerifier(
             self::trustedRoots($config),
-            isset($config['bundleId']) ? (string) $config['bundleId'] : self::UNMATCHABLE_BUNDLE_ID,
+            isset($config['bundleId']) ? Shape::asString($config['bundleId'], 'bundleId') : self::UNMATCHABLE_BUNDLE_ID,
             array_values($environments),
-            isset($config['appAppleId']) ? (int) $config['appAppleId'] : null,
+            isset($config['appAppleId']) ? Shape::asInt($config['appAppleId'], 'appAppleId') : null,
             // The port's option is already in seconds, so the conversion the
             // millisecond ports do here is a no-op rather than a hidden one.
-            isset($config['maxSignedAgeSeconds']) ? (int) $config['maxSignedAgeSeconds'] : null,
+            isset($config['maxSignedAgeSeconds'])
+                ? Shape::asInt($config['maxSignedAgeSeconds'], 'maxSignedAgeSeconds')
+                : null,
             $clock,
         );
     }
@@ -210,7 +223,7 @@ final class ConformanceCasesTest extends TestCase
             throw new RuntimeException('harness error: verifyReceipt has no clock seam, but the case pins one');
         }
 
-        return new ReceiptVerifier(self::trustedRoots($config), (string) $config['bundleId']);
+        return new ReceiptVerifier(self::trustedRoots($config), Shape::asString($config['bundleId'], 'bundleId'));
     }
 
     /**
@@ -279,6 +292,11 @@ final class ConformanceCasesTest extends TestCase
             $binary = defined($value::class . '::BINARY_PROPERTIES')
                 ? constant($value::class . '::BINARY_PROPERTIES')
                 : [];
+            if (!is_array($binary)) {
+                throw new RuntimeException(
+                    'harness error: ' . $value::class . '::BINARY_PROPERTIES is not an array',
+                );
+            }
             $out = [];
             foreach (get_object_vars($value) as $key => $property) {
                 if (in_array($key, $binary, true)) {
@@ -401,9 +419,14 @@ final class ConformanceCasesTest extends TestCase
                 throw new RuntimeException("harness error: unparseable field path \"{$path}\"");
             }
             $consumed += strlen($match[0][0]);
+            // One of the two alternatives always participates, so the
+            // bracketed group is present whenever the bare one is not — the
+            // throw states that rather than assuming it.
             $steps[] = ($match[1][0] ?? '') !== '' && $match[1][1] !== -1
                 ? [false, $match[1][0]]
-                : [true, $match[2][0]];
+                : [true, $match[2][0] ?? throw new RuntimeException(
+                    "harness error: unparseable field path \"{$path}\"",
+                )];
         }
         if ($consumed !== strlen($path)) {
             throw new RuntimeException("harness error: unparseable field path \"{$path}\"");

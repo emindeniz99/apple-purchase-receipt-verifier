@@ -173,7 +173,7 @@ final class HostileInputTest extends TestCase
                 self::jwsVerifier()->{$operation}($input);
                 self::fail("a hostile JWS was ACCEPTED by {$operation}");
             } catch (VerificationException) {
-                self::assertTrue(true);
+                $this->addToAssertionCount(1);
             } catch (Throwable $e) {
                 self::fail("{$operation} escaped as " . $e::class . ': ' . $e->getMessage());
             }
