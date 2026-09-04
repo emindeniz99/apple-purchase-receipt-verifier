@@ -32,25 +32,47 @@ class CertificateFloodTest < Minitest::Test
     assert_equal :INVALID_CHAIN, error.reason
   end
 
+  # Counts how many certificates OpenSSL is asked to decode while the block
+  # runs. This is what the bound is really about, so it is what gets
+  # asserted; the previous version compared two elapsed times, which made
+  # the claim depend on how fast the host decodes RSA relative to how fast
+  # it scans bytes. That ratio differs per machine and the comparison
+  # inverted on macOS while the property itself held.
+  def count_certificate_decodes
+    decoded = 0
+    original = OpenSSL::X509::Certificate.method(:new)
+    OpenSSL::X509::Certificate.define_singleton_method(:new) do |*args, &block|
+      decoded += 1
+      original.call(*args, &block)
+    end
+    begin
+      yield
+    ensure
+      OpenSSL::X509::Certificate.singleton_class.remove_method(:new)
+    end
+    decoded
+  end
+
   # The bound is on parsing, not on the walk: a thousand-certificate receipt
-  # must be refused without any of them being turned into an X509 object. The
-  # assertion is a timing one, against the measured cost of doing it the naive
-  # way on the very same bytes.
+  # must be refused without any of them being turned into an X509 object.
   def test_a_thousand_certificate_flood_is_refused_before_the_certificates_are_decoded
     flood = TestPki.with_certificates(@der, filler(1000) + [@pki.leaf, @pki.intermediate])
-    naive_started = Process.clock_gettime(Process::CLOCK_PROCESS_CPUTIME_ID)
-    decoded = APRV::Cms.parse(flood).certificate_ders.map { |d| OpenSSL::X509::Certificate.new(d) }
-    naive = Process.clock_gettime(Process::CLOCK_PROCESS_CPUTIME_ID) - naive_started
-    assert_equal 1002, decoded.size
+    assert_equal 1002, APRV::Cms.parse(flood).certificate_ders.size
 
-    started = Process.clock_gettime(Process::CLOCK_PROCESS_CPUTIME_ID)
-    error = assert_raises(APRV::VerificationError) { @verifier.verify_der(flood) }
-    rejection = Process.clock_gettime(Process::CLOCK_PROCESS_CPUTIME_ID) - started
+    error = nil
+    decoded = count_certificate_decodes do
+      error = assert_raises(APRV::VerificationError) { @verifier.verify_der(flood) }
+    end
 
     assert_equal :INVALID_CHAIN, error.reason
-    assert_operator rejection, :<, naive,
-                    "rejecting the flood (#{(rejection * 1000).round(2)}ms) should cost less " \
-                    "than decoding its certificates (#{(naive * 1000).round(2)}ms)"
+    assert_equal 0, decoded,
+                 "the flood was refused only after decoding #{decoded} of its certificates"
+  end
+
+  # The counter above proves nothing unless it can also count, so: a receipt
+  # this verifier accepts does decode certificates.
+  def test_the_decode_counter_sees_a_receipt_that_is_actually_verified
+    assert_operator count_certificate_decodes { @verifier.verify_der(@der) }, :>, 0
   end
 
   def test_the_bound_clears_every_genuine_chain_in_the_corpus
