@@ -1,0 +1,8 @@
+T:System.Security.Cryptography.X509Certificates.X509Chain; anchors come from the caller only — never the OS trust store, and never an AIA/OCSP fetch (PLAN.md §2.3)
+T:System.Security.Cryptography.X509Certificates.X509ChainPolicy; same
+T:System.Security.Cryptography.X509Certificates.X509Store; same
+T:System.Net.Http.HttpClient; verification is offline by design (PLAN.md D12)
+T:System.Net.WebRequest; verification is offline by design (PLAN.md D12)
+P:System.DateTime.UtcNow; go through IClock, or through the one documented certificate-validity fallback
+P:System.DateTime.Now; go through IClock
+P:System.DateTimeOffset.Now; go through IClock

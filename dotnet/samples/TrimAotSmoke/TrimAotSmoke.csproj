@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Publishes the library into a fully trimmed, invariant-globalization
+       binary and verifies a receipt with it. Trimming is the closest
+       CI-runnable proxy for Unity IL2CPP's stripping: a reflection-based
+       serializer or an embedded resource would show up here as an IL2xxx
+       warning or a runtime failure. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>TrimAotSmoke</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>full</TrimMode>
+    <SelfContained>true</SelfContained>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+    <SuppressTrimAnalysisWarnings>false</SuppressTrimAnalysisWarnings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/ApplePurchaseReceiptVerifier/ApplePurchaseReceiptVerifier.csproj" />
+  </ItemGroup>
+
+</Project>
