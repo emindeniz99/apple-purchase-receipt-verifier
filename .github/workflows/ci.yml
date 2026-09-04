@@ -843,3 +843,140 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install zizmor && zizmor .github/workflows/
+
+  # Lint and formatting for the Node port. Separate from the `node` job
+  # because it is version-independent: oxlint and prettier read their own
+  # config, so running them once says everything running them four times
+  # would. `npm test` deliberately does not call them (prettier --check
+  # costs ~1.5s), which is why this job has to exist.
+  node-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - run: npm ci && npm run lint && npm run format:check
+        working-directory: node
+
+  # ruff and mypy for the Python port. One job, not a matrix: ruff pins the
+  # language level with target-version = "py39" in pyproject, so the
+  # interpreter this runs on does not change the verdict. mypy cannot be
+  # told python_version = "3.9" at all (mypy 2.x requires >= 3.10), so the
+  # 3.9 floor is held by ruff's UP rules and proven by the `python` job's
+  # 3.9 leg above, not by this one.
+  #
+  # Installs the package rather than just the tools: mypy needs cryptography
+  # and asn1crypto importable to resolve their types.
+  python-tools:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - run: pip install -e ".[dev]"
+        working-directory: python
+      - run: ruff check .
+        working-directory: python
+      - run: ruff format --check .
+        working-directory: python
+      - run: mypy
+        working-directory: python
+
+  # swift-format ships inside the toolchain from Swift 6.0 on, so there is
+  # no SwiftPM dependency to resolve. Pinned to the 6.3 image and not the
+  # 6.1 floor on purpose: the sources were formatted by swift-format 6.3.3,
+  # and swift-format's output is not stable across minor versions -- the
+  # `swift` job's own comment records a helper that compiled on 6.3 and
+  # failed on 6.1. Formatting is a house style, not a compatibility claim,
+  # so one version owns it; the compatibility claim stays with the `swift`
+  # matrix. This was verified locally under 6.3.3 and could not be tried
+  # against the 6.1 container (no local daemon), which is the other reason
+  # not to assert it here.
+  swift-format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container: swift:6.3@sha256:56ef1be2c1ca36f4c52440357dc1fcdfdb5e113587134fcadeef57c225c71b54
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: swift format lint --strict --recursive swift/Sources swift/Tests
+
+  # A drift gate on dotnet/.editorconfig, not a restyle. The Style,
+  # Performance and Usage analyzer categories are silenced there because
+  # `dotnet format` with them on rewrote 28 files -- switch expressions,
+  # collection expressions, a primary constructor, GeneratedRegex source
+  # generators -- and in one file two fixers collided and wrote a literal
+  # <<<<<<< / ======= / >>>>>>> conflict marker into the source. A
+  # formatter that can corrupt a file is not one to run in apply mode over
+  # this port; this job only ever verifies.
+  dotnet-format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+      - run: dotnet format --verify-no-changes --severity info
+        working-directory: dotnet
+
+  # Spotless with palantir-java-format. Deliberately not bound to a Maven
+  # lifecycle phase (see java/pom.xml), so `mvn test` and the
+  # java-runtime-8 job never invoke it; this job runs it explicitly.
+  # palantir's own classes are class-file major 55, so running the check
+  # needs Maven itself on JDK 11+ -- which is why it is not in the build.
+  # palantir over google-java-format because google forces 2-space indent
+  # on a 4-space codebase: 8690 changed lines against palantir's 1967.
+  java-format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - run: mvn -B spotless:check
+        working-directory: java
+
+  # PHP-CS-Fixer, separate from the php/php-lowest/php-static/php-mutation
+  # jobs so a formatting drift fails on its own instead of inside a
+  # functional job's log. This is also the first CI run of the fixer at
+  # all: the committed .php-cs-fixer.dist.php declared the risky
+  # declare_strict_types rule while setting setRiskyAllowed(false), a
+  # combination the resolver rejects outright, so the config could never
+  # have run wherever it was invoked from.
+  php-format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: "8.4"
+          extensions: openssl, json
+          coverage: none
+      - run: composer update --no-progress --no-interaction
+        working-directory: php
+      - run: vendor/bin/php-cs-fixer fix --dry-run --diff --allow-risky=yes
+        working-directory: php
