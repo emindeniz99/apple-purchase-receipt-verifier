@@ -21,31 +21,39 @@ final class VerifierTests: XCTestCase {
     }
 
     func fixture(_ segments: String...) throws -> Data {
-        try Data(contentsOf: segments.reduce(Self.fixturesDir) {
-            $0.appendingPathComponent($1)
-        })
+        try Data(
+            contentsOf: segments.reduce(Self.fixturesDir) {
+                $0.appendingPathComponent($1)
+            })
     }
 
     func text(_ segments: String...) throws -> String {
-        String(data: try Data(contentsOf: segments.reduce(Self.fixturesDir) {
-            $0.appendingPathComponent($1)
-        }), encoding: .utf8)!.trimmingCharacters(in: .whitespacesAndNewlines)
+        String(
+            data: try Data(
+                contentsOf: segments.reduce(Self.fixturesDir) {
+                    $0.appendingPathComponent($1)
+                }), encoding: .utf8)!.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    func jwsVerifier(root: String = "jws-root.der",
-                     bundleId: String = VerifierTests.bundle,
-                     environments: Set<AppleEnvironment> = [.sandbox],
-                     appAppleId: Int64? = nil,
-                     maxSignedAgeMillis: Int64? = nil,
-                     clock: (@Sendable () -> Date)? = nil) throws -> JwsVerifier {
-        try JwsVerifier(trustedRoots: [try fixture("generated", root)], bundleId: bundleId,
-                        acceptedEnvironments: environments, appAppleId: appAppleId,
-                        maxSignedAgeMillis: maxSignedAgeMillis,
-                        clock: clock)
+    func jwsVerifier(
+        root: String = "jws-root.der",
+        bundleId: String = VerifierTests.bundle,
+        environments: Set<AppleEnvironment> = [.sandbox],
+        appAppleId: Int64? = nil,
+        maxSignedAgeMillis: Int64? = nil,
+        clock: (@Sendable () -> Date)? = nil
+    ) throws -> JwsVerifier {
+        try JwsVerifier(
+            trustedRoots: [try fixture("generated", root)], bundleId: bundleId,
+            acceptedEnvironments: environments, appAppleId: appAppleId,
+            maxSignedAgeMillis: maxSignedAgeMillis,
+            clock: clock)
     }
 
-    func assertReason<T>(_ reason: VerificationError.Reason,
-                         _ body: () async throws -> T) async {
+    func assertReason<T>(
+        _ reason: VerificationError.Reason,
+        _ body: () async throws -> T
+    ) async {
         do {
             _ = try await body()
             XCTFail("expected \(reason.rawValue) but no error was thrown")
@@ -67,8 +75,9 @@ final class VerifierTests: XCTestCase {
 
     func testRejectsTamperedPayload() async throws {
         let segments = try text("generated", "transaction.jws").components(separatedBy: ".")
-        var claims = try JSONSerialization.jsonObject(
-            with: base64URLDecode(segments[1])!) as! [String: Any]
+        var claims =
+            try JSONSerialization.jsonObject(
+                with: base64URLDecode(segments[1])!) as! [String: Any]
         claims["productId"] = "\(Self.bundle).premium_forever"
         let forged = try JSONSerialization.data(withJSONObject: claims)
             .base64EncodedString()
@@ -136,19 +145,22 @@ final class VerifierTests: XCTestCase {
         // 30 s after signing, under a 60 s max age: accepted.
         let fresh = try await jwsVerifier(
             maxSignedAgeMillis: 60_000,
-            clock: { signedAt.addingTimeInterval(30) }).verifyTransaction(jws)
+            clock: { signedAt.addingTimeInterval(30) }
+        ).verifyTransaction(jws)
         XCTAssertEqual(Self.bundle, fresh.bundleId)
         // 61 s after signing, same policy: stale. Nothing but the clock moved.
         await assertReason(.stalePayload) {
             try await self.jwsVerifier(
                 maxSignedAgeMillis: 60_000,
-                clock: { signedAt.addingTimeInterval(61) }).verifyTransaction(jws)
+                clock: { signedAt.addingTimeInterval(61) }
+            ).verifyTransaction(jws)
         }
         // The instant fixtures/cases.json pins for transaction/reject-stale-payload.
         await assertReason(.stalePayload) {
             try await self.jwsVerifier(
                 maxSignedAgeMillis: 60_000,
-                clock: { Date(timeIntervalSince1970: 1_735_689_600) }).verifyTransaction(jws)
+                clock: { Date(timeIntervalSince1970: 1_735_689_600) }
+            ).verifyTransaction(jws)
         }
     }
 
@@ -161,7 +173,7 @@ final class VerifierTests: XCTestCase {
         let freshPayload = try text("generated", "expired-cert-fresh.jws")
         let clocks: [(@Sendable () -> Date)?] = [
             nil,
-            { Date(timeIntervalSince1970: 0) },              // 1970
+            { Date(timeIntervalSince1970: 0) },  // 1970
             { Date(timeIntervalSince1970: 4_102_444_800) },  // 2100
         ]
         for clock in clocks {
@@ -189,9 +201,10 @@ final class VerifierTests: XCTestCase {
 /// verifyReceipt-compat semantics over the shared receipt fixture.
 final class VerifyReceiptEndpointTests: XCTestCase {
     func fixture(_ segments: String...) throws -> Data {
-        try Data(contentsOf: segments.reduce(VerifierTests.fixturesDir) {
-            $0.appendingPathComponent($1)
-        })
+        try Data(
+            contentsOf: segments.reduce(VerifierTests.fixturesDir) {
+                $0.appendingPathComponent($1)
+            })
     }
 
     func endpoint(_ environment: AppleEnvironment) throws -> VerifyReceiptEndpoint {
@@ -242,18 +255,22 @@ final class VerifyReceiptEndpointTests: XCTestCase {
         let live = await (try endpoint(.sandbox)).verifyReceipt(try request())
         XCTAssertEqual(response["status"] as? Int, live["status"] as? Int)
         let liveReceipt = live["receipt"] as! [String: Any]
-        XCTAssertNotEqual(liveReceipt["request_date_ms"] as? String,
-                          receipt["request_date_ms"] as? String)
+        XCTAssertNotEqual(
+            liveReceipt["request_date_ms"] as? String,
+            receipt["request_date_ms"] as? String)
         // Compared as sorted-key JSON: Swift dictionaries have no order, so
         // describing them would compare orderings rather than content.
         func withoutRequestDate(_ json: [String: Any]) throws -> String {
             let kept = json.filter { !$0.key.hasPrefix("request_date") }
-            return String(decoding: try JSONSerialization.data(withJSONObject: kept,
-                                                               options: [.sortedKeys]),
-                          as: UTF8.self)
+            return String(
+                decoding: try JSONSerialization.data(
+                    withJSONObject: kept,
+                    options: [.sortedKeys]),
+                as: UTF8.self)
         }
-        XCTAssertEqual(try withoutRequestDate(liveReceipt), try withoutRequestDate(receipt),
-                       "a verified field moved with the clock")
+        XCTAssertEqual(
+            try withoutRequestDate(liveReceipt), try withoutRequestDate(receipt),
+            "a verified field moved with the clock")
     }
 
     func testReportsMalformedRequestsAs21002() async throws {
@@ -290,8 +307,9 @@ final class VerifyReceiptEndpointTests: XCTestCase {
         XCTAssertTrue(body.contains("\"status\":0"), body)
         XCTAssertTrue(body.contains("\"quantity\":\"1\""), body)
         XCTAssertTrue(body.contains("\"web_order_line_item_id\":\"42\""), body)
-        let parsed = try XCTUnwrap(try JSONSerialization.jsonObject(
-            with: XCTUnwrap(body.data(using: .utf8))) as? [String: Any])
+        let parsed = try XCTUnwrap(
+            try JSONSerialization.jsonObject(
+                with: XCTUnwrap(body.data(using: .utf8))) as? [String: Any])
         XCTAssertTrue(parsed["status"] is NSNumber)
         XCTAssertEqual(parsed["environment"] as? String, "Sandbox")
         let receipt = try XCTUnwrap(parsed["receipt"] as? [String: Any])
@@ -309,13 +327,15 @@ final class VerifyReceiptEndpointTests: XCTestCase {
             contentsOf: VerifierTests.fixturesDir
                 .appendingPathComponent("public-receipts")
                 .appendingPathComponent("receipt-sandbox-g5.b64"),
-            encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+            encoding: .utf8
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
         let endpoint = try VerifyReceiptEndpoint(
             trustedRoots: appleReceiptRoots(), environment: .sandbox)
         let body = await endpoint.verifyReceiptJSON("{\"receipt-data\":\"\(receiptData)\"}")
         XCTAssertTrue(body.contains("\"is_in_intro_offer_period\":\"false\""), body)
-        let parsed = try XCTUnwrap(try JSONSerialization.jsonObject(
-            with: XCTUnwrap(body.data(using: .utf8))) as? [String: Any])
+        let parsed = try XCTUnwrap(
+            try JSONSerialization.jsonObject(
+                with: XCTUnwrap(body.data(using: .utf8))) as? [String: Any])
         let receipt = try XCTUnwrap(parsed["receipt"] as? [String: Any])
         let purchases = try XCTUnwrap(receipt["in_app"] as? [[String: Any]])
         XCTAssertFalse(purchases.isEmpty)
@@ -331,8 +351,10 @@ final class VerifyReceiptEndpointTests: XCTestCase {
 
     func testVerifyReceiptJSONAnswers21002ForABodyThatIsNotAnObject() async throws {
         let endpoint = try endpoint(.sandbox)
-        for body in ["", "not json", "{", "[]", "[{\"receipt-data\":\"x\"}]",
-                     "null", "3", "\"receipt\"", "true"] {
+        for body in [
+            "", "not json", "{", "[]", "[{\"receipt-data\":\"x\"}]",
+            "null", "3", "\"receipt\"", "true",
+        ] {
             let response = await endpoint.verifyReceiptJSON(body)
             XCTAssertEqual(response, "{\"status\":21002}", body)
         }
@@ -342,19 +364,22 @@ final class VerifyReceiptEndpointTests: XCTestCase {
         let endpoint = try endpoint(.sandbox)
         let viaDictionary = await endpoint.verifyReceipt(try request())
         let body = await endpoint.verifyReceiptJSON(try requestJSON())
-        let viaJSON = try XCTUnwrap(try JSONSerialization.jsonObject(
-            with: XCTUnwrap(body.data(using: .utf8))) as? [String: Any])
-        XCTAssertEqual(withoutRequestDate(viaJSON) as NSDictionary,
-                       withoutRequestDate(viaDictionary) as NSDictionary)
+        let viaJSON = try XCTUnwrap(
+            try JSONSerialization.jsonObject(
+                with: XCTUnwrap(body.data(using: .utf8))) as? [String: Any])
+        XCTAssertEqual(
+            withoutRequestDate(viaJSON) as NSDictionary,
+            withoutRequestDate(viaDictionary) as NSDictionary)
     }
 }
 
 /// Regression tests for the adversarial-review findings + PLAN D10.
 final class ReviewFixesTests: XCTestCase {
     func fixture(_ segments: String...) throws -> Data {
-        try Data(contentsOf: segments.reduce(VerifierTests.fixturesDir) {
-            $0.appendingPathComponent($1)
-        })
+        try Data(
+            contentsOf: segments.reduce(VerifierTests.fixturesDir) {
+                $0.appendingPathComponent($1)
+            })
     }
 
     func testRejectsTrailingBytesAfterCms() async throws {
@@ -419,27 +444,28 @@ final class ReviewFixesTests: XCTestCase {
     /// check this aborted the process instead of throwing. Rebuilt from
     /// fixtures/generated/receipt.der with the payload replaced; the signature
     /// no longer matches, which is the point — the crash came first.
-    static let outOfRangeDateReceipt = Data(base64Encoded:
-        "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")!
+    static let outOfRangeDateReceipt = Data(
+        base64Encoded:
+            "MIIFGQYJKoZIhvcNAQcCoIIFCjCCBQYCAQExDTALBglghkgBZQMEAgEwMwYJKoZIhvcNAQcBoCYEJDEiMCACAQwC"
+            + "AQEEGBYWOTk5OTk5LTEyLTMxVDIzOjU5OjU5WqCCAtkwggLVMIIBvaADAgECAgEPMA0GCSqGSIb3DQEBCwUAMBcx"
+            + "FTATBgNVBAMMDEZha2UgV1dEUiBDQTAgFw0yNDAxMDEwMDAwMDBaGA8yMDUwMDEwMTAwMDAwMFowHzEdMBsGA1UE"
+            + "AwwURmFrZSBSZWNlaXB0IFNpZ25pbmcwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDayocrktbzriQR"
+            + "/EwHhZzvxW48pcwOXjx2nCj0zviFJ2xdfzMb8ODpl6LXXn8BZ5j2JKWC4/92Xfq9nu2yZLDptV6Nx+m2P1hk/Vib"
+            + "zHQJ5qQ3uaU354/aH/TPA/w6B7ogeAuXSDDytaV/Z/uhuX61KKpsBg6YtxwoHU1hHMaLDgZLR3m0hUAUO10NVR+r"
+            + "1mirmldsLjzvSVq69fWAZdl5uQV2SUXz5Hk8oRmFjxNEv6Xmg/uDVhHz/bGP2DtMVRVNjVNPvRfeSBfw3QsFaprV"
+            + "jSCWroAzbOvM7r7JvMapZae8f7FCOBb6ru/9LN5ezyogkT4LYngNiNMPCFWZt881AgMBAAGjIjAgMAwGA1UdEwEB"
+            + "/wQCMAAwEAYKKoZIhvdjZAYLAQQCBQAwDQYJKoZIhvcNAQELBQADggEBADTcnfH4cgNVcLPXFZatM5kYitrSKpS8"
+            + "x/+6osJ2RetV+NbElY2lGzKORIoXLiPIPG9qO+WmP5VahwWI9ejG7jprXUsFzSvNCMvLGQEGLMQSeKaBp3c99s1W"
+            + "ackBfq8+zYinv4zGAnvGKMrpBex3Oi5yHHQojwT1qvnVRuLtgPAQohaZiFighN8xHmytRWskWL1x2fo4h59c7S2W"
+            + "cSZcrqauQEp8DlkYQqbEhm1MMGXI2rTpOQQCkmnKgyWEDTCdAXtjiYsqCLJ24BMDvjrbeerrRBo0nPBat08QT4a4"
+            + "DRAaTz1mA279uU2eV6+RdPhEA1/pF0rD80yQrzLcnwvpzhwxggHeMIIB2gIBATAcMBcxFTATBgNVBAMMDEZha2Ug"
+            + "V1dEUiBDQQIBDzALBglghkgBZQMEAgGggZYwGAYJKoZIhvcNAQkDMQsGCSqGSIb3DQEHATAcBgkqhkiG9w0BCQUx"
+            + "DxcNMjQwODA2MTIwMDAwWjArBgkqhkiG9w0BCTQxHjAcMAsGCWCGSAFlAwQCAaENBgkqhkiG9w0BAQsFADAvBgkq"
+            + "hkiG9w0BCQQxIgQgOCEqyt40p6ah5MLX+ax9VU9h268QnUyap2QqkBSOKDAwDQYJKoZIhvcNAQELBQAEggEApVar"
+            + "k1HGF6nVTye/RnLd7LPCIZgS5Nc8fe+y19KFuRNDIZxe1rcy0En38maFSZODlHLlfwpoIGlsQ6EDfakf49+2miip"
+            + "IKgl3gjNYvgQ2m4y4YSReQ1SRURS5R2etwjaK3G3Vcnl7tJKYbXFKMtDyQusulapF6jr/M4sfqgY/Kmuler+X5Dj"
+            + "xTZfkS4i4o0KMl4phduGec0yS8GNQUob0J4BfukJdZhgqtnbaiaOeUy0JBHqqtmWgxkYUV8qHqoC4R7tXO5HOCuc"
+            + "5gdP4u4lW+vYNoFuTHgwsKz0NVqb5y4HDPL1ApFKQU70Inrd1ia53sdtPhfDuOyCYNuYUfU8yw==")!
 }
 
 /// Anti-forgery controls, signing-time behaviour, and malformed-input safety.
@@ -449,9 +475,9 @@ final class ParityTests: XCTestCase {
         try Data(contentsOf: VerifierTests.fixturesDir.appendingPathComponent("generated").appendingPathComponent(n))
     }
     func expect(_ reason: VerificationError.Reason, _ body: () async throws -> Void) async {
-        do { try await body(); XCTFail("expected \(reason.rawValue)") }
-        catch let e as VerificationError { XCTAssertEqual(e.reason, reason, e.description) }
-        catch { XCTFail("unexpected \(error)") }
+        do { try await body(); XCTFail("expected \(reason.rawValue)") } catch let e as VerificationError {
+            XCTAssertEqual(e.reason, reason, e.description)
+        } catch { XCTFail("unexpected \(error)") }
     }
 
     func testMalformedReceiptThrowsInsteadOfCrashing() async throws {
@@ -477,20 +503,24 @@ final class ParityTests: XCTestCase {
 /// length fixups, and the CMS signature covers the signed attributes rather
 /// than the bag.
 final class ChainBuildingBoundTests: XCTestCase {
-    static let notValidBefore = Date(timeIntervalSince1970: 1_577_836_800) // 2020-01-01
+    static let notValidBefore = Date(timeIntervalSince1970: 1_577_836_800)  // 2020-01-01
     static let notValidAfter = Date(timeIntervalSince1970: 2_051_222_400)  // 2035-01-01
 
     func verifier() throws -> ReceiptVerifier {
         try ReceiptVerifier(
-            trustedRoots: [try Data(contentsOf: VerifierTests.fixturesDir
-                .appendingPathComponent("generated")
-                .appendingPathComponent("receipt-root.der"))],
+            trustedRoots: [
+                try Data(
+                    contentsOf: VerifierTests.fixturesDir
+                        .appendingPathComponent("generated")
+                        .appendingPathComponent("receipt-root.der"))
+            ],
             bundleId: VerifierTests.bundle)
     }
 
     func genuineReceipt() throws -> Data {
-        try Data(contentsOf: VerifierTests.fixturesDir
-            .appendingPathComponent("generated").appendingPathComponent("receipt.der"))
+        try Data(
+            contentsOf: VerifierTests.fixturesDir
+                .appendingPathComponent("generated").appendingPathComponent("receipt.der"))
     }
 
     // MARK: certificate bag surgery
@@ -507,9 +537,11 @@ final class ChainBuildingBoundTests: XCTestCase {
         }
         let contentInfo = try children(try BER.parse(receipt))
         let signedData = try children(try children(contentInfo[1])[0])
-        guard let node = signedData.dropFirst(3).first(where: {
-            $0.identifier.tagClass == .contextSpecific && $0.identifier.tagNumber == 0
-        }) else { throw CocoaError(.formatting) }
+        guard
+            let node = signedData.dropFirst(3).first(where: {
+                $0.identifier.tagClass == .contextSpecific && $0.identifier.tagNumber == 0
+            })
+        else { throw CocoaError(.formatting) }
         return node
     }
 
@@ -520,8 +552,10 @@ final class ChainBuildingBoundTests: XCTestCase {
         return try nodes.map { try Certificate(derEncoded: [UInt8]($0.encodedBytes)) }
     }
 
-    static func replacingCertificates(of receipt: Data,
-                                      with certificates: [Certificate]) throws -> Data {
+    static func replacingCertificates(
+        of receipt: Data,
+        with certificates: [Certificate]
+    ) throws -> Data {
         let bytes = [UInt8](receipt)
         let range = try certificatesNode(bytes).encodedBytes
         var serializer = DER.Serializer()
@@ -532,15 +566,18 @@ final class ChainBuildingBoundTests: XCTestCase {
         }
         // Explicit Arrays: Swift 6.1 (the CI container) cannot type
         // ArraySlice + [UInt8] + ArraySlice, 6.3 can.
-        return Data(Array(bytes[..<range.startIndex]) + serializer.serializedBytes
-            + Array(bytes[range.endIndex...]))
+        return Data(
+            Array(bytes[..<range.startIndex]) + serializer.serializedBytes
+                + Array(bytes[range.endIndex...]))
     }
 
-    static func certificate(subject: DistinguishedName, issuer: DistinguishedName,
-                            serial: Certificate.SerialNumber,
-                            key: Certificate.PrivateKey,
-                            signedBy issuerKey: Certificate.PrivateKey,
-                            dnsName: String? = nil) throws -> Certificate {
+    static func certificate(
+        subject: DistinguishedName, issuer: DistinguishedName,
+        serial: Certificate.SerialNumber,
+        key: Certificate.PrivateKey,
+        signedBy issuerKey: Certificate.PrivateKey,
+        dnsName: String? = nil
+    ) throws -> Certificate {
         try Certificate(
             version: .v3, serialNumber: serial, publicKey: key.publicKey,
             notValidBefore: notValidBefore, notValidAfter: notValidAfter,
@@ -569,12 +606,14 @@ final class ChainBuildingBoundTests: XCTestCase {
             subject: try name("Fanout Leaf"), issuer: genuine[0].issuer,
             serial: genuine[0].serialNumber,
             key: Certificate.PrivateKey(P256.Signing.PrivateKey()), signedBy: shared)
-        return [leaf] + (0..<count).map { index in
-            try! certificate(subject: genuine[0].issuer, issuer: genuine[0].issuer,
-                             serial: .init(bytes: [0x10, UInt8(index)]),
-                             key: shared, signedBy: shared,
-                             dnsName: "ca\(index).example")
-        }
+        return [leaf]
+            + (0..<count).map { index in
+                try! certificate(
+                    subject: genuine[0].issuer, issuer: genuine[0].issuer,
+                    serial: .init(bytes: [0x10, UInt8(index)]),
+                    key: shared, signedBy: shared,
+                    dnsName: "ca\(index).example")
+            }
     }
 
     // MARK: the bounds
@@ -596,8 +635,9 @@ final class ChainBuildingBoundTests: XCTestCase {
         let genuine = try genuineReceipt()
         let flooded = try Self.replacingCertificates(
             of: genuine,
-            with: try Self.fanout(count: 10,
-                                  signerOf: try Self.embeddedCertificates(of: genuine)))
+            with: try Self.fanout(
+                count: 10,
+                signerOf: try Self.embeddedCertificates(of: genuine)))
         do {
             _ = try await verifier().verify(receipt: flooded)
             XCTFail("expected INVALID_CHAIN")
@@ -614,13 +654,14 @@ final class ChainBuildingBoundTests: XCTestCase {
         // Exactly the bound: seven self-signed certificates the walk never
         // takes, ahead of the genuine three.
         let genuineCertificates = try Self.embeddedCertificates(of: genuine)
-        let padding = try (0..<(ReceiptVerifier.maximumEmbeddedCertificates
-                                - genuineCertificates.count)).map { index -> Certificate in
-            let key = Certificate.PrivateKey(P256.Signing.PrivateKey())
-            return try Self.certificate(
-                subject: try Self.name("Padding \(index)"), issuer: try Self.name("Padding \(index)"),
-                serial: .init(bytes: [0x9A, UInt8(index)]), key: key, signedBy: key)
-        }
+        let padding = try
+            (0..<(ReceiptVerifier.maximumEmbeddedCertificates
+            - genuineCertificates.count)).map { index -> Certificate in
+                let key = Certificate.PrivateKey(P256.Signing.PrivateKey())
+                return try Self.certificate(
+                    subject: try Self.name("Padding \(index)"), issuer: try Self.name("Padding \(index)"),
+                    serial: .init(bytes: [0x9A, UInt8(index)]), key: key, signedBy: key)
+            }
         let exactly = padding + genuineCertificates
         XCTAssertEqual(exactly.count, ReceiptVerifier.maximumEmbeddedCertificates)
         _ = try await verifier().verify(
@@ -636,8 +677,9 @@ final class ChainBuildingBoundTests: XCTestCase {
         let genuine = try genuineReceipt()
         let certificates = try Self.embeddedCertificates(of: genuine)
         XCTAssertEqual(certificates.count, 3)
-        let receipt = try Self.replacingCertificates(of: genuine,
-                                                     with: Array(certificates.prefix(2)))
+        let receipt = try Self.replacingCertificates(
+            of: genuine,
+            with: Array(certificates.prefix(2)))
         _ = try await verifier().verify(receipt: receipt)
     }
 
@@ -727,8 +769,9 @@ final class ChainBuildingBoundTests: XCTestCase {
         let genuine = try genuineReceipt()
         let receipt = try Self.replacingCertificates(
             of: genuine,
-            with: try Self.fanout(count: 9,
-                                  signerOf: try Self.embeddedCertificates(of: genuine)))
+            with: try Self.fanout(
+                count: 9,
+                signerOf: try Self.embeddedCertificates(of: genuine)))
         let started = Date()
         do {
             _ = try await verifier().verify(receipt: receipt)

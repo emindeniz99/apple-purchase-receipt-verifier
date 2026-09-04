@@ -81,8 +81,11 @@ public struct ReceiptVerifier: Sendable {
 
     /// Verifies a base64 receipt (the usual client transport form).
     public func verify(base64Receipt: String, deviceGuid: Data? = nil) async throws -> AppReceipt {
-        guard let der = Data(base64Encoded: base64Receipt,
-                             options: [.ignoreUnknownCharacters]) else {
+        guard
+            let der = Data(
+                base64Encoded: base64Receipt,
+                options: [.ignoreUnknownCharacters])
+        else {
             throw VerificationError(.invalidReceiptFormat, "receipt is not valid base64")
         }
         return try await verify(receipt: der, deviceGuid: deviceGuid)
@@ -94,7 +97,8 @@ public struct ReceiptVerifier: Sendable {
     public func verify(receipt: Data, deviceGuid: Data? = nil) async throws -> AppReceipt {
         let fields = try await verifyCore(receipt: receipt)
         guard fields.bundleId == bundleId else {
-            throw VerificationError(.wrongBundleId,
+            throw VerificationError(
+                .wrongBundleId,
                 "expected \(bundleId) but receipt has \(fields.bundleId ?? "nil")")
         }
         if let deviceGuid {
@@ -116,8 +120,10 @@ public struct ReceiptVerifier: Sendable {
     /// ``verifyCore(receipt:)`` for a caller that has no single bundle id to
     /// check — the verifyReceipt-compat endpoint, which accepts any bundle.
     /// Same primitive, pinned roots supplied per call.
-    public static func verifyCore(receipt: Data,
-                                  trustedRoots: [Data]) async throws -> AppReceipt {
+    public static func verifyCore(
+        receipt: Data,
+        trustedRoots: [Data]
+    ) async throws -> AppReceipt {
         guard !trustedRoots.isEmpty else {
             throw VerificationError(.invalidCertificate, "trustedRoots is required")
         }
@@ -132,7 +138,8 @@ public struct ReceiptVerifier: Sendable {
         // them is a walk candidate below, before anything about the receipt
         // has been verified, so a flood is rejected here rather than walked.
         guard cms.certificates.count <= Self.maximumEmbeddedCertificates else {
-            throw VerificationError(.invalidChain,
+            throw VerificationError(
+                .invalidChain,
                 "receipt embeds \(cms.certificates.count) certificates, "
                     + "more than the maximum of \(Self.maximumEmbeddedCertificates)")
         }
@@ -216,11 +223,12 @@ public struct ReceiptVerifier: Sendable {
         var subjectsTaken: Set<DistinguishedName> = []
         var tip = signerCert
         while intermediates.count < cms.certificates.count,
-              !subjectsTaken.contains(tip.issuer),
-              let issuer = cms.certificates.first(where: {
-                  $0.subject == tip.issuer
-                      && $0.publicKey.isValidSignature(tip.signature, for: tip)
-              }) {
+            !subjectsTaken.contains(tip.issuer),
+            let issuer = cms.certificates.first(where: {
+                $0.subject == tip.issuer
+                    && $0.publicKey.isValidSignature(tip.signature, for: tip)
+            })
+        {
             intermediates.append(issuer)
             subjectsTaken.insert(issuer.subject)
             tip = issuer
@@ -233,7 +241,8 @@ public struct ReceiptVerifier: Sendable {
             leafCertificate: signerCert,
             intermediates: CertificateStore(intermediates))
         if case .couldNotValidate = result {
-            throw VerificationError(.invalidChain,
+            throw VerificationError(
+                .invalidChain,
                 "signer chain does not validate to a pinned root")
         }
         // Apple marker OID on the receipt-signing leaf, checked after chain
@@ -243,7 +252,8 @@ public struct ReceiptVerifier: Sendable {
         // intermediate to the same pinned root.
         let receiptSignerOID: ASN1ObjectIdentifier = [1, 2, 840, 113635, 100, 6, 11, 1]
         guard signerCert.extensions.contains(where: { $0.oid == receiptSignerOID }) else {
-            throw VerificationError(.invalidCertificatePurpose,
+            throw VerificationError(
+                .invalidCertificatePurpose,
                 "receipt signer certificate lacks Apple receipt-signing marker OID")
         }
         try cms.verifySignature(signerCert: signerCert)
@@ -252,8 +262,10 @@ public struct ReceiptVerifier: Sendable {
 
     private func verifyDeviceHash(_ fields: AppReceipt, deviceGuid: Data) throws {
         guard let opaque = fields.opaqueValue, let expected = fields.sha1Hash,
-              let bundleBytes = fields.bundleIdBytes else {
-            throw VerificationError(.deviceHashMismatch,
+            let bundleBytes = fields.bundleIdBytes
+        else {
+            throw VerificationError(
+                .deviceHashMismatch,
                 "receipt lacks the attributes needed for the device-hash check")
         }
         var input = Data()
@@ -263,8 +275,10 @@ public struct ReceiptVerifier: Sendable {
         let computed = Data(Insecure.SHA1.hash(data: input))
         // Constant-time comparison.
         guard computed.count == expected.count,
-              zip(computed, expected).reduce(0, { $0 | ($1.0 ^ $1.1) }) == 0 else {
-            throw VerificationError(.deviceHashMismatch,
+            zip(computed, expected).reduce(0, { $0 | ($1.0 ^ $1.1) }) == 0
+        else {
+            throw VerificationError(
+                .deviceHashMismatch,
                 "computed device hash does not match attribute 5")
         }
     }
@@ -307,24 +321,30 @@ private struct CMSReceipt {
 
             var certificates: [Certificate] = []
             var certificateNodes: [(serial: [UInt8], issuer: [UInt8])] = []
-            for node in signedData.dropFirst(3) where node.identifier.tagClass == .contextSpecific
-                && node.identifier.tagNumber == 0 {
+            for node in signedData.dropFirst(3)
+            where node.identifier.tagClass == .contextSpecific
+                && node.identifier.tagNumber == 0
+            {
                 for certNode in try Self.children(node) {
                     let der = [UInt8](certNode.encodedBytes)
                     certificates.append(try Certificate(derEncoded: der))
                     let tbs = try Self.children(try Self.children(DER.parse(der))[0])
                     var index = 0
                     if let first = tbs.first, first.identifier.tagClass == .contextSpecific { index = 1 }
-                    certificateNodes.append((serial: try Self.primitive(tbs.at(index)),
-                                             issuer: [UInt8]((try tbs.at(index + 2)).encodedBytes)))
+                    certificateNodes.append(
+                        (
+                            serial: try Self.primitive(tbs.at(index)),
+                            issuer: [UInt8]((try tbs.at(index + 2)).encodedBytes)
+                        ))
                 }
             }
             self.certificates = certificates
             self.certificateNodes = certificateNodes
 
             guard let signerInfos = signedData.last,
-                  signerInfos.identifier == .set,
-                  let signerInfo = try Self.children(signerInfos).first else {
+                signerInfos.identifier == .set,
+                let signerInfo = try Self.children(signerInfos).first
+            else {
                 throw VerificationError(.invalidReceiptFormat, "no signer info")
             }
             let signerFields = try Self.children(signerInfo)
@@ -343,8 +363,9 @@ private struct CMSReceipt {
 
             var index = 3
             if index < signerFields.count,
-               signerFields[index].identifier.tagClass == .contextSpecific,
-               signerFields[index].identifier.tagNumber == 0 {
+                signerFields[index].identifier.tagClass == .contextSpecific,
+                signerFields[index].identifier.tagNumber == 0
+            {
                 let attrsNode = signerFields[index]
                 // Signature covers the signedAttrs re-encoded as an explicit
                 // SET (RFC 5652 §5.4): swap the IMPLICIT [0] tag for SET.
@@ -358,7 +379,8 @@ private struct CMSReceipt {
                 for attr in try Self.children(attrsNode) {
                     let parts = try Self.children(attr)
                     if try ASN1ObjectIdentifier(derEncoded: parts.at(0))
-                        == [1, 2, 840, 113549, 1, 9, 4] {
+                        == [1, 2, 840, 113549, 1, 9, 4]
+                    {
                         digest = try Self.primitive(try Self.children(parts.at(1)).at(0))
                     }
                 }
@@ -368,7 +390,7 @@ private struct CMSReceipt {
                 self.signedAttrsBytes = nil
                 self.messageDigest = nil
             }
-            index += 1 // signatureAlgorithm — RSA PKCS#1 v1.5, digest drives the hash
+            index += 1  // signatureAlgorithm — RSA PKCS#1 v1.5, digest drives the hash
             self.signature = try Self.primitive(signerFields.at(index))
         } catch let error as VerificationError {
             throw error
@@ -391,11 +413,13 @@ private struct CMSReceipt {
         }
         let signedBytes: [UInt8]
         if let signedAttrsBytes {
-            let contentDigest: [UInt8] = digestName == "sha1"
+            let contentDigest: [UInt8] =
+                digestName == "sha1"
                 ? [UInt8](Insecure.SHA1.hash(data: Data(content)))
                 : [UInt8](SHA256.hash(data: Data(content)))
             guard let messageDigest, messageDigest == contentDigest else {
-                throw VerificationError(.invalidSignature,
+                throw VerificationError(
+                    .invalidSignature,
                     "messageDigest attribute does not match content")
             }
             signedBytes = signedAttrsBytes
@@ -405,10 +429,12 @@ private struct CMSReceipt {
         let rsaSignature = _RSA.Signing.RSASignature(rawRepresentation: Data(signature))
         let valid: Bool
         if digestName == "sha1" {
-            valid = publicKey.isValidSignature(rsaSignature,
+            valid = publicKey.isValidSignature(
+                rsaSignature,
                 for: Insecure.SHA1.hash(data: Data(signedBytes)), padding: .insecurePKCS1v1_5)
         } else {
-            valid = publicKey.isValidSignature(rsaSignature,
+            valid = publicKey.isValidSignature(
+                rsaSignature,
                 for: SHA256.hash(data: Data(signedBytes)), padding: .insecurePKCS1v1_5)
         }
         guard valid else {
@@ -543,7 +569,8 @@ private func parseAttributeSet(_ der: [UInt8]) throws -> [(Int, [UInt8])] {
     for child in try CMSReceipt.children(root) {
         let fields = try CMSReceipt.children(child)
         guard child.identifier == .sequence, fields.count >= 3,
-              fields[0].identifier == .integer, fields[2].identifier == .octetString else {
+            fields[0].identifier == .integer, fields[2].identifier == .octetString
+        else {
             throw VerificationError(.invalidReceiptFormat, "malformed receipt attribute")
         }
         // The attribute TYPE is bounded at a 32-bit signed integer, the width
@@ -556,7 +583,8 @@ private func parseAttributeSet(_ der: [UInt8]) throws -> [(Int, [UInt8])] {
         // — so this bound is on the type alone.
         let type = try intValue(try CMSReceipt.primitive(fields[0]))
         guard type <= Int(Int32.max) else {
-            throw VerificationError(.invalidReceiptFormat,
+            throw VerificationError(
+                .invalidReceiptFormat,
                 "receipt attribute type \(type) exceeds the 32-bit signed range")
         }
         attributes.append((type, try CMSReceipt.primitive(fields[2])))
@@ -586,7 +614,8 @@ private func parseNested(_ der: [UInt8]) throws -> ASN1Node {
 private func decodeString(_ der: [UInt8]) throws -> String {
     let node = try parseNested(der)
     guard node.identifier == .utf8String || node.identifier == .ia5String,
-          let text = String(bytes: try CMSReceipt.primitive(node), encoding: .utf8) else {
+        let text = String(bytes: try CMSReceipt.primitive(node), encoding: .utf8)
+    else {
         throw VerificationError(.invalidReceiptFormat, "attribute value is not an ASN.1 string")
     }
     return text
@@ -631,8 +660,9 @@ private func decodeDate(_ der: [UInt8]) throws -> Date? {
         throw VerificationError(.invalidReceiptFormat, "unparseable receipt date: \(text)")
     }
     guard isRepresentableAsCertificateValidationTime(date) else {
-        throw VerificationError(.invalidReceiptFormat,
-                                "receipt date out of representable range: \(text)")
+        throw VerificationError(
+            .invalidReceiptFormat,
+            "receipt date out of representable range: \(text)")
     }
     return date
 }

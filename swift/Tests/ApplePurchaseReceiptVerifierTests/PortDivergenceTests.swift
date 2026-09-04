@@ -50,8 +50,9 @@ private enum ReceiptSurgery {
         try serializer.serialize(ASN1OctetString(contentBytes: payload[...]))
         // Explicit Arrays: Swift 6.1 (the CI container) cannot type
         // ArraySlice + [UInt8] + ArraySlice, 6.3 can.
-        return Data(Array(bytes[..<range.startIndex]) + serializer.serializedBytes
-            + Array(bytes[range.endIndex...]))
+        return Data(
+            Array(bytes[..<range.startIndex]) + serializer.serializedBytes
+                + Array(bytes[range.endIndex...]))
     }
 
     // MARK: attribute-set assembly
@@ -107,8 +108,10 @@ private enum ReceiptSurgery {
         }
         let fields = try children(try DER.parse(attributes[index]))
         let inner = set(try Self.attributes(of: try primitive(fields[2])) + [attribute])
-        attributes[index] = tlv(0x30, [UInt8](fields[0].encodedBytes)
-            + [UInt8](fields[1].encodedBytes) + tlv(0x04, inner))
+        attributes[index] = tlv(
+            0x30,
+            [UInt8](fields[0].encodedBytes)
+                + [UInt8](fields[1].encodedBytes) + tlv(0x04, inner))
         return try replacingPayload(of: receipt, with: set(attributes))
     }
 
@@ -130,16 +133,18 @@ private enum ReceiptSurgery {
 /// itself. No fixture pins this, so the inputs are built here.
 final class OversizedAttributeTypeTests: XCTestCase {
     static let outOfRange: [UInt8] = [0x00, 0x80, 0x00, 0x00, 0x00]  // 2^31
-    static let largestInRange: [UInt8] = [0x7F, 0xFF, 0xFF, 0xFF]    // 2^31 - 1
+    static let largestInRange: [UInt8] = [0x7F, 0xFF, 0xFF, 0xFF]  // 2^31 - 1
 
     func fixture(_ name: String) throws -> Data {
-        try Data(contentsOf: VerifierTests.fixturesDir
-            .appendingPathComponent("generated").appendingPathComponent(name))
+        try Data(
+            contentsOf: VerifierTests.fixturesDir
+                .appendingPathComponent("generated").appendingPathComponent(name))
     }
 
     func verifier() throws -> ReceiptVerifier {
-        try ReceiptVerifier(trustedRoots: [try fixture("receipt-root.der")],
-                            bundleId: VerifierTests.bundle)
+        try ReceiptVerifier(
+            trustedRoots: [try fixture("receipt-root.der")],
+            bundleId: VerifierTests.bundle)
     }
 
     func reason<T>(_ body: () async throws -> T) async -> VerificationError.Reason? {
@@ -171,8 +176,9 @@ final class OversizedAttributeTypeTests: XCTestCase {
         let onOversized = await reason { try await verifier.verify(receipt: oversized) }
         let onRepresentable = await reason { try await verifier.verify(receipt: representable) }
         XCTAssertEqual(.invalidReceiptFormat, onOversized)
-        XCTAssertEqual(.invalidSignature, onRepresentable,
-                       "2^31-1 is representable and must reach the signature check")
+        XCTAssertEqual(
+            .invalidSignature, onRepresentable,
+            "2^31-1 is representable and must reach the signature check")
     }
 
     /// In-app attribute sets go through the same parser, so the same bound
@@ -206,8 +212,9 @@ final class OversizedAttributeTypeTests: XCTestCase {
         let spliced = try ReceiptSurgery.appendingInAppAttribute(
             huge, to: try fixture("receipt.der"))
         let verdict = await reason { try await self.verifier().verify(receipt: spliced) }
-        XCTAssertEqual(.invalidSignature, verdict,
-                       "the type bound must not reach attribute values")
+        XCTAssertEqual(
+            .invalidSignature, verdict,
+            "the type bound must not reach attribute values")
     }
 
     /// Through the endpoint the same input is a malformed-receipt answer
@@ -239,13 +246,14 @@ final class CertificateValidityClockTests: XCTestCase {
     /// would not agree.
     static let clocks: [(@Sendable () -> Date)?] = [
         nil,
-        { Date(timeIntervalSince1970: 0) },              // 1970
+        { Date(timeIntervalSince1970: 0) },  // 1970
         { Date(timeIntervalSince1970: 4_102_444_800) },  // 2100
     ]
 
     func fixture(_ name: String) throws -> Data {
-        try Data(contentsOf: VerifierTests.fixturesDir
-            .appendingPathComponent("generated").appendingPathComponent(name))
+        try Data(
+            contentsOf: VerifierTests.fixturesDir
+                .appendingPathComponent("generated").appendingPathComponent(name))
     }
 
     func text(_ name: String) throws -> String {
@@ -274,8 +282,9 @@ final class CertificateValidityClockTests: XCTestCase {
     /// must not be able to move.
     func testAPayloadWithNoSignedDateIsJudgedAtTheSystemClock() async throws {
         let segments = try text("transaction.jws").components(separatedBy: ".")
-        var claims = try JSONSerialization.jsonObject(
-            with: base64URLDecode(segments[1])!) as! [String: Any]
+        var claims =
+            try JSONSerialization.jsonObject(
+                with: base64URLDecode(segments[1])!) as! [String: Any]
         claims.removeValue(forKey: "signedDate")
         XCTAssertNil(claims["signedDate"])
         let dateless = try JSONSerialization.data(withJSONObject: claims)
@@ -290,8 +299,9 @@ final class CertificateValidityClockTests: XCTestCase {
                 trustedRoots: [try fixture("jws-root.der")], bundleId: VerifierTests.bundle,
                 acceptedEnvironments: [.sandbox], maxSignedAgeMillis: nil, clock: clock)
             let verdict = await self.reason { try await verifier.verifyTransaction(jws) }
-            XCTAssertEqual(.invalidSignature, verdict,
-                           "the certificate-validity verdict moved with the clock")
+            XCTAssertEqual(
+                .invalidSignature, verdict,
+                "the certificate-validity verdict moved with the clock")
         }
     }
 
@@ -306,8 +316,9 @@ final class CertificateValidityClockTests: XCTestCase {
         let liveVerifier = try ReceiptVerifier(
             trustedRoots: [try fixture("receipt-root.der")], bundleId: VerifierTests.bundle)
         let onGenuine = await reason { try await liveVerifier.verifyCore(receipt: genuine) }
-        XCTAssertEqual(.invalidSignature, onGenuine,
-                       "a chain valid today must validate for a receipt with no date")
+        XCTAssertEqual(
+            .invalidSignature, onGenuine,
+            "a chain valid today must validate for a receipt with no date")
 
         let expired = try ReceiptSurgery.removingAttribute(
             12, from: try fixture("receipt-expired-historical.der"))
@@ -315,8 +326,9 @@ final class CertificateValidityClockTests: XCTestCase {
             trustedRoots: [try fixture("receipt-expired-root.der")],
             bundleId: VerifierTests.bundle)
         let onExpired = await reason { try await expiredVerifier.verifyCore(receipt: expired) }
-        XCTAssertEqual(.invalidChain, onExpired,
-                       "a chain expired today must not validate for a receipt with no date")
+        XCTAssertEqual(
+            .invalidChain, onExpired,
+            "a chain expired today must not validate for a receipt with no date")
     }
 
     /// The endpoint is the one receipt-path API that takes a clock (it stamps
@@ -327,16 +339,19 @@ final class CertificateValidityClockTests: XCTestCase {
         let insideTheWindow: @Sendable () -> Date = {
             Date(timeIntervalSince1970: 1_593_561_600)  // 2020-07-01
         }
-        for (fixture, expected) in [("receipt-expired-historical.der", 0),
-                                    ("receipt-expired-fresh.der", 21003)] {
+        for (fixture, expected) in [
+            ("receipt-expired-historical.der", 0),
+            ("receipt-expired-fresh.der", 21003),
+        ] {
             let request = ["receipt-data": try self.fixture(fixture).base64EncodedString()]
             for clock in Self.clocks + [insideTheWindow] {
                 let endpoint = try VerifyReceiptEndpoint(
                     trustedRoots: [try self.fixture("receipt-expired-root.der")],
                     environment: .sandbox, clock: clock)
                 let response = await endpoint.verifyReceipt(request)
-                XCTAssertEqual(expected, response["status"] as? Int,
-                               "\(fixture): the status moved with the clock")
+                XCTAssertEqual(
+                    expected, response["status"] as? Int,
+                    "\(fixture): the status moved with the clock")
             }
         }
     }

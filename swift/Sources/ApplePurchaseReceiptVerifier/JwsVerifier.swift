@@ -91,10 +91,12 @@ public struct JwsVerifier: Sendable {
     ///     requires. A closure returning `Date` is the idiomatic injectable
     ///     wall-clock source on Apple platforms, and `@Sendable` keeps this
     ///     struct `Sendable`.
-    public init(trustedRoots: [Data], bundleId: String,
-                acceptedEnvironments: Set<AppleEnvironment>,
-                appAppleId: Int64? = nil, maxSignedAgeMillis: Int64? = nil,
-                clock: (@Sendable () -> Date)? = nil) throws {
+    public init(
+        trustedRoots: [Data], bundleId: String,
+        acceptedEnvironments: Set<AppleEnvironment>,
+        appAppleId: Int64? = nil, maxSignedAgeMillis: Int64? = nil,
+        clock: (@Sendable () -> Date)? = nil
+    ) throws {
         guard !trustedRoots.isEmpty else {
             throw VerificationError(.invalidCertificate, "trustedRoots must not be empty")
         }
@@ -126,7 +128,8 @@ public struct JwsVerifier: Sendable {
         try requireBundleId(payload.bundleId)
         let environment = try requireAcceptedEnvironment(payload.receiptType)
         if environment == .production, appAppleId == nil || appAppleId != payload.appAppleId {
-            throw VerificationError(.wrongAppAppleId,
+            throw VerificationError(
+                .wrongAppAppleId,
                 "expected \(appAppleId.map(String.init) ?? "nil") but payload has \(payload.appAppleId.map(String.init) ?? "nil")")
         }
         return payload
@@ -147,12 +150,14 @@ public struct JwsVerifier: Sendable {
     private func verifySignature(_ jws: String) async throws -> Data {
         let segments = jws.components(separatedBy: ".")
         guard segments.count == 3 else {
-            throw VerificationError(.invalidJwsFormat,
+            throw VerificationError(
+                .invalidJwsFormat,
                 "expected 3 dot-separated segments, got \(segments.count)")
         }
         guard let headerData = base64URLDecode(segments[0]),
-              let payloadData = base64URLDecode(segments[1]),
-              let header = try? JSONSerialization.jsonObject(with: headerData) as? [String: Any] else {
+            let payloadData = base64URLDecode(segments[1]),
+            let header = try? JSONSerialization.jsonObject(with: headerData) as? [String: Any]
+        else {
             throw VerificationError(.invalidJwsFormat, "header/payload is not valid base64url JSON")
         }
         guard header["alg"] as? String == "ES256" else {
@@ -162,24 +167,28 @@ public struct JwsVerifier: Sendable {
             throw VerificationError(.invalidJwsFormat, "x5c must contain exactly 3 certificates")
         }
         guard let leafDER = Data(base64Encoded: x5c[0], options: [.ignoreUnknownCharacters]),
-              let intermediateDER = Data(base64Encoded: x5c[1], options: [.ignoreUnknownCharacters]),
-              let leaf = try? Certificate(derEncoded: [UInt8](leafDER)),
-              let intermediate = try? Certificate(derEncoded: [UInt8](intermediateDER)) else {
+            let intermediateDER = Data(base64Encoded: x5c[1], options: [.ignoreUnknownCharacters]),
+            let leaf = try? Certificate(derEncoded: [UInt8](leafDER)),
+            let intermediate = try? Certificate(derEncoded: [UInt8](intermediateDER))
+        else {
             throw VerificationError(.invalidCertificate, "x5c entry is not a valid certificate")
         }
         guard leaf.extensions.contains(where: { $0.oid == Self.leafOID }) else {
-            throw VerificationError(.invalidCertificatePurpose,
+            throw VerificationError(
+                .invalidCertificatePurpose,
                 "leaf certificate lacks Apple marker OID \(Self.leafOID)")
         }
         guard intermediate.extensions.contains(where: { $0.oid == Self.intermediateOID }) else {
-            throw VerificationError(.invalidCertificatePurpose,
+            throw VerificationError(
+                .invalidCertificatePurpose,
                 "intermediate certificate lacks Apple marker OID \(Self.intermediateOID)")
         }
 
         // Chain validity is checked at signing time so payloads signed with
         // since-rotated certificates keep verifying (PLAN.md §2.1 step 4).
         let claims = (try? JSONSerialization.jsonObject(with: payloadData) as? [String: Any]) ?? [:]
-        let signedAtMillis = (claims["signedDate"] as? Double)
+        let signedAtMillis =
+            (claims["signedDate"] as? Double)
             ?? (claims["receiptCreationDate"] as? Double)
         // Deliberately NOT the injected clock: chain validity is judged at the
         // payload's signing date (PLAN.md 2.1 step 4), and the fallback for a
@@ -191,17 +200,20 @@ public struct JwsVerifier: Sendable {
         // check, so a large enough number would trap inside the policy rather
         // than fail the payload.
         guard isRepresentableAsCertificateValidationTime(validationTime) else {
-            throw VerificationError(.invalidJwsFormat,
-                                    "signed date out of representable range")
+            throw VerificationError(
+                .invalidJwsFormat,
+                "signed date out of representable range")
         }
-        try await Self.validateChain(leaf: leaf, intermediate: intermediate,
-                                     roots: roots, at: validationTime)
+        try await Self.validateChain(
+            leaf: leaf, intermediate: intermediate,
+            roots: roots, at: validationTime)
 
         guard let publicKey = P256.Signing.PublicKey(leaf.publicKey) else {
             throw VerificationError(.invalidSignature, "leaf key is not EC P-256")
         }
         guard let signatureBytes = base64URLDecode(segments[2]), signatureBytes.count == 64,
-              let signature = try? P256.Signing.ECDSASignature(rawRepresentation: signatureBytes) else {
+            let signature = try? P256.Signing.ECDSASignature(rawRepresentation: signatureBytes)
+        else {
             throw VerificationError(.invalidSignature, "ES256 signature must be 64 raw bytes")
         }
         let signingInput = Data("\(segments[0]).\(segments[1])".utf8)
@@ -210,22 +222,27 @@ public struct JwsVerifier: Sendable {
         }
 
         if let maxSignedAgeMillis, let signedAtMillis,
-           clock().timeIntervalSince1970 * 1000 - signedAtMillis > Double(maxSignedAgeMillis) {
-            throw VerificationError(.stalePayload,
+            clock().timeIntervalSince1970 * 1000 - signedAtMillis > Double(maxSignedAgeMillis)
+        {
+            throw VerificationError(
+                .stalePayload,
                 "payload signed at \(Int64(signedAtMillis)) exceeds max age \(maxSignedAgeMillis)ms")
         }
         return payloadData
     }
 
-    static func validateChain(leaf: Certificate, intermediate: Certificate,
-                              roots: [Certificate], at: Date) async throws {
+    static func validateChain(
+        leaf: Certificate, intermediate: Certificate,
+        roots: [Certificate], at: Date
+    ) async throws {
         var verifier = Verifier(rootCertificates: CertificateStore(roots)) {
             RFC5280Policy(validationTime: at)
         }
         let result = await verifier.validate(
             leafCertificate: leaf, intermediates: CertificateStore([intermediate]))
         if case .couldNotValidate = result {
-            throw VerificationError(.invalidChain,
+            throw VerificationError(
+                .invalidChain,
                 "certificate chain does not validate to a pinned root")
         }
     }
@@ -240,15 +257,18 @@ public struct JwsVerifier: Sendable {
 
     private func requireBundleId(_ actual: String?) throws {
         guard actual == bundleId else {
-            throw VerificationError(.wrongBundleId,
+            throw VerificationError(
+                .wrongBundleId,
                 "expected \(bundleId) but payload has \(actual ?? "nil")")
         }
     }
 
     private func requireAcceptedEnvironment(_ claim: String?) throws -> AppleEnvironment {
         guard let claim, let environment = AppleEnvironment(rawValue: claim),
-              acceptedEnvironments.contains(environment) else {
-            throw VerificationError(.wrongEnvironment,
+            acceptedEnvironments.contains(environment)
+        else {
+            throw VerificationError(
+                .wrongEnvironment,
                 "payload environment \(claim ?? "nil") not in accepted set")
         }
         return environment
