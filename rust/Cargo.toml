@@ -1,6 +1,6 @@
 [package]
 name = "apple-purchase-receipt-verifier"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.74.0"
 description = "Offline verification of Apple App Store JWS payloads and legacy PKCS#7 app receipts against pinned Apple roots."

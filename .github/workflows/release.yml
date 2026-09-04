@@ -12,9 +12,26 @@
 #           CENTRAL_PASSWORD (portal token pair), GPG_PRIVATE_KEY (armored,
 #           passphrase-protected) and GPG_PASSPHRASE repo secrets.
 #   Swift — nothing to publish; SwiftPM consumes the tag itself.
+#   RubyGems — trusted publisher (OIDC) keyed to this FILENAME, environment
+#           rubygems. RubyGems supports a pending publisher, so the first
+#           publish can go through this job; see BOOTSTRAP.md.
+#   crates.io — trusted publisher (OIDC) keyed to this FILENAME. The crate
+#           must exist first, so the owner makes the first publish by hand
+#           (BOOTSTRAP.md).
+#   NuGet — trusted publisher (OIDC) keyed to this FILENAME. Package id
+#           ApplePurchaseReceiptVerifier; first publish is manual, same
+#           reason as npm (BOOTSTRAP.md).
+#   Go    — no registry: proxy.golang.org serves the module from this
+#           repository, published by a go/vX.Y.Z tag the job below creates.
+#   Packagist — nothing publishable from this repository as laid out:
+#           Packagist reads composer.json from the repository ROOT only, and
+#           this port's manifest is php/composer.json. See BOOTSTRAP.md for
+#           the decision the owner still has to make; there is deliberately
+#           no PHP job here.
 #
-# Both jobs skip (loudly) when the registry already has the tag's version,
-# so a manually bootstrapped version doesn't fail the tag run.
+# Every publish job skips (loudly) when the registry already has the tag's
+# version, so a manually bootstrapped version doesn't fail the tag run, and
+# each one proves the built artifact carries the library before pushing it.
 #
 # Security: every action pinned to a commit SHA; no dependency cache in
 # publish jobs (a poisoned restore would become the shipped artifact);
@@ -199,13 +216,260 @@ jobs:
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: mvn -B -P central deploy
 
+  publish-rubygems:
+    name: publish ruby to RubyGems.org
+    runs-on: ubuntu-latest
+    needs: ci-passed
+    timeout-minutes: 20
+    environment: rubygems
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        with:
+          ruby-version: "3.4"
+          bundler-cache: false
+
+      - name: Skip if this version is already on RubyGems.org
+        id: gate
+        run: |
+          set -euo pipefail
+          VERSION=$(cat version.txt)
+          if curl -fsSL "https://rubygems.org/api/v2/rubygems/apple-purchase-receipt-verifier/versions/$VERSION.json" >/dev/null 2>&1; then
+            echo "RubyGems already has $VERSION — skipping publish."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build the gem
+        if: steps.gate.outputs.publish == 'true'
+        working-directory: ruby
+        run: gem build apple-purchase-receipt-verifier.gemspec
+
+      # The Ruby shape of the two empty npm releases is spec.files — a Dir[]
+      # glob — losing certs/: a gem that installs and requires cleanly, then
+      # raises the first time anyone asks for a trust anchor.
+      - name: Refuse to publish a gem missing its entry point or its roots
+        if: steps.gate.outputs.publish == 'true'
+        working-directory: ruby
+        run: |
+          set -euo pipefail
+          ruby -rrubygems/package -e '
+            files = Gem::Package.new(Dir["apple-purchase-receipt-verifier-*.gem"].first).spec.files
+            want  = ["lib/apple_purchase_receipt_verifier.rb",
+                     "lib/apple-purchase-receipt-verifier.rb",
+                     "certs/AppleIncRootCertificate.cer",
+                     "certs/AppleRootCA-G2.cer",
+                     "certs/AppleRootCA-G3.cer"]
+            missing = want - files
+            abort("refusing to publish: gem is missing #{missing.join(", ")}") unless missing.empty?
+            puts "gem carries #{files.size} files, entry points and roots included"'
+
+      - uses: rubygems/configure-rubygems-credentials@dc5a8d8553e6ee01fc26761a49e99e733d17954a # v2.1.0
+        if: steps.gate.outputs.publish == 'true'
+
+      - name: gem push
+        if: steps.gate.outputs.publish == 'true'
+        working-directory: ruby
+        run: gem push apple-purchase-receipt-verifier-*.gem
+
+  publish-crates:
+    name: publish rust to crates.io
+    runs-on: ubuntu-latest
+    needs: ci-passed
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - run: rustup toolchain install stable --profile minimal
+
+      # The sparse index answers 404 for an unpublished crate and a
+      # JSON-lines version list for a published one. A crates.io publish is
+      # irrevocable — a yank hides a version, it never deletes it — which is
+      # what makes this gate load-bearing rather than a convenience.
+      - name: Skip if this version is already on crates.io
+        id: gate
+        run: |
+          set -euo pipefail
+          VERSION=$(cat version.txt)
+          if curl -fsSL https://index.crates.io/ap/pl/apple-purchase-receipt-verifier \
+             | grep -q "\"vers\":\"$VERSION\""; then
+            echo "crates.io already has $VERSION — skipping publish."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Cargo.toml excludes tests/ and fuzz/, so the published file set is not
+      # the repository file set. Prove the library and its anchors are in it
+      # before the upload, since a crates.io version cannot be withdrawn.
+      - name: Prove the crate carries the library and its roots
+        if: steps.gate.outputs.publish == 'true'
+        working-directory: rust
+        run: |
+          set -euo pipefail
+          cargo package --list > "$RUNNER_TEMP/crate-files.txt"
+          for entry in src/lib.rs \
+                       certs/AppleIncRootCertificate.cer \
+                       certs/AppleRootCA-G2.cer \
+                       certs/AppleRootCA-G3.cer; do
+            grep -qx "$entry" "$RUNNER_TEMP/crate-files.txt" \
+              || { echo "::error::the crate is missing $entry"; exit 1; }
+          done
+          echo "crate carries $(wc -l < "$RUNNER_TEMP/crate-files.txt") files, library and roots included"
+
+      # Exchanges the GitHub OIDC token for a short-lived crates.io token and
+      # revokes it in a post step, so no registry token lives in this repo.
+      - uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
+        if: steps.gate.outputs.publish == 'true'
+        id: auth
+
+      - run: cargo publish
+        if: steps.gate.outputs.publish == 'true'
+        working-directory: rust
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+  publish-nuget:
+    name: publish dotnet to NuGet
+    runs-on: ubuntu-latest
+    needs: ci-passed
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write          # NuGet trusted publishing (OIDC)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Skip if this version is already on nuget.org
+        id: gate
+        run: |
+          set -euo pipefail
+          VERSION=$(cat version.txt)
+          if curl -fsSL "https://api.nuget.org/v3-flatcontainer/applepurchasereceiptverifier/$VERSION/applepurchasereceiptverifier.$VERSION.nupkg" -o /dev/null; then
+            echo "nuget.org already has $VERSION — skipping publish."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Pack
+        if: steps.gate.outputs.publish == 'true'
+        working-directory: dotnet
+        run: dotnet pack src/ApplePurchaseReceiptVerifier -c Release -o "$RUNNER_TEMP/nupkg"
+
+      # The package is what consumers receive: prove both target-framework
+      # assets are in it before it reaches the registry.
+      - name: Prove the package carries both assets
+        if: steps.gate.outputs.publish == 'true'
+        run: |
+          set -euo pipefail
+          PKG=$(ls "$RUNNER_TEMP"/nupkg/ApplePurchaseReceiptVerifier.*.nupkg)
+          for entry in lib/netstandard2.0/ApplePurchaseReceiptVerifier.dll \
+                       lib/net8.0/ApplePurchaseReceiptVerifier.dll \
+                       README.md; do
+            unzip -l "$PKG" | grep -q "$entry" \
+              || { echo "::error::the package is missing $entry"; exit 1; }
+          done
+
+      - uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
+        if: steps.gate.outputs.publish == 'true'
+        id: nuget-login
+        with:
+          user: emindeniz99
+
+      - name: Push
+        if: steps.gate.outputs.publish == 'true'
+        env:
+          NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+        run: |
+          set -euo pipefail
+          dotnet nuget push "$RUNNER_TEMP"/nupkg/*.nupkg \
+            --source https://api.nuget.org/v3/index.json \
+            --api-key "$NUGET_API_KEY" \
+            --skip-duplicate
+
+  # Go has no registry: proxy.golang.org serves the module from the git
+  # repository, and a module in the subdirectory go/ is published by a tag
+  # named go/vX.Y.Z. The plain vX.Y.Z tag release-please creates does not
+  # publish it. Nothing is uploaded, so this is a tag plus a proxy fetch —
+  # and a published Go version is immutable, its hash recorded in
+  # sum.golang.org forever, so the tag is never moved or deleted.
+  tag-go-module:
+    name: tag the go module at this release
+    runs-on: ubuntu-latest
+    needs: ci-passed
+    timeout-minutes: 15
+    permissions:
+      contents: write     # the only job in this workflow that needs it
+    steps:
+      # No checkout: the ref is created through the API, so no credential is
+      # ever written to disk and persist-credentials never applies.
+      - name: create go/vX.Y.Z and warm the proxy
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.ref_name }}          # vX.Y.Z
+        run: |
+          set -euo pipefail
+          TAG="go/${REF}"
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
+            echo "$TAG already exists — skipping (re-runs are safe)."
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f "ref=refs/tags/$TAG" -f "sha=$GITHUB_SHA"
+            echo "created $TAG at $GITHUB_SHA"
+          fi
+          # "Publishing" is a proxy fetch. Warm it so pkg.go.dev indexes the
+          # version and the checksum-database entry exists before consumers
+          # arrive.
+          MOD="github.com/$GITHUB_REPOSITORY/go"
+          resolved=false
+          for attempt in $(seq 1 10); do
+            if GOPROXY=https://proxy.golang.org GOFLAGS=-mod=mod \
+               go list -m "$MOD@${REF}"; then resolved=true; break; fi
+            echo "proxy has not picked up ${REF} yet (attempt $attempt of 10); waiting 30s"
+            sleep 30
+          done
+          if [ "$resolved" != true ]; then
+            echo "::error::$MOD@${REF} never became resolvable from proxy.golang.org"
+            exit 1
+          fi
+          # The module zip is what consumers receive, and go/roots/certs is a
+          # copy an embed pattern cannot reach outside the module for. Prove
+          # the zip carries the library and its anchors.
+          curl -fsSL "https://proxy.golang.org/${MOD}/@v/${REF}.zip" -o "$RUNNER_TEMP/module.zip"
+          for entry in "roots.go" "roots/certs/AppleIncRootCertificate.cer" \
+                       "roots/certs/AppleRootCA-G2.cer" "roots/certs/AppleRootCA-G3.cer"; do
+            unzip -l "$RUNNER_TEMP/module.zip" | grep -q "$entry" \
+              || { echo "::error::the module zip is missing $entry"; exit 1; }
+          done
+          echo "module zip carries the library and all three roots"
+
   # workflow_run does not fire for a run that was itself dispatched with the
   # workflow token (the same suppression that hid the tag push from this
   # workflow), so the smoke test is dispatched explicitly once every
   # registry has been published.
   smoke:
     name: dispatch the post-publish smoke test
-    needs: [publish-pypi, publish-npm, publish-maven]
+    needs: [publish-pypi, publish-npm, publish-maven, publish-rubygems,
+            publish-crates, publish-nuget, tag-go-module]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
