@@ -22,6 +22,9 @@
     "build": "tsc",
     "prepack": "tsc",
     "test": "node scripts/typecheck.mjs && node --test",
+    "lint": "oxlint",
+    "format:check": "prettier --check .",
+    "format": "prettier --write .",
     "test:runtimes": "npm run runtime:node && npm run runtime:bun && npm run runtime:deno && npm run runtime:workerd-floor && npm run runtime:workerd-compat-v2 && npm run runtime:workerd-latest",
     "runtime:node": "node scripts/typecheck.mjs && node runtime-smoke/node-like.mjs",
     "runtime:bun": "node scripts/typecheck.mjs && npx --yes bun@1.4.0 runtime-smoke/node-like.mjs",
@@ -41,6 +44,8 @@
     "@edge-runtime/vm": "^5.0.0",
     "@fastly/js-compute": "^3.45.0",
     "@types/node": "^20.19.0",
+    "oxlint": "^1.81.0",
+    "prettier": "^3.9.6",
     "typescript": "^7.0.2"
   },
   "types": "dist/index.d.ts"

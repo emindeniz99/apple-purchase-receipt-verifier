@@ -4,8 +4,12 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import {
-  JwsVerifier, ReceiptVerifier, VerificationError, VerifyReceiptEndpoint,
-  appleJwsRoots, appleReceiptRoots,
+  JwsVerifier,
+  ReceiptVerifier,
+  VerificationError,
+  VerifyReceiptEndpoint,
+  appleJwsRoots,
+  appleReceiptRoots,
 } from '../dist/index.js';
 
 // Runs fixtures/cases.json — the normative cross-language conformance
@@ -24,10 +28,14 @@ const CASES = JSON.parse(readFileSync(fixtureUrl('cases.json'), 'utf8'));
 function decodeFixture(entry) {
   const raw = readFileSync(fixtureUrl(entry.path));
   switch (entry.codec) {
-    case 'raw': return raw;
-    case 'base64': return Buffer.from(raw.toString('ascii').replace(/\s+/g, ''), 'base64');
-    case 'utf8': return Buffer.from(raw.toString('utf8').trim(), 'utf8');
-    default: throw new Error(`harness error: unknown fixture codec "${entry.codec}"`);
+    case 'raw':
+      return raw;
+    case 'base64':
+      return Buffer.from(raw.toString('ascii').replace(/\s+/g, ''), 'base64');
+    case 'utf8':
+      return Buffer.from(raw.toString('utf8').trim(), 'utf8');
+    default:
+      throw new Error(`harness error: unknown fixture codec "${entry.codec}"`);
   }
 }
 
@@ -55,9 +63,11 @@ function fixtureBytes(id) {
   }
   const actual = createHash('sha256').update(bytes).digest('hex');
   if (actual !== entry.contentSha256) {
-    throw new Error(`fixture "${id}" (${entry.path}, codec ${entry.codec}) has drifted: `
-      + `cases.json records contentSha256 ${entry.contentSha256}, `
-      + `the decoded bytes hash to ${actual}`);
+    throw new Error(
+      `fixture "${id}" (${entry.path}, codec ${entry.codec}) has drifted: ` +
+        `cases.json records contentSha256 ${entry.contentSha256}, ` +
+        `the decoded bytes hash to ${actual}`,
+    );
   }
   FIXTURE_CACHE.set(id, bytes);
   return bytes;
@@ -104,8 +114,8 @@ function jwsVerifier(config, clock) {
     bundleId: config.bundleId ?? UNMATCHABLE_BUNDLE_ID,
     acceptedEnvironments: config.acceptedEnvironments ?? UNMATCHABLE_ENVIRONMENTS,
     appAppleId: config.appAppleId ?? null,
-    maxSignedAgeMillis: config.maxSignedAgeSeconds === undefined
-      ? null : config.maxSignedAgeSeconds * 1000,
+    maxSignedAgeMillis:
+      config.maxSignedAgeSeconds === undefined ? null : config.maxSignedAgeSeconds * 1000,
     clock,
   });
 }
@@ -119,20 +129,23 @@ const OPERATIONS = {
     jwsVerifier(config, clock).verifyTransaction(input.toString('utf8')),
   verifyAppTransaction: (config, input, clock) =>
     jwsVerifier(config, clock).verifyAppTransaction(input.toString('utf8')),
-  verifyRaw: (config, input, clock) =>
-    jwsVerifier(config, clock).verifyRaw(input.toString('utf8')),
+  verifyRaw: (config, input, clock) => jwsVerifier(config, clock).verifyRaw(input.toString('utf8')),
   verifyReceipt: (config, input, clock) => {
     requireNoClock(clock, 'verifyReceipt');
     const verifier = new ReceiptVerifier({
-      trustedRoots: trustedRoots(config.trustedRoots), bundleId: config.bundleId,
+      trustedRoots: trustedRoots(config.trustedRoots),
+      bundleId: config.bundleId,
     });
-    const guid = config.deviceGuidHex === undefined
-      ? null : Buffer.from(config.deviceGuidHex, 'hex');
+    const guid =
+      config.deviceGuidHex === undefined ? null : Buffer.from(config.deviceGuidHex, 'hex');
     return verifier.verify(input, guid);
   },
-  verifyReceiptEndpoint: (config, input, clock) => new VerifyReceiptEndpoint({
-    trustedRoots: trustedRoots(config.trustedRoots), environment: config.environment, clock,
-  }).verifyReceipt({ 'receipt-data': input.toString('base64') }),
+  verifyReceiptEndpoint: (config, input, clock) =>
+    new VerifyReceiptEndpoint({
+      trustedRoots: trustedRoots(config.trustedRoots),
+      environment: config.environment,
+      clock,
+    }).verifyReceipt({ 'receipt-data': input.toString('base64') }),
 };
 
 function requireNoClock(clock, operation) {
@@ -198,8 +211,11 @@ function pathSteps(path) {
       throw new Error(`harness error: unparseable field path "${path}"`);
     }
     consumed += match[0].length;
-    steps.push(match[1] === undefined
-      ? { bracket: true, value: match[2] } : { bracket: false, value: match[1] });
+    steps.push(
+      match[1] === undefined
+        ? { bracket: true, value: match[2] }
+        : { bracket: false, value: match[1] },
+    );
   }
   if (consumed !== path.length) {
     throw new Error(`harness error: unparseable field path "${path}"`);
@@ -214,8 +230,8 @@ function resolvePath(root, path) {
       return undefined;
     }
     if (!step.bracket) {
-      current = step.value === 'length' && Array.isArray(current)
-        ? current.length : current[step.value];
+      current =
+        step.value === 'length' && Array.isArray(current) ? current.length : current[step.value];
       continue;
     }
     const separator = step.value.indexOf('=');
@@ -224,9 +240,13 @@ function resolvePath(root, path) {
       const wanted = step.value.slice(separator + 1);
       assert.ok(Array.isArray(current), `${path}: [${step.value}] does not select from a list`);
       const matches = current.filter(
-        (element) => element !== null && typeof element === 'object' && element[key] === wanted);
-      assert.equal(matches.length, 1,
-        `${path}: [${step.value}] must select exactly one element, selected ${matches.length}`);
+        (element) => element !== null && typeof element === 'object' && element[key] === wanted,
+      );
+      assert.equal(
+        matches.length,
+        1,
+        `${path}: [${step.value}] must select exactly one element, selected ${matches.length}`,
+      );
       current = matches[0];
     } else {
       current = Array.isArray(current) ? current[Number(step.value)] : current[step.value];
@@ -266,24 +286,31 @@ function runCase(kase) {
     // a defect in the library or in this harness, and must never be read as
     // one of the expected reasons.
     if (!(error instanceof VerificationError)) {
-      throw new Error(`harness error: ${kase.operation} threw `
-        + `${error?.constructor?.name ?? typeof error} (${error?.message}), `
-        + 'which is not a VerificationError', { cause: error });
+      throw new Error(
+        `harness error: ${kase.operation} threw ` +
+          `${error?.constructor?.name ?? typeof error} (${error?.message}), ` +
+          'which is not a VerificationError',
+        { cause: error },
+      );
     }
-    assert.equal(kase.expected.status, 'error',
-      `expected success but threw ${error.reason}`);
+    assert.equal(kase.expected.status, 'error', `expected success but threw ${error.reason}`);
     assert.equal(error.reason, kase.expected.reason, 'reason');
     return;
   }
-  assert.equal(kase.expected.status, 'ok',
-    `expected ${kase.expected.reason} but the call returned a value`);
+  assert.equal(
+    kase.expected.status,
+    'ok',
+    `expected ${kase.expected.reason} but the call returned a value`,
+  );
   const actual = normalize(result);
   for (const [path, expected] of Object.entries(kase.expected.fields)) {
     const value = resolvePath(actual, path);
     if (expected === null) {
       // null means "absent or unset".
-      assert.ok(value === null || value === undefined,
-        `${path}: expected absent, got ${JSON.stringify(value)}`);
+      assert.ok(
+        value === null || value === undefined,
+        `${path}: expected absent, got ${JSON.stringify(value)}`,
+      );
     } else {
       assert.equal(value, expected, path);
     }

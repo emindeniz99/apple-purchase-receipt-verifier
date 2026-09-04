@@ -21,7 +21,8 @@ async function handle() {
     return new Response(`${lines.map((l) => `ok - ${l}`).join('\n')}\n`);
   } catch (error) {
     const detail = [error && error.reason, error && error.message, error && error.stack]
-      .filter(Boolean).join(' | ');
+      .filter(Boolean)
+      .join(' | ');
     return new Response(`FAIL ${detail || error}\n`, { status: 500 });
   }
 }

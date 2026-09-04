@@ -28,8 +28,12 @@ function issuedBy(cert: X509Certificate, issuer: X509Certificate): boolean {
  * name chaining at each step. Anchors are trusted by fiat (their own
  * expiry is not checked — standard PKIX trust-anchor semantics).
  */
-export function validatePair(leaf: X509Certificate, intermediate: X509Certificate,
-  anchors: X509Certificate[], at: Date): void {
+export function validatePair(
+  leaf: X509Certificate,
+  intermediate: X509Certificate,
+  anchors: X509Certificate[],
+  at: Date,
+): void {
   if (!validAt(leaf, at) || !validAt(intermediate, at)) {
     throw new VerificationError(Reason.INVALID_CHAIN, 'certificate not valid at signing time');
   }
@@ -40,8 +44,7 @@ export function validatePair(leaf: X509Certificate, intermediate: X509Certificat
     throw new VerificationError(Reason.INVALID_CHAIN, 'leaf not issued by intermediate');
   }
   if (!anchors.some((anchor) => issuedBy(intermediate, anchor))) {
-    throw new VerificationError(Reason.INVALID_CHAIN,
-      'intermediate not issued by a pinned root');
+    throw new VerificationError(Reason.INVALID_CHAIN, 'intermediate not issued by a pinned root');
   }
 }
 
@@ -51,13 +54,16 @@ const MAX_PATH_LENGTH = 6;
  * Builds and validates a path from `target` through `candidates` to one of
  * the pinned `anchors` (receipt chains embed their intermediates in the CMS).
  */
-export function buildAndValidatePath(target: X509Certificate,
-  candidates: X509Certificate[], anchors: X509Certificate[], at: Date): void {
+export function buildAndValidatePath(
+  target: X509Certificate,
+  candidates: X509Certificate[],
+  anchors: X509Certificate[],
+  at: Date,
+): void {
   let current = target;
   for (let depth = 0; depth < MAX_PATH_LENGTH; depth++) {
     if (!validAt(current, at)) {
-      throw new VerificationError(Reason.INVALID_CHAIN,
-        'certificate not valid at signing time');
+      throw new VerificationError(Reason.INVALID_CHAIN, 'certificate not valid at signing time');
     }
     if (depth > 0 && !current.ca) {
       throw new VerificationError(Reason.INVALID_CHAIN, 'intermediate is not a CA');
@@ -69,8 +75,7 @@ export function buildAndValidatePath(target: X509Certificate,
       (candidate) => candidate !== current && issuedBy(current, candidate),
     );
     if (!issuer) {
-      throw new VerificationError(Reason.INVALID_CHAIN,
-        'chain does not reach a pinned root');
+      throw new VerificationError(Reason.INVALID_CHAIN, 'chain does not reach a pinned root');
     }
     current = issuer;
   }

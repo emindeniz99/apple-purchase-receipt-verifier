@@ -2,7 +2,12 @@ import { Environment, Reason, VerificationError } from '../errors.js';
 import { asciiEncode, base64Decode } from '../bytes.js';
 import { parseCertificate, type ParsedCertificate } from '../x509.js';
 import {
-  INTERMEDIATE_OID, JwsClaimChecker, LEAF_OID, parseJsonSegment, signedAtMillisOf, splitJws,
+  INTERMEDIATE_OID,
+  JwsClaimChecker,
+  LEAF_OID,
+  parseJsonSegment,
+  signedAtMillisOf,
+  splitJws,
 } from '../jws-claims.js';
 import { normalizeRoots, validatePair, type RootInput } from './chain.js';
 import { verifyEs256 } from './crypto.js';
@@ -49,7 +54,7 @@ export class JwsVerifier {
 
   /** Verifies a signed transaction and checks bundle id + environment. */
   async verifyTransaction(jws: string): Promise<TransactionPayload> {
-    const payload = await this.#verifySignature(jws) as TransactionPayload;
+    const payload = (await this.#verifySignature(jws)) as TransactionPayload;
     this.#claims.requireBundleId(payload.bundleId);
     this.#claims.requireAcceptedEnvironment(payload.environment);
     return payload;
@@ -60,7 +65,7 @@ export class JwsVerifier {
    * (`receiptType`), and — in Production — the app Apple id.
    */
   async verifyAppTransaction(jws: string): Promise<AppTransactionPayload> {
-    const payload = await this.#verifySignature(jws) as AppTransactionPayload;
+    const payload = (await this.#verifySignature(jws)) as AppTransactionPayload;
     this.#claims.requireBundleId(payload.bundleId);
     const environment = this.#claims.requireAcceptedEnvironment(payload.receiptType);
     this.#claims.requireAppAppleId(environment, payload.appAppleId);
@@ -85,16 +90,23 @@ export class JwsVerifier {
       leaf = parseCertificate(base64Decode(x5c[0]!));
       intermediate = parseCertificate(base64Decode(x5c[1]!));
     } catch (cause) {
-      throw new VerificationError(Reason.INVALID_CERTIFICATE,
-        'x5c entry is not a valid certificate', cause);
+      throw new VerificationError(
+        Reason.INVALID_CERTIFICATE,
+        'x5c entry is not a valid certificate',
+        cause,
+      );
     }
     if (!leaf.hasExtension(LEAF_OID)) {
-      throw new VerificationError(Reason.INVALID_CERTIFICATE_PURPOSE,
-        `leaf certificate lacks Apple marker OID ${LEAF_OID}`);
+      throw new VerificationError(
+        Reason.INVALID_CERTIFICATE_PURPOSE,
+        `leaf certificate lacks Apple marker OID ${LEAF_OID}`,
+      );
     }
     if (!intermediate.hasExtension(INTERMEDIATE_OID)) {
-      throw new VerificationError(Reason.INVALID_CERTIFICATE_PURPOSE,
-        `intermediate certificate lacks Apple marker OID ${INTERMEDIATE_OID}`);
+      throw new VerificationError(
+        Reason.INVALID_CERTIFICATE_PURPOSE,
+        `intermediate certificate lacks Apple marker OID ${INTERMEDIATE_OID}`,
+      );
     }
 
     const payload = parseJsonSegment(payloadB64, 'payload');
@@ -109,11 +121,13 @@ export class JwsVerifier {
     }
     const signature = base64Decode(signatureB64);
     if (signature.length !== 64) {
-      throw new VerificationError(Reason.INVALID_SIGNATURE,
-        `ES256 signature must be 64 bytes, got ${signature.length}`);
+      throw new VerificationError(
+        Reason.INVALID_SIGNATURE,
+        `ES256 signature must be 64 bytes, got ${signature.length}`,
+      );
     }
     const signingInput = asciiEncode(`${headerB64}.${payloadB64}`);
-    if (!await verifyEs256(leaf.spki, signature, signingInput)) {
+    if (!(await verifyEs256(leaf.spki, signature, signingInput))) {
       throw new VerificationError(Reason.INVALID_SIGNATURE, 'ES256 signature check failed');
     }
 

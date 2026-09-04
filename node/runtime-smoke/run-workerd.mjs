@@ -22,8 +22,13 @@ if (!spec || !date || !flags) {
 const here = (rel) => fileURLToPath(new URL(rel, import.meta.url));
 const config = readFileSync(here('./workerd.capnp'), 'utf8')
   .replace(/compatibilityDate = "[^"]*"/, `compatibilityDate = "${date}"`)
-  .replace(/compatibilityFlags = \[[^\]]*\]/,
-    `compatibilityFlags = [${flags.split(',').map((f) => `"${f}"`).join(', ')}]`);
+  .replace(
+    /compatibilityFlags = \[[^\]]*\]/,
+    `compatibilityFlags = [${flags
+      .split(',')
+      .map((f) => `"${f}"`)
+      .join(', ')}]`,
+  );
 
 // Written next to workerd.capnp because every `embed` path in it is
 // resolved relative to the config file's own directory.

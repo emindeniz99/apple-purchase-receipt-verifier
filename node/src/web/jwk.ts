@@ -74,9 +74,14 @@ export function spkiToJwk(spki: Uint8Array): PublicJwk {
   const parts = node.children ?? [];
   const algorithm = parts[0];
   const bitString = parts[1];
-  if (node.tag !== Tag.SEQUENCE || parts.length !== 2 || algorithm?.tag !== Tag.SEQUENCE
-    || bitString?.tag !== BIT_STRING || bitString.contents.length < 2
-    || bitString.contents[0] !== 0x00) {
+  if (
+    node.tag !== Tag.SEQUENCE ||
+    parts.length !== 2 ||
+    algorithm?.tag !== Tag.SEQUENCE ||
+    bitString?.tag !== BIT_STRING ||
+    bitString.contents.length < 2 ||
+    bitString.contents[0] !== 0x00
+  ) {
     reject('unexpected SubjectPublicKeyInfo layout');
   }
   const algorithmParts = algorithm.children ?? [];
@@ -92,8 +97,8 @@ export function spkiToJwk(spki: Uint8Array): PublicJwk {
   if (oid !== OID_EC_PUBLIC_KEY) {
     reject(`unsupported public key algorithm ${oid}`);
   }
-  const curveOid = algorithmParts[1]?.tag === Tag.OID
-    ? oidString(algorithmParts[1].contents) : null;
+  const curveOid =
+    algorithmParts[1]?.tag === Tag.OID ? oidString(algorithmParts[1].contents) : null;
   const curve = curveOid === null ? undefined : CURVES.get(curveOid);
   if (curve === undefined) {
     reject(`unsupported elliptic curve ${curveOid ?? '(unnamed)'}`);
@@ -105,8 +110,12 @@ export function spkiToJwk(spki: Uint8Array): PublicJwk {
 function rsaJwk(key: Uint8Array): PublicJwk {
   const node = read(key, 'RSAPublicKey');
   const parts = node.children ?? [];
-  if (node.tag !== Tag.SEQUENCE || parts.length !== 2
-    || parts[0]!.tag !== Tag.INTEGER || parts[1]!.tag !== Tag.INTEGER) {
+  if (
+    node.tag !== Tag.SEQUENCE ||
+    parts.length !== 2 ||
+    parts[0]!.tag !== Tag.INTEGER ||
+    parts[1]!.tag !== Tag.INTEGER
+  ) {
     reject('unexpected RSAPublicKey layout');
   }
   return {

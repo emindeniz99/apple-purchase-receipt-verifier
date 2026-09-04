@@ -6,11 +6,19 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const NAMES = ['AppleIncRootCertificate.cer', 'AppleRootCA-G2.cer', 'AppleRootCA-G3.cer'];
-const wrap = (s) => s.match(/.{1,76}/g).map((l) => `  '${l}' +`).join('\n').replace(/ \+$/, '');
+const wrap = (s) =>
+  s
+    .match(/.{1,76}/g)
+    .map((l) => `  '${l}' +`)
+    .join('\n')
+    .replace(/ \+$/, '');
 
 const body = NAMES.map((name) => {
   const der = readFileSync(fileURLToPath(new URL(`../certs/${name}`, import.meta.url)));
-  const constant = name.replace(/\.cer$/, '').replace(/-/g, '_').toUpperCase();
+  const constant = name
+    .replace(/\.cer$/, '')
+    .replace(/-/g, '_')
+    .toUpperCase();
   return `/** ${name}, DER, base64. */\nconst ${constant} =\n${wrap(der.toString('base64'))};\n`;
 }).join('\n');
 

@@ -1,11 +1,18 @@
 import { X509Certificate, createHash, timingSafeEqual, verify as cryptoVerify } from 'node:crypto';
 import { Reason, VerificationError } from './errors.js';
 import {
-  findMessageDigestAttribute, findSignerCertIndex, parseCms, signedAttrsSignedBytes,
+  findMessageDigestAttribute,
+  findSignerCertIndex,
+  parseCms,
+  signedAttrsSignedBytes,
   type ParsedCms,
 } from './cms.js';
 import { hasExtension } from './der.js';
-import { parseReceiptPayload, type RawAppReceipt, type RawInAppPurchase } from './receipt-payload.js';
+import {
+  parseReceiptPayload,
+  type RawAppReceipt,
+  type RawInAppPurchase,
+} from './receipt-payload.js';
 import { buildAndValidatePath, normalizeRoots, type RootInput } from './chain.js';
 
 // Apple marker OID on the receipt-signing leaf. Without this purpose check,
@@ -74,7 +81,8 @@ export interface ReceiptVerifierOptions {
 
 /** Zero-copy Buffer view over shared-parser output, which is Uint8Array. */
 function asBuffer(bytes: Uint8Array): Buffer {
-  return Buffer.isBuffer(bytes) ? bytes
+  return Buffer.isBuffer(bytes)
+    ? bytes
     : Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 }
 
@@ -129,24 +137,29 @@ export function verifyReceiptCore(der: Buffer, trustedRoots: RootInput[]): AppRe
     // receipt carrying more of them than a chain can hold is rejected here
     // rather than converted and searched.
     if (cms.certificates.length > MAX_EMBEDDED_CERTIFICATES) {
-      throw new VerificationError(Reason.INVALID_CHAIN,
-        `receipt embeds more than ${MAX_EMBEDDED_CERTIFICATES} certificates`);
+      throw new VerificationError(
+        Reason.INVALID_CHAIN,
+        `receipt embeds more than ${MAX_EMBEDDED_CERTIFICATES} certificates`,
+      );
     }
     const embedded = cms.certificates.map((raw) => new X509Certificate(raw));
     const signerIndex = findSignerCertIndex(cms);
     if (signerIndex < 0) {
-      throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT,
-        'signer certificate not embedded');
+      throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'signer certificate not embedded');
     }
     const signerCert = embedded[signerIndex]!;
     buildAndValidatePath(signerCert, embedded, roots, at);
     let signerHasOid = false;
     try {
       signerHasOid = hasExtension(signerCert.raw, RECEIPT_SIGNER_OID);
-    } catch { signerHasOid = false; }
+    } catch {
+      signerHasOid = false;
+    }
     if (!signerHasOid) {
-      throw new VerificationError(Reason.INVALID_CERTIFICATE_PURPOSE,
-        `receipt signer certificate lacks Apple receipt-signing marker OID ${RECEIPT_SIGNER_OID}`);
+      throw new VerificationError(
+        Reason.INVALID_CERTIFICATE_PURPOSE,
+        `receipt signer certificate lacks Apple receipt-signing marker OID ${RECEIPT_SIGNER_OID}`,
+      );
     }
     verifyCmsSignature(cms, signerCert);
   } catch (cause) {
@@ -186,8 +199,10 @@ export class ReceiptVerifier {
     const der = typeof receipt === 'string' ? Buffer.from(receipt, 'base64') : receipt;
     const fields = verifyReceiptCore(der, this.#roots);
     if (fields.bundleId !== this.#bundleId) {
-      throw new VerificationError(Reason.WRONG_BUNDLE_ID,
-        `expected ${this.#bundleId} but receipt has ${fields.bundleId}`);
+      throw new VerificationError(
+        Reason.WRONG_BUNDLE_ID,
+        `expected ${this.#bundleId} but receipt has ${fields.bundleId}`,
+      );
     }
     if (deviceGuid !== null) {
       verifyDeviceHash(fields, deviceGuid);
@@ -206,11 +221,17 @@ function verifyCmsSignature(cms: ParsedCms, signerCert: X509Certificate): void {
     const contentDigest = createHash(digest).update(cms.content).digest();
     const messageDigest = findMessageDigestAttribute(signedAttrs);
     if (messageDigest === null || !timingSafeEqualPadded(asBuffer(messageDigest), contentDigest)) {
-      throw new VerificationError(Reason.INVALID_SIGNATURE,
-        'messageDigest attribute does not match content');
+      throw new VerificationError(
+        Reason.INVALID_SIGNATURE,
+        'messageDigest attribute does not match content',
+      );
     }
-    valid = cryptoVerify(digest, signedAttrsSignedBytes(signedAttrs),
-      signerCert.publicKey, signature);
+    valid = cryptoVerify(
+      digest,
+      signedAttrsSignedBytes(signedAttrs),
+      signerCert.publicKey,
+      signature,
+    );
   } else {
     valid = cryptoVerify(digest, cms.content, signerCert.publicKey, signature);
   }
@@ -225,13 +246,20 @@ function timingSafeEqualPadded(a: Buffer, b: Buffer): boolean {
 
 function verifyDeviceHash(fields: AppReceipt, deviceGuid: Buffer): void {
   if (fields.opaqueValue === null || fields.sha1Hash === null || fields.bundleIdBytes === null) {
-    throw new VerificationError(Reason.DEVICE_HASH_MISMATCH,
-      'receipt lacks the attributes needed for the device-hash check');
+    throw new VerificationError(
+      Reason.DEVICE_HASH_MISMATCH,
+      'receipt lacks the attributes needed for the device-hash check',
+    );
   }
   const computed = createHash('sha1')
-    .update(deviceGuid).update(fields.opaqueValue).update(fields.bundleIdBytes).digest();
+    .update(deviceGuid)
+    .update(fields.opaqueValue)
+    .update(fields.bundleIdBytes)
+    .digest();
   if (!timingSafeEqualPadded(computed, fields.sha1Hash)) {
-    throw new VerificationError(Reason.DEVICE_HASH_MISMATCH,
-      'computed device hash does not match attribute 5');
+    throw new VerificationError(
+      Reason.DEVICE_HASH_MISMATCH,
+      'computed device hash does not match attribute 5',
+    );
   }
 }

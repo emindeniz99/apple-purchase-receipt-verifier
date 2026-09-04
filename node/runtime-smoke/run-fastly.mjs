@@ -40,14 +40,20 @@ const cleanup = () => {
 try {
   let body = null;
   // viceroy takes a moment to bind; poll rather than sleep a fixed time.
+  // oxlint-disable no-await-in-loop -- a retry-with-delay poll: each attempt
+  // must wait for the previous one (and its backoff) before trying again, so
+  // there is nothing here to collect into a Promise.all().
   for (let attempt = 0; attempt < 60 && body === null; attempt += 1) {
     try {
       const response = await fetch(`http://127.0.0.1:${PORT}/`);
       body = { text: await response.text(), ok: response.ok };
     } catch {
-      await new Promise((resolve) => { setTimeout(resolve, 500); });
+      await new Promise((resolve) => {
+        setTimeout(resolve, 500);
+      });
     }
   }
+  // oxlint-enable no-await-in-loop
   if (body === null) {
     throw new Error('viceroy never answered');
   }

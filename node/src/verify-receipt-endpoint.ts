@@ -84,13 +84,16 @@ export class VerifyReceiptEndpoint {
    */
   verifyReceipt(requestBody: unknown): VerifyReceiptResponseBody {
     const receiptData = (requestBody as VerifyReceiptRequestBody | null)?.['receipt-data'];
-    if (typeof requestBody !== 'object' || requestBody === null
-      || typeof receiptData !== 'string' || receiptData.length === 0) {
+    if (
+      typeof requestBody !== 'object' ||
+      requestBody === null ||
+      typeof receiptData !== 'string' ||
+      receiptData.length === 0
+    ) {
       return { status: Status.MALFORMED };
     }
     try {
-      const fields: AppReceipt = verifyReceiptCore(
-        Buffer.from(receiptData, 'base64'), this.#roots);
+      const fields: AppReceipt = verifyReceiptCore(Buffer.from(receiptData, 'base64'), this.#roots);
 
       // 21007/21008 environment routing from the receipt_type attribute.
       // Production types are exactly "Production" and "ProductionVPP";
@@ -99,8 +102,8 @@ export class VerifyReceiptEndpoint {
       // "Xcode" is listed for completeness only: an Xcode-generated
       // receipt is not Apple-signed, so it fails chain verification with
       // 21003 above and never reaches this branch.
-      const productionReceipt = fields.receiptType === 'Production'
-        || fields.receiptType === 'ProductionVPP';
+      const productionReceipt =
+        fields.receiptType === 'Production' || fields.receiptType === 'ProductionVPP';
       if (this.#environment === 'Production' && !productionReceipt) {
         return { status: Status.SANDBOX_RECEIPT_ON_PRODUCTION };
       }
@@ -119,8 +122,10 @@ export class VerifyReceiptEndpoint {
     } catch (error) {
       if (error instanceof VerificationError) {
         return {
-          status: error.reason === Reason.INVALID_RECEIPT_FORMAT
-            ? Status.MALFORMED : Status.NOT_AUTHENTICATED,
+          status:
+            error.reason === Reason.INVALID_RECEIPT_FORMAT
+              ? Status.MALFORMED
+              : Status.NOT_AUTHENTICATED,
         };
       }
       return { status: Status.INTERNAL };
@@ -182,10 +187,16 @@ function inAppJson(purchase: InAppPurchase): Record<string, unknown> {
   appleDates(entry, 'original_purchase_date', purchase.originalPurchaseDate);
   appleDates(entry, 'expires_date', purchase.expiresDate);
   appleDates(entry, 'cancellation_date', purchase.cancellationDate);
-  put(entry, 'web_order_line_item_id',
-    purchase.webOrderLineItemId === null ? null : String(purchase.webOrderLineItemId));
-  put(entry, 'is_in_intro_offer_period',
-    purchase.isInIntroOfferPeriod === null ? null : String(purchase.isInIntroOfferPeriod === 1));
+  put(
+    entry,
+    'web_order_line_item_id',
+    purchase.webOrderLineItemId === null ? null : String(purchase.webOrderLineItemId),
+  );
+  put(
+    entry,
+    'is_in_intro_offer_period',
+    purchase.isInIntroOfferPeriod === null ? null : String(purchase.isInIntroOfferPeriod === 1),
+  );
   return entry;
 }
 
@@ -207,10 +218,18 @@ function appleDates(target: Record<string, unknown>, prefix: string, date: Date 
 
 function formatInZone(date: Date, timeZone: string, label: string): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
   }).formatToParts(date);
   const get = (type: string): string => parts.find((p) => p.type === type)?.value ?? '00';
-  return `${get('year')}-${get('month')}-${get('day')} `
-    + `${get('hour')}:${get('minute')}:${get('second')} ${label}`;
+  return (
+    `${get('year')}-${get('month')}-${get('day')} ` +
+    `${get('hour')}:${get('minute')}:${get('second')} ${label}`
+  );
 }

@@ -18,17 +18,22 @@ const passes = [
   { name: 'web type-check', args: ['-p', 'tsconfig.web.json'] },
 ];
 
-const results = await Promise.all(passes.map(({ name, args }) => new Promise((resolve) => {
-  const child = spawn(tsc, args, {
-    cwd: fileURLToPath(new URL('..', import.meta.url)),
-    stdio: 'inherit',
-  });
-  child.on('error', (error) => resolve({ name, code: 1, error }));
-  child.on('close', (code) => resolve({ name, code: code ?? 1 }));
-})));
+const results = await Promise.all(
+  passes.map(
+    ({ name, args }) =>
+      new Promise((resolve) => {
+        const child = spawn(tsc, args, {
+          cwd: fileURLToPath(new URL('..', import.meta.url)),
+          stdio: 'inherit',
+        });
+        child.on('error', (error) => resolve({ name, code: 1, error }));
+        child.on('close', (code) => resolve({ name, code: code ?? 1 }));
+      }),
+  ),
+);
 
 // A failing pass still lets the other finish, so one run reports everything.
-  const failed = results.filter((r) => r.code !== 0);
+const failed = results.filter((r) => r.code !== 0);
 for (const { name, error } of failed) {
   console.error(`tsc ${name} failed${error ? `: ${error.message}` : ''}`);
 }
