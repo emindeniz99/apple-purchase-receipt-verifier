@@ -13,9 +13,12 @@ import base64
 import binascii
 import json
 import time
+from collections.abc import Iterable, Mapping
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Mapping, Optional
+from typing import Any, Callable, Optional
 from zoneinfo import ZoneInfo
+
+from cryptography import x509
 
 from .exceptions import Reason, VerificationError
 from .receipt import AppReceipt, InAppPurchase, verify_receipt_core
@@ -52,8 +55,12 @@ class VerifyReceiptEndpoint:
         comes off the signed receipt).
     """
 
-    def __init__(self, trusted_roots, environment: str,
-                 clock: Optional[Callable[[], float]] = None):
+    def __init__(
+        self,
+        trusted_roots: "Iterable[x509.Certificate]",
+        environment: str,
+        clock: Optional[Callable[[], float]] = None,
+    ) -> None:
         roots = list(trusted_roots)
         if not roots:
             raise ValueError("trusted_roots must not be empty")
@@ -63,11 +70,12 @@ class VerifyReceiptEndpoint:
         self._production = environment == "Production"
         self._clock = time.time if clock is None else clock
 
-    def verify_receipt(self, request_body: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
+    def verify_receipt(self, request_body: Optional[Mapping[str, Any]]) -> dict[str, Any]:
         """Handles one verifyReceipt request body. Never raises — like the
         real endpoint, failures are reported through ``status``."""
-        receipt_data = request_body.get("receipt-data") if isinstance(request_body, Mapping) \
-            else None
+        receipt_data = (
+            request_body.get("receipt-data") if isinstance(request_body, Mapping) else None
+        )
         if not isinstance(receipt_data, str) or not receipt_data:
             return {"status": STATUS_MALFORMED}
         try:
@@ -98,8 +106,7 @@ class VerifyReceiptEndpoint:
         return {
             "status": STATUS_OK,
             "environment": "Production" if self._production else "Sandbox",
-            "receipt": _receipt_json(
-                fields, datetime.fromtimestamp(self._clock(), timezone.utc)),
+            "receipt": _receipt_json(fields, datetime.fromtimestamp(self._clock(), timezone.utc)),
         }
 
     def verify_receipt_json(self, body: str) -> str:
@@ -127,8 +134,8 @@ class VerifyReceiptEndpoint:
         return json.dumps(self.verify_receipt(parsed), separators=(",", ":"))
 
 
-def _receipt_json(fields: AppReceipt, request_date: datetime) -> Dict[str, Any]:
-    receipt: Dict[str, Any] = {}
+def _receipt_json(fields: AppReceipt, request_date: datetime) -> dict[str, Any]:
+    receipt: dict[str, Any] = {}
     _put(receipt, "receipt_type", fields.receipt_type)
     _put(receipt, "bundle_id", fields.bundle_id)
     _put(receipt, "application_version", fields.app_version)
@@ -141,8 +148,8 @@ def _receipt_json(fields: AppReceipt, request_date: datetime) -> Dict[str, Any]:
     return receipt
 
 
-def _in_app_json(purchase: InAppPurchase) -> Dict[str, Any]:
-    entry: Dict[str, Any] = {}
+def _in_app_json(purchase: InAppPurchase) -> dict[str, Any]:
+    entry: dict[str, Any] = {}
     _put(entry, "quantity", _str_or_none(purchase.quantity))
     _put(entry, "product_id", purchase.product_id)
     _put(entry, "transaction_id", purchase.transaction_id)
@@ -153,8 +160,9 @@ def _in_app_json(purchase: InAppPurchase) -> Dict[str, Any]:
     _apple_dates(entry, "cancellation_date", purchase.cancellation_date)
     _put(entry, "web_order_line_item_id", _str_or_none(purchase.web_order_line_item_id))
     if purchase.is_in_intro_offer_period is not None:
-        entry["is_in_intro_offer_period"] = \
+        entry["is_in_intro_offer_period"] = (
             "true" if purchase.is_in_intro_offer_period == 1 else "false"
+        )
     return entry
 
 
@@ -162,17 +170,18 @@ def _str_or_none(value: Optional[int]) -> Optional[str]:
     return None if value is None else str(value)
 
 
-def _put(target: Dict[str, Any], key: str, value: Any) -> None:
+def _put(target: dict[str, Any], key: str, value: Any) -> None:
     if value is not None:
         target[key] = value
 
 
-def _apple_dates(target: Dict[str, Any], prefix: str, date: Optional[datetime]) -> None:
+def _apple_dates(target: dict[str, Any], prefix: str, date: Optional[datetime]) -> None:
     """Apple's three date renderings: ``x`` (GMT), ``x_ms``, ``x_pst``."""
     if date is None:
         return
     utc = date.astimezone(timezone.utc)
     target[prefix] = utc.strftime("%Y-%m-%d %H:%M:%S") + " Etc/GMT"
     target[prefix + "_ms"] = str(int(utc.timestamp() * 1000))
-    target[prefix + "_pst"] = \
+    target[prefix + "_pst"] = (
         utc.astimezone(_PACIFIC).strftime("%Y-%m-%d %H:%M:%S") + " America/Los_Angeles"
+    )

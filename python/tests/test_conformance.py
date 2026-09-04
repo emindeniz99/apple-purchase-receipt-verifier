@@ -14,8 +14,6 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
-from cryptography import x509
-
 from apple_purchase_receipt_verifier import (
     JwsVerifier,
     ReceiptVerifier,
@@ -24,6 +22,7 @@ from apple_purchase_receipt_verifier import (
     apple_jws_roots,
     apple_receipt_roots,
 )
+from cryptography import x509
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures"
 # Read as UTF-8 explicitly rather than in the locale encoding: the file
@@ -67,13 +66,13 @@ def fixture_bytes(fixture_id):
         raise AssertionError(f"harness error: unknown fixture codec {codec!r}")
     expected = entry.get("contentSha256")
     if expected is None:
-        raise AssertionError(
-            f"harness error: fixture {fixture_id!r} records no contentSha256")
+        raise AssertionError(f"harness error: fixture {fixture_id!r} records no contentSha256")
     actual = hashlib.sha256(content).hexdigest()
     if actual != expected:
         raise AssertionError(
             f"fixture {fixture_id!r} ({entry['path']}) does not match the digest "
-            f"cases.json records: expected {expected}, got {actual}")
+            f"cases.json records: expected {expected}, got {actual}"
+        )
     return content
 
 
@@ -121,20 +120,21 @@ def _receipt(config, data, clock):
 
 
 OPERATIONS = {
-    "verifyTransaction":
-        lambda config, data, clock:
-            jws_verifier(config, clock).verify_transaction(data.decode("utf-8")),
-    "verifyAppTransaction":
-        lambda config, data, clock:
-            jws_verifier(config, clock).verify_app_transaction(data.decode("utf-8")),
-    "verifyRaw":
-        lambda config, data, clock:
-            jws_verifier(config, clock).verify_raw(data.decode("utf-8")),
+    "verifyTransaction": lambda config, data, clock: jws_verifier(config, clock).verify_transaction(
+        data.decode("utf-8")
+    ),
+    "verifyAppTransaction": lambda config, data, clock: jws_verifier(
+        config, clock
+    ).verify_app_transaction(data.decode("utf-8")),
+    "verifyRaw": lambda config, data, clock: jws_verifier(config, clock).verify_raw(
+        data.decode("utf-8")
+    ),
     "verifyReceipt": _receipt,
-    "verifyReceiptEndpoint":
-        lambda config, data, clock: VerifyReceiptEndpoint(
-            trusted_roots(config["trustedRoots"]), config["environment"], clock,
-        ).verify_receipt({"receipt-data": base64.b64encode(data).decode("ascii")}),
+    "verifyReceiptEndpoint": lambda config, data, clock: VerifyReceiptEndpoint(
+        trusted_roots(config["trustedRoots"]),
+        config["environment"],
+        clock,
+    ).verify_receipt({"receipt-data": base64.b64encode(data).decode("ascii")}),
 }
 
 
@@ -223,7 +223,8 @@ def resolve_path(root, path):
             matches = [e for e in current if isinstance(e, dict) and e.get(key) == wanted]
             if len(matches) != 1:
                 raise AssertionError(
-                    f"{path}: [{step}] must select exactly one element, selected {len(matches)}")
+                    f"{path}: [{step}] must select exactly one element, selected {len(matches)}"
+                )
             current = matches[0]
         elif isinstance(current, list):
             index = int(step)
@@ -237,22 +238,23 @@ def resolve_path(root, path):
 
 # --- one case -----------------------------------------------------------
 
+
 class ConformanceCasesTest(unittest.TestCase):
     """One test method per case in fixtures/cases.json — generated below."""
 
     def run_case(self, case):
         operation = OPERATIONS.get(case["operation"])
         if operation is None:
-            raise AssertionError(
-                f"harness error: no adapter for operation {case['operation']!r}")
+            raise AssertionError(f"harness error: no adapter for operation {case['operation']!r}")
         data = fixture_bytes(case["input"]["fixture"])
         expected = case["expected"]
         try:
             result = operation(case["config"], data, case_clock(case))
         except VerificationError as e:
             # Only a VerificationError carries a canonical Reason.
-            self.assertEqual(expected["status"], "error",
-                             f"{case['id']}: expected success but raised {e.reason}")
+            self.assertEqual(
+                expected["status"], "error", f"{case['id']}: expected success but raised {e.reason}"
+            )
             self.assertEqual(e.reason, expected["reason"], f"{case['id']}: reason")
             return
         except Exception as e:
@@ -260,17 +262,21 @@ class ConformanceCasesTest(unittest.TestCase):
             # must never be read as one of the expected reasons.
             raise AssertionError(
                 f"harness error: {case['id']}: {case['operation']} raised "
-                f"{type(e).__name__} ({e}), which is not a VerificationError") from e
+                f"{type(e).__name__} ({e}), which is not a VerificationError"
+            ) from e
         self.assertEqual(
-            expected["status"], "ok",
-            f"{case['id']}: expected {expected.get('reason')} but the call returned a value")
+            expected["status"],
+            "ok",
+            f"{case['id']}: expected {expected.get('reason')} but the call returned a value",
+        )
         actual = normalize(result)
         for path, want in expected["fields"].items():
             got = resolve_path(actual, path)
             if want is None:
                 # null means "absent or unset".
-                self.assertIn(got, (None, MISSING),
-                              f"{case['id']}: {path}: expected absent, got {got!r}")
+                self.assertIn(
+                    got, (None, MISSING), f"{case['id']}: {path}: expected absent, got {got!r}"
+                )
             else:
                 self.assertEqual(got, want, f"{case['id']}: {path}")
 
@@ -286,7 +292,7 @@ class FixtureRegistryTest(unittest.TestCase):
         self.assertTrue(registry)
         for fixture_id in registry:
             with self.subTest(fixture_id):
-                fixture_bytes(fixture_id)   # raises on a digest mismatch
+                fixture_bytes(fixture_id)  # raises on a digest mismatch
 
 
 def _method_name(case_id):
@@ -294,14 +300,19 @@ def _method_name(case_id):
 
 
 for _case in CASES["cases"]:
-    setattr(ConformanceCasesTest, _method_name(_case["id"]),
-            (lambda case: lambda self: self.run_case(case))(_case))
+    setattr(
+        ConformanceCasesTest,
+        _method_name(_case["id"]),
+        (lambda case: lambda self: self.run_case(case))(_case),
+    )
 
 
 def setUpModule():
     clocked = [c["id"] for c in CASES["cases"] if "clock" in c]
-    print(f"conformance: {len(CASES['cases'])} cases, 0 skipped; "
-          f"{len(clocked)} run against an injected clock {clocked}")
+    print(
+        f"conformance: {len(CASES['cases'])} cases, 0 skipped; "
+        f"{len(clocked)} run against an injected clock {clocked}"
+    )
 
 
 if __name__ == "__main__":
