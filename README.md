@@ -15,10 +15,11 @@ Verifies Apple in-app purchases **locally, with zero Apple server calls** —
 a replacement for the deprecated `verifyReceipt` endpoint. Cryptographically
 proves that purchase data a client presents (StoreKit 2 signed JWS
 transactions, or legacy PKCS#7 app receipts) was signed by Apple, by
-validating the certificate chain against pinned Apple root CAs. Four
+validating the certificate chain against pinned Apple root CAs. Nine
 implementations, one normative algorithm, one shared fixture set they all
 verify byte-for-byte: **Java** (8+), **Node** (20+, zero runtime deps),
-**Python** (3.9+), **Swift** (6.1+).
+**Python** (3.9+), **Swift** (6.1+), **Go** (1.22+), **Ruby** (3.1+),
+**Rust** (1.74+), **PHP** (8.1+) and **.NET** (netstandard2.0 and net8.0).
 
 Each implementation also ships **`VerifyReceiptEndpoint`** — a drop-in
 local replacement for the deprecated `verifyReceipt` endpoint speaking
@@ -47,15 +48,17 @@ Apple closed all four: the receipt format is deprecated and they are not
 adding this level of verification to their libraries
 ([maintainer's comment](https://github.com/apple/app-store-server-library-java/issues/267#issuecomment-5433242622)).
 So there is no official implementation to wait for. This repository is
-where signature verification of legacy receipts lives, in the four
-languages of Apple's libraries and against the same root certificates:
+where signature verification of legacy receipts lives — in the four
+languages of Apple's libraries, and in five more — against the same root
+certificates:
 the chain check to Apple's pinned roots, the `verifyReceipt`-compatible
 endpoint, the Java 8 floor and the zero-dependency Node build.
 
 ## Installing
 
-All four implementations publish as **`apple-purchase-receipt-verifier`**,
-in lockstep versions cut from this repository's tags.
+Four of the nine implementations are published today, all as
+**`apple-purchase-receipt-verifier`**, in lockstep versions cut from this
+repository's tags.
 
 | Registry | Install | How you import it |
 |---|---|---|
@@ -67,6 +70,19 @@ in lockstep versions cut from this repository's tags.
 The import namespace is the registry name in each ecosystem's casing
 convention (`applepurchasereceiptverifier` / `apple_purchase_receipt_verifier` /
 `ApplePurchaseReceiptVerifier`) — one name everywhere.
+
+**The five newer ports are not installable from a registry yet.** Go, Ruby,
+Rust and .NET are wired into `release.yml` and are waiting on one owner action
+each: a pending trusted publisher for RubyGems, a first manual publish for
+crates.io and NuGet, a public repository for the Go module proxy. Those
+actions, per registry and in order, are in [BOOTSTRAP.md](./BOOTSTRAP.md); the
+rows above gain entries once the first release goes out.
+
+PHP has no publishing path at all. Packagist reads `composer.json` from a
+repository root and this port's manifest is `php/composer.json`, so there is
+nothing for Packagist to read and no publish job to add. The layouts that
+would fix it, and their costs, are in BOOTSTRAP.md; until the owner picks one,
+`php/` is vendored rather than installed.
 
 **JavaScript runtimes.** The npm package has two entry points.
 `apple-purchase-receipt-verifier` is the default and is unchanged:
@@ -110,13 +126,28 @@ cd python && python3 -m unittest discover -s tests
 
 # Swift (Swift 6.1+; Linux or macOS 13+; manifest lives at the repo root)
 swift test
+
+# Go (>= 1.22; no dependencies)
+cd go && go test ./...
+
+# Ruby (>= 3.1; no runtime dependencies, minitest through rake)
+cd ruby && rake test
+
+# Rust (>= 1.74)
+cd rust && cargo test
+
+# PHP (>= 8.1; no lockfile is committed, so resolve first)
+cd php && composer update && vendor/bin/phpunit
+
+# .NET (SDK 8.0+; runs the net8.0 suite and the netstandard2.0 floor suite)
+cd dotnet && dotnet test -c Release
 ```
 
-All four suites verify the same three shared fixture tiers:
+All nine suites verify the same three shared fixture tiers:
 
 1. `fixtures/generated/` — deterministic cross-language fixtures (fake
    Apple PKI) written by the Java `FixtureGeneratorTest`; regenerate only
-   deliberately, then re-run **all four** suites.
+   deliberately, then re-run **every** suite.
 2. `fixtures/apple-official/` — Apple's own library test fixtures
    (vendored, MIT): their test-CA-signed JWS mocks verify, their negative
    cases fail with our exact reason codes, and their genuine Xcode
@@ -127,7 +158,7 @@ All four suites verify the same three shared fixture tiers:
    the real pinned Apple root, plus an Xcode receipt that must be rejected
    — the strongest tier (real Apple bytes).
 
-The vectors the four suites run those fixtures under live in
+The vectors those suites run the fixtures under live in
 [`fixtures/cases.json`](./fixtures/cases.json): one language-neutral case per
 semantic fact, giving the fixture bytes, the verifier config, and either the
 payload fields the call must return or the canonical reason it must raise.

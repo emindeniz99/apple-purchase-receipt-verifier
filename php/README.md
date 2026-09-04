@@ -6,6 +6,26 @@ Replaces the deprecated `verifyReceipt` endpoint by validating StoreKit 2
 signed JWS transactions and legacy PKCS#7 receipts against pinned Apple root
 certificates.
 
+**Not on Packagist, and not publishable from this repository as it stands.**
+Packagist reads `composer.json` from a repository root and this port's
+manifest is `php/composer.json` inside a nine-language monorepo, so there is
+nothing for Packagist to read. `release.yml` therefore has no PHP publish job.
+The layouts that would fix it, and what each costs, are in
+[BOOTSTRAP.md](../BOOTSTRAP.md); the owner has not picked one yet.
+
+Until then, consume it from a local clone with a path repository:
+
+```json
+{
+  "repositories": [
+    { "type": "path", "url": "../apple-purchase-receipt-verifier/php" }
+  ],
+  "require": { "emindeniz99/apple-purchase-receipt-verifier": "*" }
+}
+```
+
+Once the package is registered, this is the install:
+
 ```bash
 composer require emindeniz99/apple-purchase-receipt-verifier
 ```

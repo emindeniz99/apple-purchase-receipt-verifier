@@ -341,7 +341,7 @@ what the caller is told must be refused.
 `tests/data/pacific-transitions.txt` carries every `America/Los_Angeles`
 offset transition from 1900 to 2100, taken from the IANA database via
 Python's `zoneinfo`, and the suite checks the rendering rules at the second
-before and the second of each of the 308 of them. The other four ports get
+before and the second of each of the 308 of them. The other ports get
 this from a full time-zone database; this crate has no such dependency, so
 the whole rule set — including wartime daylight time, the 1950-1966 01:00
 switches and the two Emergency Daylight Saving Time Act years — is written

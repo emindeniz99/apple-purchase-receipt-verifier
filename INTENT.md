@@ -30,6 +30,11 @@ language** (all inside this folder):
 | [`node/`](./node) | Node.js 20+ | ✅ done |
 | [`python/`](./python) | Python 3.9+ | ✅ done |
 | [`swift/`](./swift) | Swift 6+ | ✅ done |
+| [`go/`](./go) | Go 1.22+ | ✅ done |
+| [`ruby/`](./ruby) | Ruby 3.1+ | ✅ done |
+| [`rust/`](./rust) | Rust 1.74+ | ✅ done |
+| [`php/`](./php) | PHP 8.1+ | ✅ done |
+| [`dotnet/`](./dotnet) | .NET (netstandard2.0, net8.0) | ✅ done |
 
 Each implementation provides the same two capabilities:
 

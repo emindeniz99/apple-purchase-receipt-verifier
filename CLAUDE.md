@@ -6,7 +6,8 @@ human-facing version; where they overlap, they agree.
 ## Commits and merges
 
 - Conventional Commits, scope **mandatory**, area scopes: `java`, `node`,
-  `python`, `swift`, `fixtures`, `certs`, `ci`, `release`, `docs`, `repo`.
+  `python`, `swift`, `go`, `ruby`, `rust`, `php`, `dotnet`, `jvm-interop`,
+  `fixtures`, `certs`, `ci`, `release`, `docs`, `repo`.
 - Imperative subject, lowercase, ≤72 chars for the whole header. Body explains
   *why*, wrapped at 72.
 - Add a `Co-Authored-By:` trailer naming the assistant and model.
@@ -16,9 +17,9 @@ human-facing version; where they overlap, they agree.
 
 ## The invariants that are easy to break
 
-- **Never rename `.github/workflows/release.yml`.** npm and PyPI trusted
-  publishing (OIDC) match the workflow *filename*. Renaming it silently kills
-  publishing.
+- **Never rename `.github/workflows/release.yml`.** npm, PyPI, RubyGems,
+  crates.io and NuGet trusted publishing (OIDC) all match the workflow
+  *filename*. Renaming it silently kills publishing on five registries.
 - **Publish jobs never cache** (a poisoned cache restore becomes the shipped
   artifact). Test jobs do cache. Keep that split.
 - **Floors are tested claims.** `@types/node` pins to the Node 20 engines
@@ -29,17 +30,37 @@ human-facing version; where they overlap, they agree.
   generated from `certs/` by `node/scripts/gen-roots.mjs`; CI regenerates it
   and fails on a diff. Change `certs/`, re-run the script in the same commit.
   Reading the files at call time would break every bundled runtime.
-- **`certs/` pins exactly two Apple roots deliberately** (minimal trust
-  anchors, PLAN.md D12). Don't add more because "the site lists many".
-- **One version, five files**: release-please's extra-files bump
-  `version.txt`, `node/package.json`, `python/pyproject.toml`, `java/pom.xml`
-  and the CHANGELOG together. Never hand-edit a version number.
+- **Four ports keep a COPY of `certs/`,** because their packaging cannot
+  reach outside the package directory: `go/roots/certs`, `ruby/certs`,
+  `rust/certs` and `php/certs`. CI diffs each copy against `certs/` and
+  regenerates the inlined forms (`ruby/lib/.../roots_data.rb`,
+  `php/src/Internal/RootsData.php`, `dotnet/.../Internal/AppleRootData.cs`,
+  `go generate`). A `certs/` change touches all of them in the same commit.
+- **`certs/` pins all three published Apple roots deliberately** (PLAN.md
+  D15, which superseded D12's two-root choice). Apple's guidance is to trust
+  every root on its PKI page; don't prune them back to the two today's chains
+  happen to end at.
+- **One version, eight files**: release-please's extra-files bump
+  `version.txt`, `node/package.json`, `python/pyproject.toml`, `java/pom.xml`,
+  `ruby/lib/apple_purchase_receipt_verifier/version.rb`, `rust/Cargo.toml`,
+  `dotnet/Directory.Build.props` and the CHANGELOG together. Go and PHP carry
+  no version string at all — the git tag is their version. Never hand-edit a
+  version number.
+- **Never delete or move a `go/v*` tag.** The Go module is published by that
+  tag alone, and its hash is recorded in `sum.golang.org` forever; re-pointing
+  one makes every consumer's build fail with a checksum mismatch that looks
+  exactly like a supply-chain attack. A bad Go release is fixed forward with a
+  `retract` directive in a new patch version.
 - Tags created by release-please's `GITHUB_TOKEN` cannot trigger workflows —
   that's why `release-please.yml` explicitly dispatches `release.yml`. Don't
   remove that step as "redundant".
 
 ## Release budget
 
+- Registries that still need a one-time owner action before their publish job
+  can succeed are listed per registry in `BOOTSTRAP.md`. PHP is not publishable
+  from this repository at all until the manifest-layout question there is
+  settled.
 - Maven Central's Usage Center caps `io.github.emindeniz99` at **7 releases
   per calendar month** (also 80 MB/release, 1,000 files). Every
   release-please PR merge spends one — `release.yml` publishes to Central on
@@ -59,8 +80,8 @@ human-facing version; where they overlap, they agree.
 
 ## Behavior changes
 
-The four implementations are one product. A verification behavior change
-touches all four languages and `fixtures/` in the same PR, with the shared
+The nine implementations are one product. A verification behavior change
+touches all nine languages and `fixtures/` in the same PR, with the shared
 fixture suite proving they still agree. If only one language changes behavior,
 that's a bug, not a feature.
 
