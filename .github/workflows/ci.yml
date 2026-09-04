@@ -740,7 +740,7 @@ jobs:
   # Unity's scripting backend.
   dotnet-mono:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -748,16 +748,26 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: '9.0.x'
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends mono-complete
       - name: Load the netstandard2.0 asset under Mono
         working-directory: dotnet
         run: |
           set -euo pipefail
           dotnet build -c Release src/ApplePurchaseReceiptVerifier
-          # A Mono host that cannot even load the assembly is the failure this
-          # job exists to catch; the full suite stays on CoreCLR.
-          monop -r:src/ApplePurchaseReceiptVerifier/bin/Release/netstandard2.0/ApplePurchaseReceiptVerifier.dll \
-            ApplePurchaseReceiptVerifier.Receipt.ReceiptVerifier
+          # Mono comes from a digest-pinned image rather than apt. Installing
+          # mono-complete pulled 163 packages and 80 MB from the Ubuntu
+          # mirror on every run; when that mirror was slow the job spent 24
+          # minutes fetching and was cancelled at its timeout, with nothing
+          # wrong in the code. Same reasoning as the swift jobs, which have
+          # been digest-pinned containers all along.
+          #
+          # A Mono host that cannot even load the assembly is the failure
+          # this job exists to catch; the full suite stays on CoreCLR, and
+          # monop reflects rather than executes, so this proves loadability
+          # and not behaviour.
+          docker run --rm -v "$PWD:/work" -w /work \
+            mono:6.12@sha256:34d816779b1248b5cfd095770b64ecbaf1798e2aca693a91c11a018dce9c7ad5 \
+            monop -r:src/ApplePurchaseReceiptVerifier/bin/Release/netstandard2.0/ApplePurchaseReceiptVerifier.dll \
+              ApplePurchaseReceiptVerifier.Receipt.ReceiptVerifier
 
   # certs/ is the reviewable source of truth for the pinned Apple roots;
   # Internal/AppleRootData.cs is generated from it and compiled in. A certs
