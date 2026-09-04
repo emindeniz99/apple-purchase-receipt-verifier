@@ -87,12 +87,29 @@ jobs:
         working-directory: node
 
   # The npm package's runtime claims (README "JavaScript runtimes"): the
-  # built dist runs the same three checks on Bun, Deno and Cloudflare
-  # workerd. The runtimes come from npm at pinned versions so no extra
-  # action is needed; bump the pins in node/package.json's test:runtimes.
+  # built dist runs the same checks on Bun, Deno and Cloudflare workerd,
+  # workerd at all three compatibility configurations it supports. The
+  # runtimes come from npm at pinned versions so no extra action is
+  # needed; bump the pins in node/package.json's runtime:* scripts.
+  #
+  # One leg per runtime rather than one job running all six. As a single
+  # job it downloaded Bun, Deno and workerd in sequence and hit the
+  # 15-minute timeout; split, each leg downloads one runtime and they run
+  # at the same time. fail-fast is off because "Bun passed and Deno did
+  # not" is the useful answer, not the first failure.
   node-runtimes:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime:
+          - node
+          - bun
+          - deno
+          - workerd-floor
+          - workerd-compat-v2
+          - workerd-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -101,10 +118,23 @@ jobs:
         with:
           node-version: "22"
           package-manager-cache: false
-      - run: npm ci && npm run test:runtimes
+      - run: npm ci && npm run runtime:${{ matrix.runtime }}
         working-directory: node
-      # roots-data.ts is generated from certs/; a certs change that forgets
-      # to regenerate it would ship stale trust anchors.
+
+  # roots-data.ts is generated from certs/; a certs change that forgets to
+  # regenerate it would ship stale trust anchors. Its own job now that the
+  # runtime smoke is a matrix, so it runs once rather than six times.
+  node-roots-generated:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
       - run: node scripts/gen-roots.mjs && git diff --exit-code src/roots-data.ts
         working-directory: node
 
