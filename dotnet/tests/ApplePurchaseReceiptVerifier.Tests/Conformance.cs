@@ -94,14 +94,15 @@ public class Conformance
         OrderedMap kase = Find(id);
         string operation = Str(kase, "operation");
         OrderedMap config = AsMap(kase["config"]);
-        byte[] input = Fixtures.Bytes(Str(AsMap(kase["input"]), "fixture"));
+        string fixtureId = Str(AsMap(kase["input"]), "fixture");
+        byte[] input = Fixtures.Bytes(fixtureId);
         IClock? clock = Clock(kase);
         OrderedMap expected = AsMap(kase["expected"]);
 
         object? result;
         try
         {
-            result = Run(operation, config, input, clock);
+            result = Run(operation, config, input, fixtureId, clock);
         }
         catch (VerificationException e)
         {
@@ -141,7 +142,7 @@ public class Conformance
         }
     }
 
-    private static object Run(string operation, OrderedMap config, byte[] input, IClock? clock)
+    private static object Run(string operation, OrderedMap config, byte[] input, string fixtureId, IClock? clock)
     {
         switch (operation)
         {
@@ -171,6 +172,18 @@ public class Conformance
                     return verifier.Verify(input, guidHex is null ? null : FromHex(guidHex));
                 }
 
+            case "verifyReceiptBase64":
+                {
+                    RequireNoClock(clock, operation);
+                    Assert.True(
+                        Fixtures.Codec(fixtureId) == "text",
+                        $"harness error: verifyReceiptBase64 fixture \"{fixtureId}\" is not codec \"text\"");
+                    using ReceiptVerifier verifier = new(Roots(config), Str(config, "bundleId"));
+                    string? guidHex = config.TryGetValue("deviceGuidHex", out object? hex) ? hex as string : null;
+                    return verifier.Verify(
+                        Encoding.UTF8.GetString(input), guidHex is null ? null : FromHex(guidHex));
+                }
+
             case "verifyReceiptEndpoint":
                 {
                     Assert.True(
@@ -178,7 +191,14 @@ public class Conformance
                         "harness error: unknown endpoint environment");
                     using VerifyReceiptEndpoint endpoint = new(Roots(config), environment, clock);
                     OrderedMap body = new();
-                    body.Set("receipt-data", Convert.ToBase64String(input));
+                    // A text fixture is what a client actually sent, verbatim;
+                    // a raw or base64 fixture is DER this harness re-encodes
+                    // as canonical base64, since no port decodes those itself.
+                    body.Set(
+                        "receipt-data",
+                        Fixtures.Codec(fixtureId) == "text"
+                            ? Encoding.UTF8.GetString(input)
+                            : Convert.ToBase64String(input));
                     return endpoint.VerifyReceipt(body);
                 }
 

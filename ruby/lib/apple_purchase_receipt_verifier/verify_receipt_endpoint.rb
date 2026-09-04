@@ -80,11 +80,10 @@ module ApplePurchaseReceiptVerifier
       return { "status" => Status::MALFORMED } unless receipt_data.is_a?(String) && !receipt_data.empty?
 
       begin
-        der = receipt_data.unpack1("m")
-      rescue ArgumentError
+        der = Receipt.decode_base64(receipt_data)
+      rescue VerificationError
         return { "status" => Status::MALFORMED }
       end
-      return { "status" => Status::MALFORMED } if der.nil?
 
       begin
         receipt = Receipt.verify(der, @roots)

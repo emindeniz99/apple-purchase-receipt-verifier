@@ -87,8 +87,8 @@ public struct VerifyReceiptEndpoint: Sendable {
     /// Handles one verifyReceipt request body. Never throws — like the real
     /// endpoint, failures are reported through `status`.
     public func verifyReceipt(_ requestBody: [String: Any]?) async -> [String: Any] {
-        guard let receiptData = requestBody?["receipt-data"] as? String, !receiptData.isEmpty,
-            let der = Data(base64Encoded: receiptData, options: [.ignoreUnknownCharacters])
+        guard let receiptData = requestBody?["receipt-data"] as? String,
+            let der = decodeReceiptBase64(receiptData)
         else {
             return ["status": Self.statusMalformed]
         }

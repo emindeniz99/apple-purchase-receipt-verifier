@@ -12,7 +12,6 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -128,8 +127,8 @@ public final class VerifyReceiptEndpoint {
         }
         byte[] der;
         try {
-            der = Base64.getMimeDecoder().decode((String) receiptData);
-        } catch (IllegalArgumentException e) {
+            der = ReceiptBase64.decode((String) receiptData);
+        } catch (VerificationException e) {
             return status(STATUS_MALFORMED);
         }
         AppReceipt receipt;

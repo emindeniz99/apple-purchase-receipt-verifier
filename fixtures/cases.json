@@ -1,7 +1,7 @@
 {
   "$schema": "./cases.schema.json",
   "schemaVersion": 1,
-  "comment": "Normative cross-language conformance vectors for apple-purchase-receipt-verifier.\nOne case per semantic fact: java/, node/, python/, swift/, go/, ruby/, rust/, php/ and dotnet/\neach assert many of these under their own test names, and the duplicates are merged here.\nEvery expectation in this file was derived by hand from the four test-suite inventories,\nfrom PLAN.md sections 2.1-2.3, from COMPARISON.md and from the fixture generator\n(java/src/test/.../FixtureGeneratorTest.java) plus fixtures/generated/manifest.json.\nNOTHING here was produced by running an implementation and recording what it did:\na vector that disagrees with an implementation is a bug report against that implementation\nuntil a human decides otherwise.\n\nPaths in \"fields\" are language-neutral. Scalars use the shared API names from PLAN.md section 3\n(camelCase) for verifyTransaction/verifyAppTransaction/verifyRaw/verifyReceipt, and the literal\nApple wire keys (snake_case) for verifyReceiptEndpoint. \"x.length\" is a collection size.\n\"list[key=value].field\" selects the single element of list whose key equals value.\n\"unknownAttributes[9999][0]\" indexes the raw values recorded for receipt attribute type 9999,\nexpressed as a lowercase hex string. Dates are ISO-8601 UTC strings; claims that Apple ships as\nepoch milliseconds (signedDate, receiptCreationDate) stay numbers. null means \"absent or unset\".\nA field a case does not list is simply not pinned by that case.\n\nCertificate-validity windows are judged at the payload signedDate / receipt creationDate, and\nwhere the input states neither, at the SYSTEM clock — never at an injected one (PLAN.md 2.1\nstep 4, 2.2 step 2). The expired-chain cases are therefore deterministic. \"clock\" appears where\nthe answer genuinely moves with time — the max-signed-age staleness rule and the request_date\ntriple of the verifyReceipt endpoint — and, on the four dateless inputs, precisely to pin that\nthe answer does NOT move: a receipt or payload carrying no date of its own, verified under a\nclock planted inside an expired certificate's window or far past a live one's, must reach the\nverdict it reaches on real time. A caller injecting a clock to test staleness, or to work\naround clock skew, must not thereby accept a chain that is expired. verifyReceipt cases cannot\ncarry a clock at all — the schema refuses one — because ReceiptVerifier takes no clock\nparameter in any port. Where the schema does allow one, a runner MUST hand the case's clock to\nthe verifier rather than fake time; a case carrying a clock that is run against the system\nclock is not running the case.\n\nEvery fixture records the SHA-256 of its DECODED logical bytes (post-codec: the file bytes for\nraw, the base64-decoded bytes for base64, the trimmed UTF-8 for utf8). contentSha256 is not\ndocumentation: tools/lint-cases.mjs re-hashes every registered fixture, and so does every\nadapter — over the whole registry before any case runs, and again for each fixture a case\nloads. A fixture that is regenerated, re-encoded or quietly edited fails loudly in every\nlanguage instead of silently changing what these vectors mean.\n\nFour places where the ports had drifted apart were adjudicated and are pinned here: the\ncertificate-validity fallback clock (the dateless cases), the typed endpoint environment\n(config.environment is the enum, and both values are exercised), and a receipt attribute type\nabove 2^31-1, which every port must reject as INVALID_RECEIPT_FORMAT rather than rename or\nclamp. The fourth — verifyReceiptCore being public in every port, so no endpoint has to build a\nwildcard-bundle-id verifier to reach it — changes no observable answer, so no vector can hold\nit; the native suites carry that one.\n\n\"fault\" names the one intentional defect of a negative case. It is documentation, not an\nassertion: implementations are not required to report it, only to report the given reason.",
+  "comment": "Normative cross-language conformance vectors for apple-purchase-receipt-verifier.\nOne case per semantic fact: java/, node/, python/, swift/, go/, ruby/, rust/, php/ and dotnet/\neach assert many of these under their own test names, and the duplicates are merged here.\nEvery expectation in this file was derived by hand from the four test-suite inventories,\nfrom PLAN.md sections 2.1-2.3, from COMPARISON.md and from the fixture generator\n(java/src/test/.../FixtureGeneratorTest.java) plus fixtures/generated/manifest.json.\nNOTHING here was produced by running an implementation and recording what it did:\na vector that disagrees with an implementation is a bug report against that implementation\nuntil a human decides otherwise.\n\nPaths in \"fields\" are language-neutral. Scalars use the shared API names from PLAN.md section 3\n(camelCase) for verifyTransaction/verifyAppTransaction/verifyRaw/verifyReceipt, and the literal\nApple wire keys (snake_case) for verifyReceiptEndpoint. \"x.length\" is a collection size.\n\"list[key=value].field\" selects the single element of list whose key equals value.\n\"unknownAttributes[9999][0]\" indexes the raw values recorded for receipt attribute type 9999,\nexpressed as a lowercase hex string. Dates are ISO-8601 UTC strings; claims that Apple ships as\nepoch milliseconds (signedDate, receiptCreationDate) stay numbers. null means \"absent or unset\".\nA field a case does not list is simply not pinned by that case.\n\nCertificate-validity windows are judged at the payload signedDate / receipt creationDate, and\nwhere the input states neither, at the SYSTEM clock — never at an injected one (PLAN.md 2.1\nstep 4, 2.2 step 2). The expired-chain cases are therefore deterministic. \"clock\" appears where\nthe answer genuinely moves with time — the max-signed-age staleness rule and the request_date\ntriple of the verifyReceipt endpoint — and, on the four dateless inputs, precisely to pin that\nthe answer does NOT move: a receipt or payload carrying no date of its own, verified under a\nclock planted inside an expired certificate's window or far past a live one's, must reach the\nverdict it reaches on real time. A caller injecting a clock to test staleness, or to work\naround clock skew, must not thereby accept a chain that is expired. verifyReceipt cases cannot\ncarry a clock at all — the schema refuses one — because ReceiptVerifier takes no clock\nparameter in any port. Where the schema does allow one, a runner MUST hand the case's clock to\nthe verifier rather than fake time; a case carrying a clock that is run against the system\nclock is not running the case.\n\nEvery fixture records the SHA-256 of its DECODED logical bytes (post-codec: the file bytes for\nraw, the base64-decoded bytes for base64, the trimmed UTF-8 for utf8). contentSha256 is not\ndocumentation: tools/lint-cases.mjs re-hashes every registered fixture, and so does every\nadapter — over the whole registry before any case runs, and again for each fixture a case\nloads. A fixture that is regenerated, re-encoded or quietly edited fails loudly in every\nlanguage instead of silently changing what these vectors mean.\n\nFour places where the ports had drifted apart were adjudicated and are pinned here: the\ncertificate-validity fallback clock (the dateless cases), the typed endpoint environment\n(config.environment is the enum, and both values are exercised), and a receipt attribute type\nabove 2^31-1, which every port must reject as INVALID_RECEIPT_FORMAT rather than rename or\nclamp. The fourth — verifyReceiptCore being public in every port, so no endpoint has to build a\nwildcard-bundle-id verifier to reach it — changes no observable answer, so no vector can hold\nit; the native suites carry that one.\n\n\"fault\" names the one intentional defect of a negative case. It is documentation, not an\nassertion: implementations are not required to report it, only to report the given reason.\n\nReceipt base64 (added 2026-09-04). Every runner decodes a base64 fixture itself and hands DER to the library, so no verifyReceipt case can say how a port treats the string a client actually sent. The text codec and the verifyReceiptBase64 operation close that: the fixture bytes go to the string entry point verbatim, and a verifyReceiptEndpoint case over a text fixture puts them in receipt-data verbatim. The rule they pin is Apple's: receipt-data is Base64 as defined in RFC 4648, and Foundation's base64EncodedString(options:) can emit the standard or the base64url alphabet, with or without padding, with CR/LF line endings at 64 or 76 columns. Everything Foundation can emit is accepted; a character outside both alphabets, a mixed alphabet, anything after the padding (a third '=' included), a partial padding run, and an empty string are INVALID_RECEIPT_FORMAT (21002 at the endpoint). Padding is accepted omitted or canonical, never over- or under-supplied: no encoder emits either, and a decoder that recomputes it turns padding into a free suffix.",
   "fixtures": {
     "generated-manifest": {
       "path": "generated/manifest.json",
@@ -344,6 +344,102 @@
       "role": "input",
       "codec": "utf8",
       "contentSha256": "cd93f46faf47ad5d0d7677b5428bcd7b9bad8b0b45e4b0ee77986bb3306d02dd"
+    },
+    "receipt-b64-genuine": {
+      "path": "generated/receipt-b64/01-genuine.txt",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "100c1dc0d15afaa4b0c89211f3ac81212d3e576b2a598d8b1d0461b00953b9c2"
+    },
+    "receipt-b64-trailing-lf": {
+      "path": "generated/receipt-b64/02-trailing-lf.txt",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "6f9e4111170dccefd3a39dad02ab95ff8af6258d601a3417e78481ddaa568b7b"
+    },
+    "receipt-b64-pem-64-lf": {
+      "path": "generated/receipt-b64/03-pem-64-lf.txt",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "a4798c899cbe44fd9948d477245bf4a0d2e6931befe5605985fac84de3be18de"
+    },
+    "receipt-b64-pem-76-crlf": {
+      "path": "generated/receipt-b64/04-pem-76-crlf.txt",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "79e139ea7f2a8cc1da844fd2f7099df9b48dd15f8baf3d059639eea7573d2480"
+    },
+    "receipt-b64-urlsafe-padded": {
+      "path": "generated/receipt-b64/05-urlsafe-padded.txt",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "492e9a1cf8789c9f7f7d79f69aa8701d514970941ff13d181242305ba89f2efb"
+    },
+    "receipt-b64-urlsafe-unpadded": {
+      "path": "generated/receipt-b64/06-urlsafe-unpadded.txt",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "e6a25cc71ed945d8a73ce1afabf943145f00ec70a4949b0b03f3da977fd320fa"
+    },
+    "receipt-b64-standard-unpadded": {
+      "path": "generated/receipt-b64/07-standard-unpadded.txt",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "ed6330c2e4003857e1b478b544bc0975ffe43da6553a3fc9792419885c54f9ab"
+    },
+    "receipt-b64-leading-trailing-space": {
+      "path": "generated/receipt-b64/08-leading-trailing-space.txt",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "146c1f9395b1be435ca9383685fb0a58a3198214bb89030931f99487c2bfd4fe"
+    },
+    "receipt-b64-junk-after-padding": {
+      "path": "generated/receipt-b64/09-junk-after-padding.txt",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "44fdcfff111493ec0a097bb38a19e1b57f9d38fcd57c8d3d2bc8fef46a5046b0"
+    },
+    "receipt-b64-b64chars-after-padding": {
+      "path": "generated/receipt-b64/10-b64chars-after-padding.txt",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "5e010e5b8f4c3913a4f3df57aec54bad72e6881ee078d207922eb15f56ecbb5f"
+    },
+    "receipt-b64-mixed-alphabet": {
+      "path": "generated/receipt-b64/11-mixed-alphabet.txt",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "91d1d59ced869a349a7190d258adf8f643da0aaa25e164b26f05845cf44c3a9f"
+    },
+    "receipt-b64-empty": {
+      "path": "generated/receipt-b64/12-empty.txt",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "receipt-b64-junk-inside": {
+      "path": "generated/receipt-b64/13-junk-inside.txt",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "e1a630b76d43ceef7313efe2b192bf28b935337931739e75197688edbd1fc335"
+    },
+    "receipt-b64-overpadded": {
+      "path": "generated/receipt-b64/14-overpadded.txt",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "d9320e6e4d113498c0f0e724af26c0e4b5993b86b4d29203762ccd623f806020"
+    },
+    "receipt-b64-underpadded": {
+      "path": "generated/receipt-b64/15-underpadded.txt",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "d2aa45a8fa6238d86e02aee58fdd5e958915fd84d8f5c5d015b9e866eec89b24"
+    },
+    "receipt-b64-impossible-length-padded": {
+      "path": "generated/receipt-b64/16-impossible-length-padded.txt",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "408fabe863b45e4d984ac849e3c55875feb22c6c83727aaeed768cf720646fa1"
     }
   },
   "cases": [
@@ -2464,6 +2560,529 @@
         "negative",
         "format",
         "generated"
+      ]
+    },
+    {
+      "id": "receipt-base64/accept-genuine",
+      "description": "The genuine sandbox receipt as the string a client would send: canonical standard base64, one line: what base64EncodedString(options: []) emits. Same DER underneath in every accept case, so the only thing that can move the verdict is the base64 decoder.",
+      "operation": "verifyReceiptBase64",
+      "input": {
+        "fixture": "receipt-b64-genuine"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "builtin",
+          "name": "apple-receipt-roots"
+        },
+        "bundleId": "dev.bonzer.weeka.app"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "receiptType": "ProductionSandbox",
+          "bundleId": "dev.bonzer.weeka.app",
+          "inAppPurchases.length": 2
+        }
+      },
+      "tags": [
+        "receipt",
+        "base64",
+        "positive",
+        "public"
+      ]
+    },
+    {
+      "id": "receipt-base64/accept-trailing-lf",
+      "description": "The genuine sandbox receipt as the string a client would send: a trailing line feed after the padding. Same DER underneath in every accept case, so the only thing that can move the verdict is the base64 decoder.",
+      "operation": "verifyReceiptBase64",
+      "input": {
+        "fixture": "receipt-b64-trailing-lf"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "builtin",
+          "name": "apple-receipt-roots"
+        },
+        "bundleId": "dev.bonzer.weeka.app"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "receiptType": "ProductionSandbox",
+          "bundleId": "dev.bonzer.weeka.app",
+          "inAppPurchases.length": 2
+        }
+      },
+      "tags": [
+        "receipt",
+        "base64",
+        "positive",
+        "public"
+      ]
+    },
+    {
+      "id": "receipt-base64/accept-pem-64-lf",
+      "description": "The genuine sandbox receipt as the string a client would send: wrapped at 64 columns with LF: Foundation's .lineLength64Characters + .endLineWithLineFeed. Same DER underneath in every accept case, so the only thing that can move the verdict is the base64 decoder.",
+      "operation": "verifyReceiptBase64",
+      "input": {
+        "fixture": "receipt-b64-pem-64-lf"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "builtin",
+          "name": "apple-receipt-roots"
+        },
+        "bundleId": "dev.bonzer.weeka.app"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "receiptType": "ProductionSandbox",
+          "bundleId": "dev.bonzer.weeka.app",
+          "inAppPurchases.length": 2
+        }
+      },
+      "tags": [
+        "receipt",
+        "base64",
+        "positive",
+        "public"
+      ]
+    },
+    {
+      "id": "receipt-base64/accept-pem-76-crlf",
+      "description": "The genuine sandbox receipt as the string a client would send: wrapped at 76 columns with CRLF: .lineLength76Characters with the default line ending. Same DER underneath in every accept case, so the only thing that can move the verdict is the base64 decoder.",
+      "operation": "verifyReceiptBase64",
+      "input": {
+        "fixture": "receipt-b64-pem-76-crlf"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "builtin",
+          "name": "apple-receipt-roots"
+        },
+        "bundleId": "dev.bonzer.weeka.app"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "receiptType": "ProductionSandbox",
+          "bundleId": "dev.bonzer.weeka.app",
+          "inAppPurchases.length": 2
+        }
+      },
+      "tags": [
+        "receipt",
+        "base64",
+        "positive",
+        "public"
+      ]
+    },
+    {
+      "id": "receipt-base64/accept-urlsafe-padded",
+      "description": "The genuine sandbox receipt as the string a client would send: base64url alphabet with padding: Foundation's .base64URLAlphabet. Same DER underneath in every accept case, so the only thing that can move the verdict is the base64 decoder.",
+      "operation": "verifyReceiptBase64",
+      "input": {
+        "fixture": "receipt-b64-urlsafe-padded"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "builtin",
+          "name": "apple-receipt-roots"
+        },
+        "bundleId": "dev.bonzer.weeka.app"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "receiptType": "ProductionSandbox",
+          "bundleId": "dev.bonzer.weeka.app",
+          "inAppPurchases.length": 2
+        }
+      },
+      "tags": [
+        "receipt",
+        "base64",
+        "positive",
+        "public"
+      ]
+    },
+    {
+      "id": "receipt-base64/accept-urlsafe-unpadded",
+      "description": "The genuine sandbox receipt as the string a client would send: base64url alphabet, padding omitted: .base64URLAlphabet with .omitPaddingCharacters. Same DER underneath in every accept case, so the only thing that can move the verdict is the base64 decoder.",
+      "operation": "verifyReceiptBase64",
+      "input": {
+        "fixture": "receipt-b64-urlsafe-unpadded"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "builtin",
+          "name": "apple-receipt-roots"
+        },
+        "bundleId": "dev.bonzer.weeka.app"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "receiptType": "ProductionSandbox",
+          "bundleId": "dev.bonzer.weeka.app",
+          "inAppPurchases.length": 2
+        }
+      },
+      "tags": [
+        "receipt",
+        "base64",
+        "positive",
+        "public"
+      ]
+    },
+    {
+      "id": "receipt-base64/accept-standard-unpadded",
+      "description": "The genuine sandbox receipt as the string a client would send: standard alphabet, padding omitted: .omitPaddingCharacters. Same DER underneath in every accept case, so the only thing that can move the verdict is the base64 decoder.",
+      "operation": "verifyReceiptBase64",
+      "input": {
+        "fixture": "receipt-b64-standard-unpadded"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "builtin",
+          "name": "apple-receipt-roots"
+        },
+        "bundleId": "dev.bonzer.weeka.app"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "receiptType": "ProductionSandbox",
+          "bundleId": "dev.bonzer.weeka.app",
+          "inAppPurchases.length": 2
+        }
+      },
+      "tags": [
+        "receipt",
+        "base64",
+        "positive",
+        "public"
+      ]
+    },
+    {
+      "id": "receipt-base64/accept-leading-trailing-space",
+      "description": "The genuine sandbox receipt as the string a client would send: two spaces before and after the text. Same DER underneath in every accept case, so the only thing that can move the verdict is the base64 decoder.",
+      "operation": "verifyReceiptBase64",
+      "input": {
+        "fixture": "receipt-b64-leading-trailing-space"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "builtin",
+          "name": "apple-receipt-roots"
+        },
+        "bundleId": "dev.bonzer.weeka.app"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "receiptType": "ProductionSandbox",
+          "bundleId": "dev.bonzer.weeka.app",
+          "inAppPurchases.length": 2
+        }
+      },
+      "tags": [
+        "receipt",
+        "base64",
+        "positive",
+        "public"
+      ]
+    },
+    {
+      "id": "receipt-base64/reject-junk-after-padding",
+      "description": "The genuine sandbox receipt as the string a client would send: four exclamation marks appended after the padding: no encoder emits them, and a lenient decoder that skips them yields a second spelling of the same receipt. Same DER underneath in every accept case, so the only thing that can move the verdict is the base64 decoder.",
+      "operation": "verifyReceiptBase64",
+      "input": {
+        "fixture": "receipt-b64-junk-after-padding"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "builtin",
+          "name": "apple-receipt-roots"
+        },
+        "bundleId": "dev.bonzer.weeka.app"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "fault": "receipt-base64-junk-after-padding",
+      "tags": [
+        "receipt",
+        "base64",
+        "negative",
+        "public"
+      ]
+    },
+    {
+      "id": "receipt-base64/reject-b64chars-after-padding",
+      "description": "The genuine sandbox receipt as the string a client would send: four alphabet characters appended after the padding: data after the terminator is not base64. Same DER underneath in every accept case, so the only thing that can move the verdict is the base64 decoder.",
+      "operation": "verifyReceiptBase64",
+      "input": {
+        "fixture": "receipt-b64-b64chars-after-padding"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "builtin",
+          "name": "apple-receipt-roots"
+        },
+        "bundleId": "dev.bonzer.weeka.app"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "fault": "receipt-base64-b64chars-after-padding",
+      "tags": [
+        "receipt",
+        "base64",
+        "negative",
+        "public"
+      ]
+    },
+    {
+      "id": "receipt-base64/reject-mixed-alphabet",
+      "description": "The genuine sandbox receipt as the string a client would send: one standard-only character replaced by its base64url twin, so both alphabets appear in one string, which no encoder produces. Same DER underneath in every accept case, so the only thing that can move the verdict is the base64 decoder.",
+      "operation": "verifyReceiptBase64",
+      "input": {
+        "fixture": "receipt-b64-mixed-alphabet"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "builtin",
+          "name": "apple-receipt-roots"
+        },
+        "bundleId": "dev.bonzer.weeka.app"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "fault": "receipt-base64-mixed-alphabet",
+      "tags": [
+        "receipt",
+        "base64",
+        "negative",
+        "public"
+      ]
+    },
+    {
+      "id": "receipt-base64/reject-empty",
+      "description": "The genuine sandbox receipt as the string a client would send: zero bytes. Same DER underneath in every accept case, so the only thing that can move the verdict is the base64 decoder.",
+      "operation": "verifyReceiptBase64",
+      "input": {
+        "fixture": "receipt-b64-empty"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "builtin",
+          "name": "apple-receipt-roots"
+        },
+        "bundleId": "dev.bonzer.weeka.app"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "fault": "receipt-base64-empty",
+      "tags": [
+        "receipt",
+        "base64",
+        "negative",
+        "public"
+      ]
+    },
+    {
+      "id": "receipt-base64/reject-junk-inside",
+      "description": "The genuine sandbox receipt as the string a client would send: one exclamation mark inserted at offset 100. Same DER underneath in every accept case, so the only thing that can move the verdict is the base64 decoder.",
+      "operation": "verifyReceiptBase64",
+      "input": {
+        "fixture": "receipt-b64-junk-inside"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "builtin",
+          "name": "apple-receipt-roots"
+        },
+        "bundleId": "dev.bonzer.weeka.app"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "fault": "receipt-base64-junk-inside",
+      "tags": [
+        "receipt",
+        "base64",
+        "negative",
+        "public"
+      ]
+    },
+    {
+      "id": "endpoint/receipt-data-urlsafe-padded",
+      "description": "The same 05-urlsafe-padded string in receipt-data: the endpoint decodes with the library's rule and answers 0.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "fixture": "receipt-b64-urlsafe-padded"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "builtin",
+          "name": "apple-receipt-roots"
+        },
+        "environment": "Sandbox"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "status": 0
+        }
+      },
+      "tags": [
+        "endpoint",
+        "base64",
+        "positive",
+        "public"
+      ]
+    },
+    {
+      "id": "endpoint/receipt-data-junk-after-padding",
+      "description": "The same 09-junk-after-padding string in receipt-data: the endpoint decodes with the library's rule and answers 21002.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "fixture": "receipt-b64-junk-after-padding"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "builtin",
+          "name": "apple-receipt-roots"
+        },
+        "environment": "Sandbox"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "status": 21002
+        }
+      },
+      "fault": "receipt-base64-junk-after-padding",
+      "tags": [
+        "endpoint",
+        "base64",
+        "negative",
+        "public"
+      ]
+    },
+    {
+      "id": "endpoint/receipt-data-empty",
+      "description": "The same 12-empty string in receipt-data: the endpoint decodes with the library's rule and answers 21002.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "fixture": "receipt-b64-empty"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "builtin",
+          "name": "apple-receipt-roots"
+        },
+        "environment": "Sandbox"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "status": 21002
+        }
+      },
+      "fault": "receipt-base64-empty",
+      "tags": [
+        "endpoint",
+        "base64",
+        "negative",
+        "public"
+      ]
+    },
+    {
+      "id": "receipt-base64/reject-overpadded",
+      "description": "The genuine sandbox receipt as the string a client would send: the genuine string already ends in '==' and two more are appended: a padding run of four, which no RFC 4648 encoder emits. Characters after the padding are refused, and '=' is not exempt -- otherwise padding is a free suffix and the receipt has one spelling per extra '='. Same DER underneath, so only the decoder can move the verdict.",
+      "operation": "verifyReceiptBase64",
+      "input": {
+        "fixture": "receipt-b64-overpadded"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "builtin",
+          "name": "apple-receipt-roots"
+        },
+        "bundleId": "dev.bonzer.weeka.app"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "fault": "receipt-base64-overpadded",
+      "tags": [
+        "receipt",
+        "base64",
+        "negative",
+        "public"
+      ]
+    },
+    {
+      "id": "receipt-base64/reject-underpadded",
+      "description": "The genuine sandbox receipt as the string a client would send: one of the two required '=' is removed: padding is accepted when omitted entirely and when canonical, never when partial, because no encoder emits a partial run and a decoder that tolerates one is guessing. Same DER underneath, so only the decoder can move the verdict.",
+      "operation": "verifyReceiptBase64",
+      "input": {
+        "fixture": "receipt-b64-underpadded"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "builtin",
+          "name": "apple-receipt-roots"
+        },
+        "bundleId": "dev.bonzer.weeka.app"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "fault": "receipt-base64-underpadded",
+      "tags": [
+        "receipt",
+        "base64",
+        "negative",
+        "public"
+      ]
+    },
+    {
+      "id": "receipt-base64/reject-impossible-length-padded",
+      "description": "The genuine receipt's base64 with its final data character removed and three '=' appended: the data length is 1 mod 4, which no base64 encoding can have, yet the total is a multiple of four. A decoder that checks the length only after counting the padding, or that treats three '=' as a canonical run, accepts an encoding RFC 4648 cannot produce. The unpadded data length must be checked first, and three '=' is never canonical.",
+      "operation": "verifyReceiptBase64",
+      "input": {
+        "fixture": "receipt-b64-impossible-length-padded"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "builtin",
+          "name": "apple-receipt-roots"
+        },
+        "bundleId": "dev.bonzer.weeka.app"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "fault": "receipt-base64-impossible-length-padded",
+      "tags": [
+        "receipt",
+        "base64",
+        "negative",
+        "public"
       ]
     }
   ]

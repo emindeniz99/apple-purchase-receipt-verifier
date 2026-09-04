@@ -8,6 +8,7 @@ import {
   type ParsedCms,
 } from './cms.js';
 import { hasExtension } from './der.js';
+import { receiptBase64DecodeStrict } from './bytes.js';
 import {
   parseReceiptPayload,
   type RawAppReceipt,
@@ -77,6 +78,20 @@ export interface ReceiptVerifierOptions {
   trustedRoots: RootInput[];
   /** Bundle id the receipt must carry. */
   bundleId: string;
+}
+
+/**
+ * Decodes a client-supplied `receipt-data` string to DER per the
+ * receipt-data contract, throwing {@link Reason.INVALID_RECEIPT_FORMAT}
+ * (rather than silently skipping bad characters) when it does not conform.
+ * Shared by {@link ReceiptVerifier.verify} and {@link VerifyReceiptEndpoint}.
+ */
+export function decodeReceiptDataString(text: string): Buffer {
+  const decoded = receiptBase64DecodeStrict(text);
+  if (decoded === null) {
+    throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'receipt-data is not valid base64');
+  }
+  return asBuffer(decoded);
 }
 
 /** Zero-copy Buffer view over shared-parser output, which is Uint8Array. */
@@ -191,12 +206,15 @@ export class ReceiptVerifier {
 
   /**
    * Verifies a receipt (DER Buffer, or its base64 string — the usual client
-   * transport form). Passing `deviceGuid` additionally enforces the
-   * device-hash binding: SHA1(guid ‖ opaqueValue ‖ bundleIdBytes) must equal
-   * attribute 5 (optional — PLAN.md D4).
+   * transport form). A string is decoded per the receipt-data contract
+   * (RFC 4648, standard or base64url alphabet, not mixed, padding optional —
+   * see {@link receiptBase64DecodeStrict}); anything that decode rejects
+   * throws {@link Reason.INVALID_RECEIPT_FORMAT}. Passing `deviceGuid`
+   * additionally enforces the device-hash binding: SHA1(guid ‖ opaqueValue ‖
+   * bundleIdBytes) must equal attribute 5 (optional — PLAN.md D4).
    */
   verify(receipt: Buffer | string, deviceGuid: Buffer | null = null): AppReceipt {
-    const der = typeof receipt === 'string' ? Buffer.from(receipt, 'base64') : receipt;
+    const der = typeof receipt === 'string' ? decodeReceiptDataString(receipt) : receipt;
     const fields = verifyReceiptCore(der, this.#roots);
     if (fields.bundleId !== this.#bundleId) {
       throw new VerificationError(

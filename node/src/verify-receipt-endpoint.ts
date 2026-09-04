@@ -1,7 +1,12 @@
 import { Reason, VerificationError } from './errors.js';
 import { normalizeRoots, type RootInput } from './chain.js';
 import { normalizeClock, type Clock } from './jws-claims.js';
-import { verifyReceiptCore, type AppReceipt, type InAppPurchase } from './receipt.js';
+import {
+  decodeReceiptDataString,
+  verifyReceiptCore,
+  type AppReceipt,
+  type InAppPurchase,
+} from './receipt.js';
 
 /**
  * Drop-in local replacement for Apple's deprecated `verifyReceipt` endpoint:
@@ -93,7 +98,10 @@ export class VerifyReceiptEndpoint {
       return { status: Status.MALFORMED };
     }
     try {
-      const fields: AppReceipt = verifyReceiptCore(Buffer.from(receiptData, 'base64'), this.#roots);
+      const fields: AppReceipt = verifyReceiptCore(
+        decodeReceiptDataString(receiptData),
+        this.#roots,
+      );
 
       // 21007/21008 environment routing from the receipt_type attribute.
       // Production types are exactly "Production" and "ProductionVPP";

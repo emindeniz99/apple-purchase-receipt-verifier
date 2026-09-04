@@ -129,6 +129,11 @@ private struct Vectors {
                 throw HarnessError("fixture \"\(id)\" is not valid UTF-8")
             }
             return Data(text.trimmingCharacters(in: .whitespacesAndNewlines).utf8)
+        case "text":
+            // The file bytes verbatim, untrimmed — pinning how a port decodes
+            // what a client sent, whitespace and all. Unlike "utf8" this must
+            // NOT trim, and a 0-byte fixture is valid input, not an error.
+            return raw
         default:
             throw HarnessError("unknown fixture codec \"\(codec)\"")
         }
@@ -180,11 +185,15 @@ private struct Vectors {
 
     /// Dispatches one case on its `operation`. Everything it returns is fed
     /// to ``normalize(_:)``; everything it throws is a verdict only when it
-    /// is a ``VerificationError``.
+    /// is a ``VerificationError``. Resolves `fixtureId` to bytes itself (this
+    /// is also where the fixture's digest is checked) so it can also read
+    /// the fixture's codec, needed to decide how `verifyReceiptEndpoint`
+    /// fills `receipt-data` for a `text` fixture.
     func invoke(
-        operation: String, config: [String: Any], input: Data,
+        operation: String, config: [String: Any], fixtureId: String,
         clock: (@Sendable () -> Date)?
     ) async throws -> Any {
+        let input = try bytes(of: fixtureId)
         switch operation {
         case "verifyTransaction":
             return try await jwsVerifier(config, clock: clock)
@@ -203,6 +212,16 @@ private struct Vectors {
                 bundleId: bundleId)
             let guid = try (config["deviceGuidHex"] as? String).map(Self.hexBytes)
             return try await verifier.verify(receipt: input, deviceGuid: guid)
+        case "verifyReceiptBase64":
+            guard let bundleId = config["bundleId"] as? String else {
+                throw HarnessError("config.bundleId is missing")
+            }
+            let verifier = try ReceiptVerifier(
+                trustedRoots: try trustedRoots(config),
+                bundleId: bundleId)
+            let guid = try (config["deviceGuidHex"] as? String).map(Self.hexBytes)
+            return try await verifier.verify(
+                base64Receipt: String(decoding: input, as: UTF8.self), deviceGuid: guid)
         case "verifyReceiptEndpoint":
             guard let name = config["environment"] as? String,
                 let environment = AppleEnvironment(rawValue: name),
@@ -214,7 +233,14 @@ private struct Vectors {
                 trustedRoots: try trustedRoots(config),
                 environment: environment,
                 clock: clock)
-            return await endpoint.verifyReceipt(["receipt-data": input.base64EncodedString()])
+            // A text fixture hands receipt-data the text verbatim (pinning
+            // how the endpoint decodes what a client sent); raw/base64
+            // fixtures keep the existing re-encode to canonical base64.
+            let codec = (fixtures[fixtureId] as? [String: Any])?["codec"] as? String
+            let receiptData =
+                codec == "text"
+                ? String(decoding: input, as: UTF8.self) : input.base64EncodedString()
+            return await endpoint.verifyReceipt(["receipt-data": receiptData])
         default:
             throw HarnessError("no adapter for operation \"\(operation)\"")
         }
@@ -435,7 +461,7 @@ final class ConformanceCasesTests: XCTestCase {
     /// The operations the methods below cover, one method each.
     static let coveredOperations: Set<String> = [
         "verifyTransaction", "verifyAppTransaction", "verifyRaw",
-        "verifyReceipt", "verifyReceiptEndpoint",
+        "verifyReceipt", "verifyReceiptBase64", "verifyReceiptEndpoint",
     ]
 
     override func setUp() {
@@ -450,6 +476,8 @@ final class ConformanceCasesTests: XCTestCase {
     func testVerifyRawCases() async { await run(operation: "verifyRaw") }
 
     func testVerifyReceiptCases() async { await run(operation: "verifyReceipt") }
+
+    func testVerifyReceiptBase64Cases() async { await run(operation: "verifyReceiptBase64") }
 
     func testVerifyReceiptEndpointCases() async { await run(operation: "verifyReceiptEndpoint") }
 
@@ -517,7 +545,7 @@ final class ConformanceCasesTests: XCTestCase {
         do {
             result = try await vectors.invoke(
                 operation: operation, config: config,
-                input: try vectors.bytes(of: fixture),
+                fixtureId: fixture,
                 clock: try clockSource(kase))
         } catch let error as VerificationError {
             guard status == "error" else {

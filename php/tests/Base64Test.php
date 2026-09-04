@@ -155,4 +155,52 @@ final class Base64Test extends TestCase
     {
         self::assertSame($expected, Base64::decodeStrict($segment));
     }
+
+    /**
+     * {@see Base64::decodeReceipt()} is a third rule, distinct from both
+     * `decode()`'s skip-and-ignore leniency above and `decodeStrict()`'s
+     * canonical-unpadded rule: Apple's own contract for what
+     * `base64EncodedString(options:)` can emit, pinned in
+     * `fixtures/cases.json`'s "Receipt base64" paragraph and exercised
+     * end-to-end by the `receipt-base64/*` and `endpoint/receipt-data-*`
+     * conformance cases. These tests pin the decoder function directly.
+     *
+     * @return iterable<string, array{string, string}>
+     */
+    public static function validReceiptBase64Provider(): iterable
+    {
+        yield 'standard alphabet, padded' => ['QUJD', 'ABC'];
+        yield 'standard alphabet, unpadded' => ['QUJDRA', 'ABCD'];
+        yield 'base64url alphabet, padded' => ['LV5f', "\x2d\x5e\x5f"];
+        yield 'base64url alphabet, unpadded' => ['LV5fXQ', "\x2d\x5e\x5f\x5d"];
+        yield 'CR, LF, space and tab anywhere' => ["QU\tJ\r\nD RA==", 'ABCD'];
+        yield 'leading and trailing whitespace' => ["  QUJDRA==\n", 'ABCD'];
+    }
+
+    #[DataProvider('validReceiptBase64Provider')]
+    public function testDecodeReceiptAcceptsApplesContract(string $text, string $expected): void
+    {
+        self::assertSame($expected, Base64::decodeReceipt($text));
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function invalidReceiptBase64Provider(): iterable
+    {
+        yield 'empty' => [''];
+        yield 'whitespace only' => [" \t\r\n"];
+        yield 'a character outside both alphabets' => ['QUJD!'];
+        yield 'text after the padding' => ['QUJDRA==XY'];
+        yield 'both alphabets in one string' => ['ab+c-d'];
+        yield 'impossible length (len % 4 == 1)' => ['QUJDR'];
+        yield 'overpadded (receipt-base64/reject-overpadded: canonical "==" plus two extra "=")' => ['QUJDQQ===='];
+        yield 'underpadded (receipt-base64/reject-underpadded: one of two required "=" removed)' => ['QUJDQQ='];
+        yield 'impossible data length hidden by padding (receipt-base64/reject-impossible-length-padded: 5 data chars + "===" is 8 in total)' => ['QUJDQ==='];
+        yield 'padding only' => ['===='];
+    }
+
+    #[DataProvider('invalidReceiptBase64Provider')]
+    public function testDecodeReceiptRejectsWhatApplesContractRejects(string $text): void
+    {
+        self::assertNull(Base64::decodeReceipt($text));
+    }
 }

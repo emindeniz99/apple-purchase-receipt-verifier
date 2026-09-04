@@ -1,7 +1,7 @@
 //! Verification of legacy PKCS#7 app receipts — the server-side port of
 //! Apple's "Validating receipts on the device" procedure (`PLAN.md` §2.2).
 
-use crate::base64::decode_lenient;
+use crate::base64::decode_receipt_base64;
 use crate::chain::build_and_validate_path;
 use crate::cms::{find_message_digest_attribute, parse_cms, signed_attrs_signed_bytes, ParsedCms};
 use crate::crypto::{constant_time_eq, verify_rsa_pkcs1, DigestAlgorithm};
@@ -267,7 +267,9 @@ impl ReceiptVerifier {
     /// # Errors
     /// As [`ReceiptVerifier::verify`].
     pub fn verify_base64(&self, receipt: &str) -> Result<AppReceipt> {
-        self.verify(&decode_lenient(receipt))
+        let der = decode_receipt_base64(receipt)
+            .ok_or_else(|| malformed("receipt-data is not valid base64"))?;
+        self.verify(&der)
     }
 
     /// Verifies a DER receipt and additionally enforces the device binding:
@@ -296,7 +298,9 @@ impl ReceiptVerifier {
         receipt: &str,
         device_guid: &[u8],
     ) -> Result<AppReceipt> {
-        self.verify_with_device_guid(&decode_lenient(receipt), device_guid)
+        let der = decode_receipt_base64(receipt)
+            .ok_or_else(|| malformed("receipt-data is not valid base64"))?;
+        self.verify_with_device_guid(&der, device_guid)
     }
 
     fn require_bundle_id(&self, fields: &AppReceipt) -> Result<()> {

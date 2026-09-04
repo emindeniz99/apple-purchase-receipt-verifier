@@ -9,8 +9,6 @@ COMPARISON.md.
 Like Apple's endpoint, this does NOT check the bundle id — the caller
 compares ``receipt["bundle_id"]``, exactly as with the real endpoint."""
 
-import base64
-import binascii
 import json
 import time
 from collections.abc import Iterable, Mapping
@@ -20,6 +18,7 @@ from zoneinfo import ZoneInfo
 
 from cryptography import x509
 
+from ._receipt_base64 import decode_receipt_base64
 from .exceptions import Reason, VerificationError
 from .receipt import AppReceipt, InAppPurchase, verify_receipt_core
 
@@ -79,8 +78,8 @@ class VerifyReceiptEndpoint:
         if not isinstance(receipt_data, str) or not receipt_data:
             return {"status": STATUS_MALFORMED}
         try:
-            der = base64.b64decode(receipt_data)
-        except (binascii.Error, ValueError):
+            der = decode_receipt_base64(receipt_data)
+        except VerificationError:
             return {"status": STATUS_MALFORMED}
         try:
             fields = verify_receipt_core(der, self._roots)

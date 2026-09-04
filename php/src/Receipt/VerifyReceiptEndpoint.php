@@ -145,7 +145,12 @@ final class VerifyReceiptEndpoint
                 return ['status' => self::STATUS_MALFORMED];
             }
 
-            $fields = ReceiptVerifier::verifyReceiptCore(Base64::decode($receiptData), $this->trustedRoots);
+            $der = Base64::decodeReceipt($receiptData);
+            if ($der === null) {
+                return ['status' => self::STATUS_MALFORMED];
+            }
+
+            $fields = ReceiptVerifier::verifyReceiptCore($der, $this->trustedRoots);
 
             // 21007/21008 routing from the receipt_type attribute, failing
             // closed: production is exactly "Production" and "ProductionVPP".
