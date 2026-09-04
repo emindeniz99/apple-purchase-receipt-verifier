@@ -16,11 +16,15 @@ end
 
 desc "Validate the RBS signatures in sig/"
 task :rbs do
+  # RBS::CLI#run returns nil when it finds nothing wrong, so `exit` on its
+  # result raised a TypeError on every run, pass or fail. Treat nil as
+  # success and anything else as the status it is.
   ruby "-e", <<~SCRIPT
     require "rbs"
     require "rbs/cli"
-    exit RBS::CLI.new(stdout: $stdout, stderr: $stderr)
-                 .run(["-r", "openssl", "-r", "json", "-I", "sig", "validate"])
+    status = RBS::CLI.new(stdout: $stdout, stderr: $stderr)
+                     .run(["-r", "openssl", "-r", "json", "-I", "sig", "validate"])
+    exit(status.nil? ? 0 : status)
   SCRIPT
 end
 
