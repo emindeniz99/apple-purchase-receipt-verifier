@@ -313,7 +313,6 @@ func decodeReceiptBase64(_ text: String) -> Data? {
     var padCount = 0
     var standardAlphabet = false
     var urlsafeAlphabet = false
-    var strippedLength = 0
 
     for byte in text.utf8 {
         switch byte {
@@ -322,7 +321,6 @@ func decodeReceiptBase64(_ text: String) -> Data? {
         default:
             break
         }
-        strippedLength += 1
         if sawPadding {
             guard byte == 0x3D else { return nil }  // only '=' may follow padding
             padCount += 1
@@ -353,7 +351,9 @@ func decodeReceiptBase64(_ text: String) -> Data? {
 
     guard !(standardAlphabet && urlsafeAlphabet) else { return nil }
     guard !body.isEmpty else { return nil }
-    guard strippedLength % 4 != 1 else { return nil }
+    // The impossible-length test is on the DATA, not the padded string:
+    // "A===" is a multiple of four in total and still encodes no whole byte.
+    guard body.count % 4 != 1 else { return nil }
 
     let remainder = body.count % 4
     guard padCount == 0 || padCount == (4 - remainder) % 4 else { return nil }

@@ -138,13 +138,15 @@ func decodeBase64(text string, limit int) []byte {
 			}
 		}
 	}
-	if coreLen == 0 || coreLen%4 == 1 {
+	// The impossible-length test is on the DATA, not the padded string:
+	// "A===" is a multiple of four in total and still encodes no whole byte.
+	dataLen := coreLen - padLen
+	if dataLen == 0 || dataLen%4 == 1 {
 		return nil
 	}
 	// Padding, if present, must be the exact amount needed to round the
 	// unpadded data up to a multiple of 4 — no more, no less. An unpadded
 	// string (padLen == 0) is still accepted.
-	dataLen := coreLen - padLen
 	if padLen != 0 && padLen != (4-dataLen%4)%4 {
 		return nil
 	}

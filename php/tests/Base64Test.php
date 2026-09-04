@@ -194,6 +194,8 @@ final class Base64Test extends TestCase
         yield 'impossible length (len % 4 == 1)' => ['QUJDR'];
         yield 'overpadded (receipt-base64/reject-overpadded: canonical "==" plus two extra "=")' => ['QUJDQQ===='];
         yield 'underpadded (receipt-base64/reject-underpadded: one of two required "=" removed)' => ['QUJDQQ='];
+        yield 'impossible data length hidden by padding (receipt-base64/reject-impossible-length-padded: 5 data chars + "===" is 8 in total)' => ['QUJDQ==='];
+        yield 'padding only' => ['===='];
     }
 
     #[DataProvider('invalidReceiptBase64Provider')]

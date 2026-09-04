@@ -43,11 +43,6 @@ def decode_receipt_base64(text: str) -> bytes:
         raise VerificationError(
             Reason.INVALID_RECEIPT_FORMAT, "receipt is empty or whitespace-only"
         )
-    if len(body) % 4 == 1:
-        raise VerificationError(
-            Reason.INVALID_RECEIPT_FORMAT, "receipt has a base64-impossible length"
-        )
-
     pad_at = body.find("=")
     core, tail = (body, "") if pad_at == -1 else (body[:pad_at], body[pad_at:])
     if any(ch != "=" for ch in tail):
@@ -56,6 +51,12 @@ def decode_receipt_base64(text: str) -> bytes:
         )
 
     pad, data = len(tail), len(core)
+    # The impossible-length test is on the DATA, not the padded string:
+    # "A===" is a multiple of four in total and still encodes no whole byte.
+    if data == 0 or data % 4 == 1:
+        raise VerificationError(
+            Reason.INVALID_RECEIPT_FORMAT, "receipt has a base64-impossible length"
+        )
     if pad != 0 and pad != (4 - data % 4) % 4:
         raise VerificationError(
             Reason.INVALID_RECEIPT_FORMAT, "receipt has an incorrect base64 padding length"

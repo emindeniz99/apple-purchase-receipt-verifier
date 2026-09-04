@@ -139,7 +139,7 @@ final class Base64
     public static function decodeReceipt(string $text): ?string
     {
         $stripped = preg_replace('/[ \t\r\n]/', '', $text) ?? '';
-        if ($stripped === '' || strlen($stripped) % 4 === 1) {
+        if ($stripped === '') {
             return null;
         }
         if (preg_match('/\A([A-Za-z0-9+\/_-]*)(=*)\z/', $stripped, $matches) !== 1) {
@@ -156,6 +156,11 @@ final class Base64
         $data = strtr($body, '-_', '+/');
         $pad = strlen($matches[2]);
         $dataLen = strlen($data);
+        // The impossible-length test is on the DATA, not the padded string:
+        // "A===" is a multiple of four in total and still encodes no whole byte.
+        if ($dataLen === 0 || $dataLen % 4 === 1) {
+            return null;
+        }
         $requiredPad = (4 - $dataLen % 4) % 4;
         if ($pad !== 0 && $pad !== $requiredPad) {
             return null; // padding present but neither omitted nor canonical

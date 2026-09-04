@@ -434,6 +434,12 @@
       "role": "input",
       "codec": "text",
       "contentSha256": "d2aa45a8fa6238d86e02aee58fdd5e958915fd84d8f5c5d015b9e866eec89b24"
+    },
+    "receipt-b64-impossible-length-padded": {
+      "path": "generated/receipt-b64/16-impossible-length-padded.txt",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "408fabe863b45e4d984ac849e3c55875feb22c6c83727aaeed768cf720646fa1"
     }
   },
   "cases": [
@@ -3046,6 +3052,32 @@
         "reason": "INVALID_RECEIPT_FORMAT"
       },
       "fault": "receipt-base64-underpadded",
+      "tags": [
+        "receipt",
+        "base64",
+        "negative",
+        "public"
+      ]
+    },
+    {
+      "id": "receipt-base64/reject-impossible-length-padded",
+      "description": "The genuine receipt's base64 with its final data character removed and three '=' appended: the data length is 1 mod 4, which no base64 encoding can have, yet the total is a multiple of four. A decoder that checks the length only after counting the padding, or that treats three '=' as a canonical run, accepts an encoding RFC 4648 cannot produce. The unpadded data length must be checked first, and three '=' is never canonical.",
+      "operation": "verifyReceiptBase64",
+      "input": {
+        "fixture": "receipt-b64-impossible-length-padded"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "builtin",
+          "name": "apple-receipt-roots"
+        },
+        "bundleId": "dev.bonzer.weeka.app"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "fault": "receipt-base64-impossible-length-padded",
       "tags": [
         "receipt",
         "base64",

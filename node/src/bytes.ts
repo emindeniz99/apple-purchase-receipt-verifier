@@ -140,11 +140,7 @@ const RECEIPT_BASE64_PATTERN = /^[A-Za-z0-9+/_-]*={0,2}$/;
  */
 export function receiptBase64DecodeStrict(text: string): Uint8Array | null {
   const stripped = text.replace(/[\r\n \t]/g, '');
-  if (
-    stripped.length === 0 ||
-    stripped.length % 4 === 1 ||
-    !RECEIPT_BASE64_PATTERN.test(stripped)
-  ) {
+  if (stripped.length === 0 || !RECEIPT_BASE64_PATTERN.test(stripped)) {
     return null;
   }
   const hasStandard = stripped.includes('+') || stripped.includes('/');
@@ -154,7 +150,9 @@ export function receiptBase64DecodeStrict(text: string): Uint8Array | null {
   }
   const pad = stripped.length - stripped.replace(/=+$/, '').length;
   const data = stripped.length - pad;
-  if (pad !== 0 && pad !== (4 - (data % 4)) % 4) {
+  // The impossible-length test is on the DATA, not the padded string: 'A==='
+  // is a multiple of four in total and still encodes no whole byte.
+  if (data === 0 || data % 4 === 1 || (pad !== 0 && pad !== (4 - (data % 4)) % 4)) {
     return null;
   }
   return base64Decode(stripped);

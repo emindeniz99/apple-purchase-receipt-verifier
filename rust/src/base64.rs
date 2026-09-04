@@ -83,8 +83,9 @@ pub fn decode_lenient_bytes(text: &[u8]) -> Vec<u8> {
 /// before anything else is checked.
 ///
 /// Refused as [`None`]: a character neither alphabet defines; anything but
-/// whitespace once padding has started; a whitespace-stripped length of
-/// `4n + 1`; an empty or whitespace-only string; a `=` count other than `0`
+/// whitespace once padding has started; a data length (padding excluded) of
+/// `4n + 1`, which no encoding has and which padding cannot rescue; an empty
+/// or whitespace-only string; a `=` count other than `0`
 /// or the exact count RFC 4648 requires for the data length (no over- or
 /// under-padding). There is no canonical-trailing-bits check — that
 /// malleability matters for a JWS signature segment (see
@@ -124,10 +125,12 @@ pub fn decode_receipt_base64(text: &str) -> Option<Vec<u8>> {
         }
         body.push(byte);
     }
-    if core_len == 0 || core_len % 4 == 1 {
+    // The impossible-length test is on the DATA, not the padded string:
+    // "A===" is a multiple of four in total and still encodes no whole byte.
+    let data = body.len();
+    if data == 0 || data % 4 == 1 {
         return None;
     }
-    let data = body.len();
     let pad = core_len - data;
     let expected_pad = (4 - data % 4) % 4;
     if pad != 0 && pad != expected_pad {
@@ -224,4 +227,22 @@ pub fn decode_base64url_strict(text: &str) -> Option<Vec<u8>> {
         return None;
     }
     Some(out)
+}
+
+#[cfg(test)]
+mod receipt_base64_tests {
+    use super::decode_receipt_base64;
+
+    /// The impossible-length test has to look at the data, not at the padded
+    /// string: "A===" is a multiple of four characters in total and encodes
+    /// no whole byte. A check on the padded length lets it through and then
+    /// treats three '=' as a canonical run.
+    #[test]
+    fn an_impossible_data_length_is_not_rescued_by_padding() {
+        assert_eq!(decode_receipt_base64("A==="), None);
+        assert_eq!(decode_receipt_base64("QUJDQ==="), None);
+        assert_eq!(decode_receipt_base64("===="), None);
+        assert_eq!(decode_receipt_base64("QUJDQQ=="), Some(b"ABCA".to_vec()));
+        assert_eq!(decode_receipt_base64("QUJDQQ"), Some(b"ABCA".to_vec()));
+    }
 }
