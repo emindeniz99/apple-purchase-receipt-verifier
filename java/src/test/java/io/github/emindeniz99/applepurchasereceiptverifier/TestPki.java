@@ -386,6 +386,23 @@ final class TestPki {
                                  byte[] opaque, byte[] sha1Hash, String creationDate,
                                  List<byte[]> inAppSets, boolean creationDateAttribute,
                                  BigInteger extraAttributeType) throws Exception {
+        return receiptPayload(receiptType, bundleId, appVersion, opaque, sha1Hash, creationDate,
+                inAppSets, creationDateAttribute, extraAttributeType, new byte[]{1, 2, 3});
+    }
+
+    /**
+     * Same again, choosing what the extra attribute carries. The default
+     * {@code {1, 2, 3}} is not valid DER for any modelled attribute, so a
+     * parser that truncated an oversized type down onto a modelled one would
+     * still refuse the receipt and the vector could not tell the two apart.
+     * Handing it a well-formed value the truncated type WOULD accept is what
+     * makes that difference observable.
+     */
+    static byte[] receiptPayload(String receiptType, String bundleId, String appVersion,
+                                 byte[] opaque, byte[] sha1Hash, String creationDate,
+                                 List<byte[]> inAppSets, boolean creationDateAttribute,
+                                 BigInteger extraAttributeType, byte[] extraAttributeValue)
+            throws Exception {
         ASN1EncodableVector attrs = new ASN1EncodableVector();
         if (receiptType != null) {
             attrs.add(attr(0, new DERUTF8String(receiptType).getEncoded()));
@@ -401,7 +418,7 @@ final class TestPki {
         attrs.add(attr(19, new DERUTF8String("1.0").getEncoded()));
         attrs.add(attr(9999, new byte[]{1, 2, 3}));  // unknown attr for D10 tests
         if (extraAttributeType != null) {
-            attrs.add(attr(extraAttributeType, new byte[]{1, 2, 3}));
+            attrs.add(attr(extraAttributeType, extraAttributeValue));
         }
         for (byte[] inApp : inAppSets) {
             attrs.add(attr(17, inApp));
