@@ -1,0 +1,72 @@
+root = true
+
+[*]
+end_of_line = lf
+insert_final_newline = true
+charset = utf-8
+
+[*.cs]
+indent_style = space
+indent_size = 4
+tab_width = 4
+
+# using-directive order: System.* first, alphabetically, then project
+# namespaces, no blank line between the groups — evidenced throughout
+# src/ and tests/ (e.g. Jws/JwsVerifier.cs).
+dotnet_sort_system_directives_first = true
+dotnet_separate_import_directive_groups = false
+
+# Explicit types everywhere (e.g. `HashSet<T> x = new HashSet<T>(...)`) —
+# zero uses of `var` found in src/, tests/, samples/ or tools/. Pinned at
+# :silent so this documents the existing style without `--severity info`
+# rewriting it to `var`.
+csharp_style_var_for_built_in_types = false:silent
+csharp_style_var_when_type_is_apparent = false:silent
+csharp_style_var_elsewhere = false:silent
+
+# Object creation always names the type (`new SystemClock()`), never the
+# target-typed `new()` — no occurrences of the latter in the codebase.
+csharp_style_implicit_object_creation_when_type_is_apparent = false:silent
+
+# Every if/for/foreach/etc. in this codebase uses braces, even for a
+# single statement (see Jws/JwsVerifier.cs).
+csharp_prefer_braces = true:silent
+
+# `dotnet format` (apply) was run against a first draft of this file and,
+# beyond whitespace, rewrote switch statements to switch expressions,
+# `new List<T>()`/arrays to collection expressions, a constructor to a
+# primary constructor, hand-written regexes to [GeneratedRegex] source
+# generators, `Substring` to range indexing, and a byte array to a UTF-8
+# string literal — 28 files, none of it evidenced in the current style,
+# and one file (tests/ReceiptTests.cs) came back with a literal unresolved
+# merge-conflict marker where two of those fixers collided. None of that
+# is a formatting drift this gate should police, so the two categories
+# that produce it are pinned to :silent — `--severity info` still fixes
+# real whitespace/using-order drift (that isn't analyzer-gated), just not
+# these. See dotnet/ci-job.md for how this was derived.
+dotnet_analyzer_diagnostic.category-Style.severity = silent
+dotnet_analyzer_diagnostic.category-Performance.severity = silent
+# `IndexOf(x) >= 0` -> `Contains(x)` (CA1847) and `Enum.GetValues(typeof(T))`
+# -> `Enum.GetValues<T>()` (CA2263) are both category "Usage"; same reasoning.
+dotnet_analyzer_diagnostic.category-Usage.severity = silent
+
+# Two rules outside those three categories still surfaced as unfixable
+# `info` diagnostics under `--severity info` (no file changed, but
+# `--verify-no-changes` exits non-zero on the diagnostic alone):
+# CA1513 (category Maintainability: "use ObjectDisposedException.ThrowIf",
+# 2 call sites in src/) and xUnit2025 (the xunit.analyzers package: "avoid
+# a boolean literal in Assert.False", 1 call site — its own fixer reports
+# "doesn't support Fix All in Solution", so it can never be auto-applied).
+# Neither is evidenced in the current style; pinned rather than rewritten.
+dotnet_diagnostic.CA1513.severity = silent
+dotnet_diagnostic.xUnit2025.severity = silent
+
+# Namespace style is split by directory in this codebase today: src/ is
+# entirely block-scoped (`namespace X { ... }`), tests/ is entirely
+# file-scoped (`namespace X;`). Pin each side to what it already does
+# rather than picking one and rewriting the other.
+[src/**.cs]
+csharp_style_namespace_declarations = block_scoped:silent
+
+[tests/**.cs]
+csharp_style_namespace_declarations = file_scoped:silent
