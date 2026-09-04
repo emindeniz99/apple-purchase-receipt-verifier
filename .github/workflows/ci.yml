@@ -422,7 +422,6 @@ jobs:
       # repository roots. Either one drifting ships stale trust anchors.
       - run: ruby script/gen_roots.rb && git diff --exit-code lib/apple_purchase_receipt_verifier/roots_data.rb
         working-directory: ruby
-      - run: diff -r certs ruby/certs
 
   # Test the artifact the consumer receives, not the working tree: the Ruby
   # shape of the two broken npm releases is spec.files losing certs/, which
@@ -557,7 +556,6 @@ jobs:
       # rust/certs/ is a copy of the repository's certs/, because cargo package
       # cannot reach outside the package directory. A copy that drifts ships
       # stale trust anchors.
-      - run: diff -r certs rust/certs
 
   # Advisories, license policy, and the banned-crate list that is the
   # mechanised form of "pinned anchors only, no network ever": a dependency
@@ -652,7 +650,6 @@ jobs:
       # php/certs/ is a copy of the repository-root certs/, and
       # src/Internal/RootsData.php is generated from that copy. A roots change
       # that forgets either step would ship stale trust anchors.
-      - run: diff -r certs php/certs
       - run: php php/tools/gen-roots.php && git diff --exit-code php/src/Internal/RootsData.php
 
   # The mutation pass: ~1,500 mutated receipts and ~1,000 mutated JWS
@@ -781,6 +778,12 @@ jobs:
           node-version: "22"
           package-manager-cache: false
       - run: node tools/lint-cases.mjs
+      # Every port that ships the pinned Apple roots must ship the same
+      # bytes. Only three ports used to diff their copy against certs/,
+      # and the per-port regenerate-and-diff steps cannot see this: they
+      # compare a generated file to its own port's copy, so a port left
+      # behind by a root refresh stays internally consistent and green.
+      - run: node tools/check-cert-copies.mjs
 
   zizmor:
     runs-on: ubuntu-latest
