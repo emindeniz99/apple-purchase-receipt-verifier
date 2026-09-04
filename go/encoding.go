@@ -14,8 +14,9 @@ import (
 //     tab anywhere, stripped before decoding.
 //   - REJECT (yields no bytes): any character outside both alphabets;
 //     both alphabets in one string; anything but whitespace after the
-//     padding starts; a stripped length congruent to 1 mod 4; an empty or
-//     whitespace-only string.
+//     padding starts; padding whose length is not exactly what the
+//     unpadded data requires (over- or under-padded); a stripped length
+//     congruent to 1 mod 4; an empty or whitespace-only string.
 //
 // There is deliberately no canonical-trailing-bits check: an unpadded
 // tail's unused low bits are simply dropped, same as before.
@@ -81,6 +82,7 @@ func decodeBase64(text string, limit int) []byte {
 	accumulator := uint32(0)
 	bits := 0
 	coreLen := 0
+	padLen := 0
 	sawStd := false
 	sawURL := false
 	sawPad := false
@@ -97,11 +99,13 @@ func decodeBase64(text string, limit int) []byte {
 				return nil
 			}
 			coreLen++
+			padLen++
 			continue
 		}
 		if c == '=' {
 			sawPad = true
 			coreLen++
+			padLen++
 			continue
 		}
 		if c >= 128 {
@@ -135,6 +139,13 @@ func decodeBase64(text string, limit int) []byte {
 		}
 	}
 	if coreLen == 0 || coreLen%4 == 1 {
+		return nil
+	}
+	// Padding, if present, must be the exact amount needed to round the
+	// unpadded data up to a multiple of 4 — no more, no less. An unpadded
+	// string (padLen == 0) is still accepted.
+	dataLen := coreLen - padLen
+	if padLen != 0 && padLen != (4-dataLen%4)%4 {
 		return nil
 	}
 	return out

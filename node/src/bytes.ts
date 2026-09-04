@@ -133,8 +133,10 @@ const RECEIPT_BASE64_PATTERN = /^[A-Za-z0-9+/_-]*={0,2}$/;
  * contract, PLAN §receipt-base64). Strips CR, LF, space and tab first, then
  * rejects: any other character; a string mixing the standard and base64url
  * alphabets; anything (beyond the already-stripped whitespace) after the
- * `=` padding; a stripped length congruent to 1 mod 4; and an empty or
- * whitespace-only string. Returns null rather than throwing.
+ * `=` padding; a stripped length congruent to 1 mod 4; a `=` count that
+ * does not match what the unpadded data length requires (over- or
+ * under-padded); and an empty or whitespace-only string. Returns null
+ * rather than throwing.
  */
 export function receiptBase64DecodeStrict(text: string): Uint8Array | null {
   const stripped = text.replace(/[\r\n \t]/g, '');
@@ -148,6 +150,11 @@ export function receiptBase64DecodeStrict(text: string): Uint8Array | null {
   const hasStandard = stripped.includes('+') || stripped.includes('/');
   const hasUrlSafe = stripped.includes('-') || stripped.includes('_');
   if (hasStandard && hasUrlSafe) {
+    return null;
+  }
+  const pad = stripped.length - stripped.replace(/=+$/, '').length;
+  const data = stripped.length - pad;
+  if (pad !== 0 && pad !== (4 - (data % 4)) % 4) {
     return null;
   }
   return base64Decode(stripped);

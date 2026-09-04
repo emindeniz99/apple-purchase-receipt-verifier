@@ -134,9 +134,11 @@ alphabet or base64url, padded or not, with `CR`/`LF` line breaks at 64 or 76
 columns. Concretely: `+`/`/` or `-`/`_` (never both in the same string),
 padding present or omitted, and `\r`, `\n`, ` ` or `\t` anywhere. A character
 neither alphabet defines, both alphabets in one string, anything but
-whitespace once padding has started, or an empty or whitespace-only string
-is `INVALID_RECEIPT_FORMAT` (`21002` at the endpoint) before any bytes reach
-the CMS parser — see `decode_receipt_base64` in `base64.rs`.
+whitespace once padding has started, an empty or whitespace-only string, or a
+`=` count other than zero or the exact count the data length requires (no
+over- or under-padding) is `INVALID_RECEIPT_FORMAT` (`21002` at the endpoint)
+before any bytes reach the CMS parser — see `decode_receipt_base64` in
+`base64.rs`.
 
 Every input form is reachable with and without the device GUID. Passing one
 additionally enforces the device binding:

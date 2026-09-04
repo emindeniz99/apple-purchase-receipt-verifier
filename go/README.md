@@ -271,8 +271,10 @@ can emit and rejects everything else: the standard (`+/`) or the base64url
 (`-_`) alphabet, not both in the same string; padding present or omitted; and
 CR, LF, space or tab anywhere, stripped before decoding. A character outside
 both alphabets, a mixed alphabet, anything but whitespace after the padding
-starts, a stripped length congruent to 1 mod 4, or an empty or
-whitespace-only string is `INVALID_RECEIPT_FORMAT` (`21002` at the endpoint).
+starts, padding whose length is not exactly what the unpadded data requires
+(over- or under-padded), a stripped length congruent to 1 mod 4, or an empty
+or whitespace-only string is `INVALID_RECEIPT_FORMAT` (`21002` at the
+endpoint).
 There is no canonical-trailing-bits check. This is the cross-port contract
 every implementation is held to (`fixtures/cases.json`'s `receipt-base64/*`
 and `endpoint/receipt-data-*` vectors), not a Go-specific choice. Compact-JWS

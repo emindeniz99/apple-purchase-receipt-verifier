@@ -194,6 +194,16 @@ module ApplePurchaseReceiptVerifier
                                       "receipt has an invalid base64 length")
         end
 
+        # Supplied padding must be either absent or exactly the canonical
+        # count for `pad_at`'s length — not any other amount. Over- and
+        # under-padded receipts (extra or missing trailing `=`) are rejected
+        # here rather than silently corrected below.
+        pad = stripped.length - pad_at
+        unless pad.zero? || pad == ((4 - (pad_at % 4)) % 4)
+          raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
+                                      "receipt has an incorrect base64 padding length")
+        end
+
         stripped.tr!("-_", "+/")
         # Whatever padding the client sent is discarded and rebuilt to the
         # canonical count for `pad_at` — "present or omitted" is accepted,

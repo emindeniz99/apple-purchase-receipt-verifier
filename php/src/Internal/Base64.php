@@ -154,7 +154,13 @@ final class Base64
             }
         }
         $data = strtr($body, '-_', '+/');
-        $padded = $data . str_repeat('=', (4 - strlen($data) % 4) % 4);
+        $pad = strlen($matches[2]);
+        $dataLen = strlen($data);
+        $requiredPad = (4 - $dataLen % 4) % 4;
+        if ($pad !== 0 && $pad !== $requiredPad) {
+            return null; // padding present but neither omitted nor canonical
+        }
+        $padded = $data . str_repeat('=', $requiredPad);
         $decoded = base64_decode($padded, true);
 
         return $decoded === false ? null : $decoded;

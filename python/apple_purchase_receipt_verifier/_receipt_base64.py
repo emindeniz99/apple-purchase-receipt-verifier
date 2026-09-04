@@ -55,6 +55,12 @@ def decode_receipt_base64(text: str) -> bytes:
             Reason.INVALID_RECEIPT_FORMAT, "receipt has data after its base64 padding"
         )
 
+    pad, data = len(tail), len(core)
+    if pad != 0 and pad != (4 - data % 4) % 4:
+        raise VerificationError(
+            Reason.INVALID_RECEIPT_FORMAT, "receipt has an incorrect base64 padding length"
+        )
+
     has_standard = "+" in core or "/" in core
     has_urlsafe = "-" in core or "_" in core
     if has_standard and has_urlsafe:

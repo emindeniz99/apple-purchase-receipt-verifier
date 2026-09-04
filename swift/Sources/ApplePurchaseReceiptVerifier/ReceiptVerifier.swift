@@ -300,16 +300,17 @@ public struct ReceiptVerifier: Sendable {
 /// `"\r\n"` pair into a single extended grapheme cluster, so comparing
 /// `Character`s against `"\r"` and `"\n"` individually never matches a
 /// PEM-wrapped receipt's line endings and rejects every 76-column input.
-/// Whatever padding the input carried is discarded and recomputed from the
-/// data length instead of validated in place: `Data(base64Encoded:
-/// options: [])` already accepts equal-or-more padding than a group
-/// strictly needs, so re-padding to the correct amount here is sufficient
-/// — a body length congruent to 1 mod 4 is rejected above and stays
-/// rejected however it is padded, and any smaller mismatch does not change
-/// which bytes decode to.
+/// Padding is validated in place rather than discarded and recomputed: `pad`
+/// counts the trailing `=` characters and `data` is the stripped length
+/// without them. The input is accepted only when `pad == 0` (no padding
+/// supplied) or `pad` equals the canonical amount for `data`'s length mod 4
+/// (`(4 - data % 4) % 4`) — any other count is rejected, including both
+/// over- and under-padded input. `data % 4 == 1` is rejected below and stays
+/// rejected regardless of padding.
 func decodeReceiptBase64(_ text: String) -> Data? {
     var body: [UInt8] = []
     var sawPadding = false
+    var padCount = 0
     var standardAlphabet = false
     var urlsafeAlphabet = false
     var strippedLength = 0
@@ -324,11 +325,13 @@ func decodeReceiptBase64(_ text: String) -> Data? {
         strippedLength += 1
         if sawPadding {
             guard byte == 0x3D else { return nil }  // only '=' may follow padding
+            padCount += 1
             continue
         }
         switch byte {
         case 0x3D:  // '='
             sawPadding = true
+            padCount = 1
         case 0x2B:  // '+'
             standardAlphabet = true
             body.append(0x2B)
@@ -353,6 +356,7 @@ func decodeReceiptBase64(_ text: String) -> Data? {
     guard strippedLength % 4 != 1 else { return nil }
 
     let remainder = body.count % 4
+    guard padCount == 0 || padCount == (4 - remainder) % 4 else { return nil }
     if remainder != 0 {
         body.append(contentsOf: repeatElement(UInt8(ascii: "="), count: 4 - remainder))
     }

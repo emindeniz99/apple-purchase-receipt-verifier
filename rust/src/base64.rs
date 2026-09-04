@@ -84,10 +84,12 @@ pub fn decode_lenient_bytes(text: &[u8]) -> Vec<u8> {
 ///
 /// Refused as [`None`]: a character neither alphabet defines; anything but
 /// whitespace once padding has started; a whitespace-stripped length of
-/// `4n + 1`; an empty or whitespace-only string. There is no
-/// canonical-trailing-bits check — that malleability matters for a JWS
-/// signature segment (see [`decode_base64url_strict`]), not for a receipt
-/// blob that is itself verified by a signature over its decoded bytes.
+/// `4n + 1`; an empty or whitespace-only string; a `=` count other than `0`
+/// or the exact count RFC 4648 requires for the data length (no over- or
+/// under-padding). There is no canonical-trailing-bits check — that
+/// malleability matters for a JWS signature segment (see
+/// [`decode_base64url_strict`]), not for a receipt blob that is itself
+/// verified by a signature over its decoded bytes.
 ///
 /// Unlike [`decode_lenient`], an unrecognised character is a hard failure
 /// here rather than something to skip: `receipt-data` is client-controlled,
@@ -123,6 +125,12 @@ pub fn decode_receipt_base64(text: &str) -> Option<Vec<u8>> {
         body.push(byte);
     }
     if core_len == 0 || core_len % 4 == 1 {
+        return None;
+    }
+    let data = body.len();
+    let pad = core_len - data;
+    let expected_pad = (4 - data % 4) % 4;
+    if pad != 0 && pad != expected_pad {
         return None;
     }
     Some(decode_lenient_bytes(&body))

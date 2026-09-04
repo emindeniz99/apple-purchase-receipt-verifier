@@ -233,6 +233,16 @@ namespace ApplePurchaseReceiptVerifier.Receipt
                     VerificationReason.InvalidReceiptFormat, "receipt has an impossible base64 length");
             }
 
+            // Padding is optional, but if present it must be exactly what the
+            // data length calls for: neither over- nor under-padded.
+            int pad = length - dataLength;
+            int requiredPad = (4 - dataLength % 4) % 4;
+            if (pad != 0 && pad != requiredPad)
+            {
+                throw new VerificationException(
+                    VerificationReason.InvalidReceiptFormat, "receipt has incorrect base64 padding");
+            }
+
             bool sawStandard = false;
             bool sawUrlSafe = false;
             for (int i = 0; i < dataLength; i++)

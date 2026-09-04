@@ -81,12 +81,16 @@ final class ReceiptBase64 {
         if (data.length() % 4 == 1) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "receipt has an invalid base64 length");
         }
+        int pad = stripped.length() - padStart;
+        int expectedPad = (4 - data.length() % 4) % 4;
+        if (pad != 0 && pad != expectedPad) {
+            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "receipt has incorrect base64 padding");
+        }
 
-        // Padding is not trusted from the input (it may be present, absent,
-        // or — since only its trailing-run shape was checked above — of a
-        // count that does not match the data length); it is recomputed
-        // canonically instead, so java.util.Base64's strict decoder always
-        // sees a well-formed standard-alphabet string.
+        // Padding is not trusted from the input (it may be present or
+        // absent, but its trailing-run shape and count were checked above);
+        // it is recomputed canonically instead, so java.util.Base64's strict
+        // decoder always sees a well-formed standard-alphabet string.
         int remainder = data.length() % 4;
         if (remainder == 2) {
             data.append("==");
