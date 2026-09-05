@@ -432,6 +432,34 @@ public class HostileInputTests
         Assert.Equal(VerificationReason.InvalidCertificate, JwsReason(jws));
     }
 
+    /// <summary>
+    /// RFC 5280 §4.2: a certificate MUST NOT include more than one instance
+    /// of a particular extension. The platform decoder takes such a
+    /// certificate, and every reader downstream — the CA flag, the key usage,
+    /// the marker-OID lookup — then answers from the copy this library
+    /// happened to keep. The verdict is a defect of the certificate, which is
+    /// what the shared vector transaction/reject-x5c-duplicate-extension pins.
+    /// </summary>
+    [Fact]
+    public void AnX5cCertificateCarryingOneExtensionTwiceIsRejected()
+    {
+        X509Certificate2 root = TestPki.EcRoot();
+        X509Certificate2 intermediate = TestPki.EcChild(root, "CN=WWDR", true, TestPki.IntermediateOid);
+        X509Certificate2 leaf = TestPki.EcChildWithDuplicateExtension(
+            intermediate, "CN=Signing", TestPki.LeafOid);
+
+        string jws = TestPki.SignJws(
+            leaf,
+            new[] { leaf, intermediate, root },
+            "{\"bundleId\":\"com.example.app\",\"environment\":\"Sandbox\"}");
+        using JwsVerifier verifier = new(
+            new[] { TestPki.Public(root) }, "com.example.app", new[] { AppleEnvironment.Sandbox });
+
+        Assert.Equal(
+            VerificationReason.InvalidCertificate,
+            Assert.Throws<VerificationException>(() => verifier.VerifyTransaction(jws)).Reason);
+    }
+
     [Fact]
     public void AnX5cEntryInPemRatherThanDerIsRejected()
     {

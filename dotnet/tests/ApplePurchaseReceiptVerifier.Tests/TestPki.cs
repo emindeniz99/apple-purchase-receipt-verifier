@@ -90,6 +90,40 @@ internal static class TestPki
         return issued.CopyWithPrivateKey(key);
     }
 
+    /// <summary>
+    /// An EC leaf carrying its first extension twice, re-signed by the issuer
+    /// so the only defect is the repetition. RFC 5280 §4.2 forbids a second
+    /// instance of any extension; <c>CertificateRequest</c> refuses to build
+    /// one, so the TBS is rebuilt and signed by hand, the way
+    /// <see cref="EcChildSha1"/> does.
+    /// </summary>
+    internal static X509Certificate2 EcChildWithDuplicateExtension(
+        X509Certificate2 issuer,
+        string subject,
+        string markerOid)
+    {
+        ECDsa key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        CertificateRequest request = new(subject, key, HashAlgorithmName.SHA256);
+        AddExtensions(request, false, markerOid);
+        using ECDsa issuerKey = issuer.GetECDsaPrivateKey()
+            ?? throw new InvalidOperationException("the issuer has no usable EC key");
+        using X509Certificate2 template = request.Create(
+            issuer.SubjectName,
+            X509SignatureGenerator.CreateForECDsa(issuerKey),
+            DefaultNotBefore,
+            DefaultNotAfter,
+            NextSerial());
+
+        AsnReader outer = new AsnReader(template.RawData, AsnEncodingRules.DER).ReadSequence();
+        outer.ReadEncodedValue();                     // tbsCertificate
+        byte[] algorithm = outer.ReadEncodedValue().ToArray();
+        byte[] tbs = DuplicateFirstExtension(template.RawData);
+        byte[] signature = issuerKey.SignData(
+            tbs, HashAlgorithmName.SHA256, DSASignatureFormat.Rfc3279DerSequence);
+        return X509CertificateLoader.LoadCertificate(Assemble(tbs, algorithm, signature))
+            .CopyWithPrivateKey(key);
+    }
+
     /// <summary>An RSA certificate issued by <paramref name="issuer"/>.</summary>
     internal static X509Certificate2 RsaChild(
         X509Certificate2 issuer,
@@ -203,6 +237,45 @@ internal static class TestPki
             while (tbs.HasData)
             {
                 writer.WriteEncodedValue(tbs.ReadEncodedValue().Span);
+            }
+        }
+
+        return writer.Encode();
+    }
+
+    /// <summary>Rebuilds a TBS with a byte-identical second copy of its first extension.</summary>
+    private static byte[] DuplicateFirstExtension(byte[] certificate)
+    {
+        AsnReader tbs = new AsnReader(certificate, AsnEncodingRules.DER).ReadSequence().ReadSequence();
+        Asn1Tag extensionsTag = new(TagClass.ContextSpecific, 3, true);
+
+        AsnWriter writer = new(AsnEncodingRules.DER);
+        using (writer.PushSequence())
+        {
+            while (tbs.HasData)
+            {
+                if (tbs.PeekTag() != extensionsTag)
+                {
+                    writer.WriteEncodedValue(tbs.ReadEncodedValue().Span);
+                    continue;
+                }
+
+                AsnReader extensions = tbs.ReadSequence(extensionsTag).ReadSequence();
+                using (writer.PushSequence(extensionsTag))
+                using (writer.PushSequence())
+                {
+                    bool first = true;
+                    while (extensions.HasData)
+                    {
+                        ReadOnlyMemory<byte> extension = extensions.ReadEncodedValue();
+                        writer.WriteEncodedValue(extension.Span);
+                        if (first)
+                        {
+                            writer.WriteEncodedValue(extension.Span);
+                            first = false;
+                        }
+                    }
+                }
             }
         }
 

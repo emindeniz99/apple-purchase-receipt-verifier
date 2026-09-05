@@ -27,13 +27,15 @@ namespace ApplePurchaseReceiptVerifier.Internal
             string signatureAlgorithmOid,
             string tbsSignatureAlgorithmOid,
             byte[] signature,
-            IReadOnlyDictionary<string, byte[]> extensions)
+            IReadOnlyDictionary<string, byte[]> extensions,
+            bool hasDuplicateExtension)
         {
             TbsCertificate = tbsCertificate;
             SignatureAlgorithmOid = signatureAlgorithmOid;
             TbsSignatureAlgorithmOid = tbsSignatureAlgorithmOid;
             Signature = signature;
             Extensions = extensions;
+            HasDuplicateExtension = hasDuplicateExtension;
         }
 
         /// <summary>The exact encoded <c>tbsCertificate</c> the signature is over.</summary>
@@ -50,6 +52,15 @@ namespace ApplePurchaseReceiptVerifier.Internal
 
         /// <summary>Extension OID to raw <c>extnValue</c> octets. Duplicates keep the first.</summary>
         internal IReadOnlyDictionary<string, byte[]> Extensions { get; }
+
+        /// <summary>
+        /// Whether the certificate carries the same extension OID more than
+        /// once, which RFC 5280 4.2 forbids. Recorded rather than acted on
+        /// here: <see cref="Extensions"/> keeps the first copy, so every
+        /// reader of this type would otherwise be answering from a copy it
+        /// picked. The JWS path refuses such a certificate outright.
+        /// </summary>
+        internal bool HasDuplicateExtension { get; }
 
         /// <summary>Parses <paramref name="raw"/>, or returns <see langword="null"/> if it will not parse.</summary>
         internal static CertificateFields? TryParse(byte[] raw)
@@ -93,6 +104,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
                 tbsReader.ReadEncodedValue();                       // subjectPublicKeyInfo
 
                 Dictionary<string, byte[]> extensions = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+                bool duplicate = false;
                 while (tbsReader.HasData)
                 {
                     Asn1Tag tag = tbsReader.PeekTag();
@@ -107,10 +119,10 @@ namespace ApplePurchaseReceiptVerifier.Internal
                         continue;
                     }
 
-                    ReadExtensions(tbsReader.ReadSequence(tag).ReadSequence(), extensions);
+                    duplicate |= ReadExtensions(tbsReader.ReadSequence(tag).ReadSequence(), extensions);
                 }
 
-                return new CertificateFields(tbs, outerOid, tbsOid, signature, extensions);
+                return new CertificateFields(tbs, outerOid, tbsOid, signature, extensions, duplicate);
             }
             catch (AsnContentException)
             {
@@ -159,8 +171,10 @@ namespace ApplePurchaseReceiptVerifier.Internal
             }
         }
 
-        private static void ReadExtensions(AsnReader sequence, Dictionary<string, byte[]> into)
+        /// <summary>Reads the extension list; returns whether an OID repeated.</summary>
+        private static bool ReadExtensions(AsnReader sequence, Dictionary<string, byte[]> into)
         {
+            bool duplicate = false;
             while (sequence.HasData)
             {
                 AsnReader extension = sequence.ReadSequence();
@@ -171,11 +185,16 @@ namespace ApplePurchaseReceiptVerifier.Internal
                 }
 
                 byte[] value = extension.ReadOctetString();
-                if (!into.ContainsKey(oid))
+                if (into.ContainsKey(oid))
                 {
-                    into.Add(oid, value);
+                    duplicate = true;
+                    continue;
                 }
+
+                into.Add(oid, value);
             }
+
+            return duplicate;
         }
 
         private static string ReadAlgorithmIdentifierOid(AsnReader reader)

@@ -336,13 +336,18 @@ namespace ApplePurchaseReceiptVerifier.Jws
                 ?? throw new VerificationException(
                     VerificationReason.InvalidCertificate, "x5c entry is not a valid certificate");
 
-            // Two things the platform decoder lets past, settled here while
+            // Three things the platform decoder lets past, settled here while
             // the verdict is still "this is not a certificate":
             //
             //  - the version, which it keeps as whatever integer it found.
             //    X.509 defines v1, v2 and v3 and nothing else, and nothing
             //    downstream reads the field, so without this a certificate
             //    claiming version 11 verifies like any other.
+            //  - a repeated extension, which RFC 5280 4.2 forbids. Every
+            //    reader downstream takes the first copy, so without this the
+            //    CA flag, the key usage and the marker-OID lookup are each
+            //    answered from a copy this library picked and another
+            //    implementation need not pick the same one.
             //  - the public key, which it builds lazily, so a namedCurve this
             //    platform does not implement would otherwise surface in the
             //    issuer check and be reported as a chain failure.
@@ -351,6 +356,13 @@ namespace ApplePurchaseReceiptVerifier.Jws
                 certificate.Dispose();
                 throw new VerificationException(
                     VerificationReason.InvalidCertificate, "x5c entry has an unknown X.509 version");
+            }
+
+            if (CertificateFields.TryParse(certificate.RawData)?.HasDuplicateExtension == true)
+            {
+                certificate.Dispose();
+                throw new VerificationException(
+                    VerificationReason.InvalidCertificate, "x5c entry carries a duplicate extension");
             }
 
             if (!HasReadablePublicKey(certificate))
