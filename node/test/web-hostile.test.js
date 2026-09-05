@@ -14,11 +14,15 @@ import * as web from '../dist/web/index.js';
 const read = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)));
 
 const GENUINE = Buffer.from(
-  read('fixtures/public-receipts/receipt-sandbox-g5.b64').toString('ascii').trim(), 'base64');
+  read('fixtures/public-receipts/receipt-sandbox-g5.b64').toString('ascii').trim(),
+  'base64',
+);
 const SHARED = read('fixtures/generated/receipt.der');
 const SHARED_ROOT = read('fixtures/generated/receipt-root.der');
 const LEGACY = Buffer.from(
-  read('fixtures/public-receipts/receipt-sandbox-legacy.b64').toString('ascii').trim(), 'base64');
+  read('fixtures/public-receipts/receipt-sandbox-legacy.b64').toString('ascii').trim(),
+  'base64',
+);
 
 function* mutations(label, receipt, step) {
   for (let cut = 1; cut < receipt.length; cut += 64) {
@@ -68,35 +72,54 @@ const MAX_TOLERATED_DIVERGENCES = 5;
 
 test('web and Node builds agree over a corpus of mutated receipts', async () => {
   const nodeVerifier = new node.ReceiptVerifier({
-    trustedRoots: [...node.appleReceiptRoots(), SHARED_ROOT], bundleId: '*',
+    trustedRoots: [...node.appleReceiptRoots(), SHARED_ROOT],
+    bundleId: '*',
   });
   const webVerifier = new web.ReceiptVerifier({
-    trustedRoots: [...web.appleReceiptRoots(), new Uint8Array(SHARED_ROOT)], bundleId: '*',
+    trustedRoots: [...web.appleReceiptRoots(), new Uint8Array(SHARED_ROOT)],
+    bundleId: '*',
   });
   let checked = 0;
   const divergences = [];
+  // oxlint-disable no-await-in-loop -- hostileCorpus() yields 1000+ mutations
+  // (see the `checked > 1000` assertion below); Promise.all-ing every verify
+  // would fire that many RSA/EC checks at once instead of the bounded,
+  // sequential run this is meant to be.
   for (const [what, input] of hostileCorpus()) {
     const fromWeb = await reasonOf(() => webVerifier.verify(new Uint8Array(input)));
     const fromNode = await reasonOf(() => nodeVerifier.verify(Buffer.from(input)));
     // Neither build may accept a mutated receipt, whatever else they say.
-    assert.ok(fromWeb.ok === undefined && fromNode.ok === undefined,
-      `${what} was accepted (web ${fromWeb.ok}, node ${fromNode.ok})`);
-    assert.equal(fromWeb.name, 'VerificationError',
-      `${what} escaped the web build as ${fromWeb.name}: ${fromWeb.message}`);
-    assert.equal(fromNode.name, 'VerificationError',
-      `${what} escaped the Node build as ${fromNode.name}: ${fromNode.message}`);
+    assert.ok(
+      fromWeb.ok === undefined && fromNode.ok === undefined,
+      `${what} was accepted (web ${fromWeb.ok}, node ${fromNode.ok})`,
+    );
+    assert.equal(
+      fromWeb.name,
+      'VerificationError',
+      `${what} escaped the web build as ${fromWeb.name}: ${fromWeb.message}`,
+    );
+    assert.equal(
+      fromNode.name,
+      'VerificationError',
+      `${what} escaped the Node build as ${fromNode.name}: ${fromNode.message}`,
+    );
     if (fromWeb.reason !== fromNode.reason || fromWeb.message !== fromNode.message) {
-      assert.ok(CORRUPT_CERTIFICATE_REASONS.has(fromWeb.reason)
-        && CORRUPT_CERTIFICATE_REASONS.has(fromNode.reason),
-      `${what}: node ${fromNode.reason} vs web ${fromWeb.reason}`);
+      assert.ok(
+        CORRUPT_CERTIFICATE_REASONS.has(fromWeb.reason) &&
+          CORRUPT_CERTIFICATE_REASONS.has(fromNode.reason),
+        `${what}: node ${fromNode.reason} vs web ${fromWeb.reason}`,
+      );
       divergences.push(`${what}: node ${fromNode.reason} vs web ${fromWeb.reason}`);
     }
     checked += 1;
   }
+  // oxlint-enable no-await-in-loop
   // The corpus is generated, so a bug that emptied it would otherwise pass.
   assert.ok(checked > 1000, `only ${checked} inputs`);
-  assert.ok(divergences.length <= MAX_TOLERATED_DIVERGENCES,
-    `${divergences.length} divergent verdicts:\n${divergences.join('\n')}`);
+  assert.ok(
+    divergences.length <= MAX_TOLERATED_DIVERGENCES,
+    `${divergences.length} divergent verdicts:\n${divergences.join('\n')}`,
+  );
 });
 
 // --- the embedded-certificate bound ---------------------------------------
@@ -104,9 +127,14 @@ test('web and Node builds agree over a corpus of mutated receipts', async () => 
 function tlv(tag, ...parts) {
   const contents = Buffer.concat(parts);
   const n = contents.length;
-  const length = n < 0x80 ? [n] : n < 0x100 ? [0x81, n]
-    : n < 0x10000 ? [0x82, n >> 8, n & 0xff]
-      : [0x83, (n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
+  const length =
+    n < 0x80
+      ? [n]
+      : n < 0x100
+        ? [0x81, n]
+        : n < 0x10000
+          ? [0x82, n >> 8, n & 0xff]
+          : [0x83, (n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
   return Buffer.concat([Buffer.from([tag, ...length]), contents]);
 }
 
@@ -116,7 +144,8 @@ const OID_DATA = Buffer.from('2a864886f70d010701', 'hex');
 /** The genuine receipt's SignedData children, read with the library's reader. */
 const donorSignedData = parse(GENUINE).children[1].children[0].children;
 const donorCertificates = donorSignedData
-  .slice(3, donorSignedData.length - 1).find((n) => n.tag === Tag.CONTEXT_0).children;
+  .slice(3, donorSignedData.length - 1)
+  .find((n) => n.tag === Tag.CONTEXT_0).children;
 const donorSignerInfos = donorSignedData[donorSignedData.length - 1];
 
 const UNPARSEABLE_CERTIFICATE = Buffer.from([0x30, 0x03, 0x02, 0x01, 0x00]);
@@ -131,22 +160,35 @@ function receiptWithCertificates(count) {
     ...Array.from({ length: count - 1 }, () => Buffer.from(donorCertificates[0].raw)),
     UNPARSEABLE_CERTIFICATE,
   ]);
-  return tlv(Tag.SEQUENCE, tlv(Tag.OID, OID_SIGNED_DATA),
-    tlv(Tag.CONTEXT_0, tlv(Tag.SEQUENCE,
-      tlv(Tag.INTEGER, Buffer.from([1])),
-      tlv(Tag.SET),
-      tlv(Tag.SEQUENCE, tlv(Tag.OID, OID_DATA),
-        tlv(Tag.CONTEXT_0, tlv(Tag.OCTET_STRING, tlv(Tag.SET)))),
-      tlv(Tag.CONTEXT_0, certificates),
-      Buffer.from(donorSignerInfos.raw))));
+  return tlv(
+    Tag.SEQUENCE,
+    tlv(Tag.OID, OID_SIGNED_DATA),
+    tlv(
+      Tag.CONTEXT_0,
+      tlv(
+        Tag.SEQUENCE,
+        tlv(Tag.INTEGER, Buffer.from([1])),
+        tlv(Tag.SET),
+        tlv(
+          Tag.SEQUENCE,
+          tlv(Tag.OID, OID_DATA),
+          tlv(Tag.CONTEXT_0, tlv(Tag.OCTET_STRING, tlv(Tag.SET))),
+        ),
+        tlv(Tag.CONTEXT_0, certificates),
+        Buffer.from(donorSignerInfos.raw),
+      ),
+    ),
+  );
 }
 
 test('the web build enforces the same embedded-certificate bound', async () => {
   const nodeVerifier = new node.ReceiptVerifier({
-    trustedRoots: node.appleReceiptRoots(), bundleId: '*',
+    trustedRoots: node.appleReceiptRoots(),
+    bundleId: '*',
   });
   const webVerifier = new web.ReceiptVerifier({
-    trustedRoots: web.appleReceiptRoots(), bundleId: '*',
+    trustedRoots: web.appleReceiptRoots(),
+    bundleId: '*',
   });
   // 64 is above any bound that could still admit a genuine 3-certificate
   // chain, so the rejection fires wherever the bound is set; the message
@@ -160,7 +202,8 @@ test('the web build enforces the same embedded-certificate bound', async () => {
 
   // One below the bound is examined rather than refused by the count guard.
   const bound = Number(/more than (\d+) certificates/.exec(fromWeb.message)[1]);
-  const examined = await reasonOf(() => webVerifier.verify(
-    new Uint8Array(receiptWithCertificates(bound))));
+  const examined = await reasonOf(() =>
+    webVerifier.verify(new Uint8Array(receiptWithCertificates(bound))),
+  );
   assert.equal(examined.reason, 'INVALID_RECEIPT_FORMAT', examined.message);
 });

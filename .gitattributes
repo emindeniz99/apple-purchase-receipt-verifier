@@ -1,0 +1,19 @@
+# Fixture and certificate bytes are normative.
+#
+# Every port hashes these files and compares the digest against the one
+# fixtures/cases.json records, so the bytes have to be identical on every
+# checkout. Git's default line-ending translation rewrites a text file on a
+# Windows working copy, which changes those bytes and fails the registry
+# check for anything it touches. It already did: the Go and .NET suites both
+# failed on windows-latest over fixtures/public-receipts/LICENSE-upstream,
+# and nowhere else.
+#
+# -text disables that translation. It is not about whether a file looks like
+# text; it is about whether its bytes are load-bearing. These are.
+fixtures/** -text
+certs/** -text
+*.der -text
+*.cer -text
+*.b64 -text
+*.jws -text
+*.hex -text

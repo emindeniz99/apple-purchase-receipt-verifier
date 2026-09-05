@@ -8,10 +8,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.emindeniz99.applepurchasereceiptverifier.Environment;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
-import org.bouncycastle.asn1.ASN1Encodable;
-import org.bouncycastle.asn1.ASN1Integer;
-import org.bouncycastle.asn1.DERSequence;
-
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.math.BigInteger;
@@ -37,6 +33,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.bouncycastle.asn1.ASN1Encodable;
+import org.bouncycastle.asn1.ASN1Integer;
+import org.bouncycastle.asn1.DERSequence;
 
 /**
  * Verifies Apple-signed JWS payloads (StoreKit 2 {@code jwsRepresentation},
@@ -73,8 +72,7 @@ public final class JwsVerifier {
      * @param acceptedEnvironments environments to accept — include SANDBOX in
      *                             endpoints App Review can hit (PLAN.md D3)
      */
-    public JwsVerifier(Set<X509Certificate> trustedRoots, String bundleId,
-                       Set<Environment> acceptedEnvironments) {
+    public JwsVerifier(Set<X509Certificate> trustedRoots, String bundleId, Set<Environment> acceptedEnvironments) {
         this(trustedRoots, bundleId, acceptedEnvironments, null, null, null);
     }
 
@@ -85,9 +83,12 @@ public final class JwsVerifier {
      *                     than this many milliseconds are rejected as
      *                     {@link Reason#STALE_PAYLOAD} (PLAN.md D5)
      */
-    public JwsVerifier(Set<X509Certificate> trustedRoots, String bundleId,
-                       Set<Environment> acceptedEnvironments, Long appAppleId,
-                       Long maxSignedAge) {
+    public JwsVerifier(
+            Set<X509Certificate> trustedRoots,
+            String bundleId,
+            Set<Environment> acceptedEnvironments,
+            Long appAppleId,
+            Long maxSignedAge) {
         this(trustedRoots, bundleId, acceptedEnvironments, appAppleId, maxSignedAge, null);
     }
 
@@ -108,9 +109,13 @@ public final class JwsVerifier {
      *              states none — so an injected clock cannot move a
      *              chain verdict for any payload at all.</p>
      */
-    public JwsVerifier(Set<X509Certificate> trustedRoots, String bundleId,
-                       Set<Environment> acceptedEnvironments, Long appAppleId,
-                       Long maxSignedAge, Clock clock) {
+    public JwsVerifier(
+            Set<X509Certificate> trustedRoots,
+            String bundleId,
+            Set<Environment> acceptedEnvironments,
+            Long appAppleId,
+            Long maxSignedAge,
+            Clock clock) {
         if (trustedRoots == null || trustedRoots.isEmpty()) {
             throw new IllegalArgumentException("trustedRoots must not be empty");
         }
@@ -130,8 +135,7 @@ public final class JwsVerifier {
         this.appAppleId = appAppleId;
         this.maxSignedAgeMillis = maxSignedAge;
         this.clock = clock == null ? Clock.systemUTC() : clock;
-        this.mapper = new ObjectMapper()
-                .setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY);
+        this.mapper = new ObjectMapper().setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY);
     }
 
     /**
@@ -165,10 +169,9 @@ public final class JwsVerifier {
         }
         requireBundleId(payload.bundleId());
         Environment env = requireAcceptedEnvironment(payload.receiptType());
-        if (env == Environment.PRODUCTION
-                && (appAppleId == null || !appAppleId.equals(payload.appAppleId()))) {
-            throw new VerificationException(Reason.WRONG_APP_APPLE_ID,
-                    "expected " + appAppleId + " but payload has " + payload.appAppleId());
+        if (env == Environment.PRODUCTION && (appAppleId == null || !appAppleId.equals(payload.appAppleId()))) {
+            throw new VerificationException(
+                    Reason.WRONG_APP_APPLE_ID, "expected " + appAppleId + " but payload has " + payload.appAppleId());
         }
         return payload;
     }
@@ -181,8 +184,7 @@ public final class JwsVerifier {
      */
     public Map<String, Object> verifyRaw(String jws) throws VerificationException {
         JsonNode node = verifySignature(jws);
-        return mapper.convertValue(node, new TypeReference<Map<String, Object>>() {
-        });
+        return mapper.convertValue(node, new TypeReference<Map<String, Object>>() {});
     }
 
     /** Cryptographic verification: format → certs → OIDs → chain → signature. */
@@ -192,28 +194,29 @@ public final class JwsVerifier {
         }
         String[] parts = jws.split("\\.", -1);
         if (parts.length != 3) {
-            throw new VerificationException(Reason.INVALID_JWS_FORMAT,
-                    "expected 3 dot-separated segments, got " + parts.length);
+            throw new VerificationException(
+                    Reason.INVALID_JWS_FORMAT, "expected 3 dot-separated segments, got " + parts.length);
         }
         JsonNode header = parseJson(parts[0], "header");
         if (!"ES256".equals(header.path("alg").asText())) {
-            throw new VerificationException(Reason.INVALID_JWS_FORMAT,
+            throw new VerificationException(
+                    Reason.INVALID_JWS_FORMAT,
                     "alg must be ES256, got " + header.path("alg").asText());
         }
         JsonNode x5c = header.path("x5c");
         if (!x5c.isArray() || x5c.size() != 3) {
-            throw new VerificationException(Reason.INVALID_JWS_FORMAT,
-                    "x5c must contain exactly 3 certificates");
+            throw new VerificationException(Reason.INVALID_JWS_FORMAT, "x5c must contain exactly 3 certificates");
         }
         List<X509Certificate> chain = decodeChain(x5c);
         X509Certificate leaf = chain.get(0);
         X509Certificate intermediate = chain.get(1);
         if (leaf.getExtensionValue(LEAF_OID) == null) {
-            throw new VerificationException(Reason.INVALID_CERTIFICATE_PURPOSE,
-                    "leaf certificate lacks Apple marker OID " + LEAF_OID);
+            throw new VerificationException(
+                    Reason.INVALID_CERTIFICATE_PURPOSE, "leaf certificate lacks Apple marker OID " + LEAF_OID);
         }
         if (intermediate.getExtensionValue(INTERMEDIATE_OID) == null) {
-            throw new VerificationException(Reason.INVALID_CERTIFICATE_PURPOSE,
+            throw new VerificationException(
+                    Reason.INVALID_CERTIFICATE_PURPOSE,
                     "intermediate certificate lacks Apple marker OID " + INTERMEDIATE_OID);
         }
 
@@ -225,8 +228,7 @@ public final class JwsVerifier {
         // only fires for a payload carrying neither signedDate nor
         // receiptCreationDate, where PLAN.md §2.1 step 4's "else current time"
         // leaves the window anchored to real time. node and python agree.
-        validateChain(leaf, intermediate, signedAtMillis != null
-                ? new Date(signedAtMillis.longValue()) : new Date());
+        validateChain(leaf, intermediate, signedAtMillis != null ? new Date(signedAtMillis.longValue()) : new Date());
 
         byte[] signature = decodeBase64Url(parts[2], "signature");
         verifyEs256(leaf, parts[0] + "." + parts[1], signature);
@@ -237,7 +239,8 @@ public final class JwsVerifier {
         if (maxSignedAgeMillis != null && signedAtMillis != null) {
             long signedAt = signedAtMillis.longValue();
             if (clock.millis() - signedAt > maxSignedAgeMillis) {
-                throw new VerificationException(Reason.STALE_PAYLOAD,
+                throw new VerificationException(
+                        Reason.STALE_PAYLOAD,
                         "payload signed at " + signedAt + " exceeds max age " + maxSignedAgeMillis + "ms");
             }
         }
@@ -253,12 +256,43 @@ public final class JwsVerifier {
         }
     }
 
+    /**
+     * Strict base64url: the JWS alphabet only, no padding, no whitespace, no
+     * standard-base64 {@code +} or {@code /}, and the decoded bytes must
+     * re-encode to the same string (rejects a final character whose unused
+     * bits are non-zero). {@code java.util.Base64}'s URL decoder tolerates
+     * padding and non-canonical trailing bits, so both are checked here
+     * rather than left to it (RFC 7515 §2).
+     */
     private static byte[] decodeBase64Url(String value, String what) throws VerificationException {
+        if (!isStrictBase64Url(value)) {
+            throw new VerificationException(Reason.INVALID_JWS_FORMAT, what + " is not valid base64url");
+        }
         try {
-            return Base64.getUrlDecoder().decode(value);
+            byte[] decoded = Base64.getUrlDecoder().decode(value);
+            String reencoded = Base64.getUrlEncoder().withoutPadding().encodeToString(decoded);
+            if (!reencoded.equals(value)) {
+                throw new VerificationException(Reason.INVALID_JWS_FORMAT, what + " is not canonical base64url");
+            }
+            return decoded;
         } catch (IllegalArgumentException e) {
             throw new VerificationException(Reason.INVALID_JWS_FORMAT, what + " is not valid base64url", e);
         }
+    }
+
+    private static boolean isStrictBase64Url(String value) {
+        if (value.length() % 4 == 1) {
+            return false;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            boolean allowed =
+                    (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_';
+            if (!allowed) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static List<X509Certificate> decodeChain(JsonNode x5c) throws VerificationException {
@@ -306,8 +340,10 @@ public final class JwsVerifier {
             params.setDate(at);
             CertPathValidator.getInstance("PKIX").validate(path, params);
         } catch (CertPathValidatorException e) {
-            throw new VerificationException(Reason.INVALID_CHAIN,
-                    "certificate chain does not validate to a pinned Apple root: " + e.getMessage(), e);
+            throw new VerificationException(
+                    Reason.INVALID_CHAIN,
+                    "certificate chain does not validate to a pinned Apple root: " + e.getMessage(),
+                    e);
         } catch (InvalidAlgorithmParameterException e) {
             throw new VerificationException(Reason.INVALID_CHAIN, "chain validation rejected parameters", e);
         } catch (GeneralSecurityException e) {
@@ -318,8 +354,8 @@ public final class JwsVerifier {
     private static void verifyEs256(X509Certificate leaf, String signingInput, byte[] signature)
             throws VerificationException {
         if (signature.length != 64) {
-            throw new VerificationException(Reason.INVALID_SIGNATURE,
-                    "ES256 signature must be 64 bytes, got " + signature.length);
+            throw new VerificationException(
+                    Reason.INVALID_SIGNATURE, "ES256 signature must be 64 bytes, got " + signature.length);
         }
         try {
             Signature verifier = Signature.getInstance("SHA256withECDSA");
@@ -343,13 +379,13 @@ public final class JwsVerifier {
     private static byte[] p1363ToDer(byte[] p1363) throws IOException {
         BigInteger r = new BigInteger(1, Arrays.copyOfRange(p1363, 0, 32));
         BigInteger s = new BigInteger(1, Arrays.copyOfRange(p1363, 32, 64));
-        return new DERSequence(new ASN1Encodable[]{new ASN1Integer(r), new ASN1Integer(s)}).getEncoded();
+        return new DERSequence(new ASN1Encodable[] {new ASN1Integer(r), new ASN1Integer(s)}).getEncoded();
     }
 
     private void requireBundleId(String actual) throws VerificationException {
         if (!bundleId.equals(actual)) {
-            throw new VerificationException(Reason.WRONG_BUNDLE_ID,
-                    "expected " + bundleId + " but payload has " + actual);
+            throw new VerificationException(
+                    Reason.WRONG_BUNDLE_ID, "expected " + bundleId + " but payload has " + actual);
         }
     }
 
@@ -357,7 +393,8 @@ public final class JwsVerifier {
     private Environment requireAcceptedEnvironment(String claim) throws VerificationException {
         Environment env = Environment.fromValue(claim);
         if (env == null || !acceptedEnvironments.contains(env)) {
-            throw new VerificationException(Reason.WRONG_ENVIRONMENT,
+            throw new VerificationException(
+                    Reason.WRONG_ENVIRONMENT,
                     "payload environment " + claim + " not in accepted set " + acceptedEnvironments);
         }
         return env;

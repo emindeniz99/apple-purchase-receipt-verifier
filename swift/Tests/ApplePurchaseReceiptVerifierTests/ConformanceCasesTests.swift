@@ -40,9 +40,13 @@ private func clockSource(_ kase: [String: Any]) throws -> (@Sendable () -> Date)
     let formatter = ISO8601DateFormatter()
     formatter.timeZone = TimeZone(identifier: "UTC")
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    guard let now = formatter.date(from: text)
-        ?? { formatter.formatOptions = [.withInternetDateTime]
-             return formatter.date(from: text) }() else {
+    guard
+        let now = formatter.date(from: text)
+            ?? {
+                formatter.formatOptions = [.withInternetDateTime]
+                return formatter.date(from: text)
+            }()
+    else {
         throw HarnessError("clock.now \"\(text)\" is not an ISO-8601 instant")
     }
     return { now }
@@ -68,8 +72,9 @@ private struct Vectors {
     init() throws {
         let data = try Data(contentsOf: fixturesDirectory.appendingPathComponent("cases.json"))
         guard let file = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let fixtures = file["fixtures"] as? [String: Any],
-              let cases = file["cases"] as? [[String: Any]] else {
+            let fixtures = file["fixtures"] as? [String: Any],
+            let cases = file["cases"] as? [[String: Any]]
+        else {
             throw HarnessError("fixtures/cases.json is not the expected JSON object")
         }
         self.fixtures = fixtures
@@ -93,17 +98,19 @@ private struct Vectors {
         }
         let actual = hexString(Data(SHA256.hash(data: decoded)))
         guard actual == expected.lowercased() else {
-            throw HarnessError("fixture \"\(id)\" has content sha256 \(actual), "
-                + "but cases.json records \(expected) — the fixture and the vectors "
-                + "have drifted apart")
+            throw HarnessError(
+                "fixture \"\(id)\" has content sha256 \(actual), "
+                    + "but cases.json records \(expected) — the fixture and the vectors "
+                    + "have drifted apart")
         }
         return decoded
     }
 
     private func decode(_ id: String) throws -> Data {
         guard let entry = fixtures[id] as? [String: Any],
-              let path = entry["path"] as? String,
-              let codec = entry["codec"] as? String else {
+            let path = entry["path"] as? String,
+            let codec = entry["codec"] as? String
+        else {
             throw HarnessError("cases.json registers no fixture \"\(id)\"")
         }
         let raw = try Data(contentsOf: fixturesDirectory.appendingPathComponent(path))
@@ -112,7 +119,8 @@ private struct Vectors {
             return raw
         case "base64":
             guard let text = String(data: raw, encoding: .utf8),
-                  let decoded = Data(base64Encoded: text, options: [.ignoreUnknownCharacters]) else {
+                let decoded = Data(base64Encoded: text, options: [.ignoreUnknownCharacters])
+            else {
                 throw HarnessError("fixture \"\(id)\" is not decodable base64")
             }
             return decoded
@@ -121,6 +129,11 @@ private struct Vectors {
                 throw HarnessError("fixture \"\(id)\" is not valid UTF-8")
             }
             return Data(text.trimmingCharacters(in: .whitespacesAndNewlines).utf8)
+        case "text":
+            // The file bytes verbatim, untrimmed — pinning how a port decodes
+            // what a client sent, whitespace and all. Unlike "utf8" this must
+            // NOT trim, and a 0-byte fixture is valid input, not an error.
+            return raw
         default:
             throw HarnessError("unknown fixture codec \"\(codec)\"")
         }
@@ -146,16 +159,19 @@ private struct Vectors {
         throw HarnessError("unknown trustedRoots source \"\(source ?? "nil")\"")
     }
 
-    func jwsVerifier(_ config: [String: Any],
-                     clock: (@Sendable () -> Date)?) throws -> JwsVerifier {
+    func jwsVerifier(
+        _ config: [String: Any],
+        clock: (@Sendable () -> Date)?
+    ) throws -> JwsVerifier {
         var environments = unmatchableEnvironments
         if let names = config["acceptedEnvironments"] as? [String] {
-            environments = Set(try names.map { name in
-                guard let environment = AppleEnvironment(rawValue: name) else {
-                    throw HarnessError("unknown environment \"\(name)\"")
-                }
-                return environment
-            })
+            environments = Set(
+                try names.map { name in
+                    guard let environment = AppleEnvironment(rawValue: name) else {
+                        throw HarnessError("unknown environment \"\(name)\"")
+                    }
+                    return environment
+                })
         }
         let maxSignedAgeSeconds = (config["maxSignedAgeSeconds"] as? NSNumber)?.int64Value
         return try JwsVerifier(
@@ -169,9 +185,15 @@ private struct Vectors {
 
     /// Dispatches one case on its `operation`. Everything it returns is fed
     /// to ``normalize(_:)``; everything it throws is a verdict only when it
-    /// is a ``VerificationError``.
-    func invoke(operation: String, config: [String: Any], input: Data,
-                clock: (@Sendable () -> Date)?) async throws -> Any {
+    /// is a ``VerificationError``. Resolves `fixtureId` to bytes itself (this
+    /// is also where the fixture's digest is checked) so it can also read
+    /// the fixture's codec, needed to decide how `verifyReceiptEndpoint`
+    /// fills `receipt-data` for a `text` fixture.
+    func invoke(
+        operation: String, config: [String: Any], fixtureId: String,
+        clock: (@Sendable () -> Date)?
+    ) async throws -> Any {
+        let input = try bytes(of: fixtureId)
         switch operation {
         case "verifyTransaction":
             return try await jwsVerifier(config, clock: clock)
@@ -185,20 +207,40 @@ private struct Vectors {
             guard let bundleId = config["bundleId"] as? String else {
                 throw HarnessError("config.bundleId is missing")
             }
-            let verifier = try ReceiptVerifier(trustedRoots: try trustedRoots(config),
-                                               bundleId: bundleId)
+            let verifier = try ReceiptVerifier(
+                trustedRoots: try trustedRoots(config),
+                bundleId: bundleId)
             let guid = try (config["deviceGuidHex"] as? String).map(Self.hexBytes)
             return try await verifier.verify(receipt: input, deviceGuid: guid)
+        case "verifyReceiptBase64":
+            guard let bundleId = config["bundleId"] as? String else {
+                throw HarnessError("config.bundleId is missing")
+            }
+            let verifier = try ReceiptVerifier(
+                trustedRoots: try trustedRoots(config),
+                bundleId: bundleId)
+            let guid = try (config["deviceGuidHex"] as? String).map(Self.hexBytes)
+            return try await verifier.verify(
+                base64Receipt: String(decoding: input, as: UTF8.self), deviceGuid: guid)
         case "verifyReceiptEndpoint":
             guard let name = config["environment"] as? String,
-                  let environment = AppleEnvironment(rawValue: name),
-                  environment == .production || environment == .sandbox else {
+                let environment = AppleEnvironment(rawValue: name),
+                environment == .production || environment == .sandbox
+            else {
                 throw HarnessError("config.environment must be Production or Sandbox")
             }
-            let endpoint = try VerifyReceiptEndpoint(trustedRoots: try trustedRoots(config),
-                                                     environment: environment,
-                                                     clock: clock)
-            return await endpoint.verifyReceipt(["receipt-data": input.base64EncodedString()])
+            let endpoint = try VerifyReceiptEndpoint(
+                trustedRoots: try trustedRoots(config),
+                environment: environment,
+                clock: clock)
+            // A text fixture hands receipt-data the text verbatim (pinning
+            // how the endpoint decodes what a client sent); raw/base64
+            // fixtures keep the existing re-encode to canonical base64.
+            let codec = (fixtures[fixtureId] as? [String: Any])?["codec"] as? String
+            let receiptData =
+                codec == "text"
+                ? String(decoding: input, as: UTF8.self) : input.base64EncodedString()
+            return await endpoint.verifyReceipt(["receipt-data": receiptData])
         default:
             throw HarnessError("no adapter for operation \"\(operation)\"")
         }
@@ -216,7 +258,8 @@ private struct Vectors {
         var index = hex.startIndex
         while index < hex.endIndex {
             guard let next = hex.index(index, offsetBy: 2, limitedBy: hex.endIndex),
-                  let byte = UInt8(hex[index..<next], radix: 16) else {
+                let byte = UInt8(hex[index..<next], radix: 16)
+            else {
                 throw HarnessError("\"\(hex)\" is not a hex byte string")
             }
             bytes.append(byte)
@@ -355,8 +398,9 @@ private func resolve(_ root: Any, _ path: String) throws -> Any? {
                 let matches = list.compactMap { $0 as? [String: Any] }
                     .filter { ($0[key] as? String) == wanted }
                 guard matches.count == 1 else {
-                    throw HarnessError("\(path): [\(bracket)] must select exactly one element, "
-                        + "selected \(matches.count)")
+                    throw HarnessError(
+                        "\(path): [\(bracket)] must select exactly one element, "
+                            + "selected \(matches.count)")
                 }
                 current = matches[0]
             } else if let list = value as? [Any] {
@@ -417,7 +461,7 @@ final class ConformanceCasesTests: XCTestCase {
     /// The operations the methods below cover, one method each.
     static let coveredOperations: Set<String> = [
         "verifyTransaction", "verifyAppTransaction", "verifyRaw",
-        "verifyReceipt", "verifyReceiptEndpoint",
+        "verifyReceipt", "verifyReceiptBase64", "verifyReceiptEndpoint",
     ]
 
     override func setUp() {
@@ -433,6 +477,8 @@ final class ConformanceCasesTests: XCTestCase {
 
     func testVerifyReceiptCases() async { await run(operation: "verifyReceipt") }
 
+    func testVerifyReceiptBase64Cases() async { await run(operation: "verifyReceiptBase64") }
+
     func testVerifyReceiptEndpointCases() async { await run(operation: "verifyReceiptEndpoint") }
 
     /// Pins that every operation in the file is claimed by a method above — a
@@ -440,16 +486,18 @@ final class ConformanceCasesTests: XCTestCase {
     /// "now" is runnable through the clock seam, so none is silently skipped.
     func testReportsItsCoverageAndRunsEveryCase() throws {
         let vectors = try Vectors()
-        XCTAssertEqual(Set(vectors.cases.compactMap { $0["operation"] as? String }),
-                       Self.coveredOperations,
-                       "cases.json carries an operation no test method runs")
+        XCTAssertEqual(
+            Set(vectors.cases.compactMap { $0["operation"] as? String }),
+            Self.coveredOperations,
+            "cases.json carries an operation no test method runs")
         let withClock = vectors.cases.filter { $0["clock"] != nil }
         for kase in withClock {
             let id = kase["id"] as? String ?? "<case without an id>"
             XCTAssertNotNil(try clockSource(kase), "\(id): clock is not injectable")
         }
-        print("conformance: \(vectors.cases.count) cases, 0 skipped "
-            + "(\(withClock.count) run against an injected clock)")
+        print(
+            "conformance: \(vectors.cases.count) cases, 0 skipped "
+                + "(\(withClock.count) run against an injected clock)")
     }
 
     /// Every registered fixture matches the `contentSha256` cases.json records
@@ -485,37 +533,42 @@ final class ConformanceCasesTests: XCTestCase {
     private func run(_ kase: [String: Any], from vectors: Vectors) async {
         let id = kase["id"] as? String ?? "<case without an id>"
         guard let operation = kase["operation"] as? String,
-              let config = kase["config"] as? [String: Any],
-              let fixture = (kase["input"] as? [String: Any])?["fixture"] as? String,
-              let expected = kase["expected"] as? [String: Any],
-              let status = expected["status"] as? String else {
+            let config = kase["config"] as? [String: Any],
+            let fixture = (kase["input"] as? [String: Any])?["fixture"] as? String,
+            let expected = kase["expected"] as? [String: Any],
+            let status = expected["status"] as? String
+        else {
             XCTFail("harness error: \(id): the case is missing a required member")
             return
         }
         let result: Any
         do {
-            result = try await vectors.invoke(operation: operation, config: config,
-                                              input: try vectors.bytes(of: fixture),
-                                              clock: try clockSource(kase))
+            result = try await vectors.invoke(
+                operation: operation, config: config,
+                fixtureId: fixture,
+                clock: try clockSource(kase))
         } catch let error as VerificationError {
             guard status == "error" else {
                 XCTFail("\(id): expected success but threw \(error.reason.rawValue)")
                 return
             }
-            XCTAssertEqual(error.reason.rawValue, expected["reason"] as? String ?? "<no reason>",
-                           "\(id): reason")
+            XCTAssertEqual(
+                error.reason.rawValue, expected["reason"] as? String ?? "<no reason>",
+                "\(id): reason")
             return
         } catch {
             // Only a VerificationError carries a canonical Reason. Anything
             // else is a defect in the library or in this harness, and must
             // never be read as one of the expected reasons.
-            XCTFail("harness error: \(id): \(operation) threw \(type(of: error)) (\(error)), "
-                + "which is not a VerificationError")
+            XCTFail(
+                "harness error: \(id): \(operation) threw \(type(of: error)) (\(error)), "
+                    + "which is not a VerificationError")
             return
         }
         guard status == "ok" else {
-            XCTFail("\(id): expected \(expected["reason"] as? String ?? "an error") "
-                + "but the call returned a value")
+            XCTFail(
+                "\(id): expected \(expected["reason"] as? String ?? "an error") "
+                    + "but the call returned a value")
             return
         }
         guard let fields = expected["fields"] as? [String: Any] else {
@@ -527,8 +580,9 @@ final class ConformanceCasesTests: XCTestCase {
             guard let want = fields[path] else { continue }
             do {
                 let got = try resolve(actual, path)
-                XCTAssertTrue(matches(got, want),
-                              "\(id): \(path): expected \(describe(want)), got \(describe(got))")
+                XCTAssertTrue(
+                    matches(got, want),
+                    "\(id): \(path): expected \(describe(want)), got \(describe(got))")
             } catch {
                 XCTFail("harness error: \(id): \(error)")
             }

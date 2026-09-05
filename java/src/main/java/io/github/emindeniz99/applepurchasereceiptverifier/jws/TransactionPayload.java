@@ -1,7 +1,6 @@
 package io.github.emindeniz99.applepurchasereceiptverifier.jws;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-
 import java.util.Date;
 
 /**
@@ -37,8 +36,7 @@ public final class TransactionPayload {
     private String type;
     private String webOrderLineItemId;
 
-    TransactionPayload() {
-    }
+    TransactionPayload() {}
 
     /**
      * Entitlement helper: {@code true} if this transaction grants access at

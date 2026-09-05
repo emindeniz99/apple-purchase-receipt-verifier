@@ -21,7 +21,10 @@ const repo = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.
 const gen = (name) => repo(`fixtures/generated/${name}`);
 const genText = (name) => gen(name).toString('ascii').trim();
 
-const BUILDS = [['node', node], ['web', web]];
+const BUILDS = [
+  ['node', node],
+  ['web', web],
+];
 
 /** Awaits the web build's promises; the Node build returns values directly. */
 async function outcome(run) {
@@ -77,44 +80,63 @@ function withoutCreationDate(der) {
 }
 
 for (const [name, build] of BUILDS) {
-  const jwsVerifier = (root, clock) => new build.JwsVerifier({
-    trustedRoots: [gen(root)], bundleId: BUNDLE,
-    acceptedEnvironments: ['Sandbox'], clock,
-  });
+  const jwsVerifier = (root, clock) =>
+    new build.JwsVerifier({
+      trustedRoots: [gen(root)],
+      bundleId: BUNDLE,
+      acceptedEnvironments: ['Sandbox'],
+      clock,
+    });
 
   test(`${name}: a dateless JWS anchors chain validity on the system clock`, async () => {
     // The expired chain is valid 2020-01-01..2021-01-01 only, so judging a
     // dateless payload at the real "now" rejects it. A clock set inside that
     // window would rescue it — and must not: a caller injecting a clock to
     // test staleness must never thereby accept an expired chain.
-    for (const [label, clock] of CLOCKS) {
-      const verdict = await outcome(() => jwsVerifier('jws-expired-root.der', clock)
-        .verifyTransaction(withoutSignedDate(genText('expired-cert-historical.jws'))));
-      assert.equal(verdict.reason, 'INVALID_CHAIN', label);
-    }
+    await Promise.all(
+      CLOCKS.map(async ([label, clock]) => {
+        const verdict = await outcome(() =>
+          jwsVerifier('jws-expired-root.der', clock).verifyTransaction(
+            withoutSignedDate(genText('expired-cert-historical.jws')),
+          ),
+        );
+        assert.equal(verdict.reason, 'INVALID_CHAIN', label);
+      }),
+    );
   });
 
   test(`${name}: an injected clock cannot expire a dateless JWS either`, async () => {
     // The mirror image: this chain is valid 2024..2050, so at the real "now"
     // the dateless payload gets past the chain and dies at the signature
     // check. A clock outside 2024..2050 would turn that into INVALID_CHAIN.
-    for (const [label, clock] of CLOCKS) {
-      const verdict = await outcome(() => jwsVerifier('jws-root.der', clock)
-        .verifyTransaction(withoutSignedDate(genText('transaction.jws'))));
-      assert.equal(verdict.reason, 'INVALID_SIGNATURE', label);
-    }
+    await Promise.all(
+      CLOCKS.map(async ([label, clock]) => {
+        const verdict = await outcome(() =>
+          jwsVerifier('jws-root.der', clock).verifyTransaction(
+            withoutSignedDate(genText('transaction.jws')),
+          ),
+        );
+        assert.equal(verdict.reason, 'INVALID_SIGNATURE', label);
+      }),
+    );
   });
 
   test(`${name}: a dateless receipt anchors chain validity on the system clock`, async () => {
-    const expired = await outcome(() => build.verifyReceiptCore(
-      asInput(build, withoutCreationDate(gen('receipt-expired-historical.der'))),
-      [gen('receipt-expired-root.der')]));
+    const expired = await outcome(() =>
+      build.verifyReceiptCore(
+        asInput(build, withoutCreationDate(gen('receipt-expired-historical.der'))),
+        [gen('receipt-expired-root.der')],
+      ),
+    );
     assert.equal(expired.reason, 'INVALID_CHAIN');
     // Same input shape against a chain that IS valid now: it reaches the
     // signature check, so the INVALID_CHAIN above is the clock's doing and
     // not something about a dateless receipt generally.
-    const current = await outcome(() => build.verifyReceiptCore(
-      asInput(build, withoutCreationDate(gen('receipt.der'))), [gen('receipt-root.der')]));
+    const current = await outcome(() =>
+      build.verifyReceiptCore(asInput(build, withoutCreationDate(gen('receipt.der'))), [
+        gen('receipt-root.der'),
+      ]),
+    );
     assert.equal(current.reason, 'INVALID_SIGNATURE');
   });
 
@@ -123,8 +145,9 @@ for (const [name, build] of BUILDS) {
     // in JavaScript, so the published type is what is asserted. The clock
     // seam belongs to the JWS verifier (max signed age) and the endpoint
     // (request_date) — nothing on the receipt path consumes one.
-    const declaration = repo(name === 'node'
-      ? 'node/dist/receipt.d.ts' : 'node/dist/web/receipt.d.ts').toString('utf8');
+    const declaration = repo(
+      name === 'node' ? 'node/dist/receipt.d.ts' : 'node/dist/web/receipt.d.ts',
+    ).toString('utf8');
     const options = declaration.slice(declaration.indexOf('interface ReceiptVerifierOptions'));
     assert.ok(options.length > 0, 'ReceiptVerifierOptions must be declared');
     assert.doesNotMatch(options.slice(0, options.indexOf('}')), /clock/i);
@@ -132,11 +155,13 @@ for (const [name, build] of BUILDS) {
     assert.equal(build.verifyReceiptCore.length, 2);
     // And passing one anyway changes no verdict.
     const withClock = new build.ReceiptVerifier({
-      trustedRoots: [gen('receipt-expired-root.der')], bundleId: BUNDLE,
+      trustedRoots: [gen('receipt-expired-root.der')],
+      bundleId: BUNDLE,
       clock: () => new Date('2020-06-01T00:00:00Z'),
     });
-    const verdict = await outcome(() => withClock.verify(
-      asInput(build, gen('receipt-expired-fresh.der'))));
+    const verdict = await outcome(() =>
+      withClock.verify(asInput(build, gen('receipt-expired-fresh.der'))),
+    );
     assert.equal(verdict.reason, 'INVALID_CHAIN');
   });
 }
@@ -147,12 +172,13 @@ function asInput(build, buffer) {
 }
 
 test('endpoint: no clock can make it accept a dateless receipt on an expired chain', () => {
-  const dateless = withoutCreationDate(gen('receipt-expired-historical.der'))
-    .toString('base64');
+  const dateless = withoutCreationDate(gen('receipt-expired-historical.der')).toString('base64');
   const dated = gen('receipt-expired-historical.der').toString('base64');
   for (const [label, clock] of CLOCKS) {
     const endpoint = new node.VerifyReceiptEndpoint({
-      trustedRoots: [gen('receipt-expired-root.der')], environment: 'Sandbox', clock,
+      trustedRoots: [gen('receipt-expired-root.der')],
+      environment: 'Sandbox',
+      clock,
     });
     // The dated receipt is judged at its own creation date and stays OK
     // under every clock; the dateless one falls back to the system clock,
@@ -166,9 +192,11 @@ test('endpoint: no clock can make it accept a dateless receipt on an expired cha
 // --- (2) the endpoint's environment parameter ----------------------------
 
 test('endpoint: environment is the typed enum, and nothing else is accepted', () => {
-  const build = (environment) => new node.VerifyReceiptEndpoint({
-    trustedRoots: [gen('receipt-root.der')], environment,
-  });
+  const build = (environment) =>
+    new node.VerifyReceiptEndpoint({
+      trustedRoots: [gen('receipt-root.der')],
+      environment,
+    });
   const request = { 'receipt-data': gen('receipt-type-production.der').toString('base64') };
   // cases.json's config.environment is this enum, spelled exactly this way.
   assert.equal(build('Production').verifyReceipt(request).environment, 'Production');
@@ -183,14 +211,17 @@ test('endpoint: environment is the typed enum, and nothing else is accepted', ()
 // --- (3) verifyReceiptCore visibility ------------------------------------
 
 test('verifyReceiptCore is public on both entry points and checks no bundle id', async () => {
-  for (const [name, build] of BUILDS) {
-    assert.equal(typeof build.verifyReceiptCore, 'function', name);
-    const receipt = await build.verifyReceiptCore(
-      asInput(build, gen('receipt.der')), [gen('receipt-root.der')]);
-    // The bundle id is returned for the caller to check, not enforced —
-    // which is why the endpoint needs no wildcard-bundle-id verifier.
-    assert.equal(receipt.bundleId, BUNDLE, name);
-  }
+  await Promise.all(
+    BUILDS.map(async ([name, build]) => {
+      assert.equal(typeof build.verifyReceiptCore, 'function', name);
+      const receipt = await build.verifyReceiptCore(asInput(build, gen('receipt.der')), [
+        gen('receipt-root.der'),
+      ]);
+      // The bundle id is returned for the caller to check, not enforced —
+      // which is why the endpoint needs no wildcard-bundle-id verifier.
+      assert.equal(receipt.bundleId, BUNDLE, name);
+    }),
+  );
 });
 
 test('the endpoint accepts any bundle id without a wildcard verifier', () => {
@@ -198,19 +229,28 @@ test('the endpoint accepts any bundle id without a wildcard verifier', () => {
   // one. Two receipts carrying different bundle ids both verify against one
   // endpoint instance, which has no bundleId option to give it.
   const endpoint = new node.VerifyReceiptEndpoint({
-    trustedRoots: node.appleReceiptRoots(), environment: 'Sandbox',
+    trustedRoots: node.appleReceiptRoots(),
+    environment: 'Sandbox',
   });
-  const bundles = { 'receipt-sandbox-g5': 'dev.bonzer.weeka.app',
-    'receipt-sandbox-legacy': 'com.nutcall.alert' };
+  const bundles = {
+    'receipt-sandbox-g5': 'dev.bonzer.weeka.app',
+    'receipt-sandbox-legacy': 'com.nutcall.alert',
+  };
   for (const [fixture, bundleId] of Object.entries(bundles)) {
     const data = repo(`fixtures/public-receipts/${fixture}.b64`).toString('ascii').trim();
     const response = endpoint.verifyReceipt({ 'receipt-data': data });
     assert.equal(response.status, 0, fixture);
     assert.equal(response.receipt.bundle_id, bundleId);
   }
-  assert.ok(!('bundleId' in new node.VerifyReceiptEndpoint({
-    trustedRoots: node.appleReceiptRoots(), environment: 'Sandbox',
-  })));
+  assert.ok(
+    !(
+      'bundleId' in
+      new node.VerifyReceiptEndpoint({
+        trustedRoots: node.appleReceiptRoots(),
+        environment: 'Sandbox',
+      })
+    ),
+  );
 });
 
 // --- (4) a receipt attribute type above 2^31 - 1 -------------------------
@@ -237,25 +277,42 @@ const OID_DATA = Buffer.from('2a864886f70d010701', 'hex');
 const OID_SHA256 = Buffer.from('608648016503040201', 'hex');
 
 function cmsAround(payload) {
-  const signerInfo = tlv(SEQUENCE,
+  const signerInfo = tlv(
+    SEQUENCE,
     tlv(INTEGER, Buffer.from([1])),
     tlv(SEQUENCE, tlv(SEQUENCE), tlv(INTEGER, Buffer.from([1]))),
     tlv(SEQUENCE, tlv(OID, OID_SHA256)),
     tlv(SEQUENCE),
-    tlv(OCTET_STRING));
-  return tlv(SEQUENCE,
+    tlv(OCTET_STRING),
+  );
+  return tlv(
+    SEQUENCE,
     tlv(OID, OID_SIGNED_DATA),
-    tlv(CONTEXT_0, tlv(SEQUENCE,
-      tlv(INTEGER, Buffer.from([1])),
-      tlv(SET),
-      tlv(SEQUENCE, tlv(OID, OID_DATA), tlv(CONTEXT_0, tlv(OCTET_STRING, payload))),
-      tlv(CONTEXT_0),
-      tlv(SET, signerInfo))));
+    tlv(
+      CONTEXT_0,
+      tlv(
+        SEQUENCE,
+        tlv(INTEGER, Buffer.from([1])),
+        tlv(SET),
+        tlv(SEQUENCE, tlv(OID, OID_DATA), tlv(CONTEXT_0, tlv(OCTET_STRING, payload))),
+        tlv(CONTEXT_0),
+        tlv(SET, signerInfo),
+      ),
+    ),
+  );
 }
 
 /** A one-attribute receipt payload whose type INTEGER is `typeBytes`. */
-const payloadWithType = (typeBytes) => tlv(SET, tlv(SEQUENCE,
-  tlv(INTEGER, Buffer.from(typeBytes)), tlv(INTEGER, Buffer.from([1])), tlv(OCTET_STRING)));
+const payloadWithType = (typeBytes) =>
+  tlv(
+    SET,
+    tlv(
+      SEQUENCE,
+      tlv(INTEGER, Buffer.from(typeBytes)),
+      tlv(INTEGER, Buffer.from([1])),
+      tlv(OCTET_STRING),
+    ),
+  );
 
 // 2^31 - 1 is the largest type a port with an int-typed attribute field can
 // hold. Above it the value is unrepresentable, and a port that maps it onto

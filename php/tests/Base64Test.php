@@ -28,8 +28,10 @@ use PHPUnit\Framework\TestCase;
  * reader it was ported from — and these tests exist so that stays a decision
  * rather than an accident.
  *
- * The security argument for why the divergence is not exploitable is in
- * {@see testTrailingGarbageCannotChangeAVerifiedClaim}.
+ * `decode()`'s leniency now applies only to `x5c` entries and legacy receipt
+ * base64 — the compact-JWS header, payload and signature segments go through
+ * {@see Base64::decodeStrict()} instead, pinned by
+ * {@see testCompactJwsSegmentsRejectWhatDecodeWouldHaveTolerated} below.
  */
 #[CoversClass(Base64::class)]
 final class Base64Test extends TestCase
@@ -81,38 +83,124 @@ final class Base64Test extends TestCase
     }
 
     /**
-     * Why the leniency is not forgeable, which is the part that matters.
-     *
-     * An ES256 JWS signature covers the literal `header.payload` segment TEXT.
-     * Garbage tolerated inside those two segments therefore changes the
-     * signing input and breaks the signature; only the signature segment is
-     * malleable, and rewriting it cannot change a claim. So the divergence
-     * costs a byte-for-byte disagreement about which encodings are accepted,
-     * never a disagreement about what a verified payload says.
+     * The three compact-JWS segments (RFC 7515 §2) reject exactly what
+     * `decode()` above would have tolerated — a trailing out-of-alphabet
+     * byte skipped rather than rejected. None of the three is malleable any
+     * more: garbage appended to the signature segment used to decode-and-
+     * ignore its way to an accepted claim (the divergence
+     * `testBytesOutsideBothAlphabetsAreSkippedWhereverTheyAppear` above still
+     * pins for the shared, unrelated `decode()` callers); now every one of
+     * the three segments fails closed with `INVALID_JWS_FORMAT`, matching
+     * `fixtures/cases.json`'s `transaction/reject-signature-segment-*`
+     * vectors.
      */
-    public function testTrailingGarbageCannotChangeAVerifiedClaim(): void
+    public function testCompactJwsSegmentsRejectWhatDecodeWouldHaveTolerated(): void
     {
         $pki = MintedPki::get();
         $jws = $pki->jws(MintedPki::transactionClaims());
         $verifier = new JwsVerifier([$pki->rootDer], 'com.example.app', [Environment::Sandbox]);
         [$header, $payload, $signature] = explode('.', $jws);
 
-        // Malleable: the signature segment tolerates it, and the claims are
-        // the claims Apple signed, unchanged.
+        // Sanity check: the genuine JWS still verifies untouched.
         self::assertSame(
             '2000000000000001',
-            $verifier->verifyTransaction($header . '.' . $payload . '.' . $signature . "\x00")->transactionId,
+            $verifier->verifyTransaction($header . '.' . $payload . '.' . $signature)->transactionId,
         );
 
-        // Not malleable: the same byte in a signed segment is skipped by the
-        // decoder but still changes the signing input, so the check fails.
-        foreach ([$header . "\x00" . '.' . $payload, $header . '.' . $payload . "\x00"] as $tampered) {
+        foreach ([
+            'header' => $header . "\x00" . '.' . $payload . '.' . $signature,
+            'payload' => $header . '.' . $payload . "\x00" . '.' . $signature,
+            'signature' => $header . '.' . $payload . '.' . $signature . "\x00",
+        ] as $what => $tampered) {
             try {
-                $verifier->verifyTransaction($tampered . '.' . $signature);
-                self::fail('a tampered signed segment was ACCEPTED');
+                $verifier->verifyTransaction($tampered);
+                self::fail("a byte outside the base64url alphabet in the {$what} segment was ACCEPTED");
             } catch (VerificationException $e) {
-                self::assertSame(Reason::InvalidSignature, $e->reason);
+                self::assertSame(Reason::InvalidJwsFormat, $e->reason, "{$what} segment");
             }
         }
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function invalidCompactJwsSegmentProvider(): iterable
+    {
+        yield 'trailing junk' => ['QUJD' . "\x00"];
+        yield 'padded' => ['QUJD=='];
+        yield 'a lone equals' => ['='];
+        yield 'impossible length (len % 4 == 1)' => ['QUJDR'];
+        yield 'standard-alphabet + is not base64url' => ['+++++++='];
+        // 'TR' decodes the same top byte as 'TQ' but its low 2 bits are '01'
+        // rather than the canonical '00' — the noncanonical spelling this
+        // pins is exactly what `fixtures/cases.json`'s
+        // `transaction/reject-signature-segment-noncanonical` exercises.
+        yield 'noncanonical final character' => ['TR'];
+    }
+
+    #[DataProvider('invalidCompactJwsSegmentProvider')]
+    public function testDecodeStrictRejectsInvalidSegments(string $segment): void
+    {
+        self::assertNull(Base64::decodeStrict($segment));
+    }
+
+    /** @return iterable<string, array{string, string}> */
+    public static function validCompactJwsSegmentProvider(): iterable
+    {
+        yield 'unpadded, as a JWS segment carries it' => ['QUJDRA', 'ABCD'];
+        yield 'empty' => ['', ''];
+        yield 'canonical final character' => ['TQ', "\x4d"];
+    }
+
+    #[DataProvider('validCompactJwsSegmentProvider')]
+    public function testDecodeStrictAcceptsCanonicalSegments(string $segment, string $expected): void
+    {
+        self::assertSame($expected, Base64::decodeStrict($segment));
+    }
+
+    /**
+     * {@see Base64::decodeReceipt()} is a third rule, distinct from both
+     * `decode()`'s skip-and-ignore leniency above and `decodeStrict()`'s
+     * canonical-unpadded rule: Apple's own contract for what
+     * `base64EncodedString(options:)` can emit, pinned in
+     * `fixtures/cases.json`'s "Receipt base64" paragraph and exercised
+     * end-to-end by the `receipt-base64/*` and `endpoint/receipt-data-*`
+     * conformance cases. These tests pin the decoder function directly.
+     *
+     * @return iterable<string, array{string, string}>
+     */
+    public static function validReceiptBase64Provider(): iterable
+    {
+        yield 'standard alphabet, padded' => ['QUJD', 'ABC'];
+        yield 'standard alphabet, unpadded' => ['QUJDRA', 'ABCD'];
+        yield 'base64url alphabet, padded' => ['LV5f', "\x2d\x5e\x5f"];
+        yield 'base64url alphabet, unpadded' => ['LV5fXQ', "\x2d\x5e\x5f\x5d"];
+        yield 'CR, LF, space and tab anywhere' => ["QU\tJ\r\nD RA==", 'ABCD'];
+        yield 'leading and trailing whitespace' => ["  QUJDRA==\n", 'ABCD'];
+    }
+
+    #[DataProvider('validReceiptBase64Provider')]
+    public function testDecodeReceiptAcceptsApplesContract(string $text, string $expected): void
+    {
+        self::assertSame($expected, Base64::decodeReceipt($text));
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function invalidReceiptBase64Provider(): iterable
+    {
+        yield 'empty' => [''];
+        yield 'whitespace only' => [" \t\r\n"];
+        yield 'a character outside both alphabets' => ['QUJD!'];
+        yield 'text after the padding' => ['QUJDRA==XY'];
+        yield 'both alphabets in one string' => ['ab+c-d'];
+        yield 'impossible length (len % 4 == 1)' => ['QUJDR'];
+        yield 'overpadded (receipt-base64/reject-overpadded: canonical "==" plus two extra "=")' => ['QUJDQQ===='];
+        yield 'underpadded (receipt-base64/reject-underpadded: one of two required "=" removed)' => ['QUJDQQ='];
+        yield 'impossible data length hidden by padding (receipt-base64/reject-impossible-length-padded: 5 data chars + "===" is 8 in total)' => ['QUJDQ==='];
+        yield 'padding only' => ['===='];
+    }
+
+    #[DataProvider('invalidReceiptBase64Provider')]
+    public function testDecodeReceiptRejectsWhatApplesContractRejects(string $text): void
+    {
+        self::assertNull(Base64::decodeReceipt($text));
     }
 }

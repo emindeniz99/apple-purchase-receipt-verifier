@@ -86,11 +86,17 @@ thousand mutated ones, through both builds and requires the same verdict.
 
 `npm run test:runtimes:web` runs the web build on Node, on the Vercel Edge
 runtime (`@edge-runtime/vm`) and on Cloudflare workerd configured with no
-compatibility flags at all. Fastly Compute and Akamai EdgeWorkers have no
-local runtime to run it in, so the claim for them rests on what the build
-asks of a runtime rather than on a passing run. That list is short:
+compatibility flags at all. `npm run test:runtimes:fastly` adds Fastly
+Compute: `js-compute-runtime` builds the smoke to wasm and Fastly's own
+local runtime, viceroy, serves it. viceroy is a Rust binary rather than an
+npm package, so it is a separate script; install it with
+`cargo install viceroy --locked` and the runner says so if it is missing.
+
+Akamai EdgeWorkers has no local runtime to run it in, so the claim for it
+rests on what the build asks of a runtime rather than on a passing run.
+That list is short:
 `crypto.subtle.digest` (SHA-1, SHA-256), `crypto.subtle.importKey` in
-`'spki'` format, `crypto.subtle.verify` for RSASSA-PKCS1-v1_5 (SHA-1 and
+`'jwk'` format, `crypto.subtle.verify` for RSASSA-PKCS1-v1_5 (SHA-1 and
 SHA-256) and for ECDSA (P-256 and P-384, SHA-256 and SHA-384), plus
 `TextDecoder`. **SHA-1 with RSASSA-PKCS1-v1_5 is not optional**: Apple's
 legacy receipt chain is signed `sha1WithRSAEncryption` from the leaf up, so

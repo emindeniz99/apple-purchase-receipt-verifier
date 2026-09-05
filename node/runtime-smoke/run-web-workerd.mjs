@@ -17,8 +17,10 @@ if (!spec) {
 }
 
 const here = (rel) => fileURLToPath(new URL(rel, import.meta.url));
-const config = readFileSync(here('./web-workerd.capnp'), 'utf8')
-  .replace(/compatibilityDate = "[^"]*"/, `compatibilityDate = "${date}"`);
+const config = readFileSync(here('./web-workerd.capnp'), 'utf8').replace(
+  /compatibilityDate = "[^"]*"/,
+  `compatibilityDate = "${date}"`,
+);
 
 // Written next to web-workerd.capnp because every `embed` path in it is
 // resolved relative to the config file's own directory.

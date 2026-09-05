@@ -330,7 +330,7 @@ func verifyES256(leaf *x509.Certificate, signingInput, signatureB64 string) erro
 	}
 	signature, err := decodeBase64URLStrict(signatureB64)
 	if err != nil {
-		return newError(ReasonInvalidSignature, "the signature segment is not valid base64url")
+		return wrapError(ReasonInvalidJWSFormat, err, "signature is not valid base64url")
 	}
 	if len(signature) != 64 {
 		return newError(ReasonInvalidSignature,

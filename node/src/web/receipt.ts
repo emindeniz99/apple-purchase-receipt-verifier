@@ -1,16 +1,21 @@
 import { Reason, VerificationError } from '../errors.js';
-import { base64Decode, concatBytes, timingSafeBytesEqual } from '../bytes.js';
+import { concatBytes, receiptBase64DecodeStrict, timingSafeBytesEqual } from '../bytes.js';
 import {
-  findMessageDigestAttribute, findSignerCertIndex, parseCms, signedAttrsSignedBytes,
+  findMessageDigestAttribute,
+  findSignerCertIndex,
+  parseCms,
+  signedAttrsSignedBytes,
   type ParsedCms,
 } from '../cms.js';
 import { parseReceiptPayload } from '../receipt-payload.js';
 import { parseCertificate, type ParsedCertificate } from '../x509.js';
 import { buildAndValidatePath, normalizeRoots, type RootInput } from './chain.js';
-import { OID_RSA_ENCRYPTION, digest, verifyRsaPkcs1 } from './crypto.js';
+import { digest, verifyRsaPkcs1 } from './crypto.js';
+import { OID_RSA_ENCRYPTION } from './jwk.js';
 
 export type {
-  RawAppReceipt as AppReceipt, RawInAppPurchase as InAppPurchase,
+  RawAppReceipt as AppReceipt,
+  RawInAppPurchase as InAppPurchase,
 } from '../receipt-payload.js';
 
 import type { RawAppReceipt } from '../receipt-payload.js';
@@ -33,13 +38,29 @@ export interface ReceiptVerifierOptions {
 }
 
 /**
+ * Decodes a client-supplied `receipt-data` string to DER per the
+ * receipt-data contract, throwing {@link Reason.INVALID_RECEIPT_FORMAT}
+ * (rather than silently skipping bad characters) when it does not conform.
+ * Matches the Node build's function of the same name in `../receipt.js`.
+ */
+function decodeReceiptDataString(text: string): Uint8Array {
+  const decoded = receiptBase64DecodeStrict(text);
+  if (decoded === null) {
+    throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'receipt-data is not valid base64');
+  }
+  return decoded;
+}
+
+/**
  * Chain + signature verification WITHOUT the bundle-id claim check — the
  * primitive under {@link ReceiptVerifier}, matching the Node build's
  * `verifyReceiptCore`. Callers that unlock products must check `bundleId`
  * themselves or use ReceiptVerifier.
  */
-export async function verifyReceiptCore(der: Uint8Array,
-  trustedRoots: RootInput[]): Promise<RawAppReceipt> {
+export async function verifyReceiptCore(
+  der: Uint8Array,
+  trustedRoots: RootInput[],
+): Promise<RawAppReceipt> {
   const roots = normalizeRoots(trustedRoots);
   if (!(der instanceof Uint8Array) || der.length === 0) {
     throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'receipt is empty');
@@ -66,20 +87,23 @@ export async function verifyReceiptCore(der: Uint8Array,
     // receipt carrying more of them than a chain can hold is rejected here
     // rather than parsed and searched.
     if (cms.certificates.length > MAX_EMBEDDED_CERTIFICATES) {
-      throw new VerificationError(Reason.INVALID_CHAIN,
-        `receipt embeds more than ${MAX_EMBEDDED_CERTIFICATES} certificates`);
+      throw new VerificationError(
+        Reason.INVALID_CHAIN,
+        `receipt embeds more than ${MAX_EMBEDDED_CERTIFICATES} certificates`,
+      );
     }
     const embedded = cms.certificates.map((raw) => parseCertificate(raw));
     const signerIndex = findSignerCertIndex(cms);
     if (signerIndex < 0) {
-      throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT,
-        'signer certificate not embedded');
+      throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'signer certificate not embedded');
     }
     const signerCert = embedded[signerIndex]!;
     await buildAndValidatePath(signerCert, embedded, roots, at);
     if (!signerCert.hasExtension(RECEIPT_SIGNER_OID)) {
-      throw new VerificationError(Reason.INVALID_CERTIFICATE_PURPOSE,
-        `receipt signer certificate lacks Apple receipt-signing marker OID ${RECEIPT_SIGNER_OID}`);
+      throw new VerificationError(
+        Reason.INVALID_CERTIFICATE_PURPOSE,
+        `receipt signer certificate lacks Apple receipt-signing marker OID ${RECEIPT_SIGNER_OID}`,
+      );
     }
     await verifyCmsSignature(cms, signerCert);
   } catch (cause) {
@@ -111,17 +135,25 @@ export class ReceiptVerifier {
 
   /**
    * Verifies a receipt (DER bytes, or its base64 string — the usual client
-   * transport form). Passing `deviceGuid` additionally enforces the
-   * device-hash binding: SHA1(guid ‖ opaqueValue ‖ bundleIdBytes) must equal
-   * attribute 5 (optional — PLAN.md D4).
+   * transport form). A string is decoded per the receipt-data contract
+   * (RFC 4648, standard or base64url alphabet, not mixed, padding optional —
+   * see {@link receiptBase64DecodeStrict}, matching the Node build); anything
+   * that decode rejects throws {@link Reason.INVALID_RECEIPT_FORMAT}. Passing
+   * `deviceGuid` additionally enforces the device-hash binding:
+   * SHA1(guid ‖ opaqueValue ‖ bundleIdBytes) must equal attribute 5
+   * (optional — PLAN.md D4).
    */
-  async verify(receipt: Uint8Array | string,
-    deviceGuid: Uint8Array | null = null): Promise<RawAppReceipt> {
-    const der = typeof receipt === 'string' ? base64Decode(receipt) : receipt;
+  async verify(
+    receipt: Uint8Array | string,
+    deviceGuid: Uint8Array | null = null,
+  ): Promise<RawAppReceipt> {
+    const der = typeof receipt === 'string' ? decodeReceiptDataString(receipt) : receipt;
     const fields = await verifyReceiptCore(der, this.#roots);
     if (fields.bundleId !== this.#bundleId) {
-      throw new VerificationError(Reason.WRONG_BUNDLE_ID,
-        `expected ${this.#bundleId} but receipt has ${fields.bundleId}`);
+      throw new VerificationError(
+        Reason.WRONG_BUNDLE_ID,
+        `expected ${this.#bundleId} but receipt has ${fields.bundleId}`,
+      );
     }
     if (deviceGuid !== null) {
       await verifyDeviceHash(fields, deviceGuid);
@@ -130,8 +162,7 @@ export class ReceiptVerifier {
   }
 }
 
-async function verifyCmsSignature(cms: ParsedCms,
-  signerCert: ParsedCertificate): Promise<void> {
+async function verifyCmsSignature(cms: ParsedCms, signerCert: ParsedCertificate): Promise<void> {
   const { digest: digestName, signedAttrs, signature } = cms.signerInfo;
   if (signerCert.publicKeyAlgorithmOid !== OID_RSA_ENCRYPTION) {
     throw new VerificationError(Reason.INVALID_SIGNATURE, 'receipt signer key is not RSA');
@@ -141,11 +172,17 @@ async function verifyCmsSignature(cms: ParsedCms,
     const contentDigest = await digest(digestName, cms.content);
     const messageDigest = findMessageDigestAttribute(signedAttrs);
     if (messageDigest === null || !timingSafeBytesEqual(messageDigest, contentDigest)) {
-      throw new VerificationError(Reason.INVALID_SIGNATURE,
-        'messageDigest attribute does not match content');
+      throw new VerificationError(
+        Reason.INVALID_SIGNATURE,
+        'messageDigest attribute does not match content',
+      );
     }
-    valid = await verifyRsaPkcs1(signerCert.spki, digestName, signature,
-      signedAttrsSignedBytes(signedAttrs));
+    valid = await verifyRsaPkcs1(
+      signerCert.spki,
+      digestName,
+      signature,
+      signedAttrsSignedBytes(signedAttrs),
+    );
   } else {
     valid = await verifyRsaPkcs1(signerCert.spki, digestName, signature, cms.content);
   }
@@ -156,13 +193,19 @@ async function verifyCmsSignature(cms: ParsedCms,
 
 async function verifyDeviceHash(fields: RawAppReceipt, deviceGuid: Uint8Array): Promise<void> {
   if (fields.opaqueValue === null || fields.sha1Hash === null || fields.bundleIdBytes === null) {
-    throw new VerificationError(Reason.DEVICE_HASH_MISMATCH,
-      'receipt lacks the attributes needed for the device-hash check');
+    throw new VerificationError(
+      Reason.DEVICE_HASH_MISMATCH,
+      'receipt lacks the attributes needed for the device-hash check',
+    );
   }
-  const computed = await digest('sha1',
-    concatBytes([deviceGuid, fields.opaqueValue, fields.bundleIdBytes]));
+  const computed = await digest(
+    'sha1',
+    concatBytes([deviceGuid, fields.opaqueValue, fields.bundleIdBytes]),
+  );
   if (!timingSafeBytesEqual(computed, fields.sha1Hash)) {
-    throw new VerificationError(Reason.DEVICE_HASH_MISMATCH,
-      'computed device hash does not match attribute 5');
+    throw new VerificationError(
+      Reason.DEVICE_HASH_MISMATCH,
+      'computed device hash does not match attribute 5',
+    );
   }
 }

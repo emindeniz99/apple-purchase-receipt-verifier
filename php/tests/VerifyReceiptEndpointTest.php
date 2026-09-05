@@ -9,6 +9,7 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\VerifyReceiptEndpoint;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\FrozenClock;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\MintedPki;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Shape;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\TestPki;
 use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -39,16 +40,18 @@ final class VerifyReceiptEndpointTest extends TestCase
             'receipt-data' => base64_encode(MintedPki::get()->receipt()),
         ]);
 
+        $receipt = Shape::asArray($body['receipt'], 'receipt');
+
         self::assertSame(0, $body['status']);
         self::assertSame('Sandbox', $body['environment']);
-        self::assertSame('ProductionSandbox', $body['receipt']['receipt_type']);
-        self::assertSame('com.example.app', $body['receipt']['bundle_id']);
-        self::assertSame('1.2.3', $body['receipt']['application_version']);
-        self::assertSame('1.0', $body['receipt']['original_application_version']);
-        self::assertSame('2024-08-06 12:00:00 Etc/GMT', $body['receipt']['receipt_creation_date']);
-        self::assertSame('1722945600000', $body['receipt']['receipt_creation_date_ms']);
-        self::assertSame('2024-08-06 05:00:00 America/Los_Angeles', $body['receipt']['receipt_creation_date_pst']);
-        self::assertSame([], $body['receipt']['in_app']);
+        self::assertSame('ProductionSandbox', $receipt['receipt_type']);
+        self::assertSame('com.example.app', $receipt['bundle_id']);
+        self::assertSame('1.2.3', $receipt['application_version']);
+        self::assertSame('1.0', $receipt['original_application_version']);
+        self::assertSame('2024-08-06 12:00:00 Etc/GMT', $receipt['receipt_creation_date']);
+        self::assertSame('1722945600000', $receipt['receipt_creation_date_ms']);
+        self::assertSame('2024-08-06 05:00:00 America/Los_Angeles', $receipt['receipt_creation_date_pst']);
+        self::assertSame([], $receipt['in_app']);
     }
 
     /** @return iterable<string, array{mixed}> */
@@ -112,9 +115,11 @@ final class VerifyReceiptEndpointTest extends TestCase
             'receipt-data' => base64_encode(MintedPki::get()->receipt()),
         ]);
 
-        self::assertSame('2025-01-01 00:00:00 Etc/GMT', $body['receipt']['request_date']);
-        self::assertSame('1735689600000', $body['receipt']['request_date_ms']);
-        self::assertSame('2024-12-31 16:00:00 America/Los_Angeles', $body['receipt']['request_date_pst']);
+        $receipt = Shape::asArray($body['receipt'], 'receipt');
+
+        self::assertSame('2025-01-01 00:00:00 Etc/GMT', $receipt['request_date']);
+        self::assertSame('1735689600000', $receipt['request_date_ms']);
+        self::assertSame('2024-12-31 16:00:00 America/Los_Angeles', $receipt['request_date_pst']);
     }
 
     /**
@@ -137,7 +142,8 @@ final class VerifyReceiptEndpointTest extends TestCase
         foreach ($cases as [$utc, $expected]) {
             $body = $this->endpoint(Environment::Sandbox, new FrozenClock(new DateTimeImmutable($utc)))
                 ->verifyReceipt(['receipt-data' => base64_encode(MintedPki::get()->receipt())]);
-            self::assertSame($expected, $body['receipt']['request_date_pst'], $utc);
+            $receipt = Shape::asArray($body['receipt'], 'receipt');
+            self::assertSame($expected, $receipt['request_date_pst'], $utc);
         }
     }
 
@@ -227,15 +233,17 @@ final class VerifyReceiptEndpointTest extends TestCase
         $decoded = json_decode($this->endpoint()->verifyReceiptJson($request), true);
 
         self::assertSame(0, $decoded['status']);
-        self::assertSame('com.example.app', $decoded['receipt']['bundle_id']);
+        self::assertSame('com.example.app', Shape::asArray($decoded['receipt'], 'receipt')['bundle_id']);
     }
 
     public function testAHugeBodyIsAStatusRatherThanAnException(): void
     {
-        self::assertSame(21002, json_decode(
+        $decoded = Shape::asArray(json_decode(
             $this->endpoint()->verifyReceiptJson(str_repeat('{', 100000)),
             true,
-        )['status']);
+        ), 'response body');
+
+        self::assertSame(21002, $decoded['status']);
     }
 
     /**
@@ -258,9 +266,11 @@ final class VerifyReceiptEndpointTest extends TestCase
                 TestPki::attribute(1719, TestPki::encodeInteger(1)),
             )),
         );
-        $entry = $this->endpoint()->verifyReceipt([
+        $body = $this->endpoint()->verifyReceipt([
             'receipt-data' => base64_encode($pki->receipt($payload)),
-        ])['receipt']['in_app'][0];
+        ]);
+        $inApp = Shape::asArray(Shape::asArray($body['receipt'], 'receipt')['in_app'], 'in_app');
+        $entry = Shape::asArray($inApp[0] ?? null, 'in_app[0]');
 
         self::assertSame('2', $entry['quantity']);
         self::assertSame('42', $entry['web_order_line_item_id']);

@@ -5,7 +5,7 @@
  * builds return the same reason for the same payload.
  */
 import { Environment, Reason, VerificationError } from './errors.js';
-import { base64Decode, utf8Decode } from './bytes.js';
+import { base64UrlDecodeStrict, utf8Decode } from './bytes.js';
 
 /** Apple marker OID: leaf certificate used for App Store signing. */
 export const LEAF_OID = '1.2.840.113635.100.6.11.1';
@@ -93,35 +93,62 @@ export function splitJws(jws: string): JwsSegments {
   }
   const parts = jws.split('.');
   if (parts.length !== 3) {
-    throw new VerificationError(Reason.INVALID_JWS_FORMAT,
-      `expected 3 dot-separated segments, got ${parts.length}`);
+    throw new VerificationError(
+      Reason.INVALID_JWS_FORMAT,
+      `expected 3 dot-separated segments, got ${parts.length}`,
+    );
   }
   const header = parseJsonSegment(parts[0]!, 'header');
   if (header['alg'] !== 'ES256') {
-    throw new VerificationError(Reason.INVALID_JWS_FORMAT,
-      `alg must be ES256, got ${header['alg']}`);
+    throw new VerificationError(
+      Reason.INVALID_JWS_FORMAT,
+      `alg must be ES256, got ${header['alg']}`,
+    );
   }
   const x5c = header['x5c'];
   if (!Array.isArray(x5c) || x5c.length !== 3 || !x5c.every((c) => typeof c === 'string')) {
-    throw new VerificationError(Reason.INVALID_JWS_FORMAT,
-      'x5c must contain exactly 3 certificates');
+    throw new VerificationError(
+      Reason.INVALID_JWS_FORMAT,
+      'x5c must contain exactly 3 certificates',
+    );
   }
   return {
-    headerB64: parts[0]!, payloadB64: parts[1]!, signatureB64: parts[2]!,
+    headerB64: parts[0]!,
+    payloadB64: parts[1]!,
+    signatureB64: parts[2]!,
     x5c: x5c as string[],
   };
 }
 
+/**
+ * Strict, canonical base64url decode of one compact-JWS segment (header,
+ * payload, or signature) — RFC 7515 §2. Unlike the x5c entries and legacy
+ * receipt base64 elsewhere in this library, a compact-JWS segment must be
+ * unpadded canonical base64url: no character outside `A-Za-z0-9-_`, no `=`,
+ * no impossible length, and no final character with unused bits set.
+ */
+export function decodeJwsSegment(segment: string, what: string): Uint8Array {
+  const decoded = base64UrlDecodeStrict(segment);
+  if (decoded === null) {
+    throw new VerificationError(Reason.INVALID_JWS_FORMAT, `${what} is not canonical base64url`);
+  }
+  return decoded;
+}
+
 export function parseJsonSegment(segment: string, what: string): Claims {
+  const decoded = decodeJwsSegment(segment, what);
   try {
-    const parsed: unknown = JSON.parse(utf8Decode(base64Decode(segment)));
+    const parsed: unknown = JSON.parse(utf8Decode(decoded));
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
       throw new Error('not a JSON object');
     }
     return parsed as Claims;
   } catch (cause) {
-    throw new VerificationError(Reason.INVALID_JWS_FORMAT,
-      `${what} is not valid base64url JSON`, cause);
+    throw new VerificationError(
+      Reason.INVALID_JWS_FORMAT,
+      `${what} is not valid base64url JSON`,
+      cause,
+    );
   }
 }
 
@@ -135,8 +162,7 @@ export function signedAtMillisOf(payload: Claims): number | null {
   if (typeof payload['signedDate'] === 'number') {
     return payload['signedDate'];
   }
-  return typeof payload['receiptCreationDate'] === 'number'
-    ? payload['receiptCreationDate'] : null;
+  return typeof payload['receiptCreationDate'] === 'number' ? payload['receiptCreationDate'] : null;
 }
 
 /**
@@ -174,13 +200,21 @@ export class JwsClaimChecker {
   readonly #maxSignedAgeMillis: number | null;
   readonly #clock: Clock;
 
-  constructor({ bundleId, acceptedEnvironments, appAppleId = null,
-    maxSignedAgeMillis = null, clock = null }: ClaimCheckerOptions) {
+  constructor({
+    bundleId,
+    acceptedEnvironments,
+    appAppleId = null,
+    maxSignedAgeMillis = null,
+    clock = null,
+  }: ClaimCheckerOptions) {
     if (typeof bundleId !== 'string' || bundleId.length === 0) {
       throw new TypeError('bundleId is required');
     }
-    if (!Array.isArray(acceptedEnvironments) || acceptedEnvironments.length === 0
-      || !acceptedEnvironments.every((e) => KNOWN_ENVIRONMENTS.has(e))) {
+    if (
+      !Array.isArray(acceptedEnvironments) ||
+      acceptedEnvironments.length === 0 ||
+      !acceptedEnvironments.every((e) => KNOWN_ENVIRONMENTS.has(e))
+    ) {
       throw new TypeError('acceptedEnvironments must be a non-empty array of known environments');
     }
     this.#bundleId = bundleId;
@@ -192,26 +226,37 @@ export class JwsClaimChecker {
 
   requireBundleId(actual: string | undefined): void {
     if (actual !== this.#bundleId) {
-      throw new VerificationError(Reason.WRONG_BUNDLE_ID,
-        `expected ${this.#bundleId} but payload has ${actual}`);
+      throw new VerificationError(
+        Reason.WRONG_BUNDLE_ID,
+        `expected ${this.#bundleId} but payload has ${actual}`,
+      );
     }
   }
 
   requireAcceptedEnvironment(claim: string | undefined): string {
-    if (claim === undefined || !KNOWN_ENVIRONMENTS.has(claim)
-      || !this.#acceptedEnvironments.has(claim)) {
-      throw new VerificationError(Reason.WRONG_ENVIRONMENT,
-        `payload environment ${claim} not in accepted set`);
+    if (
+      claim === undefined ||
+      !KNOWN_ENVIRONMENTS.has(claim) ||
+      !this.#acceptedEnvironments.has(claim)
+    ) {
+      throw new VerificationError(
+        Reason.WRONG_ENVIRONMENT,
+        `payload environment ${claim} not in accepted set`,
+      );
     }
     return claim;
   }
 
   /** Production AppTransactions must name the configured app Apple id. */
   requireAppAppleId(environment: string, actual: number | undefined): void {
-    if (environment === Environment.PRODUCTION
-      && (this.#appAppleId === null || this.#appAppleId !== actual)) {
-      throw new VerificationError(Reason.WRONG_APP_APPLE_ID,
-        `expected ${this.#appAppleId} but payload has ${actual}`);
+    if (
+      environment === Environment.PRODUCTION &&
+      (this.#appAppleId === null || this.#appAppleId !== actual)
+    ) {
+      throw new VerificationError(
+        Reason.WRONG_APP_APPLE_ID,
+        `expected ${this.#appAppleId} but payload has ${actual}`,
+      );
     }
   }
 
@@ -222,10 +267,15 @@ export class JwsClaimChecker {
    * left on the system clock in its no-signing-date fallback.
    */
   requireFresh(signedAtMillis: number | null): void {
-    if (this.#maxSignedAgeMillis !== null && signedAtMillis !== null
-      && this.#clock().getTime() - signedAtMillis > this.#maxSignedAgeMillis) {
-      throw new VerificationError(Reason.STALE_PAYLOAD,
-        `payload signed at ${signedAtMillis} exceeds max age ${this.#maxSignedAgeMillis}ms`);
+    if (
+      this.#maxSignedAgeMillis !== null &&
+      signedAtMillis !== null &&
+      this.#clock().getTime() - signedAtMillis > this.#maxSignedAgeMillis
+    ) {
+      throw new VerificationError(
+        Reason.STALE_PAYLOAD,
+        `payload signed at ${signedAtMillis} exceeds max age ${this.#maxSignedAgeMillis}ms`,
+      );
     }
   }
 }

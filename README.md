@@ -96,10 +96,10 @@ global `Buffer` the DER handling uses, and CI runs both spellings.
 `crypto.subtle` alone: same class names, same options, same
 `VerificationError` reasons, with every method returning a Promise. It
 imports no `node:` module and touches no `Buffer`, so it also runs where
-only WebCrypto exists: the Vercel Edge runtime, Next.js edge middleware and
-Cloudflare Workers with no compatibility flags, each of them exercised on
-every push, and — by the same property, though there is no local runtime to
-run it in — Fastly Compute and Akamai EdgeWorkers. Neither entry point reads
+only WebCrypto exists: the Vercel Edge runtime, Next.js edge middleware,
+Cloudflare Workers with no compatibility flags and Fastly Compute, each of
+them exercised on every push, and — by the same property, though there is no
+local runtime to run it in — Akamai EdgeWorkers. Neither entry point reads
 a file, so `appleReceiptRoots()` and `appleJwsRoots()` work inside a bundle
 either way.
 

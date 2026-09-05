@@ -10,12 +10,16 @@ function fixture(name) {
 
 function endpoint(environment) {
   return new VerifyReceiptEndpoint({
-    trustedRoots: [fixture('receipt-root.der')], environment,
+    trustedRoots: [fixture('receipt-root.der')],
+    environment,
   });
 }
 
-const publicReceipt = (name) => readFileSync(fileURLToPath(
-  new URL(`../../fixtures/public-receipts/${name}.b64`, import.meta.url)), 'ascii').trim();
+const publicReceipt = (name) =>
+  readFileSync(
+    fileURLToPath(new URL(`../../fixtures/public-receipts/${name}.b64`, import.meta.url)),
+    'ascii',
+  ).trim();
 
 const request = () => ({ 'receipt-data': fixture('receipt.der').toString('base64') });
 
@@ -77,11 +81,14 @@ test('verifyReceiptJson pins the wire types of the response body', () => {
 
 test('verifyReceiptJson renders is_in_intro_offer_period as "true"/"false"', () => {
   const ep = new VerifyReceiptEndpoint({
-    trustedRoots: appleReceiptRoots(), environment: 'Sandbox',
+    trustedRoots: appleReceiptRoots(),
+    environment: 'Sandbox',
   });
-  const json = ep.verifyReceiptJson(JSON.stringify({
-    'receipt-data': publicReceipt('receipt-sandbox-g5'),
-  }));
+  const json = ep.verifyReceiptJson(
+    JSON.stringify({
+      'receipt-data': publicReceipt('receipt-sandbox-g5'),
+    }),
+  );
   assert.ok(json.includes('"is_in_intro_offer_period":"false"'), json);
   const { receipt } = JSON.parse(json);
   assert.ok(receipt.in_app.length > 0);
@@ -91,14 +98,25 @@ test('verifyReceiptJson renders is_in_intro_offer_period as "true"/"false"', () 
 });
 
 test('verifyReceiptJson omits receipt and environment on a non-zero status', () => {
-  assert.equal(endpoint('Production').verifyReceiptJson(JSON.stringify(request())),
-    '{"status":21007}');
+  assert.equal(
+    endpoint('Production').verifyReceiptJson(JSON.stringify(request())),
+    '{"status":21007}',
+  );
 });
 
 test('verifyReceiptJson answers 21002 for a body that is not a JSON object', () => {
   const ep = endpoint('Sandbox');
-  for (const body of ['', 'not json', '{', '[]', '[{"receipt-data":"x"}]', 'null',
-    '3', '"receipt"', 'true']) {
+  for (const body of [
+    '',
+    'not json',
+    '{',
+    '[]',
+    '[{"receipt-data":"x"}]',
+    'null',
+    '3',
+    '"receipt"',
+    'true',
+  ]) {
     assert.equal(ep.verifyReceiptJson(body), '{"status":21002}', body);
   }
 });

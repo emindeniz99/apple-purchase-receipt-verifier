@@ -6,8 +6,10 @@ mirroring the Java implementation check-for-check."""
 import base64
 import binascii
 import json
+import re
 import time
-from typing import Any, Callable, Dict, Iterable, Optional
+from collections.abc import Iterable
+from typing import Any, Callable, Optional
 
 from cryptography import x509
 from cryptography.exceptions import InvalidSignature
@@ -24,14 +26,34 @@ LEAF_OID = x509.ObjectIdentifier("1.2.840.113635.100.6.11.1")
 INTERMEDIATE_OID = x509.ObjectIdentifier("1.2.840.113635.100.6.2.1")
 
 
-def _b64url(segment, what):
+#: RFC 7515 section 2 compact-JWS segments are unpadded canonical base64url:
+#: this alphabet only, no "=" padding.
+_B64URL_RE = re.compile(r"^[A-Za-z0-9_-]*$")
+
+
+def _b64url(segment: str, what: str) -> bytes:
+    # Reject anything outside the base64url alphabet (incl. "=" padding) and
+    # any length base64 cannot represent, before decoding at all — Python's
+    # decoder silently discards non-alphabet characters otherwise, which
+    # would recover the original bytes from a corrupted segment.
+    if _B64URL_RE.match(segment) is None or len(segment) % 4 == 1:
+        raise VerificationError(Reason.INVALID_JWS_FORMAT, f"{what} is not valid base64url")
+    padded = segment + "=" * (-len(segment) % 4)
     try:
-        return base64.urlsafe_b64decode(segment + "=" * (-len(segment) % 4))
+        decoded = base64.urlsafe_b64decode(padded)
     except (binascii.Error, ValueError) as e:
         raise VerificationError(Reason.INVALID_JWS_FORMAT, f"{what} is not valid base64url") from e
+    # Canonical check: the decoder ignores unused bits in the final
+    # character, so a segment whose trailing bits are non-zero decodes to
+    # the same bytes as its canonical spelling. Re-encoding must round-trip
+    # to the original segment, or it isn't the canonical encoding of those
+    # bytes.
+    if base64.urlsafe_b64encode(decoded).rstrip(b"=").decode("ascii") != segment:
+        raise VerificationError(Reason.INVALID_JWS_FORMAT, f"{what} is not valid base64url")
+    return decoded
 
 
-def _json_segment(segment, what):
+def _json_segment(segment: str, what: str) -> "dict[str, Any]":
     try:
         parsed = json.loads(_b64url(segment, what))
     except (ValueError, UnicodeDecodeError) as e:
@@ -41,7 +63,7 @@ def _json_segment(segment, what):
     return parsed
 
 
-def _has_extension(cert, oid):
+def _has_extension(cert: x509.Certificate, oid: x509.ObjectIdentifier) -> bool:
     try:
         cert.extensions.get_extension_for_oid(oid)
         return True
@@ -76,11 +98,15 @@ class JwsVerifier:
         ``signedDate`` (PLAN.md §2.1 step 4) and never moves with the clock.
     """
 
-    def __init__(self, trusted_roots: Iterable[Any], bundle_id: str,
-                 accepted_environments: Iterable[str],
-                 app_apple_id: Optional[int] = None,
-                 max_signed_age_millis: Optional[int] = None,
-                 clock: Optional[Callable[[], float]] = None):
+    def __init__(
+        self,
+        trusted_roots: Iterable[Any],
+        bundle_id: str,
+        accepted_environments: Iterable[str],
+        app_apple_id: Optional[int] = None,
+        max_signed_age_millis: Optional[int] = None,
+        clock: Optional[Callable[[], float]] = None,
+    ):
         roots = list(trusted_roots)
         if not roots:
             raise ValueError("trusted_roots must not be empty")
@@ -88,7 +114,9 @@ class JwsVerifier:
             raise ValueError("bundle_id is required")
         environments = set(accepted_environments)
         if not environments or not environments.issubset(ENVIRONMENTS):
-            raise ValueError("accepted_environments must be a non-empty subset of known environments")
+            raise ValueError(
+                "accepted_environments must be a non-empty subset of known environments"
+            )
         self._roots = roots
         self._bundle_id = bundle_id
         self._accepted_environments = environments
@@ -96,64 +124,70 @@ class JwsVerifier:
         self._max_signed_age_millis = max_signed_age_millis
         self._clock = time.time if clock is None else clock
 
-    def verify_transaction(self, jws: str) -> Dict[str, Any]:
+    def verify_transaction(self, jws: str) -> dict[str, Any]:
         """Verifies a signed transaction and checks bundle id + environment."""
         payload = self._verify_signature(jws)
         self._require_bundle_id(payload.get("bundleId"))
         self._require_accepted_environment(payload.get("environment"))
         return payload
 
-    def verify_app_transaction(self, jws: str) -> Dict[str, Any]:
+    def verify_app_transaction(self, jws: str) -> dict[str, Any]:
         """Verifies a signed AppTransaction and checks bundle id, environment
         (``receiptType``), and — in Production — the app Apple id."""
         payload = self._verify_signature(jws)
         self._require_bundle_id(payload.get("bundleId"))
         environment = self._require_accepted_environment(payload.get("receiptType"))
         if environment == "Production" and (
-                self._app_apple_id is None
-                or self._app_apple_id != payload.get("appAppleId")):
+            self._app_apple_id is None or self._app_apple_id != payload.get("appAppleId")
+        ):
             raise VerificationError(
                 Reason.WRONG_APP_APPLE_ID,
-                f"expected {self._app_apple_id} but payload has {payload.get('appAppleId')}")
+                f"expected {self._app_apple_id} but payload has {payload.get('appAppleId')}",
+            )
         return payload
 
-    def verify_raw(self, jws: str) -> Dict[str, Any]:
+    def verify_raw(self, jws: str) -> dict[str, Any]:
         """Verifies the signature/chain only and returns the raw claims — for
         payload types without a dedicated model (renewal info, notification
         envelopes). The caller must check bundle id / environment /
         app Apple id in the returned claims itself."""
         return self._verify_signature(jws)
 
-    def _verify_signature(self, jws: str) -> Dict[str, Any]:
+    def _verify_signature(self, jws: str) -> dict[str, Any]:
         if not isinstance(jws, str):
             raise VerificationError(Reason.INVALID_JWS_FORMAT, "jws must be a string")
         parts = jws.split(".")
         if len(parts) != 3:
             raise VerificationError(
-                Reason.INVALID_JWS_FORMAT,
-                f"expected 3 dot-separated segments, got {len(parts)}")
+                Reason.INVALID_JWS_FORMAT, f"expected 3 dot-separated segments, got {len(parts)}"
+            )
         header = _json_segment(parts[0], "header")
         if header.get("alg") != "ES256":
             raise VerificationError(
-                Reason.INVALID_JWS_FORMAT, f"alg must be ES256, got {header.get('alg')}")
+                Reason.INVALID_JWS_FORMAT, f"alg must be ES256, got {header.get('alg')}"
+            )
         x5c = header.get("x5c")
         if not isinstance(x5c, list) or len(x5c) != 3:
             raise VerificationError(
-                Reason.INVALID_JWS_FORMAT, "x5c must contain exactly 3 certificates")
+                Reason.INVALID_JWS_FORMAT, "x5c must contain exactly 3 certificates"
+            )
         try:
             leaf = x509.load_der_x509_certificate(base64.b64decode(x5c[0]))
             intermediate = x509.load_der_x509_certificate(base64.b64decode(x5c[1]))
         except (ValueError, binascii.Error) as e:
             raise VerificationError(
-                Reason.INVALID_CERTIFICATE, "x5c entry is not a valid certificate") from e
+                Reason.INVALID_CERTIFICATE, "x5c entry is not a valid certificate"
+            ) from e
         if not _has_extension(leaf, LEAF_OID):
             raise VerificationError(
                 Reason.INVALID_CERTIFICATE_PURPOSE,
-                f"leaf certificate lacks Apple marker OID {LEAF_OID.dotted_string}")
+                f"leaf certificate lacks Apple marker OID {LEAF_OID.dotted_string}",
+            )
         if not _has_extension(intermediate, INTERMEDIATE_OID):
             raise VerificationError(
                 Reason.INVALID_CERTIFICATE_PURPOSE,
-                f"intermediate certificate lacks Apple marker OID {INTERMEDIATE_OID.dotted_string}")
+                f"intermediate certificate lacks Apple marker OID {INTERMEDIATE_OID.dotted_string}",
+            )
 
         payload = _json_segment(parts[1], "payload")
         # Chain validity is checked at signing time so payloads signed with
@@ -177,37 +211,42 @@ class JwsVerifier:
         signature = _b64url(parts[2], "signature")
         if len(signature) != 64:
             raise VerificationError(
-                Reason.INVALID_SIGNATURE,
-                f"ES256 signature must be 64 bytes, got {len(signature)}")
+                Reason.INVALID_SIGNATURE, f"ES256 signature must be 64 bytes, got {len(signature)}"
+            )
         r = int.from_bytes(signature[:32], "big")
         s = int.from_bytes(signature[32:], "big")
         signing_input = f"{parts[0]}.{parts[1]}".encode("ascii")
         try:
-            public_key.verify(encode_dss_signature(r, s), signing_input,
-                              ec.ECDSA(hashes.SHA256()))
+            public_key.verify(encode_dss_signature(r, s), signing_input, ec.ECDSA(hashes.SHA256()))
         except InvalidSignature as e:
             raise VerificationError(Reason.INVALID_SIGNATURE, "ES256 signature check failed") from e
 
-        if (self._max_signed_age_millis is not None and signed_at is not None
-                and self._clock() * 1000 - signed_at > self._max_signed_age_millis):
+        if (
+            self._max_signed_age_millis is not None
+            and signed_at is not None
+            and self._clock() * 1000 - signed_at > self._max_signed_age_millis
+        ):
             raise VerificationError(
                 Reason.STALE_PAYLOAD,
-                f"payload signed at {signed_at} exceeds max age {self._max_signed_age_millis}ms")
+                f"payload signed at {signed_at} exceeds max age {self._max_signed_age_millis}ms",
+            )
         return payload
 
-    def _require_bundle_id(self, actual):
+    def _require_bundle_id(self, actual: Any) -> None:
         if actual != self._bundle_id:
             raise VerificationError(
-                Reason.WRONG_BUNDLE_ID, f"expected {self._bundle_id} but payload has {actual}")
+                Reason.WRONG_BUNDLE_ID, f"expected {self._bundle_id} but payload has {actual}"
+            )
 
-    def _require_accepted_environment(self, claim):
+    def _require_accepted_environment(self, claim: Any) -> Any:
         if claim not in self._accepted_environments:
             raise VerificationError(
-                Reason.WRONG_ENVIRONMENT, f"payload environment {claim} not in accepted set")
+                Reason.WRONG_ENVIRONMENT, f"payload environment {claim} not in accepted set"
+            )
         return claim
 
 
-def is_transaction_active_at(payload: Dict[str, Any], now_millis: int) -> bool:
+def is_transaction_active_at(payload: dict[str, Any], now_millis: int) -> bool:
     """Entitlement helper for a verified transaction payload: not revoked,
     and (for subscriptions) not expired at ``now_millis``. Point-in-time on
     the signed claims only — later refunds or renewals are invisible."""

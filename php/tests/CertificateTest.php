@@ -213,13 +213,14 @@ final class CertificateTest extends TestCase
         // An EC key handed a signature that is not a DER SEQUENCE: OpenSSL
         // cannot even attempt the check, so this is an ERROR, not "invalid".
         self::assertSame(-1, openssl_verify('data', "\x00\x01", $ecKey, OPENSSL_ALGO_SHA256));
-        self::assertSame(-1, openssl_x509_verify('not a certificate', $rsaKey));
+        $x509Error = openssl_x509_verify('not a certificate', $rsaKey);
+        self::assertTrue((bool) $x509Error, 'this is why every call site compares === 1');
+        self::assertSame(-1, $x509Error);
         // A genuine certificate against the wrong key TYPE is an error too.
         self::assertSame(-1, openssl_x509_verify(Certificate::parse($pki->jwsLeafDer)->pem(), $ecKey));
         // For contrast: a well-formed-but-wrong RSA signature answers a plain 0.
         self::assertSame(0, openssl_verify('data', str_repeat("\x41", 256), $rsaKey, OPENSSL_ALGO_SHA256));
 
-        self::assertTrue((bool) -1, 'this is why every call site compares === 1');
         Certificate::drainOpenSslErrors();
     }
 

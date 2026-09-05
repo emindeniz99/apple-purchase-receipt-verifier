@@ -11,7 +11,7 @@
 //! Like Apple's endpoint, this does **not** check the bundle id — the caller
 //! compares `receipt.bundle_id`, exactly as with the real endpoint.
 
-use crate::base64::decode_lenient;
+use crate::base64::decode_receipt_base64;
 use crate::clock::{default_clock, unix_millis, Clock};
 use crate::datetime::{format_etc_gmt, format_pacific, unix_millis_of};
 use crate::environment::Environment;
@@ -206,7 +206,9 @@ impl VerifyReceiptEndpoint {
         let Some(receipt_data) = request.receipt_data.as_deref().filter(|d| !d.is_empty()) else {
             return VerifyReceiptResponse::failure(status::MALFORMED);
         };
-        let der = decode_lenient(receipt_data);
+        let Some(der) = decode_receipt_base64(receipt_data) else {
+            return VerifyReceiptResponse::failure(status::MALFORMED);
+        };
         let fields = match verify_receipt_core_unchecked(&der, &self.anchors) {
             Ok(fields) => fields,
             Err(error) => {

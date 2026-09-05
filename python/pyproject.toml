@@ -27,3 +27,52 @@ license-files = ["LICENSE"]
 
 [tool.setuptools.package-data]
 apple_purchase_receipt_verifier = ["certs/*.cer", "py.typed"]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.16",
+    "mypy>=1.11",
+]
+
+[tool.ruff]
+target-version = "py39"
+# The existing source already wraps at ~100 (longest line was 102); 88 would
+# have reflowed nearly every signature and docstring in the package.
+line-length = 100
+src = ["apple_purchase_receipt_verifier", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "W",    # pycodestyle warnings
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "RUF",  # ruff-specific
+]
+
+[tool.mypy]
+# No `python_version = "3.9"`: mypy 2.x refuses to target anything below 3.10,
+# so it type-checks under the interpreter running it. Ruff's
+# `target-version = "py39"` (with the UP rules) is what keeps the source
+# itself inside the 3.9 syntax the package's `requires-python` promises.
+files = ["apple_purchase_receipt_verifier", "tests"]
+strict = true
+
+# The test suite is checked under strict too, minus the three flags that
+# demand annotations on every def: 33 of its helpers build ASN.1 and CMS
+# structures by hand and typing them is a separate piece of work. Every other
+# strict check (including check_untyped_defs) still applies to the tests.
+[[tool.mypy.overrides]]
+module = ["test_verifiers", "test_conformance"]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_untyped_calls = false
+
+# asn1crypto ships no type stubs and no py.typed marker. Its values are Any
+# either way; this only stops mypy erroring on the import itself.
+[[tool.mypy.overrides]]
+module = ["asn1crypto.*"]
+ignore_missing_imports = true

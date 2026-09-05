@@ -35,8 +35,11 @@ const { sources, specifiers } = moduleGraph('web/index.js');
 
 test('the web build imports nothing outside itself', () => {
   const foreign = specifiers.filter(([, specifier]) => !specifier.startsWith('.'));
-  assert.deepEqual(foreign, [],
-    `web build must have zero imports that are not relative: ${JSON.stringify(foreign)}`);
+  assert.deepEqual(
+    foreign,
+    [],
+    `web build must have zero imports that are not relative: ${JSON.stringify(foreign)}`,
+  );
 });
 
 test('the web build never mentions Buffer, process or a node: module', () => {
@@ -65,10 +68,13 @@ const WORKERD_CONFIGS = [
 for (const [config, entry] of WORKERD_CONFIGS) {
   test(`${config} embeds exactly the module graph of dist/${entry}`, () => {
     const capnp = readFileSync(
-      fileURLToPath(new URL(`../runtime-smoke/${config}`, import.meta.url)), 'utf8');
+      fileURLToPath(new URL(`../runtime-smoke/${config}`, import.meta.url)),
+      'utf8',
+    );
     const embedded = [...capnp.matchAll(/\(name = "(dist\/[^"]+)"/g)].map((m) => m[1]);
-    const reachable = [...moduleGraph(entry).sources.keys()]
-      .map((href) => `dist/${href.slice(distRoot.href.length)}`);
-    assert.deepEqual(embedded.sort(), reachable.sort());
+    const reachable = [...moduleGraph(entry).sources.keys()].map(
+      (href) => `dist/${href.slice(distRoot.href.length)}`,
+    );
+    assert.deepEqual(embedded.toSorted(), reachable.toSorted());
   });
 }

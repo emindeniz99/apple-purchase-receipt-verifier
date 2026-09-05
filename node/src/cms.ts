@@ -7,7 +7,13 @@
 import { Reason, VerificationError } from './errors.js';
 import { bytesEqual, concatBytes, toHex } from './bytes.js';
 import {
-  ParseError, Tag, encodeOidContents, isOctetString, octetStringValue, parse, tbsParts,
+  ParseError,
+  Tag,
+  encodeOidContents,
+  isOctetString,
+  octetStringValue,
+  parse,
+  tbsParts,
   type ASN1Node,
 } from './der.js';
 
@@ -16,10 +22,12 @@ const OID_MESSAGE_DIGEST = encodeOidContents('1.2.840.113549.1.9.4');
 
 // Only the digests Apple uses for receipts (SHA-1 / SHA-256), matching the
 // other three implementations; anything else is rejected.
-const DIGEST_ALGORITHMS = new Map<string, string>([
-  ['1.3.14.3.2.26', 'sha1'],
-  ['2.16.840.1.101.3.4.2.1', 'sha256'],
-].map(([oid, name]) => [toHex(encodeOidContents(oid!)), name!]));
+const DIGEST_ALGORITHMS = new Map<string, string>(
+  [
+    ['1.3.14.3.2.26', 'sha1'],
+    ['2.16.840.1.101.3.4.2.1', 'sha256'],
+  ].map(([oid, name]) => [toHex(encodeOidContents(oid!)), name!]),
+);
 
 export interface CmsSignerInfo {
   issuerRaw: Uint8Array;
@@ -49,9 +57,11 @@ export function parseCms(der: Uint8Array): ParsedCms {
   }
   try {
     const info = children(contentInfo);
-    if (contentInfo.tag !== Tag.SEQUENCE
-      || !bytesEqual(info[0]!.contents, OID_SIGNED_DATA)
-      || info[1]!.tag !== Tag.CONTEXT_0) {
+    if (
+      contentInfo.tag !== Tag.SEQUENCE ||
+      !bytesEqual(info[0]!.contents, OID_SIGNED_DATA) ||
+      info[1]!.tag !== Tag.CONTEXT_0
+    ) {
       throw new ParseError('not a CMS SignedData');
     }
     const signedData = children(children(info[1]!)[0]!);
@@ -114,8 +124,10 @@ export function findSignerCertIndex(cms: ParsedCms): number {
   for (let i = 0; i < cms.certificates.length; i++) {
     try {
       const { serialNumber, issuer } = tbsParts(cms.certificates[i]!);
-      if (bytesEqual(serialNumber.contents, cms.signerInfo.serialContents)
-        && bytesEqual(issuer.raw, cms.signerInfo.issuerRaw)) {
+      if (
+        bytesEqual(serialNumber.contents, cms.signerInfo.serialContents) &&
+        bytesEqual(issuer.raw, cms.signerInfo.issuerRaw)
+      ) {
         return i;
       }
     } catch {

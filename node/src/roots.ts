@@ -14,8 +14,7 @@ import { APPLE_ROOT_DER_BASE64 } from './roots-data.js';
  * a path — see PLAN.md D15.
  */
 function allRoots(): X509Certificate[] {
-  return APPLE_ROOT_DER_BASE64.map(
-    (b64) => new X509Certificate(Buffer.from(b64, 'base64')));
+  return APPLE_ROOT_DER_BASE64.map((b64) => new X509Certificate(Buffer.from(b64, 'base64')));
 }
 
 /**
