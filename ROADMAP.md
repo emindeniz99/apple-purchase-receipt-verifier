@@ -22,7 +22,8 @@ Delete a line in the commit that ships it.
 - **The one remaining parser differential.** The compact-JWS segment
   differential is closed (see the strict-decoding commit), and so are the
   resource bounds (the contract now states a floor of 1 MiB and 20,000
-  nodes, and `receipt-large` pins it). What is left is recorded in the
+  nodes, and `receipt-byte-floor` and `receipt-node-floor` pin one
+  number each, from within 2% of it). What is left is recorded in the
   port READMEs and still has no shared vector:
   **`x5c[2]`**: java decodes and parses the third certificate, so an
   unparseable one is `INVALID_CERTIFICATE` there and reaches the

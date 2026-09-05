@@ -13,6 +13,7 @@ import java.security.spec.ECGenParameterSpec;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -594,6 +595,40 @@ final class TestPki {
             BigInteger extraAttributeType,
             byte[] extraAttributeValue)
             throws Exception {
+        return receiptPayload(
+                receiptType,
+                bundleId,
+                appVersion,
+                opaque,
+                sha1Hash,
+                creationDate,
+                inAppSets,
+                creationDateAttribute,
+                extraAttributeType,
+                extraAttributeValue,
+                Collections.<ASN1Encodable>emptyList());
+    }
+
+    /**
+     * Same again, with arbitrary attributes appended after the in-app
+     * purchases — what {@link LargeReceiptFixture} builds the node-floor
+     * receipt out of, since the node budget is spent per TLV and an
+     * attribute the library does not model still has to be walked and
+     * recorded.
+     */
+    static byte[] receiptPayload(
+            String receiptType,
+            String bundleId,
+            String appVersion,
+            byte[] opaque,
+            byte[] sha1Hash,
+            String creationDate,
+            List<byte[]> inAppSets,
+            boolean creationDateAttribute,
+            BigInteger extraAttributeType,
+            byte[] extraAttributeValue,
+            List<ASN1Encodable> extraAttributes)
+            throws Exception {
         ASN1EncodableVector attrs = new ASN1EncodableVector();
         if (receiptType != null) {
             attrs.add(attr(0, new DERUTF8String(receiptType).getEncoded()));
@@ -614,7 +649,15 @@ final class TestPki {
         for (byte[] inApp : inAppSets) {
             attrs.add(attr(17, inApp));
         }
+        for (ASN1Encodable extra : extraAttributes) {
+            attrs.add(extra);
+        }
         return new DERSet(attrs).getEncoded();
+    }
+
+    /** One receipt attribute, for a generator assembling its own set. */
+    static ASN1Encodable attribute(int type, byte[] valueOctets) {
+        return attr(type, valueOctets);
     }
 
     /** Builds one in-app purchase attribute SET (the value of an attr-17). */
