@@ -13,7 +13,7 @@ import {
 } from '../jws-claims.js';
 import { normalizeRoots, validatePair, type RootInput } from './chain.js';
 import { verifyEs256 } from './crypto.js';
-import { OID_EC_PUBLIC_KEY, spkiToJwk } from './jwk.js';
+import { OID_EC_PUBLIC_KEY, requireBuildablePublicKey } from './jwk.js';
 
 export { isTransactionActiveAt } from '../jws-claims.js';
 export type { AppTransactionPayload, Claims, Clock, TransactionPayload } from '../jws-claims.js';
@@ -100,12 +100,20 @@ export class JwsVerifier {
       // than failing later and differently: an extension VALUE that stops
       // decoding, which is the difference between parsing a certificate and
       // scanning it for a marker OID; and a key on a curve this build
-      // cannot import, which converting the SPKI is the only way to find.
+      // cannot import, which building the key is the only way to find.
+      //
+      // The key check is scoped exactly as the Node build's `.publicKey` is
+      // scoped — an RSA or EC key must build, a key of any other algorithm
+      // is readable and none of this check's business. Converting every
+      // entry unconditionally instead would reject a DSA-keyed x5c[2] the
+      // Node build accepts, which the third entry's own rule forbids: it is
+      // never trusted and never compared, so it has to BE a certificate and
+      // nothing more.
       const parsed = [0, 1, 2].map((index) => {
         const raw = base64Decode(x5c[index]!);
         const certificate = parseCertificate(raw);
         requireDecodableExtensions(raw);
-        spkiToJwk(certificate.spki);
+        requireBuildablePublicKey(certificate.publicKeyAlgorithmOid, certificate.spki);
         return certificate;
       });
       leaf = parsed[0]!;
