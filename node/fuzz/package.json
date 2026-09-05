@@ -1,0 +1,14 @@
+{
+  "name": "apple-purchase-receipt-verifier-fuzz",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Coverage-guided fuzz targets for the Node port. Not part of the published package.",
+  "license": "MIT",
+  "scripts": {
+    "fuzz": "./run.sh"
+  },
+  "devDependencies": {
+    "@jazzer.js/core": "^4.0.0"
+  }
+}

@@ -4,3 +4,11 @@ certs/
 *.min.*
 # Prose, not code — out of scope for a code formatter.
 *.md
+
+# Fuzzer input and output (node/fuzz): seed bodies, the generated seed, the
+# corpus cache and saved crashers. Their exact bytes are the point, so a
+# formatter must not rewrite them.
+fuzz/seeds/
+fuzz/.seeds-generated/
+fuzz/corpus/
+fuzz/artifacts/
