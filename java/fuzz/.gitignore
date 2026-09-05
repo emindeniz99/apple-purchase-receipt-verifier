@@ -1,0 +1,10 @@
+# The Jazzer driver jar, fetched and sha256-verified by run.sh.
+.jazzer/
+# Build output: the library classpath and the compiled harness.
+.build/
+# verifyReceipt request bodies generated from the shared fixtures.
+.seeds/
+# A cache, not a source: committing it would make every run's growth a diff.
+corpus/
+# Crashers and reproducers. Reduce one into a test under ../src/test instead.
+artifacts/
