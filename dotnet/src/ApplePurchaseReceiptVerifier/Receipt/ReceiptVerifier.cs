@@ -40,6 +40,7 @@ namespace ApplePurchaseReceiptVerifier.Receipt
         private const string Sha1Oid = "1.3.14.3.2.26";
         private const string Sha256Oid = "2.16.840.1.101.3.4.2.1";
         private const string RsaOid = "1.2.840.113549.1.1.1";
+        private const string EcPublicKeyOid = "1.2.840.10045.2.1";
 
         /// <summary>
         /// The ceiling on the certificates a receipt may embed. Genuine
@@ -539,7 +540,33 @@ namespace ApplePurchaseReceiptVerifier.Receipt
                     "the receipt signer certificate has an extension that does not decode");
             }
 
-            if (!HasReadablePublicKey(rawCertificate))
+            RequireUsablePublicKey(fields, rawCertificate);
+        }
+
+        /// <summary>
+        /// A key of an algorithm this library builds must build. A key of any
+        /// other algorithm is not this check's business: an unreadable key and
+        /// a readable key of the wrong kind are different inputs with
+        /// different answers, and the "not RSA" check below owns the second —
+        /// INVALID_SIGNATURE, which is what go (<c>signer.PublicKey.(*rsa.PublicKey)</c>)
+        /// and php (<c>publicKeyType() !== OPENSSL_KEYTYPE_RSA</c>) answer for
+        /// a DSA-keyed signer. Without the algorithm test a DSA key would come
+        /// out as INVALID_CERTIFICATE here, because neither
+        /// <c>GetRSAPublicKey</c> nor <c>GetECDsaPublicKey</c> returns one.
+        /// </summary>
+        private static void RequireUsablePublicKey(CertificateFields fields, byte[] rawCertificate)
+        {
+            string? algorithm = fields.SubjectPublicKeyAlgorithmOid;
+            if (algorithm is null)
+            {
+                throw new VerificationException(
+                    VerificationReason.InvalidCertificate,
+                    "the receipt signer certificate has an unreadable public key");
+            }
+
+            bool builtHere = string.Equals(algorithm, RsaOid, StringComparison.Ordinal)
+                || string.Equals(algorithm, EcPublicKeyOid, StringComparison.Ordinal);
+            if (builtHere && !HasReadablePublicKey(rawCertificate))
             {
                 throw new VerificationException(
                     VerificationReason.InvalidCertificate,

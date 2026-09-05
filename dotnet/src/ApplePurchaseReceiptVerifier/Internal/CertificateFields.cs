@@ -244,6 +244,15 @@ namespace ApplePurchaseReceiptVerifier.Internal
                 {
                     AsnReader inner = new AsnReader(value, AsnEncodingRules.DER);
                     inner.ReadEncodedValue();
+
+                    // An extnValue holds ONE DER value. A reader that stops at
+                    // the first one never sees what follows it, so bytes left
+                    // over are as invisible — and as much a defect — as a
+                    // value that stops decoding partway through.
+                    if (inner.HasData)
+                    {
+                        undecodable = true;
+                    }
                 }
                 catch (AsnContentException)
                 {

@@ -727,6 +727,62 @@ public class HostileInputTests
             Assert.Throws<VerificationException>(() => verifier.Verify(receipt)).Reason);
     }
 
+    /// <summary>
+    /// A signer key that reads perfectly well and is simply not RSA is a
+    /// verdict about the signature, not about the certificate: go
+    /// (<c>signer.PublicKey.(*rsa.PublicKey)</c>) and php
+    /// (<c>publicKeyType() !== OPENSSL_KEYTYPE_RSA</c>) both answer it there.
+    /// The unreadable-key check ahead of it must therefore not swallow this
+    /// input — the two are different defects with different answers, which is
+    /// what receipt/reject-signer-on-an-unimplemented-curve turns on.
+    /// </summary>
+    [Fact]
+    public void AReadableSignerKeyThatIsNotRsaIsASignatureVerdict()
+    {
+        using X509Certificate2 root = TestPki.RsaRoot();
+        using X509Certificate2 intermediate = TestPki.RsaChild(root, "CN=Fake WWDR", true);
+        using X509Certificate2 leaf = TestPki.EcChild(
+            intermediate, "CN=Fake Receipt Signing", false, ReceiptVerifier.ReceiptSignerOid);
+
+        byte[] receipt = TestPki.SignReceipt(
+            TestPki.StandardPayload(ReceiptBundleId),
+            leaf,
+            new[] { intermediate, TestPki.Public(root) });
+
+        using ReceiptVerifier verifier = new(new[] { TestPki.Public(root) }, ReceiptBundleId);
+        Assert.Equal(
+            VerificationReason.InvalidSignature,
+            Assert.Throws<VerificationException>(() => verifier.Verify(receipt)).Reason);
+    }
+
+    /// <summary>
+    /// An extnValue holds one DER value. A reader that decodes the first and
+    /// stops never sees bytes left after it, so those bytes are as invisible —
+    /// and as much a defect of the certificate — as a value that stops
+    /// decoding partway through, which is what
+    /// transaction/reject-x5c-corrupt-extension pins.
+    /// </summary>
+    [Fact]
+    public void AnX5cCertificateWithBytesLeftOverInAnExtensionIsRejected()
+    {
+        using X509Certificate2 root = TestPki.EcRoot();
+        using X509Certificate2 intermediate = TestPki.EcChild(
+            root, "CN=WWDR", true, TestPki.IntermediateOid);
+        using X509Certificate2 leaf = TestPki.EcChildWithTrailingBytesInAnExtension(
+            intermediate, "CN=Signing", TestPki.LeafOid);
+
+        string jws = TestPki.SignJws(
+            leaf,
+            new[] { leaf, intermediate, root },
+            "{\"bundleId\":\"com.example.app\",\"environment\":\"Sandbox\"}");
+        using JwsVerifier verifier = new(
+            new[] { TestPki.Public(root) }, "com.example.app", new[] { AppleEnvironment.Sandbox });
+
+        Assert.Equal(
+            VerificationReason.InvalidCertificate,
+            Assert.Throws<VerificationException>(() => verifier.VerifyTransaction(jws)).Reason);
+    }
+
     private const int MaximumEmbeddedCertificates = 10;
 
     /// <summary>A SEQUENCE of two INTEGERs: well-formed ASN.1, no certificate.</summary>
