@@ -298,8 +298,24 @@ fn parse_certificate(der: &[u8]) -> Result<Certificate, Asn1Error> {
     }
     let fields = tbs.children();
     let mut index = 0;
-    if fields.first().map(|f| f.tag) == Some(tag::CONTEXT_0) {
-        index = 1; // version [0] EXPLICIT
+    if let Some(version) = fields.first().filter(|f| f.tag == tag::CONTEXT_0) {
+        // version [0] EXPLICIT INTEGER. RFC 5280 defines 0, 1 and 2 (v1, v2,
+        // v3) and nothing else. Nothing downstream reads the field, which is
+        // exactly why it is checked here: a certificate claiming version 11
+        // would otherwise parse like any other and verify on the strength of
+        // its signature and extensions alone.
+        let value = version
+            .child(0)
+            .filter(|node| node.tag == tag::INTEGER)
+            .and_then(|node| match node.contents {
+                [only] => Some(*only),
+                _ => None,
+            })
+            .ok_or(Asn1Error("unknown X.509 certificate version"))?;
+        if value > 2 {
+            return Err(Asn1Error("unknown X.509 certificate version"));
+        }
+        index = 1;
     }
     let bad = Asn1Error("unexpected TBSCertificate layout");
     let serial = fields.get(index).ok_or(bad)?;
