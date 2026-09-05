@@ -48,8 +48,10 @@ public struct AppReceipt: Sendable {
 /// implementation. CMS parsing accepts BER (genuine Apple/Xcode receipts
 /// use indefinite lengths).
 public struct ReceiptVerifier: Sendable {
-    /// Upper bound on a receipt's embedded certificates, checked before the
-    /// path walk in ``verifyCore(receipt:)`` reaches them. Genuine receipts
+    /// Upper bound on a receipt's embedded certificates, applied while the CMS
+    /// is parsed — on the number of elements in the certificate set, before
+    /// any of them is decoded and long before the path walk in
+    /// ``verifyCore(receipt:)`` reaches them. Genuine receipts
     /// embed 1 to 3 (fixtures/public-receipts: xcode-with-purchases 1,
     /// sandbox-g5 3, sandbox-legacy 3), and Java, Node and Python bound the
     /// same input at the same 10: the value is that parity plus headroom over
@@ -129,16 +131,10 @@ public struct ReceiptVerifier: Sendable {
     }
 
     static func verifyCore(receipt: Data, roots: [Certificate]) async throws -> AppReceipt {
+        // `maximumEmbeddedCertificates` is applied inside this parse, on the
+        // element count, so an oversized bag is refused before any of it is
+        // decoded and nothing below ever sees more than the bound.
         let cms = try CMSReceipt(parsing: [UInt8](receipt))
-        // The embedded certificates are attacker-supplied and every one of
-        // them is a walk candidate below, before anything about the receipt
-        // has been verified, so a flood is rejected here rather than walked.
-        guard cms.certificates.count <= Self.maximumEmbeddedCertificates else {
-            throw VerificationError(
-                .invalidChain,
-                "receipt embeds \(cms.certificates.count) certificates, "
-                    + "more than the maximum of \(Self.maximumEmbeddedCertificates)")
-        }
 
         // Parsed before signature verification only to learn the creation
         // date (chain validity anchors at signing time); nothing from it is
@@ -398,24 +394,40 @@ private struct CMSReceipt {
             }
             self.content = try Self.octetStringValue(try Self.explicit(encap[1]))
 
-            var certificates: [Certificate] = []
-            var certificateNodes: [(serial: [UInt8], issuer: [UInt8])] = []
+            // The embedded certificates are attacker-supplied and every one of
+            // them is a walk candidate in `verifyCore`, before anything about
+            // the receipt has been verified, so a flood is refused on the
+            // element count — before a single element is decoded. Decoding
+            // first would spend exactly the work the bound exists to refuse,
+            // and would let a malformed entry anywhere in an oversized bag
+            // answer "malformed receipt" where the bound answers "too many".
+            var certificateDER: [[UInt8]] = []
             for node in signedData.dropFirst(3)
             where node.identifier.tagClass == .contextSpecific
                 && node.identifier.tagNumber == 0
             {
                 for certNode in try Self.children(node) {
-                    let der = [UInt8](certNode.encodedBytes)
-                    certificates.append(try Certificate(derEncoded: der))
-                    let tbs = try Self.children(try Self.children(DER.parse(der))[0])
-                    var index = 0
-                    if let first = tbs.first, first.identifier.tagClass == .contextSpecific { index = 1 }
-                    certificateNodes.append(
-                        (
-                            serial: try Self.primitive(tbs.at(index)),
-                            issuer: [UInt8]((try tbs.at(index + 2)).encodedBytes)
-                        ))
+                    certificateDER.append([UInt8](certNode.encodedBytes))
                 }
+            }
+            guard certificateDER.count <= ReceiptVerifier.maximumEmbeddedCertificates else {
+                throw VerificationError(
+                    .invalidChain,
+                    "receipt embeds \(certificateDER.count) certificates, "
+                        + "more than the maximum of \(ReceiptVerifier.maximumEmbeddedCertificates)")
+            }
+            var certificates: [Certificate] = []
+            var certificateNodes: [(serial: [UInt8], issuer: [UInt8])] = []
+            for der in certificateDER {
+                certificates.append(try Certificate(derEncoded: der))
+                let tbs = try Self.children(try Self.children(DER.parse(der))[0])
+                var index = 0
+                if let first = tbs.first, first.identifier.tagClass == .contextSpecific { index = 1 }
+                certificateNodes.append(
+                    (
+                        serial: try Self.primitive(tbs.at(index)),
+                        issuer: [UInt8]((try tbs.at(index + 2)).encodedBytes)
+                    ))
             }
             self.certificates = certificates
             self.certificateNodes = certificateNodes
