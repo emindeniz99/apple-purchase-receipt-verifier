@@ -441,7 +441,7 @@ private struct CMSReceipt {
                 // known to be readable.
                 let identity: (serial: [UInt8], issuer: [UInt8])?
                 do {
-                    let tbs = try Self.children(try Self.children(DER.parse(der))[0])
+                    let tbs = try Self.children(try Self.children(DER.parse(der)).at(0))
                     var index = 0
                     if let first = tbs.first, first.identifier.tagClass == .contextSpecific { index = 1 }
                     identity = (
