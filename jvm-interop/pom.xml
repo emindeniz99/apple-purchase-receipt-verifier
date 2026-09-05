@@ -40,7 +40,7 @@
          (JDK 21 in this environment). -->
     <jvm.target>17</jvm.target>
 
-    <library.version>0.3.0</library.version> <!-- x-release-please-version -->
+    <library.version>0.4.0</library.version> <!-- x-release-please-version -->
     <junit.version>5.14.4</junit.version>
     <kotlin.version>2.0.21</kotlin.version>
     <scala.version>3.3.4</scala.version>
