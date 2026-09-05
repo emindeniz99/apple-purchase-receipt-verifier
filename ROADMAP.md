@@ -3,10 +3,37 @@
 Milestone status lives here (see [PLAN.md](./PLAN.md) §4 for the full plan).
 Delete an item in the same commit that ships it.
 
+## Before 1.0 — the ordered list (2026-09-05)
+
+Everything below is either in this file already or was found by the
+2026-09-04 architecture review; this is the order it is being worked in.
+Delete a line in the commit that ships it.
+
+1. **Fuzz every hand-written reader** — go and rust done; node, ruby,
+   dotnet, php, and the three library-backed ports (python, java, swift)
+   follow, one CI job each. Rationale: PLAN.md D16.
+2. **Normative resource bounds in the contract** plus one vector. (Java's
+   chain length is aligned: it now states MAX_PATH_LENGTH = 6 and counts
+   self-issued intermediates, which the JDK default exempted.)
+3. **Docs cleanup**: THREAT-MODEL.md; the stale "no commit is signed"
+   line below (commits are SSH-signed by the environment key — GitHub
+   shows Verified once the key is registered); java and swift READMEs;
+   the two per-port `ci-job.md` / `RELEASE.md` handoff documents that
+   describe wiring which now lives in `.github/`; stale case counts in
+   INTENT.md, PLAN.md §4 and the dotnet README; the GitHub repository
+   description still naming four languages.
+4. **Pin `asn1crypto` in python** to the tested range and make sure the
+   python fuzz target reaches it. Owner decision (2026-09-05): keep it —
+   last release 2022-03, but ~155M downloads a month; see PLAN.md D16.
+5. **Release**: approve the held release-please run (first-time
+   contributor gate; owner-only), register the signing key on GitHub,
+   enforce branch protection for admins, bootstrap RubyGems, crates.io,
+   NuGet and the Go proxy, and decide the PHP Packagist layout.
+
 ## Next
 
-- **The three remaining parser differentials.** The compact-JWS segment
-  differential is closed (see the strict-decoding commit); three more are
+- **The two remaining parser differentials.** The compact-JWS segment
+  differential is closed (see the strict-decoding commit); two more are
   recorded in the port READMEs and still have no shared vector:
   1. **`x5c[2]`**: java decodes and parses the third certificate, so an
      unparseable one is `INVALID_CERTIFICATE` there and reaches the
@@ -27,8 +54,6 @@ Delete an item in the same commit that ships it.
      accept a well-formed receipt up to N bytes and M nodes -- and a
      vector should pin it, or a large legitimate receipt becomes another
      port-dependent verdict.
-  3. **Chain path length**: java lets the JDK PKIX builder cap it at 5
-     while every hand-rolled walk uses 6.
 - **Fuzzing runs opposite to parser size.** go has three fuzz targets and
   seed corpora on every build; rust now has seven under `rust/fuzz/`
   (the ASN.1, X.509 and CMS readers on their own, the three verifiers,
@@ -36,12 +61,6 @@ Delete an item in the same commit that ships it.
   job. dotnet (3,896 lines) and php (3,271) still have none. The
   deterministic mutation corpora node, rust and php do have are
   regression tests, not fuzzing.
-- **No test proves the OS trust store is unreachable in swift, python,
-  node or java.** go (`systemtrust_test.go`), rust (`trust_pinning.rs`),
-  php (`PinnedAnchorsTest.php`) and ruby each install or point at a CA the
-  platform would accept and require the library to reject it anyway.
-  Swift is the port most likely to reach Security.framework by accident
-  and is one of the four without such a test.
 - **`THREAT-MODEL.md` does not exist.** PLAN.md 2.3 is fifteen lines and
   the rest is spread across nine port READMEs, each restating pinned
   anchors, no network and the marker OIDs. One page -- assets, attacker
@@ -134,6 +153,13 @@ Delete an item in the same commit that ships it.
 - **Dependency bumps inside the seven-day cooldown** land via dependabot on
   their own; swift-certificates 1.20.0 and swift-asn1 1.7.2 (released
   2026-09-01) will arrive that way.
+- **The RustCrypto 0.11/0.14 wave is deliberately not taken** (2026-09-05):
+  `digest` 0.11, `sha1`/`sha2` 0.11 and `p256`/`p384` 0.14 all set
+  `rust-version = 1.85` against this crate's 1.74.0 floor, and `rsa` is
+  still 0.9 on `digest` 0.10 (0.10 is an rc), so the trait versions would
+  not line up. Dependabot was told to ignore those majors (PRs #22–#24,
+  #26, #27). Take the whole wave in one commit once `rsa` 0.10 is stable,
+  and raise the MSRV to 1.85 in the same change (a D2-class decision).
 
 ## Upstream
 

@@ -33,6 +33,9 @@ the gaps only Apple's servers can fill.
 Start with [INTENT.md](./INTENT.md) (why + trust model), then
 [PLAN.md](./PLAN.md) (algorithms + decisions + API shape), then
 [ROADMAP.md](./ROADMAP.md) (what's next).
+[THREAT-MODEL.md](./THREAT-MODEL.md) is the security account: what is
+attacker-controlled, each mitigation with the test that proves it, the
+non-goals, and the residual risks.
 
 ## Upstream
 
@@ -168,8 +171,10 @@ against `fixtures/cases.schema.json` and re-hashes every registered fixture;
 CI runs the same check. See [CONTRIBUTING.md](./CONTRIBUTING.md) for how to
 add a case.
 
-Java additionally generates a fresh random PKI per run (`TestPki`) for the
-full attack matrix (Java-only, not a shared tier).
+Five ports additionally generate a throwaway "Apple" PKI per run for inputs
+the shared fixtures cannot express: `java/.../TestPki.java`,
+`go/testpki_test.go`, `ruby/test/test_pki.rb`, `php/tests/Support/TestPki.php`
+and `dotnet/tests/.../TestPki.cs`. Those are native suites, not a shared tier.
 
 Production trust anchors are all three published Apple root certificates in
 [`certs/`](./certs) (from [Apple PKI](https://www.apple.com/certificateauthority/)):

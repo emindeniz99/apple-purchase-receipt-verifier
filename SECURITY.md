@@ -5,6 +5,10 @@ security-sensitive parsing of attacker-suppliable input (PKCS#7 blobs, JWS
 tokens). Bugs that make it accept a receipt it should reject are the highest
 class of issue here.
 
+[THREAT-MODEL.md](./THREAT-MODEL.md) is the full account: assets, attacker
+goals, each mitigation with the test that proves it, the explicit non-goals,
+and the residual risks.
+
 ## Reporting a vulnerability
 
 Use GitHub's private vulnerability reporting:
