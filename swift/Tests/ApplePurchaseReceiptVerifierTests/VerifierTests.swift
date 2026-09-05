@@ -592,9 +592,14 @@ final class ChainBuildingBoundTests: XCTestCase {
         return try nodes.map { try Certificate(derEncoded: [UInt8]($0.encodedBytes)) }
     }
 
+    /// - Parameter appendingRawDER: extra elements written into the
+    ///   `certificates [0]` node verbatim, after the encoded certificates.
+    ///   Well-formed ASN.1 that is not a certificate goes in this way — a
+    ///   `Certificate` value cannot express it.
     static func replacingCertificates(
         of receipt: Data,
-        with certificates: [Certificate]
+        with certificates: [Certificate],
+        appendingRawDER rawDER: [[UInt8]] = []
     ) throws -> Data {
         let bytes = [UInt8](receipt)
         let range = try certificatesNode(bytes).encodedBytes
@@ -602,6 +607,9 @@ final class ChainBuildingBoundTests: XCTestCase {
         try serializer.appendConstructedNode(identifier: contextZero) { certs in
             for certificate in certificates {
                 try certs.serialize(certificate)
+            }
+            for der in rawDER {
+                certs.serializeRawBytes(der)
             }
         }
         // Explicit Arrays: Swift 6.1 (the CI container) cannot type
@@ -706,6 +714,44 @@ final class ChainBuildingBoundTests: XCTestCase {
         XCTAssertEqual(exactly.count, ReceiptVerifier.maximumEmbeddedCertificates)
         _ = try await verifier().verify(
             receipt: try Self.replacingCertificates(of: genuine, with: exactly))
+    }
+
+    /// The bound is applied to the number of embedded certificates, before any
+    /// of them is decoded — so an oversized bag costs no decoding work, and a
+    /// malformed entry inside one cannot change the verdict. This receipt
+    /// carries ten genuine-shaped certificates and an eleventh that is
+    /// well-formed ASN.1 and not a certificate at all: the answer must be the
+    /// bound's `.invalidChain`, naming eleven. Red if the count check moves
+    /// back after the decoding loop, which answered `.invalidReceiptFormat`
+    /// ("malformed CMS structure") here instead — a parse verdict on a receipt
+    /// that never had to be parsed.
+    func testTheCountBoundIsAppliedBeforeAnyCertificateIsDecoded() async throws {
+        let genuine = try genuineReceipt()
+        let genuineCertificates = try Self.embeddedCertificates(of: genuine)
+        let padding = try
+            (0..<(ReceiptVerifier.maximumEmbeddedCertificates
+            - genuineCertificates.count)).map { index -> Certificate in
+                let key = Certificate.PrivateKey(P256.Signing.PrivateKey())
+                return try Self.certificate(
+                    subject: try Self.name("Padding \(index)"), issuer: try Self.name("Padding \(index)"),
+                    serial: .init(bytes: [0x9B, UInt8(index)]), key: key, signedBy: key)
+            }
+        let ten = padding + genuineCertificates
+        XCTAssertEqual(ten.count, ReceiptVerifier.maximumEmbeddedCertificates)
+        // SEQUENCE { OCTET STRING } — parses as ASN.1, decodes as nothing.
+        let garbage: [UInt8] = [0x30, 0x06, 0x04, 0x04, 0xDE, 0xAD, 0xBE, 0xEF]
+        let receipt = try Self.replacingCertificates(
+            of: genuine, with: ten, appendingRawDER: [garbage])
+        do {
+            _ = try await verifier().verify(receipt: receipt)
+            XCTFail("expected INVALID_CHAIN")
+        } catch let error as VerificationError {
+            XCTAssertEqual(error.reason, .invalidChain)
+            XCTAssertTrue(error.message.contains("11 certificates"), error.message)
+            XCTAssertTrue(
+                error.message.contains("maximum of \(ReceiptVerifier.maximumEmbeddedCertificates)"),
+                error.message)
+        }
     }
 
     /// A receipt whose bag stops at the intermediate, with the root coming
