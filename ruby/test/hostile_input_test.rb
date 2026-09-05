@@ -16,7 +16,12 @@ class HostileInputTest < Minitest::Test
   end
 
   def assert_format_error(bytes, message = nil)
-    error = assert_raises(APRV::VerificationError, message) { @verifier.verify_der(bytes) }
+    # Only pass the message when there is one. assert_raises treats a
+    # trailing String as the failure message and everything else as an
+    # exception class, so a nil here becomes `rescue VerificationError, nil`
+    # and minitest raises TypeError instead of running the assertion.
+    expected = message ? [APRV::VerificationError, message] : [APRV::VerificationError]
+    error = assert_raises(*expected) { @verifier.verify_der(bytes) }
     assert_equal :INVALID_RECEIPT_FORMAT, error.reason, error.message
     error
   end

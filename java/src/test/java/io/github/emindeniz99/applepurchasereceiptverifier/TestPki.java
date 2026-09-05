@@ -1,6 +1,23 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.MessageDigest;
+import java.security.PrivateKey;
+import java.security.Signature;
+import java.security.cert.X509Certificate;
+import java.security.spec.ECGenParameterSpec;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Base64;
+import java.util.Date;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1Integer;
@@ -19,7 +36,6 @@ import org.bouncycastle.asn1.cms.Time;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.BasicConstraints;
 import org.bouncycastle.asn1.x509.Extension;
-import org.bouncycastle.cms.DefaultSignedAttributeTableGenerator;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.X509v3CertificateBuilder;
 import org.bouncycastle.cert.jcajce.JcaCertStore;
@@ -28,6 +44,7 @@ import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
 import org.bouncycastle.cms.CMSProcessableByteArray;
 import org.bouncycastle.cms.CMSSignedData;
 import org.bouncycastle.cms.CMSSignedDataGenerator;
+import org.bouncycastle.cms.DefaultSignedAttributeTableGenerator;
 import org.bouncycastle.cms.jcajce.JcaSignerInfoGeneratorBuilder;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.operator.ContentSigner;
@@ -35,24 +52,6 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
 import org.bouncycastle.util.CollectionStore;
 import org.bouncycastle.util.Store;
-
-import java.math.BigInteger;
-import java.nio.charset.StandardCharsets;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.security.MessageDigest;
-import java.security.PrivateKey;
-import java.security.Signature;
-import java.security.cert.X509Certificate;
-import java.security.spec.ECGenParameterSpec;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Base64;
-import java.util.Date;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Generates a fake "Apple" PKI (root → intermediate → leaf) and signs JWS
@@ -75,8 +74,7 @@ final class TestPki {
     final X509Certificate leaf;
     private final PrivateKey leafKey;
 
-    private TestPki(X509Certificate root, X509Certificate intermediate,
-                    X509Certificate leaf, PrivateKey leafKey) {
+    private TestPki(X509Certificate root, X509Certificate intermediate, X509Certificate leaf, PrivateKey leafKey) {
         this.root = root;
         this.intermediate = intermediate;
         this.leaf = leaf;
@@ -91,21 +89,40 @@ final class TestPki {
     }
 
     /** EC chain with configurable marker OIDs and validity window. */
-    static TestPki jws(boolean leafOid, boolean intermediateOid, Date notBefore, Date notAfter)
-            throws Exception {
+    static TestPki jws(boolean leafOid, boolean intermediateOid, Date notBefore, Date notAfter) throws Exception {
         KeyPair rootKp = ecKeyPair();
         KeyPair interKp = ecKeyPair();
         KeyPair leafKp = ecKeyPair();
-        X509Certificate rootCert = cert("CN=Fake Apple Root CA", rootKp, "CN=Fake Apple Root CA",
-                rootKp.getPrivate(), true, null, notBefore, notAfter, "SHA256withECDSA");
-        X509Certificate interCert = cert("CN=Fake Apple WWDR CA", interKp, "CN=Fake Apple Root CA",
-                rootKp.getPrivate(), true,
+        X509Certificate rootCert = cert(
+                "CN=Fake Apple Root CA",
+                rootKp,
+                "CN=Fake Apple Root CA",
+                rootKp.getPrivate(),
+                true,
+                null,
+                notBefore,
+                notAfter,
+                "SHA256withECDSA");
+        X509Certificate interCert = cert(
+                "CN=Fake Apple WWDR CA",
+                interKp,
+                "CN=Fake Apple Root CA",
+                rootKp.getPrivate(),
+                true,
                 intermediateOid ? "1.2.840.113635.100.6.2.1" : null,
-                notBefore, notAfter, "SHA256withECDSA");
-        X509Certificate leafCert = cert("CN=Fake App Store Signing", leafKp, "CN=Fake Apple WWDR CA",
-                interKp.getPrivate(), false,
+                notBefore,
+                notAfter,
+                "SHA256withECDSA");
+        X509Certificate leafCert = cert(
+                "CN=Fake App Store Signing",
+                leafKp,
+                "CN=Fake Apple WWDR CA",
+                interKp.getPrivate(),
+                false,
                 leafOid ? "1.2.840.113635.100.6.11.1" : null,
-                notBefore, notAfter, "SHA256withECDSA");
+                notBefore,
+                notAfter,
+                "SHA256withECDSA");
         return new TestPki(rootCert, interCert, leafCert, leafKp.getPrivate());
     }
 
@@ -125,14 +142,36 @@ final class TestPki {
         KeyPair rootKp = rsaKeyPair();
         KeyPair interKp = rsaKeyPair();
         KeyPair signerKp = rsaKeyPair();
-        X509Certificate rootCert = cert("CN=Fake Apple Inc Root", rootKp, "CN=Fake Apple Inc Root",
-                rootKp.getPrivate(), true, null, notBefore, notAfter, "SHA256withRSA");
-        X509Certificate interCert = cert("CN=Fake WWDR CA", interKp, "CN=Fake Apple Inc Root",
-                rootKp.getPrivate(), true, null, notBefore, notAfter, "SHA256withRSA");
-        X509Certificate signerCert = cert("CN=Fake Receipt Signing", signerKp, "CN=Fake WWDR CA",
-                interKp.getPrivate(), false,
+        X509Certificate rootCert = cert(
+                "CN=Fake Apple Inc Root",
+                rootKp,
+                "CN=Fake Apple Inc Root",
+                rootKp.getPrivate(),
+                true,
+                null,
+                notBefore,
+                notAfter,
+                "SHA256withRSA");
+        X509Certificate interCert = cert(
+                "CN=Fake WWDR CA",
+                interKp,
+                "CN=Fake Apple Inc Root",
+                rootKp.getPrivate(),
+                true,
+                null,
+                notBefore,
+                notAfter,
+                "SHA256withRSA");
+        X509Certificate signerCert = cert(
+                "CN=Fake Receipt Signing",
+                signerKp,
+                "CN=Fake WWDR CA",
+                interKp.getPrivate(),
+                false,
                 signerOid ? "1.2.840.113635.100.6.11.1" : null,
-                notBefore, notAfter, "SHA256withRSA");
+                notBefore,
+                notAfter,
+                "SHA256withRSA");
         return new TestPki(rootCert, interCert, signerCert, signerKp.getPrivate());
     }
 
@@ -151,16 +190,15 @@ final class TestPki {
     String signJws(Map<String, ?> claims) throws Exception {
         Map<String, Object> header = new LinkedHashMap<String, Object>();
         header.put("alg", "ES256");
-        header.put("x5c", Arrays.asList(b64(leaf.getEncoded()),
-                b64(intermediate.getEncoded()), b64(root.getEncoded())));
-        return signJwsWithHeader(MAPPER.writeValueAsString(header),
-                MAPPER.writeValueAsString(claims));
+        header.put(
+                "x5c", Arrays.asList(b64(leaf.getEncoded()), b64(intermediate.getEncoded()), b64(root.getEncoded())));
+        return signJwsWithHeader(MAPPER.writeValueAsString(header), MAPPER.writeValueAsString(claims));
     }
 
     /** Same, but with a caller-controlled header (for malformed-header tests). */
     String signJwsWithHeader(String headerJson, String payloadJson) throws Exception {
-        String input = b64url(headerJson.getBytes(StandardCharsets.UTF_8))
-                + "." + b64url(payloadJson.getBytes(StandardCharsets.UTF_8));
+        String input = b64url(headerJson.getBytes(StandardCharsets.UTF_8)) + "."
+                + b64url(payloadJson.getBytes(StandardCharsets.UTF_8));
         Signature sig = Signature.getInstance("SHA256withECDSA");
         sig.initSign(leafKey);
         sig.update(input.getBytes(StandardCharsets.US_ASCII));
@@ -168,8 +206,7 @@ final class TestPki {
     }
 
     List<String> x5c() throws Exception {
-        return Arrays.asList(b64(leaf.getEncoded()), b64(intermediate.getEncoded()),
-                b64(root.getEncoded()));
+        return Arrays.asList(b64(leaf.getEncoded()), b64(intermediate.getEncoded()), b64(root.getEncoded()));
     }
 
     /** JCA emits DER ECDSA signatures; JWS wants raw 64-byte r ‖ s. */
@@ -220,13 +257,11 @@ final class TestPki {
                 leaf.getNotBefore(), leaf.getNotAfter(),
                 leaf.getSubjectX500Principal(), rogueKp.getPublic());
         builder.addExtension(Extension.basicConstraints, true, new BasicConstraints(false));
-        builder.addExtension(new ASN1ObjectIdentifier("1.2.840.113635.100.6.11.1"), false,
-                DERNull.INSTANCE);
-        X509Certificate twin = new JcaX509CertificateConverter().getCertificate(
-                builder.build(new JcaContentSignerBuilder("SHA256withRSA")
-                        .build(rogueKp.getPrivate())));
-        return sign(payload, new Date(), rogueKp.getPrivate(), twin,
-                Arrays.asList(twin, leaf, intermediate, root));
+        builder.addExtension(new ASN1ObjectIdentifier("1.2.840.113635.100.6.11.1"), false, DERNull.INSTANCE);
+        X509Certificate twin = new JcaX509CertificateConverter()
+                .getCertificate(
+                        builder.build(new JcaContentSignerBuilder("SHA256withRSA").build(rogueKp.getPrivate())));
+        return sign(payload, new Date(), rogueKp.getPrivate(), twin, Arrays.asList(twin, leaf, intermediate, root));
     }
 
     /**
@@ -239,11 +274,18 @@ final class TestPki {
         Date notBefore = new Date(System.currentTimeMillis() - 86_400_000L);
         Date notAfter = new Date(System.currentTimeMillis() + 365L * 86_400_000L);
         KeyPair paddingKp = rsaKeyPair();
-        List<X509Certificate> embedded = new ArrayList<X509Certificate>(
-                Arrays.asList(leaf, intermediate, root));
+        List<X509Certificate> embedded = new ArrayList<X509Certificate>(Arrays.asList(leaf, intermediate, root));
         for (int i = 0; i < paddingCertificates; i++) {
-            embedded.add(cert("CN=Padding " + i, paddingKp, "CN=Padding " + i,
-                    paddingKp.getPrivate(), false, null, notBefore, notAfter, "SHA256withRSA"));
+            embedded.add(cert(
+                    "CN=Padding " + i,
+                    paddingKp,
+                    "CN=Padding " + i,
+                    paddingKp.getPrivate(),
+                    false,
+                    null,
+                    notBefore,
+                    notAfter,
+                    "SHA256withRSA"));
         }
         return sign(payload, new Date(), leafKey, leaf, embedded);
     }
@@ -268,14 +310,21 @@ final class TestPki {
         KeyPair paddingKp = rsaKeyPair();
         List<X509Certificate> embedded = new ArrayList<X509Certificate>();
         for (int i = 0; i < paddingCertificates; i++) {
-            embedded.add(cert("CN=Padding " + i, paddingKp, "CN=Padding " + i,
-                    paddingKp.getPrivate(), false, null, notBefore, notAfter, "SHA256withRSA"));
+            embedded.add(cert(
+                    "CN=Padding " + i,
+                    paddingKp,
+                    "CN=Padding " + i,
+                    paddingKp.getPrivate(),
+                    false,
+                    null,
+                    notBefore,
+                    notAfter,
+                    "SHA256withRSA"));
         }
         return sign(payload, new Date(), leafKey, leaf, embedded);
     }
 
-    byte[] signReceiptWithCrossSignedMesh(byte[] payload, int layers, int branching)
-            throws Exception {
+    byte[] signReceiptWithCrossSignedMesh(byte[] payload, int layers, int branching) throws Exception {
         Date notBefore = new Date(System.currentTimeMillis() - 86_400_000L);
         Date notAfter = new Date(System.currentTimeMillis() + 365L * 86_400_000L);
         // keys[0] signs the top layer and is never embedded, so the mesh
@@ -288,15 +337,29 @@ final class TestPki {
         for (int layer = 1; layer <= layers; layer++) {
             String issuer = layer == 1 ? "CN=Mesh Trust" : "CN=Mesh Layer " + (layer - 1);
             for (int variant = 0; variant < branching; variant++) {
-                embedded.add(cert("CN=Mesh Layer " + layer, keys[layer], issuer,
-                        keys[layer - 1].getPrivate(), true, null, notBefore, notAfter,
+                embedded.add(cert(
+                        "CN=Mesh Layer " + layer,
+                        keys[layer],
+                        issuer,
+                        keys[layer - 1].getPrivate(),
+                        true,
+                        null,
+                        notBefore,
+                        notAfter,
                         "SHA256withRSA"));
             }
         }
         KeyPair meshLeafKp = rsaKeyPair();
-        X509Certificate meshLeaf = cert("CN=Mesh Receipt Signing", meshLeafKp,
-                "CN=Mesh Layer " + layers, keys[layers].getPrivate(), false,
-                "1.2.840.113635.100.6.11.1", notBefore, notAfter, "SHA256withRSA");
+        X509Certificate meshLeaf = cert(
+                "CN=Mesh Receipt Signing",
+                meshLeafKp,
+                "CN=Mesh Layer " + layers,
+                keys[layers].getPrivate(),
+                false,
+                "1.2.840.113635.100.6.11.1",
+                notBefore,
+                notAfter,
+                "SHA256withRSA");
         embedded.add(0, meshLeaf);
         return sign(payload, new Date(), meshLeafKp.getPrivate(), meshLeaf, embedded);
     }
@@ -308,8 +371,7 @@ final class TestPki {
      * the converter. Which rejection arrives is what says where the count
      * check sits.
      */
-    byte[] signReceiptWithUndecodablePadding(byte[] payload, int paddingCertificates)
-            throws Exception {
+    byte[] signReceiptWithUndecodablePadding(byte[] payload, int paddingCertificates) throws Exception {
         Date notBefore = new Date(System.currentTimeMillis() - 86_400_000L);
         Date notAfter = new Date(System.currentTimeMillis() + 365L * 86_400_000L);
         KeyPair paddingKp = rsaKeyPair();
@@ -319,38 +381,47 @@ final class TestPki {
         }
         for (int i = 0; i < paddingCertificates; i++) {
             X509v3CertificateBuilder builder = new JcaX509v3CertificateBuilder(
-                    new X500Name("CN=Undecodable " + i), BigInteger.valueOf(SERIAL.getAndIncrement()),
-                    notBefore, notAfter, new X500Name("CN=Undecodable " + i), paddingKp.getPublic());
+                    new X500Name("CN=Undecodable " + i),
+                    BigInteger.valueOf(SERIAL.getAndIncrement()),
+                    notBefore,
+                    notAfter,
+                    new X500Name("CN=Undecodable " + i),
+                    paddingKp.getPublic());
             // basicConstraints carrying an INTEGER instead of the SEQUENCE the
             // extension is defined as: BouncyCastle keeps the extension as
             // encoded, while the JCA's CertificateFactory parses every
             // extension it recognises and rejects this one on sight.
             builder.addExtension(Extension.basicConstraints, true, new ASN1Integer(1));
-            embedded.add(builder.build(new JcaContentSignerBuilder("SHA256withRSA")
-                    .build(paddingKp.getPrivate())));
+            embedded.add(builder.build(new JcaContentSignerBuilder("SHA256withRSA").build(paddingKp.getPrivate())));
         }
-        return sign(payload, new Date(), leafKey, leaf,
-                new CollectionStore<X509CertificateHolder>(embedded));
+        return sign(payload, new Date(), leafKey, leaf, new CollectionStore<X509CertificateHolder>(embedded));
     }
 
-    private byte[] sign(byte[] payload, Date signingTime, PrivateKey signingKey,
-                        X509Certificate signerCert, List<X509Certificate> embedded)
+    private byte[] sign(
+            byte[] payload,
+            Date signingTime,
+            PrivateKey signingKey,
+            X509Certificate signerCert,
+            List<X509Certificate> embedded)
             throws Exception {
         return sign(payload, signingTime, signingKey, signerCert, new JcaCertStore(embedded));
     }
 
-    private byte[] sign(byte[] payload, Date signingTime, PrivateKey signingKey,
-                        X509Certificate signerCert, Store<X509CertificateHolder> embedded)
+    private byte[] sign(
+            byte[] payload,
+            Date signingTime,
+            PrivateKey signingKey,
+            X509Certificate signerCert,
+            Store<X509CertificateHolder> embedded)
             throws Exception {
         ASN1EncodableVector baseAttrs = new ASN1EncodableVector();
-        baseAttrs.add(new org.bouncycastle.asn1.cms.Attribute(CMSAttributes.signingTime,
-                new DERSet(new Time(signingTime))));
+        baseAttrs.add(
+                new org.bouncycastle.asn1.cms.Attribute(CMSAttributes.signingTime, new DERSet(new Time(signingTime))));
         CMSSignedDataGenerator gen = new CMSSignedDataGenerator();
         ContentSigner cs = new JcaContentSignerBuilder("SHA256withRSA").build(signingKey);
         gen.addSignerInfoGenerator(new JcaSignerInfoGeneratorBuilder(
-                new JcaDigestCalculatorProviderBuilder().setProvider(BC).build())
-                .setSignedAttributeGenerator(
-                        new DefaultSignedAttributeTableGenerator(new AttributeTable(baseAttrs)))
+                        new JcaDigestCalculatorProviderBuilder().setProvider(BC).build())
+                .setSignedAttributeGenerator(new DefaultSignedAttributeTableGenerator(new AttributeTable(baseAttrs)))
                 .build(cs, signerCert));
         gen.addCertificates(embedded);
         CMSSignedData signed = gen.generate(new CMSProcessableByteArray(payload), true);
@@ -358,19 +429,28 @@ final class TestPki {
     }
 
     /** Builds a receipt payload SET; each entry of {@code inAppSets} becomes an attr-17. */
-    static byte[] receiptPayload(String bundleId, String appVersion, byte[] opaque,
-                                 byte[] sha1Hash, String creationDate,
-                                 List<byte[]> inAppSets) throws Exception {
-        return receiptPayload("ProductionSandbox", bundleId, appVersion, opaque, sha1Hash,
-                creationDate, inAppSets);
+    static byte[] receiptPayload(
+            String bundleId,
+            String appVersion,
+            byte[] opaque,
+            byte[] sha1Hash,
+            String creationDate,
+            List<byte[]> inAppSets)
+            throws Exception {
+        return receiptPayload("ProductionSandbox", bundleId, appVersion, opaque, sha1Hash, creationDate, inAppSets);
     }
 
     /** Same, with an explicit receipt_type (attr 0); {@code null} omits the attribute. */
-    static byte[] receiptPayload(String receiptType, String bundleId, String appVersion,
-                                 byte[] opaque, byte[] sha1Hash, String creationDate,
-                                 List<byte[]> inAppSets) throws Exception {
-        return receiptPayload(receiptType, bundleId, appVersion, opaque, sha1Hash, creationDate,
-                inAppSets, true, null);
+    static byte[] receiptPayload(
+            String receiptType,
+            String bundleId,
+            String appVersion,
+            byte[] opaque,
+            byte[] sha1Hash,
+            String creationDate,
+            List<byte[]> inAppSets)
+            throws Exception {
+        return receiptPayload(receiptType, bundleId, appVersion, opaque, sha1Hash, creationDate, inAppSets, true, null);
     }
 
     /**
@@ -382,10 +462,50 @@ final class TestPki {
      * carrying that type INTEGER — the only way a type above 2^31-1 reaches
      * a parser, since every modelled type is small.
      */
-    static byte[] receiptPayload(String receiptType, String bundleId, String appVersion,
-                                 byte[] opaque, byte[] sha1Hash, String creationDate,
-                                 List<byte[]> inAppSets, boolean creationDateAttribute,
-                                 BigInteger extraAttributeType) throws Exception {
+    static byte[] receiptPayload(
+            String receiptType,
+            String bundleId,
+            String appVersion,
+            byte[] opaque,
+            byte[] sha1Hash,
+            String creationDate,
+            List<byte[]> inAppSets,
+            boolean creationDateAttribute,
+            BigInteger extraAttributeType)
+            throws Exception {
+        return receiptPayload(
+                receiptType,
+                bundleId,
+                appVersion,
+                opaque,
+                sha1Hash,
+                creationDate,
+                inAppSets,
+                creationDateAttribute,
+                extraAttributeType,
+                new byte[] {1, 2, 3});
+    }
+
+    /**
+     * Same again, choosing what the extra attribute carries. The default
+     * {@code {1, 2, 3}} is not valid DER for any modelled attribute, so a
+     * parser that truncated an oversized type down onto a modelled one would
+     * still refuse the receipt and the vector could not tell the two apart.
+     * Handing it a well-formed value the truncated type WOULD accept is what
+     * makes that difference observable.
+     */
+    static byte[] receiptPayload(
+            String receiptType,
+            String bundleId,
+            String appVersion,
+            byte[] opaque,
+            byte[] sha1Hash,
+            String creationDate,
+            List<byte[]> inAppSets,
+            boolean creationDateAttribute,
+            BigInteger extraAttributeType,
+            byte[] extraAttributeValue)
+            throws Exception {
         ASN1EncodableVector attrs = new ASN1EncodableVector();
         if (receiptType != null) {
             attrs.add(attr(0, new DERUTF8String(receiptType).getEncoded()));
@@ -399,9 +519,9 @@ final class TestPki {
             attrs.add(attr(12, new DERIA5String(creationDate).getEncoded()));
         }
         attrs.add(attr(19, new DERUTF8String("1.0").getEncoded()));
-        attrs.add(attr(9999, new byte[]{1, 2, 3}));  // unknown attr for D10 tests
+        attrs.add(attr(9999, new byte[] {1, 2, 3})); // unknown attr for D10 tests
         if (extraAttributeType != null) {
-            attrs.add(attr(extraAttributeType, new byte[]{1, 2, 3}));
+            attrs.add(attr(extraAttributeType, extraAttributeValue));
         }
         for (byte[] inApp : inAppSets) {
             attrs.add(attr(17, inApp));
@@ -410,9 +530,14 @@ final class TestPki {
     }
 
     /** Builds one in-app purchase attribute SET (the value of an attr-17). */
-    static byte[] inAppPurchase(long quantity, String productId, String transactionId,
-                                String originalTransactionId, String purchaseDate,
-                                String expiresDate) throws Exception {
+    static byte[] inAppPurchase(
+            long quantity,
+            String productId,
+            String transactionId,
+            String originalTransactionId,
+            String purchaseDate,
+            String expiresDate)
+            throws Exception {
         ASN1EncodableVector attrs = new ASN1EncodableVector();
         attrs.add(attr(1701, new ASN1Integer(quantity).getEncoded()));
         attrs.add(attr(1702, new DERUTF8String(productId).getEncoded()));
@@ -456,8 +581,8 @@ final class TestPki {
     }
 
     private static ASN1Encodable attr(BigInteger type, byte[] valueOctets) {
-        return new DERSequence(new ASN1Encodable[]{
-                new ASN1Integer(type), new ASN1Integer(1), new DEROctetString(valueOctets)});
+        return new DERSequence(
+                new ASN1Encodable[] {new ASN1Integer(type), new ASN1Integer(1), new DEROctetString(valueOctets)});
     }
 
     // --- plumbing --------------------------------------------------------
@@ -474,13 +599,24 @@ final class TestPki {
         return kpg.generateKeyPair();
     }
 
-    private static X509Certificate cert(String subject, KeyPair subjectKp, String issuer,
-                                        PrivateKey issuerKey, boolean ca, String markerOid,
-                                        Date notBefore, Date notAfter, String sigAlg)
+    private static X509Certificate cert(
+            String subject,
+            KeyPair subjectKp,
+            String issuer,
+            PrivateKey issuerKey,
+            boolean ca,
+            String markerOid,
+            Date notBefore,
+            Date notAfter,
+            String sigAlg)
             throws Exception {
         X509v3CertificateBuilder builder = new JcaX509v3CertificateBuilder(
-                new X500Name(issuer), BigInteger.valueOf(SERIAL.getAndIncrement()),
-                notBefore, notAfter, new X500Name(subject), subjectKp.getPublic());
+                new X500Name(issuer),
+                BigInteger.valueOf(SERIAL.getAndIncrement()),
+                notBefore,
+                notAfter,
+                new X500Name(subject),
+                subjectKp.getPublic());
         builder.addExtension(Extension.basicConstraints, true, new BasicConstraints(ca));
         if (markerOid != null) {
             builder.addExtension(new ASN1ObjectIdentifier(markerOid), false, DERNull.INSTANCE);

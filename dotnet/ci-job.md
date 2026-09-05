@@ -111,6 +111,34 @@ repository's usual 7-day cooldown, so `System.Security.Cryptography.Pkcs`,
           dotnet publish samples/TrimAotSmoke -c Release -r linux-x64 -o "$RUNNER_TEMP/trim" \
             -warnaserror
           "$RUNNER_TEMP/trim/TrimAotSmoke" "$GITHUB_WORKSPACE/fixtures"
+
+  # A drift gate on dotnet/.editorconfig, not a restyle: `dotnet format`
+  # (apply mode) was trialled against a first-draft .editorconfig and
+  # rewrote 28 files with analyzer-driven modernizations (switch
+  # expressions, collection expressions, a primary constructor,
+  # [GeneratedRegex] source generators, Substring-to-range) that are not
+  # the codebase's current style — one file even came back with a literal
+  # unresolved merge-conflict marker where two fixers collided on the same
+  # block. dotnet/.editorconfig pins the Style/Performance/Usage analyzer
+  # categories plus two individual rules (CA1513, xUnit2025 — the latter's
+  # own fixer can't "Fix All in Solution") to :silent so this job checks
+  # only real formatting/using-order drift; verified clean (exit 0, no
+  # file changes) against the sources as they stand today.
+  dotnet-format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+      - run: dotnet format --verify-no-changes --severity info
+        working-directory: dotnet
 ```
 
 ## Notes for whoever wires this up

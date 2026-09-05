@@ -1,13 +1,12 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
-import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.security.cert.X509Certificate;
 import java.util.Set;
 import java.util.stream.Collectors;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
 
 class AppleRootCertsTest {
 
@@ -26,9 +25,8 @@ class AppleRootCertsTest {
 
     private static void assertAllThreeRoots(Set<X509Certificate> roots) {
         assertEquals(3, roots.size());
-        Set<String> subjects = roots.stream()
-                .map(c -> c.getSubjectX500Principal().getName())
-                .collect(Collectors.toSet());
+        Set<String> subjects =
+                roots.stream().map(c -> c.getSubjectX500Principal().getName()).collect(Collectors.toSet());
         assertTrue(subjects.stream().anyMatch(s -> s.contains("Apple Root CA - G2")), subjects.toString());
         assertTrue(subjects.stream().anyMatch(s -> s.contains("Apple Root CA - G3")), subjects.toString());
         // The file Apple labels "Apple Inc. Root" has subject CN=Apple Root CA.

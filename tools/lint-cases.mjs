@@ -16,6 +16,7 @@
  *   - two cases share an id
  *   - a case references an unregistered fixture
  *   - an expected reason is outside the canonical vocabulary
+ *   - a verifyReceiptBase64 case names a fixture whose codec is not "text"
  *
  * SCOPE NOTE — fixtures/apple-official/ is deliberately NOT scanned for
  * unregistered files. That tier is vendored verbatim from Apple's
@@ -197,6 +198,7 @@ function walk(dir) {
 function decode(bytes, codec) {
   if (codec === 'raw') return bytes;
   if (codec === 'utf8') return Buffer.from(bytes.toString('utf8').trim(), 'utf8');
+  if (codec === 'text') return bytes; // verbatim, untrimmed: the string a client sent
   if (codec === 'base64') return Buffer.from(bytes.toString('utf8').replace(/\s+/g, ''), 'base64');
   throw new Error(`unknown codec ${codec}`);
 }
@@ -291,6 +293,14 @@ if (doc && typeOf(doc.fixtures) === 'object' && Array.isArray(doc.cases)) {
       referenced.add(id);
       if (!Object.prototype.hasOwnProperty.call(fixtures, id)) {
         fail(where, `${slot} references fixture "${id}", which is not registered`);
+      }
+    }
+
+    if (testCase.operation === 'verifyReceiptBase64') {
+      const codec = fixtures[testCase.input?.fixture]?.codec;
+      if (codec !== 'text') {
+        fail(where, `verifyReceiptBase64 hands the fixture to the string entry point verbatim, so its fixture must `
+          + `have codec "text" (got ${JSON.stringify(codec)}) -- any other codec makes the runner decode it first`);
       }
     }
 

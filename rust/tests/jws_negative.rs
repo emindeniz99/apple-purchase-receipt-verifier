@@ -527,11 +527,15 @@ fn verify_raw_still_enforces_staleness() {
 fn junk_in_the_signature_segment_is_not_a_signature() {
     let jws = common::transaction_jws();
     assert!(verifier().verify_transaction(&jws).is_ok(), "baseline");
+    // A malformed segment is a format failure, decided before any
+    // cryptography runs — the same class as a header that is not base64url
+    // JSON — not a cryptographic verdict on a signature that was actually
+    // checked.
     for suffix in ["=", "==", "!!!!", "\n", " ", "~~~", "\t", "AAAA!"] {
         let mutated = format!("{jws}{suffix}");
         assert_eq!(
             reason_of(&mutated),
-            Reason::InvalidSignature,
+            Reason::InvalidJwsFormat,
             "signature segment + {suffix:?} must not verify"
         );
     }
@@ -540,14 +544,14 @@ fn junk_in_the_signature_segment_is_not_a_signature() {
     let spaced: String = signature.chars().flat_map(|c| [c, '\n']).collect();
     assert_eq!(
         reason_of(&common::join_jws(&header, &payload, &spaced)),
-        Reason::InvalidSignature
+        Reason::InvalidJwsFormat
     );
     // The standard alphabet is not the URL alphabet.
     let plus = signature.replacen('A', "+", 1);
     if plus != signature {
         assert_eq!(
             reason_of(&common::join_jws(&header, &payload, &plus)),
-            Reason::InvalidSignature
+            Reason::InvalidJwsFormat
         );
     }
 }

@@ -213,7 +213,14 @@ final class Certificate
         return $key;
     }
 
-    /** OPENSSL_KEYTYPE_* of the subject public key, or null when unreadable. */
+    /**
+     * OPENSSL_KEYTYPE_* of the subject public key, or null when unreadable.
+     *
+     * `openssl_pkey_get_details()` is documented to carry an int `type`, but
+     * its return is an untyped array: a build that omits the key, or answers
+     * something other than an int, reads as unreadable rather than being
+     * handed on as an OPENSSL_KEYTYPE_* a caller would compare against.
+     */
     public function publicKeyType(): ?int
     {
         $key = $this->publicKey();
@@ -226,8 +233,9 @@ final class Certificate
 
             return null;
         }
+        $type = $details['type'] ?? null;
 
-        return $details['type'];
+        return is_int($type) ? $type : null;
     }
 
     /**

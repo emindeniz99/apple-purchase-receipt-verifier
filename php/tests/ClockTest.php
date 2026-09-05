@@ -13,6 +13,7 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\VerifyReceiptEndpoint;
 use EminDeniz99\ApplePurchaseReceiptVerifier\SystemClock;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\FrozenClock;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\MintedPki;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Shape;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\TestPki;
 use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationException;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -243,12 +244,15 @@ final class ClockTest extends TestCase
         $future = (new VerifyReceiptEndpoint([$pki->rootDer], Environment::Sandbox, self::at('2099-01-01T00:00:00Z')))
             ->verifyReceipt($data);
 
+        $pastReceipt = Shape::asArray($past['receipt'], 'receipt');
+        $futureReceipt = Shape::asArray($future['receipt'], 'receipt');
+
         self::assertSame(0, $past['status'], 'a clock before the chain existed must not fail it');
         self::assertSame(0, $future['status'], 'a clock after it expires must not fail it either');
-        self::assertNotSame($past['receipt']['request_date_ms'], $future['receipt']['request_date_ms']);
+        self::assertNotSame($pastReceipt['request_date_ms'], $futureReceipt['request_date_ms']);
         self::assertSame(
-            $past['receipt']['receipt_creation_date_ms'],
-            $future['receipt']['receipt_creation_date_ms'],
+            $pastReceipt['receipt_creation_date_ms'],
+            $futureReceipt['receipt_creation_date_ms'],
         );
     }
 }

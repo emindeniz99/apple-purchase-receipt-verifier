@@ -21,9 +21,19 @@
   "scripts": {
     "build": "tsc",
     "prepack": "tsc",
-    "test": "tsc && tsc -p tsconfig.web.json && node --test",
-    "test:runtimes:web": "tsc && node runtime-smoke/web-node.mjs && node --experimental-vm-modules runtime-smoke/web-edge.mjs && node runtime-smoke/run-web-workerd.mjs workerd@1.20260903.1",
-    "test:runtimes": "tsc && node runtime-smoke/node-like.mjs && npx --yes bun@1.4.0 runtime-smoke/node-like.mjs && npx --yes deno@2.9.6 run --allow-read runtime-smoke/node-like.mjs && node runtime-smoke/run-workerd.mjs workerd@1.20260903.1 2024-09-23 nodejs_compat && node runtime-smoke/run-workerd.mjs workerd@1.20260903.1 2023-01-01 nodejs_compat_v2 && node runtime-smoke/run-workerd.mjs workerd@1.20260903.1 2026-08-01 nodejs_compat"
+    "test": "node scripts/typecheck.mjs && node --test",
+    "lint": "oxlint",
+    "format:check": "prettier --check .",
+    "format": "prettier --write .",
+    "test:runtimes": "npm run runtime:node && npm run runtime:bun && npm run runtime:deno && npm run runtime:workerd-floor && npm run runtime:workerd-compat-v2 && npm run runtime:workerd-latest",
+    "runtime:node": "node scripts/typecheck.mjs && node runtime-smoke/node-like.mjs",
+    "runtime:bun": "node scripts/typecheck.mjs && npx --yes bun@1.4.0 runtime-smoke/node-like.mjs",
+    "runtime:deno": "node scripts/typecheck.mjs && npx --yes deno@2.9.6 run --allow-read runtime-smoke/node-like.mjs",
+    "runtime:workerd-floor": "node scripts/typecheck.mjs && node runtime-smoke/run-workerd.mjs workerd@1.20260903.1 2024-09-23 nodejs_compat",
+    "runtime:workerd-compat-v2": "node scripts/typecheck.mjs && node runtime-smoke/run-workerd.mjs workerd@1.20260903.1 2023-01-01 nodejs_compat_v2",
+    "runtime:workerd-latest": "node scripts/typecheck.mjs && node runtime-smoke/run-workerd.mjs workerd@1.20260903.1 2026-08-01 nodejs_compat",
+    "test:runtimes:web": "node scripts/typecheck.mjs && node runtime-smoke/web-node.mjs && node --experimental-vm-modules runtime-smoke/web-edge.mjs && node runtime-smoke/run-web-workerd.mjs workerd@1.20260903.1",
+    "test:runtimes:fastly": "node scripts/typecheck.mjs && node runtime-smoke/run-fastly.mjs"
   },
   "license": "MIT",
   "files": [
@@ -32,7 +42,10 @@
   ],
   "devDependencies": {
     "@edge-runtime/vm": "^5.0.0",
+    "@fastly/js-compute": "^3.45.0",
     "@types/node": "^20.19.0",
+    "oxlint": "^1.81.0",
+    "prettier": "^3.9.6",
     "typescript": "^7.0.2"
   },
   "types": "dist/index.d.ts"

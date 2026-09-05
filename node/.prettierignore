@@ -1,0 +1,6 @@
+dist/
+node_modules/
+certs/
+*.min.*
+# Prose, not code — out of scope for a code formatter.
+*.md

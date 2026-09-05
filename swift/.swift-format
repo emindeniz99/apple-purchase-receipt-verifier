@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "lineLength": 132,
+  "indentation": { "spaces": 4 },
+  "tabWidth": 4,
+  "rules": {
+    "DoNotUseSemicolons": false,
+    "GroupNumericLiterals": false
+  }
+}

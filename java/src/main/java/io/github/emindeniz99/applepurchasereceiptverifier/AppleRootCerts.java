@@ -24,8 +24,7 @@ import java.util.stream.Collectors;
  */
 public final class AppleRootCerts {
 
-    private AppleRootCerts() {
-    }
+    private AppleRootCerts() {}
 
     /**
      * Trust anchors for StoreKit 2 / App Store Server JWS chains.
@@ -45,10 +44,10 @@ public final class AppleRootCerts {
 
     private static Set<X509Certificate> allRoots() {
         return Arrays.stream(new String[] {
-                "/certs/AppleIncRootCertificate.cer",
-                "/certs/AppleRootCA-G2.cer",
-                "/certs/AppleRootCA-G3.cer",
-        }).map(AppleRootCerts::load).collect(Collectors.toCollection(LinkedHashSet::new));
+                    "/certs/AppleIncRootCertificate.cer", "/certs/AppleRootCA-G2.cer", "/certs/AppleRootCA-G3.cer",
+                })
+                .map(AppleRootCerts::load)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
     private static X509Certificate load(String resource) {

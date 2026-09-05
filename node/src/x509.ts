@@ -11,7 +11,13 @@
  */
 import { bytesEqual, utf8Decode } from './bytes.js';
 import {
-  ParseError, Tag, encodeOidContents, isOctetString, octetStringValue, parse, type ASN1Node,
+  ParseError,
+  Tag,
+  encodeOidContents,
+  isOctetString,
+  octetStringValue,
+  parse,
+  type ASN1Node,
 } from './der.js';
 
 const Tags = {
@@ -44,7 +50,7 @@ export interface ParsedCertificate {
   /** notBefore / notAfter as ms since epoch. */
   notBefore: number;
   notAfter: number;
-  /** SubjectPublicKeyInfo TLV — the SPKI `crypto.subtle.importKey` takes. */
+  /** SubjectPublicKeyInfo TLV — the key material, converted to a JWK to import. */
   spki: Uint8Array;
   /** SPKI algorithm OID (rsaEncryption / id-ecPublicKey). */
   publicKeyAlgorithmOid: string;
@@ -71,7 +77,8 @@ function children(node: ASN1Node): ASN1Node[] {
   return node.children ?? [];
 }
 
-function oidString(contents: Uint8Array): string {
+/** Dotted-decimal form of an OBJECT IDENTIFIER's contents bytes. */
+export function oidString(contents: Uint8Array): string {
   if (contents.length === 0) {
     throw new ParseError('empty OBJECT IDENTIFIER');
   }
@@ -123,8 +130,14 @@ function decodeTime(node: ASN1Node): number {
   if (node.tag === Tags.UTC_TIME) {
     year += year >= 50 ? 1900 : 2000;
   }
-  return Date.UTC(year, Number(month) - 1, Number(day),
-    Number(hour), Number(minute), Number(second));
+  return Date.UTC(
+    year,
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second),
+  );
 }
 
 function bitStringBits(contents: Uint8Array): boolean[] {
@@ -165,9 +178,13 @@ export function parseCertificate(der: Uint8Array): ParsedCertificate {
   const validity = fields[index + 3];
   const subject = fields[index + 4];
   const spki = fields[index + 5];
-  if (serial?.tag !== Tag.INTEGER || issuer?.tag !== Tag.SEQUENCE
-    || validity?.tag !== Tag.SEQUENCE || subject?.tag !== Tag.SEQUENCE
-    || spki?.tag !== Tag.SEQUENCE) {
+  if (
+    serial?.tag !== Tag.INTEGER ||
+    issuer?.tag !== Tag.SEQUENCE ||
+    validity?.tag !== Tag.SEQUENCE ||
+    subject?.tag !== Tag.SEQUENCE ||
+    spki?.tag !== Tag.SEQUENCE
+  ) {
     throw new ParseError('unexpected TBSCertificate layout');
   }
   const validityFields = children(validity);
@@ -179,8 +196,8 @@ export function parseCertificate(der: Uint8Array): ParsedCertificate {
     throw new ParseError('unexpected SubjectPublicKeyInfo layout');
   }
   const algorithmParts = children(spkiAlgorithm);
-  const publicKeyCurve = algorithmParts[1]?.tag === Tag.OID
-    ? oidString(algorithmParts[1]!.contents) : null;
+  const publicKeyCurve =
+    algorithmParts[1]?.tag === Tag.OID ? oidString(algorithmParts[1]!.contents) : null;
 
   const signatureAlgorithm = children(top[1]!)[0];
   if (top[1]!.tag !== Tag.SEQUENCE || signatureAlgorithm?.tag !== Tag.OID) {
@@ -189,10 +206,12 @@ export function parseCertificate(der: Uint8Array): ParsedCertificate {
   // RFC 5280 §4.1.1.2: the two AlgorithmIdentifiers must be the same one.
   // Without this, the algorithm the signature is checked under is taken from
   // a field the signature does not cover.
-  const innerAlgorithm = innerSignature === undefined ? undefined
-    : children(innerSignature)[0];
-  if (innerSignature?.tag !== Tag.SEQUENCE || innerAlgorithm?.tag !== Tag.OID
-    || !bytesEqual(innerAlgorithm.contents, signatureAlgorithm.contents)) {
+  const innerAlgorithm = innerSignature === undefined ? undefined : children(innerSignature)[0];
+  if (
+    innerSignature?.tag !== Tag.SEQUENCE ||
+    innerAlgorithm?.tag !== Tag.OID ||
+    !bytesEqual(innerAlgorithm.contents, signatureAlgorithm.contents)
+  ) {
     throw new ParseError('signatureAlgorithm disagrees with tbsCertificate.signature');
   }
   if (top[2]!.tag !== Tags.BIT_STRING || top[2]!.contents.length < 2) {
@@ -220,8 +239,8 @@ export function parseCertificate(der: Uint8Array): ParsedCertificate {
   }
 
   const keyUsageExtension = byOid.get(OID_KEY_USAGE);
-  const keyUsage = keyUsageExtension === undefined ? null
-    : bitStringBits(parse(keyUsageExtension).contents);
+  const keyUsage =
+    keyUsageExtension === undefined ? null : bitStringBits(parse(keyUsageExtension).contents);
 
   // X509_check_ca() === 1: basicConstraints present with cA TRUE, and a
   // keyUsage extension (if any) that permits keyCertSign.
@@ -263,8 +282,8 @@ export function parseCertificate(der: Uint8Array): ParsedCertificate {
     signatureValue: top[2]!.contents.subarray(1),
     isCa: basicConstraintsCa && certSignAllowed,
     keyUsage,
-    subjectKeyId: subjectKeyIdExtension === undefined ? null
-      : parse(subjectKeyIdExtension).contents,
+    subjectKeyId:
+      subjectKeyIdExtension === undefined ? null : parse(subjectKeyIdExtension).contents,
     authorityKeyId,
     authorityCertSerial,
     hasExtension(oid: string): boolean {

@@ -6,6 +6,7 @@ import (
 	"encoding/pem"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	applereceipt "github.com/emindeniz99/apple-purchase-receipt-verifier/go"
@@ -58,14 +59,29 @@ func TestSystemTrustStoreIsNeverConsulted(t *testing.T) {
 	// Premise 1: the operating system now trusts this chain. Verify with
 	// a nil Roots is the platform verifier, so this is the OS's own
 	// answer and not a re-implementation of it.
-	intermediates := x509.NewCertPool()
-	intermediates.AddCert(intermediate.cert)
-	if _, err := leaf.cert.Verify(x509.VerifyOptions{
-		Intermediates: intermediates,
-		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
-	}); err != nil {
-		t.Fatalf("the premise failed: the platform verifier does not trust the chain "+
-			"even with the root installed, so this test proves nothing: %v", err)
+	//
+	// Only Unix builds the pool from files, so SSL_CERT_FILE is the whole
+	// mechanism for planting a root here. On darwin and windows crypto/x509
+	// hands the chain to the platform verifier, which reads the keychain or
+	// the certificate store and ignores the variable, and this process
+	// cannot write to either without administrative rights. So the premise
+	// is asserted where it can be, and the assertion that actually matters
+	// — the library refusing the chain — still runs on all three.
+	systemRootPlantable := runtime.GOOS != "darwin" && runtime.GOOS != "windows"
+	if systemRootPlantable {
+		intermediates := x509.NewCertPool()
+		intermediates.AddCert(intermediate.cert)
+		if _, err := leaf.cert.Verify(x509.VerifyOptions{
+			Intermediates: intermediates,
+			KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
+		}); err != nil {
+			t.Fatalf("the premise failed: the platform verifier does not trust the chain "+
+				"even with the root installed, so this test proves nothing: %v", err)
+		}
+	} else {
+		t.Logf("%s verifies through the platform trust store, which SSL_CERT_FILE "+
+			"does not reach, so the root could not be planted; the rejection below "+
+			"is still asserted", runtime.GOOS)
 	}
 
 	// Premise 2: and the library still refuses it, with its production

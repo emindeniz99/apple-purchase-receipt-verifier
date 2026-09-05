@@ -407,11 +407,23 @@ namespace ApplePurchaseReceiptVerifier.Jws
             }
         }
 
+        // RFC 7515 §2: a compact-JWS segment is unpadded canonical base64url.
+        // Reject anything outside A-Za-z0-9-_ (this also rejects '=' and
+        // '+'/'/'), an impossible length (len % 4 == 1), and a segment whose
+        // final character carries non-zero unused bits — checked by
+        // requiring the decoded bytes to re-encode to the same string.
         private static byte[] DecodeBase64Url(string value, string what)
         {
-            if (value.IndexOf('+') >= 0 || value.IndexOf('/') >= 0)
+            for (int i = 0; i < value.Length; i++)
             {
-                throw Format(what + " is not valid base64url");
+                char c = value[i];
+                bool isValid =
+                    (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+                    || c == '-' || c == '_';
+                if (!isValid)
+                {
+                    throw Format(what + " is not valid base64url");
+                }
             }
 
             string standard = value.Replace('-', '+').Replace('_', '/');
@@ -423,14 +435,23 @@ namespace ApplePurchaseReceiptVerifier.Jws
                 default: break;
             }
 
+            byte[] decoded;
             try
             {
-                return Convert.FromBase64String(standard);
+                decoded = Convert.FromBase64String(standard);
             }
             catch (FormatException e)
             {
                 throw Format(what + " is not valid base64url", e);
             }
+
+            string reencoded = Convert.ToBase64String(decoded).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+            if (!string.Equals(reencoded, value, StringComparison.Ordinal))
+            {
+                throw Format(what + " is not valid base64url");
+            }
+
+            return decoded;
         }
 
         private void RequireBundleId(string? actual)

@@ -15,11 +15,11 @@ from cryptography import x509
 _CERTS = Path(__file__).parent / "certs"
 
 
-def _load(name):
+def _load(name: str) -> x509.Certificate:
     return x509.load_der_x509_certificate((_CERTS / name).read_bytes())
 
 
-def _all_roots():
+def _all_roots() -> "list[x509.Certificate]":
     return [
         _load("AppleIncRootCertificate.cer"),
         _load("AppleRootCA-G2.cer"),

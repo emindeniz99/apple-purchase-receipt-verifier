@@ -10,9 +10,12 @@ import Foundation
 /// so anchoring on a single root would break silently if Apple re-anchored
 /// a path — see PLAN.md D15.
 private func load(_ name: String) -> Data {
-    guard let url = Bundle.module.url(forResource: name, withExtension: "cer",
-                                      subdirectory: "certs"),
-          let data = try? Data(contentsOf: url) else {
+    guard
+        let url = Bundle.module.url(
+            forResource: name, withExtension: "cer",
+            subdirectory: "certs"),
+        let data = try? Data(contentsOf: url)
+    else {
         fatalError("bundled certificate missing: \(name).cer")
     }
     return data

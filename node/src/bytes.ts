@@ -119,3 +119,90 @@ export function base64Decode(text: string): Uint8Array {
   }
   return out.subarray(0, length);
 }
+
+// receipt-data as Apple's own client can send it: RFC 4648, either the
+// standard (`+/`) or base64url (`-_`) alphabet — never both in the same
+// string — padding present or omitted, and CR/LF/space/tab anywhere
+// (Foundation's base64EncodedString(options:) line-wraps at 64 or 76
+// columns). Unlike base64UrlDecodeStrict this has no canonical-trailing-bits
+// check — that is not part of the receipt-data contract.
+const RECEIPT_BASE64_PATTERN = /^[A-Za-z0-9+/_-]*={0,2}$/;
+
+/**
+ * Strict receipt-data base64 decode (the `verifyReceiptBase64` / `receipt-data`
+ * contract, PLAN §receipt-base64). Strips CR, LF, space and tab first, then
+ * rejects: any other character; a string mixing the standard and base64url
+ * alphabets; anything (beyond the already-stripped whitespace) after the
+ * `=` padding; a stripped length congruent to 1 mod 4; a `=` count that
+ * does not match what the unpadded data length requires (over- or
+ * under-padded); and an empty or whitespace-only string. Returns null
+ * rather than throwing.
+ */
+export function receiptBase64DecodeStrict(text: string): Uint8Array | null {
+  const stripped = text.replace(/[\r\n \t]/g, '');
+  if (stripped.length === 0 || !RECEIPT_BASE64_PATTERN.test(stripped)) {
+    return null;
+  }
+  const hasStandard = stripped.includes('+') || stripped.includes('/');
+  const hasUrlSafe = stripped.includes('-') || stripped.includes('_');
+  if (hasStandard && hasUrlSafe) {
+    return null;
+  }
+  const pad = stripped.length - stripped.replace(/=+$/, '').length;
+  const data = stripped.length - pad;
+  // The impossible-length test is on the DATA, not the padded string: 'A==='
+  // is a multiple of four in total and still encodes no whole byte.
+  if (data === 0 || data % 4 === 1 || (pad !== 0 && pad !== (4 - (data % 4)) % 4)) {
+    return null;
+  }
+  return base64Decode(stripped);
+}
+
+/**
+ * Strict, canonical base64url decode — RFC 7515 §2's compact-JWS segment
+ * alphabet (`A-Za-z0-9-_`), no padding. Rejects a character outside that
+ * alphabet, an impossible length (`length % 4 === 1`), or a final character
+ * whose unused bits are non-zero, by re-encoding the decoded bytes with
+ * {@link base64UrlEncode} and requiring an exact match — the same test a
+ * lenient decode-then-skip pass cannot make. Returns null rather than
+ * throwing; JWS-format callers turn that into their own VerificationError.
+ */
+export function base64UrlDecodeStrict(text: string): Uint8Array | null {
+  if (!/^[A-Za-z0-9_-]*$/.test(text) || text.length % 4 === 1) {
+    return null;
+  }
+  const decoded = base64Decode(text);
+  return base64UrlEncode(decoded) === text ? decoded : null;
+}
+
+const BASE64URL_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+
+// Hand-rolled for the same reason base64Decode is, and one more: btoa()
+// takes a binary *string*, so bytes have to be walked into one first, and
+// it is not present in every runtime this build targets. Unpadded, because
+// that is the only form JWK members take (RFC 7515 §2).
+/** base64url encode, unpadded — the encoding every JWK member uses. */
+export function base64UrlEncode(bytes: Uint8Array): string {
+  let out = '';
+  let i = 0;
+  for (; i + 3 <= bytes.length; i += 3) {
+    const chunk = (bytes[i]! << 16) | (bytes[i + 1]! << 8) | bytes[i + 2]!;
+    out +=
+      BASE64URL_ALPHABET[(chunk >> 18) & 0x3f]! +
+      BASE64URL_ALPHABET[(chunk >> 12) & 0x3f]! +
+      BASE64URL_ALPHABET[(chunk >> 6) & 0x3f]! +
+      BASE64URL_ALPHABET[chunk & 0x3f]!;
+  }
+  const left = bytes.length - i;
+  if (left === 1) {
+    const chunk = bytes[i]! << 16;
+    out += BASE64URL_ALPHABET[(chunk >> 18) & 0x3f]! + BASE64URL_ALPHABET[(chunk >> 12) & 0x3f]!;
+  } else if (left === 2) {
+    const chunk = (bytes[i]! << 16) | (bytes[i + 1]! << 8);
+    out +=
+      BASE64URL_ALPHABET[(chunk >> 18) & 0x3f]! +
+      BASE64URL_ALPHABET[(chunk >> 12) & 0x3f]! +
+      BASE64URL_ALPHABET[(chunk >> 6) & 0x3f]!;
+  }
+  return out;
+}

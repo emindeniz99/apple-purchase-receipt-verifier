@@ -9,6 +9,7 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\AppReceipt;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\DerWriter;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\MintedPki;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Shape;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\TestPki;
 use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationException;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -275,7 +276,7 @@ final class ReceiptVerifierTest extends TestCase
             $pki->receiptSignerSid,
             $pki->receiptSignerKey,
             TestPki::OID_SHA256_HEX,
-            (string) $wrong,
+            Shape::asString($wrong, 'openssl_sign output'),
             $attrs,
         );
         $this->assertReason(Reason::InvalidSignature, fn () => $this->verifier()->verify($mistagged));

@@ -41,7 +41,19 @@ module TestSupport
     end
 
     def cases
-      @cases ||= JSON.parse(File.read(File.join(fixtures_root, "cases.json")))
+      @cases ||= read_fixtures_json("cases.json")
+    end
+
+    def cases_schema
+      @cases_schema ||= read_fixtures_json("cases.schema.json")
+    end
+
+    # Read as UTF-8 explicitly rather than in the default external encoding.
+    # Both files carry non-ASCII characters in their comments, and on a
+    # machine whose locale resolves to US-ASCII the parse raises
+    # Encoding::InvalidByteSequenceError before a single vector runs.
+    def read_fixtures_json(name)
+      JSON.parse(File.read(File.join(fixtures_root, name), encoding: "UTF-8"))
     end
 
     # The decoded logical bytes of a registered fixture, checked against the
@@ -62,9 +74,13 @@ module TestSupport
       raw = File.binread(File.join(fixtures_root, entry["path"]))
       bytes =
         case entry["codec"]
-        when "raw" then raw
         when "base64" then raw.gsub(/\s+/, "").unpack1("m")
         when "utf8" then raw.force_encoding(Encoding::UTF_8).strip.b
+        # raw = the file bytes are the bytes; text = the same, verbatim and
+        # untrimmed, handed to a STRING-taking entry point instead of a
+        # binary one. Identical here: File.binread already reads verbatim,
+        # untrimmed bytes for both, CRLF and the one 0-byte fixture included.
+        when "raw", "text" then raw
         else raise "harness error: unknown fixture codec #{entry["codec"].inspect}"
         end
 

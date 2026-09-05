@@ -8,6 +8,7 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Der;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Jws\JwsVerifier;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\VerifyReceiptEndpoint;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Shape;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Subprocess;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
@@ -87,7 +88,7 @@ final class MemoryExhaustionTest extends TestCase
         self::assertMatchesRegularExpression('/^VERDICT=' . preg_quote($expected, '/') . ' /m', $output, $output);
         self::assertSame(1, preg_match('/PEAK_MB=([0-9.]+)/', $output, $m), $output);
 
-        return (float) $m[1];
+        return (float) Shape::asString($m[1] ?? null, 'PEAK_MB capture');
     }
 
     /**

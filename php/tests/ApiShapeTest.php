@@ -181,7 +181,7 @@ final class ApiShapeTest extends TestCase
         } catch (VerificationException $e) {
             self::fail('misconfiguration surfaced as a verification verdict: ' . $e->getMessage());
         } catch (InvalidArgumentException) {
-            self::assertTrue(true);
+            $this->addToAssertionCount(1);
         }
     }
 

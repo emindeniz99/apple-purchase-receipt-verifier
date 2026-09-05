@@ -97,13 +97,16 @@ function readNode(buf: Uint8Array, off: number, depth: number): [ASN1Node, numbe
     children.push(child);
     pos = next;
   }
-  return [{
-    tag,
-    constructed: true,
-    raw: buf.subarray(off, pos),
-    contents: concatBytes(children.map((c) => c.raw)),
-    children,
-  }, pos];
+  return [
+    {
+      tag,
+      constructed: true,
+      raw: buf.subarray(off, pos),
+      contents: concatBytes(children.map((c) => c.raw)),
+      children,
+    },
+    pos,
+  ];
 }
 
 function readChildren(contents: Uint8Array, depth: number): ASN1Node[] {

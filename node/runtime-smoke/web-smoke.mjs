@@ -4,7 +4,10 @@
 // compatibility flags and inside the Vercel Edge runtime's isolate.
 // Fixture bytes come in from the runner.
 import {
-  JwsVerifier, ReceiptVerifier, VerificationError, appleReceiptRoots,
+  JwsVerifier,
+  ReceiptVerifier,
+  VerificationError,
+  appleReceiptRoots,
 } from '../dist/web/index.js';
 
 const BUNDLE = 'com.example.app';
@@ -33,7 +36,8 @@ export async function run(fx) {
   // appleReceiptRoots() must not touch the filesystem: the roots are
   // inlined at build time so a bundled runtime can call it.
   const builtin = new ReceiptVerifier({
-    trustedRoots: appleReceiptRoots(), bundleId: 'dev.bonzer.weeka.app',
+    trustedRoots: appleReceiptRoots(),
+    bundleId: 'dev.bonzer.weeka.app',
   });
   if ((await builtin.verify(fx.sandboxReceiptB64.trim())).receiptType !== 'ProductionSandbox') {
     throw new Error('builtin roots did not verify the genuine receipt');
@@ -41,7 +45,8 @@ export async function run(fx) {
   out.push('appleReceiptRoots() works without a filesystem');
 
   const receipts = new ReceiptVerifier({
-    trustedRoots: [fx.appleRootDer], bundleId: 'dev.bonzer.weeka.app',
+    trustedRoots: [fx.appleRootDer],
+    bundleId: 'dev.bonzer.weeka.app',
   });
   const receipt = await receipts.verify(fx.sandboxReceiptB64.trim());
   if (receipt.receiptType !== 'ProductionSandbox') {
@@ -54,7 +59,8 @@ export async function run(fx) {
   // a runtime that refuses SHA-1 for RSASSA-PKCS1-v1_5 fails here and only
   // here.
   const legacy = new ReceiptVerifier({
-    trustedRoots: appleReceiptRoots(), bundleId: 'com.nutcall.alert',
+    trustedRoots: appleReceiptRoots(),
+    bundleId: 'com.nutcall.alert',
   });
   const purchases = (await legacy.verify(fx.legacyReceiptB64.trim())).inAppPurchases.length;
   if (purchases !== 187) {
@@ -63,7 +69,9 @@ export async function run(fx) {
   out.push('genuine legacy receipt verifies (SHA-1 RSA chain and signature, 187 purchases)');
 
   const jws = new JwsVerifier({
-    trustedRoots: [fx.jwsRootDer], bundleId: BUNDLE, acceptedEnvironments: ['Sandbox'],
+    trustedRoots: [fx.jwsRootDer],
+    bundleId: BUNDLE,
+    acceptedEnvironments: ['Sandbox'],
   });
   const transaction = fx.transactionJws.trim();
   const tx = await jws.verifyTransaction(transaction);

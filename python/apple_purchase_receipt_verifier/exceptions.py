@@ -21,7 +21,7 @@ class VerificationError(Exception):
     machine-readable cause; a payload that raises must be treated as fully
     untrusted — there is no partial success."""
 
-    def __init__(self, reason, message):
+    def __init__(self, reason: str, message: str) -> None:
         super().__init__(f"{reason}: {message}")
         self.reason = reason
 
