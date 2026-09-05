@@ -170,6 +170,13 @@ public class PlatformTests
     private const int LiveSetRoundSize = 500;
 
     /// <summary>
+    /// Measured rounds. The assertion is on the smallest growth of any round:
+    /// retention grows the live set in every round, a background allocation
+    /// lands in one.
+    /// </summary>
+    private const int LiveSetRounds = 3;
+
+    /// <summary>
     /// What one verification may leave behind, in bytes. A single retained
     /// <c>X509Certificate2</c> is ~1.5 kB of <c>RawData</c> alone, so this is
     /// well under one leaked object per call, and well over the ~2.5 B/call a
@@ -191,6 +198,14 @@ public class PlatformTests
     /// on another thread lands in the delta. That is what made this test flaky —
     /// deltas from -7.9 MB to +22 MB against a 16 MB ceiling — while the leak it
     /// looks for was never there.
+    /// <para>
+    /// A quiet process is still not a silent one: on macOS/arm64 net8.0 a single
+    /// round read +262 kB once in three runs with nothing of ours retaining it
+    /// (the test host and the runtime allocate on their own threads). So the
+    /// round is measured <see cref="LiveSetRounds"/> times and the smallest
+    /// growth is judged. Retention of one object per call, the failure this
+    /// test exists for, exceeds the budget in every round and still fails.
+    /// </para>
     /// </remarks>
     [Fact]
     public void RepeatedVerificationDoesNotGrowUnboundedly()
@@ -205,19 +220,25 @@ public class PlatformTests
             verifier.Verify(receipt);
         }
 
+        long smallestGrowth = long.MaxValue;
         long before = LiveSet();
-        for (int i = 0; i < LiveSetRoundSize; i++)
+        for (int round = 0; round < LiveSetRounds; round++)
         {
-            verifier.Verify(receipt);
-        }
+            for (int i = 0; i < LiveSetRoundSize; i++)
+            {
+                verifier.Verify(receipt);
+            }
 
-        long after = LiveSet();
+            long after = LiveSet();
+            smallestGrowth = Math.Min(smallestGrowth, after - before);
+            before = after;
+        }
 
         long budget = LiveSetRoundSize * LiveSetBudgetPerVerification;
         Assert.True(
-            after - before < budget,
-            $"live set grew by {after - before} bytes over {LiveSetRoundSize} verifications, "
-            + $"which is more than the {budget} bytes budgeted");
+            smallestGrowth < budget,
+            $"live set grew by at least {smallestGrowth} bytes in each of {LiveSetRounds} rounds "
+            + $"of {LiveSetRoundSize} verifications, which is more than the {budget} bytes budgeted per round");
     }
 
     /// <summary>The managed live set, with everything collectable collected.</summary>
