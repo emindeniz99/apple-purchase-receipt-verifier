@@ -457,7 +457,7 @@ const cases = [
     expect: 'INVALID_CHAIN',
   }),
 
-  // The five hostile-JWS contract vectors. They live here as well as in
+  // The six hostile-JWS contract vectors. They live here as well as in
   // cases.json because the header and the x5c certificates are what the two
   // builds decode most differently — OpenSSL on one side, this repo's own DER
   // reader on the other — and a shared vector only runs against the Node one.
@@ -484,6 +484,11 @@ const cases = [
   jwsCase('an x5c certificate claiming X.509 version 11', {
     roots: [HOSTILE_JWS_ROOT],
     jws: genText('transaction-x5c-certificate-version-11.jws'),
+    expect: 'INVALID_CERTIFICATE',
+  }),
+  jwsCase('an x5c certificate carrying one extension twice', {
+    roots: [HOSTILE_JWS_ROOT],
+    jws: genText('transaction-x5c-duplicate-extension.jws'),
     expect: 'INVALID_CERTIFICATE',
   }),
 ];

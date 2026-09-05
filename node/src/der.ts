@@ -218,6 +218,34 @@ export function requireKnownVersion(certRaw: Uint8Array): void {
   }
 }
 
+/**
+ * Rejects a certificate that carries the same extension more than once.
+ * RFC 5280 4.2: "A certificate MUST NOT include more than one instance of a
+ * particular extension." A parser that allows one has to pick a copy, and
+ * two implementations reading the same bytes can pick different ones — so
+ * the marker-OID scan below, and OpenSSL's own view of what the certificate
+ * is for, stop being answers about one certificate. OpenSSL does notice
+ * (it flags the certificate invalid and the issuer check then fails), but
+ * only after the verdict has become one about the chain rather than about
+ * the certificate; this settles it where the other decoding defects are
+ * settled.
+ */
+export function requireNoDuplicateExtensions(certRaw: Uint8Array): void {
+  const { extensions } = tbsParts(certRaw);
+  const seen = new Set<string>();
+  for (const ext of extensions?.children ?? []) {
+    const oid = ext.children?.[0];
+    if (oid?.tag !== Tag.OID) {
+      throw new ParseError('extension does not begin with an OID');
+    }
+    const key = Array.from(oid.contents).join(',');
+    if (seen.has(key)) {
+      throw new ParseError('duplicate X.509 extension');
+    }
+    seen.add(key);
+  }
+}
+
 /** Whether the certificate carries an extension with the given OID. */
 export function hasExtension(certRaw: Uint8Array, oid: string): boolean {
   const { extensions } = tbsParts(certRaw);

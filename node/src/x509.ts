@@ -241,9 +241,16 @@ export function parseCertificate(der: Uint8Array): ParsedCertificate {
       throw new ParseError('malformed certificate extension');
     }
     const oid = oidString(oidNode.contents);
-    if (!byOid.has(oid)) {
-      byOid.set(oid, octetStringValue(valueNode));
+    // RFC 5280 4.2: a certificate MUST NOT include more than one instance of
+    // a particular extension. Keeping the first copy and ignoring the rest is
+    // what this used to do, and it makes the reader pick which copy the
+    // certificate means — a choice another implementation can make
+    // differently, so the same bytes stop having one answer for "is this a
+    // CA", "what may it be used for" and "does it carry the marker OID".
+    if (byOid.has(oid)) {
+      throw new ParseError('duplicate X.509 extension');
     }
+    byOid.set(oid, octetStringValue(valueNode));
   }
 
   const keyUsageExtension = byOid.get(OID_KEY_USAGE);
