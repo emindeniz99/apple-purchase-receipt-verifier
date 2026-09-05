@@ -25,11 +25,19 @@ public final class AppReceipt {
     private final List<InAppPurchase> inAppPurchases;
     private final Map<Integer, List<byte[]>> unknownAttributes;
 
-    AppReceipt(String receiptType, String bundleId, byte[] bundleIdBytes, String appVersion,
-               byte[] opaqueValue, byte[] sha1Hash, Instant creationDate,
-               Instant originalPurchaseDate, String originalAppVersion,
-               Instant expirationDate, List<InAppPurchase> inAppPurchases,
-               Map<Integer, List<byte[]>> unknownAttributes) {
+    AppReceipt(
+            String receiptType,
+            String bundleId,
+            byte[] bundleIdBytes,
+            String appVersion,
+            byte[] opaqueValue,
+            byte[] sha1Hash,
+            Instant creationDate,
+            Instant originalPurchaseDate,
+            String originalAppVersion,
+            Instant expirationDate,
+            List<InAppPurchase> inAppPurchases,
+            Map<Integer, List<byte[]>> unknownAttributes) {
         this.receiptType = receiptType;
         this.originalPurchaseDate = originalPurchaseDate;
         this.bundleId = bundleId;

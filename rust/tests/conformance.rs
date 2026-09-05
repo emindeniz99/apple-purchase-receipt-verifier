@@ -194,6 +194,7 @@ fn fixture_bytes(
             apple_purchase_receipt_verifier::base64::decode_lenient(&stripped)
         }
         "utf8" => String::from_utf8_lossy(&raw).trim().as_bytes().to_vec(),
+        "text" => raw,
         other => {
             return Err(Failed::from(format!(
                 "harness error: unknown fixture codec \"{other}\" on \"{id}\""
@@ -619,6 +620,32 @@ fn run_case(dir: PathBuf, fixtures: BTreeMap<String, Fixture>, case: Case) -> Re
             };
             result.map(|receipt| app_receipt_json(&receipt))
         }
+        "verifyReceiptBase64" => {
+            require_no_clock(clock, "verifyReceiptBase64")?;
+            let bundle_id = case.config.bundle_id.clone().ok_or_else(|| {
+                Failed::from("harness error: verifyReceiptBase64 case without a bundleId")
+            })?;
+            let verifier = ReceiptVerifier::builder()
+                .trusted_roots(trust_anchors(&dir, &fixtures, &case.config.trusted_roots)?)
+                .bundle_id(bundle_id)
+                .build()
+                .map_err(|err| {
+                    Failed::from(format!(
+                        "harness error: cannot build ReceiptVerifier: {err}"
+                    ))
+                })?;
+            let text = String::from_utf8_lossy(&input).into_owned();
+            let result = match &case.config.device_guid_hex {
+                Some(guid_hex) => {
+                    let guid = hex::decode(guid_hex).map_err(|err| {
+                        Failed::from(format!("harness error: deviceGuidHex is not hex: {err}"))
+                    })?;
+                    verifier.verify_base64_with_device_guid(&text, &guid)
+                }
+                None => verifier.verify_base64(&text),
+            };
+            result.map(|receipt| app_receipt_json(&receipt))
+        }
         "verifyReceiptEndpoint" => {
             let name = case.config.environment.as_deref().ok_or_else(|| {
                 Failed::from("harness error: verifyReceiptEndpoint case without an environment")
@@ -636,8 +663,22 @@ fn run_case(dir: PathBuf, fixtures: BTreeMap<String, Fixture>, case: Case) -> Re
                     "harness error: cannot build VerifyReceiptEndpoint: {err}"
                 ))
             })?;
-            let base64_input = apple_purchase_receipt_verifier::base64::encode(&input);
-            let response = endpoint.verify_receipt(&VerifyReceiptRequest::new(base64_input));
+            // A `text` fixture hands its verbatim bytes to `receipt-data`,
+            // exactly as a client sent them; raw/base64 fixtures have no
+            // client-facing string of their own, so they are re-encoded as
+            // canonical base64.
+            let fixture = fixtures.get(&case.input.fixture).ok_or_else(|| {
+                Failed::from(format!(
+                    "harness error: cases.json registers no fixture \"{}\"",
+                    case.input.fixture
+                ))
+            })?;
+            let receipt_data = if fixture.codec == "text" {
+                String::from_utf8_lossy(&input).into_owned()
+            } else {
+                apple_purchase_receipt_verifier::base64::encode(&input)
+            };
+            let response = endpoint.verify_receipt(&VerifyReceiptRequest::new(receipt_data));
             if !matches!(
                 response.status,
                 status::OK

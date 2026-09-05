@@ -33,7 +33,7 @@ final class Cms
 
     /**
      * @param list<string> $certificates DER bytes of each embedded certificate
-     * @param string $digest 'sha1' or 'sha256' — the digest the signature is over
+     * @param 'sha1'|'sha256' $digest the digest the signature is over
      */
     private function __construct(
         public readonly string $content,
@@ -93,11 +93,12 @@ final class Cms
             }
 
             $signerInfos = $signedData[$last];
-            if ($signerInfos->tag !== Der::TAG_SET || $signerInfos->childCount() === 0) {
+            $signerInfo = $signerInfos->child(0);
+            if ($signerInfos->tag !== Der::TAG_SET || $signerInfo === null) {
                 throw new ParseException('no signer info');
             }
 
-            return self::parseSignerInfo($signerInfos->child(0), $content, $certificates);
+            return self::parseSignerInfo($signerInfo, $content, $certificates);
         } catch (VerificationException $e) {
             throw $e;
         } catch (ParseException $e) {

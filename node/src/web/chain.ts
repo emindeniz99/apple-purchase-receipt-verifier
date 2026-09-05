@@ -53,24 +53,32 @@ function checkIssued(cert: ParsedCertificate, issuer: ParsedCertificate): boolea
   if (!bytesEqual(cert.issuerDer, issuer.subjectDer)) {
     return false;
   }
-  if (cert.authorityKeyId !== null && issuer.subjectKeyId !== null
-    && !bytesEqual(cert.authorityKeyId, issuer.subjectKeyId)) {
+  if (
+    cert.authorityKeyId !== null &&
+    issuer.subjectKeyId !== null &&
+    !bytesEqual(cert.authorityKeyId, issuer.subjectKeyId)
+  ) {
     return false;
   }
-  if (cert.authorityCertSerial !== null
-    && !bytesEqual(cert.authorityCertSerial, issuer.serialNumber)) {
+  if (
+    cert.authorityCertSerial !== null &&
+    !bytesEqual(cert.authorityCertSerial, issuer.serialNumber)
+  ) {
     return false;
   }
   return issuer.keyUsage === null || issuer.keyUsage[KEY_CERT_SIGN_BIT] === true;
 }
 
 async function issuedBy(cert: ParsedCertificate, issuer: ParsedCertificate): Promise<boolean> {
-  return checkIssued(cert, issuer) && await verifyCertificateSignature(cert, issuer);
+  return checkIssued(cert, issuer) && (await verifyCertificateSignature(cert, issuer));
 }
 
-async function anyIssued(cert: ParsedCertificate,
-  anchors: ParsedCertificate[]): Promise<boolean> {
+async function anyIssued(cert: ParsedCertificate, anchors: ParsedCertificate[]): Promise<boolean> {
   for (const anchor of anchors) {
+    // Deliberate short-circuit: stop at the first matching anchor rather than
+    // running every remaining crypto.subtle.verify in parallel once a match
+    // is already found.
+    // oxlint-disable-next-line no-await-in-loop
     if (await issuedBy(cert, anchor)) {
       return true;
     }
@@ -84,20 +92,23 @@ async function anyIssued(cert: ParsedCertificate,
  * name chaining at each step. Anchors are trusted by fiat (their own
  * expiry is not checked — standard PKIX trust-anchor semantics).
  */
-export async function validatePair(leaf: ParsedCertificate, intermediate: ParsedCertificate,
-  anchors: ParsedCertificate[], at: Date): Promise<void> {
+export async function validatePair(
+  leaf: ParsedCertificate,
+  intermediate: ParsedCertificate,
+  anchors: ParsedCertificate[],
+  at: Date,
+): Promise<void> {
   if (!validAt(leaf, at) || !validAt(intermediate, at)) {
     throw new VerificationError(Reason.INVALID_CHAIN, 'certificate not valid at signing time');
   }
   if (!intermediate.isCa) {
     throw new VerificationError(Reason.INVALID_CHAIN, 'intermediate is not a CA');
   }
-  if (!await issuedBy(leaf, intermediate)) {
+  if (!(await issuedBy(leaf, intermediate))) {
     throw new VerificationError(Reason.INVALID_CHAIN, 'leaf not issued by intermediate');
   }
-  if (!await anyIssued(intermediate, anchors)) {
-    throw new VerificationError(Reason.INVALID_CHAIN,
-      'intermediate not issued by a pinned root');
+  if (!(await anyIssued(intermediate, anchors))) {
+    throw new VerificationError(Reason.INVALID_CHAIN, 'intermediate not issued by a pinned root');
   }
 }
 
@@ -107,30 +118,37 @@ const MAX_PATH_LENGTH = 6;
  * Builds and validates a path from `target` through `candidates` to one of
  * the pinned `anchors` (receipt chains embed their intermediates in the CMS).
  */
-export async function buildAndValidatePath(target: ParsedCertificate,
-  candidates: ParsedCertificate[], anchors: ParsedCertificate[], at: Date): Promise<void> {
+export async function buildAndValidatePath(
+  target: ParsedCertificate,
+  candidates: ParsedCertificate[],
+  anchors: ParsedCertificate[],
+  at: Date,
+): Promise<void> {
   let current = target;
   for (let depth = 0; depth < MAX_PATH_LENGTH; depth++) {
     if (!validAt(current, at)) {
-      throw new VerificationError(Reason.INVALID_CHAIN,
-        'certificate not valid at signing time');
+      throw new VerificationError(Reason.INVALID_CHAIN, 'certificate not valid at signing time');
     }
     if (depth > 0 && !current.isCa) {
       throw new VerificationError(Reason.INVALID_CHAIN, 'intermediate is not a CA');
     }
+    // Deliberate short-circuit, as in anyIssued above.
+    // oxlint-disable-next-line no-await-in-loop
     if (await anyIssued(current, anchors)) {
       return;
     }
     let issuer: ParsedCertificate | undefined;
     for (const candidate of candidates) {
-      if (candidate !== current && await issuedBy(current, candidate)) {
+      // Same short-circuit: stop at the first candidate that issued `current`
+      // rather than checking every remaining one.
+      // oxlint-disable-next-line no-await-in-loop
+      if (candidate !== current && (await issuedBy(current, candidate))) {
         issuer = candidate;
         break;
       }
     }
     if (!issuer) {
-      throw new VerificationError(Reason.INVALID_CHAIN,
-        'chain does not reach a pinned root');
+      throw new VerificationError(Reason.INVALID_CHAIN, 'chain does not reach a pinned root');
     }
     current = issuer;
   }

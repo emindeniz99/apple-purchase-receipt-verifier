@@ -185,7 +185,11 @@ func fixtureBytes(t testing.TB, id string) []byte {
 	}
 	var decoded []byte
 	switch entry.Codec {
-	case "raw":
+	case "raw", "text":
+		// text is raw's twin for string-taking entry points: the file
+		// bytes verbatim, untrimmed — whitespace, CRLF and a 0-byte file
+		// all pass through unchanged, because pinning what a port does
+		// with exactly what a client sent is the point of this codec.
 		decoded = raw
 	case "base64":
 		decoded = decodeBase64Strict(t, id, stripWhitespace(string(raw)))
@@ -204,6 +208,20 @@ func fixtureBytes(t testing.TB, id string) []byte {
 	}
 	cache.bytes[id] = decoded
 	return decoded
+}
+
+// fixtureCodec reports a registered fixture's codec, so an operation
+// adapter can tell a text fixture (bytes handed to a string entry point
+// verbatim) from a raw or base64 one without re-deriving it from the
+// already-decoded bytes.
+func fixtureCodec(t *testing.T, id string) string {
+	t.Helper()
+	parsed := mustCases(t)
+	entry, ok := parsed.Fixtures[id]
+	if !ok {
+		t.Fatalf("harness error: cases.json registers no fixture %q", id)
+	}
+	return entry.Codec
 }
 
 func stripWhitespace(text string) string {
@@ -333,18 +351,21 @@ func jwsVerifier(t *testing.T, config caseConfig, clock func() time.Time) *apple
 // operations dispatches on the case's "operation". Every operation takes
 // the case's clock (nil when it pins none) and hands it to the library's
 // clock seam; an operation with no seam rejects a case that pins one
-// instead of silently running on the system clock.
-var operations = map[string]func(t *testing.T, config caseConfig, input []byte, clock func() time.Time) (any, error){
-	"verifyTransaction": func(t *testing.T, config caseConfig, input []byte, clock func() time.Time) (any, error) {
+// instead of silently running on the system clock. codec is the input
+// fixture's codec — only verifyReceiptEndpoint needs it, to tell a text
+// fixture (receipt-data goes in verbatim) from a raw or base64 one
+// (re-encoded as canonical base64, as the schema documents on "input").
+var operations = map[string]func(t *testing.T, config caseConfig, input []byte, codec string, clock func() time.Time) (any, error){
+	"verifyTransaction": func(t *testing.T, config caseConfig, input []byte, codec string, clock func() time.Time) (any, error) {
 		return jwsVerifier(t, config, clock).VerifyTransaction(string(input))
 	},
-	"verifyAppTransaction": func(t *testing.T, config caseConfig, input []byte, clock func() time.Time) (any, error) {
+	"verifyAppTransaction": func(t *testing.T, config caseConfig, input []byte, codec string, clock func() time.Time) (any, error) {
 		return jwsVerifier(t, config, clock).VerifyAppTransaction(string(input))
 	},
-	"verifyRaw": func(t *testing.T, config caseConfig, input []byte, clock func() time.Time) (any, error) {
+	"verifyRaw": func(t *testing.T, config caseConfig, input []byte, codec string, clock func() time.Time) (any, error) {
 		return jwsVerifier(t, config, clock).VerifyRaw(string(input))
 	},
-	"verifyReceipt": func(t *testing.T, config caseConfig, input []byte, clock func() time.Time) (any, error) {
+	"verifyReceipt": func(t *testing.T, config caseConfig, input []byte, codec string, clock func() time.Time) (any, error) {
 		if clock != nil {
 			t.Fatalf("harness error: verifyReceipt has no clock seam, but the case pins one")
 		}
@@ -367,7 +388,37 @@ var operations = map[string]func(t *testing.T, config caseConfig, input []byte, 
 		}
 		return verifier.VerifyWithDeviceGUID(input, guid)
 	},
-	"verifyReceiptEndpoint": func(t *testing.T, config caseConfig, input []byte, clock func() time.Time) (any, error) {
+	// The string form of verifyReceipt: the input fixture is always text
+	// (the schema requires it), and fixtureBytes already hands back that
+	// text's bytes verbatim, so string(input) is exactly what a client
+	// sent — no re-encoding, which is the whole point of this operation.
+	"verifyReceiptBase64": func(t *testing.T, config caseConfig, input []byte, codec string, clock func() time.Time) (any, error) {
+		if clock != nil {
+			t.Fatalf("harness error: verifyReceiptBase64 has no clock seam, but the case pins one")
+		}
+		if codec != "text" {
+			t.Fatalf("harness error: a verifyReceiptBase64 case must name a text fixture, got codec %q", codec)
+		}
+		if config.BundleID == nil {
+			t.Fatalf("harness error: a verifyReceiptBase64 case must configure a bundleId")
+		}
+		verifier, err := applereceipt.NewReceiptVerifier(applereceipt.ReceiptVerifierOptions{
+			TrustedRoots: trustedRootsFor(t, config.TrustedRoots),
+			BundleID:     *config.BundleID,
+		})
+		if err != nil {
+			t.Fatalf("harness error: building a ReceiptVerifier: %v", err)
+		}
+		if config.DeviceGUIDHex == nil {
+			return verifier.VerifyBase64(string(input))
+		}
+		guid, err := hex.DecodeString(*config.DeviceGUIDHex)
+		if err != nil {
+			t.Fatalf("harness error: deviceGuidHex is not hex: %v", err)
+		}
+		return verifier.VerifyBase64WithDeviceGUID(string(input), guid)
+	},
+	"verifyReceiptEndpoint": func(t *testing.T, config caseConfig, input []byte, codec string, clock func() time.Time) (any, error) {
 		endpoint, err := applereceipt.NewVerifyReceiptEndpoint(applereceipt.VerifyReceiptEndpointOptions{
 			TrustedRoots: trustedRootsFor(t, config.TrustedRoots),
 			Environment:  config.Environment,
@@ -376,8 +427,16 @@ var operations = map[string]func(t *testing.T, config caseConfig, input []byte, 
 		if err != nil {
 			t.Fatalf("harness error: building a VerifyReceiptEndpoint: %v", err)
 		}
+		// A text fixture's bytes go into receipt-data verbatim, exactly as
+		// a client would send them; a raw or base64 fixture is re-encoded
+		// as canonical base64, because fixtureBytes already decoded it and
+		// there is no "original string" left to pin.
+		receiptData := base64.StdEncoding.EncodeToString(input)
+		if codec == "text" {
+			receiptData = string(input)
+		}
 		return endpoint.VerifyReceipt(applereceipt.VerifyReceiptRequest{
-			ReceiptData: base64.StdEncoding.EncodeToString(input),
+			ReceiptData: receiptData,
 		}), nil
 	},
 }
@@ -402,8 +461,9 @@ func runCase(t *testing.T, kase conformanceCase) {
 		t.Fatalf("harness error: no adapter for operation %q", kase.Operation)
 	}
 	input := fixtureBytes(t, kase.Input.Fixture)
+	codec := fixtureCodec(t, kase.Input.Fixture)
 
-	result, err := operation(t, kase.Config, input, caseClock(t, kase))
+	result, err := operation(t, kase.Config, input, codec, caseClock(t, kase))
 	if err != nil {
 		// Only a *VerificationError carries a canonical Reason. Anything
 		// else is a defect in the library or in this harness and must
@@ -507,7 +567,7 @@ func TestConformance(t *testing.T) {
 	}
 	for _, operation := range []string{
 		"verifyTransaction", "verifyAppTransaction", "verifyRaw",
-		"verifyReceipt", "verifyReceiptEndpoint",
+		"verifyReceipt", "verifyReceiptBase64", "verifyReceiptEndpoint",
 	} {
 		if seen[operation] == 0 {
 			t.Errorf("no case exercised operation %q", operation)

@@ -264,15 +264,27 @@ toolchain; if a future Go closes it, the documented replacement is
 `rsa.VerifyPKCS1v15(pub, crypto.SHA1, sha1(tbs), sig)`, which that test also
 exercises.
 
-**Base64 strictness.** Receipt and `x5c` base64 is decoded leniently, matching
-Java's MIME decoder and Node's `Buffer.from`: whitespace, PEM line breaks and
-padding are skipped. Compact-JWS segments are decoded **strictly** — a
-character outside the base64url alphabet, a wrong length, or non-zero bits in
-the final quantum is `INVALID_JWS_FORMAT`. That is stricter than the other
-ports in one observable place: appending junk to a JWS, or flipping the unused
-bits of a segment's last character, leaves their answer unchanged and makes
-this one reject. Strictness there can only turn an accept into a reject, and
-it means every byte of a JWS this port accepts is a byte the signature covers.
+**Base64 strictness.** Receipt base64 — `ReceiptVerifier.VerifyBase64` and the
+`verifyReceipt` endpoint's `receipt-data`, and `x5c` along with it, since they
+share a decoder — accepts what Foundation's `base64EncodedString(options:)`
+can emit and rejects everything else: the standard (`+/`) or the base64url
+(`-_`) alphabet, not both in the same string; padding present or omitted; and
+CR, LF, space or tab anywhere, stripped before decoding. A character outside
+both alphabets, a mixed alphabet, anything but whitespace after the padding
+starts, padding whose length is not exactly what the unpadded data requires
+(over- or under-padded), a stripped length congruent to 1 mod 4, or an empty
+or whitespace-only string is `INVALID_RECEIPT_FORMAT` (`21002` at the
+endpoint).
+There is no canonical-trailing-bits check. This is the cross-port contract
+every implementation is held to (`fixtures/cases.json`'s `receipt-base64/*`
+and `endpoint/receipt-data-*` vectors), not a Go-specific choice. Compact-JWS
+segments are decoded **strictly**, by a separate decoder — a character
+outside the base64url alphabet, `=` padding, a wrong length, or non-zero bits
+in the final quantum is `INVALID_JWS_FORMAT`, for all three segments (header,
+payload, signature). Appending junk to a compact JWS, padding a segment, or
+flipping the unused bits of a segment's last character must make every port
+reject. Strictness here can only turn an accept into a reject, and it means
+every byte of a JWS a port accepts is a byte the signature covers.
 
 ## Tests
 

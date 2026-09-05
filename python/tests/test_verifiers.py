@@ -11,12 +11,7 @@ import random
 import time
 import unittest
 from pathlib import Path
-
-from asn1crypto import cms as asn1cms
-from cryptography import x509
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.x509.oid import NameOID
+from typing import Any, ClassVar
 
 from apple_purchase_receipt_verifier import (
     JwsVerifier,
@@ -25,6 +20,11 @@ from apple_purchase_receipt_verifier import (
     apple_jws_roots,
     apple_receipt_roots,
 )
+from asn1crypto import cms as asn1cms
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures"
 BUNDLE = "com.example.app"
@@ -43,7 +43,7 @@ def cert(*segments):
 
 
 def jws_verifier(**overrides):
-    options = dict(
+    options: dict[str, Any] = dict(
         trusted_roots=[cert("generated", "jws-root.der")],
         bundle_id=BUNDLE,
         accepted_environments=["Sandbox"],
@@ -68,7 +68,8 @@ class NegativeTest(unittest.TestCase):
         # the same verdict asserted against the real system clock.
         with self.assertRaises(VerificationError) as ctx:
             jws_verifier(max_signed_age_millis=60_000).verify_transaction(
-                text("generated", "transaction.jws"))
+                text("generated", "transaction.jws")
+            )
         self.assertEqual(ctx.exception.reason, "STALE_PAYLOAD")
 
     def test_rejects_garbage(self):
@@ -110,12 +111,11 @@ class VerifyReceiptEndpointTest(unittest.TestCase):
 
     def endpoint(self, environment):
         from apple_purchase_receipt_verifier import VerifyReceiptEndpoint
-        return VerifyReceiptEndpoint(
-            [cert("generated", "receipt-root.der")], environment)
+
+        return VerifyReceiptEndpoint([cert("generated", "receipt-root.der")], environment)
 
     def request(self):
-        return {"receipt-data": base64.b64encode(
-            fixture("generated", "receipt.der")).decode()}
+        return {"receipt-data": base64.b64encode(fixture("generated", "receipt.der")).decode()}
 
     @staticmethod
     def without_request_date(response):
@@ -147,8 +147,7 @@ class VerifyReceiptEndpointTest(unittest.TestCase):
         endpoint = self.endpoint("Sandbox")
         self.assertEqual(endpoint.verify_receipt({})["status"], 21002)
         self.assertEqual(endpoint.verify_receipt(None)["status"], 21002)
-        self.assertEqual(
-            endpoint.verify_receipt({"receipt-data": "AQIDBA=="})["status"], 21002)
+        self.assertEqual(endpoint.verify_receipt({"receipt-data": "AQIDBA=="})["status"], 21002)
 
     def test_verify_receipt_json_pins_the_wire_types(self):
         body = self.endpoint("Sandbox").verify_receipt_json(json.dumps(self.request()))
@@ -171,10 +170,11 @@ class VerifyReceiptEndpointTest(unittest.TestCase):
 
     def test_verify_receipt_json_renders_is_in_intro_offer_period_as_a_string(self):
         from apple_purchase_receipt_verifier import VerifyReceiptEndpoint
-        receipt_data = (FIXTURES / "public-receipts" / "receipt-sandbox-g5.b64") \
-            .read_text().strip()
-        body = VerifyReceiptEndpoint(apple_receipt_roots(), "Sandbox") \
-            .verify_receipt_json(json.dumps({"receipt-data": receipt_data}))
+
+        receipt_data = (FIXTURES / "public-receipts" / "receipt-sandbox-g5.b64").read_text().strip()
+        body = VerifyReceiptEndpoint(apple_receipt_roots(), "Sandbox").verify_receipt_json(
+            json.dumps({"receipt-data": receipt_data})
+        )
         self.assertIn('"is_in_intro_offer_period":"false"', body)
         purchases = json.loads(body)["receipt"]["in_app"]
         self.assertTrue(purchases)
@@ -184,20 +184,30 @@ class VerifyReceiptEndpointTest(unittest.TestCase):
     def test_verify_receipt_json_omits_receipt_and_environment_on_non_zero_status(self):
         self.assertEqual(
             self.endpoint("Production").verify_receipt_json(json.dumps(self.request())),
-            '{"status":21007}')
+            '{"status":21007}',
+        )
 
     def test_verify_receipt_json_answers_21002_for_a_body_that_is_not_an_object(self):
         endpoint = self.endpoint("Sandbox")
-        for body in ("", "not json", "{", "[]", '[{"receipt-data":"x"}]', "null",
-                     "3", '"receipt"', "true", None):
+        for body in (
+            "",
+            "not json",
+            "{",
+            "[]",
+            '[{"receipt-data":"x"}]',
+            "null",
+            "3",
+            '"receipt"',
+            "true",
+            None,
+        ):
             self.assertEqual(endpoint.verify_receipt_json(body), '{"status":21002}', body)
 
     def test_verify_receipt_json_matches_the_mapping_api(self):
         endpoint = self.endpoint("Sandbox")
         via_map = endpoint.verify_receipt(self.request())
         via_json = json.loads(endpoint.verify_receipt_json(json.dumps(self.request())))
-        self.assertEqual(self.without_request_date(via_json),
-                         self.without_request_date(via_map))
+        self.assertEqual(self.without_request_date(via_json), self.without_request_date(via_map))
 
 
 class ReviewFixesTest(unittest.TestCase):
@@ -212,6 +222,7 @@ class ReviewFixesTest(unittest.TestCase):
 
     def test_is_transaction_active_at_helper(self):
         from apple_purchase_receipt_verifier import is_transaction_active_at
+
         self.assertTrue(is_transaction_active_at({}, 1000))
         self.assertFalse(is_transaction_active_at({"revocationDate": 500}, 1000))
         self.assertFalse(is_transaction_active_at({"expiresDate": 900}, 1000))
@@ -229,8 +240,9 @@ class PublicReceiptsTest(unittest.TestCase):
 
     def test_verifies_genuine_sandbox_receipt_from_its_base64_form(self):
         verifier = ReceiptVerifier(apple_receipt_roots(), "dev.bonzer.weeka.app")
-        self.assertEqual(verifier.verify(self.receipt("receipt-sandbox-g5")).receipt_type,
-                         "ProductionSandbox")
+        self.assertEqual(
+            verifier.verify(self.receipt("receipt-sandbox-g5")).receipt_type, "ProductionSandbox"
+        )
 
 
 def tlv(tag, contents):
@@ -259,8 +271,11 @@ def payload_with_attribute_type(type_bytes):
 def payload_with_in_app_integer(attribute_type, value_bytes):
     """A receipt payload SET carrying one in-app purchase (attribute 17) whose
     only field is ``attribute_type`` holding the INTEGER ``value_bytes``."""
-    field = tlv(0x02, attribute_type.to_bytes(2, "big")) + tlv(0x02, b"\x01") \
+    field = (
+        tlv(0x02, attribute_type.to_bytes(2, "big"))
+        + tlv(0x02, b"\x01")
         + tlv(0x04, tlv(0x02, value_bytes))
+    )
     in_app = tlv(0x02, b"\x11") + tlv(0x02, b"\x01") + tlv(0x04, tlv(0x31, tlv(0x30, field)))
     return tlv(0x31, tlv(0x30, in_app))
 
@@ -271,7 +286,8 @@ def payload_with_in_app_integer(attribute_type, value_bytes):
 OUT_OF_RANGE_DATE_RECEIPT = (
     "MIGfBgkqhkiG9w0BBwKggZEwgY4CAQExDzANBglghkgBZQMEAgEFADA2BgkqhkiG9w0BBwGgKQQnMSUw"
     "IwIBDAIBAQQbFhkwMDAxLTAxLTAxVDAwOjAwOjAwKzEwOjAwMUAwPgIBATARMAwxCjAIBgNVBAMMAXgC"
-    "AQEwDQYJYIZIAWUDBAIBBQAwDQYJKoZIhvcNAQEBBQAECAAAAAAAAAAA")
+    "AQEwDQYJYIZIAWUDBAIBBQAwDQYJKoZIhvcNAQEBBQAECAAAAAAAAAAA"
+)
 
 _OID_MESSAGE_DIGEST = b"\x06\x09\x2a\x86\x48\x86\xf7\x0d\x01\x09\x04"
 _OID_SIGNING_TIME = b"\x06\x09\x2a\x86\x48\x86\xf7\x0d\x01\x09\x05"
@@ -284,22 +300,29 @@ def hostile_attribute_sets():
     for _ in range(5000):
         nested = tlv(0x30, nested)
     return {
-        "empty messageDigest value set":
-            tlv(0x31, tlv(0x30, _OID_MESSAGE_DIGEST + tlv(0x31, b""))),
-        "two messageDigest values":
-            tlv(0x31, tlv(0x30, _OID_MESSAGE_DIGEST
-                          + tlv(0x31, tlv(0x04, b"\x00" * 32) + tlv(0x04, b"\x01" * 32)))),
-        "messageDigest that is not an octet string":
-            tlv(0x31, tlv(0x30, _OID_MESSAGE_DIGEST + tlv(0x31, tlv(0x02, b"\x01")))),
-        "signingTime with month 13":
-            tlv(0x31, tlv(0x30, _OID_SIGNING_TIME
-                          + tlv(0x31, tlv(0x17, b"241301000000Z")))),
-        "unknown attribute holding invalid UTF-8":
-            tlv(0x31, tlv(0x30, _OID_UNKNOWN + tlv(0x31, tlv(0x0C, b"\xff\xfe")))),
-        "unknown attribute nested 5000 deep":
-            tlv(0x31, tlv(0x30, _OID_UNKNOWN + tlv(0x31, nested))),
-        "integer where the attribute OID belongs":
-            tlv(0x31, tlv(0x30, tlv(0x02, b"\x01") + tlv(0x31, b""))),
+        "empty messageDigest value set": tlv(0x31, tlv(0x30, _OID_MESSAGE_DIGEST + tlv(0x31, b""))),
+        "two messageDigest values": tlv(
+            0x31,
+            tlv(
+                0x30,
+                _OID_MESSAGE_DIGEST + tlv(0x31, tlv(0x04, b"\x00" * 32) + tlv(0x04, b"\x01" * 32)),
+            ),
+        ),
+        "messageDigest that is not an octet string": tlv(
+            0x31, tlv(0x30, _OID_MESSAGE_DIGEST + tlv(0x31, tlv(0x02, b"\x01")))
+        ),
+        "signingTime with month 13": tlv(
+            0x31, tlv(0x30, _OID_SIGNING_TIME + tlv(0x31, tlv(0x17, b"241301000000Z")))
+        ),
+        "unknown attribute holding invalid UTF-8": tlv(
+            0x31, tlv(0x30, _OID_UNKNOWN + tlv(0x31, tlv(0x0C, b"\xff\xfe")))
+        ),
+        "unknown attribute nested 5000 deep": tlv(
+            0x31, tlv(0x30, _OID_UNKNOWN + tlv(0x31, nested))
+        ),
+        "integer where the attribute OID belongs": tlv(
+            0x31, tlv(0x30, tlv(0x02, b"\x01") + tlv(0x31, b""))
+        ),
     }
 
 
@@ -311,19 +334,27 @@ def spliced_receipt(signed_attrs=None, digest_algorithm=None, signature=None):
     info = asn1cms.ContentInfo.load(fixture("generated", "receipt.der"))
     signed_data = info["content"]
     signer = signed_data["signer_infos"][0]
-    spliced = tlv(0x30, signer["version"].dump()
-                  + signer["sid"].dump()
-                  + (digest_algorithm or signer["digest_algorithm"].dump())
-                  + (b"\xa0" + signed_attrs[1:] if signed_attrs  # SET tag -> implicit [0]
-                     else signer["signed_attrs"].dump())
-                  + signer["signature_algorithm"].dump()
-                  + (signature or signer["signature"].dump()))
-    body = (signed_data["version"].dump()
-            + signed_data["digest_algorithms"].dump()
-            + signed_data["encap_content_info"].dump()
-            + signed_data["certificates"].dump()
-            + signed_data["crls"].dump()
-            + tlv(0x31, spliced))
+    spliced = tlv(
+        0x30,
+        signer["version"].dump()
+        + signer["sid"].dump()
+        + (digest_algorithm or signer["digest_algorithm"].dump())
+        + (
+            b"\xa0" + signed_attrs[1:]
+            if signed_attrs  # SET tag -> implicit [0]
+            else signer["signed_attrs"].dump()
+        )
+        + signer["signature_algorithm"].dump()
+        + (signature or signer["signature"].dump()),
+    )
+    body = (
+        signed_data["version"].dump()
+        + signed_data["digest_algorithms"].dump()
+        + signed_data["encap_content_info"].dump()
+        + signed_data["certificates"].dump()
+        + signed_data["crls"].dump()
+        + tlv(0x31, spliced)
+    )
     return tlv(0x30, info["content_type"].dump() + tlv(0xA0, tlv(0x30, body)))
 
 
@@ -345,9 +376,10 @@ class HostileInputTest(unittest.TestCase):
         # (a 26-hour spread across hosts, and creation_date is where chain
         # validity is anchored).
         from apple_purchase_receipt_verifier.receipt import _parse_payload
-        self.assertEqual(
-            _parse_payload(date_payload("2024-08-06T12:00:00Z")).creation_date.isoformat(),
-            "2024-08-06T12:00:00+00:00")
+
+        creation_date = _parse_payload(date_payload("2024-08-06T12:00:00Z")).creation_date
+        assert creation_date is not None
+        self.assertEqual("2024-08-06T12:00:00+00:00", creation_date.isoformat())
         with self.assertRaises(VerificationError) as ctx:
             _parse_payload(date_payload("2024-08-06T12:00:00"))
         self.assertEqual(ctx.exception.reason, "INVALID_RECEIPT_FORMAT")
@@ -358,9 +390,11 @@ class HostileInputTest(unittest.TestCase):
         # nine bytes is one past the cap; a comparison one step wider admits
         # each.
         from apple_purchase_receipt_verifier.receipt import _parse_payload
+
         for name, type_bytes, message in (
-                ("leading byte 0x80", b"\x80", "negative receipt integer"),
-                ("nine bytes", b"\x00" * 8 + b"\x01", "out of range")):
+            ("leading byte 0x80", b"\x80", "negative receipt integer"),
+            ("nine bytes", b"\x00" * 8 + b"\x01", "out of range"),
+        ):
             with self.subTest(name):
                 with self.assertRaises(VerificationError) as ctx:
                     _parse_payload(payload_with_attribute_type(type_bytes))
@@ -374,11 +408,13 @@ class HostileInputTest(unittest.TestCase):
         # 2^63-1; both let two ports report different contents for the same
         # bytes, so every port now rejects it as a malformed receipt instead.
         from apple_purchase_receipt_verifier.receipt import _parse_payload
+
         largest = _parse_payload(payload_with_attribute_type(b"\x7f\xff\xff\xff"))
         self.assertEqual(largest.unknown_attributes, {2**31 - 1: [b""]})
         for name, type_bytes in (
-                ("one past 2^31-1", b"\x00\x80\x00\x00\x00"),
-                ("the old 8-byte ceiling", b"\x7f" + b"\xff" * 7)):
+            ("one past 2^31-1", b"\x00\x80\x00\x00\x00"),
+            ("the old 8-byte ceiling", b"\x7f" + b"\xff" * 7),
+        ):
             with self.subTest(name):
                 with self.assertRaises(VerificationError) as ctx:
                     _parse_payload(payload_with_attribute_type(type_bytes))
@@ -390,8 +426,10 @@ class HostileInputTest(unittest.TestCase):
         # the 8-byte cap, because web_order_line_item_id is genuinely a 7-byte
         # integer — a bound that narrowed both would reject real receipts.
         from apple_purchase_receipt_verifier.receipt import _parse_payload
+
         purchase = _parse_payload(
-            payload_with_in_app_integer(1711, b"\x7f" + b"\xff" * 7)).in_app_purchases[0]
+            payload_with_in_app_integer(1711, b"\x7f" + b"\xff" * 7)
+        ).in_app_purchases[0]
         self.assertEqual(purchase.web_order_line_item_id, 2**63 - 1)
         with self.assertRaises(VerificationError) as ctx:
             _parse_payload(payload_with_in_app_integer(1711, b"\x00" * 8 + b"\x01"))
@@ -401,17 +439,17 @@ class HostileInputTest(unittest.TestCase):
     def test_contains_hostile_signed_attrs(self):
         verifier = ReceiptVerifier([cert("generated", "receipt-root.der")], BUNDLE)
         for name, attributes in hostile_attribute_sets().items():
-            with self.subTest(name):
-                with self.assertRaises(VerificationError):
-                    verifier.verify(spliced_receipt(signed_attrs=attributes))
+            with self.subTest(name), self.assertRaises(VerificationError):
+                verifier.verify(spliced_receipt(signed_attrs=attributes))
 
     def test_rejects_a_message_digest_with_more_than_one_value(self):
         # RFC 5652 §5.3 allows exactly one value; unguarded, the decoder
         # silently takes the first of whatever list the attacker supplied.
         verifier = ReceiptVerifier([cert("generated", "receipt-root.der")], BUNDLE)
         with self.assertRaises(VerificationError) as ctx:
-            verifier.verify(spliced_receipt(
-                signed_attrs=hostile_attribute_sets()["two messageDigest values"]))
+            verifier.verify(
+                spliced_receipt(signed_attrs=hostile_attribute_sets()["two messageDigest values"])
+            )
         self.assertEqual(ctx.exception.reason, "INVALID_RECEIPT_FORMAT")
 
     def test_verify_raises_nothing_but_verification_error(self):
@@ -428,19 +466,32 @@ class HostileInputTest(unittest.TestCase):
             ("not base64", pinned, "!!!not-base64!!!"),
             ("truncated receipt", generated, fixture("generated", "receipt.der")[:200]),
             ("out-of-range date", pinned, OUT_OF_RANGE_DATE_RECEIPT),
-            ("base64 hostile signedAttrs", generated, base64.b64encode(spliced_receipt(
-                signed_attrs=hostile["empty messageDigest value set"])).decode()),
-            ("nested signedAttrs", generated, spliced_receipt(
-                signed_attrs=hostile["unknown attribute nested 5000 deep"])),
-            ("digest algorithm that is not an OID", generated, spliced_receipt(
-                digest_algorithm=tlv(0x30, tlv(0x02, b"\x01")))),
-            ("signature that is not an octet string", generated, spliced_receipt(
-                signature=tlv(0x02, b"\x01"))),
+            (
+                "base64 hostile signedAttrs",
+                generated,
+                base64.b64encode(
+                    spliced_receipt(signed_attrs=hostile["empty messageDigest value set"])
+                ).decode(),
+            ),
+            (
+                "nested signedAttrs",
+                generated,
+                spliced_receipt(signed_attrs=hostile["unknown attribute nested 5000 deep"]),
+            ),
+            (
+                "digest algorithm that is not an OID",
+                generated,
+                spliced_receipt(digest_algorithm=tlv(0x30, tlv(0x02, b"\x01"))),
+            ),
+            (
+                "signature that is not an octet string",
+                generated,
+                spliced_receipt(signature=tlv(0x02, b"\x01")),
+            ),
         ]
         for name, verifier, blob in corpus:
-            with self.subTest(name):
-                with self.assertRaises(VerificationError):
-                    verifier.verify(blob)
+            with self.subTest(name), self.assertRaises(VerificationError):
+                verifier.verify(blob)
 
     def test_mutations_of_a_genuine_receipt_raise_nothing_else_either(self):
         # The corpus above says in its own comment that it does not reach the
@@ -460,7 +511,9 @@ class HostileInputTest(unittest.TestCase):
                 verifier.verify(bytes(mutant))
             except VerificationError:
                 pass
-            except Exception as e:  # noqa: BLE001 - the assertion is the point
+            # Catching bare Exception is the assertion: verify() must never
+            # leak anything but VerificationError, whatever the mutation.
+            except Exception as e:
                 self.fail(f"mutation {i} leaked {type(e).__name__}: {e}")
 
 
@@ -478,25 +531,31 @@ def cross_signed_mesh(layers=14, branching=2):
     added layers). Every certificate is a CA, valid now, and named after the
     layer's issuer, so nothing but the count disqualifies it as a candidate."""
     now = datetime.datetime.now(datetime.timezone.utc)
-    keys = [[rsa.generate_private_key(public_exponent=65537, key_size=2048)
-             for _ in range(branching)] for _ in range(layers)]
+    keys = [
+        [rsa.generate_private_key(public_exponent=65537, key_size=2048) for _ in range(branching)]
+        for _ in range(layers)
+    ]
     certificates = []
     for layer in range(layers):
         name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, MESH_NAMES[layer % 2])])
-        above = x509.Name(
-            [x509.NameAttribute(NameOID.COMMON_NAME, MESH_NAMES[(layer + 1) % 2])])
+        above = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, MESH_NAMES[(layer + 1) % 2])])
         for key in keys[layer]:
             for issuer in keys[(layer + 1) % layers]:
-                certificates.append((x509.CertificateBuilder()
-                    .subject_name(name).issuer_name(above)
-                    .public_key(key.public_key())
-                    .serial_number(x509.random_serial_number())
-                    .not_valid_before(now - datetime.timedelta(days=3650))
-                    .not_valid_after(now + datetime.timedelta(days=3650))
-                    .add_extension(x509.BasicConstraints(ca=True, path_length=None),
-                                   critical=True)
-                    .sign(issuer, hashes.SHA256()))
-                    .public_bytes(serialization.Encoding.DER))
+                certificates.append(
+                    (
+                        x509.CertificateBuilder()
+                        .subject_name(name)
+                        .issuer_name(above)
+                        .public_key(key.public_key())
+                        .serial_number(x509.random_serial_number())
+                        .not_valid_before(now - datetime.timedelta(days=3650))
+                        .not_valid_after(now + datetime.timedelta(days=3650))
+                        .add_extension(
+                            x509.BasicConstraints(ca=True, path_length=None), critical=True
+                        )
+                        .sign(issuer, hashes.SHA256())
+                    ).public_bytes(serialization.Encoding.DER)
+                )
     return certificates
 
 
@@ -508,12 +567,14 @@ def receipt_with_extra_certificates(extra):
     info = asn1cms.ContentInfo.load(fixture("generated", "receipt.der"))
     signed_data = info["content"]
     genuine = [choice.chosen.dump() for choice in signed_data["certificates"]]
-    body = (signed_data["version"].dump()
-            + signed_data["digest_algorithms"].dump()
-            + signed_data["encap_content_info"].dump()
-            + tlv(0xA0, b"".join(extra + genuine))
-            + signed_data["crls"].dump()
-            + signed_data["signer_infos"].dump())
+    body = (
+        signed_data["version"].dump()
+        + signed_data["digest_algorithms"].dump()
+        + signed_data["encap_content_info"].dump()
+        + tlv(0xA0, b"".join(extra + genuine))
+        + signed_data["crls"].dump()
+        + signed_data["signer_infos"].dump()
+    )
     return tlv(0x30, info["content_type"].dump() + tlv(0xA0, tlv(0x30, body)))
 
 
@@ -532,6 +593,9 @@ class EmbeddedCertificateFloodTest(unittest.TestCase):
     """The embedded certificates are attacker-supplied and are parsed and
     offered to path building before anything about the receipt has been
     verified, so their count is bounded before any of that runs."""
+
+    # cross_signed_mesh() is an untyped helper, so its element type is Any.
+    mesh: ClassVar[list[Any]]
 
     @classmethod
     def setUpClass(cls):
@@ -592,10 +656,17 @@ class EmbeddedCertificateFloodTest(unittest.TestCase):
         # Read rather than asserted: the bound is only safe while it stays
         # above what Apple actually embeds.
         from apple_purchase_receipt_verifier.receipt import _MAX_EMBEDDED_CERTIFICATES
-        counts = {name: embedded_certificate_count(
-                      (FIXTURES / "public-receipts" / f"{name}.b64").read_text().strip())
-                  for name in ("receipt-sandbox-g5", "receipt-sandbox-legacy",
-                               "receipt-xcode-with-purchases")}
+
+        counts = {
+            name: embedded_certificate_count(
+                (FIXTURES / "public-receipts" / f"{name}.b64").read_text().strip()
+            )
+            for name in (
+                "receipt-sandbox-g5",
+                "receipt-sandbox-legacy",
+                "receipt-xcode-with-purchases",
+            )
+        }
         self.assertLess(max(counts.values()), _MAX_EMBEDDED_CERTIFICATES, counts)
 
 
@@ -618,12 +689,14 @@ def receipt_without_creation_date(der):
             continue
         kept += tlv(child_tag, child_value)
     new_encap = tlv(0x30, encap["content_type"].dump() + tlv(0xA0, tlv(0x04, tlv(0x31, kept))))
-    body = (signed_data["version"].dump()
-            + signed_data["digest_algorithms"].dump()
-            + new_encap
-            + signed_data["certificates"].dump()
-            + signed_data["crls"].dump()
-            + signed_data["signer_infos"].dump())
+    body = (
+        signed_data["version"].dump()
+        + signed_data["digest_algorithms"].dump()
+        + new_encap
+        + signed_data["certificates"].dump()
+        + signed_data["crls"].dump()
+        + signed_data["signer_infos"].dump()
+    )
     return tlv(0x30, info["content_type"].dump() + tlv(0xA0, tlv(0x30, body)))
 
 
@@ -654,8 +727,8 @@ class CrossPortApiShapeTest(unittest.TestCase):
         import inspect
 
         from apple_purchase_receipt_verifier import verify_receipt_core
-        for callable_ in (ReceiptVerifier.__init__, ReceiptVerifier.verify,
-                          verify_receipt_core):
+
+        for callable_ in (ReceiptVerifier.__init__, ReceiptVerifier.verify, verify_receipt_core):
             with self.subTest(callable_.__qualname__):
                 self.assertNotIn("clock", inspect.signature(callable_).parameters)
 
@@ -666,22 +739,26 @@ class CrossPortApiShapeTest(unittest.TestCase):
         # bundle id, which would put a bundle-id check one typo away from
         # passing for everyone.
         import apple_purchase_receipt_verifier as package
+
         self.assertIn("verify_receipt_core", package.__all__)
         fields = package.verify_receipt_core(
-            fixture("generated", "receipt.der"), [cert("generated", "receipt-root.der")])
+            fixture("generated", "receipt.der"), [cert("generated", "receipt-root.der")]
+        )
         self.assertEqual(BUNDLE, fields.bundle_id)
 
     def test_endpoint_environment_is_the_typed_enum(self):
         # cases.json spells the endpoint's environment as the same enum the
         # rest of the library uses, not as a boolean "production" flag.
         from apple_purchase_receipt_verifier import VerifyReceiptEndpoint
+
         roots = [cert("generated", "receipt-root.der")]
         for environment in ("Production", "Sandbox"):
             VerifyReceiptEndpoint(roots, environment)
         for rejected in (True, False, "production", "sandbox", "", None):
-            with self.subTest(rejected):
-                with self.assertRaises(ValueError):
-                    VerifyReceiptEndpoint(roots, rejected)
+            with self.subTest(rejected), self.assertRaises(ValueError):
+                # Deliberately wrong types for `environment`; the assertion is
+                # that the constructor rejects each of them.
+                VerifyReceiptEndpoint(roots, rejected)  # type: ignore[arg-type]
 
 
 class ClockSeamTest(unittest.TestCase):
@@ -698,8 +775,7 @@ class ClockSeamTest(unittest.TestCase):
         return text("generated", "transaction.jws")
 
     def expired_chain_verifier(self, clock=None):
-        return jws_verifier(
-            trusted_roots=[cert("generated", "jws-expired-root.der")], clock=clock)
+        return jws_verifier(trusted_roots=[cert("generated", "jws-expired-root.der")], clock=clock)
 
     def test_omitted_clock_reads_the_actual_system_clock(self):
         # Not "some fixed value": the accepted/rejected boundary is placed
@@ -708,23 +784,27 @@ class ClockSeamTest(unittest.TestCase):
         # fail one of the two halves.
         age_millis = time.time() * 1000 - self.SIGNED_AT * 1000
         self.assertGreater(age_millis, 0, "fixture is signed in the future")
-        jws_verifier(max_signed_age_millis=int(age_millis) + 3_600_000) \
-            .verify_transaction(self.transaction())
+        jws_verifier(max_signed_age_millis=int(age_millis) + 3_600_000).verify_transaction(
+            self.transaction()
+        )
         with self.assertRaises(VerificationError) as ctx:
-            jws_verifier(max_signed_age_millis=int(age_millis) - 3_600_000) \
-                .verify_transaction(self.transaction())
+            jws_verifier(max_signed_age_millis=int(age_millis) - 3_600_000).verify_transaction(
+                self.transaction()
+            )
         self.assertEqual(ctx.exception.reason, "STALE_PAYLOAD")
 
     def test_injected_clock_decides_the_stale_verdict(self):
         # Same payload, same max age, two clocks: the STALE_PAYLOAD verdict
         # follows the injected "now" and nothing else, which is what makes a
         # staleness vector runnable on any machine at any date.
-        fresh = jws_verifier(max_signed_age_millis=self.MAX_AGE_MILLIS,
-                             clock=lambda: self.SIGNED_AT + 30)
+        fresh = jws_verifier(
+            max_signed_age_millis=self.MAX_AGE_MILLIS, clock=lambda: self.SIGNED_AT + 30
+        )
         self.assertEqual(BUNDLE, fresh.verify_transaction(self.transaction())["bundleId"])
 
-        stale = jws_verifier(max_signed_age_millis=self.MAX_AGE_MILLIS,
-                             clock=lambda: self.SIGNED_AT + 120)
+        stale = jws_verifier(
+            max_signed_age_millis=self.MAX_AGE_MILLIS, clock=lambda: self.SIGNED_AT + 120
+        )
         with self.assertRaises(VerificationError) as ctx:
             stale.verify_transaction(self.transaction())
         self.assertEqual(ctx.exception.reason, "STALE_PAYLOAD")
@@ -734,16 +814,18 @@ class ClockSeamTest(unittest.TestCase):
         # signedDate, never at wall-clock time. So a clock inside the expired
         # certificate's validity window must not rescue the fresh payload, and
         # a clock long past it must not condemn the historical one.
-        for now in (1590969600.0, 4102444800.0):   # 2020-06-01, 2100-01-01
+        for now in (1590969600.0, 4102444800.0):  # 2020-06-01, 2100-01-01
             with self.subTest(now=now):
                 clock = (lambda moment: lambda: moment)(now)
                 with self.assertRaises(VerificationError) as ctx:
                     self.expired_chain_verifier(clock).verify_transaction(
-                        text("generated", "expired-cert-fresh.jws"))
+                        text("generated", "expired-cert-fresh.jws")
+                    )
                 self.assertEqual(ctx.exception.reason, "INVALID_CHAIN")
 
                 payload = self.expired_chain_verifier(clock).verify_transaction(
-                    text("generated", "expired-cert-historical.jws"))
+                    text("generated", "expired-cert-historical.jws")
+                )
                 self.assertEqual(1590969600000, payload["signedDate"])
 
     def test_injected_clock_does_not_move_certificate_validity_without_a_signed_date(self):
@@ -757,10 +839,12 @@ class ClockSeamTest(unittest.TestCase):
         dated = text("generated", "expired-cert-historical.jws")
         self.assertEqual(
             1590969600000,
-            self.expired_chain_verifier(lambda: 1590969600.0)
-                .verify_transaction(dated)["signedDate"])
+            self.expired_chain_verifier(lambda: 1590969600.0).verify_transaction(dated)[
+                "signedDate"
+            ],
+        )
         undated = jws_without_signed_date(dated)
-        for now in (None, 1590969600.0, 4102444800.0):   # system, 2020-06-01, 2100
+        for now in (None, 1590969600.0, 4102444800.0):  # system, 2020-06-01, 2100
             with self.subTest(now=now):
                 clock = None if now is None else (lambda moment: lambda: moment)(now)
                 with self.assertRaises(VerificationError) as ctx:
@@ -776,9 +860,9 @@ class ClockSeamTest(unittest.TestCase):
         expired_root = [cert("generated", "receipt-expired-root.der")]
         verifier = ReceiptVerifier(expired_root, BUNDLE)
         historical = fixture("generated", "receipt-expired-historical.der")
-        self.assertEqual(
-            "2020-06-01T00:00:00+00:00",
-            verifier.verify(historical).creation_date.isoformat())
+        creation_date = verifier.verify(historical).creation_date
+        assert creation_date is not None
+        self.assertEqual("2020-06-01T00:00:00+00:00", creation_date.isoformat())
         with self.assertRaises(VerificationError) as ctx:
             verifier.verify(receipt_without_creation_date(historical))
         self.assertEqual(ctx.exception.reason, "INVALID_CHAIN")
@@ -792,14 +876,22 @@ class ClockSeamTest(unittest.TestCase):
         # 2020-06-01 is inside the window and would rescue this one if it
         # reached the anchor. It answers 21003 at every clock instead.
         from apple_purchase_receipt_verifier import VerifyReceiptEndpoint
+
         roots = [cert("generated", "receipt-expired-root.der")]
-        data = {"receipt-data": base64.b64encode(
-            fixture("generated", "receipt-expired-fresh.der")).decode()}
-        historical = {"receipt-data": base64.b64encode(
-            fixture("generated", "receipt-expired-historical.der")).decode()}
+        data = {
+            "receipt-data": base64.b64encode(
+                fixture("generated", "receipt-expired-fresh.der")
+            ).decode()
+        }
+        historical = {
+            "receipt-data": base64.b64encode(
+                fixture("generated", "receipt-expired-historical.der")
+            ).decode()
+        }
         self.assertEqual(
-            0, VerifyReceiptEndpoint(roots, "Sandbox").verify_receipt(historical)["status"])
-        for now in (None, 1590969600.0, 4102444800.0):   # system, 2020-06-01, 2100
+            0, VerifyReceiptEndpoint(roots, "Sandbox").verify_receipt(historical)["status"]
+        )
+        for now in (None, 1590969600.0, 4102444800.0):  # system, 2020-06-01, 2100
             with self.subTest(now=now):
                 clock = None if now is None else (lambda moment: lambda: moment)(now)
                 endpoint = VerifyReceiptEndpoint(roots, "Sandbox", clock=clock)
@@ -817,16 +909,17 @@ class ClockSeamTest(unittest.TestCase):
         # same seam covers it — consistency, and it makes the response
         # byte-reproducible for a caller that pins the clock.
         from apple_purchase_receipt_verifier import VerifyReceiptEndpoint
+
         endpoint = VerifyReceiptEndpoint(
-            [cert("generated", "receipt-root.der")], "Sandbox",
-            clock=lambda: 1735689600.0)   # 2025-01-01T00:00:00Z
-        response = endpoint.verify_receipt({"receipt-data": base64.b64encode(
-            fixture("generated", "receipt.der")).decode()})
+            [cert("generated", "receipt-root.der")], "Sandbox", clock=lambda: 1735689600.0
+        )  # 2025-01-01T00:00:00Z
+        response = endpoint.verify_receipt(
+            {"receipt-data": base64.b64encode(fixture("generated", "receipt.der")).decode()}
+        )
         self.assertEqual(0, response["status"])
         receipt = response["receipt"]
         self.assertEqual("2025-01-01 00:00:00 Etc/GMT", receipt["request_date"])
         self.assertEqual("1735689600000", receipt["request_date_ms"])
-        self.assertEqual("2024-12-31 16:00:00 America/Los_Angeles",
-                         receipt["request_date_pst"])
+        self.assertEqual("2024-12-31 16:00:00 America/Los_Angeles", receipt["request_date_pst"])
         # The receipt's own dates are unaffected by the clock.
         self.assertEqual("2024-08-06 12:00:00 Etc/GMT", receipt["receipt_creation_date"])

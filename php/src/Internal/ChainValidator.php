@@ -115,7 +115,14 @@ final class ChainValidator
      * parsed certificates. An empty list is a configuration error, not a
      * verification verdict.
      *
-     * @param list<string> $trustedRoots
+     * This is where anchors enter the library, so the element type is
+     * declared as it actually arrives: PHP does not enforce array element
+     * types, and a caller outside static analysis can hand this a list of
+     * anything. The `is_string()` below is that guard, not a formality — it
+     * is what turns a wrong element into a named InvalidArgumentException
+     * instead of a TypeError from somewhere further in.
+     *
+     * @param array<mixed> $trustedRoots DER bytes or PEM text of each anchor
      *
      * @return list<Certificate>
      *

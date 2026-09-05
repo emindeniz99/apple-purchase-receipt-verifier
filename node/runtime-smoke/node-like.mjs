@@ -10,7 +10,9 @@ const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)))
 
 const lines = run({
   appleRootDer: read('../certs/AppleIncRootCertificate.cer'),
-  sandboxReceiptB64: read('../../fixtures/public-receipts/receipt-sandbox-g5.b64').toString('ascii'),
+  sandboxReceiptB64: read('../../fixtures/public-receipts/receipt-sandbox-g5.b64').toString(
+    'ascii',
+  ),
   jwsRootDer: read('../../fixtures/generated/jws-root.der'),
   transactionJws: read('../../fixtures/generated/transaction.jws').toString('ascii'),
   foreignReceiptDer: read('../../fixtures/generated/receipt-foreign.der'),

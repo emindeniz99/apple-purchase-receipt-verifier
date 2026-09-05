@@ -33,6 +33,10 @@
           "type": "xml",
           "path": "dotnet/Directory.Build.props",
           "xpath": "//project/propertyGroup/version"
+        },
+        {
+          "type": "generic",
+          "path": "jvm-interop/pom.xml"
         }
       ]
     }

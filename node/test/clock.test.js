@@ -20,7 +20,13 @@ const SIGNED_AT = 1722945600000;
 const TRANSACTION = text('transaction.jws');
 const MINUTE = 60_000;
 
-const BUILDS = [['node', node], ['web', web]];
+const BUILDS = [
+  ['node', node],
+  ['web', web],
+];
+
+/** Curried Date constructor, so a clock table can list bare millis. */
+const at = (millis) => () => new Date(millis);
 
 function jwsVerifier(build, options) {
   return new build.JwsVerifier({
@@ -46,21 +52,27 @@ for (const [name, build] of BUILDS) {
     // verifier reading the real clock answers differently to the two.
     const elapsed = Date.now() - SIGNED_AT;
     assert.ok(elapsed > MINUTE, 'fixture must be older than a minute for this to bracket');
-    const stale = await outcome(() => jwsVerifier(build, {
-      verifier: { maxSignedAgeMillis: MINUTE },
-    }).verifyTransaction(TRANSACTION));
+    const stale = await outcome(() =>
+      jwsVerifier(build, {
+        verifier: { maxSignedAgeMillis: MINUTE },
+      }).verifyTransaction(TRANSACTION),
+    );
     assert.equal(stale.reason, 'STALE_PAYLOAD');
-    const fresh = await outcome(() => jwsVerifier(build, {
-      verifier: { maxSignedAgeMillis: elapsed + 10 * MINUTE },
-    }).verifyTransaction(TRANSACTION));
+    const fresh = await outcome(() =>
+      jwsVerifier(build, {
+        verifier: { maxSignedAgeMillis: elapsed + 10 * MINUTE },
+      }).verifyTransaction(TRANSACTION),
+    );
     assert.equal(fresh.ok?.transactionId, '2000000000000001');
   });
 
   test(`${name}: the injected clock decides STALE_PAYLOAD`, async () => {
-    const at = (millis) => () => new Date(millis);
-    const verify = (clock) => outcome(() => jwsVerifier(build, {
-      verifier: { maxSignedAgeMillis: MINUTE, clock },
-    }).verifyTransaction(TRANSACTION));
+    const verify = (clock) =>
+      outcome(() =>
+        jwsVerifier(build, {
+          verifier: { maxSignedAgeMillis: MINUTE, clock },
+        }).verifyTransaction(TRANSACTION),
+      );
 
     // 30s after signing: inside the one-minute window, and accepted even
     // though the real clock is years past it.
@@ -73,9 +85,11 @@ for (const [name, build] of BUILDS) {
   });
 
   test(`${name}: no max-signed-age means the clock changes nothing`, async () => {
-    const far = await outcome(() => jwsVerifier(build, {
-      verifier: { clock: () => new Date('2999-01-01T00:00:00Z') },
-    }).verifyTransaction(TRANSACTION));
+    const far = await outcome(() =>
+      jwsVerifier(build, {
+        verifier: { clock: () => new Date('2999-01-01T00:00:00Z') },
+      }).verifyTransaction(TRANSACTION),
+    );
     assert.equal(far.ok?.signedDate, SIGNED_AT);
   });
 
@@ -84,19 +98,31 @@ for (const [name, build] of BUILDS) {
     // is judged at the payload's signedDate (PLAN.md 2.1 step 4), so no clock
     // — real or injected, inside the window or centuries outside it — may
     // change either verdict.
-    const clocks = [undefined, () => new Date('2020-06-01T00:00:00Z'),
-      () => new Date('2999-01-01T00:00:00Z'), () => new Date(0)];
-    for (const clock of clocks) {
-      const historical = await outcome(() => jwsVerifier(build, {
-        root: 'jws-expired-root.der', verifier: { clock },
-      }).verifyTransaction(text('expired-cert-historical.jws')));
-      assert.equal(historical.ok?.signedDate, 1590969600000, 'historical payload must verify');
+    const clocks = [
+      undefined,
+      () => new Date('2020-06-01T00:00:00Z'),
+      () => new Date('2999-01-01T00:00:00Z'),
+      () => new Date(0),
+    ];
+    await Promise.all(
+      clocks.map(async (clock) => {
+        const historical = await outcome(() =>
+          jwsVerifier(build, {
+            root: 'jws-expired-root.der',
+            verifier: { clock },
+          }).verifyTransaction(text('expired-cert-historical.jws')),
+        );
+        assert.equal(historical.ok?.signedDate, 1590969600000, 'historical payload must verify');
 
-      const fresh = await outcome(() => jwsVerifier(build, {
-        root: 'jws-expired-root.der', verifier: { clock },
-      }).verifyTransaction(text('expired-cert-fresh.jws')));
-      assert.equal(fresh.reason, 'INVALID_CHAIN', 'out-of-window payload must be rejected');
-    }
+        const fresh = await outcome(() =>
+          jwsVerifier(build, {
+            root: 'jws-expired-root.der',
+            verifier: { clock },
+          }).verifyTransaction(text('expired-cert-fresh.jws')),
+        );
+        assert.equal(fresh.reason, 'INVALID_CHAIN', 'out-of-window payload must be rejected');
+      }),
+    );
   });
 
   test(`${name}: a non-function clock is rejected at construction`, () => {
@@ -107,34 +133,45 @@ for (const [name, build] of BUILDS) {
 // --- verifyReceipt endpoint (Node build only — it has no web twin) --------
 
 test('endpoint: the clock drives request_date', () => {
-  const at = new Date('2025-03-04T05:06:07Z');
+  const fixedInstant = new Date('2025-03-04T05:06:07Z');
   const response = new node.VerifyReceiptEndpoint({
-    trustedRoots: [fixture('receipt-root.der')], environment: 'Sandbox', clock: () => at,
+    trustedRoots: [fixture('receipt-root.der')],
+    environment: 'Sandbox',
+    clock: () => fixedInstant,
   }).verifyReceipt({ 'receipt-data': fixture('receipt.der').toString('base64') });
   assert.equal(response.status, 0);
-  assert.equal(response.receipt.request_date_ms, String(at.getTime()));
+  assert.equal(response.receipt.request_date_ms, String(fixedInstant.getTime()));
   assert.equal(response.receipt.request_date, '2025-03-04 05:06:07 Etc/GMT');
 });
 
 test('endpoint: omitting the clock stamps request_date from the system clock', () => {
   const before = Date.now();
   const response = new node.VerifyReceiptEndpoint({
-    trustedRoots: [fixture('receipt-root.der')], environment: 'Sandbox',
+    trustedRoots: [fixture('receipt-root.der')],
+    environment: 'Sandbox',
   }).verifyReceipt({ 'receipt-data': fixture('receipt.der').toString('base64') });
   assert.equal(response.status, 0);
   const stamped = Number(response.receipt.request_date_ms);
-  assert.ok(stamped >= before - 1000 && stamped <= Date.now() + 1000,
-    `request_date_ms ${stamped} is not the current time`);
+  assert.ok(
+    stamped >= before - 1000 && stamped <= Date.now() + 1000,
+    `request_date_ms ${stamped} is not the current time`,
+  );
 });
 
 test('endpoint: the clock does not move the receipt-chain verdict', () => {
   // Same fixed-window argument as the JWS case: validity is judged at the
   // receipt creation date, so the endpoint's answer is clock-independent.
-  for (const clock of [undefined, () => new Date('2020-06-01T00:00:00Z'),
-    () => new Date('2999-01-01T00:00:00Z')]) {
-    const endpoint = (receipt) => new node.VerifyReceiptEndpoint({
-      trustedRoots: [fixture('receipt-expired-root.der')], environment: 'Sandbox', clock,
-    }).verifyReceipt({ 'receipt-data': fixture(receipt).toString('base64') });
+  for (const clock of [
+    undefined,
+    () => new Date('2020-06-01T00:00:00Z'),
+    () => new Date('2999-01-01T00:00:00Z'),
+  ]) {
+    const endpoint = (receipt) =>
+      new node.VerifyReceiptEndpoint({
+        trustedRoots: [fixture('receipt-expired-root.der')],
+        environment: 'Sandbox',
+        clock,
+      }).verifyReceipt({ 'receipt-data': fixture(receipt).toString('base64') });
     assert.equal(endpoint('receipt-expired-historical.der').status, 0);
     assert.equal(endpoint('receipt-expired-fresh.der').status, 21003);
   }

@@ -88,6 +88,9 @@ final class Fixtures
             'raw' => $raw,
             'base64' => self::strictBase64($id, $raw),
             'utf8' => trim($raw),
+            // Verbatim, untrimmed: pins how a port decodes what a client
+            // sent, whitespace (and, for one fixture, zero bytes) included.
+            'text' => $raw,
             default => throw new RuntimeException(
                 "harness error: unknown fixture codec \"{$entry['codec']}\" for \"{$id}\"",
             ),

@@ -132,11 +132,28 @@ class ConformanceTest < Minitest::Test
       )
       guid = config["deviceGuidHex"] && [config["deviceGuidHex"]].pack("H*")
       verifier.verify_der(input, device_guid: guid)
+    when "verifyReceiptBase64"
+      require_no_clock(clock, "verifyReceiptBase64")
+      verifier = APRV::ReceiptVerifier.new(
+        trusted_roots: trusted_roots(config["trustedRoots"]), bundle_id: config["bundleId"]
+      )
+      guid = config["deviceGuidHex"] && [config["deviceGuidHex"]].pack("H*")
+      verifier.verify_base64(input, device_guid: guid)
     when "verifyReceiptEndpoint"
+      fixture = kase["input"]["fixture"]
+      # A text fixture is what a client would put in receipt-data as-is; a
+      # raw or base64 fixture is decoded bytes this harness re-encodes, since
+      # nothing recorded what a client would have sent for those.
+      receipt_data =
+        if CASES["fixtures"][fixture]["codec"] == "text"
+          input
+        else
+          [input].pack("m0")
+        end
       APRV::VerifyReceiptEndpoint.new(
         trusted_roots: trusted_roots(config["trustedRoots"]),
         environment: config["environment"], clock: clock
-      ).verify_receipt({ "receipt-data" => [input].pack("m0") })
+      ).verify_receipt({ "receipt-data" => receipt_data })
     else
       raise "harness error: no adapter for operation #{kase["operation"].inspect}"
     end

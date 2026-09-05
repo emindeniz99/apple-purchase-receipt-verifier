@@ -104,6 +104,31 @@ final class JwsVerifier
         if ($bundleId === '') {
             throw new InvalidArgumentException('bundleId is required');
         }
+        $this->acceptedEnvironments = self::normalizeEnvironments($acceptedEnvironments);
+        if ($maxSignedAgeSeconds !== null && $maxSignedAgeSeconds < 1) {
+            throw new InvalidArgumentException('maxSignedAgeSeconds must be positive when set');
+        }
+        $this->clock = $clock ?? new SystemClock();
+    }
+
+    /**
+     * The accepted environments as a set keyed by raw claim value.
+     *
+     * This is where the caller's list enters the verifier, so the element
+     * type is declared as it actually arrives: PHP does not enforce array
+     * element types, and a caller outside static analysis can hand this
+     * strings. The `instanceof` below is that guard, not a formality — it is
+     * what turns a wrong element into a named InvalidArgumentException
+     * instead of a fatal property read on a non-object.
+     *
+     * @param array<mixed> $acceptedEnvironments
+     *
+     * @return array<string, true>
+     *
+     * @throws InvalidArgumentException
+     */
+    private static function normalizeEnvironments(array $acceptedEnvironments): array
+    {
         if ($acceptedEnvironments === []) {
             throw new InvalidArgumentException('acceptedEnvironments must be a non-empty list of Environment');
         }
@@ -114,11 +139,8 @@ final class JwsVerifier
             }
             $accepted[$environment->value] = true;
         }
-        $this->acceptedEnvironments = $accepted;
-        if ($maxSignedAgeSeconds !== null && $maxSignedAgeSeconds < 1) {
-            throw new InvalidArgumentException('maxSignedAgeSeconds must be positive when set');
-        }
-        $this->clock = $clock ?? new SystemClock();
+
+        return $accepted;
     }
 
     /**
@@ -253,7 +275,10 @@ final class JwsVerifier
         if ($leaf->publicKeyType() !== OPENSSL_KEYTYPE_EC) {
             throw new VerificationException(Reason::InvalidSignature, 'leaf key is not EC');
         }
-        $signature = Base64::decode($signatureB64);
+        $signature = Base64::decodeStrict($signatureB64);
+        if ($signature === null) {
+            throw new VerificationException(Reason::InvalidJwsFormat, 'signature segment is not valid base64url');
+        }
         if (strlen($signature) !== 64) {
             throw new VerificationException(
                 Reason::InvalidSignature,

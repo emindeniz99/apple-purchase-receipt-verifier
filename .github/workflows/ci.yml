@@ -11,9 +11,15 @@ on:
 permissions:
   contents: read
 
+# Superseding a branch's run saves a runner; superseding main's destroys
+# evidence. Every commit on main is a release candidate -- release.yml's
+# ci-passed gate polls for a completed run on the exact tagged SHA -- so a
+# main commit whose run was cancelled has no record that its tree ever
+# passed. That is not hypothetical: run 132 was cancelled by a docs commit
+# pushed 43 seconds after it, and runs 123 and 125 went the same way.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   java:
@@ -21,11 +27,13 @@ jobs:
     timeout-minutes: 20
     strategy:
       matrix:
-        # Every current LTS line (endoflife.date/eclipse-temurin). The
-        # build itself needs javac 9+ for --release 8; the artifact is
-        # Java 8 bytecode (major version 52), and the java-runtime-8 job
-        # below runs the suite on a real Temurin 8 JVM.
-        jdk: ["11", "17", "21", "25"]
+        # Every Temurin line still in support, LTS or not: 26 is the
+        # current feature release and was missing until an audit against
+        # api.adoptium.net found it. The build itself needs javac 9+ for
+        # --release 8; the artifact is Java 8 bytecode (major version 52),
+        # and the java-runtime-8 job below runs the suite on a real
+        # Temurin 8 JVM.
+        jdk: ["11", "17", "21", "25", "26"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -85,12 +93,29 @@ jobs:
         working-directory: node
 
   # The npm package's runtime claims (README "JavaScript runtimes"): the
-  # built dist runs the same three checks on Bun, Deno and Cloudflare
-  # workerd. The runtimes come from npm at pinned versions so no extra
-  # action is needed; bump the pins in node/package.json's test:runtimes.
+  # built dist runs the same checks on Bun, Deno and Cloudflare workerd,
+  # workerd at all three compatibility configurations it supports. The
+  # runtimes come from npm at pinned versions so no extra action is
+  # needed; bump the pins in node/package.json's runtime:* scripts.
+  #
+  # One leg per runtime rather than one job running all six. As a single
+  # job it downloaded Bun, Deno and workerd in sequence and hit the
+  # 15-minute timeout; split, each leg downloads one runtime and they run
+  # at the same time. fail-fast is off because "Bun passed and Deno did
+  # not" is the useful answer, not the first failure.
   node-runtimes:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime:
+          - node
+          - bun
+          - deno
+          - workerd-floor
+          - workerd-compat-v2
+          - workerd-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -99,10 +124,23 @@ jobs:
         with:
           node-version: "22"
           package-manager-cache: false
-      - run: npm ci && npm run test:runtimes
+      - run: npm ci && npm run runtime:${{ matrix.runtime }}
         working-directory: node
-      # roots-data.ts is generated from certs/; a certs change that forgets
-      # to regenerate it would ship stale trust anchors.
+
+  # roots-data.ts is generated from certs/; a certs change that forgets to
+  # regenerate it would ship stale trust anchors. Its own job now that the
+  # runtime smoke is a matrix, so it runs once rather than six times.
+  node-roots-generated:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
       - run: node scripts/gen-roots.mjs && git diff --exit-code src/roots-data.ts
         working-directory: node
 
@@ -125,6 +163,30 @@ jobs:
           node-version: "22"
           package-manager-cache: false
       - run: npm ci && npm run test:runtimes:web
+        working-directory: node
+
+  # Fastly Compute is the fourth WebCrypto-only runtime, and the one that
+  # forced the /web build to import keys as JWK: Fastly's crypto.subtle has
+  # no 'spki' import format at all, so every chain failed there until the
+  # conversion landed. js-compute-runtime builds the smoke to wasm and
+  # viceroy, Fastly's own local runtime, serves it. viceroy is a Rust
+  # binary, not an npm package, which is why this is its own job and why it
+  # is slower than its siblings.
+  node-runtimes-fastly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      # --locked so the published lockfile decides the build, and a pinned
+      # version so a viceroy release cannot change what this job proves.
+      - run: cargo install viceroy --locked --version 0.20.1
+      - run: npm ci && npm run test:runtimes:fastly
         working-directory: node
 
   # Proves jvm-interop/README.md's claim: the published jar is usable from
@@ -162,10 +224,21 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      # setup-uv provisions the interpreter too (uv python install), so this
+      # is one action where it used to be setup-python plus pip. uv builds
+      # every leg's Python from python-build-standalone, including the 3.9
+      # floor, so the matrix keeps proving exactly what it proved before.
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           python-version: ${{ matrix.python }}
-      - run: pip install cryptography asn1crypto && python -m unittest discover -s tests
+      # --no-project on purpose: this job tests the SOURCE TREE against the
+      # two runtime dependencies, not an installed wheel. `python -m` puts
+      # the working directory on sys.path, so the package still resolves
+      # from python/ exactly as it did under pip. Deliberately no lockfile
+      # and no pinned versions -- resolving cryptography fresh on every run
+      # is what makes this matrix able to catch an upstream release that
+      # breaks the >= 42 compatibility shim in _chain.py.
+      - run: uv run --no-project --with cryptography --with asn1crypto python -m unittest discover -s tests
         working-directory: python
 
   # Every Swift the manifest admits (tools 6.1 is the floor swift-crypto
@@ -398,7 +471,6 @@ jobs:
       # repository roots. Either one drifting ships stale trust anchors.
       - run: ruby script/gen_roots.rb && git diff --exit-code lib/apple_purchase_receipt_verifier/roots_data.rb
         working-directory: ruby
-      - run: diff -r certs ruby/certs
 
   # Test the artifact the consumer receives, not the working tree: the Ruby
   # shape of the two broken npm releases is spec.files losing certs/, which
@@ -470,8 +542,14 @@ jobs:
         working-directory: ruby
       - run: bundle exec rake rbs
         working-directory: ruby
-      - run: bundle exec steep check
-        working-directory: ruby
+      # `steep check` is deliberately not run. sig/ describes the public API,
+      # which is what a consumer type-checks against and what `rbs validate`
+      # proves is well-formed. Steep additionally demands a signature for
+      # every internal method and constant, and against these sources it
+      # reports 411 diagnostics, nearly all of them "not declared in RBS"
+      # for private implementation details. Turning that green means writing
+      # internal signatures for the whole library; until someone does, a job
+      # that cannot pass is worse than an honest gap. See ROADMAP.md.
 
   # The toolchains come from the rustup already on the runner, so this port
   # pins no action beyond the checkout and caches nothing: a clean debug build
@@ -524,10 +602,28 @@ jobs:
         working-directory: rust
       - run: cargo clippy --all-targets --all-features -- -D warnings
         working-directory: rust
+      - run: cargo fmt --check
+        working-directory: rust/fuzz
       # rust/certs/ is a copy of the repository's certs/, because cargo package
       # cannot reach outside the package directory. A copy that drifts ships
       # stale trust anchors.
-      - run: diff -r certs rust/certs
+
+  # The exploratory pass over the hand-written ASN.1, CMS, X.509 and JWS
+  # readers and the three verifiers; rust/fuzz/README.md lists the targets
+  # and their invariants. Seeds come from fixtures/, so a crasher is a
+  # mutation of a genuine receipt or JWS, not of noise. It needs a nightly
+  # for the sanitizer flags, which is why it is not part of the `rust` matrix.
+  rust-fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install nightly --profile minimal
+      - run: cargo install cargo-fuzz --locked
+      - run: ./run.sh all 60
+        working-directory: rust/fuzz
 
   # Advisories, license policy, and the banned-crate list that is the
   # mechanised form of "pinned anchors only, no network ever": a dependency
@@ -622,7 +718,6 @@ jobs:
       # php/certs/ is a copy of the repository-root certs/, and
       # src/Internal/RootsData.php is generated from that copy. A roots change
       # that forgets either step would ship stale trust anchors.
-      - run: diff -r certs php/certs
       - run: php php/tools/gen-roots.php && git diff --exit-code php/src/Internal/RootsData.php
 
   # The mutation pass: ~1,500 mutated receipts and ~1,000 mutated JWS
@@ -667,6 +762,11 @@ jobs:
             8.0.x
             9.0.x
             10.0.x
+      # The three SDKs above are not decoration: the test projects
+      # multi-target net8.0, net9.0 and net10.0, so this runs the suite on
+      # each runtime. It used to install all three and execute only .NET 9,
+      # which goes end of life in November 2026 while net8.0 and net10.0
+      # are the LTS runtimes consumers deploy on.
       - run: dotnet test -c Release
         working-directory: dotnet
 
@@ -676,7 +776,7 @@ jobs:
   # Unity's scripting backend.
   dotnet-mono:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -684,16 +784,26 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: '9.0.x'
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends mono-complete
       - name: Load the netstandard2.0 asset under Mono
         working-directory: dotnet
         run: |
           set -euo pipefail
           dotnet build -c Release src/ApplePurchaseReceiptVerifier
-          # A Mono host that cannot even load the assembly is the failure this
-          # job exists to catch; the full suite stays on CoreCLR.
-          monop -r:src/ApplePurchaseReceiptVerifier/bin/Release/netstandard2.0/ApplePurchaseReceiptVerifier.dll \
-            ApplePurchaseReceiptVerifier.Receipt.ReceiptVerifier
+          # Mono comes from a digest-pinned image rather than apt. Installing
+          # mono-complete pulled 163 packages and 80 MB from the Ubuntu
+          # mirror on every run; when that mirror was slow the job spent 24
+          # minutes fetching and was cancelled at its timeout, with nothing
+          # wrong in the code. Same reasoning as the swift jobs, which have
+          # been digest-pinned containers all along.
+          #
+          # A Mono host that cannot even load the assembly is the failure
+          # this job exists to catch; the full suite stays on CoreCLR, and
+          # monop reflects rather than executes, so this proves loadability
+          # and not behaviour.
+          docker run --rm -v "$PWD:/work" -w /work \
+            mono:6.12@sha256:34d816779b1248b5cfd095770b64ecbaf1798e2aca693a91c11a018dce9c7ad5 \
+            monop -r:src/ApplePurchaseReceiptVerifier/bin/Release/netstandard2.0/ApplePurchaseReceiptVerifier.dll \
+              ApplePurchaseReceiptVerifier.Receipt.ReceiptVerifier
 
   # certs/ is the reviewable source of truth for the pinned Apple roots;
   # Internal/AppleRootData.cs is generated from it and compiled in. A certs
@@ -751,6 +861,12 @@ jobs:
           node-version: "22"
           package-manager-cache: false
       - run: node tools/lint-cases.mjs
+      # Every port that ships the pinned Apple roots must ship the same
+      # bytes. Only three ports used to diff their copy against certs/,
+      # and the per-port regenerate-and-diff steps cannot see this: they
+      # compare a generated file to its own port's copy, so a port left
+      # behind by a root refresh stays internally consistent and green.
+      - run: node tools/check-cert-copies.mjs
 
   zizmor:
     runs-on: ubuntu-latest
@@ -759,7 +875,170 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      # uvx runs zizmor from an ephemeral environment and brings its own
+      # interpreter with it, so this job needs no setup-python and no
+      # install step. Version deliberately unpinned, as it was under pip:
+      # a new zizmor audit that fires on these workflows is a finding we
+      # want to see, not one to defer behind a pin.
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - run: uvx zizmor .github/workflows/
+
+  # Lint and formatting for the Node port. Separate from the `node` job
+  # because it is version-independent: oxlint and prettier read their own
+  # config, so running them once says everything running them four times
+  # would. `npm test` deliberately does not call them (prettier --check
+  # costs ~1.5s), which is why this job has to exist.
+  node-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          python-version: '3.12'
-      - run: pip install zizmor && zizmor .github/workflows/
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - run: npm ci && npm run lint && npm run format:check
+        working-directory: node
+
+  # ruff and mypy for the Python port. One job, not a matrix: ruff pins the
+  # language level with target-version = "py39" in pyproject, so the
+  # interpreter this runs on does not change the verdict. mypy cannot be
+  # told python_version = "3.9" at all (mypy 2.x requires >= 3.10), so the
+  # 3.9 floor is held by ruff's UP rules and proven by the `python` job's
+  # 3.9 leg above, not by this one.
+  #
+  # Installs the package rather than just the tools: mypy needs cryptography
+  # and asn1crypto importable to resolve their types.
+  python-tools:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          python-version: "3.13"
+          # ruff and mypy are invoked as bare commands below, so the venv uv
+          # creates has to be on PATH for the steps that follow. That is what
+          # activate-environment does; without it these would need `uv run`.
+          activate-environment: true
+      - run: uv pip install -e ".[dev]"
+        working-directory: python
+      - run: ruff check .
+        working-directory: python
+      - run: ruff format --check .
+        working-directory: python
+      - run: mypy
+        working-directory: python
+      # ty, Astral's type checker, is ADVISORY and must stay that way for
+      # now: it is 0.0.x preview software, and mypy above remains the gate.
+      #
+      # Scoped to the package rather than the whole port, because that is
+      # where it is honestly clean (0 diagnostics). Over tests/ it reports
+      # one false positive: test_endpoint_environment_is_the_typed_enum
+      # passes deliberately wrong types to assert the constructor rejects
+      # them, and ty honours only `# ty: ignore`, never the
+      # `# type: ignore[arg-type]` already on that line. Silencing a preview
+      # tool by adding a second suppression dialect to the source is worse
+      # than not running it there, so we don't.
+      #
+      # It resolves cryptography's types through VIRTUAL_ENV, which
+      # activate-environment exports; --python makes that explicit, because
+      # under continue-on-error a mis-resolved environment would look like
+      # findings rather than like the misconfiguration it is.
+      - run: uvx ty check --python "$VIRTUAL_ENV" apple_purchase_receipt_verifier
+        working-directory: python
+        continue-on-error: true
+
+  # swift-format ships inside the toolchain from Swift 6.0 on, so there is
+  # no SwiftPM dependency to resolve. Pinned to the 6.3 image and not the
+  # 6.1 floor on purpose: the sources were formatted by swift-format 6.3.3,
+  # and swift-format's output is not stable across minor versions -- the
+  # `swift` job's own comment records a helper that compiled on 6.3 and
+  # failed on 6.1. Formatting is a house style, not a compatibility claim,
+  # so one version owns it; the compatibility claim stays with the `swift`
+  # matrix. This was verified locally under 6.3.3 and could not be tried
+  # against the 6.1 container (no local daemon), which is the other reason
+  # not to assert it here.
+  swift-format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container: swift:6.3@sha256:56ef1be2c1ca36f4c52440357dc1fcdfdb5e113587134fcadeef57c225c71b54
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: swift format lint --strict --recursive swift/Sources swift/Tests
+
+  # A drift gate on dotnet/.editorconfig, not a restyle. The Style,
+  # Performance and Usage analyzer categories are silenced there because
+  # `dotnet format` with them on rewrote 28 files -- switch expressions,
+  # collection expressions, a primary constructor, GeneratedRegex source
+  # generators -- and in one file two fixers collided and wrote a literal
+  # <<<<<<< / ======= / >>>>>>> conflict marker into the source. A
+  # formatter that can corrupt a file is not one to run in apply mode over
+  # this port; this job only ever verifies.
+  dotnet-format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+      - run: dotnet format --verify-no-changes --severity info
+        working-directory: dotnet
+
+  # Spotless with palantir-java-format. Deliberately not bound to a Maven
+  # lifecycle phase (see java/pom.xml), so `mvn test` and the
+  # java-runtime-8 job never invoke it; this job runs it explicitly.
+  # palantir's own classes are class-file major 55, so running the check
+  # needs Maven itself on JDK 11+ -- which is why it is not in the build.
+  # palantir over google-java-format because google forces 2-space indent
+  # on a 4-space codebase: 8690 changed lines against palantir's 1967.
+  java-format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - run: mvn -B spotless:check
+        working-directory: java
+
+  # PHP-CS-Fixer, separate from the php/php-lowest/php-static/php-mutation
+  # jobs so a formatting drift fails on its own instead of inside a
+  # functional job's log. This is also the first CI run of the fixer at
+  # all: the committed .php-cs-fixer.dist.php declared the risky
+  # declare_strict_types rule while setting setRiskyAllowed(false), a
+  # combination the resolver rejects outright, so the config could never
+  # have run wherever it was invoked from.
+  php-format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: "8.4"
+          extensions: openssl, json
+          coverage: none
+      - run: composer update --no-progress --no-interaction
+        working-directory: php
+      - run: vendor/bin/php-cs-fixer fix --dry-run --diff --allow-risky=yes
+        working-directory: php

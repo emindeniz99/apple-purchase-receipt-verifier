@@ -38,7 +38,7 @@ class ApiShapeTest < Minitest::Test
   # anywhere. This reads the vocabulary out of the shared schema, so a change
   # to the cross-language contract breaks the Ruby port loudly.
   def test_the_reason_vocabulary_equals_the_shared_schema
-    schema = JSON.parse(File.read(File.join(TestSupport.fixtures_root, "cases.schema.json")))
+    schema = TestSupport.cases_schema
     expected = schema["$defs"]["reason"]["enum"]
     assert_equal expected.sort, APRV::Reason::ALL.map(&:to_s).sort
     assert_equal 11, APRV::Reason::ALL.size
@@ -46,7 +46,7 @@ class ApiShapeTest < Minitest::Test
   end
 
   def test_the_environment_vocabulary_equals_the_shared_schema
-    schema = JSON.parse(File.read(File.join(TestSupport.fixtures_root, "cases.schema.json")))
+    schema = TestSupport.cases_schema
     expected = schema["$defs"]["environment"]["enum"]
     assert_equal expected.sort, APRV::Environment::ALL.sort
   end

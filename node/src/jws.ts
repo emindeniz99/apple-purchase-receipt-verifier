@@ -3,13 +3,17 @@ import { Environment, Reason, VerificationError } from './errors.js';
 import { hasExtension } from './der.js';
 import { normalizeRoots, validatePair, type RootInput } from './chain.js';
 import {
-  INTERMEDIATE_OID, JwsClaimChecker, LEAF_OID, parseJsonSegment, signedAtMillisOf, splitJws,
+  decodeJwsSegment,
+  INTERMEDIATE_OID,
+  JwsClaimChecker,
+  LEAF_OID,
+  parseJsonSegment,
+  signedAtMillisOf,
+  splitJws,
 } from './jws-claims.js';
 
 export { isTransactionActiveAt } from './jws-claims.js';
-export type {
-  AppTransactionPayload, Claims, Clock, TransactionPayload,
-} from './jws-claims.js';
+export type { AppTransactionPayload, Claims, Clock, TransactionPayload } from './jws-claims.js';
 
 import type { AppTransactionPayload, Claims, Clock, TransactionPayload } from './jws-claims.js';
 
@@ -86,16 +90,23 @@ export class JwsVerifier {
       leaf = new X509Certificate(Buffer.from(x5c[0]!, 'base64'));
       intermediate = new X509Certificate(Buffer.from(x5c[1]!, 'base64'));
     } catch (cause) {
-      throw new VerificationError(Reason.INVALID_CERTIFICATE,
-        'x5c entry is not a valid certificate', cause);
+      throw new VerificationError(
+        Reason.INVALID_CERTIFICATE,
+        'x5c entry is not a valid certificate',
+        cause,
+      );
     }
     if (!safeHasExtension(leaf, LEAF_OID)) {
-      throw new VerificationError(Reason.INVALID_CERTIFICATE_PURPOSE,
-        `leaf certificate lacks Apple marker OID ${LEAF_OID}`);
+      throw new VerificationError(
+        Reason.INVALID_CERTIFICATE_PURPOSE,
+        `leaf certificate lacks Apple marker OID ${LEAF_OID}`,
+      );
     }
     if (!safeHasExtension(intermediate, INTERMEDIATE_OID)) {
-      throw new VerificationError(Reason.INVALID_CERTIFICATE_PURPOSE,
-        `intermediate certificate lacks Apple marker OID ${INTERMEDIATE_OID}`);
+      throw new VerificationError(
+        Reason.INVALID_CERTIFICATE_PURPOSE,
+        `intermediate certificate lacks Apple marker OID ${INTERMEDIATE_OID}`,
+      );
     }
 
     const payload = parseJsonSegment(payloadB64, 'payload');
@@ -108,20 +119,29 @@ export class JwsVerifier {
     if (leaf.publicKey.asymmetricKeyType !== 'ec') {
       throw new VerificationError(Reason.INVALID_SIGNATURE, 'leaf key is not EC');
     }
-    const signature = Buffer.from(signatureB64, 'base64url');
+    const signature = Buffer.from(decodeJwsSegment(signatureB64, 'signature'));
     if (signature.length !== 64) {
-      throw new VerificationError(Reason.INVALID_SIGNATURE,
-        `ES256 signature must be 64 bytes, got ${signature.length}`);
+      throw new VerificationError(
+        Reason.INVALID_SIGNATURE,
+        `ES256 signature must be 64 bytes, got ${signature.length}`,
+      );
     }
     const signingInput = Buffer.from(`${headerB64}.${payloadB64}`, 'ascii');
     // The key goes in as SPKI DER rather than as the KeyObject itself:
     // Cloudflare workerd's node:crypto rejects a KeyObject inside the
     // options form of verify() (the form dsaEncoding needs), while Node,
     // Bun and Deno accept both. Same key, same check.
-    const valid = cryptoVerify('sha256', signingInput, {
-      key: leaf.publicKey.export({ type: 'spki', format: 'der' }),
-      format: 'der', type: 'spki', dsaEncoding: 'ieee-p1363',
-    }, signature);
+    const valid = cryptoVerify(
+      'sha256',
+      signingInput,
+      {
+        key: leaf.publicKey.export({ type: 'spki', format: 'der' }),
+        format: 'der',
+        type: 'spki',
+        dsaEncoding: 'ieee-p1363',
+      },
+      signature,
+    );
     if (!valid) {
       throw new VerificationError(Reason.INVALID_SIGNATURE, 'ES256 signature check failed');
     }

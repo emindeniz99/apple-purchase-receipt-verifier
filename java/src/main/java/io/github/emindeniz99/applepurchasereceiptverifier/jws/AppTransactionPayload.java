@@ -23,8 +23,7 @@ public final class AppTransactionPayload {
     private String receiptType;
     private Long versionExternalIdentifier;
 
-    AppTransactionPayload() {
-    }
+    AppTransactionPayload() {}
 
     public Long appAppleId() {
         return appAppleId;

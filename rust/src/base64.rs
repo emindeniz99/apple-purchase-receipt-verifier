@@ -1,13 +1,20 @@
 //! Base64, in the three shapes this crate needs.
 //!
-//! There are two decoders, and which one a caller gets is a security
+//! There are three decoders, and which one a caller gets is a security
 //! decision rather than a convenience.
 //!
 //! [`decode_lenient`] skips everything outside both alphabets. That is what
 //! the *container* formats need — a PEM body carrying line breaks, an `x5c`
-//! entry, the whitespace a real `receipt-data` blob arrives with — and it
-//! matches Java's MIME decoder and Swift's `.ignoreUnknownCharacters`, which
-//! is what those ports use for exactly the same inputs.
+//! entry — and it matches Java's MIME decoder and Swift's
+//! `.ignoreUnknownCharacters`, which is what those ports use for exactly the
+//! same inputs.
+//!
+//! [`decode_receipt_base64`] is what `receipt-data` — the base64 string a
+//! client actually sends — is decoded with. It is not lenient in
+//! [`decode_lenient`]'s sense: a character neither alphabet defines, both
+//! alphabets in one string, or anything but whitespace once padding starts
+//! is a hard `None`, not a silently skipped byte. See its own docs for the
+//! accepted shape.
 //!
 //! [`decode_base64url_strict`] refuses anything that is not a canonical
 //! RFC 4648 §5 encoding. The three segments of a compact JWS are decoded
@@ -66,6 +73,70 @@ pub fn decode_lenient_bytes(text: &[u8]) -> Vec<u8> {
         }
     }
     out
+}
+
+/// Decodes `receipt-data` — the base64 string a client sends — exactly as
+/// Apple defines it: RFC 4648, as Foundation's
+/// `base64EncodedString(options:)` can emit it. Accepted: the standard
+/// alphabet (`+`/`/`) or base64url (`-`/`_`), not both in the same string;
+/// padding present or omitted; `CR`, `LF`, space or tab anywhere, stripped
+/// before anything else is checked.
+///
+/// Refused as [`None`]: a character neither alphabet defines; anything but
+/// whitespace once padding has started; a data length (padding excluded) of
+/// `4n + 1`, which no encoding has and which padding cannot rescue; an empty
+/// or whitespace-only string; a `=` count other than `0`
+/// or the exact count RFC 4648 requires for the data length (no over- or
+/// under-padding). There is no canonical-trailing-bits check — that
+/// malleability matters for a JWS signature segment (see
+/// [`decode_base64url_strict`]), not for a receipt blob that is itself
+/// verified by a signature over its decoded bytes.
+///
+/// Unlike [`decode_lenient`], an unrecognised character is a hard failure
+/// here rather than something to skip: `receipt-data` is client-controlled,
+/// and the caller turns `None` into `Reason::InvalidReceiptFormat`.
+#[must_use]
+pub fn decode_receipt_base64(text: &str) -> Option<Vec<u8>> {
+    let mut seen_std = false;
+    let mut seen_url = false;
+    let mut padding_started = false;
+    let mut core_len: usize = 0;
+    let mut body: Vec<u8> = Vec::with_capacity(text.len());
+    for byte in text.bytes() {
+        if matches!(byte, b'\r' | b'\n' | b' ' | b'\t') {
+            continue;
+        }
+        core_len += 1;
+        if byte == b'=' {
+            padding_started = true;
+            continue;
+        }
+        if padding_started {
+            return None;
+        }
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' => {}
+            b'+' | b'/' => seen_std = true,
+            b'-' | b'_' => seen_url = true,
+            _ => return None,
+        }
+        if seen_std && seen_url {
+            return None;
+        }
+        body.push(byte);
+    }
+    // The impossible-length test is on the DATA, not the padded string:
+    // "A===" is a multiple of four in total and still encodes no whole byte.
+    let data = body.len();
+    if data == 0 || data % 4 == 1 {
+        return None;
+    }
+    let pad = core_len - data;
+    let expected_pad = (4 - data % 4) % 4;
+    if pad != 0 && pad != expected_pad {
+        return None;
+    }
+    Some(decode_lenient_bytes(&body))
 }
 
 /// Standard base64 with padding.
@@ -156,4 +227,22 @@ pub fn decode_base64url_strict(text: &str) -> Option<Vec<u8>> {
         return None;
     }
     Some(out)
+}
+
+#[cfg(test)]
+mod receipt_base64_tests {
+    use super::decode_receipt_base64;
+
+    /// The impossible-length test has to look at the data, not at the padded
+    /// string: "A===" is a multiple of four characters in total and encodes
+    /// no whole byte. A check on the padded length lets it through and then
+    /// treats three '=' as a canonical run.
+    #[test]
+    fn an_impossible_data_length_is_not_rescued_by_padding() {
+        assert_eq!(decode_receipt_base64("A==="), None);
+        assert_eq!(decode_receipt_base64("QUJDQ==="), None);
+        assert_eq!(decode_receipt_base64("===="), None);
+        assert_eq!(decode_receipt_base64("QUJDQQ=="), Some(b"ABCA".to_vec()));
+        assert_eq!(decode_receipt_base64("QUJDQQ"), Some(b"ABCA".to_vec()));
+    }
 }

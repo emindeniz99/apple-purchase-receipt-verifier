@@ -47,10 +47,13 @@ public struct VerifyReceiptEndpoint: Sendable {
     ///     it never reaches a certificate-validity decision: the receipt path
     ///     takes no clock at all, and judges chain validity at the receipt's
     ///     creation date, falling back to the system clock.
-    public init(trustedRoots: [Data], environment: AppleEnvironment,
-                clock: (@Sendable () -> Date)? = nil) throws {
+    public init(
+        trustedRoots: [Data], environment: AppleEnvironment,
+        clock: (@Sendable () -> Date)? = nil
+    ) throws {
         guard environment == .production || environment == .sandbox else {
-            throw VerificationError(.wrongEnvironment,
+            throw VerificationError(
+                .wrongEnvironment,
                 "verifyReceipt emulates Production or Sandbox, not \(environment.rawValue)")
         }
         guard !trustedRoots.isEmpty else {
@@ -68,27 +71,35 @@ public struct VerifyReceiptEndpoint: Sendable {
 
     /// Boolean spelling of ``init(trustedRoots:environment:clock:)``, kept
     /// working for callers written against it.
-    @available(*, deprecated,
-               message: "use init(trustedRoots:environment:clock:) with .production / .sandbox")
-    public init(trustedRoots: [Data], production: Bool,
-                clock: (@Sendable () -> Date)? = nil) throws {
-        try self.init(trustedRoots: trustedRoots,
-                      environment: production ? .production : .sandbox, clock: clock)
+    @available(
+        *, deprecated,
+        message: "use init(trustedRoots:environment:clock:) with .production / .sandbox"
+    )
+    public init(
+        trustedRoots: [Data], production: Bool,
+        clock: (@Sendable () -> Date)? = nil
+    ) throws {
+        try self.init(
+            trustedRoots: trustedRoots,
+            environment: production ? .production : .sandbox, clock: clock)
     }
 
     /// Handles one verifyReceipt request body. Never throws — like the real
     /// endpoint, failures are reported through `status`.
     public func verifyReceipt(_ requestBody: [String: Any]?) async -> [String: Any] {
-        guard let receiptData = requestBody?["receipt-data"] as? String, !receiptData.isEmpty,
-              let der = Data(base64Encoded: receiptData, options: [.ignoreUnknownCharacters]) else {
+        guard let receiptData = requestBody?["receipt-data"] as? String,
+            let der = decodeReceiptBase64(receiptData)
+        else {
             return ["status": Self.statusMalformed]
         }
         let fields: AppReceipt
         do {
             fields = try await ReceiptVerifier.verifyCore(receipt: der, roots: roots)
         } catch let error as VerificationError {
-            return ["status": error.reason == .invalidReceiptFormat
-                ? Self.statusMalformed : Self.statusNotAuthenticated]
+            return [
+                "status": error.reason == .invalidReceiptFormat
+                    ? Self.statusMalformed : Self.statusNotAuthenticated
+            ]
         } catch {
             return ["status": Self.statusInternal]
         }
@@ -100,7 +111,8 @@ public struct VerifyReceiptEndpoint: Sendable {
         // "Xcode" is listed for completeness only: an Xcode-generated
         // receipt is not Apple-signed, so it fails chain verification with
         // 21003 above and never reaches this branch.
-        let productionReceipt = fields.receiptType == "Production"
+        let productionReceipt =
+            fields.receiptType == "Production"
             || fields.receiptType == "ProductionVPP"
         if environment == .production && !productionReceipt {
             return ["status": Self.statusSandboxReceiptOnProduction]
@@ -133,14 +145,17 @@ public struct VerifyReceiptEndpoint: Sendable {
     /// is.
     public func verifyReceiptJSON(_ body: String) async -> String {
         guard let data = body.data(using: .utf8),
-              let parsed = try? JSONSerialization.jsonObject(with: data),
-              let requestBody = parsed as? [String: Any] else {
+            let parsed = try? JSONSerialization.jsonObject(with: data),
+            let requestBody = parsed as? [String: Any]
+        else {
             return "{\"status\":\(Self.statusMalformed)}"
         }
         let response = await verifyReceipt(requestBody)
-        guard let encoded = try? JSONSerialization.data(
+        guard
+            let encoded = try? JSONSerialization.data(
                 withJSONObject: response, options: [.sortedKeys]),
-              let json = String(data: encoded, encoding: .utf8) else {
+            let json = String(data: encoded, encoding: .utf8)
+        else {
             return "{\"status\":\(Self.statusInternal)}"
         }
         return json
@@ -189,7 +204,8 @@ private func appleDates(_ json: inout [String: Any], _ prefix: String, _ date: D
     guard let date else { return }
     json[prefix] = format(date, zone: TimeZone(identifier: "UTC")!) + " Etc/GMT"
     json["\(prefix)_ms"] = String(Int64(date.timeIntervalSince1970 * 1000))
-    json["\(prefix)_pst"] = format(date, zone: TimeZone(identifier: "America/Los_Angeles")!)
+    json["\(prefix)_pst"] =
+        format(date, zone: TimeZone(identifier: "America/Los_Angeles")!)
         + " America/Los_Angeles"
 }
 

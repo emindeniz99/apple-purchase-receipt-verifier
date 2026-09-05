@@ -15,9 +15,14 @@ const LIMIT = 10;
 function tlv(tag, ...parts) {
   const contents = Buffer.concat(parts);
   const n = contents.length;
-  const length = n < 0x80 ? [n] : n < 0x100 ? [0x81, n]
-    : n < 0x10000 ? [0x82, n >> 8, n & 0xff]
-      : [0x83, (n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
+  const length =
+    n < 0x80
+      ? [n]
+      : n < 0x100
+        ? [0x81, n]
+        : n < 0x10000
+          ? [0x82, n >> 8, n & 0xff]
+          : [0x83, (n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
   return Buffer.concat([Buffer.from([tag, ...length]), contents]);
 }
 
@@ -43,22 +48,40 @@ const OID_COMMON_NAME = Buffer.from('550403', 'hex');
 const OID_BASIC_CONSTRAINTS = Buffer.from('551d13', 'hex');
 
 const SHA256_RSA = tlv(SEQUENCE, tlv(OID, OID_SHA256_RSA), tlv(NULL));
-const name = (commonName) => tlv(SEQUENCE, tlv(SET, tlv(SEQUENCE,
-  tlv(OID, OID_COMMON_NAME), tlv(UTF8_STRING, Buffer.from(commonName, 'utf8')))));
+const name = (commonName) =>
+  tlv(
+    SEQUENCE,
+    tlv(
+      SET,
+      tlv(SEQUENCE, tlv(OID, OID_COMMON_NAME), tlv(UTF8_STRING, Buffer.from(commonName, 'utf8'))),
+    ),
+  );
 // Covers the receipt creation date below, which is what chain validity is judged at.
-const VALIDITY = tlv(SEQUENCE,
+const VALIDITY = tlv(
+  SEQUENCE,
   tlv(UTC_TIME, Buffer.from('200101000000Z', 'ascii')),
-  tlv(UTC_TIME, Buffer.from('300101000000Z', 'ascii')));
-const CA_TRUE = tlv(CONTEXT_3, tlv(SEQUENCE, tlv(SEQUENCE,
-  tlv(OID, OID_BASIC_CONSTRAINTS), tlv(BOOLEAN, Buffer.from([0xff])),
-  tlv(OCTET_STRING, tlv(SEQUENCE, tlv(BOOLEAN, Buffer.from([0xff])))))));
+  tlv(UTC_TIME, Buffer.from('300101000000Z', 'ascii')),
+);
+const CA_TRUE = tlv(
+  CONTEXT_3,
+  tlv(
+    SEQUENCE,
+    tlv(
+      SEQUENCE,
+      tlv(OID, OID_BASIC_CONSTRAINTS),
+      tlv(BOOLEAN, Buffer.from([0xff])),
+      tlv(OCTET_STRING, tlv(SEQUENCE, tlv(BOOLEAN, Buffer.from([0xff])))),
+    ),
+  ),
+);
 
 let nextSerial = 1;
 
 /** A v3 certificate, signed for real so the path walk runs the RSA check on it. */
 function certificate({ subject, issuer, subjectKey, issuerKey, ca }) {
   const serial = Buffer.from([nextSerial++]);
-  const tbs = tlv(SEQUENCE,
+  const tbs = tlv(
+    SEQUENCE,
     tlv(CONTEXT_0, tlv(INTEGER, Buffer.from([2]))),
     tlv(INTEGER, serial),
     SHA256_RSA,
@@ -66,10 +89,15 @@ function certificate({ subject, issuer, subjectKey, issuerKey, ca }) {
     VALIDITY,
     name(subject),
     subjectKey.publicKey.export({ type: 'spki', format: 'der' }),
-    ...(ca ? [CA_TRUE] : []));
+    ...(ca ? [CA_TRUE] : []),
+  );
   return {
-    der: tlv(SEQUENCE, tbs, SHA256_RSA,
-      tlv(BIT_STRING, Buffer.from([0]), cryptoSign('sha256', tbs, issuerKey.privateKey))),
+    der: tlv(
+      SEQUENCE,
+      tbs,
+      SHA256_RSA,
+      tlv(BIT_STRING, Buffer.from([0]), cryptoSign('sha256', tbs, issuerKey.privateKey)),
+    ),
     // issuerAndSerialNumber, which is how the SignerInfo names its signer.
     sid: tlv(SEQUENCE, name(issuer), tlv(INTEGER, serial)),
   };
@@ -77,18 +105,40 @@ function certificate({ subject, issuer, subjectKey, issuerKey, ca }) {
 
 /** A CMS SignedData carrying `certificates`; the signature is never reached. */
 function receipt(certificates, sid) {
-  const payload = tlv(SET, tlv(SEQUENCE,
-    tlv(INTEGER, Buffer.from([12])), tlv(INTEGER, Buffer.from([1])),
-    tlv(OCTET_STRING, tlv(IA5_STRING, Buffer.from('2025-12-26T17:43:07Z', 'ascii')))));
-  return tlv(SEQUENCE, tlv(OID, OID_SIGNED_DATA), tlv(CONTEXT_0, tlv(SEQUENCE,
-    tlv(INTEGER, Buffer.from([1])),
-    tlv(SET),
-    tlv(SEQUENCE, tlv(OID, OID_DATA), tlv(CONTEXT_0, tlv(OCTET_STRING, payload))),
-    tlv(CONTEXT_0, Buffer.concat(certificates)),
-    tlv(SET, tlv(SEQUENCE,
-      tlv(INTEGER, Buffer.from([1])), sid,
-      tlv(SEQUENCE, tlv(OID, OID_SHA256), tlv(NULL)),
-      tlv(SEQUENCE), tlv(OCTET_STRING, Buffer.alloc(0)))))));
+  const payload = tlv(
+    SET,
+    tlv(
+      SEQUENCE,
+      tlv(INTEGER, Buffer.from([12])),
+      tlv(INTEGER, Buffer.from([1])),
+      tlv(OCTET_STRING, tlv(IA5_STRING, Buffer.from('2025-12-26T17:43:07Z', 'ascii'))),
+    ),
+  );
+  return tlv(
+    SEQUENCE,
+    tlv(OID, OID_SIGNED_DATA),
+    tlv(
+      CONTEXT_0,
+      tlv(
+        SEQUENCE,
+        tlv(INTEGER, Buffer.from([1])),
+        tlv(SET),
+        tlv(SEQUENCE, tlv(OID, OID_DATA), tlv(CONTEXT_0, tlv(OCTET_STRING, payload))),
+        tlv(CONTEXT_0, Buffer.concat(certificates)),
+        tlv(
+          SET,
+          tlv(
+            SEQUENCE,
+            tlv(INTEGER, Buffer.from([1])),
+            sid,
+            tlv(SEQUENCE, tlv(OID, OID_SHA256), tlv(NULL)),
+            tlv(SEQUENCE),
+            tlv(OCTET_STRING, Buffer.alloc(0)),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 const rsaKey = () => generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -105,11 +155,19 @@ const [left, right, stranger] = [rsaKey(), rsaKey(), rsaKey()];
  */
 function meshReceipt(layers, decoys = 0) {
   const leaf = certificate({
-    subject: 'Mesh Leaf', issuer: 'Mesh CA 1', subjectKey: stranger, issuerKey: left, ca: false,
+    subject: 'Mesh Leaf',
+    issuer: 'Mesh CA 1',
+    subjectKey: stranger,
+    issuerKey: left,
+    ca: false,
   });
   const certificates = [leaf.der];
   const decoy = certificate({
-    subject: 'Mesh CA 1', issuer: 'Mesh CA 99', subjectKey: stranger, issuerKey: stranger, ca: true,
+    subject: 'Mesh CA 1',
+    issuer: 'Mesh CA 99',
+    subjectKey: stranger,
+    issuerKey: stranger,
+    ca: true,
   });
   // Ahead of the mesh, where an attacker would put them: the walk scans in order.
   for (let i = 0; i < decoys; i++) {
@@ -118,9 +176,15 @@ function meshReceipt(layers, decoys = 0) {
   for (let layer = 1; layer <= layers; layer++) {
     for (const subjectKey of [left, right]) {
       for (const issuerKey of [left, right]) {
-        certificates.push(certificate({
-          subject: `Mesh CA ${layer}`, issuer: `Mesh CA ${layer + 1}`, subjectKey, issuerKey, ca: true,
-        }).der);
+        certificates.push(
+          certificate({
+            subject: `Mesh CA ${layer}`,
+            issuer: `Mesh CA ${layer + 1}`,
+            subjectKey,
+            issuerKey,
+            ca: true,
+          }).der,
+        );
       }
     }
   }
@@ -139,20 +203,33 @@ function elapsed(work) {
 test('rejects a receipt embedding more certificates than a chain can hold', () => {
   const oneTooMany = [];
   for (let i = 0; i < LIMIT; i++) {
-    oneTooMany.push(certificate({
-      subject: 'Mesh CA 1', issuer: 'Mesh CA 2', subjectKey: left, issuerKey: right, ca: true,
-    }).der);
+    oneTooMany.push(
+      certificate({
+        subject: 'Mesh CA 1',
+        issuer: 'Mesh CA 2',
+        subjectKey: left,
+        issuerKey: right,
+        ca: true,
+      }).der,
+    );
   }
   const leaf = certificate({
-    subject: 'Mesh Leaf', issuer: 'Mesh CA 1', subjectKey: stranger, issuerKey: left, ca: false,
+    subject: 'Mesh Leaf',
+    issuer: 'Mesh CA 1',
+    subjectKey: stranger,
+    issuerKey: left,
+    ca: false,
   });
   oneTooMany.push(leaf.der);
-  assert.throws(() => verifier.verify(receipt(oneTooMany, leaf.sid)), (e) => {
-    assert.equal(e.reason, 'INVALID_CHAIN');
-    // Names the bound, so a caller that trips it learns what it is.
-    assert.ok(e.message.includes(`more than ${LIMIT} certificates`), e.message);
-    return true;
-  });
+  assert.throws(
+    () => verifier.verify(receipt(oneTooMany, leaf.sid)),
+    (e) => {
+      assert.equal(e.reason, 'INVALID_CHAIN');
+      // Names the bound, so a caller that trips it learns what it is.
+      assert.ok(e.message.includes(`more than ${LIMIT} certificates`), e.message);
+      return true;
+    },
+  );
 });
 
 test('rejects a cross-signed certificate mesh without walking it', () => {
@@ -167,19 +244,32 @@ test('rejects a cross-signed certificate mesh without walking it', () => {
   // that receipt, measured here so it follows the machine rather than assuming
   // one, which leaves the bounded path a factor of 3 inside it and puts the
   // unbounded path outside.
-  const genuine = readFileSync(fileURLToPath(new URL(
-    '../../fixtures/public-receipts/receipt-sandbox-legacy.b64', import.meta.url)), 'ascii').trim();
+  const genuine = readFileSync(
+    fileURLToPath(
+      new URL('../../fixtures/public-receipts/receipt-sandbox-legacy.b64', import.meta.url),
+    ),
+    'ascii',
+  ).trim();
   const genuineVerifier = new ReceiptVerifier({
-    trustedRoots: appleReceiptRoots(), bundleId: 'com.nutcall.alert',
+    trustedRoots: appleReceiptRoots(),
+    bundleId: 'com.nutcall.alert',
   });
   // Fastest of five: the slow runs are this process's own warm-up and GC.
-  const unit = Math.min(...[1, 2, 3, 4, 5].map(() => elapsed(() => genuineVerifier.verify(genuine))));
+  const unit = Math.min(
+    ...[1, 2, 3, 4, 5].map(() => elapsed(() => genuineVerifier.verify(genuine))),
+  );
 
   const mesh = meshReceipt(14, 1000);
-  const spent = elapsed(() => assert.throws(() => verifier.verify(mesh),
-    (e) => e.reason === 'INVALID_CHAIN'));
-  assert.ok(spent < 20 * unit,
-    `rejected the mesh in ${spent.toFixed(0)} ms, budget ${(20 * unit).toFixed(0)} ms`);
+  const spent = elapsed(() =>
+    assert.throws(
+      () => verifier.verify(mesh),
+      (e) => e.reason === 'INVALID_CHAIN',
+    ),
+  );
+  assert.ok(
+    spent < 20 * unit,
+    `rejected the mesh in ${spent.toFixed(0)} ms, budget ${(20 * unit).toFixed(0)} ms`,
+  );
 });
 
 /**
@@ -208,28 +298,49 @@ test('a receipt embedding exactly the bound is examined, not rejected by it', ()
   // Exactly `bound` certificates, the last of them unparseable: reaching it
   // shows as the parse error, stopping at the count guard as INVALID_CHAIN.
   const leaf = certificate({
-    subject: 'Mesh Leaf', issuer: 'Mesh CA 1', subjectKey: stranger, issuerKey: left, ca: false,
+    subject: 'Mesh Leaf',
+    issuer: 'Mesh CA 1',
+    subjectKey: stranger,
+    issuerKey: left,
+    ca: false,
   });
   const exactly = Array.from({ length: reportedBound(leaf) - 1 }, () => leaf.der);
   exactly.push(Buffer.from([0x30, 0x03, 0x02, 0x01, 0x00]));
-  assert.throws(() => verifier.verify(receipt(exactly, leaf.sid)),
-    (e) => e.reason === 'INVALID_RECEIPT_FORMAT');
+  assert.throws(
+    () => verifier.verify(receipt(exactly, leaf.sid)),
+    (e) => e.reason === 'INVALID_RECEIPT_FORMAT',
+  );
 });
 
 test('the certificate limit is above every genuine receipt', () => {
   // The bound is only safe while it stays above the largest chain Apple
   // actually ships.
   const leaf = certificate({
-    subject: 'Mesh Leaf', issuer: 'Mesh CA 1', subjectKey: stranger, issuerKey: left, ca: false,
+    subject: 'Mesh Leaf',
+    issuer: 'Mesh CA 1',
+    subjectKey: stranger,
+    issuerKey: left,
+    ca: false,
   });
   const bound = reportedBound(leaf);
 
-  for (const fixture of ['receipt-sandbox-g5', 'receipt-sandbox-legacy', 'receipt-xcode-with-purchases']) {
-    const der = Buffer.from(readFileSync(fileURLToPath(new URL(
-      `../../fixtures/public-receipts/${fixture}.b64`, import.meta.url)), 'ascii').trim(), 'base64');
+  for (const fixture of [
+    'receipt-sandbox-g5',
+    'receipt-sandbox-legacy',
+    'receipt-xcode-with-purchases',
+  ]) {
+    const der = Buffer.from(
+      readFileSync(
+        fileURLToPath(new URL(`../../fixtures/public-receipts/${fixture}.b64`, import.meta.url)),
+        'ascii',
+      ).trim(),
+      'base64',
+    );
     const count = countCertificates(der);
-    assert.ok(count > 0 && count < bound,
-      `${fixture} embeds ${count} certificates, bound is ${bound}`);
+    assert.ok(
+      count > 0 && count < bound,
+      `${fixture} embeds ${count} certificates, bound is ${bound}`,
+    );
   }
 });
 
@@ -239,7 +350,8 @@ test('the certificate limit is above every genuine receipt', () => {
  */
 function countCertificates(der) {
   const signedData = parse(der).children[1].children[0].children;
-  const certificates = signedData.slice(3, signedData.length - 1)
+  const certificates = signedData
+    .slice(3, signedData.length - 1)
     .find((node) => node.tag === Tag.CONTEXT_0);
   return certificates.children.length;
 }

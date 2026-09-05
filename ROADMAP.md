@@ -5,6 +5,97 @@ Delete an item in the same commit that ships it.
 
 ## Next
 
+- **The three remaining parser differentials.** The compact-JWS segment
+  differential is closed (see the strict-decoding commit); three more are
+  recorded in the port READMEs and still have no shared vector:
+  1. **`x5c[2]`**: java decodes and parses the third certificate, so an
+     unparseable one is `INVALID_CERTIFICATE` there and reaches the
+     signature check in node, python, swift, rust and the rest. It is
+     untrusted by design everywhere, so no verdict about a well-formed JWS
+     moves -- but the ports disagree about a malformed one and nothing
+     pins it.
+     Since the receipt-base64 change, go additionally rejects junk inside
+     an x5c entry (its receipt decoder is shared with x5c), where the other
+     ports skip it -- the same open question, one port wider.
+  2. **Resource bounds differ by an order of magnitude and are absent in
+     five ports.** Measured: node budget 200,000 (ruby), 100,000 (rust,
+     go), 20,000 (php), and no constant at all in node, python, java,
+     dotnet, swift. Receipt size cap 8 MiB (rust), 2 MiB (php), 1 MiB
+     (go), unfound elsewhere. Only php caps the JWS input. Genuine
+     receipts are under 80 KB and 3,000 nodes so nothing breaks today,
+     but the contract should state a normative floor -- every port MUST
+     accept a well-formed receipt up to N bytes and M nodes -- and a
+     vector should pin it, or a large legitimate receipt becomes another
+     port-dependent verdict.
+  3. **Chain path length**: java lets the JDK PKIX builder cap it at 5
+     while every hand-rolled walk uses 6.
+- **Fuzzing runs opposite to parser size.** go has three fuzz targets and
+  seed corpora on every build; rust now has seven under `rust/fuzz/`
+  (the ASN.1, X.509 and CMS readers on their own, the three verifiers,
+  and the endpoint body), run for a fixed budget by the `rust-fuzz` CI
+  job. dotnet (3,896 lines) and php (3,271) still have none. The
+  deterministic mutation corpora node, rust and php do have are
+  regression tests, not fuzzing.
+- **No test proves the OS trust store is unreachable in swift, python,
+  node or java.** go (`systemtrust_test.go`), rust (`trust_pinning.rs`),
+  php (`PinnedAnchorsTest.php`) and ruby each install or point at a CA the
+  platform would accept and require the library to reject it anyway.
+  Swift is the port most likely to reach Security.framework by accident
+  and is one of the four without such a test.
+- **`THREAT-MODEL.md` does not exist.** PLAN.md 2.3 is fifteen lines and
+  the rest is spread across nine port READMEs, each restating pinned
+  anchors, no network and the marker OIDs. One page -- assets, attacker
+  capabilities, what is in scope, what is explicitly out, and the test
+  that proves each line -- is the first thing a security reviewer asks
+  for.
+- **java/ and swift/ have no README.** They are the first two ports
+  published, and Maven Central shows only the pom description. The five
+  ports written later each carry a reason-code table, a trust-model
+  section and a clock-seam explanation that java and swift consumers do
+  not get.
+- **1,817 lines of `ci-job.md` and `RELEASE.md` now contradict the real
+  files.** They were the right artefact for handing a port's CI and
+  release wiring over, and the wrong one to keep once it is wired:
+  `rust/RELEASE.md` still carries a literal `<pin to a full commit SHA>`
+  placeholder, `ruby/RELEASE.md` opens with "Nothing here has been
+  applied" while its publish job exists, and `php/ci-job.md` says a SHA is
+  unresolved that ci.yml resolved. Delete them, or reduce each to a
+  pointer at the file that superseded it.
+- **Stale counts and language lists in the docs.** INTENT.md names a
+  single root for each path where D15 pins all three; PLAN.md 4's
+  milestone list stops at four languages and leaves "CI workflow per
+  language" unchecked against 40 jobs; dotnet/README.md says 56 cases;
+  several files still say "all four languages".
+- **An unbootstrapped registry fails the release rather than skipping
+  it.** Every publish job skips loudly when the registry already has the
+  version, but rubygems, crates and nuget each fail at their OIDC step
+  when the registry has never been set up -- and the `smoke` job needs all
+  seven, so one unbootstrapped registry blocks post-publish verification
+  of the four that are live. README.md reads as though those ports were
+  merely waiting.
+
+- **No branch protection in practice.** main reports protected, yet an
+  admin push lands directly, so either the pull-request requirement or
+  admin enforcement is off. There is no CODEOWNERS, no commit signing,
+  and 82 of 83 commits are authored by the assistant rather than
+  co-authored by it.
+- **`asn1crypto` is the one attacker-facing parser the project neither
+  wrote nor fuzzes**, and its last release was 1.5.1 in 2022. Every other
+  port parses hostile bytes with its own bounded reader or a first-party
+  library. Decide before 1.0 whether python keeps it.
+- **`jackson-databind` is the heaviest dependency in the project** and
+  carries the CVE history a consumer's scanner will surface. The dotnet
+  port faced the same choice and wrote a bounded JSON reader instead; the
+  payloads here are small and flat.
+- **The `cryptography>=40` floor is never installed.** Every python CI leg
+  resolves the latest, so the floor is a claim.
+- **Internal RBS signatures for the Ruby port**: `sig/` covers the public
+  API and `rbs validate` proves it well-formed, which is what a consumer
+  type-checks against. `steep check` also wants a signature for every
+  private method and internal constant and reports 411 diagnostics
+  without them, so the CI job does not run it. Writing those signatures
+  makes the step viable; until then the gap is stated in `ci.yml` rather
+  than hidden behind a job nobody runs.
 - **Real receipt fixtures** (PLAN D6): owner to supply real production +
   sandbox receipts (and ideally a StoreKit-Test/Xcode receipt) as checked-in
   fixtures; add byte-level regression tests over them in every suite.
@@ -18,10 +109,10 @@ Delete an item in the same commit that ships it.
   engines floor to 22 is a semver-major decision, nothing in the code needs
   it yet. Revisit when @types/node's pin (see .github/dependabot.yml) starts
   blocking a needed update.
-- **WebCrypto-only runtimes** (Vercel Edge, Fastly Compute): unsupported
-  and documented as such. Supporting them means parsing X.509 with our own
-  DER parser and verifying through `crypto.subtle`, which is async, so
-  `verify()` would change shape. Wait for a request.
+- **Akamai EdgeWorkers**: the only runtime the README's WebCrypto list
+  rests on an argument rather than a run, because there is no local
+  runtime to run it in. Vercel Edge, Fastly Compute and flagless
+  Cloudflare Workers are all tested on every push.
 - **Post-publish smoke jobs for the five newer ports**:
   `post-publish-smoke.yml` still covers npm, PyPI, Maven Central and SwiftPM
   only. The Go, RubyGems, crates.io and NuGet legs are written out in each

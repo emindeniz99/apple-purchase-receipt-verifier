@@ -1,11 +1,9 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
-import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifier;
-import org.bouncycastle.cert.X509CertificateHolder;
-import org.bouncycastle.cms.CMSSignedData;
-import org.bouncycastle.util.CollectionStore;
-import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifier;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -15,9 +13,10 @@ import java.util.Base64;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.bouncycastle.cert.X509CertificateHolder;
+import org.bouncycastle.cms.CMSSignedData;
+import org.bouncycastle.util.CollectionStore;
+import org.junit.jupiter.api.Test;
 
 /**
  * The strongest fixture tier: genuine Apple-signed receipts (vendored from
@@ -34,8 +33,7 @@ class PublicReceiptsTest {
     private static final Path FIXTURES = Paths.get("..", "fixtures", "public-receipts");
 
     private static String receipt(String name) throws Exception {
-        return new String(Files.readAllBytes(FIXTURES.resolve(name + ".b64")),
-                StandardCharsets.US_ASCII).trim();
+        return new String(Files.readAllBytes(FIXTURES.resolve(name + ".b64")), StandardCharsets.US_ASCII).trim();
     }
 
     @Test
@@ -55,15 +53,16 @@ class PublicReceiptsTest {
         // certificates are decoded — that is
         // ReceiptVerifierTest#countsEmbeddedCertificatesBeforeDecodingAnyOfThem.
         int largestGenuine = 0;
-        for (String name : new String[]{"receipt-sandbox-g5", "receipt-sandbox-legacy",
-                "receipt-xcode-with-purchases"}) {
+        for (String name :
+                new String[] {"receipt-sandbox-g5", "receipt-sandbox-legacy", "receipt-xcode-with-purchases"}) {
             int embedded = new CMSSignedData(Base64.getMimeDecoder().decode(receipt(name)))
-                    .getCertificates().getMatches(null).size();
+                    .getCertificates()
+                    .getMatches(null)
+                    .size();
             largestGenuine = Math.max(largestGenuine, embedded);
         }
 
-        CMSSignedData genuine = new CMSSignedData(
-                Base64.getMimeDecoder().decode(receipt("receipt-sandbox-g5")));
+        CMSSignedData genuine = new CMSSignedData(Base64.getMimeDecoder().decode(receipt("receipt-sandbox-g5")));
         // 64 copies: far above any ceiling that could still clear a genuine
         // three-certificate chain, so the bound fires wherever it is set.
         List<X509CertificateHolder> flood = new ArrayList<X509CertificateHolder>();
@@ -71,17 +70,16 @@ class PublicReceiptsTest {
             flood.addAll(genuine.getCertificates().getMatches(null));
         }
         final byte[] flooded = CMSSignedData.replaceCertificatesAndCRLs(
-                genuine, new CollectionStore<X509CertificateHolder>(flood), null, null).getEncoded();
+                        genuine, new CollectionStore<X509CertificateHolder>(flood), null, null)
+                .getEncoded();
 
-        ReceiptVerifier verifier = new ReceiptVerifier(
-                AppleRootCerts.receiptRoots(), "dev.bonzer.weeka.app");
-        VerificationException e = assertThrows(VerificationException.class,
-                () -> verifier.verify(flooded));
-        Matcher reported = Pattern.compile("more than the maximum of (\\d+)")
-                .matcher(e.getMessage());
+        ReceiptVerifier verifier = new ReceiptVerifier(AppleRootCerts.receiptRoots(), "dev.bonzer.weeka.app");
+        VerificationException e = assertThrows(VerificationException.class, () -> verifier.verify(flooded));
+        Matcher reported = Pattern.compile("more than the maximum of (\\d+)").matcher(e.getMessage());
         assertTrue(reported.find(), e.getMessage());
-        assertTrue(Integer.parseInt(reported.group(1)) > largestGenuine,
-                "bound of " + reported.group(1) + " does not clear the largest genuine chain, "
-                        + "which embeds " + largestGenuine + " certificates");
+        assertTrue(
+                Integer.parseInt(reported.group(1)) > largestGenuine,
+                "bound of " + reported.group(1) + " does not clear the largest genuine chain, " + "which embeds "
+                        + largestGenuine + " certificates");
     }
 }

@@ -127,6 +127,19 @@ verifier.verify_with_device_guid(der, guid)?;
 verifier.verify_base64_with_device_guid(text, guid)?;
 ```
 
+`verify_base64` and `verify_base64_with_device_guid` decode exactly what
+Apple's `receipt-data` accepts: Base64 as RFC 4648 defines it, the way
+Foundation's `base64EncodedString(options:)` can emit it — the standard
+alphabet or base64url, padded or not, with `CR`/`LF` line breaks at 64 or 76
+columns. Concretely: `+`/`/` or `-`/`_` (never both in the same string),
+padding present or omitted, and `\r`, `\n`, ` ` or `\t` anywhere. A character
+neither alphabet defines, both alphabets in one string, anything but
+whitespace once padding has started, an empty or whitespace-only string, or a
+`=` count other than zero or the exact count the data length requires (no
+over- or under-padding) is `INVALID_RECEIPT_FORMAT` (`21002` at the endpoint)
+before any bytes reach the CMS parser — see `decode_receipt_base64` in
+`base64.rs`.
+
 Every input form is reachable with and without the device GUID. Passing one
 additionally enforces the device binding:
 `SHA1(guid ‖ opaqueValue ‖ bundleIdBytes)` must equal attribute 5, compared
@@ -278,12 +291,18 @@ BER would reject Apple's own Xcode receipts.
 
 The JWS side is closed instead of merely documented. The three segments are
 decoded as unpadded canonical base64url (RFC 7515 §2), so one signed payload
-has exactly one accepted spelling. That is deliberately stricter than the
-shipped ports: Node and Python decode the segments leniently and accept junk
-appended to the signature segment, and Java and Swift accept the padded form
-and a final character whose unused bits are not zero. An `x5c` entry is a
-certificate container, not a segment, and stays leniently decoded — the same
-input Java hands to its MIME decoder.
+has exactly one accepted spelling; a segment that is not that exact spelling
+is `INVALID_JWS_FORMAT`, decided before any cryptography runs, the same class
+as a header that is not base64url JSON. An `x5c` entry is a certificate
+container, not a segment, and stays leniently decoded — every character
+outside both alphabets silently skipped, the same input Java hands to its
+MIME decoder — so a padded or wrapped `x5c` entry keeps its own reason
+codes.
+
+`receipt-data` sits between those two: not blanket-lenient like `x5c` (an
+unrecognised character is a hard `INVALID_RECEIPT_FORMAT`, not something
+skipped), and not closed to one spelling like a JWS segment either — see the
+`verify_base64` rule above.
 
 One further deliberate difference, recorded because no shared vector covers
 it: `x5c[2]` is never decoded or parsed here. Node, Python and Swift agree;
@@ -337,6 +356,11 @@ the IANA database, and a mutation pass over the genuine receipts. The
 mutation pass asserts the invariant that matters: a mutated receipt is
 either rejected or produces a byte-identical result — anything that changes
 what the caller is told must be refused.
+
+`fuzz/` holds seven `cargo fuzz` targets — the ASN.1, X.509 and CMS readers
+on their own, the three verifiers, and the endpoint body — seeded from the
+shared fixtures and run by CI for a fixed budget on every push. `fuzz/README.md`
+lists them and the invariant each asserts beyond "no panic".
 
 `tests/data/pacific-transitions.txt` carries every `America/Los_Angeles`
 offset transition from 1900 to 2100, taken from the IANA database via

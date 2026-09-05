@@ -32,8 +32,9 @@ final class PublicApiTests: XCTestCase {
         let receipt = try fixture("receipt.der")
 
         // The static spelling: no bundle id anywhere in the call.
-        let fromStatic = try await ReceiptVerifier.verifyCore(receipt: receipt,
-                                                              trustedRoots: roots)
+        let fromStatic = try await ReceiptVerifier.verifyCore(
+            receipt: receipt,
+            trustedRoots: roots)
         XCTAssertEqual("com.example.app", fromStatic.bundleId)
 
         // The instance spelling: the verifier's bundle id is deliberately one
@@ -92,21 +93,25 @@ final class PublicApiTests: XCTestCase {
         let request = ["receipt-data": try fixture("receipt.der").base64EncodedString()]
         let now = Date(timeIntervalSince1970: 1_735_689_600)
         for production in [true, false] {
-            let old = try VerifyReceiptEndpoint(trustedRoots: roots, production: production,
-                                                clock: { now })
+            let old = try VerifyReceiptEndpoint(
+                trustedRoots: roots, production: production,
+                clock: { now })
             let new = try VerifyReceiptEndpoint(
                 trustedRoots: roots, environment: production ? .production : .sandbox,
                 clock: { now })
             let fromOld = await old.verifyReceipt(request)
             let fromNew = await new.verifyReceipt(request)
-            XCTAssertEqual(try json(fromOld), try json(fromNew),
-                           "production: \(production)")
+            XCTAssertEqual(
+                try json(fromOld), try json(fromNew),
+                "production: \(production)")
         }
     }
 
     private func json(_ value: [String: Any]) throws -> String {
-        String(decoding: try JSONSerialization.data(withJSONObject: value,
-                                                    options: [.sortedKeys]),
-               as: UTF8.self)
+        String(
+            decoding: try JSONSerialization.data(
+                withJSONObject: value,
+                options: [.sortedKeys]),
+            as: UTF8.self)
     }
 }
