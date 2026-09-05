@@ -11,9 +11,8 @@ keywords = ["apple", "appstore", "receipt", "storekit", "verification"]
 categories = ["cryptography", "authentication"]
 # The published tarball is src/, certs/, README.md, LICENSE and the
 # manifest. The tests read ../../fixtures, which a registry consumer does
-# not have, and the two handoff documents describe this repository's CI and
-# release wiring rather than the crate.
-exclude = ["tests/**", "fuzz/**", "ci-job.md", "RELEASE.md", "rustfmt.toml", "deny.toml"]
+# not have, and RELEASE.md describes release wiring rather than the crate.
+exclude = ["tests/**", "fuzz/**", "RELEASE.md", "rustfmt.toml", "deny.toml"]
 
 [lib]
 name = "apple_purchase_receipt_verifier"

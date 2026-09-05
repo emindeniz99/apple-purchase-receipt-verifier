@@ -8,6 +8,7 @@ import base64
 import datetime
 import json
 import random
+import string
 import time
 import unittest
 from pathlib import Path
@@ -21,6 +22,7 @@ from apple_purchase_receipt_verifier import (
     apple_receipt_roots,
 )
 from asn1crypto import cms as asn1cms
+from asn1crypto import x509 as asn1x509
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -515,6 +517,149 @@ class HostileInputTest(unittest.TestCase):
             # leak anything but VerificationError, whatever the mutation.
             except Exception as e:
                 self.fail(f"mutation {i} leaked {type(e).__name__}: {e}")
+
+
+class JwsHostileInputTest(unittest.TestCase):
+    """The JWS header and payload are attacker-supplied JSON, decoded — along
+    with the two x5c certificates — before the signature that would reject
+    them. Every case here is a fuzz finding (python/fuzz): a raw Python
+    exception that a caller of the JwsVerifier used to have to catch, and that
+    the statically typed ports never had."""
+
+    def setUp(self):
+        self.header, self.payload, self.signature = text("generated", "transaction.jws").split(".")
+
+    @staticmethod
+    def segment(raw):
+        return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+    def header_claims(self):
+        return json.loads(base64.urlsafe_b64decode(self.header + "=" * (-len(self.header) % 4)))
+
+    def assemble(self, header=None, payload=None):
+        return ".".join(
+            (
+                self.header if header is None else header,
+                self.payload if payload is None else payload,
+                self.signature,
+            )
+        )
+
+    def test_rejects_x5c_entries_that_are_not_strings(self):
+        # `"x5c": [1, 2, 3]` used to reach base64.b64decode, whose TypeError is
+        # neither of the two exception types the decode site catches. Node
+        # rejects the same header with the same reason; it gets the check from
+        # its JSON types, this port has to make it.
+        claims = self.header_claims()
+        for name, entries in (
+            ("numbers", [1, 2, 3]),
+            ("nested containers", [[], {}, None]),
+            ("one entry short of all strings", [claims["x5c"][0], claims["x5c"][1], 3]),
+        ):
+            with self.subTest(name):
+                hostile = dict(claims, x5c=entries)
+                with self.assertRaises(VerificationError) as ctx:
+                    jws_verifier().verify_transaction(
+                        self.assemble(header=self.segment(json.dumps(hostile).encode()))
+                    )
+                self.assertEqual(ctx.exception.reason, "INVALID_JWS_FORMAT")
+
+    def test_rejects_a_signing_date_no_calendar_can_express(self):
+        # datetime covers years 1 to 9999, so a signedDate of 1e300 raised
+        # OverflowError out of as_utc(), and NaN — which json.loads accepts,
+        # standard JSON or not — raised ValueError. An instant no calendar can
+        # express is inside no certificate's validity window, which is the
+        # verdict the other ports reach through their own date types.
+        for name, raw in (
+            ("far future float", b'{"signedDate": 1e300}'),
+            ("far past float", b'{"signedDate": -1e300}'),
+            ("integer past the range", b'{"signedDate": 1' + b"0" * 30 + b"}"),
+            ("NaN", b'{"signedDate": NaN}'),
+            ("Infinity", b'{"signedDate": Infinity}'),
+            ("receiptCreationDate, the fallback claim", b'{"receiptCreationDate": 1e300}'),
+        ):
+            with self.subTest(name):
+                with self.assertRaises(VerificationError) as ctx:
+                    jws_verifier().verify_raw(self.assemble(payload=self.segment(raw)))
+                self.assertEqual(ctx.exception.reason, "INVALID_CHAIN")
+
+    def test_rejects_a_certificate_whose_extensions_cannot_be_parsed(self):
+        # cryptography parses a certificate's extension block lazily, so ONE
+        # corrupt extension makes the marker-OID lookup raise ValueError
+        # instead of ExtensionNotFound — and the lookup runs on an x5c entry
+        # nothing has authenticated. One flipped byte inside the intermediate's
+        # basicConstraints is enough to reach it.
+        claims = self.header_claims()
+        der = bytearray(base64.b64decode(claims["x5c"][1]))
+        extension = asn1x509.Certificate.load(bytes(der))["tbs_certificate"]["extensions"][0]
+        der[der.find(extension["extn_value"].contents)] ^= 0xFF
+
+        # The premise. Without it this would only be testing a certificate
+        # that lacks the marker OID, which was never the failing case.
+        with self.assertRaises(ValueError):
+            list(x509.load_der_x509_certificate(bytes(der)).extensions)
+
+        hostile = dict(claims)
+        hostile["x5c"] = list(claims["x5c"])
+        hostile["x5c"][1] = base64.b64encode(bytes(der)).decode()
+        with self.assertRaises(VerificationError) as ctx:
+            jws_verifier().verify_transaction(
+                self.assemble(header=self.segment(json.dumps(hostile).encode()))
+            )
+        self.assertEqual(ctx.exception.reason, "INVALID_CERTIFICATE_PURPOSE")
+
+    def test_rejects_a_certificate_the_loader_itself_refuses(self):
+        # load_der_x509_certificate raises InvalidVersion — which derives from
+        # Exception, not from ValueError — for a TBSCertificate whose version
+        # field is not 0, 1 or 2. Naming exception types at that call site is
+        # what let it through; three bytes into the intermediate is enough.
+        claims = self.header_claims()
+        der = bytearray(base64.b64decode(claims["x5c"][1]))
+        version = der.find(b"\xa0\x03\x02\x01\x02")
+        self.assertGreater(version, 0, "the intermediate has no explicit v3 version field")
+        der[version + 4] = 11
+
+        with self.assertRaises(x509.InvalidVersion):
+            x509.load_der_x509_certificate(bytes(der))
+
+        hostile = dict(claims)
+        hostile["x5c"] = list(claims["x5c"])
+        hostile["x5c"][1] = base64.b64encode(bytes(der)).decode()
+        with self.assertRaises(VerificationError) as ctx:
+            jws_verifier().verify_transaction(
+                self.assemble(header=self.segment(json.dumps(hostile).encode()))
+            )
+        self.assertEqual(ctx.exception.reason, "INVALID_CERTIFICATE")
+
+    def test_mutations_of_a_genuine_jws_raise_nothing_else_either(self):
+        # The JWS counterpart of the receipt sweep above, and it exists for the
+        # same reason: mutating a transaction that is otherwise valid is what
+        # carries an input past the format checks and into the certificate and
+        # claim decoders, which is where all three findings above were. The
+        # mutations stay inside the compact-JWS character set, so they exercise
+        # those decoders rather than the UTF-8 boundary in front of them.
+        verifier = jws_verifier()
+        genuine = text("generated", "transaction.jws")
+        alphabet = string.ascii_letters + string.digits + "-_."
+        rnd = random.Random(1234)  # fixed seed: a failure must be reproducible
+        for i in range(400):
+            mutant = list(genuine)
+            for _ in range(rnd.randint(1, 3)):
+                mutant[rnd.randrange(len(mutant))] = rnd.choice(alphabet)
+            candidate = "".join(mutant)
+            for name, call in (
+                ("verify_transaction", verifier.verify_transaction),
+                ("verify_app_transaction", verifier.verify_app_transaction),
+                ("verify_raw", verifier.verify_raw),
+            ):
+                try:
+                    call(candidate)
+                except VerificationError:
+                    pass
+                # Catching bare Exception is the assertion: nothing but
+                # VerificationError may reach a caller, whatever the mutation.
+                except Exception as e:
+                    self.fail(f"mutation {i} leaked {type(e).__name__} out of {name}: {e}")
 
 
 # The two issuer names in the shared generated chain. Decoy certificates carry

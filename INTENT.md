@@ -40,12 +40,12 @@ Each implementation provides the same two capabilities:
 
 1. **JWS verification** (`signedTransactionInfo`, `signedRenewalInfo`,
    `AppTransaction`, notification payloads): parse the compact JWS, validate
-   the `x5c` certificate chain up to the pinned **Apple Root CA – G3**, check
+   the `x5c` certificate chain up to **one of the pinned Apple roots**, check
    Apple's marker OIDs on the leaf and intermediate certificates, verify the
    ES256 signature, then check `bundleId` / `environment` (and `appAppleId`
    in production) against expected values.
 2. **Legacy PKCS#7 receipt verification**: verify the CMS/PKCS#7 signature
-   and its chain up to the pinned **Apple Inc. Root CA**, parse the ASN.1
+   and its chain up to **one of the pinned Apple roots**, parse the ASN.1
    payload (bundle id, app version, opaque value, SHA-1 hash, in-app purchase
    attributes), and optionally check the device-hash binding when the client
    also sends its device GUID (`identifierForVendor`).
@@ -56,6 +56,12 @@ never to the system trust store. That is the PKI model described in
 [Everything you should know about certificates and PKI](https://smallstep.com/blog/everything-pki/):
 we choose our own trust anchors, and a signature only counts if the chain
 terminates at them.
+
+Both paths pin **all three published roots** (Apple Inc. Root, Apple Root
+CA - G2, Apple Root CA - G3), because Apple does not commit to a specific root
+for either one. Today's chains happen to end at Apple Inc. Root for legacy
+receipts and at Apple Root CA - G3 for JWS. The sourced rationale is PLAN.md
+D15; the security account is [THREAT-MODEL.md](./THREAT-MODEL.md).
 
 ## What verification guarantees — and what it doesn't
 

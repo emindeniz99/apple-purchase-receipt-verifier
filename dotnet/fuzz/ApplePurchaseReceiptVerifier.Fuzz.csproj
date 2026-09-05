@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Deliberately NOT a member of ApplePurchaseReceiptVerifier.sln.
+       `dotnet build` / `dotnet test` (the `dotnet` CI job) and
+       `dotnet format` (the `dotnet-format` job) both resolve that solution,
+       so keeping this project out of it is what stops a fuzzing dependency
+       and an instrumented assembly from reaching the shipped package or the
+       formatting gate. The library is referenced, never modified. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>ApplePurchaseReceiptVerifier.Fuzz</RootNamespace>
+    <AssemblyName>ApplePurchaseReceiptVerifier.Fuzz</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- SharpFuzz is the only package here and it is pinned inline, so the
+         repository's central version list stays a description of what ships. -->
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <!-- CA1031: a fuzz target's whole job is to catch everything and then
+         decide whether the type was allowed to escape.
+         CA1812: the target classes are instantiated only through the table
+         in Program.cs, which the analyzer cannot see. -->
+    <NoWarn>$(NoWarn);CA1031;CA1812</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SharpFuzz" Version="2.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../src/ApplePurchaseReceiptVerifier/ApplePurchaseReceiptVerifier.csproj"
+                      SetTargetFramework="TargetFramework=net8.0" />
+  </ItemGroup>
+
+</Project>

@@ -246,12 +246,53 @@ class ReceiptVerifierTest {
         // layers, 1.4 at eighteen, 1.5 at twenty-two (cold, the first call in
         // a fresh JVM, each is 6-24 ms of JIT). The cost tracks the
         // certificates decoded — 29, 37 and 45 of them — rather than
-        // 2^layers, because PKIXBuilderParameters defaults maxPathLength to 5
-        // and abandons every path early. Java's real protection against this
-        // shape is that depth bound, not the count; the count bound is what
-        // makes the rejection independent of a JDK default this class never
-        // states and does not control, and what keeps the four implementations
-        // agreeing on what a receipt may embed.
+        // 2^layers, because the builder abandons every path at the port-wide
+        // maximum path length. Java's real protection against this shape is
+        // that depth bound, not the count; the count bound is what keeps the
+        // implementations agreeing on what a receipt may embed.
+    }
+
+    @Test
+    void acceptsAPathOfExactlyTheMaximumLength() throws Exception {
+        // Six certificates below the anchor — leaf plus five intermediates —
+        // is the longest path every port accepts (go MaxPathLength, rust
+        // MAX_PATH_LENGTH, node/php/ruby/python/dotnet the same constant at 6,
+        // each counting certificates walked from the leaf with the anchor
+        // excluded). A port that reads its own bound as "intermediates" is off
+        // by one here and rejects a chain the others take.
+        TestPki deep = TestPki.deepReceipt(5, 0);
+        AppReceipt receipt = verifier(deep, BUNDLE).verify(deep.signReceipt(payload(BUNDLE, creationDate.toString())));
+        assertEquals(BUNDLE, receipt.bundleId());
+    }
+
+    @Test
+    void rejectsAPathOneHopOverTheMaximumLength() throws Exception {
+        // Seven certificates below the anchor. Every other port stops the walk
+        // after six and raises InvalidChain; the reason code is the contract,
+        // so this pins that java reaches the same verdict rather than a
+        // format or signature complaint.
+        TestPki deep = TestPki.deepReceipt(6, 0);
+        byte[] tooLong = deep.signReceipt(payload(BUNDLE, creationDate.toString()));
+        VerificationException e = assertThrows(
+                VerificationException.class, () -> verifier(deep, BUNDLE).verify(tooLong));
+        assertEquals(Reason.INVALID_CHAIN, e.reason());
+    }
+
+    @Test
+    void countsSelfIssuedCertificatesTowardsTheMaximumLength() throws Exception {
+        // The same seven certificates below the anchor, except that the last
+        // one repeats its issuer's subject name. PKIX exempts self-issued
+        // intermediates from maxPathLength (RFC 5280 6.1.4), so the builder
+        // returns this path even though it is a hop too long; the hand-rolled
+        // walks count every hop and reject it. Measuring the built path is
+        // what makes the two agree — delete that check and this test fails
+        // while the two above still pass.
+        TestPki deep = TestPki.deepReceipt(5, 1);
+        byte[] tooLong = deep.signReceipt(payload(BUNDLE, creationDate.toString()));
+        VerificationException e = assertThrows(
+                VerificationException.class, () -> verifier(deep, BUNDLE).verify(tooLong));
+        assertEquals(Reason.INVALID_CHAIN, e.reason());
+        assertTrue(e.getMessage().contains("chain exceeds maximum length"), e.getMessage());
     }
 
     @Test

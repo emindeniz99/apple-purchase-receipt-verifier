@@ -150,6 +150,60 @@ recorded here.
   What still holds from D12: anchors ship pinned (never fetched at
   runtime), the weekly watch diffs both the pinned bytes and the PKI
   page's root listing, and callers can inject their own anchors.
+- **D16 — Hand-written ASN.1/CMS readers stay, and are fuzzed; library
+  parsers are used where a maintained one fits** (owner decision,
+  2026-09-05, after a per-language research pass; extends D8 to every
+  port). The question was whether the six ports that read hostile bytes
+  with their own code — rust, go, dotnet (JSON only), php, node, ruby —
+  should move to a library. The answer is no, for reasons that were
+  measured rather than assumed:
+  - Apple's own Xcode and StoreKit-test receipts are BER with *indefinite*
+    lengths (10 of 11 receipt fixtures; `openssl asn1parse` shows `l=inf`
+    down to depth 5), and the strict-DER libraries reject them:
+    RustCrypto `der`/`cms` (open issue since 2022-11), Go `encoding/asn1`
+    and `cryptobyte`. The Go PKCS#7 forks (mozilla, smallstep, fullsailor)
+    accept BER by converting the whole structure to DER first and then
+    verify the signature over bytes *they* produced, not the bytes Apple
+    signed.
+  - Libraries that do read BER have no bounds. phpseclib3's `decode_ber`
+    takes no depth parameter and carries CVE-2024-27355 on exactly that
+    axis; spomky-labs/pki-framework 1.6.1 turns 400 KB of nested SEQUENCEs
+    into a 208 MB decode (a `memory_limit` fatal, not a `Throwable`, at
+    the php.ini-production default) and, worse, silently mis-decodes the
+    indefinite-length `[0]` that every CMS `ContentInfo` in an Xcode
+    receipt uses — wrong tree, no error. Ruby's `OpenSSL::ASN1.decode`
+    recurses in C and escapes `rescue` with `SystemStackError`;
+    `OpenSSL::PKCS7` accepts trailing bytes and does not expose the digest
+    OID the SHA-1/SHA-256 allow-list needs.
+  - Signature checks need the exact bytes that were signed. Every
+    candidate that re-encodes (pki-framework's `toDER()`, the Go forks'
+    `ber2der`) verifies a normalised view instead; the hand-written
+    readers keep input slices.
+  - Trust isolation: PHP's `ext-openssl` CMS/PKCS#7 verifiers consult the
+    process's `openssl.cafile`; `OpenSSL::X509::Store` and `X509Chain`
+    reach the platform store unless carefully disabled. The pinned-anchor
+    rule is easier to prove over code that cannot reach a store at all.
+  - The web Node build must run on WebCrypto-only runtimes (workerd,
+    Fastly); `node-forge`, `crypto.X509Certificate` and `jsrsasign` (end
+    of support 2026-08-14) are out on that alone.
+  What each port uses from a library is therefore the arithmetic — RSA,
+  ECDSA, digests — from the ecosystem's standard option (RustCrypto,
+  Go stdlib, Microsoft's `System.Security.Cryptography.Pkcs` and
+  `System.Formats.Asn1` for the whole CMS layer in dotnet, `ext-openssl`,
+  WebCrypto/Node `crypto`, the `openssl` default gem), and the structure
+  walk is a few hundred bounded lines per port. Consequence, and the
+  price of the choice: every hand-written reader has a coverage-guided
+  fuzz target in CI (`go-fuzz`, `rust-fuzz`, and the per-port jobs added
+  with them), seeded from the shared fixtures, with the anchor-set
+  invariant — an accepted input must fail against an unrelated anchor
+  set — so a fuzzer can find wrong acceptances, not only crashes.
+  Python's `asn1crypto` is the one exception to "maintained": last
+  release 1.5.1, 2022-03, though at ~155M downloads a month it is about
+  as widely exercised as a parser gets. Owner decision: keep it, pin the
+  tested range, and let the python fuzz target run through it. Java keeps
+  `jackson-databind`: maintained, widely deployed, and the payloads are
+  small and flat; the CVE history it carries is scanner noise, not a
+  weakness in how it is used here.
 
 ## 1. Existing solutions (research, 2026-08)
 
@@ -304,16 +358,24 @@ so tests need no real Apple secrets and prove the anchor pinning works.
 
 ## 4. Milestones
 
-1. **Docs** — this folder: INTENT / PLAN / ROADMAP / README. ✅
+1. **Docs** — this folder: INTENT / PLAN / ROADMAP / README / THREAT-MODEL. ✅
 2. **Java** (`java/`, Maven, Java 8+, BouncyCastle + Jackson):
    JWS verifier + PKCS#7 receipt verifier + test PKI + full test suite. ✅
 3. **Node** (`node/`, Node ≥20, ESM, zero runtime deps — hand-rolled
-   bounded DER/BER parser + `node:crypto`). ✅
+   bounded DER/BER parser + `node:crypto`; plus a `/web` build on
+   WebCrypto alone). ✅
 4. **Python** (`python/`, ≥3.9, `cryptography` + `asn1crypto`). ✅
 5. **Swift** (`swift/`, SwiftPM, Swift 6, swift-certificates +
    swift-crypto + swift-asn1 only). ✅
-6. **Cross-language fixture parity**: one shared fixture set
-   (`fixtures/generated/` + the vendored Apple-official set in
-   `fixtures/apple-official/`) verified byte-identically by all four
-   suites. ✅
-7. CI workflow per language (mirror existing `.github/workflows/*` style).
+6. **Five more ports** — `go/` (1.22+), `ruby/` (3.1+), `rust/` (1.74+),
+   `php/` (8.1+) and `dotnet/` (netstandard2.0 + net8.0), nine in all. ✅
+7. **Cross-language fixture parity**: one shared fixture set
+   (`fixtures/generated/`, the vendored Apple-official set in
+   `fixtures/apple-official/`, and the genuine Apple receipts in
+   `fixtures/public-receipts/`) driven by `fixtures/cases.json` —
+   82 vectors over 73 registered fixtures — and verified byte-identically
+   by all nine suites. ✅
+8. **CI per language**: `.github/workflows/ci.yml` carries a test job per
+   port plus its runtime, lint, format and fuzz legs; alongside it sit
+   `release.yml`, `release-please.yml`, `post-publish-smoke.yml` and the
+   scheduled `apple-root-watch.yml`. ✅

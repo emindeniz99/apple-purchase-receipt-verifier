@@ -408,6 +408,46 @@ final class ReviewFixesTests: XCTestCase {
         }
     }
 
+    /// The representable-range guard on the values a range check is worst at.
+    ///
+    /// Found by the `readers` fuzz target (swift/fuzz), which restates the
+    /// documented window independently and disagreed on NaN: the guard was
+    /// written as `date >= lower && date <= upper` on `Date`s, and `Date` gets
+    /// `>=` and `<=` from `Comparable` as the negation of `<`. Every `<`
+    /// involving a NaN is false, so both negations were true and a NaN instant
+    /// was reported REPRESENTABLE — the exact opposite of what the guard
+    /// exists to say, and the value that would then be handed to
+    /// `RFC5280Policy` and trap inside X509's `Time`.
+    ///
+    /// No public entry point can produce a NaN today (`ISO8601DateFormatter`
+    /// never returns one, and `JSONSerialization` refuses NaN and overflowing
+    /// exponents outright), which is exactly why only a direct test holds this:
+    /// the guard is a fail-closed backstop, so it has to be right about the
+    /// input it will never be handed until the day something changes upstream.
+    func testRepresentableRangeGuardFailsClosedOnNonFiniteInstants() {
+        for (name, seconds) in [
+            ("NaN", Double.nan), ("-NaN", -Double.nan),
+            ("+infinity", Double.infinity), ("-infinity", -Double.infinity),
+        ] {
+            XCTAssertFalse(
+                isRepresentableAsCertificateValidationTime(
+                    Date(timeIntervalSince1970: seconds)), name)
+        }
+        // The window itself, unchanged: 0001-01-01T00:00:00Z through
+        // 9999-12-31T23:59:59Z inclusive, and one second outside each end.
+        for (name, seconds, expected) in [
+            ("lower bound", -62_135_596_800.0, true),
+            ("below the lower bound", -62_135_596_801.0, false),
+            ("upper bound", 253_402_300_799.0, true),
+            ("above the upper bound", 253_402_300_800.0, false),
+            ("the epoch", 0.0, true),
+        ] {
+            XCTAssertEqual(
+                isRepresentableAsCertificateValidationTime(
+                    Date(timeIntervalSince1970: seconds)), expected, name)
+        }
+    }
+
     func testRejectsAnEmbeddedCertificateWhoseRsaKeyIsUnparseable() async throws {
         // One byte of the signer certificate's modulus, made even. The DER
         // stays well formed so swift-asn1 passes it through to BoringSSL,

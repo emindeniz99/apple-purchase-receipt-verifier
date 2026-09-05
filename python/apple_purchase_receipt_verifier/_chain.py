@@ -48,7 +48,15 @@ def _issued_by(cert: x509.Certificate, issuer: x509.Certificate) -> bool:
     try:
         cert.verify_directly_issued_by(issuer)
         return True
-    except (TypeError, InvalidSignature):
+    except (TypeError, InvalidSignature, UnsupportedAlgorithm):
+        # UnsupportedAlgorithm is the issuer's key, not its signature
+        # algorithm: an EC curve cryptography does not implement (a mutated
+        # x5c certificate is enough to produce one). There is nothing to
+        # verify against, so it fails closed alongside the two types it now
+        # sits with, rather than falling through to the SHA-1 path below,
+        # which is for the ValueError case only. The receipt path used to
+        # contain this in its own blanket guard; the JWS path has none, so a
+        # caller saw it raw.
         return False
     except ValueError as e:
         if "Unsupported signature algorithm" not in str(e):

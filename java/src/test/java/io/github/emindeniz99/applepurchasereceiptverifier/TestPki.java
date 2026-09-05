@@ -73,12 +73,24 @@ final class TestPki {
     final X509Certificate intermediate;
     final X509Certificate leaf;
     private final PrivateKey leafKey;
+    /** What {@link #signReceipt} embeds: leaf first, then every CA up to the root. */
+    private final List<X509Certificate> chain;
 
     private TestPki(X509Certificate root, X509Certificate intermediate, X509Certificate leaf, PrivateKey leafKey) {
+        this(root, intermediate, leaf, leafKey, Arrays.asList(leaf, intermediate, root));
+    }
+
+    private TestPki(
+            X509Certificate root,
+            X509Certificate intermediate,
+            X509Certificate leaf,
+            PrivateKey leafKey,
+            List<X509Certificate> chain) {
         this.root = root;
         this.intermediate = intermediate;
         this.leaf = leaf;
         this.leafKey = leafKey;
+        this.chain = chain;
     }
 
     /** EC P-256 chain with both Apple marker OIDs — for JWS fixtures. */
@@ -175,6 +187,68 @@ final class TestPki {
         return new TestPki(rootCert, interCert, signerCert, signerKp.getPrivate());
     }
 
+    /**
+     * An RSA receipt chain of an arbitrary depth: {@code intermediates} CAs
+     * between the receipt-signing leaf and the root, plus {@code selfIssuedTail}
+     * further CAs that re-use the deepest CA's subject name (so they are
+     * <em>self-issued</em> in the RFC 5280 sense, each signed by the one before
+     * it under a fresh key).
+     *
+     * <p>Both counts are what the path-length bound is measured in: the path
+     * below the anchor is {@code intermediates + selfIssuedTail + 1}
+     * certificates long. The self-issued tail exists because PKIX exempts
+     * exactly those certificates from {@code maxPathLength}, so it is the shape
+     * that tells whether a port bounds the path it actually built or only the
+     * intermediates the JDK agreed to count.</p>
+     */
+    static TestPki deepReceipt(int intermediates, int selfIssuedTail) throws Exception {
+        Date notBefore = new Date(System.currentTimeMillis() - 86_400_000L);
+        Date notAfter = new Date(System.currentTimeMillis() + 365L * 86_400_000L);
+        KeyPair rootKp = rsaKeyPair();
+        X509Certificate rootCert = cert(
+                "CN=Deep Root",
+                rootKp,
+                "CN=Deep Root",
+                rootKp.getPrivate(),
+                true,
+                null,
+                notBefore,
+                notAfter,
+                "SHA256withRSA");
+        List<X509Certificate> cas = new ArrayList<X509Certificate>();
+        String issuerName = "CN=Deep Root";
+        PrivateKey issuerKey = rootKp.getPrivate();
+        for (int i = 1; i <= intermediates; i++) {
+            String subject = "CN=Deep CA " + i;
+            KeyPair kp = rsaKeyPair();
+            cas.add(cert(subject, kp, issuerName, issuerKey, true, null, notBefore, notAfter, "SHA256withRSA"));
+            issuerName = subject;
+            issuerKey = kp.getPrivate();
+        }
+        for (int i = 0; i < selfIssuedTail; i++) {
+            KeyPair kp = rsaKeyPair();
+            cas.add(cert(issuerName, kp, issuerName, issuerKey, true, null, notBefore, notAfter, "SHA256withRSA"));
+            issuerKey = kp.getPrivate();
+        }
+        KeyPair signerKp = rsaKeyPair();
+        X509Certificate signerCert = cert(
+                "CN=Deep Receipt Signing",
+                signerKp,
+                issuerName,
+                issuerKey,
+                false,
+                "1.2.840.113635.100.6.11.1",
+                notBefore,
+                notAfter,
+                "SHA256withRSA");
+        List<X509Certificate> embedded = new ArrayList<X509Certificate>();
+        embedded.add(signerCert);
+        embedded.addAll(cas);
+        embedded.add(rootCert);
+        X509Certificate deepest = cas.isEmpty() ? rootCert : cas.get(cas.size() - 1);
+        return new TestPki(rootCert, deepest, signerCert, signerKp.getPrivate(), embedded);
+    }
+
     /** Varargs {@code key, value, key, value…} claims helper (insertion-ordered). */
     static Map<String, Object> claims(Object... kv) {
         Map<String, Object> map = new LinkedHashMap<String, Object>();
@@ -240,7 +314,7 @@ final class TestPki {
      * cert's validity window like a genuine old receipt's would.
      */
     byte[] signReceipt(byte[] payload, Date signingTime) throws Exception {
-        return sign(payload, signingTime, leafKey, leaf, Arrays.asList(leaf, intermediate, root));
+        return sign(payload, signingTime, leafKey, leaf, chain);
     }
 
     /**

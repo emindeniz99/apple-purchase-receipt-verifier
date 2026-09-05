@@ -299,6 +299,15 @@ ruby script/gen_roots.rb               # regenerate the inlined anchors
 cross-language vectors every implementation in this repository answers. It
 carries no per-case knowledge and no skip list.
 
+`fuzz/` holds six coverage-guided [ruzzy](https://github.com/trailofbits/ruzzy)
+targets — the ASN.1 scanner and the CMS walk on their own, the receipt and
+JWS verifiers, and the endpoint body — seeded from the shared fixtures and
+run by CI for a fixed budget on every push. `fuzz/README.md` lists them and
+the invariant each asserts beyond "nothing escapes". Its one dependency lives
+in `gemfiles/fuzz.gemfile`, out of the gemspec and out of the test Gemfile:
+ruzzy needs clang and a libFuzzer runtime, and a tool the library does not
+need must not be able to fail the Ruby 3.1 leg.
+
 ## License
 
 MIT. See `LICENSE`.

@@ -625,6 +625,241 @@ jobs:
       - run: ./run.sh all 60
         working-directory: rust/fuzz
 
+  # The exploratory pass over the hand-written DER and CMS readers and the
+  # three public verifiers; node/fuzz/README.md lists the targets and their
+  # invariants. Seeds come from fixtures/, so a crasher is a mutation of a
+  # genuine receipt or JWS, not of noise. The fuzzer is a native addon and
+  # lives in node/fuzz's own package.json, which is why this job installs
+  # twice and is not part of the `node` matrix.
+  node-fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      # The targets import ../dist, so the library has to be built first.
+      - run: npm ci && npm run build
+        working-directory: node
+      - run: npm ci
+        working-directory: node/fuzz
+      - run: ./run.sh all 60
+        working-directory: node/fuzz
+
+  # SharpFuzz under libFuzzer, over the two parsers this package hand-writes
+  # (the bounded JSON reader and the CMS pre-scan) and the four public entry
+  # points. The invariants are the go-fuzz and rust-fuzz jobs': nothing but a
+  # VerificationException escapes, an accepted receipt or JWS fails against an
+  # unrelated anchor set, and the verifyReceipt endpoint always answers JSON
+  # with a numeric status.
+  #
+  # The fuzz project sits outside ApplePurchaseReceiptVerifier.sln on purpose,
+  # so neither the `dotnet` job (dotnet test) nor `dotnet-format` sees it and
+  # the shipped package gains no dependency on a fuzzing engine. run.sh builds
+  # the libFuzzer driver with clang, which the ubuntu runner image already
+  # carries, and instruments only the library assembly.
+  dotnet-fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+      - run: ./run.sh all 60
+        working-directory: dotnet/fuzz
+
+  # The exploratory pass over the hand-written DER, CMS and X.509 readers and
+  # the three public verifiers; php/fuzz/README.md lists the six targets and
+  # their invariants. Seeds come from fixtures/, so a crasher is a mutation of
+  # a genuine Apple-signed receipt or JWS rather than of noise, and the
+  # anchor-set invariants are exercised on nearly every iteration because
+  # several seeds genuinely verify.
+  #
+  # It is its own job, not a step in `php`, for the same reason `rust-fuzz` is
+  # separate from `rust`: the tool is not the one the test matrix installs.
+  # nikic/php-fuzzer is downloaded as a pinned phar by php/fuzz/run.sh and is
+  # deliberately absent from composer.json — this package ships no lockfile and
+  # resolves require-dev twice, so a fuzzer in the graph could move the
+  # php-parser version the `php-lowest` leg pins for PHPUnit and PHP-CS-Fixer.
+  #
+  # pcntl is requested explicitly: php-fuzzer uses it for the per-execution
+  # timeout that turns an input the parsers loop forever on into a recorded
+  # crash instead of a job that hangs until the runner's own limit.
+  php-fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: "8.4"
+          extensions: openssl, json, pcntl
+          coverage: none
+      # The targets load the library through Composer's autoloader; no dev
+      # dependency is needed for them, but `composer update` is what writes it.
+      - run: composer update --no-progress --no-interaction
+        working-directory: php
+      # 60 s per target, six targets. A crasher leaves
+      # php/fuzz/crashes/<target>/crash-<hash>.txt and fails the job; reduce it
+      # and pin it as a test under php/tests/, where it then runs on all five
+      # PHP matrix legs rather than only here.
+      - run: ./run.sh all 60
+        working-directory: php/fuzz
+
+  # The exploratory pass over the hand-written ASN.1 and CMS readers and the
+  # verifiers a consumer calls; ruby/fuzz/README.md lists the six targets and
+  # the invariant each asserts. Seeds come from fixtures/, so a crasher is a
+  # mutation of a genuine receipt or JWS, not of noise.
+  #
+  # It is not part of the `ruby` matrix because it cannot be: ruzzy is a
+  # native extension that needs clang and libFuzzer's sanitizer runtimes, and
+  # the whole point of that matrix is that the library installs nothing. Its
+  # dependency lives in ruby/gemfiles/fuzz.gemfile for the same reason the
+  # linters live in tools.gemfile — a tool that needs clang must not be able
+  # to fail the Ruby 3.1 leg.
+  #
+  # clang is pinned to 18 with its matching libclang-rt: ruzzy links
+  # libclang_rt.fuzzer_no_main.a and libclang_rt.asan.a out of the compiler's
+  # own resource directory, so an unversioned `clang` that outruns the
+  # installed runtime package fails the build with "Could not find asan".
+  ruby-fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      BUNDLE_GEMFILE: ${{ github.workspace }}/ruby/gemfiles/fuzz.gemfile
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        with:
+          # One line, not the library's matrix: this job proves the parsers
+          # hold, not that they hold on five rubies. 3.3 is where the harness
+          # was developed and where ruzzy's branch-coverage hook is verified.
+          ruby-version: "3.3"
+          bundler-cache: false
+      - name: install clang and the libFuzzer sanitizer runtimes
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-18 libclang-rt-18-dev
+      - name: install ruzzy
+        env:
+          MAKE: make --environment-overrides V=1
+          CC: /usr/bin/clang-18
+          CXX: /usr/bin/clang++-18
+          LDSHARED: /usr/bin/clang-18 -shared
+          LDSHAREDXX: /usr/bin/clang++-18 -shared
+        run: bundle install --jobs 4
+      # A crasher is written under ruby/fuzz/artifacts/<target>/, which is
+      # gitignored on purpose, and the run fails with the offending unit
+      # printed as hex and base64 in the log — the same handling go-fuzz and
+      # rust-fuzz get. Reduce it from the log and pin it as a test under
+      # ruby/test/, where it runs on every Ruby in the matrix rather than only
+      # where a libFuzzer-capable clang is around.
+      - name: fuzz every target
+        run: ./run.sh all 60
+        working-directory: ruby/fuzz
+
+  # Five coverage-guided atheris targets over the verifiers and the receipt
+  # attribute reader, 60 s each -- the same budget and the same shape as
+  # go-fuzz and rust-fuzz. Pinned to CPython 3.13 because atheris ships wheels
+  # only (3.1.0: 3.12/3.13/3.14, no sdist), so the fuzzer's Python is not the
+  # library's: the `python` matrix above is what proves 3.9 through 3.14, and
+  # every crasher these targets found is pinned as a test under python/tests/
+  # so it runs on all of them. atheris stays out of the package's dependency
+  # sets -- run.sh installs it into an ephemeral uv environment and fuzzes the
+  # source tree off PYTHONPATH, exactly as the `python` job tests it.
+  python-fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          python-version: "3.13"
+      - run: ./run.sh all 60
+        working-directory: python/fuzz
+
+  # Coverage-guided fuzzing over the Swift port: SwiftPM's own libFuzzer
+  # support (`-Xswiftc -sanitize=fuzzer`), so nothing is installed here --
+  # the fuzzer ships with the toolchain, which is why this job has no setup
+  # step at all. It runs in the same digest-pinned image as the `swift` and
+  # `swift-format` jobs, at the newest line the matrix carries: the targets
+  # are a development tool, not part of the version claim, so fuzzing them on
+  # every supported Swift line would buy nothing the `swift` matrix does not
+  # already prove.
+  #
+  # The targets live in swift/fuzz, a package of its own that depends on the
+  # library by path, so the published root manifest carries no executable
+  # targets a consumer would never run (swift/fuzz/README.md).
+  #
+  # 60 s per target, five targets, a fixed budget rather than a run count:
+  # a fuzzer's job on a push is to keep proving the seeds and their neighbours
+  # stay clean, not to search exhaustively. A crasher aborts the process and
+  # fails the job; reduce it and pin it as a test under
+  # swift/Tests/ApplePurchaseReceiptVerifierTests, where it then runs on every
+  # Swift line rather than only here.
+  swift-fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container: swift:6.3@sha256:56ef1be2c1ca36f4c52440357dc1fcdfdb5e113587134fcadeef57c225c71b54
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: ./run.sh all 60
+        working-directory: swift/fuzz
+
+  # Jazzer (Code Intelligence) under libFuzzer, over the readers this port
+  # writes by hand -- the receipt attribute walk, the base64 dialect decoder
+  # and the JWS/Jackson glue -- and the five public entry points on top of
+  # them. Since the ASN.1 and CMS work is BouncyCastle's, these targets fuzz
+  # this port's glue and BouncyCastle beneath it; both are instrumented, the
+  # harness itself deliberately is not.
+  #
+  # The invariants are the go-fuzz, rust-fuzz and dotnet-fuzz jobs': nothing
+  # but a VerificationException escapes a public entry point, an accepted
+  # receipt or JWS fails against an unrelated anchor set, and the verifyReceipt
+  # endpoint always answers JSON with a numeric status.
+  #
+  # java/fuzz is not a Maven module and is not in the pom's source roots, so
+  # neither the `java` matrix (mvn test) nor the published artifact gains a
+  # dependency on a fuzzing engine; run.sh compiles the harness against the
+  # built jar with a modern javac, off the --release 8 floor the library keeps.
+  # The one thing that does reach it is `java-format`: the pom's spotless
+  # includes name fuzz/src explicitly, so the harness is held to the same
+  # palantir format as the library.
+  #
+  # Jazzer arrives as two sha256-pinned jars from Maven Central rather than
+  # from the GitHub release zip: the same artifacts, from the mirror the Maven
+  # build already reaches, with the publisher's own checksum file to check the
+  # pin against.
+  java-fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - run: ./run.sh all 60
+        working-directory: java/fuzz
+
   # Advisories, license policy, and the banned-crate list that is the
   # mechanised form of "pinned anchors only, no network ever": a dependency
   # bump cannot introduce a system trust store or an HTTP client, because

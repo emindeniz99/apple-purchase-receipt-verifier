@@ -1,0 +1,6 @@
+bin/
+obj/
+artifacts/
+corpus/
+seeds/generated/
+/libfuzzer-dotnet

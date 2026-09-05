@@ -151,6 +151,38 @@ public class JsonTests
         }
     }
 
+    /// <summary>
+    /// What the reader accepts, the writer emits and the reader reads back to
+    /// the same <em>value</em> — but not always to the same CLR type.
+    /// </summary>
+    /// <remarks>
+    /// <c>fuzz/</c>'s <c>json</c> target asserts this on every input, so the
+    /// rule it asserts belongs here rather than only there. The type is not
+    /// preserved because the writer renders an integral double without a
+    /// decimal point: <c>-2.5e10</c> reads as a <see cref="double"/>, writes as
+    /// <c>-25000000000</c> and reads back as a <see cref="long"/>. That is
+    /// lossless — every such rendering is exact — and it is why the endpoint,
+    /// whose reply goes through <c>Json.Write</c>, can answer a number a client
+    /// re-reads as an integer.
+    /// </remarks>
+    [Fact]
+    public void TheWriterEmitsWhatTheReaderReadsBackToTheSameValue()
+    {
+        OrderedMap map = Json.ParseObject(
+            "{\"big\":-2.5e10,\"small\":1.5,\"int\":1722945600000,\"exp\":1e20}");
+
+        Assert.Equal(-2.5e10d, map["big"]);
+        Assert.Equal(1722945600000L, map["int"]);
+
+        OrderedMap again = Json.ParseObject(Json.Write(map));
+
+        // Same value, and for the integral double a narrower type.
+        Assert.Equal(-25000000000L, again["big"]);
+        Assert.Equal(1.5d, again["small"]);
+        Assert.Equal(1722945600000L, again["int"]);
+        Assert.Equal(1e20d, again["exp"]);
+    }
+
     [Fact]
     public void TheWriterRefusesValuesJsonCannotCarry()
     {

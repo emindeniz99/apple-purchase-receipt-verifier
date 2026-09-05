@@ -3,10 +3,33 @@
 Milestone status lives here (see [PLAN.md](./PLAN.md) §4 for the full plan).
 Delete an item in the same commit that ships it.
 
+## Before 1.0 — the ordered list (2026-09-05)
+
+Everything below is either in this file already or was found by the
+2026-09-04 architecture review; this is the order it is being worked in.
+Delete a line in the commit that ships it.
+
+1. **Normative resource bounds in the contract** plus one vector. (Java's
+   chain length is aligned: it now states MAX_PATH_LENGTH = 6 and counts
+   self-issued intermediates, which the JDK default exempted.)
+2. **Docs cleanup** — done except: java and swift READMEs (neither port
+   has one), and the GitHub repository description, a repo setting that
+   still names four languages (owner-only).
+3. **Pin the five hostile-JWS inputs python fuzzing found as contract
+   vectors**, so all nine ports answer them identically: a non-string
+   `x5c` entry, `signedDate` 1e300/NaN/Infinity, one corrupt extension in
+   an `x5c` certificate, an unimplemented EC curve in the issuer check,
+   and a certificate with version 11. Python now fails each closed with
+   node's reason; the other seven have not been asked.
+4. **Release**: approve the held release-please run (first-time
+   contributor gate; owner-only), register the signing key on GitHub,
+   enforce branch protection for admins, bootstrap RubyGems, crates.io,
+   NuGet and the Go proxy, and decide the PHP Packagist layout.
+
 ## Next
 
-- **The three remaining parser differentials.** The compact-JWS segment
-  differential is closed (see the strict-decoding commit); three more are
+- **The two remaining parser differentials.** The compact-JWS segment
+  differential is closed (see the strict-decoding commit); two more are
   recorded in the port READMEs and still have no shared vector:
   1. **`x5c[2]`**: java decodes and parses the third certificate, so an
      unparseable one is `INVALID_CERTIFICATE` there and reaches the
@@ -27,21 +50,6 @@ Delete an item in the same commit that ships it.
      accept a well-formed receipt up to N bytes and M nodes -- and a
      vector should pin it, or a large legitimate receipt becomes another
      port-dependent verdict.
-  3. **Chain path length**: java lets the JDK PKIX builder cap it at 5
-     while every hand-rolled walk uses 6.
-- **Fuzzing runs opposite to parser size.** go has three fuzz targets and
-  seed corpora on every build; rust now has seven under `rust/fuzz/`
-  (the ASN.1, X.509 and CMS readers on their own, the three verifiers,
-  and the endpoint body), run for a fixed budget by the `rust-fuzz` CI
-  job. dotnet (3,896 lines) and php (3,271) still have none. The
-  deterministic mutation corpora node, rust and php do have are
-  regression tests, not fuzzing.
-- **No test proves the OS trust store is unreachable in swift, python,
-  node or java.** go (`systemtrust_test.go`), rust (`trust_pinning.rs`),
-  php (`PinnedAnchorsTest.php`) and ruby each install or point at a CA the
-  platform would accept and require the library to reject it anyway.
-  Swift is the port most likely to reach Security.framework by accident
-  and is one of the four without such a test.
 - **`THREAT-MODEL.md` does not exist.** PLAN.md 2.3 is fifteen lines and
   the rest is spread across nine port READMEs, each restating pinned
   anchors, no network and the marker OIDs. One page -- assets, attacker
@@ -76,17 +84,18 @@ Delete an item in the same commit that ships it.
 
 - **No branch protection in practice.** main reports protected, yet an
   admin push lands directly, so either the pull-request requirement or
-  admin enforcement is off. There is no CODEOWNERS, no commit signing,
-  and 82 of 83 commits are authored by the assistant rather than
-  co-authored by it.
-- **`asn1crypto` is the one attacker-facing parser the project neither
-  wrote nor fuzzes**, and its last release was 1.5.1 in 2022. Every other
-  port parses hostile bytes with its own bounded reader or a first-party
-  library. Decide before 1.0 whether python keeps it.
-- **`jackson-databind` is the heaviest dependency in the project** and
-  carries the CVE history a consumer's scanner will surface. The dotnet
-  port faced the same choice and wrote a bounded JSON reader instead; the
-  payloads here are small and flat.
+  admin enforcement is off. There is no CODEOWNERS. Commits are
+  SSH-signed by the assistant environment's key (verified with git
+  cat-file); GitHub shows them Verified once that key is registered as a
+  signing key on the owner's account. Most commits are authored by the
+  assistant rather than co-authored by it.
+- **`asn1crypto` is kept by owner decision (PLAN.md D16)**: last release
+  1.5.1 in 2022, about 155M downloads a month. Pin the tested range; the
+  python fuzz target runs through it.
+- **`jackson-databind` is kept by owner decision (PLAN.md D16)**: the
+  heaviest dependency in the project and the one consumer scanners will
+  flag, but maintained and widely deployed, and the payloads here are
+  small and flat.
 - **The `cryptography>=40` floor is never installed.** Every python CI leg
   resolves the latest, so the floor is a claim.
 - **Internal RBS signatures for the Ruby port**: `sig/` covers the public
@@ -134,6 +143,13 @@ Delete an item in the same commit that ships it.
 - **Dependency bumps inside the seven-day cooldown** land via dependabot on
   their own; swift-certificates 1.20.0 and swift-asn1 1.7.2 (released
   2026-09-01) will arrive that way.
+- **The RustCrypto 0.11/0.14 wave is deliberately not taken** (2026-09-05):
+  `digest` 0.11, `sha1`/`sha2` 0.11 and `p256`/`p384` 0.14 all set
+  `rust-version = 1.85` against this crate's 1.74.0 floor, and `rsa` is
+  still 0.9 on `digest` 0.10 (0.10 is an rc), so the trait versions would
+  not line up. Dependabot was told to ignore those majors (PRs #22–#24,
+  #26, #27). Take the whole wave in one commit once `rsa` 0.10 is stable,
+  and raise the MSRV to 1.85 in the same change (a D2-class decision).
 
 ## Upstream
 

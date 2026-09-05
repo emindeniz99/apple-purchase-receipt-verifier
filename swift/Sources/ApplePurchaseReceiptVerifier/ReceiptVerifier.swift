@@ -716,12 +716,20 @@ private func decodeInteger(_ der: [UInt8]) throws -> Int64 {
 /// throwing. `ISO8601DateFormatter` accepts a six-digit year, and the dates it
 /// parses here come out of an unverified payload and reach the policy before
 /// any chain or signature check — so without this bound a receipt carrying
-/// "999999-12-31T23:59:59Z" aborts the caller's process. NaN compares false
-/// against both bounds, which is also the answer we want for it.
+/// "999999-12-31T23:59:59Z" aborts the caller's process.
+///
+/// The bounds are compared as `TimeInterval`s, not as `Date`s, and that is
+/// the whole of what makes a NaN instant fail closed. `Date` is `Comparable`,
+/// so `>=` and `<=` come from the protocol as the negation of `<`: for a NaN
+/// every `<` is false, so both negations are TRUE and `date >= lower &&
+/// date <= upper` answers `true` — the opposite of what a range check means
+/// and the opposite of what this guard is for. IEEE comparison on the
+/// intervals answers false on either side instead, which is the fail-closed
+/// answer. The infinities are outside the bounds either way.
 func isRepresentableAsCertificateValidationTime(_ date: Date) -> Bool {
     // 0001-01-01T00:00:00Z ... 9999-12-31T23:59:59Z
-    date >= Date(timeIntervalSince1970: -62_135_596_800)
-        && date <= Date(timeIntervalSince1970: 253_402_300_799)
+    let seconds = date.timeIntervalSince1970
+    return seconds >= -62_135_596_800 && seconds <= 253_402_300_799
 }
 
 /// RFC 3339 date in an IA5String; empty means absent (real receipts do this).

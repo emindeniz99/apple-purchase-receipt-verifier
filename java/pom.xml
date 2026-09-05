@@ -107,6 +107,15 @@
         <version>3.10.1</version>
         <configuration>
           <java>
+            <!-- The default is the two source roots; naming them explicitly
+                 is what lets fuzz/src join, and the fuzz harness is held to
+                 the same format as the library even though Maven never
+                 compiles it (fuzz/run.sh does, with a modern javac). -->
+            <includes>
+              <include>src/main/java/**/*.java</include>
+              <include>src/test/java/**/*.java</include>
+              <include>fuzz/src/**/*.java</include>
+            </includes>
             <palantirJavaFormat>
               <version>2.97.0</version>
             </palantirJavaFormat>
