@@ -116,6 +116,9 @@ final class JwsClaims
      * range, truncating toward zero — the same envelope and the same rounding
      * as Java's `canConvertToLong()` / `asLong()`. Outside it the claim stays
      * absent, so a number too large to be an `int` still cannot become a date.
+     * The two SIGNING-TIME claims are the exception and do not come through
+     * here: see {@see signedAtMillis()}, where "stated but unrepresentable"
+     * has to be told apart from "not stated".
      */
     private static function integral(mixed $value): ?int
     {
@@ -141,8 +144,28 @@ final class JwsClaims
      */
     public static function signedAtMillis(array $claims): ?int
     {
-        return self::integral($claims['signedDate'] ?? null)
-            ?? self::integral($claims['receiptCreationDate'] ?? null);
+        foreach (['signedDate', 'receiptCreationDate'] as $key) {
+            $value = $claims[$key] ?? null;
+            if (!is_int($value) && !is_float($value)) {
+                continue;
+            }
+            $millis = self::integral($value);
+            if ($millis === null) {
+                // The claim IS stated, it just cannot be represented — 1e300,
+                // NaN, Infinity. Reporting it absent would fall through to the
+                // caller's current-time anchor, which hands an attacker the
+                // instant the certificate windows are judged at. An instant no
+                // calendar can express is inside no window.
+                throw new VerificationException(
+                    Reason::InvalidChain,
+                    'payload signing date is not a valid instant',
+                );
+            }
+
+            return $millis;
+        }
+
+        return null;
     }
 
     /** @param array<string, mixed> $claims */

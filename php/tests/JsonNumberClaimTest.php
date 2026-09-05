@@ -191,8 +191,8 @@ final class JsonNumberClaimTest extends TestCase
     /**
      * The other half of the rule, and the reason the envelope is bounded
      * rather than "any float": a number `json_decode` degraded to a float
-     * because it exceeds `PHP_INT_MAX` must stay absent, not become a date in
-     * the year 3.9 billion. Java's `canConvertToLong()` draws the same line.
+     * because it exceeds `PHP_INT_MAX` must not become a date in the year
+     * 3.9 billion. Java's `canConvertToLong()` draws the same line.
      *
      * @return iterable<string, array{string}>
      */
@@ -203,8 +203,19 @@ final class JsonNumberClaimTest extends TestCase
         yield 'negative and far beyond' => ['-1.0e300'];
     }
 
+    /**
+     * This used to assert that such a claim "stays absent", which was the
+     * accept direction all over again: absent means the caller's fallback
+     * anchors certificate validity at the current time, so an attacker who
+     * made the claim too large to represent chose the instant the chain's
+     * windows are judged at — and the payload verified. The shared vector
+     * `transaction/reject-signed-date-out-of-range` pins INVALID_CHAIN
+     * instead: an instant no calendar can express is inside no validity
+     * window. Only the two signing-time claims are affected; every other
+     * numeric claim is still absent rather than coerced.
+     */
     #[DataProvider('unrepresentableNumberProvider')]
-    public function testANumberOutsideTheSixtyFourBitRangeStaysAbsent(string $literal): void
+    public function testANumberOutsideTheSixtyFourBitRangeIsRefused(string $literal): void
     {
         $jws = self::jwsWithPayloadJson(
             '{"bundleId":"com.example.app","environment":"Sandbox","signedDate":' . $literal . '}',
@@ -218,10 +229,12 @@ final class JsonNumberClaimTest extends TestCase
             new FrozenClock(new DateTimeImmutable('2099-01-01T00:00:00Z')),
         );
 
-        // Absent, so the staleness rule does not apply and nothing is coerced.
-        $payload = $verifier->verifyTransaction($jws);
-        self::assertNull($payload->signedDate);
-        self::assertIsFloat($payload->claims['signedDate'], 'the raw claim is still reachable, as a float');
+        try {
+            $verifier->verifyTransaction($jws);
+            self::fail('an unrepresentable signing date must not verify');
+        } catch (VerificationException $e) {
+            self::assertSame(Reason::InvalidChain, $e->reason);
+        }
     }
 
     /** A claim that is not a number at all is still absent, not coerced. */

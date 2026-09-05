@@ -235,6 +235,15 @@ final class JwsVerifier
         } catch (ParseException $e) {
             throw new VerificationException(Reason::InvalidCertificate, 'x5c entry is not a valid certificate', $e);
         }
+        // A SubjectPublicKeyInfo OpenSSL refuses — a namedCurve it does not
+        // implement is enough — is a defect of the certificate, not of the
+        // path it sits on: there is no key to check an issuance against.
+        // Left to the chain it reads as INVALID_CHAIN, while java, swift and
+        // go refuse the certificate in their decoders, which is the reading
+        // the shared vector pins.
+        if ($leaf->publicKey() === null || $intermediate->publicKey() === null) {
+            throw new VerificationException(Reason::InvalidCertificate, 'x5c entry has an unreadable public key');
+        }
         // x5c[2] is neither parsed nor trusted: the anchor set is the
         // constructor's, so swapping the third element changes nothing.
 

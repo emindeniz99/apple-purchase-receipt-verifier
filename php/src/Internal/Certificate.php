@@ -85,7 +85,17 @@ final class Certificate
         $fields = $tbs->children();
         $index = 0;
         if (($fields[0] ?? null)?->tag === Der::TAG_CONTEXT_0) {
-            $index = 1; // version [0] EXPLICIT
+            // version [0] EXPLICIT INTEGER. RFC 5280 defines 0, 1 and 2 (v1,
+            // v2, v3) and nothing else, and nothing downstream reads the
+            // field — which is why it is checked here rather than skipped: a
+            // certificate claiming version 11 would otherwise parse like any
+            // other and verify on its signature and extensions alone.
+            $version = $fields[0]->child(0);
+            if ($version?->tag !== Der::TAG_INTEGER || strlen($version->contents) !== 1
+                || ord($version->contents) > 2) {
+                throw new ParseException('unknown X.509 certificate version');
+            }
+            $index = 1;
         }
         $serial = $fields[$index] ?? null;
         $innerSignature = $fields[$index + 1] ?? null;
