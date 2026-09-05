@@ -170,7 +170,15 @@ export function parseCertificate(der: Uint8Array): ParsedCertificate {
   }
   let index = 0;
   if (fields[index]?.tag === Tag.CONTEXT_0) {
-    index += 1; // version [0] EXPLICIT
+    // version [0] EXPLICIT INTEGER. RFC 5280 defines 0, 1 and 2 (v1, v2, v3)
+    // and nothing else, and nothing downstream reads the field — so without
+    // this check a certificate claiming version 11 parses like any other and
+    // verifies as long as its signature and extensions hold up.
+    const version = children(fields[index]!)[0];
+    if (version?.tag !== Tag.INTEGER || version.contents.length !== 1 || version.contents[0]! > 2) {
+      throw new ParseError('unknown X.509 certificate version');
+    }
+    index += 1;
   }
   const serial = fields[index];
   const innerSignature = fields[index + 1];

@@ -198,6 +198,26 @@ export function tbsParts(certRaw: Uint8Array): TbsParts {
   return { serialNumber, issuer, extensions };
 }
 
+/**
+ * Rejects a certificate whose X.509 version is not one RFC 5280 defines.
+ * The version field is [0] EXPLICIT INTEGER and legal values are 0, 1 and 2
+ * (v1, v2, v3); absent means v1. Nothing downstream reads it, which is
+ * exactly the problem: a certificate claiming version 11 is a format this
+ * library does not know, and without this check it verifies like any other
+ * as long as its signature and extensions hold up.
+ */
+export function requireKnownVersion(certRaw: Uint8Array): void {
+  const cert = parse(certRaw);
+  const version = (cert.children?.[0]?.children ?? [])[0];
+  if (version?.tag !== Tag.CONTEXT_0) {
+    return; // no version field: v1
+  }
+  const value = version.children?.[0];
+  if (value?.tag !== Tag.INTEGER || value.contents.length !== 1 || value.contents[0]! > 2) {
+    throw new ParseError('unknown X.509 certificate version');
+  }
+}
+
 /** Whether the certificate carries an extension with the given OID. */
 export function hasExtension(certRaw: Uint8Array, oid: string): boolean {
   const { extensions } = tbsParts(certRaw);
