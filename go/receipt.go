@@ -201,6 +201,7 @@ func verifyReceiptCore(receipt []byte, roots []*x509.Certificate, maxBytes int) 
 			"receipt embeds more than %d certificates", maxEmbeddedCertificates)
 	}
 	embedded := make([]*x509.Certificate, 0, len(cms.certificates))
+	var unreadable error
 	for i, raw := range cms.certificates {
 		cert, err := x509.ParseCertificate(raw)
 		if err != nil {
@@ -212,12 +213,30 @@ func verifyReceiptCore(receipt []byte, roots []*x509.Certificate, maxBytes int) 
 			// divergence: Java, Node, Python and Swift all treat a
 			// non-decodable entry as fatal. Reject what you cannot
 			// represent.
-			return nil, wrapError(ReasonInvalidReceiptFormat, err,
-				"embedded certificate %d is not a parseable X.509 certificate", i)
+			//
+			// Held rather than thrown, for one reason: WHICH entry it is
+			// changes the verdict. An entry the receipt merely carries is
+			// a defect of the receipt; the SIGNER being unreadable is a
+			// defect of a certificate, and gets the verdict an unreadable
+			// x5c entry gets on the JWS path. The signer cannot be named
+			// until the readable entries have been matched against the
+			// SignerInfo, which is the line below.
+			if unreadable == nil {
+				unreadable = wrapError(ReasonInvalidReceiptFormat, err,
+					"embedded certificate %d is not a parseable X.509 certificate", i)
+			}
+			continue
 		}
 		embedded = append(embedded, cert)
 	}
 	signer := findSignerCertificate(embedded, cms.signerInfo)
+	if signer == nil && unreadable != nil {
+		return nil, newError(ReasonInvalidCertificate,
+			"the receipt's signer certificate is not among the embedded certificates that could be read")
+	}
+	if unreadable != nil {
+		return nil, unreadable
+	}
 	if signer == nil {
 		return nil, newError(ReasonInvalidReceiptFormat, "signer certificate is not embedded in the receipt")
 	}

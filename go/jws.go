@@ -218,15 +218,23 @@ func (v *JWSVerifier) verifySignature(jws string) (Claims, error) {
 		return nil, err
 	}
 
-	// x5c[2] is deliberately never parsed. It is the JWS-supplied root; it
-	// is not a trust anchor and is not byte-compared to ours, so an
-	// attacker swapping in their own self-signed "root" changes nothing.
+	// All three entries are parsed, and the third is still trusted by
+	// nobody: it is the JWS-supplied root, it is not a trust anchor and it
+	// is not byte-compared to ours, so an attacker swapping in their own
+	// self-signed "root" changes nothing. What parsing it settles is the
+	// other question — an x5c entry that is not a certificate is
+	// INVALID_CERTIFICATE wherever it sits, rather than something this
+	// port declined to look at (transaction/reject-x5c-root-that-is-not-a-
+	// certificate).
 	leaf, err := parseX5CCertificate(x5c[0], "leaf")
 	if err != nil {
 		return nil, err
 	}
 	intermediate, err := parseX5CCertificate(x5c[1], "intermediate")
 	if err != nil {
+		return nil, err
+	}
+	if _, err := parseX5CCertificate(x5c[2], "root"); err != nil {
 		return nil, err
 	}
 

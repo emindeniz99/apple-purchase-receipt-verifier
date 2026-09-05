@@ -255,9 +255,11 @@ func TestJWSIntermediateNeedsTheWWDRMarker(t *testing.T) {
 	requireReason(t, err, applereceipt.ReasonInvalidCertificatePurpose)
 }
 
-// x5c[2] is never trusted and never compared: swapping it must change
-// nothing at all.
-func TestThirdX5CEntryIsIgnored(t *testing.T) {
+// x5c[2] is never trusted and never compared, so swapping in a stranger's
+// root must change nothing — but it must still BE a certificate. The two
+// halves are the whole of what the third entry means: identity irrelevant,
+// readability required (transaction/reject-x5c-root-that-is-not-a-certificate).
+func TestThirdX5CEntryIsUntrustedButMustParse(t *testing.T) {
 	pki := newJWSPKI(t)
 	attacker := newJWSPKI(t)
 	verifier := jwsVerifierFor(t, []*x509.Certificate{pki.root.cert}, nil)
@@ -269,9 +271,8 @@ func TestThirdX5CEntryIsIgnored(t *testing.T) {
 	}
 	garbage := signJWS(t, pki.leaf,
 		[][]byte{pki.leaf.der, pki.intermediate.der, []byte("not a certificate")}, transactionClaims())
-	if _, err := verifier.VerifyTransaction(garbage); err != nil {
-		t.Fatalf("x5c[2] is never parsed; garbage there must change nothing: %v", err)
-	}
+	_, err := verifier.VerifyTransaction(garbage)
+	requireReason(t, err, applereceipt.ReasonInvalidCertificate)
 }
 
 func TestClaimChecksRunInTheDocumentedOrder(t *testing.T) {
