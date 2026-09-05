@@ -9,7 +9,7 @@
 use crate::base64::{decode_base64url_strict, decode_lenient};
 use crate::chain::validate_pair;
 use crate::clock::{default_clock, unix_millis, Clock};
-use crate::crypto::verify_es256;
+use crate::crypto::{curve_field_size, verify_es256};
 use crate::environment::Environment;
 use crate::error::{ConfigError, Reason, Result, VerificationError};
 use crate::roots::{normalize_anchors, TrustAnchor};
@@ -444,7 +444,7 @@ impl JwsVerifier {
         // payload signed with a since-rotated certificate keeps verifying.
         // Where the payload states no date, the fallback reads the SYSTEM
         // clock — never `self.clock`, which a caller controls.
-        let signed_at_millis = signed_at_millis_of(&payload);
+        let signed_at_millis = signed_at_millis_of(&payload)?;
         let effective = signed_at_millis.unwrap_or_else(|| unix_millis(SystemTime::now()));
         validate_pair(&leaf, &intermediate, &self.anchors, effective)?;
 
@@ -555,8 +555,28 @@ impl JwsVerifier {
 /// When the payload says it was signed, in epoch milliseconds:
 /// `signedDate` for transactions, `receiptCreationDate` for
 /// `AppTransaction`s, `None` when it says neither.
-fn signed_at_millis_of(claims: &Claims) -> Option<i64> {
-    int_claim(claims, "signedDate").or_else(|| int_claim(claims, "receiptCreationDate"))
+///
+/// A claim that IS a number but does not fit an `i64` — `1e300`, say — is an
+/// error rather than a `None`: reporting it absent falls through to the
+/// current-time anchor in the caller, which hands an attacker the instant the
+/// certificate windows are judged at. An instant no calendar can express is
+/// inside no window, so it is a chain failure.
+fn signed_at_millis_of(claims: &Claims) -> Result<Option<i64>> {
+    for key in ["signedDate", "receiptCreationDate"] {
+        let Some(value) = claims.get(key) else {
+            continue;
+        };
+        if !value.is_number() {
+            continue;
+        }
+        return int_claim(claims, key).map(Some).ok_or_else(|| {
+            VerificationError::new(
+                Reason::InvalidChain,
+                format!("payload signing date {value} is not a valid instant"),
+            )
+        });
+    }
+    Ok(None)
 }
 
 fn invalid_jws(detail: impl Into<String>) -> VerificationError {
@@ -630,10 +650,28 @@ fn parse_x5c_certificate(entry: Option<&String>) -> Result<Certificate> {
             "x5c entry is not a valid certificate",
         ));
     };
-    Certificate::from_der(&decode_lenient(entry)).map_err(|_| {
+    let certificate = Certificate::from_der(&decode_lenient(entry)).map_err(|_| {
         VerificationError::new(
             Reason::InvalidCertificate,
             "x5c entry is not a valid certificate",
         )
-    })
+    })?;
+    // An EC key on a curve this crate does not implement is a defect of the
+    // certificate, not of the path it sits on: there is no key to check an
+    // issuance against. Left to the chain it reads as INVALID_CHAIN, while
+    // java, swift and go refuse the certificate in their decoders — the
+    // reading the shared vector pins, so that no port defers a rejection
+    // another already makes.
+    if certificate.public_key_algorithm_oid() == OID_EC_PUBLIC_KEY
+        && certificate
+            .public_key_curve_oid()
+            .and_then(curve_field_size)
+            .is_none()
+    {
+        return Err(VerificationError::new(
+            Reason::InvalidCertificate,
+            "x5c entry uses an unimplemented elliptic curve",
+        ));
+    }
+    Ok(certificate)
 }

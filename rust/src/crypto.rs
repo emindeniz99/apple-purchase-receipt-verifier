@@ -81,9 +81,11 @@ fn certificate_signature_algorithm(oid: &str) -> Option<(bool, DigestAlgorithm)>
 /// The curves this crate verifies under, and their field size in bytes.
 ///
 /// P-256 carries every App Store JWS leaf; P-384 carries Apple Root CA - G3.
-/// A key on any other curve fails closed: the signature simply does not
-/// verify, so a chain through it is `INVALID_CHAIN`.
-fn curve_field_size(oid: &str) -> Option<usize> {
+/// A key on any other curve fails closed everywhere it is reached. On the
+/// JWS path it is reached first by `parse_x5c_certificate`, which refuses
+/// the certificate outright (`INVALID_CERTIFICATE`); elsewhere the signature
+/// simply does not verify and the chain through it is `INVALID_CHAIN`.
+pub(crate) fn curve_field_size(oid: &str) -> Option<usize> {
     match oid {
         "1.2.840.10045.3.1.7" => Some(32), // prime256v1 / P-256
         "1.3.132.0.34" => Some(48),        // secp384r1 / P-384

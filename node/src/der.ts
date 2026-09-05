@@ -198,6 +198,54 @@ export function tbsParts(certRaw: Uint8Array): TbsParts {
   return { serialNumber, issuer, extensions };
 }
 
+/**
+ * Rejects a certificate whose X.509 version is not one RFC 5280 defines.
+ * The version field is [0] EXPLICIT INTEGER and legal values are 0, 1 and 2
+ * (v1, v2, v3); absent means v1. Nothing downstream reads it, which is
+ * exactly the problem: a certificate claiming version 11 is a format this
+ * library does not know, and without this check it verifies like any other
+ * as long as its signature and extensions hold up.
+ */
+export function requireKnownVersion(certRaw: Uint8Array): void {
+  const cert = parse(certRaw);
+  const version = (cert.children?.[0]?.children ?? [])[0];
+  if (version?.tag !== Tag.CONTEXT_0) {
+    return; // no version field: v1
+  }
+  const value = version.children?.[0];
+  if (value?.tag !== Tag.INTEGER || value.contents.length !== 1 || value.contents[0]! > 2) {
+    throw new ParseError('unknown X.509 certificate version');
+  }
+}
+
+/**
+ * Rejects a certificate that carries the same extension more than once.
+ * RFC 5280 4.2: "A certificate MUST NOT include more than one instance of a
+ * particular extension." A parser that allows one has to pick a copy, and
+ * two implementations reading the same bytes can pick different ones — so
+ * the marker-OID scan below, and OpenSSL's own view of what the certificate
+ * is for, stop being answers about one certificate. OpenSSL does notice
+ * (it flags the certificate invalid and the issuer check then fails), but
+ * only after the verdict has become one about the chain rather than about
+ * the certificate; this settles it where the other decoding defects are
+ * settled.
+ */
+export function requireNoDuplicateExtensions(certRaw: Uint8Array): void {
+  const { extensions } = tbsParts(certRaw);
+  const seen = new Set<string>();
+  for (const ext of extensions?.children ?? []) {
+    const oid = ext.children?.[0];
+    if (oid?.tag !== Tag.OID) {
+      throw new ParseError('extension does not begin with an OID');
+    }
+    const key = Array.from(oid.contents).join(',');
+    if (seen.has(key)) {
+      throw new ParseError('duplicate X.509 extension');
+    }
+    seen.add(key);
+  }
+}
+
 /** Whether the certificate carries an extension with the given OID. */
 export function hasExtension(certRaw: Uint8Array, oid: string): boolean {
   const { extensions } = tbsParts(certRaw);

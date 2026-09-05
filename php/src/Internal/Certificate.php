@@ -85,7 +85,17 @@ final class Certificate
         $fields = $tbs->children();
         $index = 0;
         if (($fields[0] ?? null)?->tag === Der::TAG_CONTEXT_0) {
-            $index = 1; // version [0] EXPLICIT
+            // version [0] EXPLICIT INTEGER. RFC 5280 defines 0, 1 and 2 (v1,
+            // v2, v3) and nothing else, and nothing downstream reads the
+            // field — which is why it is checked here rather than skipped: a
+            // certificate claiming version 11 would otherwise parse like any
+            // other and verify on its signature and extensions alone.
+            $version = $fields[0]->child(0);
+            if ($version?->tag !== Der::TAG_INTEGER || strlen($version->contents) !== 1
+                || ord($version->contents) > 2) {
+                throw new ParseException('unknown X.509 certificate version');
+            }
+            $index = 1;
         }
         $serial = $fields[$index] ?? null;
         $innerSignature = $fields[$index + 1] ?? null;
@@ -142,9 +152,17 @@ final class Certificate
             }
             $extensionOids[$oidNode->contents] = true;
             $oid = Der::decodeOid($oidNode->contents);
-            if (!isset($byOid[$oid])) {
-                $byOid[$oid] = Der::octets($valueNode);
+            // RFC 5280 4.2: a certificate MUST NOT include more than one
+            // instance of a particular extension. Keeping the first copy and
+            // ignoring the rest is what this used to do, and it makes the
+            // parser pick which copy the certificate means — a choice another
+            // implementation can make differently, so "is this a CA", "what
+            // may it be used for" and "does it carry the marker OID" stop
+            // being questions about one certificate.
+            if (isset($byOid[$oid])) {
+                throw new ParseException('duplicate X.509 extension');
             }
+            $byOid[$oid] = Der::octets($valueNode);
         }
 
         $keyUsage = isset($byOid[self::OID_KEY_USAGE])

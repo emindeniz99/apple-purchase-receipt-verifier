@@ -9,47 +9,31 @@ Everything below is either in this file already or was found by the
 2026-09-04 architecture review; this is the order it is being worked in.
 Delete a line in the commit that ships it.
 
-1. **Normative resource bounds in the contract** plus one vector. (Java's
-   chain length is aligned: it now states MAX_PATH_LENGTH = 6 and counts
-   self-issued intermediates, which the JDK default exempted.)
-2. **Docs cleanup** — done except: java and swift READMEs (neither port
+1. **Docs cleanup** — done except: java and swift READMEs (neither port
    has one), and the GitHub repository description, a repo setting that
    still names four languages (owner-only).
-3. **Pin the five hostile-JWS inputs python fuzzing found as contract
-   vectors**, so all nine ports answer them identically: a non-string
-   `x5c` entry, `signedDate` 1e300/NaN/Infinity, one corrupt extension in
-   an `x5c` certificate, an unimplemented EC curve in the issuer check,
-   and a certificate with version 11. Python now fails each closed with
-   node's reason; the other seven have not been asked.
-4. **Release**: approve the held release-please run (first-time
+2. **Release**: approve the held release-please run (first-time
    contributor gate; owner-only), register the signing key on GitHub,
    enforce branch protection for admins, bootstrap RubyGems, crates.io,
    NuGet and the Go proxy, and decide the PHP Packagist layout.
 
 ## Next
 
-- **The two remaining parser differentials.** The compact-JWS segment
-  differential is closed (see the strict-decoding commit); two more are
-  recorded in the port READMEs and still have no shared vector:
-  1. **`x5c[2]`**: java decodes and parses the third certificate, so an
-     unparseable one is `INVALID_CERTIFICATE` there and reaches the
-     signature check in node, python, swift, rust and the rest. It is
-     untrusted by design everywhere, so no verdict about a well-formed JWS
-     moves -- but the ports disagree about a malformed one and nothing
-     pins it.
-     Since the receipt-base64 change, go additionally rejects junk inside
-     an x5c entry (its receipt decoder is shared with x5c), where the other
-     ports skip it -- the same open question, one port wider.
-  2. **Resource bounds differ by an order of magnitude and are absent in
-     five ports.** Measured: node budget 200,000 (ruby), 100,000 (rust,
-     go), 20,000 (php), and no constant at all in node, python, java,
-     dotnet, swift. Receipt size cap 8 MiB (rust), 2 MiB (php), 1 MiB
-     (go), unfound elsewhere. Only php caps the JWS input. Genuine
-     receipts are under 80 KB and 3,000 nodes so nothing breaks today,
-     but the contract should state a normative floor -- every port MUST
-     accept a well-formed receipt up to N bytes and M nodes -- and a
-     vector should pin it, or a large legitimate receipt becomes another
-     port-dependent verdict.
+- **The one remaining parser differential.** The compact-JWS segment
+  differential is closed (see the strict-decoding commit), and so are the
+  resource bounds (the contract now states a floor of 1 MiB and 20,000
+  nodes, and `receipt-byte-floor` and `receipt-node-floor` pin one
+  number each, from within 2% of it). What is left is recorded in the
+  port READMEs and still has no shared vector:
+  **`x5c[2]`**: java decodes and parses the third certificate, so an
+  unparseable one is `INVALID_CERTIFICATE` there and reaches the
+  signature check in node, python, swift, rust and the rest. It is
+  untrusted by design everywhere, so no verdict about a well-formed JWS
+  moves -- but the ports disagree about a malformed one and nothing
+  pins it.
+  Since the receipt-base64 change, go additionally rejects junk inside
+  an x5c entry (its receipt decoder is shared with x5c), where the other
+  ports skip it -- the same open question, one port wider.
 - **`THREAT-MODEL.md` does not exist.** PLAN.md 2.3 is fifteen lines and
   the rest is spread across nine port READMEs, each restating pinned
   anchors, no network and the marker OIDs. One page -- assets, attacker

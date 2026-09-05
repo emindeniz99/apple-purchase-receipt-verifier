@@ -631,6 +631,35 @@ class JwsHostileInputTest(unittest.TestCase):
             )
         self.assertEqual(ctx.exception.reason, "INVALID_CERTIFICATE")
 
+    def test_rejects_a_certificate_carrying_one_extension_twice(self):
+        # The extension block refuses to be read for a second reason, and
+        # cryptography reports it as DuplicateExtension — which derives from
+        # Exception rather than ValueError, so it escaped the marker-OID
+        # lookup, every other `except` in the module and the caller. Fuzzing
+        # reached it by mutation; here the intermediate's extension list is
+        # rebuilt with a byte-identical second copy of its first extension,
+        # which is enough because the lookup reads the whole block. The
+        # certificate's signature is stale afterwards and that is not what is
+        # being tested: nothing gets as far as checking it.
+        claims = self.header_claims()
+        certificate = asn1x509.Certificate.load(base64.b64decode(claims["x5c"][1]))
+        extensions = certificate["tbs_certificate"]["extensions"]
+        extensions.append(extensions[0])
+        der = certificate.dump(force=True)
+
+        # The premise: loadable, and unreadable only at the extension block.
+        with self.assertRaises(x509.DuplicateExtension):
+            list(x509.load_der_x509_certificate(der).extensions)
+
+        hostile = dict(claims)
+        hostile["x5c"] = list(claims["x5c"])
+        hostile["x5c"][1] = base64.b64encode(der).decode()
+        with self.assertRaises(VerificationError) as ctx:
+            jws_verifier().verify_transaction(
+                self.assemble(header=self.segment(json.dumps(hostile).encode()))
+            )
+        self.assertEqual(ctx.exception.reason, "INVALID_CERTIFICATE")
+
     def test_mutations_of_a_genuine_jws_raise_nothing_else_either(self):
         # The JWS counterpart of the receipt sweep above, and it exists for the
         # same reason: mutating a transaction that is otherwise valid is what

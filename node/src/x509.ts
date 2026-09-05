@@ -170,7 +170,15 @@ export function parseCertificate(der: Uint8Array): ParsedCertificate {
   }
   let index = 0;
   if (fields[index]?.tag === Tag.CONTEXT_0) {
-    index += 1; // version [0] EXPLICIT
+    // version [0] EXPLICIT INTEGER. RFC 5280 defines 0, 1 and 2 (v1, v2, v3)
+    // and nothing else, and nothing downstream reads the field — so without
+    // this check a certificate claiming version 11 parses like any other and
+    // verifies as long as its signature and extensions hold up.
+    const version = children(fields[index]!)[0];
+    if (version?.tag !== Tag.INTEGER || version.contents.length !== 1 || version.contents[0]! > 2) {
+      throw new ParseError('unknown X.509 certificate version');
+    }
+    index += 1;
   }
   const serial = fields[index];
   const innerSignature = fields[index + 1];
@@ -233,9 +241,16 @@ export function parseCertificate(der: Uint8Array): ParsedCertificate {
       throw new ParseError('malformed certificate extension');
     }
     const oid = oidString(oidNode.contents);
-    if (!byOid.has(oid)) {
-      byOid.set(oid, octetStringValue(valueNode));
+    // RFC 5280 4.2: a certificate MUST NOT include more than one instance of
+    // a particular extension. Keeping the first copy and ignoring the rest is
+    // what this used to do, and it makes the reader pick which copy the
+    // certificate means — a choice another implementation can make
+    // differently, so the same bytes stop having one answer for "is this a
+    // CA", "what may it be used for" and "does it carry the marker OID".
+    if (byOid.has(oid)) {
+      throw new ParseError('duplicate X.509 extension');
     }
+    byOid.set(oid, octetStringValue(valueNode));
   }
 
   const keyUsageExtension = byOid.get(OID_KEY_USAGE);

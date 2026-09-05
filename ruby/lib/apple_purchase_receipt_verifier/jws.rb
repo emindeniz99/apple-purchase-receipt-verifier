@@ -234,7 +234,34 @@ module ApplePurchaseReceiptVerifier
         raise VerificationError.new(Reason::INVALID_CERTIFICATE, "x5c entry is empty") if der.nil?
 
         begin
-          OpenSSL::X509::Certificate.new(der)
+          certificate = OpenSSL::X509::Certificate.new(der)
+          # Three things OpenSSL decodes more leniently than the checks that
+          # follow assume, settled here so all three are INVALID_CERTIFICATE:
+          #
+          #   - the version, which it keeps as whatever integer it found.
+          #     X.509 defines v1, v2 and v3 (0, 1, 2) and nothing else, and
+          #     nothing downstream reads the field, so without this a
+          #     certificate claiming version 11 verifies like any other.
+          #   - a repeated extension, which RFC 5280 4.2 forbids. OpenSSL
+          #     hands the list back with both copies in it and every reader
+          #     picks one, so without this the marker-OID lookup, the CA check
+          #     and another port's answer can be about different copies.
+          #   - the public key, which it decodes lazily, so a namedCurve this
+          #     build does not implement would otherwise surface in the issuer
+          #     check and be reported as a chain failure.
+          unless (0..2).cover?(certificate.version)
+            raise VerificationError.new(Reason::INVALID_CERTIFICATE,
+                                        "x5c entry has an unknown X.509 version")
+          end
+
+          oids = certificate.extensions.map(&:oid)
+          unless oids.uniq.size == oids.size
+            raise VerificationError.new(Reason::INVALID_CERTIFICATE,
+                                        "x5c entry carries a duplicate extension")
+          end
+
+          certificate.public_key
+          certificate
         rescue OpenSSL::OpenSSLError
           raise VerificationError.new(Reason::INVALID_CERTIFICATE,
                                       "x5c entry is not a valid certificate")

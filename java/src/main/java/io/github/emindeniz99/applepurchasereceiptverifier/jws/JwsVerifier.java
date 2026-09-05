@@ -204,7 +204,7 @@ public final class JwsVerifier {
                     "alg must be ES256, got " + header.path("alg").asText());
         }
         JsonNode x5c = header.path("x5c");
-        if (!x5c.isArray() || x5c.size() != 3) {
+        if (!x5c.isArray() || x5c.size() != 3 || !allTextual(x5c)) {
             throw new VerificationException(Reason.INVALID_JWS_FORMAT, "x5c must contain exactly 3 certificates");
         }
         List<X509Certificate> chain = decodeChain(x5c);
@@ -318,16 +318,39 @@ public final class JwsVerifier {
      * is checked at this instant so payloads signed with since-rotated
      * certificates keep verifying (PLAN.md §2.1 step 4).
      */
-    private static Long signedAtMillis(JsonNode payload) {
-        JsonNode signedDate = payload.path("signedDate");
-        if (signedDate.canConvertToLong()) {
-            return Long.valueOf(signedDate.asLong());
+    private static Long signedAtMillis(JsonNode payload) throws VerificationException {
+        Long signedDate = instantClaim(payload, "signedDate");
+        return signedDate != null ? signedDate : instantClaim(payload, "receiptCreationDate");
+    }
+
+    /**
+     * One signing-time claim, or {@code null} when the payload does not state
+     * it. A claim that IS a number but does not fit a long — {@code 1e300},
+     * say — is not "not stated": treating it as absent would fall through to
+     * the current-time anchor and validate the chain against today, which is
+     * an attacker choosing the instant a certificate's window is judged at.
+     * An instant no calendar can express is inside no window, which is the
+     * verdict the other ports reach through their own date types.
+     */
+    private static Long instantClaim(JsonNode payload, String name) throws VerificationException {
+        JsonNode claim = payload.path(name);
+        if (claim.canConvertToLong()) {
+            return Long.valueOf(claim.asLong());
         }
-        JsonNode receiptCreationDate = payload.path("receiptCreationDate");
-        if (receiptCreationDate.canConvertToLong()) {
-            return Long.valueOf(receiptCreationDate.asLong());
+        if (claim.isNumber()) {
+            throw new VerificationException(
+                    Reason.INVALID_CHAIN, "payload signing date " + claim.asText() + " is not a valid instant");
         }
         return null;
+    }
+
+    private static boolean allTextual(JsonNode x5c) {
+        for (JsonNode entry : x5c) {
+            if (!entry.isTextual()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void validateChain(X509Certificate leaf, X509Certificate intermediate, Date at)

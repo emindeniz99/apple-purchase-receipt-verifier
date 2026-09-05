@@ -309,11 +309,13 @@ final class JwsVerifierTest extends TestCase
     }
 
     /**
-     * `json_decode` degrades an integer beyond PHP_INT_MAX to a float. A
-     * claim that is not an int is treated as absent rather than coerced, so a
-     * huge `signedDate` cannot become a timestamp.
+     * `json_decode` degrades an integer beyond PHP_INT_MAX to a float. Such a
+     * `signedDate` is neither coerced into a timestamp nor treated as absent:
+     * absent would anchor certificate validity at the current time, which is
+     * the caller's fallback for a payload that states no date at all. See the
+     * shared vector `transaction/reject-signed-date-out-of-range`.
      */
-    public function testAnOversizedIntegerClaimIsTreatedAsAbsentNotCoerced(): void
+    public function testAnOversizedIntegerClaimIsRefusedRatherThanCoerced(): void
     {
         $pki = MintedPki::get();
         $header = TestPki::b64url((string) json_encode([
@@ -329,9 +331,12 @@ final class JwsVerifierTest extends TestCase
             TestPki::derToP1363(Shape::asString($der, 'openssl_sign output')),
         );
 
-        $result = $this->verifier()->verifyTransaction($jws);
-        self::assertNull($result->signedDate);
-        self::assertIsFloat($result->claims['signedDate'], 'the raw claim is still reachable, as a float');
+        try {
+            $this->verifier()->verifyTransaction($jws);
+            self::fail('an unrepresentable signing date must not verify');
+        } catch (VerificationException $e) {
+            self::assertSame(Reason::InvalidChain, $e->reason);
+        }
     }
 
     public function testIsActiveAtReadsTheSignedClaims(): void

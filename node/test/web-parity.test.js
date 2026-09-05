@@ -128,6 +128,7 @@ function receiptCase(
 }
 
 const JWS_ROOT = gen('jws-root.der');
+const HOSTILE_JWS_ROOT = gen('hostile-jws-root.der');
 const RECEIPT_ROOT = gen('receipt-root.der');
 const DEVICE_GUID = Buffer.from(genText('device-guid.hex'), 'hex');
 
@@ -454,6 +455,41 @@ const cases = [
     bundleId: 'com.example.naturelab.backyardbirds.example',
     receipt: officialText('xcode', 'xcode-app-receipt-with-transaction'),
     expect: 'INVALID_CHAIN',
+  }),
+
+  // The six hostile-JWS contract vectors. They live here as well as in
+  // cases.json because the header and the x5c certificates are what the two
+  // builds decode most differently — OpenSSL on one side, this repo's own DER
+  // reader on the other — and a shared vector only runs against the Node one.
+  jwsCase('x5c entries that are not strings', {
+    roots: [HOSTILE_JWS_ROOT],
+    jws: genText('transaction-x5c-entry-not-a-string.jws'),
+    expect: 'INVALID_JWS_FORMAT',
+  }),
+  jwsCase('a signedDate no calendar can express', {
+    roots: [HOSTILE_JWS_ROOT],
+    jws: genText('transaction-signed-date-out-of-range.jws'),
+    expect: 'INVALID_CHAIN',
+  }),
+  jwsCase('an x5c certificate with a corrupt extension', {
+    roots: [HOSTILE_JWS_ROOT],
+    jws: genText('transaction-x5c-corrupt-extension.jws'),
+    expect: 'INVALID_CERTIFICATE',
+  }),
+  jwsCase('an x5c certificate on an unimplemented EC curve', {
+    roots: [HOSTILE_JWS_ROOT],
+    jws: genText('transaction-x5c-unimplemented-curve.jws'),
+    expect: 'INVALID_CERTIFICATE',
+  }),
+  jwsCase('an x5c certificate claiming X.509 version 11', {
+    roots: [HOSTILE_JWS_ROOT],
+    jws: genText('transaction-x5c-certificate-version-11.jws'),
+    expect: 'INVALID_CERTIFICATE',
+  }),
+  jwsCase('an x5c certificate carrying one extension twice', {
+    roots: [HOSTILE_JWS_ROOT],
+    jws: genText('transaction-x5c-duplicate-extension.jws'),
+    expect: 'INVALID_CERTIFICATE',
   }),
 ];
 

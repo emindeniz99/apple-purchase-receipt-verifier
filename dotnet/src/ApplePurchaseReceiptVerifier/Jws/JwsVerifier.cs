@@ -230,8 +230,14 @@ namespace ApplePurchaseReceiptVerifier.Jws
                 throw Format("alg must be ES256");
             }
 
+            // Every entry has to be a string as well as present. The header is
+            // attacker-supplied JSON, and a number reaching the base64 decode
+            // instead was reported as INVALID_CERTIFICATE — a verdict saying
+            // something was decoded and found wanting, when nothing had been
+            // decoded at all.
             if (!(header.TryGetValue("x5c", out object? x5cValue) && x5cValue is List<object?> x5c)
-                || x5c.Count != 3)
+                || x5c.Count != 3
+                || !x5c.TrueForAll(static entry => entry is string))
             {
                 throw Format("x5c must contain exactly 3 certificates");
             }
@@ -240,8 +246,8 @@ namespace ApplePurchaseReceiptVerifier.Jws
             // the intermediate being signed by one of our pinned anchors
             // counts, so swapping in an attacker's third element changes
             // nothing.
-            X509Certificate2 leaf = LoadX5cEntry(x5c[0]);
-            X509Certificate2 intermediate = LoadX5cEntry(x5c[1]);
+            X509Certificate2 leaf = LoadX5cEntry((string)x5c[0]!);
+            X509Certificate2 intermediate = LoadX5cEntry((string)x5c[1]!);
 
             RequireMarkerOid(leaf, LeafOid, "leaf");
             RequireMarkerOid(intermediate, IntermediateOid, "intermediate");
@@ -313,14 +319,8 @@ namespace ApplePurchaseReceiptVerifier.Jws
             return DateTimeOffset.FromUnixTimeMilliseconds((long)truncated);
         }
 
-        private static X509Certificate2 LoadX5cEntry(object? entry)
+        private static X509Certificate2 LoadX5cEntry(string base64)
         {
-            if (entry is not string base64)
-            {
-                throw new VerificationException(
-                    VerificationReason.InvalidCertificate, "x5c entry is not a string");
-            }
-
             byte[] der;
             try
             {
@@ -332,9 +332,70 @@ namespace ApplePurchaseReceiptVerifier.Jws
                     VerificationReason.InvalidCertificate, "x5c entry is not valid base64", e);
             }
 
-            return Certificates.TryLoad(der)
+            X509Certificate2 certificate = Certificates.TryLoad(der)
                 ?? throw new VerificationException(
                     VerificationReason.InvalidCertificate, "x5c entry is not a valid certificate");
+
+            // Three things the platform decoder lets past, settled here while
+            // the verdict is still "this is not a certificate":
+            //
+            //  - the version, which it keeps as whatever integer it found.
+            //    X.509 defines v1, v2 and v3 and nothing else, and nothing
+            //    downstream reads the field, so without this a certificate
+            //    claiming version 11 verifies like any other.
+            //  - a repeated extension, which RFC 5280 4.2 forbids. Every
+            //    reader downstream takes the first copy, so without this the
+            //    CA flag, the key usage and the marker-OID lookup are each
+            //    answered from a copy this library picked and another
+            //    implementation need not pick the same one.
+            //  - the public key, which it builds lazily, so a namedCurve this
+            //    platform does not implement would otherwise surface in the
+            //    issuer check and be reported as a chain failure.
+            if (certificate.Version is < 1 or > 3)
+            {
+                certificate.Dispose();
+                throw new VerificationException(
+                    VerificationReason.InvalidCertificate, "x5c entry has an unknown X.509 version");
+            }
+
+            if (CertificateFields.TryParse(certificate.RawData)?.HasDuplicateExtension == true)
+            {
+                certificate.Dispose();
+                throw new VerificationException(
+                    VerificationReason.InvalidCertificate, "x5c entry carries a duplicate extension");
+            }
+
+            if (!HasReadablePublicKey(certificate))
+            {
+                certificate.Dispose();
+                throw new VerificationException(
+                    VerificationReason.InvalidCertificate, "x5c entry has an unreadable public key");
+            }
+
+            return certificate;
+        }
+
+        private static bool HasReadablePublicKey(X509Certificate2 certificate)
+        {
+            try
+            {
+                using (ECDsa? ec = certificate.GetECDsaPublicKey())
+                {
+                    if (ec is not null)
+                    {
+                        return true;
+                    }
+                }
+
+                using (RSA? rsa = certificate.GetRSAPublicKey())
+                {
+                    return rsa is not null;
+                }
+            }
+            catch (CryptographicException)
+            {
+                return false;
+            }
         }
 
         private static void RequireMarkerOid(X509Certificate2 certificate, string oid, string role)

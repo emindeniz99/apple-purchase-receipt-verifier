@@ -1,6 +1,6 @@
 import { X509Certificate, verify as cryptoVerify } from 'node:crypto';
 import { Environment, Reason, VerificationError } from './errors.js';
-import { hasExtension } from './der.js';
+import { hasExtension, requireKnownVersion, requireNoDuplicateExtensions } from './der.js';
 import { normalizeRoots, validatePair, type RootInput } from './chain.js';
 import {
   decodeJwsSegment,
@@ -89,6 +89,27 @@ export class JwsVerifier {
     try {
       leaf = new X509Certificate(Buffer.from(x5c[0]!, 'base64'));
       intermediate = new X509Certificate(Buffer.from(x5c[1]!, 'base64'));
+      // OpenSSL decodes an x5c entry far more leniently than the checks
+      // below assume, so all three of the things it lets past are settled
+      // here, while the verdict is still "this is not a certificate":
+      //
+      //  - the version, which OpenSSL keeps as whatever integer it found and
+      //    nothing downstream ever reads (requireKnownVersion);
+      //  - a repeated extension, which RFC 5280 4.2 forbids and OpenSSL
+      //    reports only by flagging the certificate invalid, so the issuer
+      //    check failed and a defect of the certificate came out as a
+      //    verdict about the chain (requireNoDuplicateExtensions);
+      //  - the public key, which is decoded lazily, so a namedCurve this
+      //    runtime does not implement surfaces later as a raw
+      //    ERR_OSSL_EVP_DECODE_ERROR out of `.publicKey`. Today the issuer
+      //    check happens to fail its name comparison first; reading the key
+      //    here means the escape cannot come back if that order changes.
+      requireKnownVersion(leaf.raw);
+      requireKnownVersion(intermediate.raw);
+      requireNoDuplicateExtensions(leaf.raw);
+      requireNoDuplicateExtensions(intermediate.raw);
+      void leaf.publicKey;
+      void intermediate.publicKey;
     } catch (cause) {
       throw new VerificationError(
         Reason.INVALID_CERTIFICATE,
