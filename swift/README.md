@@ -159,9 +159,13 @@ written against it.
 
 ## The error vocabulary
 
-Every failure is a `VerificationError`, a `Sendable`, `CustomStringConvertible`
-struct carrying a `reason: Reason` and a `message: String`. Switch on
-`reason`, never parse `description` or `message`.
+Every verification verdict is a `VerificationError`, a `Sendable`,
+`CustomStringConvertible` struct carrying a `reason: Reason` and a
+`message: String`. Switch on `reason`, never parse `description` or
+`message`. One exception sits at construction rather than verification: a
+`trustedRoots` entry that is not a parseable DER certificate makes the
+initializer rethrow swift-certificates' own parsing error, so treat anchors
+as configuration to validate at startup, not as input to catch per call.
 
 ```swift
 do {
@@ -181,7 +185,7 @@ do {
 | `Reason` | Raw value | Raised when |
 |---|---|---|
 | `.invalidJwsFormat` | `INVALID_JWS_FORMAT` | not three dot-separated segments, a segment that is not base64url JSON, `alg != "ES256"`, or an `x5c` that is not exactly three entries |
-| `.invalidCertificate` | `INVALID_CERTIFICATE` | an `x5c` entry is not valid base64 or not a parseable certificate |
+| `.invalidCertificate` | `INVALID_CERTIFICATE` | `x5c[0]` or `x5c[1]` does not parse as a certificate. Their base64 is decoded with `ignoreUnknownCharacters`, so a junk character is skipped rather than refused, and `x5c[2]` is never decoded at all; both are recorded in ROADMAP.md as divergences from java, which decodes all three |
 | `.invalidCertificatePurpose` | `INVALID_CERTIFICATE_PURPOSE` | the leaf or intermediate lacks its Apple marker OID, or the receipt signer lacks its own |
 | `.invalidChain` | `INVALID_CHAIN` | the path does not reach a pinned anchor, a certificate was not valid at the signing instant, or a receipt embeds more than ten certificates |
 | `.invalidSignature` | `INVALID_SIGNATURE` | the ES256 or CMS signature check failed, or the signer key is not RSA |
