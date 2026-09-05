@@ -1,7 +1,7 @@
 {
   "$schema": "./cases.schema.json",
   "schemaVersion": 1,
-  "comment": "Normative cross-language conformance vectors for apple-purchase-receipt-verifier.\nOne case per semantic fact: java/, node/, python/, swift/, go/, ruby/, rust/, php/ and dotnet/\neach assert many of these under their own test names, and the duplicates are merged here.\nEvery expectation in this file was derived by hand from the four test-suite inventories,\nfrom PLAN.md sections 2.1-2.3, from COMPARISON.md and from the fixture generator\n(java/src/test/.../FixtureGeneratorTest.java) plus fixtures/generated/manifest.json.\nNOTHING here was produced by running an implementation and recording what it did:\na vector that disagrees with an implementation is a bug report against that implementation\nuntil a human decides otherwise.\n\nPaths in \"fields\" are language-neutral. Scalars use the shared API names from PLAN.md section 3\n(camelCase) for verifyTransaction/verifyAppTransaction/verifyRaw/verifyReceipt, and the literal\nApple wire keys (snake_case) for verifyReceiptEndpoint. \"x.length\" is a collection size.\n\"list[key=value].field\" selects the single element of list whose key equals value.\n\"unknownAttributes[9999][0]\" indexes the raw values recorded for receipt attribute type 9999,\nexpressed as a lowercase hex string. Dates are ISO-8601 UTC strings; claims that Apple ships as\nepoch milliseconds (signedDate, receiptCreationDate) stay numbers. null means \"absent or unset\".\nA field a case does not list is simply not pinned by that case.\n\nCertificate-validity windows are judged at the payload signedDate / receipt creationDate, and\nwhere the input states neither, at the SYSTEM clock — never at an injected one (PLAN.md 2.1\nstep 4, 2.2 step 2). The expired-chain cases are therefore deterministic. \"clock\" appears where\nthe answer genuinely moves with time — the max-signed-age staleness rule and the request_date\ntriple of the verifyReceipt endpoint — and, on the four dateless inputs, precisely to pin that\nthe answer does NOT move: a receipt or payload carrying no date of its own, verified under a\nclock planted inside an expired certificate's window or far past a live one's, must reach the\nverdict it reaches on real time. A caller injecting a clock to test staleness, or to work\naround clock skew, must not thereby accept a chain that is expired. verifyReceipt cases cannot\ncarry a clock at all — the schema refuses one — because ReceiptVerifier takes no clock\nparameter in any port. Where the schema does allow one, a runner MUST hand the case's clock to\nthe verifier rather than fake time; a case carrying a clock that is run against the system\nclock is not running the case.\n\nEvery fixture records the SHA-256 of its DECODED logical bytes (post-codec: the file bytes for\nraw, the base64-decoded bytes for base64, the trimmed UTF-8 for utf8). contentSha256 is not\ndocumentation: tools/lint-cases.mjs re-hashes every registered fixture, and so does every\nadapter — over the whole registry before any case runs, and again for each fixture a case\nloads. A fixture that is regenerated, re-encoded or quietly edited fails loudly in every\nlanguage instead of silently changing what these vectors mean.\n\nFour places where the ports had drifted apart were adjudicated and are pinned here: the\ncertificate-validity fallback clock (the dateless cases), the typed endpoint environment\n(config.environment is the enum, and both values are exercised), and a receipt attribute type\nabove 2^31-1, which every port must reject as INVALID_RECEIPT_FORMAT rather than rename or\nclamp. The fourth — verifyReceiptCore being public in every port, so no endpoint has to build a\nwildcard-bundle-id verifier to reach it — changes no observable answer, so no vector can hold\nit; the native suites carry that one.\n\n\"fault\" names the one intentional defect of a negative case. It is documentation, not an\nassertion: implementations are not required to report it, only to report the given reason.\n\nReceipt base64 (added 2026-09-04). Every runner decodes a base64 fixture itself and hands DER to the library, so no verifyReceipt case can say how a port treats the string a client actually sent. The text codec and the verifyReceiptBase64 operation close that: the fixture bytes go to the string entry point verbatim, and a verifyReceiptEndpoint case over a text fixture puts them in receipt-data verbatim. The rule they pin is Apple's: receipt-data is Base64 as defined in RFC 4648, and Foundation's base64EncodedString(options:) can emit the standard or the base64url alphabet, with or without padding, with CR/LF line endings at 64 or 76 columns. Everything Foundation can emit is accepted; a character outside both alphabets, a mixed alphabet, anything after the padding (a third '=' included), a partial padding run, and an empty string are INVALID_RECEIPT_FORMAT (21002 at the endpoint). Padding is accepted omitted or canonical, never over- or under-supplied: no encoder emits either, and a decoder that recomputes it turns padding into a free suffix.\n\nHostile JWS (added 2026-09-05). Six inputs that Python's coverage-guided fuzzing walked out of the library as bare exceptions rather than verdicts are pinned here, so that all nine ports answer them and answer them the same way. A seventh input sits with them carrying no defect at all: the same signedDate spelled 1722945600000.0, which must verify, because a port could otherwise pass the out-of-range vector by refusing every number that is not a bare integer. Each is a real JWS over the generated test PKI carrying exactly one mutation; the header is signed in its hostile state so the ES256 signature covers the bytes served, and a mutated certificate is re-signed by its issuer so a broken issuer signature can never be the first thing a port objects to. The reasons were adjudicated against Node and Python, which already agreed on three of the five, and on the fourth the majority was overruled for the reason that case states: x5c entries that are not strings are INVALID_JWS_FORMAT, a signedDate of 1e300 is INVALID_CHAIN, a certificate that stops decoding inside its extension block is INVALID_CERTIFICATE, an unimplemented EC curve on the intermediate is INVALID_CERTIFICATE, and a certificate claiming X.509 version 11 is INVALID_CERTIFICATE, and a certificate carrying the same extension twice is INVALID_CERTIFICATE. The per-case descriptions carry the reasoning for each. What these five have in common is where the defect sits: in the JWS header and in the x5c certificates, both of which every port decodes BEFORE the signature that would have rejected them, and neither of which any signature in the input authenticates.\n\nResource bounds (added 2026-09-05). Every port defends itself against hostile input with size and node budgets, and they sat an order of magnitude apart: a receipt byte cap of 8 MiB in rust, 2 MiB in php, 1 MiB in go and none stated in node, python, java, swift or dotnet; a budget of 200,000 ASN.1 nodes per parse in ruby, 100,000 in rust and go, 20,000 in php and none elsewhere. Those are port-local defences and none of them may quietly become a verdict, so the contract states the floor beneath them rather than the caps themselves. Every implementation MUST accept a well-formed, correctly signed receipt of up to 1 MiB (1,048,576 bytes) of DER whose largest single ASN.1 parse holds up to 20,000 nodes. Those are the two smallest numbers any port already carries — go's byte cap and php's node budget — so the floor raises nothing, and both are an order of magnitude above the largest genuine receipt in the corpus (79 KB, 187 in-app purchases, under 3,000 nodes). Above the floor a port MAY refuse and the number it refuses at is its own business; below it, refusing is a bug. A node is one TLV, counted descending into constructed values only, because a primitive OCTET STRING's contents — an in-app purchase, an attribute value, the encapsulated payload — are a separate parse with a separate budget in every port that has one. Two receipts pin it from below, one number each: `receipt-byte-floor` is 1,034,681 bytes at 9,237 nodes and `receipt-node-floor` is 19,897 nodes at 74,569 bytes. One receipt under both limits would not do it -- a port could lower either cap to just above what that single receipt happened to use, which is what the 809,069-byte, 16,037-node receipt they replace allowed. Neither is also run through verifyReceiptEndpoint: base64 of 1 MB is 1.38 MB, over php's 1 MiB cap on a REQUEST BODY, which bounds a wire request rather than a receipt and is not what this floor is about.",
+  "comment": "Normative cross-language conformance vectors for apple-purchase-receipt-verifier.\nOne case per semantic fact: java/, node/, python/, swift/, go/, ruby/, rust/, php/ and dotnet/\neach assert many of these under their own test names, and the duplicates are merged here.\nEvery expectation in this file was derived by hand from the four test-suite inventories,\nfrom PLAN.md sections 2.1-2.3, from COMPARISON.md and from the fixture generator\n(java/src/test/.../FixtureGeneratorTest.java) plus fixtures/generated/manifest.json.\nNOTHING here was produced by running an implementation and recording what it did:\na vector that disagrees with an implementation is a bug report against that implementation\nuntil a human decides otherwise.\n\nPaths in \"fields\" are language-neutral. Scalars use the shared API names from PLAN.md section 3\n(camelCase) for verifyTransaction/verifyAppTransaction/verifyRaw/verifyReceipt, and the literal\nApple wire keys (snake_case) for verifyReceiptEndpoint. \"x.length\" is a collection size.\n\"list[key=value].field\" selects the single element of list whose key equals value.\n\"unknownAttributes[9999][0]\" indexes the raw values recorded for receipt attribute type 9999,\nexpressed as a lowercase hex string. Dates are ISO-8601 UTC strings; claims that Apple ships as\nepoch milliseconds (signedDate, receiptCreationDate) stay numbers. null means \"absent or unset\".\nA field a case does not list is simply not pinned by that case.\n\nCertificate-validity windows are judged at the payload signedDate / receipt creationDate, and\nwhere the input states neither, at the SYSTEM clock — never at an injected one (PLAN.md 2.1\nstep 4, 2.2 step 2). The expired-chain cases are therefore deterministic. \"clock\" appears where\nthe answer genuinely moves with time — the max-signed-age staleness rule and the request_date\ntriple of the verifyReceipt endpoint — and, on the four dateless inputs, precisely to pin that\nthe answer does NOT move: a receipt or payload carrying no date of its own, verified under a\nclock planted inside an expired certificate's window or far past a live one's, must reach the\nverdict it reaches on real time. A caller injecting a clock to test staleness, or to work\naround clock skew, must not thereby accept a chain that is expired. verifyReceipt cases cannot\ncarry a clock at all — the schema refuses one — because ReceiptVerifier takes no clock\nparameter in any port. Where the schema does allow one, a runner MUST hand the case's clock to\nthe verifier rather than fake time; a case carrying a clock that is run against the system\nclock is not running the case.\n\nEvery fixture records the SHA-256 of its DECODED logical bytes (post-codec: the file bytes for\nraw, the base64-decoded bytes for base64, the trimmed UTF-8 for utf8). contentSha256 is not\ndocumentation: tools/lint-cases.mjs re-hashes every registered fixture, and so does every\nadapter — over the whole registry before any case runs, and again for each fixture a case\nloads. A fixture that is regenerated, re-encoded or quietly edited fails loudly in every\nlanguage instead of silently changing what these vectors mean.\n\nFour places where the ports had drifted apart were adjudicated and are pinned here: the\ncertificate-validity fallback clock (the dateless cases), the typed endpoint environment\n(config.environment is the enum, and both values are exercised), and a receipt attribute type\nabove 2^31-1, which every port must reject as INVALID_RECEIPT_FORMAT rather than rename or\nclamp. The fourth — verifyReceiptCore being public in every port, so no endpoint has to build a\nwildcard-bundle-id verifier to reach it — changes no observable answer, so no vector can hold\nit; the native suites carry that one.\n\n\"fault\" names the one intentional defect of a negative case. It is documentation, not an\nassertion: implementations are not required to report it, only to report the given reason.\n\nReceipt base64 (added 2026-09-04). Every runner decodes a base64 fixture itself and hands DER to the library, so no verifyReceipt case can say how a port treats the string a client actually sent. The text codec and the verifyReceiptBase64 operation close that: the fixture bytes go to the string entry point verbatim, and a verifyReceiptEndpoint case over a text fixture puts them in receipt-data verbatim. The rule they pin is Apple's: receipt-data is Base64 as defined in RFC 4648, and Foundation's base64EncodedString(options:) can emit the standard or the base64url alphabet, with or without padding, with CR/LF line endings at 64 or 76 columns. Everything Foundation can emit is accepted; a character outside both alphabets, a mixed alphabet, anything after the padding (a third '=' included), a partial padding run, and an empty string are INVALID_RECEIPT_FORMAT (21002 at the endpoint). Padding is accepted omitted or canonical, never over- or under-supplied: no encoder emits either, and a decoder that recomputes it turns padding into a free suffix.\n\nHostile JWS (added 2026-09-05). Six inputs that Python's coverage-guided fuzzing walked out of the library as bare exceptions rather than verdicts are pinned here, so that all nine ports answer them and answer them the same way. A seventh input sits with them carrying no defect at all: the same signedDate spelled 1722945600000.0, which must verify, because a port could otherwise pass the out-of-range vector by refusing every number that is not a bare integer. Each is a real JWS over the generated test PKI carrying exactly one mutation; the header is signed in its hostile state so the ES256 signature covers the bytes served, and a mutated certificate is re-signed by its issuer so a broken issuer signature can never be the first thing a port objects to. The reasons were adjudicated against Node and Python, which already agreed on three of the five, and on the fourth the majority was overruled for the reason that case states: x5c entries that are not strings are INVALID_JWS_FORMAT, a signedDate of 1e300 is INVALID_CHAIN, a certificate that stops decoding inside its extension block is INVALID_CERTIFICATE, an unimplemented EC curve on the intermediate is INVALID_CERTIFICATE, and a certificate claiming X.509 version 11 is INVALID_CERTIFICATE, and a certificate carrying the same extension twice is INVALID_CERTIFICATE. The per-case descriptions carry the reasoning for each. What these five have in common is where the defect sits: in the JWS header and in the x5c certificates, both of which every port decodes BEFORE the signature that would have rejected them, and neither of which any signature in the input authenticates. An eighth input joined them when the x5c[2] differential was closed: the third x5c entry holding base64 of \"not a certificate\", which java alone rejected because java alone parsed that entry. The other eight ports verified the JWS, and the majority lost to the same rule the unimplemented curve lost to \u2014 pinning acceptance would have made java drop a rejection it already makes. Every port now parses all three entries; none of them trusts the third, which is what the differential was always about.\n\nReceipt signer certificates (added 2026-09-05). The four certificate mutations above sit in a JWS header, and four ports answered them from checks written on the JWS path alone (node, python, ruby and dotnet; rust and php had them in a shared certificate parser, and java, swift and go get them from a platform decoder). So the same four mutations \u2014 X.509 version 11, a duplicated basicConstraints, an unassigned EC curve and an extension block that stops decoding \u2014 are built into the certificate a legacy PKCS#7 receipt is signed by, and carry the reason their JWS twins carry: INVALID_CERTIFICATE. Each receipt is genuine in every other respect, with the signer re-signed by the intermediate wherever the mutation touched its TBS, so the certificate is the only thing a port can object to. The curve case is the one where the signer's KEY is the mutation: the receipt is signed with a real P-256 key whose certificate then names a curve that does not exist, so the port has to refuse the certificate before it can reach the signature \u2014 and it must not answer instead that the key is not RSA, which is a different input.\n\nResource bounds (added 2026-09-05). Every port defends itself against hostile input with size and node budgets, and they sat an order of magnitude apart: a receipt byte cap of 8 MiB in rust, 2 MiB in php, 1 MiB in go and none stated in node, python, java, swift or dotnet; a budget of 200,000 ASN.1 nodes per parse in ruby, 100,000 in rust and go, 20,000 in php and none elsewhere. Those are port-local defences and none of them may quietly become a verdict, so the contract states the floor beneath them rather than the caps themselves. Every implementation MUST accept a well-formed, correctly signed receipt of up to 1 MiB (1,048,576 bytes) of DER whose largest single ASN.1 parse holds up to 20,000 nodes. Those are the two smallest numbers any port already carries — go's byte cap and php's node budget — so the floor raises nothing, and both are an order of magnitude above the largest genuine receipt in the corpus (79 KB, 187 in-app purchases, under 3,000 nodes). Above the floor a port MAY refuse and the number it refuses at is its own business; below it, refusing is a bug. A node is one TLV, counted descending into constructed values only, because a primitive OCTET STRING's contents — an in-app purchase, an attribute value, the encapsulated payload — are a separate parse with a separate budget in every port that has one. Two receipts pin it from below, one number each: `receipt-byte-floor` is 1,034,681 bytes at 9,237 nodes and `receipt-node-floor` is 19,897 nodes at 74,569 bytes. One receipt under both limits would not do it -- a port could lower either cap to just above what that single receipt happened to use, which is what the 809,069-byte, 16,037-node receipt they replace allowed. Neither is also run through verifyReceiptEndpoint: base64 of 1 MB is 1.38 MB, over php's 1 MiB cap on a REQUEST BODY, which bounds a wire request rather than a receipt and is not what this floor is about.",
   "fixtures": {
     "generated-manifest": {
       "path": "generated/manifest.json",
@@ -445,49 +445,85 @@
       "path": "generated/hostile-jws-root.der",
       "role": "trust-anchor",
       "codec": "raw",
-      "contentSha256": "1d5553133d17314e2786384f9cd5f0e2e3ab3e46608047e88338a5a14b7e1cfb"
+      "contentSha256": "703bbfb87e8bdb3902c86acabfa3c071c07d3b2b6dc9fffe1421ce63a495874d"
     },
     "transaction-x5c-entry-not-a-string": {
       "path": "generated/transaction-x5c-entry-not-a-string.jws",
       "role": "input",
       "codec": "utf8",
-      "contentSha256": "df482945ac882dcc9860a025f981ae9673f550ef35d8c77fc84b6bf47e4eb183"
+      "contentSha256": "0aaba0e36cc336f483f083a3475534a66d2b52e665bb044dbb5eff51b89f7239"
     },
     "transaction-signed-date-out-of-range": {
       "path": "generated/transaction-signed-date-out-of-range.jws",
       "role": "input",
       "codec": "utf8",
-      "contentSha256": "8289de3e2a99d1b6c9462620a2842f260df452530204fe8fd2a7f3cddfb79893"
+      "contentSha256": "2c2e70f0b5f6b36a1720546012838ae43530ab4214a63bf1c4d52b277e671dfb"
     },
     "transaction-x5c-corrupt-extension": {
       "path": "generated/transaction-x5c-corrupt-extension.jws",
       "role": "input",
       "codec": "utf8",
-      "contentSha256": "b8a4afac3233ae04dbacabb866e46f56b5875dd49896e1fd909ef6e55668aeba"
+      "contentSha256": "095cc401c369303cc1ac7e181d9388f298231f333b97b1f704a13fe22faec1c2"
     },
     "transaction-x5c-unimplemented-curve": {
       "path": "generated/transaction-x5c-unimplemented-curve.jws",
       "role": "input",
       "codec": "utf8",
-      "contentSha256": "77e3234480092382c0f2c31b49fc5737e92faa6393517174714e12db1f188f0d"
+      "contentSha256": "40d4a9b850c57496736e7a184f4d03544b163aa8785a8c0e71a49828b9355190"
     },
     "transaction-x5c-certificate-version-11": {
       "path": "generated/transaction-x5c-certificate-version-11.jws",
       "role": "input",
       "codec": "utf8",
-      "contentSha256": "931607bdc6b67fa1277fa61336a4311026c837d96654e2d6a05f5a225fb0d3be"
+      "contentSha256": "00eff953bd8760d0e6d500d09aa9b2512bab91ae5f3931b6d02a7ad308c7a393"
     },
     "transaction-x5c-duplicate-extension": {
       "path": "generated/transaction-x5c-duplicate-extension.jws",
       "role": "input",
       "codec": "utf8",
-      "contentSha256": "e3b31326d9d0eafe919baa28eeac348c920e7f212c8dbd9d2a6c8ed082fa4e11"
+      "contentSha256": "4131e0a9f02294bb7cc90fe42a9d4c21f7584ade6c65c91d6699f02d56d9febd"
     },
     "transaction-signed-date-decimal": {
       "path": "generated/transaction-signed-date-decimal.jws",
       "role": "input",
       "codec": "utf8",
-      "contentSha256": "5c65417c9da6d69fb26e3c110aee3cbb93716c100c452584e55d3a76d0a1be96"
+      "contentSha256": "dd169b3085ee0e0585cd8df6c24ea62e5f00109e18d6d840e637b3cd11ae551d"
+    },
+    "transaction-x5c-root-not-a-certificate": {
+      "path": "generated/transaction-x5c-root-not-a-certificate.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "705026fb0aaaf14fa6416370906eb3a69608883f4f0daf59c8d97ba12ce3930b"
+    },
+    "receipt-signer-root": {
+      "path": "generated/receipt-signer-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "3ea88b3c146a23758d8616ae34859e674e4a7122f8c41bcb722d9369b855b3e3"
+    },
+    "receipt-signer-version-11": {
+      "path": "generated/receipt-signer-version-11.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "e2184a2b7057cf1fe0e285e270fea18496f141134ef57ade27cb4c7307ba3115"
+    },
+    "receipt-signer-duplicate-extension": {
+      "path": "generated/receipt-signer-duplicate-extension.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "cb5df18a9fc89f5d13600601ccfea55d96633c79a3510eb05f9f308a1618a022"
+    },
+    "receipt-signer-unimplemented-curve": {
+      "path": "generated/receipt-signer-unimplemented-curve.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "88bf4f21635995fa6e838bb6554506d343d98dde363078301d369198c60a5001"
+    },
+    "receipt-signer-corrupt-extension": {
+      "path": "generated/receipt-signer-corrupt-extension.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "e8e0a1f385afd1e0dc128b99f79123004974d96a75ca5fc84f3adb6c447fe3ab"
     },
     "large-receipt-root": {
       "path": "generated/large-receipt-root.der",
@@ -3350,6 +3386,39 @@
       ]
     },
     {
+      "id": "transaction/reject-x5c-root-that-is-not-a-certificate",
+      "description": "The THIRD x5c entry is base64 of the ASCII text \"not a certificate\" — well-formed base64 that decodes to bytes no X.509 parser can read, and the header was signed in that state, so the unparseable third entry is the only defect. It is the index twin of transaction/reject-x5c-leaf-that-is-not-a-certificate, which deliberately sits on x5c[0] because this index was the one differential no shared vector covered: java decoded and parsed all three entries and answered INVALID_CERTIFICATE, while node, python, swift, go, ruby, rust, php and dotnet never touched the third entry and VERIFIED the JWS. Eight ports to one, and the majority was overruled by the rule that settled transaction/reject-x5c-unimplemented-curve: pinning acceptance would have made java drop a rejection it already makes, and no reading of this library lets an input it cannot parse through because the parse was optional. INVALID_CERTIFICATE, the same verdict the other two unreadable-certificate vectors carry. What does NOT change is trust: x5c[2] is still never compared to an anchor and never trusted anywhere, so a well-formed JWS whose third entry an attacker swapped still verifies or fails exactly as before — the entry now has to be a certificate, not the right one.",
+      "operation": "verifyTransaction",
+      "input": {
+        "fixture": "transaction-x5c-root-not-a-certificate"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "hostile-jws-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_CERTIFICATE"
+      },
+      "fault": "x5c-root-entry-is-not-a-certificate",
+      "tags": [
+        "jws",
+        "transaction",
+        "negative",
+        "certificate",
+        "hostile",
+        "generated"
+      ]
+    },
+    {
       "id": "transaction/accept-signed-date-decimal-spelling",
       "description": "The payload's signedDate is written `1722945600000.0` \u2014 the same instant every other generated transaction states, spelled with a decimal point. JSON draws no line between that and `1722945600000`, so the claim is the same claim and the JWS verifies. This is the boundary of `transaction/reject-signed-date-out-of-range`: a port that answers that vector by refusing every number which is not a bare integer passes it and fails this one, and the failure is in the accept direction \u2014 a signedDate read as absent moves certificate validity onto the current-time fallback that PLAN.md 2.1 step 4 reserves for a payload stating no date, and silences the staleness rule with it. The ports read the value rather than its spelling by different routes: node `typeof === 'number'`, java `canConvertToLong()`, python `isinstance(x, (int, float))`, swift `as? Double`, rust and dotnet a bounded float with truncation toward zero, php a bounded `(int)` cast, ruby the Numeric as it stands. Go read the literal (`json.Number.Int64`) and was the one port this vector was written against. signedDate is deliberately NOT pinned in `fields`: what a port returns for a claim spelled this way is its own numeric type, and `transaction/reject-stale-payload-signed-date-decimal` pins that the VALUE was read.",
       "operation": "verifyTransaction",
@@ -3420,6 +3489,126 @@
         "negative",
         "staleness",
         "clock",
+        "hostile",
+        "generated"
+      ]
+    },
+    {
+      "id": "receipt/reject-signer-certificate-version-11",
+      "description": "The certificate a legacy PKCS#7 receipt is signed by claims X.509 version 11, and its TBS is re-signed by the intermediate so nothing else about it is wrong. The receipt is genuine in every other respect — the signer really did sign it, the intermediate really did issue the signer, the chain terminates at the root shipped with the fixture, the marker OID is there and the validity window covers the creation date — so the certificate is the only thing a port can object to. X.509 defines v1, v2 and v3 and nothing else, so only a version check can reject this input. INVALID_CERTIFICATE, the reason transaction/reject-x5c-certificate-version-11 pins for the same mutation in a JWS header. It needs its own vector because the version check sat on the JWS path alone in node, python, ruby and dotnet: the four ports that settle what their platform decoder lets past while the verdict is still \"this is not a certificate\" were settling it for x5c entries only, and the CMS signer went unchecked.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt-signer-version-11"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-signer-root"
+          ]
+        },
+        "bundleId": "com.example.app"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_CERTIFICATE"
+      },
+      "fault": "receipt-signer-claims-version-11",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "negative",
+        "certificate",
+        "hostile",
+        "generated"
+      ]
+    },
+    {
+      "id": "receipt/reject-signer-carrying-one-extension-twice",
+      "description": "The signer certificate carries its basicConstraints extension twice — a byte-identical second copy appended to the extension list — and its TBS is re-signed by the intermediate. The receipt is genuine in every other respect — the signer really did sign it, the intermediate really did issue the signer, the chain terminates at the root shipped with the fixture, the marker OID is there and the validity window covers the creation date — so the certificate is the only thing a port can object to. RFC 5280 4.2 forbids a second instance of any extension, and a reader that allows one has to pick which copy the certificate means, so the same bytes stop having one answer to \"is this a CA\", \"what may it be used for\" and \"does it carry the receipt-signing marker OID\" — the last of which this path asks. INVALID_CERTIFICATE rather than INVALID_CERTIFICATE_PURPOSE, which would say the extensions were read and the marker OID was missing. The duplicated extension is basicConstraints rather than the marker OID for the same reason as in the JWS twin: it is the one a port reaches even if it only scans for 1.2.840.113635.100.6.11.1.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt-signer-duplicate-extension"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-signer-root"
+          ]
+        },
+        "bundleId": "com.example.app"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_CERTIFICATE"
+      },
+      "fault": "receipt-signer-carries-basic-constraints-twice",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "negative",
+        "certificate",
+        "hostile",
+        "generated"
+      ]
+    },
+    {
+      "id": "receipt/reject-signer-on-an-unimplemented-curve",
+      "description": "The signer's KEY is the mutation. The receipt is signed with a real P-256 key, and the certificate that key sits in then names 1.2.840.10045.3.1.10, which is unassigned, with the TBS re-signed by the intermediate. The receipt is genuine in every other respect — the signer really did sign it, the intermediate really did issue the signer, the chain terminates at the root shipped with the fixture, the marker OID is there and the validity window covers the creation date — so the certificate is the only thing a port can object to. A public key cannot be built on a curve the implementation does not have, so the signature this receipt carries can never be checked — and the port must say so as a verdict about the certificate, before it reaches the signature at all. INVALID_CERTIFICATE, as transaction/reject-x5c-unimplemented-curve pins, and specifically NOT the verdict a port reaches by noticing that the key is not RSA: a readable non-RSA signer key is a different input with a different answer, and this one is a certificate the library never understood. The requirement underneath the reason is that the failure is a verdict at all — an unimplemented curve surfaces as a library-specific exception type, and a caller catching the verification error otherwise sees a crash.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt-signer-unimplemented-curve"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-signer-root"
+          ]
+        },
+        "bundleId": "com.example.app"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_CERTIFICATE"
+      },
+      "fault": "receipt-signer-key-uses-an-unimplemented-ec-curve",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "negative",
+        "certificate",
+        "hostile",
+        "generated"
+      ]
+    },
+    {
+      "id": "receipt/reject-signer-with-a-corrupt-extension",
+      "description": "One byte of the signer certificate is changed, and it is one byte further in than the JWS twin changes. transaction/reject-x5c-corrupt-extension rewrites the extnValue OCTET STRING's own length, which breaks the DER of everything that contains it \u2014 harmless in a JWS header, where the certificate is a base64 string of its own, and wrong inside a CMS, where it would break the receipt's DER and make every port that walks the whole blob answer about the receipt instead of about the certificate. So the corruption sits INSIDE the OCTET STRING: the BasicConstraints SEQUENCE it holds is left claiming 127 content bytes in a two-byte value. A reader walking generic ASN.1 sees a well-formed primitive of the length it declares and never looks in, so the receipt parses, the chain validates, the payload is intact and the CMS signature is real; only a reader that DECODES the signer's extension block finds the defect, and that is precisely what this vector observes. The certificate has no TBS left to re-sign and no verifier can reach its signature to notice. INVALID_CERTIFICATE: the signer is embedded and is the certificate the SignerInfo names, but what comes out is not a certificate all the way down. The corruption sits past the marker OID a port looks for, so an implementation that walks the DER only far enough to answer \"does it carry 1.2.840.113635.100.6.11.1\" accepts the whole receipt.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt-signer-corrupt-extension"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-signer-root"
+          ]
+        },
+        "bundleId": "com.example.app"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_CERTIFICATE"
+      },
+      "fault": "receipt-signer-has-a-corrupt-extension",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "negative",
+        "certificate",
         "hostile",
         "generated"
       ]
