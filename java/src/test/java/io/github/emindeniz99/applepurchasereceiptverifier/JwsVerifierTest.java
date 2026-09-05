@@ -25,6 +25,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
 class JwsVerifierTest {
 
@@ -452,6 +453,77 @@ class JwsVerifierTest {
                 strict(at(System.currentTimeMillis() - 3650L * 86_400_000L))
                         .verifyRaw(jws)
                         .get("bundleId"));
+    }
+
+    /**
+     * A JWS header is a JSON object (RFC 7515 §4), so a header segment that
+     * decodes to nothing, to whitespace, or to a scalar or an array is a
+     * malformed JWS. The header side has always answered that way — every
+     * shape below misses {@code alg} and stops there — and this pins it, so
+     * the guard the payload side needed cannot be narrowed to the payload.
+     */
+    @Test
+    void rejectsEmptyOrNonObjectHeaderSegment() throws Exception {
+        String payloadJson = MAPPER.writeValueAsString(transactionClaims("Sandbox"));
+        String signature = pki.signJws(transactionClaims("Sandbox")).split("\\.")[2];
+        for (String jws : Arrays.asList(
+                "..",
+                ".payload.sig",
+                "..sig",
+                "." + TestPki.b64url(payloadJson.getBytes(StandardCharsets.UTF_8)) + "." + signature,
+                TestPki.b64url("   ".getBytes(StandardCharsets.UTF_8)) + ".payload.sig",
+                TestPki.b64url("123".getBytes(StandardCharsets.UTF_8)) + ".payload.sig",
+                TestPki.b64url("[]".getBytes(StandardCharsets.UTF_8)) + ".payload.sig",
+                TestPki.b64url("null".getBytes(StandardCharsets.UTF_8)) + ".payload.sig",
+                TestPki.b64url("\"alg\"".getBytes(StandardCharsets.UTF_8)) + ".payload.sig")) {
+            VerificationException e = assertThrows(
+                    VerificationException.class,
+                    () -> verifier(pki, Environment.SANDBOX).verifyTransaction(jws),
+                    "header segment of " + jws);
+            assertEquals(Reason.INVALID_JWS_FORMAT, e.reason(), "header segment of " + jws);
+        }
+    }
+
+    /**
+     * The payload segment is where the same rule was missing, and only a
+     * genuinely signed JWS reaches it — the header, the chain and the
+     * signature all have to pass first. A segment decoding to nothing, to
+     * whitespace or to the literal {@code null} made Jackson's
+     * {@code readTree} answer a node carrying no value, which
+     * {@code treeToValue} turned into a {@code null} model: both
+     * {@code verifyTransaction} and {@code verifyAppTransaction} then threw a
+     * NullPointerException from their own bundle-id check, and
+     * {@code verifyRaw} returned a null map, deferring the same crash to the
+     * caller. A scalar or array segment was reported correctly by the two
+     * typed methods but leaked an {@link IllegalArgumentException} out of
+     * {@code verifyRaw}'s conversion. All of it is
+     * {@link Reason#INVALID_JWS_FORMAT} now. {@code header..sig} is here as
+     * the shape a caller writes by hand; it stops at the header.
+     */
+    @Test
+    void rejectsEmptyOrNonObjectPayloadSegment() throws Exception {
+        for (String payloadJson : Arrays.asList("", "   ", "123", "[]", "null", "\"bundleId\"")) {
+            String jws = pki.signJwsWithHeader(headerJson(), payloadJson);
+            for (Executable call : Arrays.<Executable>asList(
+                    () -> verifier(pki, Environment.SANDBOX).verifyTransaction(jws),
+                    () -> verifier(pki, Environment.SANDBOX).verifyAppTransaction(jws),
+                    () -> verifier(pki, Environment.SANDBOX).verifyRaw(jws))) {
+                VerificationException e =
+                        assertThrows(VerificationException.class, call, "payload segment " + payloadJson);
+                assertEquals(Reason.INVALID_JWS_FORMAT, e.reason(), "payload segment " + payloadJson);
+            }
+        }
+        VerificationException e = assertThrows(
+                VerificationException.class,
+                () -> verifier(pki, Environment.SANDBOX).verifyTransaction("header..sig"));
+        assertEquals(Reason.INVALID_JWS_FORMAT, e.reason());
+    }
+
+    private static String headerJson() throws Exception {
+        Map<String, Object> header = new LinkedHashMap<String, Object>();
+        header.put("alg", "ES256");
+        header.put("x5c", pki.x5c());
+        return MAPPER.writeValueAsString(header);
     }
 
     /** One-minute max age, optionally with a pinned clock. */

@@ -9,9 +9,8 @@ Everything below is either in this file already or was found by the
 2026-09-04 architecture review; this is the order it is being worked in.
 Delete a line in the commit that ships it.
 
-1. **Docs cleanup** — done except: java and swift READMEs (neither port
-   has one), and the GitHub repository description, a repo setting that
-   still names four languages (owner-only).
+1. **Docs cleanup** — done except: the GitHub repository description, a
+   repo setting that still names four languages (owner-only).
 2. **Release**: approve the held release-please run (first-time
    contributor gate; owner-only), register the signing key on GitHub,
    enforce branch protection for admins, bootstrap RubyGems, crates.io,
@@ -40,11 +39,6 @@ Delete a line in the commit that ships it.
   capabilities, what is in scope, what is explicitly out, and the test
   that proves each line -- is the first thing a security reviewer asks
   for.
-- **java/ and swift/ have no README.** They are the first two ports
-  published, and Maven Central shows only the pom description. The five
-  ports written later each carry a reason-code table, a trust-model
-  section and a clock-seam explanation that java and swift consumers do
-  not get.
 - **1,817 lines of `ci-job.md` and `RELEASE.md` now contradict the real
   files.** They were the right artefact for handing a port's CI and
   release wiring over, and the wrong one to keep once it is wired:
