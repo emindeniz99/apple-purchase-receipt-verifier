@@ -71,12 +71,29 @@ module ApplePurchaseReceiptVerifier
             )
           end
 
-          embedded = decode_certificates(cms.certificate_ders)
+          embedded, unreadable = decode_certificates(cms.certificate_ders)
           signer = find_signer(embedded, cms.signer_info)
           if signer.nil?
+            # Which entry is unreadable changes the verdict: a stranger the
+            # receipt merely carries is a defect of the receipt, while the
+            # SIGNER being unreadable is a defect of a certificate and gets
+            # the verdict an unreadable x5c entry gets on the JWS path.
+            if unreadable
+              raise VerificationError.new(
+                Reason::INVALID_CERTIFICATE,
+                "the receipt's signer certificate is not among the embedded certificates " \
+                "that could be read"
+              )
+            end
+
             raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
                                         "signer certificate is not embedded in the receipt")
           end
+          if unreadable
+            raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
+                                        "embedded certificate is not parseable")
+          end
+          assert_signer_is_readable(signer)
 
           Chain.build_path(signer, embedded, roots, instant)
 
@@ -217,13 +234,48 @@ module ApplePurchaseReceiptVerifier
         end
       end
 
+      # Returns the entries OpenSSL could read, and the first error from one
+      # it could not. The error is held rather than raised because naming the
+      # signer needs the readable entries matched against the SignerInfo
+      # first; see the caller.
       def decode_certificates(ders)
-        ders.map do |der|
-          OpenSSL::X509::Certificate.new(der)
-        rescue OpenSSL::OpenSSLError
-          raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
-                                      "embedded certificate is not parseable")
+        certificates = []
+        unreadable = nil
+        ders.each do |der|
+          certificates << OpenSSL::X509::Certificate.new(der)
+        rescue OpenSSL::OpenSSLError => e
+          unreadable ||= e
         end
+        [certificates, unreadable]
+      end
+
+      # The same three things OpenSSL decodes more leniently than the checks
+      # below assume that Jws#certificates settles for an x5c entry, plus the
+      # extension VALUES, which it never looks inside: an unknown X.509
+      # version, a repeated extension, an extnValue that stops decoding
+      # partway through, and a public key on a curve this build does not
+      # implement. Each is a defect of the certificate, so each is
+      # INVALID_CERTIFICATE, and each is settled BEFORE the chain so it
+      # cannot come out as a verdict about the path (receipt/reject-signer-*).
+      def assert_signer_is_readable(signer)
+        unless (0..2).cover?(signer.version)
+          raise VerificationError.new(Reason::INVALID_CERTIFICATE,
+                                      "receipt signer certificate has an unknown X.509 version")
+        end
+
+        oids = signer.extensions.map(&:oid)
+        unless oids.uniq.size == oids.size
+          raise VerificationError.new(Reason::INVALID_CERTIFICATE,
+                                      "receipt signer certificate carries a duplicate extension")
+        end
+
+        signer.extensions.each do |extension|
+          OpenSSL::ASN1.decode(OpenSSL::ASN1.decode(extension.to_der).value.last.value)
+        end
+        signer.public_key
+      rescue OpenSSL::OpenSSLError
+        raise VerificationError.new(Reason::INVALID_CERTIFICATE,
+                                    "receipt signer certificate is not a valid certificate")
       end
 
       # Both halves of issuerAndSerialNumber must match. Matching on the serial

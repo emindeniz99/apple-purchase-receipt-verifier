@@ -221,11 +221,14 @@ module ApplePurchaseReceiptVerifier
       parsed.freeze
     end
 
-    # `x5c[2]` is decoded by nobody and trusted by nobody: only "the
-    # intermediate is signed by one of our pinned anchors" counts, so an
-    # attacker swapping in their own third element changes nothing.
+    # All three entries are read; only the first two are returned. `x5c[2]`
+    # is trusted by nobody — only "the intermediate is signed by one of our
+    # pinned anchors" counts, so an attacker swapping in their own third
+    # element still changes nothing. Reading it settles the other question:
+    # an entry that is not a certificate is INVALID_CERTIFICATE at every
+    # index (transaction/reject-x5c-root-that-is-not-a-certificate).
     def certificates(x5c)
-      x5c.take(2).map do |entry|
+      x5c.map do |entry|
         begin
           der = entry.unpack1("m")
         rescue ArgumentError
@@ -258,6 +261,13 @@ module ApplePurchaseReceiptVerifier
           unless oids.uniq.size == oids.size
             raise VerificationError.new(Reason::INVALID_CERTIFICATE,
                                         "x5c entry carries a duplicate extension")
+          end
+
+          #   - the extension VALUES, which it never looks inside, so one that
+          #     stops decoding partway through is the difference between
+          #     parsing a certificate and scanning it for a marker OID.
+          certificate.extensions.each do |extension|
+            OpenSSL::ASN1.decode(OpenSSL::ASN1.decode(extension.to_der).value.last.value)
           end
 
           certificate.public_key
