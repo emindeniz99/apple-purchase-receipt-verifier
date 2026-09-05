@@ -64,10 +64,15 @@ def _json_segment(segment: str, what: str) -> "dict[str, Any]":
 
 
 def _has_extension(cert: x509.Certificate, oid: x509.ObjectIdentifier) -> bool:
+    # `cert.extensions` parses the whole extension block lazily, so ONE
+    # malformed extension anywhere in an x5c certificate makes every lookup
+    # raise ValueError rather than ExtensionNotFound. Both mean the same
+    # thing here — the certificate has not shown it carries the marker OID —
+    # so both fail closed, as the Node port's safeHasExtension does.
     try:
         cert.extensions.get_extension_for_oid(oid)
         return True
-    except x509.ExtensionNotFound:
+    except (x509.ExtensionNotFound, ValueError):
         return False
 
 
@@ -167,14 +172,30 @@ class JwsVerifier:
                 Reason.INVALID_JWS_FORMAT, f"alg must be ES256, got {header.get('alg')}"
             )
         x5c = header.get("x5c")
-        if not isinstance(x5c, list) or len(x5c) != 3:
+        # Every entry has to be a string as well as present: the header is
+        # attacker-supplied JSON, so `"x5c": [1, 2, 3]` otherwise reaches
+        # b64decode and comes back as a TypeError, which is not one of the
+        # two exception types the decode below catches. The statically typed
+        # ports get this from their JSON decoding; here it is a check.
+        if (
+            not isinstance(x5c, list)
+            or len(x5c) != 3
+            or not all(isinstance(entry, str) for entry in x5c)
+        ):
             raise VerificationError(
                 Reason.INVALID_JWS_FORMAT, "x5c must contain exactly 3 certificates"
             )
         try:
             leaf = x509.load_der_x509_certificate(base64.b64decode(x5c[0]))
             intermediate = x509.load_der_x509_certificate(base64.b64decode(x5c[1]))
-        except (ValueError, binascii.Error) as e:
+        except Exception as e:
+            # Broad by category, for the reason verify_receipt_core states at
+            # length: which exception a malformed certificate produces is
+            # neither documented nor stable. Naming (ValueError, binascii.Error)
+            # here was tried first and missed InvalidVersion, which derives
+            # from Exception directly and comes out of the loader itself.
+            # Every one of them means the same thing to a caller, and it is
+            # the verdict Node reaches with its own blanket catch.
             raise VerificationError(
                 Reason.INVALID_CERTIFICATE, "x5c entry is not a valid certificate"
             ) from e
@@ -202,7 +223,20 @@ class JwsVerifier:
         # fallback only fires for a payload carrying neither signedDate nor
         # receiptCreationDate, where PLAN.md's "else current time" leaves the
         # window anchored to real time.
-        effective = as_utc(signed_at) if signed_at is not None else as_utc(time.time() * 1000)
+        try:
+            effective = as_utc(signed_at) if signed_at is not None else as_utc(time.time() * 1000)
+        except (ValueError, OverflowError, OSError) as e:
+            # signedDate is a JSON number an attacker picks, and datetime
+            # covers years 1-9999: 1e300 raises OverflowError and NaN (which
+            # json.loads accepts) raises ValueError, neither of which the
+            # caller should ever see. An instant no calendar can express is
+            # inside no certificate's validity window, which is the verdict
+            # the other ports reach through their own date types — Node's
+            # `new Date(1e300)` is an Invalid Date and every comparison
+            # against it is false.
+            raise VerificationError(
+                Reason.INVALID_CHAIN, f"payload signing date {signed_at} is not a valid instant"
+            ) from e
         validate_pair(leaf, intermediate, self._roots, effective)
 
         public_key = leaf.public_key()
