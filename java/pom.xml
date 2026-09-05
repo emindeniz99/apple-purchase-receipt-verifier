@@ -4,7 +4,7 @@
 
   <groupId>io.github.emindeniz99</groupId>
   <artifactId>apple-purchase-receipt-verifier</artifactId>
-  <version>0.3.0</version>
+  <version>0.4.0</version>
   <packaging>jar</packaging>
 
   <name>apple-purchase-receipt-verifier</name>
@@ -119,9 +119,9 @@
             <palantirJavaFormat>
               <version>2.97.0</version>
             </palantirJavaFormat>
-            <removeUnusedImports />
-            <trimTrailingWhitespace />
-            <endWithNewline />
+            <removeUnusedImports/>
+            <trimTrailingWhitespace/>
+            <endWithNewline/>
           </java>
         </configuration>
       </plugin>
