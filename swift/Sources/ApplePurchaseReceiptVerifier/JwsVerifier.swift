@@ -198,10 +198,15 @@ public struct JwsVerifier: Sendable {
         let validationTime = signedAtMillis.map { Date(timeIntervalSince1970: $0 / 1000) } ?? Date()
         // The claim is attacker-supplied JSON and is read before the signature
         // check, so a large enough number would trap inside the policy rather
-        // than fail the payload.
+        // than fail the payload. The verdict is .invalidChain, not
+        // .invalidJwsFormat: the payload is well-formed JSON and the number is
+        // a legal one, and what the claim decides is the instant the
+        // certificate windows are judged at — an instant no calendar can
+        // express is inside no window. That is the reading the other ports
+        // reach through their own date types, and what the shared vector pins.
         guard isRepresentableAsCertificateValidationTime(validationTime) else {
             throw VerificationError(
-                .invalidJwsFormat,
+                .invalidChain,
                 "signed date out of representable range")
         }
         try await Self.validateChain(
