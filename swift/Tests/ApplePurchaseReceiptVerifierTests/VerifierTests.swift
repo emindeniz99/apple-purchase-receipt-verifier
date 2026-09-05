@@ -754,6 +754,27 @@ final class ChainBuildingBoundTests: XCTestCase {
         }
     }
 
+    /// An embedded entry that is an empty SEQUENCE has no first child, and the
+    /// identity read that lets an unreadable signer be named used to index
+    /// `[0]` into it and trap — found by the `receipt-der` fuzz target on
+    /// CI. Every identity read is now a throwing access, so the entry is what
+    /// it always should have been: an unreadable stranger the SignerInfo
+    /// does not name, answered as a malformed receipt rather than a crash.
+    func testAnEmptySequenceInTheCertificateBagIsAMalformedReceiptNotATrap() async throws {
+        let genuine = try genuineReceipt()
+        let genuineCertificates = try Self.embeddedCertificates(of: genuine)
+        for entry: [UInt8] in [[0x30, 0x00], [0x30, 0x02, 0x30, 0x00], [0x30, 0x02, 0x05, 0x00]] {
+            let receipt = try Self.replacingCertificates(
+                of: genuine, with: genuineCertificates, appendingRawDER: [entry])
+            do {
+                _ = try await verifier().verify(receipt: receipt)
+                XCTFail("expected INVALID_RECEIPT_FORMAT for entry \(entry)")
+            } catch let error as VerificationError {
+                XCTAssertEqual(error.reason, .invalidReceiptFormat, "entry \(entry): \(error.message)")
+            }
+        }
+    }
+
     /// A receipt whose bag stops at the intermediate, with the root coming
     /// from the pinned store, verifies. Node, Python and Java all accept this
     /// shape — their path builders stop as soon as the current certificate is
