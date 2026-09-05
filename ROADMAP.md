@@ -18,25 +18,15 @@ Delete a line in the commit that ships it.
 
 ## Next
 
-- **`THREAT-MODEL.md` does not exist.** PLAN.md 2.3 is fifteen lines and
-  the rest is spread across nine port READMEs, each restating pinned
-  anchors, no network and the marker OIDs. One page -- assets, attacker
-  capabilities, what is in scope, what is explicitly out, and the test
-  that proves each line -- is the first thing a security reviewer asks
-  for.
-- **1,817 lines of `ci-job.md` and `RELEASE.md` now contradict the real
-  files.** They were the right artefact for handing a port's CI and
-  release wiring over, and the wrong one to keep once it is wired:
-  `rust/RELEASE.md` still carries a literal `<pin to a full commit SHA>`
-  placeholder, `ruby/RELEASE.md` opens with "Nothing here has been
-  applied" while its publish job exists, and `php/ci-job.md` says a SHA is
-  unresolved that ci.yml resolved. Delete them, or reduce each to a
-  pointer at the file that superseded it.
-- **Stale counts and language lists in the docs.** INTENT.md names a
-  single root for each path where D15 pins all three; PLAN.md 4's
-  milestone list stops at four languages and leaves "CI workflow per
-  language" unchecked against 40 jobs; dotnet/README.md says 56 cases;
-  several files still say "all four languages".
+- **Five ports still guess which embedded certificate was the signer.**
+  When a receipt's SignerInfo names a certificate absent from the bag and
+  the bag also carries an unrelated malformed certificate, python, rust,
+  java, php and ruby blame the malformed stranger (INVALID_CERTIFICATE)
+  instead of matching its issuer and serial to the SignerInfo first;
+  node, swift and go match identities and answer
+  INVALID_RECEIPT_FORMAT, the unanimous verdict for "signer not in bag".
+  No contract case covers the input, so the 3-vs-5 split is invisible
+  today; add the vector and align the five.
 - **An unbootstrapped registry fails the release rather than skipping
   it.** Every publish job skips loudly when the registry already has the
   version, but rubygems, crates and nuget each fail at their OIDC step
