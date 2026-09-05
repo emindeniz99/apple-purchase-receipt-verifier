@@ -72,6 +72,17 @@ final class TestPki {
     final X509Certificate root;
     final X509Certificate intermediate;
     final X509Certificate leaf;
+    /**
+     * The issuing keys, kept only by {@link #jws(boolean, boolean, Date, Date)}
+     * so a generator can mutate a certificate's TBS and re-sign it under the
+     * same issuer — the only way a hostile certificate can carry exactly one
+     * defect instead of also carrying a broken issuer signature. Null on the
+     * receipt factories, which need it not.
+     */
+    PrivateKey rootKey;
+
+    PrivateKey intermediateKey;
+
     private final PrivateKey leafKey;
     /** What {@link #signReceipt} embeds: leaf first, then every CA up to the root. */
     private final List<X509Certificate> chain;
@@ -135,7 +146,10 @@ final class TestPki {
                 notBefore,
                 notAfter,
                 "SHA256withECDSA");
-        return new TestPki(rootCert, interCert, leafCert, leafKp.getPrivate());
+        TestPki pki = new TestPki(rootCert, interCert, leafCert, leafKp.getPrivate());
+        pki.rootKey = rootKp.getPrivate();
+        pki.intermediateKey = interKp.getPrivate();
+        return pki;
     }
 
     /** RSA chain (no marker OIDs — receipts don't require them) — for CMS receipts. */
