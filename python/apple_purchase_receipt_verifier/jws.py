@@ -74,6 +74,23 @@ def _has_extension(cert: x509.Certificate, oid: x509.ObjectIdentifier) -> bool:
         return True
     except (x509.ExtensionNotFound, ValueError):
         return False
+    except x509.DuplicateExtension as e:
+        # A certificate carrying one extension twice is the other way this
+        # block refuses to be read, and it does not mean the same thing: RFC
+        # 5280 4.2 forbids a second instance of any extension, so there is no
+        # answer to "does it carry the marker OID" — a parser that allowed
+        # one would have to pick a copy, and two ports could pick different
+        # ones. It is the certificate that is unusable rather than its
+        # purpose that is unproven, which is the verdict the ports whose
+        # decoders refuse these outright reach (INVALID_CERTIFICATE), so this
+        # is a rejection rather than a false return. Named rather than folded
+        # into the tuple above because DuplicateExtension derives from
+        # Exception, not ValueError, and so escaped this function, every
+        # other `except` in the module and the caller — the fuzz finding
+        # `transaction/reject-x5c-duplicate-extension` now pins.
+        raise VerificationError(
+            Reason.INVALID_CERTIFICATE, f"certificate carries a duplicate extension: {e}"
+        ) from e
 
 
 class JwsVerifier:
