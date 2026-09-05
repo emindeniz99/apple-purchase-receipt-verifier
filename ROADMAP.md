@@ -18,9 +18,12 @@ Delete a line in the commit that ships it.
 3. **Docs cleanup** — done except: java and swift READMEs (neither port
    has one), and the GitHub repository description, a repo setting that
    still names four languages (owner-only).
-4. **Pin `asn1crypto` in python** to the tested range and make sure the
-   python fuzz target reaches it. Owner decision (2026-09-05): keep it —
-   last release 2022-03, but ~155M downloads a month; see PLAN.md D16.
+4. **Pin the five hostile-JWS inputs python fuzzing found as contract
+   vectors**, so all nine ports answer them identically: a non-string
+   `x5c` entry, `signedDate` 1e300/NaN/Infinity, one corrupt extension in
+   an `x5c` certificate, an unimplemented EC curve in the issuer check,
+   and a certificate with version 11. Python now fails each closed with
+   node's reason; the other seven have not been asked.
 5. **Release**: approve the held release-please run (first-time
    contributor gate; owner-only), register the signing key on GitHub,
    enforce branch protection for admins, bootstrap RubyGems, crates.io,
