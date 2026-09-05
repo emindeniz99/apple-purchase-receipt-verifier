@@ -9,22 +9,19 @@ Everything below is either in this file already or was found by the
 2026-09-04 architecture review; this is the order it is being worked in.
 Delete a line in the commit that ships it.
 
-1. **Fuzz every hand-written reader** — go and rust done; node, ruby,
-   dotnet, php, and the three library-backed ports (python, java, swift)
-   follow, one CI job each. Rationale: PLAN.md D16.
-2. **Normative resource bounds in the contract** plus one vector. (Java's
+1. **Normative resource bounds in the contract** plus one vector. (Java's
    chain length is aligned: it now states MAX_PATH_LENGTH = 6 and counts
    self-issued intermediates, which the JDK default exempted.)
-3. **Docs cleanup** — done except: java and swift READMEs (neither port
+2. **Docs cleanup** — done except: java and swift READMEs (neither port
    has one), and the GitHub repository description, a repo setting that
    still names four languages (owner-only).
-4. **Pin the five hostile-JWS inputs python fuzzing found as contract
+3. **Pin the five hostile-JWS inputs python fuzzing found as contract
    vectors**, so all nine ports answer them identically: a non-string
    `x5c` entry, `signedDate` 1e300/NaN/Infinity, one corrupt extension in
    an `x5c` certificate, an unimplemented EC curve in the issuer check,
    and a certificate with version 11. Python now fails each closed with
    node's reason; the other seven have not been asked.
-5. **Release**: approve the held release-please run (first-time
+4. **Release**: approve the held release-please run (first-time
    contributor gate; owner-only), register the signing key on GitHub,
    enforce branch protection for admins, bootstrap RubyGems, crates.io,
    NuGet and the Go proxy, and decide the PHP Packagist layout.
@@ -53,13 +50,6 @@ Delete a line in the commit that ships it.
      accept a well-formed receipt up to N bytes and M nodes -- and a
      vector should pin it, or a large legitimate receipt becomes another
      port-dependent verdict.
-- **Fuzzing runs opposite to parser size.** go has three fuzz targets and
-  seed corpora on every build; rust now has seven under `rust/fuzz/`
-  (the ASN.1, X.509 and CMS readers on their own, the three verifiers,
-  and the endpoint body), run for a fixed budget by the `rust-fuzz` CI
-  job. dotnet (3,896 lines) and php (3,271) still have none. The
-  deterministic mutation corpora node, rust and php do have are
-  regression tests, not fuzzing.
 - **`THREAT-MODEL.md` does not exist.** PLAN.md 2.3 is fifteen lines and
   the rest is spread across nine port READMEs, each restating pinned
   anchors, no network and the marker OIDs. One page -- assets, attacker
