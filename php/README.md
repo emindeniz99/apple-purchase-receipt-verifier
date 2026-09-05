@@ -349,7 +349,14 @@ vendor/bin/phpunit                      # everything
 vendor/bin/phpunit --testsuite conformance   # the shared cross-language vectors
 vendor/bin/phpunit --group mutation          # the mutation pass
 vendor/bin/phpstan analyse
+fuzz/run.sh all 60                      # the six coverage-guided fuzz targets
 ```
+
+`fuzz/` holds coverage-guided targets over the DER, CMS and X.509 readers and
+the three public verifiers, run with a pinned `nikic/php-fuzzer` phar that the
+run script downloads and digest-checks. It is not a Composer dependency, and
+deliberately so — see `fuzz/README.md`, which also lists the targets and the
+invariant each one asserts beyond "nothing but a verdict escapes".
 
 `php/certs/` is a checked copy of the repository-root `certs/`, and
 `src/Internal/RootsData.php` is generated from that copy by

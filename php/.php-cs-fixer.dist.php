@@ -14,4 +14,11 @@ return (new PhpCsFixer\Config())
         PhpCsFixer\Finder::create()
             ->in(__DIR__ . '/src')
             ->in(__DIR__ . '/tests')
+            // The fuzz targets are format-checked too — the same split the
+            // Rust port makes, where `cargo fmt --check` runs in rust/fuzz
+            // while clippy does not. `fuzz/tools`, `fuzz/corpus` and
+            // `fuzz/crashes` are the fuzzer's own working directories and
+            // hold no source.
+            ->in(__DIR__ . '/fuzz')
+            ->exclude(['tools', 'corpus', 'crashes', 'coverage'])
     );
