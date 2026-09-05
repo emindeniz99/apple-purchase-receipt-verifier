@@ -249,11 +249,23 @@ public final class JwsVerifier {
 
     private JsonNode parseJson(String base64Url, String what) throws VerificationException {
         byte[] bytes = decodeBase64Url(base64Url, what);
+        JsonNode node;
         try {
-            return mapper.readTree(bytes);
+            node = mapper.readTree(bytes);
         } catch (IOException e) {
             throw new VerificationException(Reason.INVALID_JWS_FORMAT, what + " is not valid JSON", e);
         }
+        // RFC 7515 §7.1: the header and the payload are both JSON OBJECTS.
+        // Jackson answers an empty segment with a missing node rather than
+        // raising, so without this an empty payload reaches the checks below
+        // as one carrying no claims — and a payload whose claims all read as
+        // absent fails OPEN: certificate validity falls back to the current
+        // time and the staleness rule stops applying. An array or a bare
+        // scalar is the same payload by another spelling.
+        if (node == null || !node.isObject()) {
+            throw new VerificationException(Reason.INVALID_JWS_FORMAT, what + " is not a JSON object");
+        }
+        return node;
     }
 
     /**
