@@ -14,9 +14,22 @@ using Xunit;
 namespace ApplePurchaseReceiptVerifier.Tests;
 
 /// <summary>
+/// Groups the tests that read process-wide state — the managed live set — so
+/// they do not run beside another collection's allocations. xunit's default is
+/// one collection per class, all of them in parallel, and
+/// <see cref="PlatformTests.RepeatedVerificationDoesNotGrowUnboundedly"/>
+/// measures the whole heap, not just its own objects.
+/// </summary>
+[CollectionDefinition("process-heap", DisableParallelization = true)]
+public sealed class ProcessHeapCollection
+{
+}
+
+/// <summary>
 /// The parts of this port that no cross-language vector can reach: the ECDSA
 /// encoding conversion, the structural pre-scan, thread safety, and disposal.
 /// </summary>
+[Collection("process-heap")]
 public class PlatformTests
 {
     private static IReadOnlyList<X509Certificate2> ReceiptRoots() =>
@@ -153,37 +166,67 @@ public class PlatformTests
         Assert.Throws<ObjectDisposedException>(() => jws.VerifyTransaction(Fixtures.Text("transaction")));
     }
 
+    /// <summary>The verifications each measured round performs.</summary>
+    private const int LiveSetRoundSize = 500;
+
+    /// <summary>
+    /// What one verification may leave behind, in bytes. A single retained
+    /// <c>X509Certificate2</c> is ~1.5 kB of <c>RawData</c> alone, so this is
+    /// well under one leaked object per call, and well over the ~2.5 B/call a
+    /// clean run measures.
+    /// </summary>
+    private const int LiveSetBudgetPerVerification = 64;
+
     /// <summary>
     /// Repeated verification must not grow unboundedly: each call materialises
     /// certificates behind unmanaged handles, and a leak there is invisible
     /// until a server falls over.
     /// </summary>
+    /// <remarks>
+    /// The bound is a budget per verification rather than a flat ceiling, so it
+    /// scales with the round and fails on retention that is real but small.
+    /// It can be that tight only because this class runs in a collection of its
+    /// own (<see cref="ProcessHeapCollection"/>): <see cref="GC.GetTotalMemory"/>
+    /// reports the whole process's live set, so a sibling collection allocating
+    /// on another thread lands in the delta. That is what made this test flaky —
+    /// deltas from -7.9 MB to +22 MB against a 16 MB ceiling — while the leak it
+    /// looks for was never there.
+    /// </remarks>
     [Fact]
     public void RepeatedVerificationDoesNotGrowUnboundedly()
     {
         using ReceiptVerifier verifier = new(ReceiptRoots(), "com.example.app");
         byte[] receipt = Fixtures.Bytes("receipt");
+
+        // Warm up: first-call statics, JIT and the ASN.1 reader's pools are a
+        // one-off cost, not per-call retention.
         for (int i = 0; i < 50; i++)
         {
             verifier.Verify(receipt);
         }
 
-        GC.Collect();
-        GC.WaitForPendingFinalizers();
-        GC.Collect();
-        long before = GC.GetTotalMemory(true);
-
-        for (int i = 0; i < 500; i++)
+        long before = LiveSet();
+        for (int i = 0; i < LiveSetRoundSize; i++)
         {
             verifier.Verify(receipt);
         }
 
+        long after = LiveSet();
+
+        long budget = LiveSetRoundSize * LiveSetBudgetPerVerification;
+        Assert.True(
+            after - before < budget,
+            $"live set grew by {after - before} bytes over {LiveSetRoundSize} verifications, "
+            + $"which is more than the {budget} bytes budgeted");
+    }
+
+    /// <summary>The managed live set, with everything collectable collected.</summary>
+    private static long LiveSet()
+    {
         GC.Collect();
         GC.WaitForPendingFinalizers();
         GC.Collect();
-        long after = GC.GetTotalMemory(true);
-
-        Assert.True(after - before < 16 * 1024 * 1024, $"live set grew by {after - before} bytes");
+        return GC.GetTotalMemory(true);
     }
 
     // --- the harness itself --------------------------------------------------
