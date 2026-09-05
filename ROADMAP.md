@@ -100,9 +100,23 @@ Delete a line in the commit that ships it.
   `digest` 0.11, `sha1`/`sha2` 0.11 and `p256`/`p384` 0.14 all set
   `rust-version = 1.85` against this crate's 1.74.0 floor, and `rsa` is
   still 0.9 on `digest` 0.10 (0.10 is an rc), so the trait versions would
-  not line up. Dependabot was told to ignore those majors (PRs #22–#24,
-  #26, #27). Take the whole wave in one commit once `rsa` 0.10 is stable,
-  and raise the MSRV to 1.85 in the same change (a D2-class decision).
+  not line up. The five bumps (PRs #22–#24, #26, #27) are closed and the
+  versions are ignored in `.github/dependabot.yml`'s cargo entry; the
+  `@dependabot ignore` comments on the PRs never reached the bot. Take the
+  whole wave in one commit once `rsa` 0.10 is stable, and raise the MSRV
+  to 1.85 in the same change (a D2-class decision).
+- **Three Dependabot alerts on `node/package-lock.json` stay open**
+  (2026-09-05): `decompress` 4.2.1 (critical, Zip Slip) and two moderates
+  in the chain `@fastly/js-compute` → `@bytecodealliance/weval` →
+  `decompress`. All dev-only: the Fastly package exists for the
+  `node-runtimes-fastly` job and is not in `dependencies`, so nothing
+  published carries it. No fix to take: 3.45.0 is the newest Fastly
+  release, `weval` 0.4.1 still depends on `decompress ^4.2.1`, and
+  `decompress` has no release after 4.2.1. `weval` uses it to unpack its
+  own binary from a GitHub release at install time, not to read input the
+  tests supply. Dismiss the alerts as "vulnerable code is not actually
+  used" (an owner action in the Security tab) and re-check when a Fastly
+  release drops `weval` or `weval` drops `decompress`.
 
 ## Upstream
 
