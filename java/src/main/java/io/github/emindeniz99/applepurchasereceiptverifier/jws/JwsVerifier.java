@@ -247,13 +247,31 @@ public final class JwsVerifier {
         return payload;
     }
 
+    /**
+     * A JWS header and a JWS payload are JSON <em>objects</em> (RFC 7515 §4,
+     * §3), so anything else is a malformed JWS and must be reported as one.
+     * The check is not decorative: a segment that decodes to nothing or to
+     * whitespace makes {@code readTree} answer a node carrying no value at
+     * all — {@code MissingNode} on this Jackson, {@code null} on others — and
+     * such a node survives every {@code path(...)} lookup only to fail later
+     * as a {@link NullPointerException} out of {@code treeToValue}, or to
+     * make {@code verifyRaw} hand back a null map. A scalar or array segment
+     * fails equally far downstream. Both leak past the
+     * {@link VerificationException} contract every caller codes against, so
+     * they are stopped here instead.
+     */
     private JsonNode parseJson(String base64Url, String what) throws VerificationException {
         byte[] bytes = decodeBase64Url(base64Url, what);
+        JsonNode node;
         try {
-            return mapper.readTree(bytes);
+            node = mapper.readTree(bytes);
         } catch (IOException e) {
             throw new VerificationException(Reason.INVALID_JWS_FORMAT, what + " is not valid JSON", e);
         }
+        if (node == null || !node.isObject()) {
+            throw new VerificationException(Reason.INVALID_JWS_FORMAT, what + " is not a JSON object");
+        }
+        return node;
     }
 
     /**
