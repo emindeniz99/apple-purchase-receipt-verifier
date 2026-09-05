@@ -133,10 +133,10 @@ public struct ReceiptVerifier: Sendable {
         // The embedded certificates are attacker-supplied and every one of
         // them is a walk candidate below, before anything about the receipt
         // has been verified, so a flood is rejected here rather than walked.
-        guard cms.certificates.count <= Self.maximumEmbeddedCertificates else {
+        guard cms.embeddedCount <= Self.maximumEmbeddedCertificates else {
             throw VerificationError(
                 .invalidChain,
-                "receipt embeds \(cms.certificates.count) certificates, "
+                "receipt embeds \(cms.embeddedCount) certificates, "
                     + "more than the maximum of \(Self.maximumEmbeddedCertificates)")
         }
 
@@ -150,6 +150,7 @@ public struct ReceiptVerifier: Sendable {
         let at = fields.creationDate ?? Date()
 
         let signerCert = try cms.signerCertificate()
+        try requireDecodableExtensions(signerCert, what: "receipt signer certificate")
         // Hand chain building a single path instead of the whole certificate
         // bag. swift-certificates' Verifier is a backtracking DFS whose
         // candidate pool IS the intermediate store: every pop pushes one
@@ -218,7 +219,7 @@ public struct ReceiptVerifier: Sendable {
         var intermediates: [Certificate] = []
         var subjectsTaken: Set<DistinguishedName> = []
         var tip = signerCert
-        while intermediates.count < cms.certificates.count,
+        while intermediates.count < cms.embeddedCount,
             !subjectsTaken.contains(tip.issuer),
             let issuer = cms.certificates.first(where: {
                 $0.subject == tip.issuer
@@ -367,8 +368,21 @@ func decodeReceiptBase64(_ text: String) -> Data? {
 
 private struct CMSReceipt {
     let content: [UInt8]
+    /// The embedded certificates this build could read, and their identities
+    /// in the same order. An entry that would not decode is NOT here — see
+    /// `unreadableNodes`.
     let certificates: [Certificate]
     let certificateNodes: [(serial: [UInt8], issuer: [UInt8])]
+    /// The identities of the entries that would not decode, and the first
+    /// error. Held rather than thrown, because WHICH entry it is changes the
+    /// verdict: a stranger the receipt merely carries is a defect of the
+    /// receipt, while the SIGNER being unreadable is a defect of a
+    /// certificate and gets the verdict an unreadable x5c entry gets on the
+    /// JWS path (receipt/reject-signer-*).
+    let unreadableNodes: [(serial: [UInt8], issuer: [UInt8])]
+    let unreadable: Error?
+    /// Every entry, readable or not — what the count bound is measured in.
+    let embeddedCount: Int
     let signerIssuer: [UInt8]
     let signerSerial: [UInt8]
     let digestName: String
@@ -400,25 +414,48 @@ private struct CMSReceipt {
 
             var certificates: [Certificate] = []
             var certificateNodes: [(serial: [UInt8], issuer: [UInt8])] = []
+            var unreadableNodes: [(serial: [UInt8], issuer: [UInt8])] = []
+            var unreadable: Error?
+            var embeddedCount = 0
             for node in signedData.dropFirst(3)
             where node.identifier.tagClass == .contextSpecific
                 && node.identifier.tagNumber == 0
             {
                 for certNode in try Self.children(node) {
+                    embeddedCount += 1
                     let der = [UInt8](certNode.encodedBytes)
-                    certificates.append(try Certificate(derEncoded: der))
-                    let tbs = try Self.children(try Self.children(DER.parse(der))[0])
-                    var index = 0
-                    if let first = tbs.first, first.identifier.tagClass == .contextSpecific { index = 1 }
-                    certificateNodes.append(
-                        (
+                    // The identity is read as generic ASN.1, so it is
+                    // available even for an entry no X.509 decoder accepts —
+                    // which is what lets the signer be NAMED before it is
+                    // known to be readable.
+                    let identity: (serial: [UInt8], issuer: [UInt8])?
+                    do {
+                        let tbs = try Self.children(try Self.children(DER.parse(der))[0])
+                        var index = 0
+                        if let first = tbs.first, first.identifier.tagClass == .contextSpecific { index = 1 }
+                        identity = (
                             serial: try Self.primitive(tbs.at(index)),
                             issuer: [UInt8]((try tbs.at(index + 2)).encodedBytes)
-                        ))
+                        )
+                    } catch {
+                        identity = nil
+                    }
+                    do {
+                        let certificate = try Certificate(derEncoded: der)
+                        guard let identity else { throw VerificationError(.invalidReceiptFormat, "unreadable") }
+                        certificates.append(certificate)
+                        certificateNodes.append(identity)
+                    } catch {
+                        if unreadable == nil { unreadable = error }
+                        if let identity { unreadableNodes.append(identity) }
+                    }
                 }
             }
             self.certificates = certificates
             self.certificateNodes = certificateNodes
+            self.unreadableNodes = unreadableNodes
+            self.unreadable = unreadable
+            self.embeddedCount = embeddedCount
 
             guard let signerInfos = signedData.last,
                 signerInfos.identifier == .set,
@@ -479,9 +516,24 @@ private struct CMSReceipt {
     }
 
     func signerCertificate() throws -> Certificate {
+        if unreadableNodes.contains(where: { $0.serial == signerSerial && $0.issuer == signerIssuer }) {
+            throw VerificationError(
+                .invalidCertificate, "receipt signer certificate is not a valid certificate")
+        }
         for (offset, node) in certificateNodes.enumerated()
         where node.serial == signerSerial && node.issuer == signerIssuer {
+            // A stranger in the bag that would not decode is still fatal —
+            // the bag is unsigned, so bytes that cannot be read are the
+            // receipt's problem.
+            if unreadable != nil {
+                throw VerificationError(
+                    .invalidReceiptFormat, "an embedded certificate is not a valid certificate")
+            }
             return certificates[offset]
+        }
+        if unreadable != nil {
+            throw VerificationError(
+                .invalidReceiptFormat, "an embedded certificate is not a valid certificate")
         }
         throw VerificationError(.invalidReceiptFormat, "signer certificate not embedded")
     }
