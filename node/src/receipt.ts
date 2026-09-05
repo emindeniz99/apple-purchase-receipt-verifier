@@ -7,7 +7,12 @@ import {
   signedAttrsSignedBytes,
   type ParsedCms,
 } from './cms.js';
-import { hasExtension } from './der.js';
+import {
+  hasExtension,
+  requireDecodableExtensions,
+  requireKnownVersion,
+  requireNoDuplicateExtensions,
+} from './der.js';
 import { receiptBase64DecodeStrict } from './bytes.js';
 import {
   parseReceiptPayload,
@@ -157,12 +162,19 @@ export function verifyReceiptCore(der: Buffer, trustedRoots: RootInput[]): AppRe
         `receipt embeds more than ${MAX_EMBEDDED_CERTIFICATES} certificates`,
       );
     }
-    const embedded = cms.certificates.map((raw) => new X509Certificate(raw));
     const signerIndex = findSignerCertIndex(cms);
     if (signerIndex < 0) {
       throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'signer certificate not embedded');
     }
-    const signerCert = embedded[signerIndex]!;
+    // The signer is read strictly, and before the rest of the bag, because
+    // WHICH certificate is unreadable changes the verdict. A stranger the
+    // receipt merely carries is a defect of the receipt (the bag is
+    // unsigned, so bytes that cannot be read are fatal but are the
+    // receipt's problem). The signer being unreadable is a defect of a
+    // certificate, and gets the verdict an unreadable x5c entry gets on the
+    // JWS path — receipt/reject-signer-* pins the four spellings of it.
+    const signerCert = readSignerCertificate(cms.certificates[signerIndex]!);
+    const embedded = cms.certificates.map((raw) => new X509Certificate(raw));
     buildAndValidatePath(signerCert, embedded, roots, at);
     let signerHasOid = false;
     try {
@@ -226,6 +238,32 @@ export class ReceiptVerifier {
       verifyDeviceHash(fields, deviceGuid);
     }
     return fields;
+  }
+}
+
+/**
+ * The signer certificate, or INVALID_CERTIFICATE. Everything OpenSSL lets
+ * past that the checks below assume is settled here, exactly as the JWS path
+ * settles it for an x5c entry: an unknown X.509 version, a repeated
+ * extension, an extension value that stops decoding, and a public key this
+ * runtime cannot build — the last of which must be answered here rather than
+ * left to `verifyCmsSignature`, whose "not RSA" verdict is about a readable
+ * key of the wrong kind.
+ */
+function readSignerCertificate(raw: Uint8Array): X509Certificate {
+  try {
+    const certificate = new X509Certificate(raw);
+    requireKnownVersion(certificate.raw);
+    requireNoDuplicateExtensions(certificate.raw);
+    requireDecodableExtensions(certificate.raw);
+    void certificate.publicKey;
+    return certificate;
+  } catch (cause) {
+    throw new VerificationError(
+      Reason.INVALID_CERTIFICATE,
+      'receipt signer certificate is not a valid certificate',
+      cause,
+    );
   }
 }
 

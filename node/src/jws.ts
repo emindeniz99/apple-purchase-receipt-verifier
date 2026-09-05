@@ -1,6 +1,11 @@
 import { X509Certificate, verify as cryptoVerify } from 'node:crypto';
 import { Environment, Reason, VerificationError } from './errors.js';
-import { hasExtension, requireKnownVersion, requireNoDuplicateExtensions } from './der.js';
+import {
+  hasExtension,
+  requireDecodableExtensions,
+  requireKnownVersion,
+  requireNoDuplicateExtensions,
+} from './der.js';
 import { normalizeRoots, validatePair, type RootInput } from './chain.js';
 import {
   decodeJwsSegment,
@@ -89,8 +94,15 @@ export class JwsVerifier {
     try {
       leaf = new X509Certificate(Buffer.from(x5c[0]!, 'base64'));
       intermediate = new X509Certificate(Buffer.from(x5c[1]!, 'base64'));
+      // The third entry is parsed and then dropped. It is the JWS-supplied
+      // root: it is never compared to an anchor and never trusted, so
+      // swapping in a stranger's root still changes nothing — but an entry
+      // that is not a certificate is INVALID_CERTIFICATE at every index
+      // (transaction/reject-x5c-root-that-is-not-a-certificate), and java
+      // already answered that way when nobody else did.
+      const suppliedRoot = new X509Certificate(Buffer.from(x5c[2]!, 'base64'));
       // OpenSSL decodes an x5c entry far more leniently than the checks
-      // below assume, so all three of the things it lets past are settled
+      // below assume, so all four of the things it lets past are settled
       // here, while the verdict is still "this is not a certificate":
       //
       //  - the version, which OpenSSL keeps as whatever integer it found and
@@ -104,12 +116,14 @@ export class JwsVerifier {
       //    ERR_OSSL_EVP_DECODE_ERROR out of `.publicKey`. Today the issuer
       //    check happens to fail its name comparison first; reading the key
       //    here means the escape cannot come back if that order changes.
-      requireKnownVersion(leaf.raw);
-      requireKnownVersion(intermediate.raw);
-      requireNoDuplicateExtensions(leaf.raw);
-      requireNoDuplicateExtensions(intermediate.raw);
-      void leaf.publicKey;
-      void intermediate.publicKey;
+      //  - an extension value that stops decoding partway through, which
+      //    OpenSSL never looks inside (requireDecodableExtensions).
+      for (const certificate of [leaf, intermediate, suppliedRoot]) {
+        requireKnownVersion(certificate.raw);
+        requireNoDuplicateExtensions(certificate.raw);
+        requireDecodableExtensions(certificate.raw);
+        void certificate.publicKey;
+      }
     } catch (cause) {
       throw new VerificationError(
         Reason.INVALID_CERTIFICATE,
