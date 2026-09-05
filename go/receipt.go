@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/emindeniz99/apple-purchase-receipt-verifier/go/internal/chain"
+	"github.com/emindeniz99/apple-purchase-receipt-verifier/go/internal/der"
 )
 
 // maxEmbeddedCertificates bounds how many certificates a receipt may
@@ -201,7 +202,7 @@ func verifyReceiptCore(receipt []byte, roots []*x509.Certificate, maxBytes int) 
 			"receipt embeds more than %d certificates", maxEmbeddedCertificates)
 	}
 	embedded := make([]*x509.Certificate, 0, len(cms.certificates))
-	var unreadable error
+	var unreadable, unreadableSigner error
 	for i, raw := range cms.certificates {
 		cert, err := x509.ParseCertificate(raw)
 		if err != nil {
@@ -218,25 +219,34 @@ func verifyReceiptCore(receipt []byte, roots []*x509.Certificate, maxBytes int) 
 			// changes the verdict. An entry the receipt merely carries is
 			// a defect of the receipt; the SIGNER being unreadable is a
 			// defect of a certificate, and gets the verdict an unreadable
-			// x5c entry gets on the JWS path. The signer cannot be named
-			// until the readable entries have been matched against the
-			// SignerInfo, which is the line below.
+			// x5c entry gets on the JWS path. Which one this is has to be
+			// read out of the entry ITSELF — an entry x509 refuses still
+			// carries an issuer Name and a serialNumber, and those are the
+			// only thing that says whether the SignerInfo means it. Asking
+			// instead whether the signer turned up among the READABLE
+			// entries answers a different question, and answers it wrongly
+			// whenever the receipt names a certificate it does not carry:
+			// an unrelated malformed stranger would take the blame for a
+			// signer that is simply absent.
 			if unreadable == nil {
 				unreadable = wrapError(ReasonInvalidReceiptFormat, err,
 					"embedded certificate %d is not a parseable X.509 certificate", i)
+			}
+			if unreadableSigner == nil && namesTheSigner(raw, cms.signerInfo) {
+				unreadableSigner = wrapError(ReasonInvalidCertificate, err,
+					"receipt signer certificate is not a valid certificate")
 			}
 			continue
 		}
 		embedded = append(embedded, cert)
 	}
-	signer := findSignerCertificate(embedded, cms.signerInfo)
-	if signer == nil && unreadable != nil {
-		return nil, newError(ReasonInvalidCertificate,
-			"the receipt's signer certificate is not among the embedded certificates that could be read")
+	if unreadableSigner != nil {
+		return nil, unreadableSigner
 	}
 	if unreadable != nil {
 		return nil, unreadable
 	}
+	signer := findSignerCertificate(embedded, cms.signerInfo)
 	if signer == nil {
 		return nil, newError(ReasonInvalidReceiptFormat, "signer certificate is not embedded in the receipt")
 	}
@@ -269,6 +279,41 @@ func findSignerCertificate(embedded []*x509.Certificate, info cmsSignerInfo) *x5
 		}
 	}
 	return nil
+}
+
+// namesTheSigner reports whether raw carries the issuer Name and
+// serialNumber the SignerInfo names, read as generic ASN.1 rather than as
+// an X.509 certificate — which is the whole point: the entries this is
+// asked about are the ones x509.ParseCertificate refused, and an identity
+// is still legible in bytes that are not a certificate all the way down.
+// Node (findSignerCertIndex) and Swift (unreadableNodes) resolve the signer
+// the same way, off the raw DER, so all three agree about which embedded
+// entry a defect belongs to.
+//
+// TBSCertificate ::= SEQUENCE { [0] version DEFAULT v1, serialNumber
+// INTEGER, signature AlgorithmIdentifier, issuer Name, ... } — anything
+// that does not have that shape is not an identity, and cannot match.
+func namesTheSigner(raw []byte, info cmsSignerInfo) bool {
+	certificate, err := der.Parse(raw)
+	if err != nil || certificate.Tag != der.TagSequence {
+		return false
+	}
+	tbs := der.Child(certificate, 0)
+	if tbs == nil || tbs.Tag != der.TagSequence {
+		return false
+	}
+	index := 0
+	if version := der.Child(tbs, 0); version != nil && version.Tag == der.TagContext0 {
+		index = 1 // the EXPLICIT version, absent in a v1 certificate
+	}
+	serial := der.Child(tbs, index)
+	issuer := der.Child(tbs, index+2) // index+1 is the signature AlgorithmIdentifier
+	if serial == nil || serial.Tag != der.TagInteger || issuer == nil ||
+		issuer.Tag != der.TagSequence {
+		return false
+	}
+	return bytes.Equal(issuer.Raw, info.issuerRaw) &&
+		derInteger(serial.Contents).Cmp(derInteger(info.serialContents)) == 0
 }
 
 // derInteger reads DER INTEGER contents, honouring two's complement.

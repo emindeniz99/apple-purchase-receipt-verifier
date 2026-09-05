@@ -2,6 +2,7 @@ package applereceipt_test
 
 import (
 	"encoding/base64"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
@@ -144,4 +145,55 @@ func TestCertificateCountIsStillCheckedBeforeDecoding(t *testing.T) {
 	})
 	_, err := applereceipt.VerifyReceiptCore(receipt, pki.anchors())
 	requireReason(t, err, applereceipt.ReasonInvalidChain)
+}
+
+// A receipt naming a signer it does not carry is a defect of the RECEIPT,
+// and stays one when the bag also holds an unrelated entry that will not
+// parse. Blaming the malformed stranger for the absent signer would be a
+// guess: the two are separate defects, and the only thing that connects an
+// unreadable entry to the SignerInfo is the identity the entry itself
+// carries. Node (findSignerCertIndex) and Swift (unreadableNodes) read that
+// identity out of the raw DER; this port does too.
+func TestAnAbsentSignerIsNotBlamedOnAMalformedStranger(t *testing.T) {
+	pki := newReceiptPKI(t)
+	junk := derSequence(derInt(42), derInt(43)) // a SEQUENCE, not a Certificate
+	receipt := buildCMS(t, cmsSpec{
+		content: receiptPayload(standardReceiptAttributes(
+			"com.example.app", "ProductionSandbox", time.Now())...),
+		signer: pki.leaf,
+		// An identity nothing in the bag has: the leaf is not embedded and
+		// the serial is not its own either.
+		signerSerial:    big.NewInt(0x5eed),
+		certificates:    [][]byte{pki.intermediate.der, junk},
+		withSignedAttrs: true,
+	})
+	_, err := applereceipt.VerifyReceiptCore(receipt, pki.anchors())
+	requireReason(t, err, applereceipt.ReasonInvalidReceiptFormat)
+}
+
+// The other side of the same rule: when the unreadable entry IS the one the
+// SignerInfo names, the verdict is about the certificate, exactly as it is
+// for an unreadable x5c entry on the JWS path (receipt/reject-signer-*).
+// The entry below is not a certificate — everything after the identity is
+// missing — but the identity itself is intact, which is all that matching
+// it to the SignerInfo needs.
+func TestAMalformedSignerIsACertificateDefect(t *testing.T) {
+	pki := newReceiptPKI(t)
+	namedButUnreadable := derSequence(
+		derSequence(
+			derContext0(derInt(2)),
+			derInteger(pki.leaf.cert.SerialNumber),
+			derSequence(derOID(oidSHA256), derNull()),
+			pki.leaf.cert.RawIssuer,
+		),
+	)
+	receipt := buildCMS(t, cmsSpec{
+		content: receiptPayload(standardReceiptAttributes(
+			"com.example.app", "ProductionSandbox", time.Now())...),
+		signer:          pki.leaf,
+		certificates:    [][]byte{namedButUnreadable, pki.intermediate.der},
+		withSignedAttrs: true,
+	})
+	_, err := applereceipt.VerifyReceiptCore(receipt, pki.anchors())
+	requireReason(t, err, applereceipt.ReasonInvalidCertificate)
 }
