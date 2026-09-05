@@ -653,6 +653,161 @@ public class HostileInputTests
         return Assert.Throws<VerificationException>(() => verifier.Verify(blob)).Reason;
     }
 
+    /// <summary>
+    /// The two signer mutations are condemned from the receipt's own bytes,
+    /// by this library's DER reader, before <c>SignedCms</c> is handed
+    /// anything. That is the whole reason the verdict is the same on every
+    /// operating system: materialising the certificate bag is a platform call,
+    /// macOS's certificate parser refuses both of these certificates outright,
+    /// and while the decision waited for it the receipt came out as
+    /// INVALID_RECEIPT_FORMAT there and as INVALID_CERTIFICATE everywhere
+    /// else (receipt/reject-signer-certificate-version-11,
+    /// receipt/reject-signer-with-a-corrupt-extension).
+    /// </summary>
+    [Theory]
+    [InlineData("receipt-signer-version-11")]
+    [InlineData("receipt-signer-corrupt-extension")]
+    public void TheSignerCertificateIsCondemnedFromTheReceiptsOwnBytes(string fixture)
+    {
+        byte[] receipt = Fixtures.Bytes(fixture);
+
+        byte[]? signer = Internals.FindSignerCertificate(receipt, MaximumEmbeddedCertificates);
+        Assert.True(signer is not null, "the pre-scan could not name the certificate the SignerInfo names");
+
+        (int Version, bool Duplicate, bool Undecodable)? shape = Internals.CertificateShape(signer!);
+        Assert.True(shape is not null, "the named signer did not parse at all");
+        Assert.True(
+            shape!.Value.Version is < 1 or > 3
+                || shape.Value.Duplicate
+                || shape.Value.Undecodable,
+            "nothing in the signer's own bytes condemns it, so the verdict would be the host's");
+
+        using ReceiptVerifier verifier = new(SignerFixtureRoots(), ReceiptBundleId);
+        Assert.Equal(
+            VerificationReason.InvalidCertificate,
+            Assert.Throws<VerificationException>(() => verifier.Verify(receipt)).Reason);
+    }
+
+    /// <summary>
+    /// An entry in the bag that is not the signer and does not decode stays a
+    /// verdict about the receipt. The bag is unsigned, so an entry the library
+    /// cannot read has to be fatal — but fatal as the blob, not as a judgement
+    /// on a certificate this receipt was never signed by. It is the line the
+    /// signer pre-check must not cross, and go pins the same one in
+    /// certbag_test.go.
+    /// </summary>
+    [Fact]
+    public void AnUnreadableCertificateThatIsNotTheSignerIsAFormatError()
+    {
+        byte[] receipt = WithExtraCertificate(Receipt, JunkCertificate());
+        using ReceiptVerifier verifier = new(ReceiptRoots(), ReceiptBundleId);
+        Assert.Equal(
+            VerificationReason.InvalidReceiptFormat,
+            Assert.Throws<VerificationException>(() => verifier.Verify(receipt)).Reason);
+    }
+
+    /// <summary>
+    /// The ordering, proved without a mac. A bag entry the platform decoder
+    /// refuses sits beside a signer this library condemns: on its own that
+    /// entry is INVALID_RECEIPT_FORMAT (the test above), so INVALID_CERTIFICATE
+    /// here can only have been reached BEFORE the decoder ran. It is the exact
+    /// position macOS is in for the signer certificate itself, where its own
+    /// parser is the thing that refuses — and it is the ordering the two
+    /// vectors failed on there while the check waited for <c>SignedCms</c>.
+    /// </summary>
+    [Theory]
+    [InlineData("receipt-signer-version-11")]
+    [InlineData("receipt-signer-corrupt-extension")]
+    public void TheSignerIsJudgedBeforeADecoderThatWouldRefuseTheBag(string fixture)
+    {
+        byte[] receipt = WithExtraCertificate(Fixtures.Bytes(fixture), JunkCertificate());
+        using ReceiptVerifier verifier = new(SignerFixtureRoots(), ReceiptBundleId);
+        Assert.Equal(
+            VerificationReason.InvalidCertificate,
+            Assert.Throws<VerificationException>(() => verifier.Verify(receipt)).Reason);
+    }
+
+    private const int MaximumEmbeddedCertificates = 10;
+
+    /// <summary>A SEQUENCE of two INTEGERs: well-formed ASN.1, no certificate.</summary>
+    private static byte[] JunkCertificate()
+    {
+        AsnWriter writer = new(AsnEncodingRules.DER);
+        using (writer.PushSequence())
+        {
+            writer.WriteInteger(42);
+            writer.WriteInteger(43);
+        }
+
+        return writer.Encode();
+    }
+
+    private static IReadOnlyList<X509Certificate2> SignerFixtureRoots() =>
+        new[] { X509CertificateLoader.LoadCertificate(Fixtures.Bytes("receipt-signer-root")) };
+
+    /// <summary>Rebuilds the CMS blob with one more entry in the certificate bag.</summary>
+    private static byte[] WithExtraCertificate(byte[] der, byte[] certificate)
+    {
+        Asn1Tag explicitTag = new(TagClass.ContextSpecific, 0, true);
+        AsnReader contentInfo = new AsnReader(der, AsnEncodingRules.BER).ReadSequence();
+        string oid = contentInfo.ReadObjectIdentifier();
+        AsnReader signedData = contentInfo.ReadSequence(explicitTag).ReadSequence();
+
+        List<byte[]> before = new();
+        List<byte[]> certificates = new();
+        List<byte[]> after = new();
+        while (signedData.HasData)
+        {
+            if (signedData.PeekTag() == explicitTag)
+            {
+                AsnReader bag = signedData.ReadSetOf(skipSortOrderValidation: true, explicitTag);
+                while (bag.HasData)
+                {
+                    certificates.Add(bag.ReadEncodedValue().ToArray());
+                }
+
+                continue;
+            }
+
+            (certificates.Count == 0 ? before : after).Add(signedData.ReadEncodedValue().ToArray());
+        }
+
+        certificates.Add(certificate);
+
+        // BER, not DER: the fixture uses indefinite lengths, and a DER writer
+        // refuses to re-emit those encoded values.
+        AsnWriter writer = new(AsnEncodingRules.BER);
+        using (writer.PushSequence())
+        {
+            writer.WriteObjectIdentifier(oid);
+            using (writer.PushSequence(explicitTag))
+            {
+                using (writer.PushSequence())
+                {
+                    foreach (byte[] element in before)
+                    {
+                        writer.WriteEncodedValue(element);
+                    }
+
+                    using (writer.PushSetOf(explicitTag))
+                    {
+                        foreach (byte[] element in certificates)
+                        {
+                            writer.WriteEncodedValue(element);
+                        }
+                    }
+
+                    foreach (byte[] element in after)
+                    {
+                        writer.WriteEncodedValue(element);
+                    }
+                }
+            }
+        }
+
+        return writer.Encode();
+    }
+
     private static VerificationReason JwsReason(string jws)
     {
         using JwsVerifier verifier = new(

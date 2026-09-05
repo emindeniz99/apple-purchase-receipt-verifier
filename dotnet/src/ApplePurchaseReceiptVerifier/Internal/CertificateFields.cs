@@ -24,14 +24,18 @@ namespace ApplePurchaseReceiptVerifier.Internal
 
         private CertificateFields(
             byte[] tbsCertificate,
+            int version,
             string signatureAlgorithmOid,
             string tbsSignatureAlgorithmOid,
             byte[] signature,
+            string? subjectPublicKeyAlgorithmOid,
             IReadOnlyDictionary<string, byte[]> extensions,
             bool hasDuplicateExtension,
             bool hasUndecodableExtension)
         {
             TbsCertificate = tbsCertificate;
+            Version = version;
+            SubjectPublicKeyAlgorithmOid = subjectPublicKeyAlgorithmOid;
             SignatureAlgorithmOid = signatureAlgorithmOid;
             TbsSignatureAlgorithmOid = tbsSignatureAlgorithmOid;
             Signature = signature;
@@ -42,6 +46,24 @@ namespace ApplePurchaseReceiptVerifier.Internal
 
         /// <summary>The exact encoded <c>tbsCertificate</c> the signature is over.</summary>
         internal byte[] TbsCertificate { get; }
+
+        /// <summary>
+        /// The X.509 version number, counted as
+        /// <c>X509Certificate2.Version</c> counts it: the encoded field plus
+        /// one, so v3 is 3, and 1 for a certificate omitting the field. Zero
+        /// when the field is present but does not read as a non-negative
+        /// <see cref="int"/>, which is not a version either.
+        /// </summary>
+        internal int Version { get; }
+
+        /// <summary>
+        /// The <c>subjectPublicKeyInfo</c> AlgorithmIdentifier OID, or
+        /// <see langword="null"/> when that field does not decode. Read here
+        /// rather than from <c>X509Certificate2.PublicKey</c> so that "which
+        /// kind of key is this" can be answered before any platform decoder
+        /// has seen the certificate.
+        /// </summary>
+        internal string? SubjectPublicKeyAlgorithmOid { get; }
 
         /// <summary>The outer <c>signatureAlgorithm</c> OID.</summary>
         internal string SignatureAlgorithmOid { get; }
@@ -104,9 +126,17 @@ namespace ApplePurchaseReceiptVerifier.Internal
                 // TBSCertificate ::= SEQUENCE { [0] version DEFAULT v1,
                 //   serialNumber, signature, issuer, validity, subject,
                 //   subjectPublicKeyInfo, [1] , [2] , [3] extensions }
-                if (tbsReader.HasData && tbsReader.PeekTag() == new Asn1Tag(TagClass.ContextSpecific, 0, true))
+                int version = 1;
+                Asn1Tag versionTag = new Asn1Tag(TagClass.ContextSpecific, 0, true);
+                if (tbsReader.HasData && tbsReader.PeekTag() == versionTag)
                 {
-                    tbsReader.ReadEncodedValue();
+                    AsnReader versionReader = tbsReader.ReadSequence(versionTag);
+                    version = versionReader.TryReadInt32(out int encoded)
+                        && !versionReader.HasData
+                        && encoded >= 0
+                        && encoded < int.MaxValue
+                            ? encoded + 1
+                            : 0;
                 }
 
                 tbsReader.ReadEncodedValue();                       // serialNumber
@@ -114,7 +144,8 @@ namespace ApplePurchaseReceiptVerifier.Internal
                 tbsReader.ReadEncodedValue();                       // issuer
                 tbsReader.ReadEncodedValue();                       // validity
                 tbsReader.ReadEncodedValue();                       // subject
-                tbsReader.ReadEncodedValue();                       // subjectPublicKeyInfo
+                string? subjectPublicKeyAlgorithmOid =
+                    TryReadSubjectPublicKeyAlgorithmOid(tbsReader.ReadEncodedValue());
 
                 Dictionary<string, byte[]> extensions = new Dictionary<string, byte[]>(StringComparer.Ordinal);
                 bool duplicate = false;
@@ -138,7 +169,15 @@ namespace ApplePurchaseReceiptVerifier.Internal
                 }
 
                 return new CertificateFields(
-                    tbs, outerOid, tbsOid, signature, extensions, duplicate, undecodable);
+                    tbs,
+                    version,
+                    outerOid,
+                    tbsOid,
+                    signature,
+                    subjectPublicKeyAlgorithmOid,
+                    extensions,
+                    duplicate,
+                    undecodable);
             }
             catch (AsnContentException)
             {
@@ -218,6 +257,26 @@ namespace ApplePurchaseReceiptVerifier.Internal
                 }
 
                 into.Add(oid, value);
+            }
+        }
+
+        /// <summary>
+        /// The AlgorithmIdentifier OID inside a <c>subjectPublicKeyInfo</c>,
+        /// or <see langword="null"/> when it does not decode. Tolerated rather
+        /// than fatal, because every other reader of this type only needs the
+        /// field skipped; the receipt path is what treats an unreadable answer
+        /// as a defect of the certificate.
+        /// </summary>
+        private static string? TryReadSubjectPublicKeyAlgorithmOid(ReadOnlyMemory<byte> subjectPublicKeyInfo)
+        {
+            try
+            {
+                AsnReader spki = new AsnReader(subjectPublicKeyInfo, AsnEncodingRules.DER).ReadSequence();
+                return ReadAlgorithmIdentifierOid(spki);
+            }
+            catch (AsnContentException)
+            {
+                return null;
             }
         }
 

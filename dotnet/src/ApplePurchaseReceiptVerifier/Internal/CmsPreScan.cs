@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Formats.Asn1;
 
 namespace ApplePurchaseReceiptVerifier.Internal
@@ -85,6 +86,142 @@ namespace ApplePurchaseReceiptVerifier.Internal
             {
                 throw new VerificationException(
                     VerificationReason.InvalidReceiptFormat, "not a parseable CMS blob", e);
+            }
+        }
+
+        /// <summary>
+        /// The raw DER of the certificate the first SignerInfo <em>names</em> —
+        /// its <c>issuerAndSerialNumber</c> matched against the certificate
+        /// bag — or <see langword="null"/> when this pass cannot name one.
+        /// Call it after <see cref="Scan"/>, whose structural verdict it does
+        /// not repeat.
+        /// </summary>
+        /// <remarks>
+        /// <para>It exists so the signer can be judged BEFORE the platform CMS
+        /// decoder sees the blob. Materialising the bag is a platform call —
+        /// on macOS it is Security.framework's certificate parser — and that
+        /// parser refuses a certificate claiming an unknown X.509 version or
+        /// carrying an extension value that does not decode. The receipt then
+        /// comes out as INVALID_RECEIPT_FORMAT, a verdict about the blob,
+        /// where every other host reaches the verdict about the certificate.
+        /// Reading the bag here, with the same hand-written bounded walk as
+        /// <see cref="Scan"/> and never through <c>X509Certificate2</c>, is
+        /// what makes that verdict the same on every operating system.</para>
+        /// <para>Returning <see langword="null"/> is not a verdict. A blob
+        /// whose signer this cannot name — one identified by
+        /// <c>subjectKeyIdentifier</c>, or a bag over the certificate bound —
+        /// is left to the decoder and to the checks after it, exactly as
+        /// before.</para>
+        /// </remarks>
+        internal static byte[]? FindSignerCertificate(byte[] der, int limit)
+        {
+            if (der is null || der.Length == 0)
+            {
+                return null;
+            }
+
+            Asn1Tag explicitContent = new Asn1Tag(TagClass.ContextSpecific, 0, true);
+            try
+            {
+                AsnReader contentInfo = new AsnReader(der, AsnEncodingRules.BER).ReadSequence();
+                contentInfo.ReadObjectIdentifier();
+                AsnReader signedData = contentInfo.ReadSequence(explicitContent).ReadSequence();
+                signedData.ReadEncodedValue();      // version
+                signedData.ReadEncodedValue();      // digestAlgorithms
+                signedData.ReadEncodedValue();      // encapContentInfo
+
+                if (!signedData.HasData || signedData.PeekTag() != explicitContent)
+                {
+                    return null;
+                }
+
+                List<byte[]> bag = new List<byte[]>();
+                AsnReader certificates = signedData.ReadSetOf(skipSortOrderValidation: true, explicitContent);
+                while (certificates.HasData)
+                {
+                    if (bag.Count == limit)
+                    {
+                        // Over the bound Scan counts. Its INVALID_CHAIN verdict
+                        // owns that input, so nothing is decoded here.
+                        return null;
+                    }
+
+                    bag.Add(certificates.ReadEncodedValue().ToArray());
+                }
+
+                Asn1Tag revocationInfo = new Asn1Tag(TagClass.ContextSpecific, 1, true);
+                if (signedData.HasData && signedData.PeekTag() == revocationInfo)
+                {
+                    signedData.ReadEncodedValue();  // crls
+                }
+
+                if (!signedData.HasData)
+                {
+                    return null;
+                }
+
+                AsnReader signerInfos = signedData.ReadSetOf(skipSortOrderValidation: true);
+                if (!signerInfos.HasData)
+                {
+                    return null;
+                }
+
+                AsnReader signerInfo = signerInfos.ReadSequence();
+                signerInfo.ReadEncodedValue();      // version
+                if (!signerInfo.HasData || signerInfo.PeekTag() != Asn1Tag.Sequence)
+                {
+                    // SignerIdentifier ::= issuerAndSerialNumber | [0] subjectKeyIdentifier
+                    return null;
+                }
+
+                AsnReader issuerAndSerial = signerInfo.ReadSequence();
+                ReadOnlyMemory<byte> issuer = issuerAndSerial.ReadEncodedValue();
+                ReadOnlyMemory<byte> serialNumber = issuerAndSerial.ReadEncodedValue();
+
+                foreach (byte[] candidate in bag)
+                {
+                    if (Names(candidate, issuer.Span, serialNumber.Span))
+                    {
+                        return candidate;
+                    }
+                }
+
+                return null;
+            }
+            catch (AsnContentException)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Whether <paramref name="certificate"/> is the one an
+        /// <c>issuerAndSerialNumber</c> names. Only the two fields that answer
+        /// that are read, so a certificate this cannot otherwise parse is
+        /// still recognised as the named one and still gets judged.
+        /// </summary>
+        private static bool Names(
+            byte[] certificate, ReadOnlySpan<byte> issuer, ReadOnlySpan<byte> serialNumber)
+        {
+            try
+            {
+                AsnReader tbs = new AsnReader(certificate, AsnEncodingRules.DER)
+                    .ReadSequence()
+                    .ReadSequence();
+                if (tbs.HasData && tbs.PeekTag() == new Asn1Tag(TagClass.ContextSpecific, 0, true))
+                {
+                    tbs.ReadEncodedValue();         // version
+                }
+
+                ReadOnlyMemory<byte> candidateSerial = tbs.ReadEncodedValue();
+                tbs.ReadEncodedValue();             // signature
+                ReadOnlyMemory<byte> candidateIssuer = tbs.ReadEncodedValue();
+                return ByteOps.SequenceEqual(candidateSerial.Span, serialNumber)
+                    && ByteOps.SequenceEqual(candidateIssuer.Span, issuer);
+            }
+            catch (AsnContentException)
+            {
+                return false;
             }
         }
 

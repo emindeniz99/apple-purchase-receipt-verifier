@@ -14,4 +14,20 @@ internal static class Internals
         EcdsaSignatureFormat.DerToP1363(der, fieldSizeBytes);
 
     internal static int PreScan(byte[] der, int limit) => CmsPreScan.Scan(der, limit);
+
+    internal static byte[]? FindSignerCertificate(byte[] der, int limit) =>
+        CmsPreScan.FindSignerCertificate(der, limit);
+
+    /// <summary>
+    /// What the library's own DER reader makes of a certificate: the X.509
+    /// version, whether an extension OID repeats, and whether an extension
+    /// value fails to decode. Null when the bytes will not parse at all.
+    /// </summary>
+    internal static (int Version, bool Duplicate, bool Undecodable)? CertificateShape(byte[] raw)
+    {
+        CertificateFields? fields = CertificateFields.TryParse(raw);
+        return fields is null
+            ? null
+            : (fields.Version, fields.HasDuplicateExtension, fields.HasUndecodableExtension);
+    }
 }

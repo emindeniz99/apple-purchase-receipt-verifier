@@ -329,6 +329,21 @@ namespace ApplePurchaseReceiptVerifier.Receipt
             // has materialised a certificate yet.
             int certificateCount = CmsPreScan.Scan(receiptDer, MaximumEmbeddedCertificates);
 
+            // The signer is judged here, on the raw DER the same pass picked
+            // out of the certificate bag, and BEFORE SignedCms sees the blob.
+            // Everything below this line runs on a platform decoder, and a
+            // platform decoder is entitled to refuse a certificate outright:
+            // macOS refuses one claiming an unknown X.509 version or carrying
+            // an extension value that does not decode, so the receipt came out
+            // as INVALID_RECEIPT_FORMAT there and as INVALID_CERTIFICATE
+            // everywhere else. Deciding it first makes the verdict the
+            // library's rather than the host's.
+            byte[]? namedSigner = CmsPreScan.FindSignerCertificate(receiptDer, MaximumEmbeddedCertificates);
+            if (namedSigner is not null)
+            {
+                RequireReadableSigner(namedSigner);
+            }
+
             SignedCms cms = new SignedCms();
             try
             {
@@ -383,7 +398,16 @@ namespace ApplePurchaseReceiptVerifier.Receipt
                 }
             }
 
-            RequireReadableSigner(signerCertificate);
+            if (namedSigner is null)
+            {
+                // The pre-scan could not name the signer — a SignerInfo
+                // identifying it by subjectKeyIdentifier, say — so this is the
+                // first point the check can run. It is a fallback and not the
+                // rule: on a host whose decoder refuses the certificate it
+                // never runs at all, which is exactly the divergence the
+                // pre-scan closes for every signer it can name.
+                RequireReadableSigner(signerCertificate.RawData);
+            }
 
             // Deliberately the system clock, with no seam to override it: this
             // is a certificate-validity instant. The fallback only fires for a
@@ -477,21 +501,28 @@ namespace ApplePurchaseReceiptVerifier.Receipt
         /// subject is a READABLE key of the wrong kind
         /// (receipt/reject-signer-*).
         /// </summary>
-        private static void RequireReadableSigner(X509Certificate2 signerCertificate)
+        /// <param name="rawCertificate">
+        /// The certificate's own DER — the bytes out of the certificate bag,
+        /// not a re-encoding, and read with this library's own ASN.1 reader.
+        /// Every check but the last is decided from those bytes alone, so the
+        /// verdict does not depend on what the host's certificate parser is
+        /// willing to accept.
+        /// </param>
+        private static void RequireReadableSigner(byte[] rawCertificate)
         {
-            if (signerCertificate.Version is < 1 or > 3)
-            {
-                throw new VerificationException(
-                    VerificationReason.InvalidCertificate,
-                    "the receipt signer certificate has an unknown X.509 version");
-            }
-
-            CertificateFields? fields = CertificateFields.TryParse(signerCertificate.RawData);
+            CertificateFields? fields = CertificateFields.TryParse(rawCertificate);
             if (fields is null)
             {
                 throw new VerificationException(
                     VerificationReason.InvalidCertificate,
                     "the receipt signer certificate is not a valid certificate");
+            }
+
+            if (fields.Version is < 1 or > 3)
+            {
+                throw new VerificationException(
+                    VerificationReason.InvalidCertificate,
+                    "the receipt signer certificate has an unknown X.509 version");
             }
 
             if (fields.HasDuplicateExtension)
@@ -508,7 +539,7 @@ namespace ApplePurchaseReceiptVerifier.Receipt
                     "the receipt signer certificate has an extension that does not decode");
             }
 
-            if (!HasReadablePublicKey(signerCertificate))
+            if (!HasReadablePublicKey(rawCertificate))
             {
                 throw new VerificationException(
                     VerificationReason.InvalidCertificate,
@@ -516,26 +547,34 @@ namespace ApplePurchaseReceiptVerifier.Receipt
             }
         }
 
-        private static bool HasReadablePublicKey(X509Certificate2 certificate)
+        private static bool HasReadablePublicKey(byte[] rawCertificate)
         {
-            try
+            using (X509Certificate2? certificate = Certificates.TryLoad(rawCertificate))
             {
-                using (RSA? rsa = certificate.GetRSAPublicKey())
+                if (certificate is null)
                 {
-                    if (rsa is not null)
-                    {
-                        return true;
-                    }
+                    return false;
                 }
 
-                using (ECDsa? ec = certificate.GetECDsaPublicKey())
+                try
                 {
-                    return ec is not null;
+                    using (RSA? rsa = certificate.GetRSAPublicKey())
+                    {
+                        if (rsa is not null)
+                        {
+                            return true;
+                        }
+                    }
+
+                    using (ECDsa? ec = certificate.GetECDsaPublicKey())
+                    {
+                        return ec is not null;
+                    }
                 }
-            }
-            catch (CryptographicException)
-            {
-                return false;
+                catch (CryptographicException)
+                {
+                    return false;
+                }
             }
         }
 
