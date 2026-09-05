@@ -15,13 +15,9 @@ Delete a line in the commit that ships it.
 2. **Normative resource bounds in the contract** plus one vector. (Java's
    chain length is aligned: it now states MAX_PATH_LENGTH = 6 and counts
    self-issued intermediates, which the JDK default exempted.)
-3. **Docs cleanup**: THREAT-MODEL.md; the stale "no commit is signed"
-   line below (commits are SSH-signed by the environment key — GitHub
-   shows Verified once the key is registered); java and swift READMEs;
-   the two per-port `ci-job.md` / `RELEASE.md` handoff documents that
-   describe wiring which now lives in `.github/`; stale case counts in
-   INTENT.md, PLAN.md §4 and the dotnet README; the GitHub repository
-   description still naming four languages.
+3. **Docs cleanup** — done except: java and swift READMEs (neither port
+   has one), and the GitHub repository description, a repo setting that
+   still names four languages (owner-only).
 4. **Pin `asn1crypto` in python** to the tested range and make sure the
    python fuzz target reaches it. Owner decision (2026-09-05): keep it —
    last release 2022-03, but ~155M downloads a month; see PLAN.md D16.
@@ -95,17 +91,18 @@ Delete a line in the commit that ships it.
 
 - **No branch protection in practice.** main reports protected, yet an
   admin push lands directly, so either the pull-request requirement or
-  admin enforcement is off. There is no CODEOWNERS, no commit signing,
-  and 82 of 83 commits are authored by the assistant rather than
-  co-authored by it.
-- **`asn1crypto` is the one attacker-facing parser the project neither
-  wrote nor fuzzes**, and its last release was 1.5.1 in 2022. Every other
-  port parses hostile bytes with its own bounded reader or a first-party
-  library. Decide before 1.0 whether python keeps it.
-- **`jackson-databind` is the heaviest dependency in the project** and
-  carries the CVE history a consumer's scanner will surface. The dotnet
-  port faced the same choice and wrote a bounded JSON reader instead; the
-  payloads here are small and flat.
+  admin enforcement is off. There is no CODEOWNERS. Commits are
+  SSH-signed by the assistant environment's key (verified with git
+  cat-file); GitHub shows them Verified once that key is registered as a
+  signing key on the owner's account. Most commits are authored by the
+  assistant rather than co-authored by it.
+- **`asn1crypto` is kept by owner decision (PLAN.md D16)**: last release
+  1.5.1 in 2022, about 155M downloads a month. Pin the tested range; the
+  python fuzz target runs through it.
+- **`jackson-databind` is kept by owner decision (PLAN.md D16)**: the
+  heaviest dependency in the project and the one consumer scanners will
+  flag, but maintained and widely deployed, and the payloads here are
+  small and flat.
 - **The `cryptography>=40` floor is never installed.** Every python CI leg
   resolves the latest, so the floor is a claim.
 - **Internal RBS signatures for the Ruby port**: `sig/` covers the public
