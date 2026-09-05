@@ -124,6 +124,39 @@ internal static class TestPki
             .CopyWithPrivateKey(key);
     }
 
+    /// <summary>
+    /// An EC leaf whose first extension value holds one complete DER value and
+    /// then two more bytes, re-signed by the issuer so the only defect is the
+    /// leftover. An extnValue is an OCTET STRING wrapping ONE value, and a
+    /// reader that stops at the first one never sees what follows it.
+    /// </summary>
+    internal static X509Certificate2 EcChildWithTrailingBytesInAnExtension(
+        X509Certificate2 issuer,
+        string subject,
+        string markerOid)
+    {
+        ECDsa key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        CertificateRequest request = new(subject, key, HashAlgorithmName.SHA256);
+        AddExtensions(request, false, markerOid);
+        using ECDsa issuerKey = issuer.GetECDsaPrivateKey()
+            ?? throw new InvalidOperationException("the issuer has no usable EC key");
+        using X509Certificate2 template = request.Create(
+            issuer.SubjectName,
+            X509SignatureGenerator.CreateForECDsa(issuerKey),
+            DefaultNotBefore,
+            DefaultNotAfter,
+            NextSerial());
+
+        AsnReader outer = new AsnReader(template.RawData, AsnEncodingRules.DER).ReadSequence();
+        outer.ReadEncodedValue();                     // tbsCertificate
+        byte[] algorithm = outer.ReadEncodedValue().ToArray();
+        byte[] tbs = PadFirstExtensionValue(template.RawData);
+        byte[] signature = issuerKey.SignData(
+            tbs, HashAlgorithmName.SHA256, DSASignatureFormat.Rfc3279DerSequence);
+        return X509CertificateLoader.LoadCertificate(Assemble(tbs, algorithm, signature))
+            .CopyWithPrivateKey(key);
+    }
+
     /// <summary>An RSA certificate issued by <paramref name="issuer"/>.</summary>
     internal static X509Certificate2 RsaChild(
         X509Certificate2 issuer,
@@ -273,6 +306,64 @@ internal static class TestPki
                         {
                             writer.WriteEncodedValue(extension.Span);
                             first = false;
+                        }
+                    }
+                }
+            }
+        }
+
+        return writer.Encode();
+    }
+
+    /// <summary>Rebuilds a TBS with a trailing NULL inside its first extension's value.</summary>
+    private static byte[] PadFirstExtensionValue(byte[] certificate)
+    {
+        AsnReader tbs = new AsnReader(certificate, AsnEncodingRules.DER).ReadSequence().ReadSequence();
+        Asn1Tag extensionsTag = new(TagClass.ContextSpecific, 3, true);
+
+        AsnWriter writer = new(AsnEncodingRules.DER);
+        using (writer.PushSequence())
+        {
+            while (tbs.HasData)
+            {
+                if (tbs.PeekTag() != extensionsTag)
+                {
+                    writer.WriteEncodedValue(tbs.ReadEncodedValue().Span);
+                    continue;
+                }
+
+                AsnReader extensions = tbs.ReadSequence(extensionsTag).ReadSequence();
+                using (writer.PushSequence(extensionsTag))
+                using (writer.PushSequence())
+                {
+                    bool first = true;
+                    while (extensions.HasData)
+                    {
+                        AsnReader extension = extensions.ReadSequence();
+                        string oid = extension.ReadObjectIdentifier();
+                        bool critical = extension.HasData
+                            && extension.PeekTag() == Asn1Tag.Boolean
+                            && extension.ReadBoolean();
+                        byte[] value = extension.ReadOctetString();
+                        if (first)
+                        {
+                            byte[] padded = new byte[value.Length + 2];
+                            Buffer.BlockCopy(value, 0, padded, 0, value.Length);
+                            padded[value.Length] = 0x05;      // NULL, complete
+                            padded[value.Length + 1] = 0x00;  // and unreachable
+                            value = padded;
+                            first = false;
+                        }
+
+                        using (writer.PushSequence())
+                        {
+                            writer.WriteObjectIdentifier(oid);
+                            if (critical)
+                            {
+                                writer.WriteBoolean(true);
+                            }
+
+                            writer.WriteOctetString(value);
                         }
                     }
                 }

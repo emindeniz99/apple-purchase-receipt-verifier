@@ -161,7 +161,16 @@ Hostile-input suites: `java/src/test/.../HostileReceiptInputTest.java`,
 `receipt/reject-attribute-type-above-int32-max`,
 `receipt/reject-attribute-type-that-truncates-to-a-modelled-type`,
 `transaction/reject-x5c-leaf-that-is-not-a-certificate`,
-`transaction/reject-apple-official-missing-x5c`.
+`transaction/reject-x5c-root-that-is-not-a-certificate`,
+`transaction/reject-apple-official-missing-x5c`. Defective certificates, on
+both paths: `transaction/reject-x5c-certificate-version-11`,
+`transaction/reject-x5c-duplicate-extension`,
+`transaction/reject-x5c-corrupt-extension`,
+`transaction/reject-x5c-unimplemented-curve`, and their receipt twins
+`receipt/reject-signer-certificate-version-11`,
+`receipt/reject-signer-carrying-one-extension-twice`,
+`receipt/reject-signer-with-a-corrupt-extension`,
+`receipt/reject-signer-on-an-unimplemented-curve`.
 
 *Fuzzing.* Coverage-guided targets run in CI over the readers and the public
 entry points: [`rust/fuzz/README.md`](./rust/fuzz/README.md) (seven targets),
@@ -221,16 +230,30 @@ Not defended against here, by decision rather than omission.
 
 ## 5. Residual risks
 
-- **Two parser differentials are open and unpinned** (ROADMAP.md "Next").
-  An unparseable `x5c[2]`: Java reports `INVALID_CERTIFICATE` where other
-  ports reach the signature check, and Go also rejects junk inside an `x5c`
-  entry. The third certificate is untrusted everywhere, so no verdict about a
-  well-formed JWS moves, but the ports disagree about a malformed one. And
-  resource bounds differ by an order of magnitude, several ports declaring
-  none: node budgets of 200,000 (ruby), 100,000 (rust, go), 20,000 (php);
-  receipt size caps of 8 MiB (rust), 2 MiB (php), 1 MiB (go); only PHP caps
-  the JWS input. Genuine receipts are under 80 KB, so nothing breaks today,
-  but the contract states no normative floor.
+- **No parser differential is open.** Both of the ones this section used to
+  list are pinned. Resource bounds: the contract states a floor of 1 MiB and
+  20,000 ASN.1 nodes, and `receipt-byte-floor` and `receipt-node-floor` hold
+  it from within 2% each; above the floor a port's own cap is its own
+  business. `x5c[2]`: java parsed the third certificate and the other eight
+  ports never touched it, so an unparseable one was `INVALID_CERTIFICATE`
+  there and verified everywhere else. Eight to one, and the majority lost —
+  pinning acceptance would have made java drop a rejection it already made.
+  All nine ports now parse all three entries, none trusts the third, and
+  `transaction/reject-x5c-root-that-is-not-a-certificate` holds it.
+
+  What that closing exposed was an asymmetry rather than a differential, and
+  it is closed too: the certificate checks pinned for `x5c` entries — an
+  unknown X.509 version, a repeated extension, an extension value that stops
+  decoding, a public key on a curve the implementation does not have — sat on
+  the JWS path only. Built into the certificate a legacy PKCS#7 receipt is
+  signed by, three ports ACCEPTED such a receipt outright (node, ruby,
+  dotnet) and the other six answered about the receipt or the chain instead
+  of about the certificate. `receipt/reject-signer-*` pins all four as
+  `INVALID_CERTIFICATE`, decided before the chain is built and before the
+  signature is checked. An embedded certificate that is not the signer keeps
+  its old verdict: the bag is unsigned, so bytes that cannot be read there
+  are a defect of the receipt (`INVALID_RECEIPT_FORMAT`), not of a
+  certificate.
 - **`asn1crypto` is the one attacker-facing parser this project neither wrote
   nor replaced.** Last release 1.5.1, March 2022. Owner decision: keep it, pin
   the tested range, let the Python fuzz target run through it (PLAN.md D16,

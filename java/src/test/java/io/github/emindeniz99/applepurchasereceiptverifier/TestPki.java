@@ -199,7 +199,10 @@ final class TestPki {
                 notBefore,
                 notAfter,
                 "SHA256withRSA");
-        return new TestPki(rootCert, interCert, signerCert, signerKp.getPrivate());
+        TestPki pki = new TestPki(rootCert, interCert, signerCert, signerKp.getPrivate());
+        pki.rootKey = rootKp.getPrivate();
+        pki.intermediateKey = interKp.getPrivate();
+        return pki;
     }
 
     /**
@@ -486,6 +489,37 @@ final class TestPki {
         return sign(payload, new Date(), leafKey, leaf, new CollectionStore<X509CertificateHolder>(embedded));
     }
 
+    /**
+     * CMS-signs a receipt under a caller-supplied signer certificate and
+     * signature algorithm, embedding a caller-supplied certificate bag.
+     *
+     * <p>Both are {@link X509CertificateHolder}s rather than
+     * {@link X509Certificate}s because what this exists for is a signer
+     * certificate no X.509 decoder will accept, and the algorithm is
+     * explicit because one of those mutations is the signer's key itself.
+     * See {@link HostileReceiptFixtures}.</p>
+     */
+    static byte[] signReceiptAs(
+            byte[] payload,
+            Date signingTime,
+            PrivateKey signingKey,
+            String sigAlg,
+            X509CertificateHolder signerCert,
+            List<X509CertificateHolder> embedded)
+            throws Exception {
+        ASN1EncodableVector baseAttrs = new ASN1EncodableVector();
+        baseAttrs.add(
+                new org.bouncycastle.asn1.cms.Attribute(CMSAttributes.signingTime, new DERSet(new Time(signingTime))));
+        CMSSignedDataGenerator gen = new CMSSignedDataGenerator();
+        ContentSigner cs = new JcaContentSignerBuilder(sigAlg).build(signingKey);
+        gen.addSignerInfoGenerator(new JcaSignerInfoGeneratorBuilder(
+                        new JcaDigestCalculatorProviderBuilder().setProvider(BC).build())
+                .setSignedAttributeGenerator(new DefaultSignedAttributeTableGenerator(new AttributeTable(baseAttrs)))
+                .build(cs, signerCert));
+        gen.addCertificates(new CollectionStore<X509CertificateHolder>(embedded));
+        return gen.generate(new CMSProcessableByteArray(payload), true).getEncoded();
+    }
+
     private byte[] sign(
             byte[] payload,
             Date signingTime,
@@ -730,7 +764,7 @@ final class TestPki {
         return kpg.generateKeyPair();
     }
 
-    private static X509Certificate cert(
+    static X509Certificate cert(
             String subject,
             KeyPair subjectKp,
             String issuer,

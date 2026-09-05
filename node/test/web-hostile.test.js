@@ -66,8 +66,17 @@ async function reasonOf(run) {
  * signatureAlgorithm agreement check is stricter than OpenSSL's parse), and
  * neither build ever accepts such a receipt. The count is asserted so a new
  * class of divergence, or a growing one, fails this test.
+ *
+ * INVALID_CERTIFICATE joined the set when the signer stopped being read
+ * like any other embedded certificate (receipt/reject-signer-*): a mutation
+ * landing in the SIGNER is now a verdict about the certificate in whichever
+ * build notices it, and the two parsers still notice different mutations.
  */
-const CORRUPT_CERTIFICATE_REASONS = new Set(['INVALID_RECEIPT_FORMAT', 'INVALID_CHAIN']);
+const CORRUPT_CERTIFICATE_REASONS = new Set([
+  'INVALID_RECEIPT_FORMAT',
+  'INVALID_CHAIN',
+  'INVALID_CERTIFICATE',
+]);
 const MAX_TOLERATED_DIVERGENCES = 5;
 
 test('web and Node builds agree over a corpus of mutated receipts', async () => {

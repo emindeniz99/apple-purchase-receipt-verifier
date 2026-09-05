@@ -166,12 +166,22 @@ public struct JwsVerifier: Sendable {
         guard let x5c = header["x5c"] as? [String], x5c.count == 3 else {
             throw VerificationError(.invalidJwsFormat, "x5c must contain exactly 3 certificates")
         }
+        // The third entry is decoded and parsed like the other two and then
+        // dropped: it is never compared to an anchor and never trusted, so
+        // swapping in a stranger's root still changes nothing — but an entry
+        // that is not a certificate is INVALID_CERTIFICATE at every index
+        // (transaction/reject-x5c-root-that-is-not-a-certificate).
         guard let leafDER = Data(base64Encoded: x5c[0], options: [.ignoreUnknownCharacters]),
             let intermediateDER = Data(base64Encoded: x5c[1], options: [.ignoreUnknownCharacters]),
+            let rootDER = Data(base64Encoded: x5c[2], options: [.ignoreUnknownCharacters]),
             let leaf = try? Certificate(derEncoded: [UInt8](leafDER)),
-            let intermediate = try? Certificate(derEncoded: [UInt8](intermediateDER))
+            let intermediate = try? Certificate(derEncoded: [UInt8](intermediateDER)),
+            let suppliedRoot = try? Certificate(derEncoded: [UInt8](rootDER))
         else {
             throw VerificationError(.invalidCertificate, "x5c entry is not a valid certificate")
+        }
+        for certificate in [leaf, intermediate, suppliedRoot] {
+            try requireDecodableExtensions(certificate, what: "x5c entry")
         }
         guard leaf.extensions.contains(where: { $0.oid == Self.leafOID }) else {
             throw VerificationError(
@@ -184,9 +194,19 @@ public struct JwsVerifier: Sendable {
                 "intermediate certificate lacks Apple marker OID \(Self.intermediateOID)")
         }
 
+        // RFC 7515 7.1 makes the payload a JSON object, and reading a payload
+        // that is not one as "no claims" fails OPEN: every claim then reads as
+        // absent, certificate validity falls back to the current time, and the
+        // staleness rule stops applying at all. An empty segment and a JSON
+        // array are both that payload
+        // (transaction/reject-empty-payload-segment,
+        // transaction/reject-payload-that-is-a-json-array).
+        guard let claims = try? JSONSerialization.jsonObject(with: payloadData) as? [String: Any] else {
+            throw VerificationError(.invalidJwsFormat, "payload is not a JSON object")
+        }
+
         // Chain validity is checked at signing time so payloads signed with
         // since-rotated certificates keep verifying (PLAN.md §2.1 step 4).
-        let claims = (try? JSONSerialization.jsonObject(with: payloadData) as? [String: Any]) ?? [:]
         let signedAtMillis =
             (claims["signedDate"] as? Double)
             ?? (claims["receiptCreationDate"] as? Double)
@@ -292,6 +312,19 @@ private let base64URLAlphabet = CharacterSet(
 /// base64url, so a segment is rejected when it has a character outside the
 /// alphabet above (which also excludes `=` padding), has an impossible
 /// length (`count % 4 == 1`), or its final character carries non-zero
+/// Rejects a certificate whose extension block does not decode all the way
+/// down. swift-certificates keeps an extension's value as opaque bytes, so
+/// a value that stops decoding partway through is invisible until something
+/// asks for that extension — and then surfaces as a chain failure, i.e. as
+/// a verdict about the path rather than about the certificate. Decoding
+/// every one is also what makes reading a certificate different from
+/// scanning it for a marker OID.
+func requireDecodableExtensions(_ certificate: Certificate, what: String) throws {
+    for ext in certificate.extensions where (try? DER.parse(ext.value)) == nil {
+        throw VerificationError(.invalidCertificate, "\(what) is not a valid certificate")
+    }
+}
+
 /// unused bits — checked by re-encoding the decoded bytes and requiring an
 /// exact match against the padded input.
 ///

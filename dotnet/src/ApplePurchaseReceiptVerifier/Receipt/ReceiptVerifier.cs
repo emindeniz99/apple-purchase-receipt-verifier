@@ -40,6 +40,7 @@ namespace ApplePurchaseReceiptVerifier.Receipt
         private const string Sha1Oid = "1.3.14.3.2.26";
         private const string Sha256Oid = "2.16.840.1.101.3.4.2.1";
         private const string RsaOid = "1.2.840.113549.1.1.1";
+        private const string EcPublicKeyOid = "1.2.840.10045.2.1";
 
         /// <summary>
         /// The ceiling on the certificates a receipt may embed. Genuine
@@ -329,6 +330,21 @@ namespace ApplePurchaseReceiptVerifier.Receipt
             // has materialised a certificate yet.
             int certificateCount = CmsPreScan.Scan(receiptDer, MaximumEmbeddedCertificates);
 
+            // The signer is judged here, on the raw DER the same pass picked
+            // out of the certificate bag, and BEFORE SignedCms sees the blob.
+            // Everything below this line runs on a platform decoder, and a
+            // platform decoder is entitled to refuse a certificate outright:
+            // macOS refuses one claiming an unknown X.509 version or carrying
+            // an extension value that does not decode, so the receipt came out
+            // as INVALID_RECEIPT_FORMAT there and as INVALID_CERTIFICATE
+            // everywhere else. Deciding it first makes the verdict the
+            // library's rather than the host's.
+            byte[]? namedSigner = CmsPreScan.FindSignerCertificate(receiptDer, MaximumEmbeddedCertificates);
+            if (namedSigner is not null)
+            {
+                RequireReadableSigner(namedSigner);
+            }
+
             SignedCms cms = new SignedCms();
             try
             {
@@ -381,6 +397,17 @@ namespace ApplePurchaseReceiptVerifier.Receipt
                 {
                     signerCertificate = certificate;
                 }
+            }
+
+            if (namedSigner is null)
+            {
+                // The pre-scan could not name the signer — a SignerInfo
+                // identifying it by subjectKeyIdentifier, say — so this is the
+                // first point the check can run. It is a fallback and not the
+                // rule: on a host whose decoder refuses the certificate it
+                // never runs at all, which is exactly the divergence the
+                // pre-scan closes for every signer it can name.
+                RequireReadableSigner(signerCertificate.RawData);
             }
 
             // Deliberately the system clock, with no seam to override it: this
@@ -461,6 +488,120 @@ namespace ApplePurchaseReceiptVerifier.Receipt
                 throw new VerificationException(
                     VerificationReason.DeviceHashMismatch,
                     "the computed device hash does not match attribute 5");
+            }
+        }
+
+        /// <summary>
+        /// The four things the platform CMS decoder lets past that the checks
+        /// below assume, settled while the verdict is still "this is not a
+        /// certificate" — the receipt-path twin of what
+        /// <c>JwsVerifier.LoadX5cEntry</c> settles for an x5c entry, and
+        /// checked BEFORE the chain so a defect of the signer cannot come out
+        /// as a verdict about the path. The last of them must be answered
+        /// here rather than left to the "not RSA" check further down, whose
+        /// subject is a READABLE key of the wrong kind
+        /// (receipt/reject-signer-*).
+        /// </summary>
+        /// <param name="rawCertificate">
+        /// The certificate's own DER — the bytes out of the certificate bag,
+        /// not a re-encoding, and read with this library's own ASN.1 reader.
+        /// Every check but the last is decided from those bytes alone, so the
+        /// verdict does not depend on what the host's certificate parser is
+        /// willing to accept.
+        /// </param>
+        private static void RequireReadableSigner(byte[] rawCertificate)
+        {
+            CertificateFields? fields = CertificateFields.TryParse(rawCertificate);
+            if (fields is null)
+            {
+                throw new VerificationException(
+                    VerificationReason.InvalidCertificate,
+                    "the receipt signer certificate is not a valid certificate");
+            }
+
+            if (fields.Version is < 1 or > 3)
+            {
+                throw new VerificationException(
+                    VerificationReason.InvalidCertificate,
+                    "the receipt signer certificate has an unknown X.509 version");
+            }
+
+            if (fields.HasDuplicateExtension)
+            {
+                throw new VerificationException(
+                    VerificationReason.InvalidCertificate,
+                    "the receipt signer certificate carries a duplicate extension");
+            }
+
+            if (fields.HasUndecodableExtension)
+            {
+                throw new VerificationException(
+                    VerificationReason.InvalidCertificate,
+                    "the receipt signer certificate has an extension that does not decode");
+            }
+
+            RequireUsablePublicKey(fields, rawCertificate);
+        }
+
+        /// <summary>
+        /// A key of an algorithm this library builds must build. A key of any
+        /// other algorithm is not this check's business: an unreadable key and
+        /// a readable key of the wrong kind are different inputs with
+        /// different answers, and the "not RSA" check below owns the second —
+        /// INVALID_SIGNATURE, which is what go (<c>signer.PublicKey.(*rsa.PublicKey)</c>)
+        /// and php (<c>publicKeyType() !== OPENSSL_KEYTYPE_RSA</c>) answer for
+        /// a DSA-keyed signer. Without the algorithm test a DSA key would come
+        /// out as INVALID_CERTIFICATE here, because neither
+        /// <c>GetRSAPublicKey</c> nor <c>GetECDsaPublicKey</c> returns one.
+        /// </summary>
+        private static void RequireUsablePublicKey(CertificateFields fields, byte[] rawCertificate)
+        {
+            string? algorithm = fields.SubjectPublicKeyAlgorithmOid;
+            if (algorithm is null)
+            {
+                throw new VerificationException(
+                    VerificationReason.InvalidCertificate,
+                    "the receipt signer certificate has an unreadable public key");
+            }
+
+            bool builtHere = string.Equals(algorithm, RsaOid, StringComparison.Ordinal)
+                || string.Equals(algorithm, EcPublicKeyOid, StringComparison.Ordinal);
+            if (builtHere && !HasReadablePublicKey(rawCertificate))
+            {
+                throw new VerificationException(
+                    VerificationReason.InvalidCertificate,
+                    "the receipt signer certificate has an unreadable public key");
+            }
+        }
+
+        private static bool HasReadablePublicKey(byte[] rawCertificate)
+        {
+            using (X509Certificate2? certificate = Certificates.TryLoad(rawCertificate))
+            {
+                if (certificate is null)
+                {
+                    return false;
+                }
+
+                try
+                {
+                    using (RSA? rsa = certificate.GetRSAPublicKey())
+                    {
+                        if (rsa is not null)
+                        {
+                            return true;
+                        }
+                    }
+
+                    using (ECDsa? ec = certificate.GetECDsaPublicKey())
+                    {
+                        return ec is not null;
+                    }
+                }
+                catch (CryptographicException)
+                {
+                    return false;
+                }
             }
         }
 

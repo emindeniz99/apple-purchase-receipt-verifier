@@ -4,12 +4,12 @@
 use crate::base64::decode_receipt_base64;
 use crate::chain::build_and_validate_path;
 use crate::cms::{find_message_digest_attribute, parse_cms, signed_attrs_signed_bytes, ParsedCms};
-use crate::crypto::{constant_time_eq, verify_rsa_pkcs1, DigestAlgorithm};
+use crate::crypto::{constant_time_eq, curve_field_size, verify_rsa_pkcs1, DigestAlgorithm};
 use crate::datetime::unix_millis_of;
 use crate::error::{ConfigError, CoreError, Reason, Result, VerificationError};
 use crate::receipt_payload::parse_receipt_payload;
 use crate::roots::{normalize_anchors, TrustAnchor};
-use crate::x509::{Certificate, OID_RSA_ENCRYPTION};
+use crate::x509::{Certificate, OID_EC_PUBLIC_KEY, OID_RSA_ENCRYPTION};
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -112,20 +112,59 @@ pub(crate) fn verify_receipt_core_unchecked(
             format!("receipt embeds more than {MAX_EMBEDDED_CERTIFICATES} certificates"),
         ));
     }
+    // An entry that will not decode is held rather than returned, because
+    // WHICH entry it is changes the verdict: a stranger the receipt merely
+    // carries is a defect of the receipt, while the SIGNER being unreadable
+    // is a defect of a certificate and gets the verdict an unreadable x5c
+    // entry gets on the JWS path. Naming the signer needs the readable
+    // entries matched against the SignerInfo first.
     let mut embedded = Vec::with_capacity(cms.certificates.len());
+    let mut unreadable: Option<VerificationError> = None;
     for raw in &cms.certificates {
-        embedded.push(
-            Certificate::from_der(raw)
-                .map_err(|err| malformed(format!("embedded certificate is malformed: {err}")))?,
-        );
+        match Certificate::from_der(raw) {
+            Ok(certificate) => embedded.push(certificate),
+            Err(err) => {
+                unreadable.get_or_insert_with(|| {
+                    malformed(format!("embedded certificate is malformed: {err}"))
+                });
+            }
+        }
     }
-    let signer = embedded
-        .iter()
-        .find(|cert| {
-            cert.serial_number() == cms.signer_info.serial_contents.as_slice()
-                && cert.issuer_der() == cms.signer_info.issuer_raw.as_slice()
-        })
-        .ok_or_else(|| malformed("signer certificate not embedded"))?;
+    let signer = match embedded.iter().find(|cert| {
+        cert.serial_number() == cms.signer_info.serial_contents.as_slice()
+            && cert.issuer_der() == cms.signer_info.issuer_raw.as_slice()
+    }) {
+        Some(signer) => {
+            if let Some(err) = unreadable {
+                return Err(err);
+            }
+            signer
+        }
+        None => {
+            return Err(match unreadable {
+                Some(_) => VerificationError::new(
+                    Reason::InvalidCertificate,
+                    "the receipt's signer certificate is not among the embedded certificates that could be read",
+                ),
+                None => malformed("signer certificate not embedded"),
+            });
+        }
+    };
+    // The signer's key is used to check the CMS signature, so a key this
+    // crate cannot build is a defect of the certificate rather than of the
+    // signature it carries — the same reading `parse_x5c_certificate`
+    // applies on the JWS path.
+    if signer.public_key_algorithm_oid() == OID_EC_PUBLIC_KEY
+        && signer
+            .public_key_curve_oid()
+            .and_then(curve_field_size)
+            .is_none()
+    {
+        return Err(VerificationError::new(
+            Reason::InvalidCertificate,
+            "receipt signer certificate uses an unimplemented elliptic curve",
+        ));
+    }
 
     build_and_validate_path(signer, &embedded, trusted_roots, at_millis)?;
     // Checked AFTER the chain, so a foreign chain still reports

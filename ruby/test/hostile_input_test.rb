@@ -270,33 +270,49 @@ class HostileInputTest < Minitest::Test
   # and `ReceiptPayload.parse` runs before the certificate bound, the chain
   # walk and the signature check — so the cost was reachable with a blob that
   # never carried a signature at all.
+  #
+  # The property is linearity, so the assertion is a ratio against a half-size
+  # input, like the node-budget test above; the absolute ceiling is only a
+  # sanity bound, set loosely because the macOS CI runner measured 130 ms for
+  # the same work that takes under 100 ms on ubuntu.
   def test_a_date_with_a_million_fractional_digits_is_not_superlinear
-    pki = @pki
-    long = TestPki.default_payload(creation_date: "2024-01-01T00:00:00.#{"1" * 1_000_000}Z")
-    der = TestPki.sign_receipt(pki, long).dup
-    der.setbyte(der.bytesize - 1, der.getbyte(der.bytesize - 1) ^ 0xff)
+    milliseconds = elapsed { assert_core_rejects_fraction_of("1" * 1_000_000) }
+    assert_operator milliseconds, :<, 1000, "1e6-digit fraction took #{milliseconds.round(2)}ms"
 
-    milliseconds = elapsed do
-      assert_raises(APRV::VerificationError) do
-        APRV.verify_receipt_core(der, trusted_roots: [pki.root])
-      end
+    halved = elapsed { assert_core_rejects_fraction_of("1" * 500_000) }
+    assert_operator halved, :<, milliseconds * 0.9,
+                    "halving the fraction did not halve the work " \
+                    "(#{halved.round(2)}ms of #{milliseconds.round(2)}ms)"
+  end
+
+  def assert_core_rejects_fraction_of(digits)
+    long = TestPki.default_payload(creation_date: "2024-01-01T00:00:00.#{digits}Z")
+    der = TestPki.sign_receipt(@pki, long).dup
+    der.setbyte(der.bytesize - 1, der.getbyte(der.bytesize - 1) ^ 0xff)
+    assert_raises(APRV::VerificationError) do
+      APRV.verify_receipt_core(der, trusted_roots: [@pki.root])
     end
-    assert_operator milliseconds, :<, 100, "1e6-digit fraction took #{milliseconds.round(2)}ms"
   end
 
   # The same input through the endpoint the README advertises for Rails, which
   # is the surface an unauthenticated caller actually reaches.
   def test_the_endpoint_is_not_superlinear_on_a_long_fractional_second
-    long = TestPki.default_payload(creation_date: "2024-01-01T00:00:00.#{"9" * 2_000_000}Z")
+    milliseconds = elapsed { assert_endpoint_accepts_fraction_of("9" * 2_000_000) }
+    assert_operator milliseconds, :<, 2000, "2e6-digit fraction took #{milliseconds.round(2)}ms"
+
+    halved = elapsed { assert_endpoint_accepts_fraction_of("9" * 1_000_000) }
+    assert_operator halved, :<, milliseconds * 0.9,
+                    "halving the fraction did not halve the work " \
+                    "(#{halved.round(2)}ms of #{milliseconds.round(2)}ms)"
+  end
+
+  def assert_endpoint_accepts_fraction_of(digits)
+    long = TestPki.default_payload(creation_date: "2024-01-01T00:00:00.#{digits}Z")
     der = TestPki.sign_receipt(@pki, long)
     endpoint = APRV::VerifyReceiptEndpoint.new(trusted_roots: [@pki.root],
                                                environment: APRV::Environment::SANDBOX)
-    body = { "receipt-data" => [der].pack("m0") }
-
-    response = nil
-    milliseconds = elapsed { response = endpoint.verify_receipt(body) }
+    response = endpoint.verify_receipt({ "receipt-data" => [der].pack("m0") })
     assert_equal 0, response["status"]
-    assert_operator milliseconds, :<, 200, "2e6-digit fraction took #{milliseconds.round(2)}ms"
   end
 
   # Cross-port rule S8 and decision C8: containment is categorical, and it

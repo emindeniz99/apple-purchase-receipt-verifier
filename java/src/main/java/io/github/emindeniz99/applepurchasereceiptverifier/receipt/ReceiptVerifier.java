@@ -18,7 +18,6 @@ import java.security.cert.X509Certificate;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -33,6 +32,7 @@ import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.ASN1String;
+import org.bouncycastle.asn1.ASN1TaggedObject;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cms.CMSException;
@@ -300,25 +300,75 @@ public final class ReceiptVerifier {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "no signer info");
         }
         SignerInformation signer = signers.next();
+        // The certificate bag is read from the raw SignedData rather than
+        // through cms.getCertificates(), which decodes every entry eagerly
+        // and throws on the first one it dislikes — losing WHICH entry it
+        // was, and that is what decides the verdict. A stranger the receipt
+        // merely carries is a defect of the receipt; the SIGNER being
+        // unreadable is a defect of a certificate and gets the verdict an
+        // unreadable x5c entry gets on the JWS path (receipt/reject-signer-*).
+        ASN1Set certificateSet = embeddedCertificateSet(cms);
+        int embeddedCount = certificateSet == null ? 0 : certificateSet.size();
         // Bounded here, before a single embedded certificate is decoded or
         // handed to the path builder — all of which an unverified receipt
         // would otherwise get to pay for out of the caller's CPU.
-        Collection<X509CertificateHolder> holders = cms.getCertificates().getMatches(null);
-        if (holders.size() > MAXIMUM_EMBEDDED_CERTIFICATES) {
+        if (embeddedCount > MAXIMUM_EMBEDDED_CERTIFICATES) {
             throw new VerificationException(
                     Reason.INVALID_CHAIN,
                     "receipt embeds "
-                            + holders.size() + " certificates, more than the maximum of "
+                            + embeddedCount + " certificates, more than the maximum of "
                             + MAXIMUM_EMBEDDED_CERTIFICATES);
         }
-        Collection<X509CertificateHolder> matches = cms.getCertificates().getMatches(signer.getSID());
-        if (matches.isEmpty()) {
+        List<X509CertificateHolder> holders = new ArrayList<X509CertificateHolder>();
+        Exception unreadable = null;
+        for (int i = 0; i < embeddedCount; i++) {
+            try {
+                holders.add(new X509CertificateHolder(
+                        certificateSet.getObjectAt(i).toASN1Primitive().getEncoded("DER")));
+            } catch (Exception e) {
+                if (unreadable == null) {
+                    unreadable = e;
+                }
+            }
+        }
+        X509CertificateHolder signerHolder = null;
+        for (X509CertificateHolder holder : holders) {
+            if (signer.getSID().match(holder)) {
+                signerHolder = holder;
+                break;
+            }
+        }
+        if (signerHolder == null) {
+            if (unreadable != null) {
+                throw new VerificationException(
+                        Reason.INVALID_CERTIFICATE,
+                        "the receipt's signer certificate is not among the embedded certificates that could be read",
+                        unreadable);
+            }
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "signer certificate not embedded");
         }
+        if (unreadable != null) {
+            throw new VerificationException(
+                    Reason.INVALID_RECEIPT_FORMAT, "an embedded certificate is not a valid certificate", unreadable);
+        }
+        JcaX509CertificateConverter converter = new JcaX509CertificateConverter();
+        X509Certificate signerCert;
         try {
-            JcaX509CertificateConverter converter = new JcaX509CertificateConverter();
-            X509Certificate signerCert =
-                    converter.getCertificate(matches.iterator().next());
+            // The JCA decodes the whole X.509 template, including every
+            // extension VALUE, where BouncyCastle keeps extensions as encoded
+            // bytes — so this is where an extnValue that stops decoding is
+            // found, and it is a defect of the certificate rather than of the
+            // path it sits on.
+            signerCert = converter.getCertificate(signerHolder);
+            signerCert.getPublicKey();
+        } catch (GeneralSecurityException e) {
+            throw new VerificationException(
+                    Reason.INVALID_CERTIFICATE, "receipt signer certificate is not a valid certificate", e);
+        } catch (RuntimeException e) {
+            throw new VerificationException(
+                    Reason.INVALID_CERTIFICATE, "receipt signer certificate is not a valid certificate", e);
+        }
+        try {
             List<X509Certificate> embedded = new ArrayList<X509Certificate>();
             for (X509CertificateHolder holder : holders) {
                 embedded.add(converter.getCertificate(holder));
@@ -345,6 +395,23 @@ public final class ReceiptVerifier {
         } catch (GeneralSecurityException e) {
             throw new VerificationException(Reason.INVALID_CHAIN, "chain validation unavailable", e);
         }
+    }
+
+    /**
+     * The raw {@code certificates [0] IMPLICIT SET} of the SignedData, or
+     * null when the receipt carries none. Read as generic ASN.1 so an entry
+     * no certificate decoder accepts is still counted and still locatable.
+     */
+    private static ASN1Set embeddedCertificateSet(CMSSignedData cms) {
+        ASN1Encodable content = cms.toASN1Structure().getContent();
+        ASN1Sequence signedData = ASN1Sequence.getInstance(content.toASN1Primitive());
+        for (int i = 0; i < signedData.size(); i++) {
+            ASN1Encodable field = signedData.getObjectAt(i);
+            if (field instanceof ASN1TaggedObject && ((ASN1TaggedObject) field).getTagNo() == 0) {
+                return ASN1Set.getInstance((ASN1TaggedObject) field, false);
+            }
+        }
+        return null;
     }
 
     private static void verifyCmsSignature(CMSSignedData cms, X509Certificate signerCert) throws VerificationException {

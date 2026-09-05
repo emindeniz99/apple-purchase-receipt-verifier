@@ -24,10 +24,11 @@ import org.bouncycastle.asn1.DERSequence;
 import org.bouncycastle.asn1.DERTaggedObject;
 
 /**
- * Writes the seven hostile-JWS fixtures into {@code fixtures/generated/} —
+ * Writes the eight hostile-JWS fixtures into {@code fixtures/generated/} —
  * the inputs Python's coverage-guided fuzzing found escaping the library as
- * bare exceptions (ROADMAP "Before 1.0" item 3), turned into shared vectors
- * so all nine ports have to answer them the same way.
+ * bare exceptions (ROADMAP "Before 1.0" item 3), plus the {@code x5c[2]}
+ * vector that closed the last parser differential, turned into shared
+ * vectors so all nine ports have to answer them the same way.
  *
  * <p>Same technique as {@link PortDivergenceFixtures}: a fake Apple PKI from
  * {@link TestPki}, fixed epoch instants so nothing depends on generation
@@ -45,9 +46,9 @@ import org.bouncycastle.asn1.DERTaggedObject;
  * node tools/lint-cases.mjs   # re-hash: every contentSha256 must be updated
  * </pre>
  *
- * <p>Six of the seven carry exactly ONE defect each; the seventh carries
- * none and must verify, because it is the boundary of what the second one
- * refuses. Five of the six put that
+ * <p>Seven of the eight carry exactly ONE defect each; the remaining one
+ * carries none and must verify, because it is the boundary of what the
+ * second one refuses. Six of the seven put that
  * defect in the JWS header or in an {@code x5c} certificate, which is signed
  * material in neither case — the header is covered by the ES256 signature but
  * an attacker writes it, and the certificates are covered by their own
@@ -217,6 +218,22 @@ public final class HostileJwsFixtures {
                 out,
                 "transaction-signed-date-decimal.jws",
                 pki.signJws(decimalDate).getBytes(StandardCharsets.US_ASCII));
+
+        // --- 8. x5c[2] is not a certificate ------------------------------
+        // The third entry holds base64 of the ASCII text "not a
+        // certificate" — the index twin of
+        // transaction/reject-x5c-leaf-that-is-not-a-certificate, which
+        // deliberately sits on x5c[0] because the ports disagreed about
+        // x5c[2]. Java parsed all three entries and rejected this; the other
+        // eight never touched the third and verified the JWS. Pinning the
+        // majority would have made java DROP a rejection it already makes,
+        // so the vector pins java's answer and the other eight parse the
+        // entry — without trusting it, which nothing here changes.
+        List<String> brokenRoot = replacing(pki.x5c(), 2, "not a certificate".getBytes(StandardCharsets.US_ASCII));
+        write(
+                out,
+                "transaction-x5c-root-not-a-certificate.jws",
+                pki.signJwsWithHeader(header(brokenRoot), claimsJson).getBytes(StandardCharsets.US_ASCII));
     }
 
     /** {@code {"alg":"ES256","x5c":[...]}} — the header the last three use. */
@@ -240,7 +257,7 @@ public final class HostileJwsFixtures {
      * bounds-checking DER reader has to stop there. The length octet is the
      * one byte that breaks decoding without changing the file's shape.
      */
-    private static byte[] corruptBasicConstraintsLength(byte[] der) {
+    static byte[] corruptBasicConstraintsLength(byte[] der) {
         int oid = indexOf(der, BASIC_CONSTRAINTS_OID);
         int cursor = oid + BASIC_CONSTRAINTS_OID.length;
         if (der[cursor] == 0x01) {
@@ -262,7 +279,7 @@ public final class HostileJwsFixtures {
      * signature the certificate still carries is stale afterwards, which
      * {@link #resign} repairs.
      */
-    private static byte[] duplicateBasicConstraints(byte[] der) throws Exception {
+    static byte[] duplicateBasicConstraints(byte[] der) throws Exception {
         ASN1Sequence certificate = ASN1Sequence.getInstance(ASN1Primitive.fromByteArray(der));
         ASN1Sequence tbs = ASN1Sequence.getInstance(certificate.getObjectAt(0));
         ASN1EncodableVector fields = new ASN1EncodableVector();
@@ -295,7 +312,7 @@ public final class HostileJwsFixtures {
     }
 
     /** Rewrites the namedCurve OID to the unassigned 1.2.840.10045.3.1.10. */
-    private static byte[] unimplementedCurve(byte[] der) {
+    static byte[] unimplementedCurve(byte[] der) {
         int at = indexOf(der, SECP256R1_OID);
         byte[] mutated = der.clone();
         mutated[at + SECP256R1_OID.length - 1] = 0x0a;
@@ -303,7 +320,7 @@ public final class HostileJwsFixtures {
     }
 
     /** Rewrites the X.509 version INTEGER, which DER holds in one byte here. */
-    private static byte[] version(byte[] der, int version) {
+    static byte[] version(byte[] der, int version) {
         int at = indexOf(der, VERSION_V3);
         byte[] mutated = der.clone();
         mutated[at + VERSION_V3.length - 1] = (byte) version;
@@ -316,9 +333,14 @@ public final class HostileJwsFixtures {
      * signatureAlgorithm field, which the mutations never touch.
      */
     private static byte[] resign(byte[] der, PrivateKey issuerKey) throws Exception {
+        return resign(der, issuerKey, "SHA256withECDSA");
+    }
+
+    /** Same, for an issuer whose key is not EC — the receipt PKI's is RSA. */
+    static byte[] resign(byte[] der, PrivateKey issuerKey, String sigAlg) throws Exception {
         ASN1Sequence certificate = ASN1Sequence.getInstance(ASN1Primitive.fromByteArray(der));
         byte[] tbs = certificate.getObjectAt(0).toASN1Primitive().getEncoded("DER");
-        Signature signer = Signature.getInstance("SHA256withECDSA");
+        Signature signer = Signature.getInstance(sigAlg);
         signer.initSign(issuerKey);
         signer.update(tbs);
         return new DERSequence(new ASN1Encodable[] {
@@ -328,7 +350,7 @@ public final class HostileJwsFixtures {
     }
 
     /** The single occurrence of {@code needle}; more than one is an error. */
-    private static int indexOf(byte[] haystack, byte[] needle) {
+    static int indexOf(byte[] haystack, byte[] needle) {
         int at = -1;
         for (int i = 0; i + needle.length <= haystack.length; i++) {
             boolean matches = true;

@@ -178,7 +178,7 @@ def verify_receipt_core(der: bytes, trusted_roots: "Iterable[x509.Certificate]")
 
 
 def _verify_receipt_core_unguarded(der: bytes, roots: "list[x509.Certificate]") -> "AppReceipt":
-    content, certificates, signer = _parse_cms(der)
+    content, certificates, signer, unreadable = _parse_cms(der)
 
     # Parsed before signature verification only to learn the creation
     # date (chain validity anchors at signing time); nothing from it is
@@ -191,7 +191,21 @@ def _verify_receipt_core_unguarded(der: bytes, roots: "list[x509.Certificate]") 
     # judgement, which an injected clock must not be able to shift.
     at = fields.creation_date if fields.creation_date is not None else as_utc(time.time() * 1000)
 
-    signer_cert = _find_signer_cert(certificates, signer)
+    signer_cert = _find_signer_cert(certificates, signer, unreadable)
+    # Everything cryptography's loader lets past that the checks below
+    # assume, settled while the verdict is still "this is not a
+    # certificate": the extension block, which is decoded lazily so one
+    # malformed extension VALUE surfaces later as a chain failure, and the
+    # public key, whose curve this build may not implement. Both are the
+    # receipt-path twins of what the JWS path settles for an x5c entry.
+    try:
+        signer_cert.public_key()
+        _ = signer_cert.extensions
+    except Exception as e:
+        raise VerificationError(
+            Reason.INVALID_CERTIFICATE,
+            f"receipt signer certificate is not a valid certificate: {e}",
+        ) from e
     build_and_validate_path(signer_cert, [c for _, c in certificates], roots, at)
     try:
         signer_cert.extensions.get_extension_for_oid(_RECEIPT_SIGNER_OID)
@@ -205,7 +219,9 @@ def _verify_receipt_core_unguarded(der: bytes, roots: "list[x509.Certificate]") 
     return fields
 
 
-def _parse_cms(der: bytes) -> "tuple[bytes, list[tuple[bytes, x509.Certificate]], Any]":
+def _parse_cms(
+    der: bytes,
+) -> "tuple[bytes, list[tuple[bytes, x509.Certificate]], Any, Optional[Exception]]":
     try:
         info = asn1cms.ContentInfo.load(der, strict=True)  # rejects trailing bytes (PLAN 2.3)
         if info["content_type"].native != "signed_data":
@@ -221,14 +237,25 @@ def _parse_cms(der: bytes) -> "tuple[bytes, list[tuple[bytes, x509.Certificate]]
                 f"receipt embeds {len(embedded)} certificates, more than the "
                 f"{_MAX_EMBEDDED_CERTIFICATES} a chain can hold",
             )
+        # An entry that will not load is held rather than raised, because
+        # WHICH entry it is changes the verdict: a stranger the receipt
+        # merely carries is a defect of the receipt, while the SIGNER being
+        # unreadable is a defect of a certificate and gets the verdict an
+        # unreadable x5c entry gets on the JWS path. Naming the signer needs
+        # the readable entries matched against the SignerInfo first.
         certificates = []
+        unreadable: Optional[Exception] = None
         for choice in embedded:
             raw = choice.chosen.dump()
-            certificates.append((raw, x509.load_der_x509_certificate(raw)))
+            try:
+                certificates.append((raw, x509.load_der_x509_certificate(raw)))
+            except Exception as e:  # re-raised by _find_signer_cert
+                if unreadable is None:
+                    unreadable = e
         signer_infos = signed_data["signer_infos"]
         if len(signer_infos) == 0:
             raise ValueError("no signer info")
-        return content, certificates, signer_infos[0]
+        return content, certificates, signer_infos[0], unreadable
     except VerificationError:
         raise
     except Exception as e:  # asn1crypto raises broadly on malformed input
@@ -238,7 +265,9 @@ def _parse_cms(der: bytes) -> "tuple[bytes, list[tuple[bytes, x509.Certificate]]
 
 
 def _find_signer_cert(
-    certificates: "list[tuple[bytes, x509.Certificate]]", signer: Any
+    certificates: "list[tuple[bytes, x509.Certificate]]",
+    signer: Any,
+    unreadable: Optional[Exception] = None,
 ) -> x509.Certificate:
     sid = signer["sid"].chosen
     try:
@@ -250,7 +279,18 @@ def _find_signer_cert(
         if cert.serial_number == wanted_serial:
             asn1_cert = asn1x509.Certificate.load(raw)
             if asn1_cert["tbs_certificate"]["issuer"].dump() == wanted_issuer:
+                if unreadable is not None:
+                    raise VerificationError(
+                        Reason.INVALID_RECEIPT_FORMAT,
+                        f"not a parseable PKCS#7 receipt: {unreadable}",
+                    ) from unreadable
                 return cert
+    if unreadable is not None:
+        raise VerificationError(
+            Reason.INVALID_CERTIFICATE,
+            "the receipt's signer certificate is not among the embedded "
+            f"certificates that could be read: {unreadable}",
+        ) from unreadable
     raise VerificationError(Reason.INVALID_RECEIPT_FORMAT, "signer certificate not embedded")
 
 

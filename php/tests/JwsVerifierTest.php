@@ -54,16 +54,36 @@ final class JwsVerifierTest extends TestCase
     }
 
     /**
-     * `x5c[2]` is never parsed and never trusted: the anchor set is the
-     * constructor's. Swapping the third element for arbitrary bytes must
-     * change nothing, or an attacker could supply their own "root".
+     * `x5c[2]` is never trusted: the anchor set is the constructor's, so
+     * swapping the third element for another PKI's root must change nothing,
+     * or an attacker could supply their own "root".
      */
-    public function testTheThirdX5cEntryIsIgnoredEntirely(): void
+    public function testTheThirdX5cEntryIsNeverTrusted(): void
     {
         $pki = MintedPki::get();
-        foreach ([$pki->foreignRootDer, 'not a certificate at all', ''] as $third) {
-            $payload = $this->verifier()->verifyTransaction($pki->jws(MintedPki::transactionClaims(), $third));
-            self::assertSame('com.example.app', $payload->bundleId);
+        $payload = $this->verifier()->verifyTransaction(
+            $pki->jws(MintedPki::transactionClaims(), $pki->foreignRootDer),
+        );
+        self::assertSame('com.example.app', $payload->bundleId);
+    }
+
+    /**
+     * Untrusted is not the same as unread. The third entry still has to BE a
+     * certificate — java answered that way when the other eight ports simply
+     * skipped the entry, and
+     * `transaction/reject-x5c-root-that-is-not-a-certificate` pinned java's
+     * answer for all nine.
+     */
+    public function testTheThirdX5cEntryMustStillBeACertificate(): void
+    {
+        $pki = MintedPki::get();
+        foreach (['not a certificate at all', ''] as $third) {
+            $this->assertReason(
+                Reason::InvalidCertificate,
+                fn () => $this->verifier()->verifyTransaction(
+                    $pki->jws(MintedPki::transactionClaims(), $third),
+                ),
+            );
         }
     }
 

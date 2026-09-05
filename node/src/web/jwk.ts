@@ -65,6 +65,27 @@ function reject(message: string): never {
 }
 
 /**
+ * Refuses a certificate whose key this build cannot build, and refuses
+ * nothing else. It is the web build's `void certificate.publicKey`, and it
+ * has to be scoped the way OpenSSL's key reader is scoped: a key of an
+ * algorithm this build DOES construct must construct, so an unimplemented
+ * curve stays a defect of the certificate
+ * (receipt/reject-signer-on-an-unimplemented-curve), while a key of any
+ * other algorithm is readable and simply not one of ours — a DSA signer is
+ * a readable key of the wrong kind, which the "not RSA" check downstream
+ * owns and answers INVALID_SIGNATURE. Converting unconditionally instead
+ * would make every such key an INVALID_CERTIFICATE here and put the web
+ * build at odds with the Node one, which reads a DSA key perfectly well.
+ * dotnet settles the same question the same way (RequireUsablePublicKey),
+ * as do go and php.
+ */
+export function requireBuildablePublicKey(algorithmOid: string, spki: Uint8Array): void {
+  if (algorithmOid === OID_RSA_ENCRYPTION || algorithmOid === OID_EC_PUBLIC_KEY) {
+    spkiToJwk(spki);
+  }
+}
+
+/**
  * `SubjectPublicKeyInfo ::= SEQUENCE { algorithm AlgorithmIdentifier,
  * subjectPublicKey BIT STRING }`, where the BIT STRING wraps a DER
  * `RSAPublicKey` or an uncompressed EC point.

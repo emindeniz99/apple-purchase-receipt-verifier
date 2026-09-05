@@ -205,6 +205,14 @@ class JwsVerifier:
         try:
             leaf = x509.load_der_x509_certificate(base64.b64decode(x5c[0]))
             intermediate = x509.load_der_x509_certificate(base64.b64decode(x5c[1]))
+            # The third entry is loaded and then dropped. It is the
+            # JWS-supplied root: never compared to an anchor and never
+            # trusted, so swapping in a stranger's root still changes
+            # nothing — but an entry that is not a certificate is
+            # INVALID_CERTIFICATE at every index, which java alone answered
+            # until transaction/reject-x5c-root-that-is-not-a-certificate
+            # pinned it for all nine ports.
+            supplied_root = x509.load_der_x509_certificate(base64.b64decode(x5c[2]))
             # cryptography decodes the SubjectPublicKeyInfo lazily, so a curve
             # it does not implement only surfaces later — as UnsupportedAlgorithm
             # out of the issuer check, where the chain gets blamed for a defect
@@ -213,6 +221,7 @@ class JwsVerifier:
             # and go answer: their decoders refuse the certificate outright.
             leaf.public_key()
             intermediate.public_key()
+            supplied_root.public_key()
         except Exception as e:
             # Broad by category, for the reason verify_receipt_core states at
             # length: which exception a malformed certificate produces is

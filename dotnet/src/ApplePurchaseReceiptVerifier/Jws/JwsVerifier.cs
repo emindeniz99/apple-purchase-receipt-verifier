@@ -242,12 +242,15 @@ namespace ApplePurchaseReceiptVerifier.Jws
                 throw Format("x5c must contain exactly 3 certificates");
             }
 
-            // x5c[2] is deliberately never parsed, compared or trusted: only
-            // the intermediate being signed by one of our pinned anchors
-            // counts, so swapping in an attacker's third element changes
-            // nothing.
+            // x5c[2] is never compared or trusted: only the intermediate
+            // being signed by one of our pinned anchors counts, so swapping in
+            // an attacker's third element changes nothing. It IS parsed, and
+            // then dropped — an entry that is not a certificate is
+            // INVALID_CERTIFICATE at every index
+            // (transaction/reject-x5c-root-that-is-not-a-certificate).
             X509Certificate2 leaf = LoadX5cEntry((string)x5c[0]!);
             X509Certificate2 intermediate = LoadX5cEntry((string)x5c[1]!);
+            LoadX5cEntry((string)x5c[2]!).Dispose();
 
             RequireMarkerOid(leaf, LeafOid, "leaf");
             RequireMarkerOid(intermediate, IntermediateOid, "intermediate");
@@ -336,7 +339,7 @@ namespace ApplePurchaseReceiptVerifier.Jws
                 ?? throw new VerificationException(
                     VerificationReason.InvalidCertificate, "x5c entry is not a valid certificate");
 
-            // Three things the platform decoder lets past, settled here while
+            // Four things the platform decoder lets past, settled here while
             // the verdict is still "this is not a certificate":
             //
             //  - the version, which it keeps as whatever integer it found.
@@ -358,11 +361,21 @@ namespace ApplePurchaseReceiptVerifier.Jws
                     VerificationReason.InvalidCertificate, "x5c entry has an unknown X.509 version");
             }
 
-            if (CertificateFields.TryParse(certificate.RawData)?.HasDuplicateExtension == true)
+            CertificateFields? fields = CertificateFields.TryParse(certificate.RawData);
+            if (fields?.HasDuplicateExtension == true)
             {
                 certificate.Dispose();
                 throw new VerificationException(
                     VerificationReason.InvalidCertificate, "x5c entry carries a duplicate extension");
+            }
+
+            //  - an extension VALUE that stops decoding partway through, which
+            //    it never looks inside.
+            if (fields?.HasUndecodableExtension == true)
+            {
+                certificate.Dispose();
+                throw new VerificationException(
+                    VerificationReason.InvalidCertificate, "x5c entry has an extension that does not decode");
             }
 
             if (!HasReadablePublicKey(certificate))

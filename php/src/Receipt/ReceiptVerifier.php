@@ -203,19 +203,54 @@ final class ReceiptVerifier
                 'receipt embeds more than ' . self::MAX_EMBEDDED_CERTIFICATES . ' certificates',
             );
         }
+        // An entry that will not parse is held rather than thrown, because
+        // WHICH entry it is changes the verdict: a stranger the receipt
+        // merely carries is a defect of the receipt, while the SIGNER being
+        // unreadable is a defect of a certificate and gets the verdict an
+        // unreadable x5c entry gets on the JWS path (receipt/reject-signer-*).
+        // Naming the signer needs the readable entries matched against the
+        // SignerInfo first.
         $embedded = [];
+        $unreadable = null;
         foreach ($cms->certificates as $raw) {
             try {
                 $embedded[] = Certificate::parse($raw);
             } catch (ParseException $e) {
-                throw new VerificationException(Reason::InvalidReceiptFormat, 'unparseable embedded certificate', $e);
+                $unreadable ??= $e;
             }
         }
         $signerIndex = $cms->findSignerIndex($embedded);
         if ($signerIndex < 0) {
+            if ($unreadable !== null) {
+                throw new VerificationException(
+                    Reason::InvalidCertificate,
+                    "the receipt's signer certificate is not among the embedded certificates that could be read",
+                    $unreadable,
+                );
+            }
+
             throw new VerificationException(Reason::InvalidReceiptFormat, 'signer certificate not embedded');
         }
+        if ($unreadable !== null) {
+            throw new VerificationException(
+                Reason::InvalidReceiptFormat,
+                'unparseable embedded certificate',
+                $unreadable,
+            );
+        }
         $signer = $embedded[$signerIndex];
+        // A SubjectPublicKeyInfo OpenSSL refuses — a namedCurve it does not
+        // implement is enough — is a defect of the certificate, not of the
+        // signature it carries: there is no key to check that signature with.
+        // Left to verifyCmsSignature it reads as INVALID_SIGNATURE, which is
+        // the answer a READABLE key of the wrong kind deserves. The JWS path
+        // draws the same line for an x5c entry.
+        if ($signer->publicKey() === null) {
+            throw new VerificationException(
+                Reason::InvalidCertificate,
+                'receipt signer certificate has an unreadable public key',
+            );
+        }
 
         ChainValidator::buildAndValidatePath($signer, $embedded, $anchors, $at);
 

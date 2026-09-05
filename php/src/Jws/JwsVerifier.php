@@ -232,6 +232,12 @@ final class JwsVerifier
         try {
             $leaf = Certificate::parse(Base64::decode($x5c[0]));
             $intermediate = Certificate::parse(Base64::decode($x5c[1]));
+            // The third entry is parsed and then dropped: it is never
+            // compared to an anchor and never trusted, so swapping in a
+            // stranger's root still changes nothing — but an entry that is
+            // not a certificate is INVALID_CERTIFICATE at every index
+            // (transaction/reject-x5c-root-that-is-not-a-certificate).
+            $suppliedRoot = Certificate::parse(Base64::decode($x5c[2]));
         } catch (ParseException $e) {
             throw new VerificationException(Reason::InvalidCertificate, 'x5c entry is not a valid certificate', $e);
         }
@@ -241,11 +247,11 @@ final class JwsVerifier
         // Left to the chain it reads as INVALID_CHAIN, while java, swift and
         // go refuse the certificate in their decoders, which is the reading
         // the shared vector pins.
-        if ($leaf->publicKey() === null || $intermediate->publicKey() === null) {
+        if ($leaf->publicKey() === null
+            || $intermediate->publicKey() === null
+            || $suppliedRoot->publicKey() === null) {
             throw new VerificationException(Reason::InvalidCertificate, 'x5c entry has an unreadable public key');
         }
-        // x5c[2] is neither parsed nor trusted: the anchor set is the
-        // constructor's, so swapping the third element changes nothing.
 
         // Marker OIDs are checked BEFORE the chain on this path (and after it
         // on the receipt path) — the order is observable and normative.

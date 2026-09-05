@@ -1,5 +1,6 @@
 import { Environment, Reason, VerificationError } from '../errors.js';
 import { asciiEncode, base64Decode } from '../bytes.js';
+import { requireDecodableExtensions } from '../der.js';
 import { parseCertificate, type ParsedCertificate } from '../x509.js';
 import {
   decodeJwsSegment,
@@ -12,7 +13,7 @@ import {
 } from '../jws-claims.js';
 import { normalizeRoots, validatePair, type RootInput } from './chain.js';
 import { verifyEs256 } from './crypto.js';
-import { OID_EC_PUBLIC_KEY, spkiToJwk } from './jwk.js';
+import { OID_EC_PUBLIC_KEY, requireBuildablePublicKey } from './jwk.js';
 
 export { isTransactionActiveAt } from '../jws-claims.js';
 export type { AppTransactionPayload, Claims, Clock, TransactionPayload } from '../jws-claims.js';
@@ -88,15 +89,35 @@ export class JwsVerifier {
     let leaf: ParsedCertificate;
     let intermediate: ParsedCertificate;
     try {
-      leaf = parseCertificate(base64Decode(x5c[0]!));
-      intermediate = parseCertificate(base64Decode(x5c[1]!));
-      // A key on a curve this build cannot import is a defect of the
-      // certificate, not of the path it sits on, and converting the SPKI is
-      // the only way to find out. It mirrors reading `.publicKey` in the Node
-      // build, and it has to happen inside this catch so both builds answer
-      // INVALID_CERTIFICATE rather than failing later and differently.
-      spkiToJwk(leaf.spki);
-      spkiToJwk(intermediate.spki);
+      // All three entries, including the third — which is parsed and then
+      // dropped. It is never compared to an anchor and never trusted, so
+      // swapping in a stranger's root changes nothing, but an entry that is
+      // not a certificate is INVALID_CERTIFICATE at every index
+      // (transaction/reject-x5c-root-that-is-not-a-certificate).
+      //
+      // Two defects the parser itself does not reach are settled here, in
+      // this catch, so that both builds answer INVALID_CERTIFICATE rather
+      // than failing later and differently: an extension VALUE that stops
+      // decoding, which is the difference between parsing a certificate and
+      // scanning it for a marker OID; and a key on a curve this build
+      // cannot import, which building the key is the only way to find.
+      //
+      // The key check is scoped exactly as the Node build's `.publicKey` is
+      // scoped — an RSA or EC key must build, a key of any other algorithm
+      // is readable and none of this check's business. Converting every
+      // entry unconditionally instead would reject a DSA-keyed x5c[2] the
+      // Node build accepts, which the third entry's own rule forbids: it is
+      // never trusted and never compared, so it has to BE a certificate and
+      // nothing more.
+      const parsed = [0, 1, 2].map((index) => {
+        const raw = base64Decode(x5c[index]!);
+        const certificate = parseCertificate(raw);
+        requireDecodableExtensions(raw);
+        requireBuildablePublicKey(certificate.publicKeyAlgorithmOid, certificate.spki);
+        return certificate;
+      });
+      leaf = parsed[0]!;
+      intermediate = parsed[1]!;
     } catch (cause) {
       throw new VerificationError(
         Reason.INVALID_CERTIFICATE,

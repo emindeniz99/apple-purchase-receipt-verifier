@@ -254,18 +254,21 @@ id.
 
 **Receipt.** Base64 → CMS parse (trailing bytes after the blob are refused)
 → payload parse → **at most ten embedded certificates**, checked before any
-is decoded → signer is among them → chain at the creation date → **signer
-marker OID** → RSA key, SHA-1 or SHA-256 digest → CMS signature → bundle id
-→ device hash.
+is decoded → signer is among them → **the signer is a certificate this
+crate can read** → chain at the creation date → **signer marker OID** → RSA
+key, SHA-1 or SHA-256 digest → CMS signature → bundle id → device hash.
 
 Two orderings are load-bearing and deliberately opposite. On the JWS path
 the marker OIDs are checked **before** the chain; on the receipt path the
 marker OID is checked **after** it, so a receipt signed under a foreign
 chain reports `INVALID_CHAIN` rather than a purpose error.
 
-`x5c[2]` is never parsed, never compared to an anchor and never trusted;
-neither is a receipt's embedded copy of its root. Swapping either changes
-nothing, because the chain terminates at an anchor the caller pinned.
+`x5c[2]` is never compared to an anchor and never trusted, and neither is a
+receipt's embedded copy of its root. Swapping either for another PKI's root
+changes nothing, because the chain terminates at an anchor the caller
+pinned. Being untrusted is not the same as being unread: all three `x5c`
+entries are parsed, and an entry that is not a certificate is
+`INVALID_CERTIFICATE` at whichever index it sits.
 
 Trust anchors are trusted by fiat: **an anchor's own expiry is not
 checked**. That is standard PKIX trust-anchor semantics, and it is what lets
@@ -304,12 +307,16 @@ unrecognised character is a hard `INVALID_RECEIPT_FORMAT`, not something
 skipped), and not closed to one spelling like a JWS segment either — see the
 `verify_base64` rule above.
 
-One further deliberate difference, recorded because no shared vector covers
-it: `x5c[2]` is never decoded or parsed here. Node, Python and Swift agree;
-Java alone parses it, so a JWS whose third entry is unparseable is
-`INVALID_CERTIFICATE` in Java and reaches the signature check everywhere
-else. It is untrusted by design in all five, so no verdict about a
-well-formed JWS moves.
+The receipt path draws one line worth stating: an embedded certificate that
+will not decode is fatal, but the reason depends on which one it is. A
+stranger the receipt merely carries is `INVALID_RECEIPT_FORMAT` — the bag is
+unsigned, so bytes that cannot be read are a defect of the receipt. The
+**signer** being unreadable is `INVALID_CERTIFICATE`, the same verdict an
+unreadable `x5c` entry gets, because the defect is in a certificate rather
+than in the CMS around it. `receipt/reject-signer-*` pins the four ways a
+signer can be unreadable: an unknown X.509 version, a repeated extension, an
+extension value that stops decoding, and a public key on a curve this crate
+does not implement.
 
 ## Defensive parsing
 

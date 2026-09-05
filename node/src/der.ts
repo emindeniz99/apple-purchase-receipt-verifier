@@ -246,6 +246,27 @@ export function requireNoDuplicateExtensions(certRaw: Uint8Array): void {
   }
 }
 
+/**
+ * Rejects a certificate whose extension block does not decode all the way
+ * down: every extnValue is an OCTET STRING wrapping DER, and OpenSSL leaves
+ * that DER alone until something asks for the extension, so a value that
+ * stops decoding partway through is invisible to `new X509Certificate` and
+ * surfaces later — as a chain failure, i.e. as a verdict about the path
+ * rather than about the certificate. It also decides the difference between
+ * PARSING a certificate and scanning it for a marker OID.
+ */
+export function requireDecodableExtensions(certRaw: Uint8Array): void {
+  const { extensions } = tbsParts(certRaw);
+  for (const ext of extensions?.children ?? []) {
+    const parts = ext.children ?? [];
+    const value = parts[parts.length - 1];
+    if (value === undefined || !isOctetString(value)) {
+      throw new ParseError('malformed certificate extension');
+    }
+    parse(octetStringValue(value));
+  }
+}
+
 /** Whether the certificate carries an extension with the given OID. */
 export function hasExtension(certRaw: Uint8Array, oid: string): boolean {
   const { extensions } = tbsParts(certRaw);

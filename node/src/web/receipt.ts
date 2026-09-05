@@ -8,10 +8,11 @@ import {
   type ParsedCms,
 } from '../cms.js';
 import { parseReceiptPayload } from '../receipt-payload.js';
+import { requireDecodableExtensions } from '../der.js';
 import { parseCertificate, type ParsedCertificate } from '../x509.js';
 import { buildAndValidatePath, normalizeRoots, type RootInput } from './chain.js';
 import { digest, verifyRsaPkcs1 } from './crypto.js';
-import { OID_RSA_ENCRYPTION } from './jwk.js';
+import { OID_RSA_ENCRYPTION, requireBuildablePublicKey } from './jwk.js';
 
 export type {
   RawAppReceipt as AppReceipt,
@@ -92,12 +93,15 @@ export async function verifyReceiptCore(
         `receipt embeds more than ${MAX_EMBEDDED_CERTIFICATES} certificates`,
       );
     }
-    const embedded = cms.certificates.map((raw) => parseCertificate(raw));
     const signerIndex = findSignerCertIndex(cms);
     if (signerIndex < 0) {
       throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'signer certificate not embedded');
     }
-    const signerCert = embedded[signerIndex]!;
+    // Read strictly, and before the rest of the bag: which certificate is
+    // unreadable changes the verdict. See the Node build's
+    // readSignerCertificate for the whole of the reasoning.
+    const signerCert = readSignerCertificate(cms.certificates[signerIndex]!);
+    const embedded = cms.certificates.map((raw) => parseCertificate(raw));
     await buildAndValidatePath(signerCert, embedded, roots, at);
     if (!signerCert.hasExtension(RECEIPT_SIGNER_OID)) {
       throw new VerificationError(
@@ -159,6 +163,31 @@ export class ReceiptVerifier {
       await verifyDeviceHash(fields, deviceGuid);
     }
     return fields;
+  }
+}
+
+/** The signer certificate, or INVALID_CERTIFICATE — see the Node build. */
+function readSignerCertificate(raw: Uint8Array): ParsedCertificate {
+  try {
+    const certificate = parseCertificate(raw);
+    // parseCertificate settles the version and a repeated extension; these
+    // two are what it leaves. Decoding every extension VALUE is what makes
+    // reading a certificate different from scanning it for a marker OID,
+    // and building the key is the only way to learn that it sits on a curve
+    // this build cannot import — the web build's equivalents of the Node
+    // build's requireDecodableExtensions and `.publicKey`. Like `.publicKey`,
+    // the key check refuses an RSA or EC key that will not build and says
+    // nothing about a key of another algorithm: a readable DSA signer is a
+    // verdict about the SIGNATURE, and verifyCmsSignature below makes it.
+    requireDecodableExtensions(raw);
+    requireBuildablePublicKey(certificate.publicKeyAlgorithmOid, certificate.spki);
+    return certificate;
+  } catch (cause) {
+    throw new VerificationError(
+      Reason.INVALID_CERTIFICATE,
+      'receipt signer certificate is not a valid certificate',
+      cause,
+    );
   }
 }
 
