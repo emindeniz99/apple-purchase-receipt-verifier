@@ -271,18 +271,15 @@ class HostileInputTest < Minitest::Test
   # walk and the signature check — so the cost was reachable with a blob that
   # never carried a signature at all.
   #
-  # The property is linearity, so the assertion is a ratio against a half-size
-  # input, like the node-budget test above; the absolute ceiling is only a
-  # sanity bound, set loosely because the macOS CI runner measured 130 ms for
-  # the same work that takes under 100 ms on ubuntu.
+  # The ceiling is loose on purpose. A linear scan of a million digits costs
+  # well under a millisecond and the rest of the call is fixed overhead (the
+  # macOS CI runner measured 27 ms for a million digits and 27 ms for half a
+  # million), so a ratio against a half-size input cannot hold there; the
+  # exact-Rational conversion this guards against costs seconds at this size,
+  # which one second catches with a wide margin on any runner.
   def test_a_date_with_a_million_fractional_digits_is_not_superlinear
     milliseconds = elapsed { assert_core_rejects_fraction_of("1" * 1_000_000) }
     assert_operator milliseconds, :<, 1000, "1e6-digit fraction took #{milliseconds.round(2)}ms"
-
-    halved = elapsed { assert_core_rejects_fraction_of("1" * 500_000) }
-    assert_operator halved, :<, milliseconds * 0.9,
-                    "halving the fraction did not halve the work " \
-                    "(#{halved.round(2)}ms of #{milliseconds.round(2)}ms)"
   end
 
   def assert_core_rejects_fraction_of(digits)
@@ -299,11 +296,6 @@ class HostileInputTest < Minitest::Test
   def test_the_endpoint_is_not_superlinear_on_a_long_fractional_second
     milliseconds = elapsed { assert_endpoint_accepts_fraction_of("9" * 2_000_000) }
     assert_operator milliseconds, :<, 2000, "2e6-digit fraction took #{milliseconds.round(2)}ms"
-
-    halved = elapsed { assert_endpoint_accepts_fraction_of("9" * 1_000_000) }
-    assert_operator halved, :<, milliseconds * 0.9,
-                    "halving the fraction did not halve the work " \
-                    "(#{halved.round(2)}ms of #{milliseconds.round(2)}ms)"
   end
 
   def assert_endpoint_accepts_fraction_of(digits)
