@@ -7,7 +7,8 @@ signed JWS transactions and legacy PKCS#7 app receipts against pinned Apple
 root certificates.
 
 ```swift
-.package(url: "https://github.com/emindeniz99/apple-purchase-receipt-verifier.git", from: "0.2.1")
+// v0.3.0 is the newest tag; check the project README's badge for the current one
+.package(url: "https://github.com/emindeniz99/apple-purchase-receipt-verifier.git", from: "0.3.0")
 ```
 
 ```swift
@@ -50,9 +51,12 @@ let app = try await verifier.verifyAppTransaction(jws)          // AppTransactio
 let claims = try await verifier.verifyRaw(jws)                  // [String: Any]
 ```
 
-`verifyRaw` checks the chain and the signature and enforces no claim — the
-caller checks `bundleId`, `environment` and `appAppleId` in the returned
-dictionary itself.
+`verifyRaw` checks the chain and the signature, and enforces no *identity*
+claim: the caller checks `bundleId`, `environment` and `appAppleId` in the
+returned dictionary itself. It is not claim-free, though — it runs the same
+signed path as `verifyTransaction`, so a configured `maxSignedAgeMillis`
+applies to it too and a payload older than that is `.stalePayload` rather
+than a returned dictionary.
 
 Include `.sandbox` in `acceptedEnvironments` on any endpoint App Review can
 reach: App Review runs production builds against sandbox.
@@ -162,10 +166,15 @@ written against it.
 Every verification verdict is a `VerificationError`, a `Sendable`,
 `CustomStringConvertible` struct carrying a `reason: Reason` and a
 `message: String`. Switch on `reason`, never parse `description` or
-`message`. One exception sits at construction rather than verification: a
-`trustedRoots` entry that is not a parseable DER certificate makes the
-initializer rethrow swift-certificates' own parsing error, so treat anchors
-as configuration to validate at startup, not as input to catch per call.
+`message`. The one exception is a malformed trust anchor: a `trustedRoots`
+entry that is not a parseable DER certificate makes swift-certificates' own
+parsing error come back out, not a `VerificationError`. That is usually a
+construction-time failure — `JwsVerifier.init` and `ReceiptVerifier.init`
+decode their anchors once — but the static
+`ReceiptVerifier.verifyCore(receipt:trustedRoots:)` takes its anchors per
+call and decodes them per call, so on that entry point the same error
+surfaces at verification time. Either way, treat anchors as configuration to
+validate at startup rather than as input to catch per call.
 
 ```swift
 do {
@@ -185,7 +194,7 @@ do {
 | `Reason` | Raw value | Raised when |
 |---|---|---|
 | `.invalidJwsFormat` | `INVALID_JWS_FORMAT` | not three dot-separated segments, a segment that is not base64url JSON, `alg != "ES256"`, or an `x5c` that is not exactly three entries |
-| `.invalidCertificate` | `INVALID_CERTIFICATE` | `x5c[0]` or `x5c[1]` does not parse as a certificate. Their base64 is decoded with `ignoreUnknownCharacters`, so a junk character is skipped rather than refused, and `x5c[2]` is never decoded at all; both are recorded in ROADMAP.md as divergences from java, which decodes all three |
+| `.invalidCertificate` | `INVALID_CERTIFICATE` | `x5c[0]` or `x5c[1]` does not parse as a certificate. Their base64 is decoded with `ignoreUnknownCharacters`, so a junk character inside an entry is skipped rather than refused — java skips it too, through `Base64.getMimeDecoder()`, so that is agreement and not a divergence. The one divergence is `x5c[2]`, which this port never decodes and java decodes and parses, so an unparseable third certificate is `INVALID_CERTIFICATE` there and unremarked here (ROADMAP.md records it) |
 | `.invalidCertificatePurpose` | `INVALID_CERTIFICATE_PURPOSE` | the leaf or intermediate lacks its Apple marker OID, or the receipt signer lacks its own |
 | `.invalidChain` | `INVALID_CHAIN` | the path does not reach a pinned anchor, a certificate was not valid at the signing instant, or a receipt embeds more than ten certificates |
 | `.invalidSignature` | `INVALID_SIGNATURE` | the ES256 or CMS signature check failed, or the signer key is not RSA |
