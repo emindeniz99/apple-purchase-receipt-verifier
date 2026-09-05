@@ -152,9 +152,17 @@ final class Certificate
             }
             $extensionOids[$oidNode->contents] = true;
             $oid = Der::decodeOid($oidNode->contents);
-            if (!isset($byOid[$oid])) {
-                $byOid[$oid] = Der::octets($valueNode);
+            // RFC 5280 4.2: a certificate MUST NOT include more than one
+            // instance of a particular extension. Keeping the first copy and
+            // ignoring the rest is what this used to do, and it makes the
+            // parser pick which copy the certificate means — a choice another
+            // implementation can make differently, so "is this a CA", "what
+            // may it be used for" and "does it carry the marker OID" stop
+            // being questions about one certificate.
+            if (isset($byOid[$oid])) {
+                throw new ParseException('duplicate X.509 extension');
             }
+            $byOid[$oid] = Der::octets($valueNode);
         }
 
         $keyUsage = isset($byOid[self::OID_KEY_USAGE])

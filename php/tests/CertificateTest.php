@@ -257,6 +257,33 @@ final class CertificateTest extends TestCase
         Certificate::parse($mangled);
     }
 
+    /**
+     * RFC 5280 §4.2: "A certificate MUST NOT include more than one instance
+     * of a particular extension." The reader used to keep the first copy and
+     * ignore the rest, which is a choice about what the certificate means
+     * rather than a reading of it — `isCa`, the key usage and the marker-OID
+     * lookup could each have been answered from a different copy than another
+     * port answered them from. The vector
+     * `transaction/reject-x5c-duplicate-extension` pins the verdict; this
+     * pins where it is decided.
+     */
+    public function testRejectsACertificateCarryingOneExtensionTwice(): void
+    {
+        $pki = MintedPki::get();
+        $duplicated = TestPki::certificate(
+            'Duplicated Extension',
+            'Minted WWDR',
+            $pki->jwsLeafKey,
+            $pki->intermediateKey,
+            false,
+            [TestPki::LEAF_OID_HEX, TestPki::LEAF_OID_HEX],
+        )['der'];
+
+        $this->expectException(ParseException::class);
+        $this->expectExceptionMessageMatches('/duplicate X.509 extension/');
+        Certificate::parse($duplicated);
+    }
+
     /** @return iterable<string, array{string}> */
     public static function notACertificateProvider(): iterable
     {
