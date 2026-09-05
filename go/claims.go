@@ -197,9 +197,24 @@ func newAppTransactionPayload(c Claims) *AppTransactionPayload {
 //
 // Chain validity is judged here so payloads signed with since-rotated
 // certificates keep verifying (PLAN.md §2.1 step 4).
-func signedAtMillis(c Claims) *int64 {
-	if value := c.int64("signedDate"); value != nil {
-		return value
+//
+// A claim that IS a number but does not fit an int64 -- 1e300, say -- is an
+// error rather than a nil: reporting it absent falls through to the
+// current-time anchor in the caller, which hands an attacker the instant the
+// certificate windows are judged at. An instant no calendar can express is
+// inside no window, so the verdict is a chain failure.
+func signedAtMillis(c Claims) (*int64, error) {
+	for _, key := range [...]string{"signedDate", "receiptCreationDate"} {
+		number, ok := c[key].(json.Number)
+		if !ok {
+			continue
+		}
+		value, err := number.Int64()
+		if err != nil {
+			return nil, newError(ReasonInvalidChain,
+				"payload signing date %s is not a valid instant", number.String())
+		}
+		return &value, nil
 	}
-	return c.int64("receiptCreationDate")
+	return nil, nil
 }

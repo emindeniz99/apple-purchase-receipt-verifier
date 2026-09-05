@@ -246,7 +246,10 @@ func (v *JWSVerifier) verifySignature(jws string) (Claims, error) {
 		return nil, err
 	}
 
-	signedAt := signedAtMillis(payload)
+	signedAt, err := signedAtMillis(payload)
+	if err != nil {
+		return nil, err
+	}
 	// The fallback reads the system clock directly, never v.now: an
 	// injected clock must not be able to move a certificate-validity
 	// verdict (see JWSVerifierOptions.Now).
