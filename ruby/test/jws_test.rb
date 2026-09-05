@@ -65,6 +65,31 @@ class JwsTest < Minitest::Test
     assert_reason(:INVALID_CERTIFICATE) { verifier.verify_transaction(jws) }
   end
 
+  # RFC 5280 4.2 forbids a second instance of any extension, and OpenSSL hands
+  # the list back with both copies in it rather than objecting — so every
+  # reader downstream picks one, and which one it picks is not stated
+  # anywhere. The leaf's own extension list is rebuilt here with a
+  # byte-identical second copy of its first extension; the certificate's
+  # signature is stale afterwards and nothing reaches it, because the x5c
+  # entries are decoded before any chain or signature check.
+  def test_rejects_an_x5c_certificate_carrying_one_extension_twice
+    cert = OpenSSL::ASN1.decode(@pki.leaf.to_der)
+    holder = cert.value[0].value.find do |field|
+      field.is_a?(OpenSSL::ASN1::ASN1Data) && field.tag_class == :CONTEXT_SPECIFIC && field.tag == 3
+    end
+    list = holder.value[0]
+    list.value += [list.value[0]]
+    duplicated = cert.to_der
+
+    # The premise: OpenSSL takes the certificate and reports both copies.
+    oids = OpenSSL::X509::Certificate.new(duplicated).extensions.map(&:oid)
+    assert_equal oids.size, oids.uniq.size + 1
+
+    x5c = [duplicated, @pki.intermediate.to_der, @pki.root.to_der].map { |der| [der].pack("m0") }
+    jws = TestPki.sign_jws(@pki, TestPki.default_claims, header_overrides: { "x5c" => x5c })
+    assert_reason(:INVALID_CERTIFICATE) { verifier.verify_transaction(jws) }
+  end
+
   def test_rejects_a_segment_outside_the_base64url_alphabet
     jws = TestPki.sign_jws(@pki, TestPki.default_claims)
     header, payload, signature = jws.split(".")
