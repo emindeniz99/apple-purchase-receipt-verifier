@@ -1,0 +1,14 @@
+# frozen_string_literal: true
+
+# The fuzzing harness's one dependency, kept out of both the gemspec and the
+# test Gemfile for the same reason the lint tooling is: ruzzy needs clang, a
+# libFuzzer runtime and a native build, and a tool the library does not need
+# must not be able to fail a matrix leg. Nothing under ruby/fuzz/ ships in the
+# gem — spec.files lists lib/, sig/, certs/, README and LICENSE only.
+#
+# Note the licence: ruzzy is AGPL-3.0-only where this project is MIT. It is a
+# development tool invoked out of process against the harness in ruby/fuzz/,
+# and neither it nor the harness is distributed with the gem.
+source "https://rubygems.org"
+
+gem "ruzzy", "~> 0.8"

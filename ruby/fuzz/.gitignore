@@ -1,0 +1,5 @@
+# Grown by libFuzzer, not source: the interesting units are the ones that
+# become tests under ../test/.
+/corpus/
+/artifacts/
+/.seeds/
