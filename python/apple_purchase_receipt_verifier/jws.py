@@ -188,6 +188,14 @@ class JwsVerifier:
         try:
             leaf = x509.load_der_x509_certificate(base64.b64decode(x5c[0]))
             intermediate = x509.load_der_x509_certificate(base64.b64decode(x5c[1]))
+            # cryptography decodes the SubjectPublicKeyInfo lazily, so a curve
+            # it does not implement only surfaces later — as UnsupportedAlgorithm
+            # out of the issuer check, where the chain gets blamed for a defect
+            # of the certificate. Building both keys here settles it while the
+            # verdict is still INVALID_CERTIFICATE, which is what java, swift
+            # and go answer: their decoders refuse the certificate outright.
+            leaf.public_key()
+            intermediate.public_key()
         except Exception as e:
             # Broad by category, for the reason verify_receipt_core states at
             # length: which exception a malformed certificate produces is
