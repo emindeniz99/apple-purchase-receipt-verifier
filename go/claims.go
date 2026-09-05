@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"time"
 )
 
@@ -135,11 +136,53 @@ func (c Claims) int64(key string) *int64 {
 	if !ok {
 		return nil
 	}
-	value, err := number.Int64()
-	if err != nil {
+	value, ok := integralMillis(number)
+	if !ok {
 		return nil
 	}
 	return &value
+}
+
+// int64 bounds as float64. Both are exactly representable, and the upper
+// one is the first float above math.MaxInt64, so the test is half-open.
+const (
+	minInt64AsFloat          = -9223372036854775808.0
+	maxInt64ExclusiveAsFloat = 9223372036854775808.0
+)
+
+// integralMillis reads a JSON number as an int64 claim.
+//
+// json.Number.Int64 parses the LITERAL, so it refuses every spelling that
+// is not a bare integer: `1722945600000.0` and `1.7229456e12` both fail
+// even though the value they name fits comfortably. JSON does not
+// distinguish integers from floats, Apple's own encoders are not the only
+// thing that produces these payloads, and every other port reads the value
+// rather than its spelling -- node `typeof === 'number'`, java
+// `canConvertToLong()`, python `isinstance(x, (int, float))`, php a bounded
+// float cast (php/tests/JsonNumberClaimTest.php pins all three spellings),
+// swift `as? Double`. Reading only the integer spelling made a claim's
+// meaning depend on how it was written, and every consequence was in the
+// accept direction: an expiresDate spelled with a decimal point read as
+// absent, and IsActiveAt treats an absent expiry as no expiry.
+//
+// So a literal Int64 refuses falls back to the float, which is exactly what
+// those ports hold, and is accepted when it is finite and inside the int64
+// range. The conversion truncates toward zero, matching java's longValue()
+// and php's (int) cast. Outside that envelope -- 1e300, a number past
+// MaxInt64 -- the claim is not representable and stays unread, which is the
+// case signedAtMillis turns into INVALID_CHAIN.
+func integralMillis(number json.Number) (int64, bool) {
+	if value, err := number.Int64(); err == nil {
+		return value, true
+	}
+	value, err := number.Float64()
+	if err != nil || math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0, false
+	}
+	if value < minInt64AsFloat || value >= maxInt64ExclusiveAsFloat {
+		return 0, false
+	}
+	return int64(value), true
 }
 
 func (c Claims) environment(key string) Environment { return Environment(c.str(key)) }
@@ -198,19 +241,21 @@ func newAppTransactionPayload(c Claims) *AppTransactionPayload {
 // Chain validity is judged here so payloads signed with since-rotated
 // certificates keep verifying (PLAN.md §2.1 step 4).
 //
-// A claim that IS a number but does not fit an int64 -- 1e300, say -- is an
-// error rather than a nil: reporting it absent falls through to the
-// current-time anchor in the caller, which hands an attacker the instant the
-// certificate windows are judged at. An instant no calendar can express is
-// inside no window, so the verdict is a chain failure.
+// A claim that IS a number but names no instant an int64 can hold -- 1e300,
+// say -- is an error rather than a nil: reporting it absent falls through to
+// the current-time anchor in the caller, which hands an attacker the instant
+// the certificate windows are judged at. An instant no calendar can express
+// is inside no window, so the verdict is a chain failure. A date written
+// `1722945600000.0` or `1.7229456e12` is not that case and is read like the
+// bare integer -- see integralMillis.
 func signedAtMillis(c Claims) (*int64, error) {
 	for _, key := range [...]string{"signedDate", "receiptCreationDate"} {
 		number, ok := c[key].(json.Number)
 		if !ok {
 			continue
 		}
-		value, err := number.Int64()
-		if err != nil {
+		value, ok := integralMillis(number)
+		if !ok {
 			return nil, newError(ReasonInvalidChain,
 				"payload signing date %s is not a valid instant", number.String())
 		}

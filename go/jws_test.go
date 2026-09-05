@@ -387,6 +387,52 @@ func TestVerifyRawStillChecksTheSignature(t *testing.T) {
 	requireReason(t, err, applereceipt.ReasonInvalidChain)
 }
 
+// A JSON number is a value, not a spelling. json.Number.Int64 parses the
+// literal, so `1722945600000.0` and `1.7229456e12` were refused while the
+// bare integer was accepted -- and refusing them was not a rejection but a
+// silence: signedDate read as absent moved certificate validity onto the
+// current-time fallback, and expiresDate read as absent left a lapsed
+// subscription entitled forever. php/tests/JsonNumberClaimTest.php pins the
+// same three spellings; node, java, python and swift all read the value.
+func TestEverySpellingOfADateClaimIsRead(t *testing.T) {
+	pki := newJWSPKI(t)
+	const signedAt int64 = 1722945600000 // 2024-08-06T12:00:00Z
+	for _, spelling := range []string{"1722945600000", "1722945600000.0", "1.7229456e12"} {
+		claims := transactionClaims()
+		claims["signedDate"] = json.Number(spelling)
+		claims["expiresDate"] = json.Number(spelling)
+		verifier := jwsVerifierFor(t, []*x509.Certificate{pki.root.cert}, nil)
+		payload, err := verifier.VerifyTransaction(pki.sign(t, claims))
+		if err != nil {
+			t.Fatalf("signedDate spelled %s: %v", spelling, err)
+		}
+		if payload.SignedDate == nil || *payload.SignedDate != signedAt {
+			t.Fatalf("signedDate spelled %s read as %v", spelling, payload.SignedDate)
+		}
+		if payload.ExpiresDate == nil || *payload.ExpiresDate != signedAt {
+			t.Fatalf("expiresDate spelled %s read as %v", spelling, payload.ExpiresDate)
+		}
+		if payload.IsActiveAt(time.UnixMilli(signedAt + 1)) {
+			t.Fatalf("expiresDate spelled %s left the subscription entitled", spelling)
+		}
+	}
+}
+
+// The other half: a number that names no instant an int64 can hold is not a
+// date whatever its spelling, and it is a chain failure rather than a silence
+// -- reporting it absent would let an attacker choose the instant the
+// certificate windows are judged at.
+func TestADateClaimOutsideTheInt64RangeIsAChainFailure(t *testing.T) {
+	pki := newJWSPKI(t)
+	for _, spelling := range []string{"1e300", "-1e300", "123456789012345678901234567890"} {
+		claims := transactionClaims()
+		claims["signedDate"] = json.Number(spelling)
+		verifier := jwsVerifierFor(t, []*x509.Certificate{pki.root.cert}, nil)
+		_, err := verifier.VerifyTransaction(pki.sign(t, claims))
+		requireReason(t, err, applereceipt.ReasonInvalidChain)
+	}
+}
+
 func TestStalenessBoundaries(t *testing.T) {
 	pki := newJWSPKI(t)
 	// Inside the synthesized chain's validity window, so the only thing
