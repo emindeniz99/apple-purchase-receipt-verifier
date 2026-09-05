@@ -8,6 +8,7 @@ import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.cert.CertPathBuilder;
 import java.security.cert.CertPathBuilderException;
+import java.security.cert.CertPathBuilderResult;
 import java.security.cert.CertStore;
 import java.security.cert.CollectionCertStoreParameters;
 import java.security.cert.PKIXBuilderParameters;
@@ -97,13 +98,37 @@ public final class ReceiptVerifier {
      * backtracking path builder spends 2^layers on. Here it stays flat at
      * 1.0-1.5 ms from fourteen layers to twenty-two (measured in
      * ReceiptVerifierTest#rejectsCrossSignedCertificateMeshWithoutWalkingIt),
-     * but only because {@link PKIXBuilderParameters} defaults
-     * {@code maxPathLength} to 5 and so abandons every path early: a JDK
-     * default this class never states and does not control. Bounding the
-     * count does not rely on it, and matches the node, python and swift
-     * implementations.</p>
+     * because the path builder abandons every path at
+     * {@link #MAX_PATH_LENGTH}. Bounding the count does not rely on that
+     * depth bound, and matches the node, python and swift implementations.</p>
      */
     private static final int MAXIMUM_EMBEDDED_CERTIFICATES = 10;
+
+    /**
+     * The longest path the builder will walk, anchor excluded — the same
+     * number and the same meaning as go, rust, node, python, php, ruby, dotnet
+     * and swift, all of which walk at most this many certificates starting at
+     * the leaf before they must reach a pinned anchor. Genuine receipt chains
+     * are two certificates below the root, so six leaves room for a longer
+     * Apple chain while bounding what a hostile embedded set can cost.
+     *
+     * <p>Two things stand between this constant and the JDK, and both are
+     * needed to make the bound mean here what it means there:</p>
+     *
+     * <ul>
+     *   <li>{@link PKIXBuilderParameters#setMaxPathLength} counts <em>the
+     *       intermediates</em> rather than the certificates, so it is set one
+     *       lower. Stating it also removes the reliance on the JDK's own
+     *       default of 5 — which happens to land on the same boundary, but is
+     *       a default this class does not control.</li>
+     *   <li>That parameter exempts self-issued intermediates from its count
+     *       (RFC 5280 6.1.4), so a path builder honouring it can still return
+     *       a path longer than this constant. The built path is therefore
+     *       measured afterwards, which is the check the other ports perform
+     *       inherently by counting every hop they take.</li>
+     * </ul>
+     */
+    private static final int MAX_PATH_LENGTH = 6;
 
     private static final BouncyCastleProvider PROVIDER = new BouncyCastleProvider();
 
@@ -304,7 +329,13 @@ public final class ReceiptVerifier {
             params.addCertStore(CertStore.getInstance("Collection", new CollectionCertStoreParameters(embedded)));
             params.setRevocationEnabled(false);
             params.setDate(at);
-            CertPathBuilder.getInstance("PKIX").build(params);
+            params.setMaxPathLength(MAX_PATH_LENGTH - 1);
+            CertPathBuilderResult result = CertPathBuilder.getInstance("PKIX").build(params);
+            // getCertPath() excludes the trust anchor, so this is the count the
+            // other ports bound: certificates from the leaf up to the anchor.
+            if (result.getCertPath().getCertificates().size() > MAX_PATH_LENGTH) {
+                throw new VerificationException(Reason.INVALID_CHAIN, "chain exceeds maximum length");
+            }
             return signerCert;
         } catch (CertPathBuilderException e) {
             throw new VerificationException(
