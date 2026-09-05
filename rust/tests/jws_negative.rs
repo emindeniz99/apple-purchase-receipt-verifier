@@ -210,20 +210,20 @@ fn an_x5c_certificate_carrying_one_extension_twice_is_invalid_certificate() {
 }
 
 #[test]
-fn the_third_x5c_entry_is_never_trusted_and_never_parsed() {
-    // Swapping x5c[2] for garbage must change nothing: the chain terminates
-    // at a pinned anchor, not at a certificate the payload supplied.
+fn the_third_x5c_entry_is_never_trusted_but_must_be_a_certificate() {
+    // Swapping x5c[2] for another PKI's root must change nothing: the chain
+    // terminates at a pinned anchor, not at a certificate the payload
+    // supplied. Swapping it for bytes that are not a certificate is a
+    // different thing, and is now INVALID_CERTIFICATE in every port
+    // (transaction/reject-x5c-root-that-is-not-a-certificate).
     let jws = common::transaction_jws();
     let mut header = common::jws_header(&jws);
     let mut entries = header.get("x5c").unwrap().as_array().unwrap().clone();
     entries[2] = json!("bm90IGEgY2VydGlmaWNhdGUgYXQgYWxs");
     header.insert("x5c".to_owned(), Value::Array(entries));
-    // The header changed, so the signature no longer covers it; the point is
-    // that verification reaches the signature check rather than failing on
-    // x5c[2] itself.
     assert_eq!(
         reason_of(&common::with_header(&jws, &header)),
-        Reason::InvalidSignature
+        Reason::InvalidCertificate
     );
 }
 
@@ -713,14 +713,14 @@ fn payload_from(json: &str) -> apple_purchase_receipt_verifier::TransactionPaylo
     apple_purchase_receipt_verifier::TransactionPayload::from_claims(claims)
 }
 
-/// `x5c[2]` is never decoded, never parsed and never trusted — Node, Python
-/// and Swift do the same, and Java alone decodes and parses it, which makes
-/// an unparseable third entry `INVALID_CERTIFICATE` there and lets it reach
-/// the signature check here. No conformance vector pins this, so it is
-/// pinned here instead: the divergence is real, and this port is on the
-/// side of the majority.
+/// `x5c[2]` has to BE a certificate, in every spelling of "is not one".
+/// The differential this used to pin — java parsing the third entry and the
+/// other eight ignoring it — is closed the other way: java's answer won,
+/// because pinning acceptance would have made it drop a rejection it
+/// already made. The entry is still never compared to an anchor and never
+/// trusted, which is what the test above covers.
 #[test]
-fn the_third_x5c_entry_is_never_inspected() {
+fn the_third_x5c_entry_must_be_a_certificate() {
     let jws = common::transaction_jws();
     for entry in ["!!!!!!!!", "QUJDREVGRw", "", "not a certificate at all"] {
         let mut header = common::jws_header(&jws);
@@ -728,13 +728,10 @@ fn the_third_x5c_entry_is_never_inspected() {
             .get_mut("x5c")
             .and_then(Value::as_array_mut)
             .expect("x5c")[2] = Value::String(entry.to_owned());
-        // Rewriting the header breaks the signing input, so the payload's
-        // own signature fails — the point is that it gets that far, i.e.
-        // past the certificate, purpose and chain checks.
         assert_eq!(
             reason_of(&common::with_header(&jws, &header)),
-            Reason::InvalidSignature,
-            "x5c[2] = {entry:?} must not be inspected"
+            Reason::InvalidCertificate,
+            "x5c[2] = {entry:?} must be rejected as a certificate"
         );
     }
 }

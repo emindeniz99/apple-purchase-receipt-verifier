@@ -423,6 +423,9 @@ impl JwsVerifier {
         let segments = split_jws(jws)?;
         let leaf = parse_x5c_certificate(segments.x5c.first())?;
         let intermediate = parse_x5c_certificate(segments.x5c.get(1))?;
+        // Parsed and then dropped: the third entry is trusted by nobody, and
+        // reading it decides only whether it IS a certificate.
+        parse_x5c_certificate(segments.x5c.get(2))?;
         // The marker OIDs are checked BEFORE the chain on the JWS path.
         // `cases.json` uses roots under which the chain would otherwise
         // validate, so the order is what the reason depends on.
@@ -634,11 +637,12 @@ fn parse_json_segment(segment: &str, what: &str) -> Result<Claims> {
     }
 }
 
-/// `x5c[2]` is deliberately never parsed here, never compared to an anchor
-/// and never trusted: swapping it changes nothing. Node, Python and Swift
-/// do the same; Java alone decodes and parses the third entry, so a JWS
-/// whose `x5c[2]` is unparseable is `INVALID_CERTIFICATE` there and reaches
-/// the signature check in the other four ports.
+/// `x5c[2]` is parsed like the other two and then discarded: it is never
+/// compared to an anchor and never trusted, so swapping in a stranger's
+/// root still changes nothing. Reading it settles only whether the entry is
+/// a certificate at all — the differential the ports carried until
+/// `transaction/reject-x5c-root-that-is-not-a-certificate` pinned java's
+/// answer for all nine.
 ///
 /// The entry itself is decoded leniently, not strictly: it is a certificate
 /// container, the same input Java hands to its MIME decoder and Swift to
