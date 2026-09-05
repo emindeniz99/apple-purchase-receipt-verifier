@@ -51,9 +51,12 @@ AppTransactionPayload app = verifier.verifyAppTransaction(jws);        // AppTra
 Map<String, Object> claims = verifier.verifyRaw(jws);                  // renewal info, notifications
 ```
 
-`verifyRaw` checks the chain and the signature and enforces no claim — the
-caller checks bundle id, environment and app Apple id in the returned map
-itself.
+`verifyRaw` checks the chain and the signature, and enforces no *identity*
+claim: the caller checks bundle id, environment and app Apple id in the
+returned map itself. It is not claim-free, though — it runs the same signed
+path as `verifyTransaction`, so a configured `maxSignedAge` applies to it
+too and a payload older than that is `STALE_PAYLOAD` rather than a returned
+map.
 
 Include `Environment.SANDBOX` in `acceptedEnvironments` on any endpoint App
 Review can reach: App Review runs production builds against sandbox.
@@ -172,8 +175,8 @@ try {
 
 | `Reason` | Raised when |
 |---|---|
-| `INVALID_JWS_FORMAT` | not three dot-separated segments, a segment that is not base64url JSON, `alg != ES256`, or an `x5c` that is not exactly three entries |
-| `INVALID_CERTIFICATE` | an `x5c` entry is not valid base64 or not a parseable certificate |
+| `INVALID_JWS_FORMAT` | not three dot-separated segments, a segment that is not a base64url-encoded JSON *object*, `alg != ES256`, or an `x5c` that is not exactly three entries |
+| `INVALID_CERTIFICATE` | an `x5c` entry does not decode to a parseable certificate. The base64 goes through `Base64.getMimeDecoder()`, which skips characters outside the alphabet, so a stray `!` inside an entry is dropped rather than refused — what is left has to fail to parse for this verdict |
 | `INVALID_CERTIFICATE_PURPOSE` | the leaf or intermediate lacks its Apple marker OID, or the receipt signer lacks its own |
 | `INVALID_CHAIN` | the path does not reach a pinned anchor, a certificate was not valid at the signing instant, or a receipt embeds more than ten certificates or a chain longer than six |
 | `INVALID_SIGNATURE` | the ES256 or CMS signature check failed, or the signer key is not RSA |
