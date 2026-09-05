@@ -8,7 +8,7 @@
 mod common;
 
 use apple_purchase_receipt_verifier::{
-    Environment, FixedClock, JwsVerifier, Reason, VerificationError,
+    base64, x509::Certificate, Environment, FixedClock, JwsVerifier, Reason, VerificationError,
 };
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -176,6 +176,35 @@ fn an_x5c_entry_that_is_not_base64_is_invalid_certificate() {
     header.insert("x5c".to_owned(), Value::Array(entries));
     assert_eq!(
         reason_of(&common::with_header(&jws, &header)),
+        Reason::InvalidCertificate
+    );
+}
+
+#[test]
+fn an_x5c_certificate_carrying_one_extension_twice_is_invalid_certificate() {
+    // RFC 5280 4.2 forbids a second instance of any extension. The parser
+    // used to keep the first copy and drop the rest, which is a choice about
+    // what the certificate means rather than a reading of it, so the same
+    // bytes could answer "is this a CA" one way here and another way in a
+    // port that kept the last copy. Both levels are pinned: the parser
+    // refuses the certificate, and the verifier reports it as a defect of
+    // the certificate rather than of the chain it sits on.
+    let jws = common::read_text_fixture("generated/transaction-x5c-duplicate-extension.jws");
+    let header = common::jws_header(&jws);
+    let leaf = header.get("x5c").unwrap().as_array().unwrap()[0]
+        .as_str()
+        .unwrap();
+    let der = base64::decode_lenient(leaf);
+    assert!(Certificate::from_der(&der).is_err());
+
+    let verifier = JwsVerifier::builder()
+        .trusted_roots([common::anchor("generated/hostile-jws-root.der")])
+        .bundle_id("com.example.app")
+        .accepted_environments([Environment::Sandbox])
+        .build()
+        .unwrap();
+    assert_eq!(
+        verifier.verify_transaction(&jws).unwrap_err().reason(),
         Reason::InvalidCertificate
     );
 }

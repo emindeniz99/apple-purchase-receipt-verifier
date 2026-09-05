@@ -415,7 +415,16 @@ fn parse_certificate(der: &[u8]) -> Result<Certificate, Asn1Error> {
         let value: Cow<'_, [u8]> = value_node
             .octet_string_value()
             .ok_or(Asn1Error("malformed certificate extension"))?;
-        by_oid.entry(oid).or_insert_with(|| value.into_owned());
+        // RFC 5280 4.2: a certificate MUST NOT include more than one
+        // instance of a particular extension. Keeping the first copy and
+        // dropping the rest is what this used to do, and it makes the
+        // parser pick which copy the certificate means — a choice another
+        // implementation is free to make differently, so "is this a CA",
+        // "what may it be used for" and "does it carry the marker OID"
+        // stop being questions about one certificate.
+        if by_oid.insert(oid, value.into_owned()).is_some() {
+            return Err(Asn1Error("duplicate X.509 extension"));
+        }
     }
 
     let key_usage = match by_oid.get(OID_KEY_USAGE) {
