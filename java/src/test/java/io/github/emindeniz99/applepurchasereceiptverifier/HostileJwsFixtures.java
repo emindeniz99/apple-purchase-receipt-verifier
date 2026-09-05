@@ -1,6 +1,7 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -23,7 +24,7 @@ import org.bouncycastle.asn1.DERSequence;
 import org.bouncycastle.asn1.DERTaggedObject;
 
 /**
- * Writes the six hostile-JWS fixtures into {@code fixtures/generated/} —
+ * Writes the seven hostile-JWS fixtures into {@code fixtures/generated/} —
  * the inputs Python's coverage-guided fuzzing found escaping the library as
  * bare exceptions (ROADMAP "Before 1.0" item 3), turned into shared vectors
  * so all nine ports have to answer them the same way.
@@ -44,7 +45,9 @@ import org.bouncycastle.asn1.DERTaggedObject;
  * node tools/lint-cases.mjs   # re-hash: every contentSha256 must be updated
  * </pre>
  *
- * <p>Every fixture here carries exactly ONE defect. Five of the six put that
+ * <p>Six of the seven carry exactly ONE defect each; the seventh carries
+ * none and must verify, because it is the boundary of what the second one
+ * refuses. Five of the six put that
  * defect in the JWS header or in an {@code x5c} certificate, which is signed
  * material in neither case — the header is covered by the ES256 signature but
  * an attacker writes it, and the certificates are covered by their own
@@ -196,6 +199,24 @@ public final class HostileJwsFixtures {
                 "transaction-x5c-duplicate-extension.jws",
                 pki.signJwsWithHeader(header(replacing(pki.x5c(), 0, duplicateExtension)), claimsJson)
                         .getBytes(StandardCharsets.US_ASCII));
+
+        // --- 7. the same signedDate, written with a decimal point ---------
+        // The one input here that must be ACCEPTED, and it belongs beside the
+        // other six because it is the boundary of the rule they set: a port
+        // that answers transaction/reject-signed-date-out-of-range by
+        // refusing every number that is not a bare integer passes that vector
+        // and fails this one. JSON draws no line between 1722945600000 and
+        // 1722945600000.0, and reading only the integer spelling fails OPEN —
+        // the date reads as absent, certificate validity falls back to the
+        // current time and the staleness rule stops applying at all.
+        // BigDecimal rather than double so the literal is written out as it
+        // is spelled here.
+        Map<String, Object> decimalDate = new LinkedHashMap<String, Object>(transaction);
+        decimalDate.put("signedDate", new BigDecimal("1722945600000.0"));
+        write(
+                out,
+                "transaction-signed-date-decimal.jws",
+                pki.signJws(decimalDate).getBytes(StandardCharsets.US_ASCII));
     }
 
     /** {@code {"alg":"ES256","x5c":[...]}} — the header the last three use. */
