@@ -383,6 +383,8 @@ namespace ApplePurchaseReceiptVerifier.Receipt
                 }
             }
 
+            RequireReadableSigner(signerCertificate);
+
             // Deliberately the system clock, with no seam to override it: this
             // is a certificate-validity instant. The fallback only fires for a
             // receipt carrying no creation date (attribute 12).
@@ -461,6 +463,79 @@ namespace ApplePurchaseReceiptVerifier.Receipt
                 throw new VerificationException(
                     VerificationReason.DeviceHashMismatch,
                     "the computed device hash does not match attribute 5");
+            }
+        }
+
+        /// <summary>
+        /// The four things the platform CMS decoder lets past that the checks
+        /// below assume, settled while the verdict is still "this is not a
+        /// certificate" — the receipt-path twin of what
+        /// <c>JwsVerifier.LoadX5cEntry</c> settles for an x5c entry, and
+        /// checked BEFORE the chain so a defect of the signer cannot come out
+        /// as a verdict about the path. The last of them must be answered
+        /// here rather than left to the "not RSA" check further down, whose
+        /// subject is a READABLE key of the wrong kind
+        /// (receipt/reject-signer-*).
+        /// </summary>
+        private static void RequireReadableSigner(X509Certificate2 signerCertificate)
+        {
+            if (signerCertificate.Version is < 1 or > 3)
+            {
+                throw new VerificationException(
+                    VerificationReason.InvalidCertificate,
+                    "the receipt signer certificate has an unknown X.509 version");
+            }
+
+            CertificateFields? fields = CertificateFields.TryParse(signerCertificate.RawData);
+            if (fields is null)
+            {
+                throw new VerificationException(
+                    VerificationReason.InvalidCertificate,
+                    "the receipt signer certificate is not a valid certificate");
+            }
+
+            if (fields.HasDuplicateExtension)
+            {
+                throw new VerificationException(
+                    VerificationReason.InvalidCertificate,
+                    "the receipt signer certificate carries a duplicate extension");
+            }
+
+            if (fields.HasUndecodableExtension)
+            {
+                throw new VerificationException(
+                    VerificationReason.InvalidCertificate,
+                    "the receipt signer certificate has an extension that does not decode");
+            }
+
+            if (!HasReadablePublicKey(signerCertificate))
+            {
+                throw new VerificationException(
+                    VerificationReason.InvalidCertificate,
+                    "the receipt signer certificate has an unreadable public key");
+            }
+        }
+
+        private static bool HasReadablePublicKey(X509Certificate2 certificate)
+        {
+            try
+            {
+                using (RSA? rsa = certificate.GetRSAPublicKey())
+                {
+                    if (rsa is not null)
+                    {
+                        return true;
+                    }
+                }
+
+                using (ECDsa? ec = certificate.GetECDsaPublicKey())
+                {
+                    return ec is not null;
+                }
+            }
+            catch (CryptographicException)
+            {
+                return false;
             }
         }
 

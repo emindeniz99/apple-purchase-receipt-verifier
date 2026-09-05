@@ -28,7 +28,8 @@ namespace ApplePurchaseReceiptVerifier.Internal
             string tbsSignatureAlgorithmOid,
             byte[] signature,
             IReadOnlyDictionary<string, byte[]> extensions,
-            bool hasDuplicateExtension)
+            bool hasDuplicateExtension,
+            bool hasUndecodableExtension)
         {
             TbsCertificate = tbsCertificate;
             SignatureAlgorithmOid = signatureAlgorithmOid;
@@ -36,6 +37,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
             Signature = signature;
             Extensions = extensions;
             HasDuplicateExtension = hasDuplicateExtension;
+            HasUndecodableExtension = hasUndecodableExtension;
         }
 
         /// <summary>The exact encoded <c>tbsCertificate</c> the signature is over.</summary>
@@ -61,6 +63,17 @@ namespace ApplePurchaseReceiptVerifier.Internal
         /// picked. The JWS path refuses such a certificate outright.
         /// </summary>
         internal bool HasDuplicateExtension { get; }
+
+        /// <summary>
+        /// Whether some extension's value does not decode as DER. An extnValue
+        /// is an OCTET STRING wrapping DER, and nothing here decodes the ones
+        /// it does not read, so a value that stops decoding partway through is
+        /// otherwise invisible until something asks for that extension — and
+        /// then surfaces as a chain failure, a verdict about the path rather
+        /// than about the certificate. It is also what separates PARSING a
+        /// certificate from scanning it for a marker OID.
+        /// </summary>
+        internal bool HasUndecodableExtension { get; }
 
         /// <summary>Parses <paramref name="raw"/>, or returns <see langword="null"/> if it will not parse.</summary>
         internal static CertificateFields? TryParse(byte[] raw)
@@ -105,6 +118,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
 
                 Dictionary<string, byte[]> extensions = new Dictionary<string, byte[]>(StringComparer.Ordinal);
                 bool duplicate = false;
+                bool undecodable = false;
                 while (tbsReader.HasData)
                 {
                     Asn1Tag tag = tbsReader.PeekTag();
@@ -119,10 +133,12 @@ namespace ApplePurchaseReceiptVerifier.Internal
                         continue;
                     }
 
-                    duplicate |= ReadExtensions(tbsReader.ReadSequence(tag).ReadSequence(), extensions);
+                    ReadExtensions(
+                        tbsReader.ReadSequence(tag).ReadSequence(), extensions, ref duplicate, ref undecodable);
                 }
 
-                return new CertificateFields(tbs, outerOid, tbsOid, signature, extensions, duplicate);
+                return new CertificateFields(
+                    tbs, outerOid, tbsOid, signature, extensions, duplicate, undecodable);
             }
             catch (AsnContentException)
             {
@@ -171,10 +187,10 @@ namespace ApplePurchaseReceiptVerifier.Internal
             }
         }
 
-        /// <summary>Reads the extension list; returns whether an OID repeated.</summary>
-        private static bool ReadExtensions(AsnReader sequence, Dictionary<string, byte[]> into)
+        /// <summary>Reads the extension list, flagging a repeated OID and a value that will not decode.</summary>
+        private static void ReadExtensions(
+            AsnReader sequence, Dictionary<string, byte[]> into, ref bool duplicate, ref bool undecodable)
         {
-            bool duplicate = false;
             while (sequence.HasData)
             {
                 AsnReader extension = sequence.ReadSequence();
@@ -185,6 +201,16 @@ namespace ApplePurchaseReceiptVerifier.Internal
                 }
 
                 byte[] value = extension.ReadOctetString();
+                try
+                {
+                    AsnReader inner = new AsnReader(value, AsnEncodingRules.DER);
+                    inner.ReadEncodedValue();
+                }
+                catch (AsnContentException)
+                {
+                    undecodable = true;
+                }
+
                 if (into.ContainsKey(oid))
                 {
                     duplicate = true;
@@ -193,8 +219,6 @@ namespace ApplePurchaseReceiptVerifier.Internal
 
                 into.Add(oid, value);
             }
-
-            return duplicate;
         }
 
         private static string ReadAlgorithmIdentifierOid(AsnReader reader)
