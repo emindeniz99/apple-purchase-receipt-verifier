@@ -194,9 +194,19 @@ public struct JwsVerifier: Sendable {
                 "intermediate certificate lacks Apple marker OID \(Self.intermediateOID)")
         }
 
+        // RFC 7515 7.1 makes the payload a JSON object, and reading a payload
+        // that is not one as "no claims" fails OPEN: every claim then reads as
+        // absent, certificate validity falls back to the current time, and the
+        // staleness rule stops applying at all. An empty segment and a JSON
+        // array are both that payload
+        // (transaction/reject-empty-payload-segment,
+        // transaction/reject-payload-that-is-a-json-array).
+        guard let claims = try? JSONSerialization.jsonObject(with: payloadData) as? [String: Any] else {
+            throw VerificationError(.invalidJwsFormat, "payload is not a JSON object")
+        }
+
         // Chain validity is checked at signing time so payloads signed with
         // since-rotated certificates keep verifying (PLAN.md §2.1 step 4).
-        let claims = (try? JSONSerialization.jsonObject(with: payloadData) as? [String: Any]) ?? [:]
         let signedAtMillis =
             (claims["signedDate"] as? Double)
             ?? (claims["receiptCreationDate"] as? Double)
