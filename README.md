@@ -176,6 +176,17 @@ the shared fixtures cannot express: `java/.../TestPki.java`,
 `go/testpki_test.go`, `ruby/test/test_pki.rb`, `php/tests/Support/TestPki.php`
 and `dotnet/tests/.../TestPki.cs`. Those are native suites, not a shared tier.
 
+Every port also has coverage-guided fuzz targets, run for a fixed budget by
+its own CI job (`go-fuzz`, `rust-fuzz`, `node-fuzz`, `ruby-fuzz`, `php-fuzz`,
+`dotnet-fuzz`, `python-fuzz`, `swift-fuzz`, `java-fuzz`) and seeded from
+`fixtures/`, so a crasher is a mutation of a genuine receipt or JWS. The
+targets share three invariants: nothing panics or traps, every failure is the
+port's typed verification error, and an input one anchor set accepts must be
+refused by an unrelated one — the last is what lets a fuzzer find a wrong
+acceptance, not only a crash. Each `<port>/fuzz/README.md` lists its targets;
+[THREAT-MODEL.md](./THREAT-MODEL.md) says what they are for and PLAN.md D16
+why the parsers they cover are hand-written.
+
 Production trust anchors are all three published Apple root certificates in
 [`certs/`](./certs) (from [Apple PKI](https://www.apple.com/certificateauthority/)):
 `AppleIncRootCertificate.cer`, `AppleRootCA-G2.cer` and `AppleRootCA-G3.cer`.
