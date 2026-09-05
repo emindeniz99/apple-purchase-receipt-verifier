@@ -13,7 +13,10 @@
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CA1707;CA1861;CA5350;CA5351;SYSLIB0057;CA1848;CA1031</NoWarn>
     <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
-    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+    <!-- SDKs before 10 ignore global.json's test.runner and fall back to
+         VSTest for `dotnet test`; MTP 2.x errors on this property under
+         SDK 10 itself, so it's kept but restricted to the older SDKs. -->
+    <TestingPlatformDotnetTestSupport Condition="$([MSBuild]::VersionLessThan('$(NETCoreSdkVersion)', '10.0'))">true</TestingPlatformDotnetTestSupport>
   </PropertyGroup>
 
   <ItemGroup>
