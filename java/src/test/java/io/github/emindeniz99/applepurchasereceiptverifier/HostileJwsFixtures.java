@@ -13,13 +13,17 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.bouncycastle.asn1.ASN1Encodable;
+import org.bouncycastle.asn1.ASN1EncodableVector;
+import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Sequence;
+import org.bouncycastle.asn1.ASN1TaggedObject;
 import org.bouncycastle.asn1.DERBitString;
 import org.bouncycastle.asn1.DERSequence;
+import org.bouncycastle.asn1.DERTaggedObject;
 
 /**
- * Writes the five hostile-JWS fixtures into {@code fixtures/generated/} —
+ * Writes the six hostile-JWS fixtures into {@code fixtures/generated/} —
  * the inputs Python's coverage-guided fuzzing found escaping the library as
  * bare exceptions (ROADMAP "Before 1.0" item 3), turned into shared vectors
  * so all nine ports have to answer them the same way.
@@ -40,7 +44,7 @@ import org.bouncycastle.asn1.DERSequence;
  * node tools/lint-cases.mjs   # re-hash: every contentSha256 must be updated
  * </pre>
  *
- * <p>Every fixture here carries exactly ONE defect. Four of the five put that
+ * <p>Every fixture here carries exactly ONE defect. Five of the six put that
  * defect in the JWS header or in an {@code x5c} certificate, which is signed
  * material in neither case — the header is covered by the ES256 signature but
  * an attacker writes it, and the certificates are covered by their own
@@ -78,6 +82,12 @@ public final class HostileJwsFixtures {
 
     /** {@code OBJECT IDENTIFIER 2.5.29.19} — basicConstraints. */
     private static final byte[] BASIC_CONSTRAINTS_OID = {0x06, 0x03, 0x55, 0x1d, 0x13};
+
+    /** The same OID as an object, for the extension list rebuild. */
+    private static final ASN1ObjectIdentifier BASIC_CONSTRAINTS = new ASN1ObjectIdentifier("2.5.29.19");
+
+    /** {@code [3] EXPLICIT Extensions} — the last TBSCertificate field. */
+    private static final int EXTENSIONS_TAG = 3;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -170,6 +180,22 @@ public final class HostileJwsFixtures {
                 "transaction-x5c-certificate-version-11.jws",
                 pki.signJwsWithHeader(header(replacing(pki.x5c(), 1, version11)), claimsJson)
                         .getBytes(StandardCharsets.US_ASCII));
+
+        // --- 6. the leaf carries basicConstraints twice -------------------
+        // The extension list of x5c[0] holds a byte-identical second copy of
+        // its basicConstraints, and the TBS is re-signed by the intermediate
+        // so the certificate is genuine in every other respect. RFC 5280
+        // 4.2 forbids a second instance of any extension, and a parser that
+        // allows one has to decide which copy wins — so this never becomes a
+        // verdict about basicConstraints, it is a certificate the library
+        // cannot be said to have read. It is x5c[0] because that is where
+        // the marker-OID lookup touches an extension block first.
+        byte[] duplicateExtension = resign(duplicateBasicConstraints(pki.leaf.getEncoded()), pki.intermediateKey);
+        write(
+                out,
+                "transaction-x5c-duplicate-extension.jws",
+                pki.signJwsWithHeader(header(replacing(pki.x5c(), 0, duplicateExtension)), claimsJson)
+                        .getBytes(StandardCharsets.US_ASCII));
     }
 
     /** {@code {"alg":"ES256","x5c":[...]}} — the header the last three use. */
@@ -205,6 +231,46 @@ public final class HostileJwsFixtures {
         byte[] mutated = der.clone();
         mutated[cursor + 1] = 0x7f;
         return mutated;
+    }
+
+    /**
+     * Appends a byte-identical second copy of the basicConstraints extension
+     * to the certificate's extension list. Rebuilt through the ASN.1 types
+     * rather than spliced, because every enclosing length — the extension
+     * list, the {@code [3]} wrapper and the TBS itself — grows with it. The
+     * signature the certificate still carries is stale afterwards, which
+     * {@link #resign} repairs.
+     */
+    private static byte[] duplicateBasicConstraints(byte[] der) throws Exception {
+        ASN1Sequence certificate = ASN1Sequence.getInstance(ASN1Primitive.fromByteArray(der));
+        ASN1Sequence tbs = ASN1Sequence.getInstance(certificate.getObjectAt(0));
+        ASN1EncodableVector fields = new ASN1EncodableVector();
+        boolean duplicated = false;
+        for (int i = 0; i < tbs.size(); i++) {
+            ASN1Encodable field = tbs.getObjectAt(i);
+            if (!(field instanceof ASN1TaggedObject) || ((ASN1TaggedObject) field).getTagNo() != EXTENSIONS_TAG) {
+                fields.add(field);
+                continue;
+            }
+            ASN1Sequence extensions = ASN1Sequence.getInstance((ASN1TaggedObject) field, true);
+            ASN1EncodableVector rebuilt = new ASN1EncodableVector();
+            for (int j = 0; j < extensions.size(); j++) {
+                ASN1Sequence extension = ASN1Sequence.getInstance(extensions.getObjectAt(j));
+                rebuilt.add(extension);
+                if (BASIC_CONSTRAINTS.equals(ASN1ObjectIdentifier.getInstance(extension.getObjectAt(0)))) {
+                    rebuilt.add(extension);
+                    duplicated = true;
+                }
+            }
+            fields.add(new DERTaggedObject(true, EXTENSIONS_TAG, new DERSequence(rebuilt)));
+        }
+        if (!duplicated) {
+            throw new IllegalStateException("certificate carries no basicConstraints to duplicate");
+        }
+        return new DERSequence(new ASN1Encodable[] {
+                    new DERSequence(fields), certificate.getObjectAt(1), certificate.getObjectAt(2)
+                })
+                .getEncoded("DER");
     }
 
     /** Rewrites the namedCurve OID to the unassigned 1.2.840.10045.3.1.10. */
