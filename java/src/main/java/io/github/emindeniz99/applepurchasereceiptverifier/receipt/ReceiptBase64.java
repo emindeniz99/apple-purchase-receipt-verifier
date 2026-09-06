@@ -2,6 +2,7 @@ package io.github.emindeniz99.applepurchasereceiptverifier.receipt;
 
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
+import io.github.emindeniz99.applepurchasereceiptverifier.internal.SafeText;
 import java.util.Base64;
 
 /**
@@ -62,7 +63,8 @@ final class ReceiptBase64 {
                 data.append(c == '-' ? '+' : '/');
             } else {
                 throw new VerificationException(
-                        Reason.INVALID_RECEIPT_FORMAT, "receipt has an invalid base64 character: '" + c + "'");
+                        Reason.INVALID_RECEIPT_FORMAT,
+                        "receipt has an invalid base64 character: '" + SafeText.quote(c) + "'");
             }
         }
         for (int i = padStart; i < stripped.length(); i++) {

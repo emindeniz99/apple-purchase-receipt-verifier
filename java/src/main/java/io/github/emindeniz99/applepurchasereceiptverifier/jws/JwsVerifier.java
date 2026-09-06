@@ -2,12 +2,15 @@ package io.github.emindeniz99.applepurchasereceiptverifier.jws;
 
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.PropertyAccessor;
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.emindeniz99.applepurchasereceiptverifier.Environment;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
+import io.github.emindeniz99.applepurchasereceiptverifier.internal.SafeText;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.math.BigInteger;
@@ -56,6 +59,37 @@ public final class JwsVerifier {
     static final String LEAF_OID = "1.2.840.113635.100.6.11.1";
     /** Apple marker OID: Worldwide Developer Relations intermediate CA. */
     static final String INTERMEDIATE_OID = "1.2.840.113635.100.6.2.1";
+
+    /**
+     * Ceiling on the compact JWS this verifier will look at, in characters.
+     *
+     * <p>Checked before the input is split or any segment is decoded, because
+     * everything below allocates in proportion to it: base64url decoding
+     * produces three quarters of the segment again as bytes, Jackson's tree
+     * holds the parsed header and payload, and none of that is behind a
+     * signature check. A 64 MB input under {@code -Xmx256m} threw
+     * {@link OutOfMemoryError} out of {@code verifyTransaction} rather than
+     * the declared {@link VerificationException}.
+     *
+     * <p>The number is the php port's {@code MAX_JWS_BYTES}. Every JWS in the
+     * shared corpus, Apple's own mock notification data included, is under
+     * 2.5 KB, so 256 KiB is a hundredfold headroom over anything Apple has
+     * ever signed. A compact JWS is base64url and dots, so its characters and
+     * its bytes are the same count for any input that could verify.
+     */
+    public static final int MAX_JWS_BYTES = 262144;
+
+    /**
+     * How deep a JSON structure may nest inside a JWS segment.
+     *
+     * <p>Both segments are parsed <em>before</em> the signature is checked, so
+     * this bound guards attacker-chosen bytes. Jackson 2.15 and later default
+     * to 1000, but that is a default: a host BOM that pins an older Jackson 2
+     * links cleanly and silently loses the guard, so the constraint is stated
+     * here instead of inherited. Apple's payloads are flat objects, so 64 is
+     * far above anything real.
+     */
+    private static final int MAX_JSON_NESTING_DEPTH = 64;
 
     private final Set<TrustAnchor> trustAnchors;
     private final String bundleId;
@@ -135,7 +169,29 @@ public final class JwsVerifier {
         this.appAppleId = appAppleId;
         this.maxSignedAgeMillis = maxSignedAge;
         this.clock = clock == null ? Clock.systemUTC() : clock;
-        this.mapper = new ObjectMapper().setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY);
+        this.mapper =
+                new ObjectMapper(jsonFactory()).setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY);
+    }
+
+    /**
+     * The reader constraints, stated rather than inherited from whatever
+     * Jackson the host resolved. {@link StreamReadConstraints} needs Jackson
+     * 2.15 and {@code maxDocumentLength} needs 2.16; below that floor this
+     * call fails loudly at construction instead of leaving the library
+     * running with guards it believes it set.
+     */
+    private static JsonFactory jsonFactory() {
+        return JsonFactory.builder()
+                .streamReadConstraints(StreamReadConstraints.builder()
+                        .maxNestingDepth(MAX_JSON_NESTING_DEPTH)
+                        // A segment cannot outgrow the whole JWS, so both
+                        // length bounds are MAX_JWS_BYTES: consistent with the
+                        // entry-point bound rather than a second opinion about
+                        // it.
+                        .maxStringLength(MAX_JWS_BYTES)
+                        .maxDocumentLength(MAX_JWS_BYTES)
+                        .build())
+                .build();
     }
 
     /**
@@ -192,6 +248,13 @@ public final class JwsVerifier {
         if (jws == null) {
             throw new VerificationException(Reason.INVALID_JWS_FORMAT, "jws is null");
         }
+        // Before the split, so nothing downstream allocates in proportion to
+        // an input this verifier has already decided not to look at.
+        if (jws.length() > MAX_JWS_BYTES) {
+            throw new VerificationException(
+                    Reason.INVALID_JWS_FORMAT,
+                    "jws exceeds the maximum accepted size of " + MAX_JWS_BYTES + " characters");
+        }
         String[] parts = jws.split("\\.", -1);
         if (parts.length != 3) {
             throw new VerificationException(
@@ -201,7 +264,8 @@ public final class JwsVerifier {
         if (!"ES256".equals(header.path("alg").asText())) {
             throw new VerificationException(
                     Reason.INVALID_JWS_FORMAT,
-                    "alg must be ES256, got " + header.path("alg").asText());
+                    "alg must be ES256, got "
+                            + SafeText.quote(header.path("alg").asText()));
         }
         JsonNode x5c = header.path("x5c");
         if (!x5c.isArray() || x5c.size() != 3 || !allTextual(x5c)) {
@@ -357,7 +421,8 @@ public final class JwsVerifier {
         }
         if (claim.isNumber()) {
             throw new VerificationException(
-                    Reason.INVALID_CHAIN, "payload signing date " + claim.asText() + " is not a valid instant");
+                    Reason.INVALID_CHAIN,
+                    "payload signing date " + SafeText.quote(claim.asText()) + " is not a valid instant");
         }
         return null;
     }
@@ -426,7 +491,7 @@ public final class JwsVerifier {
     private void requireBundleId(String actual) throws VerificationException {
         if (!bundleId.equals(actual)) {
             throw new VerificationException(
-                    Reason.WRONG_BUNDLE_ID, "expected " + bundleId + " but payload has " + actual);
+                    Reason.WRONG_BUNDLE_ID, "expected " + bundleId + " but payload has " + SafeText.quote(actual));
         }
     }
 
@@ -436,7 +501,7 @@ public final class JwsVerifier {
         if (env == null || !acceptedEnvironments.contains(env)) {
             throw new VerificationException(
                     Reason.WRONG_ENVIRONMENT,
-                    "payload environment " + claim + " not in accepted set " + acceptedEnvironments);
+                    "payload environment " + SafeText.quote(claim) + " not in accepted set " + acceptedEnvironments);
         }
         return env;
     }

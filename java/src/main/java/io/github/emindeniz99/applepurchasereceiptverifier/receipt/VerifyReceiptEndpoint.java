@@ -1,6 +1,8 @@
 package io.github.emindeniz99.applepurchasereceiptverifier.receipt;
 
+import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.emindeniz99.applepurchasereceiptverifier.Environment;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
@@ -30,6 +32,13 @@ import java.util.Set;
  *
  * <p>Like Apple's endpoint, this does NOT check the bundle id — the caller
  * compares {@code receipt.bundle_id}, exactly as with the real endpoint.</p>
+ *
+ * <p>Thread-safe once constructed: every instance field is final, the anchor
+ * set is copied at construction and never handed out, both methods keep their
+ * per-call state in locals, and the one object they share is a configured
+ * Jackson {@link ObjectMapper}, which Jackson documents as safe to use from
+ * many threads. One instance can serve every request of a process (a
+ * singleton bean, for example) rather than one per request.</p>
  */
 public final class VerifyReceiptEndpoint {
 
@@ -45,11 +54,46 @@ public final class VerifyReceiptEndpoint {
     /** Internal error. */
     public static final int STATUS_INTERNAL = 21009;
 
+    /**
+     * Ceiling on the raw request body {@link #verifyReceiptJson(String)} will
+     * parse, in characters.
+     *
+     * <p>"Neither method ever throws" is a promise about exceptions, and heap
+     * exhaustion is not one: it is an {@link OutOfMemoryError}, so the caller
+     * gets no body at all and the promise stops holding on exactly the hostile
+     * input it exists for. JSON parsing allocates a multiple of the body, and
+     * that happens before any verification.
+     *
+     * <p>The number is the php port's {@code MAX_REQUEST_BYTES}, and it is
+     * deliberately below {@link ReceiptVerifier#MAX_RECEIPT_BYTES}: the JSON
+     * entry point has an amplification the pre-decoded {@link
+     * #verifyReceipt(Map)} entry point does not. A 1 MiB body carries any real
+     * request with room to spare; the largest genuine receipt in the shared
+     * corpus is 106 KB of base64.
+     */
+    public static final int MAX_REQUEST_BYTES = 1048576;
+
+    /**
+     * How deep a JSON structure the request body may nest. Stated rather than
+     * inherited: Jackson 2.15 and later default to 1000, but a host BOM that
+     * pins an older Jackson 2 links cleanly and silently loses the guard. A
+     * verifyReceipt body is a flat object of strings.
+     */
+    private static final int MAX_JSON_NESTING_DEPTH = 64;
+
     // Locale.ROOT pinned so a JVM default locale can never reach the
     // rendering, matching node (en-CA) and swift (en_US_POSIX).
     private static final DateTimeFormatter FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withLocale(Locale.ROOT);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = new ObjectMapper(JsonFactory.builder()
+            .streamReadConstraints(StreamReadConstraints.builder()
+                    .maxNestingDepth(MAX_JSON_NESTING_DEPTH)
+                    // Nothing inside the body can be larger than the body, so
+                    // both length bounds are MAX_REQUEST_BYTES.
+                    .maxStringLength(MAX_REQUEST_BYTES)
+                    .maxDocumentLength(MAX_REQUEST_BYTES)
+                    .build())
+            .build());
     private static final String MALFORMED_JSON = "{\"status\":" + STATUS_MALFORMED + "}";
     private static final ZoneId GMT = ZoneId.of("UTC");
     private static final ZoneId PACIFIC = ZoneId.of("America/Los_Angeles");
@@ -125,6 +169,14 @@ public final class VerifyReceiptEndpoint {
         if (!(receiptData instanceof String) || ((String) receiptData).isEmpty()) {
             return status(STATUS_MALFORMED);
         }
+        // This entry point decodes before verifyReceiptCore could apply its
+        // own cap, so the cap is applied to the transport string here: the
+        // same string and the same limit ReceiptVerifier.verify(String) would
+        // have measured. The answer is 21002 either way; the difference is
+        // that nothing is allocated first.
+        if (((String) receiptData).length() > ReceiptVerifier.MAX_RECEIPT_BYTES) {
+            return status(STATUS_MALFORMED);
+        }
         byte[] der;
         try {
             der = ReceiptBase64.decode((String) receiptData);
@@ -193,6 +245,9 @@ public final class VerifyReceiptEndpoint {
      * @return raw JSON response body; never throws
      */
     public String verifyReceiptJson(String requestJson) {
+        if (requestJson != null && requestJson.length() > MAX_REQUEST_BYTES) {
+            return MALFORMED_JSON;
+        }
         Object parsed;
         try {
             parsed = MAPPER.readValue(requestJson, Object.class);
