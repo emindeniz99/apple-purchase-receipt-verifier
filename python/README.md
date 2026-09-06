@@ -56,13 +56,13 @@ verifier = JwsVerifier(
     apple_jws_roots(),
     "com.example.app",
     ["Production", "Sandbox"],
-    max_signed_age_millis=5 * 60 * 1000,        # the freshness window
+    max_signed_age_millis=5 * 60 * 1000,  # the freshness window
 )
 
 
 def redeem_transaction(user_id: str, jws: str) -> str:
     try:
-        payload = verifier.verify_transaction(jws)                  # step 2
+        payload = verifier.verify_transaction(jws)  # step 2
     except VerificationError as error:
         if error.reason == Reason.STALE_PAYLOAD:
             # step 4: ask the client for a fresh jwsRepresentation, or fetch
@@ -71,10 +71,10 @@ def redeem_transaction(user_id: str, jws: str) -> str:
         log.warning("purchase rejected: %s", error.reason)
         return "denied"
 
-    if payload.get("revocationDate") is not None:                   # step 3
+    if payload.get("revocationDate") is not None:  # step 3
         return "denied"
 
-    transaction_id = payload["transactionId"]                       # step 5
+    transaction_id = payload["transactionId"]  # step 5
     if grants.exists(transaction_id):
         return "denied"
     grants.record(transaction_id, payload.get("originalTransactionId"), user_id)
@@ -98,11 +98,9 @@ receipts = ReceiptVerifier(apple_receipt_roots(), "com.example.app")
 # client sends or the DER bytes; VerifyReceiptEndpoint is the alternative,
 # answering Apple's `verifyReceipt` JSON shape with a `status` instead.
 def redeem_receipt(user_id: str, receipt_data: str, product_id: str) -> str:
-    receipt = receipts.verify(receipt_data)                         # step 2
+    receipt = receipts.verify(receipt_data)  # step 2
     now = datetime.now(timezone.utc)
-    purchase = next(
-        (p for p in receipt.in_app_purchases if p.product_id == product_id), None
-    )
+    purchase = next((p for p in receipt.in_app_purchases if p.product_id == product_id), None)
     if purchase is None or purchase.cancellation_date is not None:  # step 3
         return "denied"
     if purchase.expires_date is not None and purchase.expires_date <= now:
@@ -114,7 +112,7 @@ def redeem_receipt(user_id: str, receipt_data: str, product_id: str) -> str:
     if now - receipt.creation_date > timedelta(minutes=5):
         return "refresh"
 
-    if grants.exists(purchase.transaction_id):                      # step 5
+    if grants.exists(purchase.transaction_id):  # step 5
         return "denied"
     grants.record(purchase.transaction_id, purchase.original_transaction_id, user_id)
 
