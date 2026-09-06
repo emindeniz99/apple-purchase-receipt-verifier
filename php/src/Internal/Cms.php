@@ -179,6 +179,46 @@ final class Cms
         return -1;
     }
 
+    /**
+     * Whether $der carries the issuer Name and serialNumber the SignerInfo
+     * names, read as generic ASN.1 rather than as a certificate.
+     *
+     * That is the whole point: the entries this is asked about are the ones
+     * Certificate::parse refused, and an identity is still legible in bytes
+     * that are not a certificate all the way down. Node, Swift and Go resolve
+     * the signer the same way, so all of them agree about which embedded
+     * entry a defect belongs to.
+     *
+     * TBSCertificate ::= SEQUENCE { [0] version DEFAULT v1, serialNumber
+     * INTEGER, signature AlgorithmIdentifier, issuer Name, ... } — anything
+     * without that shape is not an identity and cannot match.
+     */
+    public function namesSigner(string $der): bool
+    {
+        try {
+            $certificate = Der::parse($der);
+        } catch (ParseException) {
+            return false;
+        }
+        if ($certificate->tag !== Der::TAG_SEQUENCE) {
+            return false;
+        }
+        $tbs = $certificate->child(0);
+        if ($tbs === null || $tbs->tag !== Der::TAG_SEQUENCE) {
+            return false;
+        }
+        $index = $tbs->child(0)?->tag === Der::TAG_CONTEXT_0 ? 1 : 0;
+        $serial = $tbs->child($index);
+        $issuer = $tbs->child($index + 2);
+
+        return $serial !== null
+            && $issuer !== null
+            && $serial->tag === Der::TAG_INTEGER
+            && $issuer->tag === Der::TAG_SEQUENCE
+            && hash_equals($serial->contents, $this->signerSerial)
+            && hash_equals($issuer->raw, $this->signerIssuerRaw);
+    }
+
     /** @throws ParseException */
     public function messageDigestAttribute(): ?string
     {

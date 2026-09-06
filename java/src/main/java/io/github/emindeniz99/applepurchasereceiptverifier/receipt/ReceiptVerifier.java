@@ -34,10 +34,12 @@ import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.ASN1String;
 import org.bouncycastle.asn1.ASN1TaggedObject;
+import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cms.CMSException;
 import org.bouncycastle.cms.CMSSignedData;
+import org.bouncycastle.cms.SignerId;
 import org.bouncycastle.cms.SignerInformation;
 import org.bouncycastle.cms.jcajce.JcaSimpleSignerInfoVerifierBuilder;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
@@ -357,13 +359,24 @@ public final class ReceiptVerifier {
         }
         List<X509CertificateHolder> holders = new ArrayList<X509CertificateHolder>();
         Exception unreadable = null;
+        boolean unreadableSigner = false;
         for (int i = 0; i < embeddedCount; i++) {
+            byte[] raw = null;
             try {
-                holders.add(new X509CertificateHolder(
-                        certificateSet.getObjectAt(i).toASN1Primitive().getEncoded("DER")));
+                raw = certificateSet.getObjectAt(i).toASN1Primitive().getEncoded("DER");
+                holders.add(new X509CertificateHolder(raw));
             } catch (Exception e) {
                 if (unreadable == null) {
                     unreadable = e;
+                }
+                // Whether the SignerInfo means THIS entry has to be read out
+                // of the entry itself: an identity is still legible in bytes
+                // that are not a certificate all the way down, and matching
+                // the SignerInfo against the entries that DID decode answers
+                // a different question — wrongly, whenever the receipt names
+                // a certificate it does not carry at all.
+                if (raw != null && namesTheSigner(raw, signer.getSID())) {
+                    unreadableSigner = true;
                 }
             }
         }
@@ -375,10 +388,16 @@ public final class ReceiptVerifier {
             }
         }
         if (signerHolder == null) {
-            if (unreadable != null) {
+            if (unreadableSigner) {
                 throw new VerificationException(
                         Reason.INVALID_CERTIFICATE,
-                        "the receipt's signer certificate is not among the embedded certificates that could be read",
+                        "receipt signer certificate is not a valid certificate",
+                        unreadable);
+            }
+            if (unreadable != null) {
+                throw new VerificationException(
+                        Reason.INVALID_RECEIPT_FORMAT,
+                        "an embedded certificate is not a valid certificate",
                         unreadable);
             }
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "signer certificate not embedded");
@@ -430,6 +449,40 @@ public final class ReceiptVerifier {
                     e);
         } catch (GeneralSecurityException e) {
             throw new VerificationException(Reason.INVALID_CHAIN, "chain validation unavailable", e);
+        }
+    }
+
+    /**
+     * Whether {@code raw} carries the issuer Name and serialNumber
+     * {@code sid} names, read as generic ASN.1 rather than as a certificate.
+     *
+     * <p>That is the whole point: the entries this is asked about are the
+     * ones {@link X509CertificateHolder} refused, and an identity is still
+     * legible in bytes that are not a certificate all the way down. Node,
+     * Swift and Go resolve the signer the same way, off the raw DER, so all
+     * of them agree about which embedded entry a defect belongs to.</p>
+     *
+     * <p>{@code TBSCertificate ::= SEQUENCE { [0] version DEFAULT v1,
+     * serialNumber INTEGER, signature AlgorithmIdentifier, issuer Name,
+     * ... }} — anything without that shape is not an identity and cannot
+     * match.</p>
+     */
+    private static boolean namesTheSigner(byte[] raw, SignerId sid) {
+        try {
+            ASN1Sequence certificate = ASN1Sequence.getInstance(ASN1Primitive.fromByteArray(raw));
+            ASN1Encodable first = certificate.getObjectAt(0);
+            if (!(first instanceof ASN1Sequence)) {
+                return false;
+            }
+            ASN1Sequence tbs = (ASN1Sequence) first;
+            int index = tbs.getObjectAt(0) instanceof ASN1TaggedObject ? 1 : 0;
+            BigInteger serial = ASN1Integer.getInstance(tbs.getObjectAt(index)).getValue();
+            X500Name issuer = X500Name.getInstance(tbs.getObjectAt(index + 2));
+            return serial.equals(sid.getSerialNumber()) && issuer.equals(sid.getIssuer());
+        } catch (RuntimeException e) {
+            return false;
+        } catch (IOException e) {
+            return false;
         }
     }
 

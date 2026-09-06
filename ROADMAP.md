@@ -27,15 +27,6 @@ Delete a line in the commit that ships it.
   vendor line ends, so Java 17 (Oracle, 2026-09-30), Python 3.10
   (2026-10-31), .NET 8 and 9 (2026-11-10) and PHP 8.2 (2026-12-31) change
   nothing.
-- **Five ports still guess which embedded certificate was the signer.**
-  When a receipt's SignerInfo names a certificate absent from the bag and
-  the bag also carries an unrelated malformed certificate, python, rust,
-  java, php and ruby blame the malformed stranger (INVALID_CERTIFICATE)
-  instead of matching its issuer and serial to the SignerInfo first;
-  node, swift and go match identities and answer
-  INVALID_RECEIPT_FORMAT, the unanimous verdict for "signer not in bag".
-  No contract case covers the input, so the 3-vs-5 split is invisible
-  today; add the vector and align the five.
 - **An unbootstrapped registry fails the release rather than skipping
   it.** Every publish job skips loudly when the registry already has the
   version, but rubygems, crates and nuget each fail at their OIDC step

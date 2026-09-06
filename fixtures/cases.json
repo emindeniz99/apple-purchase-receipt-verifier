@@ -525,6 +525,18 @@
       "codec": "raw",
       "contentSha256": "e8e0a1f385afd1e0dc128b99f79123004974d96a75ca5fc84f3adb6c447fe3ab"
     },
+    "receipt-signer-absent-root": {
+      "path": "generated/receipt-signer-absent-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "4f54893861af6a8a1b61e1eddf898e26722864f692f964a9ca79096dbe4e4052"
+    },
+    "receipt-signer-absent": {
+      "path": "generated/receipt-signer-absent.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "b1b70b5bda9d4bad9694541c6239539695ac9a189dc6b24169b4c40a9b763c99"
+    },
     "jws-segments-root": {
       "path": "generated/jws-segments-root.der",
       "role": "trust-anchor",
@@ -3646,6 +3658,36 @@
         "reason": "INVALID_CERTIFICATE"
       },
       "fault": "receipt-signer-has-a-corrupt-extension",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "negative",
+        "certificate",
+        "hostile",
+        "generated"
+      ]
+    },
+    {
+      "id": "receipt/reject-signer-absent-beside-a-malformed-stranger",
+      "description": "The SignerInfo names an issuer and serial no embedded entry carries, and the bag also holds one entry that is not a certificate. The two are separate defects and only one of them is the receipt's answer. The signing certificate is a genuine receipt-signing leaf under the genuine intermediate and it really did sign this payload; it is simply not embedded, which is INVALID_RECEIPT_FORMAT — the verdict every port already gives a receipt naming a signer it does not carry. The malformed stranger must not change that: it is unrelated to the SignerInfo, and blaming it would report INVALID_CERTIFICATE, which says the signer was found and was defective. The stranger is a SEQUENCE holding a TBS that stops after the issuer — no validity, no subject, no public key, no signature — so every X.509 decoder refuses it while its own version, serial and issuer stay legible. That is deliberate: a port cannot pass this by failing to read identities at all, only by reading the identity out of each entry's raw DER and comparing it to the SignerInfo before it judges any entry. Node, Swift and Go did that already; python, rust, java, php and ruby matched the SignerInfo against the entries they could DECODE and then blamed the one they could not, which is a guess whenever the signer is absent for reasons of its own.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt-signer-absent"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-signer-absent-root"
+          ]
+        },
+        "bundleId": "com.example.app"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "fault": "signer-not-embedded-beside-an-unrelated-malformed-certificate",
       "tags": [
         "receipt",
         "pkcs7",

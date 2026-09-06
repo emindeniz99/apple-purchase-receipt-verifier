@@ -208,23 +208,36 @@ final class ReceiptVerifier
         // merely carries is a defect of the receipt, while the SIGNER being
         // unreadable is a defect of a certificate and gets the verdict an
         // unreadable x5c entry gets on the JWS path (receipt/reject-signer-*).
-        // Naming the signer needs the readable entries matched against the
-        // SignerInfo first.
+        // Whether the SignerInfo means an entry that would not parse is read
+        // out of that entry's own bytes: matching the SignerInfo against the
+        // entries that DID parse answers a different question, and answers it
+        // wrongly whenever the receipt names a certificate it does not carry
+        // at all — an unrelated malformed stranger would take the blame for a
+        // signer that is simply absent.
         $embedded = [];
         $unreadable = null;
+        $unreadableSigner = false;
         foreach ($cms->certificates as $raw) {
             try {
                 $embedded[] = Certificate::parse($raw);
             } catch (ParseException $e) {
                 $unreadable ??= $e;
+                $unreadableSigner = $unreadableSigner || $cms->namesSigner($raw);
             }
         }
         $signerIndex = $cms->findSignerIndex($embedded);
         if ($signerIndex < 0) {
-            if ($unreadable !== null) {
+            if ($unreadableSigner) {
                 throw new VerificationException(
                     Reason::InvalidCertificate,
-                    "the receipt's signer certificate is not among the embedded certificates that could be read",
+                    'receipt signer certificate is not a valid certificate',
+                    $unreadable,
+                );
+            }
+            if ($unreadable !== null) {
+                throw new VerificationException(
+                    Reason::InvalidReceiptFormat,
+                    'unparseable embedded certificate',
                     $unreadable,
                 );
             }

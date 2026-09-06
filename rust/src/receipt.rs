@@ -1,9 +1,12 @@
 //! Verification of legacy PKCS#7 app receipts — the server-side port of
 //! Apple's "Validating receipts on the device" procedure (`PLAN.md` §2.2).
 
+use crate::asn1::{parse_exact, tag};
 use crate::base64::decode_receipt_base64;
 use crate::chain::build_and_validate_path;
-use crate::cms::{find_message_digest_attribute, parse_cms, signed_attrs_signed_bytes, ParsedCms};
+use crate::cms::{
+    find_message_digest_attribute, parse_cms, signed_attrs_signed_bytes, CmsSignerInfo, ParsedCms,
+};
 use crate::crypto::{constant_time_eq, curve_field_size, verify_rsa_pkcs1, DigestAlgorithm};
 use crate::datetime::unix_millis_of;
 use crate::error::{ConfigError, CoreError, Reason, Result, VerificationError};
@@ -120,10 +123,21 @@ pub(crate) fn verify_receipt_core_unchecked(
     // entries matched against the SignerInfo first.
     let mut embedded = Vec::with_capacity(cms.certificates.len());
     let mut unreadable: Option<VerificationError> = None;
+    let mut unreadable_signer = false;
     for raw in &cms.certificates {
         match Certificate::from_der(raw) {
             Ok(certificate) => embedded.push(certificate),
             Err(err) => {
+                // Which entry this is has to be read out of the entry
+                // ITSELF: an identity is still legible in bytes that are not
+                // a certificate all the way down, and it is the only thing
+                // that says whether the SignerInfo means this one. Asking
+                // instead whether the signer turned up among the entries
+                // that DID decode answers a different question, and answers
+                // it wrongly whenever the receipt names a certificate it
+                // does not carry — an unrelated malformed stranger would
+                // take the blame for a signer that is simply absent.
+                unreadable_signer = unreadable_signer || names_the_signer(raw, &cms.signer_info);
                 unreadable.get_or_insert_with(|| {
                     malformed(format!("embedded certificate is malformed: {err}"))
                 });
@@ -142,10 +156,11 @@ pub(crate) fn verify_receipt_core_unchecked(
         }
         None => {
             return Err(match unreadable {
-                Some(_) => VerificationError::new(
+                Some(_) if unreadable_signer => VerificationError::new(
                     Reason::InvalidCertificate,
-                    "the receipt's signer certificate is not among the embedded certificates that could be read",
+                    "receipt signer certificate is not a valid certificate",
                 ),
+                Some(err) => err,
                 None => malformed("signer certificate not embedded"),
             });
         }
@@ -177,6 +192,43 @@ pub(crate) fn verify_receipt_core_unchecked(
     }
     verify_cms_signature(&cms, signer)?;
     Ok(fields)
+}
+
+/// Whether `raw` carries the issuer Name and serialNumber the `SignerInfo`
+/// names, read as generic ASN.1 rather than as an X.509 certificate.
+///
+/// That is the whole point: the entries this is asked about are the ones
+/// [`Certificate::from_der`] refused, and an identity is still legible in
+/// bytes that are not a certificate all the way down. Node
+/// (`findSignerCertIndex`), Swift (`unreadableNodes`) and Go
+/// (`namesTheSigner`) resolve the signer the same way, so all of them agree
+/// about which embedded entry a defect belongs to.
+///
+/// `TBSCertificate ::= SEQUENCE { [0] version DEFAULT v1, serialNumber
+/// INTEGER, signature AlgorithmIdentifier, issuer Name, ... }` — anything
+/// that does not have that shape is not an identity and cannot match.
+fn names_the_signer(raw: &[u8], info: &CmsSignerInfo) -> bool {
+    let Ok(certificate) = parse_exact(raw) else {
+        return false;
+    };
+    if certificate.tag != tag::SEQUENCE {
+        return false;
+    }
+    let Some(tbs) = certificate
+        .child(0)
+        .filter(|node| node.tag == tag::SEQUENCE)
+    else {
+        return false;
+    };
+    let fields = tbs.children();
+    let index = usize::from(matches!(fields.first(), Some(f) if f.tag == tag::CONTEXT_0));
+    let (Some(serial), Some(issuer)) = (fields.get(index), fields.get(index + 2)) else {
+        return false;
+    };
+    serial.tag == tag::INTEGER
+        && issuer.tag == tag::SEQUENCE
+        && serial.contents == info.serial_contents.as_slice()
+        && issuer.full == info.issuer_raw.as_slice()
 }
 
 fn verify_cms_signature(cms: &ParsedCms, signer: &Certificate) -> Result<()> {

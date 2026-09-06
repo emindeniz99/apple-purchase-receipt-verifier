@@ -221,7 +221,7 @@ def _verify_receipt_core_unguarded(der: bytes, roots: "list[x509.Certificate]") 
 
 def _parse_cms(
     der: bytes,
-) -> "tuple[bytes, list[tuple[bytes, x509.Certificate]], Any, Optional[Exception]]":
+) -> "tuple[bytes, list[tuple[bytes, x509.Certificate]], Any, list[tuple[bytes, Exception]]]":
     try:
         info = asn1cms.ContentInfo.load(der, strict=True)  # rejects trailing bytes (PLAN 2.3)
         if info["content_type"].native != "signed_data":
@@ -241,17 +241,17 @@ def _parse_cms(
         # WHICH entry it is changes the verdict: a stranger the receipt
         # merely carries is a defect of the receipt, while the SIGNER being
         # unreadable is a defect of a certificate and gets the verdict an
-        # unreadable x5c entry gets on the JWS path. Naming the signer needs
-        # the readable entries matched against the SignerInfo first.
+        # unreadable x5c entry gets on the JWS path. Its bytes are held with
+        # it, because the identity an entry carries is the only thing that
+        # says whether the SignerInfo means it.
         certificates = []
-        unreadable: Optional[Exception] = None
+        unreadable: list[tuple[bytes, Exception]] = []
         for choice in embedded:
             raw = choice.chosen.dump()
             try:
                 certificates.append((raw, x509.load_der_x509_certificate(raw)))
             except Exception as e:  # re-raised by _find_signer_cert
-                if unreadable is None:
-                    unreadable = e
+                unreadable.append((raw, e))
         signer_infos = signed_data["signer_infos"]
         if len(signer_infos) == 0:
             raise ValueError("no signer info")
@@ -267,8 +267,9 @@ def _parse_cms(
 def _find_signer_cert(
     certificates: "list[tuple[bytes, x509.Certificate]]",
     signer: Any,
-    unreadable: Optional[Exception] = None,
+    unreadable: "Optional[list[tuple[bytes, Exception]]]" = None,
 ) -> x509.Certificate:
+    unreadable = unreadable or []
     sid = signer["sid"].chosen
     try:
         wanted_serial = sid["serial_number"].native
@@ -279,19 +280,46 @@ def _find_signer_cert(
         if cert.serial_number == wanted_serial:
             asn1_cert = asn1x509.Certificate.load(raw)
             if asn1_cert["tbs_certificate"]["issuer"].dump() == wanted_issuer:
-                if unreadable is not None:
+                if unreadable:
                     raise VerificationError(
                         Reason.INVALID_RECEIPT_FORMAT,
-                        f"not a parseable PKCS#7 receipt: {unreadable}",
-                    ) from unreadable
+                        f"not a parseable PKCS#7 receipt: {unreadable[0][1]}",
+                    ) from unreadable[0][1]
                 return cert
-    if unreadable is not None:
+    # Only an entry that NAMES the signer is a defect of a certificate.
+    # Asking instead whether anything at all failed to load answers a
+    # different question, and answers it wrongly whenever the receipt names a
+    # certificate it does not carry: an unrelated malformed stranger would
+    # take the blame for a signer that is simply absent.
+    for raw, error in unreadable:
+        if _names_the_signer(raw, wanted_issuer, wanted_serial):
+            raise VerificationError(
+                Reason.INVALID_CERTIFICATE,
+                f"receipt signer certificate is not a valid certificate: {error}",
+            ) from error
+    if unreadable:
         raise VerificationError(
-            Reason.INVALID_CERTIFICATE,
-            "the receipt's signer certificate is not among the embedded "
-            f"certificates that could be read: {unreadable}",
-        ) from unreadable
+            Reason.INVALID_RECEIPT_FORMAT,
+            f"not a parseable PKCS#7 receipt: {unreadable[0][1]}",
+        ) from unreadable[0][1]
     raise VerificationError(Reason.INVALID_RECEIPT_FORMAT, "signer certificate not embedded")
+
+
+def _names_the_signer(raw: bytes, wanted_issuer: bytes, wanted_serial: int) -> bool:
+    """Whether ``raw`` carries the issuer and serial the SignerInfo names.
+
+    The entries this is asked about are the ones cryptography refused, so the
+    identity is read as plain ASN.1: it is still legible in bytes that are not
+    a certificate all the way down, and it is what says which embedded entry a
+    defect belongs to. Node, Swift and Go resolve the signer the same way.
+    """
+    try:
+        tbs = asn1x509.Certificate.load(raw)["tbs_certificate"]
+        if tbs["serial_number"].native != wanted_serial:
+            return False
+        return bool(tbs["issuer"].dump() == wanted_issuer)
+    except Exception:
+        return False
 
 
 def _verify_cms_signature(content: bytes, signer: Any, signer_cert: x509.Certificate) -> None:

@@ -71,19 +71,27 @@ module ApplePurchaseReceiptVerifier
             )
           end
 
-          embedded, unreadable = decode_certificates(cms.certificate_ders)
+          embedded, unreadable, unreadable_signer =
+            decode_certificates(cms.certificate_ders, cms.signer_info)
           signer = find_signer(embedded, cms.signer_info)
           if signer.nil?
             # Which entry is unreadable changes the verdict: a stranger the
             # receipt merely carries is a defect of the receipt, while the
             # SIGNER being unreadable is a defect of a certificate and gets
-            # the verdict an unreadable x5c entry gets on the JWS path.
-            if unreadable
+            # the verdict an unreadable x5c entry gets on the JWS path. Only
+            # the identity an unreadable entry carries says which of the two
+            # it is — asking instead whether anything failed to decode blames
+            # a malformed stranger for a signer that is simply absent.
+            if unreadable_signer
               raise VerificationError.new(
                 Reason::INVALID_CERTIFICATE,
-                "the receipt's signer certificate is not among the embedded certificates " \
-                "that could be read"
+                "receipt signer certificate is not a valid certificate"
               )
+            end
+
+            if unreadable
+              raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
+                                          "embedded certificate is not parseable")
             end
 
             raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
@@ -234,19 +242,52 @@ module ApplePurchaseReceiptVerifier
         end
       end
 
-      # Returns the entries OpenSSL could read, and the first error from one
-      # it could not. The error is held rather than raised because naming the
-      # signer needs the readable entries matched against the SignerInfo
-      # first; see the caller.
-      def decode_certificates(ders)
+      # Returns the entries OpenSSL could read, the first error from one it
+      # could not, and whether any of the entries it could not read is the one
+      # the SignerInfo names. The error is held rather than raised because
+      # which entry it belongs to decides the verdict; see the caller.
+      def decode_certificates(ders, signer_info)
         certificates = []
         unreadable = nil
+        unreadable_signer = false
         ders.each do |der|
           certificates << OpenSSL::X509::Certificate.new(der)
         rescue OpenSSL::OpenSSLError => e
           unreadable ||= e
+          unreadable_signer ||= names_the_signer?(der, signer_info)
         end
-        [certificates, unreadable]
+        [certificates, unreadable, unreadable_signer]
+      end
+
+      # Whether `der` carries the issuer Name and serialNumber the SignerInfo
+      # names, read as generic ASN.1 rather than as a certificate. The entries
+      # this is asked about are the ones OpenSSL refused, and an identity is
+      # still legible in bytes that are not a certificate all the way down —
+      # which is what says whether the SignerInfo means this entry. Node,
+      # Swift and Go resolve the signer the same way.
+      #
+      #   TBSCertificate ::= SEQUENCE { [0] version DEFAULT v1, serialNumber
+      #   INTEGER, signature AlgorithmIdentifier, issuer Name, ... }
+      #
+      # Anything without that shape is not an identity and cannot match.
+      def names_the_signer?(der, signer_info)
+        certificate = Asn1.parse(der)
+        return false unless certificate.tag == Asn1::TAG_SEQUENCE
+
+        tbs = certificate.kids.first
+        return false if tbs.nil? || tbs.tag != Asn1::TAG_SEQUENCE
+
+        fields = tbs.kids
+        index = fields.first&.tag == Asn1::TAG_CONTEXT_0 ? 1 : 0
+        serial = fields[index]
+        issuer = fields[index + 2]
+        return false if serial.nil? || issuer.nil?
+        return false if serial.tag != Asn1::TAG_INTEGER || issuer.tag != Asn1::TAG_SEQUENCE
+
+        OpenSSL::ASN1.decode(serial.raw).value.to_i == signer_info.serial &&
+          issuer.raw == signer_info.issuer_der
+      rescue Asn1::Error, OpenSSL::OpenSSLError
+        false
       end
 
       # The same three things OpenSSL decodes more leniently than the checks
