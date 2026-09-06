@@ -14,7 +14,8 @@
 #   Swift — nothing to publish; SwiftPM consumes the tag itself.
 #   RubyGems — trusted publisher (OIDC) keyed to this FILENAME, environment
 #           rubygems. RubyGems supports a pending publisher, so the first
-#           publish can go through this job; see BOOTSTRAP.md.
+#           publish can go through this job with no manual gem push; see
+#           BOOTSTRAP.md.
 #   crates.io — trusted publisher (OIDC) keyed to this FILENAME. The crate
 #           must exist first, so the owner makes the first publish by hand
 #           (BOOTSTRAP.md).
@@ -31,6 +32,17 @@
 # Every publish job skips (loudly) when the registry already has the tag's
 # version, so a manually bootstrapped version doesn't fail the tag run, and
 # each one proves the built artifact carries the library before pushing it.
+#
+# The three OIDC registries also ask whether their package exists at all, so
+# that an unfinished bootstrap is a skip rather than a failed release. Without
+# it, one unbootstrapped registry failed the whole tag run at its login step
+# and took post-publish verification of the live registries down with it
+# (v0.4.0, run 7). crates.io and NuGet cannot publish a package that does not
+# exist, so a 404 there means "skip" outright. RubyGems can, through a pending
+# publisher, so publish-rubygems always attempts OIDC and uses the lookup only
+# to read a failure: no gem and no credentials is an unfinished bootstrap; a
+# gem that exists is a real authentication failure. Either way the smoke
+# workflow is told which registries it may test.
 #
 # Security: every action pinned to a commit SHA; no dependency cache in
 # publish jobs (a poisoned restore would become the shipped artifact);
@@ -228,18 +240,77 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    outputs:
+      # 'true' when RubyGems is expected to serve this version by the time the
+      # job is done: it either published it here or already had it. 'false'
+      # only when the bootstrap has not happened. The smoke workflow gates its
+      # rubygems leg on this.
+      available: ${{ steps.adjudicate.outputs.proceed }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # This does NOT decide whether to publish — see the adjudication step
+      # below. RubyGems supports a *pending* trusted publisher, so the first
+      # publish is meant to go through this job for a gem that does not exist
+      # yet, and gating on existence would skip exactly the run the pending
+      # publisher was created for. The lookup only supplies the second half of
+      # the answer when OIDC fails: no gem AND no credentials means the
+      # bootstrap has not happened; a gem that exists means a real auth
+      # failure. Anything but 200 or 404 fails the job here, so an outage
+      # cannot be read as "never bootstrapped".
+      - name: Ask whether the gem exists, to interpret an OIDC failure later
+        id: bootstrap
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /dev/null -w '%{http_code}' \
+            https://rubygems.org/api/v1/gems/apple-purchase-receipt-verifier.json)
+          case "$code" in
+            200) echo "gem apple-purchase-receipt-verifier exists on RubyGems.org"
+                 echo "exists=true" >> "$GITHUB_OUTPUT" ;;
+            404) echo "gem apple-purchase-receipt-verifier does not exist yet; a pending trusted publisher can still authorize this run"
+                 echo "exists=false" >> "$GITHUB_OUTPUT" ;;
+            *)
+              echo "::error::rubygems.org answered $code for the gem lookup; refusing to guess whether it is bootstrapped"
+              exit 1 ;;
+          esac
 
       - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
         with:
           ruby-version: "3.4"
           bundler-cache: false
 
+      # continue-on-error so the next step can tell an unfinished bootstrap
+      # from a broken one. It applies to THIS step only: `gem push` below still
+      # fails the job, and this step's own post-action still revokes the
+      # short-lived token.
+      - uses: rubygems/configure-rubygems-credentials@dc5a8d8553e6ee01fc26761a49e99e733d17954a # v2.1.0
+        id: auth
+        continue-on-error: true
+
+      # `outcome`, not `conclusion`: continue-on-error rewrites conclusion to
+      # success, and outcome is what the step actually did.
+      - name: Decide whether an OIDC failure is a missing bootstrap or a real one
+        id: adjudicate
+        env:
+          AUTH_OUTCOME: ${{ steps.auth.outcome }}
+          GEM_EXISTS: ${{ steps.bootstrap.outputs.exists }}
+        run: |
+          set -euo pipefail
+          if [ "$AUTH_OUTCOME" = "success" ]; then
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+          elif [ "$GEM_EXISTS" = "false" ]; then
+            echo "::notice::RubyGems has no gem named apple-purchase-receipt-verifier and no trusted publisher would authorize this workflow, so the bootstrap has not happened yet. Skipping the Ruby publish; see BOOTSTRAP.md, section \"RubyGems\"."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::the gem exists on RubyGems.org but trusted publishing did not authorize this workflow; this is a real authentication failure, not a missing bootstrap"
+            exit 1
+          fi
+
       - name: Skip if this version is already on RubyGems.org
         id: gate
+        if: steps.adjudicate.outputs.proceed == 'true'
         run: |
           set -euo pipefail
           VERSION=$(cat version.txt)
@@ -274,9 +345,6 @@ jobs:
             abort("refusing to publish: gem is missing #{missing.join(", ")}") unless missing.empty?
             puts "gem carries #{files.size} files, entry points and roots included"'
 
-      - uses: rubygems/configure-rubygems-credentials@dc5a8d8553e6ee01fc26761a49e99e733d17954a # v2.1.0
-        if: steps.gate.outputs.publish == 'true'
-
       - name: gem push
         if: steps.gate.outputs.publish == 'true'
         working-directory: ruby
@@ -290,12 +358,40 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    outputs:
+      # See publish-rubygems for what this means.
+      available: ${{ steps.bootstrap.outputs.exists }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
+      # crates.io's trusted publishing is configured on the crate's own
+      # settings page, so a crate that does not exist cannot have one, and
+      # crates-io-auth-action fails with "No Trusted Publishing config found
+      # for repository" (v0.4.0, run 7). Ask first. crates.io rejects a request
+      # with no User-Agent with 403, which the case below turns into a loud
+      # failure rather than a silent skip.
+      - name: Detect whether the crate has been bootstrapped at all
+        id: bootstrap
+        env:
+          UA: apple-purchase-receipt-verifier release workflow (https://github.com/emindeniz99/apple-purchase-receipt-verifier)
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /dev/null -w '%{http_code}' -A "$UA" \
+            https://crates.io/api/v1/crates/apple-purchase-receipt-verifier)
+          case "$code" in
+            200) echo "exists=true" >> "$GITHUB_OUTPUT" ;;
+            404)
+              echo "::notice::crates.io has no crate named apple-purchase-receipt-verifier, so its trusted publisher cannot exist yet. Skipping the Rust publish; see BOOTSTRAP.md, section \"crates.io\"."
+              echo "exists=false" >> "$GITHUB_OUTPUT" ;;
+            *)
+              echo "::error::crates.io answered $code for the crate lookup; refusing to guess whether it is bootstrapped"
+              exit 1 ;;
+          esac
+
       - run: rustup toolchain install stable --profile minimal
+        if: steps.bootstrap.outputs.exists == 'true'
 
       # The sparse index answers 404 for an unpublished crate and a
       # JSON-lines version list for a published one. A crates.io publish is
@@ -303,6 +399,7 @@ jobs:
       # what makes this gate load-bearing rather than a convenience.
       - name: Skip if this version is already on crates.io
         id: gate
+        if: steps.bootstrap.outputs.exists == 'true'
         run: |
           set -euo pipefail
           VERSION=$(cat version.txt)
@@ -355,17 +452,43 @@ jobs:
     permissions:
       contents: read
       id-token: write          # NuGet trusted publishing (OIDC)
+    outputs:
+      # See publish-rubygems for what this means.
+      available: ${{ steps.bootstrap.outputs.exists }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
+      # NuGet's trusted publishing cannot create a package, so a trust policy
+      # for one that does not exist cannot be saved either, and NuGet/login
+      # fails with "No matching trust policy owned by user" (v0.4.0, run 7).
+      # The flat container index lists every version of an id and 404s for an
+      # unknown one; the id is lowercased there.
+      - name: Detect whether the package has been bootstrapped at all
+        id: bootstrap
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /dev/null -w '%{http_code}' \
+            https://api.nuget.org/v3-flatcontainer/applepurchasereceiptverifier/index.json)
+          case "$code" in
+            200) echo "exists=true" >> "$GITHUB_OUTPUT" ;;
+            404)
+              echo "::notice::nuget.org has no package ApplePurchaseReceiptVerifier, so its trust policy cannot exist yet. Skipping the .NET publish; see BOOTSTRAP.md, section \"NuGet\"."
+              echo "exists=false" >> "$GITHUB_OUTPUT" ;;
+            *)
+              echo "::error::nuget.org answered $code for the package lookup; refusing to guess whether it is bootstrapped"
+              exit 1 ;;
+          esac
+
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        if: steps.bootstrap.outputs.exists == 'true'
         with:
           dotnet-version: '9.0.x'
 
       - name: Skip if this version is already on nuget.org
         id: gate
+        if: steps.bootstrap.outputs.exists == 'true'
         run: |
           set -euo pipefail
           VERSION=$(cat version.txt)
@@ -471,22 +594,57 @@ jobs:
   # workflow_run does not fire for a run that was itself dispatched with the
   # workflow token (the same suppression that hid the tag push from this
   # workflow), so the smoke test is dispatched explicitly once every
-  # registry has been published.
+  # registry that could be published has been.
+  #
+  # The condition is `!cancelled()` plus one explicit result check per job
+  # rather than `always()`: a failed publish must still block the smoke test,
+  # and a bootstrap-skipped job concludes success (its steps skipped, not the
+  # job), so `success` alone would already cover today's shape — `skipped` is
+  # accepted too so that turning any of the three into a job-level `if:` later
+  # cannot silently stop dispatching.
   smoke:
     name: dispatch the post-publish smoke test
     needs: [publish-pypi, publish-npm, publish-maven, publish-rubygems,
             publish-crates, publish-nuget, tag-go-module]
+    if: >-
+      !cancelled()
+      && needs.publish-pypi.result == 'success'
+      && needs.publish-npm.result == 'success'
+      && needs.publish-maven.result == 'success'
+      && needs.tag-go-module.result == 'success'
+      && (needs.publish-rubygems.result == 'success' || needs.publish-rubygems.result == 'skipped')
+      && (needs.publish-crates.result == 'success' || needs.publish-crates.result == 'skipped')
+      && (needs.publish-nuget.result == 'success' || needs.publish-nuget.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
       actions: write
     steps:
+      # npm, PyPI, Maven Central, SwiftPM and the Go proxy are unconditional:
+      # their jobs must have succeeded for this one to run at all. The three
+      # bootstrap-gated registries are named only when they actually carry the
+      # version, so the smoke workflow skips their legs instead of failing on
+      # an install that cannot work.
       - name: dispatch post-publish-smoke for this version
         env:
           GH_TOKEN: ${{ github.token }}
           REF: ${{ github.ref_name }}
+          RUBYGEMS_AVAILABLE: ${{ needs.publish-rubygems.outputs.available }}
+          CRATES_AVAILABLE: ${{ needs.publish-crates.outputs.available }}
+          NUGET_AVAILABLE: ${{ needs.publish-nuget.outputs.available }}
         run: |
           set -euo pipefail
+          REGISTRIES="npm,pypi,maven,swiftpm,go"
+          if [ "${RUBYGEMS_AVAILABLE:-}" = "true" ]; then
+            REGISTRIES="$REGISTRIES,rubygems"
+          fi
+          if [ "${CRATES_AVAILABLE:-}" = "true" ]; then
+            REGISTRIES="$REGISTRIES,crates"
+          fi
+          if [ "${NUGET_AVAILABLE:-}" = "true" ]; then
+            REGISTRIES="$REGISTRIES,nuget"
+          fi
+          echo "smoke-testing: $REGISTRIES"
           gh workflow run post-publish-smoke.yml --repo "$GITHUB_REPOSITORY" \
-            --ref "$REF" -f "version=${REF#v}"
+            --ref "$REF" -f "version=${REF#v}" -f "registries=$REGISTRIES"

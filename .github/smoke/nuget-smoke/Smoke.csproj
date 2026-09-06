@@ -1,0 +1,26 @@
+<!--
+  Smoke-tests the package as published to nuget.org, restored from the real
+  registry by id. Run with the published version:
+
+    dotnet run -p:SmokeVersion=0.4.0
+
+  There is no <RestoreSources> override on purpose: restore goes to nuget.org,
+  so a package that never indexed, or one missing an asset, fails here rather
+  than in a user's build. net8.0 selects the package's lib/net8.0 asset; the
+  netstandard2.0 asset needs a net4x consumer on a Windows runner and is still
+  untested (dotnet/RELEASE.md).
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ApplePurchaseReceiptVerifier" Version="[$(SmokeVersion)]" />
+  </ItemGroup>
+
+</Project>
