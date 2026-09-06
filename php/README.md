@@ -6,28 +6,33 @@ Replaces the deprecated `verifyReceipt` endpoint by validating StoreKit 2
 signed JWS transactions and legacy PKCS#7 receipts against pinned Apple root
 certificates.
 
-**Not on Packagist, and not publishable from this repository as it stands.**
-Packagist reads `composer.json` from a repository root and this port's
-manifest is `php/composer.json` inside a nine-language monorepo, so there is
-nothing for Packagist to read. `release.yml` therefore has no PHP publish job.
-The layouts that would fix it, and what each costs, are in
-[BOOTSTRAP.md](../BOOTSTRAP.md); the owner has not picked one yet.
+## Installation
 
-Until then, consume it from a local clone with a path repository:
+```bash
+composer require emindeniz99/apple-purchase-receipt-verifier
+```
+
+**The package is the repository root, not this directory.** Packagist reads
+`composer.json` from a repository root and nowhere else, so the manifest
+Composer installs is the one at the top of this nine-language monorepo. It
+autoloads `EminDeniz99\ApplePurchaseReceiptVerifier\` from `php/src/`, and a
+root `.gitattributes` allowlist trims the archive Composer downloads to this
+port: the sources, the pinned Apple roots, the two licences and this file.
+`php/composer.json` stays the development manifest, with the require-dev block
+and the lockfile the test suite installs, and `tools/check-php-package.mjs`
+fails the build when the two disagree or when the archive loses something.
+
+Until the owner submits the repository to Packagist (the one remaining step,
+in [BOOTSTRAP.md](../BOOTSTRAP.md)), consume it from a local clone with a path
+repository pointing at the repository root:
 
 ```json
 {
   "repositories": [
-    { "type": "path", "url": "../apple-purchase-receipt-verifier/php" }
+    { "type": "path", "url": "../apple-purchase-receipt-verifier" }
   ],
   "require": { "emindeniz99/apple-purchase-receipt-verifier": "*" }
 }
-```
-
-Once the package is registered, this is the install:
-
-```bash
-composer require emindeniz99/apple-purchase-receipt-verifier
 ```
 
 ```php

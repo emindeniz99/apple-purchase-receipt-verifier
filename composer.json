@@ -1,0 +1,19 @@
+{
+    "name": "emindeniz99/apple-purchase-receipt-verifier",
+    "description": "Offline verification of Apple StoreKit 2 JWS payloads and legacy PKCS#7 app receipts against pinned Apple roots.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["apple", "app-store", "receipt", "storekit", "in-app-purchase", "jws", "pkcs7", "verification"],
+    "homepage": "https://github.com/emindeniz99/apple-purchase-receipt-verifier",
+    "require": {
+        "php": ">=8.1",
+        "ext-openssl": "*",
+        "ext-json": "*",
+        "psr/clock": "^1.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "EminDeniz99\\ApplePurchaseReceiptVerifier\\": "php/src/"
+        }
+    }
+}

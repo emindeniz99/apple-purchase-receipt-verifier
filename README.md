@@ -83,11 +83,24 @@ crates.io and NuGet, a public repository for the Go module proxy. Those
 actions, per registry and in order, are in [BOOTSTRAP.md](./BOOTSTRAP.md); the
 rows above gain entries once the first release goes out.
 
-PHP has no publishing path at all. Packagist reads `composer.json` from a
-repository root and this port's manifest is `php/composer.json`, so there is
-nothing for Packagist to read and no publish job to add. The layouts that
-would fix it, and their costs, are in BOOTSTRAP.md; until the owner picks one,
-`php/` is vendored rather than installed.
+PHP is the fifth, and its install path is:
+
+```bash
+composer require emindeniz99/apple-purchase-receipt-verifier
+```
+
+```php
+use EminDeniz99\ApplePurchaseReceiptVerifier\Jws\JwsVerifier;
+```
+
+Packagist reads `composer.json` from a repository root and nowhere else, so
+that manifest is now the repository root's, autoloading
+`EminDeniz99\ApplePurchaseReceiptVerifier\` from `php/src/` while the port
+itself stays in `php/`. `php/composer.json` remains the development manifest.
+Packagist needs no publish job and no token: once the owner submits the
+repository, it imports tags on its own. That submission is the one remaining
+action, and it is in [BOOTSTRAP.md](./BOOTSTRAP.md); the command above starts
+working at the first tag after it.
 
 **JavaScript runtimes.** The npm package has two entry points.
 `apple-purchase-receipt-verifier` is the default and is unchanged:

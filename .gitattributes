@@ -17,3 +17,45 @@ certs/** -text
 *.b64 -text
 *.jws -text
 *.hex -text
+
+# What a Composer install of this repository receives.
+#
+# Packagist reads composer.json from a repository root and nowhere else, so
+# the PHP package is the root manifest (BOOTSTRAP.md, "Packagist (PHP)",
+# layout A). Composer then installs GitHub's zipball of a tag, and a zipball
+# is a `git archive`, so these rules are the package's file list: whatever
+# survives them is what every PHP consumer unpacks into vendor/.
+#
+# This is an ALLOWLIST — `* export-ignore` drops everything, and each shipped
+# path is named back in. The alternative, naming the ports to exclude, was
+# rejected because its failure mode is silent and permanent: a tenth port
+# directory added next year matches no exclusion and ships inside the PHP
+# package forever, and nothing about adding a port would ever point at this
+# file. The allowlist fails the other way. Something the package needs and
+# nobody named here goes MISSING, which is louder, and which
+# tools/check-php-package.mjs turns into a red build: it lists the archive on
+# every CI run and fails when php/src, php/certs/*.cer or composer.json is
+# absent, or when anything outside the list is present.
+#
+# Directories have to be named before their contents. `git archive` prunes an
+# export-ignored directory without reading its children, so `/php` and
+# `/php/src` are un-ignored in their own right, not only through the `**`
+# rule underneath them.
+#
+# The cost, which is real and applies to more than Composer: GitHub builds
+# the "Source code (zip)" asset on every Release from the same archive, so
+# that asset is now the PHP package rather than the whole monorepo. Nothing
+# in .github/workflows/ consumes it. Every other registry publishes a built
+# artifact, and SwiftPM and the Go module proxy clone the repository instead
+# of downloading an archive, so none of them see these rules.
+* export-ignore
+/composer.json -export-ignore
+/LICENSE -export-ignore
+/php -export-ignore
+/php/composer.json -export-ignore
+/php/LICENSE -export-ignore
+/php/README.md -export-ignore
+/php/certs -export-ignore
+/php/certs/** -export-ignore
+/php/src -export-ignore
+/php/src/** -export-ignore
