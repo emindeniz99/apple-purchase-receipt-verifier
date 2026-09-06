@@ -7,8 +7,9 @@
 //
 // Swift is not tracked by endoflife.date and is left out on purpose; the
 // Java dates are Oracle's (product "oracle-jdk"), which is what the
-// SUPPORT-MATRIX.md tables use.
-const products = ['dotnet', 'nodejs', 'python', 'oracle-jdk', 'go', 'ruby', 'php', 'rust'];
+// SUPPORT-MATRIX.md tables use. Spring Boot is the one framework tracked,
+// because the java-spring-boot job runs a leg per Boot line in OSS support.
+const products = ['dotnet', 'nodejs', 'python', 'oracle-jdk', 'go', 'ruby', 'php', 'rust', 'spring-boot'];
 const today = new Date(process.argv[2] ?? Date.now());
 
 function status(cycle) {
