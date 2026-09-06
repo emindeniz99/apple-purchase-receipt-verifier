@@ -15,6 +15,18 @@
 //! the ABI at a handful of functions and moves the schema question into a
 //! parser the caller already has.
 //!
+//! # The clock is an instant, not a callback
+//!
+//! The Rust builders take an `Arc<dyn Clock>`. Handing that across a C
+//! boundary would mean a function pointer the library calls back into, and
+//! this surface is deliberately callback-free: a callback would have to be
+//! thread-safe, live as long as the handle, and unwind-proof, and getting any
+//! of that wrong is a crash rather than a rejected argument. So the ABI takes
+//! the one thing a fixed clock actually is — a single instant, as
+//! milliseconds since the Unix epoch — and builds a [`FixedClock`] from it.
+//! A null clock pointer means the system clock, which is what every existing
+//! constructor already does.
+//!
 //! # Panics never cross the boundary
 //!
 //! Unwinding out of an `extern "C"` function is undefined behaviour. Every
@@ -30,11 +42,12 @@
 
 use apple_purchase_receipt_verifier::serde_json::{Map, Value};
 use apple_purchase_receipt_verifier::{
-    apple_jws_roots, apple_receipt_roots, datetime, AppReceipt, Environment, InAppPurchase,
-    JwsVerifier, Reason, ReceiptVerifier, TrustAnchor, VerificationError, VerifyReceiptEndpoint,
+    apple_jws_roots, apple_receipt_roots, datetime, AppReceipt, Clock, Environment, FixedClock,
+    InAppPurchase, JwsVerifier, Reason, ReceiptVerifier, TrustAnchor, VerificationError,
+    VerifyReceiptEndpoint,
 };
 use std::ffi::{c_char, CStr, CString};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, SystemTime};
 
 // --- status codes --------------------------------------------------------
@@ -313,6 +326,21 @@ unsafe fn anchors_of(
     Ok(anchors)
 }
 
+/// The clock a caller pinned, or `None` for the system clock.
+///
+/// A pointer rather than a sentinel value because every `int64_t` names a
+/// real instant: `0` is 1970-01-01, not "unset". The other "not configured"
+/// arguments in this ABI are counts and ids, where `0` cannot be meant.
+///
+/// # Safety
+/// `pointer`, when non-null, must point at one readable, aligned `int64_t`.
+unsafe fn fixed_clock_of(pointer: *const i64) -> Option<Arc<dyn Clock>> {
+    if pointer.is_null() {
+        return None;
+    }
+    Some(Arc::new(FixedClock::from_unix_millis(*pointer)))
+}
+
 /// Moves an owned Rust string across the boundary. `None` becomes `NULL`,
 /// which is what a caller sees if the string held an interior NUL — nothing
 /// this crate produces does.
@@ -537,14 +565,17 @@ pub unsafe extern "C" fn aprv_verifier_new_jws(
             std::ptr::null(),
             std::ptr::null(),
             0,
+            std::ptr::null(),
         )
     })
 }
 
 /// [`aprv_verifier_new_jws`] with caller-supplied DER trust anchors.
 ///
-/// `ders[i]` / `lens[i]` describe one DER certificate; `count` must be
-/// non-zero. Nothing is retained: the bytes are parsed during the call.
+/// `ders[i]` / `lens[i]` describe one DER certificate. Nothing is retained:
+/// the bytes are parsed during the call. `NULL`, `NULL`, `0` selects the
+/// three bundled Apple roots, which is how the constructor above is built;
+/// a `count` of zero with either array non-null is refused.
 ///
 /// # Safety
 /// `bundle_id` must be `NULL` or a NUL-terminated UTF-8 string, and the
@@ -568,10 +599,66 @@ pub unsafe extern "C" fn aprv_verifier_new_jws_with_roots(
             ders,
             lens,
             count,
+            std::ptr::null(),
         )
     })
 }
 
+/// [`aprv_verifier_new_jws_with_roots`] with the verification clock pinned.
+///
+/// `fixed_clock_unix_millis` points at one instant, in milliseconds since
+/// the Unix epoch, that every `now` this verifier reads answers. `NULL` — the
+/// behaviour of every other constructor — reads the system clock instead.
+/// The pointer is borrowed for the duration of the call; the instant is
+/// copied into the handle.
+///
+/// **This is for conformance vectors and tests.** Production code has no
+/// reason to pin a verifier to a fixed instant, and one pinned in the past
+/// makes the `max_signed_age_secs` rule stop rejecting anything.
+///
+/// One constructor rather than a `_with_clock` variant of each of the two
+/// above, because those two already collapse: passing `NULL`, `NULL`, `0`
+/// for the anchors selects the bundled Apple roots, so this signature is the
+/// superset and the ABI does not grow a symbol per combination.
+///
+/// The clock reaches exactly what it reaches in the Rust library: the
+/// `max_signed_age_secs` comparison, and nothing else. **Certificate
+/// validity is never judged at it** — a payload that states no date of its
+/// own is checked against the system clock regardless — so pinning a clock
+/// can neither accept an expired chain nor expire a live one.
+///
+/// # Safety
+/// As [`aprv_verifier_new_jws_with_roots`], plus `fixed_clock_unix_millis`
+/// being `NULL` or a pointer to one readable, aligned `int64_t`.
+#[no_mangle]
+pub unsafe extern "C" fn aprv_verifier_new_jws_with_roots_and_clock(
+    bundle_id: *const c_char,
+    accepted_environments: u32,
+    app_apple_id: u64,
+    max_signed_age_secs: u64,
+    ders: *const *const u8,
+    lens: *const usize,
+    count: usize,
+    fixed_clock_unix_millis: *const i64,
+) -> *mut AprvJwsVerifier {
+    guard_ptr(|| {
+        new_jws(
+            bundle_id,
+            accepted_environments,
+            app_apple_id,
+            max_signed_age_secs,
+            ders,
+            lens,
+            count,
+            fixed_clock_unix_millis,
+        )
+    })
+}
+
+// One argument per ABI argument, deliberately: this is the body the three
+// exported JWS constructors share, and grouping them into a struct here
+// would put a second shape between the header and the builder.
+#[allow(clippy::too_many_arguments)]
 unsafe fn new_jws(
     bundle_id: *const c_char,
     accepted_environments: u32,
@@ -580,6 +667,7 @@ unsafe fn new_jws(
     ders: *const *const u8,
     lens: *const usize,
     count: usize,
+    fixed_clock_unix_millis: *const i64,
 ) -> *mut AprvJwsVerifier {
     let (Ok(bundle_id), Ok(environments), Ok(anchors)) = (
         borrow_str(bundle_id),
@@ -597,6 +685,9 @@ unsafe fn new_jws(
     }
     if max_signed_age_secs != 0 {
         builder = builder.max_signed_age(Duration::from_secs(max_signed_age_secs));
+    }
+    if let Some(clock) = fixed_clock_of(fixed_clock_unix_millis) {
+        builder = builder.clock(clock);
     }
     match builder.build() {
         Ok(inner) => Box::into_raw(Box::new(AprvJwsVerifier { inner })),
@@ -694,7 +785,15 @@ pub unsafe extern "C" fn aprv_verifier_free_receipt(verifier: *mut AprvReceiptVe
 /// the variant that takes anchors.
 #[no_mangle]
 pub unsafe extern "C" fn aprv_endpoint_new(environment: u32) -> *mut AprvReceiptEndpoint {
-    guard_ptr(|| new_endpoint(environment, std::ptr::null(), std::ptr::null(), 0))
+    guard_ptr(|| {
+        new_endpoint(
+            environment,
+            std::ptr::null(),
+            std::ptr::null(),
+            0,
+            std::ptr::null(),
+        )
+    })
 }
 
 /// [`aprv_endpoint_new`] with caller-supplied DER trust anchors.
@@ -708,7 +807,35 @@ pub unsafe extern "C" fn aprv_endpoint_new_with_roots(
     lens: *const usize,
     count: usize,
 ) -> *mut AprvReceiptEndpoint {
-    guard_ptr(|| new_endpoint(environment, ders, lens, count))
+    guard_ptr(|| new_endpoint(environment, ders, lens, count, std::ptr::null()))
+}
+
+/// [`aprv_endpoint_new_with_roots`] with the answering clock pinned.
+///
+/// `fixed_clock_unix_millis` points at one instant, in milliseconds since
+/// the Unix epoch; `NULL` reads the system clock, as every other constructor
+/// does. Passing `NULL`, `NULL`, `0` for the anchors selects the bundled
+/// Apple roots, so this one signature covers every combination.
+///
+/// **This is for conformance vectors and tests.** The clock drives the
+/// `request_date` / `_ms` / `_pst` triple of the response body and nothing
+/// else: the receipt's own creation date is read from the signed bytes, and
+/// certificate validity is judged at the system clock when the receipt
+/// states no date, so a pinned clock can neither authenticate an expired
+/// chain nor expire a live one.
+///
+/// # Safety
+/// As [`aprv_verifier_new_jws_with_roots`], plus `fixed_clock_unix_millis`
+/// being `NULL` or a pointer to one readable, aligned `int64_t`.
+#[no_mangle]
+pub unsafe extern "C" fn aprv_endpoint_new_with_roots_and_clock(
+    environment: u32,
+    ders: *const *const u8,
+    lens: *const usize,
+    count: usize,
+    fixed_clock_unix_millis: *const i64,
+) -> *mut AprvReceiptEndpoint {
+    guard_ptr(|| new_endpoint(environment, ders, lens, count, fixed_clock_unix_millis))
 }
 
 unsafe fn new_endpoint(
@@ -716,6 +843,7 @@ unsafe fn new_endpoint(
     ders: *const *const u8,
     lens: *const usize,
     count: usize,
+    fixed_clock_unix_millis: *const i64,
 ) -> *mut AprvReceiptEndpoint {
     let environment = match environment {
         1 => Environment::Production,
@@ -725,11 +853,13 @@ unsafe fn new_endpoint(
     let Ok(anchors) = anchors_of(ders, lens, count, apple_receipt_roots()) else {
         return std::ptr::null_mut();
     };
-    match VerifyReceiptEndpoint::builder()
+    let mut builder = VerifyReceiptEndpoint::builder()
         .trusted_roots(anchors)
-        .environment(environment)
-        .build()
-    {
+        .environment(environment);
+    if let Some(clock) = fixed_clock_of(fixed_clock_unix_millis) {
+        builder = builder.clock(clock);
+    }
+    match builder.build() {
         Ok(inner) => Box::into_raw(Box::new(AprvReceiptEndpoint { inner })),
         Err(_) => std::ptr::null_mut(),
     }
@@ -1145,7 +1275,7 @@ mod tests {
             );
         }
         assert_eq!(
-            exports, 19,
+            exports, 21,
             "the ABI exports {exports} symbols; update this count deliberately, \
              it is the check that a new export was not added unguarded"
         );
@@ -1346,12 +1476,11 @@ mod tests {
         }
     }
 
-    /// The staleness seam, which the conformance vectors cannot reach
-    /// through this ABI: every case that exercises it also pins a clock, and
-    /// the ABI has no clock argument. A one-second maximum against a fixture
-    /// signed in 2024 is stale on any real clock, so the rule is proven
-    /// wired without one — and the same call with no maximum must succeed,
-    /// or the test would pass for the wrong reason.
+    /// The staleness seam without a clock, which is the shape every existing
+    /// constructor has. A one-second maximum against a fixture signed in
+    /// 2024 is stale on any real clock, so the rule is proven wired against
+    /// system time — and the same call with no maximum must succeed, or the
+    /// test would pass for the wrong reason.
     #[test]
     fn max_signed_age_rejects_an_old_payload_and_zero_means_no_rule() {
         let root = std::fs::read(fixture("generated/jws-root.der")).unwrap();
@@ -1391,6 +1520,197 @@ mod tests {
             }
             unsafe { aprv_verifier_free_jws(verifier) };
         }
+    }
+
+    // --- the pinned clock -------------------------------------------------
+
+    /// The seam the twelve clock-pinning conformance cases need. `transaction`
+    /// carries `signedDate` 2024-08-06T12:00:00Z, so under a 60-second
+    /// maximum the verdict flips between a clock 60 seconds after it and one
+    /// 61 seconds after it — the same boundary
+    /// `transaction/accept-payload-at-exact-max-signed-age` and
+    /// `transaction/reject-payload-one-second-past-max-signed-age` pin, here
+    /// without the harness in the way.
+    #[test]
+    fn a_pinned_clock_decides_the_staleness_verdict() {
+        const SIGNED_DATE_MS: i64 = 1_722_945_600_000;
+        let root = std::fs::read(fixture("generated/jws-root.der")).unwrap();
+        let jws = std::fs::read_to_string(fixture("generated/transaction.jws")).unwrap();
+        let jws = CString::new(jws.trim()).unwrap();
+        let bundle = CString::new("com.example.app").unwrap();
+        let ders = [root.as_ptr()];
+        let lens = [root.len()];
+
+        for (offset_ms, expected) in [
+            (60_000_i64, AprvReason::Ok as i32),
+            (61_000_i64, AprvReason::StalePayload as i32),
+            // A payload signed after the clock is not stale: age runs from
+            // the signing time to now, and the difference has a sign.
+            (-3_600_000_i64, AprvReason::Ok as i32),
+        ] {
+            let now = SIGNED_DATE_MS + offset_ms;
+            let verifier = unsafe {
+                aprv_verifier_new_jws_with_roots_and_clock(
+                    bundle.as_ptr(),
+                    AprvEnvironment::Sandbox as u32,
+                    0,
+                    60,
+                    ders.as_ptr(),
+                    lens.as_ptr(),
+                    1,
+                    &now,
+                )
+            };
+            assert!(!verifier.is_null(), "clock={now}");
+            let mut out = empty_result();
+            let status = unsafe { aprv_verify_transaction(verifier, jws.as_ptr(), &mut out) };
+            assert_eq!(status, expected, "clock={now}");
+            let json = take_json(out);
+            if expected == AprvReason::Ok as i32 {
+                assert!(json.contains("\"signedDate\":1722945600000"), "{json}");
+            } else {
+                assert!(json.contains("STALE_PAYLOAD"), "{json}");
+            }
+            unsafe { aprv_verifier_free_jws(verifier) };
+        }
+    }
+
+    /// A null clock pointer is the documented "no clock given": system time,
+    /// and the bundled Apple roots when the anchor arguments are null too —
+    /// so the widest constructor with everything optional left out answers
+    /// exactly what `aprv_verifier_new_jws` answers.
+    #[test]
+    fn a_null_clock_pointer_is_system_time() {
+        let jws = std::fs::read_to_string(fixture("generated/transaction.jws")).unwrap();
+        let jws = CString::new(jws.trim()).unwrap();
+        let bundle = CString::new("com.example.app").unwrap();
+        let verifier = unsafe {
+            aprv_verifier_new_jws_with_roots_and_clock(
+                bundle.as_ptr(),
+                AprvEnvironment::Sandbox as u32,
+                0,
+                0,
+                std::ptr::null(),
+                std::ptr::null(),
+                0,
+                std::ptr::null(),
+            )
+        };
+        assert!(!verifier.is_null());
+        let mut out = empty_result();
+        let status = unsafe { aprv_verify_transaction(verifier, jws.as_ptr(), &mut out) };
+        // The bundled Apple roots, exactly as aprv_verifier_new_jws would.
+        assert_eq!(status, AprvReason::InvalidChain as i32);
+        assert!(take_json(out).contains("INVALID_CHAIN"));
+        unsafe { aprv_verifier_free_jws(verifier) };
+    }
+
+    /// The clock is not a way past argument checking: a rejected
+    /// configuration is still a null handle, with or without one.
+    #[test]
+    fn the_clock_constructors_refuse_the_same_arguments_as_the_others() {
+        let now = 0_i64;
+        let bundle = CString::new("com.example.app").unwrap();
+        let empty = CString::new("").unwrap();
+        let null_ders: *const *const u8 = std::ptr::null();
+        let null_lens: *const usize = std::ptr::null();
+        unsafe {
+            assert!(aprv_verifier_new_jws_with_roots_and_clock(
+                std::ptr::null(),
+                1,
+                0,
+                0,
+                null_ders,
+                null_lens,
+                0,
+                &now
+            )
+            .is_null());
+            assert!(aprv_verifier_new_jws_with_roots_and_clock(
+                empty.as_ptr(),
+                1,
+                0,
+                0,
+                null_ders,
+                null_lens,
+                0,
+                &now
+            )
+            .is_null());
+            assert!(aprv_verifier_new_jws_with_roots_and_clock(
+                bundle.as_ptr(),
+                0,
+                0,
+                0,
+                null_ders,
+                null_lens,
+                0,
+                &now
+            )
+            .is_null());
+            // An endpoint takes exactly Production or Sandbox, clock or not.
+            assert!(
+                aprv_endpoint_new_with_roots_and_clock(0, null_ders, null_lens, 0, &now).is_null()
+            );
+            assert!(
+                aprv_endpoint_new_with_roots_and_clock(3, null_ders, null_lens, 0, &now).is_null()
+            );
+            let endpoint = aprv_endpoint_new_with_roots_and_clock(2, null_ders, null_lens, 0, &now);
+            assert!(!endpoint.is_null());
+            aprv_endpoint_free(endpoint);
+        }
+    }
+
+    /// The endpoint's clock stamps `request_date` and nothing else, which is
+    /// what `endpoint/request-date-is-the-verification-clock` asserts:
+    /// `receipt_creation_date` comes from the signed bytes and does not move.
+    #[test]
+    fn a_pinned_clock_stamps_the_endpoint_request_date() {
+        let root = std::fs::read(fixture("generated/receipt-root.der")).unwrap();
+        let der = std::fs::read(fixture("generated/receipt.der")).unwrap();
+        let body = format!(
+            "{{\"receipt-data\":\"{}\"}}",
+            apple_purchase_receipt_verifier::base64::encode(&der)
+        );
+        let body = CString::new(body).unwrap();
+        let ders = [root.as_ptr()];
+        let lens = [root.len()];
+        let now = 1_735_689_600_000_i64; // 2025-01-01T00:00:00Z
+
+        let endpoint = unsafe {
+            aprv_endpoint_new_with_roots_and_clock(
+                AprvEnvironment::Sandbox as u32,
+                ders.as_ptr(),
+                lens.as_ptr(),
+                1,
+                &now,
+            )
+        };
+        assert!(!endpoint.is_null());
+        let mut response: *mut c_char = std::ptr::null_mut();
+        let status =
+            unsafe { aprv_verify_receipt_endpoint_json(endpoint, body.as_ptr(), &mut response) };
+        assert_eq!(status, AprvReason::Ok as i32);
+        let text = unsafe { CStr::from_ptr(response) }
+            .to_str()
+            .unwrap()
+            .to_owned();
+        unsafe { aprv_string_free(response) };
+        unsafe { aprv_endpoint_free(endpoint) };
+
+        assert!(text.contains("\"status\":0"), "{text}");
+        assert!(
+            text.contains("\"request_date_ms\":\"1735689600000\""),
+            "{text}"
+        );
+        assert!(
+            text.contains("\"request_date\":\"2025-01-01 00:00:00 Etc/GMT\""),
+            "{text}"
+        );
+        assert!(
+            text.contains("\"receipt_creation_date_ms\":\"1722945600000\""),
+            "{text}"
+        );
     }
 
     /// The caller-supplied-anchor path really is pinned: the same fixture

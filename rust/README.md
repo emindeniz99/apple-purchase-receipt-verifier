@@ -542,9 +542,10 @@ The C ABI in `ffi/` has three test layers of its own — its own unit tests
 for null, non-UTF-8 and refused configurations; `fixtures/cases.json` driven
 through the ABI from C++17; and the same vectors again from Python over
 ctypes, which checks the nested field paths a dependency-free C++ program
-cannot reach. Both conformance harnesses run 92 of the 104 cases and skip the
-same 12, because those pin a clock and the ABI has no clock argument;
-`ffi/README.md` says why, and what covers the staleness rule instead.
+cannot reach. Both conformance harnesses run all 104 cases and skip none: the
+twelve that pin a clock go through the ABI's `_and_clock` constructors, which
+take the instant as epoch milliseconds rather than a callback.
+`ffi/README.md` says what that clock can and cannot move.
 
 `fuzz/` holds seven `cargo fuzz` targets — the ASN.1, X.509 and CMS readers
 on their own, the three verifiers, and the endpoint body — seeded from the

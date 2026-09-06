@@ -20,7 +20,6 @@ defmodule AppleReceiptExample do
   parse the message.
   """
 
-  alias AppleReceiptExample.Json
   alias AppleReceiptExample.Native
 
   @environments %{production: 1, sandbox: 2, xcode: 4, local_testing: 8}
@@ -60,8 +59,15 @@ defmodule AppleReceiptExample do
   `environments` is a list of `:production`, `:sandbox`, `:xcode` or
   `:local_testing`, or the bitmask itself for a caller that already has one.
   Options are `:app_apple_id` (required to accept a Production
-  `AppTransaction`), `:max_signed_age_secs` and `:roots`, a list of DER
-  certificates that replaces the three bundled Apple roots.
+  `AppTransaction`), `:max_signed_age_secs`, `:roots`, a list of DER
+  certificates that replaces the three bundled Apple roots, and
+  `:clock_unix_millis`.
+
+  `:clock_unix_millis` pins the instant the `:max_signed_age_secs` rule is
+  measured against, and is for conformance vectors and tests; leave it out
+  and the verifier reads the system clock. It cannot move a certificate
+  verdict: a payload stating no date of its own is still judged at system
+  time.
   """
   @spec jws_verifier(binary(), [atom()] | non_neg_integer(), keyword()) ::
           {:ok, verifier()} | {:error, :invalid_argument}
@@ -71,7 +77,8 @@ defmodule AppleReceiptExample do
       mask(environments),
       Keyword.get(options, :app_apple_id, 0),
       Keyword.get(options, :max_signed_age_secs, 0),
-      Keyword.get(options, :roots, [])
+      Keyword.get(options, :roots, []),
+      Keyword.get(options, :clock_unix_millis)
     )
   end
 
@@ -83,11 +90,17 @@ defmodule AppleReceiptExample do
 
   @doc """
   A local `verifyReceipt` endpoint for `:production` or `:sandbox`. The
-  choice drives the 21007/21008 routing. Takes the `:roots` option.
+  choice drives the 21007/21008 routing. Takes the `:roots` and
+  `:clock_unix_millis` options; the clock stamps the `request_date` triple of
+  the response body and nothing else.
   """
   @spec endpoint(atom(), keyword()) :: {:ok, verifier()} | {:error, :invalid_argument}
   def endpoint(environment, options \\ []) do
-    Native.endpoint_new(mask([environment]), Keyword.get(options, :roots, []))
+    Native.endpoint_new(
+      mask([environment]),
+      Keyword.get(options, :roots, []),
+      Keyword.get(options, :clock_unix_millis)
+    )
   end
 
   @doc "Verifies a signed transaction, then checks bundle id and environment."
@@ -144,7 +157,7 @@ defmodule AppleReceiptExample do
           {:ok, map()} | {:error, atom() | integer()}
   def verify_receipt_endpoint(endpoint, request_json) do
     case Native.verify_receipt_endpoint_json(endpoint, request_json) do
-      {:ok, body} -> {:ok, Json.decode!(body)}
+      {:ok, body} -> {:ok, JSON.decode!(body)}
       {:error, status} -> {:error, reason(status)}
     end
   end
@@ -153,8 +166,8 @@ defmodule AppleReceiptExample do
   @spec reason(integer()) :: atom() | integer()
   def reason(status), do: Map.get(@reasons, status, status)
 
-  defp decode({:ok, json}), do: {:ok, Json.decode!(json)}
-  defp decode({:error, status, json}), do: {:error, reason(status), Json.decode!(json)}
+  defp decode({:ok, json}), do: {:ok, JSON.decode!(json)}
+  defp decode({:error, status, json}), do: {:error, reason(status), JSON.decode!(json)}
 
   defp mask(bits) when is_integer(bits), do: bits
 

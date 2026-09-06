@@ -51,6 +51,13 @@ header = """
  * verify through the same handle concurrently; freeing one while a call is
  * in flight is not allowed.
  *
+ * THE CLOCK: the constructors ending in _and_clock take one instant, in
+ * milliseconds since the Unix epoch, instead of a callback the library would
+ * call back into. A NULL clock pointer means the system clock, which is what
+ * every other constructor uses. Pinning one is for conformance vectors and
+ * tests; it moves the max-signed-age rule and the endpoint's request_date,
+ * and it never moves a certificate-validity verdict.
+ *
  * ERRORS: a NULL pointer, a non-UTF-8 string or a rejected configuration is
  * reported in the 100+ band of AprvReason and means nothing about the input
  * was checked. The 1..11 band is a verdict about the input. Never conflate
