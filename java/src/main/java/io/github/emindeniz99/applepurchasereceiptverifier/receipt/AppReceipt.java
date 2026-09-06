@@ -1,7 +1,9 @@
 package io.github.emindeniz99.applepurchasereceiptverifier.receipt;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -108,8 +110,23 @@ public final class AppReceipt {
      * Raw values of attribute types this library does not model, keyed by
      * type — forward compatibility for fields Apple may add (PLAN D10).
      * Values are the raw octet-string contents, verified but undecoded.
+     *
+     * <p>A fresh copy each call, arrays included. The unmodifiable wrapper
+     * only stops the map being re-keyed: the {@code List} values and the
+     * {@code byte[]} inside them were shared, so a caller could rewrite a
+     * verified attribute in place and every later reader of the same receipt
+     * would see the rewrite. {@link #opaqueValue()} and {@link #sha1Hash()}
+     * already clone for that reason.
      */
     public Map<Integer, List<byte[]>> unknownAttributes() {
-        return unknownAttributes;
+        Map<Integer, List<byte[]>> copy = new LinkedHashMap<Integer, List<byte[]>>(unknownAttributes.size());
+        for (Map.Entry<Integer, List<byte[]>> entry : unknownAttributes.entrySet()) {
+            List<byte[]> values = new ArrayList<byte[]>(entry.getValue().size());
+            for (byte[] value : entry.getValue()) {
+                values.add(value.clone());
+            }
+            copy.put(entry.getKey(), Collections.unmodifiableList(values));
+        }
+        return Collections.unmodifiableMap(copy);
     }
 }

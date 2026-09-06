@@ -2,6 +2,7 @@ package io.github.emindeniz99.applepurchasereceiptverifier.receipt;
 
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
+import io.github.emindeniz99.applepurchasereceiptverifier.internal.SafeText;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.security.GeneralSecurityException;
@@ -130,6 +131,28 @@ public final class ReceiptVerifier {
      */
     private static final int MAX_PATH_LENGTH = 6;
 
+    /**
+     * Ceiling on the receipt this class will look at: the transport string at
+     * {@link #verify(String, byte[])}, and the DER at every entry point that
+     * takes bytes.
+     *
+     * <p>Checked before anything is decoded. Base64 decoding allocates about
+     * three quarters of the input again, the CMS parse allocates in proportion
+     * to the DER, and none of that is behind a signature check, so an input
+     * large enough to exhaust the heap left {@code verify} as an
+     * {@link OutOfMemoryError} rather than as the declared
+     * {@link VerificationException}.
+     *
+     * <p>The number is the php port's {@code DEFAULT_MAX_RECEIPT_BYTES}, and
+     * it has to clear the normative floor in fixtures/cases.json: every port
+     * MUST accept a well-formed receipt of up to 1 MiB of DER, whose base64 is
+     * about 1.38 MB. The largest genuine receipt in the corpus is 79 KB.
+     * Characters rather than bytes, because that is what a Java {@code String}
+     * allocates; for base64, which is what a receipt string is, the two counts
+     * are the same.
+     */
+    public static final int MAX_RECEIPT_BYTES = 2097152;
+
     private static final BouncyCastleProvider PROVIDER = new BouncyCastleProvider();
 
     private final Set<TrustAnchor> trustAnchors;
@@ -181,6 +204,13 @@ public final class ReceiptVerifier {
      * device-hash binding; see {@link #verify(byte[], byte[])}.
      */
     public AppReceipt verify(String base64Receipt, byte[] deviceGuid) throws VerificationException {
+        // Before the decode, which would otherwise allocate a stripped copy of
+        // the string and then the bytes it decodes to.
+        if (base64Receipt != null && base64Receipt.length() > MAX_RECEIPT_BYTES) {
+            throw new VerificationException(
+                    Reason.INVALID_RECEIPT_FORMAT,
+                    "receipt exceeds the maximum accepted size of " + MAX_RECEIPT_BYTES + " characters");
+        }
         return verify(ReceiptBase64.decode(base64Receipt), deviceGuid);
     }
 
@@ -201,7 +231,8 @@ public final class ReceiptVerifier {
         AppReceipt receipt = verifyCore(receiptDer, trustAnchors);
         if (!bundleId.equals(receipt.bundleId())) {
             throw new VerificationException(
-                    Reason.WRONG_BUNDLE_ID, "expected " + bundleId + " but receipt has " + receipt.bundleId());
+                    Reason.WRONG_BUNDLE_ID,
+                    "expected " + bundleId + " but receipt has " + SafeText.quote(receipt.bundleId()));
         }
         if (deviceGuid != null) {
             verifyDeviceHash(receipt, deviceGuid);
@@ -234,6 +265,11 @@ public final class ReceiptVerifier {
             throws VerificationException {
         if (receiptDer == null) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "receipt is null");
+        }
+        if (receiptDer.length > MAX_RECEIPT_BYTES) {
+            throw new VerificationException(
+                    Reason.INVALID_RECEIPT_FORMAT,
+                    "receipt exceeds the maximum accepted size of " + MAX_RECEIPT_BYTES + " bytes");
         }
         // BouncyCastle's ASN.1 and CMS entry points report malformed input with
         // UNCHECKED exceptions, and which ones is neither documented nor stable
@@ -426,7 +462,8 @@ public final class ReceiptVerifier {
             String digestOid = signer.getDigestAlgOID();
             if (!"1.3.14.3.2.26".equals(digestOid) && !"2.16.840.1.101.3.4.2.1".equals(digestOid)) {
                 throw new VerificationException(
-                        Reason.INVALID_RECEIPT_FORMAT, "unsupported receipt digest algorithm " + digestOid);
+                        Reason.INVALID_RECEIPT_FORMAT,
+                        "unsupported receipt digest algorithm " + SafeText.quote(digestOid));
             }
             boolean valid = signer.verify(new JcaSimpleSignerInfoVerifierBuilder()
                     .setProvider(PROVIDER)
@@ -718,7 +755,8 @@ public final class ReceiptVerifier {
         try {
             instant = Instant.parse(text);
         } catch (DateTimeParseException e) {
-            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "unparseable receipt date: " + text, e);
+            throw new VerificationException(
+                    Reason.INVALID_RECEIPT_FORMAT, "unparseable receipt date: " + SafeText.quote(text), e);
         }
         // Instant.parse accepts expanded years (e.g. +1000000000-...) that no
         // longer fit an epoch-milli long; toEpochMilli overflows on those, and
@@ -729,7 +767,9 @@ public final class ReceiptVerifier {
             instant.toEpochMilli();
         } catch (ArithmeticException e) {
             throw new VerificationException(
-                    Reason.INVALID_RECEIPT_FORMAT, "receipt date out of representable range: " + text, e);
+                    Reason.INVALID_RECEIPT_FORMAT,
+                    "receipt date out of representable range: " + SafeText.quote(text),
+                    e);
         }
         return instant;
     }

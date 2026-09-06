@@ -215,6 +215,41 @@ jobs:
       - run: mvn -B test
         working-directory: jvm-interop
 
+  # A consumer on Spring Boot 4 imports the Boot BOM, which overrides the
+  # library's Jackson 2 pin with its own and adds Jackson 3 (tools.jackson)
+  # beside it. The sample wires the verifiers as beans and pushes one
+  # genuine input through every entry point on exactly that classpath. One
+  # leg per supported Boot line (endoflife.date/spring-boot: 4.0 until
+  # 2026-12-31, 4.1 until 2027-07-31) on every Java LTS Boot 4 accepts;
+  # the Boot line is a Maven property, so a new line is one entry here.
+  # Deliberately a separate Maven project, not a module of java/pom.xml,
+  # so the BOM governs versions the way it does in a real application.
+  java-spring-boot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        boot: ["4.0.8", "4.1.1"]
+        jdk: ["17", "21", "25"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.jdk }}
+          cache: maven
+      - run: mvn -B install -DskipTests
+        working-directory: java
+      - run: |
+          version=$(mvn -q help:evaluate -Dexpression=project.version -DforceStdout)
+          mvn -B -f samples/spring-boot-smoke/pom.xml test \
+            -Dverifier.version="$version" -Dspring-boot.version="$BOOT"
+        working-directory: java
+        env:
+          BOOT: ${{ matrix.boot }}
+
   python:
     runs-on: ubuntu-latest
     timeout-minutes: 15

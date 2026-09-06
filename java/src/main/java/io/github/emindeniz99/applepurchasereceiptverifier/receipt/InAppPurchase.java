@@ -1,7 +1,9 @@
 package io.github.emindeniz99.applepurchasereceiptverifier.receipt;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -91,8 +93,22 @@ public final class InAppPurchase {
         return isInIntroOfferPeriod;
     }
 
-    /** Raw unmodeled attributes by type — forward compatibility (PLAN D10). */
+    /**
+     * Raw unmodeled attributes by type — forward compatibility (PLAN D10).
+     *
+     * <p>A fresh copy each call, arrays included, for the same reason as
+     * {@link AppReceipt#unknownAttributes()}: the shared {@code byte[]}
+     * contents could otherwise be rewritten by one caller for every other.
+     */
     public Map<Integer, List<byte[]>> unknownAttributes() {
-        return unknownAttributes;
+        Map<Integer, List<byte[]>> copy = new LinkedHashMap<Integer, List<byte[]>>(unknownAttributes.size());
+        for (Map.Entry<Integer, List<byte[]>> entry : unknownAttributes.entrySet()) {
+            List<byte[]> values = new ArrayList<byte[]>(entry.getValue().size());
+            for (byte[] value : entry.getValue()) {
+                values.add(value.clone());
+            }
+            copy.put(entry.getKey(), Collections.unmodifiableList(values));
+        }
+        return Collections.unmodifiableMap(copy);
     }
 }

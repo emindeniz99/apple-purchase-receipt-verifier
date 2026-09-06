@@ -40,6 +40,13 @@
     <maven.compiler.release>8</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <bouncycastle.version>1.85</bouncycastle.version>
+    <!-- Floor: Jackson 2.16. JwsVerifier and VerifyReceiptEndpoint state
+         StreamReadConstraints on their mappers rather than relying on
+         Jackson's defaults, because the JWS header is parsed before any
+         signature check and a host BOM pinning an older Jackson 2 would
+         otherwise link cleanly and silently lose the nesting guard.
+         StreamReadConstraints arrived in 2.15 and maxDocumentLength in
+         2.16, so below 2.16 the verifier fails at construction instead. -->
     <jackson.version>2.22.2</jackson.version>
     <junit.version>5.14.4</junit.version>
   </properties>
@@ -96,6 +103,29 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <version>3.5.6</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.4.2</version>
+        <configuration>
+          <archive>
+            <manifestEntries>
+              <!-- Automatic-Module-Name so a consumer on the module path gets
+                   a stable module name instead of one derived from the jar
+                   file name, which changes with every version. The jar stays
+                   a plain classpath jar with no module-info: the Java 8
+                   baseline (PLAN.md D2) cannot compile one. -->
+              <Automatic-Module-Name>io.github.emindeniz99.applepurchasereceiptverifier</Automatic-Module-Name>
+              <!-- Implementation-* so a deployed jar can say which build it
+                   is: Package.getImplementationVersion() answers from these,
+                   which is how a support request identifies the artifact it
+                   is actually running. -->
+              <Implementation-Title>${project.artifactId}</Implementation-Title>
+              <Implementation-Version>${project.version}</Implementation-Version>
+            </manifestEntries>
+          </archive>
+        </configuration>
       </plugin>
       <!-- Format/lint gate: not bound to any lifecycle phase, so `mvn test`
            (including the java-runtime-8 profile) never touches it. Invoked

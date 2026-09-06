@@ -79,6 +79,22 @@ support for longer; the floor stays regardless.
 
 Java 27 ships 2026-09-15 and replaces 26 as the feature-release leg.
 
+#### Spring Boot (consumer smoke)
+
+Not a language line, but the framework most Java consumers integrate
+through, and its BOM overrides the library's Jackson pin. The
+`java-spring-boot` job runs `java/samples/spring-boot-smoke` for every Boot
+line in open-source support on every Java LTS that line accepts (Boot 4
+requires 17 or newer). Older Boot lines (3.5 and 2.7) are commercial-only and
+are not tested.
+
+| Line | Status | OSS ends | Java | CI |
+|---|---|---|---|---|
+| 4.0 | active | 2026-12-31 | 17 to 25 | `java-spring-boot` (17, 21, 25) |
+| 4.1 | active | 2027-07-31 | 17 to 26 | `java-spring-boot` (17, 21, 25) |
+
+When 4.0 ends, drop its leg; when 4.2 ships, add it.
+
 ### Go
 
 Go supports the two newest minors only.

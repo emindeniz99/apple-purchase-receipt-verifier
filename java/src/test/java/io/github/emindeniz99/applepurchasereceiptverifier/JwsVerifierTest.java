@@ -243,6 +243,20 @@ class JwsVerifierTest {
         assertFalse(payload.isActiveAt(new Date()));
     }
 
+    /**
+     * There is no defensible default instant for the entitlement question, so
+     * the argument is required and says so. It used to be dereferenced
+     * unchecked, which answered the caller with a bare NullPointerException
+     * carrying no hint that the argument was the problem.
+     */
+    @Test
+    void isActiveAtRefusesANullInstantWithAMessageThatNamesTheArgument() throws Exception {
+        TransactionPayload payload =
+                verifier(pki, Environment.SANDBOX).verifyTransaction(pki.signJws(transactionClaims("Sandbox")));
+        NullPointerException thrown = assertThrows(NullPointerException.class, () -> payload.isActiveAt(null));
+        assertTrue(String.valueOf(thrown.getMessage()).contains("now must not be null"), thrown.getMessage());
+    }
+
     @Test
     void verifiesProductionAppTransactionWithMatchingAppleId() throws Exception {
         Map<String, Object> claims = TestPki.claims(

@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Spring Boot smoke test for the Java port.
+
+  A consumer on Spring Boot 4 imports the Boot BOM, which pins Jackson 2 to
+  its own version (2.21.x for Boot 4.0) and puts Jackson 3 (tools.jackson)
+  on the classpath beside it. This project proves the verifier still
+  resolves, wires as Spring beans and returns the right verdict through
+  every entry point under exactly those conditions. CI runs it for each
+  supported Boot line on Java 17, 21 and 25.
+
+  The BOM is imported rather than used as a parent so the Boot line is a
+  property: -Dspring-boot.version=4.1.1. It is deliberately NOT a module of
+  ../../pom.xml, so the BOM governs versions the way it does in a real
+  application. Install the library first
+  (mvn -f ../../pom.xml install -DskipTests), then run
+  mvn test -Dverifier.version=<the version in ../../pom.xml>.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>io.github.emindeniz99.samples</groupId>
+  <artifactId>spring-boot-smoke</artifactId>
+  <version>0.0.0-sample</version>
+  <properties>
+    <maven.compiler.release>17</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!-- The oldest supported Boot line; CI overrides this per matrix leg. -->
+    <spring-boot.version>4.0.8</spring-boot.version>
+    <!-- Overridden by CI from ../../pom.xml; see the comment above. -->
+    <verifier.version>0.0.0-set-me</verifier.version>
+  </properties>
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-dependencies</artifactId>
+        <version>${spring-boot.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+  <dependencies>
+    <!-- The Jackson starter puts Jackson 3 on the classpath next to the
+         library's Jackson 2, which is the condition under test. Not
+         starter-web: the sample never serves HTTP, and the embedded Tomcat
+         it would pull in carries its own CVE history that a smoke test for
+         a receipt verifier has no reason to inherit. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-jackson</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.github.emindeniz99</groupId>
+      <artifactId>apple-purchase-receipt-verifier</artifactId>
+      <version>${verifier.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.5.5</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>

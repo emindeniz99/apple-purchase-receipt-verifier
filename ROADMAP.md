@@ -56,7 +56,13 @@ Delete a line in the commit that ships it.
 - **`jackson-databind` is kept by owner decision (PLAN.md D16)**: the
   heaviest dependency in the project and the one consumer scanners will
   flag, but maintained and widely deployed, and the payloads here are
-  small and flat.
+  small and flat. The 2026-09-06 Java review measured the price: 14.4 MB
+  of runtime jars behind a 46 KB library, of which `bcprov` is 10.1 MB
+  and `jackson-databind` 1.7 MB. `JwsVerifier` needs BouncyCastle for
+  exactly one thing, the P1363-to-DER signature re-encoding (a
+  `DERSequence` of two integers, about twenty lines by hand), and binds
+  two flat POJOs plus one `Map`, which `jackson-core` alone could do. A
+  JWS-only consumer could then drop 12 MB. Revisit if a consumer asks.
 - **The `cryptography>=40` floor is never installed.** Every python CI leg
   resolves the latest, so the floor is a claim.
 - **Internal RBS signatures for the Ruby port**: `sig/` covers the public
