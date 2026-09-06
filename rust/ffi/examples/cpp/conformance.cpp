@@ -11,11 +11,17 @@
 //
 // It carries no case-specific knowledge. The generator resolved fixture ids
 // to files, checked their digests, decoded the codecs, computed the
-// environment bitmask and wrote out the endpoint request bodies, because a
-// dependency-free C++ program can do none of those. What is left here is the
-// part that has to be C: build a verifier from the generic config, dispatch
-// on the operation, compare the status, and read a few top-level fields off
-// the JSON the ABI returned.
+// environment bitmask, parsed the pinned clocks to epoch milliseconds and
+// wrote out the endpoint request bodies, because a dependency-free C++
+// program can do none of those. What is left here is the part that has to be
+// C: build a verifier from the generic config, dispatch on the operation,
+// compare the status, and read a few top-level fields off the JSON the ABI
+// returned.
+//
+// Every case in the file runs. The twelve that pin a clock go through the
+// _and_clock constructors, which take the instant itself rather than a
+// callback; nothing here is skipped, and a case the manifest ever marks
+// unsupported fails the run.
 //
 // The JSON reader below is a top-level scalar extractor and nothing more —
 // no vendored parser, and no ambition to become one. Nested paths
@@ -334,9 +340,26 @@ bool run_case(const Case &kase, std::string &error, Outcome &outcome) {
 
   AprvResult result = {0, nullptr};
 
+  // A case that pins a clock names one instant; everything else reads the
+  // system clock, which is what a NULL clock pointer asks the ABI for.
+  int64_t clock_value = 0;
+  const bool pinned = kase.has("clockUnixMillis");
+  if (pinned) clock_value = static_cast<int64_t>(std::stoll(kase.get("clockUnixMillis")));
+  const int64_t *clock = pinned ? &clock_value : nullptr;
+
   if (op == "verifyTransaction" || op == "verifyAppTransaction" || op == "verifyRaw") {
+    // Three constructors, and the harness calls all three: the _and_clock
+    // one is the superset — NULL anchors with a count of zero select the
+    // bundled roots — but a case that pins no clock goes through the plain
+    // ones, so the run is evidence that those symbols link and answer too.
     AprvJwsVerifier *verifier =
-        anchors.builtin()
+        pinned ? aprv_verifier_new_jws_with_roots_and_clock(
+                     kase.get("bundleId").c_str(),
+                     static_cast<uint32_t>(std::stoul(kase.get("envs"))),
+                     std::stoull(kase.get("appAppleId")),
+                     std::stoull(kase.get("maxSignedAgeSecs")), anchors.ders(), anchors.lens(),
+                     anchors.count(), clock)
+        : anchors.builtin()
             ? aprv_verifier_new_jws(kase.get("bundleId").c_str(),
                                     static_cast<uint32_t>(std::stoul(kase.get("envs"))),
                                     std::stoull(kase.get("appAppleId")),
@@ -360,6 +383,13 @@ bool run_case(const Case &kase, std::string &error, Outcome &outcome) {
     }
     aprv_verifier_free_jws(verifier);
   } else if (op == "verifyReceipt" || op == "verifyReceiptBase64") {
+    // ReceiptVerifier takes no clock in any port: a caller who injects one
+    // must not be able to accept an expired chain. A case that pinned one
+    // here would be a vector-file change, so it fails rather than passes.
+    if (pinned) {
+      error = "the receipt verifier has no clock seam, but the case pins one";
+      return false;
+    }
     AprvReceiptVerifier *verifier =
         anchors.builtin()
             ? aprv_verifier_new_receipt(kase.get("bundleId").c_str())
@@ -394,9 +424,12 @@ bool run_case(const Case &kase, std::string &error, Outcome &outcome) {
   } else if (op == "verifyReceiptEndpoint") {
     uint32_t environment = static_cast<uint32_t>(std::stoul(kase.get("endpointEnv")));
     AprvReceiptEndpoint *endpoint =
-        anchors.builtin() ? aprv_endpoint_new(environment)
-                          : aprv_endpoint_new_with_roots(environment, anchors.ders(),
-                                                         anchors.lens(), anchors.count());
+        pinned ? aprv_endpoint_new_with_roots_and_clock(environment, anchors.ders(),
+                                                        anchors.lens(), anchors.count(), clock)
+        : anchors.builtin()
+            ? aprv_endpoint_new(environment)
+            : aprv_endpoint_new_with_roots(environment, anchors.ders(), anchors.lens(),
+                                           anchors.count());
     if (endpoint == nullptr) {
       error = "aprv_endpoint_new refused the configuration";
       return false;
@@ -546,7 +579,8 @@ int main(int argc, char **argv) {
 
   size_t passed = 0;
   size_t failed = 0;
-  size_t unsupported = 0;
+  size_t skipped = 0;
+  size_t pinned_clocks = 0;
   size_t skipped_fields = 0;
   size_t checked_fields = 0;
 
@@ -566,17 +600,16 @@ int main(int argc, char **argv) {
     const std::string id = kase.get("id");
     skipped_fields += static_cast<size_t>(std::stoul(kase.get("skippedFields", "0")));
     checked_fields += kase.all("field").size();
+    if (kase.has("clockUnixMillis")) pinned_clocks += 1;
 
+    // Nothing is skipped any more: the clock cases run through the
+    // _and_clock constructors. An `unsupported` marker would mean the
+    // generator found a case this ABI cannot reach, which is a finding.
     if (kase.has("unsupported")) {
-      const std::string why = kase.get("unsupported");
-      if (why != "clock") {
-        // A new reason a case cannot run is a finding, not a skip.
-        std::cerr << "FAIL  " << id << ": unsupported for an unrecognised reason \"" << why
-                  << "\"\n";
-        failed += 1;
-        continue;
-      }
-      unsupported += 1;
+      std::cerr << "FAIL  " << id << ": the manifest marks it unsupported (\""
+                << kase.get("unsupported") << "\")\n";
+      failed += 1;
+      skipped += 1;
       continue;
     }
 
@@ -590,11 +623,11 @@ int main(int argc, char **argv) {
     passed += 1;
   }
 
-  std::cout << passed << " passed, " << failed << " failed, " << unsupported
-            << " not runnable through the C ABI (no clock argument)\n";
+  std::cout << passed << " passed, " << failed << " failed, " << skipped << " skipped ("
+            << pinned_clocks << " pin a clock, and every one of them ran)\n";
   std::cout << checked_fields << " expected fields checked here, " << skipped_fields
             << " nested paths left to rust/ffi/tests/conformance.py\n";
-  if (passed + failed + unsupported == 0) {
+  if (passed + failed + skipped == 0) {
     std::cerr << "the manifest held no cases\n";
     return 2;
   }

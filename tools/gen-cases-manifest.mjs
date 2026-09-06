@@ -40,24 +40,27 @@
  *   maxSignedAgeSecs    0 when unset
  *   deviceGuidHex       absent when the case pins no device GUID
  *   endpointEnv         1 (Production) or 2 (Sandbox), endpoint cases
+ *   clockUnixMillis     the pinned `clock`, already parsed to epoch
+ *                       milliseconds; absent when the case pins none
  *   expect              ok | error
  *   reason              the canonical token, error cases only
  *   field               one expected top-level field (repeated)
  *   skippedFields       how many expected field paths this manifest DROPPED
  *   unsupported         set when the C ABI cannot run the case at all
  *
- * WHAT IS DROPPED, and why it is counted rather than hidden:
+ * NOTHING IS DROPPED for want of an ABI seam any more: `clockUnixMillis`
+ * feeds aprv_verifier_new_jws_with_roots_and_clock and
+ * aprv_endpoint_new_with_roots_and_clock, which take the instant itself
+ * rather than a callback. No case is marked `unsupported`; the key stays
+ * documented because the harnesses still fail loudly on one, so a future
+ * cause would be a finding rather than a silently smaller run.
  *
- *   - a case that pins a `clock`. The C ABI has no clock argument: the Rust
- *     builders take one, but injecting a `dyn Clock` across a C boundary
- *     would mean a callback, and the surface is deliberately callback-free.
- *     Marked `unsupported=clock`, and the harnesses report the count.
- *   - an expected field path that is not a top-level scalar or an
- *     `<array>.length` — `receipt.bundle_id`,
- *     `inAppPurchases[productId=x].quantity`, `unknownAttributes[9999][0]`.
- *     Counted in `skippedFields`. rust/ffi/tests/conformance.py checks all of
- *     them; it has a JSON parser and this manifest exists because C++ does
- *     not.
+ * WHAT IS STILL DROPPED, and why it is counted rather than hidden: an
+ * expected field path that is not a top-level scalar or an `<array>.length`
+ * — `receipt.bundle_id`, `inAppPurchases[productId=x].quantity`,
+ * `unknownAttributes[9999][0]`. Counted in `skippedFields`.
+ * rust/ffi/tests/conformance.py checks all of them; it has a JSON parser and
+ * this manifest exists because C++ does not.
  */
 
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -156,7 +159,7 @@ function main() {
   }
 
   const lines = [];
-  let unsupported = 0;
+  let pinnedClocks = 0;
   let skippedFields = 0;
 
   for (const kase of file.cases) {
@@ -164,11 +167,15 @@ function main() {
     const config = kase.config;
 
     if (kase.clock) {
-      // Not a skip list: the reason is machine-readable and the harnesses add
-      // it up, so a case going unsupported for a NEW reason shows up as an
-      // unknown token rather than as one fewer test quietly running.
-      parts.push('unsupported=clock');
-      unsupported += 1;
+      // Parsed here, once, so no harness has to read ISO-8601. The ABI takes
+      // epoch milliseconds because that is what a fixed clock is; every
+      // instant in cases.json is a UTC `Z` timestamp Date.parse accepts.
+      const millis = Date.parse(kase.clock.now);
+      if (!Number.isFinite(millis)) {
+        fail(`case "${kase.id}" pins an unparseable clock "${kase.clock.now}"`);
+      }
+      parts.push(`clockUnixMillis=${millis}`);
+      pinnedClocks += 1;
     }
 
     const inputBytes = decoded.get(kase.input.fixture);
@@ -252,7 +259,7 @@ function main() {
   writeFileSync(join(out, 'cases.tsv'), `${lines.join('\n')}\n`);
   process.stdout.write(
     `${lines.length} cases -> ${join(out, 'cases.tsv')} ` +
-      `(${unsupported} the C ABI cannot run, ${skippedFields} nested field paths dropped)\n`,
+      `(${pinnedClocks} pin a clock, ${skippedFields} nested field paths dropped)\n`,
   );
 }
 

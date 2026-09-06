@@ -30,12 +30,14 @@
  * so a binary holding an embedded NUL is truncated at it, exactly as it
  * would be for a C caller.
  *
- * TWO SENTINELS keep the shim at nine functions instead of nineteen. An
+ * THREE SENTINELS keep the shim at nine functions instead of twenty-one. An
  * empty roots list means "the bundled Apple roots", so one NIF covers both
  * aprv_*_new and aprv_*_new_with_roots; an empty device GUID means "do not
  * check the device hash", so one NIF covers each receipt call and its
- * _with_device_guid variant. Every one of the nineteen exports is still
- * reached.
+ * _with_device_guid variant; a nil clock means "read the system clock", so
+ * one NIF covers the _and_clock constructors as well. Every one of the
+ * twenty-one exports is still reached, because a clock reaches the
+ * _and_clock call only when a caller actually pins one.
  */
 
 #include <erl_nif.h>
@@ -52,6 +54,7 @@ static ErlNifResourceType *endpoint_type = NULL;
 static ERL_NIF_TERM atom_ok;
 static ERL_NIF_TERM atom_error;
 static ERL_NIF_TERM atom_invalid_argument;
+static ERL_NIF_TERM atom_nil;
 
 typedef struct {
   void *handle;
@@ -146,6 +149,21 @@ static ERL_NIF_TERM make_result(ErlNifEnv *env, int32_t status, char *json) {
   return enif_make_tuple3(env, atom_error, enif_make_int(env, status), payload);
 }
 
+/* A pinned clock as the `const int64_t *` the ABI takes: nil is NULL, which
+ * the ABI reads as "the system clock". `storage` must outlive the call. */
+static int clock_of(ErlNifEnv *env, ERL_NIF_TERM term, ErlNifSInt64 *storage,
+                    const int64_t **clock) {
+  if (enif_is_identical(term, atom_nil)) {
+    *clock = NULL;
+    return 1;
+  }
+  if (!enif_get_int64(env, term, storage)) {
+    return 0;
+  }
+  *clock = (const int64_t *)storage;
+  return 1;
+}
+
 typedef struct {
   const uint8_t **ders;
   size_t *lens;
@@ -209,6 +227,11 @@ static ERL_NIF_TERM nif_jws_verifier_new(ErlNifEnv *env, int argc, const ERL_NIF
       !enif_get_uint64(env, argv[3], &max_signed_age_secs)) {
     return enif_make_badarg(env);
   }
+  ErlNifSInt64 clock_millis = 0;
+  const int64_t *clock = NULL;
+  if (!clock_of(env, argv[5], &clock_millis, &clock)) {
+    return enif_make_badarg(env);
+  }
   char *bundle_id = cstring(env, argv[0]);
   if (bundle_id == NULL) {
     return enif_make_badarg(env);
@@ -219,7 +242,11 @@ static ERL_NIF_TERM nif_jws_verifier_new(ErlNifEnv *env, int argc, const ERL_NIF
     return enif_make_badarg(env);
   }
   AprvJwsVerifier *handle =
-      roots.count == 0
+      clock != NULL
+          ? aprv_verifier_new_jws_with_roots_and_clock(
+                bundle_id, (uint32_t)environments, app_apple_id, max_signed_age_secs,
+                (const uint8_t *const *)roots.ders, roots.lens, roots.count, clock)
+      : roots.count == 0
           ? aprv_verifier_new_jws(bundle_id, (uint32_t)environments, app_apple_id,
                                   max_signed_age_secs)
           : aprv_verifier_new_jws_with_roots(bundle_id, (uint32_t)environments, app_apple_id,
@@ -259,12 +286,21 @@ static ERL_NIF_TERM nif_endpoint_new(ErlNifEnv *env, int argc, const ERL_NIF_TER
   if (!enif_get_uint(env, argv[0], &environment)) {
     return enif_make_badarg(env);
   }
+  ErlNifSInt64 clock_millis = 0;
+  const int64_t *clock = NULL;
+  if (!clock_of(env, argv[2], &clock_millis, &clock)) {
+    return enif_make_badarg(env);
+  }
   anchors roots;
   if (!anchors_load(env, argv[1], &roots)) {
     return enif_make_badarg(env);
   }
   AprvReceiptEndpoint *handle =
-      roots.count == 0
+      clock != NULL
+          ? aprv_endpoint_new_with_roots_and_clock((uint32_t)environment,
+                                                   (const uint8_t *const *)roots.ders,
+                                                   roots.lens, roots.count, clock)
+      : roots.count == 0
           ? aprv_endpoint_new((uint32_t)environment)
           : aprv_endpoint_new_with_roots((uint32_t)environment,
                                          (const uint8_t *const *)roots.ders, roots.lens,
@@ -398,6 +434,7 @@ static int load(ErlNifEnv *env, void **priv_data, ERL_NIF_TERM load_info) {
   atom_ok = enif_make_atom(env, "ok");
   atom_error = enif_make_atom(env, "error");
   atom_invalid_argument = enif_make_atom(env, "invalid_argument");
+  atom_nil = enif_make_atom(env, "nil");
   return 0;
 }
 
@@ -405,9 +442,9 @@ static int load(ErlNifEnv *env, void **priv_data, ERL_NIF_TERM load_info) {
  * and the verify calls walk a chain and check a signature. */
 static ErlNifFunc funcs[] = {
     {"version", 0, nif_version, 0},
-    {"jws_verifier_new", 5, nif_jws_verifier_new, ERL_NIF_DIRTY_JOB_CPU_BOUND},
+    {"jws_verifier_new", 6, nif_jws_verifier_new, ERL_NIF_DIRTY_JOB_CPU_BOUND},
     {"receipt_verifier_new", 2, nif_receipt_verifier_new, ERL_NIF_DIRTY_JOB_CPU_BOUND},
-    {"endpoint_new", 2, nif_endpoint_new, ERL_NIF_DIRTY_JOB_CPU_BOUND},
+    {"endpoint_new", 3, nif_endpoint_new, ERL_NIF_DIRTY_JOB_CPU_BOUND},
     {"verify_transaction", 2, nif_verify_transaction, ERL_NIF_DIRTY_JOB_CPU_BOUND},
     {"verify_app_transaction", 2, nif_verify_app_transaction, ERL_NIF_DIRTY_JOB_CPU_BOUND},
     {"verify_raw", 2, nif_verify_raw, ERL_NIF_DIRTY_JOB_CPU_BOUND},

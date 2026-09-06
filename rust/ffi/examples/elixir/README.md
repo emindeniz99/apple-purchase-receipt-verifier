@@ -7,6 +7,9 @@ vectors through that path so the answer is checked rather than asserted.
 Nothing here is published to Hex, and the example has no Hex dependencies at
 all. `mix compile` fetches nothing.
 
+It needs **Elixir 1.18 on OTP 27** or newer, which is what `mix.exs` claims
+and what CI's floor leg runs; the other leg runs a current pair.
+
 ## Why there is C in an Elixir directory
 
 The BEAM has no foreign function interface. A native call from Elixir is a
@@ -15,11 +18,13 @@ of this library is a shim in C, `c_src/aprv_nif.c`, written against the
 committed header in `../../include`. It converts Erlang terms to the
 arguments the ABI takes and back, and holds no verification logic.
 
-The shim is 9 NIFs over the ABI's 19 exports. An empty roots list means the
+The shim is 9 NIFs over the ABI's 21 exports. An empty roots list means the
 bundled Apple roots, so one NIF covers both `aprv_verifier_new_jws` and
 `aprv_verifier_new_jws_with_roots`; an empty device GUID means no device hash
 check, so one NIF covers each receipt call and its `_with_device_guid`
-variant. Every export is still reached.
+variant; a `nil` clock means the system clock, so one NIF covers the
+`_and_clock` constructors too. Every export is still reached, because a clock
+reaches the `_and_clock` call only when a caller pins one.
 
 ## Build and run
 
@@ -78,11 +83,20 @@ emulator runs it on a dirty scheduler instead.
 
 ### JSON
 
-Elixir 1.14 on OTP 25 has no JSON reader in its standard library: `JSON`
-arrived in Elixir 1.18 and `:json` in OTP 27. Rather than depend on Jason,
-`AppleReceiptExample.Json` reads the documents this ABI emits, which keeps
-the dependency count at zero. Your application should use Jason or a current
-runtime.
+The ABI hands back one UTF-8 JSON document per call, and `JSON.decode!/1`
+from Elixir's own standard library reads it. That is why `mix.exs` claims
+Elixir 1.18: `JSON` arrived there, and taking it as the floor keeps the
+example's dependency count at zero without a hand-written reader.
+
+### The clock
+
+`jws_verifier/3` and `endpoint/2` take a `:clock_unix_millis` option, which
+becomes the ABI's `fixed_clock_unix_millis` pointer; leaving it out passes
+`nil`, the NULL that means the system clock. It exists for the conformance
+vectors that pin one, and it moves the `STALE_PAYLOAD` rule and the
+endpoint's `request_date` only. `receipt_verifier/2` has no such option
+because the ABI has none: an injected clock must never be able to accept an
+expired chain.
 
 ## The conformance run
 
@@ -92,11 +106,11 @@ cases through the NIF:
 
 ```
 apple-purchase-receipt-verifier 0.4.0 — C ABI conformance over NIFs
-92 passed, 0 failed, 12 not runnable through the C ABI (no clock argument)
+104 passed, 0 failed, 0 skipped (12 pin a clock, and every one of them ran)
 157 expected fields checked here, nested paths left to conformance.py
 ```
 
-The 12 skipped cases pin a clock, and the ABI has no clock argument. That is
-the only sanctioned reason: a case marked unsupported for anything else fails
-the run. The counts match `examples/cpp/conformance.cpp` exactly, because
-both read the same manifest.
+Nothing is skipped: the twelve cases that pin a clock are built through the
+`_and_clock` constructors. A case the manifest marks unsupported fails the
+run rather than shrinking it. The counts match `examples/cpp/conformance.cpp`
+exactly, because both read the same manifest.

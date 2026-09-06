@@ -12,11 +12,13 @@ defmodule ConformanceTest do
   generator already does once for every consumer that is not the Rust
   library itself. Reusing it keeps this file about the boundary.
 
-  Both this and `rust/ffi/examples/cpp/conformance.cpp` run 92 of the 104
-  cases and skip the same 12, for the same stated reason: those cases pin a
-  clock, and the ABI has no clock argument. That is asserted rather than
-  assumed — a case that becomes unrunnable for any other reason fails the
-  run.
+  Both this and `rust/ffi/examples/cpp/conformance.cpp` run all 104 cases and
+  skip none. The twelve that pin a clock go through
+  `aprv_verifier_new_jws_with_roots_and_clock` and
+  `aprv_endpoint_new_with_roots_and_clock`, which take the instant itself
+  rather than a callback; the generator has already parsed it to epoch
+  milliseconds. A case the manifest marks unsupported fails the run rather
+  than being counted away.
   """
 
   use ExUnit.Case, async: false
@@ -50,6 +52,8 @@ defmodule ConformanceTest do
 
     IO.puts("apple-purchase-receipt-verifier #{Aprv.version()} — C ABI conformance over NIFs")
 
+    pinned_clocks = Enum.count(cases, &(get(&1, "clockUnixMillis") != nil))
+
     {failures, passed, skipped, checked_fields} =
       Enum.reduce(cases, {[], 0, 0, 0}, fn kase, {failures, passed, skipped, fields} ->
         fields = fields + length(all(kase, "field"))
@@ -61,19 +65,17 @@ defmodule ConformanceTest do
               {:error, why} -> {[{get(kase, "id"), why} | failures], passed, skipped, fields}
             end
 
-          "clock" ->
-            {failures, passed, skipped + 1, fields}
-
           other ->
-            # A new reason a case cannot run is a finding, not a skip.
-            why = "unsupported for an unrecognised reason #{inspect(other)}"
-            {[{get(kase, "id"), why} | failures], passed, skipped, fields}
+            # Nothing is skipped any more. A case the manifest cannot express
+            # for this ABI is a finding, not a smaller run.
+            why = "the manifest marks it unsupported (#{inspect(other)})"
+            {[{get(kase, "id"), why} | failures], passed, skipped + 1, fields}
         end
       end)
 
     IO.puts(
-      "#{passed} passed, #{length(failures)} failed, " <>
-        "#{skipped} not runnable through the C ABI (no clock argument)"
+      "#{passed} passed, #{length(failures)} failed, #{skipped} skipped " <>
+        "(#{pinned_clocks} pin a clock, and every one of them ran)"
     )
 
     IO.puts("#{checked_fields} expected fields checked here, nested paths left to conformance.py")
@@ -128,6 +130,9 @@ defmodule ConformanceTest do
     roots = Enum.map(all(kase, "root"), &File.read!/1)
     input = File.read!(get(kase, "input"))
     guid = decode_hex(get(kase, "deviceGuidHex", ""))
+    # nil is the ABI's NULL clock pointer: the system clock, which is what a
+    # case that pins none must be answered at.
+    clock = clock_millis(kase)
 
     case get(kase, "op") do
       operation when operation in ~w(verifyTransaction verifyAppTransaction verifyRaw) ->
@@ -139,7 +144,8 @@ defmodule ConformanceTest do
                    integer(kase, "envs"),
                    app_apple_id: integer(kase, "appAppleId"),
                    max_signed_age_secs: integer(kase, "maxSignedAgeSecs"),
-                   roots: roots
+                   roots: roots,
+                   clock_unix_millis: clock
                  ),
                  "aprv_verifier_new_jws refused the configuration"
                ) do
@@ -151,7 +157,8 @@ defmodule ConformanceTest do
            end}
         end
 
-      operation when operation in ~w(verifyReceipt verifyReceiptBase64) ->
+      operation
+      when operation in ~w(verifyReceipt verifyReceiptBase64) and clock == nil ->
         with {:ok, verifier} <-
                open(
                  Aprv.receipt_verifier(get(kase, "bundleId"), roots: roots),
@@ -172,7 +179,7 @@ defmodule ConformanceTest do
 
         with {:ok, endpoint} <-
                open(
-                 Aprv.endpoint(environment, roots: roots),
+                 Aprv.endpoint(environment, roots: roots, clock_unix_millis: clock),
                  "aprv_endpoint_new refused the configuration"
                ) do
           case Aprv.verify_receipt_endpoint(endpoint, File.read!(get(kase, "request"))) do
@@ -186,8 +193,23 @@ defmodule ConformanceTest do
           end
         end
 
+      operation when operation in ~w(verifyReceipt verifyReceiptBase64) ->
+        # The receipt verifier takes no clock in any port: an injected one
+        # must never be able to accept an expired chain. A case pinning one
+        # here would be a change to the vectors, so it fails.
+        {:error, "the receipt verifier has no clock seam, but the case pins one"}
+
       operation ->
         {:error, "no adapter for operation #{operation}"}
+    end
+  end
+
+  # The generator parsed the case's ISO-8601 `clock` to epoch milliseconds, so
+  # nothing here reads a timestamp.
+  defp clock_millis(kase) do
+    case get(kase, "clockUnixMillis") do
+      nil -> nil
+      text -> String.to_integer(text)
     end
   end
 

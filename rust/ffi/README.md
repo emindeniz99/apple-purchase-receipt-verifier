@@ -50,7 +50,7 @@ Building from source is the only supported path today; see `ROADMAP.md`.
 
 ## The surface
 
-Nineteen symbols. Three opaque handles, seven verification calls, one result
+Twenty-one symbols. Three opaque handles, seven verification calls, one result
 struct, one free function.
 
 ```c
@@ -58,6 +58,7 @@ const char *aprv_version(void);
 
 AprvJwsVerifier     *aprv_verifier_new_jws(bundle_id, environments, app_apple_id, max_age_secs);
 AprvJwsVerifier     *aprv_verifier_new_jws_with_roots(..., ders, lens, count);
+AprvJwsVerifier     *aprv_verifier_new_jws_with_roots_and_clock(..., ders, lens, count, clock);
 void                 aprv_verifier_free_jws(AprvJwsVerifier *);
 
 AprvReceiptVerifier *aprv_verifier_new_receipt(bundle_id);
@@ -66,6 +67,7 @@ void                 aprv_verifier_free_receipt(AprvReceiptVerifier *);
 
 AprvReceiptEndpoint *aprv_endpoint_new(environment);
 AprvReceiptEndpoint *aprv_endpoint_new_with_roots(environment, ders, lens, count);
+AprvReceiptEndpoint *aprv_endpoint_new_with_roots_and_clock(environment, ders, lens, count, clock);
 void                 aprv_endpoint_free(AprvReceiptEndpoint *);
 
 int32_t aprv_verify_transaction(v, const char *jws, AprvResult *out);
@@ -91,6 +93,37 @@ bit is refused rather than ignored, because silently dropping one builds a
 verifier that accepts less than the caller asked for and reports the
 difference as `WRONG_ENVIRONMENT` on a genuine payload.
 
+### The clock
+
+The two `_and_clock` constructors take `const int64_t *fixed_clock_unix_millis`:
+one instant, in milliseconds since the Unix epoch. `NULL` — which is what
+every other constructor passes — reads the system clock. A pointer rather
+than a sentinel value because every `int64_t` names a real instant, `0`
+included.
+
+It is an instant and not a callback on purpose. The Rust builders take an
+`Arc<dyn Clock>`, but a function pointer the library calls back into would
+have to be thread-safe, outlive the handle and never unwind, and getting any
+of that wrong is a crash rather than a rejected argument. This surface is
+deliberately callback-free.
+
+**Pinning a clock is for conformance vectors and tests.** Production code has
+no reason to freeze a verifier's "now", and one frozen in the past stops
+`max_signed_age_secs` rejecting anything.
+
+The clock reaches what it reaches in every other port: the `STALE_PAYLOAD`
+comparison, and the `request_date` / `_ms` / `_pst` triple the endpoint
+stamps on its response. **Certificate validity is never judged at it.** A
+payload or receipt that states no date of its own is checked against the
+system clock regardless, so an injected clock can neither authenticate an
+expired chain nor expire a live one — which is why `AprvReceiptVerifier` has
+no clock constructor at all.
+
+One constructor per handle rather than a `_with_clock` variant of each: the
+`_and_clock` signature is the superset, because `NULL`, `NULL`, `0` for the
+anchors already selects the bundled Apple roots. The ABI does not grow a
+symbol per combination of options.
+
 ### Why JSON is the interchange
 
 `AprvResult.json` carries the answer: the claim object for the JWS calls, a
@@ -102,7 +135,7 @@ is a tree with repeated groups and raw byte attributes. Modelling either as C
 structs would put every field of a wire format Apple extends at will into the
 ABI, and every field Apple added would then be a breaking change for every
 consumer in every language. One UTF-8 JSON document instead keeps the ABI at
-nineteen symbols and moves the schema question into a parser the caller
+twenty-one symbols and moves the schema question into a parser the caller
 already has.
 
 The receipt encoding is the shared cross-port view the conformance vectors
@@ -200,14 +233,11 @@ and hands over plain files.
 field paths the C++ harness cannot reach — `receipt.bundle_id`,
 `inAppPurchases[productId=…].expiresDate`, `unknownAttributes[9999][0]`.
 
-Both harnesses run 92 of the 104 cases and skip the same 12, for the same
-stated reason: those cases pin a clock, and the ABI has no clock argument —
-injecting a `dyn Clock` across a C boundary would mean a callback, and this
-surface is deliberately callback-free. The skip is asserted, not assumed: a
-case that becomes unrunnable for any *other* reason fails the run. The
-staleness rule those cases exercise is covered instead by a unit test that
-does not need a clock, because a one-second maximum against a 2024 fixture is
-stale on any real one.
+Both harnesses run all 104 cases and skip none. The twelve that pin a clock go
+through the `_and_clock` constructors described above. Nothing is skipped and
+nothing is assumed: a case the manifest ever marks unsupported fails the run
+rather than shrinking it quietly, and both harnesses print how many pinned a
+clock alongside the pass count.
 
 ## Example
 
@@ -260,13 +290,16 @@ node tools/gen-cases-manifest.mjs rust/ffi/target/manifest
 cd rust/ffi/examples/elixir && mix compile && mix test && mix run example.exs
 ```
 
+It needs Elixir 1.18 on OTP 27 or newer. CI runs that floor and a current
+pair; `examples/elixir/README.md` says what each proves.
+
 ```
 apple-purchase-receipt-verifier 0.4.0 — C ABI conformance over NIFs
-92 passed, 0 failed, 12 not runnable through the C ABI (no clock argument)
+104 passed, 0 failed, 0 skipped (12 pin a clock, and every one of them ran)
 ```
 
-The same 92 cases and the same 12 clock skips as the C++ harness, which is
-the point of running it: two consumers, one manifest, identical counts.
+The same 104 cases as the C++ harness, which is the point of running it: two
+consumers, one manifest, identical counts.
 
 Two things the shim does that a C caller does not have to think about.
 
@@ -281,5 +314,6 @@ about a millisecond delays every process on its scheduler thread, and
 verifying a chain takes longer than that. Every call that parses or verifies
 carries `ERL_NIF_DIRTY_JOB_CPU_BOUND`.
 
-`examples/elixir/README.md` covers the rest, including why the example reads
-JSON with a decoder of its own instead of depending on Jason.
+`examples/elixir/README.md` covers the rest. The example has no Hex
+dependencies: it decodes the ABI's documents with Elixir 1.18's built-in
+`JSON` module, which is the floor `mix.exs` claims.

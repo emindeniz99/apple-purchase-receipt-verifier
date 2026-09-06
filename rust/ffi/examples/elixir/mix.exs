@@ -36,7 +36,7 @@ defmodule AppleReceiptExample.MixProject do
     [
       app: :apple_receipt_example,
       version: "0.0.0",
-      elixir: "~> 1.14",
+      elixir: "~> 1.18",
       compilers: [:aprv_nif] ++ Mix.compilers(),
       start_permanent: false,
       elixirc_options: [warnings_as_errors: true],

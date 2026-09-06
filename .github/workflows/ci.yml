@@ -773,15 +773,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The floor mix.exs claims, and the OTP line behind it. OTP 25
-          # has no :json and Elixir 1.14 has no JSON module, which is why
-          # the example reads the ABI's JSON with a decoder of its own
-          # rather than a package from Hex.
-          - otp: "25"
-            elixir: "1.14"
-          # What a current install gets.
+          # The floor mix.exs claims, and the OTP line behind it. Elixir
+          # 1.18 is where the standard library got `JSON`, which is what
+          # lets the example decode the ABI's documents with no Hex
+          # dependency at all.
           - otp: "27"
             elixir: "1.18"
+          # What a current install gets.
+          - otp: "28"
+            elixir: "1.20"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

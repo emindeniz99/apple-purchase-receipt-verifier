@@ -24,6 +24,13 @@
  * verify through the same handle concurrently; freeing one while a call is
  * in flight is not allowed.
  *
+ * THE CLOCK: the constructors ending in _and_clock take one instant, in
+ * milliseconds since the Unix epoch, instead of a callback the library would
+ * call back into. A NULL clock pointer means the system clock, which is what
+ * every other constructor uses. Pinning one is for conformance vectors and
+ * tests; it moves the max-signed-age rule and the endpoint's request_date,
+ * and it never moves a certificate-validity verdict.
+ *
  * ERRORS: a NULL pointer, a non-UTF-8 string or a rejected configuration is
  * reported in the 100+ band of AprvReason and means nothing about the input
  * was checked. The 1..11 band is a verdict about the input. Never conflate
@@ -194,8 +201,10 @@ AprvJwsVerifier *aprv_verifier_new_jws(const char *bundle_id,
 
 // [`aprv_verifier_new_jws`] with caller-supplied DER trust anchors.
 //
-// `ders[i]` / `lens[i]` describe one DER certificate; `count` must be
-// non-zero. Nothing is retained: the bytes are parsed during the call.
+// `ders[i]` / `lens[i]` describe one DER certificate. Nothing is retained:
+// the bytes are parsed during the call. `NULL`, `NULL`, `0` selects the
+// three bundled Apple roots, which is how the constructor above is built;
+// a `count` of zero with either array non-null is refused.
 //
 // # Safety
 // `bundle_id` must be `NULL` or a NUL-terminated UTF-8 string, and the
@@ -207,6 +216,41 @@ AprvJwsVerifier *aprv_verifier_new_jws_with_roots(const char *bundle_id,
                                                   const uint8_t *const *ders,
                                                   const size_t *lens,
                                                   size_t count);
+
+// [`aprv_verifier_new_jws_with_roots`] with the verification clock pinned.
+//
+// `fixed_clock_unix_millis` points at one instant, in milliseconds since
+// the Unix epoch, that every `now` this verifier reads answers. `NULL` — the
+// behaviour of every other constructor — reads the system clock instead.
+// The pointer is borrowed for the duration of the call; the instant is
+// copied into the handle.
+//
+// **This is for conformance vectors and tests.** Production code has no
+// reason to pin a verifier to a fixed instant, and one pinned in the past
+// makes the `max_signed_age_secs` rule stop rejecting anything.
+//
+// One constructor rather than a `_with_clock` variant of each of the two
+// above, because those two already collapse: passing `NULL`, `NULL`, `0`
+// for the anchors selects the bundled Apple roots, so this signature is the
+// superset and the ABI does not grow a symbol per combination.
+//
+// The clock reaches exactly what it reaches in the Rust library: the
+// `max_signed_age_secs` comparison, and nothing else. **Certificate
+// validity is never judged at it** — a payload that states no date of its
+// own is checked against the system clock regardless — so pinning a clock
+// can neither accept an expired chain nor expire a live one.
+//
+// # Safety
+// As [`aprv_verifier_new_jws_with_roots`], plus `fixed_clock_unix_millis`
+// being `NULL` or a pointer to one readable, aligned `int64_t`.
+AprvJwsVerifier *aprv_verifier_new_jws_with_roots_and_clock(const char *bundle_id,
+                                                            uint32_t accepted_environments,
+                                                            uint64_t app_apple_id,
+                                                            uint64_t max_signed_age_secs,
+                                                            const uint8_t *const *ders,
+                                                            const size_t *lens,
+                                                            size_t count,
+                                                            const int64_t *fixed_clock_unix_millis);
 
 // Releases a handle from `aprv_verifier_new_jws*`. `NULL` is a no-op.
 // Calling it twice on the same handle, or while another thread is inside a
@@ -258,6 +302,29 @@ AprvReceiptEndpoint *aprv_endpoint_new_with_roots(uint32_t environment,
                                                   const uint8_t *const *ders,
                                                   const size_t *lens,
                                                   size_t count);
+
+// [`aprv_endpoint_new_with_roots`] with the answering clock pinned.
+//
+// `fixed_clock_unix_millis` points at one instant, in milliseconds since
+// the Unix epoch; `NULL` reads the system clock, as every other constructor
+// does. Passing `NULL`, `NULL`, `0` for the anchors selects the bundled
+// Apple roots, so this one signature covers every combination.
+//
+// **This is for conformance vectors and tests.** The clock drives the
+// `request_date` / `_ms` / `_pst` triple of the response body and nothing
+// else: the receipt's own creation date is read from the signed bytes, and
+// certificate validity is judged at the system clock when the receipt
+// states no date, so a pinned clock can neither authenticate an expired
+// chain nor expire a live one.
+//
+// # Safety
+// As [`aprv_verifier_new_jws_with_roots`], plus `fixed_clock_unix_millis`
+// being `NULL` or a pointer to one readable, aligned `int64_t`.
+AprvReceiptEndpoint *aprv_endpoint_new_with_roots_and_clock(uint32_t environment,
+                                                            const uint8_t *const *ders,
+                                                            const size_t *lens,
+                                                            size_t count,
+                                                            const int64_t *fixed_clock_unix_millis);
 
 // Releases a handle from `aprv_endpoint_new*`. `NULL` is a no-op.
 //

@@ -19,9 +19,10 @@ Second, it checks the field paths C++ cannot reach. `receipt.bundle_id`,
 against a real JSON parser, so the 51 paths the manifest generator drops for
 the C++ harness are covered rather than lost.
 
-Both harnesses skip the same 12 cases, for the same stated reason: they pin
-a clock, and the C ABI has no clock argument. That is asserted, not assumed
-— an unsupported case with any other cause fails the run.
+Every case in the file runs, this harness and the C++ one alike. The twelve
+that pin a clock go through the `_and_clock` constructors, which take the
+instant as epoch milliseconds rather than a callback. A case this adapter
+cannot run raises rather than being counted as a skip.
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ import json
 import re
 import sys
 from base64 import b64decode, b64encode
+from datetime import datetime, timezone
 from pathlib import Path
 
 # --- status codes, mirroring include/apple_purchase_receipt_verifier.h -----
@@ -111,6 +113,17 @@ def load_library(directory: Path) -> ctypes.CDLL:
         ctypes.c_size_t,
     ]
     lib.aprv_verifier_new_jws_with_roots.restype = ctypes.c_void_p
+    lib.aprv_verifier_new_jws_with_roots_and_clock.argtypes = [
+        ctypes.c_char_p,
+        ctypes.c_uint32,
+        ctypes.c_uint64,
+        ctypes.c_uint64,
+        u8pp,
+        sizep,
+        ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_int64),
+    ]
+    lib.aprv_verifier_new_jws_with_roots_and_clock.restype = ctypes.c_void_p
     lib.aprv_verifier_free_jws.argtypes = [ctypes.c_void_p]
     lib.aprv_verifier_free_jws.restype = None
 
@@ -130,6 +143,14 @@ def load_library(directory: Path) -> ctypes.CDLL:
     lib.aprv_endpoint_new.restype = ctypes.c_void_p
     lib.aprv_endpoint_new_with_roots.argtypes = [ctypes.c_uint32, u8pp, sizep, ctypes.c_size_t]
     lib.aprv_endpoint_new_with_roots.restype = ctypes.c_void_p
+    lib.aprv_endpoint_new_with_roots_and_clock.argtypes = [
+        ctypes.c_uint32,
+        u8pp,
+        sizep,
+        ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_int64),
+    ]
+    lib.aprv_endpoint_new_with_roots_and_clock.restype = ctypes.c_void_p
     lib.aprv_endpoint_free.argtypes = [ctypes.c_void_p]
     lib.aprv_endpoint_free.restype = None
 
@@ -221,6 +242,26 @@ def fixture_bytes(directory: Path, registry: dict, name: str) -> bytes:
             f'cases.json records {entry["contentSha256"]}, the decoded bytes hash to {digest}'
         )
     return data
+
+
+def clock_millis(case: dict):
+    """The case's pinned instant as epoch milliseconds, or `None`.
+
+    The ABI takes the instant itself rather than a callback, so this is the
+    whole of the conversion. Every `clock.now` in cases.json is a UTC
+    ISO-8601 timestamp ending in `Z`, which `fromisoformat` reads only once
+    it is spelled as an offset."""
+    spec = case.get("clock")
+    if not spec:
+        return None
+    text = spec["now"]
+    try:
+        moment = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        raise SystemExit(f'{case["id"]}: unparseable clock "{text}"') from None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return round(moment.timestamp() * 1000)
 
 
 # --- language-neutral field paths ----------------------------------------
@@ -330,14 +371,22 @@ def run_case(lib, directory: Path, registry: dict, case: dict):
     app_apple_id = config.get("appAppleId") or 0
     max_age = config.get("maxSignedAgeSeconds") or 0
     guid = bytes.fromhex(config["deviceGuidHex"]) if config.get("deviceGuidHex") else b""
+    # NULL is "no clock given", which is the system clock — the behaviour of
+    # every constructor that predates the clock argument.
+    millis = clock_millis(case)
+    clock = None if millis is None else ctypes.byref(ctypes.c_int64(millis))
+    ders, lens, count = (None, None, 0) if anchors is None else anchors[:3]
 
     result = AprvResult()
 
     if operation in ("verifyTransaction", "verifyAppTransaction", "verifyRaw"):
-        if anchors is None:
+        if clock is not None:
+            handle = lib.aprv_verifier_new_jws_with_roots_and_clock(
+                bundle_id, mask, app_apple_id, max_age, ders, lens, count, clock
+            )
+        elif anchors is None:
             handle = lib.aprv_verifier_new_jws(bundle_id, mask, app_apple_id, max_age)
         else:
-            ders, lens, count, _keepalive = anchors
             handle = lib.aprv_verifier_new_jws_with_roots(
                 bundle_id, mask, app_apple_id, max_age, ders, lens, count
             )
@@ -352,10 +401,16 @@ def run_case(lib, directory: Path, registry: dict, case: dict):
         lib.aprv_verifier_free_jws(handle)
 
     elif operation in ("verifyReceipt", "verifyReceiptBase64"):
+        # The receipt verifier takes no clock in any port: an injected one
+        # must never be able to accept an expired chain. A case pinning one
+        # here would be a change to the vectors, so it stops the run.
+        if clock is not None:
+            raise SystemExit(
+                f'{case["id"]}: the receipt verifier has no clock seam, but the case pins one'
+            )
         if anchors is None:
             handle = lib.aprv_verifier_new_receipt(bundle_id)
         else:
-            ders, lens, count, _keepalive = anchors
             handle = lib.aprv_verifier_new_receipt_with_roots(bundle_id, ders, lens, count)
         if not handle:
             raise SystemExit(f'{case["id"]}: aprv_verifier_new_receipt refused the configuration')
@@ -383,10 +438,13 @@ def run_case(lib, directory: Path, registry: dict, case: dict):
 
     elif operation == "verifyReceiptEndpoint":
         environment = ENVIRONMENT_BITS[config["environment"]]
-        if anchors is None:
+        if clock is not None:
+            handle = lib.aprv_endpoint_new_with_roots_and_clock(
+                environment, ders, lens, count, clock
+            )
+        elif anchors is None:
             handle = lib.aprv_endpoint_new(environment)
         else:
-            ders, lens, count, _keepalive = anchors
             handle = lib.aprv_endpoint_new_with_roots(environment, ders, lens, count)
         if not handle:
             raise SystemExit(f'{case["id"]}: aprv_endpoint_new refused the configuration')
@@ -460,14 +518,14 @@ def main() -> int:
         fixture_bytes(directory, registry, name)
 
     passed = failed = skipped = 0
+    pinned_clocks = 0
     checked_fields = 0
     for case in file["cases"]:
+        # Nothing is skipped: a case that pins a clock is built through the
+        # _and_clock constructor, and one this adapter cannot run raises out
+        # of run_case rather than being counted away.
         if case.get("clock"):
-            # The only sanctioned reason a case cannot run here: the ABI has
-            # no clock argument, because injecting one would mean a callback
-            # and the surface is deliberately callback-free.
-            skipped += 1
-            continue
+            pinned_clocks += 1
         checked_fields += len(case["expected"].get("fields") or {})
         status, payload = run_case(lib, directory, registry, case)
         problem = check(case, status, payload)
@@ -478,8 +536,8 @@ def main() -> int:
             passed += 1
 
     print(
-        f"{passed} passed, {failed} failed, "
-        f"{skipped} not runnable through the C ABI (no clock argument)"
+        f"{passed} passed, {failed} failed, {skipped} skipped "
+        f"({pinned_clocks} pin a clock, and every one of them ran)"
     )
     print(f"{checked_fields} expected fields checked, nested paths included")
     if passed == 0:
