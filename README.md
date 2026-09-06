@@ -128,6 +128,171 @@ shared fixture through both builds and fails on any difference of verdict;
 [node/README.md](node/README.md#webcrypto-only-runtimes) has the per-runtime
 table and the three places the web API is not just `await`.
 
+## Integrating: from verified payload to entitlement
+
+Verification proves Apple signed the bytes. It does not prove the presenter
+owns them, and it says nothing about what happened after the signature. The
+flow below is the shape this library is meant to sit inside; each port's
+README carries the same steps written in its own API.
+
+There are two branches because clients send two things, and both are
+first-class here. StoreKit 2 apps send a signed JWS transaction. StoreKit 1
+apps and older SDKs still send the base64 PKCS#7 app receipt, the blob that
+used to be POSTed to Apple's now-deprecated `verifyReceipt` endpoint, and
+`VerifyReceiptEndpoint` is the drop-in replacement for that call: the same
+request body, the same response body, the same status codes, answered offline
+against pinned roots.
+
+### Branch A: StoreKit 2 signed transaction
+
+```text
+1. RECEIVE
+   POST /purchases { jws }          the client's jwsRepresentation
+
+2. VERIFY, OFFLINE
+   verifier = JwsVerifier(
+       trustedRoots         = appleJwsRoots(),
+       bundleId             = "com.example.app",
+       acceptedEnvironments = { Production, Sandbox },   // App Review runs
+                                                         // production builds
+                                                         // against Sandbox
+       maxSignedAge         = FRESHNESS_WINDOW)          // 5 minutes
+   payload = verifier.verifyTransaction(jws)
+   on failure:
+       log(reason)                  // the reason table below says what next
+       deny                         // nothing partial is returned
+
+3. REVOKED?
+   if payload.revocationDate is set:
+       deny                         // refunded or revoked as of signing time
+
+4. FRESH, OR ASK APPLE
+   // a payload inside FRESHNESS_WINDOW reached step 3, so it is a live
+   // snapshot and can be granted with no network call at all
+   on STALE_PAYLOAD from step 2:
+       // step 2 returned no payload, so the id for this call comes from the
+       // client's own request, never from the payload that failed to verify
+       signed  = appStoreServerApi.getTransactionInfo(request.transactionId)
+       payload = verifier.verifyTransaction(signed)   // same verifier
+       back to step 3 with the re-signed payload
+
+5. REPLAY GUARD
+   if store.grantExists(payload.transactionId):
+       deny                         // this purchase already unlocked something
+   store.recordGrant(payload.transactionId,
+                     payload.originalTransactionId,   // subscriptions
+                     userId)
+
+6. GRANT
+   grant(userId, payload.productId)
+```
+
+### Branch B: legacy PKCS#7 app receipt
+
+```text
+1. RECEIVE
+   POST /purchases { receiptData }  the base64 app receipt
+
+2. VERIFY, OFFLINE
+   verifier = ReceiptVerifier(
+       trustedRoots = appleReceiptRoots(),
+       bundleId     = "com.example.app")
+   receipt = verifier.verify(receiptData)
+   on failure:
+       log(reason)
+       deny
+   // Or hand the request body straight to VerifyReceiptEndpoint and read
+   // `status`: 0, 21002, 21003, 21007, 21008, 21009. Like Apple's endpoint
+   // it does not check the bundle id, so compare receipt.bundle_id yourself.
+
+3. REFUNDED OR EXPIRED?
+   purchase = receipt.inAppPurchases matching the product you are unlocking
+   if purchase.cancellationDate is set:
+       deny                         // refunded or cancelled as of signing time
+   if purchase.expiresDate is set and in the past:
+       deny                         // the subscription term had already ended
+
+4. FRESH, OR REFRESH
+   // a receipt is a snapshot of the same kind: Apple re-signs it whenever the
+   // app refreshes it, and a refunded purchase carries cancellationDate
+   if now - receipt.creationDate > FRESHNESS_WINDOW:
+       ask the client to refresh its receipt and re-send, or
+       signed  = appStoreServerApi.getTransactionInfo(purchase.transactionId)
+       payload = jwsVerifier.verifyTransaction(signed)
+       decide from the re-signed payload instead
+   // ReceiptVerifier has no maxSignedAge option: on this path the window is
+   // yours to compare against the receipt's own creation date
+
+5. REPLAY GUARD
+   if store.grantExists(purchase.transactionId):
+       deny
+   store.recordGrant(purchase.transactionId,
+                     purchase.originalTransactionId,
+                     userId)
+
+6. GRANT
+   grant(userId, purchase.productId)
+```
+
+### Both branches
+
+**Refunds and cancellations after step 6** arrive as App Store Server
+Notifications V2, which are Apple-signed JWS this library verifies on either
+branch:
+
+```text
+POST /apple/notifications { signedPayload }
+    claims = jwsVerifier.verifyRaw(signedPayload)   // enforces no claim:
+                                                    // check bundleId yourself
+    on REFUND or REVOKE: revoke(userId, transactionId)
+```
+
+**Why a fresh payload needs no network call.** Apple re-signs a transaction
+every time the app fetches it, and a refunded transaction carries
+`revocationDate` (JWS) or `cancellation_date` (receipt) from then on. So a
+payload signed seconds ago, with neither field set, is Apple's current answer
+about that purchase, and step 3 is the whole check. Five minutes is a
+reasonable default for the window. On the JWS path `maxSignedAge` enforces it
+and an older payload fails step 2 as `STALE_PAYLOAD`; on the receipt path
+there is no such option, so compare the receipt's creation date yourself.
+
+**Step 4 is the only place either branch talks to Apple, and it is optional.**
+Get Transaction Info by `transactionId`, or the subscription status endpoint,
+answers with a freshly signed JWS, which goes through the same verifier before
+anything is decided from it. A client that can re-fetch a current
+`jwsRepresentation`, or refresh its app receipt, removes the step entirely:
+answer a stale payload by asking for a fresh one.
+
+**Dedupe on the transaction id, not on the bytes.** A legacy receipt is BER,
+so one correctly signed receipt has several byte spellings; the id is the
+identifier (PLAN.md D4). For a subscription keep `originalTransactionId`
+beside it, since that is what ties renewals to one purchase.
+
+### What to do per reason
+
+Three classes, and the class is what decides whether a rejection is worth an
+alert. Every reason denies the payload in front of you; only `STALE_PAYLOAD`
+says the next attempt could succeed.
+
+| Reason | Class | Response |
+|---|---|---|
+| `INVALID_JWS_FORMAT` | client bug | Deny. The client sent something that is not a compact JWS, or truncated one. |
+| `INVALID_RECEIPT_FORMAT` | client bug | Deny. Malformed, truncated, not base64, or over the size bound. `21002` at the endpoint. |
+| `INVALID_CERTIFICATE` | client bug | Deny. An `x5c` entry or a receipt signer is not a parseable certificate, which mangled transport also produces. |
+| `DEVICE_HASH_MISMATCH` | client bug | Deny. The receipt is bound to a different device than the GUID supplied, or the GUID was passed as hex rather than raw bytes. |
+| `WRONG_ENVIRONMENT` | client bug | Deny, and check the accept set: an endpoint App Review can reach must include Sandbox. At the endpoint this is `21007` / `21008` instead. |
+| `INVALID_CHAIN` | possible fraud | Deny and alert. The path does not reach a pinned Apple root, or was not valid when the payload was signed. `21003` at the endpoint. |
+| `INVALID_SIGNATURE` | possible fraud | Deny and alert. The bytes were altered after Apple signed them. |
+| `INVALID_CERTIFICATE_PURPOSE` | possible fraud | Deny and alert. A certificate chaining to an Apple root without the marker OID its position requires: a developer's own certificate signing a forged payload looks exactly like this. |
+| `WRONG_BUNDLE_ID` | possible fraud | Deny and alert. A genuine Apple-signed payload for another app. |
+| `WRONG_APP_APPLE_ID` | possible fraud | Deny and alert. A Production `AppTransaction` naming a different app Apple id. |
+| `STALE_PAYLOAD` | retry later | Not a rejection of the purchase. Take step 4: ask the client for a fresh payload, or fetch one from the App Store Server API. |
+
+The vocabulary is closed and identical in all nine ports, so this table is one
+policy across every backend language. What signatures still cannot tell you,
+and why replay and refund bookkeeping are the caller's job, is in
+[INTENT.md](./INTENT.md) and [THREAT-MODEL.md](./THREAT-MODEL.md) section 4.
+
 ## How to run the test suites
 
 ```bash

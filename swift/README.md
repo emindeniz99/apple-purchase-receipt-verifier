@@ -212,6 +212,93 @@ or an empty `acceptedEnvironments` set throws `VerificationError` from
 `.invalidCertificate` and `.invalidJwsFormat` are reused there rather than
 introducing a twelfth vocabulary just for construction.
 
+## Integrating: from verified payload to entitlement
+
+The backend flow these calls sit inside is written out once in the
+[project README](../README.md#integrating-from-verified-payload-to-entitlement):
+verify offline, deny on any failure, check the refund field, refresh a payload
+past the freshness window, guard against replay on the transaction id, then
+grant. That section also carries the policy table saying what each reason
+means and which ones are worth an alert. Here are its two branches in this
+port's API.
+
+A StoreKit 2 signed transaction:
+
+```swift
+import ApplePurchaseReceiptVerifier
+
+func makeVerifier() throws -> JwsVerifier {
+    try JwsVerifier(
+        trustedRoots: appleJwsRoots(),
+        bundleId: "com.example.app",
+        acceptedEnvironments: [.production, .sandbox],
+        maxSignedAgeMillis: 300_000)          // the freshness window
+}
+
+func redeemTransaction(_ verifier: JwsVerifier, userId: String, jws: String) async -> Verdict {
+    let payload: TransactionPayload
+    do {
+        payload = try await verifier.verifyTransaction(jws)          // step 2
+    } catch let error as VerificationError {
+        if error.reason == .stalePayload {
+            // step 4: ask the client for a fresh jwsRepresentation, or fetch
+            // one from the App Store Server API and verify that instead
+            return .refresh
+        }
+        logger.warning("purchase rejected: \(error.reason.rawValue)")
+        return .denied
+    } catch {
+        return .denied
+    }
+
+    if payload.revocationDate != nil { return .denied }              // step 3
+
+    guard let id = payload.transactionId else { return .denied }
+    if grants.exists(id) { return .denied }                          // step 5
+    grants.record(id, payload.originalTransactionId, userId)
+
+    grant(userId, payload.productId)
+    return .granted
+}
+```
+
+The legacy PKCS#7 app receipt is the same policy on the other input, the one
+StoreKit 1 apps and older SDKs still send:
+
+```swift
+// Same policy keyed on the receipt's own dates. `verify(base64Receipt:)` takes
+// the string the client sends; `VerifyReceiptEndpoint` is the alternative,
+// answering Apple's `verifyReceipt` JSON shape with a status instead.
+func redeemReceipt(
+    _ verifier: ReceiptVerifier, userId: String, receiptData: String, productId: String
+) async -> Verdict {
+    guard let receipt = try? await verifier.verify(base64Receipt: receiptData) else {
+        return .denied                                               // step 2
+    }
+    let now = Date()
+    guard let purchase = receipt.inAppPurchases.first(where: { $0.productId == productId }),
+        purchase.cancellationDate == nil                             // step 3
+    else {
+        return .denied
+    }
+    if let expires = purchase.expiresDate, expires <= now { return .denied }
+
+    // step 4: no maxSignedAgeMillis here, so compare the creation date. Past
+    // the window, ask the client to refresh its receipt, or call the App Store
+    // Server API by transactionId and verify the JWS it returns.
+    guard let created = receipt.creationDate, now.timeIntervalSince(created) <= 300 else {
+        return .refresh
+    }
+
+    guard let id = purchase.transactionId else { return .denied }
+    if grants.exists(id) { return .denied }                          // step 5
+    grants.record(id, purchase.originalTransactionId, userId)
+
+    grant(userId, purchase.productId)
+    return .granted
+}
+```
+
 ## Trust anchors
 
 `appleJwsRoots()` and `appleReceiptRoots()` are top-level functions, each

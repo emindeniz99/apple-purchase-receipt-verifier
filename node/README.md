@@ -109,6 +109,89 @@ A test also reads the emitted module graph and fails if anything reachable
 from the web entry point imports a `node:` module, imports anything
 non-relative, or so much as mentions `Buffer` or `process`.
 
+## Integrating: from verified payload to entitlement
+
+The backend flow these calls sit inside is written out once in the
+[project README](https://github.com/emindeniz99/apple-purchase-receipt-verifier#integrating-from-verified-payload-to-entitlement):
+verify offline, deny on any failure, check the refund field, refresh a payload
+past the freshness window, guard against replay on the transaction id, then
+grant. That section also carries the policy table saying what each reason
+means and which ones are worth an alert. Here are its two branches in this
+port's API.
+
+A StoreKit 2 signed transaction:
+
+```js
+import {
+  JwsVerifier, Reason, VerificationError, appleJwsRoots,
+} from 'apple-purchase-receipt-verifier';
+
+const verifier = new JwsVerifier({
+  trustedRoots: appleJwsRoots(),
+  bundleId: 'com.example.app',
+  acceptedEnvironments: ['Production', 'Sandbox'],
+  maxSignedAgeMillis: 5 * 60 * 1000,        // the freshness window
+});
+
+export function redeemTransaction(userId, jws) {
+  let payload;
+  try {
+    payload = verifier.verifyTransaction(jws);                    // step 2
+  } catch (error) {
+    if (!(error instanceof VerificationError)) throw error;
+    if (error.reason === Reason.STALE_PAYLOAD) {
+      // step 4: ask the client for a fresh jwsRepresentation, or fetch one
+      // from the App Store Server API and verifyTransaction that instead
+      return 'refresh';
+    }
+    log.warn({ reason: error.reason }, 'purchase rejected');
+    return 'denied';
+  }
+
+  if (payload.revocationDate !== undefined) return 'denied';      // step 3
+
+  const id = payload.transactionId;                               // step 5
+  if (grants.exists(id)) return 'denied';
+  grants.record(id, payload.originalTransactionId, userId);
+
+  grant(userId, payload.productId);
+  return 'granted';
+}
+```
+
+The legacy PKCS#7 app receipt is the same policy on the other input, the one
+StoreKit 1 apps and older SDKs still send:
+
+```js
+import { ReceiptVerifier, appleReceiptRoots } from 'apple-purchase-receipt-verifier';
+
+const receipts = new ReceiptVerifier({
+  trustedRoots: appleReceiptRoots(),
+  bundleId: 'com.example.app',
+});
+
+// Same policy keyed on the receipt's own dates. `verify` takes the base64 the
+// client sends or the DER bytes; VerifyReceiptEndpoint is the alternative,
+// answering Apple's `verifyReceipt` JSON shape with a `status` instead.
+export function redeemReceipt(userId, receiptData, productId) {
+  const receipt = receipts.verify(receiptData);                     // step 2
+  const purchase = receipt.inAppPurchases.find((p) => p.productId === productId);
+  if (purchase === undefined) return 'denied';
+  if (purchase.cancellationDate !== null) return 'denied';          // step 3
+  if (purchase.expiresDate !== null && purchase.expiresDate <= new Date()) return 'denied';
+
+  // step 4: no maxSignedAge here, so compare the receipt's creation date. Past
+  // the window, ask the client to refresh its receipt, or call the App Store
+  // Server API by purchase.transactionId and verify the JWS it returns.
+  if (Date.now() - receipt.creationDate.getTime() > 5 * 60 * 1000) return 'refresh';
+
+  if (grants.exists(purchase.transactionId)) return 'denied';       // step 5
+  grants.record(purchase.transactionId, purchase.originalTransactionId, userId);
+  grant(userId, purchase.productId);
+  return 'granted';
+}
+```
+
 ## Why offline
 
 Signature verification cannot fail because a vendor endpoint is down, so a

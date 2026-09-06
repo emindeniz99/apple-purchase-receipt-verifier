@@ -197,6 +197,110 @@ to the shared schema in one pull request.
 empty bundle id, an empty accepted-environment set, or an endpoint environment
 other than Production/Sandbox raise `ArgumentException` from the constructor.
 
+## Integrating: from verified payload to entitlement
+
+The backend flow these calls sit inside is written out once in the
+[project README](https://github.com/emindeniz99/apple-purchase-receipt-verifier#integrating-from-verified-payload-to-entitlement):
+verify offline, deny on any failure, check the refund field, refresh a payload
+past the freshness window, guard against replay on the transaction id, then
+grant. That section also carries the policy table saying what each reason
+means and which ones are worth an alert. Here are its two branches in this
+port's API.
+
+A StoreKit 2 signed transaction:
+
+```csharp
+using ApplePurchaseReceiptVerifier;
+using ApplePurchaseReceiptVerifier.Jws;
+
+public sealed class Redeem
+{
+    private readonly JwsVerifier verifier = new(
+        trustedRoots: AppleRootCertificates.JwsRoots(),
+        bundleId: "com.example.app",
+        acceptedEnvironments: new[] { AppleEnvironment.Production, AppleEnvironment.Sandbox },
+        maxSignedAge: TimeSpan.FromMinutes(5));       // the freshness window
+
+    public string RedeemTransaction(string userId, string jws)
+    {
+        TransactionPayload payload;
+        try
+        {
+            payload = verifier.VerifyTransaction(jws);                  // step 2
+        }
+        catch (VerificationException e) when (e.Reason == VerificationReason.StalePayload)
+        {
+            // step 4: ask the client for a fresh jwsRepresentation, or fetch
+            // one from the App Store Server API and verify that instead
+            return "refresh";
+        }
+        catch (VerificationException e)
+        {
+            Log.Warning("purchase rejected: {Reason}", e.ReasonCode);
+            return "denied";
+        }
+
+        if (payload.RevocationDate is not null) return "denied";        // step 3
+
+        string id = payload.TransactionId!;                             // step 5
+        if (Grants.Exists(id)) return "denied";
+        Grants.Record(id, payload.OriginalTransactionId, userId);
+
+        Grant(userId, payload.ProductId!);
+        return "granted";
+    }
+}
+```
+
+The legacy PKCS#7 app receipt is the same policy on the other input, the one
+StoreKit 1 apps and older SDKs still send:
+
+```csharp
+using ApplePurchaseReceiptVerifier;
+using ApplePurchaseReceiptVerifier.Receipt;
+
+// Same policy keyed on the receipt's own dates. Verify takes the base64 the
+// client sends or the DER bytes; VerifyReceiptEndpoint is the alternative,
+// answering Apple's verifyReceipt JSON shape with a status instead.
+public sealed class RedeemReceipt
+{
+    private static readonly TimeSpan Window = TimeSpan.FromMinutes(5);
+
+    private readonly ReceiptVerifier receipts =
+        new(AppleRootCertificates.ReceiptRoots(), "com.example.app");
+
+    public string Redeem(string userId, string receiptData, string productId)
+    {
+        AppReceipt receipt = receipts.Verify(receiptData);              // step 2
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+
+        foreach (InAppPurchase purchase in receipt.InAppPurchases)
+        {
+            if (purchase.ProductId != productId) continue;
+            if (purchase.CancellationDate is not null) return "denied"; // step 3
+            if (purchase.ExpiresDate is { } expires && expires <= now) return "denied";
+
+            // step 4: no maxSignedAge here, so compare the creation date. Past
+            // the window, ask the client to refresh its receipt, or call the
+            // App Store Server API by TransactionId and verify the JWS back.
+            if (receipt.CreationDate is not { } created || now - created > Window)
+            {
+                return "refresh";
+            }
+
+            string id = purchase.TransactionId!;                        // step 5
+            if (Grants.Exists(id)) return "denied";
+            Grants.Record(id, purchase.OriginalTransactionId, userId);
+
+            Grant(userId, purchase.ProductId!);
+            return "granted";
+        }
+
+        return "denied";
+    }
+}
+```
+
 ## Security posture
 
 - **Pinned anchors only.** `X509Chain` is never constructed anywhere in this

@@ -159,5 +159,3 @@ Still worth filing as issues:
 - Notification-envelope convenience (typed `verifyNotification` that also
   verifies nested `signedTransactionInfo` / `signedRenewalInfo`) — today
   `verifyRaw` covers notifications with caller-side claim checks.
-- Example integration snippet: "client sends `jwsRepresentation` → backend
-  verifies → backend records transactionId (replay guard) → unlock product".

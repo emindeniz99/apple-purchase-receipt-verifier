@@ -231,6 +231,109 @@ bundle id, an empty accept set, a non-Production/Sandbox endpoint environment:
 all raise `\InvalidArgumentException`. A `catch (VerificationException)` must
 never swallow your own bug as "the receipt was bad".
 
+## Integrating: from verified payload to entitlement
+
+The backend flow these calls sit inside is written out once in the
+[project README](../README.md#integrating-from-verified-payload-to-entitlement):
+verify offline, deny on any failure, check the refund field, refresh a payload
+past the freshness window, guard against replay on the transaction id, then
+grant. That section also carries the policy table saying what each reason
+means and which ones are worth an alert. Here are its two branches in this
+port's API.
+
+A StoreKit 2 signed transaction:
+
+```php
+use EminDeniz99\ApplePurchaseReceiptVerifier\AppleRootCerts;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Jws\JwsVerifier;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Reason;
+use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationException;
+
+$verifier = new JwsVerifier(
+    AppleRootCerts::jwsRoots(),
+    'com.example.app',
+    [Environment::Production, Environment::Sandbox],
+    maxSignedAgeSeconds: 300,                     // the freshness window
+);
+
+function redeemTransaction(JwsVerifier $verifier, string $userId, string $jws): string
+{
+    try {
+        $payload = $verifier->verifyTransaction($jws);            // step 2
+    } catch (VerificationException $e) {
+        if ($e->reason === Reason::StalePayload) {
+            // step 4: ask the client for a fresh jwsRepresentation, or fetch
+            // one from the App Store Server API and verify that instead
+            return 'refresh';
+        }
+        error_log('purchase rejected: ' . $e->reason->value);
+        return 'denied';
+    }
+
+    if ($payload->revocationDate !== null) {                       // step 3
+        return 'denied';
+    }
+
+    $id = $payload->transactionId;                                 // step 5
+    if (Grants::exists($id)) {
+        return 'denied';
+    }
+    Grants::record($id, $payload->originalTransactionId, $userId);
+
+    grant($userId, $payload->productId);
+    return 'granted';
+}
+```
+
+The legacy PKCS#7 app receipt is the same policy on the other input, the one
+StoreKit 1 apps and older SDKs still send:
+
+```php
+use EminDeniz99\ApplePurchaseReceiptVerifier\AppleRootCerts;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier;
+
+$receipts = new ReceiptVerifier(AppleRootCerts::receiptRoots(), 'com.example.app');
+
+// Same policy keyed on the receipt's own dates. `verify` takes the base64 the
+// client sends or the DER bytes; VerifyReceiptEndpoint is the alternative,
+// answering Apple's `verifyReceipt` JSON shape with a `status` instead.
+function redeemReceipt(ReceiptVerifier $receipts, string $userId, string $data, string $productId): string
+{
+    $receipt = $receipts->verify($data);                            // step 2
+    $now = new DateTimeImmutable('now');
+
+    $purchase = null;
+    foreach ($receipt->inAppPurchases as $candidate) {
+        if ($candidate->productId === $productId) {
+            $purchase = $candidate;
+        }
+    }
+    if ($purchase === null || $purchase->cancellationDate !== null) {   // step 3
+        return 'denied';
+    }
+    if ($purchase->expiresDate !== null && $purchase->expiresDate <= $now) {
+        return 'denied';
+    }
+
+    // step 4: no maxSignedAgeSeconds here, so compare the creation date. Past
+    // the window, ask the client to refresh its receipt, or call the App Store
+    // Server API by transactionId and verify the JWS it returns.
+    if ($receipt->creationDate === null
+        || $now->getTimestamp() - $receipt->creationDate->getTimestamp() > 300) {
+        return 'refresh';
+    }
+
+    if (Grants::exists($purchase->transactionId)) {                 // step 5
+        return 'denied';
+    }
+    Grants::record($purchase->transactionId, $purchase->originalTransactionId, $userId);
+
+    grant($userId, $purchase->productId);
+    return 'granted';
+}
+```
+
 ## What the clock can move
 
 `JwsVerifier` and `VerifyReceiptEndpoint` take an optional PSR-20

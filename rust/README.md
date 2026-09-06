@@ -223,6 +223,137 @@ endpoint environment other than Production or Sandbox all return
 a verification verdict. The free `verify_receipt_core` has no `build()` to
 fail in, so it returns `CoreError::Config` instead — see above.
 
+## Integrating: from verified payload to entitlement
+
+The backend flow these calls sit inside is written out once in the
+[project README](../README.md#integrating-from-verified-payload-to-entitlement):
+verify offline, deny on any failure, check the refund field, refresh a payload
+past the freshness window, guard against replay on the transaction id, then
+grant. That section also carries the policy table saying what each reason
+means and which ones are worth an alert. Here are its two branches in this
+port's API.
+
+A StoreKit 2 signed transaction:
+
+```rust
+use std::time::Duration;
+
+use apple_purchase_receipt_verifier::{
+    apple_jws_roots, ConfigError, Environment, JwsVerifier, Reason,
+};
+
+fn build_verifier() -> Result<JwsVerifier, ConfigError> {
+    JwsVerifier::builder()
+        .trusted_roots(apple_jws_roots().iter().cloned())
+        .bundle_id("com.example.app")
+        .accepted_environments([Environment::Production, Environment::Sandbox])
+        .max_signed_age(Duration::from_secs(300)) // the freshness window
+        .build()
+}
+
+fn redeem_transaction(verifier: &JwsVerifier, user_id: &str, jws: &str) -> Verdict {
+    let payload = match verifier.verify_transaction(jws) {
+        // step 2
+        Ok(payload) => payload,
+        Err(e) if e.reason() == Reason::StalePayload => {
+            // step 4: ask the client for a fresh jwsRepresentation, or fetch
+            // one from the App Store Server API and verify that instead
+            return Verdict::Refresh;
+        }
+        Err(e) => {
+            tracing::warn!(reason = e.reason().as_str(), "purchase rejected");
+            return Verdict::Denied;
+        }
+    };
+
+    if payload.revocation_date.is_some() {
+        // step 3
+        return Verdict::Denied;
+    }
+
+    let Some(id) = payload.transaction_id.as_deref() else {
+        return Verdict::Denied;
+    };
+    if grants::exists(id) {
+        // step 5
+        return Verdict::Denied;
+    }
+    grants::record(id, payload.original_transaction_id.as_deref(), user_id);
+
+    grant(user_id, payload.product_id.as_deref());
+    Verdict::Granted
+}
+```
+
+The legacy PKCS#7 app receipt is the same policy on the other input, the one
+StoreKit 1 apps and older SDKs still send:
+
+```rust
+use std::time::{Duration, SystemTime};
+
+use apple_purchase_receipt_verifier::{apple_receipt_roots, ConfigError, ReceiptVerifier};
+
+fn build_receipt_verifier() -> Result<ReceiptVerifier, ConfigError> {
+    ReceiptVerifier::builder()
+        .trusted_roots(apple_receipt_roots().iter().cloned())
+        .bundle_id("com.example.app")
+        .build()
+}
+
+// Same policy keyed on the receipt's own dates. `verify_base64` takes the
+// string the client sends; `VerifyReceiptEndpoint` is the alternative,
+// answering Apple's `verifyReceipt` JSON shape with a status instead.
+fn redeem_receipt(
+    verifier: &ReceiptVerifier,
+    user_id: &str,
+    receipt_data: &str,
+    product_id: &str,
+) -> Verdict {
+    let Ok(receipt) = verifier.verify_base64(receipt_data) else {
+        return Verdict::Denied; // step 2
+    };
+    let now = SystemTime::now();
+    let Some(purchase) = receipt
+        .in_app_purchases
+        .iter()
+        .find(|p| p.product_id.as_deref() == Some(product_id))
+    else {
+        return Verdict::Denied;
+    };
+
+    if purchase.cancellation_date.is_some() {
+        // step 3
+        return Verdict::Denied;
+    }
+    if purchase.expires_date.is_some_and(|at| at <= now) {
+        return Verdict::Denied;
+    }
+
+    // step 4: no max_signed_age here, so compare the creation date. Past the
+    // window, ask the client to refresh its receipt, or call the App Store
+    // Server API by transaction_id and verify the JWS it returns.
+    let fresh = receipt
+        .creation_date
+        .and_then(|at| now.duration_since(at).ok())
+        .is_some_and(|age| age <= Duration::from_secs(300));
+    if !fresh {
+        return Verdict::Refresh;
+    }
+
+    let Some(id) = purchase.transaction_id.as_deref() else {
+        return Verdict::Denied;
+    };
+    if grants::exists(id) {
+        // step 5
+        return Verdict::Denied;
+    }
+    grants::record(id, purchase.original_transaction_id.as_deref(), user_id);
+
+    grant(user_id, purchase.product_id.as_deref());
+    Verdict::Granted
+}
+```
+
 ## The clock
 
 The injected `Clock` is read in exactly two places and nowhere else:
