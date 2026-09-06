@@ -178,11 +178,14 @@ public class PlatformTests
 
     /// <summary>
     /// What one verification may leave behind, in bytes. A single retained
-    /// <c>X509Certificate2</c> is ~1.5 kB of <c>RawData</c> alone, so this is
-    /// well under one leaked object per call, and well over the ~2.5 B/call a
-    /// clean run measures.
+    /// <c>X509Certificate2</c> is ~1.5 kB of <c>RawData</c> alone (a measured
+    /// leak of one per call read 1,730 B/call), so this is still well under
+    /// one leaked object per call. Linux and Windows measure ~2.5 B/call on a
+    /// clean run; macOS/arm64 has read up to 110 B/call in every round of a
+    /// run with nothing of ours retaining it, so the budget sits above that
+    /// platform's noise rather than at the Linux figure.
     /// </summary>
-    private const int LiveSetBudgetPerVerification = 64;
+    private const int LiveSetBudgetPerVerification = 256;
 
     /// <summary>
     /// Repeated verification must not grow unboundedly: each call materialises
@@ -205,6 +208,10 @@ public class PlatformTests
     /// round is measured <see cref="LiveSetRounds"/> times and the smallest
     /// growth is judged. Retention of one object per call, the failure this
     /// test exists for, exceeds the budget in every round and still fails.
+    /// The same platform later read +55 kB in each of the three rounds
+    /// (110 B/call) with Linux and Windows at ~0 on the same commit, which is
+    /// why the per-call budget is set above macOS noise and not at the
+    /// Linux figure.
     /// </para>
     /// </remarks>
     [Fact]
