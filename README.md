@@ -116,10 +116,10 @@ global `Buffer` the DER handling uses, and CI runs both spellings.
 imports no `node:` module and touches no `Buffer`, so it also runs where
 only WebCrypto exists: the Vercel Edge runtime, Next.js edge middleware,
 Cloudflare Workers with no compatibility flags and Fastly Compute, each of
-them exercised on every push, and — by the same property, though there is no
-local runtime to run it in — Akamai EdgeWorkers. Neither entry point reads
-a file, so `appleReceiptRoots()` and `appleJwsRoots()` work inside a bundle
-either way.
+them exercised on every push. Akamai EdgeWorkers implements the same
+WebCrypto API and is expected to work too, but is untested: there is no
+local runtime for it that CI can run. Neither entry point reads a file, so
+`appleReceiptRoots()` and `appleJwsRoots()` work inside a bundle either way.
 
 CI proves the default build on Node, Bun, Deno and workerd (`cd node && npm
 run test:runtimes`) and the web build on Node, the Vercel Edge runtime and

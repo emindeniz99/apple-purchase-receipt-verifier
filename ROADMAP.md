@@ -76,10 +76,6 @@ Delete a line in the commit that ships it.
   engines floor to 22 is a semver-major decision, nothing in the code needs
   it yet. Revisit when @types/node's pin (see .github/dependabot.yml) starts
   blocking a needed update.
-- **Akamai EdgeWorkers**: the only runtime the README's WebCrypto list
-  rests on an argument rather than a run, because there is no local
-  runtime to run it in. Vercel Edge, Fastly Compute and flagless
-  Cloudflare Workers are all tested on every push.
 - **Post-publish smoke jobs for the five newer ports**:
   `post-publish-smoke.yml` still covers npm, PyPI, Maven Central and SwiftPM
   only. The Go, RubyGems, crates.io and NuGet legs are written out in each
