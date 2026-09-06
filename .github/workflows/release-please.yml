@@ -23,6 +23,15 @@ on:
 permissions:
   contents: read
 
+# One run at a time, and never cancelled: two pushes to main a second apart
+# start two runs that both rebuild the release branch and both push the
+# lockfile sync commit; the second push loses ("the remote contains work
+# that you do not have locally") and its run goes red for nothing. Queued
+# instead, each run sees the branch the previous one left.
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
 jobs:
   release-please:
     runs-on: ubuntu-latest
