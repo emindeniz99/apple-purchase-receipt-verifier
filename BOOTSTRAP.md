@@ -136,51 +136,71 @@ un-publish it; it makes every consumer's build fail with a checksum mismatch
 that looks exactly like a supply-chain attack. A bad release is fixed forward,
 with a new patch version whose `go.mod` carries `retract`.
 
-## Packagist (PHP) — blocked on a decision, no publish job exists
+## Packagist (PHP) — layout A is landed, two owner actions remain
 
-**The PHP port cannot be published from this repository as it is laid out.**
-Packagist reads `composer.json` from the repository root and nowhere else:
-there is no subdirectory field, no monorepo path support, no equivalent of
-npm's `repository.directory`. This port's manifest is `php/composer.json`,
-which is correct for a monorepo and invisible to Packagist. `release.yml`
-therefore has no PHP job, and `README.md` does not list Composer as an install
-path.
+**The PHP package is the repository root.** Packagist reads `composer.json`
+from a repository root and nowhere else: no subdirectory field, no monorepo
+path support, no equivalent of npm's `repository.directory`. So the root
+carries a `composer.json` that declares the same package as
+`php/composer.json` and autoloads `EminDeniz99\ApplePurchaseReceiptVerifier\`
+from `php/src/`, while the port itself stays in `php/`. This is layout A of
+the three that used to be listed here; B (a force-pushed mirror repository)
+and C (do not publish) were dropped with it.
 
-Nothing here is bootstrappable until the owner picks one of:
+What landed:
 
-- **A — move or duplicate the manifest to the repository root.** A root
-  `composer.json` autoloading `EminDeniz99\ApplePurchaseReceiptVerifier\` from
-  `php/src/`, with `.gitattributes` `export-ignore` lines trimming the other
-  ports out of the published archive. SwiftPM already forces `Package.swift`
-  to the root, so the precedent exists. Costs a root `vendor/` in
-  `.gitignore`, and an `export-ignore` list that silently decides what every
-  PHP consumer receives — a mistake there ships a package with no
-  `php/certs/`. Whether GitHub's zipball, which is what Composer downloads,
-  honours `export-ignore` was asserted from documentation and never
-  reproduced; verify it with a real `git archive` before relying on it. If it
-  does not hold, the fallback is shipping the whole repository in the package,
-  about 1 MB.
-- **B — a read-only mirror repository**, force-pushed from `php/` on every
-  tag, with Packagist watching the mirror. Costs a second repository to
-  secure, a write credential in this repository's secrets (which the
-  read-only-default-token posture deliberately avoids), a tag-ordering hazard
-  and permanent drift risk.
-- **C — do not publish.** Consumers vendor the source. PHP stays a
-  second-class member of a project whose premise is one library across N
-  registries.
+- **`composer.json` at the root** — the package Packagist and Composer see.
+  Same name, description, licence, keywords and `require` as
+  `php/composer.json`, `psr/clock` included. No `require-dev`:
+  `php/composer.json` stays the development manifest, and `php/composer.lock`
+  stays the lockfile every CI leg installs.
+- **A `.gitattributes` allowlist** — `* export-ignore`, then each shipped path
+  named back in. Composer installs GitHub's zipball of a tag and a zipball is
+  a `git archive`, so these rules are the package's file list. The allowlist
+  direction was chosen over naming the ports to exclude because its failure
+  mode is loud: something the package needs goes missing, rather than a tenth
+  port added next year riding along inside the PHP package unnoticed. The
+  reasoning is in the file.
+- **`tools/check-php-package.mjs`** — fails CI when the two manifests'
+  `require` or `autoload` disagree, and when the real `git archive` is missing
+  `php/src`, the three `php/certs/*.cer` or `composer.json`, or carries
+  anything the allowlist does not name.
+- **`tools/php-consumer-smoke.mjs`** — installs that archive into a throwaway
+  project behind a `path` repository and verifies a genuine sandbox receipt
+  and the generated StoreKit 2 transaction through `vendor/autoload.php`.
+  Both run in the `php-static` job.
 
-The PHP port's own recommendation is A, revisited only if `export-ignore`
-turns out not to hold.
+The archive is 30 files: the two manifests, the two licences,
+`php/README.md`, the three pinned roots and 22 PHP sources. The open question
+the old text flagged is closed. `git archive` honours `export-ignore`,
+reproduced by the guard on every run, and GitHub's **zipball** honours it
+too: on 2026-09-06 the branch archive at
+`archive/refs/heads/feat/packagist-root-manifest.zip` listed exactly those 30
+paths (plus their directory entries) under one top-level directory, 72 KB.
+If a later GitHub change ever stops applying the rules, Composer ships the
+whole repository instead, about 1 MB, and nothing else about the layout
+changes; the guard only sees `git archive`, so that would show up as a
+consumer's oversized vendor directory, not as a red build.
 
-Once a layout is chosen and landed:
+One consequence worth knowing, because it reaches past Composer: GitHub builds
+the "Source code (zip)" asset on every Release from the same archive, so that
+asset is the PHP package rather than the whole monorepo. Nothing in
+`.github/workflows/` consumes it, and SwiftPM and the Go module proxy clone
+the repository rather than download an archive.
+
+What remains, both the owner's and neither automatable:
 
 1. Submit the repository at <https://packagist.org/packages/submit>. This
-   needs the owner's Packagist account and cannot be automated.
+   needs the owner's Packagist account.
 2. Install the **Packagist.org GitHub App** on the repository. Prefer the App
    over the legacy service hook: it stores no secret in this repository.
-3. Packagist then imports every existing tag and every future one within
-   seconds of the push. There is no OIDC to configure and no token to rotate,
-   and no publish job needs to be added to `release.yml`.
+
+Packagist then imports every existing tag and every future one within seconds
+of the push. There is no OIDC to configure and no token to rotate, and no
+publish job is added to `release.yml` — which is why the PHP port is the one
+registry with nothing in it. **The first Packagist version is the first tag
+cut after this lands**; earlier tags are importable but their archives predate
+the root manifest, so Packagist will skip them.
 
 ## Release budget, unchanged
 

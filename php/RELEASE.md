@@ -1,16 +1,16 @@
 # Release wiring for the PHP port
 
-**The PHP port cannot be published from this repository as it is laid out**
-(Packagist reads `composer.json` from the repository root only, and this
-port's manifest is `php/composer.json`), and `release.yml` already carries a
-comment saying so next to the Swift line. The layout options the owner still
-has to choose between, and the Packagist bootstrap steps once one is picked,
-live in [`BOOTSTRAP.md`](../BOOTSTRAP.md) under "Packagist (PHP)" — that
-section is current and this file no longer repeats it.
+**The package is the repository root's `composer.json`**, which autoloads
+`EminDeniz99\ApplePurchaseReceiptVerifier\` from `php/src/`; Packagist reads a
+repository root and nowhere else. Packagist needs no publish job in
+`release.yml`: it imports tags on its own once the owner submits the
+repository. That submission, and what the root manifest costs, are in
+[`BOOTSTRAP.md`](../BOOTSTRAP.md) under "Packagist (PHP)" — that section is
+current and this file no longer repeats it.
 
 ## `post-publish-smoke.yml` — not yet added
 
-Blocked on the same packaging decision as the publish itself, but the job
+Blocked on the Packagist submission rather than on the layout, but the job
 shape is settled. It is the only check that tests what a consumer actually
 receives — the same gap that once shipped two empty npm releases. Run it on
 the **floor**, 8.1, because that is the leg most likely to break on a
