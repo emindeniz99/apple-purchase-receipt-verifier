@@ -18,6 +18,14 @@ Delete a line in the commit that ships it.
 
 ## Next
 
+- **Matrix additions due** (one line each in `ci.yml`; policy and snapshot
+  in `SUPPORT-MATRIX.md`): Java 27 on 2026-09-15, replacing 26 as the
+  feature-release leg; Python 3.15 in October 2026; .NET 11 and PHP 8.6 in
+  November 2026 (.NET 11 also joins the test projects' `TargetFrameworks`);
+  Ruby 4.1 in December 2026; Go 1.28 in February 2027. Floors stay when a
+  vendor line ends, so Java 17 (Oracle, 2026-09-30), Python 3.10
+  (2026-10-31), .NET 8 and 9 (2026-11-10) and PHP 8.2 (2026-12-31) change
+  nothing.
 - **Five ports still guess which embedded certificate was the signer.**
   When a receipt's SignerInfo names a certificate absent from the bag and
   the bag also carries an unrelated malformed certificate, python, rust,
