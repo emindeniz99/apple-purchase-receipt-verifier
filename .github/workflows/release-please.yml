@@ -56,20 +56,36 @@ jobs:
       # the one path dependency, `uv lock` keeps every pinned dependency.
       # release-please rebuilds its branch from main on the next push, which
       # drops this commit; the step then runs again and re-adds it.
-      - name: check out the release branch
+      # When the action leaves an existing release PR untouched ("remained
+      # the same") it reports prs_created without a pr payload, and the
+      # branch still carries the sync commit from the run that built it, so
+      # there is nothing to do. Read the payload in shell and skip on empty
+      # rather than let fromJSON fail on it.
+      - name: name the release branch
+        id: release-branch
         if: ${{ steps.release.outputs.prs_created == 'true' }}
+        env:
+          PR_JSON: ${{ steps.release.outputs.pr }}
+        run: |
+          if [ -z "$PR_JSON" ]; then
+            echo "release PR unchanged; lockfiles already in step"
+            exit 0
+          fi
+          printf 'name=%s\n' "$(printf '%s' "$PR_JSON" | jq -r .headBranchName)" >> "$GITHUB_OUTPUT"
+      - name: check out the release branch
+        if: ${{ steps.release-branch.outputs.name != '' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
+          ref: ${{ steps.release-branch.outputs.name }}
           # This checkout pushes back to the release branch, so it keeps
           # the token; the job holds contents: write for that push.
           persist-credentials: true # zizmor: ignore[artipacked]
-      - if: ${{ steps.release.outputs.prs_created == 'true' }}
+      - if: ${{ steps.release-branch.outputs.name != '' }}
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - name: bring the lockfiles in step with the release version
-        if: ${{ steps.release.outputs.prs_created == 'true' }}
+        if: ${{ steps.release-branch.outputs.name != '' }}
         env:
-          BRANCH: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
+          BRANCH: ${{ steps.release-branch.outputs.name }}
         run: |
           cargo update --workspace --manifest-path rust/Cargo.toml
           cargo update --manifest-path rust/fuzz/Cargo.toml -p apple-purchase-receipt-verifier
