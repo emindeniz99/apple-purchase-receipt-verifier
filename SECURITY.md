@@ -24,6 +24,27 @@ PyPI, Maven Central, SwiftPM, and the registries listed in `BOOTSTRAP.md` as
 they come online — is built from the same tag, so a fix ships to all of them
 at once.
 
+## Dependency policy
+
+The library ports have almost no runtime dependencies (see each port's
+README); the surface is the test and release toolchain. Three rules:
+
+- **Seven-day cooldown.** Every ecosystem in `.github/dependabot.yml` waits
+  seven days after a release before proposing it. Manual bumps follow the
+  same rule (CONTRIBUTING.md, "Adding or bumping a dependency by hand").
+- **No install scripts in CI.** Every `npm ci` in the workflows runs with
+  `--ignore-scripts`. Composer runs no plugins the manifest does not list.
+- **No long-lived registry tokens.** npm, PyPI, RubyGems, crates.io and NuGet
+  publish through OIDC trusted publishing from `release.yml`; there is no
+  token to steal from a laptop or a workflow. Maven Central has no OIDC
+  path, so its credentials live on the `maven-central` GitHub environment,
+  reachable from that one job only.
+
+Every workflow pins actions to a commit SHA, checks out with
+`persist-credentials: false`, and runs with a read-only `GITHUB_TOKEN`
+except where a publish job asks for `id-token: write`; `zizmor` checks that
+on every push.
+
 ## What counts
 
 Especially interesting:

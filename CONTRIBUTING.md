@@ -30,6 +30,21 @@ not decoration: `@types/node` stays on 20 and JUnit stays on 5.x on purpose —
 see the rationale comments in `.github/dependabot.yml` before "upgrading"
 them.
 
+## Adding or bumping a dependency by hand
+
+`.github/dependabot.yml` holds every automated bump for seven days after the
+release, the window in which a hijacked version usually gets pulled. A manual
+`npm install`, `composer require` or gem bump skips that window. Check the
+publish date before you commit the lockfile change:
+
+```bash
+npm view <package>@<version> time.modified
+```
+
+Under seven days old: wait, or say in the commit body why it cannot. CI
+installs npm packages with `--ignore-scripts`; a dependency that needs its
+install script to work is a reason to look for another dependency.
+
 ## Conformance vectors
 
 `fixtures/cases.json` is the normative contract between the nine
