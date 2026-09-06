@@ -231,3 +231,55 @@ transaction: status 0
 receipt: status 0
 {"appVersion":"2","bundleId":"dev.bonzer.weeka.app","creationDate":"2025-12-26T18:39:47Z", …}
 ```
+
+`examples/python/example.py` is the same page from Python, with nothing but
+the standard library. ctypes opens the shared library at run time and calls
+the exported symbols by name, so there is no compiler and no package in the
+loop; the conformance harness in `tests/` is built the same way.
+
+```bash
+python3 rust/ffi/examples/python/example.py rust/ffi/target/release
+```
+
+## Elixir
+
+`examples/elixir/` is a third consumer, in a language that cannot call C at
+all. The BEAM has no foreign function interface: a native call from Elixir is
+a NIF, a C function the emulator loads and calls directly. So an Elixir
+application that wants this library writes one piece of C against the header
+above, and `examples/elixir/c_src/aprv_nif.c` is that piece, with a Mix
+project and the shared vectors on top of it.
+
+It is an example rather than a tenth port. Nothing is published to Hex, the
+Mix project has no Hex dependencies, and `SUPPORT-MATRIX.md` has no row for
+it. If you want Elixir, you build the shim.
+
+```bash
+cargo build --locked --release --manifest-path rust/ffi/Cargo.toml
+node tools/gen-cases-manifest.mjs rust/ffi/target/manifest
+cd rust/ffi/examples/elixir && mix compile && mix test && mix run example.exs
+```
+
+```
+apple-purchase-receipt-verifier 0.4.0 — C ABI conformance over NIFs
+92 passed, 0 failed, 12 not runnable through the C ABI (no clock argument)
+```
+
+The same 92 cases and the same 12 clock skips as the C++ harness, which is
+the point of running it: two consumers, one manifest, identical counts.
+
+Two things the shim does that a C caller does not have to think about.
+
+**Handles are released by the garbage collector.** Each handle from
+`aprv_*_new*` lives in an `ErlNifResourceType` whose destructor calls the
+matching `aprv_*_free`, so dropping the last Elixir reference frees it.
+Strings are copied into Erlang binaries and released with `aprv_string_free`
+before the NIF returns, so no Rust allocation outlives a call.
+
+**Verification runs on a dirty scheduler.** A NIF that does not return within
+about a millisecond delays every process on its scheduler thread, and
+verifying a chain takes longer than that. Every call that parses or verifies
+carries `ERL_NIF_DIRTY_JOB_CPU_BOUND`.
+
+`examples/elixir/README.md` covers the rest, including why the example reads
+JSON with a decoder of its own instead of depending on Jason.

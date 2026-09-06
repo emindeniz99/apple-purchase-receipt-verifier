@@ -1,0 +1,4 @@
+# Build output. The shared object is compiled from c_src/ by the Makefile,
+# and _build is Mix's. Nothing here is committed; `mix compile` recreates it.
+/_build/
+/priv/

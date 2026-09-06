@@ -731,6 +731,13 @@ jobs:
           interpreter=python3
           command -v python3 >/dev/null 2>&1 || interpreter=python
           "$interpreter" tests/conformance.py target/debug
+      - name: the README example, from Python
+        shell: bash
+        working-directory: rust/ffi
+        run: |
+          interpreter=python3
+          command -v python3 >/dev/null 2>&1 || interpreter=python
+          "$interpreter" examples/python/example.py target/debug
 
       # include/apple_purchase_receipt_verifier.h is generated from
       # src/lib.rs; a change that forgets to regenerate it ships a header
@@ -748,6 +755,66 @@ jobs:
                    --crate apple-purchase-receipt-verifier-ffi \
                    --output include/apple_purchase_receipt_verifier.h
           git diff --exit-code include/apple_purchase_receipt_verifier.h
+
+  # The C ABI reached from a runtime that has no FFI of its own. The BEAM
+  # cannot call C directly: every native call goes through a NIF, so an
+  # Elixir consumer needs exactly one piece of C, and
+  # rust/ffi/examples/elixir is that piece plus the shared vectors run
+  # through it.
+  #
+  # This is an example, not a tenth port. Nothing is published, there is no
+  # SUPPORT-MATRIX.md row, and one operating system is enough: rust-ffi
+  # above already proves the linker contract on three, and what this job
+  # adds is the NIF boundary, which is the same on all of them.
+  elixir-ffi:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The floor mix.exs claims, and the OTP line behind it. OTP 25
+          # has no :json and Elixir 1.14 has no JSON module, which is why
+          # the example reads the ABI's JSON with a decoder of its own
+          # rather than a package from Hex.
+          - otp: "25"
+            elixir: "1.14"
+          # What a current install gets.
+          - otp: "27"
+            elixir: "1.18"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - uses: erlef/setup-beam@988e02bfe678367a02564f65ca2e37726dc0268f # v1.9.0
+        with:
+          otp-version: ${{ matrix.otp }}
+          elixir-version: ${{ matrix.elixir }}
+          version-type: loose
+      - run: rustup toolchain install stable --profile minimal
+      # The NIF links against the cdylib and finds it again at load time
+      # through an rpath, so this has to exist before mix compile runs.
+      - run: cargo build --locked --release
+        working-directory: rust/ffi
+      - name: flatten the shared vectors
+        run: node tools/gen-cases-manifest.mjs rust/ffi/target/manifest
+      # Compiles c_src/aprv_nif.c through the Makefile as well: the mix
+      # project has no Hex dependencies, so there is nothing to fetch.
+      - name: build the NIF shim
+        working-directory: rust/ffi/examples/elixir
+        run: mix compile
+      - name: conformance over the C ABI from Elixir
+        working-directory: rust/ffi/examples/elixir
+        run: mix test
+      - name: the README example
+        working-directory: rust/ffi/examples/elixir
+        run: mix run example.exs
+      - run: mix format --check-formatted
+        working-directory: rust/ffi/examples/elixir
 
   # The exploratory pass over the hand-written ASN.1, CMS, X.509 and JWS
   # readers and the three verifiers; rust/fuzz/README.md lists the targets
