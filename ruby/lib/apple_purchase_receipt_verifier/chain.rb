@@ -76,7 +76,7 @@ module ApplePurchaseReceiptVerifier
         inner = Asn1.parse(value.octet_value)
         flag = inner.kids.first
         return false unless flag && flag.tag == 0x01 && flag.content_length.positive?
-        return false if flag.content.getbyte(0).zero?
+        return false if flag.content.getbyte(0).zero? # steep:ignore NoMethod
 
         cert_sign_permitted?(cert)
       rescue StandardError, Asn1::Error
@@ -148,7 +148,7 @@ module ApplePurchaseReceiptVerifier
         raw = bits.content
         return false if raw.bytesize < 2
 
-        unused = raw.getbyte(0)
+        unused = raw.getbyte(0) #: Integer
         index = KEY_CERT_SIGN_BIT
         byte_index = 1 + (index / 8)
         return false if byte_index >= raw.bytesize
@@ -156,7 +156,7 @@ module ApplePurchaseReceiptVerifier
         available = ((raw.bytesize - 1) * 8) - unused
         return false if index >= available
 
-        (raw.getbyte(byte_index) & (0x80 >> (index % 8))) != 0
+        (raw.getbyte(byte_index) & (0x80 >> (index % 8))) != 0 # steep:ignore NoMethod
       rescue StandardError, Asn1::Error
         true
       end

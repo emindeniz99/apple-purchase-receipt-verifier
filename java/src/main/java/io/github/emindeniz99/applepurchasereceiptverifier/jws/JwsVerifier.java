@@ -39,6 +39,7 @@ import java.util.Set;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.DERSequence;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Verifies Apple-signed JWS payloads (StoreKit 2 {@code jwsRepresentation},
@@ -52,6 +53,11 @@ import org.bouncycastle.asn1.DERSequence;
  * mode (no OCSP — see PLAN.md §2.3 for the trade-off).</p>
  *
  * <p>Thread-safe once constructed.</p>
+ *
+ * <p>The {@code jws} argument of all three entry points is {@code @Nullable}
+ * on purpose: a null input is a verdict about the input, so it is reported as
+ * {@link Reason#INVALID_JWS_FORMAT} like any other unusable one rather than as
+ * a {@link NullPointerException} a caller cannot catch alongside the others.</p>
  */
 public final class JwsVerifier {
 
@@ -94,8 +100,8 @@ public final class JwsVerifier {
     private final Set<TrustAnchor> trustAnchors;
     private final String bundleId;
     private final Set<Environment> acceptedEnvironments;
-    private final Long appAppleId;
-    private final Long maxSignedAgeMillis;
+    private final @Nullable Long appAppleId;
+    private final @Nullable Long maxSignedAgeMillis;
     private final Clock clock;
     private final ObjectMapper mapper;
 
@@ -121,8 +127,8 @@ public final class JwsVerifier {
             Set<X509Certificate> trustedRoots,
             String bundleId,
             Set<Environment> acceptedEnvironments,
-            Long appAppleId,
-            Long maxSignedAge) {
+            @Nullable Long appAppleId,
+            @Nullable Long maxSignedAge) {
         this(trustedRoots, bundleId, acceptedEnvironments, appAppleId, maxSignedAge, null);
     }
 
@@ -147,9 +153,9 @@ public final class JwsVerifier {
             Set<X509Certificate> trustedRoots,
             String bundleId,
             Set<Environment> acceptedEnvironments,
-            Long appAppleId,
-            Long maxSignedAge,
-            Clock clock) {
+            @Nullable Long appAppleId,
+            @Nullable Long maxSignedAge,
+            @Nullable Clock clock) {
         if (trustedRoots == null || trustedRoots.isEmpty()) {
             throw new IllegalArgumentException("trustedRoots must not be empty");
         }
@@ -198,7 +204,7 @@ public final class JwsVerifier {
      * Verifies a signed transaction ({@code jwsRepresentation} /
      * {@code signedTransactionInfo}) and checks bundle id + environment.
      */
-    public TransactionPayload verifyTransaction(String jws) throws VerificationException {
+    public TransactionPayload verifyTransaction(@Nullable String jws) throws VerificationException {
         JsonNode node = verifySignature(jws);
         TransactionPayload payload;
         try {
@@ -215,7 +221,7 @@ public final class JwsVerifier {
      * Verifies a signed {@code AppTransaction} and checks bundle id,
      * environment ({@code receiptType}), and — in PRODUCTION — the app Apple id.
      */
-    public AppTransactionPayload verifyAppTransaction(String jws) throws VerificationException {
+    public AppTransactionPayload verifyAppTransaction(@Nullable String jws) throws VerificationException {
         JsonNode node = verifySignature(jws);
         AppTransactionPayload payload;
         try {
@@ -238,13 +244,13 @@ public final class JwsVerifier {
      * envelopes). <strong>The caller must check bundle id / environment /
      * app Apple id in the returned claims itself.</strong>
      */
-    public Map<String, Object> verifyRaw(String jws) throws VerificationException {
+    public Map<String, @Nullable Object> verifyRaw(@Nullable String jws) throws VerificationException {
         JsonNode node = verifySignature(jws);
-        return mapper.convertValue(node, new TypeReference<Map<String, Object>>() {});
+        return mapper.convertValue(node, new TypeReference<Map<String, @Nullable Object>>() {});
     }
 
     /** Cryptographic verification: format → certs → OIDs → chain → signature. */
-    private JsonNode verifySignature(String jws) throws VerificationException {
+    private JsonNode verifySignature(@Nullable String jws) throws VerificationException {
         if (jws == null) {
             throw new VerificationException(Reason.INVALID_JWS_FORMAT, "jws is null");
         }
@@ -400,7 +406,7 @@ public final class JwsVerifier {
      * is checked at this instant so payloads signed with since-rotated
      * certificates keep verifying (PLAN.md §2.1 step 4).
      */
-    private static Long signedAtMillis(JsonNode payload) throws VerificationException {
+    private static @Nullable Long signedAtMillis(JsonNode payload) throws VerificationException {
         Long signedDate = instantClaim(payload, "signedDate");
         return signedDate != null ? signedDate : instantClaim(payload, "receiptCreationDate");
     }
@@ -414,7 +420,7 @@ public final class JwsVerifier {
      * An instant no calendar can express is inside no window, which is the
      * verdict the other ports reach through their own date types.
      */
-    private static Long instantClaim(JsonNode payload, String name) throws VerificationException {
+    private static @Nullable Long instantClaim(JsonNode payload, String name) throws VerificationException {
         JsonNode claim = payload.path(name);
         if (claim.canConvertToLong()) {
             return Long.valueOf(claim.asLong());
@@ -488,7 +494,7 @@ public final class JwsVerifier {
         return new DERSequence(new ASN1Encodable[] {new ASN1Integer(r), new ASN1Integer(s)}).getEncoded();
     }
 
-    private void requireBundleId(String actual) throws VerificationException {
+    private void requireBundleId(@Nullable String actual) throws VerificationException {
         if (!bundleId.equals(actual)) {
             throw new VerificationException(
                     Reason.WRONG_BUNDLE_ID, "expected " + bundleId + " but payload has " + SafeText.quote(actual));
@@ -496,7 +502,7 @@ public final class JwsVerifier {
     }
 
     /** Accept-set environment routing (PLAN.md D3): returns the matched environment. */
-    private Environment requireAcceptedEnvironment(String claim) throws VerificationException {
+    private Environment requireAcceptedEnvironment(@Nullable String claim) throws VerificationException {
         Environment env = Environment.fromValue(claim);
         if (env == null || !acceptedEnvironments.contains(env)) {
             throw new VerificationException(

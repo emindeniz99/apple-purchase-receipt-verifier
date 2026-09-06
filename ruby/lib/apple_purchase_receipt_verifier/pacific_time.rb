@@ -44,7 +44,7 @@ module ApplePurchaseReceiptVerifier
         start_at, end_at = daylight_window(year)
         return STANDARD_OFFSET if start_at.nil?
 
-        utc >= start_at && utc < end_at ? DAYLIGHT_OFFSET : STANDARD_OFFSET
+        utc >= start_at && utc < end_at ? DAYLIGHT_OFFSET : STANDARD_OFFSET # steep:ignore
       end
 
       private

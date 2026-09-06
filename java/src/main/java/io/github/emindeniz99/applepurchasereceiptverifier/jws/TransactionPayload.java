@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Date;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Decoded {@code JWSTransactionDecodedPayload} — the payload of a StoreKit 2
@@ -21,55 +22,55 @@ import java.util.Objects;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public final class TransactionPayload {
 
-    private final String appAccountToken;
-    private final String bundleId;
-    private final String currency;
-    private final String environment;
-    private final Long expiresDate;
-    private final String inAppOwnershipType;
-    private final String offerIdentifier;
-    private final Integer offerType;
-    private final Long originalPurchaseDate;
-    private final String originalTransactionId;
-    private final Long price;
-    private final String productId;
-    private final Long purchaseDate;
-    private final Integer quantity;
-    private final Long revocationDate;
-    private final Integer revocationReason;
-    private final Long signedDate;
-    private final String storefront;
-    private final String subscriptionGroupIdentifier;
-    private final String transactionId;
-    private final String transactionReason;
-    private final String type;
-    private final String webOrderLineItemId;
+    private final @Nullable String appAccountToken;
+    private final @Nullable String bundleId;
+    private final @Nullable String currency;
+    private final @Nullable String environment;
+    private final @Nullable Long expiresDate;
+    private final @Nullable String inAppOwnershipType;
+    private final @Nullable String offerIdentifier;
+    private final @Nullable Integer offerType;
+    private final @Nullable Long originalPurchaseDate;
+    private final @Nullable String originalTransactionId;
+    private final @Nullable Long price;
+    private final @Nullable String productId;
+    private final @Nullable Long purchaseDate;
+    private final @Nullable Integer quantity;
+    private final @Nullable Long revocationDate;
+    private final @Nullable Integer revocationReason;
+    private final @Nullable Long signedDate;
+    private final @Nullable String storefront;
+    private final @Nullable String subscriptionGroupIdentifier;
+    private final @Nullable String transactionId;
+    private final @Nullable String transactionReason;
+    private final @Nullable String type;
+    private final @Nullable String webOrderLineItemId;
 
     @JsonCreator
     TransactionPayload(
-            @JsonProperty("appAccountToken") String appAccountToken,
-            @JsonProperty("bundleId") String bundleId,
-            @JsonProperty("currency") String currency,
-            @JsonProperty("environment") String environment,
-            @JsonProperty("expiresDate") Long expiresDate,
-            @JsonProperty("inAppOwnershipType") String inAppOwnershipType,
-            @JsonProperty("offerIdentifier") String offerIdentifier,
-            @JsonProperty("offerType") Integer offerType,
-            @JsonProperty("originalPurchaseDate") Long originalPurchaseDate,
-            @JsonProperty("originalTransactionId") String originalTransactionId,
-            @JsonProperty("price") Long price,
-            @JsonProperty("productId") String productId,
-            @JsonProperty("purchaseDate") Long purchaseDate,
-            @JsonProperty("quantity") Integer quantity,
-            @JsonProperty("revocationDate") Long revocationDate,
-            @JsonProperty("revocationReason") Integer revocationReason,
-            @JsonProperty("signedDate") Long signedDate,
-            @JsonProperty("storefront") String storefront,
-            @JsonProperty("subscriptionGroupIdentifier") String subscriptionGroupIdentifier,
-            @JsonProperty("transactionId") String transactionId,
-            @JsonProperty("transactionReason") String transactionReason,
-            @JsonProperty("type") String type,
-            @JsonProperty("webOrderLineItemId") String webOrderLineItemId) {
+            @JsonProperty("appAccountToken") @Nullable String appAccountToken,
+            @JsonProperty("bundleId") @Nullable String bundleId,
+            @JsonProperty("currency") @Nullable String currency,
+            @JsonProperty("environment") @Nullable String environment,
+            @JsonProperty("expiresDate") @Nullable Long expiresDate,
+            @JsonProperty("inAppOwnershipType") @Nullable String inAppOwnershipType,
+            @JsonProperty("offerIdentifier") @Nullable String offerIdentifier,
+            @JsonProperty("offerType") @Nullable Integer offerType,
+            @JsonProperty("originalPurchaseDate") @Nullable Long originalPurchaseDate,
+            @JsonProperty("originalTransactionId") @Nullable String originalTransactionId,
+            @JsonProperty("price") @Nullable Long price,
+            @JsonProperty("productId") @Nullable String productId,
+            @JsonProperty("purchaseDate") @Nullable Long purchaseDate,
+            @JsonProperty("quantity") @Nullable Integer quantity,
+            @JsonProperty("revocationDate") @Nullable Long revocationDate,
+            @JsonProperty("revocationReason") @Nullable Integer revocationReason,
+            @JsonProperty("signedDate") @Nullable Long signedDate,
+            @JsonProperty("storefront") @Nullable String storefront,
+            @JsonProperty("subscriptionGroupIdentifier") @Nullable String subscriptionGroupIdentifier,
+            @JsonProperty("transactionId") @Nullable String transactionId,
+            @JsonProperty("transactionReason") @Nullable String transactionReason,
+            @JsonProperty("type") @Nullable String type,
+            @JsonProperty("webOrderLineItemId") @Nullable String webOrderLineItemId) {
         this.appAccountToken = appAccountToken;
         this.bundleId = bundleId;
         this.currency = currency;
@@ -121,95 +122,95 @@ public final class TransactionPayload {
         return true;
     }
 
-    public String appAccountToken() {
+    public @Nullable String appAccountToken() {
         return appAccountToken;
     }
 
-    public String bundleId() {
+    public @Nullable String bundleId() {
         return bundleId;
     }
 
-    public String currency() {
+    public @Nullable String currency() {
         return currency;
     }
 
-    public String environment() {
+    public @Nullable String environment() {
         return environment;
     }
 
-    public Long expiresDate() {
+    public @Nullable Long expiresDate() {
         return expiresDate;
     }
 
-    public String inAppOwnershipType() {
+    public @Nullable String inAppOwnershipType() {
         return inAppOwnershipType;
     }
 
-    public String offerIdentifier() {
+    public @Nullable String offerIdentifier() {
         return offerIdentifier;
     }
 
-    public Integer offerType() {
+    public @Nullable Integer offerType() {
         return offerType;
     }
 
-    public Long originalPurchaseDate() {
+    public @Nullable Long originalPurchaseDate() {
         return originalPurchaseDate;
     }
 
-    public String originalTransactionId() {
+    public @Nullable String originalTransactionId() {
         return originalTransactionId;
     }
 
-    public Long price() {
+    public @Nullable Long price() {
         return price;
     }
 
-    public String productId() {
+    public @Nullable String productId() {
         return productId;
     }
 
-    public Long purchaseDate() {
+    public @Nullable Long purchaseDate() {
         return purchaseDate;
     }
 
-    public Integer quantity() {
+    public @Nullable Integer quantity() {
         return quantity;
     }
 
-    public Long revocationDate() {
+    public @Nullable Long revocationDate() {
         return revocationDate;
     }
 
-    public Integer revocationReason() {
+    public @Nullable Integer revocationReason() {
         return revocationReason;
     }
 
-    public Long signedDate() {
+    public @Nullable Long signedDate() {
         return signedDate;
     }
 
-    public String storefront() {
+    public @Nullable String storefront() {
         return storefront;
     }
 
-    public String subscriptionGroupIdentifier() {
+    public @Nullable String subscriptionGroupIdentifier() {
         return subscriptionGroupIdentifier;
     }
 
-    public String transactionId() {
+    public @Nullable String transactionId() {
         return transactionId;
     }
 
-    public String transactionReason() {
+    public @Nullable String transactionReason() {
         return transactionReason;
     }
 
-    public String type() {
+    public @Nullable String type() {
         return type;
     }
 
-    public String webOrderLineItemId() {
+    public @Nullable String webOrderLineItemId() {
         return webOrderLineItemId;
     }
 }

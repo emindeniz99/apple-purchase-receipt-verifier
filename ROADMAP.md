@@ -56,13 +56,6 @@ Delete a line in the commit that ships it.
   JWS-only consumer could then drop 12 MB. Revisit if a consumer asks.
 - **The `cryptography>=40` floor is never installed.** Every python CI leg
   resolves the latest, so the floor is a claim.
-- **Internal RBS signatures for the Ruby port**: `sig/` covers the public
-  API and `rbs validate` proves it well-formed, which is what a consumer
-  type-checks against. `steep check` also wants a signature for every
-  private method and internal constant and reports 411 diagnostics
-  without them, so the CI job does not run it. Writing those signatures
-  makes the step viable; until then the gap is stated in `ci.yml` rather
-  than hidden behind a job nobody runs.
 - **Real receipt fixtures** (PLAN D6): owner to supply real production +
   sandbox receipts (and ideally a StoreKit-Test/Xcode receipt) as checked-in
   fixtures; add byte-level regression tests over them in every suite.
@@ -76,10 +69,6 @@ Delete a line in the commit that ships it.
   engines floor to 22 is a semver-major decision, nothing in the code needs
   it yet. Revisit when @types/node's pin (see .github/dependabot.yml) starts
   blocking a needed update.
-- **Akamai EdgeWorkers**: the only runtime the README's WebCrypto list
-  rests on an argument rather than a run, because there is no local
-  runtime to run it in. Vercel Edge, Fastly Compute and flagless
-  Cloudflare Workers are all tested on every push.
 - **Post-publish smoke jobs for the five newer ports**:
   `post-publish-smoke.yml` still covers npm, PyPI, Maven Central and SwiftPM
   only. The Go, RubyGems, crates.io and NuGet legs are written out in each

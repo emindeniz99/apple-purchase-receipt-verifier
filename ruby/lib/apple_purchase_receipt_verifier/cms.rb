@@ -81,7 +81,7 @@ module ApplePurchaseReceiptVerifier
       # signerInfos. Members are returned as raw DER, undecoded: the count is
       # bounded before any of them becomes an X509 object.
       def certificate_ders(parts)
-        node = parts[3...-1].find { |child| child.tag == Asn1::TAG_CONTEXT_0 }
+        node = parts[3...-1].find { |child| child.tag == Asn1::TAG_CONTEXT_0 } # steep:ignore NoMethod
         return [] if node.nil?
 
         node.kids.map(&:raw)
@@ -129,7 +129,7 @@ module ApplePurchaseReceiptVerifier
       def unsigned_integer(bytes)
         raise malformed("empty serial number") if bytes.empty?
 
-        negative = bytes.getbyte(0) >= 0x80
+        negative = bytes.getbyte(0) >= 0x80 # steep:ignore NoMethod
         value = 0
         bytes.each_byte { |b| value = (value << 8) | b }
         return value unless negative
@@ -140,7 +140,7 @@ module ApplePurchaseReceiptVerifier
       def oid_string(contents)
         raise malformed("empty OBJECT IDENTIFIER") if contents.empty?
 
-        first = contents.getbyte(0)
+        first = contents.getbyte(0) #: Integer
         parts = [[first / 40, 2].min]
         parts << (first - (parts[0] * 40))
         value = 0

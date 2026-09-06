@@ -31,7 +31,7 @@ module ApplePurchaseReceiptVerifier
     private
 
     def apple_roots
-      APPLE_ROOT_DER_BASE64.map { |b64| OpenSSL::X509::Certificate.new(b64.unpack1("m0")) }
+      APPLE_ROOT_DER_BASE64.map { |b64| OpenSSL::X509::Certificate.new(b64.unpack1("m0")) } # steep:ignore
     end
   end
 end

@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Drop-in local replacement for Apple's deprecated {@code verifyReceipt}
@@ -126,7 +127,7 @@ public final class VerifyReceiptEndpoint {
      *              "now" is a certificate-validity instant — see
      *              {@link ReceiptVerifier}.
      */
-    public VerifyReceiptEndpoint(Set<X509Certificate> trustedRoots, Environment environment, Clock clock) {
+    public VerifyReceiptEndpoint(Set<X509Certificate> trustedRoots, Environment environment, @Nullable Clock clock) {
         if (trustedRoots == null || trustedRoots.isEmpty()) {
             throw new IllegalArgumentException("trustedRoots must not be empty");
         }
@@ -156,7 +157,7 @@ public final class VerifyReceiptEndpoint {
      * @deprecated use {@link #VerifyReceiptEndpoint(Set, Environment, Clock)}.
      */
     @Deprecated
-    public VerifyReceiptEndpoint(Set<X509Certificate> trustedRoots, boolean production, Clock clock) {
+    public VerifyReceiptEndpoint(Set<X509Certificate> trustedRoots, boolean production, @Nullable Clock clock) {
         this(trustedRoots, production ? Environment.PRODUCTION : Environment.SANDBOX, clock);
     }
 
@@ -164,7 +165,7 @@ public final class VerifyReceiptEndpoint {
      * Handles one verifyReceipt request body. Never throws — like the real
      * endpoint, failures are reported through {@code status}.
      */
-    public Map<String, Object> verifyReceipt(Map<String, ?> requestBody) {
+    public Map<String, Object> verifyReceipt(@Nullable Map<String, ? extends @Nullable Object> requestBody) {
         Object receiptData = requestBody == null ? null : requestBody.get("receipt-data");
         if (!(receiptData instanceof String) || ((String) receiptData).isEmpty()) {
             return status(STATUS_MALFORMED);
@@ -244,7 +245,7 @@ public final class VerifyReceiptEndpoint {
      * @param requestJson raw JSON request body
      * @return raw JSON response body; never throws
      */
-    public String verifyReceiptJson(String requestJson) {
+    public String verifyReceiptJson(@Nullable String requestJson) {
         if (requestJson != null && requestJson.length() > MAX_REQUEST_BYTES) {
             return MALFORMED_JSON;
         }
@@ -260,7 +261,7 @@ public final class VerifyReceiptEndpoint {
             return MALFORMED_JSON;
         }
         @SuppressWarnings("unchecked")
-        Map<String, ?> requestBody = (Map<String, ?>) parsed;
+        Map<String, ? extends @Nullable Object> requestBody = (Map<String, ? extends @Nullable Object>) parsed;
         try {
             return MAPPER.writeValueAsString(verifyReceipt(requestBody));
         } catch (JsonProcessingException e) {
@@ -309,18 +310,18 @@ public final class VerifyReceiptEndpoint {
         return json;
     }
 
-    private static String stringOrNull(Long value) {
+    private static @Nullable String stringOrNull(@Nullable Long value) {
         return value == null ? null : String.valueOf(value);
     }
 
-    private static void put(Map<String, Object> json, String key, Object value) {
+    private static void put(Map<String, Object> json, String key, @Nullable Object value) {
         if (value != null) {
             json.put(key, value);
         }
     }
 
     /** Apple's three date renderings: {@code x} (GMT), {@code x_ms}, {@code x_pst}. */
-    private static void appleDates(Map<String, Object> json, String prefix, Instant instant) {
+    private static void appleDates(Map<String, Object> json, String prefix, @Nullable Instant instant) {
         if (instant == null) {
             return;
         }

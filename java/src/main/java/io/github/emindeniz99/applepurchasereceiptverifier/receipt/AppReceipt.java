@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A verified legacy app receipt (PKCS#7 payload). Only receipts returned by
@@ -14,30 +15,30 @@ import java.util.Map;
  */
 public final class AppReceipt {
 
-    private final String receiptType;
-    private final String bundleId;
-    private final byte[] bundleIdBytes;
-    private final String appVersion;
-    private final byte[] opaqueValue;
-    private final byte[] sha1Hash;
-    private final Instant creationDate;
-    private final Instant originalPurchaseDate;
-    private final String originalAppVersion;
-    private final Instant expirationDate;
+    private final @Nullable String receiptType;
+    private final @Nullable String bundleId;
+    private final byte @Nullable [] bundleIdBytes;
+    private final @Nullable String appVersion;
+    private final byte @Nullable [] opaqueValue;
+    private final byte @Nullable [] sha1Hash;
+    private final @Nullable Instant creationDate;
+    private final @Nullable Instant originalPurchaseDate;
+    private final @Nullable String originalAppVersion;
+    private final @Nullable Instant expirationDate;
     private final List<InAppPurchase> inAppPurchases;
     private final Map<Integer, List<byte[]>> unknownAttributes;
 
     AppReceipt(
-            String receiptType,
-            String bundleId,
-            byte[] bundleIdBytes,
-            String appVersion,
-            byte[] opaqueValue,
-            byte[] sha1Hash,
-            Instant creationDate,
-            Instant originalPurchaseDate,
-            String originalAppVersion,
-            Instant expirationDate,
+            @Nullable String receiptType,
+            @Nullable String bundleId,
+            byte @Nullable [] bundleIdBytes,
+            @Nullable String appVersion,
+            byte @Nullable [] opaqueValue,
+            byte @Nullable [] sha1Hash,
+            @Nullable Instant creationDate,
+            @Nullable Instant originalPurchaseDate,
+            @Nullable String originalAppVersion,
+            @Nullable Instant expirationDate,
             List<InAppPurchase> inAppPurchases,
             Map<Integer, List<byte[]>> unknownAttributes) {
         this.receiptType = receiptType;
@@ -55,50 +56,50 @@ public final class AppReceipt {
     }
 
     /** Attribute 0, e.g. "Production" / "ProductionSandbox" (undocumented). */
-    public String receiptType() {
+    public @Nullable String receiptType() {
         return receiptType;
     }
 
     /** Attribute 18 (undocumented; community-established). */
-    public Instant originalPurchaseDate() {
+    public @Nullable Instant originalPurchaseDate() {
         return originalPurchaseDate;
     }
 
-    public String bundleId() {
+    public @Nullable String bundleId() {
         return bundleId;
     }
 
     /** Raw DER bytes of attribute 2 — input to the device-hash check. */
-    public byte[] bundleIdBytes() {
+    public byte @Nullable [] bundleIdBytes() {
         return bundleIdBytes == null ? null : bundleIdBytes.clone();
     }
 
-    public String appVersion() {
+    public @Nullable String appVersion() {
         return appVersion;
     }
 
     /** Attribute 4 — device-specific opaque value used in the hash binding. */
-    public byte[] opaqueValue() {
+    public byte @Nullable [] opaqueValue() {
         return opaqueValue == null ? null : opaqueValue.clone();
     }
 
     /** Attribute 5 — SHA-1 of (device GUID ‖ opaque value ‖ bundle id bytes). */
-    public byte[] sha1Hash() {
+    public byte @Nullable [] sha1Hash() {
         return sha1Hash == null ? null : sha1Hash.clone();
     }
 
     /** Attribute 12 — when Apple signed this receipt. */
-    public Instant creationDate() {
+    public @Nullable Instant creationDate() {
         return creationDate;
     }
 
     /** Attribute 19 — version the user originally purchased. */
-    public String originalAppVersion() {
+    public @Nullable String originalAppVersion() {
         return originalAppVersion;
     }
 
     /** Attribute 21 — only present in receipts with an expiry (e.g. VPP). */
-    public Instant expirationDate() {
+    public @Nullable Instant expirationDate() {
         return expirationDate;
     }
 

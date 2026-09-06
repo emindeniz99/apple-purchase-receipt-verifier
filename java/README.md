@@ -61,6 +61,11 @@ Sizes are the jars at the versions this pom declares (BouncyCastle 1.85,
 Jackson 2.22.2); BouncyCastle is most of what depending on this library
 costs, and `bcprov` is most of BouncyCastle.
 
+The pom declares a third, `org.jspecify:jspecify`, as `optional`: it is
+annotations only, nothing reads them at run time, and an optional dependency
+is not transitive, so it reaches neither your classpath nor the table above
+(see [Kotlin and null-safety](#kotlin-and-null-safety)).
+
 **BouncyCastle line collision.** The `jdk18on` artifacts share every package
 name with the older `bcprov-jdk15on` and `bcprov-jdk15to18` lines but have
 different artifact ids, so Maven does not deduplicate them: a classpath that
@@ -367,6 +372,31 @@ public class RedeemReceipt {
     }
 }
 ```
+
+## Kotlin and null-safety
+
+Every public package carries JSpecify's `@NullMarked`, so each type in the
+API is non-null unless it says otherwise, and Kotlin types the boundary as
+`String` / `String?` instead of the platform `String!` it has to guess at.
+
+What is `@Nullable`: every claim accessor on `TransactionPayload` and
+`AppTransactionPayload` and every attribute accessor on `AppReceipt` and
+`InAppPurchase`, because Apple sends only the claims and attributes that
+apply and an absent one reads as `null`; `Environment.fromValue` for an
+unrecognised claim; the optional constructor parameters `appAppleId`,
+`maxSignedAge` and `clock`; the `deviceGuid` that switches the device-hash
+check on; the values of the map `verifyRaw` returns and of the one
+`verifyReceipt` accepts, since a JSON `null` stays one on both sides; and the
+receipt or JWS a `verify` overload is handed, which is reported as
+`INVALID_RECEIPT_FORMAT` / `INVALID_JWS_FORMAT` rather than as a
+`NullPointerException` a caller cannot catch beside the others.
+
+`org.jspecify:jspecify` is an `optional` dependency: nothing reads the
+annotations at run time and they are not inherited transitively, so a
+consumer pays nothing for them. Declare the same artifact yourself to run
+NullAway or the Checker Framework over your own code. `jvm-interop`'s
+`KotlinInteropTest` compiles under `-Xjspecify-annotations=strict`, which
+makes a nullness mismatch there a compile error rather than a warning.
 
 ## Trust anchors
 
