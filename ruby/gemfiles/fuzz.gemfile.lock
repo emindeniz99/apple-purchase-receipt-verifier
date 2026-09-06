@@ -1,0 +1,14 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    ruzzy (0.8.0)
+
+PLATFORMS
+  ruby
+  x86_64-linux
+
+DEPENDENCIES
+  ruzzy (~> 0.8)
+
+BUNDLED WITH
+   2.5.22

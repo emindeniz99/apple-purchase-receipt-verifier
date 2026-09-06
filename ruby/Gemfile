@@ -2,8 +2,13 @@
 
 source "https://rubygems.org"
 
-gemspec
-
+# The gemspec is deliberately NOT loaded here. `gemspec` would put the library
+# itself in Gemfile.lock as a path gem carrying its own version, and a
+# release-please commit that bumps only version.rb would then make every
+# frozen install fail on a lockfile it cannot update. Nothing needs it: the
+# Rakefile puts lib/ and test/ on the load path itself, and the library has no
+# runtime dependencies to resolve.
+#
 # minitest ships with Ruby as a bundled gem; naming it keeps `bundle exec`
 # honest on rubies where the bundled set changes.
 gem "minitest", "~> 5.0"
