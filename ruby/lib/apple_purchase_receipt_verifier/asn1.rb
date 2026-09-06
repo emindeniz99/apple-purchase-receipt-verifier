@@ -57,7 +57,8 @@ module ApplePurchaseReceiptVerifier
         size = bytes.bytesize
         raise Error, "empty input" if size.zero?
 
-        stack = [] # Integer end offset for definite containers, :indefinite otherwise
+        # Integer end offset for definite containers, :indefinite otherwise
+        stack = [] #: Array[Integer | Symbol]
         off = 0
         nodes = 0
         top_level_values = 0
@@ -71,8 +72,8 @@ module ApplePurchaseReceiptVerifier
           break if stack.empty? && off >= size
           raise Error, "truncated ASN.1 value" if off + 2 > size
 
-          first = bytes.getbyte(off)
-          if first.zero? && bytes.getbyte(off + 1).zero?
+          first = bytes.getbyte(off) #: Integer
+          if first.zero? && bytes.getbyte(off + 1).zero? # steep:ignore NoMethod
             raise Error, "end-of-contents with no open indefinite value" if stack.last != :indefinite
 
             stack.pop
@@ -84,7 +85,7 @@ module ApplePurchaseReceiptVerifier
 
           constructed = (first & 0x20) != 0
           pos = off + 1
-          length_byte = bytes.getbyte(pos)
+          length_byte = bytes.getbyte(pos) #: Integer
           pos += 1
           if length_byte < 0x80
             length = length_byte
@@ -99,7 +100,7 @@ module ApplePurchaseReceiptVerifier
 
             length = 0
             count.times do
-              length = (length << 8) | bytes.getbyte(pos)
+              length = (length << 8) | bytes.getbyte(pos) # steep:ignore ArgumentTypeMismatch
               pos += 1
             end
           end
@@ -155,11 +156,11 @@ module ApplePurchaseReceiptVerifier
         size = bytes.bytesize
         raise Error, "truncated ASN.1 value" if size < 2
 
-        tag = bytes.getbyte(0)
+        tag = bytes.getbyte(0) #: Integer
         raise Error, "multi-byte ASN.1 tags are not supported" if (tag & 0x1F) == 0x1F
 
         pos = 1
-        length_byte = bytes.getbyte(pos)
+        length_byte = bytes.getbyte(pos) #: Integer
         pos += 1
         if length_byte == 0x80
           raise Error, "indefinite length where a single value was expected"
@@ -172,7 +173,7 @@ module ApplePurchaseReceiptVerifier
 
           length = 0
           count.times do
-            length = (length << 8) | bytes.getbyte(pos)
+            length = (length << 8) | bytes.getbyte(pos) # steep:ignore ArgumentTypeMismatch
             pos += 1
           end
         end
@@ -180,7 +181,7 @@ module ApplePurchaseReceiptVerifier
         raise Error, "ASN.1 length exceeds the input" if pos + length > size
         raise Error, "trailing bytes after the outermost ASN.1 value" if pos + length != size
 
-        [tag, bytes.byteslice(pos, length)]
+        [tag, bytes.byteslice(pos, length)] #: [Integer, String]
       end
 
       # Builds a node tree for bytes that have already passed {scan!}. Depth is
@@ -212,10 +213,10 @@ module ApplePurchaseReceiptVerifier
         raise Error, "ASN.1 nesting too deep" if depth > MAX_DEPTH
         raise Error, "truncated ASN.1 value" if off + 2 > limit
 
-        tag = bytes.getbyte(off)
+        tag = bytes.getbyte(off) #: Integer
         constructed = (tag & 0x20) != 0
         pos = off + 1
-        length_byte = bytes.getbyte(pos)
+        length_byte = bytes.getbyte(pos) #: Integer
         pos += 1
         if length_byte < 0x80
           length = length_byte
@@ -225,15 +226,15 @@ module ApplePurchaseReceiptVerifier
           count = length_byte & 0x7F
           length = 0
           count.times do
-            length = (length << 8) | bytes.getbyte(pos)
+            length = (length << 8) | bytes.getbyte(pos) # steep:ignore ArgumentTypeMismatch
             pos += 1
           end
         end
 
         if length.nil?
-          children = []
+          children = [] #: Array[Node]
           while pos + 2 <= limit
-            break if bytes.getbyte(pos).zero? && bytes.getbyte(pos + 1).zero?
+            break if bytes.getbyte(pos).zero? && bytes.getbyte(pos + 1).zero? # steep:ignore NoMethod
 
             child, pos = read_node(bytes, pos, limit, depth + 1, depth_limit)
             children << child
@@ -245,7 +246,7 @@ module ApplePurchaseReceiptVerifier
         content_end = pos + length
         children = nil
         if constructed && depth < depth_limit
-          children = []
+          children = [] #: Array[Node]
           cursor = pos
           while cursor < content_end
             child, cursor = read_node(bytes, cursor, content_end, depth + 1, depth_limit)
@@ -257,33 +258,45 @@ module ApplePurchaseReceiptVerifier
     end
 
     # One ASN.1 value, expressed as offsets into the buffer it was read from.
+    #
+    # Steep cannot see that a `Struct.new` block body belongs to the struct:
+    # it types `self` as the enclosing module and reports every `def` below as
+    # an undeclared `Asn1` method. The signatures are in sig/, so each method
+    # states what `self` is and silences that one warning; the bodies are
+    # type-checked against {Node} as usual.
     Node = Struct.new(:buffer, :tag, :constructed, :start, :finish, :content_start, :content_end,
                       :children) do
       # The complete TLV bytes.
-      def raw
-        buffer.byteslice(start, finish - start)
+      def raw # steep:ignore UndeclaredMethodDefinition
+        # @type self: Asn1::Node
+        buffer.byteslice(start, finish - start) #: String
       end
 
       # The value bytes. For an indefinite-length constructed value this is
       # empty; use {#octet_value} for BER-chunked OCTET STRINGs.
-      def content
-        buffer.byteslice(content_start, content_end - content_start)
+      def content # steep:ignore UndeclaredMethodDefinition
+        # @type self: Asn1::Node
+        buffer.byteslice(content_start, content_end - content_start) #: String
       end
 
-      def content_length
+      def content_length # steep:ignore UndeclaredMethodDefinition
+        # @type self: Asn1::Node
         content_end - content_start
       end
 
-      def kids
+      def kids # steep:ignore UndeclaredMethodDefinition
+        # @type self: Asn1::Node
         children || []
       end
 
-      def octet_string?
+      def octet_string? # steep:ignore UndeclaredMethodDefinition
+        # @type self: Asn1::Node
         [TAG_OCTET_STRING, TAG_OCTET_STRING_BER].include?(tag)
       end
 
       # Value bytes of an OCTET STRING, joining BER constructed chunks.
-      def octet_value
+      def octet_value # steep:ignore UndeclaredMethodDefinition
+        # @type self: Asn1::Node
         return content unless constructed
 
         kids.map(&:octet_value).join

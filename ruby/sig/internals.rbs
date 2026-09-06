@@ -1,0 +1,231 @@
+# Signatures for everything `sig/apple_purchase_receipt_verifier.rbs` leaves
+# out: private methods, module-internal constants, the two CMS structs and the
+# three modules (Cms, Receipt, ReceiptPayload) that are implementation detail.
+#
+# A consumer type-checks against the public file; this one exists so
+# `steep check` can prove the implementation itself, and it is checked by CI
+# for exactly that reason. Nothing here is API: a name in this file may change
+# in any release.
+module ApplePurchaseReceiptVerifier
+  # roots.rb
+  def self.apple_roots: () -> Array[OpenSSL::X509::Certificate]
+
+  class Payload
+    def string_claim: (String name) -> String?
+    def integer_claim: (String name) -> Integer?
+    def numeric_claim: (String name) -> Numeric?
+
+    # Defines a snake_case reader over a camelCase claim. Called at class-body
+    # level, so it is a singleton method however private it is made. Nothing
+    # calls it today; the two subclasses define their readers inline.
+    def self.claim: (Symbol ruby_name, String wire_name, Symbol kind) -> void
+  end
+
+  class JwsVerifier
+    @roots: Array[OpenSSL::X509::Certificate]
+    @bundle_id: String
+    @accepted_environments: Array[String]
+    @app_apple_id: Integer?
+    @max_signed_age_seconds: Numeric?
+    @clock: clock?
+
+    EC_ORDER: OpenSSL::BN
+
+    private
+
+    def contained: [T] () { () -> T } -> T
+    def verify_signature: (String jws) -> claims
+    def split_segments: (String jws) -> [String, String, String]
+    def base64url_decode: (String segment, String what) -> String
+    def json_segment: (String segment, String what) -> claims
+    def certificates: (Array[String] x5c) -> Array[OpenSSL::X509::Certificate]
+    def verify_es256: (OpenSSL::X509::Certificate leaf, String signing_input,
+                       String signature_b64) -> void
+    # A JSON number, so Integer or Float; `nil` when the payload states none.
+    # The declaration says Numeric because that is the check the body makes;
+    # the one call site asserts the narrower truth so the arithmetic resolves.
+    def signed_at_millis_of: (claims claims) -> Numeric?
+    # The claim values are whatever the payload carried, hence `untyped`.
+    def require_bundle_id: (untyped actual) -> void
+    def require_accepted_environment: (untyped claim) -> String
+    def require_app_apple_id: (String environment, untyped actual) -> void
+    def require_fresh: ((Integer | Float)? signed_at_millis) -> void
+  end
+
+  class ReceiptVerifier
+    @roots: Array[OpenSSL::X509::Certificate]
+    @bundle_id: String
+
+    private
+
+    def require_bundle_id: (AppReceipt receipt) -> void
+    def verify_device_hash: (AppReceipt receipt, untyped device_guid) -> void
+    def secure_equal?: (String one, String other) -> bool
+  end
+
+  class VerifyReceiptEndpoint
+    @roots: Array[OpenSSL::X509::Certificate]
+    @environment: String
+    @clock: clock?
+
+    MALFORMED_JSON: String
+
+    private
+
+    def parse_json_object: (String body) -> Hash[String, untyped]?
+    def now: () -> Time
+    def receipt_json: (AppReceipt receipt, Time request_date) -> json_body
+    def in_app_json: (InAppPurchase purchase) -> Hash[String, String]
+    def put: (Hash[String, untyped] target, String key, String? value) -> void
+    def apple_dates: (Hash[String, untyped] target, String prefix, Time? date) -> void
+  end
+
+  module Asn1
+    TAG_INTEGER: Integer
+    TAG_OCTET_STRING: Integer
+    TAG_OID: Integer
+    TAG_UTF8_STRING: Integer
+    TAG_IA5_STRING: Integer
+    TAG_SEQUENCE: Integer
+    TAG_SET: Integer
+    TAG_CONTEXT_0: Integer
+    TAG_OCTET_STRING_BER: Integer
+
+    # Returns the node and the offset just past it.
+    def self.read_node: (String bytes, Integer off, Integer limit, Integer depth,
+                         Integer depth_limit) -> [Node, Integer]
+
+    class Node
+      def self.new: (String buffer, Integer tag, bool constructed, Integer start,
+                     Integer finish, Integer content_start, Integer content_end,
+                     Array[Node]? children) -> Node
+    end
+  end
+
+  module Chain
+    def self.cert_sign_permitted?: (OpenSSL::X509::Certificate cert) -> bool
+  end
+
+  module PacificTime
+    # Both UTC instants, or both nil for a year before the modelled rules.
+    def self.daylight_window: (Integer year) -> [Time?, Time?]
+    def self.transition: (Integer year, Integer month, Integer day, Integer utc_hour) -> Time
+    def self.nth_sunday: (Integer year, Integer month, Integer nth) -> Integer
+    def self.last_sunday: (Integer year, Integer month) -> Integer
+    def self.days_in_month: (Integer year, Integer month) -> Integer
+  end
+
+  # cms.rb — the structural read of a PKCS#7 SignedData.
+  module Cms
+    OID_SIGNED_DATA: String
+    SHA1_OID: String
+    SHA256_OID: String
+    DIGESTS: Hash[String, String]
+
+    class SignerInfo
+      attr_accessor issuer_der: String
+      attr_accessor serial: Integer
+      attr_accessor digest_oid: String
+      # nil when the OID is not in DIGESTS; ReceiptVerifier owns that verdict.
+      attr_accessor digest_name: String?
+
+      def self.new: (issuer_der: String, serial: Integer, digest_oid: String,
+                     digest_name: String?) -> SignerInfo
+    end
+
+    class Parsed
+      attr_accessor content: String
+      attr_accessor certificate_ders: Array[String]
+      attr_accessor signer_info: SignerInfo
+
+      def self.new: (content: String, certificate_ders: Array[String],
+                     signer_info: SignerInfo) -> Parsed
+    end
+
+    def self.parse: (String der) -> Parsed
+    def self.signed_data?: (Asn1::Node content_info, Array[Asn1::Node] info) -> bool
+    def self.encapsulated_content: (Asn1::Node? encap) -> String
+    def self.certificate_ders: (Array[Asn1::Node] parts) -> Array[String]
+    def self.signer_info: (Asn1::Node? node) -> SignerInfo
+    def self.unsigned_integer: (String bytes) -> Integer
+    def self.oid_string: (String contents) -> String
+    def self.malformed: (String message) -> VerificationError
+  end
+
+  # receipt.rb — the legacy PKCS#7 receipt pipeline.
+  module Receipt
+    BASE64_DISALLOWED: String
+
+    def self.verify: (String der, Array[OpenSSL::X509::Certificate] roots) -> AppReceipt
+    def self.contained: [T] () { () -> T } -> T
+    # Both take whatever a caller passed; rejecting a non-String is their job.
+    def self.binary: (untyped input) -> String
+    def self.decode_base64: (untyped text) -> String
+    # The readable certificates, the first error from an unreadable one, and
+    # whether an unreadable one is the certificate the SignerInfo names.
+    def self.decode_certificates: (Array[String] ders, Cms::SignerInfo signer_info)
+                                -> [Array[OpenSSL::X509::Certificate], OpenSSL::OpenSSLError?, bool]
+    def self.names_the_signer?: (String der, Cms::SignerInfo signer_info) -> bool
+    def self.assert_signer_is_readable: (OpenSSL::X509::Certificate signer) -> void
+    def self.find_signer: (Array[OpenSSL::X509::Certificate] embedded,
+                           Cms::SignerInfo signer_info) -> OpenSSL::X509::Certificate?
+    def self.verify_cms_signature: (String der, OpenSSL::X509::Certificate signer,
+                                    String content) -> void
+  end
+
+  # receipt_payload.rb — the receipt attribute grammar.
+  module ReceiptPayload
+    RECEIPT_TYPE: Integer
+    BUNDLE_ID: Integer
+    APP_VERSION: Integer
+    OPAQUE_VALUE: Integer
+    SHA1_HASH: Integer
+    CREATION_DATE: Integer
+    IN_APP: Integer
+    ORIGINAL_PURCHASE_DATE: Integer
+    ORIGINAL_APP_VERSION: Integer
+    EXPIRATION_DATE: Integer
+
+    IAP_QUANTITY: Integer
+    IAP_PRODUCT_ID: Integer
+    IAP_TRANSACTION_ID: Integer
+    IAP_PURCHASE_DATE: Integer
+    IAP_ORIGINAL_TRANSACTION_ID: Integer
+    IAP_ORIGINAL_PURCHASE_DATE: Integer
+    IAP_EXPIRES_DATE: Integer
+    IAP_WEB_ORDER_LINE_ITEM_ID: Integer
+    IAP_CANCELLATION_DATE: Integer
+    IAP_IS_IN_INTRO_OFFER_PERIOD: Integer
+
+    MAX_ATTRIBUTE_TYPE: Integer
+    MAX_ATTRIBUTES: Integer
+    NANOSECOND_DIGITS: Integer
+    RFC_3339: Regexp
+
+    # The attribute bag both models are built from: one key per reader, values
+    # of the reader's own type, so `untyped` is the value type by construction.
+    type fields = Hash[Symbol, untyped]
+    type unknown_attributes = Hash[Integer, Array[String]]
+
+    def self.parse: (String content) -> AppReceipt
+    def self.parse_in_app: (String bytes) -> InAppPurchase
+    def self.record_unknown: (unknown_attributes unknown, Integer type, String value) -> void
+    def self.freeze_unknown: (unknown_attributes unknown) -> unknown_attributes
+    def self.each_attribute: (String bytes, String what) { (Integer, String) -> void } -> void
+    # tag, content start, content end.
+    def self.outer: (String bytes, String what) -> [Integer, Integer, Integer]
+    # tag, content start, content end, offset just past the value.
+    def self.header: (String bytes, Integer offset, Integer limit, String what)
+                   -> [Integer, Integer, Integer, Integer]
+    def self.ber_octets: (String bytes, String what) -> String
+    def self.attribute_type: (String raw) -> Integer
+    def self.integer_value: (String raw) -> Integer
+    def self.single_value: (String bytes) -> [Integer, String]
+    def self.decode_string: (String bytes) -> String
+    def self.decode_integer: (String bytes) -> Integer
+    # nil for the empty string, which genuine receipts use for "absent".
+    def self.decode_date: (String bytes) -> Time?
+    def self.nanoseconds: (String? fraction) -> Integer
+    def self.format_error: (String message) -> VerificationError
+  end
+end

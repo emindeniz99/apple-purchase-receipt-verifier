@@ -145,7 +145,7 @@ module ApplePurchaseReceiptVerifier
                                     "x5c must contain exactly 3 certificates")
       end
 
-      leaf, intermediate = certificates(x5c)
+      leaf, intermediate = certificates(x5c) #: [OpenSSL::X509::Certificate, OpenSSL::X509::Certificate]
 
       if leaf.find_extension(LEAF_MARKER_OID).nil?
         raise VerificationError.new(Reason::INVALID_CERTIFICATE_PURPOSE,
@@ -165,7 +165,7 @@ module ApplePurchaseReceiptVerifier
       # date, the fallback is the SYSTEM clock and never the injected one: a
       # caller injecting a clock to test staleness, or to paper over skew, must
       # not thereby be able to authenticate an expired chain.
-      signed_at_millis = signed_at_millis_of(claims)
+      signed_at_millis = signed_at_millis_of(claims) #: (Integer | Float)?
       instant = signed_at_millis.nil? ? Time.now.utc : Time.at(signed_at_millis / 1000.0).utc
       Chain.validate_pair(leaf, intermediate, @roots, instant)
 
@@ -186,7 +186,7 @@ module ApplePurchaseReceiptVerifier
                                     "expected 3 dot-separated segments, got #{parts.size}")
       end
 
-      parts
+      parts #: [String, String, String]
     end
 
     # Strict base64url: the JWS alphabet only, no padding, no whitespace, no
@@ -200,7 +200,7 @@ module ApplePurchaseReceiptVerifier
       padded = segment.tr("-_", "+/")
       padded += "=" * ((4 - (padded.bytesize % 4)) % 4)
       begin
-        padded.unpack1("m0")
+        padded.unpack1("m0") #: String
       rescue ArgumentError
         raise VerificationError.new(Reason::INVALID_JWS_FORMAT, "#{what} is not base64url")
       end
@@ -230,7 +230,7 @@ module ApplePurchaseReceiptVerifier
     def certificates(x5c)
       x5c.map do |entry|
         begin
-          der = entry.unpack1("m")
+          der = entry.unpack1("m") #: String?
         rescue ArgumentError
           raise VerificationError.new(Reason::INVALID_CERTIFICATE, "x5c entry is not base64")
         end
@@ -287,7 +287,7 @@ module ApplePurchaseReceiptVerifier
 
     def verify_es256(leaf, signing_input, signature_b64)
       key = leaf.public_key
-      unless key.is_a?(OpenSSL::PKey::EC) && key.group.curve_name == "prime256v1"
+      unless key.is_a?(OpenSSL::PKey::EC) && key.group.curve_name == "prime256v1" # steep:ignore NoMethod
         raise VerificationError.new(Reason::INVALID_SIGNATURE, "leaf key is not a P-256 EC key")
       end
 
@@ -297,8 +297,8 @@ module ApplePurchaseReceiptVerifier
                                     "ES256 signature must be 64 bytes, got #{signature.bytesize}")
       end
 
-      r = OpenSSL::BN.new(signature.byteslice(0, 32), 2)
-      s = OpenSSL::BN.new(signature.byteslice(32, 32), 2)
+      r = OpenSSL::BN.new(signature.byteslice(0, 32), 2) # steep:ignore ArgumentTypeMismatch
+      s = OpenSSL::BN.new(signature.byteslice(32, 32), 2) # steep:ignore ArgumentTypeMismatch
       if r.zero? || s.zero? || r >= EC_ORDER || s >= EC_ORDER
         raise VerificationError.new(Reason::INVALID_SIGNATURE, "ES256 signature scalar out of range")
       end
@@ -373,13 +373,13 @@ module ApplePurchaseReceiptVerifier
     def require_fresh(signed_at_millis)
       return if @max_signed_age_seconds.nil? || signed_at_millis.nil?
 
-      now = @clock.nil? ? Time.now : @clock.call
+      now = @clock.nil? ? Time.now : @clock.call # steep:ignore NoMethod
       unless now.is_a?(Time)
         raise VerificationError.new(Reason::STALE_PAYLOAD,
                                     "clock did not return a Time")
       end
 
-      age_seconds = ((now.to_r * 1000).to_i - signed_at_millis) / 1000.0
+      age_seconds = ((now.to_r * 1000).to_i - signed_at_millis) / 1000.0 # steep:ignore
       return if age_seconds <= @max_signed_age_seconds
 
       raise VerificationError.new(Reason::STALE_PAYLOAD,

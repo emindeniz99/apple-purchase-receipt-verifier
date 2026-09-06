@@ -202,7 +202,7 @@ module ApplePurchaseReceiptVerifier
         # The tail checked here is at most a few bytes — encoders pad to at
         # most 2 `=` — so slicing it costs nothing.
         pad_at = stripped.index("=") || stripped.length
-        if stripped[pad_at..].count("^=").positive?
+        if stripped[pad_at..].count("^=").positive? # steep:ignore NoMethod
           raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
                                       "receipt has data after its base64 padding")
         end
@@ -236,7 +236,7 @@ module ApplePurchaseReceiptVerifier
         stripped.slice!(pad_at..)
         stripped << ("=" * ((4 - (pad_at % 4)) % 4))
         begin
-          stripped.unpack1("m0")
+          stripped.unpack1("m0") #: String
         rescue ArgumentError
           raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT, "receipt is not base64")
         end
@@ -247,7 +247,7 @@ module ApplePurchaseReceiptVerifier
       # the SignerInfo names. The error is held rather than raised because
       # which entry it belongs to decides the verdict; see the caller.
       def decode_certificates(ders, signer_info)
-        certificates = []
+        certificates = [] #: Array[OpenSSL::X509::Certificate]
         unreadable = nil
         unreadable_signer = false
         ders.each do |der|
@@ -356,7 +356,7 @@ module ApplePurchaseReceiptVerifier
 
         flags = OpenSSL::PKCS7::NOVERIFY | OpenSSL::PKCS7::NOINTERN
         ok = begin
-          pkcs7.verify([signer], OpenSSL::X509::Store.new, nil, flags)
+          pkcs7.verify([signer], OpenSSL::X509::Store.new, nil, flags) # steep:ignore ArgumentTypeMismatch
         rescue OpenSSL::PKCS7::PKCS7Error
           false
         end
@@ -474,9 +474,9 @@ module ApplePurchaseReceiptVerifier
       end
 
       computed = OpenSSL::Digest::SHA1.digest(
-        device_guid.b + receipt.opaque_value + receipt.bundle_id_bytes
+        device_guid.b + receipt.opaque_value + receipt.bundle_id_bytes # steep:ignore ArgumentTypeMismatch
       )
-      return if secure_equal?(computed, receipt.sha1_hash)
+      return if secure_equal?(computed, receipt.sha1_hash) # steep:ignore ArgumentTypeMismatch
 
       raise VerificationError.new(Reason::DEVICE_HASH_MISMATCH,
                                   "computed device hash does not match attribute 5")

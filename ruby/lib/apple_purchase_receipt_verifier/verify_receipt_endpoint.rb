@@ -87,7 +87,7 @@ module ApplePurchaseReceiptVerifier
 
       begin
         receipt = Receipt.verify(der, @roots)
-        production = PRODUCTION_RECEIPT_TYPES.include?(receipt.receipt_type)
+        production = PRODUCTION_RECEIPT_TYPES.include?(receipt.receipt_type) # steep:ignore
         if @environment == Environment::PRODUCTION && !production
           return { "status" => Status::SANDBOX_RECEIPT_ON_PRODUCTION }
         end
@@ -136,14 +136,14 @@ module ApplePurchaseReceiptVerifier
     end
 
     def now
-      instant = @clock.nil? ? Time.now : @clock.call
+      instant = @clock.nil? ? Time.now : @clock.call # steep:ignore NoMethod
       raise TypeError, "clock did not return a Time" unless instant.is_a?(Time)
 
       instant.utc
     end
 
     def receipt_json(receipt, request_date)
-      body = {}
+      body = {} #: Hash[String, untyped]
       put(body, "receipt_type", receipt.receipt_type)
       put(body, "bundle_id", receipt.bundle_id)
       put(body, "application_version", receipt.app_version)
@@ -157,7 +157,7 @@ module ApplePurchaseReceiptVerifier
     end
 
     def in_app_json(purchase)
-      entry = {}
+      entry = {} #: Hash[String, String]
       put(entry, "quantity", purchase.quantity&.to_s)
       put(entry, "product_id", purchase.product_id)
       put(entry, "transaction_id", purchase.transaction_id)
