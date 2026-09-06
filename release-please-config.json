@@ -17,11 +17,6 @@
           "jsonpath": "$.project.version"
         },
         {
-          "type": "toml",
-          "path": "python/uv.lock",
-          "jsonpath": "$.package[?(@.name=='apple-purchase-receipt-verifier')].version"
-        },
-        {
           "type": "pom",
           "path": "java/pom.xml"
         },
@@ -33,16 +28,6 @@
           "type": "toml",
           "path": "rust/Cargo.toml",
           "jsonpath": "$.package.version"
-        },
-        {
-          "type": "toml",
-          "path": "rust/Cargo.lock",
-          "jsonpath": "$.package[?(@.name=='apple-purchase-receipt-verifier')].version"
-        },
-        {
-          "type": "toml",
-          "path": "rust/fuzz/Cargo.lock",
-          "jsonpath": "$.package[?(@.name=='apple-purchase-receipt-verifier')].version"
         },
         {
           "type": "xml",
