@@ -1006,18 +1006,37 @@ jobs:
           php-version: "8.4"
           extensions: openssl, json
           coverage: none
+      # The consumer smoke and the drift guard are Node, like the rest of
+      # tools/. They live in this job rather than in `conformance` because
+      # what they check is the PHP package, and because the smoke needs the
+      # PHP that setup-php just installed.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
       - run: composer install --no-scripts --no-progress --no-interaction
         working-directory: php
       # --strict also reports a composer.lock that no longer matches
       # composer.json, which is the drift this port's lockfile can suffer.
       - run: composer validate --strict
         working-directory: php
+      # The root manifest is what Packagist reads and what Composer installs;
+      # php/composer.json is only the development one. Both get validated.
+      - run: composer validate --strict --no-check-lock composer.json
       - run: vendor/bin/phpstan analyse --no-progress
         working-directory: php
       # php/certs/ is a copy of the repository-root certs/, and
       # src/Internal/RootsData.php is generated from that copy. A roots change
       # that forgets either step would ship stale trust anchors.
       - run: php php/tools/gen-roots.php && git diff --exit-code php/src/Internal/RootsData.php
+      # Two manifests for one package drift, and the .gitattributes allowlist
+      # silently decides what a PHP consumer unpacks. This reads the real
+      # `git archive` rather than the rules that produce it.
+      - run: node tools/check-php-package.mjs
+      # Then install that archive into a throwaway project and verify a
+      # receipt through vendor/autoload.php: the only check here that runs
+      # against what a stranger downloads rather than against a checkout.
+      - run: node tools/php-consumer-smoke.mjs
 
   # The mutation pass: ~1,500 mutated receipts and ~1,000 mutated JWS
   # payloads, each verified through every public entry point. Its own job

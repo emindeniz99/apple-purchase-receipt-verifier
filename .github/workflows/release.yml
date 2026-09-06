@@ -23,11 +23,10 @@
 #           reason as npm (BOOTSTRAP.md).
 #   Go    — no registry: proxy.golang.org serves the module from this
 #           repository, published by a go/vX.Y.Z tag the job below creates.
-#   Packagist — nothing publishable from this repository as laid out:
-#           Packagist reads composer.json from the repository ROOT only, and
-#           this port's manifest is php/composer.json. See BOOTSTRAP.md for
-#           the decision the owner still has to make; there is deliberately
-#           no PHP job here.
+#   Packagist — no job needed: the package is the repository ROOT's
+#           composer.json (Packagist reads a root and nowhere else), and
+#           Packagist imports every tag on its own once the owner submits
+#           the repository. See BOOTSTRAP.md.
 #
 # Every publish job skips (loudly) when the registry already has the tag's
 # version, so a manually bootstrapped version doesn't fail the tag run, and
