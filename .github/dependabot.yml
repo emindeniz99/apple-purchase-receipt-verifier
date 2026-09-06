@@ -73,6 +73,17 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+  # rust/ffi is the C ABI: a third cargo manifest with its own lockfile, and
+  # dependabot only watches the directories it is told about. It holds one
+  # dependency (the library, by path) plus whatever that pulls, so a bump
+  # here is normally a transitive one — and the MSRV note on /rust applies
+  # unchanged, because this crate claims the same 1.74.0 floor.
+  - package-ecosystem: cargo
+    directory: /rust/ffi
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
   - package-ecosystem: cargo
     directory: /rust/fuzz
     schedule:

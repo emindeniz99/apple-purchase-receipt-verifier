@@ -19,7 +19,9 @@ validating the certificate chain against pinned Apple root CAs. Nine
 implementations, one normative algorithm, one shared fixture set they all
 verify byte-for-byte: **Java** (8+), **Node** (20+, zero runtime deps),
 **Python** (3.9+), **Swift** (6.1+), **Go** (1.22+), **Ruby** (3.1+),
-**Rust** (1.74+), **PHP** (8.1+) and **.NET** (netstandard2.0 and net8.0).
+**Rust** (1.74+), **PHP** (8.1+) and **.NET** (netstandard2.0 and net8.0) —
+plus **C and C++ via a C ABI over the Rust port**, which any FFI-capable
+runtime (Elixir NIFs, Lua, ctypes, P/Invoke) can load.
 [SUPPORT-MATRIX.md](SUPPORT-MATRIX.md) lists every line CI runs and the rule
 that adds or drops one.
 
@@ -71,6 +73,12 @@ repository's tags.
 | [npm](https://www.npmjs.com/package/apple-purchase-receipt-verifier) | `npm install apple-purchase-receipt-verifier` | `import { JwsVerifier } from 'apple-purchase-receipt-verifier';` |
 | [PyPI](https://pypi.org/project/apple-purchase-receipt-verifier/) | `pip install apple-purchase-receipt-verifier` | `from apple_purchase_receipt_verifier import JwsVerifier` |
 | [SwiftPM](https://swiftpackageindex.com/emindeniz99/apple-purchase-receipt-verifier) | `.package(url: "https://github.com/emindeniz99/apple-purchase-receipt-verifier.git", from: "0.2.1")` | `import ApplePurchaseReceiptVerifier` |
+
+**C and C++ have no registry entry and are not meant to.** The C ABI in
+[`rust/ffi/`](rust/ffi/) is built from source against the Rust port: a
+`cdylib`/`staticlib` and a generated header, nineteen symbols, JSON as the
+interchange. Prebuilt binaries per OS and architecture are a later step, not
+a shipped one. See [rust/ffi/README.md](rust/ffi/README.md).
 
 The import namespace is the registry name in each ecosystem's casing
 convention (`applepurchasereceiptverifier` / `apple_purchase_receipt_verifier` /

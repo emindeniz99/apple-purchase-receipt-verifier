@@ -654,6 +654,101 @@ jobs:
       # cannot reach outside the package directory. A copy that drifts ships
       # stale trust anchors.
 
+  # The C ABI (rust/ffi) and its three consumers. Three operating systems
+  # because this is the only artifact in the repository whose contract is a
+  # linker's: a symbol that resolves on Linux may not on Windows, and the
+  # cdylib/import-library dance is different on each. The Rust legs above
+  # prove the algorithm; this one proves that a C toolchain can reach it.
+  rust-ffi:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
+      # rust/ffi/Cargo.lock is committed and resolved for the 1.74.0 floor the
+      # same way rust/Cargo.lock is; --locked turns "cargo quietly rewrote the
+      # lockfile" into a failed job rather than an unnoticed bump.
+      - run: cargo build --locked
+        working-directory: rust/ffi
+      # The floor this crate's manifest claims, proven rather than asserted —
+      # once, because a Rust version floor is not platform-specific. A `check`
+      # rather than a `test`: the tests need no older toolchain to be honest,
+      # the compilable surface does.
+      - name: the 1.74.0 floor compiles
+        if: runner.os == 'Linux'
+        working-directory: rust/ffi
+        run: |
+          rustup toolchain install 1.74.0 --profile minimal
+          cargo +1.74.0 check --locked --all-targets
+      - run: cargo fmt --check
+        working-directory: rust/ffi
+      - run: cargo clippy --locked --all-targets -- -D warnings
+        working-directory: rust/ffi
+      # Layer 1: null pointers, non-UTF-8 input, rejected configurations, and
+      # the panic guard every exported symbol runs its body inside.
+      - run: cargo test --locked
+        working-directory: rust/ffi
+
+      # Layer 2, the primary one: fixtures/cases.json driven through the ABI
+      # from C++17. A passing run is the evidence that the compiled-toolchain
+      # path works — header compiles as C++, symbols link, answers match the
+      # vectors every other port answers.
+      - name: flatten the shared vectors for a compiler
+        run: node tools/gen-cases-manifest.mjs rust/ffi/target/manifest
+      - name: build the C++ consumers
+        shell: bash
+        run: |
+          cmake -S rust/ffi/examples/cpp -B rust/ffi/target/cppbuild
+          cmake --build rust/ffi/target/cppbuild --config Debug
+      - name: C++ conformance over the C ABI
+        shell: bash
+        run: rust/ffi/target/cppbuild/bin/aprv_conformance rust/ffi/target/manifest
+      - name: the README example
+        shell: bash
+        run: |
+          rust/ffi/target/cppbuild/bin/aprv_example \
+            fixtures/generated/jws-root.der \
+            fixtures/generated/transaction.jws \
+            fixtures/generated/receipt-b64/01-genuine.txt
+
+      # Layer 3: the same vectors again from a language with no compiler in
+      # the loop, checking the nested field paths the C++ harness cannot
+      # reach. This is what "any FFI-capable language" means, tested.
+      - name: ctypes conformance over the C ABI
+        shell: bash
+        working-directory: rust/ffi
+        run: |
+          interpreter=python3
+          command -v python3 >/dev/null 2>&1 || interpreter=python
+          "$interpreter" tests/conformance.py target/debug
+
+      # include/apple_purchase_receipt_verifier.h is generated from
+      # src/lib.rs; a change that forgets to regenerate it ships a header
+      # describing an ABI the library no longer has. The same regenerate-and-
+      # diff guard the generated roots files elsewhere in this workflow get.
+      # Linux only: the header is platform-independent, and cbindgen is a
+      # from-source install that costs a minute per runner.
+      - name: the committed header is the generated one
+        if: runner.os == 'Linux'
+        shell: bash
+        working-directory: rust/ffi
+        run: |
+          cargo install cbindgen --locked --version 0.29.0
+          cbindgen --config cbindgen.toml \
+                   --crate apple-purchase-receipt-verifier-ffi \
+                   --output include/apple_purchase_receipt_verifier.h
+          git diff --exit-code include/apple_purchase_receipt_verifier.h
+
   # The exploratory pass over the hand-written ASN.1, CMS, X.509 and JWS
   # readers and the three verifiers; rust/fuzz/README.md lists the targets
   # and their invariants. Seeds come from fixtures/, so a crasher is a
@@ -931,6 +1026,12 @@ jobs:
       - run: rustup toolchain install stable --profile minimal
       - run: cargo install cargo-deny --locked
       - run: cargo deny check
+        working-directory: rust
+      # ffi/ is a separate manifest with a separate lockfile, and cargo-deny
+      # audits one manifest at a time — a dependency added there would be
+      # invisible to the check above. Same policy file: the banned-crate list
+      # is a property of the project, not of one crate.
+      - run: cargo deny --manifest-path ffi/Cargo.toml --config deny.toml check
         working-directory: rust
 
   # Every line the composer.json floor admits. 8.1 is the floor and is past

@@ -1,0 +1,32 @@
+# The C ABI over the Rust library: one `cdylib`/`staticlib` that C, C++ and
+# any FFI-capable runtime (Elixir NIFs, Lua, Python ctypes, .NET P/Invoke)
+# can load. Not published to crates.io — a C consumer wants a shared object
+# and a header, not a crate — and not a workspace member, for the same
+# reason `fuzz/` is not: `..`'s `exclude` keeps it out of the library
+# tarball, and it carries its own `Cargo.lock`.
+#
+# The version is not declared here. `aprv_version()` reads the repository's
+# `version.txt`, the one file release-please bumps, so the ABI cannot report
+# a version that drifted from the library it wraps.
+[package]
+name = "apple-purchase-receipt-verifier-ffi"
+version = "0.0.0"
+publish = false
+edition = "2021"
+rust-version = "1.74.0"
+description = "C ABI for apple-purchase-receipt-verifier."
+license = "MIT"
+
+[lib]
+name = "apple_purchase_receipt_verifier_ffi"
+path = "src/lib.rs"
+crate-type = ["cdylib", "staticlib"]
+
+# One dependency, and it is the library itself. JSON is built through the
+# `serde_json` the library re-exports, so this crate cannot end up holding a
+# different major version than the one `Claims` is made of — and cargo-deny's
+# banned-crate list keeps meaning what it means, because nothing new enters
+# the graph.
+[dependencies.apple-purchase-receipt-verifier]
+path = ".."
+features = ["endpoint"]
