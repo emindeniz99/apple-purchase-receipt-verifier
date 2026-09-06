@@ -233,12 +233,14 @@ rebase-merge. Per-commit history is the record of how the work was built;
 squashing erases it irreversibly. (Squash and rebase merges are disabled in
 the repo settings.)
 
-Give the merge commit a body that is not a Conventional Commit line, e.g.
-`Merges #57` — not GitHub's default, the PR title, which usually is one.
-release-please reads merge commit bodies as commits too, so a conventional
-body there duplicates the entry the branch commit already produces (0.4.0's
-changelog lists `deps: Bump actions/setup-go from 6.5.0 to 7.0.0` twice for
-exactly this reason).
+Give the merge commit a body of the form `Merges #57: <PR title without its
+type(scope) prefix>`, not GitHub's default, the bare PR title, which is a
+Conventional Commit line. release-please reads merge commit bodies as commits
+too, so a conventional body there duplicates the entry the branch commit
+already produces (0.4.0's changelog lists `deps: Bump actions/setup-go from
+6.5.0 to 7.0.0` twice for exactly this reason). Dropping only the prefix
+keeps `git log` readable; the type, scope and any breaking marker still live
+on the branch commit, which release-please does read.
 
 ## Releases
 

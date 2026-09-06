@@ -21,14 +21,16 @@ human-facing version; where they overlap, they agree.
 - Merge PRs with a **real merge commit** (`merge_method: "merge"`, locally
   `git merge --no-ff`). Never squash, never rebase-merge — squash/rebase are
   disabled in repo settings; do not re-enable them.
-- Give the merge commit a body that is **not** a Conventional Commit line,
-  e.g. `Merges #57` — never GitHub's default (the PR title, which usually
-  is one). release-please reads merge commit bodies too, so a conventional
-  body there is counted as a second change alongside the branch commit that
-  already carries it, duplicating the entry in the generated changelog
-  (observed in 0.4.0: `deps: Bump actions/setup-go from 6.5.0 to 7.0.0`
-  listed twice, once from the dependabot branch commit and once from its
-  merge commit).
+- Give the merge commit a body of the form `Merges #57: <PR title without
+  its type(scope) prefix>`, never GitHub's default (the bare PR title,
+  which is a Conventional Commit line). release-please reads merge commit
+  bodies too, so a conventional body there is counted as a second change
+  alongside the branch commit that already carries it, duplicating the
+  entry in the generated changelog (observed in 0.4.0: `deps: Bump
+  actions/setup-go from 6.5.0 to 7.0.0` listed twice, once from the
+  dependabot branch commit and once from its merge commit). Dropping only
+  the prefix keeps `git log` readable; the type, scope and any breaking
+  marker still live on the branch commit, which release-please does read.
 
 ## The invariants that are easy to break
 
