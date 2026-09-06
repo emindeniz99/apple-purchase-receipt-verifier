@@ -20,6 +20,8 @@ implementations, one normative algorithm, one shared fixture set they all
 verify byte-for-byte: **Java** (8+), **Node** (20+, zero runtime deps),
 **Python** (3.9+), **Swift** (6.1+), **Go** (1.22+), **Ruby** (3.1+),
 **Rust** (1.74+), **PHP** (8.1+) and **.NET** (netstandard2.0 and net8.0).
+[SUPPORT-MATRIX.md](SUPPORT-MATRIX.md) lists every line CI runs and the rule
+that adds or drops one.
 
 Each implementation also ships **`VerifyReceiptEndpoint`** — a drop-in
 local replacement for the deprecated `verifyReceipt` endpoint speaking
