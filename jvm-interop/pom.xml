@@ -89,6 +89,20 @@
         <version>${kotlin.version}</version>
         <configuration>
           <jvmTarget>${jvm.target}</jvmTarget>
+          <!-- Make the library's JSpecify annotations binding rather than
+               advisory: a nullness mismatch is an ERROR here, not a warning,
+               so KotlinInteropTest is a compile-time assertion about the
+               published jar's nullability and not just a runtime one.
+               It is the default from Kotlin 2.0 on; it is stated so this
+               module keeps failing loudly if a later compiler changes that
+               default. Its companion -Xtype-enhancement-improvements-strict-mode
+               is deliberately NOT passed: this compiler answers it with
+               "the argument is redundant for the current language version
+               2.4", and a warning nobody can act on is worse than the flag
+               is useful. -->
+          <args>
+            <arg>-Xjspecify-annotations=strict</arg>
+          </args>
         </configuration>
         <executions>
           <execution>
