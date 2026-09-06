@@ -27,13 +27,22 @@ at once.
 ## Dependency policy
 
 The library ports have almost no runtime dependencies (see each port's
-README); the surface is the test and release toolchain. Three rules:
+README); the surface is the test and release toolchain. Four rules:
 
 - **Seven-day cooldown.** Every ecosystem in `.github/dependabot.yml` waits
   seven days after a release before proposing it. Manual bumps follow the
   same rule (CONTRIBUTING.md, "Adding or bumping a dependency by hand").
 - **No install scripts in CI.** Every `npm ci` in the workflows runs with
-  `--ignore-scripts`. Composer runs no plugins the manifest does not list.
+  `--ignore-scripts`, and every `composer install` with `--no-scripts`.
+- **Lockfile-strict installs in CI.** Every ecosystem with a lockfile commits
+  it and installs from it under a flag that fails rather than re-resolves, so
+  a hijacked release cannot reach a runner before the cooldown has looked at
+  it: `npm ci`, `cargo --locked`, `uv sync --locked`, `composer install`,
+  `BUNDLE_FROZEN=true`, `RestoreLockedMode` for NuGet, `swift
+  --force-resolved-versions`, and Go's default `-mod=readonly` against
+  `go.sum`. Two legs resolve from ranges on purpose, because resolving is
+  what they test: `php-lowest` (`composer update --prefer-lowest`) and
+  Java, which pins exact versions and has no lockfile format.
 - **No long-lived registry tokens.** npm, PyPI, RubyGems, crates.io and NuGet
   publish through OIDC trusted publishing from `release.yml`; there is no
   token to steal from a laptop or a workflow. Maven Central has no OIDC

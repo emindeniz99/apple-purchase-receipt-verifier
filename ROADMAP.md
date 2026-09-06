@@ -87,12 +87,12 @@ Delete a line in the commit that ships it.
   that the netstandard2.0 asset loads outside CoreCLR, not that it runs in an
   IL2CPP player. Until something exercises a real player build, the README
   must not claim Unity support.
-- **`ruby/gemfiles/tools.gemfile.lock`**: not committed, so `ruby-tools`
-  resolves the lint and type toolchain on every run and cannot use
-  `bundler-cache: true`. Dependabot cannot see that file either — its bundler
+- **`ruby/gemfiles/*.gemfile` are invisible to dependabot**: the lint and
+  type toolchain (`tools.gemfile`) and the fuzzer (`fuzz.gemfile`) now have
+  committed locks and CI installs them frozen, but dependabot's bundler
   ecosystem only discovers a manifest named `Gemfile` or `gems.rb`, which is
-  why `.github/dependabot.yml` points at `/ruby` instead. Generating the lock
-  and renaming the gemfile fixes both at once.
+  why `.github/dependabot.yml` points at `/ruby`. Until those two files are
+  renamed, rubocop, rbs, steep and ruzzy are bumped by hand.
 - **Dependency bumps inside the seven-day cooldown** land via dependabot on
   their own; swift-certificates 1.20.0 and swift-asn1 1.7.2 (released
   2026-09-01) will arrive that way.
