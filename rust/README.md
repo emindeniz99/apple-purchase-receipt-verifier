@@ -337,6 +337,37 @@ and `panic!` at compile time. The probe that preceded this port found a real
 out-of-bounds panic in a CMS walk by mutating a genuine receipt; those lints
 are the mechanical form of not shipping the next one.
 
+## The C ABI — `ffi/`
+
+`ffi/` is a second crate that exposes this library through a C ABI, so C, C++
+and any FFI-capable runtime (Elixir NIFs, Lua, ctypes, P/Invoke, Java FFM)
+can call it without a reimplementation. It is a `cdylib`/`staticlib` plus a
+cbindgen-generated header, and it is a thin wrapper: every verification
+decision, parser and trust rule is this crate's, unchanged.
+
+```bash
+cargo build --locked --manifest-path ffi/Cargo.toml
+```
+
+The shape, in one paragraph: three opaque handles (`AprvJwsVerifier`,
+`AprvReceiptVerifier`, `AprvReceiptEndpoint`), seven verification calls, and
+one `AprvResult { int32_t status; char *json; }`. JSON is the interchange
+because a claim set is open-ended and modelling it as C structs would make
+every field Apple adds a breaking ABI change. `status` is `0`, one of the
+eleven canonical [`Reason`] codes in declaration order (stable and
+append-only), or a `100`+ code meaning the *call* was malformed and nothing
+was checked. Every exported function runs its body inside `catch_unwind`, so
+no panic ever crosses the boundary.
+
+It is a separate crate rather than a feature of this one for the same reason
+`fuzz/` is: a `cdylib` is a different artifact with a different lifecycle, and
+`exclude` keeps it out of the published tarball. It carries its own
+`Cargo.lock`, resolved for the same 1.74.0 floor.
+
+**Prebuilt binaries are not published yet** — building from source is the
+only supported path today. See `ffi/README.md` for the ABI rules (ownership,
+thread safety, the status bands) and `ROADMAP.md` for what phase 2 would be.
+
 ## Testing
 
 ```bash
@@ -375,6 +406,14 @@ the IANA database, and a mutation pass over the genuine receipts. The
 mutation pass asserts the invariant that matters: a mutated receipt is
 either rejected or produces a byte-identical result — anything that changes
 what the caller is told must be refused.
+
+The C ABI in `ffi/` has three test layers of its own — its own unit tests
+for null, non-UTF-8 and refused configurations; `fixtures/cases.json` driven
+through the ABI from C++17; and the same vectors again from Python over
+ctypes, which checks the nested field paths a dependency-free C++ program
+cannot reach. Both conformance harnesses run 92 of the 104 cases and skip the
+same 12, because those pin a clock and the ABI has no clock argument;
+`ffi/README.md` says why, and what covers the staleness rule instead.
 
 `fuzz/` holds seven `cargo fuzz` targets — the ASN.1, X.509 and CMS readers
 on their own, the three verifiers, and the endpoint body — seeded from the

@@ -154,6 +154,17 @@ Still worth filing as issues:
   aren't Apple-signed). Our verifiers hard-fail them on chain validation.
   If local-testing support is ever needed, add an explicit, loudly-gated
   insecure dev mode — never reachable from production config.
+- **C ABI phase 2: prebuilt binaries, an owner decision.** Phase 1 shipped:
+  `rust/ffi/` is a `cdylib`/`staticlib` with a generated header, three test
+  layers and a three-OS CI leg, and it is buildable from source only. Phase 2
+  would attach a built `.so`/`.dylib`/`.dll` plus the header to each GitHub
+  release, per OS and architecture, so a C or Elixir consumer does not need a
+  Rust toolchain. It is not queued, because it is a decision rather than a
+  task: it means cross-compilation legs in `release.yml`, an
+  architecture/libc support promise (glibc versus musl, x86-64 versus
+  aarch64) that binaries make and source does not, signing and attestation
+  for every artifact, and a second thing to get right at every release.
+  Source-only is honest until someone asks.
 - Optional OCSP revocation checking (opt-in "online mode", like the official
   library) for consumers who accept Apple calls.
 - Notification-envelope convenience (typed `verifyNotification` that also

@@ -141,6 +141,22 @@ Rust supports the current stable only.
 | stable (1.98 today) | active | `rust`, `rust-lint`, `rust-supply-chain`, `rust-fuzz` (nightly) |
 | beta | next stable | `rust` |
 
+#### The C ABI (`rust/ffi`)
+
+This crate promises a C99 header and a C ABI, so it pins no compiler version
+and the matrix below is operating systems instead. The linker's contract is
+what differs across them: symbol visibility, the import-library dance on
+Windows, rpath on the two Unixes. Each leg uses whichever system compiler its
+runner image ships.
+
+| Line | Status | CI |
+|---|---|---|
+| Rust 1.74.0 | floor (`rust-version`, same as the library) | `rust-ffi` (ubuntu) |
+| ubuntu-latest (gcc), macos-latest (clang), windows-latest (MSVC) | the linker matrix | `rust-ffi` |
+
+Should a consumer's compiler ever be the thing that breaks, the fix belongs in
+the header rather than in a new leg here.
+
 ### Swift
 
 endoflife.date does not track Swift, and Apple patches only the newest

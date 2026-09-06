@@ -266,6 +266,18 @@ Not defended against here, by decision rather than omission.
 - **`jackson-databind` in Java** carries a CVE history a consumer's scanner
   will surface. The payloads are small and flat and the dependency is
   maintained, but the noise is real (PLAN.md D16).
+- **The C ABI reintroduces `unsafe`, and moves memory discipline to the
+  caller.** The library target is `#![forbid(unsafe_code)]`; `rust/ffi` cannot
+  be, because a C boundary is raw pointers. Two consequences are the caller's
+  and cannot be closed from inside: a handle freed twice, or freed while
+  another thread is inside a call on it, is undefined behaviour, and a string
+  the ABI returned that is released with the C runtime's `free()` rather than
+  `aprv_string_free()` corrupts the allocator. What IS closed from inside: a
+  null or non-UTF-8 argument is a status code and never a dereference, no
+  input pointer is retained past the call, and every exported function runs
+  its body inside `catch_unwind`, asserted by a test that reads the source
+  and fails on an unguarded export. No verification logic lives in the ABI —
+  a bug there cannot change a verdict, only how a verdict is delivered.
 - **RustCrypto is used at a pinned MSRV**, so a security fix released above
   that floor needs the floor raised first.
 - **No trust-store isolation test in Node or Java** (§3.1), and **fuzz
