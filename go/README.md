@@ -176,6 +176,106 @@ than Production or Sandbox on the endpoint — is a **plain error from the
 `New…` constructor**, never a `*VerificationError`. A caller switching on
 `Reason` should never have to consider a programming bug.
 
+## Integrating: from verified payload to entitlement
+
+The backend flow these calls sit inside is written out once in the
+[project README](../README.md#integrating-from-verified-payload-to-entitlement):
+verify offline, deny on any failure, check the refund field, refresh a payload
+past the freshness window, guard against replay on the transaction id, then
+grant. That section also carries the policy table saying what each reason
+means and which ones are worth an alert. Here are its two branches in this
+port's API.
+
+A StoreKit 2 signed transaction:
+
+```go
+func newVerifier() (*applereceipt.JWSVerifier, error) {
+	return applereceipt.NewJWSVerifier(applereceipt.JWSVerifierOptions{
+		TrustedRoots: applereceipt.AppleJWSRoots(),
+		BundleID:     "com.example.app",
+		AcceptedEnvironments: []applereceipt.Environment{
+			applereceipt.EnvironmentProduction,
+			applereceipt.EnvironmentSandbox,
+		},
+		MaxSignedAge: 5 * time.Minute, // the freshness window
+	})
+}
+
+func redeemTransaction(verifier *applereceipt.JWSVerifier, userID, jws string) string {
+	payload, err := verifier.VerifyTransaction(jws) // step 2
+	if err != nil {
+		var verr *applereceipt.VerificationError
+		if errors.As(err, &verr) && verr.Reason == applereceipt.ReasonStalePayload {
+			// step 4: ask the client for a fresh jwsRepresentation, or fetch
+			// one from the App Store Server API and verify that instead
+			return "refresh"
+		}
+		log.Printf("purchase rejected: %v", err)
+		return "denied"
+	}
+
+	if payload.RevocationDate != nil { // step 3
+		return "denied"
+	}
+
+	if grants.Exists(payload.TransactionID) { // step 5
+		return "denied"
+	}
+	grants.Record(payload.TransactionID, payload.OriginalTransactionID, userID)
+
+	grant(userID, payload.ProductID)
+	return "granted"
+}
+```
+
+The legacy PKCS#7 app receipt is the same policy on the other input, the one
+StoreKit 1 apps and older SDKs still send:
+
+```go
+func newReceiptVerifier() (*applereceipt.ReceiptVerifier, error) {
+	return applereceipt.NewReceiptVerifier(applereceipt.ReceiptVerifierOptions{
+		TrustedRoots: applereceipt.AppleReceiptRoots(),
+		BundleID:     "com.example.app",
+	})
+}
+
+// Same policy keyed on the receipt's own dates. VerifyBase64 takes the string
+// the client sends; VerifyReceiptEndpoint is the alternative, answering
+// Apple's verifyReceipt JSON shape with a status instead.
+func redeemReceipt(receipts *applereceipt.ReceiptVerifier, userID, receiptData, productID string) string {
+	receipt, err := receipts.VerifyBase64(receiptData) // step 2
+	if err != nil {
+		return "denied"
+	}
+	now := time.Now()
+	for _, purchase := range receipt.InAppPurchases {
+		if purchase.ProductID != productID {
+			continue
+		}
+		if purchase.CancellationDate != nil { // step 3
+			return "denied"
+		}
+		if purchase.ExpiresDate != nil && !purchase.ExpiresDate.After(now) {
+			return "denied"
+		}
+		// step 4: no MaxSignedAge here, so compare the creation date. Past the
+		// window, ask the client to refresh its receipt, or call the App Store
+		// Server API by TransactionID and verify the JWS it returns.
+		if receipt.CreationDate == nil || now.Sub(*receipt.CreationDate) > 5*time.Minute {
+			return "refresh"
+		}
+		if grants.Exists(purchase.TransactionID) { // step 5
+			return "denied"
+		}
+		grants.Record(purchase.TransactionID, purchase.OriginalTransactionID, userID)
+
+		grant(userID, purchase.ProductID)
+		return "granted"
+	}
+	return "denied"
+}
+```
+
 ## Trust model
 
 - **Pinned anchors only.** Trust comes from the `TrustedRoots` you pass.

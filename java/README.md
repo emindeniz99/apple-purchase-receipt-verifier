@@ -262,6 +262,117 @@ about the deployment, not about any payload, so it is not a `Reason` either.
 `TransactionPayload.isActiveAt(null)` throws `NullPointerException` for the
 same kind of reason: it is a call that was never made correctly.
 
+## Integrating: from verified payload to entitlement
+
+The backend flow these calls sit inside is written out once in the
+[project README](../README.md#integrating-from-verified-payload-to-entitlement):
+verify offline, deny on any failure, check the refund field, refresh a payload
+past the freshness window, guard against replay on the transaction id, then
+grant. That section also carries the policy table saying what each reason
+means and which ones are worth an alert. Here are its two branches in this
+port's API.
+
+A StoreKit 2 signed transaction:
+
+```java
+import io.github.emindeniz99.applepurchasereceiptverifier.AppleRootCerts;
+import io.github.emindeniz99.applepurchasereceiptverifier.Environment;
+import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
+import io.github.emindeniz99.applepurchasereceiptverifier.jws.JwsVerifier;
+import io.github.emindeniz99.applepurchasereceiptverifier.jws.TransactionPayload;
+import java.util.EnumSet;
+
+public class Redeem {
+    private final JwsVerifier verifier = new JwsVerifier(
+            AppleRootCerts.jwsRoots(),
+            "com.example.app",
+            EnumSet.of(Environment.PRODUCTION, Environment.SANDBOX),
+            null,          // appAppleId: only AppTransactions need it
+            300_000L);     // maxSignedAge, milliseconds: the freshness window
+
+    public String redeemTransaction(String userId, String jws) {
+        TransactionPayload payload;
+        try {
+            payload = verifier.verifyTransaction(jws);              // step 2
+        } catch (VerificationException e) {
+            if (e.reason() == VerificationException.Reason.STALE_PAYLOAD) {
+                // step 4: ask the client for a fresh jwsRepresentation, or
+                // fetch one from the App Store Server API and verify that
+                return "refresh";
+            }
+            log.warn("purchase rejected: {}", e.reason());
+            return "denied";
+        }
+
+        if (payload.revocationDate() != null) {                     // step 3
+            return "denied";
+        }
+
+        String id = payload.transactionId();                        // step 5
+        if (grants.exists(id)) {
+            return "denied";
+        }
+        grants.record(id, payload.originalTransactionId(), userId);
+
+        grant(userId, payload.productId());
+        return "granted";
+    }
+}
+```
+
+The legacy PKCS#7 app receipt is the same policy on the other input, the one
+StoreKit 1 apps and older SDKs still send:
+
+```java
+import io.github.emindeniz99.applepurchasereceiptverifier.AppleRootCerts;
+import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
+import io.github.emindeniz99.applepurchasereceiptverifier.receipt.AppReceipt;
+import io.github.emindeniz99.applepurchasereceiptverifier.receipt.InAppPurchase;
+import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifier;
+import java.time.Duration;
+import java.time.Instant;
+
+public class RedeemReceipt {
+    private static final Duration WINDOW = Duration.ofMinutes(5);
+
+    private final ReceiptVerifier receipts =
+            new ReceiptVerifier(AppleRootCerts.receiptRoots(), "com.example.app");
+
+    public String redeemReceipt(String userId, String receiptData, String productId)
+            throws VerificationException {
+        AppReceipt receipt = receipts.verify(receiptData);              // step 2
+        Instant now = Instant.now();
+
+        for (InAppPurchase purchase : receipt.inAppPurchases()) {
+            if (!productId.equals(purchase.productId())) {
+                continue;
+            }
+            if (purchase.cancellationDate() != null) {                  // step 3
+                return "denied";
+            }
+            if (purchase.expiresDate() != null && !purchase.expiresDate().isAfter(now)) {
+                return "denied";
+            }
+            // step 4: no maxSignedAge here, so compare the creation date. Past
+            // the window, ask the client to refresh its receipt, or call the
+            // App Store Server API by transactionId and verify the JWS back.
+            if (receipt.creationDate() == null
+                    || Duration.between(receipt.creationDate(), now).compareTo(WINDOW) > 0) {
+                return "refresh";
+            }
+            if (grants.exists(purchase.transactionId())) {              // step 5
+                return "denied";
+            }
+            grants.record(purchase.transactionId(), purchase.originalTransactionId(), userId);
+
+            grant(userId, purchase.productId());
+            return "granted";
+        }
+        return "denied";
+    }
+}
+```
+
 ## Kotlin and null-safety
 
 Every public package carries JSpecify's `@NullMarked`, so each type in the

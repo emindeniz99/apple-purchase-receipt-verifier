@@ -188,6 +188,84 @@ Nothing else escapes an entry point. Containment is categorical, and it
 explicitly covers `SystemStackError`, which is not a `StandardError` and would
 otherwise walk through your `rescue` and take the request with it.
 
+## Integrating: from verified payload to entitlement
+
+The backend flow these calls sit inside is written out once in the
+[project README](https://github.com/emindeniz99/apple-purchase-receipt-verifier#integrating-from-verified-payload-to-entitlement):
+verify offline, deny on any failure, check the refund field, refresh a payload
+past the freshness window, guard against replay on the transaction id, then
+grant. That section also carries the policy table saying what each reason
+means and which ones are worth an alert. Here are its two branches in this
+port's API.
+
+A StoreKit 2 signed transaction:
+
+```ruby
+APRV = ApplePurchaseReceiptVerifier
+
+VERIFIER = APRV::JwsVerifier.new(
+  trusted_roots: APRV.apple_jws_roots,
+  bundle_id: "com.example.app",
+  accepted_environments: [APRV::Environment::PRODUCTION, APRV::Environment::SANDBOX],
+  max_signed_age_seconds: 300 # the freshness window
+)
+
+def redeem_transaction(user_id, jws)
+  begin
+    payload = VERIFIER.verify_transaction(jws) # step 2
+  rescue APRV::VerificationError => e
+    # step 4: ask the client for a fresh jwsRepresentation, or fetch one from
+    # the App Store Server API and verify that instead
+    return :refresh if e.reason == APRV::Reason::STALE_PAYLOAD
+
+    logger.warn("purchase rejected: #{e.reason}")
+    return :denied
+  end
+
+  return :denied if payload.revocation_date # step 3
+
+  transaction_id = payload.transaction_id # step 5
+  return :denied if Grants.exists?(transaction_id)
+
+  Grants.record(transaction_id, payload.original_transaction_id, user_id)
+  grant(user_id, payload.product_id)
+  :granted
+end
+```
+
+The legacy PKCS#7 app receipt is the same policy on the other input, the one
+StoreKit 1 apps and older SDKs still send:
+
+```ruby
+RECEIPTS = APRV::ReceiptVerifier.new(
+  trusted_roots: APRV.apple_receipt_roots,
+  bundle_id: "com.example.app"
+)
+
+# Same policy keyed on the receipt's own dates. `verify` takes the base64 the
+# client sends or the DER bytes; VerifyReceiptEndpoint is the alternative,
+# answering Apple's `verifyReceipt` JSON shape with a `status` instead.
+def redeem_receipt(user_id, receipt_data, product_id)
+  receipt = RECEIPTS.verify_base64(receipt_data) # step 2
+  now = Time.now.utc
+  purchase = receipt.in_app_purchases.find { |p| p.product_id == product_id }
+
+  return :denied if purchase.nil? || purchase.cancellation_date # step 3
+  return :denied if purchase.expires_date && purchase.expires_date <= now
+
+  # step 4: no max_signed_age_seconds here, so compare the creation date. Past
+  # the window, ask the client to refresh its receipt, or call the App Store
+  # Server API by transaction_id and verify the JWS it returns.
+  return :refresh if receipt.creation_date.nil? || now - receipt.creation_date > 300
+
+  return :denied if Grants.exists?(purchase.transaction_id) # step 5
+
+  Grants.record(purchase.transaction_id, purchase.original_transaction_id, user_id)
+  grant(user_id, purchase.product_id)
+  :granted
+end
+```
+
 ## Time
 
 Certificate validity is judged at the instant Apple signed, not now — so a
