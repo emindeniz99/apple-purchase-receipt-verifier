@@ -10,7 +10,14 @@ human-facing version; where they overlap, they agree.
   `fixtures`, `certs`, `ci`, `release`, `docs`, `repo`.
 - Imperative subject, lowercase, ≤72 chars for the whole header. Body explains
   *why*, wrapped at 72.
-- Add a `Co-Authored-By:` trailer naming the assistant and model.
+- Commit as the identity that owns the signing key, so the commit shows
+  Verified, and name the other party in a `Co-Authored-By:` trailer. In a
+  cloud session (Claude Code on the web) the key belongs to the `claude`
+  GitHub account: commit as `Claude <noreply@anthropic.com>`, never as the
+  owner, and check `git config user.email` first because a fresh clone can
+  arrive with the owner's email set. In a local session the key is the
+  owner's: keep the owner's identity and credit the assistant and model in
+  the trailer.
 - Merge PRs with a **real merge commit** (`merge_method: "merge"`, locally
   `git merge --no-ff`). Never squash, never rebase-merge — squash/rebase are
   disabled in repo settings; do not re-enable them.
