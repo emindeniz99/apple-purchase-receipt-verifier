@@ -1,0 +1,78 @@
+# cbindgen configuration for include/apple_purchase_receipt_verifier.h.
+#
+# The header is generated, committed, and checked: CI regenerates it and
+# fails on any diff, the same guard the generated roots files elsewhere in
+# this repository get. Regenerate with
+#
+#   cbindgen --config cbindgen.toml --crate apple-purchase-receipt-verifier-ffi \
+#            --output include/apple_purchase_receipt_verifier.h
+#
+# Pin the cbindgen version to the one CI installs (rust/ffi/README.md), or
+# the drift check will fail on formatting alone.
+
+language = "C"
+cpp_compat = true
+pragma_once = false
+include_guard = "APPLE_PURCHASE_RECEIPT_VERIFIER_H"
+documentation = true
+documentation_style = "c99"
+style = "type"
+tab_width = 2
+line_length = 78
+sys_includes = ["stdbool.h", "stddef.h", "stdint.h"]
+no_includes = true
+# usize is size_t, not uintptr_t: these are byte counts, not addresses.
+usize_is_size_t = true
+
+header = """
+/*
+ * apple-purchase-receipt-verifier — the C ABI.
+ *
+ * GENERATED FILE. Do not edit by hand: it is produced from rust/ffi/src/lib.rs
+ * by cbindgen, committed, and re-generated in CI, which fails on any diff.
+ *
+ * Offline verification of Apple App Store JWS payloads and legacy PKCS#7 app
+ * receipts against pinned Apple roots. Nothing here reads an operating-system
+ * trust store and nothing here touches the network.
+ *
+ * OWNERSHIP, in one place:
+ *
+ *   - aprv_version() returns a static string. Never free it.
+ *   - Every aprv_*_new*() returns a handle the caller owns, or NULL if an
+ *     argument was rejected. Release it with the matching aprv_*_free().
+ *     Freeing NULL is a no-op; freeing twice is undefined behaviour.
+ *   - AprvResult.json and the *response_json of the endpoint call are owned
+ *     by the caller. Release each with aprv_string_free() — never with the C
+ *     runtime's free(), because the allocator is Rust's.
+ *   - Every input pointer is borrowed for the duration of the call only.
+ *     Nothing retains it, and nothing is written through it.
+ *
+ * THREADING: a handle is immutable once built. Any number of threads may
+ * verify through the same handle concurrently; freeing one while a call is
+ * in flight is not allowed.
+ *
+ * ERRORS: a NULL pointer, a non-UTF-8 string or a rejected configuration is
+ * reported in the 100+ band of AprvReason and means nothing about the input
+ * was checked. The 1..11 band is a verdict about the input. Never conflate
+ * the two.
+ *
+ * JSON is the interchange because a verified payload is an open-ended claim
+ * set that Apple extends at will; modelling it as C structs would make every
+ * field Apple adds a breaking ABI change.
+ */
+"""
+
+[export]
+prefix = ""
+# Neither enum appears in a signature — `status` is an int32_t and the
+# environment mask a uint32_t, because a C enum has no guaranteed width and
+# a bitmask of enum values is not itself a value of that enum. cbindgen
+# emits only what a signature reaches, so both are named here explicitly.
+include = ["AprvReason", "AprvEnvironment"]
+
+[enum]
+prefix_with_name = true
+rename_variants = "ScreamingSnakeCase"
+
+[parse]
+parse_deps = false

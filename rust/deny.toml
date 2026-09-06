@@ -14,6 +14,12 @@ all-features = true
 [bans]
 multiple-versions = "allow"
 wildcards = "deny"
+# `ffi/` depends on this crate by path with no version requirement, which is
+# what an unpublished sibling crate does and what cargo-deny counts as a
+# wildcard. The rule above still applies to every registry dependency, which
+# is where a wildcard would actually be dangerous: a path dependency resolves
+# to the tree in front of you, not to whatever crates.io serves next.
+allow-wildcard-paths = true
 
 deny = [
     # System trust stores.
