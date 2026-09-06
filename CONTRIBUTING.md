@@ -214,7 +214,8 @@ Fully automated — do not publish from a laptop:
 
 1. Conventional Commits on `main` → release-please opens/updates a release PR
    (one version for every language; extra-files bump every manifest that
-   carries a version string).
+   carries a version string, and a step in the same workflow regenerates
+   the three lockfiles that carry it too).
 2. Merging that PR creates the tag + GitHub Release, and the workflow
    dispatches `release.yml` at the tag.
 3. `release.yml` publishes to npm (OIDC), PyPI (OIDC), RubyGems (OIDC),
