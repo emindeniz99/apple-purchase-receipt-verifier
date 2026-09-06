@@ -38,8 +38,8 @@ Synchronous, `#![forbid(unsafe_code)]`, Rust 1.74 or newer.
 ## Runtime and version floor
 
 - **Rust 1.74.0**, declared as `rust-version` and proven by CI: the whole
-  suite, conformance included, runs on a real 1.74.0 toolchain against a
-  lockfile resolved for that floor. Edition 2021.
+  suite, conformance included, runs on a real 1.74.0 toolchain against
+  `Cargo.lock`, which is committed and resolved for that floor. Edition 2021.
 - **Eight direct dependencies**, all of them primitives: `rsa`, `p256`,
   `p384`, `sha1`, `sha2`, `digest` and `subtle` for the arithmetic, and
   `serde_json` for the JWS payloads, which are JSON. Every byte of
@@ -347,6 +347,18 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo fmt --check
 cargo deny check
 ```
+
+`Cargo.lock` is committed, which is unusual for a library and deliberate here:
+CI runs every leg with `--locked` so a hijacked release cannot reach a runner
+before the seven-day dependabot cooldown has looked at it. The file has to
+stay resolvable on the 1.74.0 floor, so regenerate it with a modern cargo and
+the MSRV-aware resolver rather than with `cargo update`:
+
+```bash
+CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback cargo +stable generate-lockfile
+```
+
+A consumer's build ignores this file; it constrains only this repository.
 
 `tests/conformance.rs` runs `fixtures/cases.json`, the normative
 cross-language vector file every port of this library answers, as one named
