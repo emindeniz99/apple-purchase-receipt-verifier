@@ -41,10 +41,14 @@
     </dependencies>
   </dependencyManagement>
   <dependencies>
-    <!-- starter-web brings Jackson 3 and the MVC stack, the shape of a real service. -->
+    <!-- The Jackson starter puts Jackson 3 on the classpath next to the
+         library's Jackson 2, which is the condition under test. Not
+         starter-web: the sample never serves HTTP, and the embedded Tomcat
+         it would pull in carries its own CVE history that a smoke test for
+         a receipt verifier has no reason to inherit. -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-web</artifactId>
+      <artifactId>spring-boot-starter-jackson</artifactId>
     </dependency>
     <dependency>
       <groupId>io.github.emindeniz99</groupId>
