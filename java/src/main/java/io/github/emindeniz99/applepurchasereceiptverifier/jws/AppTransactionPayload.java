@@ -3,6 +3,7 @@ package io.github.emindeniz99.applepurchasereceiptverifier.jws;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Decoded {@code AppTransaction} payload (StoreKit 2, iOS 16+): app-level
@@ -16,33 +17,33 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public final class AppTransactionPayload {
 
-    private final Long appAppleId;
-    private final String appTransactionId;
-    private final String applicationVersion;
-    private final String bundleId;
-    private final String deviceVerification;
-    private final String deviceVerificationNonce;
-    private final String originalApplicationVersion;
-    private final Long originalPurchaseDate;
-    private final Long preorderDate;
-    private final Long receiptCreationDate;
-    private final String receiptType;
-    private final Long versionExternalIdentifier;
+    private final @Nullable Long appAppleId;
+    private final @Nullable String appTransactionId;
+    private final @Nullable String applicationVersion;
+    private final @Nullable String bundleId;
+    private final @Nullable String deviceVerification;
+    private final @Nullable String deviceVerificationNonce;
+    private final @Nullable String originalApplicationVersion;
+    private final @Nullable Long originalPurchaseDate;
+    private final @Nullable Long preorderDate;
+    private final @Nullable Long receiptCreationDate;
+    private final @Nullable String receiptType;
+    private final @Nullable Long versionExternalIdentifier;
 
     @JsonCreator
     AppTransactionPayload(
-            @JsonProperty("appAppleId") Long appAppleId,
-            @JsonProperty("appTransactionId") String appTransactionId,
-            @JsonProperty("applicationVersion") String applicationVersion,
-            @JsonProperty("bundleId") String bundleId,
-            @JsonProperty("deviceVerification") String deviceVerification,
-            @JsonProperty("deviceVerificationNonce") String deviceVerificationNonce,
-            @JsonProperty("originalApplicationVersion") String originalApplicationVersion,
-            @JsonProperty("originalPurchaseDate") Long originalPurchaseDate,
-            @JsonProperty("preorderDate") Long preorderDate,
-            @JsonProperty("receiptCreationDate") Long receiptCreationDate,
-            @JsonProperty("receiptType") String receiptType,
-            @JsonProperty("versionExternalIdentifier") Long versionExternalIdentifier) {
+            @JsonProperty("appAppleId") @Nullable Long appAppleId,
+            @JsonProperty("appTransactionId") @Nullable String appTransactionId,
+            @JsonProperty("applicationVersion") @Nullable String applicationVersion,
+            @JsonProperty("bundleId") @Nullable String bundleId,
+            @JsonProperty("deviceVerification") @Nullable String deviceVerification,
+            @JsonProperty("deviceVerificationNonce") @Nullable String deviceVerificationNonce,
+            @JsonProperty("originalApplicationVersion") @Nullable String originalApplicationVersion,
+            @JsonProperty("originalPurchaseDate") @Nullable Long originalPurchaseDate,
+            @JsonProperty("preorderDate") @Nullable Long preorderDate,
+            @JsonProperty("receiptCreationDate") @Nullable Long receiptCreationDate,
+            @JsonProperty("receiptType") @Nullable String receiptType,
+            @JsonProperty("versionExternalIdentifier") @Nullable Long versionExternalIdentifier) {
         this.appAppleId = appAppleId;
         this.appTransactionId = appTransactionId;
         this.applicationVersion = applicationVersion;
@@ -57,52 +58,52 @@ public final class AppTransactionPayload {
         this.versionExternalIdentifier = versionExternalIdentifier;
     }
 
-    public Long appAppleId() {
+    public @Nullable Long appAppleId() {
         return appAppleId;
     }
 
-    public String appTransactionId() {
+    public @Nullable String appTransactionId() {
         return appTransactionId;
     }
 
-    public String applicationVersion() {
+    public @Nullable String applicationVersion() {
         return applicationVersion;
     }
 
-    public String bundleId() {
+    public @Nullable String bundleId() {
         return bundleId;
     }
 
-    public String deviceVerification() {
+    public @Nullable String deviceVerification() {
         return deviceVerification;
     }
 
-    public String deviceVerificationNonce() {
+    public @Nullable String deviceVerificationNonce() {
         return deviceVerificationNonce;
     }
 
-    public String originalApplicationVersion() {
+    public @Nullable String originalApplicationVersion() {
         return originalApplicationVersion;
     }
 
-    public Long originalPurchaseDate() {
+    public @Nullable Long originalPurchaseDate() {
         return originalPurchaseDate;
     }
 
-    public Long preorderDate() {
+    public @Nullable Long preorderDate() {
         return preorderDate;
     }
 
-    public Long receiptCreationDate() {
+    public @Nullable Long receiptCreationDate() {
         return receiptCreationDate;
     }
 
     /** The environment claim of an AppTransaction (e.g. {@code "Production"}). */
-    public String receiptType() {
+    public @Nullable String receiptType() {
         return receiptType;
     }
 
-    public Long versionExternalIdentifier() {
+    public @Nullable Long versionExternalIdentifier() {
         return versionExternalIdentifier;
     }
 }

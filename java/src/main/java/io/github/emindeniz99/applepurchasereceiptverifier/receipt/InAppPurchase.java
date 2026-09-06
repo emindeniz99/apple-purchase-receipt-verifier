@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.jspecify.annotations.Nullable;
 
 /**
  * One in-app purchase from a legacy app receipt (attribute 17). Field set
@@ -14,29 +15,29 @@ import java.util.Map;
  */
 public final class InAppPurchase {
 
-    private final Long quantity;
-    private final String productId;
-    private final String transactionId;
-    private final String originalTransactionId;
-    private final Instant purchaseDate;
-    private final Instant originalPurchaseDate;
-    private final Instant expiresDate;
-    private final Instant cancellationDate;
-    private final Long webOrderLineItemId;
-    private final Long isInIntroOfferPeriod;
+    private final @Nullable Long quantity;
+    private final @Nullable String productId;
+    private final @Nullable String transactionId;
+    private final @Nullable String originalTransactionId;
+    private final @Nullable Instant purchaseDate;
+    private final @Nullable Instant originalPurchaseDate;
+    private final @Nullable Instant expiresDate;
+    private final @Nullable Instant cancellationDate;
+    private final @Nullable Long webOrderLineItemId;
+    private final @Nullable Long isInIntroOfferPeriod;
     private final Map<Integer, List<byte[]>> unknownAttributes;
 
     InAppPurchase(
-            Long quantity,
-            String productId,
-            String transactionId,
-            String originalTransactionId,
-            Instant purchaseDate,
-            Instant originalPurchaseDate,
-            Instant expiresDate,
-            Instant cancellationDate,
-            Long webOrderLineItemId,
-            Long isInIntroOfferPeriod,
+            @Nullable Long quantity,
+            @Nullable String productId,
+            @Nullable String transactionId,
+            @Nullable String originalTransactionId,
+            @Nullable Instant purchaseDate,
+            @Nullable Instant originalPurchaseDate,
+            @Nullable Instant expiresDate,
+            @Nullable Instant cancellationDate,
+            @Nullable Long webOrderLineItemId,
+            @Nullable Long isInIntroOfferPeriod,
             Map<Integer, List<byte[]>> unknownAttributes) {
         this.quantity = quantity;
         this.productId = productId;
@@ -51,45 +52,45 @@ public final class InAppPurchase {
         this.unknownAttributes = Collections.unmodifiableMap(unknownAttributes);
     }
 
-    public Long quantity() {
+    public @Nullable Long quantity() {
         return quantity;
     }
 
-    public String productId() {
+    public @Nullable String productId() {
         return productId;
     }
 
-    public String transactionId() {
+    public @Nullable String transactionId() {
         return transactionId;
     }
 
-    public String originalTransactionId() {
+    public @Nullable String originalTransactionId() {
         return originalTransactionId;
     }
 
-    public Instant purchaseDate() {
+    public @Nullable Instant purchaseDate() {
         return purchaseDate;
     }
 
-    public Instant originalPurchaseDate() {
+    public @Nullable Instant originalPurchaseDate() {
         return originalPurchaseDate;
     }
 
     /** Subscription expiration (attribute 1708), if this is a subscription. */
-    public Instant expiresDate() {
+    public @Nullable Instant expiresDate() {
         return expiresDate;
     }
 
     /** Set when Apple customer support cancelled/refunded (attribute 1712). */
-    public Instant cancellationDate() {
+    public @Nullable Instant cancellationDate() {
         return cancellationDate;
     }
 
-    public Long webOrderLineItemId() {
+    public @Nullable Long webOrderLineItemId() {
         return webOrderLineItemId;
     }
 
-    public Long isInIntroOfferPeriod() {
+    public @Nullable Long isInIntroOfferPeriod() {
         return isInIntroOfferPeriod;
     }
 
