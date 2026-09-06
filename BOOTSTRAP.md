@@ -5,10 +5,26 @@ ones whose registries are already set up; the steps below are the ones that
 need the account owner, a browser session, or a 2FA code, and therefore cannot
 be automated or run by an agent.
 
-Each section is independent. Do a section completely before the next release
-pull request is merged, because `release.yml` runs every publish job on every
-tag — a registry that is half-configured fails the tag run rather than being
-skipped.
+Each section is independent, and an unstarted one no longer breaks a release.
+Each of the three publish jobs below asks its registry whether the package
+exists at all — RubyGems `/api/v1/gems/<name>.json`, crates.io
+`/api/v1/crates/<name>`, NuGet's flat container `index.json` — and reads a 404
+as "this section has not been done yet": the job emits a `::notice::` naming
+the section, skips its publish steps and concludes success, and
+`post-publish-smoke.yml` is told to skip that registry's leg too. Anything
+other than 200 or 404 fails the job: an outage must not be mistaken for an
+unbootstrapped registry.
+
+RubyGems is the one that asks *after* trying rather than before, because a
+pending trusted publisher is meant to publish a gem that does not exist yet
+and a check beforehand would skip the very run it was created for.
+`publish-rubygems` always attempts OIDC and consults the lookup only if that
+fails: no gem and no credentials is an unfinished bootstrap, a gem that exists
+is a real authentication failure.
+
+A *half*-configured registry is still a failure, and deliberately so: once
+credentials are expected to work, an authentication error is a real one. So do
+a section completely rather than partly.
 
 Already bootstrapped, nothing to do: **npm**, **PyPI**, **Maven Central**.
 **SwiftPM** never needed a bootstrap; it consumes the git tag.
@@ -28,9 +44,9 @@ through `release.yml` with no manual `gem push`.
    - Repository name: `apple-purchase-receipt-verifier`
    - Workflow filename: `release.yml`
    - Environment: `rubygems`
-3. Merge the next release pull request. The `publish-rubygems` job builds the
-   gem, refuses to push one missing its entry points or `certs/`, and pushes
-   it.
+3. Merge the next release pull request — or re-run `release.yml` on the tag
+   that skipped. The `publish-rubygems` job builds the gem, refuses to push
+   one missing its entry points or `certs/`, and pushes it.
 4. Confirm the pending publisher became a normal one on the gem's "Trusted
    publishers" page, and that the account owns the gem:
 
@@ -44,6 +60,11 @@ through `release.yml` with no manual `gem push`.
    ```sh
    gem owner apple-purchase-receipt-verifier --otp <code>
    ```
+
+Should RubyGems ever drop pending publishers, the fallback is the shape the
+two sections below use: one manual `gem build` + `gem push` with an API key to
+create the gem, then a normal trusted publisher on the gem's own page, then
+revoke the key.
 
 Open question worth settling here rather than later: `apple_purchase_receipt_verifier`
 (underscored) is free today. RubyGems rejects names differing from an existing
