@@ -55,7 +55,7 @@ module ApplePurchaseReceiptVerifier
 
     # Defines a snake_case reader over a camelCase Apple claim.
     def self.claim(ruby_name, wire_name, kind)
-      define_method(ruby_name) { send(:"#{kind}_claim", wire_name) }
+      define_method(ruby_name) { send(:"#{kind}_claim", wire_name) } # steep:ignore NoMethod
     end
     private_class_method :claim
   end
@@ -68,12 +68,12 @@ module ApplePurchaseReceiptVerifier
        webOrderLineItemId subscriptionGroupIdentifier appAccountToken
        inAppOwnershipType type transactionReason storefront storefrontId
        currency offerIdentifier appTransactionId].each do |wire|
-      define_method(wire.gsub(/([a-z\d])([A-Z])/, '\1_\2').downcase) { string_claim(wire) }
+      define_method(wire.gsub(/([a-z\d])([A-Z])/, '\1_\2').downcase) { string_claim(wire) } # steep:ignore
     end
 
     %w[signedDate purchaseDate originalPurchaseDate expiresDate revocationDate
        quantity offerType revocationReason].each do |wire|
-      define_method(wire.gsub(/([a-z\d])([A-Z])/, '\1_\2').downcase) { integer_claim(wire) }
+      define_method(wire.gsub(/([a-z\d])([A-Z])/, '\1_\2').downcase) { integer_claim(wire) } # steep:ignore
     end
 
     # @return [Numeric, nil] Apple ships this in milli-units of the currency
@@ -105,12 +105,12 @@ module ApplePurchaseReceiptVerifier
   class AppTransactionPayload < Payload
     %w[bundleId receiptType applicationVersion originalApplicationVersion
        deviceVerification deviceVerificationNonce appTransactionId].each do |wire|
-      define_method(wire.gsub(/([a-z\d])([A-Z])/, '\1_\2').downcase) { string_claim(wire) }
+      define_method(wire.gsub(/([a-z\d])([A-Z])/, '\1_\2').downcase) { string_claim(wire) } # steep:ignore
     end
 
     %w[appAppleId receiptCreationDate originalPurchaseDate preorderDate
        versionExternalIdentifier].each do |wire|
-      define_method(wire.gsub(/([a-z\d])([A-Z])/, '\1_\2').downcase) { integer_claim(wire) }
+      define_method(wire.gsub(/([a-z\d])([A-Z])/, '\1_\2').downcase) { integer_claim(wire) } # steep:ignore
     end
   end
 end

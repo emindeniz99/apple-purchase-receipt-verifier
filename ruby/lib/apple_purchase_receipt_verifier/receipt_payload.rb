@@ -121,9 +121,9 @@ module ApplePurchaseReceiptVerifier
           receipt_type: nil, bundle_id: nil, bundle_id_bytes: nil, app_version: nil,
           opaque_value: nil, sha1_hash: nil, creation_date: nil, original_purchase_date: nil,
           original_app_version: nil, expiration_date: nil
-        }
-        purchases = []
-        unknown = {}
+        } #: Hash[Symbol, untyped]
+        purchases = [] #: Array[InAppPurchase]
+        unknown = {} #: Hash[Integer, Array[String]]
 
         each_attribute(content, "receipt payload") do |type, value|
           case type
@@ -155,8 +155,8 @@ module ApplePurchaseReceiptVerifier
           quantity: nil, product_id: nil, transaction_id: nil, original_transaction_id: nil,
           purchase_date: nil, original_purchase_date: nil, expires_date: nil,
           cancellation_date: nil, web_order_line_item_id: nil, is_in_intro_offer_period: nil
-        }
-        unknown = {}
+        } #: Hash[Symbol, untyped]
+        unknown = {} #: Hash[Integer, Array[String]]
 
         each_attribute(bytes, "in-app purchase attribute") do |type, value|
           case type
@@ -207,7 +207,7 @@ module ApplePurchaseReceiptVerifier
                     bytes.byteslice(start, finish - start)
                   else
                     ber_octets(bytes, what)
-                  end
+                  end #: String
           tag, start, finish = outer(bytes, what)
         end
 
@@ -240,10 +240,11 @@ module ApplePurchaseReceiptVerifier
               # it: `position`/`after` bound the SEQUENCE, and handing those to
               # `ber_octets` made this branch reject every input it exists to
               # accept, with a message naming the wrong object.
-              ber_octets(bytes.byteslice(cursor, value_end - cursor), "receipt attribute value")
-            end
+              ber_octets(bytes.byteslice(cursor, value_end - cursor), # steep:ignore ArgumentTypeMismatch
+                         "receipt attribute value")
+            end #: String
 
-          yield attribute_type(bytes.byteslice(type_start, type_end - type_start)), value
+          yield attribute_type(bytes.byteslice(type_start, type_end - type_start)), value # steep:ignore
           position = after
         end
       end
@@ -262,11 +263,11 @@ module ApplePurchaseReceiptVerifier
       def header(bytes, offset, limit, what)
         raise format_error("truncated #{what}") if offset + 2 > limit
 
-        tag = bytes.getbyte(offset)
+        tag = bytes.getbyte(offset) #: Integer
         raise format_error("multi-byte ASN.1 tag in #{what}") if (tag & 0x1F) == 0x1F
 
         position = offset + 1
-        length_byte = bytes.getbyte(position)
+        length_byte = bytes.getbyte(position) #: Integer
         position += 1
         if length_byte == 0x80
           raise format_error("indefinite length in #{what}")
@@ -279,7 +280,7 @@ module ApplePurchaseReceiptVerifier
 
           length = 0
           count.times do
-            length = (length << 8) | bytes.getbyte(position)
+            length = (length << 8) | bytes.getbyte(position) # steep:ignore ArgumentTypeMismatch
             position += 1
           end
         end
@@ -312,7 +313,7 @@ module ApplePurchaseReceiptVerifier
       def integer_value(raw)
         raise format_error("attribute integer out of range") if raw.bytesize > 8
         raise format_error("empty receipt integer") if raw.empty?
-        raise format_error("negative receipt integer") if raw.getbyte(0) >= 0x80
+        raise format_error("negative receipt integer") if raw.getbyte(0) >= 0x80 # steep:ignore NoMethod
 
         value = 0
         raw.each_byte { |byte| value = (value << 8) | byte }
@@ -366,10 +367,10 @@ module ApplePurchaseReceiptVerifier
         # minute, which is the one answer no other port gives. This is the
         # instant the chain's validity is judged at, so it is refused rather
         # than repaired.
-        raise format_error("unparseable receipt date") if second > 59
+        raise format_error("unparseable receipt date") if second > 59 # steep:ignore NoMethod
 
         begin
-          time = Time.utc(year, month, day, hour, minute, second,
+          time = Time.utc(year, month, day, hour, minute, second, # steep:ignore ArgumentTypeMismatch
                           Rational(nanoseconds(match[7]), 1000))
         rescue ArgumentError, RangeError
           raise format_error("unparseable receipt date")
@@ -393,7 +394,7 @@ module ApplePurchaseReceiptVerifier
       def nanoseconds(fraction)
         return 0 if fraction.nil?
 
-        fraction.byteslice(1, NANOSECOND_DIGITS).ljust(NANOSECOND_DIGITS, "0").to_i
+        fraction.byteslice(1, NANOSECOND_DIGITS).ljust(NANOSECOND_DIGITS, "0").to_i # steep:ignore NoMethod
       end
 
       def format_error(message)

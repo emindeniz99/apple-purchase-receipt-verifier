@@ -46,6 +46,12 @@ Layout/LineLength:
   Exclude:
     - "test/api_shape_test.rb"
 
+# `x = expr #: Type` is Steep's inline type assertion, and the missing space
+# after the `#` is what makes it one. lib/ carries a handful of them where a
+# bounds check the type checker cannot follow proves a value is not nil.
+Layout/LeadingCommentSpace:
+  AllowRBSInlineAnnotation: true
+
 Style/Documentation:
   Enabled: false
 Style/StringLiterals:
