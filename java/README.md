@@ -32,8 +32,62 @@ System.out.println(transaction.productId() + " " + transaction.expiresDate());
 ```
 
 Java **8** is the compiled target (`maven.compiler.release=8`), built and
-tested with any modern JDK. Every entry point throws the checked
-`VerificationException`, never an unchecked one.
+tested with any modern JDK.
+
+Every verification entry point reports a rejected input as the checked
+`VerificationException` and nothing else, including on input built to exhaust
+memory: the size bounds under [Resource bounds](#resource-bounds) are what
+make that true rather than aspirational. Two failures are deliberately
+unchecked, because neither is a verdict about a payload: misconfiguration
+(`IllegalArgumentException` from a constructor, see [The error
+vocabulary](#the-error-vocabulary)) and bundled trust anchors that do not
+match their pinned fingerprints (`IllegalStateException` from
+`AppleRootCerts`, see [Trust anchors](#trust-anchors)).
+
+The version is `0.x` on Maven Central, so the API may still change between
+minor versions.
+
+## Dependencies and conflicts
+
+Two runtime dependencies, both compile-scope and both transitively pulled in
+by Maven:
+
+| Dependency | Jars it puts on the classpath | Size |
+|---|---|---|
+| `org.bouncycastle:bcpkix-jdk18on` | `bcpkix` 1.3 MB, `bcprov` 10.3 MB, `bcutil` 0.7 MB | 12.4 MB |
+| `com.fasterxml.jackson.core:jackson-databind` | `jackson-databind` 1.7 MB, `jackson-core` 0.6 MB, `jackson-annotations` 0.1 MB | 2.4 MB |
+
+Sizes are the jars at the versions this pom declares (BouncyCastle 1.85,
+Jackson 2.22.2); BouncyCastle is most of what depending on this library
+costs, and `bcprov` is most of BouncyCastle.
+
+**BouncyCastle line collision.** The `jdk18on` artifacts share every package
+name with the older `bcprov-jdk15on` and `bcprov-jdk15to18` lines but have
+different artifact ids, so Maven does not deduplicate them: a classpath that
+carries two of them resolves each BouncyCastle class from whichever jar comes
+first, which is a property of jar ordering rather than of any version
+declaration. Check before deploying:
+
+```bash
+mvn dependency:tree | grep -E 'bcprov-(jdk15on|jdk15to18)'
+```
+
+Nothing printed means the classpath carries one line. If another dependency
+brings an older line, exclude it there rather than downgrading this library:
+the `jdk15on` jars are no longer released.
+
+**Jackson floor: 2.16.** `JwsVerifier` and `VerifyReceiptEndpoint` state
+`StreamReadConstraints` on their mappers instead of relying on Jackson's
+defaults, because a JWS header is parsed before any signature check
+(see [Resource bounds](#resource-bounds)). `StreamReadConstraints` arrived in
+Jackson 2.15 and `maxDocumentLength` in 2.16, so on an older Jackson 2 the
+verifier fails at construction rather than running with guards it believes it
+set.
+
+Spring Boot 4.0.x pins Jackson 2 at 2.21.x through its BOM, which is above
+that floor, and Jackson 3 (`tools.jackson`) sits alongside Jackson 2 under a
+different package root, so an application on both is not a conflict. Verified
+with a Spring Boot 4.0.8 application in `samples/spring-boot-smoke`.
 
 ## The three JWS entry points
 
@@ -175,7 +229,7 @@ try {
 
 | `Reason` | Raised when |
 |---|---|
-| `INVALID_JWS_FORMAT` | not three dot-separated segments, a segment that is not a base64url-encoded JSON *object*, `alg != ES256`, or an `x5c` that is not exactly three entries |
+| `INVALID_JWS_FORMAT` | not three dot-separated segments, a segment that is not a base64url-encoded JSON *object*, `alg != ES256`, an `x5c` that is not exactly three entries, or a JWS over `MAX_JWS_BYTES` or nested past the reader limit |
 | `INVALID_CERTIFICATE` | an `x5c` entry does not decode to a parseable certificate. The base64 goes through `Base64.getMimeDecoder()`, which skips characters outside the alphabet, so a stray `!` inside an entry is dropped rather than refused — what is left has to fail to parse for this verdict |
 | `INVALID_CERTIFICATE_PURPOSE` | the leaf or intermediate lacks its Apple marker OID, or the receipt signer lacks its own |
 | `INVALID_CHAIN` | the path does not reach a pinned anchor, a certificate was not valid at the signing instant, or a receipt embeds more than ten certificates or a chain longer than six |
@@ -183,7 +237,7 @@ try {
 | `WRONG_BUNDLE_ID` | the verified payload or receipt names another bundle |
 | `WRONG_ENVIRONMENT` | the environment is outside the accepted set |
 | `WRONG_APP_APPLE_ID` | a Production `AppTransaction` does not name the configured app Apple id |
-| `INVALID_RECEIPT_FORMAT` | the PKCS#7/CMS blob does not parse, has trailing bytes, has no signer info, or an attribute is malformed |
+| `INVALID_RECEIPT_FORMAT` | the PKCS#7/CMS blob does not parse, has trailing bytes, has no signer info, an attribute is malformed, or the receipt is over `MAX_RECEIPT_BYTES` |
 | `DEVICE_HASH_MISMATCH` | the device hash does not match attribute 5, or the receipt lacks the attributes the check needs |
 | `STALE_PAYLOAD` | the payload was signed longer ago than `maxSignedAge` |
 
@@ -196,6 +250,13 @@ endpoint environment other than `PRODUCTION` or `SANDBOX` all throw
 `IllegalArgumentException` from the constructor. A programming mistake must
 not be catchable as a verification verdict.
 
+**Tampered trust anchors are a third.** `AppleRootCerts` throws
+`IllegalStateException` when a bundled root is missing or does not match its
+pinned SHA-256 (see [Trust anchors](#trust-anchors)). That is a statement
+about the deployment, not about any payload, so it is not a `Reason` either.
+`TransactionPayload.isActiveAt(null)` throws `NullPointerException` for the
+same kind of reason: it is a call that was never made correctly.
+
 ## Trust anchors
 
 `AppleRootCerts.jwsRoots()` and `.receiptRoots()` both return all three
@@ -205,10 +266,29 @@ in the jar. Apple deliberately documents the JWS chain as ending in "an
 Apple root certificate" rather than naming one, so narrowing either set
 would fail closed, silently, the day Apple re-anchored a path.
 
+**The anchors are fingerprint-pinned, and are loaded from this library's own
+package.** Each of the three certificates is checked against the SHA-256 of
+the root it must be, and a mismatch, a missing resource, or anything other
+than three distinct roots throws `IllegalStateException` from both accessors:
+they fail closed rather than return an anchor set that is not Apple's. Both
+halves matter. A classpath resource lookup is first-match, so before the
+resources moved under
+`io/github/emindeniz99/applepurchasereceiptverifier/certs/`, any earlier jar
+or shaded uber-jar carrying a `certs/` tree replaced the trust anchors with
+no error and no log line, and a receipt Apple never signed verified.
+
 Trust reaches this library through exactly the `trustedRoots` constructor
 argument, never through the JDK's own `cacerts` or a `TrustManagerFactory`
 default. `TrustStoreIsolationTest` (below) is what proves that, rather than
 only documenting it.
+
+**Certificate revocation is not checked**: no OCSP, no CRL
+(`setRevocationEnabled(false)` on both PKIX parameter objects). Offline
+verification is the point, and Apple handles a compromised signing
+certificate by rotating it. See
+[THREAT-MODEL.md](../THREAT-MODEL.md) section 4 for the rationale, and use
+the App Store Server API for refunds, revocations and subscription state,
+none of which a signature can express.
 
 ## Environment routing and staleness
 
@@ -259,9 +339,59 @@ hand-rolled one, so there is no depth or node-count knob to expose:
   §6.1.4), so the built path is measured again afterward against the
   six-certificate bound directly.
 
-Unlike the PHP and Rust ports, this library does not expose a configurable
-ceiling on decoded receipt size or ASN.1 node count; callers who need one
-should bound the input before it reaches `verify`.
+Three more bound the input itself, checked at every public entry point before
+anything is decoded. They are constants rather than constructor parameters:
+they exist to keep the `VerificationException` contract true on hostile
+input, not to be tuned per deployment.
+
+- **`ReceiptVerifier.MAX_RECEIPT_BYTES` (2 MiB)**, applied to the transport
+  string at `verify(String)` and to the DER at every entry point that takes
+  bytes, `verifyReceiptCore` included. The number is the PHP port's. It has
+  to clear the normative floor in `fixtures/cases.json`, which requires every
+  port to accept a well-formed receipt of up to 1 MiB of DER, whose base64 is
+  about 1.38 MB; the largest genuine receipt in the corpus is 79 KB.
+- **`JwsVerifier.MAX_JWS_BYTES` (256 KiB)**, applied to the compact JWS before
+  it is split. Also the PHP port's number: every JWS in the shared corpus,
+  Apple's own mock notification data included, is under 2.5 KB.
+- **`VerifyReceiptEndpoint.MAX_REQUEST_BYTES` (1 MiB)**, applied to the raw
+  body at `verifyReceiptJson`, which answers `{"status":21002}` for a larger
+  one. Deliberately below the receipt bound: the JSON entry point has a
+  parsing amplification the pre-decoded `verifyReceipt(Map)` entry point does
+  not.
+
+Over-limit input is `INVALID_RECEIPT_FORMAT` or `INVALID_JWS_FORMAT`, so no
+new reason enters the closed vocabulary. Without these bounds a 64 MB input
+under `-Xmx256m` left `verify` as an `OutOfMemoryError`, which is neither
+catchable as a verdict nor reportable as one.
+
+**JSON reader limits.** Both mappers state `StreamReadConstraints` explicitly:
+nesting depth 64, and string and document lengths matching the bounds above.
+A JWS header is attacker-controlled and is parsed before any signature check,
+and the depth guard behind that parse is a Jackson default, which a host BOM
+pinning an older Jackson 2 removes without a word. Hence the 2.16 floor under
+[Dependencies and conflicts](#dependencies-and-conflicts).
+
+## Thread safety
+
+`JwsVerifier`, `ReceiptVerifier` and `VerifyReceiptEndpoint` are immutable
+once constructed and are meant to be shared: build one of each at startup and
+hand it to every request, as a singleton Spring bean or its equivalent. Each
+holds only final fields, copies the anchor set at construction and never
+hands that copy out, keeps its per-call state in locals, and shares nothing
+else beyond a configured Jackson `ObjectMapper`, which Jackson documents as
+safe to use from many threads once it is configured.
+
+The objects they return are immutable too. `TransactionPayload` and
+`AppTransactionPayload` take their claims through a constructor rather than
+having Jackson write them into non-final fields afterwards, which is what
+makes a verified payload safe to publish to another thread. `AppReceipt` and
+`InAppPurchase` have final fields, and `AppReceipt` copies every array it
+exposes, so one reader cannot rewrite a verified attribute under another.
+
+`ConcurrencyTest` is what holds this rather than the paragraph above: sixteen
+threads, fifty iterations each, through `verify(String)`,
+`verifyReceipt(Map)`, `verifyReceiptJson(String)` and `verifyTransaction`,
+each answer compared to the answer a single thread gets.
 
 ## Testing
 
@@ -273,6 +403,13 @@ mvn spotless:check                                        # format/lint (not bou
 
 `ConformanceCasesTest` runs every case in `fixtures/cases.json`, the
 normative cross-language vector file every port of this library answers.
+
+`AppleRootCertsTest` pins the three bundled roots to their fingerprints and
+plants a directory of impostor `.cer` files ahead of the library on a class
+loader, showing the anchor load fails closed instead of returning them.
+`InputSizeBoundsTest` holds the bounds above, each over-limit input built so
+that it verifies or is refused differently without them.
+`ConcurrencyTest` runs the shared-instance claim across sixteen threads.
 
 `TrustStoreIsolationTest`
 (`src/test/java/.../TrustStoreIsolationTest.java`) asserts the trust-pinning
