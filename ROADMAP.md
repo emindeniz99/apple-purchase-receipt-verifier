@@ -79,10 +79,6 @@ Delete a line in the commit that ships it.
   engines floor to 22 is a semver-major decision, nothing in the code needs
   it yet. Revisit when @types/node's pin (see .github/dependabot.yml) starts
   blocking a needed update.
-- **Akamai EdgeWorkers**: the only runtime the README's WebCrypto list
-  rests on an argument rather than a run, because there is no local
-  runtime to run it in. Vercel Edge, Fastly Compute and flagless
-  Cloudflare Workers are all tested on every push.
 - **Post-publish smoke gaps that remain.** The Go, RubyGems, crates.io and
   NuGet legs are wired; only the Go one has ever run against a real registry,
   because the other three are unbootstrapped and their legs skip until they
