@@ -323,7 +323,7 @@ jobs:
         working-directory: rust
         run: |
           set -euo pipefail
-          cargo package --list > "$RUNNER_TEMP/crate-files.txt"
+          cargo package --locked --list > "$RUNNER_TEMP/crate-files.txt"
           for entry in src/lib.rs \
                        certs/AppleIncRootCertificate.cer \
                        certs/AppleRootCA-G2.cer \
@@ -339,7 +339,10 @@ jobs:
         if: steps.gate.outputs.publish == 'true'
         id: auth
 
-      - run: cargo publish
+      # --locked: publish the dependency graph CI tested, and fail if
+      # rust/Cargo.lock is stale rather than resolving something new at the
+      # one moment that cannot be undone (a crates.io version is forever).
+      - run: cargo publish --locked
         if: steps.gate.outputs.publish == 'true'
         working-directory: rust
         env:
