@@ -14,7 +14,8 @@ Delete a line in the commit that ships it.
 2. **Release**: approve the held release-please run (first-time
    contributor gate; owner-only), register the signing key on GitHub,
    enforce branch protection for admins, bootstrap RubyGems, crates.io,
-   NuGet and the Go proxy, and decide the PHP Packagist layout.
+   NuGet and the Go proxy, and submit the repository to Packagist
+   (the root manifest is landed; see BOOTSTRAP.md).
 
 ## Next
 
@@ -46,10 +47,9 @@ Delete a line in the commit that ships it.
 - **No branch protection in practice.** main reports protected, yet an
   admin push lands directly, so either the pull-request requirement or
   admin enforcement is off. There is no CODEOWNERS. Commits are
-  SSH-signed by the assistant environment's key (verified with git
-  cat-file); GitHub shows them Verified once that key is registered as a
-  signing key on the owner's account. Most commits are authored by the
-  assistant rather than co-authored by it.
+  SSH-signed by the assistant environment's key, which belongs to the
+  `claude` GitHub account, so they show Verified when authored as that
+  account; CLAUDE.md records the rule (2026-09-06).
 - **`asn1crypto` is kept by owner decision (PLAN.md D16)**: last release
   1.5.1 in 2022, about 155M downloads a month. Pin the tested range; the
   python fuzz target runs through it.
