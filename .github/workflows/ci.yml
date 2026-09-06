@@ -234,14 +234,21 @@ jobs:
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           python-version: ${{ matrix.python }}
-      # --no-project on purpose: this job tests the SOURCE TREE against the
-      # two runtime dependencies, not an installed wheel. `python -m` puts
-      # the working directory on sys.path, so the package still resolves
-      # from python/ exactly as it did under pip. Deliberately no lockfile
-      # and no pinned versions -- resolving cryptography fresh on every run
-      # is what makes this matrix able to catch an upstream release that
-      # breaks the >= 42 compatibility shim in _chain.py.
-      - run: uv run --no-project --with cryptography --with asn1crypto python -m unittest discover -s tests
+      # python/uv.lock is committed and every leg installs from it, so no
+      # push resolves a version range. uv forks the resolution on the
+      # interpreter and records a version per marker, so one file covers 3.9
+      # through 3.14 without pinning the whole matrix to what the floor can
+      # take. `uv sync` installs the project editable, which keeps this a
+      # test of the SOURCE TREE rather than of a built wheel.
+      #
+      # It used to resolve cryptography fresh on every run, to catch an
+      # upstream release that breaks the >= 42 compatibility shim in
+      # _chain.py. Dependabot's uv entry now carries that signal: it proposes
+      # the same bump after the seven-day cooldown, and the shim breaks in a
+      # reviewable pull request instead of in an unreviewed install.
+      - run: uv sync --locked
+        working-directory: python
+      - run: uv run --locked python -m unittest discover -s tests
         working-directory: python
 
   # Every Swift the manifest admits (tools 6.1 is the floor swift-crypto
@@ -269,8 +276,11 @@ jobs:
         with:
           persist-credentials: false
       # Manifest lives at the repo root (SwiftPM requirement); no
-      # working-directory needed.
-      - run: swift test
+      # working-directory needed. --force-resolved-versions builds the exact
+      # revisions in Package.resolved and fails instead of re-resolving, so a
+      # newer tag matching the manifest's `from:` floors cannot arrive
+      # unreviewed.
+      - run: swift test --force-resolved-versions
   swift-macos:
     runs-on: macos-latest
     timeout-minutes: 30
@@ -278,7 +288,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: swift --version && swift test
+      - run: swift --version && swift test --force-resolved-versions
 
   # Every Go line the module claims, down to the go.mod floor: a floor
   # nothing executes is a claim, not a fact — the analogue of the
@@ -461,7 +471,9 @@ jobs:
           # Nothing to install: the library has no runtime dependencies and the
           # suite uses only gems that ship with Ruby. Running without Bundler is
           # also the strongest form of the zero-dependency claim — if anything
-          # crept in, this leg is where it fails.
+          # crept in, this leg is where it fails. ruby/Gemfile.lock is committed
+          # for contributors who do run `bundle exec`; this job installs
+          # nothing, so it has nothing to lock.
           bundler-cache: false
           working-directory: ruby
       # The OpenSSL a runner links decides whether the genuine SHA-1 legacy
@@ -527,6 +539,10 @@ jobs:
     timeout-minutes: 15
     env:
       BUNDLE_GEMFILE: gemfiles/tools.gemfile
+      # Frozen: install exactly gemfiles/tools.gemfile.lock or fail. Without
+      # it bundler resolves rubocop, rbs and steep afresh on every push and
+      # the seven-day dependabot cooldown protects nothing here.
+      BUNDLE_FROZEN: "true"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -534,13 +550,11 @@ jobs:
       - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
         with:
           ruby-version: "3.4"
-          # No cache and an explicit install: gemfiles/tools.gemfile.lock is
-          # not committed, so there is no lockfile to key a cache on. Commit
-          # one and this becomes bundler-cache: true.
-          bundler-cache: false
+          # The lockfile exists now, so the action can install and cache the
+          # bundle itself; it keys the cache on that file and honours
+          # BUNDLE_GEMFILE.
+          bundler-cache: true
           working-directory: ruby
-      - run: bundle install --jobs 4
-        working-directory: ruby
       - run: bundle exec rubocop
         working-directory: ruby
       - run: bundle exec rake rbs
@@ -572,16 +586,12 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install ${{ matrix.toolchain }} --profile minimal
-      # The floor is proven, not declared. MSRV-aware resolution runs on a
-      # modern cargo: the env var is stable since 1.84 and, unlike
-      # `resolver = "3"` in the manifest, is invisible to consumers — cargo
-      # 1.82 refuses to parse a manifest carrying that key.
-      - name: pin dependencies to the floor
-        if: matrix.toolchain == '1.74.0'
-        working-directory: rust
-        run: |
-          rustup toolchain install stable --profile minimal
-          CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback cargo +stable generate-lockfile
+      # rust/Cargo.lock is committed and every leg installs from it, so no
+      # push resolves a version range. The file was generated with
+      # CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback on a modern cargo,
+      # which is what makes it resolvable on the 1.74.0 floor; regenerate it
+      # the same way (rust/README.md). --locked turns "cargo quietly rewrote
+      # the lockfile" into a failed job rather than an unnoticed bump.
       - name: test on the floor
         if: matrix.toolchain == '1.74.0'
         working-directory: rust
@@ -590,8 +600,8 @@ jobs:
         if: matrix.toolchain != '1.74.0'
         working-directory: rust
         run: |
-          cargo +${{ matrix.toolchain }} test --all-features
-          cargo +${{ matrix.toolchain }} test --no-default-features
+          cargo +${{ matrix.toolchain }} test --locked --all-features
+          cargo +${{ matrix.toolchain }} test --locked --no-default-features
 
   rust-lint:
     runs-on: ubuntu-latest
@@ -603,7 +613,7 @@ jobs:
       - run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
       - run: cargo fmt --check
         working-directory: rust
-      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo clippy --locked --all-targets --all-features -- -D warnings
         working-directory: rust
       - run: cargo fmt --check
         working-directory: rust/fuzz
@@ -625,6 +635,10 @@ jobs:
           persist-credentials: false
       - run: rustup toolchain install nightly --profile minimal
       - run: cargo install cargo-fuzz --locked
+      # rust/fuzz/Cargo.lock is committed and cargo builds from it. cargo-fuzz
+      # takes no --locked of its own, so this is a pin rather than a gate: a
+      # manifest change makes cargo rewrite the lockfile here instead of
+      # failing. The gate that matters is on the library, above.
       - run: ./run.sh all 60
         working-directory: rust/fuzz
 
@@ -688,9 +702,9 @@ jobs:
   # It is its own job, not a step in `php`, for the same reason `rust-fuzz` is
   # separate from `rust`: the tool is not the one the test matrix installs.
   # nikic/php-fuzzer is downloaded as a pinned phar by php/fuzz/run.sh and is
-  # deliberately absent from composer.json — this package ships no lockfile and
-  # resolves require-dev twice, so a fuzzer in the graph could move the
-  # php-parser version the `php-lowest` leg pins for PHPUnit and PHP-CS-Fixer.
+  # deliberately absent from composer.json: it would put its own php-parser
+  # constraint into the resolved graph, and the `php-lowest` leg resolves that
+  # graph again from scratch.
   #
   # pcntl is requested explicitly: php-fuzzer uses it for the per-execution
   # timeout that turns an input the parsers loop forever on into a recorded
@@ -708,8 +722,8 @@ jobs:
           extensions: openssl, json, pcntl
           coverage: none
       # The targets load the library through Composer's autoloader; no dev
-      # dependency is needed for them, but `composer update` is what writes it.
-      - run: composer update --no-progress --no-interaction
+      # dependency is needed for them, but the install is what writes it.
+      - run: composer install --no-scripts --no-progress --no-interaction
         working-directory: php
       # 60 s per target, six targets. A crasher leaves
       # php/fuzz/crashes/<target>/crash-<hash>.txt and fails the job; reduce it
@@ -739,6 +753,10 @@ jobs:
     timeout-minutes: 25
     env:
       BUNDLE_GEMFILE: ${{ github.workspace }}/ruby/gemfiles/fuzz.gemfile
+      # gemfiles/fuzz.gemfile.lock is committed; frozen makes the install use
+      # it rather than resolve ruzzy again. bundler-cache stays false below
+      # because the install needs the clang environment set on that step.
+      BUNDLE_FROZEN: "true"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -866,9 +884,10 @@ jobs:
   # Advisories, license policy, and the banned-crate list that is the
   # mechanised form of "pinned anchors only, no network ever": a dependency
   # bump cannot introduce a system trust store or an HTTP client, because
-  # cargo-deny refuses the crates that carry them. It runs on the default
-  # resolution, never on the MSRV lockfile, so a stale floor pin cannot hide
-  # an advisory.
+  # cargo-deny refuses the crates that carry them. It reads the committed
+  # rust/Cargo.lock, so it audits the exact versions every other rust leg
+  # builds; an advisory against a version we do not use is not our problem,
+  # and one against a version we do use cannot hide behind a fresh resolve.
   rust-supply-chain:
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -905,11 +924,14 @@ jobs:
           extensions: openssl, json
           coverage: none
           ini-values: memory_limit=256M
-      # composer update, not install: no lockfile is committed, because a
-      # library spanning PHP 8.1-8.5 cannot express its dev toolchain in one
-      # lock. The php-lowest job below is the substitute for the
-      # reproducibility a lock would give.
-      - run: composer update --no-progress --no-interaction --prefer-dist
+      # composer install, not update: php/composer.lock is committed and is
+      # what every leg here installs, so no push resolves a version range.
+      # The lock is resolved for the floor (config.platform.php = 8.1.0 in
+      # composer.json), which is what lets one file install on all five legs:
+      # it pins PHPUnit 10.5, the only line whose php constraint spans 8.1 to
+      # 8.5. --no-scripts for the same reason every npm ci carries
+      # --ignore-scripts.
+      - run: composer install --no-scripts --no-progress --no-interaction --prefer-dist
         working-directory: php
       - run: vendor/bin/phpunit
         working-directory: php
@@ -917,7 +939,9 @@ jobs:
   # The floor is a claim about the constraints, not only about the runtime:
   # this leg installs the oldest version of everything the manifest allows, so
   # a change that quietly needs a newer psr/clock or PHPUnit fails here rather
-  # than on a consumer's machine.
+  # than on a consumer's machine. It is the one PHP leg that still resolves
+  # from ranges, and deliberately: resolving is what it tests. The lockfile
+  # would make it a copy of the `php` job's 8.1 leg.
   php-lowest:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -947,8 +971,10 @@ jobs:
           php-version: "8.4"
           extensions: openssl, json
           coverage: none
-      - run: composer update --no-progress --no-interaction
+      - run: composer install --no-scripts --no-progress --no-interaction
         working-directory: php
+      # --strict also reports a composer.lock that no longer matches
+      # composer.json, which is the drift this port's lockfile can suffer.
       - run: composer validate --strict
         working-directory: php
       - run: vendor/bin/phpstan analyse --no-progress
@@ -974,7 +1000,7 @@ jobs:
           php-version: "8.4"
           extensions: openssl, json
           coverage: none
-      - run: composer update --no-progress --no-interaction
+      - run: composer install --no-scripts --no-progress --no-interaction
         working-directory: php
       - run: vendor/bin/phpunit --group mutation
         working-directory: php
@@ -1079,7 +1105,11 @@ jobs:
         working-directory: dotnet
         run: |
           set -euo pipefail
-          dotnet publish samples/TrimAotSmoke -c Release -r linux-x64 -o "$RUNNER_TEMP/trim" \
+          # No -r here: the sample's csproj pins RuntimeIdentifier itself.
+          # On the command line it becomes a global property and reaches the
+          # referenced library project too, whose packages.lock.json has no
+          # RID graph, so locked-mode restore fails with NU1004.
+          dotnet publish samples/TrimAotSmoke -c Release -o "$RUNNER_TEMP/trim" \
             -warnaserror
           "$RUNNER_TEMP/trim/TrimAotSmoke" "$GITHUB_WORKSPACE/fixtures"
 
@@ -1159,17 +1189,18 @@ jobs:
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           python-version: "3.13"
-          # ruff and mypy are invoked as bare commands below, so the venv uv
-          # creates has to be on PATH for the steps that follow. That is what
-          # activate-environment does; without it these would need `uv run`.
-          activate-environment: true
-      - run: uv pip install -e ".[dev]"
+      # From the committed lock, dev extra included, so ruff and mypy are the
+      # reviewed versions rather than whatever resolved this morning. The
+      # tools run through `uv run`, which puts python/.venv on PATH; that
+      # replaced setup-uv's activate-environment, whose separate venv is not
+      # the one `uv sync` fills.
+      - run: uv sync --locked --extra dev
         working-directory: python
-      - run: ruff check .
+      - run: uv run --locked ruff check .
         working-directory: python
-      - run: ruff format --check .
+      - run: uv run --locked ruff format --check .
         working-directory: python
-      - run: mypy
+      - run: uv run --locked mypy
         working-directory: python
       # ty, Astral's type checker, is ADVISORY and must stay that way for
       # now: it is 0.0.x preview software, and mypy above remains the gate.
@@ -1183,11 +1214,11 @@ jobs:
       # tool by adding a second suppression dialect to the source is worse
       # than not running it there, so we don't.
       #
-      # It resolves cryptography's types through VIRTUAL_ENV, which
-      # activate-environment exports; --python makes that explicit, because
-      # under continue-on-error a mis-resolved environment would look like
-      # findings rather than like the misconfiguration it is.
-      - run: uvx ty check --python "$VIRTUAL_ENV" apple_purchase_receipt_verifier
+      # It resolves cryptography's types through the environment `uv sync`
+      # built; --python names it explicitly, because under continue-on-error
+      # a mis-resolved environment would look like findings rather than like
+      # the misconfiguration it is.
+      - run: uvx ty check --python .venv apple_purchase_receipt_verifier
         working-directory: python
         continue-on-error: true
 
@@ -1276,7 +1307,7 @@ jobs:
           php-version: "8.4"
           extensions: openssl, json
           coverage: none
-      - run: composer update --no-progress --no-interaction
+      - run: composer install --no-scripts --no-progress --no-interaction
         working-directory: php
       - run: vendor/bin/php-cs-fixer fix --dry-run --diff --allow-risky=yes
         working-directory: php

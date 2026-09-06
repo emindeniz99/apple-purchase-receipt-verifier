@@ -126,8 +126,8 @@ cd node && npm install && npm test    # both entry points, every shared fixture
 cd node && npm run test:runtimes       # default build on Bun, Deno and Cloudflare workerd
 cd node && npm run test:runtimes:web   # /web build on Vercel Edge and flagless workerd
 
-# Python (>= 3.9; needs: pip install cryptography asn1crypto)
-cd python && python3 -m unittest discover -s tests
+# Python (>= 3.9; uv installs the locked dependencies)
+cd python && uv sync && uv run python -m unittest discover -s tests
 
 # Swift (Swift 6.1+; Linux or macOS 13+; manifest lives at the repo root)
 swift test
@@ -141,8 +141,8 @@ cd ruby && rake test
 # Rust (>= 1.74)
 cd rust && cargo test
 
-# PHP (>= 8.1; no lockfile is committed, so resolve first)
-cd php && composer update && vendor/bin/phpunit
+# PHP (>= 8.1; installs php/composer.lock)
+cd php && composer install && vendor/bin/phpunit
 
 # .NET (SDK 8.0+; runs the net8.0 suite and the netstandard2.0 floor suite)
 cd dotnet && dotnet test -c Release

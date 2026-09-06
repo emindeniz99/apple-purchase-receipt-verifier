@@ -23,7 +23,11 @@ updates:
       # engines floor itself is raised (a semver-major decision).
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
-  - package-ecosystem: pip
+  # uv, not pip: python/uv.lock is what CI installs from, and only the uv
+  # ecosystem reads and rewrites that file. This entry is also what carries
+  # the cryptography early-warning the `python` job used to get by resolving
+  # fresh on every push -- a bump arrives here after the cooldown instead.
+  - package-ecosystem: uv
     directory: /python
     schedule:
       interval: weekly
@@ -43,6 +47,15 @@ updates:
       # Revisit only if the artifact's Java 8 floor is ever raised.
       - dependency-name: "org.junit.jupiter:junit-jupiter"
         update-types: ["version-update:semver-major"]
+  # jvm-interop is a second Maven module (the Kotlin/Scala/Groovy consumer
+  # checks) with its own pom; dependabot watches only the directories it is
+  # told about, and this one drifted unnoticed.
+  - package-ecosystem: maven
+    directory: /jvm-interop
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
   - package-ecosystem: swift
     directory: /
     schedule:
@@ -89,8 +102,9 @@ updates:
       default-days: 7
   # ruby/Gemfile, not ruby/gemfiles/tools.gemfile: dependabot's bundler
   # ecosystem only discovers a manifest named Gemfile or gems.rb, so the lint
-  # and type toolchain (rubocop, steep, rbs) is bumped by hand until that file
-  # is renamed. The library itself has no runtime dependencies.
+  # and type toolchain (rubocop, steep, rbs) and the fuzzer (ruzzy) are bumped
+  # by hand until those files are renamed, even though both now have committed
+  # locks. The library itself has no runtime dependencies.
   - package-ecosystem: bundler
     directory: /ruby
     schedule:

@@ -76,12 +76,12 @@ those measure line coverage for test reports and cannot drive a mutator.
 **It is installed as a phar, deliberately.** Its own README recommends the
 phar "because it avoids dependency conflicts with libraries using PHP-Parser",
 which it depends on. But the reason it stays out of `composer.json` here is
-narrower and this repository's own: this package ships **no lockfile** on
-purpose, and its CI resolves `require-dev` twice — once normally and once with
-`--prefer-lowest --prefer-stable`. A fuzzer in `require-dev` would join both
-resolutions, and its `nikic/php-parser` requirement would then be free to move
-the version PHPUnit and PHP-CS-Fixer resolve to on the `--prefer-lowest` leg —
-a fuzzing tool silently deciding what the *test* toolchain is. It has no
+narrower and this repository's own: the `php-lowest` CI leg resolves
+`require-dev` from scratch with `--prefer-lowest --prefer-stable`. A fuzzer in
+`require-dev` would join that resolution, and its `nikic/php-parser`
+requirement would then be free to move the version PHPUnit and PHP-CS-Fixer
+resolve to there, a fuzzing tool silently deciding what the *test* toolchain
+is. It would also enter `composer.lock` and so every other leg. It has no
 business in the dependency graph of a library whose entire point is having
 almost none. `run.sh` pins the release URL and its sha256 and checks the digest
 before running the file, so this is not "curl into a shell": a tampered or

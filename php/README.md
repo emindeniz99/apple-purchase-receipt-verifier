@@ -344,7 +344,7 @@ only because the input is bounded before it is allocated.
 ## Development
 
 ```bash
-composer install
+composer install                        # installs composer.lock
 vendor/bin/phpunit                      # everything
 vendor/bin/phpunit --testsuite conformance   # the shared cross-language vectors
 vendor/bin/phpunit --group mutation          # the mutation pass
@@ -366,12 +366,17 @@ invariant each one asserts beyond "nothing but a verdict escapes".
 php php/tools/gen-roots.php
 ```
 
-No `composer.lock` is committed. A library spanning PHP 8.1–8.5 cannot express
-its dev toolchain in one lock — a lock resolved on 8.1 pins PHPUnit 10.5 for
-every leg, and one resolved on 8.5 will not install on 8.1 at all. The
-`--prefer-lowest` CI leg is the substitute for the reproducibility a lock would
-give. This is a deliberate divergence from the Node port's committed-lockfile
-posture.
+`composer.lock` is committed and CI installs from it, so no run resolves a
+version range. Making one lock serve PHP 8.1 through 8.5 takes one setting:
+`config.platform.php` is `8.1.0` in `composer.json`, so `composer update`
+resolves as the floor would and picks PHPUnit 10.5, the only line whose `php`
+constraint spans the whole matrix. Every locked package's constraint was
+checked against all five versions before the file was committed.
+
+The cost is that no leg runs the newer PHPUnit lines the `require-dev`
+constraint still admits. The constraint stays open because a consumer of this
+package resolves it themselves; the lock binds only this repository's own CI.
+The `php-lowest` job is the one leg that still resolves, which is its purpose.
 
 ## Licence
 

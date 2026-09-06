@@ -14,6 +14,12 @@
     <PublishTrimmed>true</PublishTrimmed>
     <TrimMode>full</TrimMode>
     <SelfContained>true</SelfContained>
+    <!-- Pinned rather than inferred from the host. A self-contained
+         publish takes the host RID by default, which would put a
+         different graph in packages.lock.json on each of the three OS
+         legs and fail locked-mode restore on two of them. The only job
+         that publishes this sample passes -r linux-x64 anyway. -->
+    <RuntimeIdentifier>linux-x64</RuntimeIdentifier>
     <InvariantGlobalization>true</InvariantGlobalization>
     <TrimmerSingleWarn>false</TrimmerSingleWarn>
     <SuppressTrimAnalysisWarnings>false</SuppressTrimAnalysisWarnings>

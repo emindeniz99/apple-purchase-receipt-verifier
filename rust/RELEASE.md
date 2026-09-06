@@ -7,18 +7,32 @@ Owner bootstrap steps and the release-budget note live in
 [`BOOTSTRAP.md`](../BOOTSTRAP.md) under "crates.io" — that section is
 current and this file no longer repeats it.
 
-## `rust/Cargo.lock` is deliberately not committed
+## `rust/Cargo.lock` is committed, and release-please bumps it
 
-Cargo ignores a library's lockfile downstream, and the file records this
-package's own version, so a bump that touched only `Cargo.toml` would make
-every `--locked` CI job fail. CI generates an MSRV-pinned lockfile instead
-(see the `rust` job in `.github/workflows/ci.yml`), so there is no second
-file to keep in sync — which is precisely why it is not committed.
+Cargo ignores a library's lockfile downstream, so the file constrains only
+this repository. It is committed because every CI leg runs `--locked`: a
+hijacked dependency release cannot reach a runner before the seven-day
+dependabot cooldown has looked at it.
+
+The lockfile records this package's own version, so a release that touched
+only `Cargo.toml` would leave the lock stale and fail every `--locked` job.
+`release-please-config.json` therefore carries an `extra-files` entry of type
+`toml` for `rust/Cargo.lock` (and one for `rust/fuzz/Cargo.lock`), pointing at
+this package's `version` inside the `[[package]]` array. If a release PR ever
+lands with a stale lock, that entry is the thing to check.
+
+Regenerate the file the way CI needs it, resolvable on the 1.74.0 floor:
+
+```bash
+CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback cargo +stable generate-lockfile
+```
 
 ## What the published tarball contains
 
 `exclude = ["tests/**", "fuzz/**"]` in `Cargo.toml`, so the crate ships
-`src/`, `certs/`, `Cargo.toml`, `README.md` and `LICENSE` and nothing else.
+`src/`, `certs/`, `Cargo.toml`, `Cargo.lock`, `README.md` and `LICENSE` and
+nothing else. Cargo packs the lockfile whatever the manifest says; a
+consumer's build ignores it.
 The tests read `../../fixtures`, which a registry consumer does not have,
 and a test suite that cannot run is worse than one that is not shipped. That
 means the published file set is **not** the repository file set, which is

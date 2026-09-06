@@ -2,6 +2,15 @@ plugins:
   - rubocop-minitest
   - rubocop-rake
 
+# Keep RuboCop's default excludes (vendor/, tmp/, node_modules/, .git/) on top
+# of ours. Without this, the Exclude list below replaces them, and once the
+# tools bundle is vendored into ruby/vendor/bundle (setup-ruby's
+# bundler-cache does that) RuboCop crawls every gem's own .rubocop.yml and
+# dies on the first plugin it cannot load.
+inherit_mode:
+  merge:
+    - Exclude
+
 AllCops:
   TargetRubyVersion: 3.1
   NewCops: enable

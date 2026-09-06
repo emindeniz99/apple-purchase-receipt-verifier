@@ -32,11 +32,14 @@ targets=(receipt-der receipt-base64 jws endpoint-json receipt-payload readers)
 # -parse-as-library: SwiftPM aliases a Linux executable's `main` to the
 # module's entry point, so each target keeps a main.swift and starts
 # libFuzzer through LLVMFuzzerRunDriver (see FuzzSupport.runFuzzer).
-swift build --package-path "$here" -c release \
+# --force-resolved-versions: build the revisions in this package's own
+# Package.resolved and fail rather than re-resolve, so a newer tag matching
+# the manifest's floors cannot arrive unreviewed.
+swift build --package-path "$here" -c release --force-resolved-versions \
   -Xswiftc "-sanitize=$sanitizers" \
   -Xswiftc -enable-testing
 
-bin="$(swift build --package-path "$here" -c release --show-bin-path)"
+bin="$(swift build --package-path "$here" -c release --force-resolved-versions --show-bin-path)"
 
 # The endpoint seed that carries a real receipt is built here from the
 # public fixture rather than checked in, so that receipt keeps exactly one

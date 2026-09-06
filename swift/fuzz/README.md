@@ -75,9 +75,9 @@ version range the root manifest uses so SwiftPM resolves a single copy.
 `Package.resolved` here is its own, and pins its own versions — the same
 arrangement as `rust/fuzz/Cargo.lock`. It resolves independently of the root
 manifest's, so it can sit a patch or two ahead; that is not drift to correct.
-The `swift` job proves the library against the root's pins, and this
-directory is the one place where running against the newest resolvable
-dependency set is what you want.
+The `swift` job proves the library against the root's pins. `run.sh` builds
+with `--force-resolved-versions`, so this package builds the revisions its own
+`Package.resolved` names and never re-resolves on a runner.
 
 ## The targets
 

@@ -295,6 +295,16 @@ APRV_PACKAGING=1 bundle exec rake test # also builds and installs the gem
 ruby script/gen_roots.rb               # regenerate the inlined anchors
 ```
 
+`rake test` on its own works too, and that is what CI's Ruby matrix runs: the
+library has no runtime dependencies and the suite uses only gems that ship
+with Ruby.
+
+`Gemfile` lists minitest and rake directly instead of calling `gemspec`. A
+`gemspec` line puts this library into `Gemfile.lock` as a path gem carrying
+its own version, and a release commit that bumps only `version.rb` would then
+break every frozen install. `Gemfile.lock` and the two files under
+`gemfiles/` are committed, and CI installs them with `BUNDLE_FROZEN=true`.
+
 `test/conformance_test.rb` runs `fixtures/cases.json`, the normative
 cross-language vectors every implementation in this repository answers. It
 carries no per-case knowledge and no skip list.

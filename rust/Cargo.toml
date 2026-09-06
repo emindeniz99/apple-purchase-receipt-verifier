@@ -9,9 +9,10 @@ repository = "https://github.com/emindeniz99/apple-purchase-receipt-verifier"
 readme = "README.md"
 keywords = ["apple", "appstore", "receipt", "storekit", "verification"]
 categories = ["cryptography", "authentication"]
-# The published tarball is src/, certs/, README.md, LICENSE and the
-# manifest. The tests read ../../fixtures, which a registry consumer does
-# not have, and RELEASE.md describes release wiring rather than the crate.
+# The published tarball is src/, certs/, README.md, LICENSE, the manifest
+# and Cargo.lock (cargo always packs it; a consumer's build ignores it). The
+# tests read ../../fixtures, which a registry consumer does not have, and
+# RELEASE.md describes release wiring rather than the crate.
 exclude = ["tests/**", "fuzz/**", "RELEASE.md", "rustfmt.toml", "deny.toml"]
 
 [lib]

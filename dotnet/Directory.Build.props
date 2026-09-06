@@ -16,10 +16,24 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);NU1902;NU1903</NoWarn>
+
+    <!-- Central package management pins the direct versions; a lock file is
+         what pins the transitive ones. Every project under dotnet/ writes
+         packages.lock.json, and the file is committed, so a restore installs
+         the reviewed graph instead of resolving it. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true'">
     <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+
+    <!-- Locked mode in CI only. It makes restore fail rather than silently
+         rewrite packages.lock.json, which is the whole point of committing
+         the file; locally it would turn every dependency edit into a manual
+         `dotnet restore` with force-evaluate. Set here rather than as a flag
+         on each command because `dotnet format` restores too and takes no
+         RestoreLockedMode switch. -->
+    <RestoreLockedMode>true</RestoreLockedMode>
   </PropertyGroup>
 
 </Project>

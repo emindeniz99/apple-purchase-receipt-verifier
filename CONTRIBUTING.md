@@ -12,12 +12,12 @@ Each language runs the same fixtures:
 ```bash
 cd java   && mvn test
 cd node   && npm ci && npm test
-cd python && pip install cryptography asn1crypto && python -m unittest discover -s tests
+cd python && uv sync && uv run python -m unittest discover -s tests
 swift test   # manifest is at the repo root
 cd go     && go test ./...
 cd ruby   && rake test
 cd rust   && cargo test
-cd php    && composer update && vendor/bin/phpunit   # no lockfile is committed
+cd php    && composer install && vendor/bin/phpunit
 cd dotnet && dotnet test -c Release
 
 node tools/lint-cases.mjs   # the shared conformance vectors, see below
@@ -44,6 +44,28 @@ npm view <package>@<version> time.modified
 Under seven days old: wait, or say in the commit body why it cannot. CI
 installs npm packages with `--ignore-scripts`; a dependency that needs its
 install script to work is a reason to look for another dependency.
+
+Every ecosystem that has a lockfile commits it, and CI installs from it
+strictly, so a bump reaches CI only as a committed change to a lockfile
+(SECURITY.md, "Dependency policy"). Regenerate the file the port names when
+you change a manifest:
+
+| Port | Lockfile | Regenerate with |
+|---|---|---|
+| node | `node/package-lock.json`, `node/fuzz/package-lock.json` | `npm install` |
+| rust | `rust/Cargo.lock` | `CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback cargo +stable generate-lockfile` |
+| rust | `rust/fuzz/Cargo.lock` | `cargo generate-lockfile` in `rust/fuzz` |
+| python | `python/uv.lock` | `uv lock` |
+| php | `php/composer.lock` | `composer update` (resolves at the 8.1 floor, see below) |
+| ruby | `ruby/Gemfile.lock`, `ruby/gemfiles/*.lock` | `bundle lock` with the matching `BUNDLE_GEMFILE` |
+| dotnet | `dotnet/**/packages.lock.json` | `dotnet restore --force-evaluate` |
+| swift | `Package.resolved`, `swift/fuzz/Package.resolved` | `swift package update` |
+| go | `go/tools/go.sum` | `go get` then `go mod tidy` in `go/tools` |
+
+`php/composer.json` sets `config.platform.php` to 8.1.0, so a `composer
+update` on any machine resolves the graph the PHP 8.1 leg has to install.
+The Java port pins exact versions in `java/pom.xml` and Maven has no lockfile
+format; the go library module has no dependencies at all.
 
 ## Conformance vectors
 
