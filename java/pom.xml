@@ -48,6 +48,9 @@
          StreamReadConstraints arrived in 2.15 and maxDocumentLength in
          2.16, so below 2.16 the verifier fails at construction instead. -->
     <jackson.version>2.22.2</jackson.version>
+    <!-- Annotations only, and only at compile time: see the <optional>
+         dependency below. -->
+    <jspecify.version>1.0.1</jspecify.version>
     <junit.version>5.14.4</junit.version>
   </properties>
 
@@ -61,6 +64,23 @@
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-databind</artifactId>
       <version>${jackson.version}</version>
+    </dependency>
+    <!-- JSpecify nullness annotations on the public API, so Kotlin sees
+         String? / String instead of platform types and NullAway/Checker
+         users get real diagnostics. <optional>true</optional>, so consumers
+         do not inherit it: the annotations are retained in the class files
+         but nothing reads them at run time, and a JVM reflecting over a
+         member annotated with a type it cannot load ignores that annotation
+         rather than failing (JLS 13.5.7 / AnnotatedElement). A consumer who
+         runs NullAway or the Checker Framework declares the same artifact
+         themselves. Java 8 safe: the annotation class files are major
+         version 52 (the jar's module-info is 53, and a classpath build
+         never reads it). -->
+    <dependency>
+      <groupId>org.jspecify</groupId>
+      <artifactId>jspecify</artifactId>
+      <version>${jspecify.version}</version>
+      <optional>true</optional>
     </dependency>
 
     <dependency>

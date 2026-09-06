@@ -5,8 +5,10 @@ import io.github.emindeniz99.applepurchasereceiptverifier.Environment
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason
 import io.github.emindeniz99.applepurchasereceiptverifier.jws.JwsVerifier
+import io.github.emindeniz99.applepurchasereceiptverifier.receipt.InAppPurchase
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifier
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import java.io.ByteArrayInputStream
@@ -16,13 +18,15 @@ import java.nio.file.Path
 import java.nio.file.Paths
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
+import java.time.Instant
 import java.util.EnumSet
 
 /**
  * Proves the library is usable from Kotlin exactly as a Kotlin consumer
  * would use it: idiomatic try/catch on [VerificationException], an
- * exhaustive `when` over [Reason], and the same three checks the Java,
- * Node, Python and Swift suites run against fixtures/. See
+ * exhaustive `when` over [Reason], JSpecify nullness at the boundary, and
+ * the same three checks the Java, Node, Python and Swift suites run against
+ * fixtures/. See
  * jvm-interop/README.md for why this module exists and is not published.
  */
 class KotlinInteropTest {
@@ -100,20 +104,64 @@ class KotlinInteropTest {
     }
 
     @Test
-    fun `null-safety at the Java boundary on AppReceipt accessors`() {
+    fun `JSpecify nullness reaches Kotlin, so accessors are nullable or non-null and never platform types`() {
         val verifier = ReceiptVerifier(AppleRootCerts.receiptRoots(), "dev.bonzer.weeka.app")
         val receipt = verifier.verify(receiptBase64("receipt-sandbox-g5"))
-        // AppReceipt's Java accessors carry no nullability annotations, so
-        // Kotlin sees them as platform types (String!, Instant!) rather than
-        // definite non-null — the caller decides. expirationDate() really is
-        // null here (attribute 21 is VPP-only and absent from this fixture),
-        // so treating the platform type as nullable is the only safe choice;
-        // treating it as non-null would NPE at unwrap.
-        val expirationDate = receipt.expirationDate()
-        assertNull(expirationDate)
+
+        // Every receipt-attribute accessor is @Nullable: a receipt carries
+        // only the attributes that apply to it. Kotlin therefore types these
+        // String? / Instant?, and expirationDate() really is null here
+        // (attribute 21 is VPP-only and absent from this fixture).
+        val receiptType: String? = receipt.receiptType()
+        assertEquals("ProductionSandbox", receiptType)
         val bundleId: String? = receipt.bundleId()
         assertEquals("dev.bonzer.weeka.app", bundleId)
+        val expirationDate: Instant? = receipt.expirationDate()
+        assertNull(expirationDate)
+
+        // Everything the packages' @NullMarked leaves unannotated is
+        // definitely non-null, so it lands in a non-null Kotlin type with no
+        // `!!` and no `?:` at the boundary. No expression in this file uses
+        // `!!`, which is the ergonomic claim the annotations exist to make.
+        val environment: String = Environment.SANDBOX.value()
+        assertEquals("Sandbox", environment)
+        val purchases: List<InAppPurchase> = receipt.inAppPurchases()
+        assertEquals(2, purchases.size)
+        val productId: String? = purchases[0].productId()
+        assertNotNull(productId)
     }
+
+    // Why there is no negative test beside the one above, and why that is a
+    // property of Kotlin rather than an omission:
+    //
+    // A negative test would have to be source that FAILS to compile, and
+    // every file in this module is compiled together — one such file fails
+    // the whole module's test-compile, so it cannot live here. A test that
+    // merely compiles cannot distinguish the three possible states either:
+    // a platform type (`String!`) satisfies both `String` and `String?`, so
+    // the positive assignments above would still compile if the annotations
+    // were absent or ignored.
+    //
+    // So the negative direction was verified by hand instead, on this exact
+    // jar and this exact compiler (Kotlin 2.4.10, -Xjspecify-annotations=strict,
+    // 2026-09-06). Dropping these two declarations into a scratch file
+    // under src/test/kotlin, with the imports this file already has:
+    //
+    //     fun probeNullable(r: AppReceipt): String = r.receiptType()
+    //     fun probeNonNull(): Int? = AppleRootCerts.receiptRoots()?.size
+    //
+    // produced both halves of the proof, and nothing else:
+    //
+    //     error: Return type mismatch: expected 'String', actual 'String?'.
+    //     warning: Unnecessary safe call on a non-null receiver of type
+    //              '(Mutable)Set<X509Certificate>'.
+    //
+    // The error is @Nullable being enforced; the warning is @NullMarked's
+    // non-null default being enforced. Note what is NOT on this module's
+    // classpath while both fire: org.jspecify:jspecify itself. It is an
+    // <optional> dependency of the library, so it is not transitive and a
+    // consumer never resolves it — Kotlin reads the annotation names out of
+    // the class files. Re-run the probe if you need to see it again.
 
     @Test
     fun `Reason is matched exhaustively in a when expression`() {

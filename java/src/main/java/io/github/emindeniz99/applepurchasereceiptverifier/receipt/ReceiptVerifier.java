@@ -44,6 +44,7 @@ import org.bouncycastle.cms.SignerInformation;
 import org.bouncycastle.cms.jcajce.JcaSimpleSignerInfoVerifierBuilder;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.operator.OperatorCreationException;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Verifies legacy PKCS#7 app receipts (the blob apps used to send to the
@@ -52,6 +53,14 @@ import org.bouncycastle.operator.OperatorCreationException;
  * receipts on the device" procedure (PLAN.md §2.2).
  *
  * <p>Thread-safe once constructed.</p>
+ *
+ * <p>The receipt argument of every {@code verify} overload is {@code @Nullable}
+ * on purpose: a null input is a verdict about the input, so it is reported as
+ * {@link Reason#INVALID_RECEIPT_FORMAT} like any other unusable one rather than
+ * as a {@link NullPointerException} a caller cannot catch alongside the others.
+ * {@code deviceGuid} is {@code @Nullable} because it is the optional
+ * device-hash binding: null skips that check, exactly as the shorter overload
+ * does.</p>
  */
 public final class ReceiptVerifier {
 
@@ -197,7 +206,7 @@ public final class ReceiptVerifier {
     }
 
     /** Verifies a base64-encoded receipt (the usual client transport form). */
-    public AppReceipt verify(String base64Receipt) throws VerificationException {
+    public AppReceipt verify(@Nullable String base64Receipt) throws VerificationException {
         return verify(base64Receipt, null);
     }
 
@@ -205,7 +214,8 @@ public final class ReceiptVerifier {
      * Verifies a base64-encoded receipt and additionally enforces the
      * device-hash binding; see {@link #verify(byte[], byte[])}.
      */
-    public AppReceipt verify(String base64Receipt, byte[] deviceGuid) throws VerificationException {
+    public AppReceipt verify(@Nullable String base64Receipt, byte @Nullable [] deviceGuid)
+            throws VerificationException {
         // Before the decode, which would otherwise allocate a stripped copy of
         // the string and then the bytes it decodes to.
         if (base64Receipt != null && base64Receipt.length() > MAX_RECEIPT_BYTES) {
@@ -217,7 +227,7 @@ public final class ReceiptVerifier {
     }
 
     /** Verifies a DER-encoded PKCS#7 receipt. */
-    public AppReceipt verify(byte[] receiptDer) throws VerificationException {
+    public AppReceipt verify(byte @Nullable [] receiptDer) throws VerificationException {
         return verify(receiptDer, null);
     }
 
@@ -229,7 +239,7 @@ public final class ReceiptVerifier {
      * receipt embeds that device's GUID, so cross-device restore still works:
      * every device presents its own receipt.
      */
-    public AppReceipt verify(byte[] receiptDer, byte[] deviceGuid) throws VerificationException {
+    public AppReceipt verify(byte @Nullable [] receiptDer, byte @Nullable [] deviceGuid) throws VerificationException {
         AppReceipt receipt = verifyCore(receiptDer, trustAnchors);
         if (!bundleId.equals(receipt.bundleId())) {
             throw new VerificationException(
@@ -258,12 +268,12 @@ public final class ReceiptVerifier {
      * says. A caller unlocking products must compare it itself, or use
      * {@link #verify(byte[])}.</p>
      */
-    public static AppReceipt verifyReceiptCore(byte[] receiptDer, Set<X509Certificate> trustedRoots)
+    public static AppReceipt verifyReceiptCore(byte @Nullable [] receiptDer, Set<X509Certificate> trustedRoots)
             throws VerificationException {
         return verifyCore(receiptDer, anchors(trustedRoots));
     }
 
-    private static AppReceipt verifyCore(byte[] receiptDer, Set<TrustAnchor> trustAnchors)
+    private static AppReceipt verifyCore(byte @Nullable [] receiptDer, Set<TrustAnchor> trustAnchors)
             throws VerificationException {
         if (receiptDer == null) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "receipt is null");
@@ -358,10 +368,10 @@ public final class ReceiptVerifier {
                             + MAXIMUM_EMBEDDED_CERTIFICATES);
         }
         List<X509CertificateHolder> holders = new ArrayList<X509CertificateHolder>();
-        Exception unreadable = null;
+        @Nullable Exception unreadable = null;
         boolean unreadableSigner = false;
         for (int i = 0; i < embeddedCount; i++) {
-            byte[] raw = null;
+            byte @Nullable [] raw = null;
             try {
                 raw = certificateSet.getObjectAt(i).toASN1Primitive().getEncoded("DER");
                 holders.add(new X509CertificateHolder(raw));
@@ -380,7 +390,7 @@ public final class ReceiptVerifier {
                 }
             }
         }
-        X509CertificateHolder signerHolder = null;
+        @Nullable X509CertificateHolder signerHolder = null;
         for (X509CertificateHolder holder : holders) {
             if (signer.getSID().match(holder)) {
                 signerHolder = holder;
@@ -491,7 +501,7 @@ public final class ReceiptVerifier {
      * null when the receipt carries none. Read as generic ASN.1 so an entry
      * no certificate decoder accepts is still counted and still locatable.
      */
-    private static ASN1Set embeddedCertificateSet(CMSSignedData cms) {
+    private static @Nullable ASN1Set embeddedCertificateSet(CMSSignedData cms) {
         ASN1Encodable content = cms.toASN1Structure().getContent();
         ASN1Sequence signedData = ASN1Sequence.getInstance(content.toASN1Primitive());
         for (int i = 0; i < signedData.size(); i++) {
@@ -799,7 +809,7 @@ public final class ReceiptVerifier {
     }
 
     /** RFC 3339 date in an IA5String; empty means absent (real receipts do this). */
-    private static Instant decodeDate(byte[] der) throws VerificationException {
+    private static @Nullable Instant decodeDate(byte[] der) throws VerificationException {
         String text = decodeString(der);
         if (text.isEmpty()) {
             return null;

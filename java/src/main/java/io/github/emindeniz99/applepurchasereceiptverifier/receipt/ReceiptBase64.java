@@ -4,6 +4,7 @@ import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
 import io.github.emindeniz99.applepurchasereceiptverifier.internal.SafeText;
 import java.util.Base64;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Decodes the base64 text a client actually sends as {@code receipt-data},
@@ -26,7 +27,7 @@ final class ReceiptBase64 {
 
     private ReceiptBase64() {}
 
-    static byte[] decode(String receipt) throws VerificationException {
+    static byte[] decode(@Nullable String receipt) throws VerificationException {
         if (receipt == null) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "receipt is null");
         }

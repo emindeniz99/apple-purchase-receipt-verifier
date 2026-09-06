@@ -23,7 +23,7 @@ each written the way a consumer of that language would actually write it:
 Beyond that, each test file exercises the ergonomics that would break first
 if the Java API were unfriendly to that language:
 
-- **Kotlin**: null-safety at the boundary on `AppReceipt`'s platform-typed
+- **Kotlin**: JSpecify nullness at the boundary on `AppReceipt`'s
   accessors, an exhaustive `when` over `VerificationException.Reason` with
   no `else` branch, and overload selection standing in for named/default
   arguments — Kotlin cannot use either against this (or any) Java API; see
@@ -68,6 +68,24 @@ if the Java API were unfriendly to that language:
   reflection (e.g. a framework binding request parameters to constructor
   args by name). It just doesn't — and structurally cannot — enable
   Kotlin named-argument call syntax.
+- **JSpecify annotations survive the jar, and Kotlin honours them without
+  resolving the annotation artifact.** The library's public packages are
+  `@NullMarked` and its optional-claim accessors are `@Nullable`, so Kotlin
+  types `AppReceipt.receiptType()` as `String?` and
+  `AppleRootCerts.receiptRoots()` as a non-null `Set<X509Certificate>`
+  rather than as platform types. `org.jspecify:jspecify` is `<optional>` in
+  `java/pom.xml`, so it is not transitive and is NOT on this module's
+  classpath — Kotlin reads the annotation names straight out of the class
+  files. Both halves were measured with a throwaway probe source file
+  (Kotlin 2.4.10, `-Xjspecify-annotations=strict`, 2026-09-06):
+  `fun probeNullable(r: AppReceipt): String = r.receiptType()` is
+  `error: Return type mismatch: expected 'String', actual 'String?'`, and
+  `AppleRootCerts.receiptRoots()?.size` is
+  `warning: Unnecessary safe call on a non-null receiver`. Neither direction
+  can be a permanent test here, because a compile error fails the whole
+  module and a platform type would satisfy every assignment that does
+  compile; `KotlinInteropTest` carries the probe and both messages in a
+  comment so the check can be repeated.
 - **Reason exhaustiveness works in both languages, cleanly.** A `mvn clean
   test` run of this module produces zero exhaustiveness warnings from
   either `kotlinc` or `scalac` — both a Kotlin `when` and a Scala 3 `match`
