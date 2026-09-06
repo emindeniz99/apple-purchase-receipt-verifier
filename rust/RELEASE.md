@@ -16,10 +16,12 @@ dependabot cooldown has looked at it.
 
 The lockfile records this package's own version, so a release that touched
 only `Cargo.toml` would leave the lock stale and fail every `--locked` job.
-`release-please-config.json` therefore carries an `extra-files` entry of type
-`toml` for `rust/Cargo.lock` (and one for `rust/fuzz/Cargo.lock`), pointing at
-this package's `version` inside the `[[package]]` array. If a release PR ever
-lands with a stale lock, that entry is the thing to check.
+release-please's toml updater cannot address a `[[package]]` entry by name,
+so `.github/workflows/release-please.yml` runs `cargo update --workspace`
+(and, for `rust/fuzz/Cargo.lock`, `cargo update -p
+apple-purchase-receipt-verifier`) on the release branch right after the
+action and pushes the result. If a release PR ever lands with a stale lock,
+that step is the thing to check.
 
 Regenerate the file the way CI needs it, resolvable on the 1.74.0 floor:
 
