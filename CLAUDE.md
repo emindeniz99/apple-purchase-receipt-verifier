@@ -10,7 +10,12 @@ human-facing version; where they overlap, they agree.
   `fixtures`, `certs`, `ci`, `release`, `docs`, `repo`.
 - Imperative subject, lowercase, ≤72 chars for the whole header. Body explains
   *why*, wrapped at 72.
-- Add a `Co-Authored-By:` trailer naming the assistant and model.
+- An assistant commits under its own identity, `Claude <noreply@anthropic.com>`,
+  never as the repo owner: the session's signing key belongs to the `claude`
+  GitHub account, so that identity shows Verified and the owner's email does
+  not. Check `git config user.email` before the first commit; a fresh clone can
+  arrive with the owner's email set. Keep the `Co-Authored-By:` trailer naming
+  the model.
 - Merge PRs with a **real merge commit** (`merge_method: "merge"`, locally
   `git merge --no-ff`). Never squash, never rebase-merge — squash/rebase are
   disabled in repo settings; do not re-enable them.
