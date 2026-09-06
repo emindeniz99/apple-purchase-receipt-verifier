@@ -1,0 +1,18 @@
+# Smoke-tests the crate as published to crates.io, resolved from the real
+# registry by name. The dependency is deliberately absent: the workflow adds it
+# at the published version so the manifest can never pin a stale one.
+#
+#   cp -R .github/smoke/crates-smoke/. "$SMOKE/" && cd "$SMOKE"
+#   cargo add "apple-purchase-receipt-verifier@=0.4.0"
+#   cargo run
+#
+# Cargo.toml's `exclude` drops tests/ and fuzz/ from the published tarball, so
+# the file set a consumer receives is not the repository file set — which is the
+# gap this exists to close. The receipt comes from the checkout, not the crate.
+[package]
+name = "smoke"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]

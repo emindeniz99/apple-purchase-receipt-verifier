@@ -9,6 +9,16 @@
 #
 # Registries do not publish atomically, so each job polls for the version to
 # appear. Maven Central's sync is the slow one and gets the longest budget.
+#
+# Not every registry is live on every release: RubyGems, crates.io and NuGet
+# need an owner bootstrap (BOOTSTRAP.md) before anything can be published to
+# them, and `release.yml` skips those publish jobs until it happens. It passes
+# the registries it actually published in the `registries` input, and the legs
+# below are gated on it, so an unbootstrapped registry means a skipped leg
+# rather than a job that fails on an install that cannot work.
+#
+# PHP is absent on purpose: Packagist has no publish job — the tag is the
+# release — and nothing here would be verifying a step this repository took.
 name: post-publish-smoke
 
 # zizmor flags workflow_run as fundamentally dangerous, and normally it is: it
@@ -29,6 +39,11 @@ on: # zizmor: ignore[dangerous-triggers]
         description: 'Published version to smoke-test, without the v (e.g. 0.2.1)'
         required: true
         type: string
+      registries:
+        description: 'Comma-separated registries to test; the default is all of them'
+        required: false
+        default: npm,pypi,maven,swiftpm,go,rubygems,crates,nuget
+        type: string
 
 permissions:
   contents: read
@@ -43,12 +58,16 @@ jobs:
     outputs:
       version: ${{ steps.pick.outputs.version }}
       ref: ${{ steps.pick.outputs.ref }}
+      # Comma-wrapped on both ends, so a leg can test membership with
+      # contains(..., ',name,') and never match a name by prefix.
+      registries: ${{ steps.pick.outputs.registries }}
     steps:
       # Event fields go through the environment, never into the script body:
       # interpolating them directly is the GitHub Actions script-injection sink.
       - id: pick
         env:
           DISPATCH_VERSION: ${{ inputs.version }}
+          DISPATCH_REGISTRIES: ${{ inputs.registries }}
           RELEASE_REF: ${{ github.event.workflow_run.head_branch }}
         run: |
           set -euo pipefail
@@ -61,9 +80,16 @@ jobs:
             [0-9]*.[0-9]*.[0-9]*) ;;
             *) echo "::error::'$VERSION' is not a release version; nothing to smoke-test"; exit 1 ;;
           esac
+          # workflow_run carries no inputs, so a run triggered that way tests
+          # everything and a registry that is genuinely missing fails its leg.
+          REGISTRIES="${DISPATCH_REGISTRIES:-npm,pypi,maven,swiftpm,go,rubygems,crates,nuget}"
+          case "$REGISTRIES" in
+            *[!a-z,]*) echo "::error::'$REGISTRIES' is not a comma-separated registry list"; exit 1 ;;
+          esac
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "ref=v$VERSION" >> "$GITHUB_OUTPUT"
-          echo "smoke-testing $VERSION"
+          echo "registries=,$REGISTRIES," >> "$GITHUB_OUTPUT"
+          echo "smoke-testing $VERSION on: $REGISTRIES"
 
   npm:
     name: npm — install the published package and verify a receipt
@@ -231,3 +257,198 @@ jobs:
           # The tag is pushed before this workflow can run, so there is nothing
           # to wait for; a resolve failure here is a real broken tag.
           swift run Smoke
+
+  go:
+    name: go — resolve the published module and verify a receipt
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: contains(needs.resolve.outputs.registries, ',go,')
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.ref }}
+          persist-credentials: false
+
+      # The go.mod floor, with GOTOOLCHAIN=local so Go cannot quietly download
+      # a newer toolchain and test something other than the floor.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.22"
+          cache: false
+
+      - name: resolve the published module, outside the checkout
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+          GOTOOLCHAIN: local
+          GOFLAGS: -mod=mod
+          GOPROXY: https://proxy.golang.org
+        run: |
+          set -euo pipefail
+          MODULE="github.com/$GITHUB_REPOSITORY/go"
+          SMOKE="$RUNNER_TEMP/go-smoke"
+          mkdir -p "$SMOKE"
+          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
+          cp .github/smoke/go-smoke/main.go "$SMOKE/"
+          cd "$SMOKE"
+          go mod init smoke
+          # The module is published by release.yml's tag-go-module job, which
+          # already waited for the proxy; poll anyway, because this workflow is
+          # dispatched separately and the proxy is eventually consistent.
+          resolved=false
+          for attempt in $(seq 1 20); do
+            if go get "$MODULE@v$VERSION"; then
+              resolved=true
+              break
+            fi
+            echo "the proxy has not picked up v$VERSION yet (attempt $attempt of 20); waiting 30s"
+            sleep 30
+          done
+          if [ "$resolved" != true ]; then
+            echo "::error::$MODULE@v$VERSION never became resolvable from proxy.golang.org"
+            exit 1
+          fi
+          go run .
+
+  rubygems:
+    name: rubygems — install the published gem and verify a receipt
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Skipped, not failed, while RubyGems is unbootstrapped (BOOTSTRAP.md).
+    if: contains(needs.resolve.outputs.registries, ',rubygems,')
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.ref }}
+          persist-credentials: false
+
+      # The gemspec's required_ruby_version floor, same reasoning as the node
+      # and python jobs.
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        with:
+          ruby-version: "3.1"
+          bundler-cache: false
+
+      # A scratch GEM_HOME, so the gem under test is the only thing on the
+      # load path and nothing in the checkout can satisfy the require.
+      #
+      # Installing outside a lockfile is the entire point, same as the npm leg:
+      # the subject under test is the gem the registry just started serving,
+      # which by definition no lockfile in this repository can pin.
+      - name: install from the registry, outside the checkout # zizmor: ignore[adhoc-packages]
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          SMOKE="$RUNNER_TEMP/rubygems-smoke"
+          mkdir -p "$SMOKE"
+          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
+          cp .github/smoke/rubygems-smoke.rb "$SMOKE/"
+          cd "$SMOKE"
+          export GEM_HOME="$SMOKE/gems"
+          installed=false
+          for attempt in $(seq 1 10); do
+            if gem install --no-document apple-purchase-receipt-verifier -v "$VERSION"; then
+              installed=true
+              break
+            fi
+            echo "not on rubygems.org yet (attempt $attempt of 10); waiting 30s"
+            sleep 30
+          done
+          if [ "$installed" != true ]; then
+            echo "::error::apple-purchase-receipt-verifier $VERSION never became installable from RubyGems.org"
+            exit 1
+          fi
+          ruby rubygems-smoke.rb
+
+  crates:
+    name: crates.io — depend on the published crate and verify a receipt
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # Skipped, not failed, while crates.io is unbootstrapped (BOOTSTRAP.md).
+    if: contains(needs.resolve.outputs.registries, ',crates,')
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.ref }}
+          persist-credentials: false
+
+      - run: rustup toolchain install stable --profile minimal
+
+      # `exclude` drops tests/ and fuzz/ from the published tarball, so the file
+      # set a consumer receives is not the repository file set. The receipt
+      # comes from the checkout for the same reason.
+      - name: depend on the published crate, outside the checkout
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          SMOKE="$RUNNER_TEMP/crates-smoke"
+          mkdir -p "$SMOKE"
+          cp -R .github/smoke/crates-smoke/. "$SMOKE/"
+          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
+          cd "$SMOKE"
+          added=false
+          for attempt in $(seq 1 20); do
+            if cargo add "apple-purchase-receipt-verifier@=$VERSION"; then
+              added=true
+              break
+            fi
+            echo "not on crates.io yet (attempt $attempt of 20); waiting 30s"
+            sleep 30
+          done
+          if [ "$added" != true ]; then
+            echo "::error::apple-purchase-receipt-verifier $VERSION never became resolvable from crates.io"
+            exit 1
+          fi
+          cargo run
+
+  nuget:
+    name: nuget — restore the published package and verify a receipt
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Skipped, not failed, while NuGet is unbootstrapped (BOOTSTRAP.md).
+    if: contains(needs.resolve.outputs.registries, ',nuget,')
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.ref }}
+          persist-credentials: false
+
+      # net8.0 is the floor of the two shipped assets and selects
+      # lib/net8.0; the netstandard2.0 asset needs a net4x consumer on a
+      # Windows runner and is not covered here (dotnet/RELEASE.md).
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: restore from the registry, outside the checkout
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          SMOKE="$RUNNER_TEMP/nuget-smoke"
+          mkdir -p "$SMOKE"
+          cp -R .github/smoke/nuget-smoke/. "$SMOKE/"
+          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
+          cd "$SMOKE"
+          restored=false
+          for attempt in $(seq 1 20); do
+            # --no-cache: NuGet caches an HTTP response, a 404 for a
+            # not-yet-indexed version included, for 30 minutes — the same
+            # cached-miss trap the maven job documents.
+            if dotnet restore --no-cache "-p:SmokeVersion=$VERSION"; then
+              restored=true
+              break
+            fi
+            echo "not on nuget.org yet (attempt $attempt of 20); waiting 30s"
+            sleep 30
+          done
+          if [ "$restored" != true ]; then
+            echo "::error::ApplePurchaseReceiptVerifier $VERSION never became restorable from nuget.org"
+            exit 1
+          fi
+          dotnet run --no-restore "-p:SmokeVersion=$VERSION"

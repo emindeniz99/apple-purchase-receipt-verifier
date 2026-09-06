@@ -27,13 +27,16 @@ Delete a line in the commit that ships it.
   vendor line ends, so Java 17 (Oracle, 2026-09-30), Python 3.10
   (2026-10-31), .NET 8 and 9 (2026-11-10) and PHP 8.2 (2026-12-31) change
   nothing.
-- **An unbootstrapped registry fails the release rather than skipping
-  it.** Every publish job skips loudly when the registry already has the
-  version, but rubygems, crates and nuget each fail at their OIDC step
-  when the registry has never been set up -- and the `smoke` job needs all
-  seven, so one unbootstrapped registry blocks post-publish verification
-  of the four that are live. README.md reads as though those ports were
-  merely waiting.
+- **README.md's registry table still says the five newer ports are not
+  installable.** The Go module is on `proxy.golang.org` as of `go/v0.4.0`,
+  so its row and the sentence naming "a public repository for the Go module
+  proxy" as a pending owner action are both stale. The RubyGems, crates.io
+  and NuGet halves are still true. (The release itself no longer breaks on
+  an unbootstrapped registry: `release.yml` asks each of those three whether
+  the package exists and skips the publish with a `::notice::` when it does
+  not — before OIDC for crates.io and NuGet, and after a failed OIDC for
+  RubyGems, whose pending publisher is meant to create the gem — and the
+  `smoke` job runs on the registries that did publish.)
 
 - **No branch protection in practice.** main reports protected, yet an
   admin push lands directly, so either the pull-request requirement or
@@ -80,14 +83,16 @@ Delete a line in the commit that ships it.
   rests on an argument rather than a run, because there is no local
   runtime to run it in. Vercel Edge, Fastly Compute and flagless
   Cloudflare Workers are all tested on every push.
-- **Post-publish smoke jobs for the five newer ports**:
-  `post-publish-smoke.yml` still covers npm, PyPI, Maven Central and SwiftPM
-  only. The Go, RubyGems, crates.io and NuGet legs are written out in each
-  port's `RELEASE.md` and need their smoke programs under `.github/smoke/`
-  before they can be wired. The Go one is the one that would catch the
-  embedded `roots/certs` copy being absent from the module zip, which is the
-  Go-shaped version of the incident that motivated that workflow. Add each leg
-  with that registry's first release (see BOOTSTRAP.md).
+- **Post-publish smoke gaps that remain.** The Go, RubyGems, crates.io and
+  NuGet legs are wired; only the Go one has ever run against a real registry,
+  because the other three are unbootstrapped and their legs skip until they
+  are not. Two holes are left. **PHP has no leg**: Packagist has no publish
+  job — the tag is the release — so there is no step of ours to verify, and
+  `tools/php-consumer-smoke.mjs` already installs the real `git archive` in
+  the `php-static` CI job; a Packagist leg would only be testing Composer.
+  **The .NET leg tests one of the two shipped assets**: `net8.0` selects
+  `lib/net8.0`, and `lib/netstandard2.0` needs a `net472` consumer on a
+  Windows runner (`dotnet/RELEASE.md`).
 - **Unity smoke test for the .NET port**: the `dotnet-mono` CI job is evidence
   that the netstandard2.0 asset loads outside CoreCLR, not that it runs in an
   IL2CPP player. Until something exercises a real player build, the README
