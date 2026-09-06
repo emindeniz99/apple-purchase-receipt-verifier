@@ -43,7 +43,7 @@
     <library.version>0.3.0</library.version> <!-- x-release-please-version -->
     <junit.version>5.14.4</junit.version>
     <kotlin.version>2.4.10</kotlin.version>
-    <scala.version>3.3.4</scala.version>
+    <scala.version>3.9.0</scala.version>
     <scala.binary.version>3</scala.binary.version>
   </properties>
 
