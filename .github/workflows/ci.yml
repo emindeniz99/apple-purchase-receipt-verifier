@@ -88,8 +88,11 @@ jobs:
           node-version: ${{ matrix.node }}
           package-manager-cache: false
       # npm ci, not npm install: the committed lockfile is the contract and
-      # this is the job that verifies it.
-      - run: npm ci && npm test
+      # this is the job that verifies it. --ignore-scripts everywhere: no
+      # dependency here needs its install script (esbuild resolves its binary
+      # from the optional platform package, jazzer ships prebuilds), and an
+      # install script is the way a hijacked release runs code in CI.
+      - run: npm ci --ignore-scripts && npm test
         working-directory: node
 
   # The npm package's runtime claims (README "JavaScript runtimes"): the
@@ -124,7 +127,7 @@ jobs:
         with:
           node-version: "22"
           package-manager-cache: false
-      - run: npm ci && npm run runtime:${{ matrix.runtime }}
+      - run: npm ci --ignore-scripts && npm run runtime:${{ matrix.runtime }}
         working-directory: node
 
   # roots-data.ts is generated from certs/; a certs change that forgets to
@@ -162,7 +165,7 @@ jobs:
         with:
           node-version: "22"
           package-manager-cache: false
-      - run: npm ci && npm run test:runtimes:web
+      - run: npm ci --ignore-scripts && npm run test:runtimes:web
         working-directory: node
 
   # Fastly Compute is the fourth WebCrypto-only runtime, and the one that
@@ -186,7 +189,7 @@ jobs:
       # --locked so the published lockfile decides the build, and a pinned
       # version so a viceroy release cannot change what this job proves.
       - run: cargo install viceroy --locked --version 0.20.1
-      - run: npm ci && npm run test:runtimes:fastly
+      - run: npm ci --ignore-scripts && npm run test:runtimes:fastly
         working-directory: node
 
   # Proves jvm-interop/README.md's claim: the published jar is usable from
@@ -643,9 +646,9 @@ jobs:
           node-version: "22"
           package-manager-cache: false
       # The targets import ../dist, so the library has to be built first.
-      - run: npm ci && npm run build
+      - run: npm ci --ignore-scripts && npm run build
         working-directory: node
-      - run: npm ci
+      - run: npm ci --ignore-scripts
         working-directory: node/fuzz
       - run: ./run.sh all 60
         working-directory: node/fuzz
@@ -1134,7 +1137,7 @@ jobs:
         with:
           node-version: "22"
           package-manager-cache: false
-      - run: npm ci && npm run lint && npm run format:check
+      - run: npm ci --ignore-scripts && npm run lint && npm run format:check
         working-directory: node
 
   # ruff and mypy for the Python port. One job, not a matrix: ruff pins the

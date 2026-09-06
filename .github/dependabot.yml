@@ -49,6 +49,29 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+  # The fuzz harnesses are packages of their own (a separate lockfile, a
+  # separate SwiftPM package, a separate crate) and dependabot only watches
+  # the directories it is told about. Same cooldown: a fuzz job runs the
+  # dependency's code on every push, so a hijacked release reaches it
+  # exactly as it would the library.
+  - package-ecosystem: npm
+    directory: /node/fuzz
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+  - package-ecosystem: cargo
+    directory: /rust/fuzz
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+  - package-ecosystem: swift
+    directory: /swift/fuzz
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
   # The library module has no requirements and only follows the toolchain
   # directive; /go/tools tracks staticcheck and govulncheck. Separate entries
   # are what stops a linter bump from touching the published module graph.
