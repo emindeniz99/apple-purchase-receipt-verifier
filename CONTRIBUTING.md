@@ -134,15 +134,40 @@ the sources every expectation was derived from.
 
 Fixtures under `fixtures/generated/` are signed by a fake Apple PKI built in
 `java/src/test/.../TestPki.java`, so no real Apple key material is needed.
-Two generators write them, both at fixed epoch instants so nothing depends on
-generation time:
+Seven generators write them, all at fixed epoch instants so nothing depends
+on generation time:
 
 - `FixtureGeneratorTest` — the original set. Gated behind
   `mvn test -Dtest=FixtureGeneratorTest -Dfixtures.generate=true`.
 - `PortDivergenceFixtures` — the receipt whose attribute type is above
-  2^31-1, and the receipts and payloads carrying no date of their own. It is
-  a `main`, not a test, so it costs the suite no permanently skipped test;
-  the class javadoc carries the exact command.
+  2^31-1, and the receipts and payloads carrying no date of their own.
+- `HostileReceiptFixtures` — the four defective-signer receipts, the
+  receipt-path twins of the `x5c` certificate mutations
+  `HostileJwsFixtures` builds.
+- `HostileJwsFixtures` — the eight hostile-JWS fixtures Python's
+  coverage-guided fuzzing found escaping the library as bare exceptions,
+  plus the `x5c[2]` vector that closed the last parser differential.
+- `JwsSegmentFixtures` — the six empty-or-non-object compact-JWS segment
+  fixtures (RFC 7515 §7.1 requires the first two segments to decode to JSON
+  objects).
+- `LargeReceiptFixture` — the two receipts pinning the contract's
+  normative resource floor: 1,048,576 bytes of DER and 20,000 ASN.1 nodes
+  in a single parse.
+- `AbsentSignerFixture` — the receipt that separates "the signer is not in
+  the bag" from "something in the bag is not a certificate".
+
+The last six run as a `main`, not a `@Test`, so none of them costs the suite
+a permanently skipped test. All six regenerate the same way, only the class
+name changes:
+
+```bash
+mvn -B -q -f java/pom.xml test-compile
+mvn -B -q -f java/pom.xml dependency:build-classpath -Dmdep.outputFile=/tmp/cp.txt
+java -cp "java/target/test-classes:java/target/classes:$(cat /tmp/cp.txt)" \
+     io.github.emindeniz99.applepurchasereceiptverifier.<ClassName> \
+     fixtures/generated
+node tools/lint-cases.mjs   # re-hash: every contentSha256 must be updated
+```
 
 Every run mints fresh keys, so regenerating changes every byte and every
 `contentSha256` that records it. The signing keys are deliberately not kept:
@@ -207,6 +232,13 @@ Pull requests merge with a **real merge commit** — never squash, never
 rebase-merge. Per-commit history is the record of how the work was built;
 squashing erases it irreversibly. (Squash and rebase merges are disabled in
 the repo settings.)
+
+Give the merge commit a body that is not a Conventional Commit line, e.g.
+`Merges #57` — not GitHub's default, the PR title, which usually is one.
+release-please reads merge commit bodies as commits too, so a conventional
+body there duplicates the entry the branch commit already produces (0.4.0's
+changelog lists `deps: Bump actions/setup-go from 6.5.0 to 7.0.0` twice for
+exactly this reason).
 
 ## Releases
 
