@@ -172,14 +172,15 @@ What landed:
 
 The archive is 30 files: the two manifests, the two licences,
 `php/README.md`, the three pinned roots and 22 PHP sources. The open question
-the old text flagged is half closed. `git archive` honours `export-ignore`,
-reproduced by the guard on every run; whether GitHub's **zipball** honours it
-cannot be tested before this is on a branch GitHub serves. Verify it after
-merge by downloading
-<https://github.com/emindeniz99/apple-purchase-receipt-verifier/archive/refs/heads/main.zip>
-and listing it: the same 30 paths, under one top-level directory. If it turns
-out not to hold, Composer ships the whole repository instead, about 1 MB, and
-nothing else about the layout changes.
+the old text flagged is closed. `git archive` honours `export-ignore`,
+reproduced by the guard on every run, and GitHub's **zipball** honours it
+too: on 2026-09-06 the branch archive at
+`archive/refs/heads/feat/packagist-root-manifest.zip` listed exactly those 30
+paths (plus their directory entries) under one top-level directory, 72 KB.
+If a later GitHub change ever stops applying the rules, Composer ships the
+whole repository instead, about 1 MB, and nothing else about the layout
+changes; the guard only sees `git archive`, so that would show up as a
+consumer's oversized vendor directory, not as a red build.
 
 One consequence worth knowing, because it reaches past Composer: GitHub builds
 the "Source code (zip)" asset on every Release from the same archive, so that
