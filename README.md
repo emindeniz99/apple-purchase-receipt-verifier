@@ -78,7 +78,12 @@ repository's tags.
 [`rust/ffi/`](rust/ffi/) is built from source against the Rust port: a
 `cdylib`/`staticlib` and a generated header, nineteen symbols, JSON as the
 interchange. Prebuilt binaries per OS and architecture are a later step, not
-a shipped one. See [rust/ffi/README.md](rust/ffi/README.md).
+a shipped one. See [rust/ffi/README.md](rust/ffi/README.md). Three example
+consumers call it, one of each kind: C++17 through the header in
+[`rust/ffi/examples/cpp/`](rust/ffi/examples/cpp/), Python through ctypes
+with no compiler in
+[`rust/ffi/examples/python/`](rust/ffi/examples/python/), and Elixir over a
+NIF shim in [`rust/ffi/examples/elixir/`](rust/ffi/examples/elixir/).
 
 The import namespace is the registry name in each ecosystem's casing
 convention (`applepurchasereceiptverifier` / `apple_purchase_receipt_verifier` /
