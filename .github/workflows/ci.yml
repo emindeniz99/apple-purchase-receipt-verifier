@@ -1265,9 +1265,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # 10.0.x, the newest line this workflow installs, is the SDK that wrote
+      # packages.lock.json. Each SDK band bundles its own implicit
+      # Microsoft.NET.ILLink.Tasks version for a given target, and they do
+      # not always agree (2026-09-18: 9.0.318 asked 8.0.30 for net8.0 while
+      # 10.0.401 asked 8.0.31), so a job restoring under an older SDK trips
+      # locked mode with NU1004 on a lock file that is correct.
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version: '10.0.x'
       - name: Load the netstandard2.0 asset under Mono
         working-directory: dotnet
         run: |
@@ -1318,9 +1324,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The SDK that wrote packages.lock.json; see dotnet-mono. The sample
+      # still targets net9.0, which this SDK builds and publishes.
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version: '10.0.x'
       - name: Publish fully trimmed and verify a receipt with it
         working-directory: dotnet
         run: |
