@@ -58,7 +58,7 @@ you change a manifest:
 | python | `python/uv.lock` | `uv lock` |
 | php | `php/composer.lock` | `composer update` (resolves at the 8.1 floor, see below) |
 | ruby | `ruby/Gemfile.lock`, `ruby/gemfiles/*.lock` | `bundle lock` with the matching `BUNDLE_GEMFILE` |
-| dotnet | `dotnet/**/packages.lock.json` | `dotnet restore --force-evaluate` |
+| dotnet | `dotnet/**/packages.lock.json` | `dotnet restore --force-evaluate` under the newest SDK line `ci.yml` installs (10.0.x); an older band asks for a different implicit ILLink version and fails locked mode |
 | swift | `Package.resolved`, `swift/fuzz/Package.resolved` | `swift package update` |
 | go | `go/tools/go.sum` | `go get` then `go mod tidy` in `go/tools` |
 
