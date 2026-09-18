@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.5.0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.4.0...v0.5.0) (2026-09-18)
+
+
+### Features
+
+* **java:** JSpecify nullness annotations on the public API ([05b7738](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/05b7738b2d23b17d654f80d764244bc0e6eb4917))
+* **php:** install from the repository root so Packagist can see the package ([c7fd7ed](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/c7fd7edf0b29253004fc52f13bbe4c465d38ad16))
+* **php:** publish the PHP port through a root composer.json (Packagist layout A) ([fee091c](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/fee091c49206ee2cc02751db2dc23f147c81b5eb))
+* **ruby:** type the internals so steep check passes ([41ea944](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/41ea9442bcb434ae90d45fde01a58bacb39e9d44))
+* **rust:** add a clock to the C ABI and raise the Elixir example to 1.18 ([dc00bb2](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/dc00bb2f72d0ec29a895d8f69fad4836d7d116dc))
+* **rust:** add Elixir and Python examples over the C ABI ([6eb7c1a](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/6eb7c1ae7fa1d19344528492ad736ed4a49348c5))
+* **rust:** expose the verifier through a C ABI ([7c29885](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/7c298856a9766e51e571950d81d660b23706cd09))
+
+
+### Bug Fixes
+
+* **repo:** resolve the receipt signer by identity in every port ([d160f48](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/d160f4803c121f1395fe5da1fbd1d524cae1be68))
+* **repo:** resolve the receipt signer by identity in every port ([a96c1b1](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/a96c1b1d65a45f7db574deebc338258e78d55a7f))
+
+
+### Build & Dependencies
+
+* **deps-dev:** Bump com.diffplug.spotless:spotless-maven-plugin ([b883501](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b8835019c9260d17658a3c65297f5579dde1db95))
+* **deps-dev:** Bump org.apache.maven.plugins:maven-compiler-plugin ([8fe28b4](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/8fe28b4bb43843ba7495b28edaf091e3e5a1c1a2))
+* **deps-dev:** Bump org.apache.maven.plugins:maven-compiler-plugin ([869082b](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/869082bc115d504b1e6f8b1bb44c2e3be5379fb4))
+* **deps-dev:** Bump org.apache.maven.plugins:maven-jar-plugin in /java ([1e3d20a](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/1e3d20acdcad26339f5cf89e9aec4392fe448e70))
+* **deps-dev:** Bump org.apache.maven.plugins:maven-surefire-plugin ([8083e7d](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/8083e7d034e3cbf98f8475f2f9fb9e43074c30c6))
+* **deps:** Bump github.com/apple/swift-asn1 from 1.7.1 to 1.7.2 ([b87b0b3](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b87b0b37202a16b6520595fbb5973814d875c8f5))
+* **deps:** Bump github.com/apple/swift-certificates ([3a6b600](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/3a6b600225e5d5ee7c4dfe05b89d4f9c15403882))
+* **deps:** Bump github.com/apple/swift-crypto from 4.5.1 to 4.5.2 ([5832839](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/5832839bf636afda00c101ecdd65f9e464fed859))
+* **deps:** Bump org.apache.maven.plugins:maven-surefire-plugin ([21b8b0e](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/21b8b0e4ae5b8b103c42fb49dd50a60cde8487f4))
+* **dotnet:** regenerate lock files for the September SDK patches ([acbb40b](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/acbb40beafb6158826bc0490bba230ecab9525c5))
+
 ## [0.4.0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.3.0...v0.4.0) (2026-09-06)
 
 
