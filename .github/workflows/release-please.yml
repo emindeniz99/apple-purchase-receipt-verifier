@@ -81,7 +81,7 @@ jobs:
           # the token; the job holds contents: write for that push.
           persist-credentials: true # zizmor: ignore[artipacked]
       - if: ${{ steps.release-branch.outputs.name != '' }}
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
       - name: bring the lockfiles in step with the release version
         if: ${{ steps.release-branch.outputs.name != '' }}
         env:
