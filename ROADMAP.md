@@ -62,9 +62,11 @@ Delete a line in the commit that ships it.
 - **Real receipt fixtures** (PLAN D6): owner to supply real production +
   sandbox receipts (and ideally a StoreKit-Test/Xcode receipt) as checked-in
   fixtures; add byte-level regression tests over them in every suite.
-  Also use the corpus to confirm undocumented attribute ids
-  (`is_trial_period`, `adam_id`, `version_external_identifier`) so
-  COMPARISON.md's "not produced" list can shrink.
+  The corpus has now been decoded end to end (RECEIPT-FIELDS.md):
+  `is_trial_period` is type 1713 on every genuine in-app entry and is the
+  one undocumented attribute worth modelling next; `adam_id` and
+  `version_external_identifier` cannot be told apart in this corpus (types
+  1, 11, 15 and 16 are all zero), so they stay unconfirmed.
 - **Mac App Store receipt fixture**: the harvest (fixtures/public-receipts/,
   done ✅ — genuine sandbox + legacy receipts verify in every
   language) covered iOS; a genuine macOS receipt is still missing.

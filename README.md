@@ -40,6 +40,9 @@ Start with [INTENT.md](./INTENT.md) (why + trust model), then
 [THREAT-MODEL.md](./THREAT-MODEL.md) is the security account: what is
 attacker-controlled, each mitigation with the test that proves it, the
 non-goals, and the residual risks.
+[RECEIPT-FIELDS.md](./RECEIPT-FIELDS.md) is the legacy-receipt reference:
+every attribute type the genuine fixtures carry, which ones Apple documents,
+and Apple's chain-of-trust procedure mapped step by step onto the code.
 
 ## Upstream
 
