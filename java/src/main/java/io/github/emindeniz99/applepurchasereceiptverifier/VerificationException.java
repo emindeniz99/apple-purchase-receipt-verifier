@@ -7,6 +7,8 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
  */
 public class VerificationException extends Exception {
 
+    private static final long serialVersionUID = 1L;
+
     public enum Reason {
         /** Not a parseable compact JWS, wrong alg, or malformed x5c header. */
         INVALID_JWS_FORMAT,

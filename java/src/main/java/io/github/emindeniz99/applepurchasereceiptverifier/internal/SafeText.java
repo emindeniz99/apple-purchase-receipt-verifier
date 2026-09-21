@@ -1,5 +1,7 @@
 package io.github.emindeniz99.applepurchasereceiptverifier.internal;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Renders attacker-controlled input for an exception message.
  *
@@ -34,7 +36,7 @@ public final class SafeText {
      * @param value the attacker-controlled text; {@code null} renders as
      *              {@code "null"}, the same as string concatenation would
      */
-    public static String quote(String value) {
+    public static String quote(@Nullable String value) {
         if (value == null) {
             return "null";
         }
