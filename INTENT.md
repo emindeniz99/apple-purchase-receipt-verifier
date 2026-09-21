@@ -13,7 +13,15 @@ endpoint. The recommended replacements are:
 2. **Validate the legacy app receipt on-device style** — the PKCS#7 receipt
    from `[NSBundle appStoreReceiptURL]` can be validated with plain PKI
    ([Validating receipts on the device](https://developer.apple.com/documentation/appstorereceipts/validating-receipts-on-the-device)),
-   which works identically on a server.
+   which works identically on a server. That page carries the payload's
+   ASN.1 module (`ReceiptAttribute ::= SEQUENCE { type INTEGER, version
+   INTEGER, value OCTET STRING }`, `Payload ::= SET OF ReceiptAttribute`)
+   and defers the attribute numbers to Apple's archived
+   [Receipt Fields](https://developer.apple.com/library/archive/releasenotes/General/ValidateAppStoreReceipt/Chapters/ReceiptFields.html)
+   page, last revised 2017-12-11. Every attribute the ports read is on
+   that page except two, receipt type (0) and original purchase date
+   (18), which are community-established and flagged as such in every
+   port's payload reader.
 
 We want our backends to do exactly that: **prove, cryptographically and
 offline, that purchase data presented by a client was produced by Apple** —
