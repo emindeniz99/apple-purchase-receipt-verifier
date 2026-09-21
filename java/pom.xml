@@ -39,6 +39,12 @@
     <!-- Java 8 baseline (PLAN.md D2): enterprise consumers still run 8. -->
     <maven.compiler.release>8</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!-- Reproducible build: with this set, the jar, sources and javadoc
+         plugins write this instant into every entry instead of the build
+         time, so two builds of one commit are byte-identical and a consumer
+         can rebuild the Central artifact and compare. The value only has
+         to be fixed, not current; bump it with a release when convenient. -->
+    <project.build.outputTimestamp>2026-09-21T00:00:00Z</project.build.outputTimestamp>
     <bouncycastle.version>1.86</bouncycastle.version>
     <!-- Floor: Jackson 2.16. JwsVerifier and VerifyReceiptEndpoint state
          StreamReadConstraints on their mappers rather than relying on
@@ -232,6 +238,28 @@
                 <id>attach-javadocs</id>
                 <goals>
                   <goal>jar</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+          <!-- CycloneDX SBOM, attached as <artifact>-<version>-cyclonedx.json
+               so it is signed and uploaded with the jars: runtime scope only,
+               which is the three BouncyCastle and three Jackson jars the
+               README's dependency table describes. -->
+          <plugin>
+            <groupId>org.cyclonedx</groupId>
+            <artifactId>cyclonedx-maven-plugin</artifactId>
+            <version>2.9.3</version>
+            <configuration>
+              <includeTestScope>false</includeTestScope>
+              <outputFormat>json</outputFormat>
+            </configuration>
+            <executions>
+              <execution>
+                <id>attach-sbom</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>makeBom</goal>
                 </goals>
               </execution>
             </executions>
