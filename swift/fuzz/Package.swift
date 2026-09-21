@@ -17,7 +17,11 @@ let package = Package(
     name: "apple-purchase-receipt-verifier-fuzz",
     platforms: [.macOS(.v13)],
     dependencies: [
-        .package(path: "../.."),
+        // `name:` is what the product lookup below matches. Without it the
+        // identity comes from the directory the library sits in, and
+        // Dependabot checks the repository out as "repo", so its weekly
+        // swift/fuzz run died on an unknown package (2026-09-19).
+        .package(name: "apple-purchase-receipt-verifier", path: "../.."),
         // The splice in FuzzSupport needs a BER reader to find the payload
         // node it replaces. Same version range as the root manifest, so
         // SwiftPM resolves one copy for both packages.
