@@ -9,7 +9,7 @@ module ApplePurchaseReceiptVerifier
   class InAppPurchase
     ATTRIBUTES = %i[quantity product_id transaction_id original_transaction_id purchase_date
                     original_purchase_date expires_date cancellation_date web_order_line_item_id
-                    is_in_intro_offer_period unknown_attributes].freeze
+                    is_trial_period is_in_intro_offer_period unknown_attributes].freeze
 
     attr_reader(*ATTRIBUTES)
 
@@ -33,6 +33,7 @@ module ApplePurchaseReceiptVerifier
   class AppReceipt
     ATTRIBUTES = %i[receipt_type bundle_id bundle_id_bytes app_version opaque_value sha1_hash
                     creation_date original_purchase_date original_app_version expiration_date
+                    app_item_id download_id version_external_identifier
                     in_app_purchases unknown_attributes].freeze
 
     attr_reader(*ATTRIBUTES)
@@ -59,16 +60,19 @@ module ApplePurchaseReceiptVerifier
   #
   # @api private
   module ReceiptPayload
-    RECEIPT_TYPE           = 0
-    BUNDLE_ID              = 2
-    APP_VERSION            = 3
-    OPAQUE_VALUE           = 4
-    SHA1_HASH              = 5
-    CREATION_DATE          = 12
-    IN_APP                 = 17
-    ORIGINAL_PURCHASE_DATE = 18
-    ORIGINAL_APP_VERSION   = 19
-    EXPIRATION_DATE        = 21
+    RECEIPT_TYPE                = 0
+    APP_ITEM_ID                 = 1
+    BUNDLE_ID                   = 2
+    APP_VERSION                 = 3
+    OPAQUE_VALUE                = 4
+    SHA1_HASH                   = 5
+    CREATION_DATE               = 12
+    DOWNLOAD_ID                 = 15
+    VERSION_EXTERNAL_IDENTIFIER = 16
+    IN_APP                      = 17
+    ORIGINAL_PURCHASE_DATE      = 18
+    ORIGINAL_APP_VERSION        = 19
+    EXPIRATION_DATE             = 21
 
     IAP_QUANTITY                 = 1701
     IAP_PRODUCT_ID               = 1702
@@ -79,6 +83,7 @@ module ApplePurchaseReceiptVerifier
     IAP_EXPIRES_DATE             = 1708
     IAP_WEB_ORDER_LINE_ITEM_ID   = 1711
     IAP_CANCELLATION_DATE        = 1712
+    IAP_IS_TRIAL_PERIOD          = 1713
     IAP_IS_IN_INTRO_OFFER_PERIOD = 1719
 
     # Attribute *types* live in a 32-bit signed space. Every type Apple has
@@ -120,7 +125,8 @@ module ApplePurchaseReceiptVerifier
         fields = {
           receipt_type: nil, bundle_id: nil, bundle_id_bytes: nil, app_version: nil,
           opaque_value: nil, sha1_hash: nil, creation_date: nil, original_purchase_date: nil,
-          original_app_version: nil, expiration_date: nil
+          original_app_version: nil, expiration_date: nil, app_item_id: nil, download_id: nil,
+          version_external_identifier: nil
         } #: Hash[Symbol, untyped]
         purchases = [] #: Array[InAppPurchase]
         unknown = {} #: Hash[Integer, Array[String]]
@@ -128,6 +134,7 @@ module ApplePurchaseReceiptVerifier
         each_attribute(content, "receipt payload") do |type, value|
           case type
           when RECEIPT_TYPE then fields[:receipt_type] = decode_string(value)
+          when APP_ITEM_ID  then fields[:app_item_id] = decode_integer(value)
           when BUNDLE_ID
             fields[:bundle_id] = decode_string(value)
             fields[:bundle_id_bytes] = value.dup.freeze
@@ -135,6 +142,9 @@ module ApplePurchaseReceiptVerifier
           when OPAQUE_VALUE           then fields[:opaque_value] = value.dup.freeze
           when SHA1_HASH              then fields[:sha1_hash] = value.dup.freeze
           when CREATION_DATE          then fields[:creation_date] = decode_date(value)
+          when DOWNLOAD_ID            then fields[:download_id] = decode_integer(value)
+          when VERSION_EXTERNAL_IDENTIFIER
+            fields[:version_external_identifier] = decode_integer(value)
           when IN_APP                 then purchases << parse_in_app(value)
           when ORIGINAL_PURCHASE_DATE then fields[:original_purchase_date] = decode_date(value)
           when ORIGINAL_APP_VERSION   then fields[:original_app_version] = decode_string(value)
@@ -154,7 +164,8 @@ module ApplePurchaseReceiptVerifier
         fields = {
           quantity: nil, product_id: nil, transaction_id: nil, original_transaction_id: nil,
           purchase_date: nil, original_purchase_date: nil, expires_date: nil,
-          cancellation_date: nil, web_order_line_item_id: nil, is_in_intro_offer_period: nil
+          cancellation_date: nil, web_order_line_item_id: nil, is_trial_period: nil,
+          is_in_intro_offer_period: nil
         } #: Hash[Symbol, untyped]
         unknown = {} #: Hash[Integer, Array[String]]
 
@@ -171,6 +182,7 @@ module ApplePurchaseReceiptVerifier
           when IAP_WEB_ORDER_LINE_ITEM_ID
             fields[:web_order_line_item_id] = decode_integer(value)
           when IAP_CANCELLATION_DATE        then fields[:cancellation_date] = decode_date(value)
+          when IAP_IS_TRIAL_PERIOD          then fields[:is_trial_period] = decode_integer(value)
           when IAP_IS_IN_INTRO_OFFER_PERIOD
             fields[:is_in_intro_offer_period] = decode_integer(value)
           else record_unknown(unknown, type, value)

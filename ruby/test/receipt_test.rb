@@ -178,6 +178,55 @@ class ReceiptTest < Minitest::Test
     assert_equal(["x"], receipt.unknown_attributes[(2**31) - 1].map { |v| v[2..] })
   end
 
+  # Legacy receipt ids: app-level attributes 1 (app item id), 15 (download
+  # id) and 16 (version external identifier), and in-app attribute 1713 (is
+  # trial period). None is on Apple's archived Receipt Fields chapter; their
+  # meaning was established by comparing a genuine production receipt with
+  # Apple's own verifyReceipt answer for it (measured 2026-09-21). The
+  # download id is 2^53+1, the first integer an IEEE-754 double cannot hold
+  # exactly, so asserting on its String form proves Ruby's arbitrary-precision
+  # Integer carries it digit for digit rather than rounding it.
+  def test_legacy_receipt_ids_are_decoded
+    receipt = APRV::ReceiptVerifier.new(
+      trusted_roots: [TestSupport.fixture_certificate("receipt-ids-root")],
+      bundle_id: "com.example.app"
+    ).verify_der(TestSupport.fixture_bytes("receipt-ids"))
+
+    assert_equal 1_234_567_890, receipt.app_item_id
+    assert_equal 9_007_199_254_740_993, receipt.download_id
+    assert_equal "9007199254740993", receipt.download_id.to_s
+    assert_equal 456_789_012, receipt.version_external_identifier
+
+    coins = receipt.in_app_purchases.find { |p| p.product_id == "com.example.app.coins100" }
+    vip = receipt.in_app_purchases.find { |p| p.product_id == "com.example.app.vip" }
+    assert_equal 0, coins.is_trial_period
+    assert_equal 1, vip.is_trial_period
+
+    # The four types leave unknownAttributes; the fixture's other unknown
+    # attribute, 9999, must still be there.
+    refute receipt.unknown_attributes.key?(1)
+    refute receipt.unknown_attributes.key?(15)
+    refute receipt.unknown_attributes.key?(16)
+    assert receipt.unknown_attributes.key?(9999)
+    refute coins.unknown_attributes.key?(1713)
+    refute vip.unknown_attributes.key?(1713)
+  end
+
+  # Absent and present-but-zero are different answers: a receipt that carries
+  # none of the four attributes reports them nil rather than 0.
+  def test_legacy_receipt_ids_are_absent_when_the_receipt_does_not_carry_them
+    receipt = APRV::ReceiptVerifier.new(
+      trusted_roots: [TestSupport.fixture_certificate("receipt-root")],
+      bundle_id: "com.example.app"
+    ).verify_der(TestSupport.fixture_bytes("receipt"))
+
+    assert_nil receipt.app_item_id
+    assert_nil receipt.download_id
+    assert_nil receipt.version_external_identifier
+    coins = receipt.in_app_purchases.find { |p| p.product_id == "com.example.app.coins100" }
+    assert_nil coins.is_trial_period
+  end
+
   def test_rejects_dates_without_a_timezone_designator_or_out_of_range
     ["2024-08-06T12:00:00", "2024-08-06 12:00:00Z", "0000-00-00T00:00:00Z", "not a date"]
       .each do |text|

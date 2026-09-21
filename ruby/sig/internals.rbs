@@ -76,7 +76,7 @@ module ApplePurchaseReceiptVerifier
     def now: () -> Time
     def receipt_json: (AppReceipt receipt, Time request_date) -> json_body
     def in_app_json: (InAppPurchase purchase) -> Hash[String, String]
-    def put: (Hash[String, untyped] target, String key, String? value) -> void
+    def put: (Hash[String, untyped] target, String key, (String | Integer)? value) -> void
     def apple_dates: (Hash[String, untyped] target, String prefix, Time? date) -> void
   end
 
@@ -176,11 +176,14 @@ module ApplePurchaseReceiptVerifier
   # receipt_payload.rb — the receipt attribute grammar.
   module ReceiptPayload
     RECEIPT_TYPE: Integer
+    APP_ITEM_ID: Integer
     BUNDLE_ID: Integer
     APP_VERSION: Integer
     OPAQUE_VALUE: Integer
     SHA1_HASH: Integer
     CREATION_DATE: Integer
+    DOWNLOAD_ID: Integer
+    VERSION_EXTERNAL_IDENTIFIER: Integer
     IN_APP: Integer
     ORIGINAL_PURCHASE_DATE: Integer
     ORIGINAL_APP_VERSION: Integer
@@ -195,6 +198,7 @@ module ApplePurchaseReceiptVerifier
     IAP_EXPIRES_DATE: Integer
     IAP_WEB_ORDER_LINE_ITEM_ID: Integer
     IAP_CANCELLATION_DATE: Integer
+    IAP_IS_TRIAL_PERIOD: Integer
     IAP_IS_IN_INTRO_OFFER_PERIOD: Integer
 
     MAX_ATTRIBUTE_TYPE: Integer
