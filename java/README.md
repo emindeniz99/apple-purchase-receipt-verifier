@@ -54,12 +54,20 @@ by Maven:
 
 | Dependency | Jars it puts on the classpath | Size |
 |---|---|---|
-| `org.bouncycastle:bcpkix-jdk18on` | `bcpkix` 1.3 MB, `bcprov` 10.3 MB, `bcutil` 0.7 MB | 12.4 MB |
+| `org.bouncycastle:bcpkix-jdk18on` | `bcpkix` 1.3 MB, `bcprov` 7.2 MB, `bcutil` 0.8 MB | 9.4 MB |
 | `com.fasterxml.jackson.core:jackson-databind` | `jackson-databind` 1.7 MB, `jackson-core` 0.6 MB, `jackson-annotations` 0.1 MB | 2.4 MB |
 
-Sizes are the jars at the versions this pom declares (BouncyCastle 1.85,
-Jackson 2.22.2); BouncyCastle is most of what depending on this library
-costs, and `bcprov` is most of BouncyCastle.
+Sizes are the jars at the versions the pom declared when they were measured
+(BouncyCastle 1.86, Jackson 2.22.2; `bcprov` lost three megabytes between
+1.85 and 1.86, so re-measure after a bump rather than trust this table).
+BouncyCastle is most of what depending on this library costs, and `bcprov`
+is most of BouncyCastle.
+
+Every Central deployment carries a CycloneDX 1.6 SBOM listing exactly these
+six jars, attached as the `cyclonedx` classifier
+(`apple-purchase-receipt-verifier-<version>-cyclonedx.json`) and signed like
+the jars, and the build is reproducible: `project.build.outputTimestamp` is
+pinned in the pom, so two builds of one commit are byte-identical.
 
 The pom declares a third, `org.jspecify:jspecify`, as `optional`: it is
 annotations only, nothing reads them at run time, and an optional dependency
@@ -150,6 +158,11 @@ verifier.verify(receiptBase64);                     // String
 verifier.verify(receiptDer, deviceGuid);            // byte[], byte[]
 verifier.verify(receiptBase64, deviceGuid);         // String, byte[]
 ```
+
+A null receipt is a verdict (`INVALID_RECEIPT_FORMAT`), not a
+`NullPointerException`, but a literal `null` needs a cast to pick an
+overload: `verify((String) null)`. A typed variable that happens to be null
+resolves on its own.
 
 `verify(String)` decodes exactly what Apple's `receipt-data` accepts: RFC
 4648 Base64, the standard (`+`/`/`) or base64url (`-`/`_`) alphabet — never
@@ -430,6 +443,34 @@ certificate by rotating it. See
 [THREAT-MODEL.md](../THREAT-MODEL.md) section 4 for the rationale, and use
 the App Store Server API for refunds, revocations and subscription state,
 none of which a signature can express.
+
+### One platform caveat worth knowing
+
+The genuine legacy Apple receipt chain is SHA-1 end to end: the leaf and the
+WWDR intermediate are both `sha1WithRSAEncryption`. `ReceiptVerifier` builds
+that chain with the JDK's own PKIX `CertPathBuilder`, which obeys
+`jdk.certpath.disabledAlgorithms` in `java.security`. Stock OpenJDK qualifies
+its SHA-1 entry (`SHA1 jdkCA & usage TLSServer`, or similar) so the pinned
+Apple root is unaffected and the suite passes unchanged. A JVM whose policy
+disables SHA-1 outright, which is what RHEL and Fedora system crypto policies
+and many hardened enterprise `java.security` files do, fails every genuine
+legacy receipt with `INVALID_CHAIN: signer chain does not validate to a
+pinned Apple root: unable to find valid certification path to requested
+target`. Measured on Temurin 21 with
+`jdk.certpath.disabledAlgorithms=MD2, MD5, SHA1, RSA keySize < 1024`: 104 of
+the 105 conformance cases pass and `receipt/verify-genuine-legacy-sha1-chain`
+is the one that fails, which the `java-hardened-policy` CI job asserts on
+every push.
+
+The library will not silently route around the policy: chain building stays
+on the JDK provider, so the platform's rule is the rule. The escape hatch is
+the platform's own, a `java.security` override that leaves SHA-1 out of
+`jdk.certpath.disabledAlgorithms` (`-Djava.security.properties=<file>` for
+one JVM, `update-crypto-policies --set LEGACY` on RHEL). Newer receipts
+(SHA-256 chains) and every StoreKit 2 JWS are unaffected. Run
+`ConformanceCasesTest` on the JDK image that will serve production before
+relying on legacy receipts there; the discriminating case is already in the
+suite. Ruby, PHP and Go carry the same caveat for their runtimes.
 
 ## Environment routing and staleness
 
