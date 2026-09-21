@@ -6,8 +6,10 @@ namespace EminDeniz99\ApplePurchaseReceiptVerifier\Tests;
 
 use EminDeniz99\ApplePurchaseReceiptVerifier\Reason;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\AppReceipt;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\InAppPurchase;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\DerWriter;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Fixtures;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\MintedPki;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Shape;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\TestPki;
@@ -436,6 +438,66 @@ final class ReceiptVerifierTest extends TestCase
 
         $unknown = $this->verifier()->verify($receipt)->unknownAttributes;
         self::assertSame(["\x01\x02\x03", "\x04\x05\x06"], $unknown[9999], 'a type may legitimately repeat');
+    }
+
+    /**
+     * Legacy receipt ids: app-level attributes 1 (app item id), 15 (download
+     * id) and 16 (version external identifier), and in-app attribute 1713 (is
+     * trial period). None is on Apple's archived Receipt Fields chapter;
+     * their meaning was established by comparing a genuine production
+     * receipt with Apple's own verifyReceipt answer for it (measured
+     * 2026-09-21). The download id is 2^53+1, the first integer an IEEE-754
+     * double cannot hold: asserting the exact digits, including through a
+     * string cast, proves PHP's 64-bit int carries it rather than rounding
+     * it through a float.
+     */
+    public function testLegacyReceiptIdsAreDecoded(): void
+    {
+        $receipt = $this->verifier(Fixtures::bytes('receipt-ids-root'))
+            ->verify(Fixtures::bytes('receipt-ids'));
+
+        self::assertSame(1234567890, $receipt->appItemId);
+        self::assertSame(9007199254740993, $receipt->downloadId);
+        self::assertSame('9007199254740993', (string) $receipt->downloadId);
+        self::assertSame(456789012, $receipt->versionExternalIdentifier);
+
+        $coins = self::purchase($receipt, 'com.example.app.coins100');
+        $vip = self::purchase($receipt, 'com.example.app.vip');
+        self::assertSame(0, $coins->isTrialPeriod);
+        self::assertSame(1, $vip->isTrialPeriod);
+
+        // The four types leave unknownAttributes; the fixture's other
+        // unknown attribute, 9999, must still be there.
+        self::assertArrayNotHasKey(1, $receipt->unknownAttributes);
+        self::assertArrayNotHasKey(15, $receipt->unknownAttributes);
+        self::assertArrayNotHasKey(16, $receipt->unknownAttributes);
+        self::assertArrayHasKey(9999, $receipt->unknownAttributes);
+        self::assertArrayNotHasKey(1713, $coins->unknownAttributes);
+        self::assertArrayNotHasKey(1713, $vip->unknownAttributes);
+    }
+
+    /**
+     * Absent and present-but-zero are different answers: a receipt that
+     * carries none of the four attributes reports them null rather than 0.
+     */
+    public function testLegacyReceiptIdsAreAbsentWhenTheReceiptDoesNotCarryThem(): void
+    {
+        $receipt = $this->verifier(Fixtures::bytes('receipt-root'))->verify(Fixtures::bytes('receipt'));
+
+        self::assertNull($receipt->appItemId);
+        self::assertNull($receipt->downloadId);
+        self::assertNull($receipt->versionExternalIdentifier);
+        self::assertNull(self::purchase($receipt, 'com.example.app.coins100')->isTrialPeriod);
+    }
+
+    private static function purchase(AppReceipt $receipt, string $productId): InAppPurchase
+    {
+        foreach ($receipt->inAppPurchases as $purchase) {
+            if ($purchase->productId === $productId) {
+                return $purchase;
+            }
+        }
+        self::fail("no in-app purchase with product id {$productId}");
     }
 
     public function testAcceptsAPayloadDoubleWrappedInAnOctetString(): void

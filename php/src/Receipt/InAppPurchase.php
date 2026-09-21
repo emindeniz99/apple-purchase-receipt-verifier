@@ -24,6 +24,12 @@ final class InAppPurchase
     public const BINARY_PROPERTIES = ['unknownAttributes'];
 
     /**
+     * @param int|null $isTrialPeriod attribute 1713 — 1 while the purchase is
+     *        inside a free trial, 0 otherwise. Carried as an integer like
+     *        `isInIntroOfferPeriod`, which Apple's verifyReceipt answer
+     *        renders as the string "true"/"false". On none of Apple's pages;
+     *        established by comparing a genuine production receipt with
+     *        Apple's verifyReceipt answer (measured 2026-09-21).
      * @param array<int, list<string>> $unknownAttributes raw values of attribute
      *        types this library does not model, keyed by type — forward
      *        compatibility for fields Apple may add (PLAN.md D10). Verified,
@@ -39,6 +45,7 @@ final class InAppPurchase
         public readonly ?DateTimeImmutable $expiresDate,
         public readonly ?DateTimeImmutable $cancellationDate,
         public readonly ?int $webOrderLineItemId,
+        public readonly ?int $isTrialPeriod,
         public readonly ?int $isInIntroOfferPeriod,
         public readonly array $unknownAttributes,
     ) {

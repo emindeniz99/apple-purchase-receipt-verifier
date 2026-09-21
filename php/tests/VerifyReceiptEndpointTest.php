@@ -7,6 +7,7 @@ namespace EminDeniz99\ApplePurchaseReceiptVerifier\Tests;
 use DateTimeImmutable;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\VerifyReceiptEndpoint;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Fixtures;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\FrozenClock;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\MintedPki;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Shape;
@@ -278,5 +279,72 @@ final class VerifyReceiptEndpointTest extends TestCase
         self::assertSame('2024-02-01 09:30:00 Etc/GMT', $entry['purchase_date']);
         self::assertSame('1706779800000', $entry['purchase_date_ms']);
         self::assertArrayNotHasKey('expires_date', $entry, 'an absent date is omitted, not null');
+    }
+
+    /**
+     * Apple echoes attribute 1 under both adam_id and app_item_id, as JSON
+     * numbers; 15 (download_id) and 16 (version_external_identifier) are
+     * JSON numbers too. download_id is 2^53+1, the first integer an
+     * IEEE-754 double cannot hold: asserting the literal JSON TEXT (not a
+     * value json_decode hands back) proves the serializer never routed the
+     * id through a float.
+     */
+    public function testLegacyReceiptIdsAreWireNumbersWithExactDigits(): void
+    {
+        $endpoint = new VerifyReceiptEndpoint([Fixtures::bytes('receipt-ids-root')], Environment::Production);
+        $json = $endpoint->verifyReceiptJson((string) json_encode([
+            'receipt-data' => base64_encode(Fixtures::bytes('receipt-ids')),
+        ]));
+
+        self::assertStringContainsString('"adam_id":1234567890', $json);
+        self::assertStringContainsString('"app_item_id":1234567890', $json);
+        self::assertStringContainsString('"download_id":9007199254740993', $json);
+        self::assertStringContainsString('"version_external_identifier":456789012', $json);
+        self::assertStringContainsString('"is_trial_period":"false"', $json);
+        self::assertStringContainsString('"is_trial_period":"true"', $json);
+
+        /** @var array<string, mixed> $decoded */
+        $decoded = json_decode($json, true, 64, JSON_THROW_ON_ERROR);
+        $receipt = Shape::asArray($decoded['receipt'], 'receipt');
+        self::assertSame(1234567890, $receipt['adam_id']);
+        self::assertSame(1234567890, $receipt['app_item_id']);
+        self::assertSame(9007199254740993, $receipt['download_id']);
+        self::assertSame(456789012, $receipt['version_external_identifier']);
+        $inApp = Shape::asArray($receipt['in_app'], 'in_app');
+        self::assertSame('false', self::inAppEntry($inApp, 'com.example.app.coins100')['is_trial_period']);
+        self::assertSame('true', self::inAppEntry($inApp, 'com.example.app.vip')['is_trial_period']);
+    }
+
+    /**
+     * An attribute the receipt does not carry leaves its key OUT of the
+     * answer rather than emitting JSON null.
+     */
+    public function testLegacyReceiptIdKeysAreOmittedNotNullWhenAbsent(): void
+    {
+        $endpoint = new VerifyReceiptEndpoint([Fixtures::bytes('receipt-root')], Environment::Sandbox);
+        $body = $endpoint->verifyReceipt(['receipt-data' => base64_encode(Fixtures::bytes('receipt'))]);
+        $receipt = Shape::asArray($body['receipt'], 'receipt');
+
+        foreach (['adam_id', 'app_item_id', 'download_id', 'version_external_identifier'] as $key) {
+            self::assertArrayNotHasKey($key, $receipt, $key);
+        }
+        $inApp = Shape::asArray($receipt['in_app'], 'in_app');
+        self::assertArrayNotHasKey('is_trial_period', self::inAppEntry($inApp, 'com.example.app.coins100'));
+    }
+
+    /**
+     * @param array<array-key, mixed> $inApp
+     *
+     * @return array<array-key, mixed>
+     */
+    private static function inAppEntry(array $inApp, string $productId): array
+    {
+        foreach ($inApp as $entry) {
+            $entry = Shape::asArray($entry, 'in_app entry');
+            if (($entry['product_id'] ?? null) === $productId) {
+                return $entry;
+            }
+        }
+        self::fail("no in_app entry with product id {$productId}");
     }
 }

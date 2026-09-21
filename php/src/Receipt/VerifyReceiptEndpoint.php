@@ -220,8 +220,15 @@ final class VerifyReceiptEndpoint
     {
         $receipt = [];
         self::put($receipt, 'receipt_type', $fields->receiptType);
+        // Apple echoes attribute 1 under both names — its response reference
+        // defines adam_id as "See app_item_id" — and as JSON numbers, not as
+        // the strings the in-app integers are rendered with.
+        self::put($receipt, 'adam_id', $fields->appItemId);
+        self::put($receipt, 'app_item_id', $fields->appItemId);
         self::put($receipt, 'bundle_id', $fields->bundleId);
         self::put($receipt, 'application_version', $fields->appVersion);
+        self::put($receipt, 'download_id', $fields->downloadId);
+        self::put($receipt, 'version_external_identifier', $fields->versionExternalIdentifier);
         self::put($receipt, 'original_application_version', $fields->originalAppVersion);
         self::appleDates($receipt, 'receipt_creation_date', $fields->creationDate);
         self::appleDates($receipt, 'request_date', $requestDate);
@@ -248,6 +255,13 @@ final class VerifyReceiptEndpoint
             $entry,
             'web_order_line_item_id',
             $purchase->webOrderLineItemId === null ? null : (string) $purchase->webOrderLineItemId,
+        );
+        self::put(
+            $entry,
+            'is_trial_period',
+            $purchase->isTrialPeriod === null
+                ? null
+                : ($purchase->isTrialPeriod === 1 ? 'true' : 'false'),
         );
         self::put(
             $entry,

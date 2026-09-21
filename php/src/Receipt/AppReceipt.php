@@ -37,6 +37,18 @@ final class AppReceipt
      *        not the decoded string
      * @param DateTimeImmutable|null $originalPurchaseDate attribute 18
      *        (undocumented; community-established)
+     * @param int|null $appItemId attribute 1 — the app's App Store item
+     *        identifier, which Apple's verifyReceipt answer echoes under BOTH
+     *        `adam_id` and `app_item_id`. Zero in sandbox receipts, since a
+     *        sandbox purchase is not tied to a storefront item. On none of
+     *        Apple's pages; established by comparing a genuine production
+     *        receipt with Apple's verifyReceipt answer (measured 2026-09-21).
+     * @param int|null $downloadId attribute 15 — identifies the App Store
+     *        download this receipt came from (undocumented; established the
+     *        same way as `appItemId`)
+     * @param int|null $versionExternalIdentifier attribute 16 — the App
+     *        Store's own identifier for this app version (undocumented;
+     *        established the same way as `appItemId`)
      * @param list<InAppPurchase> $inAppPurchases
      * @param array<int, list<string>> $unknownAttributes raw values of
      *        attribute types this library does not model, keyed by type —
@@ -54,6 +66,9 @@ final class AppReceipt
         public readonly ?DateTimeImmutable $originalPurchaseDate,
         public readonly ?string $originalAppVersion,
         public readonly ?DateTimeImmutable $expirationDate,
+        public readonly ?int $appItemId,
+        public readonly ?int $downloadId,
+        public readonly ?int $versionExternalIdentifier,
         public readonly array $inAppPurchases,
         public readonly array $unknownAttributes,
     ) {

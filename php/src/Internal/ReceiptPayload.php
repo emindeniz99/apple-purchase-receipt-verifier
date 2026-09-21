@@ -27,11 +27,14 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationException;
 final class ReceiptPayload
 {
     private const ATTR_RECEIPT_TYPE = 0;
+    private const ATTR_APP_ITEM_ID = 1;
     private const ATTR_BUNDLE_ID = 2;
     private const ATTR_APP_VERSION = 3;
     private const ATTR_OPAQUE_VALUE = 4;
     private const ATTR_SHA1_HASH = 5;
     private const ATTR_CREATION_DATE = 12;
+    private const ATTR_DOWNLOAD_ID = 15;
+    private const ATTR_VERSION_EXTERNAL_IDENTIFIER = 16;
     private const ATTR_IN_APP = 17;
     private const ATTR_ORIGINAL_PURCHASE_DATE = 18;
     private const ATTR_ORIGINAL_APP_VERSION = 19;
@@ -46,6 +49,7 @@ final class ReceiptPayload
     private const IAP_EXPIRES_DATE = 1708;
     private const IAP_WEB_ORDER_LINE_ITEM_ID = 1711;
     private const IAP_CANCELLATION_DATE = 1712;
+    private const IAP_IS_TRIAL_PERIOD = 1713;
     private const IAP_IS_IN_INTRO_OFFER_PERIOD = 1719;
 
     /**
@@ -87,12 +91,18 @@ final class ReceiptPayload
         $originalPurchaseDate = null;
         $originalAppVersion = null;
         $expirationDate = null;
+        $appItemId = null;
+        $downloadId = null;
+        $versionExternalIdentifier = null;
         $inAppPurchases = [];
 
         foreach ($attributes as [$type, $value]) {
             switch ($type) {
                 case self::ATTR_RECEIPT_TYPE:
                     $receiptType = self::decodeString($value, $nodeBudget);
+                    break;
+                case self::ATTR_APP_ITEM_ID:
+                    $appItemId = self::decodeInteger($value, $nodeBudget);
                     break;
                 case self::ATTR_BUNDLE_ID:
                     $bundleId = self::decodeString($value, $nodeBudget);
@@ -109,6 +119,12 @@ final class ReceiptPayload
                     break;
                 case self::ATTR_CREATION_DATE:
                     $creationDate = self::decodeDate($value, $nodeBudget);
+                    break;
+                case self::ATTR_DOWNLOAD_ID:
+                    $downloadId = self::decodeInteger($value, $nodeBudget);
+                    break;
+                case self::ATTR_VERSION_EXTERNAL_IDENTIFIER:
+                    $versionExternalIdentifier = self::decodeInteger($value, $nodeBudget);
                     break;
                 case self::ATTR_IN_APP:
                     $inAppPurchases[] = self::parseInApp($value, $nodeBudget);
@@ -139,6 +155,9 @@ final class ReceiptPayload
             originalPurchaseDate: $originalPurchaseDate,
             originalAppVersion: $originalAppVersion,
             expirationDate: $expirationDate,
+            appItemId: $appItemId,
+            downloadId: $downloadId,
+            versionExternalIdentifier: $versionExternalIdentifier,
             inAppPurchases: $inAppPurchases,
             unknownAttributes: $unknown,
         );
@@ -159,6 +178,7 @@ final class ReceiptPayload
         $expiresDate = null;
         $cancellationDate = null;
         $webOrderLineItemId = null;
+        $isTrialPeriod = null;
         $isInIntroOfferPeriod = null;
 
         foreach ($attributes as [$type, $v]) {
@@ -190,6 +210,9 @@ final class ReceiptPayload
                 case self::IAP_CANCELLATION_DATE:
                     $cancellationDate = self::decodeDate($v, $nodeBudget);
                     break;
+                case self::IAP_IS_TRIAL_PERIOD:
+                    $isTrialPeriod = self::decodeInteger($v, $nodeBudget);
+                    break;
                 case self::IAP_IS_IN_INTRO_OFFER_PERIOD:
                     $isInIntroOfferPeriod = self::decodeInteger($v, $nodeBudget);
                     break;
@@ -209,6 +232,7 @@ final class ReceiptPayload
             expiresDate: $expiresDate,
             cancellationDate: $cancellationDate,
             webOrderLineItemId: $webOrderLineItemId,
+            isTrialPeriod: $isTrialPeriod,
             isInIntroOfferPeriod: $isInIntroOfferPeriod,
             unknownAttributes: $unknown,
         );
