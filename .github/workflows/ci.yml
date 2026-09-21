@@ -266,7 +266,7 @@ jobs:
       # is one action where it used to be setup-python plus pip. uv builds
       # every leg's Python from python-build-standalone, including the 3.9
       # floor, so the matrix keeps proving exactly what it proved before.
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           python-version: ${{ matrix.python }}
       # python/uv.lock is committed and every leg installs from it, so no
@@ -1001,7 +1001,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           python-version: "3.13"
       - run: ./run.sh all 60
@@ -1376,7 +1376,7 @@ jobs:
       # install step. Version deliberately unpinned, as it was under pip:
       # a new zizmor audit that fires on these workflows is a finding we
       # want to see, not one to defer behind a pin.
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
       - run: uvx zizmor .github/workflows/
 
   # Lint and formatting for the Node port. Separate from the `node` job
@@ -1414,7 +1414,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           python-version: "3.13"
       # From the committed lock, dev extra included, so ruff and mypy are the
