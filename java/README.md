@@ -181,6 +181,9 @@ Attribute types the library does not model are exposed verbatim on
 `AppReceipt.unknownAttributes()` / `InAppPurchase.unknownAttributes()`,
 keyed by type, to the raw verified-but-undecoded value bytes — so a field
 Apple adds later stays reachable without a library update.
+[RECEIPT-FIELDS.md](../RECEIPT-FIELDS.md) names every attribute type the
+genuine fixture receipts carry, says which ones Apple documents and which are
+community-established, and maps each modelled one to its accessor.
 
 `ReceiptVerifier.verifyReceiptCore(byte[] receiptDer, Set<X509Certificate>
 trustedRoots)` is the static primitive the verifier and the endpoint are both

@@ -15,7 +15,8 @@ recorded here.
   license: **MIT, confirmed by the owner 2026-08-05** (LICENSE at the
   project root).
 - **D2 — Enterprise-reality version floors**, not upstream-support floors:
-  **Java 8**, **Node ≥20**, **Python ≥3.9**, **Swift 6** (server-side Swift
+  **Java 8**, **Node ≥20**, **Python ≥3.10** (raised from ≥3.9 after 3.9
+  reached EOL 2025-10; owner approved), **Swift 6** (server-side Swift
   has no Java-8-style long tail; Apple's own Swift library requires 6). Java is built `--release 8`
   (no records/`var`/`List.of`; ES256 raw-signature conversion done manually
   since `SHA256withECDSAinP1363Format` is Java 9+). CI should matrix-test
@@ -213,7 +214,8 @@ recorded here.
 | `node-apple-receipt-verify`, `itunes-iap`, `django-receipt-validator`, … | No | All wrappers around the deprecated `verifyReceipt` endpoint — the thing we're replacing. |
 | [SilentCircle/iap-local-receipt](https://github.com/SilentCircle/iap-local-receipt) (Python) | Yes (PKCS#7 only) | The one prior server-side local validator we found. Abandoned (~2016, Python 2 era; relies on the PKCS7 API modern pyOpenSSL removed), no JWS; does offer the optional GUID device-hash check. Proves demand; not usable today. |
 | [tikhop/TPInAppReceipt](https://github.com/tikhop/TPInAppReceipt) (Swift), [SwiftyLocalReceiptValidator](https://github.com/andrewcbancroft/SwiftyLocalReceiptValidator) | Yes (PKCS#7, on-device) | Client-side focus (`identifierForVendor`, bundle receipt URL); TPInAppReceipt is maintained. Same crypto, different deployment target. |
-| objc.io ["Receipt Validation"](https://www.objc.io/issues/17-security/receipt-validation/), [Kodeco tutorial](https://www.kodeco.com/9257-in-app-purchases-receipt-validation-tutorial), [nick.zoic.org PKCS#7 notes](https://nick.zoic.org/art/apple-signed-receipt-verification-pkcs7/) | Yes (on-device, C/Swift/OpenSSL) | Document the PKCS#7 + ASN.1 receipt format we port to server-side. |
+| Apple, [Validating receipts on the device](https://developer.apple.com/documentation/appstorereceipts/validating-receipts-on-the-device) and the archived [Receipt Fields](https://developer.apple.com/library/archive/releasenotes/General/ValidateAppStoreReceipt/Chapters/ReceiptFields.html) chapter (last revised 2017-12-11) | Yes (on-device, OpenSSL) | The primary source: the payload ASN.1 module and the attribute-number table. Types 0 and 18 are not on it; they are community-established. |
+| objc.io ["Receipt Validation"](https://www.objc.io/issues/17-security/receipt-validation/), [Kodeco tutorial](https://www.kodeco.com/9257-in-app-purchases-receipt-validation-tutorial), [nick.zoic.org PKCS#7 notes](https://nick.zoic.org/art/apple-signed-receipt-verification-pkcs7/) | Yes (on-device, C/Swift/OpenSSL) | Secondary: worked examples of the PKCS#7 + ASN.1 receipt format we port to server-side. |
 
 **Conclusion** (re-verified 2026-08): no maintained library covers both
 paths (JWS + legacy PKCS#7) server-side in any language, let alone across
@@ -364,7 +366,7 @@ so tests need no real Apple secrets and prove the anchor pinning works.
 3. **Node** (`node/`, Node ≥20, ESM, zero runtime deps — hand-rolled
    bounded DER/BER parser + `node:crypto`; plus a `/web` build on
    WebCrypto alone). ✅
-4. **Python** (`python/`, ≥3.9, `cryptography` + `asn1crypto`). ✅
+4. **Python** (`python/`, ≥3.10, `cryptography` + `asn1crypto`). ✅
 5. **Swift** (`swift/`, SwiftPM, Swift 6, swift-certificates +
    swift-crypto + swift-asn1 only). ✅
 6. **Five more ports** — `go/` (1.22+), `ruby/` (3.1+), `rust/` (1.74+),

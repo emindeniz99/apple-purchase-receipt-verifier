@@ -18,7 +18,7 @@ transactions, or legacy PKCS#7 app receipts) was signed by Apple, by
 validating the certificate chain against pinned Apple root CAs. Nine
 implementations, one normative algorithm, one shared fixture set they all
 verify byte-for-byte: **Java** (8+), **Node** (20+, zero runtime deps),
-**Python** (3.9+), **Swift** (6.1+), **Go** (1.22+), **Ruby** (3.1+),
+**Python** (3.10+), **Swift** (6.1+), **Go** (1.22+), **Ruby** (3.1+),
 **Rust** (1.85+), **PHP** (8.1+) and **.NET** (netstandard2.0 and net8.0) —
 plus **C and C++ via a C ABI over the Rust port**, which any FFI-capable
 runtime (Elixir NIFs, Lua, ctypes, P/Invoke) can load.
@@ -40,6 +40,9 @@ Start with [INTENT.md](./INTENT.md) (why + trust model), then
 [THREAT-MODEL.md](./THREAT-MODEL.md) is the security account: what is
 attacker-controlled, each mitigation with the test that proves it, the
 non-goals, and the residual risks.
+[RECEIPT-FIELDS.md](./RECEIPT-FIELDS.md) is the legacy-receipt reference:
+every attribute type the genuine fixtures carry, which ones Apple documents,
+and Apple's chain-of-trust procedure mapped step by step onto the code.
 
 ## Upstream
 
@@ -317,7 +320,7 @@ cd node && npm install && npm test    # both entry points, every shared fixture
 cd node && npm run test:runtimes       # default build on Bun, Deno and Cloudflare workerd
 cd node && npm run test:runtimes:web   # /web build on Vercel Edge and flagless workerd
 
-# Python (>= 3.9; uv installs the locked dependencies)
+# Python (>= 3.10; uv installs the locked dependencies)
 cd python && uv sync && uv run python -m unittest discover -s tests
 
 # Swift (Swift 6.1+; Linux or macOS 13+; manifest lives at the repo root)

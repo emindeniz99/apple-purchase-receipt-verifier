@@ -11,7 +11,7 @@ import hmac
 import time
 from collections.abc import Iterable
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 from asn1crypto import cms as asn1cms
 from asn1crypto import core as asn1core
@@ -83,16 +83,16 @@ class InAppPurchase:
     def __init__(self) -> None:
         #: Raw unmodeled attributes by type — forward compatibility (PLAN D10).
         self.unknown_attributes: dict[int, list[bytes]] = {}
-        self.quantity: Optional[int] = None
-        self.product_id: Optional[str] = None
-        self.transaction_id: Optional[str] = None
-        self.original_transaction_id: Optional[str] = None
-        self.purchase_date: Optional[datetime] = None
-        self.original_purchase_date: Optional[datetime] = None
-        self.expires_date: Optional[datetime] = None
-        self.cancellation_date: Optional[datetime] = None
-        self.web_order_line_item_id: Optional[int] = None
-        self.is_in_intro_offer_period: Optional[int] = None
+        self.quantity: int | None = None
+        self.product_id: str | None = None
+        self.transaction_id: str | None = None
+        self.original_transaction_id: str | None = None
+        self.purchase_date: datetime | None = None
+        self.original_purchase_date: datetime | None = None
+        self.expires_date: datetime | None = None
+        self.cancellation_date: datetime | None = None
+        self.web_order_line_item_id: int | None = None
+        self.is_in_intro_offer_period: int | None = None
 
 
 class AppReceipt:
@@ -104,16 +104,16 @@ class AppReceipt:
         #: by type — forward compatibility for fields Apple may add (PLAN
         #: D10). Values are raw octet-string contents, verified but undecoded.
         self.unknown_attributes: dict[int, list[bytes]] = {}
-        self.receipt_type: Optional[str] = None
-        self.original_purchase_date: Optional[datetime] = None
-        self.bundle_id: Optional[str] = None
-        self.bundle_id_bytes: Optional[bytes] = None
-        self.app_version: Optional[str] = None
-        self.opaque_value: Optional[bytes] = None
-        self.sha1_hash: Optional[bytes] = None
-        self.creation_date: Optional[datetime] = None
-        self.original_app_version: Optional[str] = None
-        self.expiration_date: Optional[datetime] = None
+        self.receipt_type: str | None = None
+        self.original_purchase_date: datetime | None = None
+        self.bundle_id: str | None = None
+        self.bundle_id_bytes: bytes | None = None
+        self.app_version: str | None = None
+        self.opaque_value: bytes | None = None
+        self.sha1_hash: bytes | None = None
+        self.creation_date: datetime | None = None
+        self.original_app_version: str | None = None
+        self.expiration_date: datetime | None = None
         self.in_app_purchases: list[InAppPurchase] = []
 
 
@@ -267,7 +267,7 @@ def _parse_cms(
 def _find_signer_cert(
     certificates: "list[tuple[bytes, x509.Certificate]]",
     signer: Any,
-    unreadable: "Optional[list[tuple[bytes, Exception]]]" = None,
+    unreadable: "list[tuple[bytes, Exception]] | None" = None,
 ) -> x509.Certificate:
     unreadable = unreadable or []
     sid = signer["sid"].chosen
@@ -497,7 +497,7 @@ def _decode_integer(der: bytes) -> int:
     return _int_value(contents)
 
 
-def _decode_date(der: bytes) -> Optional[datetime]:
+def _decode_date(der: bytes) -> datetime | None:
     """RFC 3339 date in an IA5String; empty means absent (real receipts do this)."""
     text = _decode_string(der)
     if text == "":

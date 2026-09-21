@@ -30,7 +30,7 @@ print(transaction.product_id, transaction.expires_date)
 ```
 
 The import package is `apple_purchase_receipt_verifier`; the distribution is
-`apple-purchase-receipt-verifier`. Requires Python 3.9+.
+`apple-purchase-receipt-verifier`. Requires Python 3.10+.
 
 ## Integrating: from verified payload to entitlement
 

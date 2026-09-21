@@ -151,7 +151,7 @@ jobs:
       # requires-python floor, same reasoning as the node job.
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: '3.9'
+          python-version: '3.10'
 
       - name: install from the registry, outside the checkout
         env:

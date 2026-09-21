@@ -54,8 +54,7 @@ the last column names the job.
 
 | Line | Status | Ends | CI |
 |---|---|---|---|
-| 3.9 | floor, EOL 2025-10-31 | kept | `python` |
-| 3.10 | security | 2026-10-31 | `python` |
+| 3.10 | floor, security | 2026-10-31 | `python` |
 | 3.11 | security | 2027-10-31 | `python`, `python-tools` |
 | 3.12 | security | 2028-10-31 | `python` |
 | 3.13 | active | 2029-10-31 | `python`, `python-fuzz` |

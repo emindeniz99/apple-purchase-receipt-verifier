@@ -13,7 +13,15 @@ endpoint. The recommended replacements are:
 2. **Validate the legacy app receipt on-device style** — the PKCS#7 receipt
    from `[NSBundle appStoreReceiptURL]` can be validated with plain PKI
    ([Validating receipts on the device](https://developer.apple.com/documentation/appstorereceipts/validating-receipts-on-the-device)),
-   which works identically on a server.
+   which works identically on a server. That page carries the payload's
+   ASN.1 module (`ReceiptAttribute ::= SEQUENCE { type INTEGER, version
+   INTEGER, value OCTET STRING }`, `Payload ::= SET OF ReceiptAttribute`)
+   and defers the attribute numbers to Apple's archived
+   [Receipt Fields](https://developer.apple.com/library/archive/releasenotes/General/ValidateAppStoreReceipt/Chapters/ReceiptFields.html)
+   page, last revised 2017-12-11. Every attribute the ports read is on
+   that page except two, receipt type (0) and original purchase date
+   (18), which are community-established and flagged as such in every
+   port's payload reader.
 
 We want our backends to do exactly that: **prove, cryptographically and
 offline, that purchase data presented by a client was produced by Apple** —
@@ -28,7 +36,7 @@ language** (all inside this folder):
 |--------|----------|--------|
 | [`java/`](./java) | Java 8+ | ✅ done |
 | [`node/`](./node) | Node.js 20+ | ✅ done |
-| [`python/`](./python) | Python 3.9+ | ✅ done |
+| [`python/`](./python) | Python 3.10+ | ✅ done |
 | [`swift/`](./swift) | Swift 6+ | ✅ done |
 | [`go/`](./go) | Go 1.22+ | ✅ done |
 | [`ruby/`](./ruby) | Ruby 3.1+ | ✅ done |
@@ -47,7 +55,8 @@ Each implementation provides the same two capabilities:
 2. **Legacy PKCS#7 receipt verification**: verify the CMS/PKCS#7 signature
    and its chain up to **one of the pinned Apple roots**, parse the ASN.1
    payload (bundle id, app version, opaque value, SHA-1 hash, in-app purchase
-   attributes), and optionally check the device-hash binding when the client
+   attributes — [RECEIPT-FIELDS.md](./RECEIPT-FIELDS.md) is the per-attribute
+   reference), and optionally check the device-hash binding when the client
    also sends its device GUID (`identifierForVendor`).
 
 Trust is **pinned to the Apple root certificates** stored in

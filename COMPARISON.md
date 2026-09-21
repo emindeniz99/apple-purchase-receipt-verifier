@@ -67,9 +67,9 @@ those responses carry no `environment` at all.
 ### Not produced — receipt attributes Apple documents in the response but that are absent or undocumented in the ASN.1 receipt
 
 `adam_id` / `app_item_id`, `download_id`, `version_external_identifier`,
-`preorder_date`, `is_trial_period` (attribute exists but its type id is not
-reliably documented — needs the real-receipt corpus, ROADMAP), promotional
-offer ids introduced after the receipt format froze.
+`preorder_date`, `is_trial_period` (type 1713, measured on every in-app
+entry of the genuine corpus, see RECEIPT-FIELDS.md; not modelled yet),
+promotional offer ids introduced after the receipt format froze.
 
 ### Impossible locally — Apple server-side database state
 
