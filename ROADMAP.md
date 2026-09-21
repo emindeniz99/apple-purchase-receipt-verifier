@@ -27,6 +27,38 @@ Delete a line in the commit that ships it.
   vendor line ends, so Java 17 (Oracle, 2026-09-30), Python 3.10
   (2026-10-31), .NET 8 and 9 (2026-11-10) and PHP 8.2 (2026-12-31) change
   nothing.
+- **Floor policy (owner decision, 2026-09-21)**: a floor moves when it
+  blocks a dependency refresh or a security fix, never because a newer
+  line exists. Applied the same day: Python 3.9 to 3.10 (#89, the uv
+  Dependabot job could not move cryptography or mypy across the dead
+  split) and Rust 1.74 to 1.85 (#91, a plain `cargo update` locked
+  edition-2024 crates the floor could not parse). Held on purpose: Java 8
+  (enterprise consumers, PLAN D2; JUnit 6 is test-only and stays ignored),
+  Swift 6.1 (swift-crypto 5.0 needs 6.2, the 4.x line still ships), Node 20
+  (next candidate, see below).
+- **Model the receipt attributes Apple's verifyReceipt echoes and we hold
+  as raw bytes** (2026-09-21, measured against Apple's own answer for a
+  genuine production receipt, which stays out of the repository): type 1
+  is `adam_id`/`app_item_id`, 15 is `download_id`, 16 is
+  `version_external_identifier`, 1713 is `is_trial_period`; and
+  `web_order_line_item_id` must be omitted when 1711 is zero on a
+  non-subscription, as Apple does. With those, the emulation matches
+  Apple on 30 of 31 fields; the last, `in_app_ownership_type`, is family
+  sharing state that no receipt carries. Nine ports, synthetic fixtures
+  from the generator, one conformance case. Type 11 (an integer, zero on
+  sandbox receipts) is still unexplained.
+- **Apple's step 4, the app-version match (type 3), is a caller
+  responsibility** in every port: the server cannot know which binary is
+  running. RECEIPT-FIELDS.md states it; the accessor exists.
+- **The SHA-1 legacy chain under a hardened `java.security`** is now a
+  documented caveat with two CI guards (#86, #90): `java-hardened-policy`
+  proves exactly one conformance case fails when SHA-1 is disabled for
+  certpath, and `java-distroless` proves the whole suite passes inside
+  gcr.io/distroless java17-debian12 and java17/21/25-debian13 (`:nonroot`,
+  digest-pinned) on their own JVM and java.security. Finding for the
+  deployment: `java17-debian12` is deprecated (last rebuilt 2026-02-20,
+  Debian OpenJDK, not Temurin); distroless now builds only debian13 from
+  Temurin debs. Move to `java17-debian13` or `java21-debian13`.
 - **README.md's registry table still says the five newer ports are not
   installable.** The Go module is on `proxy.golang.org` as of `go/v0.4.0`,
   so its row and the sentence naming "a public repository for the Go module
@@ -52,7 +84,8 @@ Delete a line in the commit that ships it.
   flag, but maintained and widely deployed, and the payloads here are
   small and flat. The 2026-09-06 Java review measured the price: 14.4 MB
   of runtime jars behind a 46 KB library, of which `bcprov` is 10.1 MB
-  and `jackson-databind` 1.7 MB. `JwsVerifier` needs BouncyCastle for
+  and `jackson-databind` 1.7 MB (re-measured 2026-09-21 at BouncyCastle
+  1.86: 11.2 MiB total, `bcprov` 7.2 MB; java/README.md has the table). `JwsVerifier` needs BouncyCastle for
   exactly one thing, the P1363-to-DER signature re-encoding (a
   `DERSequence` of two integers, about twenty lines by hand), and binds
   two flat POJOs plus one `Map`, which `jackson-core` alone could do. A
@@ -64,9 +97,13 @@ Delete a line in the commit that ships it.
   fixtures; add byte-level regression tests over them in every suite.
   The corpus has now been decoded end to end (RECEIPT-FIELDS.md):
   `is_trial_period` is type 1713 on every genuine in-app entry and is the
-  one undocumented attribute worth modelling next; `adam_id` and
-  `version_external_identifier` cannot be told apart in this corpus (types
-  1, 11, 15 and 16 are all zero), so they stay unconfirmed.
+  one undocumented attribute worth modelling next. A genuine production
+  receipt checked locally on 2026-09-21 (not committed) resolved the
+  ambiguity the sandbox corpus left: type 1 is `adam_id`/`app_item_id`,
+  15 is `download_id`, 16 is `version_external_identifier`, each equal to
+  the value Apple's verifyReceipt returned for the same receipt. A
+  committed production fixture is still wanted; until then the synthetic
+  generator carries these types.
 - **Mac App Store receipt fixture**: the harvest (fixtures/public-receipts/,
   done ✅ — genuine sandbox + legacy receipts verify in every
   language) covered iOS; a genuine macOS receipt is still missing.
@@ -120,6 +157,32 @@ Delete a line in the commit that ships it.
   tests supply. Dismiss the alerts as "vulnerable code is not actually
   used" (an owner action in the Security tab) and re-check when a Fastly
   release drops `weval` or `weval` drops `decompress`.
+
+## Working notes for agents (2026-09-21)
+
+Things that cost a round trip once and should not cost another.
+
+- Dependabot commands posted through the GitHub integration are neutralised
+  (`@dependabot rebase` never reaches the bot). Use the update-branch API
+  instead; a branch update also re-runs CI, which is how a Maven Central
+  HTTP 429 was cleared without a re-run permission.
+- The uv Dependabot job pins one version per package across every Python
+  in the lock, so it fails as soon as a package drops the oldest split.
+  Fixed for good by dropping 3.9; if it recurs, the floor is the fix.
+- Dependabot's bundler ecosystem only discovers `Gemfile`/`gems.rb`;
+  `ruby/gemfiles/*.gemfile` are refreshed by hand (`bundle update` with
+  `BUNDLE_GEMFILE`, then rubocop, rbs and steep).
+- Dependabot's swift ecosystem checks the repository out as `repo`, so a
+  path dependency needs `name:` or the product lookup fails (#85).
+- A plain `cargo update` ignores `rust-version`; use
+  `CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback` (CONTRIBUTING.md).
+  clippy's `borrow_as_ptr` is gated on the MSRV, so raising the floor can
+  surface new lint errors in untouched code.
+- .NET lock files regenerate under the newest SDK line CI installs (10.0.x);
+  `dotnet/fuzz` sits outside the solution and needs its own
+  `restore --force-evaluate`.
+- The distroless Java images' `java.security` can be read without Docker by
+  pulling the layer blobs over HTTPS and untarring `conf/security/`.
 
 ## Upstream
 
