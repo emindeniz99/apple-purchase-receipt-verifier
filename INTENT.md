@@ -47,7 +47,8 @@ Each implementation provides the same two capabilities:
 2. **Legacy PKCS#7 receipt verification**: verify the CMS/PKCS#7 signature
    and its chain up to **one of the pinned Apple roots**, parse the ASN.1
    payload (bundle id, app version, opaque value, SHA-1 hash, in-app purchase
-   attributes), and optionally check the device-hash binding when the client
+   attributes — [RECEIPT-FIELDS.md](./RECEIPT-FIELDS.md) is the per-attribute
+   reference), and optionally check the device-hash binding when the client
    also sends its device GUID (`identifierForVendor`).
 
 Trust is **pinned to the Apple root certificates** stored in
