@@ -12,7 +12,7 @@ defmodule ConformanceTest do
   generator already does once for every consumer that is not the Rust
   library itself. Reusing it keeps this file about the boundary.
 
-  Both this and `rust/ffi/examples/cpp/conformance.cpp` run all 104 cases and
+  Both this and `rust/ffi/examples/cpp/conformance.cpp` run all 110 cases and
   skip none. The twelve that pin a clock go through
   `aprv_verifier_new_jws_with_roots_and_clock` and
   `aprv_endpoint_new_with_roots_and_clock`, which take the instant itself

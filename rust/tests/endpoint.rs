@@ -81,6 +81,98 @@ fn in_app_scalars_are_rendered_as_apple_renders_them() {
     );
 }
 
+fn receipt_ids_endpoint() -> VerifyReceiptEndpoint {
+    VerifyReceiptEndpoint::builder()
+        .trusted_roots([common::anchor("generated/receipt-ids-root.der")])
+        .environment(Environment::Production)
+        .build()
+        .unwrap()
+}
+
+fn receipt_ids_body() -> String {
+    base64::encode(&common::read_fixture("generated/receipt-ids.der"))
+}
+
+#[test]
+fn the_legacy_ids_cross_the_wire_as_bare_numbers() {
+    let response =
+        receipt_ids_endpoint().verify_receipt(&VerifyReceiptRequest::new(receipt_ids_body()));
+    assert_eq!(response.status, status::OK);
+    let receipt = response.receipt.unwrap();
+    // Apple echoes attribute 1 twice, and defines adam_id as
+    // "See app_item_id".
+    assert_eq!(receipt.get("adam_id").unwrap(), &Value::from(1_234_567_890));
+    assert_eq!(
+        receipt.get("app_item_id").unwrap(),
+        &Value::from(1_234_567_890)
+    );
+    assert_eq!(
+        receipt.get("version_external_identifier").unwrap(),
+        &Value::from(456_789_012)
+    );
+    assert_eq!(
+        receipt.get("download_id").unwrap(),
+        &Value::from(9_007_199_254_740_993i64)
+    );
+    // The wire text, not the parsed value: a serialiser routing the number
+    // through a double writes 9007199254740992 here, and both spellings
+    // compare equal to nothing else in this test.
+    let text = serde_json::to_string(&Value::Object(receipt)).unwrap();
+    assert!(
+        text.contains(r#""download_id":9007199254740993"#),
+        "download_id lost digits on the wire: {text}"
+    );
+    assert!(!text.contains("9007199254740992"));
+    // Numbers, not the strings Apple uses for the in-app integers.
+    assert!(!text.contains(r#""adam_id":""#));
+}
+
+#[test]
+fn is_trial_period_is_a_string_like_is_in_intro_offer_period() {
+    let response =
+        receipt_ids_endpoint().verify_receipt(&VerifyReceiptRequest::new(receipt_ids_body()));
+    let receipt = response.receipt.unwrap();
+    let entries = receipt.get("in_app").unwrap().as_array().unwrap();
+    let by_product = |product_id: &str| {
+        entries
+            .iter()
+            .find(|entry| entry.get("product_id").unwrap() == product_id)
+            .unwrap_or_else(|| panic!("no entry for {product_id}"))
+            .get("is_trial_period")
+            .cloned()
+    };
+    assert_eq!(
+        by_product("com.example.app.coins100"),
+        Some(Value::from("false"))
+    );
+    assert_eq!(by_product("com.example.app.vip"), Some(Value::from("true")));
+}
+
+#[test]
+fn ids_a_receipt_does_not_carry_are_omitted_never_null() {
+    let response = endpoint(Environment::Sandbox)
+        .verify_receipt(&VerifyReceiptRequest::new(shared_receipt_base64()));
+    let receipt = response.receipt.unwrap();
+    for key in [
+        "adam_id",
+        "app_item_id",
+        "download_id",
+        "version_external_identifier",
+    ] {
+        assert!(
+            !receipt.contains_key(key),
+            "{key} must be absent, not null, when the receipt does not carry it"
+        );
+    }
+    for entry in receipt.get("in_app").unwrap().as_array().unwrap() {
+        assert!(entry.get("is_trial_period").is_none());
+    }
+    // Absence is the key being gone, which is only meaningful if `null`
+    // never appears in the body at all.
+    let text = serde_json::to_string(&Value::Object(receipt)).unwrap();
+    assert!(!text.contains("null"), "{text}");
+}
+
 #[test]
 fn the_request_date_triple_comes_from_the_injected_clock() {
     let response = endpoint_at(Environment::Sandbox, 1_735_689_600_000)

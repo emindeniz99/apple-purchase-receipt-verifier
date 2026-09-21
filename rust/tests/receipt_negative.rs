@@ -340,6 +340,75 @@ fn unmodelled_attributes_are_exposed_verbatim() {
     assert!(receipt.original_purchase_date.is_some());
 }
 
+/// The receipt-ids fixture carries attributes 1, 15, 16 and 1713 under its
+/// own root, because the shared generator mints fresh keys on every run and
+/// nothing new can chain to `receipt-root.der`.
+fn receipt_ids_receipt() -> apple_purchase_receipt_verifier::AppReceipt {
+    verifier_with(
+        common::anchor("generated/receipt-ids-root.der"),
+        "com.example.app",
+    )
+    .verify(&common::read_fixture("generated/receipt-ids.der"))
+    .expect("the receipt-ids fixture must verify")
+}
+
+#[test]
+fn the_legacy_ids_are_decoded_with_every_digit() {
+    let receipt = receipt_ids_receipt();
+    assert_eq!(receipt.app_item_id, Some(1_234_567_890));
+    assert_eq!(receipt.version_external_identifier, Some(456_789_012));
+    // 2^53 + 1: the first integer an IEEE-754 double cannot hold, which is
+    // why the fixture carries it. A port that rounds answers …992 here, and
+    // real download ids run to eighteen digits.
+    assert_eq!(receipt.download_id, Some(9_007_199_254_740_993));
+    assert_ne!(receipt.download_id, Some(9_007_199_254_740_992));
+    assert_eq!(receipt.download_id.unwrap().to_string(), "9007199254740993");
+}
+
+#[test]
+fn is_trial_period_is_read_on_both_sides_of_the_boolean() {
+    let receipt = receipt_ids_receipt();
+    let by_product = |product_id: &str| {
+        receipt
+            .in_app_purchases
+            .iter()
+            .find(|purchase| purchase.product_id.as_deref() == Some(product_id))
+            .unwrap_or_else(|| panic!("no purchase of {product_id}"))
+            .is_trial_period
+    };
+    assert_eq!(by_product("com.example.app.coins100"), Some(0));
+    assert_eq!(by_product("com.example.app.vip"), Some(1));
+}
+
+#[test]
+fn the_four_modelled_ids_leave_the_unknown_attribute_map() {
+    let receipt = receipt_ids_receipt();
+    for attribute_type in [1u32, 15, 16] {
+        assert!(
+            !receipt.unknown_attributes.contains_key(&attribute_type),
+            "attribute {attribute_type} is modelled now"
+        );
+    }
+    for purchase in &receipt.in_app_purchases {
+        assert!(!purchase.unknown_attributes.contains_key(&1713));
+    }
+    // 9999 is still unmodelled, so forward compatibility is untouched.
+    assert!(receipt.unknown_attributes.contains_key(&9999));
+}
+
+#[test]
+fn ids_a_receipt_does_not_carry_are_absent_rather_than_zero() {
+    // The shared sandbox receipt carries none of the four. Absent and
+    // present-but-zero are different answers: Apple's sandbox does send 0.
+    let receipt = verifier().verify(&common::receipt_der()).unwrap();
+    assert_eq!(receipt.app_item_id, None);
+    assert_eq!(receipt.download_id, None);
+    assert_eq!(receipt.version_external_identifier, None);
+    for purchase in &receipt.in_app_purchases {
+        assert_eq!(purchase.is_trial_period, None);
+    }
+}
+
 #[test]
 fn the_receipt_size_bound_rejects_before_parsing() {
     let huge = vec![0x30u8; apple_purchase_receipt_verifier::MAX_RECEIPT_BYTES + 1];

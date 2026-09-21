@@ -473,6 +473,7 @@ fn in_app_json(purchase: &InAppPurchase) -> Value {
         "webOrderLineItemId",
         purchase.web_order_line_item_id,
     );
+    put_int(&mut out, "isTrialPeriod", purchase.is_trial_period);
     put_int(
         &mut out,
         "isInIntroOfferPeriod",
@@ -509,6 +510,13 @@ fn app_receipt_json(receipt: &AppReceipt) -> Value {
         receipt.original_app_version.as_deref(),
     );
     put_date(&mut out, "expirationDate", receipt.expiration_date);
+    put_int(&mut out, "appItemId", receipt.app_item_id);
+    put_int(&mut out, "downloadId", receipt.download_id);
+    put_int(
+        &mut out,
+        "versionExternalIdentifier",
+        receipt.version_external_identifier,
+    );
     out.insert(
         "inAppPurchases".to_owned(),
         Value::Array(receipt.in_app_purchases.iter().map(in_app_json).collect()),

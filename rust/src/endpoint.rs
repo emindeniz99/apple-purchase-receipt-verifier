@@ -281,11 +281,24 @@ impl VerifyReceiptEndpoint {
 fn receipt_json(fields: &AppReceipt, request_date_millis: i64) -> Map<String, Value> {
     let mut receipt = Map::new();
     put_str(&mut receipt, "receipt_type", fields.receipt_type.as_deref());
+    // Attribute 1 twice: Apple's response reference defines adam_id as
+    // "See app_item_id", and both carry the same value.
+    put_int(&mut receipt, "adam_id", fields.app_item_id);
+    put_int(&mut receipt, "app_item_id", fields.app_item_id);
     put_str(&mut receipt, "bundle_id", fields.bundle_id.as_deref());
     put_str(
         &mut receipt,
         "application_version",
         fields.app_version.as_deref(),
+    );
+    // The three app-level ids are JSON numbers, unlike the in-app integers
+    // Apple renders as strings, and download_id is wider than an IEEE-754
+    // double: it crosses the wire with every digit it was decoded with.
+    put_int(&mut receipt, "download_id", fields.download_id);
+    put_int(
+        &mut receipt,
+        "version_external_identifier",
+        fields.version_external_identifier,
     );
     put_str(
         &mut receipt,
@@ -359,6 +372,14 @@ fn in_app_json(purchase: &InAppPurchase) -> Value {
     );
     put_str(
         &mut entry,
+        "is_trial_period",
+        purchase
+            .is_trial_period
+            .map(|flag| (flag == 1).to_string())
+            .as_deref(),
+    );
+    put_str(
+        &mut entry,
         "is_in_intro_offer_period",
         purchase
             .is_in_intro_offer_period
@@ -373,6 +394,14 @@ fn millis_of(at: Option<SystemTime>) -> Option<i64> {
 }
 
 fn put_str(target: &mut Map<String, Value>, key: &str, value: Option<&str>) {
+    if let Some(value) = value {
+        target.insert(key.to_owned(), Value::from(value));
+    }
+}
+
+/// An attribute Apple renders as a bare JSON number. Absent leaves the key
+/// out rather than emitting `null`; a present zero is a value.
+fn put_int(target: &mut Map<String, Value>, key: &str, value: Option<i64>) {
     if let Some(value) = value {
         target.insert(key.to_owned(), Value::from(value));
     }
