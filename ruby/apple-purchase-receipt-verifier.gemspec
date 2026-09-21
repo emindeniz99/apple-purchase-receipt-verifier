@@ -28,7 +28,7 @@ Gem::Specification.new do |spec|
   }
 
   # D2, enterprise-reality floors: 3.1 is Debian 12's system Ruby and is
-  # tested on every push, exactly as Python 3.9 and Java 8 are.
+  # tested on every push, exactly as Python 3.10 and Java 8 are.
   spec.required_ruby_version = ">= 3.1.0"
 
   spec.files = Dir[

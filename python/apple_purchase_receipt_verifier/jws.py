@@ -8,8 +8,8 @@ import binascii
 import json
 import re
 import time
-from collections.abc import Iterable
-from typing import Any, Callable, Optional
+from collections.abc import Callable, Iterable
+from typing import Any
 
 from cryptography import x509
 from cryptography.exceptions import InvalidSignature
@@ -125,9 +125,9 @@ class JwsVerifier:
         trusted_roots: Iterable[Any],
         bundle_id: str,
         accepted_environments: Iterable[str],
-        app_apple_id: Optional[int] = None,
-        max_signed_age_millis: Optional[int] = None,
-        clock: Optional[Callable[[], float]] = None,
+        app_apple_id: int | None = None,
+        max_signed_age_millis: int | None = None,
+        clock: Callable[[], float] | None = None,
     ):
         roots = list(trusted_roots)
         if not roots:

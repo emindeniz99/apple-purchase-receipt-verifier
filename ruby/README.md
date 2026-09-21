@@ -31,7 +31,7 @@ require "apple-purchase-receipt-verifier"   # the gem name also works
 Ruby **3.1 or newer**. That floor is enterprise reality rather than upstream
 support: 3.1 is Debian 12's system Ruby and is exercised by the whole test
 suite on every push, exactly as this project does for Java 8, Node 20 and
-Python 3.9.
+Python 3.10.
 
 ## Verifying a StoreKit 2 transaction
 

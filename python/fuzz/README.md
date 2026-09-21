@@ -45,7 +45,7 @@ something a CI job should be doing to obtain a linter-grade tool.
 
 So the fuzzing interpreter is pinned to 3.13, the line covered by both current
 releases, and `FUZZ_PYTHON` overrides it. This is a property of the *fuzzer*,
-not of the library: the package still claims and tests 3.9 through 3.14, and
+not of the library: the package still claims and tests 3.10 through 3.14, and
 the `python` job's matrix is what proves that. A bug these targets find is
 reproduced as a test under `../tests/`, where it runs on every one of those
 lines rather than only where atheris installs.

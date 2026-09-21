@@ -36,7 +36,7 @@ language** (all inside this folder):
 |--------|----------|--------|
 | [`java/`](./java) | Java 8+ | ✅ done |
 | [`node/`](./node) | Node.js 20+ | ✅ done |
-| [`python/`](./python) | Python 3.9+ | ✅ done |
+| [`python/`](./python) | Python 3.10+ | ✅ done |
 | [`swift/`](./swift) | Swift 6+ | ✅ done |
 | [`go/`](./go) | Go 1.22+ | ✅ done |
 | [`ruby/`](./ruby) | Ruby 3.1+ | ✅ done |
