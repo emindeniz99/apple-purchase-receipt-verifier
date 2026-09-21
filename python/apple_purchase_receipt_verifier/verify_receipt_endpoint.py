@@ -136,8 +136,15 @@ class VerifyReceiptEndpoint:
 def _receipt_json(fields: AppReceipt, request_date: datetime) -> dict[str, Any]:
     receipt: dict[str, Any] = {}
     _put(receipt, "receipt_type", fields.receipt_type)
+    # Apple echoes attribute 1 under both names — its response reference
+    # defines adam_id as "See app_item_id" — and as JSON numbers, not as the
+    # strings the in-app integers are rendered with.
+    _put(receipt, "adam_id", fields.app_item_id)
+    _put(receipt, "app_item_id", fields.app_item_id)
     _put(receipt, "bundle_id", fields.bundle_id)
     _put(receipt, "application_version", fields.app_version)
+    _put(receipt, "download_id", fields.download_id)
+    _put(receipt, "version_external_identifier", fields.version_external_identifier)
     _put(receipt, "original_application_version", fields.original_app_version)
     _apple_dates(receipt, "receipt_creation_date", fields.creation_date)
     _apple_dates(receipt, "request_date", request_date)
@@ -158,6 +165,8 @@ def _in_app_json(purchase: InAppPurchase) -> dict[str, Any]:
     _apple_dates(entry, "expires_date", purchase.expires_date)
     _apple_dates(entry, "cancellation_date", purchase.cancellation_date)
     _put(entry, "web_order_line_item_id", _str_or_none(purchase.web_order_line_item_id))
+    if purchase.is_trial_period is not None:
+        entry["is_trial_period"] = "true" if purchase.is_trial_period == 1 else "false"
     if purchase.is_in_intro_offer_period is not None:
         entry["is_in_intro_offer_period"] = (
             "true" if purchase.is_in_intro_offer_period == 1 else "false"
