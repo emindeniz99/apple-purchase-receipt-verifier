@@ -134,7 +134,7 @@ the sources every expectation was derived from.
 
 Fixtures under `fixtures/generated/` are signed by a fake Apple PKI built in
 `java/src/test/.../TestPki.java`, so no real Apple key material is needed.
-Seven generators write them, all at fixed epoch instants so nothing depends
+Eight generators write them, all at fixed epoch instants so nothing depends
 on generation time:
 
 - `FixtureGeneratorTest` — the original set. Gated behind
@@ -155,10 +155,12 @@ on generation time:
   in a single parse.
 - `AbsentSignerFixture` — the receipt that separates "the signer is not in
   the bag" from "something in the bag is not a certificate".
+- `ReceiptIdsFixture` — the receipt carrying the four attributes that used
+  to sit in `unknownAttributes`: app-level 1, 15 and 16, and in-app 1713.
 
-The last six run as a `main`, not a `@Test`, so none of them costs the suite
-a permanently skipped test. All six regenerate the same way, only the class
-name changes:
+The last seven run as a `main`, not a `@Test`, so none of them costs the
+suite a permanently skipped test. All seven regenerate the same way, only
+the class name changes:
 
 ```bash
 mvn -B -q -f java/pom.xml test-compile

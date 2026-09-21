@@ -153,6 +153,54 @@ class VerifyReceiptEndpointTest {
     }
 
     @Test
+    void rawJsonOverloadEmitsTheLegacyIdsAsNumbersAndIsTrialPeriodAsAString() throws Exception {
+        byte[] receipt = Files.readAllBytes(FIXTURES.resolve("receipt-ids.der"));
+        byte[] rootDer = Files.readAllBytes(FIXTURES.resolve("receipt-ids-root.der"));
+        X509Certificate root = (X509Certificate)
+                CertificateFactory.getInstance("X.509").generateCertificate(new ByteArrayInputStream(rootDer));
+        String body = new VerifyReceiptEndpoint(Collections.singleton(root), Environment.PRODUCTION)
+                .verifyReceiptJson(MAPPER.writeValueAsString(Collections.singletonMap(
+                        "receipt-data", Base64.getEncoder().encodeToString(receipt))));
+        // Raw bytes, not just the parse. Attribute 1 is echoed under both of
+        // Apple's names, the three app-level ids are JSON NUMBERS (unlike
+        // every other number-shaped receipt field, which Apple sends as a
+        // string), and 1713 renders exactly as 1719 does. download_id is
+        // 2^53+1, so the literal digits are the assertion: anything that
+        // routed the value through a double would print ...992 here.
+        assertTrue(body.contains("\"adam_id\":1234567890"), body);
+        assertTrue(body.contains("\"app_item_id\":1234567890"), body);
+        assertTrue(body.contains("\"download_id\":9007199254740993"), body);
+        assertTrue(body.contains("\"version_external_identifier\":456789012"), body);
+        assertTrue(body.contains("\"is_trial_period\":\"false\""), body);
+        assertTrue(body.contains("\"is_trial_period\":\"true\""), body);
+        JsonNode parsed = MAPPER.readTree(body).get("receipt");
+        assertTrue(parsed.get("adam_id").isNumber(), body);
+        assertTrue(parsed.get("download_id").isNumber(), body);
+        assertEquals(9007199254740993L, parsed.get("download_id").asLong(), body);
+        // Apple's own key order, which is also the order a reader of the two
+        // answers side by side compares them in.
+        assertTrue(
+                body.indexOf("\"receipt_type\"") < body.indexOf("\"adam_id\"")
+                        && body.indexOf("\"adam_id\"") < body.indexOf("\"app_item_id\"")
+                        && body.indexOf("\"app_item_id\"") < body.indexOf("\"bundle_id\"")
+                        && body.indexOf("\"bundle_id\"") < body.indexOf("\"application_version\"")
+                        && body.indexOf("\"application_version\"") < body.indexOf("\"download_id\"")
+                        && body.indexOf("\"download_id\"") < body.indexOf("\"version_external_identifier\""),
+                body);
+    }
+
+    @Test
+    void rawJsonOverloadOmitsTheLegacyIdKeysWhenTheReceiptCarriesNone() throws Exception {
+        // Absent, not JSON null: the shared sandbox receipt carries none of
+        // the four, so none of their keys is in the answer at all.
+        String body = endpoint(false).verifyReceiptJson(MAPPER.writeValueAsString(request()));
+        for (String key : java.util.Arrays.asList(
+                "adam_id", "app_item_id", "download_id", "version_external_identifier", "is_trial_period")) {
+            assertTrue(!body.contains("\"" + key + "\""), key + " is present in " + body);
+        }
+    }
+
+    @Test
     void rawJsonOverloadOmitsReceiptAndEnvironmentOnNonZeroStatus() throws Exception {
         assertEquals("{\"status\":21007}", endpoint(true).verifyReceiptJson(MAPPER.writeValueAsString(request())));
     }

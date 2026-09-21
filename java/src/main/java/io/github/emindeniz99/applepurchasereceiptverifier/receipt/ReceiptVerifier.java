@@ -73,13 +73,30 @@ public final class ReceiptVerifier {
     // to it), plus two community-established ones (0: receipt type, 18:
     // original purchase date) needed for verifyReceipt response
     // compatibility.
+    //
+    // Types 1, 15, 16 and 1713 are on none of those pages either. They were
+    // established by decoding a genuine production receipt and lining its
+    // attributes up against the answer Apple's verifyReceipt endpoint gives
+    // for the same receipt (measured 2026-09-21):
+    //
+    //   1     app item id                -> adam_id AND app_item_id
+    //   15    download id                -> download_id
+    //   16    version external id        -> version_external_identifier
+    //   1713  is trial period (in-app)   -> is_trial_period
+    //
+    // All four are INTEGER attributes. Apple renders the three app-level ids
+    // as JSON numbers and 1713 as the string "true"/"false", exactly as it
+    // renders 1719.
     private static final int ATTR_RECEIPT_TYPE = 0;
+    private static final int ATTR_APP_ITEM_ID = 1;
     private static final int ATTR_ORIGINAL_PURCHASE_DATE = 18;
     private static final int ATTR_BUNDLE_ID = 2;
     private static final int ATTR_APP_VERSION = 3;
     private static final int ATTR_OPAQUE_VALUE = 4;
     private static final int ATTR_SHA1_HASH = 5;
     private static final int ATTR_CREATION_DATE = 12;
+    private static final int ATTR_DOWNLOAD_ID = 15;
+    private static final int ATTR_VERSION_EXTERNAL_IDENTIFIER = 16;
     private static final int ATTR_IN_APP = 17;
     private static final int ATTR_ORIGINAL_APP_VERSION = 19;
     private static final int ATTR_EXPIRATION_DATE = 21;
@@ -93,6 +110,7 @@ public final class ReceiptVerifier {
     private static final int IAP_EXPIRES_DATE = 1708;
     private static final int IAP_WEB_ORDER_LINE_ITEM_ID = 1711;
     private static final int IAP_CANCELLATION_DATE = 1712;
+    private static final int IAP_IS_TRIAL_PERIOD = 1713;
     private static final int IAP_IS_IN_INTRO_OFFER_PERIOD = 1719;
 
     /**
@@ -580,6 +598,9 @@ public final class ReceiptVerifier {
         Instant originalPurchaseDate = null;
         String originalAppVersion = null;
         Instant expirationDate = null;
+        Long appItemId = null;
+        Long downloadId = null;
+        Long versionExternalIdentifier = null;
         List<InAppPurchase> purchases = new ArrayList<InAppPurchase>();
         Map<Integer, List<byte[]>> unknown = new LinkedHashMap<Integer, List<byte[]>>();
 
@@ -588,6 +609,9 @@ public final class ReceiptVerifier {
             switch (attr.type) {
                 case ATTR_RECEIPT_TYPE:
                     receiptType = decodeString(attr.value);
+                    break;
+                case ATTR_APP_ITEM_ID:
+                    appItemId = decodeInteger(attr.value);
                     break;
                 case ATTR_ORIGINAL_PURCHASE_DATE:
                     originalPurchaseDate = decodeDate(attr.value);
@@ -607,6 +631,12 @@ public final class ReceiptVerifier {
                     break;
                 case ATTR_CREATION_DATE:
                     creationDate = decodeDate(attr.value);
+                    break;
+                case ATTR_DOWNLOAD_ID:
+                    downloadId = decodeInteger(attr.value);
+                    break;
+                case ATTR_VERSION_EXTERNAL_IDENTIFIER:
+                    versionExternalIdentifier = decodeInteger(attr.value);
                     break;
                 case ATTR_IN_APP:
                     purchases.add(parseInApp(attr.value));
@@ -635,6 +665,9 @@ public final class ReceiptVerifier {
                 originalPurchaseDate,
                 originalAppVersion,
                 expirationDate,
+                appItemId,
+                downloadId,
+                versionExternalIdentifier,
                 purchases,
                 unknown);
     }
@@ -650,6 +683,7 @@ public final class ReceiptVerifier {
         Instant expiresDate = null;
         Instant cancellationDate = null;
         Long webOrderLineItemId = null;
+        Long isTrialPeriod = null;
         Long isInIntroOfferPeriod = null;
         Map<Integer, List<byte[]>> unknown = new LinkedHashMap<Integer, List<byte[]>>();
 
@@ -683,6 +717,9 @@ public final class ReceiptVerifier {
                 case IAP_CANCELLATION_DATE:
                     cancellationDate = decodeDate(attr.value);
                     break;
+                case IAP_IS_TRIAL_PERIOD:
+                    isTrialPeriod = decodeInteger(attr.value);
+                    break;
                 case IAP_IS_IN_INTRO_OFFER_PERIOD:
                     isInIntroOfferPeriod = decodeInteger(attr.value);
                     break;
@@ -701,6 +738,7 @@ public final class ReceiptVerifier {
                 expiresDate,
                 cancellationDate,
                 webOrderLineItemId,
+                isTrialPeriod,
                 isInIntroOfferPeriod,
                 unknown);
     }

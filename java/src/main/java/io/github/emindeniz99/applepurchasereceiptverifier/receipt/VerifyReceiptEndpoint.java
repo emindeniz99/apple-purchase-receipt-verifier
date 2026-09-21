@@ -278,8 +278,15 @@ public final class VerifyReceiptEndpoint {
     private static Map<String, Object> receiptJson(AppReceipt receipt, Instant requestDate) {
         Map<String, Object> json = new LinkedHashMap<String, Object>();
         put(json, "receipt_type", receipt.receiptType());
+        // Apple echoes attribute 1 under both names — its response reference
+        // defines adam_id as "See app_item_id" — and as JSON numbers, not as
+        // the strings the in-app integers are rendered with.
+        put(json, "adam_id", receipt.appItemId());
+        put(json, "app_item_id", receipt.appItemId());
         put(json, "bundle_id", receipt.bundleId());
         put(json, "application_version", receipt.appVersion());
+        put(json, "download_id", receipt.downloadId());
+        put(json, "version_external_identifier", receipt.versionExternalIdentifier());
         put(json, "original_application_version", receipt.originalAppVersion());
         appleDates(json, "receipt_creation_date", receipt.creationDate());
         appleDates(json, "request_date", requestDate);
@@ -304,6 +311,9 @@ public final class VerifyReceiptEndpoint {
         appleDates(json, "expires_date", purchase.expiresDate());
         appleDates(json, "cancellation_date", purchase.cancellationDate());
         put(json, "web_order_line_item_id", stringOrNull(purchase.webOrderLineItemId()));
+        if (purchase.isTrialPeriod() != null) {
+            json.put("is_trial_period", String.valueOf(purchase.isTrialPeriod() == 1L));
+        }
         if (purchase.isInIntroOfferPeriod() != null) {
             json.put("is_in_intro_offer_period", String.valueOf(purchase.isInIntroOfferPeriod() == 1L));
         }

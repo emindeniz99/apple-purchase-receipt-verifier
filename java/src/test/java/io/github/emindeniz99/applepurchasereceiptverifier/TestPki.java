@@ -703,6 +703,30 @@ final class TestPki {
             String purchaseDate,
             String expiresDate)
             throws Exception {
+        return inAppPurchase(
+                quantity,
+                productId,
+                transactionId,
+                originalTransactionId,
+                purchaseDate,
+                expiresDate,
+                Collections.<ASN1Encodable>emptyList());
+    }
+
+    /**
+     * Same, with arbitrary attributes appended after 1711 — how a fixture
+     * carries an in-app attribute the six-argument shape does not model, such
+     * as 1713 (is_trial_period). Build them with {@link #attribute}.
+     */
+    static byte[] inAppPurchase(
+            long quantity,
+            String productId,
+            String transactionId,
+            String originalTransactionId,
+            String purchaseDate,
+            String expiresDate,
+            List<ASN1Encodable> extraAttributes)
+            throws Exception {
         ASN1EncodableVector attrs = new ASN1EncodableVector();
         attrs.add(attr(1701, new ASN1Integer(quantity).getEncoded()));
         attrs.add(attr(1702, new DERUTF8String(productId).getEncoded()));
@@ -714,6 +738,9 @@ final class TestPki {
             attrs.add(attr(1708, new DERIA5String(expiresDate).getEncoded()));
         }
         attrs.add(attr(1711, new ASN1Integer(42).getEncoded()));
+        for (ASN1Encodable extra : extraAttributes) {
+            attrs.add(extra);
+        }
         return new DERSet(attrs).getEncoded();
     }
 
