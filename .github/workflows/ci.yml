@@ -255,23 +255,23 @@ jobs:
     timeout-minutes: 15
     strategy:
       matrix:
-        # Every supported line (endoflife.date/python) plus 3.9: EOL, but
-        # it is the requires-python floor and stays tested while claimed.
-        python: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+        # Every supported line (endoflife.date/python); 3.10 is the
+        # requires-python floor and stays tested while claimed.
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       # setup-uv provisions the interpreter too (uv python install), so this
       # is one action where it used to be setup-python plus pip. uv builds
-      # every leg's Python from python-build-standalone, including the 3.9
+      # every leg's Python from python-build-standalone, including the 3.10
       # floor, so the matrix keeps proving exactly what it proved before.
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           python-version: ${{ matrix.python }}
       # python/uv.lock is committed and every leg installs from it, so no
       # push resolves a version range. uv forks the resolution on the
-      # interpreter and records a version per marker, so one file covers 3.9
+      # interpreter and records a version per marker, so one file covers 3.10
       # through 3.14 without pinning the whole matrix to what the floor can
       # take. `uv sync` installs the project editable, which keeps this a
       # test of the SOURCE TREE rather than of a built wheel.
@@ -494,7 +494,7 @@ jobs:
         # Every supported line (endoflife.date/ruby: 4.0, 3.4, 3.3) plus 3.2
         # and 3.1. Both are EOL upstream, but 3.1 is the gemspec's
         # required_ruby_version floor and Debian 12's system Ruby, so it stays
-        # tested while it is claimed — the java-runtime-8 / python-3.9 rule.
+        # tested while it is claimed — the java-runtime-8 / python-3.10 rule.
         ruby: ["3.1", "3.2", "3.3", "3.4", "4.0"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -989,7 +989,7 @@ jobs:
   # attribute reader, 60 s each -- the same budget and the same shape as
   # go-fuzz and rust-fuzz. Pinned to CPython 3.13 because atheris ships wheels
   # only (3.1.0: 3.12/3.13/3.14, no sdist), so the fuzzer's Python is not the
-  # library's: the `python` matrix above is what proves 3.9 through 3.14, and
+  # library's: the `python` matrix above is what proves 3.10 through 3.14, and
   # every crasher these targets found is pinned as a test under python/tests/
   # so it runs on all of them. atheris stays out of the package's dependency
   # sets -- run.sh installs it into an ephemeral uv environment and fuzzes the
@@ -1103,7 +1103,7 @@ jobs:
 
   # Every line the composer.json floor admits. 8.1 is the floor and is past
   # its own security-support end; it stays here for exactly as long as the
-  # manifest claims it, the same rule as node 20 and python 3.9. That leg is
+  # manifest claims it, the same rule as node 20 and python 3.10. That leg is
   # not decoration: PHP gained zend.max_allowed_stack_size in 8.3, so on 8.1
   # an unbounded recursive parser segfaults rather than raising, and this is
   # the only leg where the DER reader's depth bound is what stands between
@@ -1399,11 +1399,10 @@ jobs:
         working-directory: node
 
   # ruff and mypy for the Python port. One job, not a matrix: ruff pins the
-  # language level with target-version = "py39" in pyproject, so the
-  # interpreter this runs on does not change the verdict. mypy cannot be
-  # told python_version = "3.9" at all (mypy 2.x requires >= 3.10), so the
-  # 3.9 floor is held by ruff's UP rules and proven by the `python` job's
-  # 3.9 leg above, not by this one.
+  # language level with target-version = "py310" and mypy is told
+  # python_version = "3.10" in pyproject, so the interpreter this runs on
+  # does not change either verdict. The floor's runtime behaviour is
+  # proven by the `python` job's 3.10 leg above, not by this one.
   #
   # Installs the package rather than just the tools: mypy needs cryptography
   # and asn1crypto importable to resolve their types.

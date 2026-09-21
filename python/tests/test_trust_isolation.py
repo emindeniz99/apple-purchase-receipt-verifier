@@ -330,7 +330,7 @@ class AnchorsReachTheChainBuilderUnchangedTest(unittest.TestCase):
         actual: "Sequence[x509.Certificate]",
     ) -> None:
         self.assertEqual(len(expected), len(actual), "the anchor set changed size in transit")
-        for index, (want, got) in enumerate(zip(expected, actual)):
+        for index, (want, got) in enumerate(zip(expected, actual, strict=True)):
             self.assertIs(want, got, f"anchor {index} is not the object the caller passed")
 
 
@@ -523,7 +523,7 @@ def declared_dependencies(pyproject: str) -> "list[str]":
     """The distribution names in ``[project] dependencies``.
 
     Hand-parsed rather than read with ``tomllib``: this suite runs on the
-    3.9 floor the package claims, where ``tomllib`` does not exist and no
+    3.10 floor the package claims, where ``tomllib`` does not exist and no
     TOML parser is a dependency.
     """
     section = pyproject.split("\n[project]\n", 1)

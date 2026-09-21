@@ -8,7 +8,7 @@ version = "0.4.0"
 description = "Verify Apple in-app purchases locally (StoreKit 2 JWS + legacy PKCS#7 receipts) with zero Apple server calls"
 readme = "README.md"
 license = { text = "MIT" }
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 # asn1crypto is kept by owner decision (PLAN.md D16); 1.5 is the tested line.
 dependencies = [
     "cryptography>=40",
@@ -36,7 +36,7 @@ dev = [
 ]
 
 [tool.ruff]
-target-version = "py39"
+target-version = "py310"
 # The existing source already wraps at ~100 (longest line was 102); 88 would
 # have reflowed nearly every signature and docstring in the package.
 line-length = 100
@@ -55,10 +55,9 @@ select = [
 ]
 
 [tool.mypy]
-# No `python_version = "3.9"`: mypy 2.x refuses to target anything below 3.10,
-# so it type-checks under the interpreter running it. Ruff's
-# `target-version = "py39"` (with the UP rules) is what keeps the source
-# itself inside the 3.9 syntax the package's `requires-python` promises.
+# python_version pinned to the package's floor (requires-python = ">=3.10"),
+# the lowest mypy 2.x supports.
+python_version = "3.10"
 files = ["apple_purchase_receipt_verifier", "tests"]
 strict = true
 

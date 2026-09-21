@@ -11,9 +11,9 @@ compares ``receipt["bundle_id"]``, exactly as with the real endpoint."""
 
 import json
 import time
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime, timezone
-from typing import Any, Callable, Optional
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from cryptography import x509
@@ -58,7 +58,7 @@ class VerifyReceiptEndpoint:
         self,
         trusted_roots: "Iterable[x509.Certificate]",
         environment: str,
-        clock: Optional[Callable[[], float]] = None,
+        clock: Callable[[], float] | None = None,
     ) -> None:
         roots = list(trusted_roots)
         if not roots:
@@ -69,7 +69,7 @@ class VerifyReceiptEndpoint:
         self._production = environment == "Production"
         self._clock = time.time if clock is None else clock
 
-    def verify_receipt(self, request_body: Optional[Mapping[str, Any]]) -> dict[str, Any]:
+    def verify_receipt(self, request_body: Mapping[str, Any] | None) -> dict[str, Any]:
         """Handles one verifyReceipt request body. Never raises — like the
         real endpoint, failures are reported through ``status``."""
         receipt_data = (
@@ -165,7 +165,7 @@ def _in_app_json(purchase: InAppPurchase) -> dict[str, Any]:
     return entry
 
 
-def _str_or_none(value: Optional[int]) -> Optional[str]:
+def _str_or_none(value: int | None) -> str | None:
     return None if value is None else str(value)
 
 
@@ -174,7 +174,7 @@ def _put(target: dict[str, Any], key: str, value: Any) -> None:
         target[key] = value
 
 
-def _apple_dates(target: dict[str, Any], prefix: str, date: Optional[datetime]) -> None:
+def _apple_dates(target: dict[str, Any], prefix: str, date: datetime | None) -> None:
     """Apple's three date renderings: ``x`` (GMT), ``x_ms``, ``x_pst``."""
     if date is None:
         return

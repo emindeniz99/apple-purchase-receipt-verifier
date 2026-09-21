@@ -20,8 +20,9 @@ fuzzer with nothing to keep in step. Nothing under ``fixtures/`` is written.
 """
 
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 import atheris
 
@@ -121,7 +122,7 @@ def require_verification_error(error: BaseException, what: str) -> None:
     raise InvariantViolation(f"{what} escaped as {type(error).__name__}: {error}") from error
 
 
-def as_text(data: bytes) -> Optional[str]:
+def as_text(data: bytes) -> str | None:
     """The string an API taking ``str`` would actually receive, or ``None``
     when the bytes are not UTF-8.
 
