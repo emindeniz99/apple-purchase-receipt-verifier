@@ -4131,6 +4131,75 @@
         "wire-format",
         "generated"
       ]
+    },
+    {
+      "id": "receipt/genuine-sandbox-ids-are-zero",
+      "description": "A genuine sandbox receipt carries attribute types 1, 15 and 16 with value 0, and 1713 with value 0 on every in-app entry, which is what Apple's verifyReceipt echoes as adam_id, app_item_id, download_id, version_external_identifier and is_trial_period for a sandbox receipt. Present-with-zero is a decoded 0, not absent: receipt/ids-absent-when-not-carried pins the other case.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "public-receipt-sandbox-g5"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "builtin",
+          "name": "apple-receipt-roots"
+        },
+        "bundleId": "dev.bonzer.weeka.app"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "appItemId": 0,
+          "downloadId": 0,
+          "versionExternalIdentifier": 0,
+          "inAppPurchases[transactionId=2000001092134138].isTrialPeriod": 0,
+          "inAppPurchases[transactionId=2000001092148094].isTrialPeriod": 0
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "positive",
+        "attribute-type",
+        "genuine",
+        "public-receipts"
+      ]
+    },
+    {
+      "id": "endpoint/genuine-sandbox-receipt-echoes-zero-ids",
+      "description": "The verifyReceipt-compatible endpoint renders the zero-valued ids a genuine sandbox receipt carries exactly as Apple does for a sandbox receipt: adam_id, app_item_id, download_id and version_external_identifier as the JSON number 0, and is_trial_period as the string \"false\".",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "fixture": "public-receipt-sandbox-g5"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "builtin",
+          "name": "apple-receipt-roots"
+        },
+        "environment": "Sandbox"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "status": 0,
+          "environment": "Sandbox",
+          "receipt.adam_id": 0,
+          "receipt.app_item_id": 0,
+          "receipt.download_id": 0,
+          "receipt.version_external_identifier": 0,
+          "receipt.in_app[transaction_id=2000001092134138].is_trial_period": "false",
+          "receipt.in_app[transaction_id=2000001092148094].is_trial_period": "false"
+        }
+      },
+      "tags": [
+        "endpoint",
+        "receipt",
+        "positive",
+        "wire-format",
+        "genuine",
+        "public-receipts"
+      ]
     }
   ]
 }
