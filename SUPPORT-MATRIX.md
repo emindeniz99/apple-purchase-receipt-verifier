@@ -137,7 +137,7 @@ Rust supports the current stable only.
 
 | Line | Status | CI |
 |---|---|---|
-| 1.74.0 | floor (`rust-version`) | `rust` |
+| 1.85.0 | floor (`rust-version`) | `rust` |
 | stable (1.98 today) | active | `rust`, `rust-lint`, `rust-supply-chain`, `rust-fuzz` (nightly) |
 | beta | next stable | `rust` |
 
@@ -151,7 +151,7 @@ runner image ships.
 
 | Line | Status | CI |
 |---|---|---|
-| Rust 1.74.0 | floor (`rust-version`, same as the library) | `rust-ffi` (ubuntu) |
+| Rust 1.85.0 | floor (`rust-version`, same as the library) | `rust-ffi` (ubuntu) |
 | ubuntu-latest (gcc), macos-latest (clang), windows-latest (MSVC) | the linker matrix | `rust-ffi` |
 
 Should a consumer's compiler ever be the thing that breaks, the fix belongs in

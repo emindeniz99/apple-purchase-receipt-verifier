@@ -95,15 +95,17 @@ Delete a line in the commit that ships it.
 - **Dependency bumps inside the seven-day cooldown** land via dependabot on
   their own; swift-certificates 1.20.0 and swift-asn1 1.7.2 (released
   2026-09-01) will arrive that way.
-- **The RustCrypto 0.11/0.14 wave is deliberately not taken** (2026-09-05):
-  `digest` 0.11, `sha1`/`sha2` 0.11 and `p256`/`p384` 0.14 all set
-  `rust-version = 1.85` against this crate's 1.74.0 floor, and `rsa` is
-  still 0.9 on `digest` 0.10 (0.10 is an rc), so the trait versions would
-  not line up. The five bumps (PRs #22–#24, #26, #27) are closed and the
-  versions are ignored in `.github/dependabot.yml`'s cargo entry; the
-  `@dependabot ignore` comments on the PRs never reached the bot. Take the
-  whole wave in one commit once `rsa` 0.10 is stable, and raise the MSRV
-  to 1.85 in the same change (a D2-class decision).
+- **The RustCrypto 0.11/0.14 wave is deliberately not taken** (2026-09-21):
+  the MSRV move to 1.85.0 that the wave needed is done — `rust-version` in
+  `rust/Cargo.toml` and `rust/ffi/Cargo.toml` now reads 1.85.0, matching
+  `digest` 0.11, `sha1`/`sha2` 0.11 and `p256`/`p384` 0.14. What still blocks
+  the wave is `rsa`: it is still 0.9 on `digest` 0.10, and `rsa` 0.10 is
+  still a release candidate (0.10.0-rc.18 as of 2026-04-27; stable is
+  0.9.10), so the trait versions would not line up. The five bumps
+  (PRs #22–#24, #26, #27) are closed and the versions are ignored in
+  `.github/dependabot.yml`'s cargo entry; the `@dependabot ignore` comments
+  on the PRs never reached the bot. Take the whole wave in one commit once
+  `rsa` 0.10 is stable.
 - **Three Dependabot alerts on `node/package-lock.json` stay open**
   (2026-09-05): `decompress` 4.2.1 (critical, Zip Slip) and two moderates
   in the chain `@fastly/js-compute` → `@bytecodealliance/weval` →

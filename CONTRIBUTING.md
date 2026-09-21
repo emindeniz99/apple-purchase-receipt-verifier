@@ -24,7 +24,7 @@ node tools/lint-cases.mjs   # the shared conformance vectors, see below
 ```
 
 CI runs these on every supported runtime line (Java 8–25, Node 20–26,
-Python 3.9–3.14, Swift 6, Go 1.22–1.27, Ruby 3.1–4.0, Rust 1.74 through beta,
+Python 3.9–3.14, Swift 6, Go 1.22–1.27, Ruby 3.1–4.0, Rust 1.85 through beta,
 PHP 8.1–8.5, .NET on Linux, Windows and macOS). The floors are claims we test,
 not decoration: `@types/node` stays on 20 and JUnit stays on 5.x on purpose —
 see the rationale comments in `.github/dependabot.yml` before "upgrading"
