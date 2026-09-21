@@ -58,15 +58,21 @@ import org.jspecify.annotations.Nullable;
  * on purpose: a null input is a verdict about the input, so it is reported as
  * {@link Reason#INVALID_RECEIPT_FORMAT} like any other unusable one rather than
  * as a {@link NullPointerException} a caller cannot catch alongside the others.
+ * (A literal {@code null} is ambiguous between the {@code String} and
+ * {@code byte[]} overloads and needs a cast: {@code verify((String) null)}.)
  * {@code deviceGuid} is {@code @Nullable} because it is the optional
  * device-hash binding: null skips that check, exactly as the shorter overload
  * does.</p>
  */
 public final class ReceiptVerifier {
 
-    // Receipt attribute types (Apple, "Validating receipts on the device"),
-    // plus two community-established ones (0: receipt type, 18: original
-    // purchase date) needed for verifyReceipt response compatibility.
+    // Receipt attribute types from Apple's archived "Receipt Fields" chapter
+    // (developer.apple.com/library/archive/releasenotes/General/
+    // ValidateAppStoreReceipt/Chapters/ReceiptFields.html, last revised
+    // 2017-12-11; the live "Validating receipts on the device" page defers
+    // to it), plus two community-established ones (0: receipt type, 18:
+    // original purchase date) needed for verifyReceipt response
+    // compatibility.
     private static final int ATTR_RECEIPT_TYPE = 0;
     private static final int ATTR_ORIGINAL_PURCHASE_DATE = 18;
     private static final int ATTR_BUNDLE_ID = 2;

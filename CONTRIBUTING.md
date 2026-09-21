@@ -53,7 +53,7 @@ you change a manifest:
 | Port | Lockfile | Regenerate with |
 |---|---|---|
 | node | `node/package-lock.json`, `node/fuzz/package-lock.json` | `npm install` |
-| rust | `rust/Cargo.lock` | `CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback cargo +stable generate-lockfile` |
+| rust | `rust/Cargo.lock`, `rust/ffi/Cargo.lock` | `CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback cargo +stable generate-lockfile` in each; a plain `cargo update` picks edition-2024 crates the 1.74.0 floor cannot parse |
 | rust | `rust/fuzz/Cargo.lock` | `cargo generate-lockfile` in `rust/fuzz` |
 | python | `python/uv.lock` | `uv lock` |
 | php | `php/composer.lock` | `composer update` (resolves at the 8.1 floor, see below) |
