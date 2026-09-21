@@ -268,8 +268,21 @@ func malformedJSON() []byte {
 func (e *VerifyReceiptEndpoint) receiptJSON(fields *AppReceipt, requestDate time.Time) map[string]any {
 	receipt := map[string]any{}
 	putString(receipt, "receipt_type", fields.ReceiptType)
+	// Apple echoes attribute 1 under both names — its response reference
+	// defines adam_id as "See app_item_id" — and as JSON numbers, not as
+	// the strings the in-app integers are rendered with.
+	if fields.AppItemID != nil {
+		receipt["adam_id"] = *fields.AppItemID
+		receipt["app_item_id"] = *fields.AppItemID
+	}
 	putString(receipt, "bundle_id", fields.BundleID)
 	putString(receipt, "application_version", fields.AppVersion)
+	if fields.DownloadID != nil {
+		receipt["download_id"] = *fields.DownloadID
+	}
+	if fields.VersionExternalIdentifier != nil {
+		receipt["version_external_identifier"] = *fields.VersionExternalIdentifier
+	}
 	putString(receipt, "original_application_version", fields.OriginalAppVersion)
 	e.putDates(receipt, "receipt_creation_date", fields.CreationDate)
 	e.putDates(receipt, "request_date", &requestDate)
@@ -298,6 +311,9 @@ func (e *VerifyReceiptEndpoint) inAppJSON(purchase *InAppPurchase) map[string]an
 	e.putDates(entry, "cancellation_date", purchase.CancellationDate)
 	if purchase.WebOrderLineItemID != nil {
 		entry["web_order_line_item_id"] = strconv.FormatInt(*purchase.WebOrderLineItemID, 10)
+	}
+	if purchase.IsTrialPeriod != nil {
+		entry["is_trial_period"] = strconv.FormatBool(*purchase.IsTrialPeriod == 1)
 	}
 	if purchase.IsInIntroOfferPeriod != nil {
 		entry["is_in_intro_offer_period"] = strconv.FormatBool(*purchase.IsInIntroOfferPeriod == 1)

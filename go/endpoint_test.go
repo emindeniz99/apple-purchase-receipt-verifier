@@ -476,3 +476,71 @@ func TestAppleDateTripleShape(t *testing.T) {
 		t.Error("a date the receipt does not carry must be absent from the body")
 	}
 }
+
+// The wire body must contain the download id's exact digits. Serialising
+// it through a float64 anywhere in the pipeline would answer
+// 9007199254740992 (2^53) instead of 9007199254740993 (2^53+1) here.
+func TestEndpointIdsExactDigits(t *testing.T) {
+	pki := newReceiptPKI(t)
+	der := pki.receipt(t,
+		attr(0, derUTF8String("Production")),
+		attr(2, derUTF8String("com.example.app")),
+		attr(1, derInt(1234567890)),
+		attr(15, derInt(9007199254740993)),
+		attr(16, derInt(456789012)),
+		attr(17, receiptPayload(
+			attr(1702, derUTF8String("com.example.app.coins100")),
+			attr(1713, derInt(0)),
+		)),
+	)
+	endpoint := endpointFor(t, pki.anchors(), applereceipt.EnvironmentProduction, nil)
+	body, err := json.Marshal(map[string]any{
+		"receipt-data": base64.StdEncoding.EncodeToString(der),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := string(endpoint.VerifyReceiptJSON(body))
+	for _, literal := range []string{
+		`"adam_id":1234567890`,
+		`"app_item_id":1234567890`,
+		`"download_id":9007199254740993`,
+		`"version_external_identifier":456789012`,
+		`"is_trial_period":"false"`,
+	} {
+		if !strings.Contains(out, literal) {
+			t.Errorf("body must contain the literal %s, got %s", literal, out)
+		}
+	}
+	if strings.Contains(out, "9007199254740992") {
+		t.Fatalf("download_id was rounded to 2^53 somewhere in the pipeline: %s", out)
+	}
+}
+
+// An attribute the receipt does not carry leaves its key OUT of the body
+// entirely, never JSON null.
+func TestEndpointIdsAbsentAreOmitted(t *testing.T) {
+	pki := newReceiptPKI(t)
+	der := pki.receipt(t,
+		attr(0, derUTF8String("ProductionSandbox")),
+		attr(2, derUTF8String("com.example.app")),
+		attr(17, receiptPayload(
+			attr(1702, derUTF8String("com.example.app.coins100")),
+		)),
+	)
+	endpoint := endpointFor(t, pki.anchors(), applereceipt.EnvironmentSandbox, nil)
+	body, err := json.Marshal(map[string]any{
+		"receipt-data": base64.StdEncoding.EncodeToString(der),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := string(endpoint.VerifyReceiptJSON(body))
+	for _, key := range []string{
+		"adam_id", "app_item_id", "download_id", "version_external_identifier", "is_trial_period",
+	} {
+		if strings.Contains(out, `"`+key+`"`) {
+			t.Errorf("absent attribute must omit its key %q entirely, got %s", key, out)
+		}
+	}
+}

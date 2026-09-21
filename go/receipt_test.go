@@ -567,6 +567,94 @@ func TestUnknownAttributesArePreserved(t *testing.T) {
 	}
 }
 
+// Attribute types 1, 15, 16 and 1713 used to be left raw in
+// unknownAttributes; this pins that they decode instead, that 15 (2^53+1,
+// the first integer an IEEE-754 double cannot hold) keeps its exact
+// digits, and that the four types leave unknownAttributes while an
+// unmodelled type does not.
+func TestReceiptIdsAreDecoded(t *testing.T) {
+	pki := newReceiptPKI(t)
+	der := pki.receipt(t,
+		attr(2, derUTF8String("com.example.app")),
+		attr(1, derInt(1234567890)),
+		attr(15, derInt(9007199254740993)),
+		attr(16, derInt(456789012)),
+		attr(9999, []byte{1, 2, 3}),
+		attr(17, receiptPayload(
+			attr(1702, derUTF8String("com.example.app.coins100")),
+			attr(1713, derInt(0)),
+		)),
+		attr(17, receiptPayload(
+			attr(1702, derUTF8String("com.example.app.vip")),
+			attr(1713, derInt(1)),
+		)),
+	)
+	receipt, err := receiptVerifier(t, pki, "com.example.app").Verify(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.AppItemID == nil || *receipt.AppItemID != 1234567890 {
+		t.Errorf("AppItemID: got %v, want 1234567890", receipt.AppItemID)
+	}
+	if receipt.DownloadID == nil || *receipt.DownloadID != 9007199254740993 {
+		t.Errorf("DownloadID: got %v, want the exact digits of 2^53+1 (9007199254740993)", receipt.DownloadID)
+	}
+	if receipt.VersionExternalIdentifier == nil || *receipt.VersionExternalIdentifier != 456789012 {
+		t.Errorf("VersionExternalIdentifier: got %v, want 456789012", receipt.VersionExternalIdentifier)
+	}
+	if len(receipt.InAppPurchases) != 2 {
+		t.Fatalf("expected 2 in-app purchases, got %d", len(receipt.InAppPurchases))
+	}
+	if got := receipt.InAppPurchases[0].IsTrialPeriod; got == nil || *got != 0 {
+		t.Errorf("coins100.IsTrialPeriod: got %v, want 0", got)
+	}
+	if got := receipt.InAppPurchases[1].IsTrialPeriod; got == nil || *got != 1 {
+		t.Errorf("vip.IsTrialPeriod: got %v, want 1", got)
+	}
+	for _, kind := range []int64{1, 15, 16} {
+		if _, present := receipt.UnknownAttributes[kind]; present {
+			t.Errorf("attribute %d must no longer appear in UnknownAttributes", kind)
+		}
+	}
+	if _, present := receipt.UnknownAttributes[9999]; !present {
+		t.Error("attribute 9999 must still appear in UnknownAttributes")
+	}
+	if _, present := receipt.InAppPurchases[0].UnknownAttributes[1713]; present {
+		t.Error("attribute 1713 must no longer appear in a purchase's UnknownAttributes")
+	}
+}
+
+// A receipt that does not carry the four attributes reports them absent
+// rather than zero: absent and present-but-zero are different answers.
+func TestReceiptIdsAbsentAreNil(t *testing.T) {
+	pki := newReceiptPKI(t)
+	der := pki.receipt(t,
+		attr(2, derUTF8String("com.example.app")),
+		attr(17, receiptPayload(
+			attr(1702, derUTF8String("com.example.app.coins100")),
+		)),
+	)
+	receipt, err := receiptVerifier(t, pki, "com.example.app").Verify(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.AppItemID != nil {
+		t.Errorf("AppItemID: got %v, want nil", *receipt.AppItemID)
+	}
+	if receipt.DownloadID != nil {
+		t.Errorf("DownloadID: got %v, want nil", *receipt.DownloadID)
+	}
+	if receipt.VersionExternalIdentifier != nil {
+		t.Errorf("VersionExternalIdentifier: got %v, want nil", *receipt.VersionExternalIdentifier)
+	}
+	if len(receipt.InAppPurchases) != 1 {
+		t.Fatalf("expected 1 in-app purchase, got %d", len(receipt.InAppPurchases))
+	}
+	if receipt.InAppPurchases[0].IsTrialPeriod != nil {
+		t.Errorf("IsTrialPeriod: got %v, want nil", *receipt.InAppPurchases[0].IsTrialPeriod)
+	}
+}
+
 func TestEmptyDateStringMeansAbsent(t *testing.T) {
 	pki := newReceiptPKI(t)
 	der := pki.receipt(t,

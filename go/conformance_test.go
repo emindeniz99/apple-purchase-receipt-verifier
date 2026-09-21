@@ -131,6 +131,13 @@ var loadCases = sync.OnceValues(func() (*casesFile, error) {
 	decoder := json.NewDecoder(strings.NewReader(string(raw)))
 	// Unknown members would mean the schema moved under us.
 	decoder.DisallowUnknownFields()
+	// Without this, a number decoded into the "fields" map[string]any
+	// (expectation.Fields) becomes a float64, and 9007199254740993
+	// (2^53+1) rounds to 9007199254740992 on the way in — silently, since
+	// the same rounding then happens to the actual int64 result when it is
+	// compared as a float64 in equalValue, so a mismatch at that magnitude
+	// would not be caught. json.Number keeps the literal's exact digits.
+	decoder.UseNumber()
 	if err := decoder.Decode(&parsed); err != nil {
 		return nil, err
 	}
@@ -822,8 +829,11 @@ func resolvePath(t *testing.T, root any, path string) (any, bool) {
 }
 
 // equalValue compares a normalized value against the JSON literal a case
-// pins. Numbers arrive from JSON as float64 and from the library as
-// int64, so numeric comparison widens; nothing else is coerced.
+// pins. Numbers arrive from cases.json as json.Number (loadCases decodes
+// with UseNumber, so a literal like 9007199254740993 keeps its exact
+// digits instead of rounding through float64) and from the library as
+// int64; the integer path compares exactly, and only a genuinely
+// fractional literal falls back to float64.
 func equalValue(got, want any) bool {
 	switch wanted := want.(type) {
 	case string:
@@ -832,14 +842,31 @@ func equalValue(got, want any) bool {
 	case bool:
 		value, ok := got.(bool)
 		return ok && value == wanted
-	case float64:
+	case json.Number:
+		return equalNumber(got, wanted)
+	}
+	return reflect.DeepEqual(got, want)
+}
+
+func equalNumber(got any, wanted json.Number) bool {
+	if i, err := wanted.Int64(); err == nil {
 		switch value := got.(type) {
 		case int64:
-			return float64(value) == wanted
+			return value == i
 		case float64:
-			return value == wanted
+			return value == float64(i)
 		}
 		return false
 	}
-	return reflect.DeepEqual(got, want)
+	f, err := wanted.Float64()
+	if err != nil {
+		return false
+	}
+	switch value := got.(type) {
+	case int64:
+		return float64(value) == f
+	case float64:
+		return value == f
+	}
+	return false
 }
