@@ -185,6 +185,48 @@ public class ReceiptTests
     }
 
     [Fact]
+    public void TheLegacyIdAttributesAreDecoded()
+    {
+        AppReceipt receipt = IdsReceipt();
+
+        Assert.Equal(1234567890L, receipt.AppItemId);
+        // 2^53+1: the exact digits are the point. Apple's download_id runs to
+        // eighteen of them, past what a double can hold.
+        Assert.Equal(9007199254740993L, receipt.DownloadId);
+        Assert.Equal(456789012L, receipt.VersionExternalIdentifier);
+        Assert.Equal(0L, ByProduct(receipt, "com.example.app.coins100").IsTrialPeriod);
+        Assert.Equal(1L, ByProduct(receipt, "com.example.app.vip").IsTrialPeriod);
+    }
+
+    [Fact]
+    public void TheLegacyIdAttributesLeaveTheUnknownAttributeMap()
+    {
+        // Modelled now, so they are gone from the map they all used to land
+        // in — while 9999 stays, proving the map itself still works.
+        AppReceipt receipt = IdsReceipt();
+
+        Assert.False(receipt.UnknownAttributes.ContainsKey(1));
+        Assert.False(receipt.UnknownAttributes.ContainsKey(15));
+        Assert.False(receipt.UnknownAttributes.ContainsKey(16));
+        Assert.True(receipt.UnknownAttributes.ContainsKey(9999));
+        Assert.False(ByProduct(receipt, "com.example.app.vip").UnknownAttributes.ContainsKey(1713));
+    }
+
+    [Fact]
+    public void TheLegacyIdAttributesAreNullWhenTheReceiptDoesNotCarryThem()
+    {
+        // Absent is not zero: the shared sandbox receipt carries none of the
+        // four, and 0 is what Apple sends when it does carry them.
+        using ReceiptVerifier verifier = new(Roots(), "com.example.app");
+        AppReceipt receipt = verifier.Verify(Fixtures.Bytes("receipt"));
+
+        Assert.Null(receipt.AppItemId);
+        Assert.Null(receipt.DownloadId);
+        Assert.Null(receipt.VersionExternalIdentifier);
+        Assert.Null(ByProduct(receipt, "com.example.app.coins100").IsTrialPeriod);
+    }
+
+    [Fact]
     public void AnIntegerAttributeWiderThanSixtyFourBitsIsRejected()
     {
         byte[] inApp = TestPki.AttributeSet(new (BigInteger, byte[])[]
@@ -333,6 +375,17 @@ public class ReceiptTests
             Assert.Throws<VerificationException>(
                 () => verifier.Verify(Fixtures.Bytes("public-receipt-xcode-with-purchases"))).Reason);
     }
+
+    private static AppReceipt IdsReceipt()
+    {
+        using ReceiptVerifier verifier = new(
+            new[] { X509CertificateLoader.LoadCertificate(Fixtures.Bytes("receipt-ids-root")) },
+            "com.example.app");
+        return verifier.Verify(Fixtures.Bytes("receipt-ids"));
+    }
+
+    private static InAppPurchase ByProduct(AppReceipt receipt, string productId) =>
+        receipt.InAppPurchases.Single(p => p.ProductId == productId);
 
     private static IEnumerable<string> Chunks(string value, int size)
     {

@@ -87,6 +87,26 @@ public class Conformance
         Assert.Equal(CaseList.Count, ids.Count);
     }
 
+    /// <summary>
+    /// The download-id vectors expect 2^53+1, the first integer an IEEE-754
+    /// double cannot hold. This harness reads cases.json with the library's own
+    /// reader, which keeps an integral literal that fits as a
+    /// <see cref="long"/>; a reader that made it a double would compare against
+    /// 9007199254740992 and let a rounding implementation pass. So the
+    /// expectation itself is asserted to arrive with its exact digits, and as
+    /// an integer — the comparison in <see cref="AssertEqual"/> is then exact.
+    /// </summary>
+    [Fact]
+    public void TheDownloadIdExpectationIsReadAsAnExactInteger()
+    {
+        Assert.Equal(
+            9007199254740993L,
+            Assert.IsType<long>(Expected("receipt/ids-are-decoded")["downloadId"]));
+        Assert.Equal(
+            9007199254740993L,
+            Assert.IsType<long>(Expected("endpoint/ids-echo-apples-keys")["receipt.download_id"]));
+    }
+
     [Theory]
     [MemberData(nameof(CaseIds))]
     public void Case(string id)
@@ -321,6 +341,8 @@ public class Conformance
                     $"harness error: unsupported expected value type for \"{path}\"");
         }
     }
+
+    private static OrderedMap Expected(string id) => AsMap(AsMap(Find(id)["expected"])["fields"]);
 
     private static OrderedMap Find(string id)
     {

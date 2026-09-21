@@ -27,6 +27,9 @@ namespace ApplePurchaseReceiptVerifier.Receipt
             DateTimeOffset? originalPurchaseDate,
             string? originalAppVersion,
             DateTimeOffset? expirationDate,
+            long? appItemId,
+            long? downloadId,
+            long? versionExternalIdentifier,
             IReadOnlyList<InAppPurchase> inAppPurchases,
             IReadOnlyDictionary<int, IReadOnlyList<byte[]>> unknownAttributes)
         {
@@ -40,6 +43,9 @@ namespace ApplePurchaseReceiptVerifier.Receipt
             OriginalPurchaseDate = originalPurchaseDate;
             OriginalAppVersion = originalAppVersion;
             ExpirationDate = expirationDate;
+            AppItemId = appItemId;
+            DownloadId = downloadId;
+            VersionExternalIdentifier = versionExternalIdentifier;
             InAppPurchases = inAppPurchases;
             UnknownAttributes = unknownAttributes;
         }
@@ -79,6 +85,26 @@ namespace ApplePurchaseReceiptVerifier.Receipt
 
         /// <summary>Attribute 21 — only present in receipts with an expiry (e.g. VPP).</summary>
         public DateTimeOffset? ExpirationDate { get; }
+
+        /// <summary>
+        /// Attribute 1 — the app's App Store item identifier, which Apple's
+        /// verifyReceipt answer echoes under BOTH <c>adam_id</c> and
+        /// <c>app_item_id</c>. Zero in sandbox receipts, since a sandbox
+        /// purchase is not tied to a storefront item (undocumented).
+        /// </summary>
+        public long? AppItemId { get; }
+
+        /// <summary>
+        /// Attribute 15 — identifies the App Store download this receipt came
+        /// from (undocumented).
+        /// </summary>
+        public long? DownloadId { get; }
+
+        /// <summary>
+        /// Attribute 16 — the App Store's own identifier for this app version
+        /// (undocumented).
+        /// </summary>
+        public long? VersionExternalIdentifier { get; }
 
         /// <summary>Attribute 17, repeated.</summary>
         public IReadOnlyList<InAppPurchase> InAppPurchases { get; }
