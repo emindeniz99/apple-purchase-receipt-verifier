@@ -33,12 +33,12 @@ let transaction = transactions.verify_transaction(jws)?;
 println!("{:?} {:?}", transaction.product_id, transaction.expires_date);
 ```
 
-Synchronous, `#![forbid(unsafe_code)]`, Rust 1.74 or newer.
+Synchronous, `#![forbid(unsafe_code)]`, Rust 1.85 or newer.
 
 ## Runtime and version floor
 
-- **Rust 1.74.0**, declared as `rust-version` and proven by CI: the whole
-  suite, conformance included, runs on a real 1.74.0 toolchain against
+- **Rust 1.85.0**, declared as `rust-version` and proven by CI: the whole
+  suite, conformance included, runs on a real 1.85.0 toolchain against
   `Cargo.lock`, which is committed and resolved for that floor. Edition 2021.
 - **Eight direct dependencies**, all of them primitives: `rsa`, `p256`,
   `p384`, `sha1`, `sha2`, `digest` and `subtle` for the arithmetic, and
@@ -493,7 +493,7 @@ no panic ever crosses the boundary.
 It is a separate crate rather than a feature of this one for the same reason
 `fuzz/` is: a `cdylib` is a different artifact with a different lifecycle, and
 `exclude` keeps it out of the published tarball. It carries its own
-`Cargo.lock`, resolved for the same 1.74.0 floor.
+`Cargo.lock`, resolved for the same 1.85.0 floor.
 
 **Prebuilt binaries are not published yet** — building from source is the
 only supported path today. See `ffi/README.md` for the ABI rules (ownership,
@@ -513,7 +513,7 @@ cargo deny check
 `Cargo.lock` is committed, which is unusual for a library and deliberate here:
 CI runs every leg with `--locked` so a hijacked release cannot reach a runner
 before the seven-day dependabot cooldown has looked at it. The file has to
-stay resolvable on the 1.74.0 floor, so regenerate it with a modern cargo and
+stay resolvable on the 1.85.0 floor, so regenerate it with a modern cargo and
 the MSRV-aware resolver rather than with `cargo update`:
 
 ```bash

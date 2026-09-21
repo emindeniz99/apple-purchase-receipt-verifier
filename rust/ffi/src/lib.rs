@@ -1338,7 +1338,8 @@ mod tests {
     fn a_null_verifier_handle_is_reported_not_dereferenced() {
         let jws = CString::new("not.a.jws").unwrap();
         let mut out = empty_result();
-        let status = unsafe { aprv_verify_transaction(std::ptr::null(), jws.as_ptr(), &mut out) };
+        let status =
+            unsafe { aprv_verify_transaction(std::ptr::null(), jws.as_ptr(), &raw mut out) };
         assert_eq!(status, AprvReason::NullPointer as i32);
         assert_eq!(out.status, status);
         assert!(take_json(out).contains("NULL_POINTER"));
@@ -1348,7 +1349,7 @@ mod tests {
     fn a_null_input_string_is_reported() {
         let verifier = jws_verifier();
         let mut out = empty_result();
-        let status = unsafe { aprv_verify_transaction(verifier, std::ptr::null(), &mut out) };
+        let status = unsafe { aprv_verify_transaction(verifier, std::ptr::null(), &raw mut out) };
         assert_eq!(status, AprvReason::NullPointer as i32);
         assert!(take_json(out).contains("NULL_POINTER"));
         unsafe { aprv_verifier_free_jws(verifier) };
@@ -1360,7 +1361,7 @@ mod tests {
         // 0xFF is not a valid UTF-8 byte in any position.
         let bytes: [c_char; 4] = [0x65, -1_i8 as c_char, 0x65, 0];
         let mut out = empty_result();
-        let status = unsafe { aprv_verify_transaction(verifier, bytes.as_ptr(), &mut out) };
+        let status = unsafe { aprv_verify_transaction(verifier, bytes.as_ptr(), &raw mut out) };
         assert_eq!(status, AprvReason::InvalidUtf8 as i32);
         assert!(take_json(out).contains("INVALID_UTF8"));
 
@@ -1369,7 +1370,7 @@ mod tests {
             unsafe { aprv_verifier_new_receipt(bundle.as_ptr()) }
         };
         let mut out = empty_result();
-        let status = unsafe { aprv_verify_receipt_base64(receipt, bytes.as_ptr(), &mut out) };
+        let status = unsafe { aprv_verify_receipt_base64(receipt, bytes.as_ptr(), &raw mut out) };
         assert_eq!(status, AprvReason::InvalidUtf8 as i32);
         drop(take_json(out));
         unsafe { aprv_verifier_free_receipt(receipt) };
@@ -1381,7 +1382,8 @@ mod tests {
         let bundle = CString::new("com.example.app").unwrap();
         let verifier = unsafe { aprv_verifier_new_receipt(bundle.as_ptr()) };
         let mut out = empty_result();
-        let status = unsafe { aprv_verify_receipt_der(verifier, std::ptr::null(), 0, &mut out) };
+        let status =
+            unsafe { aprv_verify_receipt_der(verifier, std::ptr::null(), 0, &raw mut out) };
         assert_eq!(status, AprvReason::NullPointer as i32);
         drop(take_json(out));
         unsafe { aprv_verifier_free_receipt(verifier) };
@@ -1404,7 +1406,7 @@ mod tests {
         let verifier = jws_verifier();
         let jws = CString::new("not.a.jws").unwrap();
         let mut out = empty_result();
-        let status = unsafe { aprv_verify_transaction(verifier, jws.as_ptr(), &mut out) };
+        let status = unsafe { aprv_verify_transaction(verifier, jws.as_ptr(), &raw mut out) };
         assert_eq!(status, AprvReason::InvalidJwsFormat as i32);
         let json = take_json(out);
         assert!(json.contains("\"reason\":\"INVALID_JWS_FORMAT\""), "{json}");
@@ -1418,7 +1420,7 @@ mod tests {
         let verifier = unsafe { aprv_verifier_new_receipt(bundle.as_ptr()) };
         let empty: [u8; 0] = [];
         let mut out = empty_result();
-        let status = unsafe { aprv_verify_receipt_der(verifier, empty.as_ptr(), 0, &mut out) };
+        let status = unsafe { aprv_verify_receipt_der(verifier, empty.as_ptr(), 0, &raw mut out) };
         assert_eq!(status, AprvReason::InvalidReceiptFormat as i32);
         assert!(take_json(out).contains("INVALID_RECEIPT_FORMAT"));
         unsafe { aprv_verifier_free_receipt(verifier) };
@@ -1431,8 +1433,9 @@ mod tests {
         let endpoint = unsafe { aprv_endpoint_new(2) };
         let body = CString::new("not json at all").unwrap();
         let mut response: *mut c_char = std::ptr::null_mut();
-        let status =
-            unsafe { aprv_verify_receipt_endpoint_json(endpoint, body.as_ptr(), &mut response) };
+        let status = unsafe {
+            aprv_verify_receipt_endpoint_json(endpoint, body.as_ptr(), &raw mut response)
+        };
         assert_eq!(status, AprvReason::Ok as i32);
         let text = unsafe { CStr::from_ptr(response) }
             .to_str()
@@ -1448,7 +1451,7 @@ mod tests {
         let body = CString::new("{}").unwrap();
         let mut response: *mut c_char = std::ptr::null_mut();
         let status = unsafe {
-            aprv_verify_receipt_endpoint_json(std::ptr::null(), body.as_ptr(), &mut response)
+            aprv_verify_receipt_endpoint_json(std::ptr::null(), body.as_ptr(), &raw mut response)
         };
         assert_eq!(status, AprvReason::NullPointer as i32);
         assert!(response.is_null());
@@ -1507,7 +1510,7 @@ mod tests {
             };
             assert!(!verifier.is_null(), "max_signed_age_secs={max_age}");
             let mut out = empty_result();
-            let status = unsafe { aprv_verify_transaction(verifier, jws.as_ptr(), &mut out) };
+            let status = unsafe { aprv_verify_transaction(verifier, jws.as_ptr(), &raw mut out) };
             assert_eq!(status, expected, "max_signed_age_secs={max_age}");
             let json = take_json(out);
             if expected == AprvReason::Ok as i32 {
@@ -1558,12 +1561,12 @@ mod tests {
                     ders.as_ptr(),
                     lens.as_ptr(),
                     1,
-                    &now,
+                    &raw const now,
                 )
             };
             assert!(!verifier.is_null(), "clock={now}");
             let mut out = empty_result();
-            let status = unsafe { aprv_verify_transaction(verifier, jws.as_ptr(), &mut out) };
+            let status = unsafe { aprv_verify_transaction(verifier, jws.as_ptr(), &raw mut out) };
             assert_eq!(status, expected, "clock={now}");
             let json = take_json(out);
             if expected == AprvReason::Ok as i32 {
@@ -1598,7 +1601,7 @@ mod tests {
         };
         assert!(!verifier.is_null());
         let mut out = empty_result();
-        let status = unsafe { aprv_verify_transaction(verifier, jws.as_ptr(), &mut out) };
+        let status = unsafe { aprv_verify_transaction(verifier, jws.as_ptr(), &raw mut out) };
         // The bundled Apple roots, exactly as aprv_verifier_new_jws would.
         assert_eq!(status, AprvReason::InvalidChain as i32);
         assert!(take_json(out).contains("INVALID_CHAIN"));
@@ -1623,7 +1626,7 @@ mod tests {
                 null_ders,
                 null_lens,
                 0,
-                &now
+                &raw const now
             )
             .is_null());
             assert!(aprv_verifier_new_jws_with_roots_and_clock(
@@ -1634,7 +1637,7 @@ mod tests {
                 null_ders,
                 null_lens,
                 0,
-                &now
+                &raw const now
             )
             .is_null());
             assert!(aprv_verifier_new_jws_with_roots_and_clock(
@@ -1645,17 +1648,28 @@ mod tests {
                 null_ders,
                 null_lens,
                 0,
-                &now
+                &raw const now
             )
             .is_null());
             // An endpoint takes exactly Production or Sandbox, clock or not.
-            assert!(
-                aprv_endpoint_new_with_roots_and_clock(0, null_ders, null_lens, 0, &now).is_null()
-            );
-            assert!(
-                aprv_endpoint_new_with_roots_and_clock(3, null_ders, null_lens, 0, &now).is_null()
-            );
-            let endpoint = aprv_endpoint_new_with_roots_and_clock(2, null_ders, null_lens, 0, &now);
+            assert!(aprv_endpoint_new_with_roots_and_clock(
+                0,
+                null_ders,
+                null_lens,
+                0,
+                &raw const now
+            )
+            .is_null());
+            assert!(aprv_endpoint_new_with_roots_and_clock(
+                3,
+                null_ders,
+                null_lens,
+                0,
+                &raw const now
+            )
+            .is_null());
+            let endpoint =
+                aprv_endpoint_new_with_roots_and_clock(2, null_ders, null_lens, 0, &raw const now);
             assert!(!endpoint.is_null());
             aprv_endpoint_free(endpoint);
         }
@@ -1683,13 +1697,14 @@ mod tests {
                 ders.as_ptr(),
                 lens.as_ptr(),
                 1,
-                &now,
+                &raw const now,
             )
         };
         assert!(!endpoint.is_null());
         let mut response: *mut c_char = std::ptr::null_mut();
-        let status =
-            unsafe { aprv_verify_receipt_endpoint_json(endpoint, body.as_ptr(), &mut response) };
+        let status = unsafe {
+            aprv_verify_receipt_endpoint_json(endpoint, body.as_ptr(), &raw mut response)
+        };
         assert_eq!(status, AprvReason::Ok as i32);
         let text = unsafe { CStr::from_ptr(response) }
             .to_str()
@@ -1722,7 +1737,7 @@ mod tests {
         let jws = CString::new(jws.trim()).unwrap();
         let verifier = jws_verifier();
         let mut out = empty_result();
-        let status = unsafe { aprv_verify_transaction(verifier, jws.as_ptr(), &mut out) };
+        let status = unsafe { aprv_verify_transaction(verifier, jws.as_ptr(), &raw mut out) };
         assert_eq!(status, AprvReason::InvalidChain as i32);
         assert!(take_json(out).contains("INVALID_CHAIN"));
         unsafe { aprv_verifier_free_jws(verifier) };

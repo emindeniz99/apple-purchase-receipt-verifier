@@ -77,7 +77,7 @@ updates:
   # dependabot only watches the directories it is told about. It holds one
   # dependency (the library, by path) plus whatever that pulls, so a bump
   # here is normally a transitive one — and the MSRV note on /rust applies
-  # unchanged, because this crate claims the same 1.74.0 floor.
+  # unchanged, because this crate claims the same 1.85.0 floor.
   - package-ecosystem: cargo
     directory: /rust/ffi
     schedule:
@@ -122,7 +122,7 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
-  # The MSRV floor is a claim this repository tests (the rust job's 1.74.0
+  # The MSRV floor is a claim this repository tests (the rust job's 1.85.0
   # leg), so a bump that raises it is a deliberate decision and not a
   # dependabot merge. When one of these needs a newer Rust, raise
   # rust-version in rust/Cargo.toml in the same pull request, or ignore the
@@ -134,12 +134,13 @@ updates:
     cooldown:
       default-days: 7
     ignore:
-      # The RustCrypto 0.11/0.14 wave sets rust-version = 1.85 against this
-      # crate's 1.74.0 floor, and rsa 0.9 still speaks digest 0.10 (rsa 0.10
-      # is an rc), so the five crates move together in one deliberate PR once
-      # rsa 0.10 is stable and the MSRV move is decided (ROADMAP.md, "The
-      # RustCrypto 0.11/0.14 wave"). Explicit versions, not
-      # semver-major: for 0.x crates dependabot labels 0.10 -> 0.11 a minor.
+      # The RustCrypto 0.11/0.14 wave matches this crate's 1.85.0 floor now,
+      # but rsa 0.9 still speaks digest 0.10 and rsa 0.10 is still a release
+      # candidate (0.10.0-rc.18 as of 2026-04-27; stable is 0.9.10), so the
+      # five crates move together in one deliberate PR once rsa 0.10 is
+      # stable (ROADMAP.md, "The RustCrypto 0.11/0.14 wave"). Explicit
+      # versions, not semver-major: for 0.x crates dependabot labels 0.10 ->
+      # 0.11 a minor.
       - dependency-name: digest
         versions: [">=0.11"]
       - dependency-name: sha1

@@ -644,10 +644,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Rust has no LTS lines. 1.74.0 is the floor the manifest claims, so
+        # Rust has no LTS lines. 1.85.0 is the floor the manifest claims, so
         # it is the one that needs proving; stable is what users have; beta
         # is the early warning.
-        toolchain: ["1.74.0", "stable", "beta"]
+        toolchain: ["1.85.0", "stable", "beta"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -656,15 +656,15 @@ jobs:
       # rust/Cargo.lock is committed and every leg installs from it, so no
       # push resolves a version range. The file was generated with
       # CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback on a modern cargo,
-      # which is what makes it resolvable on the 1.74.0 floor; regenerate it
+      # which is what makes it resolvable on the 1.85.0 floor; regenerate it
       # the same way (rust/README.md). --locked turns "cargo quietly rewrote
       # the lockfile" into a failed job rather than an unnoticed bump.
       - name: test on the floor
-        if: matrix.toolchain == '1.74.0'
+        if: matrix.toolchain == '1.85.0'
         working-directory: rust
-        run: cargo +1.74.0 test --locked --all-features
+        run: cargo +1.85.0 test --locked --all-features
       - name: test on ${{ matrix.toolchain }}
-        if: matrix.toolchain != '1.74.0'
+        if: matrix.toolchain != '1.85.0'
         working-directory: rust
         run: |
           cargo +${{ matrix.toolchain }} test --locked --all-features
@@ -709,7 +709,7 @@ jobs:
           node-version: "22"
           package-manager-cache: false
       - run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
-      # rust/ffi/Cargo.lock is committed and resolved for the 1.74.0 floor the
+      # rust/ffi/Cargo.lock is committed and resolved for the 1.85.0 floor the
       # same way rust/Cargo.lock is; --locked turns "cargo quietly rewrote the
       # lockfile" into a failed job rather than an unnoticed bump.
       - run: cargo build --locked
@@ -718,12 +718,12 @@ jobs:
       # once, because a Rust version floor is not platform-specific. A `check`
       # rather than a `test`: the tests need no older toolchain to be honest,
       # the compilable surface does.
-      - name: the 1.74.0 floor compiles
+      - name: the 1.85.0 floor compiles
         if: runner.os == 'Linux'
         working-directory: rust/ffi
         run: |
-          rustup toolchain install 1.74.0 --profile minimal
-          cargo +1.74.0 check --locked --all-targets
+          rustup toolchain install 1.85.0 --profile minimal
+          cargo +1.85.0 check --locked --all-targets
       - run: cargo fmt --check
         working-directory: rust/ffi
       - run: cargo clippy --locked --all-targets -- -D warnings
