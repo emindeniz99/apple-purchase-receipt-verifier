@@ -1,7 +1,7 @@
 {
   "$schema": "./cases.schema.json",
   "schemaVersion": 1,
-  "comment": "Normative cross-language conformance vectors for apple-purchase-receipt-verifier.\nOne case per semantic fact: java/, node/, python/, swift/, go/, ruby/, rust/, php/ and dotnet/\neach assert many of these under their own test names, and the duplicates are merged here.\nEvery expectation in this file was derived by hand from the four test-suite inventories,\nfrom PLAN.md sections 2.1-2.3, from COMPARISON.md and from the fixture generator\n(java/src/test/.../FixtureGeneratorTest.java) plus fixtures/generated/manifest.json.\nNOTHING here was produced by running an implementation and recording what it did:\na vector that disagrees with an implementation is a bug report against that implementation\nuntil a human decides otherwise.\n\nPaths in \"fields\" are language-neutral. Scalars use the shared API names from PLAN.md section 3\n(camelCase) for verifyTransaction/verifyAppTransaction/verifyRaw/verifyReceipt, and the literal\nApple wire keys (snake_case) for verifyReceiptEndpoint. \"x.length\" is a collection size.\n\"list[key=value].field\" selects the single element of list whose key equals value.\n\"unknownAttributes[9999][0]\" indexes the raw values recorded for receipt attribute type 9999,\nexpressed as a lowercase hex string. Dates are ISO-8601 UTC strings; claims that Apple ships as\nepoch milliseconds (signedDate, receiptCreationDate) stay numbers. null means \"absent or unset\".\nA field a case does not list is simply not pinned by that case.\n\nCertificate-validity windows are judged at the payload signedDate / receipt creationDate, and\nwhere the input states neither, at the SYSTEM clock — never at an injected one (PLAN.md 2.1\nstep 4, 2.2 step 2). The expired-chain cases are therefore deterministic. \"clock\" appears where\nthe answer genuinely moves with time — the max-signed-age staleness rule and the request_date\ntriple of the verifyReceipt endpoint — and, on the four dateless inputs, precisely to pin that\nthe answer does NOT move: a receipt or payload carrying no date of its own, verified under a\nclock planted inside an expired certificate's window or far past a live one's, must reach the\nverdict it reaches on real time. A caller injecting a clock to test staleness, or to work\naround clock skew, must not thereby accept a chain that is expired. verifyReceipt cases cannot\ncarry a clock at all — the schema refuses one — because ReceiptVerifier takes no clock\nparameter in any port. Where the schema does allow one, a runner MUST hand the case's clock to\nthe verifier rather than fake time; a case carrying a clock that is run against the system\nclock is not running the case.\n\nEvery fixture records the SHA-256 of its DECODED logical bytes (post-codec: the file bytes for\nraw, the base64-decoded bytes for base64, the trimmed UTF-8 for utf8). contentSha256 is not\ndocumentation: tools/lint-cases.mjs re-hashes every registered fixture, and so does every\nadapter — over the whole registry before any case runs, and again for each fixture a case\nloads. A fixture that is regenerated, re-encoded or quietly edited fails loudly in every\nlanguage instead of silently changing what these vectors mean.\n\nFour places where the ports had drifted apart were adjudicated and are pinned here: the\ncertificate-validity fallback clock (the dateless cases), the typed endpoint environment\n(config.environment is the enum, and both values are exercised), and a receipt attribute type\nabove 2^31-1, which every port must reject as INVALID_RECEIPT_FORMAT rather than rename or\nclamp. The fourth — verifyReceiptCore being public in every port, so no endpoint has to build a\nwildcard-bundle-id verifier to reach it — changes no observable answer, so no vector can hold\nit; the native suites carry that one.\n\n\"fault\" names the one intentional defect of a negative case. It is documentation, not an\nassertion: implementations are not required to report it, only to report the given reason.\n\nReceipt base64 (added 2026-09-04). Every runner decodes a base64 fixture itself and hands DER to the library, so no verifyReceipt case can say how a port treats the string a client actually sent. The text codec and the verifyReceiptBase64 operation close that: the fixture bytes go to the string entry point verbatim, and a verifyReceiptEndpoint case over a text fixture puts them in receipt-data verbatim. The rule they pin is Apple's: receipt-data is Base64 as defined in RFC 4648, and Foundation's base64EncodedString(options:) can emit the standard or the base64url alphabet, with or without padding, with CR/LF line endings at 64 or 76 columns. Everything Foundation can emit is accepted; a character outside both alphabets, a mixed alphabet, anything after the padding (a third '=' included), a partial padding run, and an empty string are INVALID_RECEIPT_FORMAT (21002 at the endpoint). Padding is accepted omitted or canonical, never over- or under-supplied: no encoder emits either, and a decoder that recomputes it turns padding into a free suffix.\n\nHostile JWS (added 2026-09-05). Six inputs that Python's coverage-guided fuzzing walked out of the library as bare exceptions rather than verdicts are pinned here, so that all nine ports answer them and answer them the same way. A seventh input sits with them carrying no defect at all: the same signedDate spelled 1722945600000.0, which must verify, because a port could otherwise pass the out-of-range vector by refusing every number that is not a bare integer. Each is a real JWS over the generated test PKI carrying exactly one mutation; the header is signed in its hostile state so the ES256 signature covers the bytes served, and a mutated certificate is re-signed by its issuer so a broken issuer signature can never be the first thing a port objects to. The reasons were adjudicated against Node and Python, which already agreed on three of the five, and on the fourth the majority was overruled for the reason that case states: x5c entries that are not strings are INVALID_JWS_FORMAT, a signedDate of 1e300 is INVALID_CHAIN, a certificate that stops decoding inside its extension block is INVALID_CERTIFICATE, an unimplemented EC curve on the intermediate is INVALID_CERTIFICATE, and a certificate claiming X.509 version 11 is INVALID_CERTIFICATE, and a certificate carrying the same extension twice is INVALID_CERTIFICATE. The per-case descriptions carry the reasoning for each. What these five have in common is where the defect sits: in the JWS header and in the x5c certificates, both of which every port decodes BEFORE the signature that would have rejected them, and neither of which any signature in the input authenticates. An eighth input joined them when the x5c[2] differential was closed: the third x5c entry holding base64 of \"not a certificate\", which java alone rejected because java alone parsed that entry. The other eight ports verified the JWS, and the majority lost to the same rule the unimplemented curve lost to \u2014 pinning acceptance would have made java drop a rejection it already makes. Every port now parses all three entries; none of them trusts the third, which is what the differential was always about.\n\nReceipt signer certificates (added 2026-09-05). The four certificate mutations above sit in a JWS header, and four ports answered them from checks written on the JWS path alone (node, python, ruby and dotnet; rust and php had them in a shared certificate parser, and java, swift and go get them from a platform decoder). So the same four mutations \u2014 X.509 version 11, a duplicated basicConstraints, an unassigned EC curve and an extension block that stops decoding \u2014 are built into the certificate a legacy PKCS#7 receipt is signed by, and carry the reason their JWS twins carry: INVALID_CERTIFICATE. Each receipt is genuine in every other respect, with the signer re-signed by the intermediate wherever the mutation touched its TBS, so the certificate is the only thing a port can object to. The curve case is the one where the signer's KEY is the mutation: the receipt is signed with a real P-256 key whose certificate then names a curve that does not exist, so the port has to refuse the certificate before it can reach the signature \u2014 and it must not answer instead that the key is not RSA, which is a different input.\n\nCompact-JWS segments that are empty or are not JSON objects (added 2026-09-05). RFC 7515 7.1 gives a compact JWS three base64url segments whose first two decode to JSON OBJECTS, and nothing here said what happens when one is empty or decodes to an array or a bare scalar. Six inputs pin it, all INVALID_JWS_FORMAT: the whole input `..`, an empty header, an empty payload, a header that is a JSON array, a header that is a bare scalar, and a payload that is a JSON array. The two with the defect in the PAYLOAD carry a genuine header and signature, so a port answers about the payload rather than about the certificates in a fake header; the four with the defect in the header need no signing, because the header is read first. Two things make these worth pinning rather than assuming. An empty segment is valid base64url of zero bytes, and a JSON reader that answers \"nothing\" instead of raising hands the caller a null the next line dereferences \u2014 which is how `..` left java as a NullPointerException rather than a verdict. And an empty or non-object PAYLOAD makes every claim read as absent, which fails OPEN: a payload stating no signedDate moves certificate validity onto the current-time fallback and silences the staleness rule, the same pair transaction/reject-signed-date-out-of-range guards from the other side.\n\nResource bounds (added 2026-09-05). Every port defends itself against hostile input with size and node budgets, and they sat an order of magnitude apart: a receipt byte cap of 8 MiB in rust, 2 MiB in php, 1 MiB in go and none stated in node, python, java, swift or dotnet; a budget of 200,000 ASN.1 nodes per parse in ruby, 100,000 in rust and go, 20,000 in php and none elsewhere. Those are port-local defences and none of them may quietly become a verdict, so the contract states the floor beneath them rather than the caps themselves. Every implementation MUST accept a well-formed, correctly signed receipt of up to 1 MiB (1,048,576 bytes) of DER whose largest single ASN.1 parse holds up to 20,000 nodes. Those are the two smallest numbers any port already carries — go's byte cap and php's node budget — so the floor raises nothing, and both are an order of magnitude above the largest genuine receipt in the corpus (79 KB, 187 in-app purchases, under 3,000 nodes). Above the floor a port MAY refuse and the number it refuses at is its own business; below it, refusing is a bug. A node is one TLV, counted descending into constructed values only, because a primitive OCTET STRING's contents — an in-app purchase, an attribute value, the encapsulated payload — are a separate parse with a separate budget in every port that has one. Two receipts pin it from below, one number each: `receipt-byte-floor` is 1,034,681 bytes at 9,237 nodes and `receipt-node-floor` is 19,897 nodes at 74,569 bytes. One receipt under both limits would not do it -- a port could lower either cap to just above what that single receipt happened to use, which is what the 809,069-byte, 16,037-node receipt they replace allowed. Neither is also run through verifyReceiptEndpoint: base64 of 1 MB is 1.38 MB, over php's 1 MiB cap on a REQUEST BODY, which bounds a wire request rather than a receipt and is not what this floor is about.",
+  "comment": "Normative cross-language conformance vectors for apple-purchase-receipt-verifier.\nOne case per semantic fact: java/, node/, python/, swift/, go/, ruby/, rust/, php/ and dotnet/\neach assert many of these under their own test names, and the duplicates are merged here.\nEvery expectation in this file was derived by hand from the four test-suite inventories,\nfrom PLAN.md sections 2.1-2.3, from COMPARISON.md and from the fixture generator\n(java/src/test/.../FixtureGeneratorTest.java) plus fixtures/generated/manifest.json.\nNOTHING here was produced by running an implementation and recording what it did:\na vector that disagrees with an implementation is a bug report against that implementation\nuntil a human decides otherwise.\n\nPaths in \"fields\" are language-neutral. Scalars use the shared API names from PLAN.md section 3\n(camelCase) for verifyTransaction/verifyAppTransaction/verifyRaw/verifyReceipt, and the literal\nApple wire keys (snake_case) for verifyReceiptEndpoint. \"x.length\" is a collection size.\n\"list[key=value].field\" selects the single element of list whose key equals value.\n\"unknownAttributes[9999][0]\" indexes the raw values recorded for receipt attribute type 9999,\nexpressed as a lowercase hex string. Dates are ISO-8601 UTC strings; claims that Apple ships as\nepoch milliseconds (signedDate, receiptCreationDate) stay numbers. null means \"absent or unset\".\nA field a case does not list is simply not pinned by that case.\n\nCertificate-validity windows are judged at the payload signedDate / receipt creationDate, and\nwhere the input states neither, at the SYSTEM clock — never at an injected one (PLAN.md 2.1\nstep 4, 2.2 step 2). The expired-chain cases are therefore deterministic. \"clock\" appears where\nthe answer genuinely moves with time — the max-signed-age staleness rule and the request_date\ntriple of the verifyReceipt endpoint — and, on the four dateless inputs, precisely to pin that\nthe answer does NOT move: a receipt or payload carrying no date of its own, verified under a\nclock planted inside an expired certificate's window or far past a live one's, must reach the\nverdict it reaches on real time. A caller injecting a clock to test staleness, or to work\naround clock skew, must not thereby accept a chain that is expired. verifyReceipt cases cannot\ncarry a clock at all — the schema refuses one — because ReceiptVerifier takes no clock\nparameter in any port. Where the schema does allow one, a runner MUST hand the case's clock to\nthe verifier rather than fake time; a case carrying a clock that is run against the system\nclock is not running the case.\n\nEvery fixture records the SHA-256 of its DECODED logical bytes (post-codec: the file bytes for\nraw, the base64-decoded bytes for base64, the trimmed UTF-8 for utf8). contentSha256 is not\ndocumentation: tools/lint-cases.mjs re-hashes every registered fixture, and so does every\nadapter — over the whole registry before any case runs, and again for each fixture a case\nloads. A fixture that is regenerated, re-encoded or quietly edited fails loudly in every\nlanguage instead of silently changing what these vectors mean.\n\nFour places where the ports had drifted apart were adjudicated and are pinned here: the\ncertificate-validity fallback clock (the dateless cases), the typed endpoint environment\n(config.environment is the enum, and both values are exercised), and a receipt attribute type\nabove 2^31-1, which every port must reject as INVALID_RECEIPT_FORMAT rather than rename or\nclamp. The fourth — verifyReceiptCore being public in every port, so no endpoint has to build a\nwildcard-bundle-id verifier to reach it — changes no observable answer, so no vector can hold\nit; the native suites carry that one.\n\n\"fault\" names the one intentional defect of a negative case. It is documentation, not an\nassertion: implementations are not required to report it, only to report the given reason.\n\nReceipt base64 (added 2026-09-04). Every runner decodes a base64 fixture itself and hands DER to the library, so no verifyReceipt case can say how a port treats the string a client actually sent. The text codec and the verifyReceiptBase64 operation close that: the fixture bytes go to the string entry point verbatim, and a verifyReceiptEndpoint case over a text fixture puts them in receipt-data verbatim. The rule they pin is Apple's: receipt-data is Base64 as defined in RFC 4648, and Foundation's base64EncodedString(options:) can emit the standard or the base64url alphabet, with or without padding, with CR/LF line endings at 64 or 76 columns. Everything Foundation can emit is accepted; a character outside both alphabets, a mixed alphabet, anything after the padding (a third '=' included), a partial padding run, and an empty string are INVALID_RECEIPT_FORMAT (21002 at the endpoint). Padding is accepted omitted or canonical, never over- or under-supplied: no encoder emits either, and a decoder that recomputes it turns padding into a free suffix.\n\nHostile JWS (added 2026-09-05). Six inputs that Python's coverage-guided fuzzing walked out of the library as bare exceptions rather than verdicts are pinned here, so that all nine ports answer them and answer them the same way. A seventh input sits with them carrying no defect at all: the same signedDate spelled 1722945600000.0, which must verify, because a port could otherwise pass the out-of-range vector by refusing every number that is not a bare integer. Each is a real JWS over the generated test PKI carrying exactly one mutation; the header is signed in its hostile state so the ES256 signature covers the bytes served, and a mutated certificate is re-signed by its issuer so a broken issuer signature can never be the first thing a port objects to. The reasons were adjudicated against Node and Python, which already agreed on three of the five, and on the fourth the majority was overruled for the reason that case states: x5c entries that are not strings are INVALID_JWS_FORMAT, a signedDate of 1e300 is INVALID_CHAIN, a certificate that stops decoding inside its extension block is INVALID_CERTIFICATE, an unimplemented EC curve on the intermediate is INVALID_CERTIFICATE, and a certificate claiming X.509 version 11 is INVALID_CERTIFICATE, and a certificate carrying the same extension twice is INVALID_CERTIFICATE. The per-case descriptions carry the reasoning for each. What these five have in common is where the defect sits: in the JWS header and in the x5c certificates, both of which every port decodes BEFORE the signature that would have rejected them, and neither of which any signature in the input authenticates. An eighth input joined them when the x5c[2] differential was closed: the third x5c entry holding base64 of \"not a certificate\", which java alone rejected because java alone parsed that entry. The other eight ports verified the JWS, and the majority lost to the same rule the unimplemented curve lost to \u2014 pinning acceptance would have made java drop a rejection it already makes. Every port now parses all three entries; none of them trusts the third, which is what the differential was always about.\n\nReceipt signer certificates (added 2026-09-05). The four certificate mutations above sit in a JWS header, and four ports answered them from checks written on the JWS path alone (node, python, ruby and dotnet; rust and php had them in a shared certificate parser, and java, swift and go get them from a platform decoder). So the same four mutations \u2014 X.509 version 11, a duplicated basicConstraints, an unassigned EC curve and an extension block that stops decoding \u2014 are built into the certificate a legacy PKCS#7 receipt is signed by, and carry the reason their JWS twins carry: INVALID_CERTIFICATE. Each receipt is genuine in every other respect, with the signer re-signed by the intermediate wherever the mutation touched its TBS, so the certificate is the only thing a port can object to. The curve case is the one where the signer's KEY is the mutation: the receipt is signed with a real P-256 key whose certificate then names a curve that does not exist, so the port has to refuse the certificate before it can reach the signature \u2014 and it must not answer instead that the key is not RSA, which is a different input.\n\nCompact-JWS segments that are empty or are not JSON objects (added 2026-09-05). RFC 7515 7.1 gives a compact JWS three base64url segments whose first two decode to JSON OBJECTS, and nothing here said what happens when one is empty or decodes to an array or a bare scalar. Six inputs pin it, all INVALID_JWS_FORMAT: the whole input `..`, an empty header, an empty payload, a header that is a JSON array, a header that is a bare scalar, and a payload that is a JSON array. The two with the defect in the PAYLOAD carry a genuine header and signature, so a port answers about the payload rather than about the certificates in a fake header; the four with the defect in the header need no signing, because the header is read first. Two things make these worth pinning rather than assuming. An empty segment is valid base64url of zero bytes, and a JSON reader that answers \"nothing\" instead of raising hands the caller a null the next line dereferences \u2014 which is how `..` left java as a NullPointerException rather than a verdict. And an empty or non-object PAYLOAD makes every claim read as absent, which fails OPEN: a payload stating no signedDate moves certificate validity onto the current-time fallback and silences the staleness rule, the same pair transaction/reject-signed-date-out-of-range guards from the other side.\n\nResource bounds (added 2026-09-05). Every port defends itself against hostile input with size and node budgets, and they sat an order of magnitude apart: a receipt byte cap of 8 MiB in rust, 2 MiB in php, 1 MiB in go and none stated in node, python, java, swift or dotnet; a budget of 200,000 ASN.1 nodes per parse in ruby, 100,000 in rust and go, 20,000 in php and none elsewhere. Those are port-local defences and none of them may quietly become a verdict, so the contract states the floor beneath them rather than the caps themselves. Every implementation MUST accept a well-formed, correctly signed receipt of up to 1 MiB (1,048,576 bytes) of DER whose largest single ASN.1 parse holds up to 20,000 nodes. Those are the two smallest numbers any port already carries — go's byte cap and php's node budget — so the floor raises nothing, and both are an order of magnitude above the largest genuine receipt in the corpus (79 KB, 187 in-app purchases, under 3,000 nodes). Above the floor a port MAY refuse and the number it refuses at is its own business; below it, refusing is a bug. A node is one TLV, counted descending into constructed values only, because a primitive OCTET STRING's contents — an in-app purchase, an attribute value, the encapsulated payload — are a separate parse with a separate budget in every port that has one. Two receipts pin it from below, one number each: `receipt-byte-floor` is 1,034,681 bytes at 9,237 nodes and `receipt-node-floor` is 19,897 nodes at 74,569 bytes. One receipt under both limits would not do it -- a port could lower either cap to just above what that single receipt happened to use, which is what the 809,069-byte, 16,037-node receipt they replace allowed. Neither is also run through verifyReceiptEndpoint: base64 of 1 MB is 1.38 MB, over php's 1 MiB cap on a REQUEST BODY, which bounds a wire request rather than a receipt and is not what this floor is about.\n\nLegacy receipt ids (added 2026-09-21). Four attribute types the library used to leave raw in unknownAttributes are modelled: app-level 1 (app item id), 15 (download id) and 16 (version external identifier), and in-app 1713 (is trial period). None is on Apple's archived Receipt Fields chapter. They were established by decoding a genuine production receipt and lining its attributes up against the answer Apple's verifyReceipt endpoint gives for the same receipt, and against Apple's published response reference. All four are INTEGER attributes, decoded like 1711. At the endpoint, attribute 1 is echoed under BOTH adam_id and app_item_id \u2014 Apple's reference defines adam_id as \"See app_item_id\" \u2014 and the three app-level ids are JSON numbers while 1713 is the string \"true\"/\"false\", exactly like 1719. An attribute a receipt does not carry leaves its key OUT of the answer rather than emitting JSON null, and a value of 0 is a value: Apple's sandbox sends 0 for the three ids. The fixture's download id is 2^53+1, the first integer an IEEE-754 double cannot hold, because Apple's real download_id values run to eighteen digits: a port carrying receipt integers as a JavaScript number answers 9007199254740992 here, or refuses the receipt, and either way the vector catches it.",
   "fixtures": {
     "generated-manifest": {
       "path": "generated/manifest.json",
@@ -596,6 +596,18 @@
       "role": "input",
       "codec": "raw",
       "contentSha256": "a862c7017580ccfd22a6f6008203de5d3ea3722a65115ef8b2bf577a4c9e9e2c"
+    },
+    "receipt-ids-root": {
+      "path": "generated/receipt-ids-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "be7ab0a66ca2f4879c4432ac6f8de330392a8a73227152b62df27f77b00e1e5d"
+    },
+    "receipt-ids": {
+      "path": "generated/receipt-ids.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "c534d976d53d95f669855c2be442f454e833143d555f195ae149be224cb307f9"
     }
   },
   "cases": [
@@ -3980,6 +3992,213 @@
         "positive",
         "resource-bounds",
         "generated"
+      ]
+    },
+    {
+      "id": "receipt/ids-are-decoded",
+      "description": "Four legacy attributes every port used to leave raw in unknownAttributes are decoded instead: app-level 1 (app item id), 15 (download id) and 16 (version external identifier), and in-app 1713 (is trial period). None of the four is on Apple's archived Receipt Fields chapter; they were established by decoding a genuine production receipt and lining its attributes up against the answer Apple's verifyReceipt endpoint gives for the same receipt (measured 2026-09-21). All four are INTEGER attributes and decode like 1711. The download id is 2^53+1, the first integer an IEEE-754 double cannot hold: Apple's real download_id values run to eighteen digits, so a port must carry these exactly rather than as a JavaScript number, and one that rounds answers 9007199254740992 here. The two purchases carry 1713 on both sides of the boolean, so no port passes by rendering one constant.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt-ids"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-ids-root"
+          ]
+        },
+        "bundleId": "com.example.app"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "appItemId": 1234567890,
+          "downloadId": 9007199254740993,
+          "versionExternalIdentifier": 456789012,
+          "inAppPurchases[productId=com.example.app.coins100].isTrialPeriod": 0,
+          "inAppPurchases[productId=com.example.app.vip].isTrialPeriod": 1
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "positive",
+        "attribute-type",
+        "generated"
+      ]
+    },
+    {
+      "id": "receipt/ids-absent-when-not-carried",
+      "description": "A receipt carrying none of the four attributes reports them absent rather than zero or empty: the shared sandbox receipt has no 1, 15, 16 or 1713, so appItemId, downloadId, versionExternalIdentifier and a purchase's isTrialPeriod are all null. Absent and present-but-zero are different answers, and the value 0 is what Apple's sandbox sends for the three ids when it does carry them.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "bundleId": "com.example.app"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "appItemId": null,
+          "downloadId": null,
+          "versionExternalIdentifier": null,
+          "inAppPurchases[productId=com.example.app.coins100].isTrialPeriod": null
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "positive",
+        "attribute-type",
+        "generated"
+      ]
+    },
+    {
+      "id": "endpoint/ids-echo-apples-keys",
+      "description": "The verifyReceipt-compatible endpoint echoes the four decoded attributes under Apple's own keys and in Apple's own JSON types. Attribute 1 appears TWICE, as adam_id and as app_item_id, because Apple's response reference defines adam_id as \"See app_item_id\" and both carry the same value. The three app-level ids are JSON numbers, unlike the in-app integers, which Apple renders as strings; download_id is 2^53+1, so a port serialising through a double answers 9007199254740992 and fails. Attribute 1713 becomes is_trial_period, the string \"true\" or \"false\", exactly as 1719 becomes is_in_intro_offer_period. This case pins no clock, so request_date* is left unasserted.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "fixture": "receipt-ids"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-ids-root"
+          ]
+        },
+        "environment": "Production"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "status": 0,
+          "receipt.adam_id": 1234567890,
+          "receipt.app_item_id": 1234567890,
+          "receipt.download_id": 9007199254740993,
+          "receipt.version_external_identifier": 456789012,
+          "receipt.in_app[product_id=com.example.app.coins100].is_trial_period": "false",
+          "receipt.in_app[product_id=com.example.app.vip].is_trial_period": "true"
+        }
+      },
+      "tags": [
+        "endpoint",
+        "receipt",
+        "positive",
+        "wire-format",
+        "generated"
+      ]
+    },
+    {
+      "id": "endpoint/ids-absent-are-omitted",
+      "description": "An attribute the receipt does not carry leaves its key OUT of the endpoint's answer rather than emitting JSON null: the shared sandbox receipt carries none of the four, so adam_id, app_item_id, download_id, version_external_identifier and a purchase's is_trial_period are all absent. That is what Apple does, and it is what the existing optional keys already do here.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "fixture": "receipt"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "environment": "Sandbox"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "status": 0,
+          "receipt.adam_id": null,
+          "receipt.app_item_id": null,
+          "receipt.download_id": null,
+          "receipt.version_external_identifier": null,
+          "receipt.in_app[product_id=com.example.app.coins100].is_trial_period": null
+        }
+      },
+      "tags": [
+        "endpoint",
+        "receipt",
+        "positive",
+        "wire-format",
+        "generated"
+      ]
+    },
+    {
+      "id": "receipt/genuine-sandbox-ids-are-zero",
+      "description": "A genuine sandbox receipt carries attribute types 1, 15 and 16 with value 0, and 1713 with value 0 on every in-app entry, which is what Apple's verifyReceipt echoes as adam_id, app_item_id, download_id, version_external_identifier and is_trial_period for a sandbox receipt. Present-with-zero is a decoded 0, not absent: receipt/ids-absent-when-not-carried pins the other case.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "public-receipt-sandbox-g5"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "builtin",
+          "name": "apple-receipt-roots"
+        },
+        "bundleId": "dev.bonzer.weeka.app"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "appItemId": 0,
+          "downloadId": 0,
+          "versionExternalIdentifier": 0,
+          "inAppPurchases[transactionId=2000001092134138].isTrialPeriod": 0,
+          "inAppPurchases[transactionId=2000001092148094].isTrialPeriod": 0
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "positive",
+        "attribute-type",
+        "genuine",
+        "public-receipts"
+      ]
+    },
+    {
+      "id": "endpoint/genuine-sandbox-receipt-echoes-zero-ids",
+      "description": "The verifyReceipt-compatible endpoint renders the zero-valued ids a genuine sandbox receipt carries exactly as Apple does for a sandbox receipt: adam_id, app_item_id, download_id and version_external_identifier as the JSON number 0, and is_trial_period as the string \"false\".",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "fixture": "public-receipt-sandbox-g5"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "builtin",
+          "name": "apple-receipt-roots"
+        },
+        "environment": "Sandbox"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "status": 0,
+          "environment": "Sandbox",
+          "receipt.adam_id": 0,
+          "receipt.app_item_id": 0,
+          "receipt.download_id": 0,
+          "receipt.version_external_identifier": 0,
+          "receipt.in_app[transaction_id=2000001092134138].is_trial_period": "false",
+          "receipt.in_app[transaction_id=2000001092148094].is_trial_period": "false"
+        }
+      },
+      "tags": [
+        "endpoint",
+        "receipt",
+        "positive",
+        "wire-format",
+        "genuine",
+        "public-receipts"
       ]
     }
   ]

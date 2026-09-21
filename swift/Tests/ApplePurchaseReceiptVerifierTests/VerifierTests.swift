@@ -373,6 +373,137 @@ final class VerifyReceiptEndpointTests: XCTestCase {
     }
 }
 
+/// Attribute types 1, 15, 16 and 1713 — the four that used to reach callers
+/// only as raw bytes in `unknownAttributes`. None of them is on Apple's
+/// archived Receipt Fields chapter; their meaning was established by lining a
+/// genuine production receipt's attributes up against the answer Apple's
+/// verifyReceipt endpoint gives for the same receipt (measured 2026-09-21).
+/// fixtures/generated/receipt-ids.der carries all four, and its download id is
+/// 2^53+1 — the first integer an IEEE-754 double cannot hold, which is what
+/// makes the exact digits below an assertion rather than a formality.
+final class ReceiptIdAttributesTests: XCTestCase {
+    static let downloadId: Int64 = 9_007_199_254_740_993  // 2^53 + 1
+
+    func fixture(_ name: String) throws -> Data {
+        try Data(
+            contentsOf: VerifierTests.fixturesDir
+                .appendingPathComponent("generated")
+                .appendingPathComponent(name))
+    }
+
+    func receiptWithIds() async throws -> AppReceipt {
+        try await ReceiptVerifier(
+            trustedRoots: [try fixture("receipt-ids-root.der")],
+            bundleId: "com.example.app"
+        ).verify(receipt: try fixture("receipt-ids.der"))
+    }
+
+    func sandboxReceipt() async throws -> AppReceipt {
+        try await ReceiptVerifier(
+            trustedRoots: [try fixture("receipt-root.der")],
+            bundleId: "com.example.app"
+        ).verify(receipt: try fixture("receipt.der"))
+    }
+
+    func testDecodesTheFourAttributes() async throws {
+        let receipt = try await receiptWithIds()
+        XCTAssertEqual(1_234_567_890, receipt.appItemId)
+        XCTAssertEqual(Self.downloadId, receipt.downloadId)
+        // Spelled again as digits, because `9_007_199_254_740_993` typed as a
+        // Double would be the value one below it: the literal above is the
+        // assertion only while it stays an Int64.
+        XCTAssertEqual("9007199254740993", receipt.downloadId.map(String.init))
+        XCTAssertEqual(456_789_012, receipt.versionExternalIdentifier)
+
+        let coins = try XCTUnwrap(
+            receipt.inAppPurchases.first { $0.productId == "com.example.app.coins100" })
+        let vip = try XCTUnwrap(
+            receipt.inAppPurchases.first { $0.productId == "com.example.app.vip" })
+        XCTAssertEqual(0, coins.isTrialPeriod)
+        XCTAssertEqual(1, vip.isTrialPeriod)
+        // The neighbouring integer attribute still decodes as it did.
+        XCTAssertEqual(42, coins.webOrderLineItemId)
+    }
+
+    func testReportsTheFourAttributesAbsentWhenTheReceiptCarriesNone() async throws {
+        let receipt = try await sandboxReceipt()
+        XCTAssertNil(receipt.appItemId)
+        XCTAssertNil(receipt.downloadId)
+        XCTAssertNil(receipt.versionExternalIdentifier)
+        XCTAssertFalse(receipt.inAppPurchases.isEmpty)
+        for purchase in receipt.inAppPurchases {
+            XCTAssertNil(purchase.isTrialPeriod, purchase.productId ?? "")
+        }
+    }
+
+    /// The four leave `unknownAttributes` — that is what modelling them means —
+    /// while a type the library still does not model stays there.
+    func testTheFourAttributesLeaveTheUnknownMapAnd9999Stays() async throws {
+        let receipt = try await receiptWithIds()
+        for type in [1, 15, 16] {
+            XCTAssertNil(receipt.unknownAttributes[type], "app-level attribute \(type)")
+        }
+        XCTAssertNotNil(receipt.unknownAttributes[9999], "the unmodelled attribute must stay")
+        for purchase in receipt.inAppPurchases {
+            XCTAssertNil(purchase.unknownAttributes[1713], purchase.productId ?? "")
+        }
+    }
+
+    /// The endpoint's wire types: the three ids are bare JSON numbers with
+    /// exact digits (not strings, not a rounded double), and 1713 is the
+    /// string "true"/"false" like 1719.
+    func testEndpointJSONEchoesApplesKeysWithExactDigits() async throws {
+        let endpoint = try VerifyReceiptEndpoint(
+            trustedRoots: [try fixture("receipt-ids-root.der")], environment: .production)
+        let base64 = try fixture("receipt-ids.der").base64EncodedString()
+        let body = await endpoint.verifyReceiptJSON("{\"receipt-data\":\"\(base64)\"}")
+        XCTAssertTrue(body.contains("\"download_id\":9007199254740993"), body)
+        XCTAssertFalse(body.contains("9007199254740992"), "the download id was rounded: \(body)")
+        XCTAssertTrue(body.contains("\"adam_id\":1234567890"), body)
+        XCTAssertTrue(body.contains("\"app_item_id\":1234567890"), body)
+        XCTAssertTrue(body.contains("\"version_external_identifier\":456789012"), body)
+        XCTAssertTrue(body.contains("\"is_trial_period\":\"false\""), body)
+        XCTAssertTrue(body.contains("\"is_trial_period\":\"true\""), body)
+
+        let parsed = try XCTUnwrap(
+            try JSONSerialization.jsonObject(
+                with: XCTUnwrap(body.data(using: .utf8))) as? [String: Any])
+        let receipt = try XCTUnwrap(parsed["receipt"] as? [String: Any])
+        XCTAssertEqual("9007199254740993", (receipt["download_id"] as? NSNumber)?.stringValue)
+        for key in ["adam_id", "app_item_id", "download_id", "version_external_identifier"] {
+            XCTAssertTrue(receipt[key] is NSNumber, key)
+            XCTAssertFalse(receipt[key] is String, key)
+        }
+        let purchases = try XCTUnwrap(receipt["in_app"] as? [[String: Any]])
+        for purchase in purchases {
+            XCTAssertTrue(purchase["is_trial_period"] is String, purchase.description)
+        }
+    }
+
+    /// Absent means the key is OUT, never JSON null — what the endpoint's
+    /// other optional keys already do.
+    func testEndpointOmitsTheKeysForAReceiptCarryingNoneOfTheFour() async throws {
+        let endpoint = try VerifyReceiptEndpoint(
+            trustedRoots: [try fixture("receipt-root.der")], environment: .sandbox)
+        let base64 = try fixture("receipt.der").base64EncodedString()
+        let body = await endpoint.verifyReceiptJSON("{\"receipt-data\":\"\(base64)\"}")
+        XCTAssertFalse(body.contains("null"), body)
+        let parsed = try XCTUnwrap(
+            try JSONSerialization.jsonObject(
+                with: XCTUnwrap(body.data(using: .utf8))) as? [String: Any])
+        let receipt = try XCTUnwrap(parsed["receipt"] as? [String: Any])
+        for key in ["adam_id", "app_item_id", "download_id", "version_external_identifier"] {
+            XCTAssertNil(receipt[key], key)
+            XCTAssertFalse(receipt.keys.contains(key), key)
+        }
+        let purchases = try XCTUnwrap(receipt["in_app"] as? [[String: Any]])
+        XCTAssertFalse(purchases.isEmpty)
+        for purchase in purchases {
+            XCTAssertFalse(purchase.keys.contains("is_trial_period"), purchase.description)
+        }
+    }
+}
+
 /// Regression tests for the adversarial-review findings + PLAN D10.
 final class ReviewFixesTests: XCTestCase {
     func fixture(_ segments: String...) throws -> Data {

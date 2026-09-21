@@ -23,12 +23,28 @@ namespace ApplePurchaseReceiptVerifier.Internal
     /// </remarks>
     internal static class ReceiptPayload
     {
+        // Types 1, 15, 16 and 1713 are on none of Apple's pages. They were
+        // established by decoding a genuine production receipt and lining its
+        // attributes up against the answer Apple's verifyReceipt endpoint gives
+        // for the same receipt (measured 2026-09-21):
+        //
+        //   1     app item id                -> adam_id AND app_item_id
+        //   15    download id                -> download_id
+        //   16    version external id        -> version_external_identifier
+        //   1713  is trial period (in-app)   -> is_trial_period
+        //
+        // All four are INTEGER attributes and decode like 1711. Apple renders
+        // the three app-level ids as JSON numbers and 1713 as the string
+        // "true"/"false", exactly as it renders 1719.
         private const int AttrReceiptType = 0;
+        private const int AttrAppItemId = 1;
         private const int AttrBundleId = 2;
         private const int AttrAppVersion = 3;
         private const int AttrOpaqueValue = 4;
         private const int AttrSha1Hash = 5;
         private const int AttrCreationDate = 12;
+        private const int AttrDownloadId = 15;
+        private const int AttrVersionExternalIdentifier = 16;
         private const int AttrInApp = 17;
         private const int AttrOriginalPurchaseDate = 18;
         private const int AttrOriginalAppVersion = 19;
@@ -43,6 +59,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
         private const int IapExpiresDate = 1708;
         private const int IapWebOrderLineItemId = 1711;
         private const int IapCancellationDate = 1712;
+        private const int IapIsTrialPeriod = 1713;
         private const int IapIsInIntroOfferPeriod = 1719;
 
         /// <summary>
@@ -71,6 +88,9 @@ namespace ApplePurchaseReceiptVerifier.Internal
             DateTimeOffset? originalPurchaseDate = null;
             string? originalAppVersion = null;
             DateTimeOffset? expirationDate = null;
+            long? appItemId = null;
+            long? downloadId = null;
+            long? versionExternalIdentifier = null;
             List<InAppPurchase> purchases = new List<InAppPurchase>();
             Dictionary<int, List<byte[]>> unknown = new Dictionary<int, List<byte[]>>();
 
@@ -79,6 +99,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
                 switch (attribute.Type)
                 {
                     case AttrReceiptType: receiptType = DecodeString(attribute.Value); break;
+                    case AttrAppItemId: appItemId = DecodeInteger(attribute.Value); break;
                     case AttrBundleId:
                         bundleId = DecodeString(attribute.Value);
                         bundleIdBytes = attribute.Value;
@@ -87,6 +108,10 @@ namespace ApplePurchaseReceiptVerifier.Internal
                     case AttrOpaqueValue: opaqueValue = attribute.Value; break;
                     case AttrSha1Hash: sha1Hash = attribute.Value; break;
                     case AttrCreationDate: creationDate = DecodeDate(attribute.Value); break;
+                    case AttrDownloadId: downloadId = DecodeInteger(attribute.Value); break;
+                    case AttrVersionExternalIdentifier:
+                        versionExternalIdentifier = DecodeInteger(attribute.Value);
+                        break;
                     case AttrInApp: purchases.Add(ParseInApp(attribute.Value)); break;
                     case AttrOriginalPurchaseDate: originalPurchaseDate = DecodeDate(attribute.Value); break;
                     case AttrOriginalAppVersion: originalAppVersion = DecodeString(attribute.Value); break;
@@ -98,6 +123,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
             return new AppReceipt(
                 receiptType, bundleId, bundleIdBytes, appVersion, opaqueValue, sha1Hash,
                 creationDate, originalPurchaseDate, originalAppVersion, expirationDate,
+                appItemId, downloadId, versionExternalIdentifier,
                 purchases, Freeze(unknown));
         }
 
@@ -112,6 +138,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
             DateTimeOffset? expiresDate = null;
             DateTimeOffset? cancellationDate = null;
             long? webOrderLineItemId = null;
+            long? isTrialPeriod = null;
             long? isInIntroOfferPeriod = null;
             Dictionary<int, List<byte[]>> unknown = new Dictionary<int, List<byte[]>>();
 
@@ -131,6 +158,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
                     case IapExpiresDate: expiresDate = DecodeDate(attribute.Value); break;
                     case IapWebOrderLineItemId: webOrderLineItemId = DecodeInteger(attribute.Value); break;
                     case IapCancellationDate: cancellationDate = DecodeDate(attribute.Value); break;
+                    case IapIsTrialPeriod: isTrialPeriod = DecodeInteger(attribute.Value); break;
                     case IapIsInIntroOfferPeriod: isInIntroOfferPeriod = DecodeInteger(attribute.Value); break;
                     default: Record(unknown, attribute); break;
                 }
@@ -139,7 +167,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
             return new InAppPurchase(
                 quantity, productId, transactionId, originalTransactionId, purchaseDate,
                 originalPurchaseDate, expiresDate, cancellationDate, webOrderLineItemId,
-                isInIntroOfferPeriod, Freeze(unknown));
+                isTrialPeriod, isInIntroOfferPeriod, Freeze(unknown));
         }
 
         private static void Record(Dictionary<int, List<byte[]>> unknown, Attribute attribute)

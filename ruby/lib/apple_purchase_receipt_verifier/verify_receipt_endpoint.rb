@@ -145,8 +145,15 @@ module ApplePurchaseReceiptVerifier
     def receipt_json(receipt, request_date)
       body = {} #: Hash[String, untyped]
       put(body, "receipt_type", receipt.receipt_type)
+      # Apple echoes attribute 1 under both names — its response reference
+      # defines adam_id as "See app_item_id" — and as JSON numbers, not as
+      # the strings the in-app integers are rendered with.
+      put(body, "adam_id", receipt.app_item_id)
+      put(body, "app_item_id", receipt.app_item_id)
       put(body, "bundle_id", receipt.bundle_id)
       put(body, "application_version", receipt.app_version)
+      put(body, "download_id", receipt.download_id)
+      put(body, "version_external_identifier", receipt.version_external_identifier)
       put(body, "original_application_version", receipt.original_app_version)
       apple_dates(body, "receipt_creation_date", receipt.creation_date)
       apple_dates(body, "request_date", request_date)
@@ -167,6 +174,7 @@ module ApplePurchaseReceiptVerifier
       apple_dates(entry, "expires_date", purchase.expires_date)
       apple_dates(entry, "cancellation_date", purchase.cancellation_date)
       put(entry, "web_order_line_item_id", purchase.web_order_line_item_id&.to_s)
+      entry["is_trial_period"] = (purchase.is_trial_period == 1).to_s unless purchase.is_trial_period.nil?
       unless purchase.is_in_intro_offer_period.nil?
         entry["is_in_intro_offer_period"] = (purchase.is_in_intro_offer_period == 1).to_s
       end

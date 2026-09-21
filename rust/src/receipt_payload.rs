@@ -8,6 +8,22 @@
 //! Apple, "Validating receipts on the device", plus two community-
 //! established attribute types (0 receipt type, 18 original purchase date)
 //! that the `verifyReceipt` response compatibility needs.
+//!
+//! Types 1, 15, 16 and 1713 are on none of Apple's pages either. They were
+//! established by decoding a genuine production receipt and lining its
+//! attributes up against the answer Apple's `verifyReceipt` endpoint gives
+//! for the same receipt (measured 2026-09-21):
+//!
+//! ```text
+//! 1     app item id               -> adam_id AND app_item_id
+//! 15    download id               -> download_id
+//! 16    version external id       -> version_external_identifier
+//! 1713  is trial period (in-app)  -> is_trial_period
+//! ```
+//!
+//! All four are INTEGER attributes. Apple renders the three app-level ids as
+//! JSON numbers and 1713 as the string `"true"`/`"false"`, exactly as it
+//! renders 1719.
 
 use crate::asn1::{parse_exact, tag, Tlv};
 use crate::datetime::{parse_rfc3339, system_time_from_millis};
@@ -17,11 +33,14 @@ use std::time::SystemTime;
 
 // App-level attribute types.
 const ATTR_RECEIPT_TYPE: u32 = 0;
+const ATTR_APP_ITEM_ID: u32 = 1;
 const ATTR_BUNDLE_ID: u32 = 2;
 const ATTR_APP_VERSION: u32 = 3;
 const ATTR_OPAQUE_VALUE: u32 = 4;
 const ATTR_SHA1_HASH: u32 = 5;
 const ATTR_CREATION_DATE: u32 = 12;
+const ATTR_DOWNLOAD_ID: u32 = 15;
+const ATTR_VERSION_EXTERNAL_IDENTIFIER: u32 = 16;
 const ATTR_IN_APP: u32 = 17;
 const ATTR_ORIGINAL_PURCHASE_DATE: u32 = 18;
 const ATTR_ORIGINAL_APP_VERSION: u32 = 19;
@@ -37,6 +56,7 @@ const IAP_ORIGINAL_PURCHASE_DATE: u32 = 1706;
 const IAP_EXPIRES_DATE: u32 = 1708;
 const IAP_WEB_ORDER_LINE_ITEM_ID: u32 = 1711;
 const IAP_CANCELLATION_DATE: u32 = 1712;
+const IAP_IS_TRIAL_PERIOD: u32 = 1713;
 const IAP_IS_IN_INTRO_OFFER_PERIOD: u32 = 1719;
 
 /// Attribute *types* live in a 32-bit signed space.
@@ -50,7 +70,13 @@ const IAP_IS_IN_INTRO_OFFER_PERIOD: u32 = 1719;
 const MAX_ATTRIBUTE_TYPE: i64 = 2_147_483_647;
 
 /// Attribute *values* keep the wider range: `web_order_line_item_id` is
-/// genuinely a 7-byte integer. The ceiling is the one every port shares.
+/// genuinely a 7-byte integer.
+///
+/// It is not a universal ceiling, and [`decode_exact_integer`] is the
+/// exception: Apple's `download_id` (attribute 15) runs to eighteen digits,
+/// so the three app-level ids are decoded without it. Everything else stays
+/// inside the range a port carrying receipt integers as a double can
+/// represent.
 const MAX_ATTRIBUTE_VALUE: i64 = 9_007_199_254_740_991;
 
 /// One in-app purchase from a legacy app receipt (attribute 17).
@@ -79,6 +105,12 @@ pub struct InAppPurchase {
     pub cancellation_date: Option<SystemTime>,
     /// 1711
     pub web_order_line_item_id: Option<i64>,
+    /// 1713 (undocumented; measured) — 1 while the purchase is inside a free
+    /// trial, 0 otherwise. Carried as an integer like
+    /// [`is_in_intro_offer_period`](Self::is_in_intro_offer_period), which
+    /// Apple's `verifyReceipt` answer renders as the string `"true"`/
+    /// `"false"`.
+    pub is_trial_period: Option<i64>,
     /// 1719
     pub is_in_intro_offer_period: Option<i64>,
 }
@@ -119,6 +151,18 @@ pub struct AppReceipt {
     pub original_app_version: Option<String>,
     /// Attribute 21.
     pub expiration_date: Option<SystemTime>,
+    /// Attribute 1 (undocumented; measured) — the app's App Store item
+    /// identifier, which Apple's `verifyReceipt` answer echoes under BOTH
+    /// `adam_id` and `app_item_id`. Zero in sandbox receipts, since a
+    /// sandbox purchase is not tied to a storefront item.
+    pub app_item_id: Option<i64>,
+    /// Attribute 15 (undocumented; measured) — identifies the App Store
+    /// download this receipt came from. Genuine values exceed the range an
+    /// IEEE-754 double holds exactly.
+    pub download_id: Option<i64>,
+    /// Attribute 16 (undocumented; measured) — the App Store's own
+    /// identifier for this app version.
+    pub version_external_identifier: Option<i64>,
     /// Attribute 17, repeated.
     pub in_app_purchases: Vec<InAppPurchase>,
 }
@@ -144,6 +188,7 @@ pub fn parse_receipt_payload(content: &[u8]) -> Result<AppReceipt> {
         let value = attribute.value.as_slice();
         match attribute.attribute_type {
             ATTR_RECEIPT_TYPE => receipt.receipt_type = Some(decode_string(value)?),
+            ATTR_APP_ITEM_ID => receipt.app_item_id = Some(decode_exact_integer(value)?),
             ATTR_BUNDLE_ID => {
                 receipt.bundle_id = Some(decode_string(value)?);
                 receipt.bundle_id_bytes = Some(value.to_vec());
@@ -152,6 +197,10 @@ pub fn parse_receipt_payload(content: &[u8]) -> Result<AppReceipt> {
             ATTR_OPAQUE_VALUE => receipt.opaque_value = Some(value.to_vec()),
             ATTR_SHA1_HASH => receipt.sha1_hash = Some(value.to_vec()),
             ATTR_CREATION_DATE => receipt.creation_date = decode_date(value)?,
+            ATTR_DOWNLOAD_ID => receipt.download_id = Some(decode_exact_integer(value)?),
+            ATTR_VERSION_EXTERNAL_IDENTIFIER => {
+                receipt.version_external_identifier = Some(decode_exact_integer(value)?);
+            }
             ATTR_IN_APP => receipt.in_app_purchases.push(parse_in_app(value)?),
             ATTR_ORIGINAL_PURCHASE_DATE => receipt.original_purchase_date = decode_date(value)?,
             ATTR_ORIGINAL_APP_VERSION => {
@@ -183,6 +232,7 @@ fn parse_in_app(value: &[u8]) -> Result<InAppPurchase> {
                 purchase.web_order_line_item_id = Some(decode_integer(value)?);
             }
             IAP_CANCELLATION_DATE => purchase.cancellation_date = decode_date(value)?,
+            IAP_IS_TRIAL_PERIOD => purchase.is_trial_period = Some(decode_integer(value)?),
             IAP_IS_IN_INTRO_OFFER_PERIOD => {
                 purchase.is_in_intro_offer_period = Some(decode_integer(value)?);
             }
@@ -251,9 +301,11 @@ fn attribute_type(node: &Tlv<'_>) -> Result<u32> {
     u32::try_from(value).map_err(|_| malformed("receipt attribute type out of range"))
 }
 
-fn integer_value(node: &Tlv<'_>) -> Result<i64> {
+/// The exact value of an attribute INTEGER, bounds-checked but not narrowed
+/// to the safe-integer range.
+fn exact_integer_value(node: &Tlv<'_>) -> Result<i64> {
     // 8-byte cap: real receipts carry 7-byte integers
-    // (web_order_line_item_id).
+    // (web_order_line_item_id) and 8-byte ones (download_id).
     if node.contents.len() > 8 {
         return Err(malformed("attribute integer out of range"));
     }
@@ -265,12 +317,17 @@ fn integer_value(node: &Tlv<'_>) -> Result<i64> {
     for byte in node.contents {
         value = value * 256 + i128::from(*byte);
     }
-    if value > i128::from(MAX_ATTRIBUTE_VALUE) {
+    i64::try_from(value).map_err(|_| malformed("receipt integer out of range"))
+}
+
+fn integer_value(node: &Tlv<'_>) -> Result<i64> {
+    let value = exact_integer_value(node)?;
+    if value > MAX_ATTRIBUTE_VALUE {
         return Err(malformed(
             "receipt integer exceeds the shared safe-integer range",
         ));
     }
-    i64::try_from(value).map_err(|_| malformed("receipt integer out of range"))
+    Ok(value)
 }
 
 fn decode_nested(der: &[u8]) -> Result<Tlv<'_>> {
@@ -285,12 +342,24 @@ fn decode_string(der: &[u8]) -> Result<String> {
     Ok(String::from_utf8_lossy(node.contents).into_owned())
 }
 
-fn decode_integer(der: &[u8]) -> Result<i64> {
+fn integer_node(der: &[u8]) -> Result<Tlv<'_>> {
     let node = decode_nested(der)?;
     if node.tag != tag::INTEGER {
         return Err(malformed("attribute value is not an ASN.1 integer"));
     }
-    integer_value(&node)
+    Ok(node)
+}
+
+fn decode_integer(der: &[u8]) -> Result<i64> {
+    integer_value(&integer_node(der)?)
+}
+
+/// The same attribute INTEGER, kept exact. Same tag, 8-byte and non-negative
+/// checks as [`decode_integer`]; what it drops is that function's
+/// safe-integer ceiling, which a genuine `download_id` sits above —
+/// refusing one would turn a real production receipt away.
+fn decode_exact_integer(der: &[u8]) -> Result<i64> {
+    exact_integer_value(&integer_node(der)?)
 }
 
 /// An RFC 3339 date in an `IA5String`; an empty string means absent, which

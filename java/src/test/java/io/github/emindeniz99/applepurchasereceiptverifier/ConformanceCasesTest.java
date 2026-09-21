@@ -352,6 +352,9 @@ class ConformanceCasesTest {
         out.put("creationDate", iso(receipt.creationDate()));
         out.put("originalPurchaseDate", iso(receipt.originalPurchaseDate()));
         out.put("expirationDate", iso(receipt.expirationDate()));
+        out.put("appItemId", receipt.appItemId());
+        out.put("downloadId", receipt.downloadId());
+        out.put("versionExternalIdentifier", receipt.versionExternalIdentifier());
         out.put("opaqueValueHex", hex(receipt.opaqueValue()));
         out.put("sha1HashHex", hex(receipt.sha1Hash()));
         List<Object> purchases = new ArrayList<Object>();
@@ -374,6 +377,7 @@ class ConformanceCasesTest {
         out.put("expiresDate", iso(purchase.expiresDate()));
         out.put("cancellationDate", iso(purchase.cancellationDate()));
         out.put("webOrderLineItemId", purchase.webOrderLineItemId());
+        out.put("isTrialPeriod", purchase.isTrialPeriod());
         out.put("isInIntroOfferPeriod", purchase.isInIntroOfferPeriod());
         out.put("unknownAttributes", unknownAttributes(purchase.unknownAttributes()));
         return out;

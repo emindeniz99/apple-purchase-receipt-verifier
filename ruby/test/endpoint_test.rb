@@ -63,6 +63,48 @@ class EndpointTest < Minitest::Test
     end
   end
 
+  # Apple echoes attribute 1 under both adam_id and app_item_id, as JSON
+  # numbers; 15 (download_id) and 16 (version_external_identifier) are JSON
+  # numbers too. download_id is 2^53+1, the first integer an IEEE-754 double
+  # cannot hold: asserting on the literal JSON TEXT (not a value JSON.parse
+  # hands back) proves the serializer never routed the id through a Float.
+  def test_legacy_receipt_ids_are_wire_numbers_with_exact_digits
+    roots = [TestSupport.fixture_certificate("receipt-ids-root")]
+    receipt = TestSupport.fixture_bytes("receipt-ids")
+    json = endpoint(environment: APRV::Environment::PRODUCTION, roots: roots)
+           .verify_receipt_json(JSON.generate(body(receipt)))
+
+    assert_includes json, "\"adam_id\":1234567890"
+    assert_includes json, "\"app_item_id\":1234567890"
+    assert_includes json, "\"download_id\":9007199254740993"
+    assert_includes json, "\"version_external_identifier\":456789012"
+    assert_includes json, "\"is_trial_period\":\"false\""
+    assert_includes json, "\"is_trial_period\":\"true\""
+
+    response = JSON.parse(json)
+    receipt_body = response["receipt"]
+    assert_equal 1_234_567_890, receipt_body["adam_id"]
+    assert_equal 1_234_567_890, receipt_body["app_item_id"]
+    assert_equal 9_007_199_254_740_993, receipt_body["download_id"]
+    assert_equal 456_789_012, receipt_body["version_external_identifier"]
+    coins = receipt_body["in_app"].find { |i| i["product_id"] == "com.example.app.coins100" }
+    vip = receipt_body["in_app"].find { |i| i["product_id"] == "com.example.app.vip" }
+    assert_equal "false", coins["is_trial_period"]
+    assert_equal "true", vip["is_trial_period"]
+  end
+
+  # An attribute the receipt does not carry leaves its key OUT of the answer
+  # rather than emitting JSON null.
+  def test_legacy_receipt_id_keys_are_omitted_not_null_when_absent
+    response = endpoint.verify_receipt(body(@receipt))
+    receipt_body = response["receipt"]
+    %w[adam_id app_item_id download_id version_external_identifier].each do |key|
+      refute receipt_body.key?(key), key
+    end
+    coins = receipt_body["in_app"].find { |i| i["product_id"] == "com.example.app.coins100" }
+    refute coins.key?("is_trial_period")
+  end
+
   def test_malformed_receipt_data_answers_21002
     [nil, {}, { "receipt-data" => nil }, { "receipt-data" => "" }, { "receipt-data" => 42 },
      { "receipt-data" => [] }, "not a hash", 42, []].each do |request|

@@ -212,6 +212,90 @@ class VerifyReceiptEndpointTest(unittest.TestCase):
         self.assertEqual(self.without_request_date(via_json), self.without_request_date(via_map))
 
 
+class ReceiptIdsAttributesTest(unittest.TestCase):
+    """Attribute types 1 (app item id), 15 (download id), 16 (version
+    external identifier) and 1713 (is trial period). The cross-language
+    contract is pinned by receipt/ids-are-decoded,
+    receipt/ids-absent-when-not-carried, endpoint/ids-echo-apples-keys and
+    endpoint/ids-absent-are-omitted in fixtures/cases.json; what's left here
+    is proving the 2^53+1 download id survives as exact digits rather than a
+    rounded double, both through the accessor and through the endpoint's raw
+    JSON text, and that the four types leave unknownAttributes."""
+
+    def receipt(self):
+        verifier = ReceiptVerifier([cert("generated", "receipt-ids-root.der")], BUNDLE)
+        return verifier.verify(fixture("generated", "receipt-ids.der"))
+
+    def test_decodes_the_four_attributes_with_exact_digits(self):
+        receipt = self.receipt()
+        self.assertEqual(receipt.app_item_id, 1234567890)
+        self.assertEqual(receipt.download_id, 9007199254740993)  # 2**53 + 1
+        self.assertEqual(receipt.version_external_identifier, 456789012)
+        coins = next(
+            p for p in receipt.in_app_purchases if p.product_id == "com.example.app.coins100"
+        )
+        vip = next(p for p in receipt.in_app_purchases if p.product_id == "com.example.app.vip")
+        self.assertEqual(coins.is_trial_period, 0)
+        self.assertEqual(vip.is_trial_period, 1)
+
+    def test_absent_attributes_are_none_not_zero(self):
+        receipt = ReceiptVerifier([cert("generated", "receipt-root.der")], BUNDLE).verify(
+            fixture("generated", "receipt.der")
+        )
+        self.assertIsNone(receipt.app_item_id)
+        self.assertIsNone(receipt.download_id)
+        self.assertIsNone(receipt.version_external_identifier)
+        coins = next(
+            p for p in receipt.in_app_purchases if p.product_id == "com.example.app.coins100"
+        )
+        self.assertIsNone(coins.is_trial_period)
+
+    def test_the_four_types_leave_unknown_attributes_while_9999_stays(self):
+        receipt = self.receipt()
+        for attr_type in (1, 15, 16):
+            self.assertNotIn(attr_type, receipt.unknown_attributes)
+        self.assertIn(9999, receipt.unknown_attributes)
+        coins = next(
+            p for p in receipt.in_app_purchases if p.product_id == "com.example.app.coins100"
+        )
+        self.assertNotIn(1713, coins.unknown_attributes)
+
+    def test_endpoint_json_text_carries_exact_digits_and_the_trial_string(self):
+        from apple_purchase_receipt_verifier import VerifyReceiptEndpoint
+
+        body = VerifyReceiptEndpoint(
+            [cert("generated", "receipt-ids-root.der")], "Production"
+        ).verify_receipt_json(
+            json.dumps(
+                {"receipt-data": base64.b64encode(fixture("generated", "receipt-ids.der")).decode()}
+            )
+        )
+        # Bare JSON numbers with exact digits, not the rounded double an
+        # IEEE-754 round trip would produce (9007199254740992).
+        self.assertIn('"adam_id":1234567890', body)
+        self.assertIn('"app_item_id":1234567890', body)
+        self.assertIn('"download_id":9007199254740993', body)
+        self.assertIn('"version_external_identifier":456789012', body)
+        self.assertIn('"is_trial_period":"false"', body)
+        self.assertIn('"is_trial_period":"true"', body)
+        parsed = json.loads(body)
+        self.assertIsInstance(parsed["receipt"]["download_id"], int)
+        self.assertEqual(parsed["receipt"]["download_id"], 9007199254740993)
+
+    def test_endpoint_omits_the_four_keys_when_absent_rather_than_nulling_them(self):
+        from apple_purchase_receipt_verifier import VerifyReceiptEndpoint
+
+        endpoint = VerifyReceiptEndpoint([cert("generated", "receipt-root.der")], "Sandbox")
+        response = endpoint.verify_receipt(
+            {"receipt-data": base64.b64encode(fixture("generated", "receipt.der")).decode()}
+        )
+        receipt = response["receipt"]
+        for key in ("adam_id", "app_item_id", "download_id", "version_external_identifier"):
+            self.assertNotIn(key, receipt)
+        coins = next(p for p in receipt["in_app"] if p["product_id"] == "com.example.app.coins100")
+        self.assertNotIn("is_trial_period", coins)
+
+
 class ReviewFixesTest(unittest.TestCase):
     """Regression tests for the adversarial-review findings + PLAN D10."""
 

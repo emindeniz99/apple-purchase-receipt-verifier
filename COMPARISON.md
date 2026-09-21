@@ -51,12 +51,15 @@ the first part — cryptographically verified.
 `receipt.receipt_type`, `bundle_id`, `application_version`,
 `original_application_version`, `receipt_creation_date` (+`_ms`, `_pst`),
 `request_date` (+`_ms`, `_pst`), `original_purchase_date` (+`_ms`, `_pst`),
-`expiration_date` (VPP receipts), and per-purchase `in_app` entries:
+`expiration_date` (VPP receipts), `adam_id` / `app_item_id`, `download_id`,
+`version_external_identifier` (all three JSON numbers, the first two
+echoing the same value under both keys), and per-purchase `in_app` entries:
 `quantity`, `product_id`, `transaction_id`, `original_transaction_id`,
 `purchase_date` / `original_purchase_date` / `expires_date` /
 `cancellation_date` (each +`_ms`, `_pst`), `web_order_line_item_id`,
-`is_in_intro_offer_period`. Number-as-string and date-triplet formatting
-match Apple's (`"1"`, `"2024-08-06 12:00:00 Etc/GMT"`).
+`is_in_intro_offer_period`, `is_trial_period` (JSON string `"true"`/`"false"`,
+like `is_in_intro_offer_period`). Number-as-string and date-triplet
+formatting match Apple's (`"1"`, `"2024-08-06 12:00:00 Etc/GMT"`).
 
 `environment` is the one response field not read from the receipt: it echoes
 the environment this endpoint instance was configured to emulate. On a
@@ -64,12 +67,18 @@ status-0 response the two agree by construction — a receipt that disagrees
 with the configured environment is what 21007/21008 report instead, and
 those responses carry no `environment` at all.
 
-### Not produced — receipt attributes Apple documents in the response but that are absent or undocumented in the ASN.1 receipt
+### Not produced — receipt attributes Apple documents in the response but that are absent, undocumented, or unavailable locally
 
-`adam_id` / `app_item_id`, `download_id`, `version_external_identifier`,
-`preorder_date`, `is_trial_period` (type 1713, measured on every in-app
-entry of the genuine corpus, see RECEIPT-FIELDS.md; not modelled yet),
-promotional offer ids introduced after the receipt format froze.
+`preorder_date`, promotional offer ids introduced after the receipt format
+froze, and `in_app_ownership_type` — family-sharing state that no receipt,
+sandbox or production, carries, so it cannot be derived locally.
+
+Measured against a genuine production receipt (not committed) and Apple's
+own `verifyReceipt` answer for it, 2026-09-21: the endpoint now matches
+Apple on 30 of the 31 fields Apple returned for that receipt, the lone gap
+being `in_app_ownership_type`. Key order inside `receipt` matches Apple's
+except that Apple places `original_application_version` immediately before
+`in_app`, which is not part of the JSON contract.
 
 ### Impossible locally — Apple server-side database state
 

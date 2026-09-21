@@ -24,7 +24,9 @@
  * are a list. A `field` value is `<path>~><tag>:<text>`, where the tag is
  * `s` (string), `n` (number) or `z` (absent or null); `~>` is the separator
  * because an expected field path may itself contain `=`, `.` and `[]`, but
- * never a tilde.
+ * never a tilde. An `n` value carries the number's DIGITS rather than a
+ * double's rendering of them: cases.json pins a download id of 2^53 + 1,
+ * which `JSON.parse` on its own hands on as 9007199254740992.
  *
  *   id                  the case id
  *   op                  verifyTransaction | verifyAppTransaction | verifyRaw
@@ -119,9 +121,53 @@ function safeName(id) {
   return id.replace(/[^A-Za-z0-9._-]/g, '_');
 }
 
+/**
+ * An integer literal whose digits a JavaScript number cannot hold.
+ *
+ * cases.json pins a `download_id` of 2^53 + 1 on purpose — Apple's real
+ * ones run to eighteen digits — and `JSON.parse` answers 9007199254740992
+ * for it, because that is the nearest double. The manifest would then carry
+ * an expectation no correct library can meet, and the harnesses reading it
+ * would fail a port for being right. The digits are kept as text instead.
+ */
+class ExactInteger {
+  constructor(digits) {
+    this.digits = digits;
+  }
+}
+
+/**
+ * `JSON.parse` with the source text of each primitive (the third reviver
+ * argument, Node >= 22), so an integer literal that does not survive the
+ * round trip through a double keeps its digits.
+ *
+ * Only bare integer literals that actually lost something are wrapped:
+ * everything else stays the number it has always been, so nothing else in
+ * this generator changes shape.
+ */
+function parseCasesKeepingExactIntegers(text) {
+  let sourceSeen = false;
+  const parsed = JSON.parse(text, function reviver(key, value, context) {
+    if (typeof value !== 'number') return value;
+    const source = context?.source;
+    if (source === undefined) return value;
+    sourceSeen = true;
+    if (String(value) === source || !/^-?\d+$/.test(source)) return value;
+    return new ExactInteger(source);
+  });
+  if (!sourceSeen) {
+    fail(
+      'this Node build does not hand JSON.parse revivers the source text, so an integer ' +
+        'wider than a double would be silently rounded — Node 22 or newer is required',
+    );
+  }
+  return parsed;
+}
+
 function encodeField(path, value) {
   let tagged;
   if (value === null) tagged = 'z:';
+  else if (value instanceof ExactInteger) tagged = `n:${value.digits}`;
   else if (typeof value === 'number') tagged = `n:${value}`;
   else if (typeof value === 'string') tagged = `s:${value}`;
   else fail(`expected field "${path}" has unsupported type ${typeof value}`);
@@ -139,7 +185,8 @@ function main() {
   const outDir = process.argv[2];
   if (!outDir) fail('usage: node tools/gen-cases-manifest.mjs <outdir>');
 
-  const file = JSON.parse(readFileSync(join(FIXTURES_DIR, 'cases.json'), 'utf8'));
+  const casesText = readFileSync(join(FIXTURES_DIR, 'cases.json'), 'utf8');
+  const file = parseCasesKeepingExactIntegers(casesText);
   if (file.schemaVersion !== 1) {
     fail(`cases.json is schemaVersion ${file.schemaVersion}, this generator implements 1`);
   }

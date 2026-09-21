@@ -17,21 +17,31 @@ import (
 
 // App-level attribute types. 0 and 18 are undocumented but
 // community-established, and verifyReceipt response compatibility needs
-// both.
+// both. 1, 15 and 16 are undocumented too: they were established by
+// decoding a genuine production receipt and lining its attributes up
+// against the answer Apple's verifyReceipt endpoint gives for the same
+// receipt (measured 2026-09-21). 1 is the app's App Store item id, which
+// Apple echoes as both adam_id and app_item_id; 15 is download_id; 16 is
+// version_external_identifier.
 const (
-	attrReceiptType          int64 = 0
-	attrBundleID             int64 = 2
-	attrAppVersion           int64 = 3
-	attrOpaqueValue          int64 = 4
-	attrSHA1Hash             int64 = 5
-	attrCreationDate         int64 = 12
-	attrInApp                int64 = 17
-	attrOriginalPurchaseDate int64 = 18
-	attrOriginalAppVersion   int64 = 19
-	attrExpirationDate       int64 = 21
+	attrReceiptType               int64 = 0
+	attrAppItemID                 int64 = 1
+	attrBundleID                  int64 = 2
+	attrAppVersion                int64 = 3
+	attrOpaqueValue               int64 = 4
+	attrSHA1Hash                  int64 = 5
+	attrCreationDate              int64 = 12
+	attrDownloadID                int64 = 15
+	attrVersionExternalIdentifier int64 = 16
+	attrInApp                     int64 = 17
+	attrOriginalPurchaseDate      int64 = 18
+	attrOriginalAppVersion        int64 = 19
+	attrExpirationDate            int64 = 21
 )
 
-// In-app purchase attribute types.
+// In-app purchase attribute types. 1713 is undocumented, established the
+// same way as the app-level ids above (measured 2026-09-21): it is
+// is_trial_period.
 const (
 	iapQuantity             int64 = 1701
 	iapProductID            int64 = 1702
@@ -42,6 +52,7 @@ const (
 	iapExpiresDate          int64 = 1708
 	iapWebOrderLineItemID   int64 = 1711
 	iapCancellationDate     int64 = 1712
+	iapIsTrialPeriod        int64 = 1713
 	iapIsInIntroOfferPeriod int64 = 1719
 )
 
@@ -74,7 +85,13 @@ type InAppPurchase struct {
 	ExpiresDate           *time.Time `json:"expiresDate,omitempty"`
 	CancellationDate      *time.Time `json:"cancellationDate,omitempty"`
 	WebOrderLineItemID    *int64     `json:"webOrderLineItemId,omitempty"`
-	IsInIntroOfferPeriod  *int64     `json:"isInIntroOfferPeriod,omitempty"`
+	// IsTrialPeriod is attribute 1713 — 1 while the purchase is inside a
+	// free trial, 0 otherwise, carried as an integer like
+	// IsInIntroOfferPeriod, which Apple's verifyReceipt answer renders as
+	// the string "true"/"false". Undocumented by Apple (measured
+	// 2026-09-21).
+	IsTrialPeriod        *int64 `json:"isTrialPeriod,omitempty"`
+	IsInIntroOfferPeriod *int64 `json:"isInIntroOfferPeriod,omitempty"`
 }
 
 // AppReceipt is a verified legacy app receipt.
@@ -108,6 +125,20 @@ type AppReceipt struct {
 	OriginalAppVersion   string     `json:"originalAppVersion,omitempty"`
 	ExpirationDate       *time.Time `json:"expirationDate,omitempty"`
 
+	// AppItemID is attribute 1 — the app's App Store item identifier,
+	// which Apple's verifyReceipt answer echoes under BOTH adam_id and
+	// app_item_id. Zero in sandbox receipts, since a sandbox purchase is
+	// not tied to a storefront item. Undocumented by Apple (measured
+	// 2026-09-21).
+	AppItemID *int64 `json:"appItemId,omitempty"`
+	// DownloadID is attribute 15 — identifies the App Store download this
+	// receipt came from. Undocumented by Apple (measured 2026-09-21).
+	DownloadID *int64 `json:"downloadId,omitempty"`
+	// VersionExternalIdentifier is attribute 16 — the App Store's own
+	// identifier for this app version. Undocumented by Apple (measured
+	// 2026-09-21).
+	VersionExternalIdentifier *int64 `json:"versionExternalIdentifier,omitempty"`
+
 	InAppPurchases []InAppPurchase `json:"inAppPurchases"`
 }
 
@@ -131,6 +162,10 @@ func parseReceiptPayload(content []byte) (*AppReceipt, error) {
 			if receipt.ReceiptType, err = decodeString(attr.value); err != nil {
 				return nil, err
 			}
+		case attrAppItemID:
+			if receipt.AppItemID, err = decodeInteger(attr.value); err != nil {
+				return nil, err
+			}
 		case attrBundleID:
 			if receipt.BundleID, err = decodeString(attr.value); err != nil {
 				return nil, err
@@ -146,6 +181,14 @@ func parseReceiptPayload(content []byte) (*AppReceipt, error) {
 			receipt.SHA1Hash = bytes.Clone(attr.value)
 		case attrCreationDate:
 			if receipt.CreationDate, err = decodeDate(attr.value); err != nil {
+				return nil, err
+			}
+		case attrDownloadID:
+			if receipt.DownloadID, err = decodeInteger(attr.value); err != nil {
+				return nil, err
+			}
+		case attrVersionExternalIdentifier:
+			if receipt.VersionExternalIdentifier, err = decodeInteger(attr.value); err != nil {
 				return nil, err
 			}
 		case attrInApp:
@@ -215,6 +258,10 @@ func parseInApp(value []byte) (*InAppPurchase, error) {
 			}
 		case iapCancellationDate:
 			if purchase.CancellationDate, err = decodeDate(attr.value); err != nil {
+				return nil, err
+			}
+		case iapIsTrialPeriod:
+			if purchase.IsTrialPeriod, err = decodeInteger(attr.value); err != nil {
 				return nil, err
 			}
 		case iapIsInIntroOfferPeriod:

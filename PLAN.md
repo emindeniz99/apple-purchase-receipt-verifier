@@ -343,7 +343,8 @@ JwsVerifier(trustedRoots, bundleId, acceptedEnvironments, appAppleId?, maxSigned
 ReceiptVerifier(trustedRoots, bundleId)
   .verify(receiptBytes|base64) -> AppReceipt { bundleId, appVersion, opaqueValue,
                                    sha1Hash, creationDate, originalAppVersion,
-                                   expirationDate, inAppPurchases[] }
+                                   expirationDate, appItemId, downloadId,
+                                   versionExternalIdentifier, inAppPurchases[] }
   .verifyWithDeviceGuid(receipt, guid)  // adds the device-hash check
 
 VerificationException { reason: INVALID_JWS_FORMAT | INVALID_CHAIN |

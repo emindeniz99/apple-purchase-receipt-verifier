@@ -26,6 +26,8 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Set;
+import org.bouncycastle.asn1.ASN1Encodable;
+import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.DERUTF8String;
 import org.bouncycastle.cms.CMSSignedData;
 import org.junit.jupiter.api.BeforeAll;
@@ -89,6 +91,11 @@ class ReceiptVerifierTest {
         return new ReceiptVerifier(Collections.singleton(trustedPki.root), bundleId);
     }
 
+    /** One receipt attribute whose value is the DER of {@code value}. */
+    private static ASN1Encodable integerAttribute(int type, long value) throws Exception {
+        return TestPki.attribute(type, new ASN1Integer(value).getEncoded());
+    }
+
     private static InAppPurchase byProduct(AppReceipt receipt, String productId) {
         for (InAppPurchase p : receipt.inAppPurchases()) {
             if (productId.equals(p.productId())) {
@@ -118,6 +125,71 @@ class ReceiptVerifierTest {
         InAppPurchase vip = byProduct(receipt, "com.example.app.vip");
         assertEquals(Instant.parse("2030-02-01T09:30:00Z"), vip.expiresDate());
         assertEquals(Long.valueOf(42), vip.webOrderLineItemId());
+    }
+
+    @Test
+    void decodesTheLegacyIdAttributes() throws Exception {
+        byte[] hash = TestPki.deviceHash(GUID, OPAQUE, BUNDLE);
+        List<byte[]> inApps = Arrays.asList(
+                TestPki.inAppPurchase(
+                        1,
+                        "com.example.app.coins100",
+                        "70000000000001",
+                        "70000000000001",
+                        "2024-01-15T12:00:00Z",
+                        null,
+                        Arrays.asList(integerAttribute(1713, 0L))),
+                TestPki.inAppPurchase(
+                        1,
+                        "com.example.app.vip",
+                        "70000000000002",
+                        "70000000000002",
+                        "2024-02-01T09:30:00Z",
+                        "2030-02-01T09:30:00Z",
+                        Arrays.asList(integerAttribute(1713, 1L))));
+        byte[] der = pki.signReceipt(TestPki.receiptPayload(
+                "Production",
+                BUNDLE,
+                "1.2.3",
+                OPAQUE,
+                hash,
+                creationDate.toString(),
+                inApps,
+                true,
+                null,
+                new byte[] {1, 2, 3},
+                Arrays.asList(
+                        integerAttribute(1, 1234567890L),
+                        integerAttribute(15, 9007199254740993L),
+                        integerAttribute(16, 456789012L))));
+
+        AppReceipt receipt = verifier(pki, BUNDLE).verify(der);
+        assertEquals(Long.valueOf(1234567890L), receipt.appItemId());
+        // 2^53+1: the exact digits are the point. Apple's download_id runs to
+        // eighteen of them, past what a double can hold.
+        assertEquals(Long.valueOf(9007199254740993L), receipt.downloadId());
+        assertEquals(Long.valueOf(456789012L), receipt.versionExternalIdentifier());
+        assertEquals(
+                Long.valueOf(0L), byProduct(receipt, "com.example.app.coins100").isTrialPeriod());
+        assertEquals(Long.valueOf(1L), byProduct(receipt, "com.example.app.vip").isTrialPeriod());
+
+        // Modelled now, so they leave unknownAttributes — where every one of
+        // them used to land — while 9999 stays, proving the map still works.
+        assertNull(receipt.unknownAttributes().get(1));
+        assertNull(receipt.unknownAttributes().get(15));
+        assertNull(receipt.unknownAttributes().get(16));
+        assertNotNull(receipt.unknownAttributes().get(9999));
+        assertNull(byProduct(receipt, "com.example.app.vip").unknownAttributes().get(1713));
+    }
+
+    @Test
+    void legacyIdAttributesAreNullWhenTheReceiptDoesNotCarryThem() throws Exception {
+        // Absent is not zero: the shared payload carries none of the four.
+        AppReceipt receipt = verifier(pki, BUNDLE).verify(receiptDer);
+        assertNull(receipt.appItemId());
+        assertNull(receipt.downloadId());
+        assertNull(receipt.versionExternalIdentifier());
+        assertNull(byProduct(receipt, "com.example.app.coins100").isTrialPeriod());
     }
 
     @Test

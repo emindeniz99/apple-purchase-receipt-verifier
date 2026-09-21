@@ -52,13 +52,30 @@ _DIGESTS = {
 # Receipt attribute types — Apple, "Validating receipts on the device",
 # plus two community-established ones (0: receipt type, 18: original
 # purchase date) needed for verifyReceipt response compatibility.
+#
+# Types 1, 15, 16 and 1713 are on none of Apple's documented pages either.
+# They were established by decoding a genuine production receipt and lining
+# its attributes up against the answer Apple's verifyReceipt endpoint gives
+# for the same receipt (measured 2026-09-21):
+#
+#   1     app item id                -> adam_id AND app_item_id
+#   15    download id                -> download_id
+#   16    version external id        -> version_external_identifier
+#   1713  is trial period (in-app)   -> is_trial_period
+#
+# All four are INTEGER attributes. Apple renders the three app-level ids as
+# JSON numbers and 1713 as the string "true"/"false", exactly as it renders
+# 1719.
 _ATTR_RECEIPT_TYPE = 0
+_ATTR_APP_ITEM_ID = 1
 _ATTR_ORIGINAL_PURCHASE_DATE = 18
 _ATTR_BUNDLE_ID = 2
 _ATTR_APP_VERSION = 3
 _ATTR_OPAQUE_VALUE = 4
 _ATTR_SHA1_HASH = 5
 _ATTR_CREATION_DATE = 12
+_ATTR_DOWNLOAD_ID = 15
+_ATTR_VERSION_EXTERNAL_IDENTIFIER = 16
 _ATTR_IN_APP = 17
 _ATTR_ORIGINAL_APP_VERSION = 19
 _ATTR_EXPIRATION_DATE = 21
@@ -73,6 +90,7 @@ _IAP_FIELDS = {
     1708: ("expires_date", "date"),
     1711: ("web_order_line_item_id", "int"),
     1712: ("cancellation_date", "date"),
+    1713: ("is_trial_period", "int"),
     1719: ("is_in_intro_offer_period", "int"),
 }
 
@@ -92,6 +110,7 @@ class InAppPurchase:
         self.expires_date: datetime | None = None
         self.cancellation_date: datetime | None = None
         self.web_order_line_item_id: int | None = None
+        self.is_trial_period: int | None = None
         self.is_in_intro_offer_period: int | None = None
 
 
@@ -114,6 +133,9 @@ class AppReceipt:
         self.creation_date: datetime | None = None
         self.original_app_version: str | None = None
         self.expiration_date: datetime | None = None
+        self.app_item_id: int | None = None
+        self.download_id: int | None = None
+        self.version_external_identifier: int | None = None
         self.in_app_purchases: list[InAppPurchase] = []
 
 
@@ -522,6 +544,8 @@ def _parse_payload(content: bytes) -> AppReceipt:
     for attr_type, value in _parse_attribute_set(content, "receipt payload"):
         if attr_type == _ATTR_RECEIPT_TYPE:
             receipt.receipt_type = _decode_string(value)
+        elif attr_type == _ATTR_APP_ITEM_ID:
+            receipt.app_item_id = _decode_integer(value)
         elif attr_type == _ATTR_ORIGINAL_PURCHASE_DATE:
             receipt.original_purchase_date = _decode_date(value)
         elif attr_type == _ATTR_BUNDLE_ID:
@@ -535,6 +559,10 @@ def _parse_payload(content: bytes) -> AppReceipt:
             receipt.sha1_hash = value
         elif attr_type == _ATTR_CREATION_DATE:
             receipt.creation_date = _decode_date(value)
+        elif attr_type == _ATTR_DOWNLOAD_ID:
+            receipt.download_id = _decode_integer(value)
+        elif attr_type == _ATTR_VERSION_EXTERNAL_IDENTIFIER:
+            receipt.version_external_identifier = _decode_integer(value)
         elif attr_type == _ATTR_IN_APP:
             receipt.in_app_purchases.append(_parse_in_app(value))
         elif attr_type == _ATTR_ORIGINAL_APP_VERSION:

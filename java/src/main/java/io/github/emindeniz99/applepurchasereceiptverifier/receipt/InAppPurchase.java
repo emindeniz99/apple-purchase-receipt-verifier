@@ -24,6 +24,7 @@ public final class InAppPurchase {
     private final @Nullable Instant expiresDate;
     private final @Nullable Instant cancellationDate;
     private final @Nullable Long webOrderLineItemId;
+    private final @Nullable Long isTrialPeriod;
     private final @Nullable Long isInIntroOfferPeriod;
     private final Map<Integer, List<byte[]>> unknownAttributes;
 
@@ -37,6 +38,7 @@ public final class InAppPurchase {
             @Nullable Instant expiresDate,
             @Nullable Instant cancellationDate,
             @Nullable Long webOrderLineItemId,
+            @Nullable Long isTrialPeriod,
             @Nullable Long isInIntroOfferPeriod,
             Map<Integer, List<byte[]>> unknownAttributes) {
         this.quantity = quantity;
@@ -48,6 +50,7 @@ public final class InAppPurchase {
         this.expiresDate = expiresDate;
         this.cancellationDate = cancellationDate;
         this.webOrderLineItemId = webOrderLineItemId;
+        this.isTrialPeriod = isTrialPeriod;
         this.isInIntroOfferPeriod = isInIntroOfferPeriod;
         this.unknownAttributes = Collections.unmodifiableMap(unknownAttributes);
     }
@@ -88,6 +91,16 @@ public final class InAppPurchase {
 
     public @Nullable Long webOrderLineItemId() {
         return webOrderLineItemId;
+    }
+
+    /**
+     * Attribute 1713 — 1 while the purchase is inside a free trial, 0
+     * otherwise. Carried as an integer like
+     * {@link #isInIntroOfferPeriod()}, which Apple's verifyReceipt answer
+     * renders as the string "true"/"false".
+     */
+    public @Nullable Long isTrialPeriod() {
+        return isTrialPeriod;
     }
 
     public @Nullable Long isInIntroOfferPeriod() {

@@ -104,6 +104,16 @@ Passing `deviceGuid` additionally enforces the device binding:
 constant time. The check is optional because a server does not always have
 the client's `identifierForVendor`.
 
+Four attribute types are modelled although Apple documents none of them:
+`AppReceipt.appItemId` (type 1, which Apple's endpoint echoes under both
+`adam_id` and `app_item_id`), `AppReceipt.downloadId` (15),
+`AppReceipt.versionExternalIdentifier` (16) and `InAppPurchase.isTrialPeriod`
+(1713, an `Int64?` like `isInIntroOfferPeriod`). Their meaning was established
+by lining a genuine production receipt's attributes up against the answer
+Apple's `verifyReceipt` endpoint gives for the same receipt (measured
+2026-09-21). All four are `Int64?` rather than narrower: download ids run past
+2^53, so a `Double` would round them.
+
 Attribute types the library does not model are exposed verbatim on
 `AppReceipt.unknownAttributes` / `InAppPurchase.unknownAttributes`
 (`[Int: [Data]]`), the raw verified-but-undecoded value bytes keyed by

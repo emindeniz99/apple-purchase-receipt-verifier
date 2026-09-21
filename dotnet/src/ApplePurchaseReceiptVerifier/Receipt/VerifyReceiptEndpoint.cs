@@ -254,8 +254,17 @@ namespace ApplePurchaseReceiptVerifier.Receipt
         {
             OrderedMap json = new OrderedMap();
             json.SetIfPresent("receipt_type", receipt.ReceiptType);
+
+            // Apple echoes attribute 1 under both names — its response
+            // reference defines adam_id as "See app_item_id" — and as JSON
+            // numbers, not as the strings the in-app integers are rendered
+            // with.
+            json.SetIfPresent("adam_id", receipt.AppItemId);
+            json.SetIfPresent("app_item_id", receipt.AppItemId);
             json.SetIfPresent("bundle_id", receipt.BundleId);
             json.SetIfPresent("application_version", receipt.AppVersion);
+            json.SetIfPresent("download_id", receipt.DownloadId);
+            json.SetIfPresent("version_external_identifier", receipt.VersionExternalIdentifier);
             json.SetIfPresent("original_application_version", receipt.OriginalAppVersion);
             AppleDates(json, "receipt_creation_date", receipt.CreationDate);
             AppleDates(json, "request_date", requestDate);
@@ -284,6 +293,11 @@ namespace ApplePurchaseReceiptVerifier.Receipt
             AppleDates(json, "expires_date", purchase.ExpiresDate);
             AppleDates(json, "cancellation_date", purchase.CancellationDate);
             json.SetIfPresent("web_order_line_item_id", Text(purchase.WebOrderLineItemId));
+            if (purchase.IsTrialPeriod is long trial)
+            {
+                json.Set("is_trial_period", trial == 1 ? "true" : "false");
+            }
+
             if (purchase.IsInIntroOfferPeriod is long flag)
             {
                 json.Set("is_in_intro_offer_period", flag == 1 ? "true" : "false");

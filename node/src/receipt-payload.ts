@@ -12,13 +12,30 @@ import { Tag, isOctetString, octetStringValue, parse, type ASN1Node } from './de
 // Receipt attribute types — Apple, "Validating receipts on the device",
 // plus two community-established ones (0: receipt type, 18: original
 // purchase date) needed for verifyReceipt response compatibility.
+//
+// Types 1, 15, 16 and 1713 are on none of those pages either. They were
+// established by decoding a genuine production receipt and lining its
+// attributes up against the answer Apple's verifyReceipt endpoint gives for
+// the same receipt (measured 2026-09-21):
+//
+//   1     app item id                -> adam_id AND app_item_id
+//   15    download id                -> download_id
+//   16    version external id        -> version_external_identifier
+//   1713  is trial period (in-app)   -> is_trial_period
+//
+// All four are INTEGER attributes. Apple renders the three app-level ids as
+// JSON numbers and 1713 as the string "true"/"false", exactly as it renders
+// 1719.
 const ATTR = {
   RECEIPT_TYPE: 0,
+  APP_ITEM_ID: 1,
   BUNDLE_ID: 2,
   APP_VERSION: 3,
   OPAQUE_VALUE: 4,
   SHA1_HASH: 5,
   CREATION_DATE: 12,
+  DOWNLOAD_ID: 15,
+  VERSION_EXTERNAL_IDENTIFIER: 16,
   IN_APP: 17,
   ORIGINAL_PURCHASE_DATE: 18,
   ORIGINAL_APP_VERSION: 19,
@@ -34,6 +51,7 @@ const IAP = {
   EXPIRES_DATE: 1708,
   WEB_ORDER_LINE_ITEM_ID: 1711,
   CANCELLATION_DATE: 1712,
+  IS_TRIAL_PERIOD: 1713,
   IS_IN_INTRO_OFFER_PERIOD: 1719,
 } as const;
 
@@ -50,6 +68,13 @@ export interface RawInAppPurchase {
   expiresDate: Date | null;
   cancellationDate: Date | null;
   webOrderLineItemId: number | null;
+  /**
+   * Attribute 1713 (undocumented) — 1 while the purchase is inside a free
+   * trial, 0 otherwise. Carried as the integer it is, like
+   * {@link isInIntroOfferPeriod}, which Apple's verifyReceipt answer renders
+   * as the string "true"/"false".
+   */
+  isTrialPeriod: number | null;
   isInIntroOfferPeriod: number | null;
 }
 
@@ -74,6 +99,23 @@ export interface RawAppReceipt {
   originalPurchaseDate: Date | null;
   originalAppVersion: string | null;
   expirationDate: Date | null;
+  /**
+   * Attribute 1 (undocumented) — the app's App Store item identifier, which
+   * Apple's verifyReceipt answer echoes under BOTH `adam_id` and
+   * `app_item_id`. Zero in sandbox receipts, since a sandbox purchase is not
+   * tied to a storefront item. A `bigint` because real values of the three
+   * ids below run past `Number.MAX_SAFE_INTEGER` — see {@link downloadId}.
+   */
+  appItemId: bigint | null;
+  /**
+   * Attribute 15 (undocumented) — identifies the App Store download this
+   * receipt came from. Apple's are eighteen digits, well past the range a
+   * JavaScript number holds exactly, so this is a `bigint`: a `number` would
+   * silently round the id it is meant to identify a download by.
+   */
+  downloadId: bigint | null;
+  /** Attribute 16 (undocumented) — the App Store's own id for this app version. */
+  versionExternalIdentifier: bigint | null;
   inAppPurchases: RawInAppPurchase[];
 }
 
@@ -95,12 +137,18 @@ export function parseReceiptPayload(content: Uint8Array): RawAppReceipt {
     originalPurchaseDate: null,
     originalAppVersion: null,
     expirationDate: null,
+    appItemId: null,
+    downloadId: null,
+    versionExternalIdentifier: null,
     inAppPurchases: [],
   };
   for (const { type, value } of attributes) {
     switch (type) {
       case ATTR.RECEIPT_TYPE:
         fields.receiptType = decodeString(value);
+        break;
+      case ATTR.APP_ITEM_ID:
+        fields.appItemId = decodeBigInteger(value);
         break;
       case ATTR.BUNDLE_ID:
         fields.bundleId = decodeString(value);
@@ -117,6 +165,12 @@ export function parseReceiptPayload(content: Uint8Array): RawAppReceipt {
         break;
       case ATTR.CREATION_DATE:
         fields.creationDate = decodeDate(value);
+        break;
+      case ATTR.DOWNLOAD_ID:
+        fields.downloadId = decodeBigInteger(value);
+        break;
+      case ATTR.VERSION_EXTERNAL_IDENTIFIER:
+        fields.versionExternalIdentifier = decodeBigInteger(value);
         break;
       case ATTR.IN_APP:
         fields.inAppPurchases.push(parseInApp(value));
@@ -157,6 +211,7 @@ function parseInApp(value: Uint8Array): RawInAppPurchase {
     expiresDate: null,
     cancellationDate: null,
     webOrderLineItemId: null,
+    isTrialPeriod: null,
     isInIntroOfferPeriod: null,
   };
   for (const { type, value: v } of attributes) {
@@ -187,6 +242,9 @@ function parseInApp(value: Uint8Array): RawInAppPurchase {
         break;
       case IAP.CANCELLATION_DATE:
         purchase.cancellationDate = decodeDate(v);
+        break;
+      case IAP.IS_TRIAL_PERIOD:
+        purchase.isTrialPeriod = decodeInteger(v);
         break;
       case IAP.IS_IN_INTRO_OFFER_PERIOD:
         purchase.isInIntroOfferPeriod = decodeInteger(v);
@@ -249,7 +307,9 @@ function parseAttributeSet(
 // sentinel (-1) and filing it under unknownAttributes would let two ports
 // disagree about what the same receipt says, so an unrepresentable type is
 // a malformed receipt in every port. Attribute *values* keep the wider
-// 2^53-1 range: web_order_line_item_id is genuinely a 7-byte integer.
+// 2^53-1 range: web_order_line_item_id is genuinely a 7-byte integer. The
+// three app-level ids are the exception and are decoded as bigint, because
+// Apple's download ids are eighteen digits and a number would round them.
 const MAX_ATTRIBUTE_TYPE = 2147483647;
 
 function attributeType(node: ASN1Node): number {
@@ -263,8 +323,10 @@ function attributeType(node: ASN1Node): number {
   return type;
 }
 
-function integerValue(node: ASN1Node): number {
-  // 8-byte cap: real receipts carry 7-byte integers (web_order_line_item_id).
+/** The exact value of an attribute INTEGER, bounds-checked but not narrowed. */
+function bigIntegerValue(node: ASN1Node): bigint {
+  // 8-byte cap: real receipts carry 7-byte integers (web_order_line_item_id)
+  // and 8-byte ones (download_id).
   if (node.contents.length > 8) {
     throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'attribute integer out of range');
   }
@@ -276,6 +338,11 @@ function integerValue(node: ASN1Node): number {
   for (const byte of node.contents) {
     value = value * 256n + BigInt(byte);
   }
+  return value;
+}
+
+function integerValue(node: ASN1Node): number {
+  const value = bigIntegerValue(node);
   if (value > BigInt(Number.MAX_SAFE_INTEGER)) {
     throw new VerificationError(
       Reason.INVALID_RECEIPT_FORMAT,
@@ -304,7 +371,7 @@ function decodeString(der: Uint8Array): string {
   return utf8Decode(node.contents);
 }
 
-function decodeInteger(der: Uint8Array): number {
+function integerNode(der: Uint8Array): ASN1Node {
   const node = decodeNested(der, 'attribute value');
   if (node.tag !== Tag.INTEGER) {
     throw new VerificationError(
@@ -312,7 +379,21 @@ function decodeInteger(der: Uint8Array): number {
       'attribute value is not an ASN.1 integer',
     );
   }
-  return integerValue(node);
+  return node;
+}
+
+function decodeInteger(der: Uint8Array): number {
+  return integerValue(integerNode(der));
+}
+
+/**
+ * The same attribute INTEGER, kept exact. Same tag, 8-byte and non-negative
+ * checks as {@link decodeInteger}; what it drops is that function's
+ * safe-integer ceiling, which a genuine `download_id` sits above — rejecting
+ * one as malformed would turn a real production receipt away.
+ */
+function decodeBigInteger(der: Uint8Array): bigint {
+  return bigIntegerValue(integerNode(der));
 }
 
 // The timezone designator is mandatory: `new Date` reads a naive date as the

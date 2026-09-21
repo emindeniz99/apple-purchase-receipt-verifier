@@ -21,6 +21,7 @@ namespace ApplePurchaseReceiptVerifier.Receipt
             DateTimeOffset? expiresDate,
             DateTimeOffset? cancellationDate,
             long? webOrderLineItemId,
+            long? isTrialPeriod,
             long? isInIntroOfferPeriod,
             IReadOnlyDictionary<int, IReadOnlyList<byte[]>> unknownAttributes)
         {
@@ -33,6 +34,7 @@ namespace ApplePurchaseReceiptVerifier.Receipt
             ExpiresDate = expiresDate;
             CancellationDate = cancellationDate;
             WebOrderLineItemId = webOrderLineItemId;
+            IsTrialPeriod = isTrialPeriod;
             IsInIntroOfferPeriod = isInIntroOfferPeriod;
             UnknownAttributes = unknownAttributes;
         }
@@ -63,6 +65,14 @@ namespace ApplePurchaseReceiptVerifier.Receipt
 
         /// <summary>Attribute 1711.</summary>
         public long? WebOrderLineItemId { get; }
+
+        /// <summary>
+        /// Attribute 1713 — 1 while the purchase is inside a free trial, 0
+        /// otherwise (undocumented). Carried as an integer like
+        /// <see cref="IsInIntroOfferPeriod"/>, which Apple's verifyReceipt
+        /// answer renders as the string "true"/"false".
+        /// </summary>
+        public long? IsTrialPeriod { get; }
 
         /// <summary>Attribute 1719.</summary>
         public long? IsInIntroOfferPeriod { get; }

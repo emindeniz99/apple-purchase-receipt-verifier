@@ -145,6 +145,66 @@ public class EndpointTests
         Assert.IsType<string>(receipt["receipt_creation_date_ms"]);
     }
 
+    /// <summary>
+    /// The three app-level ids are the exception to that rule: Apple sends
+    /// them as JSON numbers, attribute 1 under both of its names, and renders
+    /// 1713 exactly as it renders 1719. The raw bytes are what is asserted,
+    /// because <c>download_id</c> is 2^53+1 — anything that routed the value
+    /// through a double would print ...992 here.
+    /// </summary>
+    [Fact]
+    public void TheLegacyIdsAreEmittedAsBareNumbersWithTheirExactDigits()
+    {
+        string body = IdsAnswer();
+
+        Assert.Contains("\"adam_id\":1234567890", body, StringComparison.Ordinal);
+        Assert.Contains("\"app_item_id\":1234567890", body, StringComparison.Ordinal);
+        Assert.Contains("\"download_id\":9007199254740993", body, StringComparison.Ordinal);
+        Assert.Contains("\"version_external_identifier\":456789012", body, StringComparison.Ordinal);
+        Assert.Contains("\"is_trial_period\":\"false\"", body, StringComparison.Ordinal);
+        Assert.Contains("\"is_trial_period\":\"true\"", body, StringComparison.Ordinal);
+    }
+
+    /// <summary>Apple's own key order, which a reader diffing the two answers reads in.</summary>
+    [Fact]
+    public void TheLegacyIdsAreEmittedInApplesKeyOrder()
+    {
+        string body = IdsAnswer();
+        string[] keys =
+        {
+            "\"receipt_type\"", "\"adam_id\"", "\"app_item_id\"", "\"bundle_id\"",
+            "\"application_version\"", "\"download_id\"", "\"version_external_identifier\"",
+            "\"original_application_version\"",
+        };
+
+        for (int i = 1; i < keys.Length; i++)
+        {
+            Assert.True(
+                body.IndexOf(keys[i - 1], StringComparison.Ordinal)
+                    < body.IndexOf(keys[i], StringComparison.Ordinal),
+                $"{keys[i - 1]} must precede {keys[i]} in {body}");
+        }
+    }
+
+    [Fact]
+    public void TheLegacyIdKeysAreAbsentWhenTheReceiptCarriesNone()
+    {
+        // Absent, not JSON null: the shared sandbox receipt carries none of
+        // the four, so none of their keys is in the answer at all.
+        using VerifyReceiptEndpoint endpoint = Endpoint();
+        string body = endpoint.VerifyReceiptJson(
+            "{\"receipt-data\":\"" + Convert.ToBase64String(Fixtures.Bytes("receipt")) + "\"}");
+
+        Assert.StartsWith("{\"status\":0,", body, StringComparison.Ordinal);
+        foreach (string key in new[]
+        {
+            "adam_id", "app_item_id", "download_id", "version_external_identifier", "is_trial_period",
+        })
+        {
+            Assert.DoesNotContain("\"" + key + "\"", body, StringComparison.Ordinal);
+        }
+    }
+
     [Fact]
     public void TheDateTripleUsesApplesExactRendering()
     {
@@ -245,6 +305,16 @@ public class EndpointTests
         // Like Apple's endpoint: the caller compares receipt.bundle_id itself.
         IReadOnlyDictionary<string, object?> receipt = SuccessfulReceipt();
         Assert.Equal("com.example.app", receipt["bundle_id"]);
+    }
+
+    /// <summary>The raw answer for the receipt that carries all four attributes.</summary>
+    private static string IdsAnswer()
+    {
+        using VerifyReceiptEndpoint endpoint = new(
+            new[] { X509CertificateLoader.LoadCertificate(Fixtures.Bytes("receipt-ids-root")) },
+            AppleEnvironment.Production);
+        return endpoint.VerifyReceiptJson(
+            "{\"receipt-data\":\"" + Convert.ToBase64String(Fixtures.Bytes("receipt-ids")) + "\"}");
     }
 
     private static IReadOnlyDictionary<string, object?> SuccessfulReceipt()

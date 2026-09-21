@@ -22,7 +22,35 @@ import {
 
 const fixtureUrl = (path) => fileURLToPath(new URL(`../../fixtures/${path}`, import.meta.url));
 
-const CASES = JSON.parse(readFileSync(fixtureUrl('cases.json'), 'utf8'));
+// `JSON.parse` reads every number as a double, so the download id the
+// receipt-ids vectors pin — 9007199254740993, the first integer a double
+// cannot hold — would arrive here as 9007199254740992 and the expectation
+// would be a value no port ever produces. Node 20, this package's engines
+// floor, has neither `JSON.rawJSON` nor a reviver that can see the source
+// text, so the lift happens before the parse: every number literal outside
+// a string that is an integer a double cannot hold is rewritten into a
+// tagged string, and the reviver turns it back into a BigInt. Every other
+// literal is handed to `JSON.parse` untouched. `assert.equal` then compares
+// a BigInt against the library's BigInt exactly — and against a number
+// mathematically, so a rounded value cannot compare equal to this one.
+const BIG_INT_TAG = '__bigint__:';
+const JSON_STRING_OR_NUMBER = /"(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g;
+
+function parseWithBigInts(text) {
+  const tagged = text.replace(JSON_STRING_OR_NUMBER, (literal) =>
+    literal.startsWith('"') || !/^-?\d+$/.test(literal) || Number.isSafeInteger(Number(literal))
+      ? literal
+      : `"${BIG_INT_TAG}${literal}"`,
+  );
+  return JSON.parse(tagged, (_key, value) =>
+    typeof value === 'string' && value.startsWith(BIG_INT_TAG)
+      ? BigInt(value.slice(BIG_INT_TAG.length))
+      : value,
+  );
+}
+
+const CASES_TEXT = readFileSync(fixtureUrl('cases.json'), 'utf8');
+const CASES = parseWithBigInts(CASES_TEXT);
 
 /** Decodes a registered fixture to its logical bytes (fixture.codec). */
 function decodeFixture(entry) {
@@ -86,6 +114,30 @@ test('every fixture cases.json registers matches its recorded contentSha256', ()
   assert.ok(ids.length > 0, 'cases.json must register fixtures');
   for (const id of ids) {
     fixtureBytes(id);
+  }
+});
+
+// Guarded the way the fixture digests are, and for the same reason: a vector
+// that pins an integer past 2^53 is pinning its digits, and a plain
+// `JSON.parse` would round them into an expectation no port can meet — one
+// that a port rounding the same way would nonetheless "pass". Finding none
+// at all means the lift above stopped working, not that the vectors changed.
+test('cases.json expectations keep the integers a double cannot hold', () => {
+  const big = [];
+  const walk = (value) => {
+    if (typeof value === 'bigint') {
+      big.push(value);
+    } else if (Array.isArray(value)) {
+      value.forEach(walk);
+    } else if (value !== null && typeof value === 'object') {
+      Object.values(value).forEach(walk);
+    }
+  };
+  walk(CASES);
+  assert.ok(big.length > 0, 'no vector pins an integer past 2^53 any more');
+  for (const value of big) {
+    assert.ok(!Number.isSafeInteger(Number(value)), `${value} fits in a double after all`);
+    assert.ok(CASES_TEXT.includes(String(value)), `${value} is not what cases.json says`);
   }
 });
 
@@ -337,8 +389,15 @@ function runCase(kase) {
       // null means "absent or unset".
       assert.ok(
         value === null || value === undefined,
-        `${path}: expected absent, got ${JSON.stringify(value)}`,
+        `${path}: expected absent, got ${String(value)}`,
       );
+    } else if (typeof value === 'bigint' || typeof expected === 'bigint') {
+      // Compared as digits: an id past 2^53 arrives as a BigInt, the vector
+      // pins a BigInt or a plain number depending on its size, and the
+      // strict `assert.equal` would call 1234567890n and 1234567890
+      // different ids. Rounding still fails — "9007199254740992" is not
+      // "9007199254740993".
+      assert.equal(String(value), String(expected), path);
     } else {
       assert.equal(value, expected, path);
     }

@@ -25,6 +25,9 @@ public final class AppReceipt {
     private final @Nullable Instant originalPurchaseDate;
     private final @Nullable String originalAppVersion;
     private final @Nullable Instant expirationDate;
+    private final @Nullable Long appItemId;
+    private final @Nullable Long downloadId;
+    private final @Nullable Long versionExternalIdentifier;
     private final List<InAppPurchase> inAppPurchases;
     private final Map<Integer, List<byte[]>> unknownAttributes;
 
@@ -39,6 +42,9 @@ public final class AppReceipt {
             @Nullable Instant originalPurchaseDate,
             @Nullable String originalAppVersion,
             @Nullable Instant expirationDate,
+            @Nullable Long appItemId,
+            @Nullable Long downloadId,
+            @Nullable Long versionExternalIdentifier,
             List<InAppPurchase> inAppPurchases,
             Map<Integer, List<byte[]>> unknownAttributes) {
         this.receiptType = receiptType;
@@ -51,6 +57,9 @@ public final class AppReceipt {
         this.creationDate = creationDate;
         this.originalAppVersion = originalAppVersion;
         this.expirationDate = expirationDate;
+        this.appItemId = appItemId;
+        this.downloadId = downloadId;
+        this.versionExternalIdentifier = versionExternalIdentifier;
         this.inAppPurchases = Collections.unmodifiableList(inAppPurchases);
         this.unknownAttributes = Collections.unmodifiableMap(unknownAttributes);
     }
@@ -101,6 +110,26 @@ public final class AppReceipt {
     /** Attribute 21 — only present in receipts with an expiry (e.g. VPP). */
     public @Nullable Instant expirationDate() {
         return expirationDate;
+    }
+
+    /**
+     * Attribute 1 — the app's App Store item identifier, which Apple's
+     * verifyReceipt answer echoes under BOTH {@code adam_id} and
+     * {@code app_item_id}. Zero in sandbox receipts, since a sandbox purchase
+     * is not tied to a storefront item.
+     */
+    public @Nullable Long appItemId() {
+        return appItemId;
+    }
+
+    /** Attribute 15 — identifies the App Store download this receipt came from. */
+    public @Nullable Long downloadId() {
+        return downloadId;
+    }
+
+    /** Attribute 16 — the App Store's own identifier for this app version. */
+    public @Nullable Long versionExternalIdentifier() {
+        return versionExternalIdentifier;
     }
 
     public List<InAppPurchase> inAppPurchases() {

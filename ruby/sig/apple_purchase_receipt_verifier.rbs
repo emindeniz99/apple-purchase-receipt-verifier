@@ -120,6 +120,7 @@ module ApplePurchaseReceiptVerifier
     def expires_date: () -> Time?
     def cancellation_date: () -> Time?
     def web_order_line_item_id: () -> Integer?
+    def is_trial_period: () -> Integer?
     def is_in_intro_offer_period: () -> Integer?
     def unknown_attributes: () -> Hash[Integer, Array[String]]
     def to_h: () -> Hash[String, untyped]
@@ -138,6 +139,9 @@ module ApplePurchaseReceiptVerifier
     def original_purchase_date: () -> Time?
     def original_app_version: () -> String?
     def expiration_date: () -> Time?
+    def app_item_id: () -> Integer?
+    def download_id: () -> Integer?
+    def version_external_identifier: () -> Integer?
     def in_app_purchases: () -> Array[InAppPurchase]
     def unknown_attributes: () -> Hash[Integer, Array[String]]
     def to_h: () -> Hash[String, untyped]

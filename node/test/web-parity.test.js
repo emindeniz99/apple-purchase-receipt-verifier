@@ -30,6 +30,11 @@ function canon(value) {
   if (value === undefined) {
     return '<undefined>';
   }
+  // The receipt ids (attributes 1, 15, 16) are BigInts, which the verdicts
+  // below are compared AND rendered as JSON with. Digits keep both working.
+  if (typeof value === 'bigint') {
+    return `bigint:${value}`;
+  }
   if (value === null || typeof value !== 'object') {
     return value;
   }
@@ -217,6 +222,39 @@ const cases = [
         [...r.unknownAttributes.get(9999)].map((v) => Array.from(v)),
         [[1, 2, 3]],
       ),
+  }),
+  receiptCase('shared receipt-ids fixture', {
+    roots: [gen('receipt-ids-root.der')],
+    receipt: gen('receipt-ids.der'),
+    // Attributes 1, 15 and 16 arrive exact. The download id is 2^53 + 1,
+    // the first integer a JavaScript number cannot hold, so a build that
+    // carried it as one would answer 9007199254740992 here. 1713 rides on
+    // the purchases, one on each side of the boolean.
+    check: (r) => {
+      assert.equal(r.appItemId, 1234567890n);
+      assert.equal(String(r.downloadId), '9007199254740993');
+      assert.equal(r.versionExternalIdentifier, 456789012n);
+      const coins = r.inAppPurchases.find((p) => p.productId === `${BUNDLE}.coins100`);
+      const vip = r.inAppPurchases.find((p) => p.productId === `${BUNDLE}.vip`);
+      assert.equal(coins.isTrialPeriod, 0);
+      assert.equal(vip.isTrialPeriod, 1);
+      // The four types are modelled now, so only the unmodelled 9999 is
+      // left raw — and 1713 no longer sits in a purchase's map either.
+      assert.deepEqual([...r.unknownAttributes.keys()], [9999]);
+      assert.deepEqual([...vip.unknownAttributes.keys()], []);
+    },
+  }),
+  receiptCase('shared receipt fixture carries none of the four id attributes', {
+    roots: [RECEIPT_ROOT],
+    receipt: gen('receipt.der'),
+    // Absent is not zero, and zero is what Apple's sandbox sends for the
+    // three ids when it does carry them.
+    check: (r) => {
+      assert.equal(r.appItemId, null);
+      assert.equal(r.downloadId, null);
+      assert.equal(r.versionExternalIdentifier, null);
+      assert.equal(r.inAppPurchases[0].isTrialPeriod, null);
+    },
   }),
   receiptCase('foreign-root receipt fixture', {
     roots: [RECEIPT_ROOT],

@@ -224,6 +224,56 @@ fn check_whole_registry(dir: &Path, fixtures: &BTreeMap<String, Fixture>) -> Res
     Ok(())
 }
 
+/// Every expected integer in `cases.json` survived the parse with all its
+/// digits.
+///
+/// The file pins a `download_id` of 2^53 + 1 — the first integer an
+/// IEEE-754 double cannot hold — precisely because Apple's real ones run to
+/// eighteen digits. `serde_json` keeps an unsuffixed integer literal as
+/// `i64`/`u64`, so the expectation this suite compares against carries all
+/// seventeen digits; a runner that read the file through a double would
+/// compare against 9007199254740992 instead and let a rounding library pass.
+/// That failure mode is invisible in a green run, so it is checked here
+/// rather than assumed, by a property no value that passed through a double
+/// can have: at least one expected integer must come back CHANGED by an
+/// `f64` round trip. A parser that used a double for it could not produce
+/// such a value, so the check fails either way — as a float that is not an
+/// integer at all, or as an integer that survives the round trip because it
+/// had already been rounded.
+fn expectations_keep_every_digit(file: &CasesFile) -> Result<(), Failed> {
+    let mut beyond_a_double = 0usize;
+    for case in &file.cases {
+        for (path, value) in case.expected.fields.iter().flatten() {
+            let Value::Number(number) = value else {
+                continue;
+            };
+            if !number.is_i64() && !number.is_u64() {
+                return Err(Failed::from(format!(
+                    "cases.json {} field {path}: the expected integer arrived as the float \
+                     {number}, so this runner cannot compare it exactly",
+                    case.id
+                )));
+            }
+            // Negative expectations exist nowhere near this magnitude.
+            let Some(exact) = number.as_u64() else {
+                continue;
+            };
+            #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+            let through_a_double = exact as f64 as u64;
+            if through_a_double != exact {
+                beyond_a_double += 1;
+            }
+        }
+    }
+    if beyond_a_double == 0 {
+        return Err(Failed::from(
+            "no expected integer in cases.json survives an f64 round trip changed, so nothing \
+             here proves the expectations were not read through a double",
+        ));
+    }
+    Ok(())
+}
+
 // --- config → API -------------------------------------------------------
 
 fn trust_anchors(
@@ -397,6 +447,7 @@ fn in_app_json(purchase: &InAppPurchase) -> Value {
         "webOrderLineItemId",
         purchase.web_order_line_item_id,
     );
+    put_int(&mut out, "isTrialPeriod", purchase.is_trial_period);
     put_int(
         &mut out,
         "isInIntroOfferPeriod",
@@ -436,6 +487,13 @@ fn app_receipt_json(receipt: &AppReceipt) -> Value {
         receipt.original_app_version.as_deref(),
     );
     put_date(&mut out, "expirationDate", receipt.expiration_date);
+    put_int(&mut out, "appItemId", receipt.app_item_id);
+    put_int(&mut out, "downloadId", receipt.download_id);
+    put_int(
+        &mut out,
+        "versionExternalIdentifier",
+        receipt.version_external_identifier,
+    );
     out.insert(
         "inAppPurchases".to_owned(),
         Value::Array(receipt.in_app_purchases.iter().map(in_app_json).collect()),
@@ -792,6 +850,17 @@ fn main() -> std::process::ExitCode {
             move || check_whole_registry(&dir, &fixtures),
         ));
     }
+
+    // Read before any case runs too: an expectation that lost digits on the
+    // way in would be compared against, and passed, by a library that lost
+    // the same digits.
+    trials.push(Trial::test(
+        "cases.json every expected integer keeps its digits",
+        || {
+            let (_, fresh) = load_cases()?;
+            expectations_keep_every_digit(&fresh)
+        },
+    ));
 
     let mut represented: Vec<String> = Vec::new();
     for case in &file.cases {
