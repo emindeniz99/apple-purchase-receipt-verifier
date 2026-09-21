@@ -193,6 +193,37 @@ export function redeemReceipt(userId, receiptData, productId) {
 }
 ```
 
+## Receipt ids are bigints
+
+Three App Store ids come off a receipt as `bigint`: `appItemId` (attribute 1),
+`downloadId` (15) and `versionExternalIdentifier` (16). Apple's download ids
+are eighteen digits, so a JavaScript number would round the id it exists to
+identify a download by. In-app purchases carry `isTrialPeriod` (1713) as the
+integer it is, like `isInIntroOfferPeriod`.
+
+`VerifyReceiptEndpoint` echoes them under Apple's own keys — attribute 1 twice,
+as `adam_id` and `app_item_id`, because Apple does — as JSON numbers rather
+than the strings the in-app integers use, and 1713 as `is_trial_period`,
+`"true"` or `"false"`.
+
+```js
+const { receipt } = endpoint.verifyReceipt(body);
+receipt.download_id;                  // 9007199254740993n
+JSON.stringify(receipt);              // "download_id":9007199254740992 — rounded
+endpoint.verifyReceiptJson(rawBody);  // "download_id":9007199254740993 — every digit
+```
+
+`JSON.stringify` on the response does not throw on those bigints: the receipt
+renders itself with the ids as JSON numbers, which is what `JSON.parse` of
+Apple's own answer yields in JavaScript anyway. `verifyReceiptJson` is the one
+path that writes every digit, because it serializes the ids itself — Node 20,
+the floor this package supports, has no `JSON.rawJSON` to do it with. Read
+exact values off the object as bigints, or hand a consumer outside JavaScript
+the `verifyReceiptJson` text.
+
+An attribute the receipt does not carry reads `null` on the object, and its
+key is left out of the endpoint's answer rather than sent as JSON null.
+
 ## Why offline
 
 Signature verification cannot fail because a vendor endpoint is down, so a

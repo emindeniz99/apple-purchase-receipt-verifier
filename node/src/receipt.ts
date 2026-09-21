@@ -48,6 +48,13 @@ export interface InAppPurchase {
   expiresDate: Date | null;
   cancellationDate: Date | null;
   webOrderLineItemId: number | null;
+  /**
+   * Attribute 1713 (undocumented) — 1 while the purchase is inside a free
+   * trial, 0 otherwise. Carried as the integer it is, like
+   * {@link isInIntroOfferPeriod}, which Apple's verifyReceipt answer renders
+   * as the string "true"/"false".
+   */
+  isTrialPeriod: number | null;
   isInIntroOfferPeriod: number | null;
 }
 
@@ -75,6 +82,23 @@ export interface AppReceipt {
   originalPurchaseDate: Date | null;
   originalAppVersion: string | null;
   expirationDate: Date | null;
+  /**
+   * Attribute 1 (undocumented) — the app's App Store item identifier, which
+   * Apple's verifyReceipt answer echoes under BOTH `adam_id` and
+   * `app_item_id`. Zero in sandbox receipts, since a sandbox purchase is not
+   * tied to a storefront item. A `bigint` because real values of the three
+   * ids below run past `Number.MAX_SAFE_INTEGER` — see {@link downloadId}.
+   */
+  appItemId: bigint | null;
+  /**
+   * Attribute 15 (undocumented) — identifies the App Store download this
+   * receipt came from. Apple's are eighteen digits, well past the range a
+   * JavaScript number holds exactly, so this is a `bigint`: a `number` would
+   * silently round the id it is meant to identify a download by.
+   */
+  downloadId: bigint | null;
+  /** Attribute 16 (undocumented) — the App Store's own id for this app version. */
+  versionExternalIdentifier: bigint | null;
   inAppPurchases: InAppPurchase[];
 }
 

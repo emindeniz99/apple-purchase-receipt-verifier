@@ -23,6 +23,14 @@ const publicReceipt = (name) =>
 
 const request = () => ({ 'receipt-data': fixture('receipt.der').toString('base64') });
 
+// The receipt carrying attributes 1, 15, 16 and 1713, on its own root.
+const idsEndpoint = () =>
+  new VerifyReceiptEndpoint({
+    trustedRoots: [fixture('receipt-ids-root.der')],
+    environment: 'Production',
+  });
+const idsRequest = () => ({ 'receipt-data': fixture('receipt-ids.der').toString('base64') });
+
 // request_date is "now": two calls legitimately disagree on it.
 function withoutRequestDate(response) {
   const copy = structuredClone(response);
@@ -95,6 +103,46 @@ test('verifyReceiptJson renders is_in_intro_offer_period as "true"/"false"', () 
   for (const purchase of receipt.in_app) {
     assert.equal(typeof purchase.is_in_intro_offer_period, 'string');
   }
+});
+
+test('verifyReceiptJson emits the receipt ids as bare JSON numbers', () => {
+  const json = idsEndpoint().verifyReceiptJson(JSON.stringify(idsRequest()));
+  // Read off the bytes, not the parse: `JSON.parse` would round the
+  // download id (2^53 + 1) to 2^53 and agree with a build that lost the
+  // digit. Apple echoes attribute 1 under both names, sends the three ids
+  // as numbers rather than the strings the in-app integers get, and renders
+  // 1713 as "true"/"false" like 1719.
+  assert.ok(json.includes('"adam_id":1234567890'), json);
+  assert.ok(json.includes('"app_item_id":1234567890'), json);
+  assert.ok(json.includes('"download_id":9007199254740993'), json);
+  assert.ok(json.includes('"version_external_identifier":456789012'), json);
+  assert.ok(json.includes('"is_trial_period":"false"'), json);
+  assert.ok(json.includes('"is_trial_period":"true"'), json);
+});
+
+test('verifyReceiptJson leaves the id keys out of a receipt that carries none', () => {
+  const json = endpoint('Sandbox').verifyReceiptJson(JSON.stringify(request()));
+  for (const key of [
+    'adam_id',
+    'app_item_id',
+    'download_id',
+    'version_external_identifier',
+    'is_trial_period',
+  ]) {
+    assert.ok(!json.includes(`"${key}"`), `${key} must be absent, never null: ${json}`);
+  }
+});
+
+test('verifyReceipt hands the ids over as bigints that plain JSON.stringify accepts', () => {
+  const { receipt } = idsEndpoint().verifyReceipt(idsRequest());
+  assert.equal(receipt.download_id, 9007199254740993n);
+  // A caller serializing the object themselves gets JSON numbers and no
+  // throw — past 2^53 that rounds, which is also what `JSON.parse` of
+  // Apple's own answer yields in JavaScript. verifyReceiptJson is the way
+  // to the exact digits.
+  const plain = JSON.parse(JSON.stringify(receipt));
+  assert.equal(plain.adam_id, 1234567890);
+  assert.equal(plain.download_id, 9007199254740992);
 });
 
 test('verifyReceiptJson omits receipt and environment on a non-zero status', () => {
