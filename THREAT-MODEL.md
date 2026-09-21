@@ -195,7 +195,7 @@ canonical but never over- or under-supplied. Anything else is
 
 ### 3.9 Port divergence is itself a finding, and roots do not move
 
-One vector file, `fixtures/cases.json`: 82 cases over 73 registered fixtures,
+One vector file, `fixtures/cases.json`: 110 cases over 101 registered fixtures,
 read by all nine ports through a thin adapter. Every fixture's SHA-256 is
 re-hashed before any case runs, so a quietly edited fixture fails loudly in
 every language. `node tools/lint-cases.mjs` validates it against

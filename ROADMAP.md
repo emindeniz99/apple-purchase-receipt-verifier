@@ -36,20 +36,22 @@ Delete a line in the commit that ships it.
   (enterprise consumers, PLAN D2; JUnit 6 is test-only and stays ignored),
   Swift 6.1 (swift-crypto 5.0 needs 6.2, the 4.x line still ships), Node 20
   (next candidate, see below).
-- **Model the receipt attributes Apple's verifyReceipt echoes and we hold
-  as raw bytes** (2026-09-21, measured against Apple's own answer for a
-  genuine production receipt, which stays out of the repository): type 1
-  is `adam_id`/`app_item_id`, 15 is `download_id`, 16 is
-  `version_external_identifier`, 1713 is `is_trial_period`. With those,
-  the emulation matches Apple on 30 of 31 fields; the last,
-  `in_app_ownership_type`, is family sharing state that no receipt
-  carries. `web_order_line_item_id` stays in the output when 1711 is
-  zero on a non-subscription: Apple's live answer omitted it for a
-  consumable, but Apple's response reference lists the field without a
-  product-type condition, and the owner chose the reference over the
-  observed answer (2026-09-21). Nine ports, synthetic fixtures from the
-  generator, one conformance case. Type 11 (an integer, zero on sandbox
-  receipts, non-zero on the production one) is still unexplained.
+- **Model the receipt attributes Apple's verifyReceipt echoes and we held
+  as raw bytes** — done ✅ (2026-09-21, measured against Apple's own answer
+  for a genuine production receipt, which stays out of the repository):
+  type 1 is `adam_id`/`app_item_id`, 15 is `download_id`, 16 is
+  `version_external_identifier`, 1713 is `is_trial_period`, across all nine
+  ports. `web_order_line_item_id` stays in the output when 1711 is zero on
+  a non-subscription: Apple's live answer omitted it for a consumable, but
+  Apple's response reference lists the field without a product-type
+  condition, and the owner chose the reference over the observed answer
+  (2026-09-21). With those, the emulation matches Apple on 30 of 31 fields;
+  the last, `in_app_ownership_type`, is family sharing state that no
+  receipt carries. Synthetic fixtures from the generator, four conformance
+  vectors. Type 11 stays unmodelled: only TPInAppReceipt names it
+  (`developer id`), no other parser or Apple document corroborates it, and
+  it maps to no `verifyReceipt` or App Store Server API field
+  (RECEIPT-FIELDS.md "The unnamed types").
 - **Apple's step 4, the app-version match (type 3), is a caller
   responsibility** in every port: the server cannot know which binary is
   running. RECEIPT-FIELDS.md states it; the accessor exists.
@@ -99,14 +101,16 @@ Delete a line in the commit that ships it.
   sandbox receipts (and ideally a StoreKit-Test/Xcode receipt) as checked-in
   fixtures; add byte-level regression tests over them in every suite.
   The corpus has now been decoded end to end (RECEIPT-FIELDS.md):
-  `is_trial_period` is type 1713 on every genuine in-app entry and is the
-  one undocumented attribute worth modelling next. A genuine production
-  receipt checked locally on 2026-09-21 (not committed) resolved the
-  ambiguity the sandbox corpus left: type 1 is `adam_id`/`app_item_id`,
-  15 is `download_id`, 16 is `version_external_identifier`, each equal to
-  the value Apple's verifyReceipt returned for the same receipt. A
-  committed production fixture is still wanted; until then the synthetic
-  generator carries these types.
+  `is_trial_period` is type 1713 on every genuine in-app entry, and is now
+  modelled alongside types 1, 15 and 16 (see the attribute-modelling entry
+  above). A genuine production receipt checked locally on 2026-09-21 (not
+  committed) resolved the ambiguity the sandbox corpus left: type 1 is
+  `adam_id`/`app_item_id`, 15 is `download_id`, 16 is
+  `version_external_identifier`, each equal to the value Apple's
+  verifyReceipt returned for the same receipt. A committed production
+  fixture is still wanted; until then the synthetic fixture
+  `receipt-ids.der` (generator `ReceiptIdsFixture`) carries these types,
+  with a download id of 2^53 + 1 to force exact-digit handling.
 - **Mac App Store receipt fixture**: the harvest (fixtures/public-receipts/,
   done ✅ — genuine sandbox + legacy receipts verify in every
   language) covered iOS; a genuine macOS receipt is still missing.
