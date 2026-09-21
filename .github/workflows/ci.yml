@@ -104,6 +104,157 @@ jobs:
           grep -F 'receipt/verify-genuine-legacy-sha1-chain: expected success but failed with INVALID_CHAIN' "$RUNNER_TEMP/hardened.log"
           test "$status" -ne 0
 
+  # The deployment surface rather than the build surface. `ReceiptVerifier`
+  # builds the genuine legacy receipt chain -- sha1WithRSAEncryption at both
+  # the leaf and the WWDR intermediate -- with the JDK's own PKIX
+  # CertPathBuilder, so `jdk.certpath.disabledAlgorithms` in whichever
+  # java.security the production image ships decides whether every legacy
+  # receipt verifies or none does. java/README.md ("One platform caveat worth
+  # knowing") states the caveat and java-hardened-policy pins the failing
+  # side; this job pins the passing side on the images the library is actually
+  # deployed on, with the image's own JVM and its own java.security.
+  #
+  # Measured 2026-09-21 by unpacking the published layers rather than trusting
+  # the docs: every tag below ships the upstream OpenJDK value
+  #
+  #   jdk.certpath.disabledAlgorithms=MD2, MD5, SHA1 jdkCA & usage TLSServer, \
+  #       RSA keySize < 1024, DSA keySize < 1024, EC keySize < 224, \
+  #       SHA1 usage SignedJAR & denyAfter 2019-01-01
+  #
+  # whose SHA-1 entry is constrained to certificates chaining to a cacerts
+  # anchor AND used for TLS server auth, neither of which a pinned Apple root
+  # in a receipt is. Nothing in the distroless build touches crypto policy: it
+  # unpacks Adoptium's temurin-<v>-jre deb (debian13) or Debian's openjdk deb
+  # (debian12) and replaces only the cacerts trust store.
+  #
+  # Mechanics, because distroless has no shell, no Maven and no package
+  # manager: Maven runs on the runner and only the JVM runs in the container.
+  # test-compile plus copy-dependencies lay down target/classes,
+  # target/test-classes and target/dep; the JUnit Platform console launcher
+  # (sha256-pinned, the discipline java/fuzz/run.sh already applies to Jazzer)
+  # drives them.
+  #
+  # `java -cp <console.jar>:... ConsoleLauncher`, NEVER `java -jar
+  # console.jar --class-path ...`: with -jar the launcher hangs the supplied
+  # classpath off a child loader and java.class.path holds only the console
+  # jar, so TrustStoreIsolationTest's forked child JVM -- which passes
+  # java.class.path straight to `java -cp` -- dies with a
+  # ClassNotFoundException on PlantedTrustStoreChild. Measured, not guessed.
+  java-distroless:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        # Digest-pinned, same reasoning as the swift images (a mutable tag is
+        # the container flavor of action retagging); the comment names the tag.
+        # :nonroot, because that is what gets deployed: uid 65532 reads the
+        # read-only checkout and writes only into the image's /tmp (mode 1777),
+        # which is where the two @TempDir tests land. The :nonroot and default
+        # variants carry byte-identical JRE layers, so the policy under test is
+        # the same in both.
+        #
+        # debian12 is what many deployments still run and is frozen -- gcr.io has
+        # not rebuilt it since 2026-02-20 and carries a
+        # `deprecated-public-image-*` tag beside it -- and it is Debian's
+        # OpenJDK, not Temurin. debian13 is what GoogleContainerTools/distroless
+        # builds now (java/BUILD: ADOPTIUM_DEB_PER_DISTRO = 17, 21, 25 on
+        # debian13 only). Both lines are here so the migration is already
+        # covered. There is no java11 tag to add: java11-debian11 was last
+        # built in 2024 and is deprecated, and the console launcher needs 17+.
+        include:
+          - jre: "17 (Debian OpenJDK 17.0.18, deprecated tag)"
+            image: gcr.io/distroless/java17-debian12@sha256:06484c2a9dcc9070aeafbc0fe752cb9f73bc0cea5c311f6a516e9010061998ad # java17-debian12:nonroot
+          - jre: "17 (Temurin 17.0.20.1)"
+            image: gcr.io/distroless/java17-debian13@sha256:6457ce026c1733d9693b65a4dbb45459d71ec1f5e48676f9d3877c99c63c35cc # java17-debian13:nonroot
+          - jre: "21 (Temurin 21.0.12.1)"
+            image: gcr.io/distroless/java21-debian13@sha256:0a1f5a75661918de9c0813f287f651c3bf2d6dd752eada5f084eb0c1f14ced9e # java21-debian13:nonroot
+          - jre: "25 (Temurin 25.0.4.1)"
+            image: gcr.io/distroless/java25-debian13@sha256:ca60da1345c0f17b6d019049e6749e15f10fd3c0da86dec938d2b4ec565d0629 # java25-debian13:nonroot
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The runner-side JDK only compiles; the pom's --release 8 applies to the
+      # test sources too, so target/test-classes is major version 52 and loads
+      # on every JRE in the matrix.
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+      - name: Build the test tree and fetch the console launcher
+        working-directory: java
+        run: |
+          set -euo pipefail
+          mvn -B -DskipTests test-compile
+          # runtime scope, not test: the console launcher jar already carries
+          # the platform and the Jupiter engine, and a second copy of them on
+          # the classpath is a version conflict waiting to happen.
+          mvn -B dependency:copy-dependencies -DincludeScope=runtime -DoutputDirectory=target/dep
+          curl -fsSL --retry 3 -o target/junit-console.jar \
+            "https://repo.maven.apache.org/maven2/org/junit/platform/junit-platform-console-standalone/${JUNIT_PLATFORM}/junit-platform-console-standalone-${JUNIT_PLATFORM}.jar"
+          echo "${JUNIT_CONSOLE_SHA256}  target/junit-console.jar" | sha256sum -c -
+        env:
+          # The junit-platform version that ships inside the junit-jupiter in
+          # pom.xml (jupiter 5.14.4 -> platform 1.14.4). Bump both together.
+          JUNIT_PLATFORM: "1.14.4"
+          JUNIT_CONSOLE_SHA256: "7c6968cbcaf4301c729f202b23b7d736c5d88be625fc7d27ad5d746146a8bc28"
+      # Read-only mount: nothing the suite runs writes into the checkout, and a
+      # run that suddenly needs to should fail rather than leave a file behind.
+      # The working directory is /w/java because every fixture path in the
+      # tests is relative to the Maven module ("../fixtures").
+      - name: Run the suite on the image's own JVM
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/w:ro" -w /w/java \
+            --entrypoint /usr/bin/java \
+            "$IMAGE" \
+            -cp 'target/junit-console.jar:target/classes:target/test-classes:target/dep/*' \
+            org.junit.platform.console.ConsoleLauncher execute \
+            --scan-class-path=target/test-classes \
+            --fail-if-no-tests --details=testfeed \
+            --disable-ansi-colors --disable-banner | tee "$RUNNER_TEMP/stock.log"
+          # The point of the job, asserted by name: a green exit code would
+          # also be green if the discriminating case had quietly stopped being
+          # discovered.
+          grep -F 'receipt/verify-genuine-legacy-sha1-chain :: SUCCESSFUL' "$RUNNER_TEMP/stock.log"
+          grep -E '^\[[[:space:]]+0 tests failed[[:space:]]+\]' "$RUNNER_TEMP/stock.log"
+        env:
+          IMAGE: ${{ matrix.image }}
+      # The other half of the claim: the caveat is real, it is one case wide,
+      # and it is the operator's java.security that fires it -- not anything
+      # the image ships. Same property line as java-hardened-policy.
+      - name: Assert the SHA-1 case, and only it, fails under a hardened java.security
+        run: |
+          set -euo pipefail
+          # A single `=` layers this over the image's own java.security instead
+          # of replacing it (`==` would replace), so exactly one property moves.
+          printf 'jdk.certpath.disabledAlgorithms=MD2, MD5, SHA1, RSA keySize < 1024\n' \
+            > java/target/hardened.properties
+          set +e
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/w:ro" -w /w/java \
+            --entrypoint /usr/bin/java \
+            "$IMAGE" \
+            -Djava.security.properties=/w/java/target/hardened.properties \
+            -cp 'target/junit-console.jar:target/classes:target/test-classes:target/dep/*' \
+            org.junit.platform.console.ConsoleLauncher execute \
+            --select-class=io.github.emindeniz99.applepurchasereceiptverifier.ConformanceCasesTest \
+            --fail-if-no-tests --details=testfeed \
+            --disable-ansi-colors --disable-banner > "$RUNNER_TEMP/hardened.log" 2>&1
+          status=$?
+          set -e
+          cat "$RUNNER_TEMP/hardened.log"
+          grep -F 'receipt/verify-genuine-legacy-sha1-chain :: FAILED' "$RUNNER_TEMP/hardened.log"
+          failed=$(grep -cE ' :: FAILED$' "$RUNNER_TEMP/hardened.log" || true)
+          test "$failed" -eq 1
+          grep -E '^\[[[:space:]]+1 tests failed[[:space:]]+\]' "$RUNNER_TEMP/hardened.log"
+          test "$status" -ne 0
+        env:
+          IMAGE: ${{ matrix.image }}
+
   node:
     runs-on: ubuntu-latest
     timeout-minutes: 15
