@@ -70,6 +70,40 @@ jobs:
       - run: mvn -B test -Pjdk8-runtime "-Djdk8.jvm=${JAVA_HOME_8_X64}/bin/java"
         working-directory: java
 
+  # The genuine legacy receipt chain is SHA-1 end to end, and ReceiptVerifier
+  # builds it with the JDK's PKIX CertPathBuilder, which obeys
+  # jdk.certpath.disabledAlgorithms. A hardened java.security that disables
+  # SHA-1 outright (RHEL crypto policies, many enterprise images) therefore
+  # fails that one receipt with INVALID_CHAIN, and the library deliberately
+  # does not route around the policy (java/README.md, "One platform caveat").
+  # This job pins the fact rather than the folklore: under that policy the
+  # conformance suite must fail exactly one case, the SHA-1 chain, and
+  # nothing else. A second failure means the exposure grew; zero failures
+  # means the JDK stopped enforcing the property and the README is wrong.
+  java-hardened-policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Run the conformance suite with SHA-1 disabled for certpath
+        working-directory: java
+        run: |
+          printf 'jdk.certpath.disabledAlgorithms=MD2, MD5, SHA1, RSA keySize < 1024\n' > "$RUNNER_TEMP/hardened.properties"
+          set +e
+          mvn -B test -Dtest=ConformanceCasesTest "-DargLine=-Djava.security.properties=$RUNNER_TEMP/hardened.properties" > "$RUNNER_TEMP/hardened.log" 2>&1
+          status=$?
+          set -e
+          grep -E 'Tests run: [0-9]+, Failures: 1, Errors: 0, Skipped: 0' "$RUNNER_TEMP/hardened.log"
+          grep -F 'receipt/verify-genuine-legacy-sha1-chain: expected success but failed with INVALID_CHAIN' "$RUNNER_TEMP/hardened.log"
+          test "$status" -ne 0
+
   node:
     runs-on: ubuntu-latest
     timeout-minutes: 15
