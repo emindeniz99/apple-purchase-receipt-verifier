@@ -15,7 +15,8 @@ recorded here.
   license: **MIT, confirmed by the owner 2026-08-05** (LICENSE at the
   project root).
 - **D2 — Enterprise-reality version floors**, not upstream-support floors:
-  **Java 8**, **Node ≥20**, **Python ≥3.9**, **Swift 6** (server-side Swift
+  **Java 8**, **Node ≥20**, **Python ≥3.10** (raised from ≥3.9 after 3.9
+  reached EOL 2025-10; owner approved), **Swift 6** (server-side Swift
   has no Java-8-style long tail; Apple's own Swift library requires 6). Java is built `--release 8`
   (no records/`var`/`List.of`; ES256 raw-signature conversion done manually
   since `SHA256withECDSAinP1363Format` is Java 9+). CI should matrix-test
@@ -364,7 +365,7 @@ so tests need no real Apple secrets and prove the anchor pinning works.
 3. **Node** (`node/`, Node ≥20, ESM, zero runtime deps — hand-rolled
    bounded DER/BER parser + `node:crypto`; plus a `/web` build on
    WebCrypto alone). ✅
-4. **Python** (`python/`, ≥3.9, `cryptography` + `asn1crypto`). ✅
+4. **Python** (`python/`, ≥3.10, `cryptography` + `asn1crypto`). ✅
 5. **Swift** (`swift/`, SwiftPM, Swift 6, swift-certificates +
    swift-crypto + swift-asn1 only). ✅
 6. **Five more ports** — `go/` (1.22+), `ruby/` (3.1+), `rust/` (1.74+),
