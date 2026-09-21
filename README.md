@@ -19,7 +19,7 @@ validating the certificate chain against pinned Apple root CAs. Nine
 implementations, one normative algorithm, one shared fixture set they all
 verify byte-for-byte: **Java** (8+), **Node** (20+, zero runtime deps),
 **Python** (3.10+), **Swift** (6.1+), **Go** (1.22+), **Ruby** (3.1+),
-**Rust** (1.74+), **PHP** (8.1+) and **.NET** (netstandard2.0 and net8.0) —
+**Rust** (1.85+), **PHP** (8.1+) and **.NET** (netstandard2.0 and net8.0) —
 plus **C and C++ via a C ABI over the Rust port**, which any FFI-capable
 runtime (Elixir NIFs, Lua, ctypes, P/Invoke) can load.
 [SUPPORT-MATRIX.md](SUPPORT-MATRIX.md) lists every line CI runs and the rule
@@ -332,7 +332,7 @@ cd go && go test ./...
 # Ruby (>= 3.1; no runtime dependencies, minitest through rake)
 cd ruby && rake test
 
-# Rust (>= 1.74)
+# Rust (>= 1.85)
 cd rust && cargo test
 
 # PHP (>= 8.1; installs php/composer.lock)

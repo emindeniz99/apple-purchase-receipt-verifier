@@ -37,7 +37,7 @@ cd rust/ffi && cbindgen --config cbindgen.toml \
   --output include/apple_purchase_receipt_verifier.h
 ```
 
-The crate builds on the same Rust 1.74.0 floor as the library, from a
+The crate builds on the same Rust 1.85.0 floor as the library, from a
 committed `Cargo.lock` resolved for that floor:
 
 ```bash

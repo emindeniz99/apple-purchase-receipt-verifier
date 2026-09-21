@@ -24,7 +24,7 @@ apple-purchase-receipt-verifier`) on the release branch right after the
 action and pushes the result. If a release PR ever lands with a stale lock,
 that step is the thing to check.
 
-Regenerate the file the way CI needs it, resolvable on the 1.74.0 floor:
+Regenerate the file the way CI needs it, resolvable on the 1.85.0 floor:
 
 ```bash
 CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback cargo +stable generate-lockfile
