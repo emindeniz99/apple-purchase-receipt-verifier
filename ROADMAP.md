@@ -40,13 +40,16 @@ Delete a line in the commit that ships it.
   as raw bytes** (2026-09-21, measured against Apple's own answer for a
   genuine production receipt, which stays out of the repository): type 1
   is `adam_id`/`app_item_id`, 15 is `download_id`, 16 is
-  `version_external_identifier`, 1713 is `is_trial_period`; and
-  `web_order_line_item_id` must be omitted when 1711 is zero on a
-  non-subscription, as Apple does. With those, the emulation matches
-  Apple on 30 of 31 fields; the last, `in_app_ownership_type`, is family
-  sharing state that no receipt carries. Nine ports, synthetic fixtures
-  from the generator, one conformance case. Type 11 (an integer, zero on
-  sandbox receipts) is still unexplained.
+  `version_external_identifier`, 1713 is `is_trial_period`. With those,
+  the emulation matches Apple on 30 of 31 fields; the last,
+  `in_app_ownership_type`, is family sharing state that no receipt
+  carries. `web_order_line_item_id` stays in the output when 1711 is
+  zero on a non-subscription: Apple's live answer omitted it for a
+  consumable, but Apple's response reference lists the field without a
+  product-type condition, and the owner chose the reference over the
+  observed answer (2026-09-21). Nine ports, synthetic fixtures from the
+  generator, one conformance case. Type 11 (an integer, zero on sandbox
+  receipts, non-zero on the production one) is still unexplained.
 - **Apple's step 4, the app-version match (type 3), is a caller
   responsibility** in every port: the server cannot know which binary is
   running. RECEIPT-FIELDS.md states it; the accessor exists.
