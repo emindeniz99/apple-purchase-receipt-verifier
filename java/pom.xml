@@ -39,7 +39,7 @@
     <!-- Java 8 baseline (PLAN.md D2): enterprise consumers still run 8. -->
     <maven.compiler.release>8</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <bouncycastle.version>1.85</bouncycastle.version>
+    <bouncycastle.version>1.86</bouncycastle.version>
     <!-- Floor: Jackson 2.16. JwsVerifier and VerifyReceiptEndpoint state
          StreamReadConstraints on their mappers rather than relying on
          Jackson's defaults, because the JWS header is parsed before any
