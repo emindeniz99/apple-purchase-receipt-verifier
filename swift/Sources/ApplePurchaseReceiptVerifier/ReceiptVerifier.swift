@@ -17,6 +17,10 @@ public struct InAppPurchase: Sendable {
     public var expiresDate: Date?
     public var cancellationDate: Date?
     public var webOrderLineItemId: Int64?
+    /// Attribute 1713 (undocumented) — 1 while the purchase is inside a free
+    /// trial, 0 otherwise. An integer like ``isInIntroOfferPeriod``, which
+    /// Apple's verifyReceipt answer renders as the string "true"/"false".
+    public var isTrialPeriod: Int64?
     public var isInIntroOfferPeriod: Int64?
 }
 
@@ -39,6 +43,18 @@ public struct AppReceipt: Sendable {
     public var creationDate: Date?
     public var originalAppVersion: String?
     public var expirationDate: Date?
+    /// Attribute 1 (undocumented) — the app's App Store item identifier, which
+    /// Apple's verifyReceipt answer echoes under BOTH `adam_id` and
+    /// `app_item_id`. Zero in sandbox receipts, since a sandbox purchase is not
+    /// tied to a storefront item.
+    public var appItemId: Int64?
+    /// Attribute 15 (undocumented) — identifies the App Store download this
+    /// receipt came from. Real values exceed 2^53, so this is an `Int64` and
+    /// the endpoint emits its exact digits.
+    public var downloadId: Int64?
+    /// Attribute 16 (undocumented) — the App Store's own identifier for this
+    /// app version.
+    public var versionExternalIdentifier: Int64?
     public var inAppPurchases: [InAppPurchase] = []
 }
 
@@ -635,13 +651,30 @@ private extension Array {
 
 // MARK: - Receipt payload (strict DER)
 
+// Types 1, 15, 16 and 1713 are on none of Apple's pages, not even the
+// archived Receipt Fields chapter that documents the rest. They were
+// established by decoding a genuine production receipt and lining its
+// attributes up against the answer Apple's verifyReceipt endpoint gives for
+// the same receipt (measured 2026-09-21):
+//
+//   1     app item id                -> adam_id AND app_item_id
+//   15    download id                -> download_id
+//   16    version external id        -> version_external_identifier
+//   1713  is trial period (in-app)   -> is_trial_period
+//
+// All four are INTEGER attributes and decode like 1711. Apple renders the
+// three app-level ids as JSON numbers and 1713 as the string "true"/"false",
+// exactly as it renders 1719.
 private let attrReceiptType = 0
+private let attrAppItemId = 1
 private let attrOriginalPurchaseDate = 18
 private let attrBundleId = 2
 private let attrAppVersion = 3
 private let attrOpaqueValue = 4
 private let attrSha1Hash = 5
 private let attrCreationDate = 12
+private let attrDownloadId = 15
+private let attrVersionExternalIdentifier = 16
 private let attrInApp = 17
 private let attrOriginalAppVersion = 19
 private let attrExpirationDate = 21
@@ -651,6 +684,7 @@ private func parsePayload(_ content: [UInt8]) throws -> AppReceipt {
     for (type, value) in try parseAttributeSet(content) {
         switch type {
         case attrReceiptType: receipt.receiptType = try decodeString(value)
+        case attrAppItemId: receipt.appItemId = try decodeInteger(value)
         case attrOriginalPurchaseDate: receipt.originalPurchaseDate = try decodeDate(value)
         case attrBundleId:
             receipt.bundleId = try decodeString(value)
@@ -659,6 +693,9 @@ private func parsePayload(_ content: [UInt8]) throws -> AppReceipt {
         case attrOpaqueValue: receipt.opaqueValue = Data(value)
         case attrSha1Hash: receipt.sha1Hash = Data(value)
         case attrCreationDate: receipt.creationDate = try decodeDate(value)
+        case attrDownloadId: receipt.downloadId = try decodeInteger(value)
+        case attrVersionExternalIdentifier:
+            receipt.versionExternalIdentifier = try decodeInteger(value)
         case attrInApp: receipt.inAppPurchases.append(try parseInApp(value))
         case attrOriginalAppVersion: receipt.originalAppVersion = try decodeString(value)
         case attrExpirationDate: receipt.expirationDate = try decodeDate(value)
@@ -681,6 +718,7 @@ private func parseInApp(_ value: [UInt8]) throws -> InAppPurchase {
         case 1708: purchase.expiresDate = try decodeDate(v)
         case 1711: purchase.webOrderLineItemId = try decodeInteger(v)
         case 1712: purchase.cancellationDate = try decodeDate(v)
+        case 1713: purchase.isTrialPeriod = try decodeInteger(v)
         case 1719: purchase.isInIntroOfferPeriod = try decodeInteger(v)
         default: purchase.unknownAttributes[type, default: []].append(Data(v))
         }

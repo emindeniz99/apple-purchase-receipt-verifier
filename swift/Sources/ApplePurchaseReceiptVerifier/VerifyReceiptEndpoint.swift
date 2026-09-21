@@ -165,8 +165,17 @@ public struct VerifyReceiptEndpoint: Sendable {
 private func receiptJson(_ fields: AppReceipt, requestDate: Date) -> [String: Any] {
     var json: [String: Any] = [:]
     put(&json, "receipt_type", fields.receiptType)
+    // Apple echoes attribute 1 under both names — its response reference
+    // defines adam_id as "See app_item_id" — and as JSON numbers, not as the
+    // strings the in-app integers are rendered with. `Int64` rather than a
+    // string or a `Double`: real download ids run past 2^53, and
+    // JSONSerialization writes an Int64 as its exact digits.
+    put(&json, "adam_id", fields.appItemId)
+    put(&json, "app_item_id", fields.appItemId)
     put(&json, "bundle_id", fields.bundleId)
     put(&json, "application_version", fields.appVersion)
+    put(&json, "download_id", fields.downloadId)
+    put(&json, "version_external_identifier", fields.versionExternalIdentifier)
     put(&json, "original_application_version", fields.originalAppVersion)
     appleDates(&json, "receipt_creation_date", fields.creationDate)
     appleDates(&json, "request_date", requestDate)
@@ -187,6 +196,9 @@ private func inAppJson(_ purchase: InAppPurchase) -> [String: Any] {
     appleDates(&json, "expires_date", purchase.expiresDate)
     appleDates(&json, "cancellation_date", purchase.cancellationDate)
     put(&json, "web_order_line_item_id", purchase.webOrderLineItemId.map(String.init))
+    if let trial = purchase.isTrialPeriod {
+        json["is_trial_period"] = trial == 1 ? "true" : "false"
+    }
     if let intro = purchase.isInIntroOfferPeriod {
         json["is_in_intro_offer_period"] = intro == 1 ? "true" : "false"
     }
