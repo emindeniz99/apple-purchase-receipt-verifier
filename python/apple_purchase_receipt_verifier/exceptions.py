@@ -14,6 +14,14 @@ class Reason:
     INVALID_RECEIPT_FORMAT = "INVALID_RECEIPT_FORMAT"
     DEVICE_HASH_MISMATCH = "DEVICE_HASH_MISMATCH"
     STALE_PAYLOAD = "STALE_PAYLOAD"
+    #: The verifyReceipt request envelope is unusable: the body is not a JSON
+    #: object, or ``receipt-data`` is missing, empty or not a string. Only
+    #: ever a ``VerifyReceiptResult.failure_reason``; never raised.
+    MALFORMED_REQUEST = "MALFORMED_REQUEST"
+    #: An unexpected exception inside the verifyReceipt endpoint, answered as
+    #: status 21009. Only ever a ``VerifyReceiptResult.failure_reason``;
+    #: never raised.
+    INTERNAL_ERROR = "INTERNAL_ERROR"
 
 
 class VerificationError(Exception):

@@ -38,6 +38,36 @@ def decode_receipt_base64(text: str) -> bytes:
     Raises :class:`VerificationError` (``INVALID_RECEIPT_FORMAT``) rather
     than any ``binascii``/``ValueError`` — every rejection this function
     makes is a client-format problem, not a library bug."""
+    decoded = _decode_strict(text)
+    return decoded if decoded is not None else _decode_tolerant(text)
+
+
+def _decode_strict(text: str) -> bytes | None:
+    """The fast path for the common case, canonical standard base64 with no
+    whitespace: the stdlib's validating decoder alone, without the tolerant
+    path's regex and translate passes. ``None`` hands the string to
+    :func:`_decode_tolerant`.
+
+    ``b64decode(validate=True)`` on its own is NOT a subset of the rule above
+    on every supported Python. Measured on 3.10 to 3.14: 3.10 accepts ``=``,
+    ``AAA==``, ``AAAA=`` and ``AAAA==``; 3.11 and 3.12 accept ``AAAA=`` and
+    ``AAAA====``; 3.13 and later reject all of them. Every such string has a
+    length that is not a multiple of four or ends in three or more ``=``,
+    and the tolerant path rejects all of those. With both excluded, what the
+    decoder accepts is ``[A-Za-z0-9+/]`` data followed by exactly the
+    canonical padding, which the tolerant path accepts and hands to this same
+    decoder unchanged, so the bytes are identical.
+    tests/test_receipt_base64.py holds this to 20,000 seeded inputs."""
+    if not text or len(text) % 4 != 0 or text.endswith("==="):
+        return None
+    try:
+        return base64.b64decode(text, validate=True)
+    except ValueError:  # binascii.Error, or a non-ASCII str
+        return None
+
+
+def _decode_tolerant(text: str) -> bytes:
+    """The accept/reject rule above, spelled out step by step."""
     body = _WHITESPACE_RE.sub("", text)
     if not body:
         raise VerificationError(
