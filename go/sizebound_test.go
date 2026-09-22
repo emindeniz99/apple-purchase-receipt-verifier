@@ -49,7 +49,7 @@ func TestEndpointDoesNotDecodeBeyondItsCeiling(t *testing.T) {
 	body := oversizedBase64()
 	var response applereceipt.VerifyReceiptResponse
 	allocated := allocatedBy(func() {
-		response = endpoint.VerifyReceipt(applereceipt.VerifyReceiptRequest{ReceiptData: body})
+		response = endpoint.VerifyReceipt(applereceipt.VerifyReceiptRequest{ReceiptData: body}).Response()
 	})
 	if response.Status != applereceipt.StatusMalformed {
 		t.Fatalf("status = %d, want %d", response.Status, applereceipt.StatusMalformed)

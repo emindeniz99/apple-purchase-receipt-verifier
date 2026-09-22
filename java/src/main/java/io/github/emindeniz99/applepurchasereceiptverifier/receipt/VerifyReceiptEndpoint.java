@@ -1,7 +1,6 @@
 package io.github.emindeniz99.applepurchasereceiptverifier.receipt;
 
 import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.emindeniz99.applepurchasereceiptverifier.Environment;
@@ -11,13 +10,7 @@ import java.io.IOException;
 import java.security.cert.X509Certificate;
 import java.time.Clock;
 import java.time.Instant;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import org.jspecify.annotations.Nullable;
@@ -35,7 +28,7 @@ import org.jspecify.annotations.Nullable;
  * compares {@code receipt.bundle_id}, exactly as with the real endpoint.</p>
  *
  * <p>Thread-safe once constructed: every instance field is final, the anchor
- * set is copied at construction and never handed out, both methods keep their
+ * set is copied at construction and never handed out, every method keeps its
  * per-call state in locals, and the one object they share is a configured
  * Jackson {@link ObjectMapper}, which Jackson documents as safe to use from
  * many threads. One instance can serve every request of a process (a
@@ -59,7 +52,7 @@ public final class VerifyReceiptEndpoint {
      * Ceiling on the raw request body {@link #verifyReceiptJson(String)} will
      * parse, in characters.
      *
-     * <p>"Neither method ever throws" is a promise about exceptions, and heap
+     * <p>"No method ever throws" is a promise about exceptions, and heap
      * exhaustion is not one: it is an {@link OutOfMemoryError}, so the caller
      * gets no body at all and the promise stops holding on exactly the hostile
      * input it exists for. JSON parsing allocates a multiple of the body, and
@@ -68,7 +61,7 @@ public final class VerifyReceiptEndpoint {
      * <p>The number is the php port's {@code MAX_REQUEST_BYTES}, and it is
      * deliberately below {@link ReceiptVerifier#MAX_RECEIPT_BYTES}: the JSON
      * entry point has an amplification the pre-decoded {@link
-     * #verifyReceipt(Map)} entry point does not. A 1 MiB body carries any real
+     * #verifyReceiptResult(Map)} entry point does not. A 1 MiB body carries any real
      * request with room to spare; the largest genuine receipt in the shared
      * corpus is 106 KB of base64.
      */
@@ -82,11 +75,8 @@ public final class VerifyReceiptEndpoint {
      */
     private static final int MAX_JSON_NESTING_DEPTH = 64;
 
-    // Locale.ROOT pinned so a JVM default locale can never reach the
-    // rendering, matching node (en-CA) and swift (en_US_POSIX).
-    private static final DateTimeFormatter FORMAT =
-            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withLocale(Locale.ROOT);
-    private static final ObjectMapper MAPPER = new ObjectMapper(JsonFactory.builder()
+    // Shared with VerifyReceiptResult, which serializes the response.
+    static final ObjectMapper MAPPER = new ObjectMapper(JsonFactory.builder()
             .streamReadConstraints(StreamReadConstraints.builder()
                     .maxNestingDepth(MAX_JSON_NESTING_DEPTH)
                     // Nothing inside the body can be larger than the body, so
@@ -95,9 +85,6 @@ public final class VerifyReceiptEndpoint {
                     .maxDocumentLength(MAX_REQUEST_BYTES)
                     .build())
             .build());
-    private static final String MALFORMED_JSON = "{\"status\":" + STATUS_MALFORMED + "}";
-    private static final ZoneId GMT = ZoneId.of("UTC");
-    private static final ZoneId PACIFIC = ZoneId.of("America/Los_Angeles");
 
     private final Set<X509Certificate> trustedRoots;
     private final Environment environment;
@@ -117,9 +104,8 @@ public final class VerifyReceiptEndpoint {
 
     /**
      * @param clock source of "now"; {@code null} (the two-argument
-     *              constructor's default) means {@link Clock#systemUTC()}, so
-     *              existing callers are unaffected. It drives the
-     *              {@code request_date} / {@code request_date_ms} /
+     *              constructor's default) means {@link Clock#systemUTC()}. It
+     *              drives the {@code request_date} / {@code request_date_ms} /
      *              {@code request_date_pst} response fields, and nothing else:
      *              Apple's endpoint stamps them with the time the request was
      *              answered, which is wall-clock by definition. It deliberately
@@ -140,203 +126,148 @@ public final class VerifyReceiptEndpoint {
     }
 
     /**
-     * @param production which environment this instance emulates
-     * @deprecated use {@link #VerifyReceiptEndpoint(Set, Environment)} — the
-     *             environment is an enum in cases.json and in every other
-     *             port, and a boolean cannot say which of the two it means at
-     *             a call site. {@code true} is {@link Environment#PRODUCTION},
-     *             {@code false} is {@link Environment#SANDBOX}.
-     */
-    @Deprecated
-    public VerifyReceiptEndpoint(Set<X509Certificate> trustedRoots, boolean production) {
-        this(trustedRoots, production ? Environment.PRODUCTION : Environment.SANDBOX, null);
-    }
-
-    /**
-     * @param production which environment this instance emulates
-     * @deprecated use {@link #VerifyReceiptEndpoint(Set, Environment, Clock)}.
-     */
-    @Deprecated
-    public VerifyReceiptEndpoint(Set<X509Certificate> trustedRoots, boolean production, @Nullable Clock clock) {
-        this(trustedRoots, production ? Environment.PRODUCTION : Environment.SANDBOX, clock);
-    }
-
-    /**
      * Handles one verifyReceipt request body. Never throws — like the real
-     * endpoint, failures are reported through {@code status}.
+     * endpoint, failures are reported through the result's status and
+     * {@link VerifyReceiptResult#failureReason()}. {@code request_date} is
+     * the endpoint's clock at the time of the call.
      */
-    public Map<String, Object> verifyReceipt(@Nullable Map<String, ? extends @Nullable Object> requestBody) {
-        Object receiptData = requestBody == null ? null : requestBody.get("receipt-data");
-        if (!(receiptData instanceof String) || ((String) receiptData).isEmpty()) {
-            return status(STATUS_MALFORMED);
-        }
-        // This entry point decodes before verifyReceiptCore could apply its
-        // own cap, so the cap is applied to the transport string here: the
-        // same string and the same limit ReceiptVerifier.verify(String) would
-        // have measured. The answer is 21002 either way; the difference is
-        // that nothing is allocated first.
-        if (((String) receiptData).length() > ReceiptVerifier.MAX_RECEIPT_BYTES) {
-            return status(STATUS_MALFORMED);
-        }
-        byte[] der;
-        try {
-            der = ReceiptBase64.decode((String) receiptData);
-        } catch (VerificationException e) {
-            return status(STATUS_MALFORMED);
-        }
-        AppReceipt receipt;
-        try {
-            // The primitive itself, not a ReceiptVerifier built around a
-            // wildcard bundle id: like Apple's endpoint, no bundle-id
-            // claim is checked here (callers compare receipt.bundle_id).
-            receipt = ReceiptVerifier.verifyReceiptCore(der, trustedRoots);
-        } catch (VerificationException e) {
-            return status(e.reason() == Reason.INVALID_RECEIPT_FORMAT ? STATUS_MALFORMED : STATUS_NOT_AUTHENTICATED);
-        } catch (RuntimeException e) {
-            return status(STATUS_INTERNAL);
-        }
-
-        // 21007/21008 environment routing from the receipt_type attribute.
-        // Production types are exactly "Production" and "ProductionVPP";
-        // everything else ("ProductionSandbox", "ProductionVPPSandbox",
-        // "Xcode", or a missing attribute) fails closed as non-production.
-        // "Xcode" is listed for completeness only: an Xcode-generated
-        // receipt is not Apple-signed, so it fails chain verification with
-        // 21003 above and never reaches this branch.
-        boolean productionReceipt =
-                "Production".equals(receipt.receiptType()) || "ProductionVPP".equals(receipt.receiptType());
-        if (environment == Environment.PRODUCTION && !productionReceipt) {
-            return status(STATUS_SANDBOX_RECEIPT_ON_PRODUCTION);
-        }
-        if (environment == Environment.SANDBOX && productionReceipt) {
-            return status(STATUS_PRODUCTION_RECEIPT_ON_SANDBOX);
-        }
-
-        Map<String, Object> response = new LinkedHashMap<String, Object>();
-        response.put("status", STATUS_OK);
-        response.put("environment", environment.value());
-        response.put("receipt", receiptJson(receipt, clock.instant()));
-        return response;
+    public VerifyReceiptResult verifyReceiptResult(@Nullable Map<String, ? extends @Nullable Object> requestBody) {
+        return verifyReceiptResult(requestBody, null);
     }
 
     /**
-     * Handles one verifyReceipt request body in its raw wire form: the JSON
-     * request body in, the JSON response body out, so an HTTP framework's
-     * body can be piped straight through without a DTO in between. A thin
-     * wrapper over {@link #verifyReceipt(Map)} — every verification
-     * decision is made there.
+     * As {@link #verifyReceiptResult(Map)}, with {@code request_date} set to
+     * {@code requestDate} instead of the endpoint's clock ({@code null} falls
+     * back to the clock). It feeds {@code request_date} and nothing else.
+     */
+    public VerifyReceiptResult verifyReceiptResult(
+            @Nullable Map<String, ? extends @Nullable Object> requestBody, @Nullable Instant requestDate) {
+        Instant at = requestDate(requestDate);
+        Object receiptData;
+        try {
+            receiptData = requestBody == null ? null : requestBody.get("receipt-data");
+        } catch (RuntimeException e) {
+            return VerifyReceiptResult.internalError(environment, e, at);
+        }
+        if (!(receiptData instanceof String)) {
+            return VerifyReceiptResult.failed(environment, Reason.MALFORMED_REQUEST, at);
+        }
+        return verify((String) receiptData, at);
+    }
+
+    /**
+     * Handles one verifyReceipt request body in its raw wire form, the JSON
+     * text an HTTP framework hands over. Never throws.
      *
      * <p>A body that is not a JSON object (unparseable, {@code null}, an
-     * array, a scalar) answers <code>{"status":21002}</code>. Apple has no
+     * array, a scalar) or is longer than {@link #MAX_REQUEST_BYTES} fails
+     * with {@link Reason#MALFORMED_REQUEST}, status 21002. Apple has no
      * status code for "that wasn't JSON"; 21002 ("The data in the
      * receipt-data property was malformed or missing") is the closest, and
      * it is what a JSON object without usable {@code receipt-data} gets
      * anyway.</p>
      *
-     * <p>Output is deterministic — the response map preserves insertion
-     * order, so equal inputs serialize to equal bytes. Key order is not
-     * part of the JSON contract.</p>
-     *
-     * <p>Deliberately a distinct name rather than a {@code verifyReceipt}
-     * overload: an overload would make an existing
-     * {@code verifyReceipt(null)} call ambiguous, and this is a published
-     * library.</p>
-     *
-     * @param requestJson raw JSON request body
-     * @return raw JSON response body; never throws
+     * <p>A literal {@code null} argument needs a cast to pick this overload
+     * over {@link #verifyReceiptResult(Map)}.</p>
      */
-    public String verifyReceiptJson(@Nullable String requestJson) {
-        if (requestJson != null && requestJson.length() > MAX_REQUEST_BYTES) {
-            return MALFORMED_JSON;
+    public VerifyReceiptResult verifyReceiptResult(@Nullable String requestJson) {
+        return verifyReceiptResult(requestJson, null);
+    }
+
+    /**
+     * As {@link #verifyReceiptResult(String)}, with {@code request_date} set
+     * to {@code requestDate} instead of the endpoint's clock.
+     */
+    public VerifyReceiptResult verifyReceiptResult(@Nullable String requestJson, @Nullable Instant requestDate) {
+        Instant at = requestDate(requestDate);
+        if (requestJson == null || requestJson.length() > MAX_REQUEST_BYTES) {
+            return VerifyReceiptResult.failed(environment, Reason.MALFORMED_REQUEST, at);
         }
         Object parsed;
         try {
             parsed = MAPPER.readValue(requestJson, Object.class);
         } catch (IOException e) {
-            return MALFORMED_JSON;
+            return VerifyReceiptResult.failed(environment, Reason.MALFORMED_REQUEST, at);
         } catch (RuntimeException e) {
-            return MALFORMED_JSON;
+            // What the JSON parser throws unchecked is still a body it could
+            // not read, and it has always answered 21002.
+            return VerifyReceiptResult.failed(environment, Reason.MALFORMED_REQUEST, at);
         }
         if (!(parsed instanceof Map)) {
-            return MALFORMED_JSON;
+            return VerifyReceiptResult.failed(environment, Reason.MALFORMED_REQUEST, at);
         }
         @SuppressWarnings("unchecked")
         Map<String, ? extends @Nullable Object> requestBody = (Map<String, ? extends @Nullable Object>) parsed;
+        return verifyReceiptResult(requestBody, at);
+    }
+
+    /**
+     * Verifies a bare base64 receipt, the value a request body would carry as
+     * {@code receipt-data}, with no envelope around it. Never throws; a
+     * {@code null} or empty string fails with
+     * {@link Reason#MALFORMED_REQUEST}, as a missing {@code receipt-data}
+     * does.
+     */
+    public VerifyReceiptResult verifyReceiptData(@Nullable String base64) {
+        return verifyReceiptData(base64, null);
+    }
+
+    /**
+     * As {@link #verifyReceiptData(String)}, with {@code request_date} set to
+     * {@code requestDate} instead of the endpoint's clock.
+     */
+    public VerifyReceiptResult verifyReceiptData(@Nullable String base64, @Nullable Instant requestDate) {
+        return verify(base64, requestDate(requestDate));
+    }
+
+    /**
+     * Handles one verifyReceipt request body in its raw wire form: the JSON
+     * request body in, the JSON response body out, so an HTTP framework's
+     * body can be piped straight through without a DTO in between. The same
+     * as {@code verifyReceiptResult(requestJson).toJson()}.
+     *
+     * <p>Output is deterministic — the response map preserves insertion
+     * order, so equal inputs serialize to equal bytes. Key order is not
+     * part of the JSON contract.</p>
+     *
+     * @param requestJson raw JSON request body
+     * @return raw JSON response body; never throws
+     */
+    public String verifyReceiptJson(@Nullable String requestJson) {
+        return verifyReceiptResult(requestJson).toJson();
+    }
+
+    private Instant requestDate(@Nullable Instant requestDate) {
+        return requestDate != null ? requestDate : clock.instant();
+    }
+
+    /**
+     * The one verification path every entry point ends in. {@code at} only
+     * becomes {@code request_date}: certificate validity is judged inside
+     * {@link ReceiptVerifier#verifyReceiptCore}, which takes no time input.
+     */
+    private VerifyReceiptResult verify(@Nullable String receiptData, Instant at) {
         try {
-            return MAPPER.writeValueAsString(verifyReceipt(requestBody));
-        } catch (JsonProcessingException e) {
-            return "{\"status\":" + STATUS_INTERNAL + "}";
+            if (receiptData == null || receiptData.isEmpty()) {
+                return VerifyReceiptResult.failed(environment, Reason.MALFORMED_REQUEST, at);
+            }
+            // Decoding happens before verifyReceiptCore could apply its own
+            // cap, so the cap is applied to the transport string here: the
+            // same string and the same limit ReceiptVerifier.verify(String)
+            // would have measured, and the same reason it throws.
+            if (receiptData.length() > ReceiptVerifier.MAX_RECEIPT_BYTES) {
+                return VerifyReceiptResult.failed(environment, Reason.INVALID_RECEIPT_FORMAT, at);
+            }
+            byte[] der = ReceiptBase64.decode(receiptData);
+            // The primitive itself, not a ReceiptVerifier built around a
+            // wildcard bundle id: like Apple's endpoint, no bundle-id
+            // claim is checked here (callers compare receipt.bundle_id).
+            AppReceipt receipt = ReceiptVerifier.verifyReceiptCore(der, trustedRoots);
+            return VerifyReceiptResult.verified(environment, receipt, at);
+        } catch (VerificationException e) {
+            return VerifyReceiptResult.failed(environment, e.reason(), at);
+        } catch (RuntimeException e) {
+            return VerifyReceiptResult.internalError(environment, e, at);
         }
-    }
-
-    private static Map<String, Object> status(int code) {
-        Map<String, Object> response = new LinkedHashMap<String, Object>();
-        response.put("status", code);
-        return response;
-    }
-
-    private static Map<String, Object> receiptJson(AppReceipt receipt, Instant requestDate) {
-        Map<String, Object> json = new LinkedHashMap<String, Object>();
-        put(json, "receipt_type", receipt.receiptType());
-        // Apple echoes attribute 1 under both names — its response reference
-        // defines adam_id as "See app_item_id" — and as JSON numbers, not as
-        // the strings the in-app integers are rendered with.
-        put(json, "adam_id", receipt.appItemId());
-        put(json, "app_item_id", receipt.appItemId());
-        put(json, "bundle_id", receipt.bundleId());
-        put(json, "application_version", receipt.appVersion());
-        put(json, "download_id", receipt.downloadId());
-        put(json, "version_external_identifier", receipt.versionExternalIdentifier());
-        put(json, "original_application_version", receipt.originalAppVersion());
-        appleDates(json, "receipt_creation_date", receipt.creationDate());
-        appleDates(json, "request_date", requestDate);
-        appleDates(json, "original_purchase_date", receipt.originalPurchaseDate());
-        appleDates(json, "expiration_date", receipt.expirationDate());
-        List<Map<String, Object>> inApp = new ArrayList<Map<String, Object>>();
-        for (InAppPurchase purchase : receipt.inAppPurchases()) {
-            inApp.add(inAppJson(purchase));
-        }
-        json.put("in_app", inApp);
-        return json;
-    }
-
-    private static Map<String, Object> inAppJson(InAppPurchase purchase) {
-        Map<String, Object> json = new LinkedHashMap<String, Object>();
-        put(json, "quantity", stringOrNull(purchase.quantity()));
-        put(json, "product_id", purchase.productId());
-        put(json, "transaction_id", purchase.transactionId());
-        put(json, "original_transaction_id", purchase.originalTransactionId());
-        appleDates(json, "purchase_date", purchase.purchaseDate());
-        appleDates(json, "original_purchase_date", purchase.originalPurchaseDate());
-        appleDates(json, "expires_date", purchase.expiresDate());
-        appleDates(json, "cancellation_date", purchase.cancellationDate());
-        put(json, "web_order_line_item_id", stringOrNull(purchase.webOrderLineItemId()));
-        if (purchase.isTrialPeriod() != null) {
-            json.put("is_trial_period", String.valueOf(purchase.isTrialPeriod() == 1L));
-        }
-        if (purchase.isInIntroOfferPeriod() != null) {
-            json.put("is_in_intro_offer_period", String.valueOf(purchase.isInIntroOfferPeriod() == 1L));
-        }
-        return json;
-    }
-
-    private static @Nullable String stringOrNull(@Nullable Long value) {
-        return value == null ? null : String.valueOf(value);
-    }
-
-    private static void put(Map<String, Object> json, String key, @Nullable Object value) {
-        if (value != null) {
-            json.put(key, value);
-        }
-    }
-
-    /** Apple's three date renderings: {@code x} (GMT), {@code x_ms}, {@code x_pst}. */
-    private static void appleDates(Map<String, Object> json, String prefix, @Nullable Instant instant) {
-        if (instant == null) {
-            return;
-        }
-        json.put(prefix, FORMAT.format(instant.atZone(GMT)) + " Etc/GMT");
-        json.put(prefix + "_ms", String.valueOf(instant.toEpochMilli()));
-        json.put(prefix + "_pst", FORMAT.format(instant.atZone(PACIFIC)) + " America/Los_Angeles");
     }
 }

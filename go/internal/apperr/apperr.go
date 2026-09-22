@@ -30,6 +30,13 @@ const (
 	ReasonStalePayload              Reason = "STALE_PAYLOAD"
 )
 
+// The two reasons only a verifyReceipt endpoint result reports. No
+// verifier returns either, so they are not in AllReasons.
+const (
+	ReasonMalformedRequest Reason = "MALFORMED_REQUEST"
+	ReasonInternalError    Reason = "INTERNAL_ERROR"
+)
+
 // AllReasons is every reason, in the order fixtures/cases.schema.json
 // lists them. Exposed so a test can assert the vocabulary is complete.
 var AllReasons = []Reason{

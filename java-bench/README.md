@@ -49,14 +49,17 @@ base64 for the string entry points. The endpoint gets a fixed `Clock`
 |---|---|
 | `core` | `ReceiptVerifier.verifyReceiptCore(der, roots)` on pre-decoded DER |
 | `verifierBase64` | `new ReceiptVerifier(roots, bundleId).verify(base64)` (verifier built in setup) |
-| `endpointMap` | `VerifyReceiptEndpoint` in `SANDBOX`, `verifyReceipt({"receipt-data": base64})`, status 0 with the full receipt |
+| `endpointMap` | `VerifyReceiptEndpoint` in `SANDBOX`, `verifyReceiptResult({"receipt-data": base64}).toResponse()`, status 0 with the full receipt |
 | `endpointJson` | the same endpoint, `verifyReceiptJson("{\"receipt-data\":\"...\"}")` |
-| `endpointWrongEnv` | the endpoint in `PRODUCTION` on the same sandbox receipt, status 21007 |
+| `endpointWrongEnv` | the endpoint in `PRODUCTION` on the same sandbox receipt, `verifyReceiptResult(...).toResponse()`, status 21007 |
+| `resultOnly` | the `SANDBOX` endpoint, `verifyReceiptResult(...)` with no rendering |
+| `retryViaResult` | the `PRODUCTION` endpoint, `verifyReceiptResult(...).toJson(Environment.SANDBOX)`: the 21007 retry without a second verification |
 | `rejectTamperedSignature` | `verifyReceiptCore` on the DER with one bit flipped in the middle of the SignerInfo signature; the `VerificationException` is caught and consumed |
 
 `@Setup` prepares every input and runs each call once, failing the run unless
 it gives the expected answer: the right bundle id and in-app count, status 0
-with every `in_app` entry rendered, status 21007, and `INVALID_SIGNATURE` for
+with every `in_app` entry rendered, status 21007, a result with status 0
+and a receipt, a Sandbox status-0 body from the production result, and `INVALID_SIGNATURE` for
 the tampered receipt (checked for both fixtures). A benchmark therefore cannot
 time a fast failure by accident.
 
@@ -200,3 +203,109 @@ count, so the scaling figures are not a per-purchase cost model. The ad hoc
 decode rows come from a separate run using reflection, which adds a little
 call overhead to that row. No GC, heap or JIT flags were tuned. Everything
 ran single-threaded, so nothing here speaks to contention.
+
+## 2026-09-22: base64 fast path
+
+`ReceiptBase64.decode` now tries `Base64.getDecoder().decode(receipt)` first
+and falls back to the tolerant parser only when the JDK decoder refuses the
+string. Every benchmark that decodes base64 got faster; `core`, which starts
+from DER, did not move.
+
+Both columns come from one session on the same machine, run back to back:
+"before" is `5e8652f` (origin/main, the code the baseline measured), "after"
+is the fast-path commit. JDK 21.0.10 (OpenJDK 64-Bit Server VM, Ubuntu build
+21.0.10+7), 4 vCPUs of an Intel(R) Xeon(R) Processor @ 2.80GHz, 15 GiB RAM.
+Same JMH settings as the baseline, plain run, no `-prof gc`. µs/op.
+
+| benchmark | fixture | before | after | change |
+|---|---|---:|---:|---:|
+| `core` | g5 | 498.1 ± 38.0 | 513.9 ± 32.0 | within error |
+| `core` | legacy | 3,796.5 ± 183.5 | 3,743.5 ± 184.8 | within error |
+| `verifierBase64` | g5 | 689.5 ± 34.6 | 545.8 ± 36.4 | −143.7 (−20.8%) |
+| `verifierBase64` | legacy | 5,264.3 ± 210.7 | 4,219.1 ± 364.9 | −1,045.2 (−19.9%) |
+| `endpointMap` | g5 | 711.6 ± 47.1 | 581.7 ± 55.8 | −129.9 (−18.3%) |
+| `endpointMap` | legacy | 5,935.9 ± 241.9 | 4,634.9 ± 220.2 | −1,301.0 (−21.9%) |
+| `endpointJson` | g5 | 783.6 ± 60.0 | 593.7 ± 57.7 | −189.9 (−24.2%) |
+| `endpointJson` | legacy | 7,649.8 ± 483.7 | 5,960.8 ± 401.3 | −1,689.0 (−22.1%) |
+| `endpointWrongEnv` | g5 | 702.0 ± 41.6 | 550.3 ± 39.5 | −151.7 (−21.6%) |
+| `endpointWrongEnv` | legacy | 5,299.6 ± 255.1 | 4,092.9 ± 244.9 | −1,206.7 (−22.8%) |
+
+**What decoding costs now.** `verifierBase64` minus `core` fell from
+689.5 − 498.1 = 191.4 to 545.8 − 513.9 = 31.9 µs (g5) and from
+5,264.3 − 3,796.5 = 1,467.8 to 4,219.1 − 3,743.5 = 475.6 µs (legacy). The
+g5 gap is now in the range of the JDK decoder's own 2.9 µs plus noise. The
+legacy gap is larger than the JDK decoder's 49.3 µs, but it sits inside the
+combined error of the two rows (± 365 and ± 185), so this run cannot say
+whether any of it is real.
+
+**Why the answers cannot change.** The JDK's strict decoder accepts exactly
+the strings made of `[A-Za-z0-9+/]` whose data length is not congruent to 1
+mod 4, followed by either no padding or exactly the canonical `=` run, with
+nothing after it. The empty string is the one such input the contract
+rejects, and `decode` refuses it (and whitespace-only strings) before the
+fast path. Every other string the JDK accepts passes each rule of the
+tolerant parser: there is nothing to strip, one alphabet, only `=` after the
+padding, a length that is not 1 mod 4, and a padding count that is zero or
+correct. The tolerant parser then hands the JDK decoder the same data with
+canonical padding, which decodes to the same bytes. Anything the JDK refuses
+falls through to the tolerant parser unchanged, so every rejection keeps its
+reason and message. `ReceiptBase64FastPathTest` checks this on 20,000 seeded
+inputs plus hand-picked edges, comparing `decode` with the tolerant path
+alone.
+
+## 2026-09-22: `VerifyReceiptResult`
+
+The endpoint benchmarks moved to `verifyReceiptResult`, and two were added:
+`resultOnly` (verification with no rendering) and `retryViaResult` (a
+production endpoint's result re-rendered for Sandbox, the 21007 retry
+without a second verification).
+
+"Before" is `5e8652f` (origin/main, the old `verifyReceipt(Map)` API),
+"after" is the `VerifyReceiptResult` commit. Both ran in one session on the
+same machine: JDK 21.0.10 (OpenJDK 64-Bit Server VM, Ubuntu build
+21.0.10+7), 4 vCPUs of an Intel(R) Xeon(R) Processor @ 2.80GHz, 15 GiB RAM.
+Same JMH settings as the baseline, plain run, no `-prof gc`. µs/op. Both
+runs predate the base64 fast path above, so decoding costs what it did in
+the baseline.
+
+| benchmark | fixture | before | after |
+|---|---|---:|---:|
+| `core` | g5 | 498.1 ± 38.0 | 509.0 ± 30.5 |
+| `core` | legacy | 3,796.5 ± 183.5 | 3,825.3 ± 174.7 |
+| `endpointMap` | g5 | 711.6 ± 47.1 | 716.7 ± 38.9 |
+| `endpointMap` | legacy | 5,935.9 ± 241.9 | 6,023.0 ± 378.7 |
+| `endpointJson` | g5 | 783.6 ± 60.0 | 780.7 ± 77.6 |
+| `endpointJson` | legacy | 7,649.8 ± 483.7 | 7,349.0 ± 392.0 |
+| `endpointWrongEnv` | g5 | 702.0 ± 41.6 | 680.9 ± 22.6 |
+| `endpointWrongEnv` | legacy | 5,299.6 ± 255.1 | 5,523.6 ± 374.3 |
+| `resultOnly` | g5 | | 701.9 ± 49.7 |
+| `resultOnly` | legacy | | 5,271.1 ± 176.7 |
+| `retryViaResult` | g5 | | 737.4 ± 55.4 |
+| `retryViaResult` | legacy | | 6,954.2 ± 402.3 |
+
+**The existing entry points did not move.** Every before/after pair above is
+within its combined error. Building the result and rendering it later costs
+nothing measurable against rendering inline.
+
+**`resultOnly` costs what `endpointWrongEnv` did**: 701.9 against 702.0
+(g5) and 5,271.1 against 5,299.6 (legacy). Both run the decode and
+`verifyReceiptCore` and render nothing, which is the expected match.
+
+**What the 21007 retry costs now.** Before, a sandbox receipt sent to
+production first had to be verified twice. Like for like against
+`retryViaResult`, which ends in JSON:
+
+| path | g5 | legacy |
+|---|---:|---:|
+| before: `endpointWrongEnv` + `endpointJson` | 702.0 + 783.6 = 1,485.6 | 5,299.6 + 7,649.8 = 12,949.4 |
+| after: `retryViaResult` | 737.4 | 6,954.2 |
+| saved | 748.2 (50.4%) | 5,995.2 (46.3%) |
+
+The before row adds two separately measured means and the JSON request
+parse, which `retryViaResult` does not do (it takes the map), so the saving
+is slightly overstated; the JSON parse was measured at 60.6 (g5) and
+1,778.3 µs (legacy) for parse and write together in the baseline breakdown.
+`retryViaResult` minus `resultOnly`, 35.5 (g5) and 1,683.1 µs (legacy), is
+the price of rendering the Sandbox body as JSON.
+
+The caveats of the baseline apply: one run pair on a shared cloud VM.
