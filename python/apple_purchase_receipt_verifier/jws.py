@@ -9,7 +9,7 @@ import json
 import re
 import time
 from collections.abc import Callable, Iterable
-from typing import Any
+from typing import Any, ClassVar
 
 from cryptography import x509
 from cryptography.exceptions import InvalidSignature
@@ -29,6 +29,35 @@ INTERMEDIATE_OID = x509.ObjectIdentifier("1.2.840.113635.100.6.2.1")
 #: RFC 7515 section 2 compact-JWS segments are unpadded canonical base64url:
 #: this alphabet only, no "=" padding.
 _B64URL_RE = re.compile(r"^[A-Za-z0-9_-]*$")
+
+#: How deep the header/payload JSON may nest; the Java port's number. Both
+#: segments are parsed before the signature is checked, so this bound guards
+#: attacker-chosen bytes. ``json.loads`` has no depth option of its own and
+#: recurses once per level, so the depth is measured before it runs. Apple's
+#: payloads are flat objects, so 64 is far above anything real.
+_MAX_JSON_NESTING_DEPTH = 64
+#: A JSON string literal, escapes included. Brackets inside one are data, not
+#: nesting.
+_JSON_STRING_RE = re.compile(r'"[^"\\]*(?:\\.[^"\\]*)*"', re.DOTALL)
+_JSON_BRACKET_RE = re.compile(r"[\[\]{}]")
+
+
+def _nesting_exceeds_limit(raw: bytes) -> bool:
+    """Whether the decoded segment ``raw`` opens more than
+    :data:`_MAX_JSON_NESTING_DEPTH` arrays and objects at once, outside
+    string literals. Decoding errors are replaced rather than raised: an
+    invalid encoding is rejected by ``json.loads`` right after, and this
+    check must never fail differently than that does."""
+    text = raw.decode("utf-8", "replace")
+    depth = 0
+    for bracket in _JSON_BRACKET_RE.findall(_JSON_STRING_RE.sub("", text)):
+        if bracket in "[{":
+            depth += 1
+            if depth > _MAX_JSON_NESTING_DEPTH:
+                return True
+        else:
+            depth -= 1
+    return False
 
 
 def _b64url(segment: str, what: str) -> bytes:
@@ -54,8 +83,13 @@ def _b64url(segment: str, what: str) -> bytes:
 
 
 def _json_segment(segment: str, what: str) -> "dict[str, Any]":
+    raw = _b64url(segment, what)
+    # Before json.loads, which recurses once per nesting level and has no
+    # depth option of its own to stop it.
+    if _nesting_exceeds_limit(raw):
+        raise VerificationError(Reason.INVALID_JWS_FORMAT, f"{what} is nested too deeply")
     try:
-        parsed = json.loads(_b64url(segment, what))
+        parsed = json.loads(raw)
     except (ValueError, UnicodeDecodeError) as e:
         raise VerificationError(Reason.INVALID_JWS_FORMAT, f"{what} is not valid JSON") from e
     if not isinstance(parsed, dict):
@@ -120,6 +154,18 @@ class JwsVerifier:
         ``signedDate`` (PLAN.md §2.1 step 4) and never moves with the clock.
     """
 
+    #: Ceiling on the compact JWS this verifier will look at, in characters,
+    #: checked before the input is split or any segment is decoded: base64url
+    #: decoding produces three quarters of a segment again as bytes, and
+    #: ``json.loads`` holds the whole parsed header and payload, none of it
+    #: behind a signature check. The number is the Java and PHP ports'. Every
+    #: JWS in the shared corpus, Apple's own mock notification data included,
+    #: is under 2.5 KB, so 256 KiB is a hundredfold headroom over anything
+    #: Apple has ever signed. A compact JWS is base64url and dots, so its
+    #: characters and its bytes are the same count for any input that could
+    #: verify.
+    MAX_JWS_BYTES: ClassVar[int] = 262144
+
     def __init__(
         self,
         trusted_roots: Iterable[Any],
@@ -178,6 +224,13 @@ class JwsVerifier:
     def _verify_signature(self, jws: str) -> dict[str, Any]:
         if not isinstance(jws, str):
             raise VerificationError(Reason.INVALID_JWS_FORMAT, "jws must be a string")
+        # Before the split, so nothing downstream allocates in proportion to
+        # an input this verifier has already decided not to look at.
+        if len(jws) > JwsVerifier.MAX_JWS_BYTES:
+            raise VerificationError(
+                Reason.INVALID_JWS_FORMAT,
+                f"jws exceeds the maximum accepted size of {JwsVerifier.MAX_JWS_BYTES} characters",
+            )
         parts = jws.split(".")
         if len(parts) != 3:
             raise VerificationError(
