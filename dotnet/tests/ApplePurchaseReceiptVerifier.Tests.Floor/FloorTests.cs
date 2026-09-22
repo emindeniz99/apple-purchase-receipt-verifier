@@ -99,8 +99,10 @@ public class FloorTests
     [Fact]
     public void TheReasonVocabularyIsIntactOnTheFloorAsset()
     {
-        Assert.Equal(11, Enum.GetValues(typeof(VerificationReason)).Length);
+        // Eleven verifier reasons plus the two only a VerifyReceiptResult carries.
+        Assert.Equal(13, Enum.GetValues(typeof(VerificationReason)).Length);
         Assert.Equal("STALE_PAYLOAD", VerificationReasonCodes.ToCode(VerificationReason.StalePayload));
+        Assert.Equal("INTERNAL_ERROR", VerificationReasonCodes.ToCode(VerificationReason.InternalError));
     }
 
     [Fact]

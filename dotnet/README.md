@@ -146,33 +146,79 @@ by calling Apple.
 var endpoint = new VerifyReceiptEndpoint(
     AppleRootCertificates.ReceiptRoots(), AppleEnvironment.Production);
 
-// From a parsed body…
-IReadOnlyDictionary<string, object?> response = endpoint.VerifyReceipt(body);
+VerifyReceiptResult result = endpoint.VerifyReceiptResult(body);   // a parsed body, or the raw JSON string
+IReadOnlyDictionary<string, object?> response = result.ToResponse(); // Apple's body as a map
+string json = result.ToJson();                                      // Apple's body as JSON
 
-// …or straight from the wire.
-string json = endpoint.VerifyReceiptJson(requestJson);
+string json2 = endpoint.VerifyReceiptJson(requestJson);          // same as VerifyReceiptResult(requestJson).ToJson()
+VerifyReceiptResult bare = endpoint.VerifyReceiptData(base64);   // receipt-data alone, no envelope
 ```
 
-It never throws: the Apple status code is a field of the answer.
+No endpoint method throws: the Apple status code is a field of the answer.
 
-| Condition | `status` |
-|---|---|
-| body is not an object, or `receipt-data` is missing / not a string / empty / not base64 | `21002` |
-| the receipt is malformed | `21002` |
-| the receipt could not be authenticated | `21003` |
-| an internal error | `21009` |
-| a Production endpoint, and `receiptType ∉ {Production, ProductionVPP}` | `21007` |
-| a Sandbox endpoint, and `receiptType ∈ {Production, ProductionVPP}` | `21008` |
-| otherwise | `0`, plus `environment` and `receipt` |
+| Condition | `Status` | `FailureReason` |
+|---|---|---|
+| body is not a JSON object, or `receipt-data` is missing, empty or not a string | `21002` | `MalformedRequest` |
+| `receipt-data` is not base64, or does not decode to a receipt | `21002` | `InvalidReceiptFormat` |
+| the receipt could not be authenticated | `21003` | `InvalidChain`, `InvalidSignature`, other certificate reasons |
+| an unexpected exception (including a throwing `IClock` or request dictionary, or a disposed endpoint) | `21009` | `InternalError`, with the exception in `FailureCause` |
+| a Production endpoint, and `receiptType ∉ {Production, ProductionVPP}` | `21007` | none: `Receipt` is set |
+| a Sandbox endpoint, and `receiptType ∈ {Production, ProductionVPP}` | `21008` | none: `Receipt` is set |
+| otherwise | `0`, plus `environment` and `receipt` | none: `Receipt` is set |
+
+A `VerifyReceiptResult` is one verification. `Status` is the answer for the
+endpoint's own environment. `Receipt` is the verified `AppReceipt` whenever the
+receipt bytes verified, 21007 and 21008 included, and `FailureReason` says why
+there is no receipt; exactly one of the two is non-null. `IsVerified` is `true`
+exactly when `Receipt` is non-null, and the compiler knows it
+(`[MemberNotNullWhen]`), so `if (result.IsVerified)` gives a non-null
+`result.Receipt`. That makes `IsVerified` **not** the same check as
+`Status == 0`: `Status == 0` asks whether this endpoint's own environment
+accepts the receipt, `IsVerified` asks whether the receipt verified at all. The
+response is rendered only when `ToResponse()` or `ToJson()` is called, as a new
+map each time. The result is immutable and thread-safe, and only the endpoint
+can create one.
+
+**Retrying in the other environment costs no second verification.**
+`ToResponse(AppleEnvironment)` and `ToJson(AppleEnvironment)` render what an
+endpoint of that environment would answer, recomputing the status from the
+receipt's own type each time:
+
+| receipt | on `Production` | on `Sandbox` |
+|---|---|---|
+| `Production`, `ProductionVPP` | 0 | 21008 |
+| any other type, or none | 21007 | 0 |
+| failed verification | its own status | its own status |
+
+```csharp
+VerifyReceiptResult result = production.VerifyReceiptResult(requestJson);
+string json = result.Status == VerifyReceiptEndpoint.StatusSandboxReceiptOnProduction
+    ? result.ToJson(AppleEnvironment.Sandbox)
+    : result.ToJson();
+```
+
+A sandbox receipt never renders as a production 0, whichever endpoint verified
+it. 21007 and 21008 bodies carry the status alone, as Apple's do. Any
+environment other than `Production` or `Sandbox` throws `ArgumentException`,
+the same refusal as the constructor's.
+
+**`request_date`.** Every method takes an optional `DateTimeOffset? now`,
+which becomes `request_date` in place of the endpoint's clock. Without one the
+clock is read once, when the call is made, and `RequestDate` returns that
+instant (in UTC). It reaches `request_date` and nothing else: certificate
+validity never sees it (see [Time](#time)).
+
+`VerifyReceiptResult(null)` does not compile, because both the dictionary and
+the string overload match; cast the `null` to the one you mean.
 
 Environment routing fails closed: only `Production` and `ProductionVPP` count
 as production, so `ProductionVPPSandbox`, `Xcode` and a missing attribute all
 route as non-production. Like Apple's endpoint, this does not check the bundle
-id — compare `receipt.bundle_id` yourself. `password` and
-`exclude-old-transactions` are accepted for wire compatibility and never read.
-Fields that only exist in Apple's server-side subscription database
-(`latest_receipt_info`, `pending_renewal_info`) are out of scope; see
-`COMPARISON.md` in the repository.
+id: compare `result.Receipt.BundleId` (or `receipt.bundle_id` in the body)
+yourself. `password` and `exclude-old-transactions` are accepted for wire
+compatibility and never read. Fields that only exist in Apple's server-side
+subscription database (`latest_receipt_info`, `pending_renewal_info`) are out
+of scope; see `COMPARISON.md` in the repository.
 
 ## Error vocabulary
 
@@ -194,7 +240,12 @@ One exception type, `VerificationException`. Switch on `.Reason`; report
 | `StalePayload` | `STALE_PAYLOAD` | the payload is older than `maxSignedAge` |
 
 The vocabulary is closed. Adding a twelfth reason is a change to every port and
-to the shared schema in one pull request.
+to the shared schema in one pull request. `VerificationReason` also carries
+`MalformedRequest` (`MALFORMED_REQUEST`) and `InternalError`
+(`INTERNAL_ERROR`), but only as
+[`VerifyReceiptResult.FailureReason`](#the-verifyreceipt-compatible-endpoint)
+values: no `VerificationException` is ever thrown with either, so a `switch`
+over a caught exception's `Reason` never sees them.
 
 **Misconfiguration is not a verification verdict.** Empty trust anchors, an
 empty bundle id, an empty accepted-environment set, or an endpoint environment

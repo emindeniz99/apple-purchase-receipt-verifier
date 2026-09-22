@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Security.Cryptography.X509Certificates;
 using ApplePurchaseReceiptVerifier.Internal;
+using Result = ApplePurchaseReceiptVerifier.Receipt.VerifyReceiptResult;
 
 namespace ApplePurchaseReceiptVerifier.Receipt
 {
@@ -18,8 +18,9 @@ namespace ApplePurchaseReceiptVerifier.Receipt
     /// <c>latest_receipt_info</c>) are documented in COMPARISON.md.</para>
     /// <para>Like Apple's endpoint, this does <strong>not</strong> check the
     /// bundle id — the caller compares <c>receipt.bundle_id</c>, exactly as
-    /// with the real endpoint. It never throws: a failure is reported through
-    /// <c>status</c>.</para>
+    /// with the real endpoint. It never throws: every call returns a
+    /// <see cref="Result"/>, and a failure is reported through its
+    /// status and failure reason.</para>
     /// </remarks>
     public sealed class VerifyReceiptEndpoint : IDisposable
     {
@@ -40,9 +41,6 @@ namespace ApplePurchaseReceiptVerifier.Receipt
 
         /// <summary>An internal error.</summary>
         public const int StatusInternal = 21009;
-
-        private const string DateFormat = "yyyy-MM-dd HH:mm:ss";
-        private const string MalformedJson = "{\"status\":21002}";
 
         private readonly List<X509Certificate2> _anchors;
         private readonly AppleEnvironment _environment;
@@ -87,121 +85,126 @@ namespace ApplePurchaseReceiptVerifier.Receipt
         }
 
         /// <summary>
-        /// Handles one <c>verifyReceipt</c> request body. Never throws — like
-        /// the real endpoint, failures are reported through <c>status</c>.
+        /// Handles one <c>verifyReceipt</c> request body. Never throws: like
+        /// the real endpoint, a failure is reported through the result's
+        /// status and <see cref="ApplePurchaseReceiptVerifier.Receipt.VerifyReceiptResult.FailureReason"/>.
         /// </summary>
+        /// <param name="requestBody">The parsed request body.</param>
+        /// <param name="now">
+        /// The instant to render as <c>request_date</c> instead of reading
+        /// the endpoint's clock. It reaches <c>request_date</c> and nothing
+        /// else: certificate validity never sees it.
+        /// </param>
         /// <remarks>
-        /// <c>password</c> and <c>exclude-old-transactions</c> are accepted for
-        /// wire compatibility and never read.
+        /// <para><c>password</c> and <c>exclude-old-transactions</c> are
+        /// accepted for wire compatibility and never read.</para>
+        /// <para>A literal <see langword="null"/> argument needs a cast to pick
+        /// this overload over the <see cref="string"/> one.</para>
         /// </remarks>
-        public IReadOnlyDictionary<string, object?> VerifyReceipt(
-            IReadOnlyDictionary<string, object?>? requestBody)
+        public VerifyReceiptResult VerifyReceiptResult(
+            IReadOnlyDictionary<string, object?>? requestBody, DateTimeOffset? now = null)
         {
-            if (_disposed)
+            if (Start(now, out DateTimeOffset at) is Result refused)
             {
-                return Status(StatusInternal);
+                return refused;
             }
 
-            if (requestBody is null
-                || !requestBody.TryGetValue("receipt-data", out object? receiptData)
-                || receiptData is not string base64
-                || base64.Length == 0)
-            {
-                return Status(StatusMalformed);
-            }
-
-            byte[] der;
+            object? receiptData;
             try
             {
-                der = ReceiptVerifier.DecodeBase64(base64);
+                if (requestBody is null || !requestBody.TryGetValue("receipt-data", out receiptData))
+                {
+                    return Result.Failed(_environment, _pacific, VerificationReason.MalformedRequest, at);
+                }
             }
-            catch (VerificationException)
+            catch (Exception e)
             {
-                return Status(StatusMalformed);
+                // A caller's dictionary implementation, not a verdict.
+                return Result.InternalError(_environment, _pacific, e, at);
             }
 
+            if (receiptData is not string base64)
+            {
+                return Result.Failed(_environment, _pacific, VerificationReason.MalformedRequest, at);
+            }
+
+            return Verify(base64, at);
+        }
+
+        /// <summary>
+        /// Handles one request body in its raw wire form, the JSON text an HTTP
+        /// framework hands over. Never throws.
+        /// </summary>
+        /// <param name="requestJson">The raw JSON request body.</param>
+        /// <param name="now">
+        /// The instant to render as <c>request_date</c> instead of reading
+        /// the endpoint's clock; it reaches nothing else.
+        /// </param>
+        /// <remarks>
+        /// A body that is not a JSON object (unparseable, <c>null</c>, an array,
+        /// a scalar) fails with <see cref="VerificationReason.MalformedRequest"/>,
+        /// status 21002. Apple has no status code for "that wasn't JSON"; 21002
+        /// is the closest, and it is what a JSON object without usable
+        /// <c>receipt-data</c> gets anyway.
+        /// </remarks>
+        public VerifyReceiptResult VerifyReceiptResult(string? requestJson, DateTimeOffset? now = null)
+        {
+            if (Start(now, out DateTimeOffset at) is Result refused)
+            {
+                return refused;
+            }
+
+            OrderedMap body;
             try
             {
-                // The primitive itself, not a ReceiptVerifier built around a
-                // wildcard bundle id: like Apple's endpoint, no bundle-id claim
-                // is checked here.
-                AppReceipt receipt = ReceiptVerifier.VerifyReceiptCore(der, _anchors);
-
-                // 21007/21008 routing from the receipt_type attribute, failing
-                // closed: production is exactly "Production" and
-                // "ProductionVPP". Everything else — "ProductionSandbox",
-                // "ProductionVPPSandbox", "Xcode", or a missing attribute —
-                // routes as non-production. ("Xcode" is listed for completeness:
-                // an Xcode receipt is not Apple-signed, so it fails above with
-                // 21003 and never reaches this branch.)
-                bool production = string.Equals(receipt.ReceiptType, "Production", StringComparison.Ordinal)
-                    || string.Equals(receipt.ReceiptType, "ProductionVPP", StringComparison.Ordinal);
-                if (_environment == AppleEnvironment.Production && !production)
-                {
-                    return Status(StatusSandboxReceiptOnProduction);
-                }
-
-                if (_environment == AppleEnvironment.Sandbox && production)
-                {
-                    return Status(StatusProductionReceiptOnSandbox);
-                }
-
-                // Response rendering stays inside the guard: date formatting
-                // touches the time-zone database, and a host without one must
-                // answer 21009 rather than throw out of a method documented as
-                // never throwing.
-                OrderedMap response = new OrderedMap();
-                response.Set("status", StatusOk);
-                response.Set("environment", AppleEnvironments.ToValue(_environment));
-                response.Set("receipt", ReceiptJson(receipt, _clock.UtcNow));
-                return response;
-            }
-            catch (VerificationException e)
-            {
-                return Status(e.Reason == VerificationReason.InvalidReceiptFormat
-                    ? StatusMalformed : StatusNotAuthenticated);
+                body = Json.ParseObject(requestJson!);
             }
             catch (Exception)
             {
-                return Status(StatusInternal);
+                // Categorical, like every other boundary here: the reader's
+                // failure surface is not something a caller should have to
+                // know, and a body it cannot read has always answered 21002.
+                return Result.Failed(_environment, _pacific, VerificationReason.MalformedRequest, at);
             }
+
+            return VerifyReceiptResult(body, at);
+        }
+
+        /// <summary>
+        /// Verifies a bare base64 receipt, the value a request body would carry
+        /// as <c>receipt-data</c>, with no envelope around it. Never throws; a
+        /// null or empty string fails with
+        /// <see cref="VerificationReason.MalformedRequest"/>, as a missing
+        /// <c>receipt-data</c> does.
+        /// </summary>
+        /// <param name="base64">The receipt as the client sent it.</param>
+        /// <param name="now">
+        /// The instant to render as <c>request_date</c> instead of reading
+        /// the endpoint's clock; it reaches nothing else.
+        /// </param>
+        public VerifyReceiptResult VerifyReceiptData(string? base64, DateTimeOffset? now = null)
+        {
+            if (Start(now, out DateTimeOffset at) is Result refused)
+            {
+                return refused;
+            }
+
+            return Verify(base64, at);
         }
 
         /// <summary>
         /// Handles one request in its raw wire form: the JSON request body in,
         /// the JSON response body out, so an HTTP framework's body can be piped
-        /// straight through without a DTO in between.
+        /// straight through without a DTO in between. The same as
+        /// <c>VerifyReceiptResult(requestJson).ToJson()</c>.
         /// </summary>
         /// <remarks>
-        /// A body that is not a JSON object (unparseable, <c>null</c>, an array,
-        /// a scalar) answers <c>{"status":21002}</c>. Apple has no status code
-        /// for "that wasn't JSON"; 21002 is the closest, and it is what a JSON
-        /// object without usable <c>receipt-data</c> gets anyway. Output is
-        /// deterministic: equal inputs serialize to equal bytes.
+        /// Never throws. Output is deterministic: equal inputs serialize to
+        /// equal bytes.
         /// </remarks>
         public string VerifyReceiptJson(string requestJson)
         {
-            OrderedMap body;
-            try
-            {
-                body = Json.ParseObject(requestJson);
-            }
-            catch (Exception)
-            {
-                // Categorical, like every other boundary here: this method is
-                // documented as never throwing, and the reader's failure
-                // surface is not something a caller should have to know.
-                return MalformedJson;
-            }
-
-            try
-            {
-                return Json.Write(VerifyReceipt(body));
-            }
-            catch (Exception)
-            {
-                return "{\"status\":" + StatusInternal.ToString(CultureInfo.InvariantCulture) + "}";
-            }
+            return VerifyReceiptResult(requestJson).ToJson();
         }
 
         /// <summary>Releases the endpoint's private copies of the trust anchors.</summary>
@@ -243,92 +246,65 @@ namespace ApplePurchaseReceiptVerifier.Receipt
                 + "verifyReceipt endpoint cannot render request_date_pst");
         }
 
-        private static OrderedMap Status(int code)
+        /// <summary>
+        /// Fixes the request date, reading the clock at most once, and answers
+        /// for a disposed endpoint. Returns null when the call may go on.
+        /// </summary>
+        private Result? Start(DateTimeOffset? now, out DateTimeOffset at)
         {
-            OrderedMap response = new OrderedMap();
-            response.Set("status", code);
-            return response;
-        }
-
-        private OrderedMap ReceiptJson(AppReceipt receipt, DateTimeOffset requestDate)
-        {
-            OrderedMap json = new OrderedMap();
-            json.SetIfPresent("receipt_type", receipt.ReceiptType);
-
-            // Apple echoes attribute 1 under both names — its response
-            // reference defines adam_id as "See app_item_id" — and as JSON
-            // numbers, not as the strings the in-app integers are rendered
-            // with.
-            json.SetIfPresent("adam_id", receipt.AppItemId);
-            json.SetIfPresent("app_item_id", receipt.AppItemId);
-            json.SetIfPresent("bundle_id", receipt.BundleId);
-            json.SetIfPresent("application_version", receipt.AppVersion);
-            json.SetIfPresent("download_id", receipt.DownloadId);
-            json.SetIfPresent("version_external_identifier", receipt.VersionExternalIdentifier);
-            json.SetIfPresent("original_application_version", receipt.OriginalAppVersion);
-            AppleDates(json, "receipt_creation_date", receipt.CreationDate);
-            AppleDates(json, "request_date", requestDate);
-            AppleDates(json, "original_purchase_date", receipt.OriginalPurchaseDate);
-            AppleDates(json, "expiration_date", receipt.ExpirationDate);
-
-            List<object?> inApp = new List<object?>(receipt.InAppPurchases.Count);
-            foreach (InAppPurchase purchase in receipt.InAppPurchases)
+            try
             {
-                inApp.Add(InAppJson(purchase));
+                at = (now ?? _clock.UtcNow).ToUniversalTime();
+            }
+            catch (Exception e)
+            {
+                // An injected clock that throws is a bug outside this library,
+                // answered as 21009 like any other. The result still needs a
+                // request date, and the system clock is the only other one.
+                at = SystemClock.Instance.UtcNow;
+                return Result.InternalError(_environment, _pacific, e, at);
             }
 
-            json.Set("in_app", inApp);
-            return json;
-        }
-
-        private OrderedMap InAppJson(InAppPurchase purchase)
-        {
-            OrderedMap json = new OrderedMap();
-            json.SetIfPresent("quantity", Text(purchase.Quantity));
-            json.SetIfPresent("product_id", purchase.ProductId);
-            json.SetIfPresent("transaction_id", purchase.TransactionId);
-            json.SetIfPresent("original_transaction_id", purchase.OriginalTransactionId);
-            AppleDates(json, "purchase_date", purchase.PurchaseDate);
-            AppleDates(json, "original_purchase_date", purchase.OriginalPurchaseDate);
-            AppleDates(json, "expires_date", purchase.ExpiresDate);
-            AppleDates(json, "cancellation_date", purchase.CancellationDate);
-            json.SetIfPresent("web_order_line_item_id", Text(purchase.WebOrderLineItemId));
-            if (purchase.IsTrialPeriod is long trial)
+            if (_disposed)
             {
-                json.Set("is_trial_period", trial == 1 ? "true" : "false");
+                return Result.InternalError(
+                    _environment, _pacific, new ObjectDisposedException(nameof(VerifyReceiptEndpoint)), at);
             }
 
-            if (purchase.IsInIntroOfferPeriod is long flag)
-            {
-                json.Set("is_in_intro_offer_period", flag == 1 ? "true" : "false");
-            }
-
-            return json;
+            return null;
         }
 
-        private static string? Text(long? value)
+        /// <summary>
+        /// The one verification path every entry point ends in. <paramref name="at"/>
+        /// only becomes <c>request_date</c>: certificate validity is judged
+        /// inside <see cref="ReceiptVerifier.VerifyReceiptCore"/>, which takes no
+        /// time input.
+        /// </summary>
+        private Result Verify(string? receiptData, DateTimeOffset at)
         {
-            return value is long l ? l.ToString(CultureInfo.InvariantCulture) : null;
-        }
-
-        /// <summary>Apple's three renderings of one instant: GMT, epoch millis, US Pacific.</summary>
-        private void AppleDates(OrderedMap json, string prefix, DateTimeOffset? instant)
-        {
-            if (instant is not DateTimeOffset value)
+            if (string.IsNullOrEmpty(receiptData))
             {
-                return;
+                return Result.Failed(_environment, _pacific, VerificationReason.MalformedRequest, at);
             }
 
-            DateTimeOffset utc = value.ToUniversalTime();
-            json.Set(prefix, utc.UtcDateTime.ToString(DateFormat, CultureInfo.InvariantCulture) + " Etc/GMT");
-            json.Set(
-                prefix + "_ms",
-                utc.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture));
-            json.Set(
-                prefix + "_pst",
-                TimeZoneInfo.ConvertTime(utc, _pacific).DateTime
-                    .ToString(DateFormat, CultureInfo.InvariantCulture)
-                + " America/Los_Angeles");
+            try
+            {
+                byte[] der = ReceiptVerifier.DecodeBase64(receiptData!);
+
+                // The primitive itself, not a ReceiptVerifier built around a
+                // wildcard bundle id: like Apple's endpoint, no bundle-id claim
+                // is checked here.
+                AppReceipt receipt = ReceiptVerifier.VerifyReceiptCore(der, _anchors);
+                return Result.Verified(_environment, _pacific, receipt, at);
+            }
+            catch (VerificationException e)
+            {
+                return Result.Failed(_environment, _pacific, e.Reason, at);
+            }
+            catch (Exception e)
+            {
+                return Result.InternalError(_environment, _pacific, e, at);
+            }
         }
     }
 }

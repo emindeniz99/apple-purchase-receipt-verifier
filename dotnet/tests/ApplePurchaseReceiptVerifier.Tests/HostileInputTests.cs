@@ -554,14 +554,14 @@ public class HostileInputTests
         foreach (byte[] blob in HostileBlobs(random))
         {
             IReadOnlyDictionary<string, object?> body = Body(Convert.ToBase64String(blob));
-            IReadOnlyDictionary<string, object?> response = endpoint.VerifyReceipt(body);
+            IReadOnlyDictionary<string, object?> response = endpoint.VerifyReceiptResult(body).ToResponse();
             Assert.True(response.ContainsKey("status"));
             answered++;
         }
 
         foreach (string raw in new[] { "", "!!!!", "not base64", "e30", new string('A', 10_000) })
         {
-            Assert.True(endpoint.VerifyReceipt(Body(raw)).ContainsKey("status"));
+            Assert.True(endpoint.VerifyReceiptResult(Body(raw)).ToResponse().ContainsKey("status"));
             answered++;
         }
 

@@ -9,8 +9,13 @@ namespace ApplePurchaseReceiptVerifier
     /// which is what <c>fixtures/cases.schema.json</c> pins.
     /// </summary>
     /// <remarks>
-    /// Members are PascalCase because that is the .NET naming rule; the
-    /// SCREAMING_SNAKE token lives in <see cref="VerificationReasonCodes"/>.
+    /// <para>Members are PascalCase because that is the .NET naming rule; the
+    /// SCREAMING_SNAKE token lives in <see cref="VerificationReasonCodes"/>.</para>
+    /// <para>The first eleven are the verifier vocabulary the schema pins.
+    /// <see cref="MalformedRequest"/> and <see cref="InternalError"/> appear
+    /// only on a <see cref="Receipt.VerifyReceiptResult"/>: no
+    /// <see cref="VerificationException"/> is ever thrown with either, so a
+    /// <c>switch</c> over a caught exception's reason never sees them.</para>
     /// </remarks>
     public enum VerificationReason
     {
@@ -46,6 +51,24 @@ namespace ApplePurchaseReceiptVerifier
 
         /// <summary>The payload is older than the verifier's configured max signed age.</summary>
         StalePayload,
+
+        /// <summary>
+        /// The verifyReceipt request envelope is unusable: the body is not a
+        /// JSON object, or <c>receipt-data</c> is missing, empty or not a
+        /// string. Reported only by
+        /// <see cref="Receipt.VerifyReceiptResult.FailureReason"/>; never
+        /// thrown.
+        /// </summary>
+        MalformedRequest,
+
+        /// <summary>
+        /// An unexpected exception inside the verifyReceipt endpoint, answered
+        /// as status 21009. Reported only by
+        /// <see cref="Receipt.VerifyReceiptResult.FailureReason"/>, with the
+        /// exception in <see cref="Receipt.VerifyReceiptResult.FailureCause"/>;
+        /// never thrown.
+        /// </summary>
+        InternalError,
     }
 
     /// <summary>
@@ -79,6 +102,8 @@ namespace ApplePurchaseReceiptVerifier
                 case VerificationReason.InvalidReceiptFormat: return "INVALID_RECEIPT_FORMAT";
                 case VerificationReason.DeviceHashMismatch: return "DEVICE_HASH_MISMATCH";
                 case VerificationReason.StalePayload: return "STALE_PAYLOAD";
+                case VerificationReason.MalformedRequest: return "MALFORMED_REQUEST";
+                case VerificationReason.InternalError: return "INTERNAL_ERROR";
                 default:
                     throw new ArgumentOutOfRangeException(nameof(reason), reason,
                         "no canonical code for this reason");
@@ -86,7 +111,7 @@ namespace ApplePurchaseReceiptVerifier
         }
 
         /// <summary>Parses a canonical token back into a <see cref="VerificationReason"/>.</summary>
-        /// <returns><see langword="true"/> when <paramref name="code"/> is one of the eleven tokens.</returns>
+        /// <returns><see langword="true"/> when <paramref name="code"/> is one of the thirteen tokens.</returns>
         public static bool TryParse(string? code, out VerificationReason reason)
         {
             switch (code)
@@ -102,6 +127,8 @@ namespace ApplePurchaseReceiptVerifier
                 case "INVALID_RECEIPT_FORMAT": reason = VerificationReason.InvalidReceiptFormat; return true;
                 case "DEVICE_HASH_MISMATCH": reason = VerificationReason.DeviceHashMismatch; return true;
                 case "STALE_PAYLOAD": reason = VerificationReason.StalePayload; return true;
+                case "MALFORMED_REQUEST": reason = VerificationReason.MalformedRequest; return true;
+                case "INTERNAL_ERROR": reason = VerificationReason.InternalError; return true;
                 default: reason = default; return false;
             }
         }
