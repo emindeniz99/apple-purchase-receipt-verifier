@@ -2,6 +2,7 @@
 
 require_relative "helper"
 require_relative "test_pki"
+require "rbconfig"
 require "tempfile"
 
 # Hostile and malformed input. The load-bearing claim is not just "it is
@@ -38,19 +39,30 @@ class HostileInputTest < Minitest::Test
   # not a StandardError and walks straight through `rescue => e`. The bounded
   # scanner is what keeps those bytes away from it. This asserts both halves:
   # the scanner rejects, and OpenSSL would not have.
+  #
+  # The OpenSSL half runs in a child interpreter. The C recursion sometimes
+  # overflows while the GC is marking, and Ruby then aborts the whole process
+  # with "[BUG] system stack overflow during GC" instead of raising — seen on
+  # ruby 3.4.10 in CI, on a run whose only change was two Markdown files. In
+  # a child that abort is just another way of not decoding, which is the
+  # premise; in the suite's own process it was a core dump.
   def test_indefinite_length_nesting_bomb
     bomb = "\x30\x80".b * 500_000
     milliseconds = elapsed { assert_format_error(bomb) }
     assert_operator milliseconds, :<, 250, "bomb took #{milliseconds.round(2)}ms"
 
-    raised = begin
-      OpenSSL::ASN1.decode(bomb)
-      nil
-    rescue Exception => e # rubocop:disable Lint/RescueException
-      e.class
-    end
-    assert_equal SystemStackError, raised,
-                 "the premise of the bounded scanner no longer holds on this Ruby"
+    probe = <<~RUBY
+      bomb = "\\x30\\x80".b * 500_000
+      begin
+        OpenSSL::ASN1.decode(bomb)
+        puts "DECODED"
+      rescue SystemStackError
+        puts "SystemStackError"
+      end
+    RUBY
+    output = IO.popen([RbConfig.ruby, "-ropenssl", "-e", probe], err: File::NULL, &:read)
+    refute_includes output, "DECODED",
+                    "the premise of the bounded scanner no longer holds on this Ruby"
   end
 
   def test_definite_length_nesting_bomb
