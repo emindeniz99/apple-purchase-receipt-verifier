@@ -71,6 +71,49 @@ func decodeBase64(text string, limit int) []byte {
 	if limit < 0 {
 		limit = 0
 	}
+	if decoded := decodeBase64Fast(text, limit); decoded != nil {
+		return decoded
+	}
+	return decodeBase64Tolerant(text, limit)
+}
+
+// decodeBase64Fast handles the common case, canonical padded standard
+// base64, with the standard library's decoder alone. nil hands the
+// string to decodeBase64Tolerant, which then gives the answer, so a
+// rejection here never changes a verdict.
+//
+// base64.StdEncoding accepts [A-Za-z0-9+/] data followed by exactly the
+// canonical padding, nothing after it, and skips CR and LF anywhere.
+// decodeBase64Tolerant accepts every such string too (it strips CR and
+// LF, sees one alphabet, the canonical padding and a legal length) and
+// decodes it to the same bytes, as neither checks the trailing bits.
+// Two cases are excluded before the call so that the subset holds:
+//
+//   - a string whose decoded size could exceed limit, since the tolerant
+//     path answers that with a truncated prefix. DecodedLen is an upper
+//     bound on the output, so below it both paths decode everything;
+//   - an empty result, which the standard decoder returns for "" and for
+//     a string of only CR and LF, and which the tolerant path rejects.
+//
+// base64.RawStdEncoding is not tried: it covers only unpadded input,
+// which Foundation does not emit by default, and a second attempt would
+// cost every string that falls through. Unpadded input takes the
+// tolerant path. encoding_internal_test.go holds this subset property to
+// a seeded differential run on every Go version in the CI matrix.
+func decodeBase64Fast(text string, limit int) []byte {
+	if base64.StdEncoding.DecodedLen(len(text)) > limit {
+		return nil
+	}
+	decoded, err := base64.StdEncoding.DecodeString(text)
+	if err != nil || len(decoded) == 0 {
+		return nil
+	}
+	return decoded
+}
+
+// decodeBase64Tolerant is the full decoder described above decodeBase64,
+// without the fast path. limit must not be negative.
+func decodeBase64Tolerant(text string, limit int) []byte {
 	// One past the limit is the most this can usefully produce. Clamping
 	// the capacity this way also keeps len(text)*3/4 from overflowing the
 	// slice length on a 32-bit build.
