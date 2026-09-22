@@ -207,6 +207,59 @@ namespace ApplePurchaseReceiptVerifier.Receipt
                     VerificationReason.InvalidReceiptFormat, "receipt is null");
             }
 
+            return DecodeBase64Fast(base64Receipt) ?? DecodeBase64Tolerant(base64Receipt);
+        }
+
+        /// <summary>
+        /// The fast path for the common input, standard base64 as
+        /// <see cref="Convert.ToBase64String(byte[])"/> writes it. Returns
+        /// <see langword="null"/> for anything it does not take, and the
+        /// caller then runs <see cref="DecodeBase64Tolerant"/> unchanged.
+        /// </summary>
+        /// <remarks>
+        /// <para><c>Convert.TryFromBase64String</c> is not a strict
+        /// decoder: it skips the same four whitespace characters the tolerant
+        /// path strips, anywhere in the string. What it accepts is
+        /// <c>[A-Za-z0-9+/]</c> data of a length that is a multiple of four
+        /// once whitespace is skipped, ending in at most the canonical
+        /// <c>=</c> run with nothing but whitespace after it. The tolerant path
+        /// accepts every such string, strips the same whitespace, and hands
+        /// the result to <see cref="Convert.FromBase64String"/>, the same
+        /// decoder, so the bytes are the same. The one string it accepts that
+        /// the tolerant path rejects is the empty (or whitespace-only) one,
+        /// which decodes to zero bytes, so a zero-byte result is refused here.
+        /// The seeded differential test in the test project holds this on
+        /// every runtime the suite runs on.</para>
+        /// <para>Only the net8.0 build has it. netstandard2.0 has no
+        /// <c>TryFromBase64String</c>, and the runtimes that load that asset
+        /// (.NET Framework, Mono, Unity) are not ones this repository can run
+        /// the differential test on, so that build keeps the tolerant path
+        /// alone.</para>
+        /// </remarks>
+        internal static byte[]? DecodeBase64Fast(string base64Receipt)
+        {
+#if NET8_0_OR_GREATER
+            // IsValid sizes the output exactly; its verdict is not relied on,
+            // since TryFromBase64String decides acceptance below.
+            if (System.Buffers.Text.Base64.IsValid(base64Receipt.AsSpan(), out int length) && length > 0)
+            {
+                byte[] buffer = new byte[length];
+                if (Convert.TryFromBase64String(base64Receipt, buffer, out int written) && written == length)
+                {
+                    return buffer;
+                }
+            }
+#endif
+            return null;
+        }
+
+        /// <summary>
+        /// The full decoder described on <see cref="DecodeBase64"/>, without
+        /// the fast path. Internal so the differential test can compare the
+        /// two.
+        /// </summary>
+        internal static byte[] DecodeBase64Tolerant(string base64Receipt)
+        {
             char[] compact = new char[base64Receipt.Length];
             int length = 0;
             foreach (char c in base64Receipt)
