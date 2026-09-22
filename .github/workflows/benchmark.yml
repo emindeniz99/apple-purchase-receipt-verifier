@@ -1,9 +1,13 @@
 name: benchmark
 
-# The Java JMH benchmarks in java-bench/, on demand only. A shared runner is
-# too noisy for a timing gate, so this never runs on push or pull_request:
-# it produces a JSON result to download and compare by hand against the
-# baseline in java-bench/README.md.
+# The cross-port benchmarks (BENCHMARKS.md), on demand only: one job per
+# port, each running the same operations on the same fixtures with that
+# port's own tool and uploading its result as an artifact. A shared runner is
+# too noisy for a timing gate, so this never runs on push or pull_request;
+# the results are to download and compare by hand, against each other (every
+# job uses the same runner type) and, for Java, against the baseline in
+# java-bench/README.md. No job caches anything: a benchmark should not
+# depend on what a previous run left behind.
 
 on:
   workflow_dispatch:
@@ -32,4 +36,161 @@ jobs:
         with:
           name: jmh-result
           path: jmh-result.json
+          if-no-files-found: error
+
+  go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27"
+          cache: false
+      # Go's own benchmark format (ns/op), which benchstat reads.
+      - run: go test -run '^$' -bench '^BenchmarkCrossPort$' -benchtime 1s -count 5 . | tee ../go-bench.txt
+        working-directory: go
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: go-bench
+          path: go-bench.txt
+          if-no-files-found: error
+
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install stable --profile minimal
+      - run: cargo +stable run --release --locked --example bench > ../rust-bench.json
+        working-directory: rust
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rust-bench
+          path: rust-bench.json
+          if-no-files-found: error
+
+  node:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts && npm run build
+        working-directory: node
+      - run: node bench/bench.mjs > ../node-bench.json
+        working-directory: node
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: node-bench
+          path: node-bench.json
+          if-no-files-found: error
+
+  python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          python-version: "3.13"
+          enable-cache: false
+      - run: uv sync --locked
+        working-directory: python
+      - run: uv run --locked python bench/bench.py > ../python-bench.json
+        working-directory: python
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: python-bench
+          path: python-bench.json
+          if-no-files-found: error
+
+  ruby:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # No bundle: the library and the benchmark use only what ships with Ruby.
+      - uses: ruby/setup-ruby@bec3f19a76460dbe12f60def7d1a77585f07516c # v1.322.0
+        with:
+          ruby-version: "3.4"
+          bundler-cache: false
+      - run: ruby -Ilib bench/bench.rb > ../ruby-bench.json
+        working-directory: ruby
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ruby-bench
+          path: ruby-bench.json
+          if-no-files-found: error
+
+  php:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: "8.4"
+          extensions: openssl, json
+          coverage: none
+      # Only the autoloader and psr/clock are needed, so no dev dependencies.
+      - run: composer install --no-dev --no-scripts --no-progress --no-interaction
+        working-directory: php
+      - run: php bench/bench.php > ../php-bench.json
+        working-directory: php
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: php-bench
+          path: php-bench.json
+          if-no-files-found: error
+
+  dotnet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+      # BenchmarkDotNet looks for the project from the working directory.
+      # Its JSON reports times in nanoseconds.
+      - run: dotnet run -c Release -- --exporters json --artifacts "$RUNNER_TEMP/bdn"
+        working-directory: dotnet/bench
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dotnet-bench
+          path: ${{ runner.temp }}/bdn/results/
+          if-no-files-found: error
+
+  swift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container: swift:6.3@sha256:56ef1be2c1ca36f4c52440357dc1fcdfdb5e113587134fcadeef57c225c71b54
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: swift build -c release --package-path swift/bench --force-resolved-versions
+      - run: swift/bench/.build/release/bench > swift-bench.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: swift-bench
+          path: swift-bench.json
           if-no-files-found: error
