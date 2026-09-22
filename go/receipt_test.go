@@ -568,16 +568,16 @@ func TestUnknownAttributesArePreserved(t *testing.T) {
 }
 
 // Attribute types 1, 15, 16 and 1713 used to be left raw in
-// unknownAttributes; this pins that they decode instead, that 15 (2^53+1,
-// the first integer an IEEE-754 double cannot hold) keeps its exact
-// digits, and that the four types leave unknownAttributes while an
-// unmodelled type does not.
+// unknownAttributes; this pins that they decode instead, that 15
+// (2^63-1, a nineteen-digit, eight-byte integer an IEEE-754 double rounds
+// to 2^63) keeps its exact digits, and that the four types leave
+// unknownAttributes while an unmodelled type does not.
 func TestReceiptIdsAreDecoded(t *testing.T) {
 	pki := newReceiptPKI(t)
 	der := pki.receipt(t,
 		attr(2, derUTF8String("com.example.app")),
 		attr(1, derInt(1234567890)),
-		attr(15, derInt(9007199254740993)),
+		attr(15, derInt(9223372036854775807)),
 		attr(16, derInt(456789012)),
 		attr(9999, []byte{1, 2, 3}),
 		attr(17, receiptPayload(
@@ -596,8 +596,8 @@ func TestReceiptIdsAreDecoded(t *testing.T) {
 	if receipt.AppItemID == nil || *receipt.AppItemID != 1234567890 {
 		t.Errorf("AppItemID: got %v, want 1234567890", receipt.AppItemID)
 	}
-	if receipt.DownloadID == nil || *receipt.DownloadID != 9007199254740993 {
-		t.Errorf("DownloadID: got %v, want the exact digits of 2^53+1 (9007199254740993)", receipt.DownloadID)
+	if receipt.DownloadID == nil || *receipt.DownloadID != 9223372036854775807 {
+		t.Errorf("DownloadID: got %v, want the exact digits of 2^63-1 (9223372036854775807)", receipt.DownloadID)
 	}
 	if receipt.VersionExternalIdentifier == nil || *receipt.VersionExternalIdentifier != 456789012 {
 		t.Errorf("VersionExternalIdentifier: got %v, want 456789012", receipt.VersionExternalIdentifier)

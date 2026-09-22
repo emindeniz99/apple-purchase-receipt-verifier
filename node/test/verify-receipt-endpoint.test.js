@@ -108,13 +108,13 @@ test('verifyReceiptJson renders is_in_intro_offer_period as "true"/"false"', () 
 test('verifyReceiptJson emits the receipt ids as bare JSON numbers', () => {
   const json = idsEndpoint().verifyReceiptJson(JSON.stringify(idsRequest()));
   // Read off the bytes, not the parse: `JSON.parse` would round the
-  // download id (2^53 + 1) to 2^53 and agree with a build that lost the
+  // download id (2^63 - 1) to 2^63 and agree with a build that lost the
   // digit. Apple echoes attribute 1 under both names, sends the three ids
   // as numbers rather than the strings the in-app integers get, and renders
   // 1713 as "true"/"false" like 1719.
   assert.ok(json.includes('"adam_id":1234567890'), json);
   assert.ok(json.includes('"app_item_id":1234567890'), json);
-  assert.ok(json.includes('"download_id":9007199254740993'), json);
+  assert.ok(json.includes('"download_id":9223372036854775807'), json);
   assert.ok(json.includes('"version_external_identifier":456789012'), json);
   assert.ok(json.includes('"is_trial_period":"false"'), json);
   assert.ok(json.includes('"is_trial_period":"true"'), json);
@@ -135,14 +135,14 @@ test('verifyReceiptJson leaves the id keys out of a receipt that carries none', 
 
 test('verifyReceipt hands the ids over as bigints that plain JSON.stringify accepts', () => {
   const { receipt } = idsEndpoint().verifyReceipt(idsRequest());
-  assert.equal(receipt.download_id, 9007199254740993n);
+  assert.equal(receipt.download_id, 9223372036854775807n);
   // A caller serializing the object themselves gets JSON numbers and no
   // throw — past 2^53 that rounds, which is also what `JSON.parse` of
   // Apple's own answer yields in JavaScript. verifyReceiptJson is the way
   // to the exact digits.
   const plain = JSON.parse(JSON.stringify(receipt));
   assert.equal(plain.adam_id, 1234567890);
-  assert.equal(plain.download_id, 9007199254740992);
+  assert.equal(plain.download_id, 9223372036854775808);
 });
 
 test('verifyReceiptJson omits receipt and environment on a non-zero status', () => {

@@ -183,9 +183,10 @@ class ReceiptTest < Minitest::Test
   # trial period). None is on Apple's archived Receipt Fields chapter; their
   # meaning was established by comparing a genuine production receipt with
   # Apple's own verifyReceipt answer for it (measured 2026-09-21). The
-  # download id is 2^53+1, the first integer an IEEE-754 double cannot hold
-  # exactly, so asserting on its String form proves Ruby's arbitrary-precision
-  # Integer carries it digit for digit rather than rounding it.
+  # download id is 2^63-1, a nineteen-digit, eight-byte integer an
+  # IEEE-754 double rounds to 2^63, so asserting on its String form proves
+  # Ruby's arbitrary-precision Integer carries it digit for digit rather
+  # than rounding it.
   def test_legacy_receipt_ids_are_decoded
     receipt = APRV::ReceiptVerifier.new(
       trusted_roots: [TestSupport.fixture_certificate("receipt-ids-root")],
@@ -193,8 +194,8 @@ class ReceiptTest < Minitest::Test
     ).verify_der(TestSupport.fixture_bytes("receipt-ids"))
 
     assert_equal 1_234_567_890, receipt.app_item_id
-    assert_equal 9_007_199_254_740_993, receipt.download_id
-    assert_equal "9007199254740993", receipt.download_id.to_s
+    assert_equal 9_223_372_036_854_775_807, receipt.download_id
+    assert_equal "9223372036854775807", receipt.download_id.to_s
     assert_equal 456_789_012, receipt.version_external_identifier
 
     coins = receipt.in_app_purchases.find { |p| p.product_id == "com.example.app.coins100" }

@@ -54,17 +54,18 @@ final class ConformanceCasesTest extends TestCase
     private static array $executed = [];
 
     /**
-     * The 2^53+1 trap, on the harness's own JSON parser rather than the
+     * The 2^63-1 trap, on the harness's own JSON parser rather than the
      * library's. `Fixtures::cases()` calls `json_decode($json, true, 64,
      * JSON_THROW_ON_ERROR)` with no `JSON_BIGINT_AS_STRING`: PHP keeps an
      * integer literal as a PHP int, exact digits included, as long as it
      * fits a signed 64-bit int, and only falls back to a float above
-     * `PHP_INT_MAX`. `9007199254740993` (2^53+1) is far under that ceiling,
-     * so this must decode as `int(9007199254740993)`, not as the float that
-     * would print as `9007199254740992`. Without this, `receipt/ids-are-
-     * decoded` and `endpoint/ids-echo-apples-keys` could pass for the wrong
-     * reason — a rounded expectation matching a rounded actual — if the
-     * decode call ever regressed.
+     * `PHP_INT_MAX`. `9223372036854775807` (2^63-1) IS `PHP_INT_MAX`, the
+     * documented ceiling itself, so this must decode as
+     * `int(9223372036854775807)`, not as the float that would print as
+     * `9223372036854775808`. Without this, `receipt/ids-are-decoded` and
+     * `endpoint/ids-echo-apples-keys` could pass for the wrong reason — a
+     * rounded expectation matching a rounded actual — if the decode call
+     * ever regressed.
      */
     public function testCasesJsonKeepsTheDownloadIdExpectationAsAnExactInteger(): void
     {
@@ -82,7 +83,7 @@ final class ConformanceCasesTest extends TestCase
         $expected = $case['expected'];
         $downloadId = $expected['fields']['downloadId'];
         self::assertIsInt($downloadId, 'json_decode rounded the download id expectation to a float');
-        self::assertSame(9007199254740993, $downloadId);
+        self::assertSame(9223372036854775807, $downloadId);
     }
 
     /** @return iterable<string, array{array<string, mixed>}> */

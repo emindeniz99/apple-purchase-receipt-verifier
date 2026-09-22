@@ -149,8 +149,8 @@ public class EndpointTests
     /// The three app-level ids are the exception to that rule: Apple sends
     /// them as JSON numbers, attribute 1 under both of its names, and renders
     /// 1713 exactly as it renders 1719. The raw bytes are what is asserted,
-    /// because <c>download_id</c> is 2^53+1 — anything that routed the value
-    /// through a double would print ...992 here.
+    /// because <c>download_id</c> is 2^63-1 — anything that routed the value
+    /// through a double would print ...488 here.
     /// </summary>
     [Fact]
     public void TheLegacyIdsAreEmittedAsBareNumbersWithTheirExactDigits()
@@ -159,7 +159,7 @@ public class EndpointTests
 
         Assert.Contains("\"adam_id\":1234567890", body, StringComparison.Ordinal);
         Assert.Contains("\"app_item_id\":1234567890", body, StringComparison.Ordinal);
-        Assert.Contains("\"download_id\":9007199254740993", body, StringComparison.Ordinal);
+        Assert.Contains("\"download_id\":9223372036854775807", body, StringComparison.Ordinal);
         Assert.Contains("\"version_external_identifier\":456789012", body, StringComparison.Ordinal);
         Assert.Contains("\"is_trial_period\":\"false\"", body, StringComparison.Ordinal);
         Assert.Contains("\"is_trial_period\":\"true\"", body, StringComparison.Ordinal);

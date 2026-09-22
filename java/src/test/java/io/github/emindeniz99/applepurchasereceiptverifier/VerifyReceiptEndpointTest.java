@@ -165,18 +165,18 @@ class VerifyReceiptEndpointTest {
         // Apple's names, the three app-level ids are JSON NUMBERS (unlike
         // every other number-shaped receipt field, which Apple sends as a
         // string), and 1713 renders exactly as 1719 does. download_id is
-        // 2^53+1, so the literal digits are the assertion: anything that
-        // routed the value through a double would print ...992 here.
+        // 2^63-1, so the literal digits are the assertion: anything that
+        // routed the value through a double would print ...488 here.
         assertTrue(body.contains("\"adam_id\":1234567890"), body);
         assertTrue(body.contains("\"app_item_id\":1234567890"), body);
-        assertTrue(body.contains("\"download_id\":9007199254740993"), body);
+        assertTrue(body.contains("\"download_id\":9223372036854775807"), body);
         assertTrue(body.contains("\"version_external_identifier\":456789012"), body);
         assertTrue(body.contains("\"is_trial_period\":\"false\""), body);
         assertTrue(body.contains("\"is_trial_period\":\"true\""), body);
         JsonNode parsed = MAPPER.readTree(body).get("receipt");
         assertTrue(parsed.get("adam_id").isNumber(), body);
         assertTrue(parsed.get("download_id").isNumber(), body);
-        assertEquals(9007199254740993L, parsed.get("download_id").asLong(), body);
+        assertEquals(9223372036854775807L, parsed.get("download_id").asLong(), body);
         // Apple's own key order, which is also the order a reader of the two
         // answers side by side compares them in.
         assertTrue(

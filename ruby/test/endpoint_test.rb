@@ -65,9 +65,10 @@ class EndpointTest < Minitest::Test
 
   # Apple echoes attribute 1 under both adam_id and app_item_id, as JSON
   # numbers; 15 (download_id) and 16 (version_external_identifier) are JSON
-  # numbers too. download_id is 2^53+1, the first integer an IEEE-754 double
-  # cannot hold: asserting on the literal JSON TEXT (not a value JSON.parse
-  # hands back) proves the serializer never routed the id through a Float.
+  # numbers too. download_id is 2^63-1, a nineteen-digit, eight-byte
+  # integer an IEEE-754 double rounds to 2^63: asserting on the literal
+  # JSON TEXT (not a value JSON.parse hands back) proves the serializer
+  # never routed the id through a Float.
   def test_legacy_receipt_ids_are_wire_numbers_with_exact_digits
     roots = [TestSupport.fixture_certificate("receipt-ids-root")]
     receipt = TestSupport.fixture_bytes("receipt-ids")
@@ -76,7 +77,7 @@ class EndpointTest < Minitest::Test
 
     assert_includes json, "\"adam_id\":1234567890"
     assert_includes json, "\"app_item_id\":1234567890"
-    assert_includes json, "\"download_id\":9007199254740993"
+    assert_includes json, "\"download_id\":9223372036854775807"
     assert_includes json, "\"version_external_identifier\":456789012"
     assert_includes json, "\"is_trial_period\":\"false\""
     assert_includes json, "\"is_trial_period\":\"true\""
@@ -85,7 +86,7 @@ class EndpointTest < Minitest::Test
     receipt_body = response["receipt"]
     assert_equal 1_234_567_890, receipt_body["adam_id"]
     assert_equal 1_234_567_890, receipt_body["app_item_id"]
-    assert_equal 9_007_199_254_740_993, receipt_body["download_id"]
+    assert_equal 9_223_372_036_854_775_807, receipt_body["download_id"]
     assert_equal 456_789_012, receipt_body["version_external_identifier"]
     coins = receipt_body["in_app"].find { |i| i["product_id"] == "com.example.app.coins100" }
     vip = receipt_body["in_app"].find { |i| i["product_id"] == "com.example.app.vip" }

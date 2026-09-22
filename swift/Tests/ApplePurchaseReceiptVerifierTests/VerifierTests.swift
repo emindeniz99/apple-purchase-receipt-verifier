@@ -379,10 +379,11 @@ final class VerifyReceiptEndpointTests: XCTestCase {
 /// genuine production receipt's attributes up against the answer Apple's
 /// verifyReceipt endpoint gives for the same receipt (measured 2026-09-21).
 /// fixtures/generated/receipt-ids.der carries all four, and its download id is
-/// 2^53+1 — the first integer an IEEE-754 double cannot hold, which is what
-/// makes the exact digits below an assertion rather than a formality.
+/// 2^63-1 — a nineteen-digit, eight-byte integer an IEEE-754 double rounds
+/// to 2^63, which is what makes the exact digits below an assertion rather
+/// than a formality.
 final class ReceiptIdAttributesTests: XCTestCase {
-    static let downloadId: Int64 = 9_007_199_254_740_993  // 2^53 + 1
+    static let downloadId: Int64 = 9_223_372_036_854_775_807  // 2^63 - 1
 
     func fixture(_ name: String) throws -> Data {
         try Data(
@@ -409,10 +410,10 @@ final class ReceiptIdAttributesTests: XCTestCase {
         let receipt = try await receiptWithIds()
         XCTAssertEqual(1_234_567_890, receipt.appItemId)
         XCTAssertEqual(Self.downloadId, receipt.downloadId)
-        // Spelled again as digits, because `9_007_199_254_740_993` typed as a
-        // Double would be the value one below it: the literal above is the
-        // assertion only while it stays an Int64.
-        XCTAssertEqual("9007199254740993", receipt.downloadId.map(String.init))
+        // Spelled again as digits, because `9_223_372_036_854_775_807` typed as
+        // a Double would round to the value one below it: the literal above
+        // is the assertion only while it stays an Int64.
+        XCTAssertEqual("9223372036854775807", receipt.downloadId.map(String.init))
         XCTAssertEqual(456_789_012, receipt.versionExternalIdentifier)
 
         let coins = try XCTUnwrap(
@@ -457,8 +458,8 @@ final class ReceiptIdAttributesTests: XCTestCase {
             trustedRoots: [try fixture("receipt-ids-root.der")], environment: .production)
         let base64 = try fixture("receipt-ids.der").base64EncodedString()
         let body = await endpoint.verifyReceiptJSON("{\"receipt-data\":\"\(base64)\"}")
-        XCTAssertTrue(body.contains("\"download_id\":9007199254740993"), body)
-        XCTAssertFalse(body.contains("9007199254740992"), "the download id was rounded: \(body)")
+        XCTAssertTrue(body.contains("\"download_id\":9223372036854775807"), body)
+        XCTAssertFalse(body.contains("9223372036854775808"), "the download id was rounded: \(body)")
         XCTAssertTrue(body.contains("\"adam_id\":1234567890"), body)
         XCTAssertTrue(body.contains("\"app_item_id\":1234567890"), body)
         XCTAssertTrue(body.contains("\"version_external_identifier\":456789012"), body)
@@ -469,7 +470,7 @@ final class ReceiptIdAttributesTests: XCTestCase {
             try JSONSerialization.jsonObject(
                 with: XCTUnwrap(body.data(using: .utf8))) as? [String: Any])
         let receipt = try XCTUnwrap(parsed["receipt"] as? [String: Any])
-        XCTAssertEqual("9007199254740993", (receipt["download_id"] as? NSNumber)?.stringValue)
+        XCTAssertEqual("9223372036854775807", (receipt["download_id"] as? NSNumber)?.stringValue)
         for key in ["adam_id", "app_item_id", "download_id", "version_external_identifier"] {
             XCTAssertTrue(receipt[key] is NSNumber, key)
             XCTAssertFalse(receipt[key] is String, key)

@@ -208,9 +208,9 @@ than the strings the in-app integers use, and 1713 as `is_trial_period`,
 
 ```js
 const { receipt } = endpoint.verifyReceipt(body);
-receipt.download_id;                  // 9007199254740993n
-JSON.stringify(receipt);              // "download_id":9007199254740992 — rounded
-endpoint.verifyReceiptJson(rawBody);  // "download_id":9007199254740993 — every digit
+receipt.download_id;                  // 9223372036854775807n
+JSON.stringify(receipt);              // "download_id":9223372036854775808 — rounded
+endpoint.verifyReceiptJson(rawBody);  // "download_id":9223372036854775807 — every digit
 ```
 
 `JSON.stringify` on the response does not throw on those bigints: the receipt

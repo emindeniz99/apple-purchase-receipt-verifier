@@ -427,8 +427,8 @@ private func matches(_ actual: Any?, _ expected: Any) -> Bool {
     if let text = expected as? String { return (actual as? String) == text }
     // Integers are compared as integers, before the Double path below ever
     // sees them: a receipt's download_id runs past 2^53, so rounding either
-    // side to a Double makes 9007199254740993 and 9007199254740992 the same
-    // number and the vector passes for the wrong reason. JSONSerialization
+    // side to a Double makes 9223372036854775807 and 9223372036854775808 the
+    // same number and the vector passes for the wrong reason. JSONSerialization
     // reads a JSON integer that fits into an `Int64` as one (objCType "q"),
     // so `integerValue` below gets the file's exact digits on both sides.
     if let want = integerValue(expected), let got = integerValue(actual) { return want == got }
@@ -518,12 +518,13 @@ final class ConformanceCasesTests: XCTestCase {
                 + "(\(withClock.count) run against an injected clock)")
     }
 
-    /// The 2^53+1 expectation survives both halves of the harness: the parse
+    /// The 2^63-1 expectation survives both halves of the harness: the parse
     /// of cases.json and the comparison. `receipt/ids-are-decoded` pins a
-    /// download id of 9007199254740993, the first integer an IEEE-754 double
-    /// cannot hold, so a harness that read it as a double would compare
-    /// 9007199254740992 and call a rounding implementation conformant. Both
-    /// assertions below fail if the digits are ever rounded on either side.
+    /// download id of 9223372036854775807, a nineteen-digit, eight-byte
+    /// integer an IEEE-754 double rounds to 2^63, so a harness that read it
+    /// as a double would compare 9223372036854775808 and call a rounding
+    /// implementation conformant. Both assertions below fail if the digits
+    /// are ever rounded on either side.
     func testTheDownloadIdExpectationIsCarriedWithExactDigits() throws {
         let vectors = try Vectors()
         let kase = try XCTUnwrap(
@@ -533,14 +534,18 @@ final class ConformanceCasesTests: XCTestCase {
             (kase["expected"] as? [String: Any])?["fields"] as? [String: Any])
         let expected = try XCTUnwrap(fields["downloadId"])
         XCTAssertEqual(
-            (expected as? NSNumber)?.stringValue, "9007199254740993",
+            (expected as? NSNumber)?.stringValue, "9223372036854775807",
             "cases.json's download id lost digits in the parse")
         XCTAssertTrue(
-            matches(Int64(9_007_199_254_740_993), expected),
+            matches(Int64(9_223_372_036_854_775_807), expected),
             "the exact value must match the expectation")
-        XCTAssertFalse(
-            matches(Int64(9_007_199_254_740_992), expected),
-            "2^53 must not match a 2^53+1 expectation — the comparison rounds")
+        // 2^63 itself has no `Int64` representation — it is one past
+        // `Int64.max` — so the rounded neighbor is compared as a string
+        // instead of routing it through `matches`, which needs a typed
+        // integer to reach the exact-digit path.
+        XCTAssertNotEqual(
+            (expected as? NSNumber)?.stringValue, "9223372036854775808",
+            "2^63 must not match a 2^63-1 expectation — the comparison rounds")
     }
 
     /// Every registered fixture matches the `contentSha256` cases.json records

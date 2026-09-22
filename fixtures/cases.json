@@ -601,13 +601,13 @@
       "path": "generated/receipt-ids-root.der",
       "role": "trust-anchor",
       "codec": "raw",
-      "contentSha256": "be7ab0a66ca2f4879c4432ac6f8de330392a8a73227152b62df27f77b00e1e5d"
+      "contentSha256": "eb20f67deac6a7e2d4dd87e491214ad92f2e6cea928198ed1b4835002a36ca94"
     },
     "receipt-ids": {
       "path": "generated/receipt-ids.der",
       "role": "input",
       "codec": "raw",
-      "contentSha256": "c534d976d53d95f669855c2be442f454e833143d555f195ae149be224cb307f9"
+      "contentSha256": "fb5bd76616e1487ef772726d6b9c69c882cfe7bfab867d132bb888ceb0171ffa"
     }
   },
   "cases": [
@@ -4014,7 +4014,7 @@
         "status": "ok",
         "fields": {
           "appItemId": 1234567890,
-          "downloadId": 9007199254740993,
+          "downloadId": 9223372036854775807,
           "versionExternalIdentifier": 456789012,
           "inAppPurchases[productId=com.example.app.coins100].isTrialPeriod": 0,
           "inAppPurchases[productId=com.example.app.vip].isTrialPeriod": 1
@@ -4083,7 +4083,7 @@
           "status": 0,
           "receipt.adam_id": 1234567890,
           "receipt.app_item_id": 1234567890,
-          "receipt.download_id": 9007199254740993,
+          "receipt.download_id": 9223372036854775807,
           "receipt.version_external_identifier": 456789012,
           "receipt.in_app[product_id=com.example.app.coins100].is_trial_period": "false",
           "receipt.in_app[product_id=com.example.app.vip].is_trial_period": "true"

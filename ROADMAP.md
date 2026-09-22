@@ -110,7 +110,8 @@ Delete a line in the commit that ships it.
   verifyReceipt returned for the same receipt. A committed production
   fixture is still wanted; until then the synthetic fixture
   `receipt-ids.der` (generator `ReceiptIdsFixture`) carries these types,
-  with a download id of 2^53 + 1 to force exact-digit handling.
+  with a download id of 2^63 - 1 (a nineteen-digit, eight-byte integer) to
+  force exact-digit handling.
 - **Mac App Store receipt fixture**: the harvest (fixtures/public-receipts/,
   done ✅ — genuine sandbox + legacy receipts verify in every
   language) covered iOS; a genuine macOS receipt is still missing.

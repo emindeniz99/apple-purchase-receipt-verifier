@@ -479,14 +479,14 @@ func TestAppleDateTripleShape(t *testing.T) {
 
 // The wire body must contain the download id's exact digits. Serialising
 // it through a float64 anywhere in the pipeline would answer
-// 9007199254740992 (2^53) instead of 9007199254740993 (2^53+1) here.
+// 9223372036854775808 (2^63) instead of 9223372036854775807 (2^63-1) here.
 func TestEndpointIdsExactDigits(t *testing.T) {
 	pki := newReceiptPKI(t)
 	der := pki.receipt(t,
 		attr(0, derUTF8String("Production")),
 		attr(2, derUTF8String("com.example.app")),
 		attr(1, derInt(1234567890)),
-		attr(15, derInt(9007199254740993)),
+		attr(15, derInt(9223372036854775807)),
 		attr(16, derInt(456789012)),
 		attr(17, receiptPayload(
 			attr(1702, derUTF8String("com.example.app.coins100")),
@@ -504,7 +504,7 @@ func TestEndpointIdsExactDigits(t *testing.T) {
 	for _, literal := range []string{
 		`"adam_id":1234567890`,
 		`"app_item_id":1234567890`,
-		`"download_id":9007199254740993`,
+		`"download_id":9223372036854775807`,
 		`"version_external_identifier":456789012`,
 		`"is_trial_period":"false"`,
 	} {
@@ -512,8 +512,8 @@ func TestEndpointIdsExactDigits(t *testing.T) {
 			t.Errorf("body must contain the literal %s, got %s", literal, out)
 		}
 	}
-	if strings.Contains(out, "9007199254740992") {
-		t.Fatalf("download_id was rounded to 2^53 somewhere in the pipeline: %s", out)
+	if strings.Contains(out, "9223372036854775808") {
+		t.Fatalf("download_id was rounded to 2^63 somewhere in the pipeline: %s", out)
 	}
 }
 

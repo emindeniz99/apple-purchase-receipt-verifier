@@ -60,13 +60,13 @@ public final class ReceiptIdsFixture {
     private static final long APP_ITEM_ID = 1234567890L;
 
     /**
-     * 2^53 + 1: the first integer an IEEE-754 double cannot represent, so a
-     * port that carries receipt integers as a JavaScript number answers
-     * 9007199254740992 here, or refuses the receipt. Apple's real
-     * {@code download_id} values run to eighteen digits, well past that
-     * boundary, so the exact digits are the contract rather than an edge case.
+     * 2^63 - 1: a nineteen-digit, eight-byte integer that an IEEE-754 double
+     * rounds to 2^63, so a port that carries receipt integers as a
+     * JavaScript number answers 9223372036854775808 here, or refuses the
+     * receipt. Apple's real {@code download_id} values run to eighteen
+     * digits, so the exact digits are the contract rather than an edge case.
      */
-    private static final long DOWNLOAD_ID = 9007199254740993L;
+    private static final long DOWNLOAD_ID = 9223372036854775807L;
 
     private static final long VERSION_EXTERNAL_IDENTIFIER = 456789012L;
 
