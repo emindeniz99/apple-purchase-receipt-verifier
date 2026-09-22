@@ -1,5 +1,83 @@
 # Changelog
 
+## [0.5.0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.4.0...v0.5.0) (2026-09-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* **rust:** building the crates needs Rust 1.85.0 or newer.
+* **python:** the package no longer installs on Python 3.9. Stay on the last release that carried requires-python >= 3.9 if you need it.
+
+### Features
+
+* **dotnet:** model receipt attribute types 1, 15, 16 and 1713 ([7e3881c](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/7e3881c5085808b8b5e3d4fa44ad93dfe7901cbb))
+* **go:** model receipt attribute types 1, 15, 16 and 1713 ([29e4e2c](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/29e4e2c603d9bc26103d5d59e9dbe5142b1e4662))
+* **java:** JSpecify nullness annotations on the public API ([05b7738](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/05b7738b2d23b17d654f80d764244bc0e6eb4917))
+* **java:** model receipt attribute types 1, 15, 16 and 1713 ([88078ea](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/88078ea15d05e5b74b45de44644bd26d759c5437))
+* **node:** model receipt attribute types 1, 15, 16 and 1713 ([9b364cb](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/9b364cb0524805e6e9ca4492be7cefb0ac8f9d88))
+* **php:** install from the repository root so Packagist can see the package ([c7fd7ed](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/c7fd7edf0b29253004fc52f13bbe4c465d38ad16))
+* **php:** model receipt attribute types 1, 15, 16 and 1713 ([4e33d6d](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/4e33d6defe937c58ea97ee369a3facc65280ce1b))
+* **php:** publish the PHP port through a root composer.json (Packagist layout A) ([fee091c](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/fee091c49206ee2cc02751db2dc23f147c81b5eb))
+* **python:** model receipt attribute types 1, 15, 16 and 1713 ([a2d036d](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/a2d036dd208a4f9b98935883063fe1b915b90e25))
+* **python:** raise the floor to Python 3.10 ([8cfdeca](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/8cfdeca4553854e254d8bbd7ffa8f102f0dbde68))
+* **ruby:** model receipt attribute types 1, 15, 16 and 1713 ([5677c2f](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/5677c2fa3e2fb04b0167f982fb479d3b0317c23d))
+* **ruby:** type the internals so steep check passes ([41ea944](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/41ea9442bcb434ae90d45fde01a58bacb39e9d44))
+* **rust:** add a clock to the C ABI and raise the Elixir example to 1.18 ([dc00bb2](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/dc00bb2f72d0ec29a895d8f69fad4836d7d116dc))
+* **rust:** add Elixir and Python examples over the C ABI ([6eb7c1a](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/6eb7c1ae7fa1d19344528492ad736ed4a49348c5))
+* **rust:** expose the verifier through a C ABI ([7c29885](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/7c298856a9766e51e571950d81d660b23706cd09))
+* **rust:** model receipt attribute types 1, 15, 16 and 1713 ([80483b0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/80483b0645f5e7b33b40d1126c002b654fa95fbe))
+* **rust:** raise the floor to Rust 1.85 ([a52c00c](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/a52c00ce76be9c071febc8c1e156acdc1b3a0c10))
+* **swift:** model receipt attribute types 1, 15, 16 and 1713 ([8b94d00](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/8b94d0075c4d258194a27a06f3b2fb9e8e5140b5))
+
+
+### Bug Fixes
+
+* **java:** declare serialVersionUID and null-mark the internal package ([fa2712e](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/fa2712e72deaf461eefb6f55cace35017fe65383))
+* **node:** refuse a non-numeric FASTLY_SMOKE_PORT in the Fastly smoke ([a00800c](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/a00800c84b5b3380a6ecb2275c00d806aa8b62e0))
+* **node:** unwrap PEM trust roots without a polynomial regex ([77f9b52](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/77f9b525a9806a7d382bc34445abefc222bb37e7))
+* **repo:** keep integers above 2^53 exact in the cases manifest ([baf255a](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/baf255af04e37c90c8da9541870926264075a7d9))
+* **repo:** resolve the receipt signer by identity in every port ([d160f48](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/d160f4803c121f1395fe5da1fbd1d524cae1be68))
+* **repo:** resolve the receipt signer by identity in every port ([a96c1b1](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/a96c1b1d65a45f7db574deebc338258e78d55a7f))
+* **swift:** name the fuzz manifest's path dependency for Dependabot ([a6a8ab7](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/a6a8ab780dbb85b9bec81c3f98298130076008d9))
+
+
+### Build & Dependencies
+
+* **deps-dev:** Bump @fastly/js-compute from 3.45.0 to 3.45.1 in /node ([85293c1](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/85293c1d8991528a776e90051a483812d65c28c1))
+* **deps-dev:** Bump @fastly/js-compute from 3.45.1 to 3.46.0 in /node ([8ef5ca9](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/8ef5ca9a5f566b99a44a2ccf02818595291915a9))
+* **deps-dev:** Bump com.diffplug.spotless:spotless-maven-plugin ([b883501](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b8835019c9260d17658a3c65297f5579dde1db95))
+* **deps-dev:** Bump friendsofphp/php-cs-fixer in /php ([b3e3bee](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b3e3bee8b24db6c336f8a4ab7e693072ccf55470))
+* **deps-dev:** Bump kotlin.version in /jvm-interop ([c82ccae](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/c82ccaef79365a1b3c4e8b7ed3703a2300550d88))
+* **deps-dev:** Bump org.apache.maven.plugins:maven-compiler-plugin ([8fe28b4](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/8fe28b4bb43843ba7495b28edaf091e3e5a1c1a2))
+* **deps-dev:** Bump org.apache.maven.plugins:maven-compiler-plugin ([869082b](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/869082bc115d504b1e6f8b1bb44c2e3be5379fb4))
+* **deps-dev:** Bump org.apache.maven.plugins:maven-jar-plugin in /java ([1e3d20a](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/1e3d20acdcad26339f5cf89e9aec4392fe448e70))
+* **deps-dev:** Bump org.apache.maven.plugins:maven-surefire-plugin ([8083e7d](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/8083e7d034e3cbf98f8475f2f9fb9e43074c30c6))
+* **deps-dev:** Bump oxlint from 1.81.0 to 1.82.0 in /node ([1b2d941](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/1b2d941b84834c814565f910aa855e4ff1a4539e))
+* **deps-dev:** Bump oxlint from 1.82.0 to 1.83.0 in /node ([aaf6f24](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/aaf6f247f7a8082f1d7104fec122320042842eba))
+* **deps-dev:** Bump phpstan/phpstan from 2.2.13 to 2.2.14 in /php ([64bf48f](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/64bf48fb80d9aa0f92d728eb69f1e4f390c47045))
+* **deps:** Bump actions/setup-java from 6.0.0 to 6.0.1 ([b7901b6](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b7901b6c4af0db6bd725f41d469fdb863131ffb8))
+* **deps:** Bump astral-sh/setup-uv from 10.0.1 to 10.1.0 ([5369f25](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/5369f25daea4726ad6d7db0b2e4486b2b0ea0c9e))
+* **deps:** Bump github.com/apple/swift-asn1 from 1.7.1 to 1.7.2 ([b87b0b3](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b87b0b37202a16b6520595fbb5973814d875c8f5))
+* **deps:** Bump github.com/apple/swift-certificates ([3a6b600](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/3a6b600225e5d5ee7c4dfe05b89d4f9c15403882))
+* **deps:** Bump github.com/apple/swift-crypto from 4.5.1 to 4.5.2 ([5832839](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/5832839bf636afda00c101ecdd65f9e464fed859))
+* **deps:** Bump golang.org/x/vuln from 1.7.0 to 1.8.0 in /go/tools ([e714746](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/e7147461303f1a8ecf04b5461b0b3b9bbaa70629))
+* **deps:** Bump org.apache.maven.plugins:maven-surefire-plugin ([21b8b0e](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/21b8b0e4ae5b8b103c42fb49dd50a60cde8487f4))
+* **deps:** Bump org.bouncycastle:bcpkix-jdk18on in /java ([4ebca87](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/4ebca87c116bb47fe74adbd1d422b7f723ba9d25))
+* **deps:** Bump ruby/setup-ruby from 1.321.0 to 1.322.0 ([6a40207](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/6a402072f8a5d8a128b4035c77781b65b3d8d1fe))
+* **deps:** Bump ruff from 0.16.6 to 0.16.7 in /python ([93d6565](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/93d656546148666bdd2e8bb74d0302df6687786a))
+* **dotnet:** bump System.Formats.Asn1, Pkcs and xunit.v3 patch releases ([de75452](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/de75452af6962e642caeffc267758fd239984e6e))
+* **dotnet:** regenerate lock files for the September SDK patches ([acbb40b](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/acbb40beafb6158826bc0490bba230ecab9525c5))
+* **dotnet:** regenerate the fuzz project's lock file as well ([c5b4037](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/c5b4037b5780a51dfba5dd317db9140b88b077cf))
+* **dotnet:** regenerate the library project's lock file as well ([166c6da](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/166c6da6f3849c4c114b080587e6141f48bca693))
+* **go/tools:** refresh the transitive requirements of the tool module ([0005e9d](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/0005e9d30aec5ef334ddf0563a631cfe2fa8bfe0))
+* **java:** make the build reproducible and attach a CycloneDX SBOM ([c0af613](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/c0af613b626e8ab8952aa8401882451cf057f2a8))
+* **node:** override weval to 0.5 so decompress leaves the dev tree ([65d20f3](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/65d20f348d701bfa8281b99aa1168247d883afb5))
+* **python:** keep ast-serialize 0.11.2 after merging main ([329b055](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/329b055af2b44e8c5c48e1a696497697c9e185e8))
+* **python:** refresh ast-serialize in uv.lock ([bbb177e](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/bbb177e9b5fee640c2ce5030ba5ec0ed394b3f98))
+* **ruby:** refresh the tools gemfile lock ([dcf6e94](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/dcf6e94a75fff489d14142db1313b410cfc08e98))
+* **rust:** redo the lock refresh with the MSRV-aware resolver ([09d4816](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/09d4816ffd1f4523cfb272fa17d6baaf6cb3dc66))
+* **rust:** refresh the three lockfiles within their compatible ranges ([ab5c5fc](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/ab5c5fc8c1ec81abfbbebffc3ba9a69822b9062e))
+
 ## [0.4.0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.3.0...v0.4.0) (2026-09-06)
 
 
