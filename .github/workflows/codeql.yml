@@ -10,12 +10,17 @@
 #      retag them runs code in a job that holds `security-events: write`.
 #      The repository's own zizmor job fails on unpinned uses, so the
 #      template turns main red on the push that adds it.
-#   2. java-kotlin, csharp and c-cpp move off Autobuild to
-#      `build-mode: none`. Autobuild is why the default-setup run failed:
-#      there are two independent Maven projects (java/pom.xml and
-#      jvm-interop/pom.xml) and no aggregator POM, so Autobuild finds no
+#   2. java-kotlin and csharp move off Autobuild to `build-mode: manual`,
+#      and c-cpp to `build-mode: none`. Autobuild is why the default-setup
+#      run failed: there are two independent Maven projects (java/pom.xml
+#      and jvm-interop/pom.xml) and no aggregator POM, so Autobuild finds no
 #      single build to run and reports "We were unable to automatically
-#      build your code". Nothing here needs a build to be scanned.
+#      build your code". Naming the build explicitly fixes that, and it is
+#      what the two compiled ports that ship to a registry deserve: Java and
+#      C# are scanned against a real, fully resolved compilation rather than
+#      the buildless extractor. Every other compiled language here is built
+#      too — Go and Swift autobuild — so the only thing still analysed
+#      without a build is C/C++ (examples only) and Rust (no other mode).
 #   3. `persist-credentials: false` on the checkout, as everywhere else in
 #      this repository. A scan never pushes.
 #   4. A config file. fixtures/, tools/ and every port's test and fuzz
@@ -92,13 +97,6 @@ jobs:
             config: .github/codeql/codeql-config.yml
 
           # --- compiled, analysed without a build -----------------------
-          # Same treatment for C#: the solution builds fine in ci.yml, but a
-          # security scan has no reason to spend a build on it.
-          - language: csharp
-            runner: ubuntu-latest
-            build-mode: none
-            timeout: 45
-            config: .github/codeql/codeql-config.yml
           # C/C++ deliberately runs WITHOUT the config file. The only C and
           # C++ in this repository is rust/ffi/examples/ and the .NET fuzz
           # driver, both of which the config excludes — applying it here
@@ -111,14 +109,23 @@ jobs:
             config: ""
 
           # --- compiled, built on purpose -------------------------------
-          # The Java port is the one that runs in production, so it is
-          # scanned against a real, fully resolved compilation rather than
-          # the buildless extractor: `manual`, with the build steps below.
-          # Autobuild is what failed under default setup — there are two
-          # independent Maven projects and no aggregator POM, so it found no
-          # single build to run. Naming the two builds explicitly fixes that
-          # and gets Kotlin extracted as well, which buildless cannot do.
+          # Both of these are scanned against a real, fully resolved
+          # compilation rather than the buildless extractor: `manual`, with
+          # the build steps below. Autobuild is what failed under default
+          # setup for Java — two independent Maven projects and no
+          # aggregator POM, so it found no single build to run — and naming
+          # the build explicitly fixes that.
+          #
+          # A built language ignores the config's paths-ignore, so each
+          # build step below compiles the LIBRARY project and nothing else.
+          # That is the only lever available for keeping the conformance
+          # suites and the fuzz drivers out of these two databases.
           - language: java-kotlin
+            runner: ubuntu-latest
+            build-mode: manual
+            timeout: 45
+            config: .github/codeql/codeql-config.yml
+          - language: csharp
             runner: ubuntu-latest
             build-mode: manual
             timeout: 45
@@ -159,13 +166,12 @@ jobs:
           # naming the same suite twice costs nothing.
           queries: security-extended
 
-      # --- manual build, java-kotlin only ---------------------------------
-      # Between init and analyze, so the extractor wraps javac and kotlinc
-      # and records every file they actually compile.
+      # --- manual builds, java-kotlin and csharp ---------------------------
+      # Between init and analyze, so the extractor wraps javac / csc and
+      # records every file they actually compile.
       #
-      # The same JDK ci.yml's jvm-interop job uses: Temurin 21. The library
-      # targets Java 8 bytecode (maven.compiler.release=8) and builds on any
-      # JDK 9+; jvm-interop needs 17+ for Kotlin 2.4 and Scala 3.9.
+      # The same JDK ci.yml uses: Temurin 21. The library targets Java 8
+      # bytecode (maven.compiler.release=8) and builds on any JDK 9+.
       - name: Set up Java for the CodeQL build
         if: matrix.language == 'java-kotlin'
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
@@ -174,12 +180,6 @@ jobs:
           java-version: "21"
           cache: maven
 
-      # `install`, not `compile`: jvm-interop/pom.xml has no parent and no
-      # <relativePath> — it resolves the library as a plain Maven coordinate
-      # (io.github.emindeniz99:apple-purchase-receipt-verifier:0.4.0) the way
-      # a consumer would, so the jar has to be in the local repository before
-      # the second build can run. ci.yml's jvm-interop job does the same.
-      #
       # `-Dmaven.test.skip=true` rather than ci.yml's `-DskipTests`: skipTests
       # still COMPILES java/src/test, which would put the whole conformance
       # harness into the database. A built language ignores the config's
@@ -190,16 +190,59 @@ jobs:
       # every lifecycle phase in java/pom.xml (see the comment there), so the
       # flag would be dead weight. No `-q` either: the compile log is the
       # evidence that every file under src/main reached the extractor.
+      #
+      # `install` rather than `compile`, matching ci.yml's own
+      # `mvn -B install -DskipTests`: the extra phases run the same javac the
+      # extractor is wrapping, and staying on the lifecycle ci.yml uses means
+      # a plugin that fails there fails here too instead of surprising us.
       - name: Build the Java library for CodeQL
         if: matrix.language == 'java-kotlin'
         run: mvn -B -ntp -f java/pom.xml -Dmaven.test.skip=true install
 
-      # jvm-interop is a test-only module: its Kotlin and Scala live under
-      # src/test, so `test-compile` is the phase that compiles them. Scala is
-      # not a CodeQL language and is extracted by nothing; the Kotlin is.
-      - name: Build the JVM interop module for CodeQL
-        if: matrix.language == 'java-kotlin'
-        run: mvn -B -ntp -f jvm-interop/pom.xml test-compile
+      # jvm-interop is deliberately NOT built here, so the java-kotlin
+      # database holds the Java library and nothing else. Two reasons, and
+      # the second is a hard blocker: its only Kotlin is a consumer interop
+      # test (one Kotlin file and one Scala file under src/test, no library
+      # code), and CodeQL 2.27 cannot extract it — the first real run of
+      # this job on PR #104 built java/ successfully and then died with
+      # `KotlinVersionTooRecentError: Kotlin version 2.4.20 is too recent.
+      # CodeQL currently supports versions below 2.4.20`. Downgrading
+      # jvm-interop to suit the scanner would be the wrong direction: the
+      # module exists to prove the jar works against current Kotlin and
+      # Scala. There is no Kotlin in this repository outside that test, so
+      # nothing shipped goes unscanned.
+
+      # The same SDK set ci.yml's `dotnet` job installs. Three lines rather
+      # than one because the library multi-targets netstandard2.0 and
+      # net8.0, and because packages.lock.json was written by the 10.0 SDK:
+      # restoring the committed lock graph under an older SDK trips locked
+      # mode with NU1004 (see ci.yml's dotnet-mono job). No `cache:` — the
+      # default is off and a scan has nothing to gain from a warm NuGet
+      # cache it would also have to trust.
+      - name: Set up .NET for the CodeQL build
+        if: matrix.language == 'csharp'
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+          cache: false
+
+      # The library project alone, by path — not `dotnet build` on the
+      # solution, which would pull in dotnet/tests, dotnet/samples and the
+      # fuzz driver. A built language ignores the config's paths-ignore, so
+      # the project list IS the filter, exactly as `-Dmaven.test.skip=true`
+      # is for Java above.
+      #
+      # Restore is implicit and already locked: dotnet/Directory.Build.props
+      # sets RestoreLockedMode when GITHUB_ACTIONS is true, so this fails on
+      # a lock file that does not match rather than rewriting it. That is
+      # also why no `--locked-mode` flag appears here — ci.yml does not pass
+      # one either, for the same reason.
+      - name: Build the .NET library for CodeQL
+        if: matrix.language == 'csharp'
+        run: dotnet build -c Release dotnet/src/ApplePurchaseReceiptVerifier/ApplePurchaseReceiptVerifier.csproj
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1

@@ -32,16 +32,20 @@ name: apple-purchase-receipt-verifier
 # Caveat worth knowing before editing: paths / paths-ignore are honoured for
 # interpreted languages and for compiled languages analysed with
 # `build-mode: none`. They do NOT apply to a language that is built, and
-# three of ours are: Go and Swift autobuild (neither extractor has a
-# buildless mode) and java-kotlin builds manually, because the Java port is
-# the one that runs in production and is scanned against a real compilation.
+# four of ours are: Go and Swift autobuild (neither extractor has a
+# buildless mode), while java-kotlin and csharp build manually, because
+# those two ports are scanned against a real compilation rather than the
+# buildless extractor.
 #
-# For those three the workflow's build steps, not this file, decide what is
+# For those four the workflow's build steps, not this file, decide what is
 # in the database. That is why codeql.yml builds java/ with
-# `-Dmaven.test.skip=true`: it is the only way to keep java/src/test out,
-# since the entry below cannot do it. The Go and Swift test entries below
-# are documentation of intent rather than an enforced filter — excluding
-# them would require changing their build steps.
+# `-Dmaven.test.skip=true` and builds only
+# dotnet/src/ApplePurchaseReceiptVerifier/ApplePurchaseReceiptVerifier.csproj
+# rather than the solution: naming the library is the only way to keep
+# java/src/test and dotnet/{tests,fuzz,samples,tools} out, since the entries
+# below cannot do it. The Go, Swift and dotnet entries below are
+# documentation of intent rather than an enforced filter — narrowing them
+# further would mean changing a build step, not this file.
 
 # The query suite the owner chose when switching to advanced setup. It is
 # `security-and-quality`'s smaller sibling: everything in the default
@@ -66,10 +70,13 @@ paths-ignore:
   - ruby/test/**
   - php/tests/**
   - dotnet/tests/**
-  # java-kotlin is built, so these two are not enforced here. java/src/test
-  # is kept out by `-Dmaven.test.skip=true` on the library build instead.
-  # jvm-interop is test-only and IS analysed on purpose: its Kotlin is the
-  # only Kotlin in the repository, and a `test-compile` is what extracts it.
+  # java-kotlin is built, so these two are not enforced here — the build
+  # steps in codeql.yml are what keep them out. java/src/test is excluded by
+  # `-Dmaven.test.skip=true` on the library build; jvm-interop is simply not
+  # built at all, because its only Kotlin is a consumer interop test and
+  # CodeQL 2.27 refuses Kotlin 2.4.20 (see the comment in codeql.yml). No
+  # Kotlin outside that test exists in this repository, so nothing that
+  # ships goes unscanned.
   - java/src/test/**
   - jvm-interop/src/test/**
   - swift/Tests/**
