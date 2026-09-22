@@ -47,6 +47,7 @@ base64 for the string entry points. The endpoint gets a fixed `Clock`
 
 | benchmark | call |
 |---|---|
+| `decodeBase64` | the package-private `ReceiptBase64.decode(base64)`, bound once by reflection; added for the cross-port set in `BENCHMARKS.md` and not in the baseline below |
 | `core` | `ReceiptVerifier.verifyReceiptCore(der, roots)` on pre-decoded DER |
 | `verifierBase64` | `new ReceiptVerifier(roots, bundleId).verify(base64)` (verifier built in setup) |
 | `endpointMap` | `VerifyReceiptEndpoint` in `SANDBOX`, `verifyReceiptResult({"receipt-data": base64}).toResponse()`, status 0 with the full receipt |
