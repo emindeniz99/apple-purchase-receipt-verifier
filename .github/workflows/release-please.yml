@@ -80,8 +80,16 @@ jobs:
           # This checkout pushes back to the release branch, so it keeps
           # the token; the job holds contents: write for that push.
           persist-credentials: true # zizmor: ignore[artipacked]
+      # `enable-cache: false`, not the action's `auto` default. This job holds
+      # contents: write, checks out the release branch with the token kept,
+      # and pushes back to it — so a cache entry restored here reaches a
+      # privileged, pushing context, which is what zizmor and CodeQL both call
+      # cache poisoning. `uv lock` resolves from the index either way; the
+      # only thing the cache saves is a download.
       - if: ${{ steps.release-branch.outputs.name != '' }}
         uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          enable-cache: false
       - name: bring the lockfiles in step with the release version
         if: ${{ steps.release-branch.outputs.name != '' }}
         env:

@@ -48,6 +48,29 @@ on: # zizmor: ignore[dangerous-triggers]
 permissions:
   contents: read
 
+# Every job below restores nothing from cache, and every setup action says so
+# explicitly rather than relying on its default.
+#
+# This is the one workflow in the repository where that matters. It is
+# triggered by `workflow_run`, so it runs in the base repository with a token
+# GitHub scopes to this repo, and every job then installs a package that was
+# published minutes earlier and executes it. CodeQL reports that pairing as
+# "Cache Poisoning via execution of untrusted code": a job that runs
+# freshly-published third-party code and also has a warm cache can write that
+# cache, and anything it writes is restored later by a job that is trusted.
+# The direction that actually bites is the reverse one — a cache entry poisoned
+# by some earlier run being restored HERE, into the job whose whole purpose is
+# to answer "is the artifact consumers receive good?". A smoke test that quietly
+# reuses a cached toolchain or dependency is not testing the artifact any more.
+#
+# The repository's graduation notes already carry the same rule for the publish
+# side: a release job must not set `cache:`, because a poisoned cache becomes
+# the published artifact. This is that rule applied one step later in the chain.
+#
+# Turning it off explicitly rather than leaving the default is the point.
+# setup-node, setup-python and setup-java default to no cache today, but a
+# default is a thing that can change under a version bump, and a reader cannot
+# tell "off" from "nobody thought about it". These settings are an assertion.
 jobs:
   resolve:
     name: resolve the published version
@@ -107,6 +130,8 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 20
+          # No npm cache: see the note above the jobs.
+          cache: ''
 
       # Installing outside a lockfile is the entire point: the subject under
       # test is the tarball the registry just started serving, which by
@@ -152,6 +177,8 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.10'
+          # No pip cache: see the note above the jobs.
+          cache: ''
 
       - name: install from the registry, outside the checkout
         env:
@@ -196,6 +223,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+          # No ~/.m2 cache: see the note above the jobs. This job's retry loop
+          # deletes the coordinate from ~/.m2 on every attempt anyway, so a
+          # restored cache would be actively counterproductive here.
+          cache: ''
 
       - name: resolve from Central, outside the checkout
         env:
@@ -275,6 +306,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.22"
+          # setup-go caches by default; off here, see the note above the jobs.
           cache: false
 
       - name: resolve the published module, outside the checkout
@@ -328,6 +360,9 @@ jobs:
       - uses: ruby/setup-ruby@bec3f19a76460dbe12f60def7d1a77585f07516c # v1.322.0
         with:
           ruby-version: "3.1"
+          # No bundler cache, and nothing else this action caches: see the
+          # note above the jobs. The gem under test comes from the registry
+          # into a scratch GEM_HOME, never from a restored cache.
           bundler-cache: false
 
       # A scratch GEM_HOME, so the gem under test is the only thing on the
@@ -375,6 +410,9 @@ jobs:
           ref: ${{ needs.resolve.outputs.ref }}
           persist-credentials: false
 
+      # No Swatinem/rust-cache or actions/cache here, deliberately: this leg
+      # has no setup action to turn caching off in, and it must not grow one.
+      # See the note above the jobs.
       - run: rustup toolchain install stable --profile minimal
 
       # `exclude` drops tests/ and fuzz/ from the published tarball, so the file
@@ -424,6 +462,10 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: '8.0.x'
+          # No NuGet cache: see the note above the jobs. The restore loop
+          # below already passes --no-cache for the same reason at the HTTP
+          # layer; this closes the Actions-cache half of it.
+          cache: false
 
       - name: restore from the registry, outside the checkout
         env:
