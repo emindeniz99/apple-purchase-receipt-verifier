@@ -44,6 +44,17 @@ the first part — cryptographically verified.
 | 21009 / 21010 | internal error / account not found | 21009 on unexpected internal errors; 21010 never (no account database) |
 | 21100–21199 (+ `is_retryable`) | Apple internal data access error; `is_retryable` says whether retrying may help | ❌ never produced, and we never emit an `is_retryable` field either — these codes report the state of Apple's own datastore, and there is no remote call here to retry |
 
+A tampered receipt shows 21002 and 21003 diverging in practice. Altering one
+byte of a well-formed payload while keeping the DER structurally valid
+(2026-09-22, not committed) gets 21003 from this endpoint and 21002 from
+Apple's own. Apple's reference defines 21003 as "The receipt could not be
+authenticated" and 21002 as malformed data or a temporary issue on Apple's
+server; this endpoint follows the documented meaning and reports 21003 for
+the case that description names, while Apple's own endpoint collapses both
+into 21002. A caller migrating from Apple's endpoint should not read a
+21002 response from Apple as covering every rejection this endpoint reports
+as 21003.
+
 ## Response body
 
 ### Produced with full fidelity (from the verified receipt)
