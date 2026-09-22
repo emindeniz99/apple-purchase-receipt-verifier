@@ -1209,6 +1209,7 @@ class InputSizeBoundsTest(unittest.TestCase):
         self.receipt_b64 = base64.b64encode(self.der).decode()
         self.verifier = ReceiptVerifier([cert("generated", "receipt-root.der")], BUNDLE)
         self.endpoint = VerifyReceiptEndpoint([cert("generated", "receipt-root.der")], "Sandbox")
+        self.jws = text("generated", "transaction.jws")
 
     @staticmethod
     def padded(text, length):
@@ -1327,3 +1328,60 @@ class InputSizeBoundsTest(unittest.TestCase):
         # Brackets inside a string are data, escaped quotes included.
         in_string = self.request_body(',"note":"\\"' + "[" * 1000 + '"')
         self.assertEqual(0, self.endpoint.verify_receipt_result(in_string).status)
+
+    def jws_with_segment(self, index, raw_json):
+        parts = self.jws.split(".")
+        parts[index] = base64.urlsafe_b64encode(raw_json.encode()).rstrip(b"=").decode()
+        return ".".join(parts)
+
+    def test_jws_over_the_cap_is_refused_without_decoding(self):
+        oversized = self.padded(self.jws, JwsVerifier.MAX_JWS_BYTES + 1)
+        with (
+            mock.patch("apple_purchase_receipt_verifier.jws._b64url") as decode,
+            self.assertRaises(VerificationError) as ctx,
+        ):
+            jws_verifier().verify_transaction(oversized)
+        decode.assert_not_called()
+        self.assertEqual("INVALID_JWS_FORMAT", ctx.exception.reason)
+        self.assertIn("exceeds the maximum accepted size", str(ctx.exception))
+
+    def test_jws_at_the_cap_is_not_refused_by_the_cap(self):
+        at_cap = self.padded(self.jws, JwsVerifier.MAX_JWS_BYTES)
+        self.assertEqual(JwsVerifier.MAX_JWS_BYTES, len(at_cap))
+        with self.assertRaises(VerificationError) as ctx:
+            jws_verifier().verify_transaction(at_cap)
+        self.assertNotIn("exceeds the maximum accepted size", str(ctx.exception))
+
+    def test_jws_header_nested_past_the_limit_is_refused_before_json_loads(self):
+        # json.loads recurses once per level and has no depth option, so a
+        # deeply nested segment must be refused before it runs. The segment
+        # itself is level 1, so 64 inner arrays make 65. The header is the
+        # first segment parsed, so no json.loads call happens at all yet.
+        deep = '{"deep":' + "[" * 64 + "]" * 64 + "}"
+        with (
+            mock.patch("apple_purchase_receipt_verifier.jws.json.loads") as loads,
+            self.assertRaises(VerificationError) as ctx,
+        ):
+            jws_verifier().verify_transaction(self.jws_with_segment(0, deep))
+        loads.assert_not_called()
+        self.assertEqual("INVALID_JWS_FORMAT", ctx.exception.reason)
+        self.assertIn("nested too deeply", str(ctx.exception))
+
+    def test_jws_payload_nested_past_the_limit_is_refused_before_its_json_loads(self):
+        # The genuine header parses fine first (one json.loads call); the
+        # payload's own depth guard must still fire before ITS json.loads.
+        deep = '{"deep":' + "[" * 64 + "]" * 64 + "}"
+        with self.assertRaises(VerificationError) as ctx:
+            jws_verifier().verify_transaction(self.jws_with_segment(1, deep))
+        self.assertEqual("INVALID_JWS_FORMAT", ctx.exception.reason)
+        self.assertIn("nested too deeply", str(ctx.exception))
+
+    def test_jws_segment_nested_to_the_limit_reaches_json_loads(self):
+        at_limit = '{"deep":' + "[" * 63 + "]" * 63 + "}"
+        with self.assertRaises(VerificationError) as ctx:
+            jws_verifier().verify_transaction(self.jws_with_segment(0, at_limit))
+        self.assertNotIn("nested too deeply", str(ctx.exception))
+        # No "alg" survives replacing the header with the padding shape, so
+        # processing reached the algorithm check rather than being stopped
+        # by the depth guard.
+        self.assertIn("alg must be ES256", str(ctx.exception))

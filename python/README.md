@@ -232,6 +232,12 @@ constants, not constructor options, and they match the Java and PHP ports.
   once per level, so the depth is counted before it runs. A deeper body
   answers 21002 with `MALFORMED_REQUEST`. A verifyReceipt body is a flat
   object of strings.
+- **`JwsVerifier.MAX_JWS_BYTES` (256 KiB).** Applied to the compact JWS
+  string in characters, before it is split into segments or any segment is
+  decoded. A larger JWS is `INVALID_JWS_FORMAT`. The header and payload JSON
+  are also capped at nesting depth 64, checked before `json.loads` runs, for
+  the same reason as the request body above. Apple's JWS payloads are a few
+  KB at most.
 
 ## Why offline
 
