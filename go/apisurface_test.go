@@ -194,8 +194,27 @@ func TestPublicAPIShape(t *testing.T) {
 
 	endpoint := &applereceipt.VerifyReceiptEndpoint{}
 	var (
-		_ func(applereceipt.VerifyReceiptRequest) applereceipt.VerifyReceiptResponse = endpoint.VerifyReceipt
-		_ func([]byte) []byte                                                        = endpoint.VerifyReceiptJSON
+		_ func(applereceipt.VerifyReceiptRequest) *applereceipt.VerifyReceiptResult            = endpoint.VerifyReceipt
+		_ func(applereceipt.VerifyReceiptRequest, time.Time) *applereceipt.VerifyReceiptResult = endpoint.VerifyReceiptAt
+		_ func(string) *applereceipt.VerifyReceiptResult                                       = endpoint.VerifyReceiptData
+		_ func(string, time.Time) *applereceipt.VerifyReceiptResult                            = endpoint.VerifyReceiptDataAt
+		_ func([]byte) *applereceipt.VerifyReceiptResult                                       = endpoint.VerifyReceiptBody
+		_ func([]byte, time.Time) *applereceipt.VerifyReceiptResult                            = endpoint.VerifyReceiptBodyAt
+		_ func([]byte) []byte                                                                  = endpoint.VerifyReceiptJSON
+	)
+
+	result := &applereceipt.VerifyReceiptResult{}
+	var (
+		_ func() int                                                                 = result.Status
+		_ func() bool                                                                = result.Verified
+		_ func() *applereceipt.AppReceipt                                            = result.Receipt
+		_ func() applereceipt.Reason                                                 = result.Reason
+		_ func() error                                                               = result.Err
+		_ func() time.Time                                                           = result.RequestDate
+		_ func() applereceipt.VerifyReceiptResponse                                  = result.Response
+		_ func() []byte                                                              = result.JSON
+		_ func(applereceipt.Environment) (applereceipt.VerifyReceiptResponse, error) = result.ResponseFor
+		_ func(applereceipt.Environment) ([]byte, error)                             = result.JSONFor
 	)
 
 	payload := &applereceipt.TransactionPayload{}

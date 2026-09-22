@@ -105,15 +105,84 @@ endpoint, err := applereceipt.NewVerifyReceiptEndpoint(
 		Environment:  applereceipt.EnvironmentProduction, // drives 21007/21008
 	})
 
-body := endpoint.VerifyReceiptJSON(requestBody)          // JSON in, JSON out
-response := endpoint.VerifyReceipt(applereceipt.VerifyReceiptRequest{
+body := endpoint.VerifyReceiptJSON(requestBody) // JSON in, JSON out
+
+result := endpoint.VerifyReceipt(applereceipt.VerifyReceiptRequest{
 	ReceiptData: base64Receipt,
-})                                                       // typed in, typed out
+})
+response := result.Response() // Apple's body, typed
+jsonBody := result.JSON()     // Apple's body, as JSON
+
+result = endpoint.VerifyReceiptBody(requestBody)  // the raw JSON request
+result = endpoint.VerifyReceiptData(base64Receipt) // receipt-data alone
 ```
 
-It never returns an error and never panics: every failure is a status code in
-the answer. Like Apple's endpoint it does **not** check the bundle id — the
-caller compares `receipt.bundle_id`.
+No endpoint method returns an error or panics: every failure is a status in
+the result. Like Apple's endpoint it does **not** check the bundle id: compare
+`result.Receipt().BundleID` yourself.
+
+A `*VerifyReceiptResult` is one verification:
+
+- `Status()` is the answer for the endpoint's own environment.
+- `Receipt()` is the verified `*AppReceipt` whenever the receipt bytes
+  verified, 21007 and 21008 included. Treat it as read-only.
+- `Reason()` says why there is no receipt. Exactly one of `Receipt()` and
+  `Reason()` is set.
+- `Verified()` is true exactly when `Receipt()` is non-nil. That includes
+  21007 and 21008, so it is not the same check as `Status() == 0`:
+  `Status() == 0` asks whether this endpoint's environment accepts the
+  receipt, `Verified()` asks whether the receipt verified at all.
+- `Err()` is the failure as a `*VerificationError`, or nil. For
+  `INTERNAL_ERROR`, `errors.Unwrap(result.Err())` is the unexpected error or
+  panic behind it, for logging.
+- `RequestDate()` is the instant rendered as `request_date`.
+
+Only the endpoint creates a meaningful result, and it never changes. Each
+response is rendered when asked for. The zero value reports `INTERNAL_ERROR`
+and status 21009. Passed to `encoding/json`, a result marshals as the same
+bytes as `JSON()`.
+
+**Retrying in the other environment costs no second verification.**
+`ResponseFor(environment)` and `JSONFor(environment)` render what an endpoint
+of that environment would answer, with the status recomputed from the
+receipt's own type:
+
+| receipt | on `Production` | on `Sandbox` |
+|---|---|---|
+| `Production`, `ProductionVPP` | 0 | 21008 |
+| any other type, or none | 21007 | 0 |
+| failed verification | its own status | its own status |
+
+```go
+result := production.VerifyReceipt(request)
+if result.Status() == applereceipt.StatusSandboxReceiptOnProduction {
+	jsonBody, err = result.JSONFor(applereceipt.EnvironmentSandbox)
+}
+```
+
+A sandbox receipt never renders as a production 0, whichever endpoint
+verified it. Any environment other than Production or Sandbox is a plain
+error, as it is for `NewVerifyReceiptEndpoint`.
+
+| `Reason()` | status | when |
+|---|---|---|
+| `MALFORMED_REQUEST` | 21002 | the body is not a JSON object, or `receipt-data` is missing, empty or not a string |
+| `INVALID_RECEIPT_FORMAT` | 21002 | `receipt-data` is not base64 or does not decode to a receipt |
+| `INVALID_CHAIN`, `INVALID_SIGNATURE`, other certificate reasons | 21003 | the receipt did not authenticate |
+| `INTERNAL_ERROR` | 21009 | an unexpected error or panic |
+
+`MALFORMED_REQUEST` and `INTERNAL_ERROR` only ever appear on a result. No
+verifier returns either, and `AllReasons()` does not list them.
+
+**`request_date`.** `VerifyReceiptAt`, `VerifyReceiptBodyAt` and
+`VerifyReceiptDataAt` take a `time.Time` that becomes `request_date` in place
+of the endpoint's clock. Without one the clock is read once, when the call is
+made. The time reaches `request_date` and nothing else: certificate validity
+never sees it.
+
+Migrating from 0.5: `endpoint.VerifyReceipt(request)` now returns a
+`*VerifyReceiptResult`; use `endpoint.VerifyReceipt(request).Response()` for
+the old `VerifyReceiptResponse`. `VerifyReceiptJSON` is unchanged.
 
 Statuses this produces: `0`, `21002`, `21003`, `21007`, `21008`, `21009`.
 `21000`, `21004`, `21005`, `21006`, `21010`, the `21100`–`21199` range and

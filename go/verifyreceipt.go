@@ -128,10 +128,8 @@ func NewVerifyReceiptEndpoint(opts VerifyReceiptEndpointOptions) (*VerifyReceipt
 			return nil, errors.New("applereceipt: TrustedRoots contains a nil certificate at index " + itoa(i))
 		}
 	}
-	if opts.Environment != EnvironmentProduction && opts.Environment != EnvironmentSandbox {
-		return nil, fmt.Errorf(
-			"applereceipt: Environment must be %q or %q, got %q",
-			EnvironmentProduction, EnvironmentSandbox, opts.Environment)
+	if err := checkEndpointEnvironment(opts.Environment); err != nil {
+		return nil, err
 	}
 	if opts.MaxReceiptBytes < 0 {
 		return nil, errors.New("applereceipt: MaxReceiptBytes must not be negative")
@@ -164,67 +162,70 @@ func NewVerifyReceiptEndpoint(opts VerifyReceiptEndpointOptions) (*VerifyReceipt
 	}, nil
 }
 
-// VerifyReceipt handles one verifyReceipt request body.
+// VerifyReceipt handles one verifyReceipt request body. request_date is
+// the endpoint's clock, read once when the call is made.
 //
-// It never returns an error: like the real endpoint, every failure is a
-// status code in the answer.
-func (e *VerifyReceiptEndpoint) VerifyReceipt(request VerifyReceiptRequest) (response VerifyReceiptResponse) {
-	// The contract is "never panics", and it is worth more than the
-	// contained bug: an endpoint that kills its caller's request is
-	// worse than one that answers 21009.
-	defer func() {
-		if r := recover(); r != nil {
-			response = VerifyReceiptResponse{Status: StatusInternal}
-		}
-	}()
+// It never returns an error and never panics: like the real endpoint,
+// every failure is a status in the result. Render Apple's response body
+// with the result's Response or JSON.
+func (e *VerifyReceiptEndpoint) VerifyReceipt(request VerifyReceiptRequest) *VerifyReceiptResult {
+	return e.run(nil, func(requestDate time.Time) *VerifyReceiptResult {
+		return e.verify(request.ReceiptData, requestDate)
+	})
+}
 
-	if request.ReceiptData == "" {
-		return VerifyReceiptResponse{Status: StatusMalformed}
-	}
-	// The decode is bounded by the same ceiling as the parse: this is the
-	// hostile-network surface, and a body far above the ceiling must not
-	// buy more work than a body at it.
-	fields, err := verifyReceiptCore(decodeBase64(request.ReceiptData, e.maxReceiptBytes), e.roots, e.maxReceiptBytes)
-	if err != nil {
-		reason, ok := ReasonOf(err)
-		switch {
-		case !ok:
-			return VerifyReceiptResponse{Status: StatusInternal}
-		case reason == ReasonInvalidReceiptFormat:
-			return VerifyReceiptResponse{Status: StatusMalformed}
-		default:
-			return VerifyReceiptResponse{Status: StatusNotAuthenticated}
-		}
-	}
+// VerifyReceiptAt is VerifyReceipt with request_date set to now instead
+// of the endpoint's clock. now reaches request_date and nothing else:
+// certificate validity never sees it.
+func (e *VerifyReceiptEndpoint) VerifyReceiptAt(request VerifyReceiptRequest, now time.Time) *VerifyReceiptResult {
+	return e.run(&now, func(requestDate time.Time) *VerifyReceiptResult {
+		return e.verify(request.ReceiptData, requestDate)
+	})
+}
 
-	// 21007/21008 routing from the receipt_type attribute, failing closed
-	// (PLAN.md D10): only "Production" and "ProductionVPP" count as
-	// production. "ProductionSandbox", "ProductionVPPSandbox", "Xcode"
-	// and a missing attribute are all non-production. ("Xcode" is listed
-	// for completeness: an Xcode receipt is not Apple-signed, so it fails
-	// chain verification above and never reaches here.)
-	production := fields.ReceiptType == "Production" || fields.ReceiptType == "ProductionVPP"
-	if e.environment == EnvironmentProduction && !production {
-		return VerifyReceiptResponse{Status: StatusSandboxReceiptOnProduction}
-	}
-	if e.environment == EnvironmentSandbox && production {
-		return VerifyReceiptResponse{Status: StatusProductionReceiptOnSandbox}
-	}
-	return VerifyReceiptResponse{
-		Status:      StatusOK,
-		Environment: e.environment,
-		Receipt:     e.receiptJSON(fields, e.now()),
-	}
+// VerifyReceiptData verifies a bare base64 receipt, the value a request
+// body carries as receipt-data, with no envelope around it. An empty
+// string is ReasonMalformedRequest, as a missing receipt-data is.
+func (e *VerifyReceiptEndpoint) VerifyReceiptData(receiptData string) *VerifyReceiptResult {
+	return e.run(nil, func(requestDate time.Time) *VerifyReceiptResult {
+		return e.verify(receiptData, requestDate)
+	})
+}
+
+// VerifyReceiptDataAt is VerifyReceiptData with request_date set to now
+// instead of the endpoint's clock.
+func (e *VerifyReceiptEndpoint) VerifyReceiptDataAt(receiptData string, now time.Time) *VerifyReceiptResult {
+	return e.run(&now, func(requestDate time.Time) *VerifyReceiptResult {
+		return e.verify(receiptData, requestDate)
+	})
+}
+
+// VerifyReceiptBody handles one verifyReceipt request body in its raw
+// wire form, the JSON an HTTP framework hands over.
+//
+// A body that is not a JSON object (unparseable, null, an array, a
+// scalar), or whose receipt-data is not a JSON string, is
+// ReasonMalformedRequest, status 21002. Apple has no status code for
+// "that wasn't JSON"; 21002 is the closest, and it is what a JSON object
+// with no usable receipt-data gets anyway.
+func (e *VerifyReceiptEndpoint) VerifyReceiptBody(body []byte) *VerifyReceiptResult {
+	return e.run(nil, func(requestDate time.Time) *VerifyReceiptResult {
+		return e.verifyBody(body, requestDate)
+	})
+}
+
+// VerifyReceiptBodyAt is VerifyReceiptBody with request_date set to now
+// instead of the endpoint's clock.
+func (e *VerifyReceiptEndpoint) VerifyReceiptBodyAt(body []byte, now time.Time) *VerifyReceiptResult {
+	return e.run(&now, func(requestDate time.Time) *VerifyReceiptResult {
+		return e.verifyBody(body, requestDate)
+	})
 }
 
 // VerifyReceiptJSON handles one verifyReceipt request body in its raw
 // wire form: the JSON request in, the JSON response out, so an HTTP
-// framework's body can be piped through without a DTO in between.
-//
-// A body that is not a JSON object — unparseable, null, an array, a
-// scalar — answers {"status":21002}. Apple has no status code for "that
-// wasn't JSON"; 21002 is the closest, and it is what a JSON object with
-// no usable receipt-data gets anyway.
+// framework's body can be piped through without a DTO in between. It is
+// VerifyReceiptBody(body).JSON().
 //
 // The output is deterministic: encoding/json sorts object keys, so equal
 // inputs serialize to equal bytes.
@@ -236,36 +237,105 @@ func (e *VerifyReceiptEndpoint) VerifyReceipt(request VerifyReceiptRequest) (res
 // HTTP status accompanies 21002 — that no other port answered. Wire this
 // into your own mux in three lines instead.
 func (e *VerifyReceiptEndpoint) VerifyReceiptJSON(body []byte) []byte {
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return malformedJSON()
+	return e.VerifyReceiptBody(body).JSON()
+}
+
+// run resolves request_date once (at, or else the endpoint's clock) and
+// hands it to verify, turning any panic into ReasonInternalError.
+//
+// The contract is "never panics", and it is worth more than the
+// contained bug: an endpoint that kills its caller's request is worse
+// than one that answers 21009. The injected clock is inside the recover
+// too, because it is caller code.
+func (e *VerifyReceiptEndpoint) run(at *time.Time,
+	verify func(requestDate time.Time) *VerifyReceiptResult) (result *VerifyReceiptResult) {
+	var requestDate time.Time
+	defer func() {
+		if r := recover(); r != nil {
+			cause, ok := r.(error)
+			if !ok {
+				cause = fmt.Errorf("panic: %v", r)
+			}
+			result = e.internalError(cause, requestDate)
+		}
+	}()
+	if at != nil {
+		requestDate = *at
+	} else {
+		requestDate = e.now()
 	}
-	var request VerifyReceiptRequest
+	return verify(requestDate)
+}
+
+func (e *VerifyReceiptEndpoint) verifyBody(body []byte, requestDate time.Time) *VerifyReceiptResult {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil || raw == nil {
+		return e.failed(newError(ReasonMalformedRequest, "the request body is not a JSON object"), requestDate)
+	}
+	var receiptData string
 	if data, ok := raw["receipt-data"]; ok {
 		// receipt-data must be a JSON string. A number, an object or null
 		// is a malformed request, not an empty receipt.
-		if err := json.Unmarshal(data, &request.ReceiptData); err != nil {
-			return malformedJSON()
+		if err := json.Unmarshal(data, &receiptData); err != nil {
+			return e.failed(newError(ReasonMalformedRequest, "receipt-data is not a JSON string"), requestDate)
 		}
 	}
-	if password, ok := raw["password"]; ok {
-		_ = json.Unmarshal(password, &request.Password)
+	// password and exclude-old-transactions are accepted for wire
+	// compatibility and never read (COMPARISON.md).
+	return e.verify(receiptData, requestDate)
+}
+
+// verify is the one verification path every entry point ends in.
+// requestDate only becomes request_date: certificate validity is judged
+// inside verifyReceiptCore, which takes no time input.
+func (e *VerifyReceiptEndpoint) verify(receiptData string, requestDate time.Time) *VerifyReceiptResult {
+	if receiptData == "" {
+		return e.failed(newError(ReasonMalformedRequest, "receipt-data is missing or empty"), requestDate)
 	}
-	if exclude, ok := raw["exclude-old-transactions"]; ok {
-		_ = json.Unmarshal(exclude, &request.ExcludeOldTransactions)
-	}
-	out, err := json.Marshal(e.VerifyReceipt(request))
+	// The decode is bounded by the same ceiling as the parse: this is the
+	// hostile-network surface, and a body far above the ceiling must not
+	// buy more work than a body at it.
+	fields, err := verifyReceiptCore(decodeBase64(receiptData, e.maxReceiptBytes), e.roots, e.maxReceiptBytes)
 	if err != nil {
-		return []byte(`{"status":` + strconv.Itoa(StatusInternal) + `}`)
+		var verr *VerificationError
+		if errors.As(err, &verr) && verr != nil {
+			return e.failed(verr, requestDate)
+		}
+		return e.internalError(err, requestDate)
 	}
-	return out
+	return &VerifyReceiptResult{
+		environment: e.environment,
+		pacific:     e.pacific,
+		receipt:     fields,
+		production:  isProductionReceipt(fields),
+		requestDate: requestDate,
+	}
 }
 
-func malformedJSON() []byte {
-	return []byte(`{"status":` + strconv.Itoa(StatusMalformed) + `}`)
+func (e *VerifyReceiptEndpoint) failed(err *VerificationError, requestDate time.Time) *VerifyReceiptResult {
+	return &VerifyReceiptResult{
+		environment: e.environment,
+		pacific:     e.pacific,
+		err:         err,
+		requestDate: requestDate,
+	}
 }
 
-func (e *VerifyReceiptEndpoint) receiptJSON(fields *AppReceipt, requestDate time.Time) map[string]any {
+func (e *VerifyReceiptEndpoint) internalError(cause error, requestDate time.Time) *VerifyReceiptResult {
+	return e.failed(wrapError(ReasonInternalError, cause, "unexpected error in the verifyReceipt endpoint"), requestDate)
+}
+
+// isProductionReceipt is the 21007/21008 routing rule, failing closed
+// (PLAN.md D10): only "Production" and "ProductionVPP" count as
+// production. "ProductionSandbox", "ProductionVPPSandbox", "Xcode" and a
+// missing attribute are all non-production. ("Xcode" is listed for
+// completeness: an Xcode receipt is not Apple-signed, so it fails chain
+// verification and never gets here.)
+func isProductionReceipt(fields *AppReceipt) bool {
+	return fields.ReceiptType == "Production" || fields.ReceiptType == "ProductionVPP"
+}
+
+func (r *VerifyReceiptResult) receiptJSON(fields *AppReceipt, requestDate time.Time) map[string]any {
 	receipt := map[string]any{}
 	putString(receipt, "receipt_type", fields.ReceiptType)
 	// Apple echoes attribute 1 under both names — its response reference
@@ -284,20 +354,20 @@ func (e *VerifyReceiptEndpoint) receiptJSON(fields *AppReceipt, requestDate time
 		receipt["version_external_identifier"] = *fields.VersionExternalIdentifier
 	}
 	putString(receipt, "original_application_version", fields.OriginalAppVersion)
-	e.putDates(receipt, "receipt_creation_date", fields.CreationDate)
-	e.putDates(receipt, "request_date", &requestDate)
-	e.putDates(receipt, "original_purchase_date", fields.OriginalPurchaseDate)
-	e.putDates(receipt, "expiration_date", fields.ExpirationDate)
+	r.putDates(receipt, "receipt_creation_date", fields.CreationDate)
+	r.putDates(receipt, "request_date", &requestDate)
+	r.putDates(receipt, "original_purchase_date", fields.OriginalPurchaseDate)
+	r.putDates(receipt, "expiration_date", fields.ExpirationDate)
 
 	inApp := make([]any, 0, len(fields.InAppPurchases))
 	for i := range fields.InAppPurchases {
-		inApp = append(inApp, e.inAppJSON(&fields.InAppPurchases[i]))
+		inApp = append(inApp, r.inAppJSON(&fields.InAppPurchases[i]))
 	}
 	receipt["in_app"] = inApp
 	return receipt
 }
 
-func (e *VerifyReceiptEndpoint) inAppJSON(purchase *InAppPurchase) map[string]any {
+func (r *VerifyReceiptResult) inAppJSON(purchase *InAppPurchase) map[string]any {
 	entry := map[string]any{}
 	if purchase.Quantity != nil {
 		entry["quantity"] = strconv.FormatInt(*purchase.Quantity, 10)
@@ -305,10 +375,10 @@ func (e *VerifyReceiptEndpoint) inAppJSON(purchase *InAppPurchase) map[string]an
 	putString(entry, "product_id", purchase.ProductID)
 	putString(entry, "transaction_id", purchase.TransactionID)
 	putString(entry, "original_transaction_id", purchase.OriginalTransactionID)
-	e.putDates(entry, "purchase_date", purchase.PurchaseDate)
-	e.putDates(entry, "original_purchase_date", purchase.OriginalPurchaseDate)
-	e.putDates(entry, "expires_date", purchase.ExpiresDate)
-	e.putDates(entry, "cancellation_date", purchase.CancellationDate)
+	r.putDates(entry, "purchase_date", purchase.PurchaseDate)
+	r.putDates(entry, "original_purchase_date", purchase.OriginalPurchaseDate)
+	r.putDates(entry, "expires_date", purchase.ExpiresDate)
+	r.putDates(entry, "cancellation_date", purchase.CancellationDate)
 	if purchase.WebOrderLineItemID != nil {
 		entry["web_order_line_item_id"] = strconv.FormatInt(*purchase.WebOrderLineItemID, 10)
 	}
@@ -331,13 +401,13 @@ func putString(target map[string]any, key, value string) {
 // the epoch-millisecond form as a decimal string, and the US Pacific
 // form. Apple labels the first "Etc/GMT" — that string is part of the
 // wire contract, not a description.
-func (e *VerifyReceiptEndpoint) putDates(target map[string]any, prefix string, at *time.Time) {
+func (r *VerifyReceiptResult) putDates(target map[string]any, prefix string, at *time.Time) {
 	if at == nil {
 		return
 	}
 	target[prefix] = formatAppleDate(*at, time.UTC, "Etc/GMT")
 	target[prefix+"_ms"] = strconv.FormatInt(at.UnixMilli(), 10)
-	target[prefix+"_pst"] = formatAppleDate(*at, e.pacific, "America/Los_Angeles")
+	target[prefix+"_pst"] = formatAppleDate(*at, r.pacific, "America/Los_Angeles")
 }
 
 func formatAppleDate(at time.Time, location *time.Location, label string) string {
