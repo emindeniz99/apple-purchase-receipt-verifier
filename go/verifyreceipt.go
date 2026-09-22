@@ -48,6 +48,25 @@ const (
 	StatusInternal = 21009
 )
 
+// MaxRequestBytes is the ceiling on a raw request body handed to
+// VerifyReceiptBody, VerifyReceiptBodyAt or VerifyReceiptJSON. A larger
+// body is ReasonMalformedRequest, status 21002, before it is parsed:
+// JSON parsing allocates a multiple of the body, and that happens before
+// any verification.
+//
+// The number is the Java, PHP and Python ports' (1 MiB). It is
+// deliberately below DefaultMaxReceiptBytes: the JSON entry point has an
+// amplification the pre-decoded entry points do not. The largest genuine
+// receipt in the corpus is 106 KB of base64.
+const MaxRequestBytes = 1 << 20
+
+// MaxJSONNestingDepth is how many arrays and objects a request body or a
+// JWS header or payload may hold open at once. It is counted before the
+// JSON is parsed. A verifyReceipt body is a flat object of strings, and
+// Apple's JWS headers and payloads nest two levels at most; 64 is the
+// Java, PHP and Python ports' number.
+const MaxJSONNestingDepth = 64
+
 // VerifyReceiptRequest is Apple's request body.
 // https://developer.apple.com/documentation/appstorereceipts/requestbody
 type VerifyReceiptRequest struct {
@@ -99,9 +118,10 @@ type VerifyReceiptEndpointOptions struct {
 	// wrong instant.
 	PacificLocation *time.Location
 
-	// MaxReceiptBytes is the ceiling on a receipt's DECODED size, and it
-	// bounds the base64 decode of receipt-data as well as the parse.
-	// Zero means DefaultMaxReceiptBytes.
+	// MaxReceiptBytes is the ceiling on receipt-data: on the base64
+	// string before it is decoded, and on the DER before it is parsed.
+	// Zero means DefaultMaxReceiptBytes. A request body is separately
+	// capped at MaxRequestBytes, whatever this is set to.
 	MaxReceiptBytes int
 }
 
@@ -204,8 +224,10 @@ func (e *VerifyReceiptEndpoint) VerifyReceiptDataAt(receiptData string, now time
 // wire form, the JSON an HTTP framework hands over.
 //
 // A body that is not a JSON object (unparseable, null, an array, a
-// scalar), or whose receipt-data is not a JSON string, is
-// ReasonMalformedRequest, status 21002. Apple has no status code for
+// scalar), that is longer than MaxRequestBytes or nests deeper than
+// MaxJSONNestingDepth, or whose receipt-data is not a JSON string, is
+// ReasonMalformedRequest, status 21002. Both caps are checked before the
+// body is parsed. Apple has no status code for
 // "that wasn't JSON"; 21002 is the closest, and it is what a JSON object
 // with no usable receipt-data gets anyway.
 func (e *VerifyReceiptEndpoint) VerifyReceiptBody(body []byte) *VerifyReceiptResult {
@@ -268,6 +290,14 @@ func (e *VerifyReceiptEndpoint) run(at *time.Time,
 }
 
 func (e *VerifyReceiptEndpoint) verifyBody(body []byte, requestDate time.Time) *VerifyReceiptResult {
+	if len(body) > MaxRequestBytes {
+		return e.failed(newError(ReasonMalformedRequest,
+			"the request body exceeds the %d byte limit", MaxRequestBytes), requestDate)
+	}
+	if jsonNestingExceeds(body, MaxJSONNestingDepth) {
+		return e.failed(newError(ReasonMalformedRequest,
+			"the request body nests deeper than %d levels", MaxJSONNestingDepth), requestDate)
+	}
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(body, &raw); err != nil || raw == nil {
 		return e.failed(newError(ReasonMalformedRequest, "the request body is not a JSON object"), requestDate)
@@ -292,10 +322,14 @@ func (e *VerifyReceiptEndpoint) verify(receiptData string, requestDate time.Time
 	if receiptData == "" {
 		return e.failed(newError(ReasonMalformedRequest, "receipt-data is missing or empty"), requestDate)
 	}
-	// The decode is bounded by the same ceiling as the parse: this is the
-	// hostile-network surface, and a body far above the ceiling must not
-	// buy more work than a body at it.
-	fields, err := verifyReceiptCore(decodeBase64(receiptData, e.maxReceiptBytes), e.roots, e.maxReceiptBytes)
+	// The string is checked against the ceiling before it is decoded: this
+	// is the hostile-network surface, and a receipt-data far above the
+	// ceiling must not buy more work than one at it.
+	der, err := receiptFromBase64(receiptData, e.maxReceiptBytes)
+	var fields *AppReceipt
+	if err == nil {
+		fields, err = verifyReceiptCore(der, e.roots, e.maxReceiptBytes)
+	}
 	if err != nil {
 		var verr *VerificationError
 		if errors.As(err, &verr) && verr != nil {

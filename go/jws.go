@@ -30,12 +30,15 @@ var (
 	oidAppleWWDRMarker = asn1.ObjectIdentifier{1, 2, 840, 113635, 100, 6, 2, 1}
 )
 
-// maxJWSBytes bounds the compact JWS a verifier will look at. Apple's
+// MaxJWSBytes bounds the compact JWS a verifier will look at. A longer
+// one is ReasonInvalidJWSFormat before it is split or decoded, which keeps
+// a hostile multi-megabyte "JWS" from being base64-decoded and
+// JSON-parsed before it is rejected. The header and payload JSON are
+// further held to MaxJSONNestingDepth before they are parsed.
+//
+// The number is the Java, PHP and Python ports' (256 KiB). Apple's
 // payloads are a few kilobytes; the largest fixture here is under 3 KB.
-// This is a port-local defensive bound (it moves no verdict any
-// conformance vector pins) that keeps a hostile multi-megabyte "JWS" from
-// being base64-decoded and JSON-parsed before it is rejected.
-const maxJWSBytes = 1 << 20
+const MaxJWSBytes = 256 << 10
 
 // JWSVerifierOptions configures a JWSVerifier. A plain struct rather than
 // functional options, so every knob is greppable and an omitted field is
@@ -195,9 +198,9 @@ func (v *JWSVerifier) verifySignature(jws string) (Claims, error) {
 	if jws == "" {
 		return nil, newError(ReasonInvalidJWSFormat, "jws is empty")
 	}
-	if len(jws) > maxJWSBytes {
+	if len(jws) > MaxJWSBytes {
 		return nil, newError(ReasonInvalidJWSFormat,
-			"jws exceeds the %d byte limit", maxJWSBytes)
+			"jws exceeds the %d byte limit", MaxJWSBytes)
 	}
 	parts := strings.Split(jws, ".")
 	if len(parts) != 3 {
@@ -299,6 +302,10 @@ func parseJSONSegment(segment, what string) (Claims, error) {
 	if err != nil {
 		return nil, wrapError(ReasonInvalidJWSFormat, err, "%s is not valid base64url", what)
 	}
+	if jsonNestingExceeds(decoded, MaxJSONNestingDepth) {
+		return nil, newError(ReasonInvalidJWSFormat,
+			"%s nests deeper than %d levels", what, MaxJSONNestingDepth)
+	}
 	claims, err := decodeJSONObject(decoded)
 	if err != nil {
 		return nil, wrapError(ReasonInvalidJWSFormat, err, "%s is not valid base64url JSON", what)
@@ -307,9 +314,9 @@ func parseJSONSegment(segment, what string) (Claims, error) {
 }
 
 func parseX5CCertificate(text, what string) (*x509.Certificate, error) {
-	// The whole compact JWS is already under maxJWSBytes, so that is the
+	// The whole compact JWS is already under MaxJWSBytes, so that is the
 	// only ceiling an x5c entry can need.
-	cert, err := x509.ParseCertificate(decodeBase64(text, maxJWSBytes))
+	cert, err := x509.ParseCertificate(decodeBase64(text, MaxJWSBytes))
 	if err != nil {
 		return nil, wrapError(ReasonInvalidCertificate, err,
 			"x5c %s entry is not a valid certificate", what)

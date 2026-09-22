@@ -218,3 +218,41 @@ func decodeBase64Tolerant(text string, limit int) []byte {
 func decodeBase64URLStrict(segment string) ([]byte, error) {
 	return base64.RawURLEncoding.Strict().DecodeString(segment)
 }
+
+// jsonNestingExceeds reports whether b holds more than limit arrays and
+// objects open at once, counting brackets outside string literals. It runs
+// before the JSON is parsed, so a hostile document nested thousands deep
+// is refused in one linear pass rather than handed to encoding/json.
+//
+// It does not validate: a closer with no opener only lowers the count,
+// and such input is not JSON, so the parse that follows rejects it.
+func jsonNestingExceeds(b []byte, limit int) bool {
+	depth := 0
+	inString := false
+	escaped := false
+	for _, c := range b {
+		if inString {
+			switch {
+			case escaped:
+				escaped = false
+			case c == '\\':
+				escaped = true
+			case c == '"':
+				inString = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inString = true
+		case '[', '{':
+			depth++
+			if depth > limit {
+				return true
+			}
+		case ']', '}':
+			depth--
+		}
+	}
+	return false
+}
