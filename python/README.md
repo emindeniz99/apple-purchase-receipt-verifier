@@ -189,8 +189,8 @@ verified it. Any environment other than `"Production"` or `"Sandbox"` raises
 
 | `failure_reason` | status | when |
 |---|---|---|
-| `MALFORMED_REQUEST` | 21002 | the body is not a JSON object, or `receipt-data` is missing, empty or not a string |
-| `INVALID_RECEIPT_FORMAT` | 21002 | `receipt-data` is not base64 or does not decode to a receipt |
+| `MALFORMED_REQUEST` | 21002 | the body is not a JSON object, is over `MAX_REQUEST_BYTES` or nests past 64 levels, or `receipt-data` is missing, empty or not a string |
+| `INVALID_RECEIPT_FORMAT` | 21002 | `receipt-data` is over `MAX_RECEIPT_BYTES`, is not base64 or does not decode to a receipt |
 | `INVALID_CHAIN`, `INVALID_SIGNATURE`, other certificate reasons | 21003 | the receipt did not authenticate |
 | `INTERNAL_ERROR` | 21009 | an unexpected exception; `failure_cause` holds it |
 
@@ -209,6 +209,29 @@ Like Apple's endpoint, this does **not** check the bundle id: compare
 
 Migrating from 0.5: `endpoint.verify_receipt(body)` is removed; use
 `endpoint.verify_receipt_result(body).to_response()`.
+
+## Input limits
+
+Base64 decoding and JSON parsing both allocate a multiple of their input
+before any signature is checked, so the input is measured first. These are
+constants, not constructor options, and they match the Java and PHP ports.
+
+- **`ReceiptVerifier.MAX_RECEIPT_BYTES` (2 MiB).** Applied to the base64
+  string at `ReceiptVerifier.verify` and at the endpoint's `receipt-data`,
+  in characters, before decoding, and to the DER at every entry point that
+  takes bytes, `verify_receipt_core` included. A larger receipt is
+  `INVALID_RECEIPT_FORMAT`. `fixtures/cases.json` requires every port to
+  accept a receipt of up to 1 MiB of DER, about 1.38 MB of base64; the
+  largest genuine receipt in the corpus is 79 KB.
+- **`VerifyReceiptEndpoint.MAX_REQUEST_BYTES` (1 MiB).** Applied to a raw
+  JSON body (`str` in characters, `bytes` in bytes) before it is parsed. A
+  larger body answers 21002 with `MALFORMED_REQUEST`. It is below the
+  receipt cap on purpose: the JSON path parses the body as well as decoding
+  the receipt. A body already decoded to a dict is not measured.
+- **JSON nesting depth 64.** `json.loads` has no depth option and recurses
+  once per level, so the depth is counted before it runs. A deeper body
+  answers 21002 with `MALFORMED_REQUEST`. A verifyReceipt body is a flat
+  object of strings.
 
 ## Why offline
 

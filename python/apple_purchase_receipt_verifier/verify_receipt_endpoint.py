@@ -10,17 +10,18 @@ Like Apple's endpoint, this does NOT check the bundle id — the caller
 compares ``receipt["bundle_id"]``, exactly as with the real endpoint."""
 
 import json
+import re
 import time
 from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime, timezone
-from typing import Any, NoReturn
+from typing import Any, ClassVar, NoReturn
 from zoneinfo import ZoneInfo
 
 from cryptography import x509
 
 from ._receipt_base64 import decode_receipt_base64
 from .exceptions import Reason, VerificationError
-from .receipt import AppReceipt, InAppPurchase, verify_receipt_core
+from .receipt import AppReceipt, InAppPurchase, ReceiptVerifier, verify_receipt_core
 
 STATUS_OK = 0
 #: Malformed request or receipt-data property.
@@ -37,6 +38,16 @@ STATUS_INTERNAL = 21009
 _PACIFIC = ZoneInfo("America/Los_Angeles")
 _ENDPOINT_ENVIRONMENTS = ("Production", "Sandbox")
 _ENVIRONMENT_ERROR = "environment must be 'Production' or 'Sandbox'"
+
+#: How deep a JSON structure the request body may nest; the Java port's
+#: number. A verifyReceipt body is a flat object of strings. ``json.loads``
+#: has no depth option of its own and recurses once per level, so the depth
+#: is measured before it runs.
+_MAX_JSON_NESTING_DEPTH = 64
+#: A JSON string literal, escapes included. Brackets inside one are data, not
+#: nesting.
+_JSON_STRING_RE = re.compile(r'"[^"\\]*(?:\\.[^"\\]*)*"', re.DOTALL)
+_JSON_BRACKET_RE = re.compile(r"[\[\]{}]")
 
 
 class VerifyReceiptResult:
@@ -239,6 +250,16 @@ class VerifyReceiptEndpoint:
     instant.
     """
 
+    #: Ceiling on a raw request body, in characters for ``str`` and bytes for
+    #: ``bytes``. A larger one fails with :attr:`Reason.MALFORMED_REQUEST`,
+    #: status 21002, before it is parsed: JSON parsing allocates a multiple of
+    #: the body, and that happens before any verification. The number is the
+    #: Java and PHP ports'. It is deliberately below
+    #: :attr:`ReceiptVerifier.MAX_RECEIPT_BYTES`: the JSON entry point has an
+    #: amplification the pre-decoded mapping entry point does not. The
+    #: largest genuine receipt in the corpus is 106 KB of base64.
+    MAX_REQUEST_BYTES: ClassVar[int] = 1048576
+
     def __init__(
         self,
         trusted_roots: "Iterable[x509.Certificate]",
@@ -264,8 +285,13 @@ class VerifyReceiptEndpoint:
         to a mapping, or the raw JSON text an HTTP framework hands over.
 
         A body that is not a JSON object (unparseable, ``null``, an array, a
-        scalar), or a ``receipt-data`` that is missing, empty or not a
-        string, fails with :attr:`Reason.MALFORMED_REQUEST`, status 21002.
+        scalar), a raw body over :attr:`MAX_REQUEST_BYTES` or nested more
+        than 64 levels deep, or a ``receipt-data`` that is missing, empty or
+        not a string, fails with :attr:`Reason.MALFORMED_REQUEST`, status
+        21002. A ``receipt-data`` over
+        :attr:`ReceiptVerifier.MAX_RECEIPT_BYTES` characters fails with
+        :attr:`Reason.INVALID_RECEIPT_FORMAT`, also 21002, before it is
+        decoded.
         Apple has no status code for "that wasn't JSON"; 21002 ("The data in
         the receipt-data property was malformed or missing") is the closest.
         """
@@ -305,11 +331,22 @@ class VerifyReceiptEndpoint:
         return VerifyReceiptResult._create(self._environment, None, reason, None, at)
 
     def _from_json(self, body: object, at: datetime) -> VerifyReceiptResult:
+        if (
+            isinstance(body, (str, bytes, bytearray))
+            and len(body) > VerifyReceiptEndpoint.MAX_REQUEST_BYTES
+        ):
+            return self._failed(Reason.MALFORMED_REQUEST, at)
         try:
+            if isinstance(body, (bytes, bytearray)):
+                # What json.loads would do with bytes, done first so the depth
+                # check below reads the same text the parser will.
+                body = body.decode(json.detect_encoding(body), "surrogatepass")
+            if isinstance(body, str) and _nesting_exceeds_limit(body):
+                return self._failed(Reason.MALFORMED_REQUEST, at)
             parsed = json.loads(body)  # type: ignore[arg-type]
         except (ValueError, TypeError, RecursionError):
-            # RecursionError is a body nested too deep to parse: still a body
-            # that could not be read.
+            # RecursionError cannot come from nesting past the check above;
+            # it stays because no request input may make this method raise.
             return self._failed(Reason.MALFORMED_REQUEST, at)
         if not isinstance(parsed, dict):
             return self._failed(Reason.MALFORMED_REQUEST, at)
@@ -331,6 +368,11 @@ class VerifyReceiptEndpoint:
         try:
             if not isinstance(receipt_data, str) or not receipt_data:
                 return self._failed(Reason.MALFORMED_REQUEST, at)
+            # The decode below runs before verify_receipt_core could apply
+            # its own cap, so the cap is applied to the string here, as
+            # ReceiptVerifier.verify does, and nothing is allocated first.
+            if len(receipt_data) > ReceiptVerifier.MAX_RECEIPT_BYTES:
+                return self._failed(Reason.INVALID_RECEIPT_FORMAT, at)
             der = decode_receipt_base64(receipt_data)
             receipt = verify_receipt_core(der, self._roots)
         except VerificationError as e:
@@ -340,6 +382,22 @@ class VerifyReceiptEndpoint:
                 self._environment, None, Reason.INTERNAL_ERROR, e, at
             )
         return VerifyReceiptResult._create(self._environment, receipt, None, None, at)
+
+
+def _nesting_exceeds_limit(body: str) -> bool:
+    """Whether ``body`` opens more than :data:`_MAX_JSON_NESTING_DEPTH`
+    arrays and objects at once, outside string literals. An unterminated
+    string is not stripped, so the brackets after it count: that can only
+    overcount, and such a body is not JSON anyway."""
+    depth = 0
+    for bracket in _JSON_BRACKET_RE.findall(_JSON_STRING_RE.sub("", body)):
+        if bracket in "[{":
+            depth += 1
+            if depth > _MAX_JSON_NESTING_DEPTH:
+                return True
+        else:
+            depth -= 1
+    return False
 
 
 def _receipt_json(fields: AppReceipt, request_date: datetime) -> dict[str, Any]:
