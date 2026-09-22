@@ -233,7 +233,7 @@ and hands over plain files.
 field paths the C++ harness cannot reach — `receipt.bundle_id`,
 `inAppPurchases[productId=…].expiresDate`, `unknownAttributes[9999][0]`.
 
-Both harnesses run all 110 cases and skip none. The twelve that pin a clock go
+Both harnesses run all 117 cases and skip none. The twelve that pin a clock go
 through the `_and_clock` constructors described above. Nothing is skipped and
 nothing is assumed: a case the manifest ever marks unsupported fails the run
 rather than shrinking it quietly, and both harnesses print how many pinned a
@@ -298,7 +298,7 @@ apple-purchase-receipt-verifier 0.4.0 — C ABI conformance over NIFs
 104 passed, 0 failed, 0 skipped (12 pin a clock, and every one of them ran)
 ```
 
-The same 110 cases as the C++ harness, which is the point of running it: two
+The same 117 cases as the C++ harness, which is the point of running it: two
 consumers, one manifest, identical counts.
 
 Two things the shim does that a C caller does not have to think about.
