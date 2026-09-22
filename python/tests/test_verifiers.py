@@ -134,7 +134,9 @@ class VerifyReceiptEndpointTest(unittest.TestCase):
         # a shared vector cannot express: request_date is the wall clock at
         # call time, and the _ms/_pst siblings of each date are asserted by
         # presence rather than by value.
-        receipt = self.endpoint("Sandbox").verify_receipt(self.request())["receipt"]
+        receipt = (
+            self.endpoint("Sandbox").verify_receipt_result(self.request()).to_response()["receipt"]
+        )
         self.assertEqual(receipt["in_app"][0]["web_order_line_item_id"], "42")
         for key in ("request_date", "request_date_ms", "request_date_pst"):
             self.assertIn(key, receipt)
@@ -147,9 +149,12 @@ class VerifyReceiptEndpointTest(unittest.TestCase):
 
     def test_reports_malformed_requests_as_21002(self):
         endpoint = self.endpoint("Sandbox")
-        self.assertEqual(endpoint.verify_receipt({})["status"], 21002)
-        self.assertEqual(endpoint.verify_receipt(None)["status"], 21002)
-        self.assertEqual(endpoint.verify_receipt({"receipt-data": "AQIDBA=="})["status"], 21002)
+        self.assertEqual(endpoint.verify_receipt_result({}).to_response()["status"], 21002)
+        self.assertEqual(endpoint.verify_receipt_result(None).to_response()["status"], 21002)
+        self.assertEqual(
+            endpoint.verify_receipt_result({"receipt-data": "AQIDBA=="}).to_response()["status"],
+            21002,
+        )
 
     def test_verify_receipt_json_pins_the_wire_types(self):
         body = self.endpoint("Sandbox").verify_receipt_json(json.dumps(self.request()))
@@ -207,7 +212,7 @@ class VerifyReceiptEndpointTest(unittest.TestCase):
 
     def test_verify_receipt_json_matches_the_mapping_api(self):
         endpoint = self.endpoint("Sandbox")
-        via_map = endpoint.verify_receipt(self.request())
+        via_map = endpoint.verify_receipt_result(self.request()).to_response()
         via_json = json.loads(endpoint.verify_receipt_json(json.dumps(self.request())))
         self.assertEqual(self.without_request_date(via_json), self.without_request_date(via_map))
 
@@ -286,9 +291,9 @@ class ReceiptIdsAttributesTest(unittest.TestCase):
         from apple_purchase_receipt_verifier import VerifyReceiptEndpoint
 
         endpoint = VerifyReceiptEndpoint([cert("generated", "receipt-root.der")], "Sandbox")
-        response = endpoint.verify_receipt(
+        response = endpoint.verify_receipt_result(
             {"receipt-data": base64.b64encode(fixture("generated", "receipt.der")).decode()}
-        )
+        ).to_response()
         receipt = response["receipt"]
         for key in ("adam_id", "app_item_id", "download_id", "version_external_identifier"):
             self.assertNotIn(key, receipt)
@@ -1147,13 +1152,18 @@ class ClockSeamTest(unittest.TestCase):
             ).decode()
         }
         self.assertEqual(
-            0, VerifyReceiptEndpoint(roots, "Sandbox").verify_receipt(historical)["status"]
+            0,
+            VerifyReceiptEndpoint(roots, "Sandbox")
+            .verify_receipt_result(historical)
+            .to_response()["status"],
         )
         for now in (None, 1590969600.0, 4102444800.0):  # system, 2020-06-01, 2100
             with self.subTest(now=now):
                 clock = None if now is None else (lambda moment: lambda: moment)(now)
                 endpoint = VerifyReceiptEndpoint(roots, "Sandbox", clock=clock)
-                self.assertEqual(21003, endpoint.verify_receipt(data)["status"])
+                self.assertEqual(
+                    21003, endpoint.verify_receipt_result(data).to_response()["status"]
+                )
 
     def test_injected_clock_is_ignored_without_a_max_signed_age(self):
         # The clock is not a second expiry policy: with no max age configured
@@ -1171,9 +1181,9 @@ class ClockSeamTest(unittest.TestCase):
         endpoint = VerifyReceiptEndpoint(
             [cert("generated", "receipt-root.der")], "Sandbox", clock=lambda: 1735689600.0
         )  # 2025-01-01T00:00:00Z
-        response = endpoint.verify_receipt(
+        response = endpoint.verify_receipt_result(
             {"receipt-data": base64.b64encode(fixture("generated", "receipt.der")).decode()}
-        )
+        ).to_response()
         self.assertEqual(0, response["status"])
         receipt = response["receipt"]
         self.assertEqual("2025-01-01 00:00:00 Etc/GMT", receipt["request_date"])

@@ -120,6 +120,96 @@ def redeem_receipt(user_id: str, receipt_data: str, product_id: str) -> str:
     return "granted"
 ```
 
+## The verifyReceipt-compatible endpoint
+
+`VerifyReceiptEndpoint` answers Apple's deprecated `verifyReceipt` request
+with the same response body, verified offline. One instance emulates one
+environment, `"Production"` or `"Sandbox"`.
+
+```python
+from apple_purchase_receipt_verifier import VerifyReceiptEndpoint, apple_receipt_roots
+
+endpoint = VerifyReceiptEndpoint(apple_receipt_roots(), "Production")
+
+# The request body as a dict, or the raw JSON text.
+result = endpoint.verify_receipt_result(request_body)
+response = result.to_response()  # Apple's body as a dict
+json_body = result.to_json()  # Apple's body as JSON
+
+# The same as verify_receipt_result(raw_body).to_json().
+json_body = endpoint.verify_receipt_json(raw_body)
+# receipt-data alone, with no request envelope.
+bare = endpoint.verify_receipt_data(receipt_b64)
+```
+
+No endpoint method raises on a request: the Apple status is part of the
+result, for every input, including a body that is not JSON
+(`{"status":21002}`). The statuses it can produce are 0, 21002, 21003,
+21007, 21008 and 21009, and no others, because the rest describe conditions
+that only exist on Apple's servers. Local 21007/21008 routing fails closed:
+only receipt types `Production` and `ProductionVPP` count as production.
+
+A `VerifyReceiptResult` is one verification:
+
+- `status` is the answer for the endpoint's own environment.
+- `receipt` is the verified `AppReceipt` whenever the receipt bytes
+  verified, 21007 and 21008 included.
+- `failure_reason` is a `Reason` value saying why there is no receipt.
+  Exactly one of `receipt` and `failure_reason` is set.
+- `verified` is `True` exactly when `receipt` is set. That includes 21007
+  and 21008, so it is not the same check as `status == 0`: `status == 0`
+  asks whether this endpoint's environment accepts the receipt, `verified`
+  asks whether the receipt verified at all.
+- `failure_cause` is the exception behind an `INTERNAL_ERROR`, for logging.
+- `request_date` is the UTC `datetime` rendered as `request_date`.
+
+The result is immutable and only the endpoint creates one. Each response is
+rendered the first time it is asked for and reused after that.
+
+**Retrying in the other environment costs no second verification.**
+`to_response(environment)` and `to_json(environment)` render what an endpoint
+of that environment would answer, recomputing the status from the receipt's
+own type:
+
+| receipt | on `"Production"` | on `"Sandbox"` |
+|---|---|---|
+| `Production`, `ProductionVPP` | 0 | 21008 |
+| any other type, or none | 21007 | 0 |
+| failed verification | its own status | its own status |
+
+```python
+result = production.verify_receipt_result(request_body)
+if result.status == 21007:
+    json_body = result.to_json("Sandbox")
+```
+
+A sandbox receipt never renders as a production 0, whichever endpoint
+verified it. Any environment other than `"Production"` or `"Sandbox"` raises
+`ValueError`, as the constructor does.
+
+| `failure_reason` | status | when |
+|---|---|---|
+| `MALFORMED_REQUEST` | 21002 | the body is not a JSON object, or `receipt-data` is missing, empty or not a string |
+| `INVALID_RECEIPT_FORMAT` | 21002 | `receipt-data` is not base64 or does not decode to a receipt |
+| `INVALID_CHAIN`, `INVALID_SIGNATURE`, other certificate reasons | 21003 | the receipt did not authenticate |
+| `INTERNAL_ERROR` | 21009 | an unexpected exception; `failure_cause` holds it |
+
+`MALFORMED_REQUEST` and `INTERNAL_ERROR` only ever appear on a result. No
+`VerificationError` is raised with either.
+
+**`request_date`.** `verify_receipt_result` and `verify_receipt_data` take
+a keyword-only `now`, a timezone-aware `datetime` that becomes
+`request_date` in place of the endpoint's clock. Without it the clock is
+read once, when the call is made.
+`now` reaches `request_date` and nothing else: certificate validity never
+sees it. A naive `datetime` raises `ValueError`.
+
+Like Apple's endpoint, this does **not** check the bundle id: compare
+`result.receipt.bundle_id` yourself.
+
+Migrating from 0.5: `endpoint.verify_receipt(body)` is removed; use
+`endpoint.verify_receipt_result(body).to_response()`.
+
 ## Why offline
 
 Signature verification cannot fail because a vendor endpoint is down, so a
