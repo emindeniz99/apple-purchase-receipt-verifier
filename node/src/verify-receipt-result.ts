@@ -1,3 +1,4 @@
+import { formatGmt, formatPacific } from './apple-date.js';
 import { Reason, VerificationError } from './errors.js';
 import type { RawAppReceipt, RawInAppPurchase } from './receipt-payload.js';
 
@@ -163,10 +164,10 @@ class Result<R extends RenderedReceipt> {
         receipt: receiptJson(this.receipt, this.requestDate),
       };
     } catch {
-      // receiptJson formats dates through Intl.DateTimeFormat with named
-      // time zones, which throws on a runtime built without full ICU (and on
-      // an invalid request date). The endpoint has always answered 21009
-      // for that rather than letting the throw escape.
+      // A date outside the range apple-date.ts formats itself (an invalid
+      // request date among them) goes through Intl, which throws on a
+      // runtime without it or without full ICU. The endpoint has always
+      // answered 21009 for that rather than letting the throw escape.
       return { status: Status.INTERNAL };
     }
   }
@@ -401,25 +402,7 @@ function appleDates(target: Record<string, unknown>, prefix: string, date: Date 
   if (date === null) {
     return;
   }
-  target[prefix] = formatInZone(date, 'UTC', 'Etc/GMT');
+  target[prefix] = formatGmt(date);
   target[`${prefix}_ms`] = String(date.getTime());
-  target[`${prefix}_pst`] = formatInZone(date, 'America/Los_Angeles', 'America/Los_Angeles');
-}
-
-function formatInZone(date: Date, timeZone: string, label: string): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(date);
-  const get = (type: string): string => parts.find((p) => p.type === type)?.value ?? '00';
-  return (
-    `${get('year')}-${get('month')}-${get('day')} ` +
-    `${get('hour')}:${get('minute')}:${get('second')} ${label}`
-  );
+  target[`${prefix}_pst`] = formatPacific(date);
 }

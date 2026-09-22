@@ -55,8 +55,9 @@ export async function run(fx) {
   }
   out.push('genuine sandbox receipt verifies against the real Apple root');
 
-  // The endpoint renders its dates through Intl with named time zones, so
-  // this is the check that the runtime ships the zone data it needs.
+  // The endpoint renders its GMT and Pacific dates itself, since Fastly
+  // Compute has no Intl; this is the check that a status-0 body renders on
+  // every runtime, the Pacific daylight-saving offset included.
   const result = await new VerifyReceiptEndpoint({
     trustedRoots: [fx.appleRootDer],
     environment: 'Production',
@@ -71,7 +72,7 @@ export async function run(fx) {
   ) {
     throw new Error(`endpoint rendered ${sandboxJson.slice(0, 200)}`);
   }
-  out.push('VerifyReceiptEndpoint answers 21007, then renders the Sandbox body with Intl zones');
+  out.push('VerifyReceiptEndpoint answers 21007, then renders the Sandbox body');
 
   // The legacy receipt is the SHA-1 check: its CMS signature is RSA over a
   // SHA-1 digest and its whole certificate chain is signed sha1WithRSA, so

@@ -14,6 +14,7 @@
   },
   "include": [
     "src/web",
+    "src/apple-date.ts",
     "src/bytes.ts",
     "src/cms.ts",
     "src/der.ts",
