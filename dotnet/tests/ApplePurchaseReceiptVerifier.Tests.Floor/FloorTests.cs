@@ -96,6 +96,28 @@ public class FloorTests
             StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// This asset has no base64 fast path, so the receipt cap is checked here
+    /// in front of the tolerant decoder alone: a genuine receipt padded with
+    /// line feeds to the cap verifies, and one more line feed is refused.
+    /// </summary>
+    [Fact]
+    public void TheReceiptCapHoldsOnTheFloorAsset()
+    {
+        string base64 = Convert.ToBase64String(Bytes("generated/receipt.der"));
+        string atCap = base64 + new string('\n', ReceiptVerifier.MaxReceiptBytes - base64.Length);
+
+        using ReceiptVerifier verifier = new(
+            new[] { Certificate("generated/receipt-root.der") }, "com.example.app");
+        Assert.Equal("com.example.app", verifier.Verify(atCap).BundleId);
+
+        VerificationException error = Assert.Throws<VerificationException>(() => verifier.Verify(atCap + "\n"));
+        Assert.Equal(VerificationReason.InvalidReceiptFormat, error.Reason);
+        Assert.Equal(
+            "INVALID_RECEIPT_FORMAT: receipt exceeds the maximum accepted size of 2097152 characters",
+            error.Message);
+    }
+
     [Fact]
     public void TheReasonVocabularyIsIntactOnTheFloorAsset()
     {

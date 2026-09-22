@@ -47,13 +47,16 @@ public class ResourceBoundTests
     /// it — reading <c>SignedCms.Certificates.Count</c> — is the attack:
     /// touching that property materialises every embedded certificate, which
     /// measured 1 045 ms and 6 000 handle-holding objects for this input,
-    /// against 35 µs for the structural pre-scan.
+    /// against 35 µs for the structural pre-scan. The flood here stays under
+    /// <see cref="ReceiptVerifier.MaxReceiptBytes"/>, so it is the pre-scan
+    /// that refuses it and not the byte cap in front of it.
     /// </summary>
     [Fact]
     public void ACertificateFloodIsRejectedInBoundedTime()
     {
-        byte[] flood = WithCertificateCopies(Receipt, 6_000);
-        Assert.True(flood.Length > 3_000_000, $"the flood is only {flood.Length} bytes");
+        byte[] flood = WithCertificateCopies(Receipt, 2_500);
+        Assert.True(flood.Length > 1_000_000, $"the flood is only {flood.Length} bytes");
+        Assert.True(flood.Length <= ReceiptVerifier.MaxReceiptBytes, $"the flood is {flood.Length} bytes, over the cap");
 
         using ReceiptVerifier verifier = new(Roots(), "com.example.app");
         Stopwatch stopwatch = Stopwatch.StartNew();

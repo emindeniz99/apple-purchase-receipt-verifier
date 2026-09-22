@@ -245,7 +245,19 @@ public class VerifyReceiptResultTests
             {
                 string label = data.Substring(0, Math.Min(40, data.Length));
                 VerifyReceiptResult bare = pinned.VerifyReceiptData(data);
-                Assert.Equal(pinned.VerifyReceiptJson(Body(data)), bare.ToJson());
+                string body = Body(data);
+                if (body.Length > VerifyReceiptEndpoint.MaxRequestBytes)
+                {
+                    // The byte-floor receipt: its base64 is under the receipt
+                    // cap, so the bare string is answered, but as a JSON body
+                    // it is over the request cap and never parsed.
+                    Assert.Equal("{\"status\":21002}", pinned.VerifyReceiptJson(body));
+                }
+                else
+                {
+                    Assert.Equal(pinned.VerifyReceiptJson(body), bare.ToJson());
+                }
+
                 Assert.NotEqual(VerificationReason.InternalError, bare.FailureReason);
                 AssertInvariant(bare, label);
                 statuses.Add(bare.Status);
