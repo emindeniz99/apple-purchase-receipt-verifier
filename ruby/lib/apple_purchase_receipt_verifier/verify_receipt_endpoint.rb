@@ -47,6 +47,16 @@ module ApplePurchaseReceiptVerifier
     # PLAN.md D10.
     PRODUCTION_RECEIPT_TYPES = %w[Production ProductionVPP].freeze
 
+    # Ceiling on a raw JSON request body, in bytes. A larger one fails with
+    # {Reason::MALFORMED_REQUEST}, status 21002, before it is parsed: JSON
+    # parsing allocates a multiple of the body, and that happens before any
+    # verification. The number is the Java, PHP and Python ports'. It is
+    # deliberately below {ReceiptVerifier::MAX_RECEIPT_BYTES}: the JSON entry
+    # points parse the body as well as decoding the receipt. A request already
+    # decoded to a Hash is not measured; its `receipt-data` still is. The
+    # largest genuine receipt in the corpus is 106 KB of base64.
+    MAX_REQUEST_BYTES = 1_048_576
+
     # @param trusted_roots [Array<OpenSSL::X509::Certificate, String>]
     # @param environment [String] which environment this instance emulates,
     #   {Environment::PRODUCTION} or {Environment::SANDBOX}. It drives
@@ -73,8 +83,12 @@ module ApplePurchaseReceiptVerifier
     # Hash, or the raw JSON text an HTTP framework hands over.
     #
     # A body that is not a JSON object (unparseable, `null`, an array, a
-    # scalar), or a `receipt-data` that is missing, empty or not a String,
-    # fails with {Reason::MALFORMED_REQUEST}, status 21002. Apple has no status
+    # scalar), a raw body over {MAX_REQUEST_BYTES} or nested more than 64
+    # levels deep, or a `receipt-data` that is missing, empty or not a String,
+    # fails with {Reason::MALFORMED_REQUEST}, status 21002. A `receipt-data`
+    # over {ReceiptVerifier::MAX_RECEIPT_BYTES} characters fails with
+    # {Reason::INVALID_RECEIPT_FORMAT}, also 21002, before it is decoded.
+    # Apple has no status
     # code for "that was not JSON"; 21002 ("the data in the receipt-data
     # property was malformed or missing") is the closest.
     #
@@ -144,8 +158,15 @@ module ApplePurchaseReceiptVerifier
     end
 
     def from_json(body, at)
+      # Measured before the parser sees it. A non-String answers 21002 here
+      # too, rather than reaching JSON.parse through an implicit #to_str that
+      # would bypass the measurement.
+      unless body.is_a?(String) && body.bytesize <= MAX_REQUEST_BYTES
+        return failed(Reason::MALFORMED_REQUEST, at)
+      end
+
       begin
-        parsed = JSON.parse(body)
+        parsed = JsonLimits.parse(body)
       rescue JSON::ParserError, TypeError
         return failed(Reason::MALFORMED_REQUEST, at)
       end

@@ -186,7 +186,7 @@ a result, never on a `VerificationError`:
 
 | Reason | Status | When |
 |---|---|---|
-| `MALFORMED_REQUEST` | 21002 | the body is not a JSON object, or `receipt-data` is missing, empty or not a String |
+| `MALFORMED_REQUEST` | 21002 | the body is not a JSON object, is over `MAX_REQUEST_BYTES` or nests past 64 levels, or `receipt-data` is missing, empty or not a String |
 | `INTERNAL_ERROR` | 21009 | an unexpected error inside the endpoint, including a clock that raises or returns something other than a `Time`; `failure_cause` holds it |
 
 Like the real endpoint, it does **not** check the bundle id. Compare
@@ -202,6 +202,36 @@ would need.
 
 `verify_receipt(body)` is gone. `verify_receipt_result(body).to_response`
 returns the same Hash.
+
+## Input limits
+
+Base64 decoding, the CMS parse and JSON parsing all allocate in proportion to
+their input before any signature is checked, so the input is measured first.
+These are constants, not constructor options, and they match the Java, PHP
+and Python ports.
+
+- **`ReceiptVerifier::MAX_RECEIPT_BYTES` (2 MiB).** Applied to base64 text in
+  characters, before decoding: at `ReceiptVerifier#verify`, `#verify_base64`
+  and the endpoint's `receipt-data`. Applied to DER in bytes, before parsing:
+  at `#verify_der` and `verify_receipt_core`. A larger receipt is
+  `INVALID_RECEIPT_FORMAT` (21002 at the endpoint). `fixtures/cases.json`
+  requires every port to accept a receipt of up to 1 MiB of DER, about
+  1.38 MB of base64; the largest genuine receipt in the corpus is 79 KB.
+- **`VerifyReceiptEndpoint::MAX_REQUEST_BYTES` (1 MiB).** Applied to a raw
+  JSON body in bytes, before it is parsed. A larger body answers 21002 with
+  `MALFORMED_REQUEST`. It sits below the receipt cap on purpose: the JSON
+  path parses the body as well as decoding the receipt. So a receipt at the
+  1 MiB DER floor verifies through `verify_receipt_data` or a Hash request,
+  and answers 21002 inside a JSON body. A request already decoded to a Hash
+  is not measured; its `receipt-data` still is.
+- **JSON nesting depth 64.** Applies to the request body and to the JWS
+  header and payload. A deeper body answers 21002 with `MALFORMED_REQUEST`; a
+  deeper JWS segment is `INVALID_JWS_FORMAT`. The depth is enforced by the
+  parser's `max_nesting` and then counted over the result, because newer json
+  gems do not count an empty innermost array or object.
+- **`JwsVerifier::MAX_JWS_BYTES` (256 KiB).** Applied to the compact JWS in
+  characters, before it is split or decoded. A longer one is
+  `INVALID_JWS_FORMAT`. Every JWS in the shared corpus is under 2.5 KB.
 
 ## Errors
 
@@ -227,7 +257,7 @@ outside it; no verifier raises them.)
 
 | Reason | Raised when |
 |---|---|
-| `INVALID_JWS_FORMAT` | not three segments, not base64url, not JSON, `alg` is not ES256, `x5c` is not three certificates |
+| `INVALID_JWS_FORMAT` | over `MAX_JWS_BYTES`, not three segments, not base64url, not JSON (or nested past 64 levels), `alg` is not ES256, `x5c` is not three certificates |
 | `INVALID_CERTIFICATE` | an `x5c` entry does not decode as a certificate |
 | `INVALID_CERTIFICATE_PURPOSE` | a certificate lacks its Apple marker OID |
 | `INVALID_CHAIN` | the chain does not reach a pinned anchor, or was not valid at signing time |
@@ -235,7 +265,7 @@ outside it; no verifier raises them.)
 | `WRONG_BUNDLE_ID` | the payload names a different app |
 | `WRONG_ENVIRONMENT` | the environment is outside the accepted set |
 | `WRONG_APP_APPLE_ID` | a Production AppTransaction names a different app Apple id |
-| `INVALID_RECEIPT_FORMAT` | the receipt is not a well-formed CMS blob or attribute set |
+| `INVALID_RECEIPT_FORMAT` | the receipt is over `MAX_RECEIPT_BYTES`, or is not a well-formed CMS blob or attribute set |
 | `DEVICE_HASH_MISMATCH` | the receipt is not bound to the device GUID supplied |
 | `STALE_PAYLOAD` | the payload was signed longer ago than `max_signed_age_seconds` |
 
