@@ -109,7 +109,10 @@ func (v *ReceiptVerifier) Verify(receipt []byte) (*AppReceipt, error) {
 // SHA1(guid ‖ opaqueValue ‖ bundleIdBytes) must equal attribute 5.
 //
 // The check is optional (PLAN.md D4) because a server does not always
-// have the device's identifierForVendor.
+// have the device's GUID — the raw bytes of identifierForVendor on iOS,
+// iPadOS, tvOS and watchOS, including an iOS app running on an Apple
+// silicon Mac, or the primary network interface's MAC address from
+// copy_mac_address on macOS and Mac Catalyst.
 func (v *ReceiptVerifier) VerifyWithDeviceGUID(receipt, deviceGUID []byte) (*AppReceipt, error) {
 	return v.verify(func() []byte { return receipt }, deviceGUID, true)
 }

@@ -111,7 +111,10 @@ verifier.Verify(receiptBase64);
 verifier.Verify(receiptBase64, deviceGuid);
 ```
 
-Passing `deviceGuid` (the client's `identifierForVendor` bytes) additionally
+Passing `deviceGuid` (the client's device GUID — the raw bytes of
+`identifierForVendor` on iOS, iPadOS, tvOS and watchOS, including an iOS
+app running on an Apple silicon Mac, or the primary network interface's
+MAC address from `copy_mac_address` on macOS and Mac Catalyst) additionally
 enforces `SHA1(guid ‖ opaqueValue ‖ bundleIdBytes) == attribute 5`. It is
 optional because a server does not always hold those bytes; cross-device
 restore still works either way, since each device presents its own receipt.

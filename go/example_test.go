@@ -66,7 +66,10 @@ func ExampleReceiptVerifier_VerifyWithDeviceGUID() {
 	if err != nil {
 		panic(err)
 	}
-	// The device's identifierForVendor as raw bytes. Optional: a server
+	// The device's GUID: the raw bytes of identifierForVendor on iOS,
+	// iPadOS, tvOS and watchOS, including an iOS app running on an Apple
+	// silicon Mac, or the primary network interface's MAC address from
+	// copy_mac_address on macOS and Mac Catalyst. Optional: a server
 	// does not always have it, and it binds the receipt to one device.
 	guid := []byte{0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
 		0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00}

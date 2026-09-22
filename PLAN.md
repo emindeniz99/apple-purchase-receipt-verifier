@@ -27,10 +27,13 @@ recorded here.
   a single-environment hard fail would reject purchases during review
   (the old `verifyReceipt` 21007 retry-on-sandbox problem, solved locally).
 - **D4 — Device-hash check stays optional, off by default.**
-  `identifierForVendor` differs per device but each device carries its own
-  receipt with its own GUID, so the check is sound — still, requiring it
-  would force client changes. Replay defense = server-side transaction-id
-  bookkeeping (owner confirmed the server can keep them).
+  The device GUID (the raw bytes of `identifierForVendor` on iOS, iPadOS,
+  tvOS and watchOS, including an iOS app running on an Apple silicon Mac,
+  or the primary network interface's MAC address from `copy_mac_address`
+  on macOS and Mac Catalyst) differs per device but each device carries
+  its own receipt with its own GUID, so the check is sound — still,
+  requiring it would force client changes. Replay defense = server-side
+  transaction-id bookkeeping (owner confirmed the server can keep them).
 - **D5 — Subscriptions supported**: payloads expose `expiresDate` /
   `revocationDate` with an `isActiveAt(now)` helper, and the JWS verifier
   takes an optional max-signed-age (staleness) policy. Refund/renewal
