@@ -205,7 +205,8 @@ read once, when the call is made.
 sees it. A naive `datetime` raises `ValueError`.
 
 Like Apple's endpoint, this does **not** check the bundle id: compare
-`result.receipt.bundle_id` yourself.
+`result.receipt.bundle_id` yourself before granting anything, or use
+`ReceiptVerifier`, which checks it for you.
 
 Migrating from 0.5: `endpoint.verify_receipt(body)` is removed; use
 `endpoint.verify_receipt_result(body).to_response()`.
