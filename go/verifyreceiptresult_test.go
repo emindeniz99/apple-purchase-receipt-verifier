@@ -315,7 +315,10 @@ func TestResultMarshalsAsTheResponseBody(t *testing.T) {
 
 // The bare-base64 entry point and the JSON-body entry point must be the
 // same endpoint: over every receipt the conformance vectors use, in both
-// environments, the answers must match byte for byte.
+// environments, the answers must match byte for byte. The one exception is
+// a body over MaxRequestBytes (the byte-floor receipt's), which the body
+// path refuses before parsing and the bare path, which has no envelope to
+// cap, still verifies.
 func TestReceiptDataMatchesTheBodyPathOverEveryReceiptFixture(t *testing.T) {
 	compared := 0
 	for _, kase := range mustCases(t).Cases {
@@ -338,7 +341,12 @@ func TestReceiptDataMatchesTheBodyPathOverEveryReceiptFixture(t *testing.T) {
 			endpoint := endpointFor(t, roots, environment, fixedClock)
 			fromData := endpoint.VerifyReceiptData(receiptData).JSON()
 			fromBody := endpoint.VerifyReceiptJSON(body)
-			if !bytes.Equal(fromData, fromBody) {
+			if len(body) > applereceipt.MaxRequestBytes {
+				if string(fromBody) != `{"status":21002}` || bytes.Equal(fromData, fromBody) {
+					t.Errorf("%s on %s: a %d byte body must be 21002 on the body path only:\n%s\n%s",
+						kase.ID, environment, len(body), fromData, fromBody)
+				}
+			} else if !bytes.Equal(fromData, fromBody) {
 				t.Errorf("%s on %s: VerifyReceiptData and VerifyReceiptJSON differ:\n%s\n%s",
 					kase.ID, environment, fromData, fromBody)
 			}

@@ -231,7 +231,7 @@ cause. `ReasonOf(err)` is the one-line form.
 
 | Reason | Raised when |
 |---|---|
-| `INVALID_JWS_FORMAT` | not three segments, header not base64url JSON, `alg` is not ES256, `x5c` is absent or not exactly three entries |
+| `INVALID_JWS_FORMAT` | longer than `MaxJWSBytes`, not three segments, header not base64url JSON, header or payload JSON nested deeper than `MaxJSONNestingDepth`, `alg` is not ES256, `x5c` is absent or not exactly three entries |
 | `INVALID_CERTIFICATE` | an `x5c` entry does not parse as a certificate |
 | `INVALID_CERTIFICATE_PURPOSE` | a marker OID is missing: `1.2.840.113635.100.6.11.1` on the JWS leaf and on the receipt signer, `1.2.840.113635.100.6.2.1` on the JWS intermediate |
 | `INVALID_CHAIN` | validity window at signing time, name mismatch, issuer signature, disallowed signature algorithm, not a CA, no path to a pinned anchor, path too long, more than ten embedded certificates |
@@ -239,7 +239,7 @@ cause. `ReasonOf(err)` is the one-line form.
 | `WRONG_BUNDLE_ID` | the payload's bundle id is not the configured one |
 | `WRONG_ENVIRONMENT` | the environment (or `receiptType`) claim is outside the accept set |
 | `WRONG_APP_APPLE_ID` | a Production `AppTransaction` whose app Apple id is unset or does not match |
-| `INVALID_RECEIPT_FORMAT` | unparseable CMS, trailing bytes after the blob, no encapsulated content, no `SignerInfo`, an embedded certificate that does not decode, signer not embedded, unsupported digest OID, bad attribute shape, decoded receipt over `MaxReceiptBytes` |
+| `INVALID_RECEIPT_FORMAT` | unparseable CMS, trailing bytes after the blob, no encapsulated content, no `SignerInfo`, an embedded certificate that does not decode, signer not embedded, unsupported digest OID, bad attribute shape, a base64 string or a DER receipt over `MaxReceiptBytes` |
 | `DEVICE_HASH_MISMATCH` | the device-hash check was requested and failed, or the receipt lacks the attributes it needs |
 | `STALE_PAYLOAD` | `MaxSignedAge` is set and the payload's own signing date is older than it |
 
@@ -381,14 +381,32 @@ func redeemReceipt(receipts *applereceipt.ReceiptVerifier, userID, receiptData, 
   long-form lengths, and rejects trailing bytes after the outermost value.
   It is zero-copy: nesting an indefinite-length value does not multiply the
   bytes a parse materializes, so depth is not an amplification lever.
-  Receipts are capped at 1 MiB by default and at ten embedded certificates,
-  the latter enforced *before* any certificate is decoded.
-- **`MaxReceiptBytes` bounds the decode, not only the parse.** It is a
-  ceiling on the DECODED size, and the base64 entry points — including the
-  endpoint, which is the untrusted-network surface — stop decoding one byte
-  past it. A 300 MB request body against a 1 MiB ceiling allocates about a
-  megabyte and answers `21002`. Characters the decoder skips (PEM line
-  breaks, whitespace) do not count against the ceiling.
+  Receipts are capped at ten embedded certificates, enforced *before* any
+  certificate is decoded.
+- **Input size limits, checked before anything is decoded or parsed.** The
+  numbers are the Java, PHP and Python ports' own, and each is exported:
+
+  | Input | Limit | Checked before | Answer |
+  |---|---|---|---|
+  | receipt base64 string (`VerifyBase64*`, `receipt-data`) | `MaxReceiptBytes`, default `DefaultMaxReceiptBytes` = 2,097,152 bytes | base64 decode | `INVALID_RECEIPT_FORMAT`; `21002` at the endpoint |
+  | receipt DER (`Verify*`, `VerifyReceiptCore`) | the same, 2,097,152 bytes | CMS parse | `INVALID_RECEIPT_FORMAT` |
+  | raw request body (`VerifyReceiptBody*`, `VerifyReceiptJSON`) | `MaxRequestBytes` = 1,048,576 bytes | JSON parse | `21002`, `MALFORMED_REQUEST` |
+  | request body nesting | `MaxJSONNestingDepth` = 64 | JSON parse | `21002`, `MALFORMED_REQUEST` |
+  | compact JWS | `MaxJWSBytes` = 262,144 bytes | split and base64url decode | `INVALID_JWS_FORMAT` |
+  | JWS header and payload nesting | `MaxJSONNestingDepth` = 64 | JSON parse | `INVALID_JWS_FORMAT` |
+
+  A string is measured as sent, in bytes, whitespace and PEM line breaks
+  included, because the decoder walks those characters too. Nesting is
+  counted in one pass over the bytes (brackets inside strings do not count)
+  before `encoding/json` sees them. `MaxReceiptBytes` stays configurable on
+  `ReceiptVerifierOptions` and `VerifyReceiptEndpointOptions`, and one
+  setting caps both the string and the DER; the request body and JWS limits
+  are fixed. The 2 MiB receipt limit clears the normative floor in
+  `fixtures/cases.json` (a receipt of up to 1 MiB of DER must verify), and
+  the byte-floor fixture verifies through every verifier entry point and
+  through `VerifyReceiptData`. Its JSON body is about 1.38 MB, over the
+  request limit, so through `VerifyReceiptBody` it answers `21002`, as it
+  does in the other ports.
 - **An embedded certificate that does not decode is fatal.** The CMS
   certificate bag is the one region of a receipt the `SignerInfo` signature
   does not cover, so it is where a genuine receipt can be rewritten for

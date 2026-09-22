@@ -27,14 +27,18 @@ import (
 // Apple chain.
 const maxEmbeddedCertificates = 10
 
-// DefaultMaxReceiptBytes is the default ceiling on receipt size.
+// DefaultMaxReceiptBytes is the default ceiling on receipt size: on the
+// base64 string, in bytes, before it is decoded, and on the DER before it
+// is parsed. Both checks run before the expensive step, because decoding
+// and parsing allocate in proportion to the input and none of that work is
+// behind a signature check.
 //
-// The largest genuine receipt in this repository's corpus is 79 KB with
-// 187 in-app purchases, so a megabyte sits an order of magnitude above
-// anything real. It is a port-local defensive bound — no conformance
-// verdict depends on it — and a caller with an unusual corpus can raise
-// it through ReceiptVerifierOptions.
-const DefaultMaxReceiptBytes = 1 << 20
+// The number is the Java, PHP and Python ports' (2 MiB). It clears the
+// normative floor in fixtures/cases.json, which requires accepting a
+// receipt of up to 1 MiB of DER (about 1.38 MB of base64); the largest
+// genuine receipt in this repository's corpus is 79 KB. A caller with an
+// unusual corpus can raise it through the options.
+const DefaultMaxReceiptBytes = 2 << 20
 
 // ReceiptVerifierOptions configures a ReceiptVerifier.
 //
@@ -52,10 +56,10 @@ type ReceiptVerifierOptions struct {
 	// BundleID the receipt must carry. Required.
 	BundleID string
 
-	// MaxReceiptBytes is the ceiling on a receipt's DECODED size. It
-	// bounds the base64 decode as well as the parse, so an oversized
-	// input is rejected without ever being materialized in full. Zero
-	// means DefaultMaxReceiptBytes.
+	// MaxReceiptBytes is the ceiling on a receipt: on the length of the
+	// base64 string before it is decoded, and on the DER before it is
+	// parsed, so an oversized input is rejected without ever being
+	// decoded. Zero means DefaultMaxReceiptBytes.
 	MaxReceiptBytes int
 }
 
@@ -101,7 +105,7 @@ func NewReceiptVerifier(opts ReceiptVerifierOptions) (*ReceiptVerifier, error) {
 
 // Verify verifies a receipt in its DER form and checks the bundle id.
 func (v *ReceiptVerifier) Verify(receipt []byte) (*AppReceipt, error) {
-	return v.verify(func() []byte { return receipt }, nil, false)
+	return v.verify(func() ([]byte, error) { return receipt, nil }, nil, false)
 }
 
 // VerifyWithDeviceGUID verifies a receipt in its DER form, checks the
@@ -114,31 +118,35 @@ func (v *ReceiptVerifier) Verify(receipt []byte) (*AppReceipt, error) {
 // silicon Mac, or the primary network interface's MAC address from
 // copy_mac_address on macOS and Mac Catalyst.
 func (v *ReceiptVerifier) VerifyWithDeviceGUID(receipt, deviceGUID []byte) (*AppReceipt, error) {
-	return v.verify(func() []byte { return receipt }, deviceGUID, true)
+	return v.verify(func() ([]byte, error) { return receipt, nil }, deviceGUID, true)
 }
 
 // VerifyBase64 verifies a receipt in the base64 form clients transmit.
 //
-// MaxReceiptBytes bounds the decode as well as the parse, so an
-// arbitrarily long string costs no more than an at-the-ceiling one.
+// A string longer than MaxReceiptBytes is refused before it is decoded,
+// so an arbitrarily long string costs no more than an at-the-ceiling one.
 func (v *ReceiptVerifier) VerifyBase64(receipt string) (*AppReceipt, error) {
-	return v.verify(func() []byte { return decodeBase64(receipt, v.maxReceiptBytes) }, nil, false)
+	return v.verify(func() ([]byte, error) { return receiptFromBase64(receipt, v.maxReceiptBytes) }, nil, false)
 }
 
 // VerifyBase64WithDeviceGUID verifies a base64 receipt and enforces the
 // device binding. Every input form is reachable with and without the
 // device GUID.
 func (v *ReceiptVerifier) VerifyBase64WithDeviceGUID(receipt string, deviceGUID []byte) (*AppReceipt, error) {
-	return v.verify(func() []byte { return decodeBase64(receipt, v.maxReceiptBytes) }, deviceGUID, true)
+	return v.verify(func() ([]byte, error) { return receiptFromBase64(receipt, v.maxReceiptBytes) }, deviceGUID, true)
 }
 
 // verify takes the input as a thunk so that decoding happens INSIDE the
 // panic containment, not in the caller's frame: every failure on a public
 // entry point, decoder included, is then a typed *VerificationError.
-func (v *ReceiptVerifier) verify(decode func() []byte, deviceGUID []byte, checkDevice bool) (receipt *AppReceipt, err error) {
+func (v *ReceiptVerifier) verify(decode func() ([]byte, error), deviceGUID []byte, checkDevice bool) (receipt *AppReceipt, err error) {
 	defer containPanic(ReasonInvalidReceiptFormat, &err, func() { receipt = nil })
 
-	fields, err := verifyReceiptCore(decode(), v.roots, v.maxReceiptBytes)
+	der, err := decode()
+	if err != nil {
+		return nil, err
+	}
+	fields, err := verifyReceiptCore(der, v.roots, v.maxReceiptBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -170,6 +178,19 @@ func VerifyReceiptCore(receipt []byte, trustedRoots []*x509.Certificate) (result
 		return nil, errors.New("applereceipt: trustedRoots must not be empty")
 	}
 	return verifyReceiptCore(receipt, trustedRoots, DefaultMaxReceiptBytes)
+}
+
+// receiptFromBase64 is the one way a base64 receipt becomes DER: the
+// string's length is checked against the ceiling BEFORE anything is
+// decoded. decodeBase64 already stops one byte past the ceiling, but it
+// still walks every character it skips (whitespace, CR/LF), so without
+// this check a long run of whitespace would be scanned in full.
+func receiptFromBase64(text string, maxBytes int) ([]byte, error) {
+	if len(text) > maxBytes {
+		return nil, newError(ReasonInvalidReceiptFormat,
+			"receipt base64 exceeds the %d byte limit", maxBytes)
+	}
+	return decodeBase64(text, maxBytes), nil
 }
 
 func verifyReceiptCore(receipt []byte, roots []*x509.Certificate, maxBytes int) (*AppReceipt, error) {
