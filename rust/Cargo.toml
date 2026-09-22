@@ -69,5 +69,9 @@ name = "public_receipts"
 required-features = ["endpoint"]
 
 [[test]]
+name = "input_size_caps"
+required-features = ["endpoint"]
+
+[[test]]
 name = "verify_receipt_result"
 required-features = ["endpoint"]

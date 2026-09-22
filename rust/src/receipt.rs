@@ -35,12 +35,35 @@ pub const RECEIPT_SIGNER_OID: &str = "1.2.840.113635.100.6.11.1";
 /// certificate is decoded — it is a bound on parsing, not on the walk.
 pub const MAX_EMBEDDED_CERTIFICATES: usize = 10;
 
-/// The largest receipt this crate will look at.
+/// The largest receipt this crate will look at: the DER at every entry point
+/// that takes bytes, and the base64 string at every entry point that takes
+/// one (`receipt-data` at the endpoint included).
 ///
-/// A port-local defensive bound. The largest genuine receipt in the shared
-/// fixture corpus is 79 KB with 187 in-app purchases, so this sits four
-/// orders of magnitude above anything real and moves no verdict.
-pub const MAX_RECEIPT_BYTES: usize = 8 * 1024 * 1024;
+/// Checked before anything is decoded. Base64 decoding allocates about three
+/// quarters of the input again and the CMS parse allocates in proportion to
+/// the DER, all of it before any signature is checked, so an unbounded input
+/// is decoded and parsed in full for free.
+///
+/// 2 MiB, the same number as Java's `ReceiptVerifier.MAX_RECEIPT_BYTES`,
+/// PHP's `DEFAULT_MAX_RECEIPT_BYTES` and Python's cap. It clears the
+/// normative floor in `fixtures/cases.json` (every port MUST accept 1 MiB of
+/// DER, whose base64 is about 1.38 MB); the largest genuine receipt in the
+/// corpus is 79 KB. The string is measured in UTF-8 bytes (`str::len`),
+/// which for base64 is the same count as characters; a string carrying
+/// non-ASCII can only be refused sooner, and it is not base64 anyway.
+pub const MAX_RECEIPT_BYTES: usize = 2 * 1024 * 1024;
+
+/// Decodes a receipt string after checking it against [`MAX_RECEIPT_BYTES`],
+/// so an oversized one is refused before a byte of it is decoded. The one
+/// path every base64 entry point, the endpoint's included, goes through.
+pub(crate) fn decode_receipt_string(receipt: &str) -> Result<Vec<u8>> {
+    if receipt.len() > MAX_RECEIPT_BYTES {
+        return Err(malformed(format!(
+            "receipt exceeds the maximum accepted size of {MAX_RECEIPT_BYTES} bytes of base64"
+        )));
+    }
+    decode_receipt_base64(receipt).ok_or_else(|| malformed("receipt-data is not valid base64"))
+}
 
 fn malformed(detail: impl Into<String>) -> VerificationError {
     VerificationError::new(Reason::InvalidReceiptFormat, detail)
@@ -90,7 +113,9 @@ pub(crate) fn verify_receipt_core_unchecked(
         return Err(malformed("receipt is empty"));
     }
     if der.len() > MAX_RECEIPT_BYTES {
-        return Err(malformed("receipt exceeds the maximum accepted size"));
+        return Err(malformed(format!(
+            "receipt exceeds the maximum accepted size of {MAX_RECEIPT_BYTES} bytes"
+        )));
     }
     let cms = parse_cms(der).map_err(|err| malformed(format!("malformed CMS structure: {err}")))?;
 
@@ -358,8 +383,7 @@ impl ReceiptVerifier {
     /// # Errors
     /// As [`ReceiptVerifier::verify`].
     pub fn verify_base64(&self, receipt: &str) -> Result<AppReceipt> {
-        let der = decode_receipt_base64(receipt)
-            .ok_or_else(|| malformed("receipt-data is not valid base64"))?;
+        let der = decode_receipt_string(receipt)?;
         self.verify(&der)
     }
 
@@ -389,8 +413,7 @@ impl ReceiptVerifier {
         receipt: &str,
         device_guid: &[u8],
     ) -> Result<AppReceipt> {
-        let der = decode_receipt_base64(receipt)
-            .ok_or_else(|| malformed("receipt-data is not valid base64"))?;
+        let der = decode_receipt_string(receipt)?;
         self.verify_with_device_guid(&der, device_guid)
     }
 

@@ -11,16 +11,32 @@
 //! Like Apple's endpoint, this does **not** check the bundle id — the caller
 //! compares `receipt.bundle_id`, exactly as with the real endpoint.
 
-use crate::base64::decode_receipt_base64;
 use crate::clock::{default_clock, unix_millis, Clock};
 use crate::datetime::{format_etc_gmt, format_pacific, unix_millis_of};
 use crate::environment::Environment;
 use crate::error::{ConfigError, Reason};
-use crate::receipt::{verify_receipt_core_unchecked, AppReceipt, InAppPurchase};
+use crate::json_depth::nesting_exceeds_limit;
+use crate::receipt::{
+    decode_receipt_string, verify_receipt_core_unchecked, AppReceipt, InAppPurchase,
+};
 use crate::roots::{normalize_anchors, TrustAnchor};
 use serde_json::{Map, Value};
 use std::sync::Arc;
 use std::time::SystemTime;
+
+/// The largest request body [`VerifyReceiptEndpoint`] will parse, in UTF-8
+/// bytes (`str::len`), checked before the JSON parser runs.
+///
+/// JSON parsing allocates a multiple of the body, all of it before any
+/// verification. 1 MiB, the same number as Java's
+/// `VerifyReceiptEndpoint.MAX_REQUEST_BYTES` and the PHP and Python ports,
+/// and deliberately below [`MAX_RECEIPT_BYTES`](crate::MAX_RECEIPT_BYTES):
+/// the JSON entry points have an amplification the pre-decoded ones do not.
+/// The largest genuine receipt in the corpus is 106 KB of base64. The ports
+/// do not agree on the unit (Node counts UTF-8 bytes as this crate does;
+/// Java, .NET and Python count characters), which differs only for a body
+/// carrying non-ASCII, and a `verifyReceipt` body has no reason to.
+pub const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 
 /// The Apple status codes this local implementation can produce.
 ///
@@ -417,6 +433,9 @@ impl VerifyReceiptEndpoint {
     /// scalar — fails with [`Reason::MalformedRequest`], status 21002. Apple
     /// has no status code for "that wasn't JSON"; 21002 is the closest, and
     /// it is what a JSON object without usable `receipt-data` gets anyway.
+    /// A body longer than [`MAX_REQUEST_BYTES`] or nesting deeper than
+    /// [`MAX_JSON_NESTING_DEPTH`](crate::MAX_JSON_NESTING_DEPTH) gets the
+    /// same answer without being parsed.
     #[must_use]
     pub fn verify_receipt_result_from_json(&self, body: &str) -> VerifyReceiptResult {
         self.contained(None, || self.verify_body(body))
@@ -502,6 +521,11 @@ impl VerifyReceiptEndpoint {
     }
 
     fn verify_body(&self, body: &str) -> core::result::Result<AppReceipt, Reason> {
+        // Both bounds before the parser: it allocates in proportion to the
+        // body, and its own recursion limit (128) cannot be lowered.
+        if body.len() > MAX_REQUEST_BYTES || nesting_exceeds_limit(body.as_bytes()) {
+            return Err(Reason::MalformedRequest);
+        }
         let Ok(Value::Object(parsed)) = serde_json::from_str::<Value>(body) else {
             return Err(Reason::MalformedRequest);
         };
@@ -519,7 +543,9 @@ impl VerifyReceiptEndpoint {
         let Some(receipt_data) = receipt_data.filter(|d| !d.is_empty()) else {
             return Err(Reason::MalformedRequest);
         };
-        let der = decode_receipt_base64(receipt_data).ok_or(Reason::InvalidReceiptFormat)?;
+        // Capped before decoding, by the same check and with the same reason
+        // as ReceiptVerifier::verify_base64.
+        let der = decode_receipt_string(receipt_data).map_err(|error| error.reason())?;
         // The primitive itself, not a ReceiptVerifier built around a
         // wildcard bundle id: like Apple's endpoint, no bundle-id claim is
         // checked here (callers compare receipt.bundle_id).

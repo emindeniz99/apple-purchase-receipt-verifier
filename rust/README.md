@@ -518,8 +518,34 @@ the design rather than a configuration: nesting depth capped at 32, a
 octets, indefinite (BER) lengths only on constructed values, trailing bytes
 after the outer value refused, negative and out-of-range attribute integers
 refused, at most ten embedded certificates enforced before decoding, a path
-length of at most six with each candidate issuer tried once per hop, and an
-8 MiB ceiling on a receipt.
+length of at most six with each candidate issuer tried once per hop.
+
+Input size is capped before anything is decoded or parsed, because all of
+that work happens before a signature is checked. The numbers are the Java,
+PHP and Python ports' numbers, and each is a public constant:
+
+- `MAX_RECEIPT_BYTES` (2 MiB): the receipt base64 string, checked before it
+  is decoded, and the receipt DER, checked before the CMS parse. Over it is
+  `INVALID_RECEIPT_FORMAT`, and 21002 at the endpoint.
+- `MAX_REQUEST_BYTES` (1 MiB): the endpoint's raw JSON request body, checked
+  before `serde_json` runs. Over it is 21002 with `MALFORMED_REQUEST`.
+- `MAX_JWS_BYTES` (256 KiB): the compact JWS, checked before it is split.
+  Over it is `INVALID_JWS_FORMAT`.
+- `MAX_JSON_NESTING_DEPTH` (64): the request body and the JWS header and
+  payload. `serde_json`'s own limit is fixed at 128, so the depth is counted
+  in one pass before the parser runs. Deeper is 21002 with
+  `MALFORMED_REQUEST` at the endpoint and `INVALID_JWS_FORMAT` on a JWS.
+
+String lengths are UTF-8 bytes (`str::len`). For base64 and a compact JWS
+that is the same count as characters. For the request body it is the unit
+the Node port uses; the Java, .NET and Python ports count characters, which
+differs only for a body carrying non-ASCII text.
+
+The receipt cap clears the 1 MiB DER floor `cases.json` makes every port
+accept. The base64 of such a receipt is about 1.38 MB, so it verifies through
+`ReceiptVerifier::verify_base64` and the endpoint's `verify_receipt_data`,
+and through a JSON body it answers 21002, because the body is over the
+request cap.
 
 An attribute type above `2^31 − 1` is a malformed receipt, not an attribute
 filed under a sentinel: fail closed, never clamp.

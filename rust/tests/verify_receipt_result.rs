@@ -12,6 +12,7 @@ mod common;
 use apple_purchase_receipt_verifier::{
     apple_receipt_roots, base64, status, Clock, Environment, FixedClock, Reason, TrustAnchor,
     VerifyReceiptEndpoint, VerifyReceiptOutcome, VerifyReceiptRequest, VerifyReceiptResult,
+    MAX_REQUEST_BYTES,
 };
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -390,11 +391,20 @@ fn the_bare_base64_path_answers_what_the_json_body_path_answers_for_every_receip
             Arc::new(FixedClock::from_unix_millis(NOW)),
         );
         for (name, text) in &texts {
-            let via_body = endpoint.verify_receipt_json(&body(text));
+            let request_body = body(text);
+            let via_body = endpoint.verify_receipt_json(&request_body);
             let bare = endpoint.verify_receipt_data(text);
-            assert_eq!(bare.to_json(), via_body, "{name} on {environment}");
             let typed = endpoint.verify_receipt_result(&VerifyReceiptRequest::new(text.clone()));
-            assert_eq!(typed.to_json(), via_body, "{name} on {environment}");
+            assert_eq!(typed.to_json(), bare.to_json(), "{name} on {environment}");
+            // The one place the paths part on purpose: the request-body cap
+            // bounds a wire request, not a receipt, so a receipt whose JSON
+            // body is over it (receipt-byte-floor, ~1.38 MB of base64) still
+            // verifies bare and answers 21002 through the body.
+            if request_body.len() > MAX_REQUEST_BYTES {
+                assert_eq!(via_body, r#"{"status":21002}"#, "{name} on {environment}");
+            } else {
+                assert_eq!(bare.to_json(), via_body, "{name} on {environment}");
+            }
             *statuses.entry(bare.status()).or_default() += 1;
         }
     }

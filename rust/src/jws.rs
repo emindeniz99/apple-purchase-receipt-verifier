@@ -12,6 +12,7 @@ use crate::clock::{default_clock, unix_millis, Clock};
 use crate::crypto::{curve_field_size, verify_es256};
 use crate::environment::Environment;
 use crate::error::{ConfigError, Reason, Result, VerificationError};
+use crate::json_depth::{nesting_exceeds_limit, MAX_JSON_NESTING_DEPTH};
 use crate::roots::{normalize_anchors, TrustAnchor};
 use crate::x509::{Certificate, OID_EC_PUBLIC_KEY};
 use serde_json::{Map, Value};
@@ -582,11 +583,27 @@ fn signed_at_millis_of(claims: &Claims) -> Result<Option<i64>> {
     Ok(None)
 }
 
+/// The longest compact JWS this crate will look at, checked before the
+/// string is split or any segment decoded.
+///
+/// 256 KiB, the same number as Java's `JwsVerifier.MAX_JWS_BYTES` and the
+/// PHP and Python ports. Every JWS Apple signs is a few kilobytes, most of it
+/// the three `x5c` certificates. Measured in UTF-8 bytes (`str::len`); a
+/// compact JWS is ASCII, where that is the same count as characters.
+pub const MAX_JWS_BYTES: usize = 256 * 1024;
+
 fn invalid_jws(detail: impl Into<String>) -> VerificationError {
     VerificationError::new(Reason::InvalidJwsFormat, detail)
 }
 
 fn split_jws(jws: &str) -> Result<Segments<'_>> {
+    // Before any split or decode: every step below allocates in proportion
+    // to the input, and none of it is behind the signature.
+    if jws.len() > MAX_JWS_BYTES {
+        return Err(invalid_jws(format!(
+            "jws exceeds the maximum accepted size of {MAX_JWS_BYTES} bytes"
+        )));
+    }
     let parts: Vec<&str> = jws.split('.').collect();
     if parts.len() != 3 {
         return Err(invalid_jws(format!(
@@ -630,6 +647,12 @@ fn parse_json_segment(segment: &str, what: &str) -> Result<Claims> {
     // `from_utf8_lossy` rather than a UTF-8 error: a replacement character
     // is not valid JSON either, so the input is refused all the same, and
     // this keeps one failure path instead of two.
+    // Counted first: serde_json's own recursion limit is 128 and fixed.
+    if nesting_exceeds_limit(&bytes) {
+        return Err(invalid_jws(format!(
+            "{what} nests deeper than {MAX_JSON_NESTING_DEPTH} levels"
+        )));
+    }
     let text = String::from_utf8_lossy(&bytes);
     match serde_json::from_str::<Value>(&text) {
         Ok(Value::Object(map)) => Ok(map),
