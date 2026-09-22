@@ -14,6 +14,7 @@ import {
   requireNoDuplicateExtensions,
 } from './der.js';
 import { receiptBase64DecodeStrict } from './bytes.js';
+import { MAX_RECEIPT_BYTES } from './limits.js';
 import {
   parseReceiptPayload,
   type RawAppReceipt,
@@ -120,6 +121,14 @@ export interface ReceiptVerifierOptions {
  * Shared by {@link ReceiptVerifier.verify} and {@link VerifyReceiptEndpoint}.
  */
 export function decodeReceiptDataString(text: string): Buffer {
+  // Before the decode, which allocates a stripped copy of the string and
+  // then the bytes it decodes to.
+  if (text.length > MAX_RECEIPT_BYTES) {
+    throw new VerificationError(
+      Reason.INVALID_RECEIPT_FORMAT,
+      `receipt exceeds the maximum accepted size of ${MAX_RECEIPT_BYTES} characters`,
+    );
+  }
   // Fast path for the string a client usually sends: canonical standard
   // base64, one run with correct padding and nothing else. Every such
   // non-empty string passes each rule of receiptBase64DecodeStrict (nothing
@@ -173,6 +182,13 @@ export function verifyReceiptCore(der: Buffer, trustedRoots: RootInput[]): AppRe
   const roots = normalizeRoots(trustedRoots);
   if (!Buffer.isBuffer(der) || der.length === 0) {
     throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'receipt is empty');
+  }
+  // Before the CMS parse, which allocates in proportion to the DER.
+  if (der.length > MAX_RECEIPT_BYTES) {
+    throw new VerificationError(
+      Reason.INVALID_RECEIPT_FORMAT,
+      `receipt exceeds the maximum accepted size of ${MAX_RECEIPT_BYTES} bytes`,
+    );
   }
   const cms = parseCms(der);
 
@@ -243,6 +259,14 @@ export function verifyReceiptCore(der: Buffer, trustedRoots: RootInput[]): AppRe
  * on the device" procedure (PLAN.md §2.2), mirroring the Java implementation.
  */
 export class ReceiptVerifier {
+  /**
+   * Ceiling on a receipt: the base64 string in characters before it is
+   * decoded, and the DER in bytes before it is parsed, at every entry point
+   * ({@link verifyReceiptCore} included). A larger receipt is
+   * {@link Reason.INVALID_RECEIPT_FORMAT}.
+   */
+  static readonly MAX_RECEIPT_BYTES = MAX_RECEIPT_BYTES;
+
   #roots: RootInput[];
   #bundleId: string;
 

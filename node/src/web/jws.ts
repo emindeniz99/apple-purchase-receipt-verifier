@@ -11,6 +11,7 @@ import {
   signedAtMillisOf,
   splitJws,
 } from '../jws-claims.js';
+import { MAX_JWS_BYTES } from '../limits.js';
 import { normalizeRoots, validatePair, type RootInput } from './chain.js';
 import { verifyEs256 } from './crypto.js';
 import { OID_EC_PUBLIC_KEY, requireBuildablePublicKey } from './jwk.js';
@@ -46,6 +47,13 @@ export interface JwsVerifierOptions {
  * every method returns a Promise because `crypto.subtle` is async.
  */
 export class JwsVerifier {
+  /**
+   * Ceiling on a compact JWS, in characters, checked before it is split or
+   * decoded. A longer one, or a header or payload nesting JSON more than 64
+   * levels deep, is {@link Reason.INVALID_JWS_FORMAT}.
+   */
+  static readonly MAX_JWS_BYTES = MAX_JWS_BYTES;
+
   #roots: ParsedCertificate[];
   #claims: JwsClaimChecker;
 

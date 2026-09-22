@@ -235,17 +235,30 @@ for (const [name, build] of BUILDS) {
     ];
     assert.ok(inputs.length > 40, `expected the whole corpus, found ${inputs.length}`);
     const statuses = new Set();
+    const overRequestCap = new Set();
     for (const environment of ENVIRONMENTS) {
       const ep = new build.VerifyReceiptEndpoint({ trustedRoots: roots, environment });
       for (const [label, receiptData] of inputs) {
         const bare = await ep.verifyReceiptData(receiptData, EXPLICIT);
         const body = JSON.stringify({ 'receipt-data': receiptData });
         const viaJson = await ep.verifyReceiptResult(body, EXPLICIT);
+        statuses.add(bare.status);
+        // The one place the two paths may differ: a body over the request
+        // cap is refused before it is parsed, while the same receipt handed
+        // over bare is still verified. The receipt byte floor (1 MiB of DER,
+        // 1.38 MB of base64) is such a body, as in the Java, PHP and Python
+        // ports.
+        if (Buffer.byteLength(body) > build.VerifyReceiptEndpoint.MAX_REQUEST_BYTES) {
+          overRequestCap.add(label);
+          assert.equal(viaJson.toJson(), '{"status":21002}', `${label} on ${environment}`);
+          assert.equal(viaJson.failureReason, build.Reason.MALFORMED_REQUEST, label);
+          continue;
+        }
         assert.equal(bare.toJson(), viaJson.toJson(), `${label} on ${environment}`);
         assert.equal(bare.failureReason, viaJson.failureReason, label);
-        statuses.add(bare.status);
       }
     }
+    assert.deepEqual([...overRequestCap], ['receipt-byte-floor.der']);
     // The corpus reaches every status a receipt can produce, so the equality
     // above was checked on verified and failed results alike.
     for (const status of [0, 21002, 21003, 21007, 21008]) {

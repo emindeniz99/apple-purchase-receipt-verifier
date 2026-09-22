@@ -20,6 +20,7 @@
     "src/der.ts",
     "src/errors.ts",
     "src/jws-claims.ts",
+    "src/limits.ts",
     "src/receipt-payload.ts",
     "src/roots-data.ts",
     "src/verify-receipt-result.ts",

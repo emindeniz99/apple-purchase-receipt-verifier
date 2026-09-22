@@ -16,6 +16,7 @@ import {
   signedAtMillisOf,
   splitJws,
 } from './jws-claims.js';
+import { MAX_JWS_BYTES } from './limits.js';
 
 export { isTransactionActiveAt } from './jws-claims.js';
 export type { AppTransactionPayload, Claims, Clock, TransactionPayload } from './jws-claims.js';
@@ -49,6 +50,13 @@ export interface JwsVerifierOptions {
  * the Java implementation check-for-check.
  */
 export class JwsVerifier {
+  /**
+   * Ceiling on a compact JWS, in characters, checked before it is split or
+   * decoded. A longer one, or a header or payload nesting JSON more than 64
+   * levels deep, is {@link Reason.INVALID_JWS_FORMAT}.
+   */
+  static readonly MAX_JWS_BYTES = MAX_JWS_BYTES;
+
   #roots: X509Certificate[];
   #claims: JwsClaimChecker;
 

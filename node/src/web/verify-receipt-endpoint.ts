@@ -1,4 +1,5 @@
 import { normalizeClock, type Clock } from '../jws-claims.js';
+import { MAX_REQUEST_BYTES } from '../limits.js';
 import {
   failedResult,
   malformedRequest,
@@ -41,6 +42,15 @@ export interface VerifyReceiptEndpointOptions {
  * none of them rejects.
  */
 export class VerifyReceiptEndpoint {
+  /**
+   * Ceiling on a raw JSON request body, in UTF-8 bytes, checked before it is
+   * parsed. A larger body, or one nesting JSON more than 64 levels deep,
+   * answers 21002 with `MALFORMED_REQUEST`. Deliberately below
+   * `ReceiptVerifier.MAX_RECEIPT_BYTES`: the JSON path parses the body as
+   * well as decoding the receipt. A body passed as an object is not measured.
+   */
+  static readonly MAX_REQUEST_BYTES = MAX_REQUEST_BYTES;
+
   #roots: RootInput[];
   #environment: EndpointEnvironment;
   #clock: Clock;
