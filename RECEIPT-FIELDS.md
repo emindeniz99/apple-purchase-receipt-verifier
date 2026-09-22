@@ -303,6 +303,11 @@ Apple, read 2026-09-21:
   certificate chain of trust" section. The page is a DocC application; its
   content is served as JSON at
   `https://developer.apple.com/tutorials/data/documentation/appstorereceipts/validating-receipts-on-the-device.json`.
+  Re-read 2026-09-22 for the "Compute the SHA-1 hash" section: the device
+  GUID's byte source is per-platform, not the single source the ports'
+  docs previously named — `identifierForVendor` on iOS, iPadOS, tvOS and
+  watchOS, including an iOS app running on an Apple silicon Mac, or
+  `copy_mac_address`'s MAC address on macOS and Mac Catalyst.
 - [Receipt Fields](https://developer.apple.com/library/archive/releasenotes/General/ValidateAppStoreReceipt/Chapters/ReceiptFields.html),
   archived, last revised 2017-12-11. App-level types 2, 3, 4, 5, 12, 17, 19,
   21; in-app types 1701 to 1706, 1708, 1711, 1712, 1719. In-app section

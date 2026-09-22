@@ -81,9 +81,13 @@ namespace ApplePurchaseReceiptVerifier.Receipt
         /// <param name="deviceGuid">
         /// When supplied, additionally enforces the device binding
         /// <c>SHA1(guid ‖ opaqueValue ‖ bundleIdBytes) == attribute 5</c>.
-        /// Optional because a server does not always hold the device's
-        /// <c>identifierForVendor</c> bytes (PLAN.md D4); cross-device restore
-        /// still works, since each device presents its own receipt.
+        /// Optional because a server does not always hold the device GUID
+        /// (PLAN.md D4) — the raw bytes of <c>identifierForVendor</c> on
+        /// iOS, iPadOS, tvOS and watchOS, including an iOS app running on
+        /// an Apple silicon Mac, or the primary network interface's MAC
+        /// address from <c>copy_mac_address</c> on macOS and Mac Catalyst;
+        /// cross-device restore still works, since each device presents
+        /// its own receipt.
         /// </param>
         /// <exception cref="VerificationException">The receipt did not verify.</exception>
         public AppReceipt Verify(byte[] receiptDer, byte[]? deviceGuid = null)

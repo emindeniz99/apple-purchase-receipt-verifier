@@ -175,7 +175,10 @@ parser — see `ReceiptBase64` in `receipt/ReceiptBase64.java`.
 Passing `deviceGuid` additionally enforces the device binding:
 `SHA1(guid ‖ opaqueValue ‖ bundleIdBytes)` must equal attribute 5, compared in
 constant time via `MessageDigest.isEqual`. The check is optional because a
-server does not always have the client's `identifierForVendor`.
+server does not always have the client's device GUID — the raw bytes of
+`identifierForVendor` on iOS, iPadOS, tvOS and watchOS, including an iOS
+app running on an Apple silicon Mac, or the primary network interface's
+MAC address from `copy_mac_address` on macOS and Mac Catalyst.
 
 Attribute types the library does not model are exposed verbatim on
 `AppReceipt.unknownAttributes()` / `InAppPurchase.unknownAttributes()`,

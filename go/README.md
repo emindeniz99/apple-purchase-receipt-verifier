@@ -49,7 +49,10 @@ optional device binding:
 
 The device check computes `SHA1(guid ‖ opaqueValue ‖ bundleIdBytes)` and
 compares it, in constant time, with attribute 5. It is optional because a
-server does not always hold the device's `identifierForVendor`.
+server does not always hold the device's GUID — the raw bytes of
+`identifierForVendor` on iOS, iPadOS, tvOS and watchOS, including an iOS
+app running on an Apple silicon Mac, or the primary network interface's
+MAC address from `copy_mac_address` on macOS and Mac Catalyst.
 
 `VerifyReceiptCore(der, roots)` is the same verification **without** the
 bundle-id check — the primitive the endpoint below is built on. If you unlock

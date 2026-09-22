@@ -100,7 +100,10 @@ verifier.verify_base64(text, device_guid: guid_bytes)
 
 The device-hash check (`SHA1(guid + opaqueValue + bundleIdBytes)` equals
 attribute 5) is optional, because servers do not always have the device's
-`identifierForVendor`. Supplying it binds the receipt to one device.
+GUID — the raw bytes of `identifierForVendor` on iOS, iPadOS, tvOS and
+watchOS, including an iOS app running on an Apple silicon Mac, or the
+primary network interface's MAC address from `copy_mac_address` on macOS
+and Mac Catalyst. Supplying it binds the receipt to one device.
 
 `ReceiptVerifier` takes **no clock**, and must never grow one: no receipt
 verdict depends on the current time. See "Time" below.

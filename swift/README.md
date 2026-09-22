@@ -102,7 +102,10 @@ CMS parser — see `decodeReceiptBase64` in `ReceiptVerifier.swift`.
 Passing `deviceGuid` additionally enforces the device binding:
 `SHA1(guid ‖ opaqueValue ‖ bundleIdBytes)` must equal attribute 5, compared in
 constant time. The check is optional because a server does not always have
-the client's `identifierForVendor`.
+the client's device GUID — the raw bytes of `identifierForVendor` on iOS,
+iPadOS, tvOS and watchOS, including an iOS app running on an Apple silicon
+Mac, or the primary network interface's MAC address from
+`copy_mac_address` on macOS and Mac Catalyst.
 
 Four attribute types are modelled although Apple documents none of them:
 `AppReceipt.appItemId` (type 1, which Apple's endpoint echoes under both

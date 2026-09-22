@@ -57,7 +57,10 @@ Each implementation provides the same two capabilities:
    payload (bundle id, app version, opaque value, SHA-1 hash, in-app purchase
    attributes — [RECEIPT-FIELDS.md](./RECEIPT-FIELDS.md) is the per-attribute
    reference), and optionally check the device-hash binding when the client
-   also sends its device GUID (`identifierForVendor`).
+   also sends its device GUID (the raw bytes of `identifierForVendor` on
+   iOS, iPadOS, tvOS and watchOS, including an iOS app running on an
+   Apple silicon Mac, or the primary network interface's MAC address
+   from `copy_mac_address` on macOS and Mac Catalyst).
 
 Trust is **pinned to the Apple root certificates** stored in
 [`certs/`](./certs) (downloaded from [Apple PKI](https://www.apple.com/certificateauthority/)) —

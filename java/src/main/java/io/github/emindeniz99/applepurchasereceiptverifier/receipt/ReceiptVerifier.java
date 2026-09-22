@@ -259,9 +259,12 @@ public final class ReceiptVerifier {
      * Verifies a receipt and additionally enforces the device-hash binding:
      * {@code SHA1(deviceGuid ‖ opaqueValue ‖ bundleIdBytes)} must equal
      * attribute 5. Optional because it requires the client to send its
-     * {@code identifierForVendor} bytes (PLAN.md D4) — each device's own
-     * receipt embeds that device's GUID, so cross-device restore still works:
-     * every device presents its own receipt.
+     * device GUID (PLAN.md D4) — the raw bytes of {@code identifierForVendor}
+     * on iOS, iPadOS, tvOS and watchOS, including an iOS app running on an
+     * Apple silicon Mac, or the primary network interface's MAC address
+     * from {@code copy_mac_address} on macOS and Mac Catalyst. Each
+     * device's own receipt embeds that device's GUID, so cross-device
+     * restore still works: every device presents its own receipt.
      */
     public AppReceipt verify(byte @Nullable [] receiptDer, byte @Nullable [] deviceGuid) throws VerificationException {
         AppReceipt receipt = verifyCore(receiptDer, trustAnchors);

@@ -413,10 +413,13 @@ module ApplePurchaseReceiptVerifier
     # better.
     #
     # @param receipt [String] DER bytes or base64 text
-    # @param device_guid [String, nil] raw `identifierForVendor` bytes. When
-    #   given, `SHA1(guid + opaqueValue + bundleIdBytes)` must equal
-    #   attribute 5 (PLAN.md D4 — optional, because servers do not always have
-    #   the GUID).
+    # @param device_guid [String, nil] raw device GUID bytes — the raw bytes
+    #   of `identifierForVendor` on iOS, iPadOS, tvOS and watchOS, including
+    #   an iOS app running on an Apple silicon Mac, or the primary network
+    #   interface's MAC address from `copy_mac_address` on macOS and Mac
+    #   Catalyst. When given, `SHA1(guid + opaqueValue + bundleIdBytes)` must
+    #   equal attribute 5 (PLAN.md D4 — optional, because servers do not
+    #   always have the GUID).
     # @return [AppReceipt]
     # @raise [VerificationError]
     def verify(receipt, device_guid: nil)
