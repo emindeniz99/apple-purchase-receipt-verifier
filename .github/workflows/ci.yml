@@ -501,6 +501,11 @@ jobs:
       # newer tag matching the manifest's `from:` floors cannot arrive
       # unreviewed.
       - run: swift test --force-resolved-versions
+      # Consumers ship release builds, and the optimizer is where a compiler
+      # bug shows up: Swift 6.3.3 on x86_64 miscompiled a throwing function
+      # so that release builds crashed on a genuine receipt while every debug
+      # test passed.
+      - run: swift test -c release --force-resolved-versions
   swift-macos:
     runs-on: macos-latest
     timeout-minutes: 30
@@ -509,6 +514,7 @@ jobs:
         with:
           persist-credentials: false
       - run: swift --version && swift test --force-resolved-versions
+      - run: swift test -c release --force-resolved-versions
 
   # Every Go line the module claims, down to the go.mod floor: a floor
   # nothing executes is a claim, not a fact — the analogue of the
