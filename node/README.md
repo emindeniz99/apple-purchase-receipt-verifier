@@ -241,6 +241,10 @@ other environment answers 21007 or 21008 and still carries its `receipt`.
 Exactly one of `receipt` and `failureReason` is set. The result is frozen,
 and only the endpoint creates one.
 
+Like Apple's endpoint, this does **not** check the bundle id: compare
+`result.receipt.bundleId` yourself before granting anything, or use
+`ReceiptVerifier`, which checks it for you.
+
 **Retrying in the other environment costs no second verification.**
 `toResponse(environment)` and `toJson(environment)` render what an endpoint
 of that environment would answer, recomputing the status from the receipt's
