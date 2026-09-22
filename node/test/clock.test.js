@@ -130,7 +130,7 @@ for (const [name, build] of BUILDS) {
   });
 }
 
-// --- verifyReceipt endpoint (Node build only — it has no web twin) --------
+// --- verifyReceipt endpoint ---------------------------------------------
 
 test('endpoint: the clock drives request_date', () => {
   const fixedInstant = new Date('2025-03-04T05:06:07Z');
@@ -138,7 +138,9 @@ test('endpoint: the clock drives request_date', () => {
     trustedRoots: [fixture('receipt-root.der')],
     environment: 'Sandbox',
     clock: () => fixedInstant,
-  }).verifyReceipt({ 'receipt-data': fixture('receipt.der').toString('base64') });
+  })
+    .verifyReceiptResult({ 'receipt-data': fixture('receipt.der').toString('base64') })
+    .toResponse();
   assert.equal(response.status, 0);
   assert.equal(response.receipt.request_date_ms, String(fixedInstant.getTime()));
   assert.equal(response.receipt.request_date, '2025-03-04 05:06:07 Etc/GMT');
@@ -149,7 +151,9 @@ test('endpoint: omitting the clock stamps request_date from the system clock', (
   const response = new node.VerifyReceiptEndpoint({
     trustedRoots: [fixture('receipt-root.der')],
     environment: 'Sandbox',
-  }).verifyReceipt({ 'receipt-data': fixture('receipt.der').toString('base64') });
+  })
+    .verifyReceiptResult({ 'receipt-data': fixture('receipt.der').toString('base64') })
+    .toResponse();
   assert.equal(response.status, 0);
   const stamped = Number(response.receipt.request_date_ms);
   assert.ok(
@@ -171,7 +175,9 @@ test('endpoint: the clock does not move the receipt-chain verdict', () => {
         trustedRoots: [fixture('receipt-expired-root.der')],
         environment: 'Sandbox',
         clock,
-      }).verifyReceipt({ 'receipt-data': fixture(receipt).toString('base64') });
+      })
+        .verifyReceiptResult({ 'receipt-data': fixture(receipt).toString('base64') })
+        .toResponse();
     assert.equal(endpoint('receipt-expired-historical.der').status, 0);
     assert.equal(endpoint('receipt-expired-fresh.der').status, 21003);
   }

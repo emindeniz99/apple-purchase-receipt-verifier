@@ -5,7 +5,10 @@
  *
  * Its documented contract is stronger than the other targets' — it never
  * throws at all — so that is what is asserted: any body, any bytes, gets a
- * JSON object with a numeric `status` back.
+ * JSON object with a numeric `status` back. The typed result behind that
+ * body is checked too: exactly one of receipt and failureReason, the same
+ * status, and never INTERNAL_ERROR, which only an unexpected error inside
+ * the pipeline produces.
  */
 import { VerifyReceiptEndpoint } from '../../dist/index.js';
 import { RECEIPT_ANCHORS, asUtf8 } from '../harness.mjs';
@@ -39,5 +42,24 @@ export function fuzz(data) {
   }
   if (parsed === null || typeof parsed !== 'object' || typeof parsed.status !== 'number') {
     throw new Error(`the endpoint answered without a numeric status: ${response}`);
+  }
+
+  let result;
+  try {
+    result = endpoint.verifyReceiptResult(body);
+  } catch (error) {
+    throw new Error(
+      `verifyReceiptResult threw ${error?.constructor?.name}: ${error?.message}, but it documents that it never throws`,
+      { cause: error },
+    );
+  }
+  if ((result.receipt === null) === (result.failureReason === null)) {
+    throw new Error('verifyReceiptResult broke its receipt/failureReason invariant');
+  }
+  if (result.failureReason === 'INTERNAL_ERROR') {
+    throw new Error('verifyReceiptResult hit an internal error', { cause: result.failureCause });
+  }
+  if (result.status !== parsed.status) {
+    throw new Error(`verifyReceiptResult status ${result.status} differs from ${response}`);
   }
 }

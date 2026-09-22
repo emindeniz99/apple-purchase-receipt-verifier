@@ -67,7 +67,7 @@ Which entry point a runtime needs:
 | Vercel Edge runtime, Next.js edge middleware | `/web` |
 | Fastly Compute, Akamai EdgeWorkers | `/web` |
 
-Three differences beyond `await`:
+Two differences beyond `await`:
 
 - Byte-valued fields are `Uint8Array`, not `Buffer`: `opaqueValue`,
   `sha1Hash`, `bundleIdBytes`, the values in `unknownAttributes`, and the
@@ -75,8 +75,9 @@ Three differences beyond `await`:
 - Trust roots go in as DER `Uint8Array` or PEM strings. There is no
   `X509Certificate` to pass, and `appleReceiptRoots()` / `appleJwsRoots()`
   return DER bytes here.
-- `VerifyReceiptEndpoint`, the drop-in for Apple's deprecated endpoint, is
-  only in the default entry point.
+
+`VerifyReceiptEndpoint` is in both entry points. On `/web` its three methods
+return Promises that never reject, and the response bytes are the same.
 
 Everything else is shared source, including the DER reader, the receipt
 attribute grammar, the JWS claim checks and the `Reason` vocabulary, so the
@@ -193,6 +194,97 @@ export function redeemReceipt(userId, receiptData, productId) {
 }
 ```
 
+## The verifyReceipt-compatible endpoint
+
+`VerifyReceiptEndpoint` answers Apple's deprecated `verifyReceipt` request
+with Apple's response body, verified offline. Each call returns a
+`VerifyReceiptResult`; the body is rendered only when you ask for it.
+
+```js
+import { VerifyReceiptEndpoint, appleReceiptRoots } from 'apple-purchase-receipt-verifier';
+
+const endpoint = new VerifyReceiptEndpoint({
+  trustedRoots: appleReceiptRoots(),
+  environment: 'Production',
+});
+
+const result = endpoint.verifyReceiptResult(requestBody); // an object, or the raw JSON string
+result.toResponse();                                     // Apple's body as an object
+result.toJson();                                         // Apple's body as JSON text
+
+endpoint.verifyReceiptJson(rawBody);           // same as verifyReceiptResult(rawBody).toJson()
+endpoint.verifyReceiptData(receiptBase64);     // receipt-data alone, no envelope
+```
+
+No method throws. The statuses it can produce are `Status.OK` (0),
+`MALFORMED` (21002), `NOT_AUTHENTICATED` (21003),
+`SANDBOX_RECEIPT_ON_PRODUCTION` (21007), `PRODUCTION_RECEIPT_ON_SANDBOX`
+(21008) and `INTERNAL` (21009), and no others, because the rest describe
+conditions that only exist on Apple's servers. Routing fails closed: only
+receipt types `Production` and `ProductionVPP` count as production.
+
+A result is a union on `verified`:
+
+```js
+if (result.verified) {
+  result.receipt.bundleId;     // the verified AppReceipt; compare the bundle id yourself
+} else {
+  result.failureReason;        // a Reason, e.g. 'INVALID_CHAIN' or 'MALFORMED_REQUEST'
+  result.failureCause;         // the caught error, for INTERNAL_ERROR only; otherwise null
+}
+result.status;                 // the status for the endpoint's own environment
+result.requestDate;            // the instant rendered as request_date
+```
+
+`verified` is not `status === 0`. A receipt that verified but belongs to the
+other environment answers 21007 or 21008 and still carries its `receipt`.
+Exactly one of `receipt` and `failureReason` is set. The result is frozen,
+and only the endpoint creates one.
+
+**Retrying in the other environment costs no second verification.**
+`toResponse(environment)` and `toJson(environment)` render what an endpoint
+of that environment would answer, recomputing the status from the receipt's
+own type:
+
+| receipt | on `'Production'` | on `'Sandbox'` |
+|---|---|---|
+| `Production`, `ProductionVPP` | 0 | 21008 |
+| any other type, or none | 21007 | 0 |
+| failed verification | its own status | its own status |
+
+```js
+const json = result.status === Status.SANDBOX_RECEIPT_ON_PRODUCTION
+  ? result.toJson('Sandbox')
+  : result.toJson();
+```
+
+A sandbox receipt never renders as a production 0, whichever endpoint
+verified it. Any environment other than `'Production'` or `'Sandbox'` is a
+`TypeError`, as it is for the constructor.
+
+**Failure reasons:**
+
+| `failureReason` | status | when |
+|---|---|---|
+| `MALFORMED_REQUEST` | 21002 | the request is not an object, the string is not a JSON object, or `receipt-data` is missing, empty or not a string |
+| `INVALID_RECEIPT_FORMAT` | 21002 | `receipt-data` is not base64 or does not decode to a receipt |
+| `INVALID_CHAIN`, `INVALID_SIGNATURE`, other certificate reasons | 21003 | the receipt did not authenticate |
+| `INTERNAL_ERROR` | 21009 | an unexpected error; `failureCause` holds it |
+
+`MALFORMED_REQUEST` and `INTERNAL_ERROR` appear only on a result. No
+`VerificationError` is ever thrown with either.
+
+**`request_date`.** Every method takes an optional `Date` as its second
+argument, which becomes `request_date` in place of the endpoint's `clock`.
+Without one, the clock is read once, when the call is made. That instant
+reaches `request_date` and nothing else: receipt chain validity is judged at
+the receipt's own creation date.
+
+`password` and `exclude-old-transactions` are accepted for wire
+compatibility and never read. See
+[COMPARISON.md](https://github.com/emindeniz99/apple-purchase-receipt-verifier/blob/main/COMPARISON.md)
+for the field-by-field account.
+
 ## Receipt ids are bigints
 
 Three App Store ids come off a receipt as `bigint`: `appItemId` (attribute 1),
@@ -207,7 +299,7 @@ than the strings the in-app integers use, and 1713 as `is_trial_period`,
 `"true"` or `"false"`.
 
 ```js
-const { receipt } = endpoint.verifyReceipt(body);
+const { receipt } = endpoint.verifyReceiptResult(body).toResponse();
 receipt.download_id;                  // 9223372036854775807n
 JSON.stringify(receipt);              // "download_id":9223372036854775808 — rounded
 endpoint.verifyReceiptJson(rawBody);  // "download_id":9223372036854775807 — every digit

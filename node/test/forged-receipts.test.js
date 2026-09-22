@@ -264,9 +264,11 @@ test('reports an unparseable embedded certificate as INVALID_RECEIPT_FORMAT', ()
     environment: 'Sandbox',
   });
   assert.equal(
-    endpoint.verifyReceipt({
-      'receipt-data': UNPARSEABLE_CERTIFICATE.toString('base64'),
-    }).status,
+    endpoint
+      .verifyReceiptResult({
+        'receipt-data': UNPARSEABLE_CERTIFICATE.toString('base64'),
+      })
+      .toResponse().status,
     21002,
   );
 });
@@ -335,7 +337,8 @@ test('nothing but VerificationError escapes verify() over a hostile corpus', () 
       assert.ok(e instanceof VerificationError, `${what} escaped as ${e.name}: ${e.message}`);
     }
     assert.notEqual(
-      endpoint.verifyReceipt({ 'receipt-data': input.toString('base64') }).status,
+      endpoint.verifyReceiptResult({ 'receipt-data': input.toString('base64') }).toResponse()
+        .status,
       21009,
       what,
     );
