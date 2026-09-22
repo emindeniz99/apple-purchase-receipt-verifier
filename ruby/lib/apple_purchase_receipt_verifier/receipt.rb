@@ -182,6 +182,11 @@ module ApplePurchaseReceiptVerifier
                                       "receipt must be a base64 String")
         end
 
+        decode_base64_strict(text) || decode_base64_tolerant(text)
+      end
+
+      # The accept/reject rule above, spelled out step by step.
+      def decode_base64_tolerant(text)
         # One owned copy, mutated in place from here on (delete!/tr!/slice!
         # never reallocate the whole buffer) — a receipt is attacker-sized
         # and unbounded (hostile_input_test.rb), so this path is written to
@@ -240,6 +245,27 @@ module ApplePurchaseReceiptVerifier
         rescue ArgumentError
           raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT, "receipt is not base64")
         end
+      end
+
+      # The fast path for the common case, canonical standard base64 with no
+      # whitespace: Ruby's strict decoder alone, without the copy and the
+      # passes above. `nil` hands the string to the tolerant path, which then
+      # decides exactly as it did before.
+      #
+      # `unpack1("m0")` accepts only `[A-Za-z0-9+/]` data in groups of four,
+      # exactly the canonical padding, and zero bits in the unused tail
+      # (measured on Ruby 3.1, 3.2 and 3.3). The tolerant path accepts every
+      # such string and ends in this same call on the same characters, so the
+      # bytes are identical. The one string it accepts that the tolerant path
+      # rejects is the empty one, hence the guard.
+      # test/receipt_base64_fast_path_test.rb holds this to 20,000 seeded
+      # inputs on every Ruby the CI matrix runs.
+      def decode_base64_strict(text)
+        return nil if text.empty?
+
+        text.unpack1("m0") #: String
+      rescue ArgumentError
+        nil
       end
 
       # Returns the entries OpenSSL could read, the first error from one it
