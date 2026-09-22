@@ -31,7 +31,20 @@ public class VerificationException extends Exception {
         /** SHA-1 device-hash binding check failed. */
         DEVICE_HASH_MISMATCH,
         /** Payload is older than the verifier's configured max signed age. */
-        STALE_PAYLOAD
+        STALE_PAYLOAD,
+        /**
+         * The verifyReceipt request envelope is unusable: the body is not a
+         * JSON object or is too large, or {@code receipt-data} is missing,
+         * empty or not a string. Reported only by
+         * {@code VerifyReceiptResult.failureReason()}; never thrown.
+         */
+        MALFORMED_REQUEST,
+        /**
+         * An unexpected runtime exception inside the verifyReceipt endpoint,
+         * answered as status 21009. Reported only by
+         * {@code VerifyReceiptResult.failureReason()}; never thrown.
+         */
+        INTERNAL_ERROR
     }
 
     private final Reason reason;

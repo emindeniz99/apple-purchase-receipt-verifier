@@ -202,29 +202,76 @@ receipt from a different app.
 VerifyReceiptEndpoint endpoint = new VerifyReceiptEndpoint(
         AppleRootCerts.receiptRoots(), Environment.PRODUCTION);
 
-Map<String, Object> response = endpoint.verifyReceipt(requestBody);   // Map in, Map out
-String json = endpoint.verifyReceiptJson(rawRequestBody);             // String in, String out
+VerifyReceiptResult result = endpoint.verifyReceiptResult(requestBody);  // Map, or the raw JSON String
+Map<String, Object> response = result.toResponse();                      // Apple's body as a Map
+String json = result.toJson();                                           // Apple's body as JSON
+
+String json2 = endpoint.verifyReceiptJson(rawRequestBody);  // same as verifyReceiptResult(raw).toJson()
+VerifyReceiptResult bare = endpoint.verifyReceiptData(base64Receipt);   // receipt-data alone, no envelope
 ```
 
-Neither method throws: the Apple status code is a field of the body, for
-every input, including one that is not JSON (`verifyReceiptJson` answers
-`{"status":21002}` for that case). The statuses it can produce are
-`STATUS_OK` (`0`), `STATUS_MALFORMED` (`21002`), `STATUS_NOT_AUTHENTICATED`
-(`21003`), `STATUS_SANDBOX_RECEIPT_ON_PRODUCTION` (`21007`),
-`STATUS_PRODUCTION_RECEIPT_ON_SANDBOX` (`21008`) and `STATUS_INTERNAL`
-(`21009`) — and no others, because the rest describe conditions that only
-exist on Apple's servers. Local 21007/21008 routing fails closed: only
-receipt types `Production` and `ProductionVPP` count as production.
+No endpoint method throws: the Apple status code is a field of the body, for
+every input, including one that is not JSON (`{"status":21002}`). The
+statuses it can produce are `STATUS_OK` (`0`), `STATUS_MALFORMED` (`21002`),
+`STATUS_NOT_AUTHENTICATED` (`21003`), `STATUS_SANDBOX_RECEIPT_ON_PRODUCTION`
+(`21007`), `STATUS_PRODUCTION_RECEIPT_ON_SANDBOX` (`21008`) and
+`STATUS_INTERNAL` (`21009`), and no others, because the rest describe
+conditions that only exist on Apple's servers. Local 21007/21008 routing
+fails closed: only receipt types `Production` and `ProductionVPP` count as
+production.
 
-Like Apple's endpoint, this does **not** check the bundle id — compare
-`receipt.get("bundle_id")` yourself. `password` and
-`exclude-old-transactions` are accepted for wire compatibility and never
-read. See [COMPARISON.md](../COMPARISON.md) for the field-by-field fidelity
-account.
+A `VerifyReceiptResult` is one verification. `status()` is the answer for
+the endpoint's own environment; `receipt()` is the verified `AppReceipt`
+whenever the receipt bytes verified, 21007 and 21008 included;
+`failureReason()` says why there is no receipt, and exactly one of the two
+is non-null. The response is rendered only when `toResponse()` or `toJson()`
+is called. The result is immutable and thread-safe, and only the endpoint can
+create one.
 
-The two-argument `VerifyReceiptEndpoint(Set, boolean)` constructor is
-deprecated in favor of the `Environment` overload — a `boolean` cannot say
-at a call site which of Production or Sandbox it means.
+**Retrying in the other environment costs no second verification.**
+`toResponse(Environment)` and `toJson(Environment)` render what an endpoint
+of that environment would answer, recomputing the status from the receipt's
+own type each time:
+
+| receipt | on `PRODUCTION` | on `SANDBOX` |
+|---|---|---|
+| `Production`, `ProductionVPP` | 0 | 21008 |
+| any other type, or none | 21007 | 0 |
+| failed verification | its own status | its own status |
+
+```java
+VerifyReceiptResult result = production.verifyReceiptResult(requestBody);
+String json = result.status() == VerifyReceiptEndpoint.STATUS_SANDBOX_RECEIPT_ON_PRODUCTION
+        ? result.toJson(Environment.SANDBOX)
+        : result.toJson();
+```
+
+A sandbox receipt never renders as a production 0, whichever endpoint
+verified it. 21007 and 21008 bodies carry the status alone, as Apple's do.
+
+**Failure reasons.** `failureReason()` is a `VerificationException.Reason`:
+
+| `failureReason()` | status | when |
+|---|---|---|
+| `MALFORMED_REQUEST` | 21002 | the body is not JSON, not a JSON object or over `MAX_REQUEST_BYTES`, or `receipt-data` is missing, empty or not a string |
+| `INVALID_RECEIPT_FORMAT` | 21002 | `receipt-data` is not base64, is over `MAX_RECEIPT_BYTES`, or does not decode to a receipt |
+| `INVALID_CHAIN`, `INVALID_SIGNATURE`, other certificate reasons | 21003 | the receipt did not authenticate |
+| `INTERNAL_ERROR` | 21009 | an unexpected runtime exception; `failureCause()` holds it |
+
+**`request_date`.** Every method has an overload taking an `Instant`, which
+becomes `request_date` in place of the endpoint's clock; without one the
+clock is read once, when the call is made, and `requestDate()` returns it.
+That instant reaches `request_date` and nothing else. Certificate validity
+never sees it (see [The clock](#the-clock)).
+
+Like Apple's endpoint, this does **not** check the bundle id: compare
+`result.receipt().bundleId()` (or `receipt.bundle_id` in the body)
+yourself. `password` and `exclude-old-transactions` are accepted for wire
+compatibility and never read. See [COMPARISON.md](../COMPARISON.md) for the
+field-by-field fidelity account.
+
+`verifyReceiptResult(null)` does not compile, because both the `Map` and the
+`String` overload match; cast the `null` to the one you mean.
 
 ## The error vocabulary
 
@@ -267,6 +314,10 @@ try {
 
 The vocabulary is **closed** by the cross-port contract: a twelfth reason
 would be a change to the shared vector file and to every port at once.
+`Reason` also carries `MALFORMED_REQUEST` and `INTERNAL_ERROR`, but only as
+[`VerifyReceiptResult.failureReason()`](#the-verifyreceipt-compatible-endpoint)
+values: no `VerificationException` is ever thrown with either, so a `switch`
+over a caught exception's `reason()` never sees them.
 
 **Misconfiguration is a different failure mode.** Empty or null trust
 anchors, a null bundle id, an empty accepted-environment set, and an
@@ -405,7 +456,7 @@ apply and an absent one reads as `null`; `Environment.fromValue` for an
 unrecognised claim; the optional constructor parameters `appAppleId`,
 `maxSignedAge` and `clock`; the `deviceGuid` that switches the device-hash
 check on; the values of the map `verifyRaw` returns and of the one
-`verifyReceipt` accepts, since a JSON `null` stays one on both sides; and the
+`verifyReceiptResult` accepts, since a JSON `null` stays one on both sides; and the
 receipt or JWS a `verify` overload is handed, which is reported as
 `INVALID_RECEIPT_FORMAT` / `INVALID_JWS_FORMAT` rather than as a
 `NullPointerException` a caller cannot catch beside the others.
@@ -542,10 +593,10 @@ input, not to be tuned per deployment.
   it is split. Also the PHP port's number: every JWS in the shared corpus,
   Apple's own mock notification data included, is under 2.5 KB.
 - **`VerifyReceiptEndpoint.MAX_REQUEST_BYTES` (1 MiB)**, applied to the raw
-  body at `verifyReceiptJson`, which answers `{"status":21002}` for a larger
-  one. Deliberately below the receipt bound: the JSON entry point has a
-  parsing amplification the pre-decoded `verifyReceipt(Map)` entry point does
-  not.
+  body at `verifyReceiptJson` and `verifyReceiptResult(String)`, which answer
+  `{"status":21002}` for a larger one. Deliberately below the receipt bound:
+  the JSON entry point has a parsing amplification the pre-decoded
+  `verifyReceiptResult(Map)` entry point does not.
 
 Over-limit input is `INVALID_RECEIPT_FORMAT` or `INVALID_JWS_FORMAT`, so no
 new reason enters the closed vocabulary. Without these bounds a 64 MB input
@@ -578,7 +629,7 @@ exposes, so one reader cannot rewrite a verified attribute under another.
 
 `ConcurrencyTest` is what holds this rather than the paragraph above: sixteen
 threads, fifty iterations each, through `verify(String)`,
-`verifyReceipt(Map)`, `verifyReceiptJson(String)` and `verifyTransaction`,
+`verifyReceiptResult(Map)`, `verifyReceiptJson(String)` and `verifyTransaction`,
 each answer compared to the answer a single thread gets.
 
 ## Testing

@@ -182,6 +182,8 @@ class KotlinInteropTest {
             Reason.INVALID_RECEIPT_FORMAT -> "bad receipt"
             Reason.DEVICE_HASH_MISMATCH -> "device mismatch"
             Reason.STALE_PAYLOAD -> "stale"
+            Reason.MALFORMED_REQUEST -> "malformed request"
+            Reason.INTERNAL_ERROR -> "internal error"
         }
         assertEquals("wrong bundle", description)
     }
