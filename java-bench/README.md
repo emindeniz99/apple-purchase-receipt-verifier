@@ -49,14 +49,17 @@ base64 for the string entry points. The endpoint gets a fixed `Clock`
 |---|---|
 | `core` | `ReceiptVerifier.verifyReceiptCore(der, roots)` on pre-decoded DER |
 | `verifierBase64` | `new ReceiptVerifier(roots, bundleId).verify(base64)` (verifier built in setup) |
-| `endpointMap` | `VerifyReceiptEndpoint` in `SANDBOX`, `verifyReceipt({"receipt-data": base64})`, status 0 with the full receipt |
+| `endpointMap` | `VerifyReceiptEndpoint` in `SANDBOX`, `verifyReceiptResult({"receipt-data": base64}).toResponse()`, status 0 with the full receipt |
 | `endpointJson` | the same endpoint, `verifyReceiptJson("{\"receipt-data\":\"...\"}")` |
-| `endpointWrongEnv` | the endpoint in `PRODUCTION` on the same sandbox receipt, status 21007 |
+| `endpointWrongEnv` | the endpoint in `PRODUCTION` on the same sandbox receipt, `verifyReceiptResult(...).toResponse()`, status 21007 |
+| `resultOnly` | the `SANDBOX` endpoint, `verifyReceiptResult(...)` with no rendering |
+| `retryViaResult` | the `PRODUCTION` endpoint, `verifyReceiptResult(...).toJson(Environment.SANDBOX)`: the 21007 retry without a second verification |
 | `rejectTamperedSignature` | `verifyReceiptCore` on the DER with one bit flipped in the middle of the SignerInfo signature; the `VerificationException` is caught and consumed |
 
 `@Setup` prepares every input and runs each call once, failing the run unless
 it gives the expected answer: the right bundle id and in-app count, status 0
-with every `in_app` entry rendered, status 21007, and `INVALID_SIGNATURE` for
+with every `in_app` entry rendered, status 21007, a result with status 0
+and a receipt, a Sandbox status-0 body from the production result, and `INVALID_SIGNATURE` for
 the tampered receipt (checked for both fixtures). A benchmark therefore cannot
 time a fast failure by accident.
 
@@ -249,5 +252,60 @@ falls through to the tolerant parser unchanged, so every rejection keeps its
 reason and message. `ReceiptBase64FastPathTest` checks this on 20,000 seeded
 inputs plus hand-picked edges, comparing `decode` with the tolerant path
 alone.
+
+## 2026-09-22: `VerifyReceiptResult`
+
+The endpoint benchmarks moved to `verifyReceiptResult`, and two were added:
+`resultOnly` (verification with no rendering) and `retryViaResult` (a
+production endpoint's result re-rendered for Sandbox, the 21007 retry
+without a second verification).
+
+"Before" is `5e8652f` (origin/main, the old `verifyReceipt(Map)` API),
+"after" is the `VerifyReceiptResult` commit. Both ran in one session on the
+same machine: JDK 21.0.10 (OpenJDK 64-Bit Server VM, Ubuntu build
+21.0.10+7), 4 vCPUs of an Intel(R) Xeon(R) Processor @ 2.80GHz, 15 GiB RAM.
+Same JMH settings as the baseline, plain run, no `-prof gc`. µs/op. Both
+runs predate the base64 fast path above, so decoding costs what it did in
+the baseline.
+
+| benchmark | fixture | before | after |
+|---|---|---:|---:|
+| `core` | g5 | 498.1 ± 38.0 | 509.0 ± 30.5 |
+| `core` | legacy | 3,796.5 ± 183.5 | 3,825.3 ± 174.7 |
+| `endpointMap` | g5 | 711.6 ± 47.1 | 716.7 ± 38.9 |
+| `endpointMap` | legacy | 5,935.9 ± 241.9 | 6,023.0 ± 378.7 |
+| `endpointJson` | g5 | 783.6 ± 60.0 | 780.7 ± 77.6 |
+| `endpointJson` | legacy | 7,649.8 ± 483.7 | 7,349.0 ± 392.0 |
+| `endpointWrongEnv` | g5 | 702.0 ± 41.6 | 680.9 ± 22.6 |
+| `endpointWrongEnv` | legacy | 5,299.6 ± 255.1 | 5,523.6 ± 374.3 |
+| `resultOnly` | g5 | | 701.9 ± 49.7 |
+| `resultOnly` | legacy | | 5,271.1 ± 176.7 |
+| `retryViaResult` | g5 | | 737.4 ± 55.4 |
+| `retryViaResult` | legacy | | 6,954.2 ± 402.3 |
+
+**The existing entry points did not move.** Every before/after pair above is
+within its combined error. Building the result and rendering it later costs
+nothing measurable against rendering inline.
+
+**`resultOnly` costs what `endpointWrongEnv` did**: 701.9 against 702.0
+(g5) and 5,271.1 against 5,299.6 (legacy). Both run the decode and
+`verifyReceiptCore` and render nothing, which is the expected match.
+
+**What the 21007 retry costs now.** Before, a sandbox receipt sent to
+production first had to be verified twice. Like for like against
+`retryViaResult`, which ends in JSON:
+
+| path | g5 | legacy |
+|---|---:|---:|
+| before: `endpointWrongEnv` + `endpointJson` | 702.0 + 783.6 = 1,485.6 | 5,299.6 + 7,649.8 = 12,949.4 |
+| after: `retryViaResult` | 737.4 | 6,954.2 |
+| saved | 748.2 (50.4%) | 5,995.2 (46.3%) |
+
+The before row adds two separately measured means and the JSON request
+parse, which `retryViaResult` does not do (it takes the map), so the saving
+is slightly overstated; the JSON parse was measured at 60.6 (g5) and
+1,778.3 µs (legacy) for parse and write together in the baseline breakdown.
+`retryViaResult` minus `resultOnly`, 35.5 (g5) and 1,683.1 µs (legacy), is
+the price of rendering the Sandbox body as JSON.
 
 The caveats of the baseline apply: one run pair on a shared cloud VM.
