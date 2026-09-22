@@ -83,6 +83,24 @@ public struct ReceiptVerifier: Sendable {
     /// x4, against the x16 per x4 a quadratic cost would show.
     static let maximumEmbeddedCertificates = 10
 
+    /// Ceiling on the receipt this library will look at: the base64 string at
+    /// ``verify(base64Receipt:deviceGuid:)`` and at the endpoint's
+    /// `receipt-data`, and the DER at every entry point that takes bytes,
+    /// both `verifyCore` overloads included. A larger receipt is
+    /// ``VerificationError/Reason/invalidReceiptFormat``, decided before
+    /// anything is decoded: base64 decoding allocates about three quarters of
+    /// the input again and the CMS parse allocates in proportion to the DER,
+    /// none of it behind a signature check.
+    ///
+    /// A string is measured in UTF-8 bytes (`utf8.count`, constant time for a
+    /// native string). For base64, which is what a receipt string is, that is
+    /// the character count the Java and Python ports measure. The number is
+    /// theirs and PHP's. It clears the normative floor in
+    /// fixtures/cases.json, which requires accepting a receipt of up to 1 MiB
+    /// of DER (about 1.38 MB of base64); the largest genuine receipt in the
+    /// corpus is 79 KB.
+    public static let maxReceiptBytes = 2_097_152
+
     private let roots: [Certificate]
     private let bundleId: String
 
@@ -99,6 +117,13 @@ public struct ReceiptVerifier: Sendable {
 
     /// Verifies a base64 receipt (the usual client transport form).
     public func verify(base64Receipt: String, deviceGuid: Data? = nil) async throws -> AppReceipt {
+        // Before the decode, which would otherwise allocate a stripped copy of
+        // the string and then the bytes it decodes to.
+        guard base64Receipt.utf8.count <= Self.maxReceiptBytes else {
+            throw VerificationError(
+                .invalidReceiptFormat,
+                "receipt exceeds the maximum accepted size of \(Self.maxReceiptBytes) bytes")
+        }
         guard let der = decodeReceiptBase64(base64Receipt) else {
             throw VerificationError(.invalidReceiptFormat, "receipt is not valid base64")
         }
@@ -147,6 +172,13 @@ public struct ReceiptVerifier: Sendable {
     }
 
     static func verifyCore(receipt: Data, roots: [Certificate]) async throws -> AppReceipt {
+        // Every DER entry point ends here, so one check covers them all, and
+        // it runs before the CMS parse allocates in proportion to the input.
+        guard receipt.count <= maxReceiptBytes else {
+            throw VerificationError(
+                .invalidReceiptFormat,
+                "receipt exceeds the maximum accepted size of \(maxReceiptBytes) bytes")
+        }
         // `maximumEmbeddedCertificates` is applied inside this parse, on the
         // element count, so an oversized bag is refused before any of it is
         // decoded and nothing below ever sees more than the bound.

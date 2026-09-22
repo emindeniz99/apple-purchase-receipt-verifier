@@ -67,6 +67,22 @@ public struct JwsVerifier: Sendable {
     /// Apple marker OID: Worldwide Developer Relations intermediate CA.
     static let intermediateOID: ASN1ObjectIdentifier = [1, 2, 840, 113635, 100, 6, 2, 1]
 
+    /// Ceiling on a compact JWS, in UTF-8 bytes (`utf8.count`). A longer
+    /// input is ``VerificationError/Reason/invalidJwsFormat`` before it is
+    /// split or decoded. The number is the Java and PHP ports'. Every JWS in
+    /// the shared corpus, Apple's own mock notification data included, is
+    /// under 2.5 KB, so 256 KiB is a hundredfold headroom over anything Apple
+    /// has signed. A compact JWS is base64url and dots, so its bytes and its
+    /// characters are the same count for any input that could verify.
+    public static let maxJwsBytes = 262_144
+
+    /// How deep a JSON structure may nest inside the header or payload
+    /// segment; the Java port's number. Both are parsed before the signature
+    /// is checked, so this bounds attacker-chosen bytes. `JSONSerialization`
+    /// and `JSONDecoder` take no depth option, so the depth is counted
+    /// before either runs.
+    static let maxJsonNestingDepth = 64
+
     private let roots: [Certificate]
     private let bundleId: String
     private let acceptedEnvironments: Set<AppleEnvironment>
@@ -148,6 +164,13 @@ public struct JwsVerifier: Sendable {
     }
 
     private func verifySignature(_ jws: String) async throws -> Data {
+        // Before the split, so nothing downstream allocates in proportion to
+        // an input this verifier has already decided not to look at.
+        guard jws.utf8.count <= Self.maxJwsBytes else {
+            throw VerificationError(
+                .invalidJwsFormat,
+                "jws exceeds the maximum accepted size of \(Self.maxJwsBytes) bytes")
+        }
         let segments = jws.components(separatedBy: ".")
         guard segments.count == 3 else {
             throw VerificationError(
@@ -155,9 +178,21 @@ public struct JwsVerifier: Sendable {
                 "expected 3 dot-separated segments, got \(segments.count)")
         }
         guard let headerData = base64URLDecode(segments[0]),
-            let payloadData = base64URLDecode(segments[1]),
-            let header = try? JSONSerialization.jsonObject(with: headerData) as? [String: Any]
+            let payloadData = base64URLDecode(segments[1])
         else {
+            throw VerificationError(.invalidJwsFormat, "header/payload is not valid base64url JSON")
+        }
+        // Both segments, here, because the payload is parsed further down and
+        // again by the typed decoders, and every one of those parses happens
+        // before or without a signature check.
+        guard !jsonNestingExceeds(headerData, limit: Self.maxJsonNestingDepth),
+            !jsonNestingExceeds(payloadData, limit: Self.maxJsonNestingDepth)
+        else {
+            throw VerificationError(
+                .invalidJwsFormat,
+                "header/payload nests more than \(Self.maxJsonNestingDepth) levels deep")
+        }
+        guard let header = try? JSONSerialization.jsonObject(with: headerData) as? [String: Any] else {
             throw VerificationError(.invalidJwsFormat, "header/payload is not valid base64url JSON")
         }
         guard header["alg"] as? String == "ES256" else {
