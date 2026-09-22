@@ -15,7 +15,16 @@ import { fileURLToPath } from 'node:url';
 const here = (rel) => fileURLToPath(new URL(rel, import.meta.url));
 const generated = here('./.web-fixtures.generated.js');
 const wasm = here('./.web-fastly.generated.wasm');
+// Digits only. The value is interpolated into a URL below, and a port like
+// `1@example.com` would move the host out of loopback: `http://127.0.0.1:1@
+// example.com/` parses with example.com as the host and 127.0.0.1:1 as
+// userinfo. Nobody is attacking their own shell, but the check costs a line
+// and keeps the URL honestly local.
 const PORT = process.env.FASTLY_SMOKE_PORT || '7878';
+if (!/^[0-9]{1,5}$/.test(PORT)) {
+  console.error(`FASTLY_SMOKE_PORT must be a port number; got ${JSON.stringify(PORT)}`);
+  process.exit(2);
+}
 
 try {
   execFileSync('viceroy', ['--version'], { stdio: 'ignore' });
