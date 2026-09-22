@@ -321,6 +321,53 @@ public struct ReceiptVerifier: Sendable {
 /// over- and under-padded input. `data % 4 == 1` is rejected below and stays
 /// rejected regardless of padding.
 func decodeReceiptBase64(_ text: String) -> Data? {
+    // Fast path for the common case, a canonical standard-alphabet string
+    // with no whitespace: hand it to Foundation's decoder directly, without
+    // the copy the tolerant path builds. Foundation alone is NOT a subset of
+    // the rule above: on Linux (swift-corelibs-foundation, Swift 6.3)
+    // `Data(base64Encoded:)` accepts over-padded input such as "AA===",
+    // "AAAA=" and "AAAA====", and the Darwin implementation is a different
+    // code base again. So the shape is checked here first, byte by byte, and
+    // the decoder only ever sees a string the tolerant path would accept and
+    // pass to it unchanged: [A-Za-z0-9+/] data, then exactly the canonical
+    // '=' run. The bytes are then identical on every platform by
+    // construction. Anything else, or a nil from the decoder, falls through
+    // to the tolerant path, so rejections are unchanged.
+    // ReceiptBase64FastPathTests compares the two on 20,000 seeded inputs.
+    if isCanonicalStandardBase64(text), let decoded = Data(base64Encoded: text) {
+        return decoded
+    }
+    return decodeReceiptBase64Tolerant(text)
+}
+
+/// True when `text` is non-empty `[A-Za-z0-9+/]` data followed by the
+/// canonical padding for its length and nothing else: total length a
+/// multiple of four with at most two trailing `=`. Every such string passes
+/// each rule of ``decodeReceiptBase64Tolerant(_:)`` with nothing stripped or
+/// translated, and that function then hands the decoder the same bytes.
+func isCanonicalStandardBase64(_ text: String) -> Bool {
+    var count = 0
+    var padding = 0
+    for byte in text.utf8 {
+        count += 1
+        if byte == 0x3D {  // '='
+            padding += 1
+            continue
+        }
+        guard padding == 0 else { return false }
+        switch byte {
+        case 0x30...0x39, 0x41...0x5A, 0x61...0x7A, 0x2B, 0x2F:  // 0-9 A-Z a-z + /
+            continue
+        default:
+            return false
+        }
+    }
+    return count > 0 && count % 4 == 0 && padding <= 2
+}
+
+/// The full rule described on ``decodeReceiptBase64(_:)``, without the fast
+/// path. Internal so the differential test can compare the two.
+func decodeReceiptBase64Tolerant(_ text: String) -> Data? {
     var body: [UInt8] = []
     var sawPadding = false
     var padCount = 0
