@@ -1,0 +1,120 @@
+name: apple-purchase-receipt-verifier
+
+# CodeQL configuration for apple-purchase-receipt-verifier.
+#
+# What this file does and does not do
+# -----------------------------------
+# It narrows the scanned tree to LIBRARY code — the nine ports' own source
+# directories — and leaves out the harnesses around them. Nothing here
+# weakens the analysis of the library itself: no query is disabled, no
+# suite is swapped out, and every file under
+#
+#   node/src/          python/apple_purchase_receipt_verifier/
+#   go/ (non-_test)    ruby/lib/
+#   rust/src/          php/src/
+#   rust/ffi/src/      dotnet/src/
+#   java/src/main/     swift/Sources/
+#
+# stays fully in scope.
+#
+# Why the exclusions below are legitimate rather than convenient: every one
+# of these paths is a *repository-controlled* input. The conformance suites,
+# the fuzz drivers, the runtime-smoke runners and tools/ read fixtures/,
+# cases.json and cases.schema.json — files that live in this repository, are
+# reviewed on every change, and are not reachable by any consumer of the
+# published packages. CodeQL's taint queries model a filename read out of
+# cases.json or a directory taken from argv as untrusted, which is correct
+# for a server and wrong for a test harness whose entire input set is
+# committed next to it. Those alerts are noise that would hide a real
+# finding in the library, which is the code that actually parses bytes an
+# attacker controls.
+#
+# Caveat worth knowing before editing: paths / paths-ignore are honoured for
+# interpreted languages and for compiled languages analysed with
+# `build-mode: none`. They do NOT apply to a language that is built, and
+# three of ours are: Go and Swift autobuild (neither extractor has a
+# buildless mode) and java-kotlin builds manually, because the Java port is
+# the one that runs in production and is scanned against a real compilation.
+#
+# For those three the workflow's build steps, not this file, decide what is
+# in the database. That is why codeql.yml builds java/ with
+# `-Dmaven.test.skip=true`: it is the only way to keep java/src/test out,
+# since the entry below cannot do it. The Go and Swift test entries below
+# are documentation of intent rather than an enforced filter — excluding
+# them would require changing their build steps.
+
+# The query suite the owner chose when switching to advanced setup. It is
+# `security-and-quality`'s smaller sibling: everything in the default
+# suite plus security queries held back from it for lower precision or
+# lower severity — more taint-tracking sinks, more "uncontrolled data in X"
+# shapes, more heuristic matches. It finds more, and it is wrong more
+# often, which is exactly why the exclusions below are not cosmetic: under
+# `security-extended` the test and fuzz harnesses generate far more
+# repository-controlled-input findings than the library does real ones, and
+# an inbox of those is how a genuine alert gets missed.
+queries:
+  - uses: security-extended
+
+paths-ignore:
+  # ---- conformance and unit test suites -------------------------------
+  # Every port runs the same shared fixture suite from fixtures/cases.json.
+  # The harnesses join fixture names into paths and look helpers up by name,
+  # which is what produces the "uncontrolled data in path expression" and
+  # "unvalidated dynamic method call" families here.
+  - node/test/**
+  - python/tests/**
+  - ruby/test/**
+  - php/tests/**
+  - dotnet/tests/**
+  # java-kotlin is built, so these two are not enforced here. java/src/test
+  # is kept out by `-Dmaven.test.skip=true` on the library build instead.
+  # jvm-interop is test-only and IS analysed on purpose: its Kotlin is the
+  # only Kotlin in the repository, and a `test-compile` is what extracts it.
+  - java/src/test/**
+  - jvm-interop/src/test/**
+  - swift/Tests/**
+  - rust/tests/**
+  - rust/ffi/tests/**
+  - "**/*_test.go"
+
+  # ---- fuzz harnesses --------------------------------------------------
+  # Drivers and seed corpora. They exist to feed malformed bytes to the
+  # library on purpose; the driver itself is not shipped to anyone.
+  - node/fuzz/**
+  - python/fuzz/**
+  - ruby/fuzz/**
+  - php/fuzz/**
+  - dotnet/fuzz/**
+  - java/fuzz/**
+  - swift/fuzz/**
+  - rust/fuzz/**
+
+  # ---- runtime smoke runners and per-port dev scripts ------------------
+  # These start local servers, evaluate the built ES modules inside a vm
+  # realm and shell out to runtime CLIs. They run on a developer's machine
+  # and in CI, never in a consumer's process.
+  - node/runtime-smoke/**
+  - node/scripts/**
+  - ruby/script/**
+  - php/tools/**
+  - go/tools/**
+  - dotnet/tools/**
+  - .github/smoke/**
+
+  # ---- repository tooling ---------------------------------------------
+  # tools/ validates cases.json against cases.schema.json and generates the
+  # C++/FFI manifest. Both files are in this repository.
+  - tools/**
+
+  # ---- examples and consumer samples -----------------------------------
+  # Documentation that happens to compile. Not part of any published
+  # artifact.
+  - rust/ffi/examples/**
+  - dotnet/samples/**
+  - java/samples/**
+
+  # ---- vendored fixtures ------------------------------------------------
+  # Apple's published sample receipts and certificates, plus the generated
+  # fake-Apple PKI. Data, not code, but the directory also holds small
+  # helper scripts that should not be analysed as library code.
+  - fixtures/**
