@@ -206,10 +206,10 @@ class InputSizeBoundsTest {
         request.put("receipt-data", paddedGenuineReceipt(ReceiptVerifier.MAX_RECEIPT_BYTES + 1));
         assertEquals(
                 Integer.valueOf(VerifyReceiptEndpoint.STATUS_MALFORMED),
-                endpoint().verifyReceipt(request).get("status"));
+                endpoint().verifyReceiptResult(request).toResponse().get("status"));
         assertNotEquals(
                 Integer.valueOf(VerifyReceiptEndpoint.STATUS_OK),
-                endpoint().verifyReceipt(request).get("status"));
+                endpoint().verifyReceiptResult(request).toResponse().get("status"));
     }
 
     // ------------------------------------------------------------------

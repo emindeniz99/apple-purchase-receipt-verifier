@@ -54,8 +54,8 @@ class SmokeTest {
 
     @Test
     void answersTheVerifyReceiptShimForAGenuineReceipt() throws Exception {
-        Map<String, Object> response = endpoint.verifyReceipt(
-                Collections.singletonMap("receipt-data", fixture("public-receipts/receipt-sandbox-g5.b64")));
+        Map<String, Object> response = endpoint.verifyReceiptResult(
+                Collections.singletonMap("receipt-data", fixture("public-receipts/receipt-sandbox-g5.b64"))).toResponse();
         assertThat(response.get("status")).isEqualTo(0);
         assertThat(response.get("environment")).isEqualTo("Sandbox");
     }

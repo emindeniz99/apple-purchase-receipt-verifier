@@ -182,7 +182,8 @@ class ConformanceCasesTest {
             String receiptData =
                     "text".equals(codec) ? text(input) : Base64.getEncoder().encodeToString(input);
             return new VerifyReceiptEndpoint(roots, environment, clock)
-                    .verifyReceipt(Collections.singletonMap("receipt-data", receiptData));
+                    .verifyReceiptResult(Collections.singletonMap("receipt-data", receiptData))
+                    .toResponse();
         }
         throw new IllegalStateException("unknown operation " + operation);
     }

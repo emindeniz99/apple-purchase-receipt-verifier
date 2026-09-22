@@ -6,6 +6,7 @@ import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.AppReceipt;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifier;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.VerifyReceiptEndpoint;
+import io.github.emindeniz99.applepurchasereceiptverifier.receipt.VerifyReceiptResult;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -111,7 +112,7 @@ public class ReceiptBenchmark {
 
         checkReceipt(ReceiptVerifier.verifyReceiptCore(der, roots), bundleId, inAppCount);
         checkReceipt(verifier.verify(base64), bundleId, inAppCount);
-        Map<String, Object> ok = sandboxEndpoint.verifyReceipt(request);
+        Map<String, Object> ok = sandboxEndpoint.verifyReceiptResult(request).toResponse();
         if (!Integer.valueOf(0).equals(ok.get("status"))) {
             throw new IllegalStateException("endpointMap answered " + ok);
         }
@@ -122,10 +123,21 @@ public class ReceiptBenchmark {
         if (!sandboxEndpoint.verifyReceiptJson(requestJson).startsWith("{\"status\":0,")) {
             throw new IllegalStateException("endpointJson did not answer status 0");
         }
-        Object wrongEnv = productionEndpoint.verifyReceipt(request).get("status");
+        Object wrongEnv =
+                productionEndpoint.verifyReceiptResult(request).toResponse().get("status");
         if (!Integer.valueOf(VerifyReceiptEndpoint.STATUS_SANDBOX_RECEIPT_ON_PRODUCTION)
                 .equals(wrongEnv)) {
             throw new IllegalStateException("endpointWrongEnv answered " + wrongEnv);
+        }
+        VerifyReceiptResult result = sandboxEndpoint.verifyReceiptResult(request);
+        if (result.status() != 0 || result.receipt() == null) {
+            throw new IllegalStateException("resultOnly answered " + result.status());
+        }
+        if (!productionEndpoint
+                .verifyReceiptResult(request)
+                .toJson(Environment.SANDBOX)
+                .startsWith("{\"status\":0,\"environment\":\"Sandbox\",")) {
+            throw new IllegalStateException("retryViaResult did not answer status 0 for Sandbox");
         }
         try {
             ReceiptVerifier.verifyReceiptCore(tamperedDer, roots);
@@ -149,7 +161,7 @@ public class ReceiptBenchmark {
 
     @Benchmark
     public Map<String, Object> endpointMap() {
-        return sandboxEndpoint.verifyReceipt(request);
+        return sandboxEndpoint.verifyReceiptResult(request).toResponse();
     }
 
     @Benchmark
@@ -159,7 +171,17 @@ public class ReceiptBenchmark {
 
     @Benchmark
     public Map<String, Object> endpointWrongEnv() {
-        return productionEndpoint.verifyReceipt(request);
+        return productionEndpoint.verifyReceiptResult(request).toResponse();
+    }
+
+    @Benchmark
+    public VerifyReceiptResult resultOnly() {
+        return sandboxEndpoint.verifyReceiptResult(request);
+    }
+
+    @Benchmark
+    public String retryViaResult() {
+        return productionEndpoint.verifyReceiptResult(request).toJson(Environment.SANDBOX);
     }
 
     @Benchmark

@@ -75,7 +75,8 @@ class ConcurrencyTest {
         // what the library says when nothing is racing, not merely against
         // itself.
         final String expectedReceipt = describe(receipts.verify(receiptBase64));
-        final Map<String, Object> expectedResponse = endpoint.verifyReceipt(request);
+        final Map<String, Object> expectedResponse =
+                endpoint.verifyReceiptResult(request).toResponse();
         final String expectedJson = endpoint.verifyReceiptJson(requestJson);
         final String expectedTransaction = describe(transactions.verifyTransaction(jws));
         assertEquals(Integer.valueOf(VerifyReceiptEndpoint.STATUS_OK), expectedResponse.get("status"));
@@ -92,7 +93,9 @@ class ConcurrencyTest {
                         start.await();
                         for (int n = 0; n < ITERATIONS; n++) {
                             assertEquals(expectedReceipt, describe(receipts.verify(receiptBase64)));
-                            assertEquals(expectedResponse, endpoint.verifyReceipt(request));
+                            assertEquals(
+                                    expectedResponse,
+                                    endpoint.verifyReceiptResult(request).toResponse());
                             assertEquals(expectedJson, endpoint.verifyReceiptJson(requestJson));
                             assertEquals(expectedTransaction, describe(transactions.verifyTransaction(jws)));
                         }
