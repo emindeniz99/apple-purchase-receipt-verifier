@@ -224,7 +224,12 @@ A `VerifyReceiptResult` is one verification. `status()` is the answer for
 the endpoint's own environment; `receipt()` is the verified `AppReceipt`
 whenever the receipt bytes verified, 21007 and 21008 included;
 `failureReason()` says why there is no receipt, and exactly one of the two
-is non-null. The response is rendered only when `toResponse()` or `toJson()`
+is non-null. `isVerified()` is `true` exactly when `receipt()` is non-null,
+which includes 21007 and 21008: the receipt verified, only its environment
+differs from this endpoint's own. That makes `isVerified()` **not** the same
+check as `status() == 0` — `status() == 0` is "does this endpoint's own
+environment accept the receipt", `isVerified()` is "did the receipt verify at
+all". The response is rendered only when `toResponse()` or `toJson()`
 is called. The result is immutable and thread-safe, and only the endpoint can
 create one.
 

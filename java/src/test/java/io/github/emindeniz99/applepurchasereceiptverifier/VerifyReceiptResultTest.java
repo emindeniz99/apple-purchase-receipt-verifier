@@ -72,6 +72,7 @@ class VerifyReceiptResultTest {
         assertTrue(
                 (result.receipt() == null) != (result.failureReason() == null),
                 label + ": exactly one of receipt and failureReason must be set");
+        assertEquals(result.receipt() != null, result.isVerified(), label + ": isVerified must match receipt()");
         assertEquals(
                 result.failureReason() == Reason.INTERNAL_ERROR,
                 result.failureCause() != null,
@@ -100,6 +101,15 @@ class VerifyReceiptResultTest {
         // 21007 and 21008 are routing answers, not failures: the receipt verified.
         assertNotNull(results.get("21007").receipt());
         assertNotNull(results.get("21008").receipt());
+        // isVerified() is true for status 0 and for 21007/21008 alike, since
+        // all three carry a verified receipt; it is false for every failure,
+        // even though 21002/21003/21009 are also non-zero statuses.
+        for (String verified : Arrays.asList("0 sandbox", "0 production", "21007", "21008")) {
+            assertTrue(results.get(verified).isVerified(), verified);
+        }
+        for (String failed : Arrays.asList("21002", "21003", "21009")) {
+            assertTrue(!results.get(failed).isVerified(), failed);
+        }
     }
 
     /**

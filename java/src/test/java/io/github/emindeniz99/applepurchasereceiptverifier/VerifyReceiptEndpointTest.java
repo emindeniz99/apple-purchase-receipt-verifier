@@ -281,27 +281,6 @@ class VerifyReceiptEndpointTest {
     }
 
     /**
-     * The boolean constructors are gone. This pins the one-line migration they
-     * left behind: {@code true} was {@link Environment#PRODUCTION} and
-     * {@code false} was {@link Environment#SANDBOX}, byte for byte.
-     */
-    @Test
-    void theBooleanConstructorMigrationMapsTrueToProduction() throws Exception {
-        X509Certificate root = fixtureRoot();
-        for (boolean production : new boolean[] {true, false}) {
-            Environment environment = production ? Environment.PRODUCTION : Environment.SANDBOX;
-            JsonNode viaBoolean = MAPPER.valueToTree(new VerifyReceiptEndpoint(
-                            Collections.singleton(root), production ? Environment.PRODUCTION : Environment.SANDBOX)
-                    .verifyReceiptResult(request())
-                    .toResponse());
-            JsonNode viaEnum = MAPPER.valueToTree(new VerifyReceiptEndpoint(Collections.singleton(root), environment)
-                    .verifyReceiptResult(request())
-                    .toResponse());
-            assertEquals(withoutRequestDate(viaEnum), withoutRequestDate(viaBoolean), String.valueOf(production));
-        }
-    }
-
-    /**
      * Apple's endpoint has exactly two environments. The enum carries four
      * (XCODE and LOCAL_TESTING exist for JWS payload claims), so the two that
      * cannot route 21007/21008 are refused at construction rather than

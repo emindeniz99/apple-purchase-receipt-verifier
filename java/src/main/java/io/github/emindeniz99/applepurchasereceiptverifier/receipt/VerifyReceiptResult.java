@@ -83,6 +83,21 @@ public final class VerifyReceiptResult {
         return receipt;
     }
 
+    /**
+     * Whether the receipt bytes verified, {@code true} exactly when
+     * {@link #receipt()} is non-null. This includes 21007 and 21008 results:
+     * the receipt verified, only its environment differs from this endpoint's
+     * own, so this is <strong>not</strong> the same check as {@code status()
+     * == 0}. {@code status() == 0} answers "does this endpoint's own
+     * environment accept the receipt"; {@code isVerified()} answers "did the
+     * receipt verify at all", which is what a caller should check before
+     * trusting {@link #receipt()}'s fields or retrying with
+     * {@link #toResponse(Environment)}.
+     */
+    public boolean isVerified() {
+        return receipt != null;
+    }
+
     /** Why there is no receipt; non-null exactly when {@link #receipt()} is null. */
     public @Nullable Reason failureReason() {
         return failureReason;
