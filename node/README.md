@@ -266,8 +266,8 @@ verified it. Any environment other than `'Production'` or `'Sandbox'` is a
 
 | `failureReason` | status | when |
 |---|---|---|
-| `MALFORMED_REQUEST` | 21002 | the request is not an object, the string is not a JSON object, or `receipt-data` is missing, empty or not a string |
-| `INVALID_RECEIPT_FORMAT` | 21002 | `receipt-data` is not base64 or does not decode to a receipt |
+| `MALFORMED_REQUEST` | 21002 | the request is not an object, the string is not a JSON object, is over `MAX_REQUEST_BYTES` or nests past 64 levels, or `receipt-data` is missing, empty or not a string |
+| `INVALID_RECEIPT_FORMAT` | 21002 | `receipt-data` is over `MAX_RECEIPT_BYTES`, is not base64 or does not decode to a receipt |
 | `INVALID_CHAIN`, `INVALID_SIGNATURE`, other certificate reasons | 21003 | the receipt did not authenticate |
 | `INTERNAL_ERROR` | 21009 | an unexpected error; `failureCause` holds it |
 
@@ -284,6 +284,36 @@ the receipt's own creation date.
 compatibility and never read. See
 [COMPARISON.md](https://github.com/emindeniz99/apple-purchase-receipt-verifier/blob/main/COMPARISON.md)
 for the field-by-field account.
+
+## Input limits
+
+Base64 decoding, ASN.1 parsing and JSON parsing all allocate in proportion to
+their input, and all of them run before any signature is checked. So each
+input is measured first. The caps are static constants on the classes, the
+same in the default and the `/web` build, and they match the Java, PHP and
+Python ports.
+
+- **`ReceiptVerifier.MAX_RECEIPT_BYTES` (2 MiB, 2097152).** Applied to a
+  base64 receipt string, in characters, before it is decoded (at
+  `ReceiptVerifier.verify` and at the endpoint's `receipt-data`), and to the
+  DER, in bytes, before it is parsed (at every entry point, `verifyReceiptCore`
+  included). A larger receipt is `INVALID_RECEIPT_FORMAT`, 21002 at the
+  endpoint. `fixtures/cases.json` requires accepting a receipt of up to 1 MiB
+  of DER, about 1.38 MB of base64; the largest genuine receipt in the corpus
+  is 79 KB.
+- **`VerifyReceiptEndpoint.MAX_REQUEST_BYTES` (1 MiB, 1048576).** Applied to
+  a raw JSON body, in UTF-8 bytes, before it is parsed. A larger body answers
+  21002 with `MALFORMED_REQUEST`. It is below the receipt cap on purpose: the
+  JSON path parses the body as well as decoding the receipt, so a receipt
+  near the 1 MiB DER floor verifies through `verifyReceiptData` or an object
+  body but not as JSON text. A body passed as an object is not measured.
+- **JSON nesting depth 64.** `JSON.parse` has no depth option, so brackets
+  outside strings are counted before it runs. A deeper request body answers
+  21002 with `MALFORMED_REQUEST`; a deeper JWS header or payload is
+  `INVALID_JWS_FORMAT`. A verifyReceipt body is a flat object of strings.
+- **`JwsVerifier.MAX_JWS_BYTES` (256 KiB, 262144).** Applied to the compact
+  JWS, in characters, before it is split or decoded. A longer one is
+  `INVALID_JWS_FORMAT`. Apple's JWS payloads are a few kilobytes.
 
 ## Receipt ids are bigints
 

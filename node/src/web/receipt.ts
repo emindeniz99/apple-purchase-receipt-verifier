@@ -8,6 +8,7 @@ import {
   type ParsedCms,
 } from '../cms.js';
 import { parseReceiptPayload } from '../receipt-payload.js';
+import { MAX_RECEIPT_BYTES } from '../limits.js';
 import { requireDecodableExtensions } from '../der.js';
 import { parseCertificate, type ParsedCertificate } from '../x509.js';
 import { buildAndValidatePath, normalizeRoots, type RootInput } from './chain.js';
@@ -46,6 +47,14 @@ export interface ReceiptVerifierOptions {
  * Shared by {@link ReceiptVerifier.verify} and the web VerifyReceiptEndpoint.
  */
 export function decodeReceiptDataString(text: string): Uint8Array {
+  // Before the decode, which allocates a stripped copy of the string and
+  // then the bytes it decodes to.
+  if (text.length > MAX_RECEIPT_BYTES) {
+    throw new VerificationError(
+      Reason.INVALID_RECEIPT_FORMAT,
+      `receipt exceeds the maximum accepted size of ${MAX_RECEIPT_BYTES} characters`,
+    );
+  }
   const decoded = receiptBase64DecodeStrict(text);
   if (decoded === null) {
     throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'receipt-data is not valid base64');
@@ -66,6 +75,13 @@ export async function verifyReceiptCore(
   const roots = normalizeRoots(trustedRoots);
   if (!(der instanceof Uint8Array) || der.length === 0) {
     throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'receipt is empty');
+  }
+  // Before the CMS parse, which allocates in proportion to the DER.
+  if (der.length > MAX_RECEIPT_BYTES) {
+    throw new VerificationError(
+      Reason.INVALID_RECEIPT_FORMAT,
+      `receipt exceeds the maximum accepted size of ${MAX_RECEIPT_BYTES} bytes`,
+    );
   }
   const cms = parseCms(der);
 
@@ -126,6 +142,14 @@ export async function verifyReceiptCore(
  * reasons — `verify` returns a Promise because `crypto.subtle` is async.
  */
 export class ReceiptVerifier {
+  /**
+   * Ceiling on a receipt, as in the Node build: the base64 string in characters before it is
+   * decoded, and the DER in bytes before it is parsed, at every entry point
+   * ({@link verifyReceiptCore} included). A larger receipt is
+   * {@link Reason.INVALID_RECEIPT_FORMAT}.
+   */
+  static readonly MAX_RECEIPT_BYTES = MAX_RECEIPT_BYTES;
+
   #roots: RootInput[];
   #bundleId: string;
 

@@ -6,6 +6,7 @@
  */
 import { Environment, Reason, VerificationError } from './errors.js';
 import { base64UrlDecodeStrict, utf8Decode } from './bytes.js';
+import { jsonNestingExceeds, MAX_JSON_NESTING_DEPTH, MAX_JWS_BYTES } from './limits.js';
 
 /** Apple marker OID: leaf certificate used for App Store signing. */
 export const LEAF_OID = '1.2.840.113635.100.6.11.1';
@@ -91,6 +92,13 @@ export function splitJws(jws: string): JwsSegments {
   if (typeof jws !== 'string') {
     throw new VerificationError(Reason.INVALID_JWS_FORMAT, 'jws must be a string');
   }
+  // Before the split, which copies the string, and the segment decodes.
+  if (jws.length > MAX_JWS_BYTES) {
+    throw new VerificationError(
+      Reason.INVALID_JWS_FORMAT,
+      `jws exceeds the maximum accepted size of ${MAX_JWS_BYTES} characters`,
+    );
+  }
   const parts = jws.split('.');
   if (parts.length !== 3) {
     throw new VerificationError(
@@ -136,9 +144,15 @@ export function decodeJwsSegment(segment: string, what: string): Uint8Array {
 }
 
 export function parseJsonSegment(segment: string, what: string): Claims {
-  const decoded = decodeJwsSegment(segment, what);
+  const text = utf8Decode(decodeJwsSegment(segment, what));
+  if (jsonNestingExceeds(text)) {
+    throw new VerificationError(
+      Reason.INVALID_JWS_FORMAT,
+      `${what} nests deeper than ${MAX_JSON_NESTING_DEPTH} levels`,
+    );
+  }
   try {
-    const parsed: unknown = JSON.parse(utf8Decode(decoded));
+    const parsed: unknown = JSON.parse(text);
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
       throw new Error('not a JSON object');
     }

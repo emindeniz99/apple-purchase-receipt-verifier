@@ -1,5 +1,6 @@
 import { formatGmt, formatPacific } from './apple-date.js';
 import { Reason, VerificationError } from './errors.js';
+import { jsonNestingExceeds, MAX_REQUEST_BYTES, utf8LengthExceeds } from './limits.js';
 import type { RawAppReceipt, RawInAppPurchase } from './receipt-payload.js';
 
 /**
@@ -286,10 +287,14 @@ export function receiptDataOf(requestBody: unknown): unknown {
  * value that answers 21002. Apple has no status code for "that wasn't JSON";
  * 21002 ("The data in the receipt-data property was malformed or missing") is
  * the closest, and it is what a JSON object without usable `receipt-data`
- * gets anyway.
+ * gets anyway. So does a body over {@link MAX_REQUEST_BYTES} UTF-8 bytes or
+ * nested more than 64 levels deep, refused before it is parsed.
  */
 export function parseRequestJson(body: unknown): object | undefined {
   if (typeof body !== 'string') {
+    return undefined;
+  }
+  if (utf8LengthExceeds(body, MAX_REQUEST_BYTES) || jsonNestingExceeds(body)) {
     return undefined;
   }
   let parsed: unknown;

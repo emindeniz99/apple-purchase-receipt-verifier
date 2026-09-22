@@ -29,6 +29,7 @@ const worker :Workerd.Worker = (
     (name = "dist/der.js", esModule = embed "../dist/der.js"),
     (name = "dist/errors.js", esModule = embed "../dist/errors.js"),
     (name = "dist/jws-claims.js", esModule = embed "../dist/jws-claims.js"),
+    (name = "dist/limits.js", esModule = embed "../dist/limits.js"),
     (name = "dist/receipt-payload.js", esModule = embed "../dist/receipt-payload.js"),
     (name = "dist/roots-data.js", esModule = embed "../dist/roots-data.js"),
     (name = "dist/verify-receipt-result.js", esModule = embed "../dist/verify-receipt-result.js"),
