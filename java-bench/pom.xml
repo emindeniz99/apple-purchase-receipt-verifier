@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Not part of the published release. JMH benchmarks for the Java port,
+  built the way jvm-interop is: a standalone Maven project that resolves
+  the library as a real Maven coordinate from the local repository
+  (installed by `mvn install` in java/ first). It is NOT a <module> of
+  java/pom.xml and has no release-please entry.
+
+  How CI (or anyone) builds and runs this:
+
+      mvn -B -f java/pom.xml -Dmaven.test.skip=true install
+      mvn -B -f java-bench/pom.xml -Dlibrary.version="$(cat version.txt)" package
+      java -jar java-bench/target/benchmarks.jar
+
+  library.version below is only the default. Nothing bumps it on a
+  release, so the benchmark workflow passes the repository's current
+  version (version.txt) explicitly.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>io.github.emindeniz99</groupId>
+  <artifactId>apple-purchase-receipt-verifier-java-bench</artifactId>
+  <version>0.0.0-not-for-publication</version>
+  <packaging>jar</packaging>
+
+  <name>apple-purchase-receipt-verifier-java-bench (internal, unpublished)</name>
+  <description>JMH benchmarks for apple-purchase-receipt-verifier. Not published.</description>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!-- The library's public API targets Java 8 (java/pom.xml), so the
+         benchmarks are compiled against the same release: they can only
+         call what a Java 8 consumer can call. They run on any newer JVM. -->
+    <maven.compiler.release>8</maven.compiler.release>
+
+    <library.version>0.5.1</library.version>
+    <jmh.version>1.37</jmh.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.github.emindeniz99</groupId>
+      <artifactId>apple-purchase-receipt-verifier</artifactId>
+      <version>${library.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.openjdk.jmh</groupId>
+      <artifactId>jmh-core</artifactId>
+      <version>${jmh.version}</version>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.16.0</version>
+        <configuration>
+          <!-- A modern javac warns that release 8 is obsolete; that is the
+               point of targeting it, so the warning is silenced. -->
+          <compilerArgs>
+            <arg>-Xlint:-options</arg>
+          </compilerArgs>
+          <annotationProcessorPaths>
+            <path>
+              <groupId>org.openjdk.jmh</groupId>
+              <artifactId>jmh-generator-annprocess</artifactId>
+              <version>${jmh.version}</version>
+            </path>
+          </annotationProcessorPaths>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.6.2</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <finalName>benchmarks</finalName>
+              <createDependencyReducedPom>false</createDependencyReducedPom>
+              <transformers>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                  <mainClass>org.openjdk.jmh.Main</mainClass>
+                </transformer>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+              </transformers>
+              <filters>
+                <!-- Signed dependency jars (BouncyCastle) leave their
+                     signature files behind; in a merged jar they no longer
+                     match and the JVM refuses to load it. -->
+                <filter>
+                  <artifact>*:*</artifact>
+                  <excludes>
+                    <exclude>META-INF/*.SF</exclude>
+                    <exclude>META-INF/*.DSA</exclude>
+                    <exclude>META-INF/*.RSA</exclude>
+                    <exclude>META-INF/*.EC</exclude>
+                  </excludes>
+                </filter>
+              </filters>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <!-- Same formatter configuration as java/pom.xml, so the benchmark
+           code reads like the library. Not bound to a phase; run
+           `mvn -f java-bench/pom.xml spotless:check` explicitly. -->
+      <plugin>
+        <groupId>com.diffplug.spotless</groupId>
+        <artifactId>spotless-maven-plugin</artifactId>
+        <version>3.10.2</version>
+        <configuration>
+          <java>
+            <includes>
+              <include>src/main/java/**/*.java</include>
+            </includes>
+            <palantirJavaFormat>
+              <version>2.97.0</version>
+            </palantirJavaFormat>
+            <removeUnusedImports/>
+            <trimTrailingWhitespace/>
+            <endWithNewline/>
+          </java>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>
