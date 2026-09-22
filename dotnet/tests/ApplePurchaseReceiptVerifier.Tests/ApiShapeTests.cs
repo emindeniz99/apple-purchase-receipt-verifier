@@ -35,10 +35,17 @@ public class ApiShapeTests
         }
     }
 
+    /// <summary>
+    /// The two reasons only a <c>VerifyReceiptResult</c> carries. They describe
+    /// the endpoint's request envelope and its own failures, not a verdict on
+    /// a payload, so they are outside the schema's verifier vocabulary.
+    /// </summary>
+    private static readonly string[] ResultOnlyCodes = { "MALFORMED_REQUEST", "INTERNAL_ERROR" };
+
     [Fact]
-    public void ReasonHasExactlyElevenMembers()
+    public void ReasonHasTheElevenVerifierMembersAndTheTwoResultOnlyOnes()
     {
-        Assert.Equal(11, Enum.GetValues<VerificationReason>().Length);
+        Assert.Equal(13, Enum.GetValues<VerificationReason>().Length);
     }
 
     [Fact]
@@ -62,12 +69,17 @@ public class ApiShapeTests
     }
 
     [Fact]
-    public void TheVocabularyIsExactlyTheSchemaVocabulary()
+    public void TheVocabularyIsExactlyTheSchemaVocabularyPlusTheResultOnlyReasons()
     {
         HashSet<string> schema = new(ReasonCodesFromSchema(), StringComparer.Ordinal);
         HashSet<string> ours = new(
             Enum.GetValues<VerificationReason>().Select(VerificationReasonCodes.ToCode),
             StringComparer.Ordinal);
+
+        // Neither result-only reason may collide with a schema token, or a
+        // vector could start expecting one from a verifier that never throws it.
+        Assert.Empty(schema.Intersect(ResultOnlyCodes));
+        ours.ExceptWith(ResultOnlyCodes);
         Assert.Equal(schema, ours);
     }
 

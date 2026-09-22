@@ -37,8 +37,8 @@ public class EndpointTests
     public void AMissingReceiptDataPropertyAnswers21002()
     {
         using VerifyReceiptEndpoint endpoint = Endpoint();
-        Assert.Equal(21002, Status(endpoint.VerifyReceipt(Body())));
-        Assert.Equal(21002, Status(endpoint.VerifyReceipt(null)));
+        Assert.Equal(21002, Status(endpoint.VerifyReceiptResult(Body()).ToResponse()));
+        Assert.Equal(21002, Status(endpoint.VerifyReceiptResult((IReadOnlyDictionary<string, object?>?)null).ToResponse()));
     }
 
     [Theory]
@@ -48,18 +48,18 @@ public class EndpointTests
     public void AnUnusableReceiptDataPropertyAnswers21002(string value)
     {
         using VerifyReceiptEndpoint endpoint = Endpoint();
-        Assert.Equal(21002, Status(endpoint.VerifyReceipt(Body(("receipt-data", value)))));
+        Assert.Equal(21002, Status(endpoint.VerifyReceiptResult(Body(("receipt-data", value))).ToResponse()));
     }
 
     [Fact]
     public void ANonStringReceiptDataPropertyAnswers21002()
     {
         using VerifyReceiptEndpoint endpoint = Endpoint();
-        Assert.Equal(21002, Status(endpoint.VerifyReceipt(Body(("receipt-data", 7L)))));
-        Assert.Equal(21002, Status(endpoint.VerifyReceipt(Body(("receipt-data", null)))));
+        Assert.Equal(21002, Status(endpoint.VerifyReceiptResult(Body(("receipt-data", 7L))).ToResponse()));
+        Assert.Equal(21002, Status(endpoint.VerifyReceiptResult(Body(("receipt-data", null))).ToResponse()));
         Assert.Equal(
             21002,
-            Status(endpoint.VerifyReceipt(Body(("receipt-data", new List<object?>())))));
+            Status(endpoint.VerifyReceiptResult(Body(("receipt-data", new List<object?>()))).ToResponse()));
     }
 
     [Theory]
@@ -108,11 +108,11 @@ public class EndpointTests
         using VerifyReceiptEndpoint endpoint = Endpoint();
         Assert.Equal(
             21002,
-            Status(endpoint.VerifyReceipt(Body(("receipt-data", Convert.ToBase64String(new byte[] { 1, 2, 3 }))))));
+            Status(endpoint.VerifyReceiptResult(Body(("receipt-data", Convert.ToBase64String(new byte[] { 1, 2, 3 })))).ToResponse()));
         Assert.Equal(
             21003,
-            Status(endpoint.VerifyReceipt(
-                Body(("receipt-data", Convert.ToBase64String(Fixtures.Bytes("receipt-foreign")))))));
+            Status(endpoint.VerifyReceiptResult(
+                Body(("receipt-data", Convert.ToBase64String(Fixtures.Bytes("receipt-foreign"))))).ToResponse()));
     }
 
     // --- compatibility fields ------------------------------------------------
@@ -121,12 +121,12 @@ public class EndpointTests
     public void PasswordAndExcludeOldTransactionsAreAcceptedAndIgnored()
     {
         using VerifyReceiptEndpoint endpoint = Endpoint();
-        IReadOnlyDictionary<string, object?> withExtras = endpoint.VerifyReceipt(Body(
+        IReadOnlyDictionary<string, object?> withExtras = endpoint.VerifyReceiptResult(Body(
             ("receipt-data", Convert.ToBase64String(Fixtures.Bytes("receipt"))),
             ("password", "a-shared-secret"),
-            ("exclude-old-transactions", true)));
-        IReadOnlyDictionary<string, object?> without = endpoint.VerifyReceipt(Body(
-            ("receipt-data", Convert.ToBase64String(Fixtures.Bytes("receipt")))));
+            ("exclude-old-transactions", true))).ToResponse();
+        IReadOnlyDictionary<string, object?> without = endpoint.VerifyReceiptResult(Body(
+            ("receipt-data", Convert.ToBase64String(Fixtures.Bytes("receipt"))))).ToResponse();
 
         Assert.Equal(0, Status(withExtras));
         Assert.Equal(0, Status(without));
@@ -229,8 +229,8 @@ public class EndpointTests
         DateTimeOffset now = DateTimeOffset.Parse(utc, System.Globalization.CultureInfo.InvariantCulture);
         using VerifyReceiptEndpoint endpoint = Endpoint(AppleEnvironment.Sandbox, new FixedClock(now));
         IReadOnlyDictionary<string, object?> receipt =
-            (IReadOnlyDictionary<string, object?>)endpoint.VerifyReceipt(
-                Body(("receipt-data", Convert.ToBase64String(Fixtures.Bytes("receipt")))))["receipt"]!;
+            (IReadOnlyDictionary<string, object?>)endpoint.VerifyReceiptResult(
+                Body(("receipt-data", Convert.ToBase64String(Fixtures.Bytes("receipt"))))).ToResponse()["receipt"]!;
 
         Assert.Equal(expected, receipt["request_date_pst"]);
     }
@@ -255,8 +255,8 @@ public class EndpointTests
     public void AnUnsuccessfulAnswerCarriesNothingButTheStatus()
     {
         using VerifyReceiptEndpoint endpoint = Endpoint(AppleEnvironment.Production);
-        IReadOnlyDictionary<string, object?> response = endpoint.VerifyReceipt(
-            Body(("receipt-data", Convert.ToBase64String(Fixtures.Bytes("receipt")))));
+        IReadOnlyDictionary<string, object?> response = endpoint.VerifyReceiptResult(
+            Body(("receipt-data", Convert.ToBase64String(Fixtures.Bytes("receipt"))))).ToResponse();
 
         Assert.Equal(21007, Status(response));
         Assert.Single(response);
@@ -284,8 +284,8 @@ public class EndpointTests
         using VerifyReceiptEndpoint onSandbox = new(new[] { root }, AppleEnvironment.Sandbox);
         Dictionary<string, object?> body = Body(("receipt-data", Convert.ToBase64String(receipt)));
 
-        Assert.Equal(production ? 0 : 21007, Status(onProduction.VerifyReceipt(body)));
-        Assert.Equal(production ? 21008 : 0, Status(onSandbox.VerifyReceipt(body)));
+        Assert.Equal(production ? 0 : 21007, Status(onProduction.VerifyReceiptResult(body).ToResponse()));
+        Assert.Equal(production ? 21008 : 0, Status(onSandbox.VerifyReceiptResult(body).ToResponse()));
     }
 
     [Fact]
@@ -295,8 +295,8 @@ public class EndpointTests
         endpoint.Dispose();
         Assert.Equal(
             21009,
-            Status(endpoint.VerifyReceipt(
-                Body(("receipt-data", Convert.ToBase64String(Fixtures.Bytes("receipt")))))));
+            Status(endpoint.VerifyReceiptResult(
+                Body(("receipt-data", Convert.ToBase64String(Fixtures.Bytes("receipt"))))).ToResponse()));
     }
 
     [Fact]
@@ -320,8 +320,8 @@ public class EndpointTests
     private static IReadOnlyDictionary<string, object?> SuccessfulReceipt()
     {
         using VerifyReceiptEndpoint endpoint = Endpoint();
-        IReadOnlyDictionary<string, object?> response = endpoint.VerifyReceipt(
-            Body(("receipt-data", Convert.ToBase64String(Fixtures.Bytes("receipt")))));
+        IReadOnlyDictionary<string, object?> response = endpoint.VerifyReceiptResult(
+            Body(("receipt-data", Convert.ToBase64String(Fixtures.Bytes("receipt"))))).ToResponse();
         Assert.Equal(0, Status(response));
         return (IReadOnlyDictionary<string, object?>)response["receipt"]!;
     }

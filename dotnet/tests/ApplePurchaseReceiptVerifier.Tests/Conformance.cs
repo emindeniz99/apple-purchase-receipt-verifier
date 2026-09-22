@@ -220,7 +220,7 @@ public class Conformance
                         Fixtures.Codec(fixtureId) == "text"
                             ? Encoding.UTF8.GetString(input)
                             : Convert.ToBase64String(input));
-                    return endpoint.VerifyReceipt(body);
+                    return endpoint.VerifyReceiptResult(body).ToResponse();
                 }
 
             default:
