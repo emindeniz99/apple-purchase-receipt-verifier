@@ -30,14 +30,14 @@ func TestEndpointMalformedBodies(t *testing.T) {
 	endpoint := endpointFor(t, pki.anchors(), applereceipt.EnvironmentSandbox, nil)
 
 	t.Run("empty receipt-data", func(t *testing.T) {
-		if got := endpoint.VerifyReceipt(applereceipt.VerifyReceiptRequest{}).Status; got != applereceipt.StatusMalformed {
+		if got := endpoint.VerifyReceipt(applereceipt.VerifyReceiptRequest{}).Response().Status; got != applereceipt.StatusMalformed {
 			t.Fatalf("status: got %d", got)
 		}
 	})
 	t.Run("receipt-data that is not a receipt", func(t *testing.T) {
 		response := endpoint.VerifyReceipt(applereceipt.VerifyReceiptRequest{
 			ReceiptData: base64.StdEncoding.EncodeToString([]byte("nope")),
-		})
+		}).Response()
 		if response.Status != applereceipt.StatusMalformed {
 			t.Fatalf("status: got %d", response.Status)
 		}
@@ -139,7 +139,7 @@ func TestRequestDateComesFromTheInjectedClock(t *testing.T) {
 		func() time.Time { return at })
 	response := endpoint.VerifyReceipt(applereceipt.VerifyReceiptRequest{
 		ReceiptData: base64.StdEncoding.EncodeToString(pki.receipt(t)),
-	})
+	}).Response()
 	if response.Status != applereceipt.StatusOK {
 		t.Fatalf("status: %d", response.Status)
 	}
@@ -179,7 +179,7 @@ func TestEndpointClockCannotAuthenticateAnExpiredChain(t *testing.T) {
 		func() time.Time { return past.Add(time.Hour) })
 	response := endpoint.VerifyReceipt(applereceipt.VerifyReceiptRequest{
 		ReceiptData: base64.StdEncoding.EncodeToString(der),
-	})
+	}).Response()
 	if response.Status != applereceipt.StatusNotAuthenticated {
 		t.Fatalf("an injected clock must not authenticate an expired chain, got %d", response.Status)
 	}
@@ -219,12 +219,12 @@ func TestEndpointEnvironmentRouting(t *testing.T) {
 			data := base64.StdEncoding.EncodeToString(der)
 
 			production := endpointFor(t, pki.anchors(), applereceipt.EnvironmentProduction, nil).
-				VerifyReceipt(applereceipt.VerifyReceiptRequest{ReceiptData: data})
+				VerifyReceipt(applereceipt.VerifyReceiptRequest{ReceiptData: data}).Response()
 			if production.Status != test.onProduction {
 				t.Errorf("on Production: got %d, want %d", production.Status, test.onProduction)
 			}
 			sandbox := endpointFor(t, pki.anchors(), applereceipt.EnvironmentSandbox, nil).
-				VerifyReceipt(applereceipt.VerifyReceiptRequest{ReceiptData: data})
+				VerifyReceipt(applereceipt.VerifyReceiptRequest{ReceiptData: data}).Response()
 			if sandbox.Status != test.onSandbox {
 				t.Errorf("on Sandbox: got %d, want %d", sandbox.Status, test.onSandbox)
 			}
@@ -246,7 +246,7 @@ func TestEndpointStatusesForFailedVerification(t *testing.T) {
 	t.Run("a foreign chain is 21003", func(t *testing.T) {
 		response := endpoint.VerifyReceipt(applereceipt.VerifyReceiptRequest{
 			ReceiptData: base64.StdEncoding.EncodeToString(pki.receipt(t)),
-		})
+		}).Response()
 		if response.Status != applereceipt.StatusNotAuthenticated {
 			t.Fatalf("got %d", response.Status)
 		}
@@ -254,7 +254,7 @@ func TestEndpointStatusesForFailedVerification(t *testing.T) {
 	t.Run("a malformed receipt is 21002", func(t *testing.T) {
 		response := endpoint.VerifyReceipt(applereceipt.VerifyReceiptRequest{
 			ReceiptData: base64.StdEncoding.EncodeToString(derSequence(derInt(1))),
-		})
+		}).Response()
 		if response.Status != applereceipt.StatusMalformed {
 			t.Fatalf("got %d", response.Status)
 		}
@@ -268,7 +268,7 @@ func TestEndpointDoesNotCheckTheBundleID(t *testing.T) {
 	response := endpointFor(t, pki.anchors(), applereceipt.EnvironmentSandbox, nil).
 		VerifyReceipt(applereceipt.VerifyReceiptRequest{
 			ReceiptData: base64.StdEncoding.EncodeToString(pki.receipt(t)),
-		})
+		}).Response()
 	if response.Status != applereceipt.StatusOK {
 		t.Fatalf("status: %d", response.Status)
 	}
@@ -287,7 +287,7 @@ func TestEndpointNeverPanicsOverTheHostileCorpus(t *testing.T) {
 	good := pki.receipt(t)
 	genuine := endpoint.VerifyReceipt(applereceipt.VerifyReceiptRequest{
 		ReceiptData: base64.StdEncoding.EncodeToString(good),
-	})
+	}).Response()
 	if genuine.Status != applereceipt.StatusOK {
 		t.Fatalf("the unmutated receipt must verify: %d", genuine.Status)
 	}
@@ -309,7 +309,7 @@ func TestEndpointNeverPanicsOverTheHostileCorpus(t *testing.T) {
 	for i, input := range corpus {
 		response := endpoint.VerifyReceipt(applereceipt.VerifyReceiptRequest{
 			ReceiptData: base64.StdEncoding.EncodeToString(input),
-		})
+		}).Response()
 		// 21009 means something escaped that was not a VerificationError.
 		if response.Status == applereceipt.StatusInternal {
 			t.Fatalf("corpus entry %d produced 21009: something unexpected escaped", i)
@@ -415,7 +415,7 @@ func TestPacificLocationIsInjectable(t *testing.T) {
 	}
 	response := endpoint.VerifyReceipt(applereceipt.VerifyReceiptRequest{
 		ReceiptData: base64.StdEncoding.EncodeToString(pki.receipt(t)),
-	})
+	}).Response()
 	if got := response.Receipt["request_date_pst"]; got != "2024-12-31 19:00:00 America/Los_Angeles" {
 		t.Fatalf("the injected location must drive the _pst rendering, got %v", got)
 	}
@@ -439,7 +439,7 @@ func TestAppleDateTripleShape(t *testing.T) {
 	response := endpointFor(t, pki.anchors(), applereceipt.EnvironmentSandbox, nil).
 		VerifyReceipt(applereceipt.VerifyReceiptRequest{
 			ReceiptData: base64.StdEncoding.EncodeToString(der),
-		})
+		}).Response()
 	if response.Status != applereceipt.StatusOK {
 		t.Fatalf("status: %d", response.Status)
 	}

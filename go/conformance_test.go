@@ -444,7 +444,7 @@ var operations = map[string]func(t *testing.T, config caseConfig, input []byte, 
 		}
 		return endpoint.VerifyReceipt(applereceipt.VerifyReceiptRequest{
 			ReceiptData: receiptData,
-		}), nil
+		}).Response(), nil
 	},
 }
 

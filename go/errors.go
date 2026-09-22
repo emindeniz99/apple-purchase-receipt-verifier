@@ -8,9 +8,12 @@ import (
 
 // Reason is the machine-readable cause of a verification failure.
 //
-// The eleven constants below are the complete vocabulary. It is closed by
-// the cross-port contract (fixtures/cases.schema.json); a twelfth reason
-// is a change to every implementation in one go, not a Go-local addition.
+// The eleven constants below are the complete vocabulary a verifier
+// returns. It is closed by the cross-port contract
+// (fixtures/cases.schema.json); a twelfth reason is a change to every
+// implementation in one go, not a Go-local addition. A
+// [VerifyReceiptResult] can also report ReasonMalformedRequest and
+// ReasonInternalError, which every port's endpoint result shares.
 type Reason = apperr.Reason
 
 // The error vocabulary. The string values are normative — they are the
@@ -28,6 +31,20 @@ const (
 	ReasonInvalidReceiptFormat      = apperr.ReasonInvalidReceiptFormat
 	ReasonDeviceHashMismatch        = apperr.ReasonDeviceHashMismatch
 	ReasonStalePayload              = apperr.ReasonStalePayload
+)
+
+// Two more reasons exist only on a [VerifyReceiptResult]. No verifier
+// returns either, and neither is in AllReasons, which is the shared
+// schema's vocabulary.
+const (
+	// ReasonMalformedRequest: the verifyReceipt request envelope is
+	// unusable. The body is not a JSON object, or receipt-data is
+	// missing, empty or not a string. Status 21002.
+	ReasonMalformedRequest = apperr.ReasonMalformedRequest
+	// ReasonInternalError: an unexpected error or panic inside the
+	// verifyReceipt endpoint. Status 21009. errors.Unwrap on the
+	// result's Err gives the cause.
+	ReasonInternalError = apperr.ReasonInternalError
 )
 
 // AllReasons is the whole vocabulary, in the order the shared schema
