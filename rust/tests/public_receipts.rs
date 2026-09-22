@@ -87,7 +87,9 @@ fn the_genuine_receipts_survive_a_round_trip_through_the_endpoint() {
         .environment(Environment::Sandbox)
         .build()
         .unwrap();
-    let response = endpoint.verify_receipt(&VerifyReceiptRequest::new(base64::encode(&der)));
+    let response = endpoint
+        .verify_receipt_result(&VerifyReceiptRequest::new(base64::encode(&der)))
+        .to_response();
     assert_eq!(response.status, status::OK);
     let receipt = response.receipt.unwrap();
     assert_eq!(receipt.get("bundle_id").unwrap(), "dev.bonzer.weeka.app");
@@ -102,7 +104,8 @@ fn the_genuine_receipts_survive_a_round_trip_through_the_endpoint() {
         .unwrap();
     assert_eq!(
         production
-            .verify_receipt(&VerifyReceiptRequest::new(base64::encode(&der)))
+            .verify_receipt_result(&VerifyReceiptRequest::new(base64::encode(&der)))
+            .to_response()
             .status,
         status::SANDBOX_RECEIPT_ON_PRODUCTION
     );

@@ -97,6 +97,35 @@ pub fn decode_lenient_bytes(text: &[u8]) -> Vec<u8> {
 /// and the caller turns `None` into `Reason::InvalidReceiptFormat`.
 #[must_use]
 pub fn decode_receipt_base64(text: &str) -> Option<Vec<u8>> {
+    // Fast path for the common case, a canonical standard-alphabet string.
+    // Every string `decode_canonical_standard` accepts is non-empty, has
+    // only `A-Z a-z 0-9 + /` before the exact `=` run RFC 4648 requires for
+    // its length, and a data length not `4n + 1`. Each such string passes
+    // every rule of the tolerant path (nothing to strip, one alphabet,
+    // nothing after the padding, same length and padding checks), which
+    // then decodes the same data to the same bytes. Anything the fast path
+    // refuses falls through, so the answer for every other input is
+    // unchanged. The differential test below holds this.
+    decode_canonical_standard(text).or_else(|| decode_receipt_base64_tolerant(text))
+}
+
+/// Canonical standard-alphabet base64 only, or `None`, decoded by the
+/// `base64` crate's `STANDARD` engine: canonical padding required, non-zero
+/// trailing bits refused, no whitespace, no base64url characters. That
+/// engine decodes `""` to an empty vector, which `receipt-data` must never
+/// be, so the empty string is refused here first.
+fn decode_canonical_standard(text: &str) -> Option<Vec<u8>> {
+    use ::base64::engine::general_purpose::STANDARD;
+    use ::base64::Engine as _;
+    if text.is_empty() {
+        return None;
+    }
+    STANDARD.decode(text).ok()
+}
+
+/// The full `receipt-data` decoder described on [`decode_receipt_base64`],
+/// without the fast path.
+fn decode_receipt_base64_tolerant(text: &str) -> Option<Vec<u8>> {
     let mut seen_std = false;
     let mut seen_url = false;
     let mut padding_started = false;
@@ -244,5 +273,191 @@ mod receipt_base64_tests {
         assert_eq!(decode_receipt_base64("===="), None);
         assert_eq!(decode_receipt_base64("QUJDQQ=="), Some(b"ABCA".to_vec()));
         assert_eq!(decode_receipt_base64("QUJDQQ"), Some(b"ABCA".to_vec()));
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::indexing_slicing, clippy::unwrap_used, clippy::panic)]
+mod receipt_base64_fast_path_tests {
+    use super::{decode_canonical_standard, decode_receipt_base64, decode_receipt_base64_tolerant};
+    use super::{encode, ALPHABET};
+
+    /// Which way one input went, so the test can prove every branch ran.
+    #[derive(Default)]
+    struct Branches {
+        fast: usize,
+        fell_through_accepted: usize,
+        rejected: usize,
+    }
+
+    /// The fast path is only allowed to answer early, never differently:
+    /// for every input the public decoder must return exactly what the
+    /// tolerant path alone returns, bytes on success and `None` on refusal.
+    /// A fast path that accepted one string the tolerant path refuses
+    /// (whitespace, mixed alphabets, under- or over-padding) or decoded it
+    /// to other bytes would let the same `receipt-data` verify differently
+    /// depending on which path saw it. The two sides are independent
+    /// implementations — the `base64` crate against this module's own
+    /// decoder — so agreement is evidence about both.
+    ///
+    /// The fast path is also held to its own contract, canonical input
+    /// only: whatever it accepts must be exactly what [`encode`] produces
+    /// for the decoded bytes. That is what keeps a looser engine (padding
+    /// optional, non-zero trailing bits allowed) from quietly taking over
+    /// inputs that Apple's tolerant rule is meant to judge.
+    fn check(text: &str, branches: &mut Branches) {
+        let tolerant = decode_receipt_base64_tolerant(text);
+        let public = decode_receipt_base64(text);
+        assert_eq!(public, tolerant, "input {text:?}");
+        match (decode_canonical_standard(text), tolerant) {
+            (Some(fast), Some(slow)) => {
+                assert_eq!(fast, slow, "input {text:?}");
+                assert_eq!(
+                    encode(&fast),
+                    text,
+                    "the fast path accepted a non-canonical spelling"
+                );
+                branches.fast += 1;
+            }
+            (Some(_), None) => {
+                panic!("the fast path accepted what the tolerant path refuses: {text:?}")
+            }
+            (None, Some(_)) => branches.fell_through_accepted += 1,
+            (None, None) => branches.rejected += 1,
+        }
+    }
+
+    struct Rng(u64);
+
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            // xorshift64*: deterministic, so a failure names a reproducible input.
+            self.0 ^= self.0 >> 12;
+            self.0 ^= self.0 << 25;
+            self.0 ^= self.0 >> 27;
+            self.0.wrapping_mul(0x2545_F491_4F6C_DD1D)
+        }
+
+        fn below(&mut self, bound: usize) -> usize {
+            usize::try_from(self.next() % u64::try_from(bound).unwrap()).unwrap()
+        }
+    }
+
+    /// A string near the canonical shape: a real encoding, then zero to
+    /// three edits that each break one rule the fast path relies on.
+    fn near_canonical(rng: &mut Rng) -> String {
+        let length = rng.below(40);
+        let bytes: Vec<u8> = (0..length).map(|_| rng.next().to_le_bytes()[0]).collect();
+        let mut text: Vec<u8> = encode(&bytes).into_bytes();
+        for _ in 0..rng.below(4) {
+            let edit = rng.below(9);
+            let at = if text.is_empty() {
+                0
+            } else {
+                rng.below(text.len() + 1)
+            };
+            match edit {
+                0 => text.retain(|b| *b != b'='),
+                1 => text.push(b'='),
+                2 => text.insert(at, b" \r\n\t"[rng.below(4)]),
+                3 => text.insert(at, b"-_"[rng.below(2)]),
+                4 => text.insert(at, b"!.*\0"[rng.below(4)]),
+                5 => {
+                    text.pop();
+                }
+                6 => text.push(ALPHABET[rng.below(64)]),
+                7 if !text.is_empty() => {
+                    let index = rng.below(text.len());
+                    text[index] = ALPHABET[rng.below(64)];
+                }
+                _ => text.insert(at, b'='),
+            }
+        }
+        String::from_utf8(text).unwrap()
+    }
+
+    /// A string drawn from every character either path treats specially.
+    fn noise(rng: &mut Rng) -> String {
+        const CHARS: &[u8] = b"AQgw+/-_= \r\n\t!Zz09";
+        (0..rng.below(12))
+            .map(|_| char::from(CHARS[rng.below(CHARS.len())]))
+            .collect()
+    }
+
+    #[test]
+    fn the_fast_path_answers_exactly_what_the_tolerant_path_answers() {
+        let mut branches = Branches::default();
+        for edge in [
+            "",
+            " ",
+            "\r\n",
+            "=",
+            "==",
+            "===",
+            "A",
+            "A=",
+            "A==",
+            "A===",
+            "AA",
+            "AA=",
+            "AA==",
+            "AA===",
+            "AAA",
+            "AAA=",
+            "AAA==",
+            "AAAA",
+            "AAAA=",
+            "AAAA====",
+            "QUJD",
+            "QUJDQQ",
+            "QUJDQQ==",
+            "QUJDQQ=",
+            "QUJDQQ===",
+            "QUJ=DQQ=",
+            "QUJDQQ==A",
+            "QUJDQQ== ",
+            " QUJDQQ==",
+            "QUJ\nDQQ==",
+            "QU-DQQ==",
+            "QU+/QQ==",
+            "QU+_QQ==",
+            "////",
+            "____",
+            "++++",
+            "AB/=",
+            "AB==",
+            "ABC=",
+            "AB+/",
+            "ABc\u{e9}",
+            "\u{e9}\u{e9}\u{e9}\u{e9}",
+        ] {
+            check(edge, &mut branches);
+        }
+        let mut rng = Rng(0x5EED_0FBA_5E64);
+        for index in 0..24_000 {
+            let text = if index % 4 == 3 {
+                noise(&mut rng)
+            } else {
+                near_canonical(&mut rng)
+            };
+            check(&text, &mut branches);
+        }
+        // A differential test that never reached one side proves nothing
+        // about it.
+        assert!(
+            branches.fast > 1_000,
+            "fast path hit {} times",
+            branches.fast
+        );
+        assert!(
+            branches.fell_through_accepted > 1_000,
+            "tolerant-only acceptances: {}",
+            branches.fell_through_accepted
+        );
+        assert!(
+            branches.rejected > 1_000,
+            "rejections: {}",
+            branches.rejected
+        );
     }
 }

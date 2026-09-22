@@ -114,8 +114,8 @@ pub use roots::{apple_jws_roots, apple_receipt_roots, apple_root_der, TrustAncho
 
 #[cfg(feature = "endpoint")]
 pub use endpoint::{
-    status, VerifyReceiptEndpoint, VerifyReceiptEndpointBuilder, VerifyReceiptRequest,
-    VerifyReceiptResponse,
+    status, VerifyReceiptEndpoint, VerifyReceiptEndpointBuilder, VerifyReceiptOutcome,
+    VerifyReceiptRequest, VerifyReceiptResponse, VerifyReceiptResult,
 };
 
 /// `serde_json`, re-exported so a consumer cannot end up with a different
