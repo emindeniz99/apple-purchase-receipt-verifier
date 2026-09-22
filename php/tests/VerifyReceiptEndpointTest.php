@@ -37,9 +37,9 @@ final class VerifyReceiptEndpointTest extends TestCase
 
     public function testAnswersZeroAndTheAppleShapedBodyForAGenuineReceipt(): void
     {
-        $body = $this->endpoint()->verifyReceipt([
+        $body = $this->endpoint()->verifyReceiptResult([
             'receipt-data' => base64_encode(MintedPki::get()->receipt()),
-        ]);
+        ])->toResponse();
 
         $receipt = Shape::asArray($body['receipt'], 'receipt');
 
@@ -77,15 +77,15 @@ final class VerifyReceiptEndpointTest extends TestCase
     #[DataProvider('malformedBodyProvider')]
     public function testAMalformedBodyAnswers21002(mixed $body): void
     {
-        self::assertSame(21002, $this->endpoint()->verifyReceipt($body)['status']);
+        self::assertSame(21002, $this->endpoint()->verifyReceiptResult($body)->toResponse()['status']);
     }
 
     public function testAnUnauthenticatedReceiptAnswers21003(): void
     {
         $pki = MintedPki::get();
-        $body = $this->endpoint(Environment::Sandbox, null, $pki->foreignRootDer)->verifyReceipt([
+        $body = $this->endpoint(Environment::Sandbox, null, $pki->foreignRootDer)->verifyReceiptResult([
             'receipt-data' => base64_encode($pki->receipt()),
-        ]);
+        ])->toResponse();
 
         self::assertSame(21003, $body['status']);
         self::assertArrayNotHasKey('receipt', $body, 'nothing verified-so-far is returned');
@@ -98,12 +98,12 @@ final class VerifyReceiptEndpointTest extends TestCase
         // A fixed clock, so the only thing that could differ between the two
         // bodies is the effect of the two ignored fields.
         $clock = new FrozenClock(new DateTimeImmutable('2025-01-01T00:00:00Z'));
-        $plain = $this->endpoint(Environment::Sandbox, $clock)->verifyReceipt(['receipt-data' => $data]);
-        $decorated = $this->endpoint(Environment::Sandbox, $clock)->verifyReceipt([
+        $plain = $this->endpoint(Environment::Sandbox, $clock)->verifyReceiptResult(['receipt-data' => $data])->toResponse();
+        $decorated = $this->endpoint(Environment::Sandbox, $clock)->verifyReceiptResult([
             'receipt-data' => $data,
             'password' => 'a-shared-secret-we-cannot-check-offline',
             'exclude-old-transactions' => true,
-        ]);
+        ])->toResponse();
 
         self::assertSame($plain, $decorated);
         self::assertSame(0, $plain['status']);
@@ -112,9 +112,9 @@ final class VerifyReceiptEndpointTest extends TestCase
     public function testRequestDateComesFromTheInjectedClock(): void
     {
         $clock = new FrozenClock(new DateTimeImmutable('2025-01-01T00:00:00Z'));
-        $body = $this->endpoint(Environment::Sandbox, $clock)->verifyReceipt([
+        $body = $this->endpoint(Environment::Sandbox, $clock)->verifyReceiptResult([
             'receipt-data' => base64_encode(MintedPki::get()->receipt()),
-        ]);
+        ])->toResponse();
 
         $receipt = Shape::asArray($body['receipt'], 'receipt');
 
@@ -142,7 +142,7 @@ final class VerifyReceiptEndpointTest extends TestCase
         ];
         foreach ($cases as [$utc, $expected]) {
             $body = $this->endpoint(Environment::Sandbox, new FrozenClock(new DateTimeImmutable($utc)))
-                ->verifyReceipt(['receipt-data' => base64_encode(MintedPki::get()->receipt())]);
+                ->verifyReceiptResult(['receipt-data' => base64_encode(MintedPki::get()->receipt())])->toResponse();
             $receipt = Shape::asArray($body['receipt'], 'receipt');
             self::assertSame($expected, $receipt['request_date_pst'], $utc);
         }
@@ -172,9 +172,9 @@ final class VerifyReceiptEndpointTest extends TestCase
 
         self::assertSame(
             $expected,
-            $this->endpoint(Environment::Production)->verifyReceipt([
+            $this->endpoint(Environment::Production)->verifyReceiptResult([
                 'receipt-data' => base64_encode($pki->receipt($payload)),
-            ])['status'],
+            ])->toResponse()['status'],
         );
     }
 
@@ -184,13 +184,13 @@ final class VerifyReceiptEndpointTest extends TestCase
 
         self::assertSame(
             'Production',
-            (new VerifyReceiptEndpoint($roots, Environment::Production))->verifyReceipt([
+            (new VerifyReceiptEndpoint($roots, Environment::Production))->verifyReceiptResult([
                 'receipt-data' => base64_encode(MintedPki::get()->receipt(TestPki::payload(
                     TestPki::utf8Attribute(0, 'Production'),
                     TestPki::utf8Attribute(2, 'com.example.app'),
                     TestPki::dateAttribute(12, '2024-08-06T12:00:00Z'),
                 ))),
-            ])['environment'],
+            ])->toResponse()['environment'],
         );
 
         foreach ([Environment::Xcode, Environment::LocalTesting] as $unsupported) {
@@ -267,9 +267,9 @@ final class VerifyReceiptEndpointTest extends TestCase
                 TestPki::attribute(1719, TestPki::encodeInteger(1)),
             )),
         );
-        $body = $this->endpoint()->verifyReceipt([
+        $body = $this->endpoint()->verifyReceiptResult([
             'receipt-data' => base64_encode($pki->receipt($payload)),
-        ]);
+        ])->toResponse();
         $inApp = Shape::asArray(Shape::asArray($body['receipt'], 'receipt')['in_app'], 'in_app');
         $entry = Shape::asArray($inApp[0] ?? null, 'in_app[0]');
 
@@ -322,7 +322,7 @@ final class VerifyReceiptEndpointTest extends TestCase
     public function testLegacyReceiptIdKeysAreOmittedNotNullWhenAbsent(): void
     {
         $endpoint = new VerifyReceiptEndpoint([Fixtures::bytes('receipt-root')], Environment::Sandbox);
-        $body = $endpoint->verifyReceipt(['receipt-data' => base64_encode(Fixtures::bytes('receipt'))]);
+        $body = $endpoint->verifyReceiptResult(['receipt-data' => base64_encode(Fixtures::bytes('receipt'))])->toResponse();
         $receipt = Shape::asArray($body['receipt'], 'receipt');
 
         foreach (['adam_id', 'app_item_id', 'download_id', 'version_external_identifier'] as $key) {

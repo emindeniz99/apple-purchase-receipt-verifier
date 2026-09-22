@@ -219,12 +219,12 @@ final class ConformanceCasesTest extends TestCase
                 self::trustedRoots($config),
                 Environment::from(Shape::asString($config['environment'], 'environment')),
                 $clock,
-            ))->verifyReceipt([
+            ))->verifyReceiptResult([
                 // A text fixture is the string a client would actually send;
                 // a raw/base64 fixture is decoded bytes this harness must
                 // re-encode to put back on the wire.
                 'receipt-data' => $inputCodec === 'text' ? $input : base64_encode($input),
-            ]),
+            ])->toResponse(),
             default => throw new RuntimeException("harness error: no adapter for operation \"{$operation}\""),
         };
     }

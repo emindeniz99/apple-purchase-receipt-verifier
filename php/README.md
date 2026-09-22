@@ -154,13 +154,19 @@ $endpoint = new VerifyReceiptEndpoint(
     Environment::Production,          // or Environment::Sandbox
 );
 
-// PSR-7: JSON body in, JSON body out.
-$response->getBody()->write($endpoint->verifyReceiptJson((string) $request->getBody()));
+// The decoded body as an array, or the raw JSON body as a string.
+$result = $endpoint->verifyReceiptResult((string) $request->getBody());
+$body = $result->toResponse();                   // Apple's body as an array
+$response->getBody()->write($result->toJson());  // Apple's body as JSON
+
+// The same as verifyReceiptResult($json)->toJson().
+$json = $endpoint->verifyReceiptJson((string) $request->getBody());
+// receipt-data alone, with no request envelope.
+$bare = $endpoint->verifyReceiptData($base64Receipt);
 ```
 
-`verifyReceipt(mixed $body): array` takes and returns the decoded body;
-`verifyReceiptJson(string $json): string` is the raw-wire twin. **Neither ever
-throws** — like Apple's endpoint, a failure is a `status` in the body:
+**No endpoint method throws on a request.** Like Apple's endpoint, a failure
+is a `status` in the body:
 
 | Condition | `status` |
 |---|---|
@@ -176,11 +182,69 @@ Environment routing fails closed: only receipt types `Production` and
 `ProductionVPP` count as production. `ProductionVPPSandbox`, `Xcode`, a type
 Apple adds later, and a missing attribute all route as non-production.
 
-Like Apple's endpoint, this does **not** check the bundle id — compare
-`receipt.bundle_id` yourself. `password` and `exclude-old-transactions` are
-accepted for wire compatibility and never read. `21000`, `21004`, `21005`,
-`21006`, `21010`, the `21100`–`21199` range and `is_retryable` are never
-produced; see [COMPARISON.md](../COMPARISON.md).
+A `VerifyReceiptResult` is one verification:
+
+- `status()` is the answer for the endpoint's own environment.
+- `receipt()` is the verified `AppReceipt` whenever the receipt bytes
+  verified, 21007 and 21008 included.
+- `failureReason()` is a `Reason` saying why there is no receipt. Exactly
+  one of `receipt()` and `failureReason()` is non-null.
+- `isVerified()` is `true` exactly when `receipt()` is non-null. That
+  includes 21007 and 21008, so it is not the same check as
+  `status() === 0`: `status() === 0` asks whether this endpoint's
+  environment accepts the receipt, `isVerified()` asks whether the receipt
+  verified at all.
+- `failureCause()` is the `Throwable` behind an `INTERNAL_ERROR`, for
+  logging.
+- `requestDate()` is the `DateTimeImmutable` rendered as `request_date`.
+
+The result is immutable, and only the endpoint creates one. The response is
+built when `toResponse()` or `toJson()` is called.
+
+**Retrying in the other environment costs no second verification.**
+`toResponse($environment)` and `toJson($environment)` render what an endpoint
+of that environment would answer, recomputing the status from the receipt's
+own type:
+
+| receipt | on `Environment::Production` | on `Environment::Sandbox` |
+|---|---|---|
+| `Production`, `ProductionVPP` | 0 | 21008 |
+| any other type, or none | 21007 | 0 |
+| failed verification | its own status | its own status |
+
+```php
+$result = $production->verifyReceiptResult($body);
+$json = $result->status() === VerifyReceiptEndpoint::STATUS_SANDBOX_RECEIPT_ON_PRODUCTION
+    ? $result->toJson(Environment::Sandbox)
+    : $result->toJson();
+```
+
+A sandbox receipt never renders as a production 0, whichever endpoint
+verified it. Any other environment throws `\InvalidArgumentException`, as
+the constructor does.
+
+| `failureReason()` | status | when |
+|---|---|---|
+| `Reason::MalformedRequest` | 21002 | the body is not a JSON object or is over `MAX_REQUEST_BYTES`, or `receipt-data` is missing, empty or not a string |
+| `Reason::InvalidReceiptFormat` | 21002 | `receipt-data` is not base64, is over 2 MiB, or does not decode to a receipt |
+| `Reason::InvalidChain`, `Reason::InvalidSignature`, other certificate reasons | 21003 | the receipt did not authenticate |
+| `Reason::InternalError` | 21009 | an unexpected `Throwable`; `failureCause()` holds it |
+
+**`request_date`.** `verifyReceiptResult()` and `verifyReceiptData()` take an
+optional `?DateTimeImmutable $now`, which becomes `request_date` in place of
+the endpoint's clock. Without it the clock is read once, when the call is
+made. `$now` reaches `request_date` and nothing else: certificate validity
+never sees it (see "What the clock can move" below).
+
+Like Apple's endpoint, this does **not** check the bundle id: compare
+`$result->receipt()->bundleId` (or `receipt.bundle_id` in the body)
+yourself. `password` and `exclude-old-transactions` are accepted for wire
+compatibility and never read. `21000`, `21004`, `21005`, `21006`, `21010`,
+the `21100`–`21199` range and `is_retryable` are never produced; see
+[COMPARISON.md](../COMPARISON.md).
+
+Migrating: `verifyReceipt(mixed $body): array` is removed. Use
+`verifyReceiptResult($body)->toResponse()`.
 
 ## The error vocabulary
 
@@ -220,6 +284,11 @@ a metrics label read the same in every language.
 | `Reason::InvalidReceiptFormat` | `INVALID_RECEIPT_FORMAT` | the receipt is not a parseable CMS SignedData / attribute set |
 | `Reason::DeviceHashMismatch` | `DEVICE_HASH_MISMATCH` | the device binding does not hold |
 | `Reason::StalePayload` | `STALE_PAYLOAD` | signed longer ago than `maxSignedAgeSeconds` |
+
+`Reason` also has `MalformedRequest` (`MALFORMED_REQUEST`) and `InternalError`
+(`INTERNAL_ERROR`), but only as `VerifyReceiptResult::failureReason()` values.
+No `VerificationException` is ever thrown with either, so a `match` over a
+caught exception's reason never sees them.
 
 The exception message is `"REASON: detail"` for readability only. It is not
 part of the API, nothing should parse it, and it never contains receipt bytes,
@@ -341,7 +410,8 @@ function redeemReceipt(ReceiptVerifier $receipts, string $userId, string $data, 
 things:
 
 1. the `STALE_PAYLOAD` comparison in `JwsVerifier`;
-2. the `request_date` / `_ms` / `_pst` triple in `VerifyReceiptEndpoint`.
+2. the `request_date` / `_ms` / `_pst` triple in `VerifyReceiptEndpoint`,
+   read once per call and only when no explicit `$now` is passed.
 
 **Certificate validity is never judged by an injected clock.** It is judged at
 the payload's own `signedDate` / `receiptCreationDate`, or at the receipt's
@@ -409,7 +479,7 @@ about 72 MB of parser state, against a `php.ini-production` default
 | ASN.1 retained bytes per parse | 32 MiB | that same fixture retains 967 KB; see below for why bounding node count is not enough |
 | Receipt size | 2 MiB | Apple receipts are tens of KB |
 | JWS size | 256 KiB | every JWS in the corpus, Apple's own mock notification data included, is under 2.5 KB |
-| `verifyReceiptJson` request body | 1 MiB | the largest genuine receipt is 106 KB of base64, and `json_decode` expands a breadth bomb ~48× |
+| raw JSON request body (`verifyReceiptResult(string)`, `verifyReceiptJson`) | 1 MiB | the largest genuine receipt is 106 KB of base64, and `json_decode` expands a breadth bomb ~48× |
 | Embedded certificates | 10 | enforced *before* any certificate is decoded, because decoding and RSA-checking candidate issuers is the expensive half |
 | Chain path length | 6 | well past any Apple chain |
 

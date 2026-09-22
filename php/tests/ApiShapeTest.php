@@ -15,6 +15,7 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\AppReceipt;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\InAppPurchase;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\VerifyReceiptEndpoint;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\VerifyReceiptResult;
 use EminDeniz99\ApplePurchaseReceiptVerifier\SystemClock;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Fixtures;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\MintedPki;
@@ -39,6 +40,10 @@ final class ApiShapeTest extends TestCase
      * than restated here. The schema is the source of truth for the
      * vocabulary, so a typo in a case name — or a twelfth reason added
      * without a cross-port change — fails here.
+     *
+     * The enum also carries the two reasons every port's VerifyReceiptResult
+     * shares, MALFORMED_REQUEST and INTERNAL_ERROR. They are not in the
+     * schema because no verifier throws them, and they are the only extras.
      */
     public function testTheReasonVocabularyIsExactlyTheOneTheSchemaDefines(): void
     {
@@ -49,12 +54,12 @@ final class ApiShapeTest extends TestCase
             64,
             JSON_THROW_ON_ERROR,
         );
-        $expected = $schema['$defs']['reason']['enum'];
+        $expected = [...$schema['$defs']['reason']['enum'], 'MALFORMED_REQUEST', 'INTERNAL_ERROR'];
         $actual = array_map(static fn (Reason $r): string => $r->value, Reason::cases());
         sort($expected);
         sort($actual);
 
-        self::assertCount(11, $expected);
+        self::assertCount(11, $schema['$defs']['reason']['enum']);
         self::assertSame($expected, $actual, 'the Reason vocabulary drifted from the schema');
     }
 
@@ -191,7 +196,7 @@ final class ApiShapeTest extends TestCase
         foreach ([
             JwsVerifier::class, TransactionPayload::class, AppTransactionPayload::class,
             ReceiptVerifier::class, AppReceipt::class, InAppPurchase::class,
-            VerifyReceiptEndpoint::class, VerificationException::class,
+            VerifyReceiptEndpoint::class, VerifyReceiptResult::class, VerificationException::class,
             AppleRootCerts::class, SystemClock::class,
         ] as $class) {
             yield $class => [$class];
