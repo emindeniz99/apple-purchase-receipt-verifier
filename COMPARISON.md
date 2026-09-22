@@ -55,6 +55,17 @@ into 21002. A caller migrating from Apple's endpoint should not read a
 21002 response from Apple as covering every rejection this endpoint reports
 as 21003.
 
+Apple's answer was 21002 for every rejection measured, not only that one.
+Ten input classes went to `buy.itunes.apple.com/verifyReceipt` on
+2026-09-22: a genuine receipt (0), the same receipt with one byte changed in
+the payload, in the signature, and in a certificate, a receipt truncated in
+half, valid DER that is not a receipt, random bytes, a string that is not
+base64, the empty string, and an Xcode-signed receipt that is well formed
+but not signed by Apple. Every rejection came back 21002. This endpoint
+answers 21002 for the four that never become a receipt and 21003 for the
+four that do and then fail to authenticate. So 21003 is a code Apple
+documents and does not appear to emit.
+
 ## Response body
 
 ### Produced with full fidelity (from the verified receipt)
