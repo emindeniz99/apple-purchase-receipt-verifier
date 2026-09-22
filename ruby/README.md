@@ -190,7 +190,8 @@ a result, never on a `VerificationError`:
 | `INTERNAL_ERROR` | 21009 | an unexpected error inside the endpoint, including a clock that raises or returns something other than a `Time`; `failure_cause` holds it |
 
 Like the real endpoint, it does **not** check the bundle id. Compare
-`result.receipt.bundle_id` yourself.
+`result.receipt.bundle_id` yourself before granting anything, or use
+`ReceiptVerifier`, which checks it for you.
 
 Status codes it can produce: `0`, `21002`, `21003`, `21007`, `21008`, `21009`.
 Everything else in Apple's list depends on Apple's subscription database and is

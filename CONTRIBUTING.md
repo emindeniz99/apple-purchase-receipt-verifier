@@ -5,6 +5,11 @@ Ruby, Rust, PHP and .NET — kept in lockstep by one shared fixture suite. A
 behavior change lands in all nine languages plus `fixtures/`, or it doesn't
 land.
 
+The same holds for features that do not change behavior, such as a new
+entry point, a fast path or a benchmark: a feature lands in every port, or
+[PORTS.md](./PORTS.md) says why a port does not have it. Update that table
+in the PR that adds the feature.
+
 ## Running the tests
 
 Each language runs the same fixtures:

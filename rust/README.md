@@ -242,9 +242,11 @@ that instant. The instant reaches `request_date` and nothing else:
 certificate validity never sees it (see [The clock](#the-clock)).
 
 Like Apple's endpoint, this does **not** check the bundle id: compare
-`receipt.bundle_id` yourself. `password` and `exclude-old-transactions` are
-accepted for compatibility and never read. See
-[COMPARISON.md](../COMPARISON.md) for the field-by-field fidelity account.
+`receipt.bundle_id` yourself before granting anything, or use
+`ReceiptVerifier`, which checks it for you. `password` and
+`exclude-old-transactions` are accepted for compatibility and never read.
+See [COMPARISON.md](../COMPARISON.md) for the field-by-field fidelity
+account.
 
 ## The error vocabulary
 

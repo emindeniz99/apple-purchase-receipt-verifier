@@ -50,7 +50,7 @@ Building from source is the only supported path today; see `ROADMAP.md`.
 
 ## The surface
 
-Twenty-one symbols. Three opaque handles, seven verification calls, one result
+Twenty-one symbols. Three opaque handles, eight verification calls, one result
 struct, one free function.
 
 ```c
@@ -92,6 +92,19 @@ no code path to an operating-system trust store to disable.
 bit is refused rather than ignored, because silently dropping one builds a
 verifier that accepts less than the caller asked for and reports the
 difference as `WRONG_ENVIRONMENT` on a genuine payload.
+
+### Which receipt function to use
+
+| You want | Call | You get |
+|---|---|---|
+| a pass/fail answer, with the bundle id (and optionally the device hash) checked | `aprv_verify_receipt_base64`, `aprv_verify_receipt_der`, or their `_with_device_guid` forms | the failure reason as `status`, or the normalised receipt in `json` |
+| a drop-in for Apple's `verifyReceipt` | `aprv_verify_receipt_endpoint_json` | Apple's response body, verdict in its `status` field |
+
+The endpoint call takes Apple's request JSON. If you hold only the base64
+receipt, build `{"receipt-data":"<base64>"}` yourself: base64 without line
+breaks needs no JSON escaping. Like Apple's endpoint, it does not check the
+bundle id. Compare `receipt.bundle_id` in the response before granting
+anything, or use the receipt verifier calls, which check it for you.
 
 ### The clock
 

@@ -23,7 +23,8 @@ verify byte-for-byte: **Java** (8+), **Node** (20+, zero runtime deps),
 plus **C and C++ via a C ABI over the Rust port**, which any FFI-capable
 runtime (Elixir NIFs, Lua, ctypes, P/Invoke) can load.
 [SUPPORT-MATRIX.md](SUPPORT-MATRIX.md) lists every line CI runs and the rule
-that adds or drops one.
+that adds or drops one. [PORTS.md](PORTS.md) shows which features each
+port ships.
 
 Each implementation also ships **`VerifyReceiptEndpoint`** — a drop-in
 local replacement for the deprecated `verifyReceipt` endpoint speaking
@@ -79,7 +80,7 @@ repository's tags.
 
 **C and C++ have no registry entry and are not meant to.** The C ABI in
 [`rust/ffi/`](rust/ffi/) is built from source against the Rust port: a
-`cdylib`/`staticlib` and a generated header, nineteen symbols, JSON as the
+`cdylib`/`staticlib` and a generated header, twenty-one symbols, JSON as the
 interchange. Prebuilt binaries per OS and architecture are a later step, not
 a shipped one. See [rust/ffi/README.md](rust/ffi/README.md). Three example
 consumers call it, one of each kind: C++17 through the header in

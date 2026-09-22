@@ -19,6 +19,34 @@ Delete a line in the commit that ships it.
 
 ## Next
 
+- **Endpoint result API, base64 fast path and input caps: done ✅**
+  (2026-09-22, #114 to #133). Every port's endpoint returns a
+  `VerifyReceiptResult` with a verified flag and re-renders for the other
+  environment without verifying again; every port decodes canonical base64
+  on a fast path held to the tolerant decoder by a differential test; every
+  port caps the receipt (2 MiB), the request body (1 MiB), JSON depth (64)
+  and the JWS (256 KiB). Swift's release-build crash on Linux x86_64 with
+  Swift 6.3.3 is fixed (#126), and CI now runs the Swift tests in release
+  mode. PORTS.md has the per-port detail.
+- **0.6.0 release notes must warn Swift users of 0.4.0 to 0.5.1**: release
+  builds of those versions crash on a genuine receipt on Linux x86_64
+  under Swift 6.3.3 (a miscompiled throw path, #126). Debug builds and
+  tests pass, so a consumer's CI does not show it. Tell them to upgrade.
+- **Make the input caps a MUST in `fixtures/cases.json`**, with vectors at
+  and over each cap. Blocked on one decision: the request body unit. Java
+  and .NET count UTF-16 characters, Python counts code points for a `str`,
+  the other six count bytes. UTF-8 bytes is the recommendation, since that
+  is what arrives on the wire.
+- **Cross-port benchmarks** (in progress): only `java-bench/` is committed.
+  `go/bench_test.go` has five benchmarks with no recorded baseline.
+- **A date round-trip conformance vector**: a date string parsed to an
+  instant and rendered back as Apple's JSON must come out byte-identical in
+  every port.
+- **Name the unnamed receipt attributes by experiment** (RECEIPT-FIELDS.md
+  "The unnamed types"). Receipts worth capturing: one after a receipt
+  refresh, a Mac App Store receipt, a purchase made with an offer or an
+  `appAccountToken`, and one holding a non-consumable and a non-renewing
+  subscription.
 - **Matrix additions due** (one line each in `ci.yml`; policy and snapshot
   in `SUPPORT-MATRIX.md`): Java 27 on 2026-09-15, replacing 26 as the
   feature-release leg; Python 3.15 in October 2026; .NET 11 and PHP 8.6 in

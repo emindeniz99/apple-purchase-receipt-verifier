@@ -119,7 +119,8 @@ result = endpoint.VerifyReceiptData(base64Receipt) // receipt-data alone
 
 No endpoint method returns an error or panics: every failure is a status in
 the result. Like Apple's endpoint it does **not** check the bundle id: compare
-`result.Receipt().BundleID` yourself.
+`result.Receipt().BundleID` yourself before granting anything, or use
+`ReceiptVerifier`, which checks it for you.
 
 A `*VerifyReceiptResult` is one verification:
 
