@@ -185,7 +185,7 @@ final class MemoryExhaustionTest extends TestCase
             );
             // 96 MB of base64: ~72 MB once decoded, which on its own is most of
             // a 128M budget before a single byte has been parsed.
-            $answer = $endpoint->verifyReceipt(['receipt-data' => str_repeat('QUFB', 24 * 1024 * 1024)]);
+            $answer = $endpoint->verifyReceiptResult(['receipt-data' => str_repeat('QUFB', 24 * 1024 * 1024)])->toResponse();
             report(json_encode($answer));
             PHP);
 
@@ -250,7 +250,7 @@ final class MemoryExhaustionTest extends TestCase
                 [file_get_contents(\EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Fixtures::directory() . '/generated/receipt-root.der')],
                 \EminDeniz99\ApplePurchaseReceiptVerifier\Environment::Production,
             );
-            report(json_encode($endpoint->verifyReceipt(['receipt-data' => base64_encode($blob)])));
+            report(json_encode($endpoint->verifyReceiptResult(['receipt-data' => base64_encode($blob)])->toResponse()));
             PHP);
 
         self::assertSame(0, $status, "the worker did not survive the vector through the endpoint:\n" . $output);

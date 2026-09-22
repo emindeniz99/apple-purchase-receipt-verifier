@@ -4,9 +4,8 @@ declare(strict_types=1);
 
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Receipt;
 
+use Closure;
 use DateTimeImmutable;
-use DateTimeInterface;
-use DateTimeZone;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Base64;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\ChainValidator;
@@ -29,11 +28,13 @@ use Throwable;
  * Like Apple's endpoint, this does **not** check the bundle id — the caller
  * compares `receipt.bundle_id`, exactly as with the real endpoint.
  *
- * Neither method ever throws: a failure is a `status` in the returned body.
+ * No method ever throws on a request: a failure is a status and a
+ * {@see Reason} on the returned {@see VerifyReceiptResult}.
  *
  * ```php
  * $endpoint = new VerifyReceiptEndpoint(AppleRootCerts::receiptRoots(), Environment::Production);
- * $response->getBody()->write($endpoint->verifyReceiptJson((string) $request->getBody()));
+ * $result = $endpoint->verifyReceiptResult((string) $request->getBody());
+ * $response->getBody()->write($result->toJson());
  * ```
  */
 final class VerifyReceiptEndpoint
@@ -56,9 +57,10 @@ final class VerifyReceiptEndpoint
     public const STATUS_INTERNAL = 21009;
 
     /**
-     * Ceiling on the raw request body {@see verifyReceiptJson()} will parse.
+     * Ceiling on the raw request body {@see verifyReceiptResult()} and
+     * {@see verifyReceiptJson()} will parse.
      *
-     * "Neither method ever throws" is a promise about `Throwable`s, and a
+     * "No method ever throws" is a promise about `Throwable`s, and a
      * `memory_limit` exhaustion is not one: it is a fatal error, so the worker
      * dies with no body at all and the promise silently stops holding on
      * exactly the hostile input it exists for. `json_decode` expands a breadth
@@ -70,11 +72,12 @@ final class VerifyReceiptEndpoint
      * carries any real request with room to spare while bounding the parse to
      * tens of MB. It is deliberately below {@see \EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier::DEFAULT_MAX_RECEIPT_BYTES}:
      * the JSON entry point has an amplification the pre-decoded
-     * {@see verifyReceipt()} entry point does not.
+     * array entry point of {@see verifyReceiptResult()} does not.
      */
     public const MAX_REQUEST_BYTES = 1048576;
 
-    private const MALFORMED_JSON = '{"status":21002}';
+    /** @var (Closure(Environment, ?AppReceipt, ?Reason, ?Throwable, DateTimeImmutable): VerifyReceiptResult)|null */
+    private static ?Closure $newResult = null;
 
     /** @var list<string> */
     private readonly array $trustedRoots;
@@ -114,194 +117,180 @@ final class VerifyReceiptEndpoint
     }
 
     /**
-     * Handles one verifyReceipt request body.
+     * Handles one verifyReceipt request: the decoded JSON body as an array,
+     * or the raw JSON text an HTTP framework hands over as a string. Never
+     * throws; a failure is the result's status and
+     * {@see VerifyReceiptResult::failureReason()}.
+     *
+     * Anything that is not an array with a usable `receipt-data` fails with
+     * {@see Reason::MalformedRequest}, status 21002: a body that is not a
+     * JSON object (unparseable, `null`, a list, a scalar), a raw body over
+     * {@see MAX_REQUEST_BYTES}, or a `receipt-data` that is missing, empty or
+     * not a string. Apple has no status code for "that wasn't JSON"; 21002 is
+     * the closest, and it is what a JSON object without usable `receipt-data`
+     * gets anyway.
      *
      * `password` and `exclude-old-transactions` are accepted for wire
      * compatibility and never read: the first cannot be validated offline,
      * and the second only affects `latest_receipt_info`, which this endpoint
      * never produces (COMPARISON.md).
      *
-     * @param mixed $requestBody the decoded JSON body; anything that is not
-     *        an array with a usable `receipt-data` answers 21002
-     *
-     * @return array<string, mixed> the response body
+     * @param mixed $request the decoded body, or the raw JSON body as a string
+     * @param DateTimeImmutable|null $now becomes `request_date` in place of
+     *        the endpoint's clock. It reaches `request_date` and nothing else:
+     *        certificate validity never sees it.
      */
-    public function verifyReceipt(mixed $requestBody): array
+    public function verifyReceiptResult(mixed $request, ?DateTimeImmutable $now = null): VerifyReceiptResult
     {
         try {
-            if (!is_array($requestBody)) {
-                return ['status' => self::STATUS_MALFORMED];
-            }
-            $receiptData = $requestBody['receipt-data'] ?? null;
-            if (!is_string($receiptData) || $receiptData === '') {
-                return ['status' => self::STATUS_MALFORMED];
-            }
-            // This entry point base64-decodes before `verifyReceiptCore` gets
-            // to apply its own cap, so the cap is applied to the transport
-            // string here — the same string, and the same limit, that
-            // `ReceiptVerifier::toDer()` would have measured. It answers 21002
-            // either way; the difference is that nothing is allocated first.
-            if (strlen($receiptData) > ReceiptVerifier::DEFAULT_MAX_RECEIPT_BYTES) {
-                return ['status' => self::STATUS_MALFORMED];
-            }
-
-            $der = Base64::decodeReceipt($receiptData);
-            if ($der === null) {
-                return ['status' => self::STATUS_MALFORMED];
-            }
-
-            $fields = ReceiptVerifier::verifyReceiptCore($der, $this->trustedRoots);
-
-            // 21007/21008 routing from the receipt_type attribute, failing
-            // closed: production is exactly "Production" and "ProductionVPP".
-            // Everything else — "ProductionSandbox", "ProductionVPPSandbox",
-            // "Xcode", or a missing attribute — routes as non-production
-            // (PLAN.md D10; a VPP-sandbox misroute found by adversarial
-            // review drove this tightening).
-            $productionReceipt = $fields->receiptType === 'Production'
-                || $fields->receiptType === 'ProductionVPP';
-            if ($this->environment === Environment::Production && !$productionReceipt) {
-                return ['status' => self::STATUS_SANDBOX_RECEIPT_ON_PRODUCTION];
-            }
-            if ($this->environment === Environment::Sandbox && $productionReceipt) {
-                return ['status' => self::STATUS_PRODUCTION_RECEIPT_ON_SANDBOX];
-            }
-
-            return [
-                'status' => self::STATUS_OK,
-                'environment' => $this->environment->value,
-                'receipt' => self::receiptJson($fields, $this->clock->now()),
-            ];
-        } catch (VerificationException $e) {
-            return [
-                'status' => $e->reason === Reason::InvalidReceiptFormat
-                    ? self::STATUS_MALFORMED
-                    : self::STATUS_NOT_AUTHENTICATED,
-            ];
-        } catch (Throwable) {
-            // "Never throws" is the contract, so it holds for a timezone
-            // database without America/Los_Angeles just as it does for a
-            // hostile receipt.
-            return ['status' => self::STATUS_INTERNAL];
+            $at = $now ?? $this->clock->now();
+        } catch (Throwable $e) {
+            return $this->clockFailed($e);
         }
+        if (is_string($request)) {
+            return $this->fromJson($request, $at);
+        }
+        if (!is_array($request)) {
+            return $this->failed(Reason::MalformedRequest, $at);
+        }
+        $receiptData = $request['receipt-data'] ?? null;
+
+        return $this->verify(is_string($receiptData) ? $receiptData : null, $at);
+    }
+
+    /**
+     * Verifies a bare base64 receipt, the value a request body carries as
+     * `receipt-data`, with no envelope around it. Never throws; null or an
+     * empty string fails with {@see Reason::MalformedRequest}, as a missing
+     * `receipt-data` does.
+     *
+     * @param DateTimeImmutable|null $now as for {@see verifyReceiptResult()}
+     */
+    public function verifyReceiptData(?string $receiptData, ?DateTimeImmutable $now = null): VerifyReceiptResult
+    {
+        try {
+            $at = $now ?? $this->clock->now();
+        } catch (Throwable $e) {
+            return $this->clockFailed($e);
+        }
+
+        return $this->verify($receiptData, $at);
     }
 
     /**
      * Handles one verifyReceipt request in its raw wire form: the JSON
      * request body in, the JSON response body out, so a PSR-7 handler can
-     * pipe a body straight through without a DTO in between.
-     *
-     * A body that is not a JSON object (unparseable, `null`, an array, a
-     * scalar) answers `{"status":21002}`. Apple has no status code for "that
-     * wasn't JSON"; 21002 is the closest, and it is what a JSON object
-     * without usable `receipt-data` gets anyway — and what a body over
-     * {@see MAX_REQUEST_BYTES} gets, before it is parsed.
+     * pipe a body straight through without a DTO in between. The same as
+     * `verifyReceiptResult($requestJson)->toJson()`, and like it, never
+     * throws.
      */
     public function verifyReceiptJson(string $requestJson): string
     {
+        return $this->verifyReceiptResult($requestJson)->toJson();
+    }
+
+    /**
+     * The clock is read once per call, before anything else. One that throws
+     * would break "never throws", so it becomes an internal error instead,
+     * stamped with the system clock since the injected one has no answer.
+     */
+    private function clockFailed(Throwable $e): VerifyReceiptResult
+    {
+        return self::newResult($this->environment, null, Reason::InternalError, $e, (new SystemClock())->now());
+    }
+
+    private function fromJson(string $requestJson, DateTimeImmutable $at): VerifyReceiptResult
+    {
         if (strlen($requestJson) > self::MAX_REQUEST_BYTES) {
-            return self::MALFORMED_JSON;
+            return $this->failed(Reason::MalformedRequest, $at);
         }
         try {
             $parsed = json_decode($requestJson, true, 64, JSON_THROW_ON_ERROR);
         } catch (Throwable) {
-            return self::MALFORMED_JSON;
+            return $this->failed(Reason::MalformedRequest, $at);
         }
         if (!is_array($parsed) || ($parsed !== [] && array_is_list($parsed))) {
-            return self::MALFORMED_JSON;
+            return $this->failed(Reason::MalformedRequest, $at);
         }
-        $encoded = json_encode($this->verifyReceipt($parsed));
+        $receiptData = $parsed['receipt-data'] ?? null;
 
-        return $encoded === false ? '{"status":21009}' : $encoded;
-    }
-
-    /** @return array<string, mixed> */
-    private static function receiptJson(AppReceipt $fields, DateTimeInterface $requestDate): array
-    {
-        $receipt = [];
-        self::put($receipt, 'receipt_type', $fields->receiptType);
-        // Apple echoes attribute 1 under both names — its response reference
-        // defines adam_id as "See app_item_id" — and as JSON numbers, not as
-        // the strings the in-app integers are rendered with.
-        self::put($receipt, 'adam_id', $fields->appItemId);
-        self::put($receipt, 'app_item_id', $fields->appItemId);
-        self::put($receipt, 'bundle_id', $fields->bundleId);
-        self::put($receipt, 'application_version', $fields->appVersion);
-        self::put($receipt, 'download_id', $fields->downloadId);
-        self::put($receipt, 'version_external_identifier', $fields->versionExternalIdentifier);
-        self::put($receipt, 'original_application_version', $fields->originalAppVersion);
-        self::appleDates($receipt, 'receipt_creation_date', $fields->creationDate);
-        self::appleDates($receipt, 'request_date', $requestDate);
-        self::appleDates($receipt, 'original_purchase_date', $fields->originalPurchaseDate);
-        self::appleDates($receipt, 'expiration_date', $fields->expirationDate);
-        $receipt['in_app'] = array_map(self::inAppJson(...), $fields->inAppPurchases);
-
-        return $receipt;
-    }
-
-    /** @return array<string, mixed> */
-    private static function inAppJson(InAppPurchase $purchase): array
-    {
-        $entry = [];
-        self::put($entry, 'quantity', $purchase->quantity === null ? null : (string) $purchase->quantity);
-        self::put($entry, 'product_id', $purchase->productId);
-        self::put($entry, 'transaction_id', $purchase->transactionId);
-        self::put($entry, 'original_transaction_id', $purchase->originalTransactionId);
-        self::appleDates($entry, 'purchase_date', $purchase->purchaseDate);
-        self::appleDates($entry, 'original_purchase_date', $purchase->originalPurchaseDate);
-        self::appleDates($entry, 'expires_date', $purchase->expiresDate);
-        self::appleDates($entry, 'cancellation_date', $purchase->cancellationDate);
-        self::put(
-            $entry,
-            'web_order_line_item_id',
-            $purchase->webOrderLineItemId === null ? null : (string) $purchase->webOrderLineItemId,
-        );
-        self::put(
-            $entry,
-            'is_trial_period',
-            $purchase->isTrialPeriod === null
-                ? null
-                : ($purchase->isTrialPeriod === 1 ? 'true' : 'false'),
-        );
-        self::put(
-            $entry,
-            'is_in_intro_offer_period',
-            $purchase->isInIntroOfferPeriod === null
-                ? null
-                : ($purchase->isInIntroOfferPeriod === 1 ? 'true' : 'false'),
-        );
-
-        return $entry;
-    }
-
-    /** @param array<string, mixed> $target */
-    private static function put(array &$target, string $key, mixed $value): void
-    {
-        if ($value !== null) {
-            $target[$key] = $value;
-        }
+        return $this->verify(is_string($receiptData) ? $receiptData : null, $at);
     }
 
     /**
-     * Apple's three date renderings: `x` (GMT), `x_ms` (epoch millis as a
-     * string), `x_pst` (US Pacific, which is what Apple's endpoint emits).
-     *
-     * @param array<string, mixed> $target
+     * The one verification path every entry point ends in. `$at` only
+     * becomes `request_date`: certificate validity is judged inside
+     * {@see ReceiptVerifier::verifyReceiptCore()}, which takes no time input.
      */
-    private static function appleDates(array &$target, string $prefix, ?DateTimeInterface $date): void
+    private function verify(?string $receiptData, DateTimeImmutable $at): VerifyReceiptResult
     {
-        if ($date === null) {
-            return;
+        try {
+            if ($receiptData === null || $receiptData === '') {
+                return $this->failed(Reason::MalformedRequest, $at);
+            }
+            // Decoding happens before `verifyReceiptCore` could apply its own
+            // cap, so the cap is applied to the transport string here: the
+            // same string, the same limit and the same reason that
+            // `ReceiptVerifier::toDer()` would have used, and nothing is
+            // allocated first.
+            if (strlen($receiptData) > ReceiptVerifier::DEFAULT_MAX_RECEIPT_BYTES) {
+                return $this->failed(Reason::InvalidReceiptFormat, $at);
+            }
+            $der = Base64::decodeReceipt($receiptData);
+            if ($der === null) {
+                return $this->failed(Reason::InvalidReceiptFormat, $at);
+            }
+            // The primitive itself, not a ReceiptVerifier built around a
+            // wildcard bundle id: like Apple's endpoint, no bundle-id claim
+            // is checked here (callers compare receipt.bundle_id).
+            $receipt = ReceiptVerifier::verifyReceiptCore($der, $this->trustedRoots);
+
+            return self::newResult($this->environment, $receipt, null, null, $at);
+        } catch (VerificationException $e) {
+            return $this->failed($e->reason, $at);
+        } catch (Throwable $e) {
+            // "Never throws" is the contract, so it holds for a bug or an
+            // exhausted resource inside verification just as it does for a
+            // hostile receipt.
+            return self::newResult($this->environment, null, Reason::InternalError, $e, $at);
         }
-        $target[$prefix] = self::formatInZone($date, 'UTC', 'Etc/GMT');
-        $target[$prefix . '_ms'] = (string) (int) $date->format('Uv');
-        $target[$prefix . '_pst'] = self::formatInZone($date, 'America/Los_Angeles', 'America/Los_Angeles');
     }
 
-    private static function formatInZone(DateTimeInterface $date, string $timeZone, string $label): string
+    private function failed(Reason $reason, DateTimeImmutable $at): VerifyReceiptResult
     {
-        $utc = DateTimeImmutable::createFromInterface($date)->setTimezone(new DateTimeZone($timeZone));
+        return self::newResult($this->environment, null, $reason, null, $at);
+    }
 
-        return $utc->format('Y-m-d H:i:s') . ' ' . $label;
+    /**
+     * VerifyReceiptResult's constructor is private so that no caller can
+     * build a result carrying status 0; this closure, bound to that class's
+     * scope, is the endpoint's only way in.
+     */
+    private static function newResult(
+        Environment $environment,
+        ?AppReceipt $receipt,
+        ?Reason $failureReason,
+        ?Throwable $failureCause,
+        DateTimeImmutable $requestDate,
+    ): VerifyReceiptResult {
+        $factory = self::$newResult ??= Closure::bind(
+            static fn (
+                Environment $environment,
+                ?AppReceipt $receipt,
+                ?Reason $failureReason,
+                ?Throwable $failureCause,
+                DateTimeImmutable $requestDate,
+            ): VerifyReceiptResult => new VerifyReceiptResult(
+                $environment,
+                $receipt,
+                $failureReason,
+                $failureCause,
+                $requestDate,
+            ),
+            null,
+            VerifyReceiptResult::class,
+        );
+
+        return $factory($environment, $receipt, $failureReason, $failureCause, $requestDate);
     }
 }

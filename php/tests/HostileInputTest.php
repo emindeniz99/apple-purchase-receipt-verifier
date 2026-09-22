@@ -135,7 +135,7 @@ final class HostileInputTest extends TestCase
     public function testHostileReceiptInputNeverReachesTheEndpointsInternalError(string $input): void
     {
         $endpoint = new VerifyReceiptEndpoint([MintedPki::get()->rootDer], Environment::Sandbox);
-        $status = $endpoint->verifyReceipt(['receipt-data' => base64_encode($input)])['status'];
+        $status = $endpoint->verifyReceiptResult(['receipt-data' => base64_encode($input)])->toResponse()['status'];
 
         self::assertNotSame(21009, $status);
         self::assertNotSame(0, $status, 'a hostile receipt was ACCEPTED');
