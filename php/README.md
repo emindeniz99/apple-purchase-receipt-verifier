@@ -238,7 +238,8 @@ never sees it (see "What the clock can move" below).
 
 Like Apple's endpoint, this does **not** check the bundle id: compare
 `$result->receipt()->bundleId` (or `receipt.bundle_id` in the body)
-yourself. `password` and `exclude-old-transactions` are accepted for wire
+yourself before granting anything, or use `ReceiptVerifier`, which checks it
+for you. `password` and `exclude-old-transactions` are accepted for wire
 compatibility and never read. `21000`, `21004`, `21005`, `21006`, `21010`,
 the `21100`–`21199` range and `is_retryable` are never produced; see
 [COMPARISON.md](../COMPARISON.md).
