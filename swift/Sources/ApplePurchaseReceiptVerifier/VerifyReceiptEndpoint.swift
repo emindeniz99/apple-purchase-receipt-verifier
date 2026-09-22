@@ -24,6 +24,28 @@ public struct VerifyReceiptEndpoint: Sendable {
     /// Internal error.
     public static let statusInternal = 21009
 
+    /// Ceiling on a raw JSON request body, in UTF-8 bytes (`utf8.count`). A
+    /// larger body fails with ``VerificationError/Reason/malformedRequest``,
+    /// status 21002, before it is parsed: JSON parsing allocates a multiple
+    /// of the body, and that happens before any verification. The number is
+    /// the Java, PHP and Python ports'. PHP measures bytes too; Java and
+    /// Python measure a string in UTF-16 units or characters, so a body of
+    /// non-ASCII text can pass there and be refused here. No body that
+    /// carries only a receipt is affected, since base64 is ASCII.
+    ///
+    /// It is deliberately below ``ReceiptVerifier/maxReceiptBytes``: the
+    /// JSON entry point has an amplification the dictionary entry point does
+    /// not. A 1 MiB body carries any real request with room to spare; the
+    /// largest genuine receipt in the corpus is 106 KB of base64. A body
+    /// already decoded to a dictionary is not measured.
+    public static let maxRequestBytes = 1_048_576
+
+    /// How deep a JSON structure the request body may nest; the Java
+    /// port's number. A verifyReceipt body is a flat object of strings.
+    /// `JSONSerialization` takes no depth option, so the depth is counted
+    /// before it runs.
+    static let maxJsonNestingDepth = 64
+
     private let roots: [Certificate]
     private let environment: AppleEnvironment
     private let clock: @Sendable () -> Date
@@ -107,14 +129,17 @@ public struct VerifyReceiptEndpoint: Sendable {
     /// text an HTTP framework hands over. Never throws.
     ///
     /// A body that is not a JSON object (unparseable, `null`, an array, a
-    /// scalar) fails with ``VerificationError/Reason/malformedRequest``,
-    /// status 21002. Apple has no status code for "that wasn't JSON"; 21002
+    /// scalar), is over ``maxRequestBytes`` UTF-8 bytes or nests more than 64
+    /// levels deep fails with ``VerificationError/Reason/malformedRequest``,
+    /// status 21002, and the last two are refused before it is parsed. Apple has no status code for "that wasn't JSON"; 21002
     /// ("The data in the receipt-data property was malformed or missing") is
     /// the closest, and it is what a JSON object without usable
     /// `receipt-data` gets anyway.
     public func verifyReceiptResult(_ body: String, now: Date? = nil) async -> VerifyReceiptResult {
         let at = now ?? clock()
-        guard let data = body.data(using: .utf8),
+        guard body.utf8.count <= Self.maxRequestBytes,
+            !jsonNestingExceeds(body.utf8, limit: Self.maxJsonNestingDepth),
+            let data = body.data(using: .utf8),
             let parsed = try? JSONSerialization.jsonObject(with: data),
             let requestBody = parsed as? [String: Any]
         else {
@@ -151,6 +176,13 @@ public struct VerifyReceiptEndpoint: Sendable {
     private func verify(_ receiptData: String?, _ at: Date) async -> VerifyReceiptResult {
         guard let receiptData, !receiptData.isEmpty else {
             return failed(.malformedRequest, at)
+        }
+        // The decode below runs before verifyCore could apply its own cap, so
+        // the cap is applied to the string here, as
+        // ReceiptVerifier.verify(base64Receipt:) does, before anything is
+        // allocated.
+        guard receiptData.utf8.count <= ReceiptVerifier.maxReceiptBytes else {
+            return failed(.invalidReceiptFormat, at)
         }
         guard let der = decodeReceiptBase64(receiptData) else {
             return failed(.invalidReceiptFormat, at)

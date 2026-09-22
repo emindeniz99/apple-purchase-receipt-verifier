@@ -223,8 +223,8 @@ verified it. `.xcode` and `.localTesting` throw
 
 | `failureReason` | status | when |
 |---|---|---|
-| `.malformedRequest` | 21002 | the body is not a JSON object, or `receipt-data` is missing, empty or not a string |
-| `.invalidReceiptFormat` | 21002 | `receipt-data` is not base64 or does not decode to a receipt |
+| `.malformedRequest` | 21002 | the body is not a JSON object, is over `VerifyReceiptEndpoint.maxRequestBytes` or nests past 64 levels, or `receipt-data` is missing, empty or not a string |
+| `.invalidReceiptFormat` | 21002 | `receipt-data` is over `ReceiptVerifier.maxReceiptBytes`, is not base64 or does not decode to a receipt |
 | `.invalidChain`, `.invalidSignature`, other certificate reasons | 21003 | the receipt did not authenticate |
 | `.internalError` | 21009 | an unexpected error; `failureCause` holds it |
 
@@ -250,8 +250,8 @@ dictionaries carry no insertion order, so keys are serialized
 `VerificationError(.wrongEnvironment, ...)` at construction, since Apple's
 endpoint has no other environment to emulate.
 
-The endpoint applies no size cap of its own to a request body or to
-`receipt-data`.
+A raw request body and `receipt-data` are both measured before they are
+parsed or decoded; see [Resource bounds](#resource-bounds).
 
 Migrating from 0.5: `endpoint.verifyReceipt(body)` is removed; use
 `await endpoint.verifyReceiptResult(body).response()`. The deprecated
@@ -290,7 +290,7 @@ do {
 
 | `Reason` | Raw value | Raised when |
 |---|---|---|
-| `.invalidJwsFormat` | `INVALID_JWS_FORMAT` | not three dot-separated segments, a segment that is not base64url JSON, `alg != "ES256"`, or an `x5c` that is not exactly three entries |
+| `.invalidJwsFormat` | `INVALID_JWS_FORMAT` | longer than `JwsVerifier.maxJwsBytes`, a header or payload nesting past 64 levels, not three dot-separated segments, a segment that is not base64url JSON, `alg != "ES256"`, or an `x5c` that is not exactly three entries |
 | `.invalidCertificate` | `INVALID_CERTIFICATE` | `x5c[0]` or `x5c[1]` does not parse as a certificate. Their base64 is decoded with `ignoreUnknownCharacters`, so a junk character inside an entry is skipped rather than refused — java skips it too, through `Base64.getMimeDecoder()`, so that is agreement and not a divergence. The one divergence is `x5c[2]`, which this port never decodes and java decodes and parses, so an unparseable third certificate is `INVALID_CERTIFICATE` there and unremarked here (ROADMAP.md records it) |
 | `.invalidCertificatePurpose` | `INVALID_CERTIFICATE_PURPOSE` | the leaf or intermediate lacks its Apple marker OID, or the receipt signer lacks its own |
 | `.invalidChain` | `INVALID_CHAIN` | the path does not reach a pinned anchor, a certificate was not valid at the signing instant, or a receipt embeds more than ten certificates |
@@ -298,7 +298,7 @@ do {
 | `.wrongBundleId` | `WRONG_BUNDLE_ID` | the verified payload or receipt names another bundle |
 | `.wrongEnvironment` | `WRONG_ENVIRONMENT` | the environment is outside the accepted set |
 | `.wrongAppAppleId` | `WRONG_APP_APPLE_ID` | a Production `AppTransaction` does not name the configured app Apple id |
-| `.invalidReceiptFormat` | `INVALID_RECEIPT_FORMAT` | the CMS blob does not parse, has no signer info, or an attribute is malformed |
+| `.invalidReceiptFormat` | `INVALID_RECEIPT_FORMAT` | the receipt is over `ReceiptVerifier.maxReceiptBytes`, the CMS blob does not parse, has no signer info, or an attribute is malformed |
 | `.deviceHashMismatch` | `DEVICE_HASH_MISMATCH` | the device hash does not match attribute 5, or the receipt lacks the attributes the check needs |
 | `.stalePayload` | `STALE_PAYLOAD` | the payload was signed longer ago than `maxSignedAgeMillis` |
 | `.malformedRequest` | `MALFORMED_REQUEST` | never thrown: reported only on a `VerifyReceiptResult`, for an unusable request envelope |
@@ -474,9 +474,42 @@ would abort the process rather than fail the verification. An
 attacker-supplied year like `999999` is therefore `.invalidChain` (JWS) or
 `.invalidReceiptFormat` (receipt attribute), not a crash.
 
-Unlike the PHP and Rust ports, this library does not expose a configurable
-ceiling on decoded receipt size; callers who need one should bound the input
-before it reaches `verify`.
+### Input size limits
+
+Base64 decoding and JSON parsing both allocate a multiple of their input
+before any signature is checked, so the input is measured first. These are
+constants, not initializer options, and they are the numbers the Java, PHP
+and Python ports use.
+
+- **`ReceiptVerifier.maxReceiptBytes` (2 MiB, 2,097,152).** Applied to the
+  base64 string at `verify(base64Receipt:)` and at the endpoint's
+  `receipt-data`, before decoding, and to the DER at every entry point that
+  takes bytes, both `verifyCore` overloads included. A larger receipt is
+  `.invalidReceiptFormat` (21002 at the endpoint). `fixtures/cases.json`
+  requires every port to accept a receipt of up to 1 MiB of DER, about
+  1.38 MB of base64; the largest genuine receipt in the corpus is 79 KB.
+- **`VerifyReceiptEndpoint.maxRequestBytes` (1 MiB, 1,048,576).** Applied to
+  a raw JSON body before it is parsed. A larger body answers 21002 with
+  `.malformedRequest`. It is below the receipt cap on purpose: the JSON path
+  parses the body as well as decoding the receipt. A body already decoded to
+  a dictionary is not measured. The byte-floor receipt from
+  `fixtures/cases.json` therefore verifies through `verifyReceiptData` and
+  the dictionary entry point, and answers 21002 inside a JSON body.
+- **`JwsVerifier.maxJwsBytes` (256 KiB, 262,144).** Applied to a compact JWS
+  before it is split. A longer one is `.invalidJwsFormat`. Every JWS in the
+  corpus is under 2.5 KB.
+- **JSON nesting depth 64.** `JSONSerialization` and `JSONDecoder` take no
+  depth option, so the depth of a request body, and of a JWS header and
+  payload, is counted before either runs. A deeper request body answers
+  21002 with `.malformedRequest`; a deeper JWS segment is
+  `.invalidJwsFormat`. Brackets inside strings are not counted.
+
+Every string is measured in UTF-8 bytes (`utf8.count`, constant time for a
+native Swift string). For base64 and a compact JWS that is also the
+character count. For a request body it is not: a body carrying non-ASCII
+text is counted in bytes here and in PHP, where the Java and Python ports
+count UTF-16 units or characters today, so such a body can be refused here
+and parsed there. No body that carries only a receipt is affected.
 
 ## Testing
 
