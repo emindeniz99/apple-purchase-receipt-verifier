@@ -23,7 +23,8 @@ verify byte-for-byte: **Java** (8+), **Node** (20+, zero runtime deps),
 plus **C and C++ via a C ABI over the Rust port**, which any FFI-capable
 runtime (Elixir NIFs, Lua, ctypes, P/Invoke) can load.
 [SUPPORT-MATRIX.md](SUPPORT-MATRIX.md) lists every line CI runs and the rule
-that adds or drops one.
+that adds or drops one. [PORTS.md](PORTS.md) shows which features each
+port ships.
 
 Each implementation also ships **`VerifyReceiptEndpoint`** — a drop-in
 local replacement for the deprecated `verifyReceipt` endpoint speaking
