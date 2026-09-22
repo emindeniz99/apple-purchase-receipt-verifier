@@ -46,14 +46,16 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-      # Three lockfiles record the project's own version (rust/Cargo.lock,
-      # rust/fuzz/Cargo.lock, python/uv.lock). release-please's toml updater
+      # Four lockfiles record the project's own version (rust/Cargo.lock,
+      # rust/fuzz/Cargo.lock, rust/ffi/Cargo.lock, python/uv.lock). release-please's toml updater
       # cannot address an entry of a [[package]] array by name (it logs
       # "No entries modified"), and a release PR with bumped manifests and
       # stale locks fails every --locked leg. So the tools that own those
       # files bring them in step on the release branch: `cargo update
-      # --workspace` touches workspace members only, the fuzz crate updates
-      # the one path dependency, `uv lock` keeps every pinned dependency.
+      # --workspace` touches workspace members only, the fuzz and ffi crates
+      # update the one path dependency, `uv lock` keeps every pinned
+      # dependency. The ffi lock was missing here once and v0.5.0's commit
+      # failed every --locked ffi leg, so the gate refused to publish it.
       # release-please rebuilds its branch from main on the next push, which
       # drops this commit; the step then runs again and re-adds it.
       # When the action leaves an existing release PR untouched ("remained
@@ -97,15 +99,16 @@ jobs:
         run: |
           cargo update --workspace --manifest-path rust/Cargo.toml
           cargo update --manifest-path rust/fuzz/Cargo.toml -p apple-purchase-receipt-verifier
+          cargo update --manifest-path rust/ffi/Cargo.toml -p apple-purchase-receipt-verifier
           uv lock --directory python
-          if git diff --quiet -- rust/Cargo.lock rust/fuzz/Cargo.lock python/uv.lock; then
+          if git diff --quiet -- rust/Cargo.lock rust/fuzz/Cargo.lock rust/ffi/Cargo.lock python/uv.lock; then
             echo "lockfiles already in step"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "chore(release): bring the lockfiles in step with the release version" \
-            -- rust/Cargo.lock rust/fuzz/Cargo.lock python/uv.lock
+            -- rust/Cargo.lock rust/fuzz/Cargo.lock rust/ffi/Cargo.lock python/uv.lock
           git push origin "HEAD:$BRANCH"
       - name: dispatch publish workflow at the new tag
         if: ${{ steps.release.outputs.release_created }}
