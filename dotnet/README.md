@@ -215,7 +215,8 @@ Environment routing fails closed: only `Production` and `ProductionVPP` count
 as production, so `ProductionVPPSandbox`, `Xcode` and a missing attribute all
 route as non-production. Like Apple's endpoint, this does not check the bundle
 id: compare `result.Receipt.BundleId` (or `receipt.bundle_id` in the body)
-yourself. `password` and `exclude-old-transactions` are accepted for wire
+yourself before granting anything, or use `ReceiptVerifier`, which checks it
+for you. `password` and `exclude-old-transactions` are accepted for wire
 compatibility and never read. Fields that only exist in Apple's server-side
 subscription database (`latest_receipt_info`, `pending_renewal_info`) are out
 of scope; see `COMPARISON.md` in the repository.
