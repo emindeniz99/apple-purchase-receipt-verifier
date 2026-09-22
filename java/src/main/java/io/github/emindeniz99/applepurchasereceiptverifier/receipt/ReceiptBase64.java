@@ -31,6 +31,42 @@ final class ReceiptBase64 {
         if (receipt == null) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "receipt is null");
         }
+        if (isEmptyOrWhitespace(receipt)) {
+            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "receipt is empty or whitespace-only");
+        }
+        // Fast path for the common case, a canonical standard-alphabet
+        // string. The JDK's strict decoder accepts exactly: characters from
+        // [A-Za-z0-9+/], a data length not congruent to 1 mod 4, and either
+        // no padding or exactly the canonical run of '=' at the end, nothing
+        // after it. Every such non-empty string also passes each rule of
+        // decodeTolerant (nothing to strip, one alphabet, only '=' after the
+        // padding, same length and padding checks), and decodeTolerant then
+        // hands the JDK decoder the same data with canonical padding, which
+        // it decodes to the same bytes. Anything the JDK refuses falls
+        // through, so rejections and their messages are unchanged.
+        try {
+            return Base64.getDecoder().decode(receipt);
+        } catch (IllegalArgumentException e) {
+            return decodeTolerant(receipt);
+        }
+    }
+
+    private static boolean isEmptyOrWhitespace(String receipt) {
+        for (int i = 0; i < receipt.length(); i++) {
+            char c = receipt.charAt(i);
+            if (c != '\r' && c != '\n' && c != ' ' && c != '\t') {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * The full decoder described in the class comment, without the fast
+     * path. Package-private so the differential test can compare it against
+     * {@link #decode}.
+     */
+    static byte[] decodeTolerant(String receipt) throws VerificationException {
         StringBuilder stripped = new StringBuilder(receipt.length());
         for (int i = 0; i < receipt.length(); i++) {
             char c = receipt.charAt(i);

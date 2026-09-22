@@ -200,3 +200,54 @@ count, so the scaling figures are not a per-purchase cost model. The ad hoc
 decode rows come from a separate run using reflection, which adds a little
 call overhead to that row. No GC, heap or JIT flags were tuned. Everything
 ran single-threaded, so nothing here speaks to contention.
+
+## 2026-09-22: base64 fast path
+
+`ReceiptBase64.decode` now tries `Base64.getDecoder().decode(receipt)` first
+and falls back to the tolerant parser only when the JDK decoder refuses the
+string. Every benchmark that decodes base64 got faster; `core`, which starts
+from DER, did not move.
+
+Both columns come from one session on the same machine, run back to back:
+"before" is `5e8652f` (origin/main, the code the baseline measured), "after"
+is the fast-path commit. JDK 21.0.10 (OpenJDK 64-Bit Server VM, Ubuntu build
+21.0.10+7), 4 vCPUs of an Intel(R) Xeon(R) Processor @ 2.80GHz, 15 GiB RAM.
+Same JMH settings as the baseline, plain run, no `-prof gc`. µs/op.
+
+| benchmark | fixture | before | after | change |
+|---|---|---:|---:|---:|
+| `core` | g5 | 498.1 ± 38.0 | 513.9 ± 32.0 | within error |
+| `core` | legacy | 3,796.5 ± 183.5 | 3,743.5 ± 184.8 | within error |
+| `verifierBase64` | g5 | 689.5 ± 34.6 | 545.8 ± 36.4 | −143.7 (−20.8%) |
+| `verifierBase64` | legacy | 5,264.3 ± 210.7 | 4,219.1 ± 364.9 | −1,045.2 (−19.9%) |
+| `endpointMap` | g5 | 711.6 ± 47.1 | 581.7 ± 55.8 | −129.9 (−18.3%) |
+| `endpointMap` | legacy | 5,935.9 ± 241.9 | 4,634.9 ± 220.2 | −1,301.0 (−21.9%) |
+| `endpointJson` | g5 | 783.6 ± 60.0 | 593.7 ± 57.7 | −189.9 (−24.2%) |
+| `endpointJson` | legacy | 7,649.8 ± 483.7 | 5,960.8 ± 401.3 | −1,689.0 (−22.1%) |
+| `endpointWrongEnv` | g5 | 702.0 ± 41.6 | 550.3 ± 39.5 | −151.7 (−21.6%) |
+| `endpointWrongEnv` | legacy | 5,299.6 ± 255.1 | 4,092.9 ± 244.9 | −1,206.7 (−22.8%) |
+
+**What decoding costs now.** `verifierBase64` minus `core` fell from
+689.5 − 498.1 = 191.4 to 545.8 − 513.9 = 31.9 µs (g5) and from
+5,264.3 − 3,796.5 = 1,467.8 to 4,219.1 − 3,743.5 = 475.6 µs (legacy). The
+g5 gap is now in the range of the JDK decoder's own 2.9 µs plus noise. The
+legacy gap is larger than the JDK decoder's 49.3 µs, but it sits inside the
+combined error of the two rows (± 365 and ± 185), so this run cannot say
+whether any of it is real.
+
+**Why the answers cannot change.** The JDK's strict decoder accepts exactly
+the strings made of `[A-Za-z0-9+/]` whose data length is not congruent to 1
+mod 4, followed by either no padding or exactly the canonical `=` run, with
+nothing after it. The empty string is the one such input the contract
+rejects, and `decode` refuses it (and whitespace-only strings) before the
+fast path. Every other string the JDK accepts passes each rule of the
+tolerant parser: there is nothing to strip, one alphabet, only `=` after the
+padding, a length that is not 1 mod 4, and a padding count that is zero or
+correct. The tolerant parser then hands the JDK decoder the same data with
+canonical padding, which decodes to the same bytes. Anything the JDK refuses
+falls through to the tolerant parser unchanged, so every rejection keeps its
+reason and message. `ReceiptBase64FastPathTest` checks this on 20,000 seeded
+inputs plus hand-picked edges, comparing `decode` with the tolerant path
+alone.
+
+The caveats of the baseline apply: one run pair on a shared cloud VM.
