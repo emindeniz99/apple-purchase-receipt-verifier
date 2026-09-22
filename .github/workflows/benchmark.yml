@@ -1,0 +1,35 @@
+name: benchmark
+
+# The Java JMH benchmarks in java-bench/, on demand only. A shared runner is
+# too noisy for a timing gate, so this never runs on push or pull_request:
+# it produces a JSON result to download and compare by hand against the
+# baseline in java-bench/README.md.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  java:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+      - run: mvn -B -ntp -f java/pom.xml -Dmaven.test.skip=true install
+      # java-bench's library.version default is not bumped on release, so
+      # the version being benchmarked is the one this checkout carries.
+      - run: mvn -B -ntp -f java-bench/pom.xml -Dlibrary.version="$(cat version.txt)" package
+      - run: java -jar java-bench/target/benchmarks.jar -rf json -rff jmh-result.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: jmh-result
+          path: jmh-result.json
+          if-no-files-found: error
