@@ -227,12 +227,13 @@ fn check_whole_registry(dir: &Path, fixtures: &BTreeMap<String, Fixture>) -> Res
 /// Every expected integer in `cases.json` survived the parse with all its
 /// digits.
 ///
-/// The file pins a `download_id` of 2^53 + 1 — the first integer an
-/// IEEE-754 double cannot hold — precisely because Apple's real ones run to
-/// eighteen digits. `serde_json` keeps an unsuffixed integer literal as
-/// `i64`/`u64`, so the expectation this suite compares against carries all
-/// seventeen digits; a runner that read the file through a double would
-/// compare against 9007199254740992 instead and let a rounding library pass.
+/// The file pins a `download_id` of 2^63 - 1 — a nineteen-digit, eight-byte
+/// integer an IEEE-754 double rounds to 2^63 — precisely because Apple's
+/// real ones run to eighteen digits. `serde_json` keeps an unsuffixed
+/// integer literal as `i64`/`u64`, so the expectation this suite compares
+/// against carries all nineteen digits; a runner that read the file through
+/// a double would compare against 9223372036854775808 instead and let a
+/// rounding library pass.
 /// That failure mode is invisible in a green run, so it is checked here
 /// rather than assumed, by a property no value that passed through a double
 /// can have: at least one expected integer must come back CHANGED by an

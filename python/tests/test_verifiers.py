@@ -218,7 +218,7 @@ class ReceiptIdsAttributesTest(unittest.TestCase):
     contract is pinned by receipt/ids-are-decoded,
     receipt/ids-absent-when-not-carried, endpoint/ids-echo-apples-keys and
     endpoint/ids-absent-are-omitted in fixtures/cases.json; what's left here
-    is proving the 2^53+1 download id survives as exact digits rather than a
+    is proving the 2^63-1 download id survives as exact digits rather than a
     rounded double, both through the accessor and through the endpoint's raw
     JSON text, and that the four types leave unknownAttributes."""
 
@@ -229,7 +229,7 @@ class ReceiptIdsAttributesTest(unittest.TestCase):
     def test_decodes_the_four_attributes_with_exact_digits(self):
         receipt = self.receipt()
         self.assertEqual(receipt.app_item_id, 1234567890)
-        self.assertEqual(receipt.download_id, 9007199254740993)  # 2**53 + 1
+        self.assertEqual(receipt.download_id, 9223372036854775807)  # 2**63 - 1
         self.assertEqual(receipt.version_external_identifier, 456789012)
         coins = next(
             p for p in receipt.in_app_purchases if p.product_id == "com.example.app.coins100"
@@ -271,16 +271,16 @@ class ReceiptIdsAttributesTest(unittest.TestCase):
             )
         )
         # Bare JSON numbers with exact digits, not the rounded double an
-        # IEEE-754 round trip would produce (9007199254740992).
+        # IEEE-754 round trip would produce (9223372036854775808).
         self.assertIn('"adam_id":1234567890', body)
         self.assertIn('"app_item_id":1234567890', body)
-        self.assertIn('"download_id":9007199254740993', body)
+        self.assertIn('"download_id":9223372036854775807', body)
         self.assertIn('"version_external_identifier":456789012', body)
         self.assertIn('"is_trial_period":"false"', body)
         self.assertIn('"is_trial_period":"true"', body)
         parsed = json.loads(body)
         self.assertIsInstance(parsed["receipt"]["download_id"], int)
-        self.assertEqual(parsed["receipt"]["download_id"], 9007199254740993)
+        self.assertEqual(parsed["receipt"]["download_id"], 9223372036854775807)
 
     def test_endpoint_omits_the_four_keys_when_absent_rather_than_nulling_them(self):
         from apple_purchase_receipt_verifier import VerifyReceiptEndpoint

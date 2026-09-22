@@ -357,12 +357,21 @@ fn the_legacy_ids_are_decoded_with_every_digit() {
     let receipt = receipt_ids_receipt();
     assert_eq!(receipt.app_item_id, Some(1_234_567_890));
     assert_eq!(receipt.version_external_identifier, Some(456_789_012));
-    // 2^53 + 1: the first integer an IEEE-754 double cannot hold, which is
-    // why the fixture carries it. A port that rounds answers …992 here, and
-    // real download ids run to eighteen digits.
-    assert_eq!(receipt.download_id, Some(9_007_199_254_740_993));
-    assert_ne!(receipt.download_id, Some(9_007_199_254_740_992));
-    assert_eq!(receipt.download_id.unwrap().to_string(), "9007199254740993");
+    // 2^63 - 1: a nineteen-digit, eight-byte integer an IEEE-754 double
+    // rounds to 2^63, which is why the fixture carries it. A port that
+    // rounds answers …808 here, and real download ids run to eighteen
+    // digits. 2^63 itself has no `i64` representation — it is one past
+    // `i64::MAX` — so the string form is what a rounded port would get
+    // wrong; the typed field cannot even hold the rounded value.
+    assert_eq!(receipt.download_id, Some(9_223_372_036_854_775_807));
+    assert_eq!(
+        receipt.download_id.unwrap().to_string(),
+        "9223372036854775807"
+    );
+    assert_ne!(
+        receipt.download_id.unwrap().to_string(),
+        "9223372036854775808"
+    );
 }
 
 #[test]

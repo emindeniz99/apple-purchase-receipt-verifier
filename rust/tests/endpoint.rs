@@ -112,17 +112,17 @@ fn the_legacy_ids_cross_the_wire_as_bare_numbers() {
     );
     assert_eq!(
         receipt.get("download_id").unwrap(),
-        &Value::from(9_007_199_254_740_993i64)
+        &Value::from(9_223_372_036_854_775_807i64)
     );
     // The wire text, not the parsed value: a serialiser routing the number
-    // through a double writes 9007199254740992 here, and both spellings
+    // through a double writes 9223372036854775808 here, and both spellings
     // compare equal to nothing else in this test.
     let text = serde_json::to_string(&Value::Object(receipt)).unwrap();
     assert!(
-        text.contains(r#""download_id":9007199254740993"#),
+        text.contains(r#""download_id":9223372036854775807"#),
         "download_id lost digits on the wire: {text}"
     );
-    assert!(!text.contains("9007199254740992"));
+    assert!(!text.contains("9223372036854775808"));
     // Numbers, not the strings Apple uses for the in-app integers.
     assert!(!text.contains(r#""adam_id":""#));
 }

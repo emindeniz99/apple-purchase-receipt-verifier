@@ -132,8 +132,8 @@ var loadCases = sync.OnceValues(func() (*casesFile, error) {
 	// Unknown members would mean the schema moved under us.
 	decoder.DisallowUnknownFields()
 	// Without this, a number decoded into the "fields" map[string]any
-	// (expectation.Fields) becomes a float64, and 9007199254740993
-	// (2^53+1) rounds to 9007199254740992 on the way in — silently, since
+	// (expectation.Fields) becomes a float64, and 9223372036854775807
+	// (2^63-1) rounds to 9223372036854775808 on the way in — silently, since
 	// the same rounding then happens to the actual int64 result when it is
 	// compared as a float64 in equalValue, so a mismatch at that magnitude
 	// would not be caught. json.Number keeps the literal's exact digits.
@@ -830,7 +830,7 @@ func resolvePath(t *testing.T, root any, path string) (any, bool) {
 
 // equalValue compares a normalized value against the JSON literal a case
 // pins. Numbers arrive from cases.json as json.Number (loadCases decodes
-// with UseNumber, so a literal like 9007199254740993 keeps its exact
+// with UseNumber, so a literal like 9223372036854775807 keeps its exact
 // digits instead of rounding through float64) and from the library as
 // int64; the integer path compares exactly, and only a genuinely
 // fractional literal falls back to float64.

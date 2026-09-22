@@ -190,9 +190,9 @@ public class ReceiptTests
         AppReceipt receipt = IdsReceipt();
 
         Assert.Equal(1234567890L, receipt.AppItemId);
-        // 2^53+1: the exact digits are the point. Apple's download_id runs to
+        // 2^63-1: the exact digits are the point. Apple's download_id runs to
         // eighteen of them, past what a double can hold.
-        Assert.Equal(9007199254740993L, receipt.DownloadId);
+        Assert.Equal(9223372036854775807L, receipt.DownloadId);
         Assert.Equal(456789012L, receipt.VersionExternalIdentifier);
         Assert.Equal(0L, ByProduct(receipt, "com.example.app.coins100").IsTrialPeriod);
         Assert.Equal(1L, ByProduct(receipt, "com.example.app.vip").IsTrialPeriod);

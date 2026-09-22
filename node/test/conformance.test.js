@@ -23,15 +23,16 @@ import {
 const fixtureUrl = (path) => fileURLToPath(new URL(`../../fixtures/${path}`, import.meta.url));
 
 // `JSON.parse` reads every number as a double, so the download id the
-// receipt-ids vectors pin — 9007199254740993, the first integer a double
-// cannot hold — would arrive here as 9007199254740992 and the expectation
-// would be a value no port ever produces. Node 20, this package's engines
-// floor, has neither `JSON.rawJSON` nor a reviver that can see the source
-// text, so the lift happens before the parse: every number literal outside
-// a string that is an integer a double cannot hold is rewritten into a
-// tagged string, and the reviver turns it back into a BigInt. Every other
-// literal is handed to `JSON.parse` untouched. `assert.equal` then compares
-// a BigInt against the library's BigInt exactly — and against a number
+// receipt-ids vectors pin — 9223372036854775807, a nineteen-digit, eight-byte
+// integer a double rounds to 9223372036854775808 — would arrive here rounded
+// and the expectation would be a value no port ever produces. Node 20, this
+// package's engines floor, has neither `JSON.rawJSON` nor a reviver that can
+// see the source text, so the lift happens before the parse: every number
+// literal outside a string that is an integer a double cannot hold is
+// rewritten into a tagged string, and the reviver turns it back into a
+// BigInt. Every other literal is handed to `JSON.parse` untouched.
+// `assert.equal` then compares a BigInt against the library's BigInt
+// exactly — and against a number
 // mathematically, so a rounded value cannot compare equal to this one.
 const BIG_INT_TAG = '__bigint__:';
 const JSON_STRING_OR_NUMBER = /"(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g;
@@ -395,8 +396,8 @@ function runCase(kase) {
       // Compared as digits: an id past 2^53 arrives as a BigInt, the vector
       // pins a BigInt or a plain number depending on its size, and the
       // strict `assert.equal` would call 1234567890n and 1234567890
-      // different ids. Rounding still fails — "9007199254740992" is not
-      // "9007199254740993".
+      // different ids. Rounding still fails — "9223372036854775808" is not
+      // "9223372036854775807".
       assert.equal(String(value), String(expected), path);
     } else {
       assert.equal(value, expected, path);

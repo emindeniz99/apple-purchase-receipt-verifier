@@ -226,13 +226,14 @@ const cases = [
   receiptCase('shared receipt-ids fixture', {
     roots: [gen('receipt-ids-root.der')],
     receipt: gen('receipt-ids.der'),
-    // Attributes 1, 15 and 16 arrive exact. The download id is 2^53 + 1,
-    // the first integer a JavaScript number cannot hold, so a build that
-    // carried it as one would answer 9007199254740992 here. 1713 rides on
-    // the purchases, one on each side of the boolean.
+    // Attributes 1, 15 and 16 arrive exact. The download id is 2^63 - 1, a
+    // nineteen-digit, eight-byte integer a JavaScript number rounds to
+    // 2^63, so a build that carried it as one would answer
+    // 9223372036854775808 here. 1713 rides on the purchases, one on each
+    // side of the boolean.
     check: (r) => {
       assert.equal(r.appItemId, 1234567890n);
-      assert.equal(String(r.downloadId), '9007199254740993');
+      assert.equal(String(r.downloadId), '9223372036854775807');
       assert.equal(r.versionExternalIdentifier, 456789012n);
       const coins = r.inAppPurchases.find((p) => p.productId === `${BUNDLE}.coins100`);
       const vip = r.inAppPurchases.find((p) => p.productId === `${BUNDLE}.vip`);

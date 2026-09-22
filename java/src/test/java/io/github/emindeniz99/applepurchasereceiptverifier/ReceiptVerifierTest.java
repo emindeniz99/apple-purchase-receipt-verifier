@@ -160,14 +160,14 @@ class ReceiptVerifierTest {
                 new byte[] {1, 2, 3},
                 Arrays.asList(
                         integerAttribute(1, 1234567890L),
-                        integerAttribute(15, 9007199254740993L),
+                        integerAttribute(15, 9223372036854775807L),
                         integerAttribute(16, 456789012L))));
 
         AppReceipt receipt = verifier(pki, BUNDLE).verify(der);
         assertEquals(Long.valueOf(1234567890L), receipt.appItemId());
-        // 2^53+1: the exact digits are the point. Apple's download_id runs to
+        // 2^63-1: the exact digits are the point. Apple's download_id runs to
         // eighteen of them, past what a double can hold.
-        assertEquals(Long.valueOf(9007199254740993L), receipt.downloadId());
+        assertEquals(Long.valueOf(9223372036854775807L), receipt.downloadId());
         assertEquals(Long.valueOf(456789012L), receipt.versionExternalIdentifier());
         assertEquals(
                 Long.valueOf(0L), byProduct(receipt, "com.example.app.coins100").isTrialPeriod());

@@ -284,10 +284,10 @@ final class VerifyReceiptEndpointTest extends TestCase
     /**
      * Apple echoes attribute 1 under both adam_id and app_item_id, as JSON
      * numbers; 15 (download_id) and 16 (version_external_identifier) are
-     * JSON numbers too. download_id is 2^53+1, the first integer an
-     * IEEE-754 double cannot hold: asserting the literal JSON TEXT (not a
-     * value json_decode hands back) proves the serializer never routed the
-     * id through a float.
+     * JSON numbers too. download_id is 2^63-1, a nineteen-digit, eight-byte
+     * integer an IEEE-754 double rounds to 2^63: asserting the literal
+     * JSON TEXT (not a value json_decode hands back) proves the serializer
+     * never routed the id through a float.
      */
     public function testLegacyReceiptIdsAreWireNumbersWithExactDigits(): void
     {
@@ -298,7 +298,7 @@ final class VerifyReceiptEndpointTest extends TestCase
 
         self::assertStringContainsString('"adam_id":1234567890', $json);
         self::assertStringContainsString('"app_item_id":1234567890', $json);
-        self::assertStringContainsString('"download_id":9007199254740993', $json);
+        self::assertStringContainsString('"download_id":9223372036854775807', $json);
         self::assertStringContainsString('"version_external_identifier":456789012', $json);
         self::assertStringContainsString('"is_trial_period":"false"', $json);
         self::assertStringContainsString('"is_trial_period":"true"', $json);
@@ -308,7 +308,7 @@ final class VerifyReceiptEndpointTest extends TestCase
         $receipt = Shape::asArray($decoded['receipt'], 'receipt');
         self::assertSame(1234567890, $receipt['adam_id']);
         self::assertSame(1234567890, $receipt['app_item_id']);
-        self::assertSame(9007199254740993, $receipt['download_id']);
+        self::assertSame(9223372036854775807, $receipt['download_id']);
         self::assertSame(456789012, $receipt['version_external_identifier']);
         $inApp = Shape::asArray($receipt['in_app'], 'in_app');
         self::assertSame('false', self::inAppEntry($inApp, 'com.example.app.coins100')['is_trial_period']);

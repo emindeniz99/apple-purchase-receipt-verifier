@@ -167,7 +167,7 @@ export class VerifyReceiptEndpoint {
    * of the JSON contract.
    *
    * This is the entry point that emits the four id keys with every digit
-   * intact (`"download_id":9007199254740993`), which no `JSON.stringify` of
+   * intact (`"download_id":9223372036854775807`), which no `JSON.stringify` of
    * the object form can do on Node 20 — see {@link stringifyResponse}.
    */
   verifyReceiptJson(body: string): string {

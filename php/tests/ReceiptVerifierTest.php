@@ -446,10 +446,10 @@ final class ReceiptVerifierTest extends TestCase
      * trial period). None is on Apple's archived Receipt Fields chapter;
      * their meaning was established by comparing a genuine production
      * receipt with Apple's own verifyReceipt answer for it (measured
-     * 2026-09-21). The download id is 2^53+1, the first integer an IEEE-754
-     * double cannot hold: asserting the exact digits, including through a
-     * string cast, proves PHP's 64-bit int carries it rather than rounding
-     * it through a float.
+     * 2026-09-21). The download id is 2^63-1, a nineteen-digit, eight-byte
+     * integer an IEEE-754 double rounds to 2^63: asserting the exact
+     * digits, including through a string cast, proves PHP's 64-bit int
+     * carries it rather than rounding it through a float.
      */
     public function testLegacyReceiptIdsAreDecoded(): void
     {
@@ -457,8 +457,8 @@ final class ReceiptVerifierTest extends TestCase
             ->verify(Fixtures::bytes('receipt-ids'));
 
         self::assertSame(1234567890, $receipt->appItemId);
-        self::assertSame(9007199254740993, $receipt->downloadId);
-        self::assertSame('9007199254740993', (string) $receipt->downloadId);
+        self::assertSame(9223372036854775807, $receipt->downloadId);
+        self::assertSame('9223372036854775807', (string) $receipt->downloadId);
         self::assertSame(456789012, $receipt->versionExternalIdentifier);
 
         $coins = self::purchase($receipt, 'com.example.app.coins100');

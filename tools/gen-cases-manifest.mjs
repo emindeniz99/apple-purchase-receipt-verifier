@@ -25,8 +25,8 @@
  * `s` (string), `n` (number) or `z` (absent or null); `~>` is the separator
  * because an expected field path may itself contain `=`, `.` and `[]`, but
  * never a tilde. An `n` value carries the number's DIGITS rather than a
- * double's rendering of them: cases.json pins a download id of 2^53 + 1,
- * which `JSON.parse` on its own hands on as 9007199254740992.
+ * double's rendering of them: cases.json pins a download id of 2^63 - 1,
+ * which `JSON.parse` on its own hands on as 9223372036854775808.
  *
  *   id                  the case id
  *   op                  verifyTransaction | verifyAppTransaction | verifyRaw
@@ -124,8 +124,8 @@ function safeName(id) {
 /**
  * An integer literal whose digits a JavaScript number cannot hold.
  *
- * cases.json pins a `download_id` of 2^53 + 1 on purpose — Apple's real
- * ones run to eighteen digits — and `JSON.parse` answers 9007199254740992
+ * cases.json pins a `download_id` of 2^63 - 1 on purpose — Apple's real
+ * ones run to eighteen digits — and `JSON.parse` answers 9223372036854775808
  * for it, because that is the nearest double. The manifest would then carry
  * an expectation no correct library can meet, and the harnesses reading it
  * would fail a port for being right. The digits are kept as text instead.
