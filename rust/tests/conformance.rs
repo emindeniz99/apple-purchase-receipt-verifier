@@ -737,7 +737,9 @@ fn run_case(dir: PathBuf, fixtures: BTreeMap<String, Fixture>, case: Case) -> Re
             } else {
                 apple_purchase_receipt_verifier::base64::encode(&input)
             };
-            let response = endpoint.verify_receipt(&VerifyReceiptRequest::new(receipt_data));
+            let response = endpoint
+                .verify_receipt_result(&VerifyReceiptRequest::new(receipt_data))
+                .to_response();
             if !matches!(
                 response.status,
                 status::OK

@@ -4,10 +4,16 @@ use core::fmt;
 
 /// Why a verification failed.
 ///
-/// The vocabulary is **closed** by the cross-port contract: these eleven
-/// reasons are the whole observability surface of the library, and adding a
-/// twelfth requires changing `fixtures/cases.schema.json`, `PLAN.md` and
-/// every port in one change.
+/// The vocabulary is **closed** by the cross-port contract: the eleven
+/// reasons in [`Reason::all`] are the whole observability surface of the
+/// verifiers, and adding a twelfth requires changing
+/// `fixtures/cases.schema.json`, `PLAN.md` and every port in one change.
+///
+/// Two more values, [`Reason::MalformedRequest`] and
+/// [`Reason::InternalError`], exist only as the failure reason of a
+/// `VerifyReceiptResult` from the `verifyReceipt` endpoint. No verifier ever
+/// returns a [`VerificationError`] carrying either, and neither is in
+/// [`Reason::all`].
 ///
 /// The enum is nonetheless `#[non_exhaustive]` so that, if that ever
 /// happens, a Rust caller with a `_ => reject` arm keeps compiling and keeps
@@ -42,6 +48,15 @@ pub enum Reason {
     DeviceHashMismatch,
     /// The payload was signed longer ago than the configured maximum.
     StalePayload,
+    /// The `verifyReceipt` request envelope is unusable: the body is not a
+    /// JSON object, or `receipt-data` is missing, empty or not a string.
+    /// Reported only as a `VerifyReceiptResult` failure reason (status
+    /// 21002); never returned by a verifier.
+    MalformedRequest,
+    /// A panic inside the `verifyReceipt` endpoint, contained and answered
+    /// as status 21009. Reported only as a `VerifyReceiptResult` failure
+    /// reason; never returned by a verifier.
+    InternalError,
 }
 
 impl Reason {
@@ -60,10 +75,14 @@ impl Reason {
             Reason::InvalidReceiptFormat => "INVALID_RECEIPT_FORMAT",
             Reason::DeviceHashMismatch => "DEVICE_HASH_MISMATCH",
             Reason::StalePayload => "STALE_PAYLOAD",
+            Reason::MalformedRequest => "MALFORMED_REQUEST",
+            Reason::InternalError => "INTERNAL_ERROR",
         }
     }
 
-    /// Every reason, in the order the contract lists them.
+    /// Every reason a verifier can return, in the order the contract lists
+    /// them. The two endpoint-only reasons, [`Reason::MalformedRequest`] and
+    /// [`Reason::InternalError`], are not in it.
     #[must_use]
     pub const fn all() -> &'static [Reason] {
         &[
@@ -105,7 +124,8 @@ impl core::str::FromStr for Reason {
     type Err = UnknownReason;
 
     fn from_str(s: &str) -> core::result::Result<Self, Self::Err> {
-        for reason in Reason::all() {
+        let endpoint_only = [Reason::MalformedRequest, Reason::InternalError];
+        for reason in Reason::all().iter().chain(&endpoint_only) {
             if reason.as_str() == s {
                 return Ok(*reason);
             }
