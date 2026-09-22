@@ -90,6 +90,7 @@ pub mod crypto;
 pub mod datetime;
 mod environment;
 mod error;
+mod json_depth;
 mod jws;
 mod receipt;
 mod receipt_payload;
@@ -102,9 +103,10 @@ mod endpoint;
 pub use clock::{Clock, FixedClock, SystemClock};
 pub use environment::Environment;
 pub use error::{ConfigError, CoreError, Reason, UnknownReason, VerificationError};
+pub use json_depth::MAX_JSON_NESTING_DEPTH;
 pub use jws::{
     AppTransactionPayload, Claims, JwsVerifier, JwsVerifierBuilder, TransactionPayload,
-    INTERMEDIATE_OID, LEAF_OID,
+    INTERMEDIATE_OID, LEAF_OID, MAX_JWS_BYTES,
 };
 pub use receipt::{
     verify_receipt_core, AppReceipt, InAppPurchase, ReceiptVerifier, ReceiptVerifierBuilder,
@@ -115,7 +117,7 @@ pub use roots::{apple_jws_roots, apple_receipt_roots, apple_root_der, TrustAncho
 #[cfg(feature = "endpoint")]
 pub use endpoint::{
     status, VerifyReceiptEndpoint, VerifyReceiptEndpointBuilder, VerifyReceiptOutcome,
-    VerifyReceiptRequest, VerifyReceiptResponse, VerifyReceiptResult,
+    VerifyReceiptRequest, VerifyReceiptResponse, VerifyReceiptResult, MAX_REQUEST_BYTES,
 };
 
 /// `serde_json`, re-exported so a consumer cannot end up with a different
