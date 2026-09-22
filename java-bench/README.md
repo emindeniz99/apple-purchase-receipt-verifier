@@ -2,8 +2,7 @@
 
 JMH benchmarks for the Java port. Not published: like `jvm-interop/`, this is
 a standalone Maven project that resolves the library as a Maven coordinate
-from the local repository. It is not a module of `java/pom.xml` and has no
-release-please entry.
+from the local repository. It is not a module of `java/pom.xml`.
 
 ## Build and run
 
@@ -19,8 +18,9 @@ java -jar java-bench/target/benchmarks.jar -rf json -rff jmh-result.json
 
 Run from anywhere inside the repository: the benchmark finds `fixtures/` by
 walking up from the working directory. `library.version` in the pom is only a
-default and is not bumped on release, which is why the build line passes
-`version.txt`. The `benchmark` workflow (`.github/workflows/benchmark.yml`,
+default. release-please bumps it together with `version.txt`, and the build
+line passes `version.txt` anyway so the two can never disagree.
+The `benchmark` workflow (`.github/workflows/benchmark.yml`,
 manual dispatch only) runs the same steps and uploads the JSON.
 
 The code is compiled with `--release 8`, the release the library's public

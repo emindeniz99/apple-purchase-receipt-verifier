@@ -4,7 +4,7 @@
   built the way jvm-interop is: a standalone Maven project that resolves
   the library as a real Maven coordinate from the local repository
   (installed by `mvn install` in java/ first). It is NOT a <module> of
-  java/pom.xml and has no release-please entry.
+  java/pom.xml.
 
   How CI (or anyone) builds and runs this:
 
@@ -12,9 +12,10 @@
       mvn -B -f java-bench/pom.xml -Dlibrary.version="$(cat version.txt)" package
       java -jar java-bench/target/benchmarks.jar
 
-  library.version below is only the default. Nothing bumps it on a
-  release, so the benchmark workflow passes the repository's current
-  version (version.txt) explicitly.
+  library.version below is only the default. release-please bumps it
+  together with version.txt (a generic extra-file, the marker on its line),
+  and the benchmark workflow passes version.txt anyway so the two can never
+  disagree.
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
@@ -34,7 +35,7 @@
          call what a Java 8 consumer can call. They run on any newer JVM. -->
     <maven.compiler.release>8</maven.compiler.release>
 
-    <library.version>0.5.1</library.version>
+    <library.version>0.5.1</library.version> <!-- x-release-please-version -->
     <jmh.version>1.37</jmh.version>
   </properties>
 
