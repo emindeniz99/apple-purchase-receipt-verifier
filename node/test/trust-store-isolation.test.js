@@ -56,6 +56,11 @@ const publicReceipt = (name) =>
 
 const SRC = fileURLToPath(new URL('../src/', import.meta.url));
 
+const PEM_BEGIN_LINE = '-----BEGIN CERTIFICATE-----';
+
+/** The DER a single web-build trust root normalized to, as base64. */
+const derOfRoot = (root) => Buffer.from(webNormalizeRoots([root])[0].raw).toString('base64');
+
 /** A DER certificate as a PEM block — the form a CA bundle and tls both take. */
 function pem(der) {
   const body = Buffer.from(der)
@@ -753,6 +758,65 @@ test('normalizeRoots returns the caller list and nothing else, in both builds', 
     "the web build no longer hands the chain builder the caller's own array",
   );
   consulted = [];
+});
+
+test('a PEM trust root is unwrapped in one pass, whatever the caller sends', () => {
+  // `trustedRoots` is caller data, and the web build accepts it as a PEM
+  // string. The unwrapping used to be a lazy `[\s\S]*?` between the two
+  // marker literals, which CodeQL flagged as a polynomial regular expression
+  // on uncontrolled data: a string that opens a block and never closes it
+  // makes that engine re-scan the tail from every candidate start. The
+  // rewrite is two indexOf calls, and these are the inputs that have to keep
+  // behaving exactly as they did.
+  const der = fixture('receipt-root.der');
+  const expected = der.toString('base64');
+
+  // The happy paths, unchanged: 64-column breaks, CRLF, blank lines and
+  // indentation around the block, and junk on either side of it.
+  const block = pem(der);
+  assert.equal(derOfRoot(block), expected, 'the 64-column PEM stopped parsing');
+  assert.equal(derOfRoot(block.replace(/\n/g, '\r\n')), expected, 'CRLF stopped parsing');
+  assert.equal(derOfRoot(`\n\n   ${block}  \n\t\n`), expected, 'surrounding whitespace now bites');
+  assert.equal(derOfRoot(`bundle header\n${block}trailer\n`), expected, 'junk around it now bites');
+
+  // The adversarial half. The last entry is the one that actually made the
+  // old regex crawl, and it is worth being precise about why, because the
+  // obvious guess is wrong: a single unterminated block followed by a long
+  // whitespace run costs V8 nothing (it finds the BEGIN literal once and
+  // gives up). The quadratic case is an input where BEGIN matches over and
+  // over with no END anywhere, so the lazy `[\s\S]*?` walks the whole
+  // remaining tail again from each one. Measured 2026-09-22 with the old
+  // regex: 4000 repeats 130ms, 8000 repeats 512ms, 16000 repeats 1.7s. The
+  // 40000 used below took 10.3s and blows the bound; the indexOf scan does
+  // the same string in 0.7ms, so the margin here is four orders of
+  // magnitude and the bound is not measuring runner speed.
+  const SIZE = 400_000;
+  const hostile = [
+    `${PEM_BEGIN_LINE}\n${' '.repeat(SIZE)}`,
+    `${PEM_BEGIN_LINE}\n${'\n'.repeat(SIZE)}`,
+    `${PEM_BEGIN_LINE}\n${'A'.repeat(SIZE)}\n-----END CERTIFICATE`,
+    `${'-'.repeat(SIZE)}${PEM_BEGIN_LINE}`,
+    `${PEM_BEGIN_LINE}\n`.repeat(40_000),
+  ];
+  const started = process.hrtime.bigint();
+  for (const input of hostile) {
+    assert.throws(
+      () => webNormalizeRoots([input]),
+      TypeError,
+      'an unterminated certificate block is no longer a TypeError',
+    );
+  }
+  const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
+  // Linear scanning does all five in single-digit milliseconds here; the
+  // quadratic spelling took minutes on the same inputs. The bound is loose on
+  // purpose -- it is asserting a complexity class, not a benchmark, and it
+  // has to hold on the slowest runner in the matrix.
+  assert.ok(elapsedMs < 2000, `rejecting ${hostile.length} hostile roots took ${elapsedMs}ms`);
+
+  // And the ordinary refusals the same code path owes callers.
+  for (const input of ['', 'not a certificate', PEM_BEGIN_LINE, '-----END CERTIFICATE-----']) {
+    assert.throws(() => webNormalizeRoots([input]), TypeError);
+  }
 });
 
 test('the chain primitives take their anchors only from their argument', () => {

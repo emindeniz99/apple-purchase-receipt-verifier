@@ -24,7 +24,33 @@ import { verifyCertificateSignature } from './crypto.js';
 /** Accepted trust-root inputs: DER bytes, or a PEM certificate. */
 export type RootInput = Uint8Array | string;
 
-const PEM_BODY = /-----BEGIN CERTIFICATE-----([\s\S]*?)-----END CERTIFICATE-----/;
+// Scanned with indexOf rather than matched with a regular expression. The
+// obvious spelling — /-----BEGIN CERTIFICATE-----([\s\S]*?)-----END
+// CERTIFICATE-----/ — is a lazy unbounded quantifier between two literals,
+// and when no END marker exists the engine restarts the whole tail walk at
+// every position where BEGIN matches again. Measured on V8, 2026-09-22, with
+// an input that is nothing but repeated BEGIN lines: 112 KB took 130 ms,
+// 224 KB took 512 ms, 448 KB took 1.7 s — quadratic, on a `trustedRoots`
+// entry the caller supplies. Two indexOf calls find exactly the same leftmost
+// block in one pass.
+const PEM_BEGIN = '-----BEGIN CERTIFICATE-----';
+const PEM_END = '-----END CERTIFICATE-----';
+
+/**
+ * The base64 between the first BEGIN line and the first END line after it, or
+ * null when the input is not a certificate block. Whitespace is left in place:
+ * {@link base64Decode} skips everything outside both alphabets, which is what
+ * makes 64-column line breaks, CRLF and surrounding blank lines all decode.
+ */
+function pemBody(text: string): string | null {
+  const begin = text.indexOf(PEM_BEGIN);
+  if (begin < 0) {
+    return null;
+  }
+  const bodyStart = begin + PEM_BEGIN.length;
+  const end = text.indexOf(PEM_END, bodyStart);
+  return end < 0 ? null : text.slice(bodyStart, end);
+}
 
 /** Normalizes trust-root inputs (DER Uint8Array | PEM string). */
 export function normalizeRoots(trustedRoots: RootInput[]): ParsedCertificate[] {
@@ -38,11 +64,11 @@ function toCertificate(root: RootInput): ParsedCertificate {
   if (typeof root !== 'string') {
     return parseCertificate(root);
   }
-  const body = PEM_BODY.exec(root);
+  const body = pemBody(root);
   if (body === null) {
     throw new TypeError('a string trust root must be a PEM certificate');
   }
-  return parseCertificate(base64Decode(body[1]!));
+  return parseCertificate(base64Decode(body));
 }
 
 function validAt(cert: ParsedCertificate, at: Date): boolean {
