@@ -141,38 +141,122 @@ different app.
 
 ## The `verifyReceipt`-compatible endpoint
 
+`VerifyReceiptEndpoint` answers Apple's deprecated `verifyReceipt` request
+with the same response body, verified offline. One instance emulates one
+environment, `.production` or `.sandbox`.
+
 ```swift
 let endpoint = try VerifyReceiptEndpoint(trustedRoots: appleReceiptRoots(), environment: .production)
 
-let response = await endpoint.verifyReceipt(requestBody)      // [String: Any] in, out
-let json = await endpoint.verifyReceiptJSON(rawRequestBody)   // String in, out
+// The request body as a dictionary, or the raw JSON text.
+let result = await endpoint.verifyReceiptResult(requestBody)
+let response = result.response()  // Apple's body as [String: Any]
+let json = result.json()          // Apple's body as JSON
+
+// The same as verifyReceiptResult(rawRequestBody).json().
+let body = await endpoint.verifyReceiptJSON(rawRequestBody)
+// receipt-data alone, with no request envelope.
+let bare = await endpoint.verifyReceiptData(receiptBase64)
 ```
 
-Neither method throws: the Apple status code is a field of the returned
-dictionary, for every input, including one that is not JSON —
-`verifyReceiptJSON` answers `{"status":21002}` for that case. The statuses it
-can produce are `VerifyReceiptEndpoint.statusOK` (`0`), `.statusMalformed`
-(`21002`), `.statusNotAuthenticated` (`21003`),
-`.statusSandboxReceiptOnProduction` (`21007`),
-`.statusProductionReceiptOnSandbox` (`21008`) and `.statusInternal`
-(`21009`) — and no others, because the rest describe conditions that only
-exist on Apple's servers. Local 21007/21008 routing fails closed: only
-receipt types `Production` and `ProductionVPP` count as production.
+No endpoint method throws on a request: the Apple status is part of the
+result, for every input, including a body that is not JSON
+(`{"status":21002}`). The statuses it can produce are
+`VerifyReceiptEndpoint.statusOK` (`0`), `.statusMalformed` (`21002`),
+`.statusNotAuthenticated` (`21003`), `.statusSandboxReceiptOnProduction`
+(`21007`), `.statusProductionReceiptOnSandbox` (`21008`) and
+`.statusInternal` (`21009`), and no others, because the rest describe
+conditions that only exist on Apple's servers. Local 21007/21008 routing
+fails closed: only receipt types `Production` and `ProductionVPP` count as
+production.
 
-Like Apple's endpoint, this does **not** check the bundle id — compare
-`receipt["bundle_id"]` yourself. `password` and `exclude-old-transactions`
-are accepted for wire compatibility and never read.
-`verifyReceiptJSON`'s output is deterministic: Swift dictionaries carry no
-insertion order, so keys are serialized `.sortedKeys` rather than in
-declaration order. See [COMPARISON.md](../COMPARISON.md) for the
-field-by-field fidelity account.
+A `VerifyReceiptResult` is one verification. It is an immutable `Sendable`
+struct, and only the endpoint creates one.
+
+- `outcome` is `.verified(AppReceipt)` or
+  `.failed(reason: VerificationError.Reason, cause: (any Error)?)`.
+- `receipt` is the verified `AppReceipt` whenever the receipt bytes
+  verified, 21007 and 21008 included, and `failureReason` says why there is
+  none. Exactly one of them is non-nil.
+- `isVerified` is true exactly when `receipt` is non-nil. That includes
+  21007 and 21008, so it is not the same check as `status == 0`:
+  `status == 0` asks whether this endpoint's environment accepts the
+  receipt, `isVerified` asks whether the receipt verified at all.
+- `failureCause` is the error behind an `.internalError`, for logging.
+- `status` is the answer for the endpoint's own environment.
+- `requestDate` is the instant rendered as `request_date`.
+
+The response is rendered when `response()` or `json()` is called, not
+before.
+
+```swift
+switch result.outcome {
+case .verified(let receipt):
+    guard receipt.bundleId == "com.example.app" else { return reject() }
+    grant(receipt.inAppPurchases)
+case .failed(let reason, let cause):
+    log(reason.rawValue, cause)
+}
+```
+
+**Retrying in the other environment costs no second verification.**
+`response(for:)` and `json(for:)` render what an endpoint of that
+environment would answer, recomputing the status from the receipt's own
+type:
+
+| receipt | on `.production` | on `.sandbox` |
+|---|---|---|
+| `Production`, `ProductionVPP` | 0 | 21008 |
+| any other type, or none | 21007 | 0 |
+| failed verification | its own status | its own status |
+
+```swift
+let result = await production.verifyReceiptResult(requestBody)
+if result.status == VerifyReceiptEndpoint.statusSandboxReceiptOnProduction {
+    let body = try result.json(for: .sandbox)
+}
+```
+
+A sandbox receipt never renders as a production 0, whichever endpoint
+verified it. `.xcode` and `.localTesting` throw
+`VerificationError(.wrongEnvironment, ...)`, as the initializer does.
+
+| `failureReason` | status | when |
+|---|---|---|
+| `.malformedRequest` | 21002 | the body is not a JSON object, or `receipt-data` is missing, empty or not a string |
+| `.invalidReceiptFormat` | 21002 | `receipt-data` is not base64 or does not decode to a receipt |
+| `.invalidChain`, `.invalidSignature`, other certificate reasons | 21003 | the receipt did not authenticate |
+| `.internalError` | 21009 | an unexpected error; `failureCause` holds it |
+
+`.malformedRequest` and `.internalError` only ever appear on a result. No
+`VerificationError` is thrown with either.
+
+**`request_date`.** `verifyReceiptResult` and `verifyReceiptData` take an
+optional `now: Date?` that becomes `request_date` in place of the
+endpoint's clock. Without it the clock is read once, when the call is made.
+`now` reaches `request_date` and nothing else: certificate validity never
+sees it.
+
+Like Apple's endpoint, this does **not** check the bundle id: compare
+`result.receipt?.bundleId` yourself. `password` and
+`exclude-old-transactions` are accepted for wire compatibility and never
+read. `json()` and `verifyReceiptJSON` are deterministic: Swift
+dictionaries carry no insertion order, so keys are serialized
+`.sortedKeys` rather than in declaration order. See
+[COMPARISON.md](../COMPARISON.md) for the field-by-field fidelity account.
 
 `init(trustedRoots:environment:clock:)` only accepts `.production` or
-`.sandbox` for `environment` — `.xcode` and `.localTesting` throw
-`VerificationError(.wrongEnvironment, …)` at construction, since Apple's
-endpoint has no other environment to emulate. A deprecated
-`init(trustedRoots:production:clock:)` boolean overload exists for callers
-written against it.
+`.sandbox` for `environment`. `.xcode` and `.localTesting` throw
+`VerificationError(.wrongEnvironment, ...)` at construction, since Apple's
+endpoint has no other environment to emulate.
+
+The endpoint applies no size cap of its own to a request body or to
+`receipt-data`.
+
+Migrating from 0.5: `endpoint.verifyReceipt(body)` is removed; use
+`await endpoint.verifyReceiptResult(body).response()`. The deprecated
+`init(trustedRoots:production:clock:)` is removed; pass
+`environment: .production` for `true` and `.sandbox` for `false`.
 
 ## The error vocabulary
 
@@ -217,13 +301,15 @@ do {
 | `.invalidReceiptFormat` | `INVALID_RECEIPT_FORMAT` | the CMS blob does not parse, has no signer info, or an attribute is malformed |
 | `.deviceHashMismatch` | `DEVICE_HASH_MISMATCH` | the device hash does not match attribute 5, or the receipt lacks the attributes the check needs |
 | `.stalePayload` | `STALE_PAYLOAD` | the payload was signed longer ago than `maxSignedAgeMillis` |
+| `.malformedRequest` | `MALFORMED_REQUEST` | never thrown: reported only on a `VerifyReceiptResult`, for an unusable request envelope |
+| `.internalError` | `INTERNAL_ERROR` | never thrown: reported only on a `VerifyReceiptResult`, for an unexpected error (status 21009) |
 
 The vocabulary is **closed** by the cross-port contract, and it doubles as
 the misconfiguration channel: an empty `trustedRoots`, an empty `bundleId`,
 or an empty `acceptedEnvironments` set throws `VerificationError` from
 `init` too, not a separate error type — `Reason` cases like
 `.invalidCertificate` and `.invalidJwsFormat` are reused there rather than
-introducing a twelfth vocabulary just for construction.
+introducing a new reason just for construction.
 
 ## Integrating: from verified payload to entitlement
 
@@ -351,7 +437,8 @@ be stale by, so the rule never fires for it.
 read in exactly two places:
 
 1. the `.stalePayload` comparison in `JwsVerifier`;
-2. the `request_date` / `_ms` / `_pst` triple in `VerifyReceiptEndpoint`.
+2. the `request_date` / `_ms` / `_pst` triple in `VerifyReceiptEndpoint`,
+   once per call and only when the call passes no `now`.
 
 **Certificate validity is never judged by the injected clock.** It is judged
 at the payload's own `signedDate` / `receiptCreationDate`, or at the

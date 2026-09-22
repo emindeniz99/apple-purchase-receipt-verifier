@@ -218,7 +218,7 @@ final class VerifyReceiptEndpointTests: XCTestCase {
     }
 
     func testAnswersLikeVerifyReceiptForValidSandboxReceipt() async throws {
-        let response = await (try endpoint(.sandbox)).verifyReceipt(try request())
+        let response = await (try endpoint(.sandbox)).verifyReceiptResult(try request()).response()
         XCTAssertEqual(response["status"] as? Int, 0)
         let receipt = response["receipt"] as! [String: Any]
         let inApp = receipt["in_app"] as! [[String: Any]]
@@ -245,14 +245,14 @@ final class VerifyReceiptEndpointTests: XCTestCase {
             trustedRoots: [try fixture("generated", "receipt-root.der")],
             environment: .sandbox,
             clock: { now })
-        let response = await pinned.verifyReceipt(try request())
+        let response = await pinned.verifyReceiptResult(try request()).response()
         let receipt = response["receipt"] as! [String: Any]
         XCTAssertEqual(receipt["request_date_ms"] as? String, "1735689600000")
         XCTAssertEqual(receipt["request_date"] as? String, "2025-01-01 00:00:00 Etc/GMT")
 
         // Same request through the default (system-clock) endpoint: identical
         // status and identical verified fields, only request_date differs.
-        let live = await (try endpoint(.sandbox)).verifyReceipt(try request())
+        let live = await (try endpoint(.sandbox)).verifyReceiptResult(try request()).response()
         XCTAssertEqual(response["status"] as? Int, live["status"] as? Int)
         let liveReceipt = live["receipt"] as! [String: Any]
         XCTAssertNotEqual(
@@ -275,11 +275,11 @@ final class VerifyReceiptEndpointTests: XCTestCase {
 
     func testReportsMalformedRequestsAs21002() async throws {
         let endpoint = try endpoint(.sandbox)
-        let empty = await endpoint.verifyReceipt([:])
+        let empty = await endpoint.verifyReceiptResult([:]).response()
         XCTAssertEqual(empty["status"] as? Int, 21002)
-        let missing = await endpoint.verifyReceipt(nil)
+        let missing = await endpoint.verifyReceiptResult(nil).response()
         XCTAssertEqual(missing["status"] as? Int, 21002)
-        let garbage = await endpoint.verifyReceipt(["receipt-data": "AQIDBA=="])
+        let garbage = await endpoint.verifyReceiptResult(["receipt-data": "AQIDBA=="]).response()
         XCTAssertEqual(garbage["status"] as? Int, 21002)
     }
 
@@ -362,7 +362,7 @@ final class VerifyReceiptEndpointTests: XCTestCase {
 
     func testVerifyReceiptJSONMatchesTheDictionaryApi() async throws {
         let endpoint = try endpoint(.sandbox)
-        let viaDictionary = await endpoint.verifyReceipt(try request())
+        let viaDictionary = await endpoint.verifyReceiptResult(try request()).response()
         let body = await endpoint.verifyReceiptJSON(try requestJSON())
         let viaJSON = try XCTUnwrap(
             try JSONSerialization.jsonObject(
@@ -658,7 +658,7 @@ final class ParityTests: XCTestCase {
         let v = try ReceiptVerifier(trustedRoots: [try fx("receipt-root.der")], bundleId: Self.bundle)
         await expect(.invalidReceiptFormat) { _ = try await v.verify(receipt: malformed) }
         let ep = try VerifyReceiptEndpoint(trustedRoots: [try fx("receipt-root.der")], environment: .sandbox)
-        let resp = await ep.verifyReceipt(["receipt-data": malformed.base64EncodedString()])
+        let resp = await ep.verifyReceiptResult(["receipt-data": malformed.base64EncodedString()]).response()
         XCTAssertEqual(resp["status"] as? Int, 21002)
     }
 }

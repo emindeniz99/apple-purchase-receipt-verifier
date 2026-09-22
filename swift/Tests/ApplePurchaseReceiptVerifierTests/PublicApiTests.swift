@@ -60,12 +60,12 @@ final class PublicApiTests: XCTestCase {
         let request = ["receipt-data": try fixture("receipt.der").base64EncodedString()]
 
         let sandbox = try VerifyReceiptEndpoint(trustedRoots: roots, environment: .sandbox)
-        let onSandbox = await sandbox.verifyReceipt(request)
+        let onSandbox = await sandbox.verifyReceiptResult(request).response()
         XCTAssertEqual(0, onSandbox["status"] as? Int)
         XCTAssertEqual("Sandbox", onSandbox["environment"] as? String)
 
         let production = try VerifyReceiptEndpoint(trustedRoots: roots, environment: .production)
-        let onProduction = await production.verifyReceipt(request)
+        let onProduction = await production.verifyReceiptResult(request).response()
         XCTAssertEqual(21007, onProduction["status"] as? Int)
     }
 
@@ -84,34 +84,26 @@ final class PublicApiTests: XCTestCase {
         }
     }
 
-    /// The boolean spelling still works and still means the same thing — the
-    /// typed initializer was added beside it, not in place of it. Marked
-    /// deprecated so calling the deprecated overload raises no warning here.
-    @available(*, deprecated)
-    func testDeprecatedBooleanEnvironmentStillDelegates() async throws {
+    /// The result type is reachable from outside the module the way a
+    /// consumer uses it: switch over the outcome, read the convenience
+    /// properties, render for either environment. It has no public
+    /// initializer, so a caller cannot build one carrying status 0; that is
+    /// pinned by this file compiling without ever constructing one.
+    func testVerifyReceiptResultIsPublic() async throws {
         let roots = [try fixture("receipt-root.der")]
-        let request = ["receipt-data": try fixture("receipt.der").base64EncodedString()]
-        let now = Date(timeIntervalSince1970: 1_735_689_600)
-        for production in [true, false] {
-            let old = try VerifyReceiptEndpoint(
-                trustedRoots: roots, production: production,
-                clock: { now })
-            let new = try VerifyReceiptEndpoint(
-                trustedRoots: roots, environment: production ? .production : .sandbox,
-                clock: { now })
-            let fromOld = await old.verifyReceipt(request)
-            let fromNew = await new.verifyReceipt(request)
-            XCTAssertEqual(
-                try json(fromOld), try json(fromNew),
-                "production: \(production)")
-        }
-    }
+        let production = try VerifyReceiptEndpoint(trustedRoots: roots, environment: .production)
+        let result = await production.verifyReceiptData(try fixture("receipt.der").base64EncodedString())
 
-    private func json(_ value: [String: Any]) throws -> String {
-        String(
-            decoding: try JSONSerialization.data(
-                withJSONObject: value,
-                options: [.sortedKeys]),
-            as: UTF8.self)
+        switch result.outcome {
+        case .verified(let receipt):
+            XCTAssertEqual("com.example.app", receipt.bundleId)
+        case .failed(let reason, let cause):
+            XCTFail("expected a verified receipt, got \(reason.rawValue) \(String(describing: cause))")
+        }
+        XCTAssertTrue(result.isVerified)
+        XCTAssertEqual(21007, result.status)
+        XCTAssertNil(result.failureReason)
+        XCTAssertEqual("{\"status\":21007}", result.json())
+        XCTAssertEqual(0, try result.response(for: .sandbox)["status"] as? Int)
     }
 }
