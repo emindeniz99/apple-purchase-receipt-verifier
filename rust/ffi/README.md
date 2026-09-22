@@ -50,7 +50,7 @@ Building from source is the only supported path today; see `ROADMAP.md`.
 
 ## The surface
 
-Twenty-one symbols. Three opaque handles, seven verification calls, one result
+Twenty-one symbols. Three opaque handles, eight verification calls, one result
 struct, one free function.
 
 ```c
