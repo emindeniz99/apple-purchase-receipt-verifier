@@ -98,67 +98,29 @@ pub fn decode_lenient_bytes(text: &[u8]) -> Vec<u8> {
 #[must_use]
 pub fn decode_receipt_base64(text: &str) -> Option<Vec<u8>> {
     // Fast path for the common case, a canonical standard-alphabet string.
-    // Every string `decode_standard_strict` accepts is non-empty, has only
-    // `A-Z a-z 0-9 + /` before an optional `=` run at the very end, a data
-    // length not `4n + 1`, and either no padding or the exact count. Each
-    // such string passes every rule of the tolerant path (nothing to strip,
-    // one alphabet, nothing after the padding, same length and padding
-    // checks), which then decodes the same data to the same bytes. Anything
-    // the strict decoder refuses falls through, so the answer for every
-    // other input is unchanged. The differential test below holds this.
-    decode_standard_strict(text.as_bytes()).or_else(|| decode_receipt_base64_tolerant(text))
+    // Every string `decode_canonical_standard` accepts is non-empty, has
+    // only `A-Z a-z 0-9 + /` before the exact `=` run RFC 4648 requires for
+    // its length, and a data length not `4n + 1`. Each such string passes
+    // every rule of the tolerant path (nothing to strip, one alphabet,
+    // nothing after the padding, same length and padding checks), which
+    // then decodes the same data to the same bytes. Anything the fast path
+    // refuses falls through, so the answer for every other input is
+    // unchanged. The differential test below holds this.
+    decode_canonical_standard(text).or_else(|| decode_receipt_base64_tolerant(text))
 }
 
-fn standard_value(byte: u8) -> Option<u32> {
-    match byte {
-        b'A'..=b'Z' => Some(u32::from(byte - b'A')),
-        b'a'..=b'z' => Some(u32::from(byte - b'a') + 26),
-        b'0'..=b'9' => Some(u32::from(byte - b'0') + 52),
-        b'+' => Some(62),
-        b'/' => Some(63),
-        _ => None,
-    }
-}
-
-/// Standard-alphabet base64 in its canonical shape only, or `None`: no
-/// whitespace, no base64url characters, a data length other than `4n + 1`,
-/// and either no padding or exactly the padding RFC 4648 requires. The
-/// unused low bits of the last character are not checked, matching the
-/// tolerant path.
-fn decode_standard_strict(text: &[u8]) -> Option<Vec<u8>> {
-    let data = text
-        .strip_suffix(b"==")
-        .or_else(|| text.strip_suffix(b"="))
-        .unwrap_or(text);
-    if data.is_empty() || data.len() % 4 == 1 {
+/// Canonical standard-alphabet base64 only, or `None`, decoded by the
+/// `base64` crate's `STANDARD` engine: canonical padding required, non-zero
+/// trailing bits refused, no whitespace, no base64url characters. That
+/// engine decodes `""` to an empty vector, which `receipt-data` must never
+/// be, so the empty string is refused here first.
+fn decode_canonical_standard(text: &str) -> Option<Vec<u8>> {
+    use ::base64::engine::general_purpose::STANDARD;
+    use ::base64::Engine as _;
+    if text.is_empty() {
         return None;
     }
-    let pad = text.len() - data.len();
-    if pad != 0 && pad != (4 - data.len() % 4) % 4 {
-        return None;
-    }
-    let mut out = Vec::with_capacity(data.len() / 4 * 3 + 2);
-    let mut groups = data.chunks_exact(4);
-    for group in &mut groups {
-        let mut bits: u32 = 0;
-        for byte in group {
-            bits = (bits << 6) | standard_value(*byte)?;
-        }
-        let [_, first, second, third] = bits.to_be_bytes();
-        out.extend_from_slice(&[first, second, third]);
-    }
-    let tail = groups.remainder();
-    if !tail.is_empty() {
-        // Two or three characters, left-aligned in 24 bits: two carry one
-        // byte, three carry two.
-        let mut bits: u32 = 0;
-        for byte in tail {
-            bits = (bits << 6) | standard_value(*byte)?;
-        }
-        bits <<= 6 * (4 - tail.len());
-        out.extend_from_slice(bits.to_be_bytes().get(1..tail.len())?);
-    }
-    Some(out)
+    STANDARD.decode(text).ok()
 }
 
 /// The full `receipt-data` decoder described on [`decode_receipt_base64`],
@@ -317,7 +279,7 @@ mod receipt_base64_tests {
 #[cfg(test)]
 #[allow(clippy::indexing_slicing, clippy::unwrap_used, clippy::panic)]
 mod receipt_base64_fast_path_tests {
-    use super::{decode_receipt_base64, decode_receipt_base64_tolerant, decode_standard_strict};
+    use super::{decode_canonical_standard, decode_receipt_base64, decode_receipt_base64_tolerant};
     use super::{encode, ALPHABET};
 
     /// Which way one input went, so the test can prove every branch ran.
@@ -331,17 +293,30 @@ mod receipt_base64_fast_path_tests {
     /// The fast path is only allowed to answer early, never differently:
     /// for every input the public decoder must return exactly what the
     /// tolerant path alone returns, bytes on success and `None` on refusal.
-    /// A strict decoder that accepted one string the tolerant path refuses
-    /// (whitespace, mixed alphabets, over-padding) or decoded it to other
-    /// bytes would let the same `receipt-data` verify differently depending
-    /// on which path saw it.
+    /// A fast path that accepted one string the tolerant path refuses
+    /// (whitespace, mixed alphabets, under- or over-padding) or decoded it
+    /// to other bytes would let the same `receipt-data` verify differently
+    /// depending on which path saw it. The two sides are independent
+    /// implementations — the `base64` crate against this module's own
+    /// decoder — so agreement is evidence about both.
+    ///
+    /// The fast path is also held to its own contract, canonical input
+    /// only: whatever it accepts must be exactly what [`encode`] produces
+    /// for the decoded bytes. That is what keeps a looser engine (padding
+    /// optional, non-zero trailing bits allowed) from quietly taking over
+    /// inputs that Apple's tolerant rule is meant to judge.
     fn check(text: &str, branches: &mut Branches) {
         let tolerant = decode_receipt_base64_tolerant(text);
         let public = decode_receipt_base64(text);
         assert_eq!(public, tolerant, "input {text:?}");
-        match (decode_standard_strict(text.as_bytes()), tolerant) {
+        match (decode_canonical_standard(text), tolerant) {
             (Some(fast), Some(slow)) => {
                 assert_eq!(fast, slow, "input {text:?}");
+                assert_eq!(
+                    encode(&fast),
+                    text,
+                    "the fast path accepted a non-canonical spelling"
+                );
                 branches.fast += 1;
             }
             (Some(_), None) => {

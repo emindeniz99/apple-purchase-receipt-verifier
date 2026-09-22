@@ -40,9 +40,11 @@ Synchronous, `#![forbid(unsafe_code)]`, Rust 1.85 or newer.
 - **Rust 1.85.0**, declared as `rust-version` and proven by CI: the whole
   suite, conformance included, runs on a real 1.85.0 toolchain against
   `Cargo.lock`, which is committed and resolved for that floor. Edition 2021.
-- **Eight direct dependencies**, all of them primitives: `rsa`, `p256`,
-  `p384`, `sha1`, `sha2`, `digest` and `subtle` for the arithmetic, and
-  `serde_json` for the JWS payloads, which are JSON. Every byte of
+- **Nine direct dependencies**, all of them primitives: `rsa`, `p256`,
+  `p384`, `sha1`, `sha2`, `digest` and `subtle` for the arithmetic,
+  `serde_json` for the JWS payloads, which are JSON, and `base64` for the
+  fast path over canonical `receipt-data` (anything it refuses falls through
+  to this crate's own decoder for Apple's tolerant rule). Every byte of
   attacker-supplied ASN.1 — certificates, CMS,
   receipt payloads, keys, signatures — is parsed by this crate's own bounded
   reader, so no third-party parser decides what a key or a signature is.

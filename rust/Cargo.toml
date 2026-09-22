@@ -23,11 +23,13 @@ path = "src/lib.rs"
 default = ["endpoint"]
 endpoint = []
 
-# Seven crates, all of them primitives. Every byte of attacker-supplied
+# Nine crates, all of them primitives. Every byte of attacker-supplied
 # ASN.1 — certificates, CMS, receipt payloads, keys, signatures — is parsed
 # by this crate's own bounded reader, so no third-party parser decides what a
 # key or a signature is. What is delegated is arithmetic: modular
-# exponentiation, two curves, three digests.
+# exponentiation, two curves, three digests, and the canonical-base64 fast
+# path for `receipt-data` (anything `base64` refuses falls through to this
+# crate's own tolerant decoder; see `src/base64.rs`).
 #
 # `deny.toml` bans, as a build-breaking rule, every crate that could bring a
 # system trust store or a network client into the tree.
@@ -40,6 +42,7 @@ sha2 = { version = "0.10.9", default-features = false, features = ["oid"] }
 digest = "0.10.7"
 subtle = "2.6"
 serde_json = "1"
+base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
 libtest-mimic = "0.8.2"
