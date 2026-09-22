@@ -49,6 +49,23 @@ namespace ApplePurchaseReceiptVerifier.Receipt
         /// </summary>
         internal const int MaximumEmbeddedCertificates = 10;
 
+        /// <summary>
+        /// The largest receipt this library will look at: 2 MiB (2,097,152),
+        /// counted in characters for the base64 string and in bytes for the
+        /// DER. A larger one fails with
+        /// <see cref="VerificationReason.InvalidReceiptFormat"/> before it is
+        /// decoded or parsed.
+        /// </summary>
+        /// <remarks>
+        /// Base64 decoding allocates about three quarters of the input again,
+        /// the CMS parse allocates in proportion to the DER, and none of that
+        /// is behind a signature check. The number is the Java, PHP and Python
+        /// ports'. It clears the normative floor in fixtures/cases.json, a
+        /// receipt of up to 1 MiB of DER (about 1.38 MB of base64); the
+        /// largest genuine receipt in the corpus is 79 KB.
+        /// </remarks>
+        public const int MaxReceiptBytes = 2097152;
+
         private readonly List<X509Certificate2> _anchors;
         private readonly string _bundleId;
         private bool _disposed;
@@ -205,6 +222,16 @@ namespace ApplePurchaseReceiptVerifier.Receipt
             {
                 throw new VerificationException(
                     VerificationReason.InvalidReceiptFormat, "receipt is null");
+            }
+
+            // Before either decoder, both of which allocate in proportion to
+            // the string.
+            if (base64Receipt.Length > MaxReceiptBytes)
+            {
+                throw new VerificationException(
+                    VerificationReason.InvalidReceiptFormat,
+                    "receipt exceeds the maximum accepted size of "
+                    + MaxReceiptBytes.ToString(CultureInfo.InvariantCulture) + " characters");
             }
 
             return DecodeBase64Fast(base64Receipt) ?? DecodeBase64Tolerant(base64Receipt);
@@ -378,6 +405,13 @@ namespace ApplePurchaseReceiptVerifier.Receipt
             if (receiptDer is null)
             {
                 throw Malformed("receipt is null");
+            }
+
+            if (receiptDer.Length > MaxReceiptBytes)
+            {
+                throw Malformed(
+                    "receipt exceeds the maximum accepted size of "
+                    + MaxReceiptBytes.ToString(CultureInfo.InvariantCulture) + " bytes");
             }
 
             // One structural pass first: it rejects trailing bytes and counts

@@ -37,6 +37,22 @@ namespace ApplePurchaseReceiptVerifier.Jws
         /// <inheritdoc cref="MinUnixMilliseconds"/>
         private const double MaxUnixMilliseconds = 253402300799999d;
 
+        /// <summary>
+        /// The longest compact JWS this library will look at: 256 KiB
+        /// (262,144 characters). A longer one fails with
+        /// <see cref="VerificationReason.InvalidJwsFormat"/> before it is split
+        /// or decoded.
+        /// </summary>
+        /// <remarks>
+        /// Splitting, base64url decoding and JSON parsing all allocate in
+        /// proportion to the input, before the signature is checked. The number
+        /// is the Java and PHP ports'. Every JWS in the shared corpus, Apple's
+        /// own mock notifications included, is under 2.5 KB. A compact JWS is
+        /// base64url and dots, so characters and bytes are the same count for
+        /// any input that could verify.
+        /// </remarks>
+        public const int MaxJwsBytes = 262144;
+
         private readonly List<X509Certificate2> _anchors;
         private readonly string _bundleId;
         private readonly HashSet<AppleEnvironment> _acceptedEnvironments;
@@ -214,6 +230,15 @@ namespace ApplePurchaseReceiptVerifier.Jws
             if (jws is null)
             {
                 throw Format("jws is null");
+            }
+
+            // Before the split, so nothing allocates in proportion to an input
+            // this verifier has already decided not to look at.
+            if (jws.Length > MaxJwsBytes)
+            {
+                throw Format(
+                    "jws exceeds the maximum accepted size of "
+                    + MaxJwsBytes.ToString(CultureInfo.InvariantCulture) + " characters");
             }
 
             string[] parts = jws.Split('.');

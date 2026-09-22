@@ -32,7 +32,16 @@ namespace ApplePurchaseReceiptVerifier.Internal
     /// </remarks>
     internal static class Json
     {
-        internal const int MaxDepth = 32;
+        /// <summary>
+        /// How many arrays and objects may be open at once. 64 is the Java
+        /// port's number; a verifyReceipt body and Apple's JWS segments are
+        /// flat objects. The reader recurses two frames per level (a value,
+        /// then its container), so the bound also caps its stack at about 130
+        /// small frames. A document at the bound parsed on a 48 KiB thread on
+        /// .NET 8 x64 (and overflowed at 40 KiB), far inside the 256 KiB and
+        /// larger stacks hosts hand out; a test pins it on a 256 KiB thread.
+        /// </summary>
+        internal const int MaxDepth = 64;
 
         private const int DefaultMaxLength = 16 * 1024 * 1024;
 
@@ -213,19 +222,23 @@ namespace ApplePurchaseReceiptVerifier.Internal
                 }
             }
 
+            /// <param name="depth">How many arrays and objects enclose this value.</param>
             internal object? ReadValue(int depth)
             {
-                if (depth > MaxDepth)
-                {
-                    throw new JsonException("document nests deeper than the maximum depth");
-                }
-
                 if (AtEnd)
                 {
                     throw new JsonException("unexpected end of input");
                 }
 
-                switch (_text[_index])
+                char first = _text[_index];
+                if ((first == '{' || first == '[') && depth >= MaxDepth)
+                {
+                    // Checked before the container is entered, so the
+                    // recursion never goes deeper than the bound.
+                    throw new JsonException("document nests deeper than the maximum depth");
+                }
+
+                switch (first)
                 {
                     case '{': return ReadObject(depth);
                     case '[': return ReadArray(depth);

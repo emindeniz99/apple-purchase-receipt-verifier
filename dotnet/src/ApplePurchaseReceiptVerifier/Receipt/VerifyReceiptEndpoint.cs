@@ -42,6 +42,22 @@ namespace ApplePurchaseReceiptVerifier.Receipt
         /// <summary>An internal error.</summary>
         public const int StatusInternal = 21009;
 
+        /// <summary>
+        /// The longest raw request body <see cref="VerifyReceiptResult(string, DateTimeOffset?)"/>
+        /// will parse: 1 MiB (1,048,576), counted in characters. A longer one
+        /// fails with <see cref="VerificationReason.MalformedRequest"/>, status
+        /// 21002, before it is parsed.
+        /// </summary>
+        /// <remarks>
+        /// JSON parsing allocates a multiple of the body, and that happens
+        /// before any verification. The number is the Java, PHP and Python
+        /// ports'. It is deliberately below
+        /// <see cref="ReceiptVerifier.MaxReceiptBytes"/>: the JSON entry point
+        /// has an amplification the dictionary entry point does not. The
+        /// largest genuine receipt in the corpus is 106 KB of base64.
+        /// </remarks>
+        public const int MaxRequestBytes = 1048576;
+
         private readonly List<X509Certificate2> _anchors;
         private readonly AppleEnvironment _environment;
         private readonly IClock _clock;
@@ -142,8 +158,9 @@ namespace ApplePurchaseReceiptVerifier.Receipt
         /// </param>
         /// <remarks>
         /// A body that is not a JSON object (unparseable, <c>null</c>, an array,
-        /// a scalar) fails with <see cref="VerificationReason.MalformedRequest"/>,
-        /// status 21002. Apple has no status code for "that wasn't JSON"; 21002
+        /// a scalar), is longer than <see cref="MaxRequestBytes"/> characters or
+        /// nests more than 64 arrays and objects deep fails with
+        /// <see cref="VerificationReason.MalformedRequest"/>, status 21002. Apple has no status code for "that wasn't JSON"; 21002
         /// is the closest, and it is what a JSON object without usable
         /// <c>receipt-data</c> gets anyway.
         /// </remarks>
@@ -154,10 +171,15 @@ namespace ApplePurchaseReceiptVerifier.Receipt
                 return refused;
             }
 
+            if (requestJson is null || requestJson.Length > MaxRequestBytes)
+            {
+                return Result.Failed(_environment, _pacific, VerificationReason.MalformedRequest, at);
+            }
+
             OrderedMap body;
             try
             {
-                body = Json.ParseObject(requestJson!);
+                body = Json.ParseObject(requestJson);
             }
             catch (Exception)
             {

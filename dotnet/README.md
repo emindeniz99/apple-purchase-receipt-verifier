@@ -386,8 +386,24 @@ public sealed class RedeemReceipt
   sentinel.
 - **Bounded parsing.** At most ten embedded certificates, counted by a
   structural pre-scan before any certificate is decoded; at most six chain
-  hops; bounded JSON depth and length; the payload double-unwrap is bounded at
-  one, and a nested in-app attribute is recorded rather than recursed into.
+  hops; JSON nested at most 64 arrays and objects deep; the payload
+  double-unwrap is bounded at one, and a nested in-app attribute is recorded
+  rather than recursed into.
+- **Input size caps, checked before anything is decoded.** A receipt may be at
+  most `ReceiptVerifier.MaxReceiptBytes` (2 MiB, 2,097,152) long: characters
+  for the base64 string, bytes for the DER. A larger one is
+  `INVALID_RECEIPT_FORMAT`, and status 21002 at the endpoint. A raw request
+  body passed to `VerifyReceiptEndpoint` may be at most
+  `VerifyReceiptEndpoint.MaxRequestBytes` (1 MiB, 1,048,576 characters); a
+  longer one, or one nested more than 64 levels deep, is 21002 with
+  `MALFORMED_REQUEST`. A compact JWS may be at most `JwsVerifier.MaxJwsBytes`
+  (256 KiB, 262,144 characters); a longer one is `INVALID_JWS_FORMAT`. Decoding
+  and parsing allocate in proportion to the input before any signature is
+  checked, so without these a large enough input exhausts memory. The numbers
+  are the other ports'. A receipt of 1 MiB of DER, the normative floor, still
+  verifies; its base64 is about 1.38 MB, so it is over the request cap as a
+  JSON body and reaches the endpoint only through `VerifyReceiptData` or the
+  dictionary overload.
 - **Only this library's own exception escapes.** Containment is categorical,
   not a list of types: `AsnContentException` derives from `Exception` and not
   from `CryptographicException`, so a type-by-type catch leaks.

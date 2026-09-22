@@ -99,11 +99,14 @@ public class JsonTests
     [Fact]
     public void NestingDeeperThanTheBoundIsRejected()
     {
-        string shallow = new string('[', Json.MaxDepth) + new string(']', Json.MaxDepth);
-        Assert.NotNull(Json.Parse(shallow));
+        // 64 is the other ports' number, and the boundary is exact: 64 open
+        // containers parse, the 65th is refused.
+        Assert.Equal(64, Json.MaxDepth);
+        string atBound = new string('[', Json.MaxDepth) + new string(']', Json.MaxDepth);
+        Assert.NotNull(Json.Parse(atBound));
 
-        string deep = new string('[', Json.MaxDepth + 2) + new string(']', Json.MaxDepth + 2);
-        Assert.Throws<JsonException>(() => Json.Parse(deep));
+        string overBound = new string('[', Json.MaxDepth + 1) + new string(']', Json.MaxDepth + 1);
+        Assert.Throws<JsonException>(() => Json.Parse(overBound));
     }
 
     [Fact]
