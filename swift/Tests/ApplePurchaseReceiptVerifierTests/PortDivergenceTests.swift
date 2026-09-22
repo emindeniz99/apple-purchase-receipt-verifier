@@ -225,8 +225,8 @@ final class OversizedAttributeTypeTests: XCTestCase {
         let oversized = try ReceiptSurgery.appendingAttribute(
             ReceiptSurgery.attribute(typeBytes: Self.outOfRange, value: [0x2A]),
             to: try fixture("receipt.der"))
-        let response = await endpoint.verifyReceipt(
-            ["receipt-data": oversized.base64EncodedString()])
+        let response = await endpoint.verifyReceiptResult(
+            ["receipt-data": oversized.base64EncodedString()]).response()
         XCTAssertEqual(21002, response["status"] as? Int)
     }
 }
@@ -348,7 +348,7 @@ final class CertificateValidityClockTests: XCTestCase {
                 let endpoint = try VerifyReceiptEndpoint(
                     trustedRoots: [try self.fixture("receipt-expired-root.der")],
                     environment: .sandbox, clock: clock)
-                let response = await endpoint.verifyReceipt(request)
+                let response = await endpoint.verifyReceiptResult(request).response()
                 XCTAssertEqual(
                     expected, response["status"] as? Int,
                     "\(fixture): the status moved with the clock")

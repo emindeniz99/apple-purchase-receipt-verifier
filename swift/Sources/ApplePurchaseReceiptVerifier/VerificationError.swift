@@ -17,6 +17,15 @@ public struct VerificationError: Error, Sendable, CustomStringConvertible {
         case invalidReceiptFormat = "INVALID_RECEIPT_FORMAT"
         case deviceHashMismatch = "DEVICE_HASH_MISMATCH"
         case stalePayload = "STALE_PAYLOAD"
+        /// The verifyReceipt request envelope is unusable: the body is not a
+        /// JSON object, or `receipt-data` is missing, empty or not a string.
+        /// Reported only by ``VerifyReceiptResult/failureReason``; never
+        /// thrown.
+        case malformedRequest = "MALFORMED_REQUEST"
+        /// An unexpected error inside the verifyReceipt endpoint, answered as
+        /// status 21009. Reported only by
+        /// ``VerifyReceiptResult/failureReason``; never thrown.
+        case internalError = "INTERNAL_ERROR"
     }
 
     public let reason: Reason

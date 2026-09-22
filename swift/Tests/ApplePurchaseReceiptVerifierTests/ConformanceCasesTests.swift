@@ -240,7 +240,7 @@ private struct Vectors {
             let receiptData =
                 codec == "text"
                 ? String(decoding: input, as: UTF8.self) : input.base64EncodedString()
-            return await endpoint.verifyReceipt(["receipt-data": receiptData])
+            return await endpoint.verifyReceiptResult(["receipt-data": receiptData]).response()
         default:
             throw HarnessError("no adapter for operation \"\(operation)\"")
         }
