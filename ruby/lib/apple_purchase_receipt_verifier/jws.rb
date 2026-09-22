@@ -24,6 +24,17 @@ module ApplePurchaseReceiptVerifier
   #   )
   #   payload = verifier.verify_transaction(jws)
   class JwsVerifier
+    # Ceiling on a compact JWS, in characters. A longer one is
+    # {Reason::INVALID_JWS_FORMAT} before it is split or decoded: splitting
+    # copies it, base64url decoding allocates three quarters of it again and
+    # JSON parsing a multiple of that, none of it behind a signature check.
+    # The number is the Java and PHP ports'. Every JWS in the shared corpus,
+    # Apple's own mock notification data included, is under 2.5 KB, and a
+    # compact JWS is base64url and dots, so for any input that could verify
+    # its characters and its bytes are the same count. The header and payload
+    # JSON may also nest at most 64 levels deep.
+    MAX_JWS_BYTES = 262_144
+
     # @param trusted_roots [Array<OpenSSL::X509::Certificate, String>] pinned
     #   anchors; in production {ApplePurchaseReceiptVerifier.apple_jws_roots}
     # @param bundle_id [String] the bundle id every payload must carry
@@ -179,6 +190,10 @@ module ApplePurchaseReceiptVerifier
       unless jws.is_a?(String) && !jws.empty?
         raise VerificationError.new(Reason::INVALID_JWS_FORMAT, "jws must be a non-empty String")
       end
+      if jws.length > MAX_JWS_BYTES
+        raise VerificationError.new(Reason::INVALID_JWS_FORMAT,
+                                    "jws exceeds the maximum accepted size of #{MAX_JWS_BYTES} characters")
+      end
 
       parts = jws.split(".", -1)
       unless parts.size == 3
@@ -209,7 +224,7 @@ module ApplePurchaseReceiptVerifier
     def json_segment(segment, what)
       bytes = base64url_decode(segment, what)
       begin
-        parsed = JSON.parse(bytes)
+        parsed = JsonLimits.parse(bytes)
       rescue JSON::ParserError, EncodingError
         raise VerificationError.new(Reason::INVALID_JWS_FORMAT, "#{what} is not valid JSON")
       end

@@ -215,9 +215,17 @@ class VerifyReceiptResultTest < Minitest::Test
       pinned = APRV::VerifyReceiptEndpoint.new(trusted_roots: roots, environment: environment,
                                                clock: CountingClock.new)
       receipt_data.each do |data|
-        body = pinned.verify_receipt_json(JSON.generate({ "receipt-data" => data }))
+        json = JSON.generate({ "receipt-data" => data })
+        body = pinned.verify_receipt_json(json)
         bare = pinned.verify_receipt_data(data)
-        assert_equal body, bare.to_json, data[0, 40]
+        if json.bytesize > APRV::VerifyReceiptEndpoint::MAX_REQUEST_BYTES
+          # The byte-floor receipt: its 1.38 MB of base64 is a receipt the
+          # contract requires accepting, inside a body over the request cap.
+          # The two caps bound different things, so the answers part here.
+          assert_equal '{"status":21002}', body, data[0, 40]
+        else
+          assert_equal body, bare.to_json, data[0, 40]
+        end
         statuses << bare.status
         refute_equal APRV::Reason::INTERNAL_ERROR, bare.failure_reason, data[0, 40]
       end

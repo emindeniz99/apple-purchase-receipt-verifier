@@ -42,6 +42,15 @@ module ApplePurchaseReceiptVerifier
     class << self
       def verify(der, roots)
         contained do
+          # Measured before the binary copy below, so an oversized input is
+          # refused without being duplicated, scanned or parsed.
+          if der.is_a?(String) && der.bytesize > ReceiptVerifier::MAX_RECEIPT_BYTES
+            raise VerificationError.new(
+              Reason::INVALID_RECEIPT_FORMAT,
+              "receipt exceeds the maximum accepted size of #{ReceiptVerifier::MAX_RECEIPT_BYTES} bytes"
+            )
+          end
+
           bytes = binary(der)
           raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT, "receipt is empty") if bytes.empty?
 
@@ -180,6 +189,15 @@ module ApplePurchaseReceiptVerifier
         unless text.is_a?(String)
           raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
                                       "receipt must be a base64 String")
+        end
+        # Before either decoder: both allocate in proportion to the input,
+        # and none of it is behind a signature check. Characters, as a client
+        # sends them; for base64 the count equals the byte count.
+        if text.length > ReceiptVerifier::MAX_RECEIPT_BYTES
+          raise VerificationError.new(
+            Reason::INVALID_RECEIPT_FORMAT,
+            "receipt exceeds the maximum accepted size of #{ReceiptVerifier::MAX_RECEIPT_BYTES} characters"
+          )
         end
 
         decode_base64_strict(text) || decode_base64_tolerant(text)
@@ -419,6 +437,21 @@ module ApplePurchaseReceiptVerifier
   # instant, which comes from the receipt's own creation date and, failing
   # that, from the system clock.
   class ReceiptVerifier
+    # Ceiling on the receipt this library will look at: the base64 text at
+    # every entry point that takes it ({#verify}, {#verify_base64} and the
+    # endpoint's `receipt-data`), in characters, and the DER at every entry
+    # point that takes bytes, {ApplePurchaseReceiptVerifier.verify_receipt_core}
+    # included. A larger receipt is {Reason::INVALID_RECEIPT_FORMAT}.
+    #
+    # Checked before anything is decoded: base64 decoding allocates about
+    # three quarters of the input again, the CMS parse allocates in proportion
+    # to the DER, and none of that is behind a signature check. The number is
+    # the Java, PHP and Python ports'. It clears the normative floor in
+    # fixtures/cases.json, which requires accepting a receipt of up to 1 MiB
+    # of DER (about 1.38 MB of base64); the largest genuine receipt in the
+    # corpus is 79 KB.
+    MAX_RECEIPT_BYTES = 2_097_152
+
     # @param trusted_roots [Array<OpenSSL::X509::Certificate, String>]
     # @param bundle_id [String] the bundle id the receipt must carry
     def initialize(trusted_roots:, bundle_id:)
@@ -454,9 +487,10 @@ module ApplePurchaseReceiptVerifier
                                     "receipt must be a String")
       end
 
-      bytes = receipt.b
-      if !bytes.empty? && bytes.getbyte(0) == Asn1::TAG_SEQUENCE
-        verify_der(bytes, device_guid: device_guid)
+      # The first byte is read in place: a copy of the whole input here would
+      # be made before either path could apply MAX_RECEIPT_BYTES to it.
+      if receipt.getbyte(0) == Asn1::TAG_SEQUENCE
+        verify_der(receipt, device_guid: device_guid)
       else
         verify_base64(receipt, device_guid: device_guid)
       end

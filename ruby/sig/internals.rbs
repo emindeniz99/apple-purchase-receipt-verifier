@@ -10,6 +10,14 @@ module ApplePurchaseReceiptVerifier
   # roots.rb
   def self.apple_roots: () -> Array[OpenSSL::X509::Certificate]
 
+  # json_limits.rb
+  module JsonLimits
+    MAX_NESTING_DEPTH: Integer
+
+    def self.parse: (String text) -> untyped
+    def self.depth: (untyped value) -> Integer
+  end
+
   class Payload
     def string_claim: (String name) -> String?
     def integer_claim: (String name) -> Integer?

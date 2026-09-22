@@ -101,6 +101,8 @@ module ApplePurchaseReceiptVerifier
   end
 
   class JwsVerifier
+    MAX_JWS_BYTES: Integer
+
     def initialize: (trusted_roots: roots, bundle_id: String,
                      accepted_environments: Array[String],
                      ?app_apple_id: Integer?, ?max_signed_age_seconds: Numeric?,
@@ -150,6 +152,8 @@ module ApplePurchaseReceiptVerifier
   end
 
   class ReceiptVerifier
+    MAX_RECEIPT_BYTES: Integer
+
     def initialize: (trusted_roots: roots, bundle_id: String) -> void
     def verify: (String receipt, ?device_guid: String?) -> AppReceipt
     def verify_der: (String der, ?device_guid: String?) -> AppReceipt
@@ -158,6 +162,7 @@ module ApplePurchaseReceiptVerifier
 
   class VerifyReceiptEndpoint
     PRODUCTION_RECEIPT_TYPES: Array[String]
+    MAX_REQUEST_BYTES: Integer
 
     module Status
       OK: Integer
