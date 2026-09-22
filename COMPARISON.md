@@ -35,6 +35,7 @@ the first part — cryptographically verified.
 |---|---|---|
 | 0 | valid | ✅ same semantics (chain + signature to pinned Apple root) |
 | 21000 | the request didn't use HTTP POST | ❌ out of scope — this is a body-level API with no HTTP layer, so there is no request method to get wrong. Your framework decides what a non-POST gets |
+| 21001 | "The App Store no longer sends this status code." | ❌ never produced; Apple retired it |
 | 21002 | receipt-data malformed or missing | ✅ returned when `receipt-data` is absent, empty, not a string, not base64, or not a parseable receipt |
 | 21003 | receipt could not be authenticated | ✅ chain or signature failure |
 | 21004 | shared secret mismatch | ❌ never produced (see `password`) |

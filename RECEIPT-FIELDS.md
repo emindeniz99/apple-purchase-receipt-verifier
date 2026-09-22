@@ -196,6 +196,88 @@ that one library alone, and this repository's own byte-level evidence —
 type 8 equal to the creation date in production, type 9 decoding to a
 version string — is what supports two of them.
 
+## What StoreKit 2 can and cannot name
+
+StoreKit 2 carries purchases in signed JWS payloads instead of a receipt, and
+many of its fields describe facts the receipt also holds. Setting Apple's
+DocC pages beside the tables above settles some attributes, rules out a few
+tempting matches, and leaves five hypotheses open. The pages read on
+2026-09-22 were StoreKit's `AppTransaction` and its per-symbol pages, and the
+App Store Server API's `JWSTransactionDecodedPayload`,
+`JWSRenewalInfoDecodedPayload` and `JWSAppTransactionDecodedPayload`. The
+App Store Server API's `apptransaction` page returns 404.
+
+### Confirmed correspondences
+
+| StoreKit 2 `AppTransaction` property | Receipt type | Notes |
+|---|---|---|
+| `bundleID` | 2 | |
+| `appVersion` | 3 | |
+| `originalAppVersion` | 19 | |
+| `deviceVerification` | 5 | Same role as the SHA-1 hash. StoreKit 2 computes its digest differently, so the bytes do not match. |
+| `deviceVerificationNonce` | 4 | Same role as the opaque value, with the same caveat as type 5. |
+| `environment` | 0 | |
+| `signedDate` | 12 | |
+| `originalPurchaseDate` | 18 | |
+| `appID` | 1 | |
+| `appVersionID` | 16 | |
+
+| App Store Server API `JWSTransactionDecodedPayload` field | Receipt type |
+|---|---|
+| `quantity` | 1701 |
+| `productId` | 1702 |
+| `transactionId` | 1703 |
+| `purchaseDate` | 1704 |
+| `originalTransactionId` | 1705 |
+| `originalPurchaseDate` | 1706 |
+| `expiresDate` | 1708 |
+| `webOrderLineItemId` | 1711 |
+| `revocationDate` | 1712 |
+
+Apple's server-side `JWSAppTransactionDecodedPayload` still uses the legacy
+field names `receiptType`, `receiptCreationDate` and
+`originalApplicationVersion`, which corroborates the mapping for types 0, 12
+and 19 by name. That page publishes field names, not ASN.1 type numbers, so
+the statement under type 0 above still holds: no Apple page gives the number
+for type 0.
+
+### Ruled out
+
+- **Type 20 is not `preorderDate`.** Type 20 is tagged UTF8String. Every date
+  attribute in this format is IA5String, and type 8 shows that an empty date
+  keeps its IA5String tag.
+- **Types 6 and 7 are not a device digest.** Their length varies from
+  receipt to receipt, and a digest has a fixed length.
+- **Type 1710 is neither `subscriptionGroupIdentifier` nor `storefrontId`.**
+  Consumable purchases carry a nonzero value there, which rules out the
+  subscription group. Storefront ids have six digits and 1710 has ten, which
+  rules out the storefront.
+- **Type 1722 is not `transactionReason`.** The committed g5 fixture holds an
+  original purchase and a renewal of the same subscription, and 1722 is 0 on
+  both. `transactionReason` would tell those two apart.
+- **Types 8, 9, 10, 11 and 14 have no StoreKit 2 counterpart.** They carry an
+  issue date equal to creation, a receipt-generator version, an age rating, a
+  developer-scoped id and a fleet build counter. StoreKit 2 exposes none of
+  those categories.
+
+### Open candidates, unconfirmed
+
+Each row below is a hypothesis, not a finding. None is modelled, and each
+names the observation that would confirm or kill it.
+
+| Receipt type | Candidate | Evidence so far | Settled by |
+|---|---|---|---|
+| 1707 | integer form of JWS `type` | 3 on auto-renewable subscriptions, 1 on consumables. TPInAppReceipt decodes it as a closed enum with values 0 to 4, one more than Apple's four type strings. | A receipt containing a non-consumable and a non-renewing subscription, read beside the same transactions' JWS `type`. |
+| 1722 | `isUpgraded` | Absent in 2020, present from 2024. `isUpgraded` shipped in 2021. | A receipt from a customer who upgraded within a subscription group. |
+| 1709, 1714 to 1718 | `appAccountToken` (one of the six) | All six are empty in every receipt examined, and none of those purchases set an account token. | A purchase that sets one. |
+| 25 | payload format version, or purchase platform | 3 in every receipt examined, all from iOS. | A Mac App Store receipt. |
+| 8 against 12 | two names for one date, or two dates | Equal in both production receipts examined. | Refreshing a receipt and seeing whether only one of them moves. |
+
+StoreKit 2 names the fields that describe a purchase and its app, and
+deliberately exposes nothing about Apple's own tooling, signing fleet or
+developer identity, which is where most of the unnamed app-level attributes
+sit, so reading StoreKit 2 cannot resolve them.
+
 ## What was measured, and how
 
 Source receipts, all of them genuine Apple-signed or Xcode-signed bytes
@@ -335,6 +417,13 @@ Apple, read 2026-09-21:
   live page, `receipt-data` dictionary. Source for the `adam_id` /
   `app_item_id` / `version_external_identifier` definitions quoted against
   types 1 and 16 above.
+- StoreKit [AppTransaction](https://developer.apple.com/documentation/storekit/apptransaction)
+  and its per-symbol pages, and the App Store Server API's
+  [JWSTransactionDecodedPayload](https://developer.apple.com/documentation/appstoreserverapi/jwstransactiondecodedpayload),
+  [JWSRenewalInfoDecodedPayload](https://developer.apple.com/documentation/appstoreserverapi/jwsrenewalinfodecodedpayload)
+  and [JWSAppTransactionDecodedPayload](https://developer.apple.com/documentation/appstoreserverapi/jwsapptransactiondecodedpayload),
+  read 2026-09-22 for "What StoreKit 2 can and cannot name" above. The App
+  Store Server API's `apptransaction` page returned 404 the same day.
 
 Community, read 2026-09-21 except where an entry gives its own date:
 
