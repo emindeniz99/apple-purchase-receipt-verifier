@@ -1,0 +1,207 @@
+# CodeQL advanced setup — the hardened replacement for the workflow the
+# "Switch to advanced" button committed.
+#
+# GitHub's template is a starting point, not a finished workflow, and this
+# repository already holds every workflow to a stricter bar (see ci.yml).
+# Four things changed, in order of how badly they were needed:
+#
+#   1. Every action is pinned to a full commit SHA with the tag in a
+#      comment. The template's `@v7` / `@v4` are mutable tags: whoever can
+#      retag them runs code in a job that holds `security-events: write`.
+#      The repository's own zizmor job fails on unpinned uses, so the
+#      template turns main red on the push that adds it.
+#   2. java-kotlin, csharp and c-cpp move off Autobuild to
+#      `build-mode: none`. Autobuild is why the default-setup run failed:
+#      there are two independent Maven projects (java/pom.xml and
+#      jvm-interop/pom.xml) and no aggregator POM, so Autobuild finds no
+#      single build to run and reports "We were unable to automatically
+#      build your code". Nothing here needs a build to be scanned.
+#   3. `persist-credentials: false` on the checkout, as everywhere else in
+#      this repository. A scan never pushes.
+#   4. A config file. fixtures/, tools/ and every port's test and fuzz
+#      harness are repository-controlled inputs, not library code — see
+#      .github/codeql/codeql-config.yml for the full reasoning.
+#
+# Kept deliberately from the template so existing alerts keep their
+# identity: the workflow name, the job name, the language list, the weekly
+# cron, and the `category: "/language:<lang>"` convention that maps each
+# job's results onto the category default setup already used.
+name: "CodeQL Advanced"
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly, so a newly published query finds this code without waiting for
+    # someone to push.
+    - cron: "18 5 * * 3"
+  workflow_dispatch:
+
+# Read-only by default; the one write a scan needs is requested per job.
+permissions:
+  contents: read
+
+# Same rule as ci.yml: superseding a branch's run saves a runner,
+# superseding main's destroys the record that main was ever scanned.
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ matrix.timeout }}
+    permissions:
+      security-events: write # upload the SARIF results; the only write here
+      actions: read # read run metadata, to attach results to this run
+      contents: read # check the tree out
+    strategy:
+      # One language failing should not hide the other nine.
+      fail-fast: false
+      matrix:
+        include:
+          # --- interpreted: nothing to build ----------------------------
+          - language: actions
+            runner: ubuntu-latest
+            build-mode: none
+            timeout: 30
+            config: .github/codeql/codeql-config.yml
+          - language: javascript-typescript
+            runner: ubuntu-latest
+            build-mode: none
+            timeout: 30
+            config: .github/codeql/codeql-config.yml
+          - language: python
+            runner: ubuntu-latest
+            build-mode: none
+            timeout: 30
+            config: .github/codeql/codeql-config.yml
+          - language: ruby
+            runner: ubuntu-latest
+            build-mode: none
+            timeout: 30
+            config: .github/codeql/codeql-config.yml
+          # Rust has no other mode: `none` is the only one its extractor
+          # supports.
+          - language: rust
+            runner: ubuntu-latest
+            build-mode: none
+            timeout: 45
+            config: .github/codeql/codeql-config.yml
+
+          # --- compiled, analysed without a build -----------------------
+          # Same treatment for C#: the solution builds fine in ci.yml, but a
+          # security scan has no reason to spend a build on it.
+          - language: csharp
+            runner: ubuntu-latest
+            build-mode: none
+            timeout: 45
+            config: .github/codeql/codeql-config.yml
+          # C/C++ deliberately runs WITHOUT the config file. The only C and
+          # C++ in this repository is rust/ffi/examples/ and the .NET fuzz
+          # driver, both of which the config excludes — applying it here
+          # would leave the extractor with no source at all. Analysing the
+          # examples is the honest alternative to analysing nothing.
+          - language: c-cpp
+            runner: ubuntu-latest
+            build-mode: none
+            timeout: 45
+            config: ""
+
+          # --- compiled, built on purpose -------------------------------
+          # The Java port is the one that runs in production, so it is
+          # scanned against a real, fully resolved compilation rather than
+          # the buildless extractor: `manual`, with the build steps below.
+          # Autobuild is what failed under default setup — there are two
+          # independent Maven projects and no aggregator POM, so it found no
+          # single build to run. Naming the two builds explicitly fixes that
+          # and gets Kotlin extracted as well, which buildless cannot do.
+          - language: java-kotlin
+            runner: ubuntu-latest
+            build-mode: manual
+            timeout: 45
+            config: .github/codeql/codeql-config.yml
+
+          # --- compiled, must be built ----------------------------------
+          # Neither extractor has a buildless mode, so these two autobuild:
+          # Go and Swift support only `autobuild` or `manual`. A consequence
+          # worth remembering when reading their alerts: paths / paths-ignore
+          # are not applied to a built language, so go's *_test.go files and
+          # swift/Tests/ stay in scope no matter what the config says.
+          - language: go
+            runner: ubuntu-latest
+            build-mode: autobuild
+            timeout: 45
+            config: .github/codeql/codeql-config.yml
+          - language: swift
+            runner: macos-latest
+            build-mode: autobuild
+            timeout: 60
+            config: .github/codeql/codeql-config.yml
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          config-file: ${{ matrix.config }}
+          # The suite the owner selected in the UI. The config file names it
+          # too; it is repeated here because the c-cpp job runs without that
+          # config (see the matrix) and would otherwise silently fall back to
+          # the smaller default suite. The action merges the two lists, so
+          # naming the same suite twice costs nothing.
+          queries: security-extended
+
+      # --- manual build, java-kotlin only ---------------------------------
+      # Between init and analyze, so the extractor wraps javac and kotlinc
+      # and records every file they actually compile.
+      #
+      # The same JDK ci.yml's jvm-interop job uses: Temurin 21. The library
+      # targets Java 8 bytecode (maven.compiler.release=8) and builds on any
+      # JDK 9+; jvm-interop needs 17+ for Kotlin 2.4 and Scala 3.9.
+      - name: Set up Java for the CodeQL build
+        if: matrix.language == 'java-kotlin'
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      # `install`, not `compile`: jvm-interop/pom.xml has no parent and no
+      # <relativePath> — it resolves the library as a plain Maven coordinate
+      # (io.github.emindeniz99:apple-purchase-receipt-verifier:0.4.0) the way
+      # a consumer would, so the jar has to be in the local repository before
+      # the second build can run. ci.yml's jvm-interop job does the same.
+      #
+      # `-Dmaven.test.skip=true` rather than ci.yml's `-DskipTests`: skipTests
+      # still COMPILES java/src/test, which would put the whole conformance
+      # harness into the database. A built language ignores the config's
+      # paths-ignore, so not compiling those sources is the only way to keep
+      # them out — and this job wants the library, not its tests.
+      #
+      # No `-Dspotless.check.skip`: spotless is deliberately unbound from
+      # every lifecycle phase in java/pom.xml (see the comment there), so the
+      # flag would be dead weight. No `-q` either: the compile log is the
+      # evidence that every file under src/main reached the extractor.
+      - name: Build the Java library for CodeQL
+        if: matrix.language == 'java-kotlin'
+        run: mvn -B -ntp -f java/pom.xml -Dmaven.test.skip=true install
+
+      # jvm-interop is a test-only module: its Kotlin and Scala live under
+      # src/test, so `test-compile` is the phase that compiles them. Scala is
+      # not a CodeQL language and is extracted by nothing; the Kotlin is.
+      - name: Build the JVM interop module for CodeQL
+        if: matrix.language == 'java-kotlin'
+        run: mvn -B -ntp -f jvm-interop/pom.xml test-compile
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
+        with:
+          category: "/language:${{ matrix.language }}"
