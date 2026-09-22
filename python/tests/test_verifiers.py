@@ -13,11 +13,13 @@ import time
 import unittest
 from pathlib import Path
 from typing import Any, ClassVar
+from unittest import mock
 
 from apple_purchase_receipt_verifier import (
     JwsVerifier,
     ReceiptVerifier,
     VerificationError,
+    VerifyReceiptEndpoint,
     apple_jws_roots,
     apple_receipt_roots,
 )
@@ -1191,3 +1193,137 @@ class ClockSeamTest(unittest.TestCase):
         self.assertEqual("2024-12-31 16:00:00 America/Los_Angeles", receipt["request_date_pst"])
         # The receipt's own dates are unaffected by the clock.
         self.assertEqual("2024-08-06 12:00:00 Etc/GMT", receipt["receipt_creation_date"])
+
+
+class InputSizeBoundsTest(unittest.TestCase):
+    """The input caps exist so that hostile input costs little to refuse:
+    base64 decoding and JSON parsing both allocate a multiple of their input
+    before any signature is checked. So the over-cap tests prove the
+    expensive step never runs, and the at-cap tests prove the cap is not set
+    below what a genuine receipt needs."""
+
+    endpoint_module = "apple_purchase_receipt_verifier.verify_receipt_endpoint"
+
+    def setUp(self):
+        self.der = fixture("generated", "receipt.der")
+        self.receipt_b64 = base64.b64encode(self.der).decode()
+        self.verifier = ReceiptVerifier([cert("generated", "receipt-root.der")], BUNDLE)
+        self.endpoint = VerifyReceiptEndpoint([cert("generated", "receipt-root.der")], "Sandbox")
+
+    @staticmethod
+    def padded(text, length):
+        # Whitespace is accepted anywhere in a receipt string and around a
+        # JSON body, so padding a genuine input keeps it genuine.
+        return text + "\n" * (length - len(text))
+
+    def request_body(self, extra=""):
+        return '{"receipt-data":"' + self.receipt_b64 + '"' + extra + "}"
+
+    def test_receipt_string_over_the_cap_is_refused_without_decoding(self):
+        receipt = self.padded(self.receipt_b64, ReceiptVerifier.MAX_RECEIPT_BYTES + 1)
+        with (
+            mock.patch("apple_purchase_receipt_verifier.receipt.decode_receipt_base64") as decode,
+            self.assertRaises(VerificationError) as ctx,
+        ):
+            self.verifier.verify(receipt)
+        decode.assert_not_called()
+        self.assertEqual("INVALID_RECEIPT_FORMAT", ctx.exception.reason)
+
+    def test_receipt_string_at_the_cap_still_verifies(self):
+        receipt = self.padded(self.receipt_b64, ReceiptVerifier.MAX_RECEIPT_BYTES)
+        self.assertEqual(BUNDLE, self.verifier.verify(receipt).bundle_id)
+
+    def test_receipt_der_over_the_cap_is_refused_before_it_is_parsed(self):
+        # verify_receipt_core is the primitive under the endpoint, so the
+        # bytes cap has to hold there, not only on ReceiptVerifier.
+        from apple_purchase_receipt_verifier import verify_receipt_core
+
+        der = b"\x30" + bytes(ReceiptVerifier.MAX_RECEIPT_BYTES)
+        roots = [cert("generated", "receipt-root.der")]
+        for label, call in (
+            ("ReceiptVerifier.verify", lambda: self.verifier.verify(der)),
+            ("verify_receipt_core", lambda: verify_receipt_core(der, roots)),
+        ):
+            with (
+                self.subTest(label),
+                mock.patch("apple_purchase_receipt_verifier.receipt._parse_cms") as parse,
+                self.assertRaises(VerificationError) as ctx,
+            ):
+                call()
+            parse.assert_not_called()
+            self.assertEqual("INVALID_RECEIPT_FORMAT", ctx.exception.reason)
+
+    def test_receipt_der_at_the_cap_reaches_the_parser(self):
+        der = b"\x30" + bytes(ReceiptVerifier.MAX_RECEIPT_BYTES - 1)
+        with (
+            mock.patch(
+                "apple_purchase_receipt_verifier.receipt._parse_cms",
+                side_effect=VerificationError("INVALID_RECEIPT_FORMAT", "parsed"),
+            ) as parse,
+            self.assertRaises(VerificationError),
+        ):
+            self.verifier.verify(der)
+        parse.assert_called_once()
+
+    def test_receipt_cap_clears_the_normative_one_mebibyte_floor(self):
+        # fixtures/cases.json: every port MUST accept 1 MiB of DER, and the
+        # string cap measures that receipt's base64, a third larger. Lowering
+        # the cap below this turns a defence into a wrong verdict.
+        self.assertGreaterEqual(ReceiptVerifier.MAX_RECEIPT_BYTES, -(-1048576 * 4 // 3))
+
+    def test_endpoint_receipt_data_over_the_cap_answers_21002_without_decoding(self):
+        receipt = self.padded(self.receipt_b64, ReceiptVerifier.MAX_RECEIPT_BYTES + 1)
+        with mock.patch(f"{self.endpoint_module}.decode_receipt_base64") as decode:
+            results = {
+                "mapping": self.endpoint.verify_receipt_result({"receipt-data": receipt}),
+                "bare": self.endpoint.verify_receipt_data(receipt),
+            }
+        decode.assert_not_called()
+        for label, result in results.items():
+            self.assertEqual("INVALID_RECEIPT_FORMAT", result.failure_reason, label)
+            self.assertEqual(21002, result.status, label)
+
+        at_cap = self.padded(self.receipt_b64, ReceiptVerifier.MAX_RECEIPT_BYTES)
+        self.assertEqual(0, self.endpoint.verify_receipt_data(at_cap).status)
+
+    def test_request_body_over_the_cap_answers_21002_without_parsing(self):
+        body = self.padded(self.request_body(), VerifyReceiptEndpoint.MAX_REQUEST_BYTES + 1)
+        with mock.patch(f"{self.endpoint_module}.json.loads") as loads:
+            results = {
+                "str": self.endpoint.verify_receipt_result(body),
+                "bytes": self.endpoint.verify_receipt_result(body.encode()),
+            }
+            wire = self.endpoint.verify_receipt_json(body)
+        loads.assert_not_called()
+        self.assertEqual('{"status":21002}', wire)
+        for label, result in results.items():
+            self.assertEqual("MALFORMED_REQUEST", result.failure_reason, label)
+            self.assertEqual(21002, result.status, label)
+
+    def test_request_body_at_the_cap_still_verifies(self):
+        body = self.padded(self.request_body(), VerifyReceiptEndpoint.MAX_REQUEST_BYTES)
+        self.assertEqual(0, self.endpoint.verify_receipt_result(body).status)
+        self.assertEqual(0, self.endpoint.verify_receipt_result(body.encode()).status)
+
+    def test_body_nested_past_the_limit_answers_21002_before_parsing(self):
+        # json.loads recurses once per level and has no depth option, so a
+        # deep body must be refused before it runs, not caught afterwards.
+        # The object itself is level 1, so 64 inner arrays make 65.
+        for depth in (64, 100_000):
+            body = self.request_body(',"deep":' + "[" * depth + "]" * depth)
+            for form in (body, body.encode()):
+                with (
+                    self.subTest(depth=depth, type=type(form).__name__),
+                    mock.patch(f"{self.endpoint_module}.json.loads") as loads,
+                ):
+                    result = self.endpoint.verify_receipt_result(form)
+                    loads.assert_not_called()
+                    self.assertEqual("MALFORMED_REQUEST", result.failure_reason)
+                    self.assertEqual(21002, result.status)
+
+    def test_body_nested_to_the_limit_still_verifies(self):
+        at_limit = self.request_body(',"deep":' + "[" * 63 + "]" * 63)
+        self.assertEqual(0, self.endpoint.verify_receipt_result(at_limit).status)
+        # Brackets inside a string are data, escaped quotes included.
+        in_string = self.request_body(',"note":"\\"' + "[" * 1000 + '"')
+        self.assertEqual(0, self.endpoint.verify_receipt_result(in_string).status)
