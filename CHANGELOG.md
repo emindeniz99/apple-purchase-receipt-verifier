@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.5.0...v0.5.1) (2026-09-22)
+
+
+### Build & Dependencies
+
+* **rust:** bring the ffi lockfile in step with the 0.5.0 crate version ([654ccd4](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/654ccd4aa69780974409347f18b4e5b6b3217887))
+
 ## [0.5.0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.4.0...v0.5.0) (2026-09-22)
 
 
