@@ -44,22 +44,25 @@ function withoutRequestDate(response) {
 // fixtures/cases.json, which selects in_app entries by product_id and so
 // pins nothing about their order. These two do.
 test('renders in_app in receipt attribute order', () => {
-  const response = endpoint('Sandbox').verifyReceipt(request());
+  const response = endpoint('Sandbox').verifyReceiptResult(request()).toResponse();
   assert.equal(response.receipt.in_app[0].quantity, '1');
   assert.equal(response.receipt.in_app[0].web_order_line_item_id, '42');
 });
 
 test('reports malformed requests as 21002', () => {
-  assert.equal(endpoint('Sandbox').verifyReceipt({}).status, 21002);
-  assert.equal(endpoint('Sandbox').verifyReceipt(null).status, 21002);
-  assert.equal(endpoint('Sandbox').verifyReceipt({ 'receipt-data': 'AQIDBA==' }).status, 21002);
+  assert.equal(endpoint('Sandbox').verifyReceiptResult({}).toResponse().status, 21002);
+  assert.equal(endpoint('Sandbox').verifyReceiptResult(null).toResponse().status, 21002);
+  assert.equal(
+    endpoint('Sandbox').verifyReceiptResult({ 'receipt-data': 'AQIDBA==' }).toResponse().status,
+    21002,
+  );
 });
 
 // The values cases.json pins are asserted there; what is left here is the
 // presence of the renderings it deliberately does not pin — request_date
 // (the wall clock at call time) and the _ms / _pst companions.
 test('endpoint response carries every field COMPARISON.md advertises as full-fidelity', () => {
-  const receipt = endpoint('Sandbox').verifyReceipt(request()).receipt;
+  const receipt = endpoint('Sandbox').verifyReceiptResult(request()).toResponse().receipt;
   assert.ok(receipt.request_date && receipt.request_date_ms && receipt.request_date_pst);
   const coins = receipt.in_app.find((p) => p.product_id === 'com.example.app.coins100');
   assert.ok(coins.purchase_date && coins.purchase_date_ms && coins.purchase_date_pst);
@@ -133,8 +136,8 @@ test('verifyReceiptJson leaves the id keys out of a receipt that carries none', 
   }
 });
 
-test('verifyReceipt hands the ids over as bigints that plain JSON.stringify accepts', () => {
-  const { receipt } = idsEndpoint().verifyReceipt(idsRequest());
+test('toResponse hands the ids over as bigints that plain JSON.stringify accepts', () => {
+  const { receipt } = idsEndpoint().verifyReceiptResult(idsRequest()).toResponse();
   assert.equal(receipt.download_id, 9223372036854775807n);
   // A caller serializing the object themselves gets JSON numbers and no
   // throw — past 2^53 that rounds, which is also what `JSON.parse` of
@@ -169,9 +172,9 @@ test('verifyReceiptJson answers 21002 for a body that is not a JSON object', () 
   }
 });
 
-test('verifyReceiptJson parses back to exactly what verifyReceipt returns', () => {
+test('verifyReceiptJson parses back to exactly what toResponse returns', () => {
   const ep = endpoint('Sandbox');
-  const viaMap = ep.verifyReceipt(request());
+  const viaMap = ep.verifyReceiptResult(request()).toResponse();
   const viaJson = JSON.parse(ep.verifyReceiptJson(JSON.stringify(request())));
   assert.deepEqual(withoutRequestDate(viaJson), withoutRequestDate(viaMap));
 });

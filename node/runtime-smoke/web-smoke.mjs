@@ -7,6 +7,7 @@ import {
   JwsVerifier,
   ReceiptVerifier,
   VerificationError,
+  VerifyReceiptEndpoint,
   appleReceiptRoots,
 } from '../dist/web/index.js';
 
@@ -53,6 +54,24 @@ export async function run(fx) {
     throw new Error(`receiptType ${receipt.receiptType}`);
   }
   out.push('genuine sandbox receipt verifies against the real Apple root');
+
+  // The endpoint renders its dates through Intl with named time zones, so
+  // this is the check that the runtime ships the zone data it needs.
+  const result = await new VerifyReceiptEndpoint({
+    trustedRoots: [fx.appleRootDer],
+    environment: 'Production',
+  }).verifyReceiptData(fx.sandboxReceiptB64.trim(), new Date('2025-06-15T12:34:56Z'));
+  if (!result.verified || result.status !== 21007) {
+    throw new Error(`endpoint answered ${result.status} (${result.failureReason})`);
+  }
+  const sandboxJson = result.toJson('Sandbox');
+  if (
+    !sandboxJson.startsWith('{"status":0,"environment":"Sandbox"') ||
+    !sandboxJson.includes('"request_date_pst":"2025-06-15 05:34:56 America/Los_Angeles"')
+  ) {
+    throw new Error(`endpoint rendered ${sandboxJson.slice(0, 200)}`);
+  }
+  out.push('VerifyReceiptEndpoint answers 21007, then renders the Sandbox body with Intl zones');
 
   // The legacy receipt is the SHA-1 check: its CMS signature is RSA over a
   // SHA-1 digest and its whole certificate chain is signed sha1WithRSA, so

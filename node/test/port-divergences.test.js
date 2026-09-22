@@ -184,8 +184,16 @@ test('endpoint: no clock can make it accept a dateless receipt on an expired cha
     // under every clock; the dateless one falls back to the system clock,
     // which is outside the chain's window, and stays rejected under every
     // clock — including one aimed squarely inside that window.
-    assert.equal(endpoint.verifyReceipt({ 'receipt-data': dated }).status, 0, label);
-    assert.equal(endpoint.verifyReceipt({ 'receipt-data': dateless }).status, 21003, label);
+    assert.equal(
+      endpoint.verifyReceiptResult({ 'receipt-data': dated }).toResponse().status,
+      0,
+      label,
+    );
+    assert.equal(
+      endpoint.verifyReceiptResult({ 'receipt-data': dateless }).toResponse().status,
+      21003,
+      label,
+    );
   }
 });
 
@@ -199,8 +207,11 @@ test('endpoint: environment is the typed enum, and nothing else is accepted', ()
     });
   const request = { 'receipt-data': gen('receipt-type-production.der').toString('base64') };
   // cases.json's config.environment is this enum, spelled exactly this way.
-  assert.equal(build('Production').verifyReceipt(request).environment, 'Production');
-  assert.equal(build('Sandbox').verifyReceipt(request).status, 21008);
+  assert.equal(
+    build('Production').verifyReceiptResult(request).toResponse().environment,
+    'Production',
+  );
+  assert.equal(build('Sandbox').verifyReceiptResult(request).toResponse().status, 21008);
   // A boolean "production" flag is the other ports' old spelling; taking it
   // silently would make `false` (a common default) mean Production here.
   for (const wrong of [true, false, 'production', 'PRODUCTION', 1, null, undefined]) {
@@ -238,7 +249,7 @@ test('the endpoint accepts any bundle id without a wildcard verifier', () => {
   };
   for (const [fixture, bundleId] of Object.entries(bundles)) {
     const data = repo(`fixtures/public-receipts/${fixture}.b64`).toString('ascii').trim();
-    const response = endpoint.verifyReceipt({ 'receipt-data': data });
+    const response = endpoint.verifyReceiptResult({ 'receipt-data': data }).toResponse();
     assert.equal(response.status, 0, fixture);
     assert.equal(response.receipt.bundle_id, bundleId);
   }

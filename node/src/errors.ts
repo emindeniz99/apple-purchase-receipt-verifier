@@ -25,6 +25,18 @@ export const Reason = {
   INVALID_RECEIPT_FORMAT: 'INVALID_RECEIPT_FORMAT',
   DEVICE_HASH_MISMATCH: 'DEVICE_HASH_MISMATCH',
   STALE_PAYLOAD: 'STALE_PAYLOAD',
+  /**
+   * The verifyReceipt request envelope is unusable: the body is not a JSON
+   * object, or `receipt-data` is missing, empty or not a string. Reported
+   * only as a `VerifyReceiptResult.failureReason`; never thrown.
+   */
+  MALFORMED_REQUEST: 'MALFORMED_REQUEST',
+  /**
+   * An unexpected error inside the verifyReceipt endpoint, answered as
+   * status 21009. Reported only as a `VerifyReceiptResult.failureReason`;
+   * never thrown.
+   */
+  INTERNAL_ERROR: 'INTERNAL_ERROR',
 } as const;
 
 export type Reason = (typeof Reason)[keyof typeof Reason];

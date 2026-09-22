@@ -220,12 +220,15 @@ const OPERATIONS = {
       trustedRoots: trustedRoots(config.trustedRoots),
       environment: config.environment,
       clock,
-    }).verifyReceipt({
-      // A text fixture's bytes ARE the client-sent string, verbatim; a
-      // raw/base64 fixture is DER, which this harness re-encodes as
-      // canonical base64 the way a normal client would.
-      'receipt-data': fixture.codec === 'text' ? input.toString('utf8') : input.toString('base64'),
-    }),
+    })
+      .verifyReceiptResult({
+        // A text fixture's bytes ARE the client-sent string, verbatim; a
+        // raw/base64 fixture is DER, which this harness re-encodes as
+        // canonical base64 the way a normal client would.
+        'receipt-data':
+          fixture.codec === 'text' ? input.toString('utf8') : input.toString('base64'),
+      })
+      .toResponse(),
 };
 
 function requireNoClock(clock, operation) {
