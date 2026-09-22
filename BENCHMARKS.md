@@ -61,10 +61,10 @@ which no other port repeats.
 | Python | a script with `timeit`, collector on | `python/bench/bench.py` | JSON, µs/op |
 | Ruby | a script with the monotonic clock | `ruby/bench/bench.rb` | JSON, µs/op |
 | PHP | a script with `hrtime` | `php/bench/bench.php` | JSON, µs/op |
-| .NET | BenchmarkDotNet 0.15.8, 2 launches, 5 warmup and 5 measured iterations | `dotnet/bench/` | BenchmarkDotNet JSON, ns |
+| .NET | a console app with `System.Diagnostics.Stopwatch`, release build | `dotnet/bench/` | JSON, µs/op |
 | Swift | an executable with `ContinuousClock`, release build | `swift/bench/` | JSON, µs/op |
 
-The six script ports share one method: warm up for one second, size a sample
+The seven script ports share one method: warm up for one second, size a sample
 to at least 100 ms, take ten samples, and report the median, minimum and
 maximum µs/op. Their JSON has the same shape: `port`, `tool`, `settings`,
 and `results` with `benchmark`, `fixture`, `us_per_op_median`,
@@ -73,9 +73,11 @@ and `results` with `benchmark`, `fixture`, `us_per_op_median`,
 The tools are the ones each port already had, or none. Rust's `#[bench]` needs
 nightly, and criterion would add a few dozen crates to the lockfile the crate
 publishes. pyperf, benchmark-ips and phpbench are not dependencies of their
-ports. BenchmarkDotNet lives in its own project outside the solution, like
-`dotnet/fuzz`, so the shipped package never sees it. `swift/bench` is a
-separate package, like `swift/fuzz`, so the root manifest stays as it is.
+ports, and BenchmarkDotNet would add a few dozen packages to the .NET
+benchmark. `dotnet/bench` references the library project and no package,
+and it sits outside the solution, like `dotnet/fuzz`, so the shipped
+package never sees it. `swift/bench` is a separate package, like
+`swift/fuzz`, so the root manifest stays as it is.
 
 ## Running locally
 
@@ -108,8 +110,8 @@ ruby -Iruby/lib ruby/bench/bench.rb > ruby-bench.json
 composer --working-dir=php install --no-dev --no-scripts
 php php/bench/bench.php > php-bench.json
 
-# .NET (BenchmarkDotNet finds the project from the working directory)
-env -C dotnet/bench dotnet run -c Release -- --exporters json
+# .NET
+dotnet run -c Release --project dotnet/bench > dotnet-bench.json
 
 # Swift
 swift build -c release --package-path swift/bench --force-resolved-versions
@@ -117,8 +119,7 @@ swift/bench/.build/release/bench > swift-bench.json
 ```
 
 The script ports print progress to stderr and the JSON to stdout. A run takes
-one to five minutes per port. BenchmarkDotNet writes its reports under
-`dotnet/bench/BenchmarkDotNet.Artifacts/results/`.
+one to five minutes per port.
 
 ## Running in CI
 
@@ -137,29 +138,32 @@ running. CPU: Intel(R) Xeon(R) Processor @ 2.10GHz, 4 vCPUs (KVM guest),
 
 Tool versions: OpenJDK 21.0.10 (Ubuntu build) with JMH 1.37; Go 1.24.7;
 rustc 1.94.1; Node 22.22.2; CPython 3.11.15; Ruby 3.3.6 and PHP 8.4.19, both
-on OpenSSL 3.0.13; .NET 10.0.11 (SDK 10.0.400) with BenchmarkDotNet 0.15.8;
+on OpenSSL 3.0.13; .NET 10.0.11 (SDK 10.0.400);
 Swift 6.3.3.
 
-Values are µs/op: the JMH mean for Java, the median of five runs for Go, the
-BenchmarkDotNet median for .NET, and the median of ten samples for the rest.
+Values are µs/op: the JMH mean for Java, the median of five runs for Go,
+and the median of ten samples for the rest. The .NET column was re-measured the same
+day on the same machine and library, after its benchmark moved from
+BenchmarkDotNet to the shared Stopwatch loop.
 
 | benchmark | fixture | Java | Go | Rust | Node | Python | Ruby | PHP | .NET | Swift |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| `decodeBase64` | g5 | 2.4 | 6.9 | 3.3 | 16.3 | 17.9 | 6.6 | 0.4 | 5.6 | n/a |
-| `core` | g5 | 356 | 207 | 1,159 | 519 | 589 | 2,108 | 3,882 | 2,776 | 2,905 |
-| `verifierBase64` | g5 | 345 | 205 | 1,130 | 581 | 682 | 1,865 | 3,470 | 2,171 | 2,753 |
-| `endpointJson` | g5 | 366 | 338 | 1,219 | 674 | 914 | 2,264 | 3,842 | 2,662 | 6,245 |
-| `retryViaResult` | g5 | 375 | 248 | 1,202 | 668 | 784 | 2,151 | 3,527 | 2,814 | 5,345 |
-| `rejectTamperedSignature` | g5 | 380 | 201 | 1,191 | 563 | 612 | 2,053 | 3,410 | 2,712 | 2,870 |
-| `decodeBase64` | legacy | 27.3 | 96.3 | 47.4 | 192 | 235 | 80.1 | 5.0 | 80.4 | n/a |
-| `core` | legacy | 3,063 | 2,519 | 2,274 | 4,051 | 9,176 | 17,193 | 24,777 | 3,475 | 160,145 |
-| `verifierBase64` | legacy | 3,134 | 2,481 | 2,153 | 4,176 | 9,028 | 16,237 | 24,255 | 3,222 | 162,450 |
-| `endpointJson` | legacy | 4,401 | 5,758 | 3,969 | 8,170 | 13,659 | 24,503 | 26,855 | 5,460 | 304,378 |
-| `retryViaResult` | legacy | 4,061 | 4,655 | 4,103 | 6,187 | 12,421 | 22,131 | 24,997 | 5,284 | 297,134 |
-| `rejectTamperedSignature` | legacy | 3,152 | 2,381 | 2,438 | 3,386 | 9,106 | 14,852 | 23,731 | 3,886 | 153,825 |
+| `decodeBase64` | g5 | 2.4 | 6.9 | 3.3 | 16.3 | 17.9 | 6.6 | 0.4 | 6.0 | n/a |
+| `core` | g5 | 356 | 207 | 1,159 | 519 | 589 | 2,108 | 3,882 | 3,018 | 2,905 |
+| `verifierBase64` | g5 | 345 | 205 | 1,130 | 581 | 682 | 1,865 | 3,470 | 2,620 | 2,753 |
+| `endpointJson` | g5 | 366 | 338 | 1,219 | 674 | 914 | 2,264 | 3,842 | 3,030 | 6,245 |
+| `retryViaResult` | g5 | 375 | 248 | 1,202 | 668 | 784 | 2,151 | 3,527 | 2,639 | 5,345 |
+| `rejectTamperedSignature` | g5 | 380 | 201 | 1,191 | 563 | 612 | 2,053 | 3,410 | 2,812 | 2,870 |
+| `decodeBase64` | legacy | 27.3 | 96.3 | 47.4 | 192 | 235 | 80.1 | 5.0 | 76.2 | n/a |
+| `core` | legacy | 3,063 | 2,519 | 2,274 | 4,051 | 9,176 | 17,193 | 24,777 | 3,319 | 160,145 |
+| `verifierBase64` | legacy | 3,134 | 2,481 | 2,153 | 4,176 | 9,028 | 16,237 | 24,255 | 3,223 | 162,450 |
+| `endpointJson` | legacy | 4,401 | 5,758 | 3,969 | 8,170 | 13,659 | 24,503 | 26,855 | 4,929 | 304,378 |
+| `retryViaResult` | legacy | 4,061 | 4,655 | 4,103 | 6,187 | 12,421 | 22,131 | 24,997 | 4,800 | 297,134 |
+| `rejectTamperedSignature` | legacy | 3,152 | 2,381 | 2,438 | 3,386 | 9,106 | 14,852 | 23,731 | 3,747 | 153,825 |
 
-Read the ratios inside one column before the absolute values. PHP and .NET
-each ran twice, and the same benchmark moved by up to 12% between those runs.
+Read the ratios inside one column before the absolute values. PHP and the
+earlier BenchmarkDotNet run of .NET each ran twice, and the same benchmark
+moved by up to 12% between those runs.
 A few gaps are larger than that. Swift takes about 50 times as long as Java on
 the legacy receipt and about 8 times as long on g5: its cost grows with the
 purchase count far faster than any other port's. PHP and Ruby take about 25 ms

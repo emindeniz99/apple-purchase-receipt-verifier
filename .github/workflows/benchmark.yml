@@ -169,14 +169,14 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: "10.0.x"
-      # BenchmarkDotNet looks for the project from the working directory.
-      # Its JSON reports times in nanoseconds.
-      - run: dotnet run -c Release -- --exporters json --artifacts "$RUNNER_TEMP/bdn"
-        working-directory: dotnet/bench
+      # Built in its own step so the SDK's first-run and build output stay
+      # out of the JSON the run step writes to stdout.
+      - run: dotnet build -c Release dotnet/bench
+      - run: dotnet run -c Release --no-build --project dotnet/bench > dotnet-bench.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dotnet-bench
-          path: ${{ runner.temp }}/bdn/results/
+          path: dotnet-bench.json
           if-no-files-found: error
 
   swift:
