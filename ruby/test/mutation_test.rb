@@ -198,7 +198,7 @@ class MutationTest < Minitest::Test
     random = Random.new(SEED)
     500.times do |iteration|
       mutated = mutate(random, bytes)
-      response = endpoint.verify_receipt({ "receipt-data" => [mutated].pack("m0") })
+      response = endpoint.verify_receipt_result({ "receipt-data" => [mutated].pack("m0") }).to_response
       assert_includes [0, 21_002, 21_003, 21_007, 21_008, 21_009], response["status"],
                       "iteration #{iteration}"
     end

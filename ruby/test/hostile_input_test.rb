@@ -315,7 +315,7 @@ class HostileInputTest < Minitest::Test
     der = TestPki.sign_receipt(@pki, long)
     endpoint = APRV::VerifyReceiptEndpoint.new(trusted_roots: [@pki.root],
                                                environment: APRV::Environment::SANDBOX)
-    response = endpoint.verify_receipt({ "receipt-data" => [der].pack("m0") })
+    response = endpoint.verify_receipt_result({ "receipt-data" => [der].pack("m0") }).to_response
     assert_equal 0, response["status"]
   end
 

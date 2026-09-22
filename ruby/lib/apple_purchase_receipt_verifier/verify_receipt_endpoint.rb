@@ -21,8 +21,12 @@ module ApplePurchaseReceiptVerifier
   #   )
   #
   #   def create
-  #     render json: ENDPOINT.verify_receipt(params.permit!.to_h)
+  #     render json: ENDPOINT.verify_receipt_result(params.permit!.to_h).to_response
   #   end
+  #
+  # No method raises on any request input: every failure comes back as a
+  # {VerifyReceiptResult} with a status and a
+  # {VerifyReceiptResult#failure_reason}.
   class VerifyReceiptEndpoint
     # The Apple status codes this local implementation can produce. 21000,
     # 21004, 21005, 21006, 21010 and 21100-21199 are out of scope and are
@@ -35,9 +39,6 @@ module ApplePurchaseReceiptVerifier
       PRODUCTION_RECEIPT_ON_SANDBOX  = 21_008
       INTERNAL                       = 21_009
     end
-
-    MALFORMED_JSON = "{\"status\":#{Status::MALFORMED}}".freeze
-    private_constant :MALFORMED_JSON
 
     # Receipt types that count as production. Everything else —
     # "ProductionSandbox", "ProductionVPPSandbox", "Xcode", or a missing
@@ -68,134 +69,125 @@ module ApplePurchaseReceiptVerifier
       freeze
     end
 
-    # Handles one verifyReceipt request body. Never raises: like the real
-    # endpoint, every failure is reported through `status`.
+    # Handles one verifyReceipt request: a request body already decoded to a
+    # Hash, or the raw JSON text an HTTP framework hands over.
     #
-    # @param request_body [Hash] `{"receipt-data" => base64}`. `password` and
-    #   `exclude-old-transactions` are accepted for compatibility and never
-    #   read (there is nothing local to validate them against).
-    # @return [Hash] the response body, string-keyed
-    def verify_receipt(request_body)
-      receipt_data = request_body.is_a?(Hash) ? request_body["receipt-data"] : nil
-      return { "status" => Status::MALFORMED } unless receipt_data.is_a?(String) && !receipt_data.empty?
-
-      begin
-        der = Receipt.decode_base64(receipt_data)
-      rescue VerificationError
-        return { "status" => Status::MALFORMED }
+    # A body that is not a JSON object (unparseable, `null`, an array, a
+    # scalar), or a `receipt-data` that is missing, empty or not a String,
+    # fails with {Reason::MALFORMED_REQUEST}, status 21002. Apple has no status
+    # code for "that was not JSON"; 21002 ("the data in the receipt-data
+    # property was malformed or missing") is the closest.
+    #
+    # @param request [Hash, String] `{"receipt-data" => base64}` or its JSON
+    #   text. `password` and `exclude-old-transactions` are accepted for
+    #   compatibility and never read (there is nothing local to validate them
+    #   against).
+    # @param now [Time, nil] the instant to render as `request_date` in place
+    #   of the clock. It reaches `request_date` and nothing else: certificate
+    #   validity never sees it.
+    # @return [VerifyReceiptResult]
+    # @raise [ArgumentError] if `now` is neither nil nor a Time
+    def verify_receipt_result(request, now: nil)
+      stamped(now) do |at|
+        request.is_a?(String) ? from_json(request, at) : from_hash(request, at)
       end
+    end
 
-      begin
-        receipt = Receipt.verify(der, @roots)
-        production = PRODUCTION_RECEIPT_TYPES.include?(receipt.receipt_type) # steep:ignore
-        if @environment == Environment::PRODUCTION && !production
-          return { "status" => Status::SANDBOX_RECEIPT_ON_PRODUCTION }
-        end
-        if @environment == Environment::SANDBOX && production
-          return { "status" => Status::PRODUCTION_RECEIPT_ON_SANDBOX }
-        end
-
-        {
-          "status" => Status::OK,
-          "environment" => @environment,
-          "receipt" => receipt_json(receipt, now)
-        }
-      rescue VerificationError => e
-        status = e.reason == Reason::INVALID_RECEIPT_FORMAT ? Status::MALFORMED : Status::NOT_AUTHENTICATED
-        { "status" => status }
-      rescue SystemStackError, StandardError
-        { "status" => Status::INTERNAL }
-      end
+    # Verifies a bare base64 receipt, the value a request body carries as
+    # `receipt-data`, with no envelope around it. nil, an empty String or a
+    # non-String fails with {Reason::MALFORMED_REQUEST}, as a missing
+    # `receipt-data` does.
+    #
+    # @param receipt_data [String, nil]
+    # @param now [Time, nil] as for {#verify_receipt_result}
+    # @return [VerifyReceiptResult]
+    # @raise [ArgumentError] if `now` is neither nil nor a Time
+    def verify_receipt_data(receipt_data, now: nil)
+      stamped(now) { |at| verify(receipt_data, at) }
     end
 
     # The same decision in raw wire form: the JSON request body in, the JSON
     # response body out, so a framework's body can be piped straight through
-    # without a DTO in between.
-    #
-    # A body that is not a JSON object answers 21002. Apple has no status code
-    # for "that was not JSON"; 21002 ("the data in the receipt-data property
-    # was malformed or missing") is the closest, and a JSON object without
-    # usable receipt-data gets it anyway.
+    # without a DTO in between. The same as
+    # `verify_receipt_result(body).to_json` for a String body; anything that
+    # is not a String answers 21002.
     #
     # @param body [String]
     # @return [String]
     def verify_receipt_json(body)
-      parsed = parse_json_object(body)
-      return MALFORMED_JSON if parsed.nil?
-
-      JSON.generate(verify_receipt(parsed))
+      stamped(nil) { |at| from_json(body, at) }.to_json
     end
 
     private
 
-    def parse_json_object(body)
-      parsed = JSON.parse(body)
-      parsed.is_a?(Hash) ? parsed : nil
-    rescue JSON::ParserError, TypeError
-      nil
+    # Reads the time once per call, before anything else, so one result can
+    # never carry two request dates. A clock that raises or returns something
+    # other than a Time is contained like any other internal failure: the
+    # result is {Reason::INTERNAL_ERROR} with the clock's error as its cause,
+    # and its request_date (never rendered for a 21009) is the system time.
+    def stamped(now)
+      raise ArgumentError, "now must be a Time" unless now.nil? || now.is_a?(Time)
+
+      begin
+        at = now.nil? ? clock_time : now.getutc
+      rescue SystemStackError, StandardError => e
+        return internal_error(e, Time.now.utc)
+      end
+      yield at
     end
 
-    def now
+    def clock_time
       instant = @clock.nil? ? Time.now : @clock.call # steep:ignore NoMethod
       raise TypeError, "clock did not return a Time" unless instant.is_a?(Time)
 
-      instant.utc
+      instant.getutc
     end
 
-    def receipt_json(receipt, request_date)
-      body = {} #: Hash[String, untyped]
-      put(body, "receipt_type", receipt.receipt_type)
-      # Apple echoes attribute 1 under both names — its response reference
-      # defines adam_id as "See app_item_id" — and as JSON numbers, not as
-      # the strings the in-app integers are rendered with.
-      put(body, "adam_id", receipt.app_item_id)
-      put(body, "app_item_id", receipt.app_item_id)
-      put(body, "bundle_id", receipt.bundle_id)
-      put(body, "application_version", receipt.app_version)
-      put(body, "download_id", receipt.download_id)
-      put(body, "version_external_identifier", receipt.version_external_identifier)
-      put(body, "original_application_version", receipt.original_app_version)
-      apple_dates(body, "receipt_creation_date", receipt.creation_date)
-      apple_dates(body, "request_date", request_date)
-      apple_dates(body, "original_purchase_date", receipt.original_purchase_date)
-      apple_dates(body, "expiration_date", receipt.expiration_date)
-      body["in_app"] = receipt.in_app_purchases.map { |purchase| in_app_json(purchase) }
-      body
-    end
-
-    def in_app_json(purchase)
-      entry = {} #: Hash[String, String]
-      put(entry, "quantity", purchase.quantity&.to_s)
-      put(entry, "product_id", purchase.product_id)
-      put(entry, "transaction_id", purchase.transaction_id)
-      put(entry, "original_transaction_id", purchase.original_transaction_id)
-      apple_dates(entry, "purchase_date", purchase.purchase_date)
-      apple_dates(entry, "original_purchase_date", purchase.original_purchase_date)
-      apple_dates(entry, "expires_date", purchase.expires_date)
-      apple_dates(entry, "cancellation_date", purchase.cancellation_date)
-      put(entry, "web_order_line_item_id", purchase.web_order_line_item_id&.to_s)
-      entry["is_trial_period"] = (purchase.is_trial_period == 1).to_s unless purchase.is_trial_period.nil?
-      unless purchase.is_in_intro_offer_period.nil?
-        entry["is_in_intro_offer_period"] = (purchase.is_in_intro_offer_period == 1).to_s
+    def from_json(body, at)
+      begin
+        parsed = JSON.parse(body)
+      rescue JSON::ParserError, TypeError
+        return failed(Reason::MALFORMED_REQUEST, at)
       end
-      entry
+      from_hash(parsed, at)
     end
 
-    def put(target, key, value)
-      target[key] = value unless value.nil?
+    def from_hash(request, at)
+      begin
+        receipt_data = request.is_a?(Hash) ? request["receipt-data"] : nil
+      rescue SystemStackError, StandardError => e
+        return internal_error(e, at)
+      end
+      verify(receipt_data, at)
     end
 
-    # Apple renders every date three ways: GMT wall-clock, epoch milliseconds
-    # as a String, and US Pacific wall-clock.
-    def apple_dates(target, prefix, date)
-      return if date.nil?
+    # The one verification path every entry point ends in. `at` only becomes
+    # `request_date`: certificate validity is judged inside Receipt.verify,
+    # which takes no time input.
+    def verify(receipt_data, at)
+      return failed(Reason::MALFORMED_REQUEST, at) unless receipt_data.is_a?(String) && !receipt_data.empty?
 
-      utc = date.utc? ? date : date.getutc
-      target[prefix] = "#{utc.strftime("%Y-%m-%d %H:%M:%S")} Etc/GMT"
-      target["#{prefix}_ms"] = (utc.to_r * 1000).to_i.to_s
-      pacific = PacificTime.wall_clock(utc)
-      target["#{prefix}_pst"] =
-        "#{pacific.strftime("%Y-%m-%d %H:%M:%S")} #{PacificTime::ZONE_LABEL}"
+      # The primitive itself, not a ReceiptVerifier built around a wildcard
+      # bundle id: like Apple's endpoint, no bundle-id claim is checked here
+      # (callers compare receipt.bundle_id).
+      receipt = Receipt.verify(Receipt.decode_base64(receipt_data), @roots)
+      result(receipt, nil, nil, at)
+    rescue VerificationError => e
+      failed(e.reason, at)
+    rescue SystemStackError, StandardError => e
+      internal_error(e, at)
+    end
+
+    def failed(reason, at)
+      result(nil, reason, nil, at)
+    end
+
+    def internal_error(cause, at)
+      result(nil, Reason::INTERNAL_ERROR, cause, at)
+    end
+
+    def result(receipt, reason, cause, at)
+      VerifyReceiptResult.__send__(:new, @environment, receipt, reason, cause, at)
     end
   end
 end

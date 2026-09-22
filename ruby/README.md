@@ -121,7 +121,7 @@ the bundle-id check** — if you unlock products from its result, compare
 ## The verifyReceipt-compatible endpoint
 
 Same request body, same response body, same status codes as Apple's deprecated
-endpoint — answered locally.
+endpoint, answered locally.
 
 ```ruby
 ENDPOINT = APRV::VerifyReceiptEndpoint.new(
@@ -131,22 +131,77 @@ ENDPOINT = APRV::VerifyReceiptEndpoint.new(
 
 # Rails
 def create
-  render json: ENDPOINT.verify_receipt(params.permit!.to_h)
+  render json: ENDPOINT.verify_receipt_result(params.permit!.to_h).to_response
 end
 
 # Or pipe the raw body straight through
 ENDPOINT.verify_receipt_json(request.body.read)   # String in, String out
 ```
 
-It never raises: failures are reported through `status`, exactly as the real
-endpoint does. Like the real endpoint, it does **not** check the bundle id —
-compare `response["receipt"]["bundle_id"]` yourself.
+Every entry point returns a `VerifyReceiptResult`, except `verify_receipt_json`,
+which returns its JSON:
+
+| Method | Takes |
+|---|---|
+| `verify_receipt_result(request, now: nil)` | a request Hash, or its raw JSON text |
+| `verify_receipt_data(receipt_data, now: nil)` | the bare base64 `receipt-data` value, no envelope |
+| `verify_receipt_json(body)` | raw JSON text; the same as `verify_receipt_result(body).to_json` |
+
+```ruby
+result = ENDPOINT.verify_receipt_data(receipt_data)
+
+result.status          # 0, 21002, 21003, 21007, 21008 or 21009, for this endpoint's environment
+result.verified?       # true when the receipt verified, 21007 and 21008 included
+result.receipt         # the AppReceipt when verified?, else nil
+result.failure_reason  # a Reason Symbol when not verified?, else nil
+result.failure_cause   # the error behind INTERNAL_ERROR, else nil
+result.request_date    # the Time rendered as request_date, read once per call
+
+result.to_response     # the response body as a new Hash
+result.to_json         # the same, as JSON text
+
+# A 21007 keeps the receipt, so the sandbox answer needs no second verification.
+result.to_json(APRV::Environment::SANDBOX) if result.status == 21_007
+```
+
+`verified?` is not `status.zero?`. A 21007 or 21008 means the receipt verified
+and belongs to the other environment. `to_response(environment)` and
+`to_json(environment)` answer what an endpoint of that environment would, with
+the status recomputed from the receipt's own `receipt_type`: a production
+receipt answers 0 on Production and 21008 on Sandbox, any other receipt 21007
+on Production and 0 on Sandbox, and a failed result keeps its status on both.
+An environment other than Production or Sandbox raises `ArgumentError`.
+
+`now:` takes a `Time` and renders it as `request_date` in place of the clock.
+It reaches `request_date` and nothing else; certificate validity never sees it.
+Anything other than `nil` or a `Time` raises `ArgumentError`.
+
+A result is frozen, and `VerifyReceiptResult.new` is private: only the endpoint
+creates one, so no caller can build a status 0. Passing a result to
+`JSON.generate` or to Rails' `render json:` embeds its own response.
+
+No request input makes the endpoint raise: failures come back as a result with
+a status, exactly as the real endpoint reports them. Two reasons exist only on
+a result, never on a `VerificationError`:
+
+| Reason | Status | When |
+|---|---|---|
+| `MALFORMED_REQUEST` | 21002 | the body is not a JSON object, or `receipt-data` is missing, empty or not a String |
+| `INTERNAL_ERROR` | 21009 | an unexpected error inside the endpoint, including a clock that raises or returns something other than a `Time`; `failure_cause` holds it |
+
+Like the real endpoint, it does **not** check the bundle id. Compare
+`result.receipt.bundle_id` yourself.
 
 Status codes it can produce: `0`, `21002`, `21003`, `21007`, `21008`, `21009`.
 Everything else in Apple's list depends on Apple's subscription database and is
 out of scope; `COMPARISON.md` at the repository root has the field-by-field
 fidelity table, including what `latest_receipt_info` and `pending_renewal_info`
 would need.
+
+### Migrating from `verify_receipt`
+
+`verify_receipt(body)` is gone. `verify_receipt_result(body).to_response`
+returns the same Hash.
 
 ## Errors
 
@@ -165,8 +220,10 @@ end
 ```
 
 `e.reason.to_s` is the canonical cross-language token, with no mapping table
-anywhere. The vocabulary is closed by the cross-port contract — eleven reasons,
-and a twelfth would be a change to every implementation in one pull request:
+anywhere. The vocabulary is closed by the cross-port contract: eleven reasons
+in `Reason::ALL`, and a twelfth would be a change to every implementation in
+one pull request. (The endpoint's `MALFORMED_REQUEST` and `INTERNAL_ERROR` are
+outside it; no verifier raises them.)
 
 | Reason | Raised when |
 |---|---|
@@ -280,7 +337,8 @@ creation-date attribute, and failing all of those, the **system** clock.
 in exactly two places:
 
 1. the `STALE_PAYLOAD` comparison;
-2. the endpoint's `request_date` / `_ms` / `_pst` triple.
+2. the endpoint's `request_date` / `_ms` / `_pst` triple, once per call, and
+   not at all when the call passes `now:`.
 
 It never reaches a certificate-validity decision. Injecting a clock to test
 staleness, or to work around skew, must not let you authenticate an expired

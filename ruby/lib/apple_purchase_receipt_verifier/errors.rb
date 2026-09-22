@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 module ApplePurchaseReceiptVerifier
-  # The machine-readable failure vocabulary. Eleven reasons, closed by the
-  # cross-port contract: `fixtures/cases.schema.json` holds the same enum and
+  # The machine-readable failure vocabulary. Eleven reasons in `ALL`, closed
+  # by the cross-port contract: `fixtures/cases.schema.json` holds the same enum and
   # every port mirrors it. A twelfth reason is a change to that file, to
   # PLAN.md and to every port in one pull request.
   #
@@ -28,6 +28,17 @@ module ApplePurchaseReceiptVerifier
       WRONG_APP_APPLE_ID, INVALID_RECEIPT_FORMAT, DEVICE_HASH_MISMATCH,
       STALE_PAYLOAD
     ].freeze
+
+    # The two reasons below are not in ALL: no verifier raises them, so no
+    # {VerificationError} ever carries one. They exist only as a
+    # {VerifyReceiptResult#failure_reason}.
+
+    # The verifyReceipt request envelope is unusable: the body is not a JSON
+    # object, or `receipt-data` is missing, empty or not a String.
+    MALFORMED_REQUEST = :MALFORMED_REQUEST
+    # An unexpected error inside the verifyReceipt endpoint, answered as
+    # status 21009. {VerifyReceiptResult#failure_cause} holds the error.
+    INTERNAL_ERROR = :INTERNAL_ERROR
   end
 
   # The four environment names, spelled as Apple's claims spell them.
