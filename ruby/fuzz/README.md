@@ -26,7 +26,7 @@ MAKE="make --environment-overrides V=1" \
 | `verify_receipt` | `verify_receipt_core`: CMS, payload, chain, signature | an accepted receipt fails against an unrelated anchor set |
 | `verify_receipt_base64` | `ReceiptVerifier#verify_base64` and `#verify`, the string a client sends | only `VerificationError` escapes |
 | `verify_transaction` | the three `JwsVerifier` entry points | a JWS `verify_raw` accepts under the fixture root fails under Apple's roots |
-| `endpoint_json` | `VerifyReceiptEndpoint#verify_receipt_json` on a request body | it never raises, and the answer is always JSON with a numeric `status` |
+| `endpoint_json` | `VerifyReceiptEndpoint#verify_receipt_json` and `#verify_receipt_result` on a request body | neither raises, the answer is always JSON with a numeric `status`, and the result has the same status, exactly one of receipt and failure reason, and never `INTERNAL_ERROR` |
 
 The names are the Rust port's, in snake_case because they are Ruby file
 names; `rust/fuzz/` additionally carries `parse-certificate`, which here

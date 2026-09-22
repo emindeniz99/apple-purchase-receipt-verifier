@@ -109,7 +109,7 @@ public class ClockTests
         {
             ["receipt-data"] = Convert.ToBase64String(Fixtures.Bytes("receipt")),
         };
-        IReadOnlyDictionary<string, object?> response = endpoint.VerifyReceipt(body);
+        IReadOnlyDictionary<string, object?> response = endpoint.VerifyReceiptResult(body).ToResponse();
         IReadOnlyDictionary<string, object?> receipt =
             (IReadOnlyDictionary<string, object?>)response["receipt"]!;
 
@@ -132,7 +132,7 @@ public class ClockTests
             ["receipt-data"] = Convert.ToBase64String(Fixtures.Bytes("receipt")),
         };
         IReadOnlyDictionary<string, object?> receipt =
-            (IReadOnlyDictionary<string, object?>)endpoint.VerifyReceipt(body)["receipt"]!;
+            (IReadOnlyDictionary<string, object?>)endpoint.VerifyReceiptResult(body).ToResponse()["receipt"]!;
         long stamped = long.Parse((string)receipt["request_date_ms"]!, System.Globalization.CultureInfo.InvariantCulture);
         Assert.True(Math.Abs(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - stamped) < 60_000);
     }

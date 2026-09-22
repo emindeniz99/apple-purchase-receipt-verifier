@@ -161,7 +161,7 @@ public struct ReceiptVerifier: Sendable {
         // 2), so this is deliberately not routed through any injected clock.
         let at = fields.creationDate ?? Date()
 
-        let signerCert = try cms.signerCertificate()
+        let signerCert = cms.certificates[try cms.signerIndex()]
         try requireDecodableExtensions(signerCert, what: "receipt signer certificate")
         // Hand chain building a single path instead of the whole certificate
         // bag. swift-certificates' Verifier is a backtracking DFS whose
@@ -588,7 +588,14 @@ private struct CMSReceipt {
         }
     }
 
-    func signerCertificate() throws -> Certificate {
+    /// Answers the signer's position in `certificates`, not the certificate
+    /// itself. Returning the 616-byte `Certificate` from a throwing function
+    /// made its success path end in a tail-called `memcpy`, and on x86_64 the
+    /// Swift 6.3.3 compiler (LLVM) drops the error register's restore on that
+    /// tail call: a release build returned a garbage "error" for a genuine
+    /// receipt and the caller crashed retaining it. An `Int` result comes back
+    /// in a register, so no copy follows the last check.
+    func signerIndex() throws -> Int {
         if unreadableNodes.contains(where: { $0.serial == signerSerial && $0.issuer == signerIssuer }) {
             throw VerificationError(
                 .invalidCertificate, "receipt signer certificate is not a valid certificate")
@@ -602,7 +609,7 @@ private struct CMSReceipt {
                 throw VerificationError(
                     .invalidReceiptFormat, "an embedded certificate is not a valid certificate")
             }
-            return certificates[offset]
+            return offset
         }
         if unreadable != nil {
             throw VerificationError(

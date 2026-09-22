@@ -244,7 +244,7 @@ fn no_source_file_constructs_an_rsa_private_key() {
 fn the_direct_dependency_set_is_exactly_the_reviewed_one() {
     // A new direct dependency is a supply-chain decision, and it should not
     // be possible to make one by accident.
-    const EXPECTED: [&str; 8] = [
+    const EXPECTED: [&str; 9] = [
         "rsa",
         "p256",
         "p384",
@@ -253,6 +253,7 @@ fn the_direct_dependency_set_is_exactly_the_reviewed_one() {
         "digest",
         "subtle",
         "serde_json",
+        "base64",
     ];
     let manifest = std::fs::read_to_string(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"),

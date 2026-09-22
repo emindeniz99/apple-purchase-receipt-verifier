@@ -43,8 +43,9 @@ export interface ReceiptVerifierOptions {
  * receipt-data contract, throwing {@link Reason.INVALID_RECEIPT_FORMAT}
  * (rather than silently skipping bad characters) when it does not conform.
  * Matches the Node build's function of the same name in `../receipt.js`.
+ * Shared by {@link ReceiptVerifier.verify} and the web VerifyReceiptEndpoint.
  */
-function decodeReceiptDataString(text: string): Uint8Array {
+export function decodeReceiptDataString(text: string): Uint8Array {
   const decoded = receiptBase64DecodeStrict(text);
   if (decoded === null) {
     throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'receipt-data is not valid base64');

@@ -61,7 +61,7 @@ public class CultureTests : IDisposable
             ["receipt-data"] = Convert.ToBase64String(Fixtures.Bytes("receipt")),
         };
         IReadOnlyDictionary<string, object?> receipt =
-            (IReadOnlyDictionary<string, object?>)endpoint.VerifyReceipt(body)["receipt"]!;
+            (IReadOnlyDictionary<string, object?>)endpoint.VerifyReceiptResult(body).ToResponse()["receipt"]!;
 
         // A Buddhist-calendar culture would render 2567, and a comma-decimal
         // culture would corrupt the millisecond strings.

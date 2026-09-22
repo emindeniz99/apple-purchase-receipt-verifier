@@ -1026,7 +1026,7 @@ final class ChainBuildingBoundTests: XCTestCase {
     /// receipt, and left every other test in this file green (measured), so
     /// nothing else pins the position. This bag separates the two: it is over
     /// the bound AND omits the signer certificate, so the guard where it is
-    /// reports the bound, while a guard that runs after `signerCertificate()`
+    /// reports the bound, while a guard that runs after `signerIndex()`
     /// tells the caller the receipt is malformed instead.
     func testTheCountGuardRunsBeforeTheSignerIsResolved() async throws {
         let genuine = try genuineReceipt()

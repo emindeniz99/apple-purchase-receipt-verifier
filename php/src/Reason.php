@@ -15,6 +15,12 @@ namespace EminDeniz99\ApplePurchaseReceiptVerifier;
  * canonical `SCREAMING_SNAKE` token.
  *
  * Adding a twelfth case is a cross-port change, not a PHP one.
+ *
+ * Two more cases, {@see Reason::MalformedRequest} and
+ * {@see Reason::InternalError}, exist only as
+ * {@see \EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\VerifyReceiptResult::failureReason()}
+ * values. No {@see VerificationException} is ever thrown with either, so a
+ * `match` over a caught exception's reason never sees them.
  */
 enum Reason: string
 {
@@ -50,4 +56,17 @@ enum Reason: string
 
     /** The payload was signed longer ago than the configured max signed age. */
     case StalePayload = 'STALE_PAYLOAD';
+
+    /**
+     * The verifyReceipt request envelope is unusable: the body is not a JSON
+     * object or is over the size cap, or `receipt-data` is missing, empty or
+     * not a string. Status 21002. Only ever a result's failure reason.
+     */
+    case MalformedRequest = 'MALFORMED_REQUEST';
+
+    /**
+     * An unexpected `Throwable` inside the verifyReceipt endpoint. Status
+     * 21009. Only ever a result's failure reason.
+     */
+    case InternalError = 'INTERNAL_ERROR';
 }

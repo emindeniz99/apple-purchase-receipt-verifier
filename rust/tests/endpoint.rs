@@ -35,7 +35,8 @@ fn shared_receipt_base64() -> String {
 #[test]
 fn a_sandbox_receipt_on_sandbox_answers_zero_with_the_full_body() {
     let response = endpoint(Environment::Sandbox)
-        .verify_receipt(&VerifyReceiptRequest::new(shared_receipt_base64()));
+        .verify_receipt_result(&VerifyReceiptRequest::new(shared_receipt_base64()))
+        .to_response();
     assert_eq!(response.status, status::OK);
     assert_eq!(response.environment, Some(Environment::Sandbox));
     let receipt = response.receipt.unwrap();
@@ -61,7 +62,8 @@ fn a_sandbox_receipt_on_sandbox_answers_zero_with_the_full_body() {
 #[test]
 fn in_app_scalars_are_rendered_as_apple_renders_them() {
     let response = endpoint(Environment::Sandbox)
-        .verify_receipt(&VerifyReceiptRequest::new(shared_receipt_base64()));
+        .verify_receipt_result(&VerifyReceiptRequest::new(shared_receipt_base64()))
+        .to_response();
     let receipt = response.receipt.unwrap();
     let entries = receipt.get("in_app").unwrap().as_array().unwrap();
     let vip = entries
@@ -95,8 +97,9 @@ fn receipt_ids_body() -> String {
 
 #[test]
 fn the_legacy_ids_cross_the_wire_as_bare_numbers() {
-    let response =
-        receipt_ids_endpoint().verify_receipt(&VerifyReceiptRequest::new(receipt_ids_body()));
+    let response = receipt_ids_endpoint()
+        .verify_receipt_result(&VerifyReceiptRequest::new(receipt_ids_body()))
+        .to_response();
     assert_eq!(response.status, status::OK);
     let receipt = response.receipt.unwrap();
     // Apple echoes attribute 1 twice, and defines adam_id as
@@ -129,8 +132,9 @@ fn the_legacy_ids_cross_the_wire_as_bare_numbers() {
 
 #[test]
 fn is_trial_period_is_a_string_like_is_in_intro_offer_period() {
-    let response =
-        receipt_ids_endpoint().verify_receipt(&VerifyReceiptRequest::new(receipt_ids_body()));
+    let response = receipt_ids_endpoint()
+        .verify_receipt_result(&VerifyReceiptRequest::new(receipt_ids_body()))
+        .to_response();
     let receipt = response.receipt.unwrap();
     let entries = receipt.get("in_app").unwrap().as_array().unwrap();
     let by_product = |product_id: &str| {
@@ -151,7 +155,8 @@ fn is_trial_period_is_a_string_like_is_in_intro_offer_period() {
 #[test]
 fn ids_a_receipt_does_not_carry_are_omitted_never_null() {
     let response = endpoint(Environment::Sandbox)
-        .verify_receipt(&VerifyReceiptRequest::new(shared_receipt_base64()));
+        .verify_receipt_result(&VerifyReceiptRequest::new(shared_receipt_base64()))
+        .to_response();
     let receipt = response.receipt.unwrap();
     for key in [
         "adam_id",
@@ -176,7 +181,8 @@ fn ids_a_receipt_does_not_carry_are_omitted_never_null() {
 #[test]
 fn the_request_date_triple_comes_from_the_injected_clock() {
     let response = endpoint_at(Environment::Sandbox, 1_735_689_600_000)
-        .verify_receipt(&VerifyReceiptRequest::new(shared_receipt_base64()));
+        .verify_receipt_result(&VerifyReceiptRequest::new(shared_receipt_base64()))
+        .to_response();
     let receipt = response.receipt.unwrap();
     assert_eq!(
         receipt.get("request_date").unwrap(),
@@ -207,7 +213,8 @@ fn the_request_date_crosses_both_dst_boundaries_correctly() {
         (1_730_624_400_000, "2024-11-03 01:00:00 America/Los_Angeles"),
     ] {
         let response = endpoint_at(Environment::Sandbox, now)
-            .verify_receipt(&VerifyReceiptRequest::new(shared_receipt_base64()));
+            .verify_receipt_result(&VerifyReceiptRequest::new(shared_receipt_base64()))
+            .to_response();
         assert_eq!(
             response.receipt.unwrap().get("request_date_pst").unwrap(),
             expected
@@ -230,9 +237,11 @@ fn environment_routing_is_exhaustive_over_the_receipt_types() {
         let der = common::read_fixture(path);
         let body = base64::encode(&der);
         let production = endpoint(Environment::Production)
-            .verify_receipt(&VerifyReceiptRequest::new(body.clone()));
-        let sandbox =
-            endpoint(Environment::Sandbox).verify_receipt(&VerifyReceiptRequest::new(body));
+            .verify_receipt_result(&VerifyReceiptRequest::new(body.clone()))
+            .to_response();
+        let sandbox = endpoint(Environment::Sandbox)
+            .verify_receipt_result(&VerifyReceiptRequest::new(body))
+            .to_response();
         if is_production {
             assert_eq!(production.status, status::OK, "{path} on production");
             assert_eq!(
@@ -262,7 +271,9 @@ fn a_non_zero_status_carries_no_receipt_and_no_environment() {
         ))),
     ];
     for request in bodies {
-        let response = endpoint(Environment::Sandbox).verify_receipt(&request);
+        let response = endpoint(Environment::Sandbox)
+            .verify_receipt_result(&request)
+            .to_response();
         assert_ne!(response.status, status::OK);
         assert!(response.receipt.is_none());
         assert!(response.environment.is_none());
@@ -277,13 +288,15 @@ fn a_missing_or_empty_receipt_data_answers_21002() {
     let endpoint = endpoint(Environment::Sandbox);
     assert_eq!(
         endpoint
-            .verify_receipt(&VerifyReceiptRequest::default())
+            .verify_receipt_result(&VerifyReceiptRequest::default())
+            .to_response()
             .status,
         status::MALFORMED
     );
     assert_eq!(
         endpoint
-            .verify_receipt(&VerifyReceiptRequest::new(""))
+            .verify_receipt_result(&VerifyReceiptRequest::new(""))
+            .to_response()
             .status,
         status::MALFORMED
     );
@@ -295,7 +308,8 @@ fn a_malformed_receipt_answers_21002_and_an_unauthenticated_one_21003() {
     // Not a CMS blob at all.
     assert_eq!(
         endpoint
-            .verify_receipt(&VerifyReceiptRequest::new("aaaaaaaaaaa"))
+            .verify_receipt_result(&VerifyReceiptRequest::new("aaaaaaaaaaa"))
+            .to_response()
             .status,
         status::MALFORMED
     );
@@ -303,7 +317,8 @@ fn a_malformed_receipt_answers_21002_and_an_unauthenticated_one_21003() {
     let foreign = base64::encode(&common::read_fixture("generated/receipt-foreign.der"));
     assert_eq!(
         endpoint
-            .verify_receipt(&VerifyReceiptRequest::new(foreign))
+            .verify_receipt_result(&VerifyReceiptRequest::new(foreign))
+            .to_response()
             .status,
         status::NOT_AUTHENTICATED
     );
@@ -312,12 +327,16 @@ fn a_malformed_receipt_answers_21002_and_an_unauthenticated_one_21003() {
 #[test]
 fn password_and_exclude_old_transactions_are_accepted_and_never_read() {
     let endpoint = endpoint_at(Environment::Sandbox, 1_735_689_600_000);
-    let plain = endpoint.verify_receipt(&VerifyReceiptRequest::new(shared_receipt_base64()));
-    let decorated = endpoint.verify_receipt(&VerifyReceiptRequest {
-        receipt_data: Some(shared_receipt_base64()),
-        password: Some("a shared secret this library cannot check".to_owned()),
-        exclude_old_transactions: Some(true),
-    });
+    let plain = endpoint
+        .verify_receipt_result(&VerifyReceiptRequest::new(shared_receipt_base64()))
+        .to_response();
+    let decorated = endpoint
+        .verify_receipt_result(&VerifyReceiptRequest {
+            receipt_data: Some(shared_receipt_base64()),
+            password: Some("a shared secret this library cannot check".to_owned()),
+            exclude_old_transactions: Some(true),
+        })
+        .to_response();
     assert_eq!(plain, decorated);
 }
 
@@ -346,7 +365,8 @@ fn the_json_entry_point_matches_the_typed_one() {
     let body = serde_json::json!({ "receipt-data": shared_receipt_base64() }).to_string();
     let json: Value = serde_json::from_str(&endpoint.verify_receipt_json(&body)).unwrap();
     let typed = endpoint
-        .verify_receipt(&VerifyReceiptRequest::new(shared_receipt_base64()))
+        .verify_receipt_result(&VerifyReceiptRequest::new(shared_receipt_base64()))
+        .to_response()
         .to_json_value();
     assert_eq!(json, typed);
 }
@@ -371,7 +391,9 @@ fn hostile_bodies_never_escape_the_never_fails_contract() {
             .map(|_| u8::try_from(rng.below(256)).unwrap())
             .collect();
         let text = String::from_utf8_lossy(&bytes).into_owned();
-        let response = endpoint.verify_receipt(&VerifyReceiptRequest::new(text.clone()));
+        let response = endpoint
+            .verify_receipt_result(&VerifyReceiptRequest::new(text.clone()))
+            .to_response();
         assert!(
             matches!(
                 response.status,
@@ -409,7 +431,9 @@ fn the_endpoint_never_produces_a_status_outside_its_documented_set() {
             "generated/receipt-no-type.der",
         ] {
             let body = base64::encode(&common::read_fixture(name));
-            let response = endpoint.verify_receipt(&VerifyReceiptRequest::new(body));
+            let response = endpoint
+                .verify_receipt_result(&VerifyReceiptRequest::new(body))
+                .to_response();
             assert!(
                 documented.contains(&response.status),
                 "{name}: {}",
@@ -423,7 +447,8 @@ fn the_endpoint_never_produces_a_status_outside_its_documented_set() {
 fn the_endpoint_does_not_check_the_bundle_id() {
     // Like Apple's endpoint. The caller compares receipt.bundle_id itself.
     let response = endpoint(Environment::Sandbox)
-        .verify_receipt(&VerifyReceiptRequest::new(shared_receipt_base64()));
+        .verify_receipt_result(&VerifyReceiptRequest::new(shared_receipt_base64()))
+        .to_response();
     assert_eq!(response.status, status::OK);
     assert_eq!(
         response.receipt.unwrap().get("bundle_id").unwrap(),
@@ -449,7 +474,8 @@ fn an_injected_clock_cannot_authenticate_an_expired_chain() {
     ));
     assert_eq!(
         endpoint
-            .verify_receipt(&VerifyReceiptRequest::new(body))
+            .verify_receipt_result(&VerifyReceiptRequest::new(body))
+            .to_response()
             .status,
         status::NOT_AUTHENTICATED
     );
@@ -466,7 +492,9 @@ fn an_injected_clock_cannot_expire_a_valid_chain() {
     let body = base64::encode(&common::read_fixture(
         "generated/receipt-no-creation-date.der",
     ));
-    let response = endpoint.verify_receipt(&VerifyReceiptRequest::new(body));
+    let response = endpoint
+        .verify_receipt_result(&VerifyReceiptRequest::new(body))
+        .to_response();
     assert_eq!(response.status, status::OK);
     let receipt = response.receipt.unwrap();
     assert!(receipt.get("receipt_creation_date").is_none());

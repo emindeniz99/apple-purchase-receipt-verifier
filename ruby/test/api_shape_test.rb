@@ -29,7 +29,7 @@ class ApiShapeTest < Minitest::Test
     %i[verify verify_der verify_base64].each do |name|
       assert_includes APRV::ReceiptVerifier.public_instance_methods, name
     end
-    %i[verify_receipt verify_receipt_json].each do |name|
+    %i[verify_receipt_result verify_receipt_data verify_receipt_json].each do |name|
       assert_includes APRV::VerifyReceiptEndpoint.public_instance_methods, name
     end
   end
@@ -43,6 +43,17 @@ class ApiShapeTest < Minitest::Test
     assert_equal expected.sort, APRV::Reason::ALL.map(&:to_s).sort
     assert_equal 11, APRV::Reason::ALL.size
     APRV::Reason::ALL.each { |reason| assert_kind_of Symbol, reason }
+  end
+
+  # The endpoint's two extra reasons stay out of ALL and out of the shared
+  # schema: ALL is what a VerificationError can carry, and no verifier raises
+  # either of them.
+  def test_the_endpoint_only_reasons_are_outside_the_verifier_vocabulary
+    %i[MALFORMED_REQUEST INTERNAL_ERROR].each do |reason|
+      assert_equal reason, APRV::Reason.const_get(reason)
+      refute_includes APRV::Reason::ALL, reason
+      refute_includes TestSupport.cases_schema["$defs"]["reason"]["enum"], reason.to_s
+    end
   end
 
   def test_the_environment_vocabulary_equals_the_shared_schema

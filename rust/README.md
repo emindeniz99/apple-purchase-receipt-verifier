@@ -40,9 +40,11 @@ Synchronous, `#![forbid(unsafe_code)]`, Rust 1.85 or newer.
 - **Rust 1.85.0**, declared as `rust-version` and proven by CI: the whole
   suite, conformance included, runs on a real 1.85.0 toolchain against
   `Cargo.lock`, which is committed and resolved for that floor. Edition 2021.
-- **Eight direct dependencies**, all of them primitives: `rsa`, `p256`,
-  `p384`, `sha1`, `sha2`, `digest` and `subtle` for the arithmetic, and
-  `serde_json` for the JWS payloads, which are JSON. Every byte of
+- **Nine direct dependencies**, all of them primitives: `rsa`, `p256`,
+  `p384`, `sha1`, `sha2`, `digest` and `subtle` for the arithmetic,
+  `serde_json` for the JWS payloads, which are JSON, and `base64` for the
+  fast path over canonical `receipt-data` (anything it refuses falls through
+  to this crate's own decoder for Apple's tolerant rule). Every byte of
   attacker-supplied ASN.1 — certificates, CMS,
   receipt payloads, keys, signatures — is parsed by this crate's own bounded
   reader, so no third-party parser decides what a key or a signature is.
@@ -175,20 +177,74 @@ let endpoint = VerifyReceiptEndpoint::builder()
     .environment(Environment::Production)
     .build()?;
 
-let response = endpoint.verify_receipt(&VerifyReceiptRequest::new(receipt_b64));
-let json: String = endpoint.verify_receipt_json(raw_request_body);
+let result = endpoint.verify_receipt_result(&VerifyReceiptRequest::new(receipt_b64));
+let result = endpoint.verify_receipt_result_from_json(raw_request_body);
+let result = endpoint.verify_receipt_data(receipt_b64);   // receipt-data alone, no envelope
+
+let response: VerifyReceiptResponse = result.to_response(); // Apple's body, typed
+let json: String = result.to_json();                         // Apple's body as JSON
+
+let json = endpoint.verify_receipt_json(raw_request_body);   // same as ..._from_json(body).to_json()
 ```
 
-It never fails: the Apple status code is a field of the body it answers, for
-every input, including one that is not JSON. The statuses it can produce are
-`0`, `21002`, `21003`, `21007`, `21008` and `21009` — and no others, because
-the rest describe conditions that only exist on Apple's servers. Local
-21007 / 21008 routing fails closed: only receipt types `Production` and
-`ProductionVPP` count as production.
+No endpoint method returns an error or panics. The Apple status code is a
+field of the body, for every input, including one that is not JSON
+(`{"status":21002}`). The statuses it can produce are `0`, `21002`, `21003`,
+`21007`, `21008` and `21009`, and no others, because the rest describe
+conditions that only exist on Apple's servers. Local 21007 / 21008 routing
+fails closed: only receipt types `Production` and `ProductionVPP` count as
+production.
 
-`password` and `exclude-old-transactions` are accepted for compatibility and
-never read. See [COMPARISON.md](../COMPARISON.md) for the field-by-field
-fidelity account.
+A `VerifyReceiptResult` holds one verification. `status()` is the answer for
+the endpoint's own environment. `outcome()` is a `VerifyReceiptOutcome`:
+`Verified(AppReceipt)` whenever the receipt bytes verified, 21007 and 21008
+included, or `Failed { reason, cause }`. `verified()`, `receipt()`,
+`failure_reason()` and `failure_cause()` read the same thing without a
+`match`. The response is rendered only when you call `to_response()` or
+`to_json()`. Only the endpoint can create a result, and it is immutable.
+
+```rust
+match result.outcome() {
+    VerifyReceiptOutcome::Verified(receipt) => { /* compare receipt.bundle_id, unlock */ }
+    VerifyReceiptOutcome::Failed { reason, .. } => { /* reject; log reason.as_str() */ }
+}
+```
+
+**Retrying in the other environment costs no second verification.**
+`to_response_in(environment)` and `to_json_in(environment)` render what an
+endpoint of that environment would answer, recomputing the status from the
+receipt's own type each time:
+
+| receipt | on `Production` | on `Sandbox` |
+|---|---|---|
+| `Production`, `ProductionVPP` | 0 | 21008 |
+| any other type, or none | 21007 | 0 |
+| failed verification | its own status | its own status |
+
+`Xcode` and `LocalTesting` return the same `ConfigError` the builder returns
+for them. A sandbox receipt never renders as a production 0, whichever
+endpoint verified it. 21007 and 21008 bodies carry the status alone, as
+Apple's do.
+
+**Failure reasons.** `failure_reason()` is a `Reason`:
+
+| `failure_reason()` | status | when |
+|---|---|---|
+| `MalformedRequest` | 21002 | the body is not a JSON object, or `receipt-data` is missing, empty or not a string |
+| `InvalidReceiptFormat` | 21002 | `receipt-data` is not receipt base64, or does not decode to a receipt |
+| `InvalidChain`, `InvalidSignature`, other certificate reasons | 21003 | the receipt did not authenticate |
+| `InternalError` | 21009 | a panic inside the endpoint, contained; `failure_cause()` holds its message |
+
+**`request_date`.** Each entry point has an `_at` variant that takes a
+`SystemTime` for `request_date` in place of the endpoint's clock. Without
+one, the endpoint reads its clock once per call and `request_date()` returns
+that instant. The instant reaches `request_date` and nothing else:
+certificate validity never sees it (see [The clock](#the-clock)).
+
+Like Apple's endpoint, this does **not** check the bundle id: compare
+`receipt.bundle_id` yourself. `password` and `exclude-old-transactions` are
+accepted for compatibility and never read. See
+[COMPARISON.md](../COMPARISON.md) for the field-by-field fidelity account.
 
 ## The error vocabulary
 
@@ -215,6 +271,11 @@ would be a change to the shared vector file and to every port at once.
 `Reason` is nevertheless `#[non_exhaustive]`, so that if that ever happens a
 caller with a `_ => reject` arm keeps compiling and keeps failing closed.
 That arm is a safety net, not an extension point.
+
+`Reason` also has `MalformedRequest` (`MALFORMED_REQUEST`) and
+`InternalError` (`INTERNAL_ERROR`), but only as a `VerifyReceiptResult`
+failure reason. No verifier returns either, and `Reason::all()` lists only
+the eleven above, so the C ABI's reason codes do not move.
 
 **Misconfiguration is a different type.** Empty trust anchors, an empty
 bundle id, an empty accepted-environment set, an unparseable anchor and an

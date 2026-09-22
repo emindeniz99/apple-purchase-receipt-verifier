@@ -240,9 +240,9 @@ final class ClockTest extends TestCase
         $data = ['receipt-data' => base64_encode($pki->receipt())];
 
         $past = (new VerifyReceiptEndpoint([$pki->rootDer], Environment::Sandbox, self::at('2000-01-01T00:00:00Z')))
-            ->verifyReceipt($data);
+            ->verifyReceiptResult($data)->toResponse();
         $future = (new VerifyReceiptEndpoint([$pki->rootDer], Environment::Sandbox, self::at('2099-01-01T00:00:00Z')))
-            ->verifyReceipt($data);
+            ->verifyReceiptResult($data)->toResponse();
 
         $pastReceipt = Shape::asArray($past['receipt'], 'receipt');
         $futureReceipt = Shape::asArray($future['receipt'], 'receipt');

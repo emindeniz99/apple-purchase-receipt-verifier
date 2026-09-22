@@ -95,7 +95,7 @@ final class MutationTest extends TestCase
 
                 // The endpoint promises never to throw, and 21009 would mean
                 // it hit something it did not expect.
-                $status = $endpoint->verifyReceipt(['receipt-data' => base64_encode($mutated)])['status'];
+                $status = $endpoint->verifyReceiptResult(['receipt-data' => base64_encode($mutated)])->toResponse()['status'];
                 self::assertNotSame(21009, $status, "{$label}: {$what} reached the endpoint's internal error");
             }
         }

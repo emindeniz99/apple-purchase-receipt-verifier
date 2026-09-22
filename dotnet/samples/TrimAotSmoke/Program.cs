@@ -32,6 +32,18 @@ internal static class Program
         {
         }
 
+        // The endpoint renders its response by hand; a trimmed build must still
+        // produce the same body and the typed result behind it.
+        using VerifyReceiptEndpoint endpoint = new(new[] { root }, AppleEnvironment.Sandbox);
+        VerifyReceiptResult result = endpoint.VerifyReceiptData(Convert.ToBase64String(der));
+        if (!result.IsVerified || result.Receipt.BundleId != "com.example.app"
+            || !result.ToJson().StartsWith("{\"status\":0,\"environment\":\"Sandbox\"", StringComparison.Ordinal)
+            || result.ToJson(AppleEnvironment.Production) != "{\"status\":21007}")
+        {
+            Console.Error.WriteLine("trimmed endpoint returned the wrong result");
+            return 1;
+        }
+
         Console.WriteLine("trimmed smoke ok: " + receipt.BundleId);
         return 0;
     }

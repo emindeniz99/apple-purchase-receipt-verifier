@@ -11,7 +11,7 @@ import hmac
 import time
 from collections.abc import Iterable
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, ClassVar
 
 from asn1crypto import cms as asn1cms
 from asn1crypto import core as asn1core
@@ -147,6 +147,17 @@ class ReceiptVerifier:
     :param bundle_id: the app's bundle id the receipt must carry
     """
 
+    #: Ceiling on the receipt this library will look at: the base64 string at
+    #: :meth:`verify`, in characters, and the DER at every entry point that
+    #: takes bytes, :func:`verify_receipt_core` included. Checked before
+    #: anything is decoded: base64 decoding allocates about three quarters of
+    #: the input again and the CMS parse allocates in proportion to the DER,
+    #: none of it behind a signature check. The number is the Java and PHP
+    #: ports'. It clears the normative floor in fixtures/cases.json, which
+    #: requires accepting a receipt of up to 1 MiB of DER (about 1.38 MB of
+    #: base64); the largest genuine receipt in the corpus is 79 KB.
+    MAX_RECEIPT_BYTES: ClassVar[int] = 2097152
+
     def __init__(self, trusted_roots: "Iterable[x509.Certificate]", bundle_id: str) -> None:
         roots = list(trusted_roots)
         if not roots:
@@ -161,7 +172,18 @@ class ReceiptVerifier:
         usual client transport form). Passing ``device_guid`` additionally
         enforces the device-hash binding: SHA1(guid ‖ opaqueValue ‖
         bundleIdBytes) must equal attribute 5 (optional — PLAN.md D4)."""
-        der = decode_receipt_base64(receipt) if isinstance(receipt, str) else receipt
+        if isinstance(receipt, str):
+            # Before the decode, which would otherwise allocate a stripped
+            # copy of the string and then the bytes it decodes to.
+            if len(receipt) > ReceiptVerifier.MAX_RECEIPT_BYTES:
+                raise VerificationError(
+                    Reason.INVALID_RECEIPT_FORMAT,
+                    "receipt exceeds the maximum accepted size of "
+                    f"{ReceiptVerifier.MAX_RECEIPT_BYTES} characters",
+                )
+            der = decode_receipt_base64(receipt)
+        else:
+            der = receipt
         fields = verify_receipt_core(der, self._roots)
         if fields.bundle_id != self._bundle_id:
             raise VerificationError(
@@ -184,6 +206,12 @@ def verify_receipt_core(der: bytes, trusted_roots: "Iterable[x509.Certificate]")
         raise ValueError("trusted_roots must not be empty")
     if not der:
         raise VerificationError(Reason.INVALID_RECEIPT_FORMAT, "receipt is empty")
+    if len(der) > ReceiptVerifier.MAX_RECEIPT_BYTES:
+        raise VerificationError(
+            Reason.INVALID_RECEIPT_FORMAT,
+            "receipt exceeds the maximum accepted size of "
+            f"{ReceiptVerifier.MAX_RECEIPT_BYTES} bytes",
+        )
 
     # asn1crypto and cryptography report malformed input with whatever the
     # failing layer happens to raise, and which exceptions those are is neither

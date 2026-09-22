@@ -144,11 +144,15 @@ def _receipt_endpoint(config, data, clock, codec):
     receipt_data = (
         data.decode("utf-8") if codec == "text" else base64.b64encode(data).decode("ascii")
     )
-    return VerifyReceiptEndpoint(
-        trusted_roots(config["trustedRoots"]),
-        config["environment"],
-        clock,
-    ).verify_receipt({"receipt-data": receipt_data})
+    return (
+        VerifyReceiptEndpoint(
+            trusted_roots(config["trustedRoots"]),
+            config["environment"],
+            clock,
+        )
+        .verify_receipt_result({"receipt-data": receipt_data})
+        .to_response()
+    )
 
 
 OPERATIONS = {

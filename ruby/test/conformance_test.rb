@@ -153,7 +153,7 @@ class ConformanceTest < Minitest::Test
       APRV::VerifyReceiptEndpoint.new(
         trusted_roots: trusted_roots(config["trustedRoots"]),
         environment: config["environment"], clock: clock
-      ).verify_receipt({ "receipt-data" => receipt_data })
+      ).verify_receipt_result({ "receipt-data" => receipt_data }).to_response
     else
       raise "harness error: no adapter for operation #{kase["operation"].inspect}"
     end

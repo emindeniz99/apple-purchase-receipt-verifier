@@ -1,6 +1,8 @@
 package io.github.emindeniz99.applepurchasereceiptverifier.fuzz;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
+import io.github.emindeniz99.applepurchasereceiptverifier.receipt.VerifyReceiptResult;
 import java.nio.charset.StandardCharsets;
 
 /**
@@ -43,6 +45,25 @@ public final class FuzzEndpointJson {
         JsonNode status = answer.get("status");
         if (status == null || !status.isNumber()) {
             throw new AssertionError("verifyReceiptJson answered without a numeric status: " + response);
+        }
+
+        // The typed result behind that body: exactly one of receipt and
+        // failureReason, and never INTERNAL_ERROR, which only an unexpected
+        // runtime exception inside the pipeline produces.
+        VerifyReceiptResult result;
+        try {
+            result = Harness.ENDPOINT.verifyReceiptResult(body);
+        } catch (Throwable t) {
+            throw Harness.leaked("verifyReceiptResult", t);
+        }
+        if ((result.receipt() == null) == (result.failureReason() == null)) {
+            throw new AssertionError("verifyReceiptResult broke its receipt/failureReason invariant");
+        }
+        if (result.failureReason() == VerificationException.Reason.INTERNAL_ERROR) {
+            throw new AssertionError("verifyReceiptResult hit an internal error", result.failureCause());
+        }
+        if (result.status() != status.asInt()) {
+            throw new AssertionError("verifyReceiptResult status " + result.status() + " differs from " + response);
         }
     }
 }
