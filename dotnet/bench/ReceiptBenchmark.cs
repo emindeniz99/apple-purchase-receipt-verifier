@@ -8,6 +8,8 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using ApplePurchaseReceiptVerifier.Receipt;
 using BenchmarkDotNet.Attributes;
+using BenchmarkDotNet.Configs;
+using BenchmarkDotNet.Reports;
 
 namespace ApplePurchaseReceiptVerifier.Bench
 {
@@ -26,6 +28,7 @@ namespace ApplePurchaseReceiptVerifier.Bench
     /// </remarks>
     [MemoryDiagnoser]
     [SimpleJob(launchCount: 2, warmupCount: 5, iterationCount: 5)]
+    [Config(typeof(WholeFixtureNames))]
     public class ReceiptBenchmark
     {
         // The library's own receipt-data decoder is internal. Reflection
@@ -161,6 +164,17 @@ namespace ApplePurchaseReceiptVerifier.Bench
             {
                 throw new InvalidOperationException("setup check failed: " + what);
             }
+        }
+
+        /// <summary>
+        /// Keeps the fixture name whole in the reports, JSON included;
+        /// BenchmarkDotNet shortens parameter values past 20 characters by
+        /// default, which turns receipt-sandbox-legacy into recei(...)egacy.
+        /// </summary>
+        public sealed class WholeFixtureNames : ManualConfig
+        {
+            /// <summary>Widens the parameter columns.</summary>
+            public WholeFixtureNames() => SummaryStyle = SummaryStyle.Default.WithMaxParameterColumnWidth(40);
         }
 
         /// <summary>Walks up from the binary to the repository's fixtures/.</summary>
