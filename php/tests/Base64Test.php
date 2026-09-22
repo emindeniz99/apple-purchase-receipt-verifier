@@ -203,4 +203,132 @@ final class Base64Test extends TestCase
     {
         self::assertNull(Base64::decodeReceipt($text));
     }
+
+    /**
+     * decodeReceipt() answers from `base64_decode($s, true)` when that
+     * accepts, and from the tolerant path otherwise. That is only a speed-up
+     * if the strict decoder accepts a SUBSET of what the tolerant path
+     * accepts, with the same bytes: otherwise a client's receipt would start
+     * verifying (or stop) because of an optimisation. PHP's "strict" mode is
+     * not strict about everything: it skips whitespace and returns '' for a
+     * blank string. So this compares the two paths directly, on seeded
+     * random inputs built to sit on the edges (whitespace in and around the
+     * padding, base64url, junk bytes, every padding count, lengths across
+     * the 32- and 64-character SIMD blocks), and asserts every branch was
+     * reached so the corpus cannot quietly go blind.
+     */
+    public function testTheStrictFastPathAgreesWithTheTolerantPathOnEveryInput(): void
+    {
+        $inputs = self::edgeCaseInputs();
+        mt_srand(20260922);
+        while (count($inputs) < 20000 + 60) {
+            $inputs[] = self::randomReceiptText();
+        }
+
+        $fastAccepted = 0;
+        $tolerantOnly = 0;
+        $rejected = 0;
+        $lenientDisagrees = 0;
+        foreach ($inputs as $text) {
+            $expected = Base64::decodeReceiptTolerant($text);
+            $label = bin2hex($text);
+            self::assertSame($expected, Base64::decodeReceipt($text), $label);
+
+            $strict = base64_decode($text, true);
+            if ($strict !== false && $strict !== '') {
+                self::assertSame($expected, $strict, "strict accepted what the tolerant path does not: {$label}");
+                ++$fastAccepted;
+            } elseif ($expected !== null) {
+                ++$tolerantOnly;
+            } else {
+                ++$rejected;
+            }
+            // The corpus has teeth: a permissive decoder in the fast path
+            // would disagree with the tolerant path on some of it.
+            if (base64_decode($text) !== ($expected ?? false)) {
+                ++$lenientDisagrees;
+            }
+        }
+
+        self::assertGreaterThan(1000, $fastAccepted, 'the fast path was barely exercised');
+        self::assertGreaterThan(1000, $tolerantOnly, 'the tolerant-only branch was barely exercised');
+        self::assertGreaterThan(1000, $rejected, 'the rejection branch was barely exercised');
+        self::assertGreaterThan(1000, $lenientDisagrees, 'the corpus cannot tell a lenient decoder apart');
+    }
+
+    /** @return list<string> */
+    private static function edgeCaseInputs(): array
+    {
+        $block = str_repeat('QUJD', 16); // 64 characters, one AVX-512 block
+        return [
+            '', ' ', " \t\r\n", "\v", "\f", '=', '==', '===', '====',
+            'A', 'AA', 'AAA', 'AAAA', 'AA=', 'AA==', 'AAA=', 'AAA==', 'AAAA=', 'AAAA==', 'A=', 'A==', 'A===',
+            'AA==AA', 'AA=A', "AA=\n=", 'AA= =', "AA=\t=", "AA=\v=", "AA==\n", "\nAA==", "AA==\0",
+            "\vQUJD", "QUJD\f", "QU\x00JD", "QUJD\x80", 'QUJD.', 'QUJD====', 'QUJDRA===',
+            '-_-_', '+/+/', '+/-_', 'LV5f', 'LV5fXQ', 'LV5fXQ==', 'LV5fXQ=',
+            $block, $block . '=', $block . 'QQ', $block . 'QQ==', $block . 'QQ=', $block . 'Q',
+            substr($block, 0, 63) . ' ' . substr($block, 63), substr($block, 0, 32) . "\n" . substr($block, 32),
+            substr($block, 0, 31) . '-' . substr($block, 32), $block . $block . "\r\n",
+            substr($block, 0, 40) . '=' . substr($block, 40),
+            str_repeat("QUJD\n", 40), str_repeat('QUJD', 40) . '=', chunk_split(str_repeat('QUJD', 50), 76, "\r\n"),
+        ];
+    }
+
+    /**
+     * A mix of valid encodings (standard or base64url, padded or not, with
+     * or without whitespace) and single mutations of them, plus short random
+     * strings over an alphabet dense in the characters that matter.
+     */
+    private static function randomReceiptText(): string
+    {
+        $bytes = '';
+        for ($i = 0, $n = mt_rand(0, 200); $i < $n; ++$i) {
+            $bytes .= chr(mt_rand(0, 255));
+        }
+        $text = base64_encode($bytes);
+        if (mt_rand(0, 3) === 0) {
+            $text = rtrim($text, '=');
+        }
+        if (mt_rand(0, 4) === 0) {
+            $text = strtr($text, '+/', '-_');
+        }
+        $pool = ['A', 'Q', 'z', '0', '+', '/', '-', '_', '=', '=', ' ', "\t", "\r", "\n", "\v", "\f", "\0", '!', '.', "\x80", "\xff"];
+        switch (mt_rand(0, 7)) {
+            case 0: // insert whitespace, possibly several times
+                for ($k = mt_rand(1, 4); $k > 0; --$k) {
+                    $at = mt_rand(0, strlen($text));
+                    $text = substr($text, 0, $at) . [' ', "\t", "\r", "\n", "\r\n"][mt_rand(0, 4)] . substr($text, $at);
+                }
+                break;
+            case 1: // replace one character
+                if ($text !== '') {
+                    $at = mt_rand(0, strlen($text) - 1);
+                    $text[$at] = $pool[mt_rand(0, count($pool) - 1)];
+                }
+                break;
+            case 2: // insert one character
+                $at = mt_rand(0, strlen($text));
+                $text = substr($text, 0, $at) . $pool[mt_rand(0, count($pool) - 1)] . substr($text, $at);
+                break;
+            case 3: // delete one character
+                if ($text !== '') {
+                    $at = mt_rand(0, strlen($text) - 1);
+                    $text = substr($text, 0, $at) . substr($text, $at + 1);
+                }
+                break;
+            case 4: // change the padding
+                $text = rtrim($text, '=') . str_repeat('=', mt_rand(0, 4));
+                break;
+            case 5: // short random string
+                $text = '';
+                for ($k = mt_rand(0, 10); $k > 0; --$k) {
+                    $text .= $pool[mt_rand(0, count($pool) - 1)];
+                }
+                break;
+            default: // leave it valid
+                break;
+        }
+
+        return $text;
+    }
 }

@@ -138,6 +138,34 @@ final class Base64
      */
     public static function decodeReceipt(string $text): ?string
     {
+        // Fast path for the common case, one call into the C decoder. In
+        // strict mode `base64_decode` skips exactly the whitespace the rule
+        // above tolerates (CR, LF, space, tab) and accepts what remains only
+        // when it is `[A-Za-z0-9+/]` data with a length not congruent to 1
+        // mod 4, followed by no padding or by the canonical `=` run and
+        // nothing else. Every such string with at least one data character
+        // also passes each check in decodeReceiptTolerant(), which then hands
+        // the same data, canonically padded, to this same decoder: same
+        // bytes. What it answers '' for (empty or whitespace-only) and
+        // everything it refuses (base64url, junk, bad padding) takes the full
+        // path, so rejections are unchanged. The decoder's scalar loop is the
+        // same from PHP 8.1 through 8.5, and its SSSE3/AVX2/AVX-512/NEON
+        // prefixes only consume whole blocks of plain alphabet characters.
+        // Base64Test compares the two paths on 20,000 seeded inputs.
+        $decoded = base64_decode($text, true);
+        if ($decoded !== false && $decoded !== '') {
+            return $decoded;
+        }
+
+        return self::decodeReceiptTolerant($text);
+    }
+
+    /**
+     * The whole rule described on {@see decodeReceipt()}, without its fast
+     * path. Public only so the differential test can compare the two.
+     */
+    public static function decodeReceiptTolerant(string $text): ?string
+    {
         $stripped = preg_replace('/[ \t\r\n]/', '', $text) ?? '';
         if ($stripped === '') {
             return null;
