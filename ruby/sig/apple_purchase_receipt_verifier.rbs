@@ -28,6 +28,8 @@ module ApplePurchaseReceiptVerifier
     DEVICE_HASH_MISMATCH: Symbol
     STALE_PAYLOAD: Symbol
     ALL: Array[Symbol]
+    MALFORMED_REQUEST: Symbol
+    INTERNAL_ERROR: Symbol
   end
 
   module Environment
@@ -167,8 +169,20 @@ module ApplePurchaseReceiptVerifier
     end
 
     def initialize: (trusted_roots: roots, environment: String, ?clock: clock?) -> void
-    def verify_receipt: (untyped request_body) -> json_body
-    def verify_receipt_json: (String body) -> String
+    def verify_receipt_result: (untyped request, ?now: Time?) -> VerifyReceiptResult
+    def verify_receipt_data: (untyped receipt_data, ?now: Time?) -> VerifyReceiptResult
+    def verify_receipt_json: (untyped body) -> String
+  end
+
+  class VerifyReceiptResult
+    attr_reader receipt: AppReceipt?
+    attr_reader failure_reason: Symbol?
+    attr_reader failure_cause: Exception?
+    attr_reader request_date: Time
+    def verified?: () -> bool
+    def status: () -> Integer
+    def to_response: (?String? environment) -> json_body
+    def to_json: (?untyped environment, *untyped) -> String
   end
 
   module Asn1

@@ -68,12 +68,31 @@ module ApplePurchaseReceiptVerifier
     @environment: String
     @clock: clock?
 
-    MALFORMED_JSON: String
+    private
+
+    def stamped: (Time? now) { (Time at) -> VerifyReceiptResult } -> VerifyReceiptResult
+    def clock_time: () -> Time
+    def from_json: (untyped body, Time at) -> VerifyReceiptResult
+    def from_hash: (untyped request, Time at) -> VerifyReceiptResult
+    def verify: (untyped receipt_data, Time at) -> VerifyReceiptResult
+    def failed: (Symbol reason, Time at) -> VerifyReceiptResult
+    def internal_error: (Exception cause, Time at) -> VerifyReceiptResult
+    def result: (AppReceipt? receipt, Symbol? reason, Exception? cause, Time at) -> VerifyReceiptResult
+  end
+
+  class VerifyReceiptResult
+    @environment: String
+    @receipt: AppReceipt?
+    @failure_reason: Symbol?
+    @failure_cause: Exception?
+    @request_date: Time
+
+    def initialize: (String environment, AppReceipt? receipt, Symbol? failure_reason,
+                     Exception? failure_cause, Time request_date) -> void
 
     private
 
-    def parse_json_object: (String body) -> Hash[String, untyped]?
-    def now: () -> Time
+    def status_for: (untyped environment) -> Integer
     def receipt_json: (AppReceipt receipt, Time request_date) -> json_body
     def in_app_json: (InAppPurchase purchase) -> Hash[String, String]
     def put: (Hash[String, untyped] target, String key, (String | Integer)? value) -> void

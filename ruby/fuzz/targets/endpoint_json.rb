@@ -6,7 +6,10 @@
 #
 # Its contract is stronger than "raises nothing typed": it must never raise at
 # all, and every body — any bytes whatsoever — must come back as a JSON object
-# carrying a numeric status. Both halves are asserted after each call.
+# carrying a numeric status. Both halves are asserted after each call. The
+# typed result behind that body is checked too: exactly one of receipt and
+# failure_reason, the same status, and never INTERNAL_ERROR, which only an
+# unexpected error inside the pipeline produces.
 
 require "ruzzy"
 require_relative "../support"
@@ -38,6 +41,19 @@ TEST_ONE_INPUT = lambda do |data|
 
   unless parsed.is_a?(Hash) && parsed["status"].is_a?(Integer)
     FuzzSupport.violated("the endpoint's answer carries no numeric status: #{response[0, 200]}")
+  end
+
+  _, result = FuzzSupport.call("#verify_receipt_result", FuzzSupport::NoError) do
+    ENDPOINT.verify_receipt_result(data)
+  end
+  if result.receipt.nil? == result.failure_reason.nil?
+    FuzzSupport.violated("verify_receipt_result broke its receipt/failure_reason invariant")
+  end
+  if result.failure_reason == APRV::Reason::INTERNAL_ERROR
+    FuzzSupport.violated("verify_receipt_result hit an internal error", result.failure_cause)
+  end
+  unless result.status == parsed["status"]
+    FuzzSupport.violated("verify_receipt_result status #{result.status} differs from #{response[0, 200]}")
   end
   nil
 end

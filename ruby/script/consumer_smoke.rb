@@ -32,8 +32,8 @@ end
 endpoint = ApplePurchaseReceiptVerifier::VerifyReceiptEndpoint.new(
   trusted_roots: roots, environment: ApplePurchaseReceiptVerifier::Environment::SANDBOX
 )
-response = endpoint.verify_receipt({ "receipt-data" => File.read(receipt_path).gsub(/\s+/, "") })
-abort "endpoint answered #{response["status"]}" unless response["status"].zero?
+result = endpoint.verify_receipt_data(File.read(receipt_path).gsub(/\s+/, ""))
+abort "endpoint answered #{result.status}" unless result.verified? && result.status.zero?
 
 puts "ok: apple-purchase-receipt-verifier #{ApplePurchaseReceiptVerifier::VERSION} " \
      "verified a genuine receipt from an installed gem"

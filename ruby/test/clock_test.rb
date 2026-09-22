@@ -72,9 +72,9 @@ class ClockTest < Minitest::Test
       environment: APRV::Environment::SANDBOX
     )
     before = (Time.now.utc.to_r * 1000).to_i
-    response = endpoint.verify_receipt(
+    response = endpoint.verify_receipt_result(
       { "receipt-data" => [TestSupport.fixture_bytes("receipt")].pack("m0") }
-    )
+    ).to_response
     after = (Time.now.utc.to_r * 1000).to_i
     rendered = response["receipt"]["request_date_ms"].to_i
     assert_operator rendered, :>=, before - 1000
@@ -121,11 +121,11 @@ class ClockTest < Minitest::Test
     early = APRV::VerifyReceiptEndpoint.new(
       trusted_roots: roots, environment: APRV::Environment::SANDBOX,
       clock: -> { Time.utc(2019, 1, 1) }
-    ).verify_receipt({ "receipt-data" => [receipt].pack("m0") })
+    ).verify_receipt_result({ "receipt-data" => [receipt].pack("m0") }).to_response
     late = APRV::VerifyReceiptEndpoint.new(
       trusted_roots: roots, environment: APRV::Environment::SANDBOX,
       clock: -> { Time.utc(2099, 1, 1) }
-    ).verify_receipt({ "receipt-data" => [receipt].pack("m0") })
+    ).verify_receipt_result({ "receipt-data" => [receipt].pack("m0") }).to_response
 
     assert_equal 0, early["status"]
     assert_equal 0, late["status"]

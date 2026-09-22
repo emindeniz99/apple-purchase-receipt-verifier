@@ -22,7 +22,8 @@ class EndpointTest < Minitest::Test
   end
 
   def test_status_zero_body_matches_the_documented_contract
-    response = endpoint(clock: -> { Time.utc(2025, 1, 1) }).verify_receipt(body(@receipt))
+    response = endpoint(clock: -> { Time.utc(2025, 1, 1) })
+               .verify_receipt_result(body(@receipt)).to_response
     assert_equal 0, response["status"]
     assert_equal "Sandbox", response["environment"]
     receipt = response["receipt"]
@@ -40,7 +41,7 @@ class EndpointTest < Minitest::Test
   # Apple's wire types: everything numeric in `in_app` is a String, and only
   # `status` is an Integer.
   def test_wire_types_are_apples_wire_types
-    response = endpoint.verify_receipt(body(@receipt))
+    response = endpoint.verify_receipt_result(body(@receipt)).to_response
     entry = response["receipt"]["in_app"].find { |i| i["product_id"] == "com.example.app.vip" }
     assert_kind_of Integer, response["status"]
     assert_kind_of String, entry["quantity"]
@@ -58,7 +59,7 @@ class EndpointTest < Minitest::Test
                                          [2, TestPki.utf8("com.example.app")],
                                          [17, in_app]])
       response = endpoint(roots: [pki.root])
-                 .verify_receipt(body(TestPki.sign_receipt(pki, payload)))
+                 .verify_receipt_result(body(TestPki.sign_receipt(pki, payload))).to_response
       assert_equal expected, response["receipt"]["in_app"][0]["is_in_intro_offer_period"]
     end
   end
@@ -97,7 +98,7 @@ class EndpointTest < Minitest::Test
   # An attribute the receipt does not carry leaves its key OUT of the answer
   # rather than emitting JSON null.
   def test_legacy_receipt_id_keys_are_omitted_not_null_when_absent
-    response = endpoint.verify_receipt(body(@receipt))
+    response = endpoint.verify_receipt_result(body(@receipt)).to_response
     receipt_body = response["receipt"]
     %w[adam_id app_item_id download_id version_external_identifier].each do |key|
       refute receipt_body.key?(key), key
@@ -109,49 +110,49 @@ class EndpointTest < Minitest::Test
   def test_malformed_receipt_data_answers_21002
     [nil, {}, { "receipt-data" => nil }, { "receipt-data" => "" }, { "receipt-data" => 42 },
      { "receipt-data" => [] }, "not a hash", 42, []].each do |request|
-      assert_equal 21_002, endpoint.verify_receipt(request)["status"], request.inspect
+      assert_equal 21_002, endpoint.verify_receipt_result(request).to_response["status"], request.inspect
     end
   end
 
   def test_undecodable_base64_answers_21002
-    assert_equal 21_002, endpoint.verify_receipt({ "receipt-data" => "!!!!" })["status"]
+    assert_equal 21_002, endpoint.verify_receipt_result({ "receipt-data" => "!!!!" }).to_response["status"]
   end
 
   def test_unauthenticated_receipt_answers_21003
-    assert_equal 21_003,
-                 endpoint.verify_receipt(body(TestSupport.fixture_bytes("receipt-foreign")))["status"]
+    foreign = body(TestSupport.fixture_bytes("receipt-foreign"))
+    assert_equal 21_003, endpoint.verify_receipt_result(foreign).to_response["status"]
   end
 
   def test_environment_routing_both_directions
     production = TestSupport.fixture_bytes("receipt-type-production")
     assert_equal 21_007, endpoint(environment: APRV::Environment::PRODUCTION)
-      .verify_receipt(body(@receipt))["status"]
+      .verify_receipt_result(body(@receipt)).to_response["status"]
     assert_equal 21_008, endpoint(environment: APRV::Environment::SANDBOX)
-      .verify_receipt(body(production))["status"]
+      .verify_receipt_result(body(production)).to_response["status"]
     assert_equal 0, endpoint(environment: APRV::Environment::PRODUCTION)
-      .verify_receipt(body(production))["status"]
+      .verify_receipt_result(body(production)).to_response["status"]
   end
 
   # The fail-closed case that drove PLAN D10: ProductionVPPSandbox is sandbox.
   def test_vpp_sandbox_routes_as_sandbox
     vpp_sandbox = TestSupport.fixture_bytes("receipt-type-vpp-sandbox")
     assert_equal 0, endpoint(environment: APRV::Environment::SANDBOX)
-      .verify_receipt(body(vpp_sandbox))["status"]
+      .verify_receipt_result(body(vpp_sandbox)).to_response["status"]
     assert_equal 21_007, endpoint(environment: APRV::Environment::PRODUCTION)
-      .verify_receipt(body(vpp_sandbox))["status"]
+      .verify_receipt_result(body(vpp_sandbox)).to_response["status"]
   end
 
   def test_a_missing_receipt_type_routes_as_sandbox
     no_type = TestSupport.fixture_bytes("receipt-no-type")
-    assert_equal 0, endpoint.verify_receipt(body(no_type))["status"]
+    assert_equal 0, endpoint.verify_receipt_result(body(no_type)).to_response["status"]
     assert_equal 21_007, endpoint(environment: APRV::Environment::PRODUCTION)
-      .verify_receipt(body(no_type))["status"]
+      .verify_receipt_result(body(no_type)).to_response["status"]
   end
 
   def test_non_zero_status_bodies_carry_neither_receipt_nor_environment
-    [endpoint.verify_receipt({}),
-     endpoint.verify_receipt(body(TestSupport.fixture_bytes("receipt-foreign"))),
-     endpoint(environment: APRV::Environment::PRODUCTION).verify_receipt(body(@receipt))]
+    [endpoint.verify_receipt_result({}).to_response,
+     endpoint.verify_receipt_result(body(TestSupport.fixture_bytes("receipt-foreign"))).to_response,
+     endpoint(environment: APRV::Environment::PRODUCTION).verify_receipt_result(body(@receipt)).to_response]
       .each do |response|
       refute response.key?("receipt"), response.inspect
       refute response.key?("environment"), response.inspect
@@ -159,11 +160,11 @@ class EndpointTest < Minitest::Test
     end
   end
 
-  def test_verify_receipt_json_agrees_with_verify_receipt
+  def test_verify_receipt_json_agrees_with_to_response
     [body(@receipt), {}, { "receipt-data" => "!!!!" },
      body(TestSupport.fixture_bytes("receipt-foreign"))].each do |request|
       clock = -> { Time.utc(2025, 1, 1) }
-      expected = endpoint(clock: clock).verify_receipt(request)
+      expected = endpoint(clock: clock).verify_receipt_result(request).to_response
       actual = JSON.parse(endpoint(clock: clock).verify_receipt_json(JSON.generate(request)))
       assert_equal expected, actual
     end
@@ -178,13 +179,13 @@ class EndpointTest < Minitest::Test
   def test_password_and_exclude_old_transactions_are_accepted_and_ignored
     request = body(@receipt).merge("password" => "shared secret",
                                    "exclude-old-transactions" => true)
-    assert_equal 0, endpoint.verify_receipt(request)["status"]
+    assert_equal 0, endpoint.verify_receipt_result(request).to_response["status"]
   end
 
   def test_the_endpoint_never_raises_for_hostile_input
     hostile = ["\x30\x80" * 100_000, "\x00" * 1000, "\xff" * 10, ""]
     hostile.each do |bytes|
-      response = endpoint.verify_receipt({ "receipt-data" => [bytes].pack("m0") })
+      response = endpoint.verify_receipt_result({ "receipt-data" => [bytes].pack("m0") }).to_response
       assert_includes [0, 21_002, 21_003, 21_009], response["status"]
     end
   end
@@ -198,10 +199,10 @@ class EndpointTest < Minitest::Test
 
   def test_status_codes_out_of_scope_are_never_produced
     responses = [
-      endpoint.verify_receipt(body(@receipt)),
-      endpoint.verify_receipt({}),
-      endpoint.verify_receipt(body(TestSupport.fixture_bytes("receipt-foreign"))),
-      endpoint(environment: APRV::Environment::PRODUCTION).verify_receipt(body(@receipt))
+      endpoint.verify_receipt_result(body(@receipt)).to_response,
+      endpoint.verify_receipt_result({}).to_response,
+      endpoint.verify_receipt_result(body(TestSupport.fixture_bytes("receipt-foreign"))).to_response,
+      endpoint(environment: APRV::Environment::PRODUCTION).verify_receipt_result(body(@receipt)).to_response
     ]
     responses.each do |response|
       assert_includes [0, 21_002, 21_003, 21_007, 21_008, 21_009], response["status"]
