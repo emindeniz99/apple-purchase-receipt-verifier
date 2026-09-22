@@ -249,6 +249,13 @@ A caller that needs the check can do it: `AppReceipt.appVersion()` returns
 the decoded type 3 value. This is a caller responsibility that no document in
 the repository currently names, which is the actual gap.
 
+The same shape applies to type 21, the Volume Purchase Program expiration
+date: every port decodes it (`AppReceipt.expirationDate()`) and the endpoint
+echoes it as `expiration_date`, but no port compares it with a clock. The
+objc.io walkthrough does compare it, on-device, against the current time. On
+a server the caller owns the clock, so the comparison is theirs to make; the
+verifier reports the date and stops there.
+
 ### The expired-intermediate case, measured
 
 Apple's warning is that "if the receipt was signed with a valid certificate,
@@ -308,14 +315,18 @@ Apple, read 2026-09-21:
   `app_item_id` / `version_external_identifier` definitions quoted against
   types 1 and 16 above.
 
-Community, read 2026-09-21:
+Community, read 2026-09-21 except where an entry gives its own date:
 
 - [tikhop/TPInAppReceipt](https://github.com/tikhop/TPInAppReceipt),
   `Sources/Core/AppReceiptField.swift`. The fullest published enumeration:
   app-level 0 to 21 plus 25, in-app 1701 to 1719 plus 1721 and 1722, with
   "reserved for future use" or a bare `unknown_NNNN` on the ones it will not
   name further. MIT. The same project's test assets are where two of this
-  repository's genuine receipts come from.
+  repository's genuine receipts come from. Re-read 2026-09-22 against the
+  tables above: every name matches, with one deliberate divergence — its
+  type 16 is `installerVersionID`, which this library calls version external
+  identifier after Apple's own response reference. Its README is also where
+  the objc.io and fluffy.es entries below were found.
 - [SilentCircle/iap-local-receipt](https://github.com/SilentCircle/iap-local-receipt),
   `iap_local_receipt/iap_receipt_parser.py`. Independent Python
   implementation naming type 0 `FT_STAGE` and type 18
@@ -328,9 +339,22 @@ Community, read 2026-09-21:
   and [shoshins/apple-receipt](https://github.com/shoshins/apple-receipt).
   Checked for "The unnamed types" above; none defines a constant for any of
   the seventeen remaining types.
-- [Receipt Validation, objc.io](https://www.objc.io/issues/17-security/receipt-validation/).
-  Walkthrough covering types 2, 3, 4, 5 and 21, and the source of the
-  "ignore unlisted attributes" rule.
+- [Receipt Validation, objc.io](https://www.objc.io/issues/17-security/receipt-validation/),
+  Laurent Etiemble, issue 17, October 2014; read in full 2026-09-22. The
+  walkthrough that establishes what the type 5 hash is actually computed
+  over: `SHA1(device GUID ‖ opaque value ‖ bundle id)`, taken from "the
+  ASN.1 attribute's raw values (i.e. the binary data of the OCTET-STRING),
+  and not on the interpreted values" — the reason `bundleIdBytes()` is
+  modelled separately from `bundleId()` in the table above. It names
+  app-level types 2, 3, 4, 5 and 21 and no in-app number, and it is the
+  source of the "ignore unlisted attributes" rule quoted earlier. It uses
+  `PKCS7_verify` with no validation date, so it says nothing about the
+  attribute 12 anchoring in the chain-of-trust table.
+- [Local receipt validation, fluffy.es](https://fluffy.es/in-app-purchase-receipt-local/),
+  read 2026-09-22, found through TPInAppReceipt's README. A second
+  independent statement of the same concatenation order — GUID, then opaque
+  value, then bundle identifier. It names no ASN.1 attribute numbers, so it
+  is listed for the hash order only.
 - [Poking Around in Mac App Store Receipts](http://magervalp.github.io/2013/03/19/poking-around-in-masreceipts.html),
   2013. Early reverse-engineering of the opaque value.
 - [Validating App Store Receipts without verifyReceipt, RevenueCat](https://www.revenuecat.com/blog/engineering/validating-app-store-receipts).
