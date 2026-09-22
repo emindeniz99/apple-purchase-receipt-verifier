@@ -44,6 +44,28 @@ the first part — cryptographically verified.
 | 21009 / 21010 | internal error / account not found | 21009 on unexpected internal errors; 21010 never (no account database) |
 | 21100–21199 (+ `is_retryable`) | Apple internal data access error; `is_retryable` says whether retrying may help | ❌ never produced, and we never emit an `is_retryable` field either — these codes report the state of Apple's own datastore, and there is no remote call here to retry |
 
+A tampered receipt shows 21002 and 21003 diverging in practice. Altering one
+byte of a well-formed payload while keeping the DER structurally valid
+(2026-09-22, not committed) gets 21003 from this endpoint and 21002 from
+Apple's own. Apple's reference defines 21003 as "The receipt could not be
+authenticated" and 21002 as malformed data or a temporary issue on Apple's
+server; this endpoint follows the documented meaning and reports 21003 for
+the case that description names, while Apple's own endpoint collapses both
+into 21002. A caller migrating from Apple's endpoint should not read a
+21002 response from Apple as covering every rejection this endpoint reports
+as 21003.
+
+Apple's answer was 21002 for every rejection measured, not only that one.
+Ten input classes went to `buy.itunes.apple.com/verifyReceipt` on
+2026-09-22: a genuine receipt (0), the same receipt with one byte changed in
+the payload, in the signature, and in a certificate, a receipt truncated in
+half, valid DER that is not a receipt, random bytes, a string that is not
+base64, the empty string, and an Xcode-signed receipt that is well formed
+but not signed by Apple. Every rejection came back 21002. This endpoint
+answers 21002 for the four that never become a receipt and 21003 for the
+four that do and then fail to authenticate. So 21003 is a code Apple
+documents and does not appear to emit.
+
 ## Response body
 
 ### Produced with full fidelity (from the verified receipt)
