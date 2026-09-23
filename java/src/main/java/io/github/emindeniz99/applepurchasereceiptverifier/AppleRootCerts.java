@@ -9,9 +9,11 @@ import java.security.cert.CertificateEncodingException;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import org.bouncycastle.util.encoders.Hex;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Loads the Apple root certificates bundled with this library (copies of the
@@ -53,28 +55,53 @@ public final class AppleRootCerts {
     /**
      * Trust anchors for StoreKit 2 / App Store Server JWS chains.
      * Production chains currently end at Apple Root CA - G3.
+     * The roots are loaded and checked once; each call returns a new
+     * mutable set of the same certificates.
      *
      * @throws IllegalStateException if the bundled roots are missing, do not
      *                               parse, or do not match their pinned
      *                               fingerprints
      */
     public static Set<X509Certificate> jwsRoots() {
-        return allRoots();
+        return new LinkedHashSet<X509Certificate>(allRoots());
     }
 
     /**
      * Trust anchors for legacy PKCS#7 app-receipt chains.
      * Production chains currently end at the Apple Inc. Root CA.
+     * The roots are loaded and checked once; each call returns a new
+     * mutable set of the same certificates.
      *
      * @throws IllegalStateException if the bundled roots are missing, do not
      *                               parse, or do not match their pinned
      *                               fingerprints
      */
     public static Set<X509Certificate> receiptRoots() {
-        return allRoots();
+        return new LinkedHashSet<X509Certificate>(allRoots());
     }
 
+    /**
+     * The roots, read, parsed and pinned once per class loader. Each accessor
+     * hands out its own mutable copy, so a caller changing its set cannot
+     * change what the next caller gets; the certificates themselves are
+     * immutable. A failed load is not cached: it is rethrown as the same
+     * {@link IllegalStateException} on every call, which a static holder
+     * class would instead turn into an {@link ExceptionInInitializerError}
+     * and then a {@link NoClassDefFoundError}. Two threads racing the first
+     * load both build the same set, and the volatile write publishes one.
+     */
+    private static volatile @Nullable Set<X509Certificate> cached;
+
     private static Set<X509Certificate> allRoots() {
+        Set<X509Certificate> roots = cached;
+        if (roots == null) {
+            roots = Collections.unmodifiableSet(loadRoots());
+            cached = roots;
+        }
+        return roots;
+    }
+
+    private static Set<X509Certificate> loadRoots() {
         Set<X509Certificate> roots = new LinkedHashSet<X509Certificate>();
         for (String[] root : ROOTS) {
             roots.add(load(root[0], root[1]));

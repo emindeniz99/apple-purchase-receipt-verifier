@@ -2,6 +2,7 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -69,6 +70,23 @@ class AppleRootCertsTest {
             loaded.add(sha256Hex(root.getEncoded()));
         }
         assertEquals(ROOT_FINGERPRINTS, loaded);
+    }
+
+    /**
+     * The roots are parsed once, but a caller still owns the set it gets:
+     * emptying one must not reach the next caller, or one careless caller
+     * would strip every later verifier of its anchors.
+     */
+    @Test
+    void eachCallReturnsItsOwnSetOfTheSameCachedCertificates() {
+        Set<X509Certificate> first = AppleRootCerts.jwsRoots();
+        Set<X509Certificate> second = AppleRootCerts.receiptRoots();
+        assertNotSame(first, second);
+        for (X509Certificate root : first) {
+            assertTrue(second.stream().anyMatch(c -> c == root), "certificate was parsed again");
+        }
+        first.clear();
+        assertAllThreeRoots(AppleRootCerts.jwsRoots());
     }
 
     /**
