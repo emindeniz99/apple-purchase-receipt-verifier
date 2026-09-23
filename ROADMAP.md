@@ -180,7 +180,18 @@ Delete a line in the commit that ships it.
   (PRs #22–#24, #26, #27) are closed and the versions are ignored in
   `.github/dependabot.yml`'s cargo entry; the `@dependabot ignore` comments
   on the PRs never reached the bot. Take the whole wave in one commit once
-  `rsa` 0.10 is stable.
+  `rsa` 0.10 is stable. It is also the next Rust speed step: measured
+  2026-09-23, one RSA-2048 verify takes about 92 µs on 0.10.0-rc.18
+  against 221 µs on 0.9.10, and a receipt does three, which would take the
+  g5 receipt from about 740 µs to about 350 µs.
+- **Faster Rust RSA beyond `rsa` 0.10 is not taken** (2026-09-23). `ring`
+  (27 µs per verify) or `aws-lc-rs` (24 µs) would make the g5 receipt about
+  5 times faster, but both bring C and assembly into a crate whose C ABI is
+  cross-compiled, plus a licence review. Caching verified certificate
+  signatures would skip two of the three verifies with the current crate,
+  but it puts shared mutable state in the security core and an attacker's
+  own chain could fill the cache, so it needs a THREAT-MODEL decision
+  first.
 - **Three Dependabot alerts on `node/package-lock.json` stay open**
   (2026-09-05): `decompress` 4.2.1 (critical, Zip Slip) and two moderates
   in the chain `@fastly/js-compute` → `@bytecodealliance/weval` →
