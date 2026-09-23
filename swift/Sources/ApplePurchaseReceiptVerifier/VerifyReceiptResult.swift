@@ -153,11 +153,7 @@ public struct VerifyReceiptResult: Sendable {
     /// Swift dictionaries have no insertion order, so keys are serialized
     /// sorted: equal inputs give equal bytes.
     private func serialize(_ response: [String: Any]) -> String {
-        guard
-            let encoded = try? JSONSerialization.data(
-                withJSONObject: response, options: [.sortedKeys]),
-            let json = String(data: encoded, encoding: .utf8)
-        else {
+        guard let json = serializeResponse(response) else {
             return "{\"status\":\(VerifyReceiptEndpoint.statusInternal)}"
         }
         return json
