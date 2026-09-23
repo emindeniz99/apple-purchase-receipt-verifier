@@ -182,6 +182,7 @@ class Result<R extends RenderedReceipt> {
     if (this.receipt === null) {
       switch (this.failureReason) {
         case Reason.MALFORMED_REQUEST:
+        case Reason.REQUEST_TOO_LARGE:
         case Reason.INVALID_RECEIPT_FORMAT:
           return Status.MALFORMED;
         case Reason.INTERNAL_ERROR:
@@ -262,6 +263,30 @@ export function malformedRequest(
 }
 
 /**
+ * The result for a raw body over {@link MAX_REQUEST_BYTES} UTF-8 bytes, or
+ * null when `body` is not such a string. Checked before anything else looks
+ * at the body, so a huge malformed body is REQUEST_TOO_LARGE, not
+ * MALFORMED_REQUEST. For the endpoints only.
+ */
+export function requestTooLarge(
+  environment: EndpointEnvironment,
+  body: unknown,
+  requestDateMs: number,
+): FailedReceiptResult | null {
+  if (typeof body !== 'string' || !utf8LengthExceeds(body, MAX_REQUEST_BYTES)) {
+    return null;
+  }
+  return new Result<RenderedReceipt>(
+    CONSTRUCT,
+    environment,
+    null,
+    Reason.REQUEST_TOO_LARGE,
+    null,
+    requestDateMs,
+  ) as unknown as FailedReceiptResult;
+}
+
+/**
  * The request_date instant as epoch milliseconds: the explicit one when
  * given, the clock otherwise. Read once per call, before anything else.
  */
@@ -287,14 +312,15 @@ export function receiptDataOf(requestBody: unknown): unknown {
  * value that answers 21002. Apple has no status code for "that wasn't JSON";
  * 21002 ("The data in the receipt-data property was malformed or missing") is
  * the closest, and it is what a JSON object without usable `receipt-data`
- * gets anyway. So does a body over {@link MAX_REQUEST_BYTES} UTF-8 bytes or
- * nested more than 64 levels deep, refused before it is parsed.
+ * gets anyway. So does a body nested more than 64 levels deep, refused
+ * before it is parsed. The size cap is {@link requestTooLarge}'s, checked
+ * before this.
  */
 export function parseRequestJson(body: unknown): object | undefined {
   if (typeof body !== 'string') {
     return undefined;
   }
-  if (utf8LengthExceeds(body, MAX_REQUEST_BYTES) || jsonNestingExceeds(body)) {
+  if (jsonNestingExceeds(body)) {
     return undefined;
   }
   let parsed: unknown;
