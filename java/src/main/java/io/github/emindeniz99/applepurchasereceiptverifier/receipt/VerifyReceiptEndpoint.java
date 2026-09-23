@@ -20,9 +20,8 @@ import org.jspecify.annotations.Nullable;
  * Drop-in local replacement for Apple's deprecated {@code verifyReceipt}
  * endpoint: same request body, same response body shape, same status codes —
  * but verified offline against the pinned Apple root instead of by calling
- * Apple. Field-by-field fidelity and the unavoidable gaps (fields that only
- * exist in Apple's server-side subscription database, like
- * {@code latest_receipt_info} / {@code pending_renewal_info}) are not
+ * Apple. Fields that exist only in Apple's server-side subscription database,
+ * like {@code latest_receipt_info} and {@code pending_renewal_info}, are not
  * produced.
  *
  * <p>Like Apple's endpoint, this does NOT check the bundle id — the caller

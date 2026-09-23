@@ -46,8 +46,8 @@
          to be fixed, not current; bump it with a release when convenient. -->
     <project.build.outputTimestamp>2026-09-21T00:00:00Z</project.build.outputTimestamp>
     <bouncycastle.version>1.86</bouncycastle.version>
-    <!-- Floor: Jackson 2.16. JwsVerifier and VerifyReceiptEndpoint state
-         StreamReadConstraints on their mappers rather than relying on
+    <!-- Floor: Jackson 2.16. JwsVerifier and VerifyReceiptEndpoint set
+         StreamReadConstraints through internal/BoundedJson rather than relying on
          Jackson's defaults, because the JWS header is parsed before any
          signature check and a host BOM pinning an older Jackson 2 would
          otherwise link cleanly and silently lose the nesting guard.
