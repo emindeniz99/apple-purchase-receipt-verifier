@@ -274,6 +274,7 @@ public final class JwsVerifier {
         if (!x5c.isArray() || x5c.size() != 3 || !allTextual(x5c)) {
             throw new VerificationException(Reason.INVALID_JWS_FORMAT, "x5c must contain exactly 3 certificates");
         }
+        // x5c[2] is decoded but unused: PKIX validates leaf + intermediate against the pinned anchors.
         List<X509Certificate> chain = decodeChain(x5c);
         X509Certificate leaf = chain.get(0);
         X509Certificate intermediate = chain.get(1);
