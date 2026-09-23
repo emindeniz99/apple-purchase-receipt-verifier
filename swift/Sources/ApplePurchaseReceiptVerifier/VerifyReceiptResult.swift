@@ -216,17 +216,40 @@ private func put(_ json: inout [String: Any], _ key: String, _ value: Any?) {
 /// Apple's three date renderings: `x` (GMT), `x_ms` (epoch ms), `x_pst`.
 private func appleDates(_ json: inout [String: Any], _ prefix: String, _ date: Date?) {
     guard let date else { return }
-    json[prefix] = format(date, zone: TimeZone(identifier: "UTC")!) + " Etc/GMT"
+    json[prefix] = formatAppleDate(date, appleGMTDateStyle) + " Etc/GMT"
     json["\(prefix)_ms"] = String(Int64(date.timeIntervalSince1970 * 1000))
     json["\(prefix)_pst"] =
-        format(date, zone: TimeZone(identifier: "America/Los_Angeles")!)
-        + " America/Los_Angeles"
+        formatAppleDate(date, applePacificDateStyle) + " America/Los_Angeles"
 }
 
-private func format(_ date: Date, zone: TimeZone) -> String {
-    let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "en_US_POSIX")
-    formatter.timeZone = zone
-    formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-    return formatter.string(from: date)
+/// `yyyy-MM-dd HH:mm:ss` in GMT and in Los Angeles time. Value types and
+/// `Sendable`, so each is built once and serves every thread; Foundation
+/// caches the formatter behind them. A new `DateFormatter` per date, the
+/// alternative, cost about 95 µs on Linux, and swift-corelibs-foundation's
+/// `DateFormatter` has no lock, so one cannot be shared between threads.
+let appleGMTDateStyle = appleDateStyle(TimeZone(identifier: "UTC")!)
+let applePacificDateStyle = appleDateStyle(TimeZone(identifier: "America/Los_Angeles")!)
+
+private func appleDateStyle(_ zone: TimeZone) -> Date.VerbatimFormatStyle {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = zone
+    return Date.VerbatimFormatStyle(
+        format: """
+            \(year: .padded(4))-\(month: .twoDigits)-\(day: .twoDigits) \
+            \(hour: .twoDigits(clock: .twentyFourHour, hourCycle: .zeroBased)):\
+            \(minute: .twoDigits):\(second: .twoDigits)
+            """,
+        locale: Locale(identifier: "en_US_POSIX"), timeZone: zone, calendar: calendar)
+}
+
+/// `date` rendered with `style`, to the same text `DateFormatter` gives.
+///
+/// `DateFormatter` rounds the instant to the nearest millisecond before it
+/// renders it, and `VerbatimFormatStyle` truncates, so an instant less than
+/// half a millisecond below a whole second (a `request_date` from the clock)
+/// would render one second early. Rounding it the same way first gives the
+/// same text; ReceiptDateTests compares the two.
+func formatAppleDate(_ date: Date, _ style: Date.VerbatimFormatStyle) -> String {
+    let milliseconds = (date.timeIntervalSince1970 * 1000 + 0.5).rounded(.down)
+    return Date(timeIntervalSince1970: milliseconds / 1000).formatted(style)
 }

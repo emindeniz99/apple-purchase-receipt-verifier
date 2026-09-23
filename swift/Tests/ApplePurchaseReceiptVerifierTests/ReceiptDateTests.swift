@@ -6,9 +6,11 @@ import XCTest
 /// Receipt dates are parsed with `Date.ISO8601FormatStyle` when the text has
 /// the canonical shape and with `ISO8601DateFormatter` otherwise
 /// (ReceiptVerifier.swift says why: a formatter per date made a 187-purchase
-/// receipt about 50 times slower than the Java port). The fast path is only
-/// allowed because it never changes an answer, so it is compared here with
-/// the formatter on whichever Foundation the suite is built against.
+/// receipt about 50 times slower than the Java port), and rendered with
+/// shared `Date.VerbatimFormatStyle`s instead of a new `DateFormatter` per
+/// date. Both are only allowed because they never change an answer, so each
+/// is compared here with the formatter it replaced, on whichever Foundation
+/// the suite is built against.
 ///
 /// The generators are seeded, so a failure reproduces.
 final class ReceiptDateTests: XCTestCase {
@@ -96,4 +98,85 @@ final class ReceiptDateTests: XCTestCase {
         }
         return text
     }
+
+    // MARK: render
+
+    func testRenderAgreesWithDateFormatterOnGeneratedInstants() {
+        var random = SplitMix64(seed: Self.seed ^ 1)
+        for _ in 0..<5_000 {
+            // The whole range decodeDate lets through, 0001 to 9999: before
+            // the Gregorian cutover, around the 2007 US rule change, and far
+            // past the last transition the time zone database lists.
+            let seconds = Double.random(in: -62_135_596_800...253_402_300_799, using: &random)
+            let whole = seconds.rounded(.down)
+            for instant in [seconds, whole, whole - 0.0004, whole - 0.0006, whole.nextDown] {
+                comparesRender(Date(timeIntervalSince1970: instant))
+            }
+        }
+    }
+
+    /// Every Los Angeles offset change from 1900 to 2100, approached from
+    /// both sides at the hour, the second, the millisecond and the closest
+    /// representable instants.
+    func testRenderAgreesWithDateFormatterAroundEveryOffsetChange() {
+        let pacific = TimeZone(identifier: "America/Los_Angeles")!
+        var instant = Date(timeIntervalSince1970: -2_208_988_800)  // 1900-01-01
+        let end = Date(timeIntervalSince1970: 4_102_444_800)  // 2100-01-01
+        var transitions = 0
+        while let next = pacific.nextDaylightSavingTimeTransition(after: instant), next < end {
+            let t = next.timeIntervalSince1970
+            for offset in [-3600, -1, -0.001, -0.0006, -0.0004, 0, 0.001, 1, 3600] {
+                comparesRender(Date(timeIntervalSince1970: t + offset))
+            }
+            comparesRender(Date(timeIntervalSince1970: t.nextDown))
+            comparesRender(Date(timeIntervalSince1970: t.nextUp))
+            transitions += 1
+            instant = next
+        }
+        XCTAssertGreaterThan(transitions, 300, "transitions: \(transitions)")
+    }
+
+    /// The styles are shared by every thread, which only `Sendable` values
+    /// may be; this checks concurrent use gives the answers serial use does.
+    func testRenderAndParseGiveTheSameAnswersFromManyThreads() async {
+        let instants = (0..<2_000).map { Date(timeIntervalSince1970: Double($0) * 86_417.123) }
+        let expected = instants.map(renderBoth)
+        let texts = instants.map { canonicalText($0) }
+        await withTaskGroup(of: Bool.self) { group in
+            for _ in 0..<8 {
+                group.addTask {
+                    zip(instants, expected).allSatisfy { renderBoth($0) == $1 }
+                        && zip(instants, texts).allSatisfy {
+                            parseCanonicalReceiptDate($1)?.timeIntervalSince1970
+                                == $0.timeIntervalSince1970.rounded(.down)
+                        }
+                }
+            }
+            for await agreed in group {
+                XCTAssertTrue(agreed)
+            }
+        }
+    }
+
+    private func comparesRender(_ date: Date) {
+        for (style, zone) in [
+            (appleGMTDateStyle, "UTC"), (applePacificDateStyle, "America/Los_Angeles"),
+        ] {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = TimeZone(identifier: zone)!
+            formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+            XCTAssertEqual(
+                formatAppleDate(date, style), formatter.string(from: date),
+                "\(date.timeIntervalSince1970) in \(zone)")
+        }
+    }
+}
+
+private func renderBoth(_ date: Date) -> String {
+    formatAppleDate(date, appleGMTDateStyle) + " " + formatAppleDate(date, applePacificDateStyle)
+}
+
+private func canonicalText(_ date: Date) -> String {
+    Date.ISO8601FormatStyle().format(date)
 }
