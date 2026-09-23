@@ -307,6 +307,61 @@ public class EndpointTests
         Assert.Equal("com.example.app", receipt["bundle_id"]);
     }
 
+    /// <summary>
+    /// The endpoint calls the receipt verifier's internal core with the
+    /// anchors it copied at construction, not the public
+    /// <see cref="ReceiptVerifier.VerifyReceiptCore"/>, which copies every
+    /// anchor again on each call (about 150 µs per root on OpenSSL 3.0, so
+    /// some 450 µs per request with the three Apple roots). That shortcut is
+    /// only sound while both give the same verdict for the same roots, so
+    /// this compares them on a pass, a foreign chain, a broken signature and
+    /// a malformed blob.
+    /// </summary>
+    [Fact]
+    public void TheEndpointGivesThePublicPrimitivesVerdictForEveryReceipt()
+    {
+        byte[] receipt = Fixtures.Bytes("receipt");
+        byte[] tampered = (byte[])receipt.Clone();
+        tampered[tampered.Length - 16] ^= 0x01;
+        byte[][] inputs =
+        {
+            receipt,
+            Fixtures.Bytes("receipt-foreign"),
+            tampered,
+            receipt[..(receipt.Length / 2)],
+        };
+
+        List<VerificationReason?> verdicts = new();
+        using VerifyReceiptEndpoint endpoint = Endpoint();
+        foreach (byte[] input in inputs)
+        {
+            VerificationReason? expected = null;
+            try
+            {
+                ReceiptVerifier.VerifyReceiptCore(input, Roots());
+            }
+            catch (VerificationException e)
+            {
+                expected = e.Reason;
+            }
+
+            VerifyReceiptResult result = endpoint.VerifyReceiptData(Convert.ToBase64String(input));
+            Assert.Equal(expected is null, result.IsVerified);
+            Assert.Equal(expected, result.FailureReason);
+            verdicts.Add(expected);
+        }
+
+        Assert.Equal(
+            new VerificationReason?[]
+            {
+                null,
+                VerificationReason.InvalidChain,
+                VerificationReason.InvalidSignature,
+                VerificationReason.InvalidReceiptFormat,
+            },
+            verdicts);
+    }
+
     /// <summary>The raw answer for the receipt that carries all four attributes.</summary>
     private static string IdsAnswer()
     {
