@@ -922,14 +922,7 @@ func isRepresentableAsCertificateValidationTime(_ date: Date) -> Bool {
 private func decodeDate(_ der: [UInt8]) throws -> Date? {
     let text = try decodeString(der)
     if text.isEmpty { return nil }
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    var parsed = formatter.date(from: text)
-    if parsed == nil {
-        formatter.formatOptions = [.withInternetDateTime]
-        parsed = formatter.date(from: text)
-    }
-    guard let date = parsed else {
+    guard let date = parseCanonicalReceiptDate(text) ?? parseReceiptDateWithFormatter(text) else {
         throw VerificationError(.invalidReceiptFormat, "unparseable receipt date: \(text)")
     }
     guard isRepresentableAsCertificateValidationTime(date) else {
@@ -938,4 +931,43 @@ private func decodeDate(_ der: [UInt8]) throws -> Date? {
             "receipt date out of representable range: \(text)")
     }
     return date
+}
+
+/// The shape every genuine receipt date has: `yyyy-MM-ddTHH:mm:ssZ`.
+/// A value type and `Sendable`, so one instance serves every thread.
+private let canonicalReceiptDateStyle = Date.ISO8601FormatStyle()
+
+/// The instant a canonical receipt date names, or nil for any other text.
+///
+/// Building an `ISO8601DateFormatter` and parsing twice with it costs about
+/// 300 µs on Linux, and a receipt carries up to four dates per purchase:
+/// that was nearly all of the time a 187-purchase receipt took to verify.
+/// `Date.ISO8601FormatStyle` parses the same text in about 1 µs, but it does
+/// not accept and reject the same strings: it reads "23:60:00" as the next
+/// hour and takes a five-digit year at face value, and it refuses a leading
+/// space and "+2400". So it answers only when formatting the instant back
+/// gives the input text unchanged and the instant is one the certificate
+/// policy can hold. Every other string goes to
+/// ``parseReceiptDateWithFormatter(_:)`` and gets the answer it always got.
+/// ReceiptDateTests compares the two on generated strings.
+func parseCanonicalReceiptDate(_ text: String) -> Date? {
+    guard let date = try? canonicalReceiptDateStyle.parse(text),
+        canonicalReceiptDateStyle.format(date) == text,
+        isRepresentableAsCertificateValidationTime(date)
+    else { return nil }
+    return date
+}
+
+/// RFC 3339 with or without fractional seconds, as `ISO8601DateFormatter`
+/// reads it. A new formatter per call: swift-corelibs-foundation's has no
+/// lock, so one cannot be shared between threads.
+func parseReceiptDateWithFormatter(_ text: String) -> Date? {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    var parsed = formatter.date(from: text)
+    if parsed == nil {
+        formatter.formatOptions = [.withInternetDateTime]
+        parsed = formatter.date(from: text)
+    }
+    return parsed
 }
