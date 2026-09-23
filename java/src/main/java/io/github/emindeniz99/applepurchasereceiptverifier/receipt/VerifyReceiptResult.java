@@ -4,7 +4,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import io.github.emindeniz99.applepurchasereceiptverifier.Environment;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -33,10 +35,10 @@ public final class VerifyReceiptResult {
 
     // Locale.ROOT pinned so a JVM default locale can never reach the
     // rendering, matching node (en-CA) and swift (en_US_POSIX).
-    private static final DateTimeFormatter FORMAT =
+    static final DateTimeFormatter FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withLocale(Locale.ROOT);
-    private static final ZoneId GMT = ZoneId.of("UTC");
-    private static final ZoneId PACIFIC = ZoneId.of("America/Los_Angeles");
+    static final ZoneId GMT = ZoneId.of("UTC");
+    static final ZoneId PACIFIC = ZoneId.of("America/Los_Angeles");
 
     private final Environment environment;
     private final @Nullable AppReceipt receipt;
@@ -252,8 +254,46 @@ public final class VerifyReceiptResult {
         if (instant == null) {
             return;
         }
-        json.put(prefix, FORMAT.format(instant.atZone(GMT)) + " Etc/GMT");
+        json.put(prefix, format(instant, GMT) + " Etc/GMT");
         json.put(prefix + "_ms", String.valueOf(instant.toEpochMilli()));
-        json.put(prefix + "_pst", FORMAT.format(instant.atZone(PACIFIC)) + " America/Los_Angeles");
+        json.put(prefix + "_pst", format(instant, PACIFIC) + " America/Los_Angeles");
+    }
+
+    /**
+     * {@code FORMAT.format(instant.atZone(zone))}. A legacy receipt renders
+     * hundreds of dates twice each, and the general formatter was a large
+     * share of rendering one, so years 1 to 9999 are written directly from
+     * the same local date-time {@code atZone} computes (the zone's offset
+     * at that instant). There {@code yyyy} is the year zero-padded to four
+     * digits; other years (no era sign, a {@code +} above 9999) go to the
+     * formatter.
+     */
+    static String format(Instant instant, ZoneId zone) {
+        ZoneOffset offset = zone.getRules().getOffset(instant);
+        LocalDateTime local = LocalDateTime.ofEpochSecond(instant.getEpochSecond(), instant.getNano(), offset);
+        int year = local.getYear();
+        if (year < 1 || year > 9999) {
+            return FORMAT.format(instant.atZone(zone));
+        }
+        char[] out = new char[19];
+        digits(out, 0, year, 4);
+        out[4] = '-';
+        digits(out, 5, local.getMonthValue(), 2);
+        out[7] = '-';
+        digits(out, 8, local.getDayOfMonth(), 2);
+        out[10] = ' ';
+        digits(out, 11, local.getHour(), 2);
+        out[13] = ':';
+        digits(out, 14, local.getMinute(), 2);
+        out[16] = ':';
+        digits(out, 17, local.getSecond(), 2);
+        return new String(out);
+    }
+
+    private static void digits(char[] out, int at, int value, int width) {
+        for (int i = at + width - 1; i >= at; i--) {
+            out[i] = (char) ('0' + value % 10);
+            value /= 10;
+        }
     }
 }
