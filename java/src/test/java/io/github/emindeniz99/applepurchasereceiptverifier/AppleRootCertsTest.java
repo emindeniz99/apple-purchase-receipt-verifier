@@ -20,6 +20,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.bouncycastle.util.encoders.Hex;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -109,8 +110,11 @@ class AppleRootCertsTest {
         Files.copy(fixtures.resolve("receipt-root.der"), certs.resolve("AppleRootCA-G3.cer"));
 
         URL library = AppleRootCerts.class.getProtectionDomain().getCodeSource().getLocation();
+        // The library's own runtime dependency, which the fingerprint check
+        // uses for its hex rendering.
+        URL bouncyCastle = Hex.class.getProtectionDomain().getCodeSource().getLocation();
         URLClassLoader shadowed = new URLClassLoader(
-                new URL[] {tmp.toUri().toURL(), library},
+                new URL[] {tmp.toUri().toURL(), library, bouncyCastle},
                 ClassLoader.getSystemClassLoader().getParent());
         try {
             // The premise: on this loader the planted directory really does

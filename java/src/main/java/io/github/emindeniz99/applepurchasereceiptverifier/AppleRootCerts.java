@@ -11,6 +11,7 @@ import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import org.bouncycastle.util.encoders.Hex;
 
 /**
  * Loads the Apple root certificates bundled with this library (copies of the
@@ -126,11 +127,6 @@ public final class AppleRootCerts {
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 unavailable, so the pinned roots cannot be checked", e);
         }
-        StringBuilder hex = new StringBuilder(digest.length * 2);
-        for (byte b : digest) {
-            hex.append(Character.forDigit((b >> 4) & 0xf, 16));
-            hex.append(Character.forDigit(b & 0xf, 16));
-        }
-        return hex.toString();
+        return Hex.toHexString(digest);
     }
 }
