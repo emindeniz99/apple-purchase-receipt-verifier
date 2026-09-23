@@ -362,13 +362,7 @@ public final class ReceiptVerifier {
     private static X509Certificate validateChain(
             CMSSignedData cms, SignerInformation signer, Date at, Set<TrustAnchor> trustAnchors)
             throws VerificationException {
-        // The certificate bag is read from the raw SignedData rather than
-        // through cms.getCertificates(), which decodes every entry eagerly
-        // and throws on the first one it dislikes — losing WHICH entry it
-        // was, and that is what decides the verdict. A stranger the receipt
-        // merely carries is a defect of the receipt; the SIGNER being
-        // unreadable is a defect of a certificate and gets the verdict an
-        // unreadable x5c entry gets on the JWS path (receipt/reject-signer-*).
+        // Raw set, not cms.getCertificates(); see decodeEmbeddedAndFindSigner.
         ASN1Set certificateSet = embeddedCertificateSet(cms);
         int embeddedCount = certificateSet == null ? 0 : certificateSet.size();
         // Bounded here, before a single embedded certificate is decoded or
@@ -438,12 +432,14 @@ public final class ReceiptVerifier {
      *
      * <p>This walk over the raw set, and {@link #namesTheSigner}, exist so
      * that a signer certificate no decoder accepts is reported as
-     * INVALID_CERTIFICATE rather than INVALID_RECEIPT_FORMAT. fixtures/cases.json
-     * pins that with receipt/reject-signer-certificate-version-11,
-     * reject-signer-carrying-one-extension-twice,
-     * reject-signer-on-an-unimplemented-curve and
-     * reject-signer-with-a-corrupt-extension; do not replace it with
-     * {@code cms.getCertificates()}.</p>
+     * INVALID_CERTIFICATE (as an unreadable x5c entry is on the JWS path),
+     * while an unreadable certificate the receipt merely carries is
+     * INVALID_RECEIPT_FORMAT. {@code cms.getCertificates()} decodes every
+     * entry eagerly and throws on the first bad one without saying which, so
+     * it cannot tell the two apart. The four broken-signer-certificate
+     * conformance cases (version 11, one extension carried twice, an
+     * unimplemented curve, a corrupt extension) pin INVALID_CERTIFICATE; do
+     * not replace this walk with {@code cms.getCertificates()}.</p>
      */
     private static X509CertificateHolder decodeEmbeddedAndFindSigner(
             @Nullable ASN1Set certificateSet,
@@ -462,12 +458,7 @@ public final class ReceiptVerifier {
                 if (unreadable == null) {
                     unreadable = e;
                 }
-                // Whether the SignerInfo means THIS entry has to be read out
-                // of the entry itself: an identity is still legible in bytes
-                // that are not a certificate all the way down, and matching
-                // the SignerInfo against the entries that DID decode answers
-                // a different question — wrongly, whenever the receipt names
-                // a certificate it does not carry at all.
+                // Read the identity from the entry itself; see namesTheSigner.
                 if (raw != null && namesTheSigner(raw, signer.getSID())) {
                     unreadableSigner = true;
                 }
@@ -504,13 +495,11 @@ public final class ReceiptVerifier {
 
     /**
      * Whether {@code raw} carries the issuer Name and serialNumber
-     * {@code sid} names, read as generic ASN.1 rather than as a certificate.
-     *
-     * <p>That is the whole point: the entries this is asked about are the
-     * ones {@link X509CertificateHolder} refused, and an identity is still
-     * legible in bytes that are not a certificate all the way down. Node,
-     * Swift and Go resolve the signer the same way, off the raw DER, so all
-     * of them agree about which embedded entry a defect belongs to.</p>
+     * {@code sid} names, read as generic ASN.1 because the entries asked
+     * about are the ones {@link X509CertificateHolder} refused. Inferring it
+     * from the entries that did decode would blame the wrong entry whenever
+     * the receipt names a certificate it does not carry. All ports resolve
+     * the signer off the raw DER, so they agree which entry a defect is in.
      *
      * <p>{@code TBSCertificate ::= SEQUENCE { [0] version DEFAULT v1,
      * serialNumber INTEGER, signature AlgorithmIdentifier, issuer Name,
