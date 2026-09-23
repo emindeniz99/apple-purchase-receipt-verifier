@@ -185,6 +185,7 @@ module ApplePurchaseReceiptVerifier
 
     def self.verify: (String der, Array[OpenSSL::X509::Certificate] roots) -> AppReceipt
     def self.contained: [T] () { () -> T } -> T
+    def self.parse_signed_payload: (String content) -> AppReceipt
     # Both take whatever a caller passed; rejecting a non-String is their job.
     def self.binary: (untyped input) -> String
     def self.decode_base64: (untyped text) -> String
@@ -240,6 +241,7 @@ module ApplePurchaseReceiptVerifier
     type fields = Hash[Symbol, untyped]
     type unknown_attributes = Hash[Integer, Array[String]]
 
+    def self.creation_date: (String content) -> Time?
     def self.parse: (String content) -> AppReceipt
     def self.parse_in_app: (String bytes) -> InAppPurchase
     def self.record_unknown: (unknown_attributes unknown, Integer type, String value) -> void

@@ -85,8 +85,9 @@ namespace ApplePurchaseReceiptVerifier.Receipt
         public VerificationReason? FailureReason { get; }
 
         /// <summary>
-        /// The unexpected exception behind
-        /// <see cref="VerificationReason.InternalError"/>; null for every other
+        /// What is behind <see cref="VerificationReason.InternalError"/>: the
+        /// unexpected exception the endpoint caught, or the parser's error for
+        /// signed receipt content that could not be read. Null for every other
         /// outcome. For logging, not for deciding anything.
         /// </summary>
         public Exception? FailureCause { get; }

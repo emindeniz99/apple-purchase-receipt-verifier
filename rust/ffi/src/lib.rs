@@ -55,7 +55,7 @@ use std::time::{Duration, SystemTime};
 /// The value of [`AprvResult::status`], and the return value of every
 /// verification call.
 ///
-/// Two bands, and the split is the point: `1..=11` is a **verdict about the
+/// Two bands, and the split is the point: `1..=12` is a **verdict about the
 /// input** — the canonical cross-port [`Reason`] vocabulary, in the order
 /// `Reason` declares it — while `100..` is a **mistake in the call itself**,
 /// where nothing about the input was checked. A caller that treats
@@ -64,8 +64,9 @@ use std::time::{Duration, SystemTime};
 ///
 /// **Stable and append-only.** These numbers are part of the ABI: a value is
 /// never reused for a different meaning and an existing value never changes.
-/// A twelfth verification reason — which the cross-port contract makes a
-/// deliberate, all-nine-ports change — would be 12.
+/// A new verification reason is a deliberate, all-nine-ports change of the
+/// cross-port contract and takes the next number: `INTERNAL_ERROR` joined
+/// as 12, and a thirteenth would be 13.
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AprvReason {
@@ -94,6 +95,10 @@ pub enum AprvReason {
     DeviceHashMismatch = 10,
     /// The payload was signed longer ago than the configured maximum.
     StalePayload = 11,
+    /// Not the caller's fault: a trusted signer signed receipt content the
+    /// library cannot read (found only after the chain and the signature
+    /// passed). Alert and retry or escalate; do not deny the user on it.
+    InternalError = 12,
 
     /// A required pointer argument was `NULL`. Nothing was verified.
     NullPointer = 100,
@@ -199,7 +204,7 @@ fn guard_ptr<T, F: FnOnce() -> *mut T>(body: F) -> *mut T {
 /// The canonical reason tokens, in the order `Reason` declares them. The
 /// index of a token here is its ABI code minus one, and
 /// `reason_codes_mirror_the_library` asserts that against `Reason::all()`.
-const REASON_TOKENS: [&str; 11] = [
+const REASON_TOKENS: [&str; 12] = [
     "INVALID_JWS_FORMAT",
     "INVALID_CERTIFICATE",
     "INVALID_CERTIFICATE_PURPOSE",
@@ -211,13 +216,14 @@ const REASON_TOKENS: [&str; 11] = [
     "INVALID_RECEIPT_FORMAT",
     "DEVICE_HASH_MISMATCH",
     "STALE_PAYLOAD",
+    "INTERNAL_ERROR",
 ];
 
 /// The ABI code for a library reason.
 ///
 /// Derived from position in `Reason::all()` rather than written out as a
 /// `match`, because `Reason` is `#[non_exhaustive]`: a match would need a
-/// wildcard arm, and a wildcard arm is exactly how a newly added twelfth
+/// wildcard arm, and a wildcard arm is exactly how a newly added
 /// reason would silently become an existing code.
 fn reason_code(reason: Reason) -> i32 {
     match Reason::all().iter().position(|known| *known == reason) {
@@ -1199,8 +1205,8 @@ mod tests {
     // --- the reason contract ---------------------------------------------
 
     /// The ABI numbers ARE the library's declaration order. This is the test
-    /// that fails if a twelfth `Reason` is ever added without the header's
-    /// enum growing a twelfth name to match — the append-only promise made
+    /// that fails if a new `Reason` is ever added without the header's
+    /// enum growing a name to match — the append-only promise made
     /// mechanical rather than written down.
     #[test]
     fn reason_codes_mirror_the_library() {
@@ -1223,6 +1229,7 @@ mod tests {
         }
         assert_eq!(AprvReason::InvalidJwsFormat as i32, 1);
         assert_eq!(AprvReason::StalePayload as i32, 11);
+        assert_eq!(AprvReason::InternalError as i32, 12);
     }
 
     #[test]

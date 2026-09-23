@@ -90,7 +90,11 @@ export interface FailedReceiptResult extends VerifyReceiptResultMembers {
   readonly receipt: null;
   /** Why there is no receipt. */
   readonly failureReason: Reason;
-  /** The value caught behind {@link Reason.INTERNAL_ERROR}; null for every other reason. */
+  /**
+   * What is behind {@link Reason.INTERNAL_ERROR}: the unexpected error the
+   * endpoint caught, or the parser's error for signed content that could not
+   * be read. null for every other reason.
+   */
   readonly failureCause: unknown;
 }
 
@@ -229,20 +233,32 @@ export function verifiedResult<R extends RenderedReceipt>(
 /**
  * The result for a caught error: its reason when it is a
  * {@link VerificationError}, INTERNAL_ERROR with the error kept otherwise.
- * For the endpoints only.
+ * A VerificationError that is itself INTERNAL_ERROR (signed content that
+ * could not be read) keeps what is behind it, its `cause`, as the
+ * failureCause. For the endpoints only.
  */
 export function failedResult(
   environment: EndpointEnvironment,
   error: unknown,
   requestDateMs: number,
 ): FailedReceiptResult {
-  const internal = !(error instanceof VerificationError);
+  if (!(error instanceof VerificationError)) {
+    return new Result<RenderedReceipt>(
+      CONSTRUCT,
+      environment,
+      null,
+      Reason.INTERNAL_ERROR,
+      error,
+      requestDateMs,
+    ) as unknown as FailedReceiptResult;
+  }
+  const internal = error.reason === Reason.INTERNAL_ERROR;
   return new Result<RenderedReceipt>(
     CONSTRUCT,
     environment,
     null,
-    internal ? Reason.INTERNAL_ERROR : error.reason,
-    internal ? error : null,
+    error.reason,
+    internal ? (error.cause ?? error) : null,
     requestDateMs,
   ) as unknown as FailedReceiptResult;
 }

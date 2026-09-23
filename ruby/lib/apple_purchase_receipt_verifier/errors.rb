@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
 module ApplePurchaseReceiptVerifier
-  # The machine-readable failure vocabulary. Eleven reasons in `ALL`, closed
+  # The machine-readable failure vocabulary. Twelve reasons in `ALL`, closed
   # by the cross-port contract: `fixtures/cases.schema.json` holds the same enum and
-  # every port mirrors it. A twelfth reason is a change to that file, to
+  # every port mirrors it. A thirteenth reason is a change to that file, to
   # PLAN.md and to every port in one pull request.
   #
   # The values are Symbols spelled in SCREAMING_SNAKE so that
@@ -21,15 +21,23 @@ module ApplePurchaseReceiptVerifier
     INVALID_RECEIPT_FORMAT      = :INVALID_RECEIPT_FORMAT
     DEVICE_HASH_MISMATCH        = :DEVICE_HASH_MISMATCH
     STALE_PAYLOAD               = :STALE_PAYLOAD
+    # Not the client's fault, status 21009 at the endpoint. Raised when a
+    # trusted signer signed receipt content this library cannot read (found
+    # only after the chain and the signature passed; the parser's error is
+    # the raised error's `cause`), and reported by the endpoint for an
+    # unexpected error inside it, with {VerifyReceiptResult#failure_cause}
+    # holding the error. Alert and retry or escalate; do not deny the user on
+    # it.
+    INTERNAL_ERROR              = :INTERNAL_ERROR
 
     ALL = [
       INVALID_JWS_FORMAT, INVALID_CERTIFICATE, INVALID_CERTIFICATE_PURPOSE,
       INVALID_CHAIN, INVALID_SIGNATURE, WRONG_BUNDLE_ID, WRONG_ENVIRONMENT,
       WRONG_APP_APPLE_ID, INVALID_RECEIPT_FORMAT, DEVICE_HASH_MISMATCH,
-      STALE_PAYLOAD
+      STALE_PAYLOAD, INTERNAL_ERROR
     ].freeze
 
-    # The three reasons below are not in ALL: no verifier raises them, so no
+    # The two reasons below are not in ALL: no verifier raises them, so no
     # {VerificationError} ever carries one. They exist only as a
     # {VerifyReceiptResult#failure_reason}.
 
@@ -37,9 +45,6 @@ module ApplePurchaseReceiptVerifier
     # object or nests deeper than 64, or `receipt-data` is missing, empty or
     # not a String.
     MALFORMED_REQUEST = :MALFORMED_REQUEST
-    # An unexpected error inside the verifyReceipt endpoint, answered as
-    # status 21009. {VerifyReceiptResult#failure_cause} holds the error.
-    INTERNAL_ERROR = :INTERNAL_ERROR
     # The raw verifyReceipt request body is over
     # {VerifyReceiptEndpoint::MAX_REQUEST_BYTES} (3,145,728 bytes), the size
     # at which Apple's endpoint answers HTTP 413. Status 21002 in the

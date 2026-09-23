@@ -2,6 +2,7 @@ package applereceipt
 
 import (
 	"bytes"
+	"errors"
 	"time"
 
 	"github.com/emindeniz99/apple-purchase-receipt-verifier/go/internal/der"
@@ -145,6 +146,73 @@ type AppReceipt struct {
 type receiptAttribute struct {
 	kind  int64
 	value []byte
+}
+
+// readCreationDate reads the receipt creation date (attribute 12) the only
+// way anything in a payload is read before its signer is trusted: the
+// top-level attribute SET is walked shallowly, each entry's type is read,
+// and only the value of type 12 is decoded.
+//
+// nil means "judge the chain at now": no attribute 12, an empty one, one
+// that does not decode, more than one, or a walk that fails anywhere. An
+// entry the walk cannot read fails it as a whole rather than being skipped,
+// since that entry might have been a second attribute 12. It never returns
+// an error, and a panic in the walk is also "no date": nothing is trusted
+// yet, so nothing here can blame anyone.
+func readCreationDate(content []byte) (date *time.Time) {
+	defer func() {
+		if recover() != nil {
+			date = nil
+		}
+	}()
+	attributes, err := parseAttributeSet(content)
+	if err != nil {
+		return nil
+	}
+	var found *receiptAttribute
+	for i := range attributes {
+		if attributes[i].kind != attrCreationDate {
+			continue
+		}
+		if found != nil {
+			return nil
+		}
+		found = &attributes[i]
+	}
+	if found == nil {
+		return nil
+	}
+	date, err = decodeDate(found.value)
+	if err != nil {
+		return nil
+	}
+	return date
+}
+
+// parseSignedReceiptPayload is the full payload parse, run only after the
+// chain and the signature have passed. A trusted signer signed these bytes,
+// so anything that stops the parse (this library's grammar, a bound, a
+// panic) is the library's failure or a format Apple added, not the
+// client's: ReasonInternalError wrapping the parser's error, never
+// ReasonInvalidReceiptFormat, which the endpoint answers as 21002 and an
+// app server reads as "deny".
+func parseSignedReceiptPayload(content []byte) (receipt *AppReceipt, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			receipt = nil
+			err = newError(ReasonInternalError, "signed receipt content could not be read: %v", r)
+		}
+	}()
+	receipt, err = parseReceiptPayload(content)
+	if err != nil {
+		detail := err.Error()
+		var verr *VerificationError
+		if errors.As(err, &verr) && verr != nil {
+			detail = verr.Detail
+		}
+		return nil, wrapError(ReasonInternalError, err, "signed receipt content could not be read: %s", detail)
+	}
+	return receipt, nil
 }
 
 func parseReceiptPayload(content []byte) (*AppReceipt, error) {

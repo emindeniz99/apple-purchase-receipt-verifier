@@ -88,12 +88,13 @@ class PortDivergenceTest < Minitest::Test
   end
 
   # The chunks are still bounded ASN.1: a chunk that is not an OCTET STRING,
-  # or a value that is not a chunk container at all, stays a format error.
+  # or a value that is not a chunk container at all, is refused. A trusted
+  # signer signed it, so the refusal is INTERNAL_ERROR.
   def test_a_ber_chunked_attribute_value_is_still_parsed_strictly
     bad = tlv(0x24, tlv(0x04, "ab") + tlv(0x02, "\x01".b))
     attribute = tlv(0x30, TestPki.integer(2) + TestPki.integer(1) + bad)
 
-    assert_reason(:INVALID_RECEIPT_FORMAT) do
+    assert_reason(:INTERNAL_ERROR) do
       verifier.verify_der(TestPki.sign_receipt(@pki, tlv(0x31, attribute)))
     end
   end
@@ -105,7 +106,7 @@ class PortDivergenceTest < Minitest::Test
   def test_rejects_a_timezone_offset_outside_a_real_one
     ["2024-08-06T12:00:00+99:99", "2024-08-06T12:00:00-45:00",
      "2024-08-06T12:00:00+24:00", "2024-08-06T12:00:00+00:99"].each do |text|
-      assert_reason(:INVALID_RECEIPT_FORMAT) { verifier.verify_der(date_receipt(text)) }
+      assert_reason(:INTERNAL_ERROR) { verifier.verify_der(date_receipt(text)) }
     end
   end
 
@@ -122,7 +123,7 @@ class PortDivergenceTest < Minitest::Test
   # one answer no other port gives. Rejecting is the fail-closed choice and
   # matches three of the four.
   def test_rejects_a_leap_second
-    assert_reason(:INVALID_RECEIPT_FORMAT) { verifier.verify_der(date_receipt("2024-06-30T23:59:60Z")) }
+    assert_reason(:INTERNAL_ERROR) { verifier.verify_der(date_receipt("2024-06-30T23:59:60Z")) }
   end
 
   # An ambiguity the shipped ports do not resolve, pinned so it is a decision
@@ -142,7 +143,7 @@ class PortDivergenceTest < Minitest::Test
   def test_out_of_range_date_components_are_still_refused
     ["2024-08-06T25:00:00Z", "2024-08-06T12:60:00Z", "2024-13-06T12:00:00Z",
      "2024-00-06T12:00:00Z", "2024-08-00T12:00:00Z"].each do |text|
-      assert_reason(:INVALID_RECEIPT_FORMAT) { verifier.verify_der(date_receipt(text)) }
+      assert_reason(:INTERNAL_ERROR) { verifier.verify_der(date_receipt(text)) }
     end
   end
 

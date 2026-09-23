@@ -19,6 +19,7 @@ import java.security.cert.TrustAnchor;
 import java.security.cert.X509CertSelector;
 import java.security.cert.X509Certificate;
 import java.security.interfaces.RSAPublicKey;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.Iterator;
@@ -291,13 +292,15 @@ public final class ReceiptVerifier {
         }
         byte[] payload = (byte[]) cms.getSignedContent().getContent();
 
-        // Parsed before signature verification only to learn the creation
-        // date (chain validity is anchored at signing time); nothing from it
-        // is trusted until after the chain + signature checks pass.
-        AppReceipt receipt = ReceiptPayload.parse(payload);
-        // Without a creation date (attribute 12) the chain is judged at the
-        // system clock, never an injected one; see the constructor.
-        Date at = receipt.creationDate() != null ? Date.from(receipt.creationDate()) : new Date();
+        // Only the creation date is read before trust is established, because
+        // chain validity is anchored at signing time; nothing else in the
+        // payload is decoded until the chain and the signature have passed. A
+        // date that is missing, empty, unreadable or stated twice cannot blame
+        // anyone yet, so it only moves the chain instant to "now" and never
+        // rejects by itself. "Now" is the system clock, never an injected one;
+        // see the constructor.
+        Instant creationDate = ReceiptPayload.readCreationDate(payload);
+        Date at = creationDate != null ? Date.from(creationDate) : new Date();
 
         Iterator<SignerInformation> signers = cms.getSignerInfos().getSigners().iterator();
         if (!signers.hasNext()) {
@@ -310,8 +313,41 @@ public final class ReceiptVerifier {
                     Reason.INVALID_CERTIFICATE_PURPOSE,
                     "receipt signer certificate lacks Apple receipt-signing marker OID " + AppleTrust.SIGNING_LEAF_OID);
         }
+        // The chain is checked BEFORE the signature on purpose: checking the
+        // signature first would run the attacker's own key (their choice of RSA
+        // size and exponent) before anything about it is trusted.
         verifyCmsSignature(signer, signerCert);
-        return receipt;
+        return parseSignedPayload(payload);
+    }
+
+    /**
+     * The full payload parse, run only after the chain and the signature have
+     * passed. A trusted signer signed these bytes, so anything that stops the
+     * parse (this library's grammar, a bound, an unexpected runtime exception)
+     * is the library's failure or a format Apple added, not the client's:
+     * INTERNAL_ERROR with the parser's exception as its cause, never
+     * INVALID_RECEIPT_FORMAT, which the endpoint answers as 21002 and an app
+     * server reads as "deny".
+     */
+    private static AppReceipt parseSignedPayload(byte[] payload) throws VerificationException {
+        try {
+            return ReceiptPayload.parse(payload);
+        } catch (VerificationException e) {
+            String detail = e.getMessage();
+            String prefix = e.reason() + ": ";
+            throw new VerificationException(
+                    Reason.INTERNAL_ERROR,
+                    "signed receipt content could not be read: "
+                            + (detail != null && detail.startsWith(prefix)
+                                    ? detail.substring(prefix.length())
+                                    : detail),
+                    e);
+        } catch (RuntimeException e) {
+            throw new VerificationException(
+                    Reason.INTERNAL_ERROR,
+                    "signed receipt content could not be read: " + e.getClass().getName(),
+                    e);
+        }
     }
 
     /** PKIX-builds signer → (intermediates from the CMS) → pinned root at {@code at}. */

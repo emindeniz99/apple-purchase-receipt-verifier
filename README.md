@@ -287,14 +287,15 @@ beside it, since that is what ties renewals to one purchase.
 
 ### What to do per reason
 
-Three classes, and the class is what decides whether a rejection is worth an
-alert. Every reason denies the payload in front of you; only `STALE_PAYLOAD`
-says the next attempt could succeed.
+Four classes, and the class is what decides whether a rejection is worth an
+alert. Every reason except `INTERNAL_ERROR` denies the payload in front of
+you, and only `STALE_PAYLOAD` says the next attempt could succeed.
+`INTERNAL_ERROR` is not a verdict on the client at all.
 
 | Reason | Class | Response |
 |---|---|---|
 | `INVALID_JWS_FORMAT` | client bug | Deny. The client sent something that is not a compact JWS, or truncated one. |
-| `INVALID_RECEIPT_FORMAT` | client bug | Deny. Malformed, truncated, not base64, or over the size bound. `21002` at the endpoint. |
+| `INVALID_RECEIPT_FORMAT` | client bug | Deny. Malformed, truncated, not base64, or over the size bound: the CMS envelope itself is defective. `21002` at the endpoint. |
 | `INVALID_CERTIFICATE` | client bug | Deny. An `x5c` entry or a receipt signer is not a parseable certificate, which mangled transport also produces. |
 | `DEVICE_HASH_MISMATCH` | client bug | Deny. The receipt is bound to a different device than the GUID supplied, or the GUID was passed as hex rather than raw bytes. |
 | `WRONG_ENVIRONMENT` | client bug | Deny, and check the accept set: an endpoint App Review can reach must include Sandbox. At the endpoint this is `21007` / `21008` instead. |
@@ -304,6 +305,7 @@ says the next attempt could succeed.
 | `WRONG_BUNDLE_ID` | possible fraud | Deny and alert. A genuine Apple-signed payload for another app. |
 | `WRONG_APP_APPLE_ID` | possible fraud | Deny and alert. A Production `AppTransaction` naming a different app Apple id. |
 | `STALE_PAYLOAD` | retry later | Not a rejection of the purchase. Take step 4: ask the client for a fresh payload, or fetch one from the App Store Server API. |
+| `INTERNAL_ERROR` | not the client's | Do not deny the user. Alert, then retry or escalate. The receipt authenticated (trusted chain, valid signature) but this library cannot read what Apple signed, or the library failed unexpectedly; either way the purchase may well be genuine. `21009` at the endpoint. |
 
 The vocabulary is closed and identical in all nine ports, so this table is one
 policy across every backend language. What signatures still cannot tell you,

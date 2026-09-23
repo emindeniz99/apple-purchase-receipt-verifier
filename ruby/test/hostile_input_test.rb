@@ -27,6 +27,16 @@ class HostileInputTest < Minitest::Test
     error
   end
 
+  # A payload a trusted signer signed that the library cannot read: the
+  # failure is found only after the chain and the signature pass, and it is
+  # INTERNAL_ERROR with the parser's own verdict as its cause.
+  def assert_unreadable_signed_content(bytes)
+    error = assert_raises(APRV::VerificationError) { @verifier.verify_der(bytes) }
+    assert_equal :INTERNAL_ERROR, error.reason, error.message
+    assert_equal :INVALID_RECEIPT_FORMAT, error.cause&.reason, error.message
+    error
+  end
+
   # CPU time, not wall time: on a shared runner wall time also measures the
   # scheduler, and the claim here is about work done, not seconds elapsed.
   def elapsed
@@ -136,7 +146,7 @@ class HostileInputTest < Minitest::Test
 
   def test_a_payload_with_invalid_utf8_in_the_bundle_id
     payload = TestPki.receipt_payload([[2, "\x0c\x03\xff\xfe\xfd".b]])
-    assert_format_error(TestPki.sign_receipt(@pki, payload))
+    assert_unreadable_signed_content(TestPki.sign_receipt(@pki, payload))
   end
 
   def test_a_message_digest_attribute_that_does_not_match_the_content
@@ -221,7 +231,7 @@ class HostileInputTest < Minitest::Test
     attribute = tlv.call(0x30, TestPki.integer(2) + TestPki.integer(1) + deep)
     payload = tlv.call(0x31, attribute)
 
-    milliseconds = elapsed { assert_format_error(TestPki.sign_receipt(@pki, payload)) }
+    milliseconds = elapsed { assert_unreadable_signed_content(TestPki.sign_receipt(@pki, payload)) }
     assert_operator milliseconds, :<, 250, "40-deep chunk nest took #{milliseconds.round(2)}ms"
 
     # 60,000 one-byte chunks that concatenate to one valid UTF8String: the
@@ -342,6 +352,26 @@ class HostileInputTest < Minitest::Test
     end
     assert_equal :INVALID_RECEIPT_FORMAT, error.reason
     refute_kind_of SystemStackError, error
+  end
+
+  # The boundary above covers everything BEFORE trust. After the chain and
+  # the signature pass, a foreign error (or a SystemStackError) in the full
+  # payload parse is the library's failure on content a trusted signer
+  # signed: INTERNAL_ERROR, with the error kept as the cause.
+  def test_a_foreign_error_in_the_signed_payload_parse_is_an_internal_error
+    receipt = TestPki.sign_receipt(@pki, TestPki.default_payload)
+    [TypeError.new("boom"), SystemStackError.new("stack level too deep")].each do |failure|
+      parse = APRV::ReceiptPayload.method(:parse)
+      APRV::ReceiptPayload.define_singleton_method(:parse) { |_content| raise failure }
+      begin
+        error = assert_raises(APRV::VerificationError) { @verifier.verify_der(receipt) }
+      ensure
+        APRV::ReceiptPayload.define_singleton_method(:parse, parse)
+      end
+      assert_equal :INTERNAL_ERROR, error.reason
+      assert_includes error.message, failure.class.name
+      assert_same failure, error.cause
+    end
   end
 
   def test_a_verification_error_passes_through_the_boundary_unchanged

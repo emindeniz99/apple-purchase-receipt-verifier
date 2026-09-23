@@ -75,6 +75,41 @@ namespace ApplePurchaseReceiptVerifier.Internal
             @"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$",
             RegexOptions.CultureInvariant);
 
+        /// <summary>
+        /// The receipt creation date (attribute 12), read the only way anything
+        /// in a payload is read before its signer is trusted: the top-level
+        /// attribute SET is walked shallowly, each entry's type is read, and
+        /// only the value of type 12 is decoded.
+        /// </summary>
+        /// <remarks>
+        /// <see langword="null"/> means "judge the chain at now": no attribute
+        /// 12, an empty one, one that does not decode, more than one, or a walk
+        /// that fails anywhere. An entry the walk cannot read fails it as a
+        /// whole rather than being skipped, since that entry might have been a
+        /// second attribute 12. Never throws: nothing is trusted yet, so
+        /// nothing here can blame anyone.
+        /// </remarks>
+        internal static DateTimeOffset? ReadCreationDate(byte[] payload)
+        {
+            try
+            {
+                List<byte[]> dates = new List<byte[]>();
+                foreach (Attribute attribute in ReadAttributeSet(payload, "receipt payload"))
+                {
+                    if (attribute.Type == AttrCreationDate)
+                    {
+                        dates.Add(attribute.Value);
+                    }
+                }
+
+                return dates.Count == 1 ? DecodeDate(dates[0]) : null;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
         /// <summary>Decodes the receipt payload into the modelled fields.</summary>
         internal static AppReceipt Parse(byte[] payload)
         {
@@ -216,7 +251,8 @@ namespace ApplePurchaseReceiptVerifier.Internal
                 // would mean reading less than the bytes say — two concatenated
                 // SETs would present only the first one's bundle id. This is
                 // the one parser that runs on untrusted bytes before any
-                // signature check, so it reads exactly what is there or fails.
+                // signature check (for the creation date), so it reads exactly
+                // what is there or fails.
                 RequireExhausted(reader, what);
             }
             catch (AsnContentException e)

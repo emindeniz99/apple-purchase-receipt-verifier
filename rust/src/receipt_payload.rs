@@ -213,6 +213,29 @@ pub fn parse_receipt_payload(content: &[u8]) -> Result<AppReceipt> {
     Ok(receipt)
 }
 
+/// The receipt creation date (attribute 12), read the only way anything in
+/// a payload is read before its signer is trusted: the top-level attribute
+/// SET is walked shallowly, each entry's type is read, and only the value of
+/// type 12 is decoded.
+///
+/// `None` — "judge the chain at now" — whenever the date is not usable: no
+/// attribute 12, an empty one, one that does not decode, more than one, or
+/// a walk that fails anywhere. An entry the walk cannot read fails it as a
+/// whole rather than being skipped, since that entry might have been a
+/// second attribute 12. Never an error: nothing is trusted yet, so nothing
+/// here can blame anyone.
+pub(crate) fn read_creation_date(content: &[u8]) -> Option<SystemTime> {
+    let attributes = parse_attribute_set(content, "receipt payload").ok()?;
+    let mut dates = attributes
+        .iter()
+        .filter(|attribute| attribute.attribute_type == ATTR_CREATION_DATE);
+    let only = dates.next()?;
+    if dates.next().is_some() {
+        return None;
+    }
+    decode_date(&only.value).ok().flatten()
+}
+
 fn parse_in_app(value: &[u8]) -> Result<InAppPurchase> {
     let attributes = parse_attribute_set(value, "in-app purchase attribute")?;
     let mut purchase = InAppPurchase::default();
@@ -376,5 +399,134 @@ fn decode_date(der: &[u8]) -> Result<Option<SystemTime>> {
     match parse_rfc3339(&text) {
         Some(millis) => Ok(Some(system_time_from_millis(millis))),
         None => Err(malformed("unparseable receipt date")),
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    //! The payload grammar, tested against the parser itself. Through the
+    //! verifier these payloads would need a trusted signer, because the full
+    //! parse runs only after the chain and the signature have passed.
+
+    use super::{parse_receipt_payload, read_creation_date};
+    use crate::asn1::tag;
+    use crate::error::Reason;
+
+    fn der(tag: u8, contents: &[u8]) -> Vec<u8> {
+        assert!(contents.len() < 0x80, "short-form lengths only");
+        let mut out = vec![tag, u8::try_from(contents.len()).unwrap()];
+        out.extend_from_slice(contents);
+        out
+    }
+
+    fn int(bytes: &[u8]) -> Vec<u8> {
+        der(tag::INTEGER, bytes)
+    }
+
+    fn attribute(type_bytes: &[u8], value: &[u8]) -> Vec<u8> {
+        der(
+            tag::SEQUENCE,
+            &[int(type_bytes), int(&[1]), der(tag::OCTET_STRING, value)].concat(),
+        )
+    }
+
+    fn set(entries: &[Vec<u8>]) -> Vec<u8> {
+        der(tag::SET, &entries.concat())
+    }
+
+    fn date(text: &str) -> Vec<u8> {
+        attribute(&[12], &der(tag::IA5_STRING, text.as_bytes()))
+    }
+
+    fn refused(payload: &[u8]) -> String {
+        let error = parse_receipt_payload(payload).unwrap_err();
+        assert_eq!(error.reason(), Reason::InvalidReceiptFormat);
+        error.detail().to_owned()
+    }
+
+    #[test]
+    fn an_attribute_set_that_is_not_a_set_is_refused() {
+        refused(&der(tag::SEQUENCE, &int(&[1])));
+    }
+
+    #[test]
+    fn an_attribute_with_fewer_than_three_fields_is_refused() {
+        refused(&set(&[der(
+            tag::SEQUENCE,
+            &[int(&[2]), int(&[1])].concat(),
+        )]));
+    }
+
+    #[test]
+    fn a_negative_or_oversized_attribute_integer_is_refused() {
+        let utf8_x = der(tag::UTF8_STRING, b"x");
+        refused(&set(&[attribute(&[0xff], &utf8_x)]));
+        refused(&set(&[attribute(&[0x00; 9], &utf8_x)]));
+    }
+
+    #[test]
+    fn an_attribute_type_above_the_signed_32_bit_range_is_refused() {
+        let detail = refused(&set(&[attribute(&[0x00, 0x80, 0, 0, 0], &[1, 2, 3])]));
+        assert!(detail.contains("32-bit signed range"), "{detail}");
+    }
+
+    #[test]
+    fn a_receipt_date_without_a_timezone_designator_is_refused() {
+        // A naive date would be read as the server's local time; the same
+        // receipt would read differently on two hosts.
+        for text in [
+            "2024-08-06T12:00:00",
+            "2024-08-06 12:00:00Z",
+            "06/08/2024",
+            "2024-02-31T00:00:00Z",
+        ] {
+            let detail = refused(&set(&[date(text)]));
+            assert!(
+                detail.contains("unparseable receipt date"),
+                "{text}: {detail}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_empty_receipt_date_means_absent() {
+        let expiration = attribute(&[21], &der(tag::IA5_STRING, b""));
+        let receipt = parse_receipt_payload(&set(&[date(""), expiration])).unwrap();
+        assert_eq!(receipt.creation_date, None);
+        assert_eq!(receipt.expiration_date, None);
+    }
+
+    // --- step 2: the creation date read before trust -------------------
+
+    #[test]
+    fn a_single_readable_creation_date_is_the_chain_instant() {
+        let payload = set(&[date("2024-08-06T12:00:00Z"), attribute(&[2], &[0xff])]);
+        // Attribute 2 does not decode, and step 2 does not care: it decodes
+        // the value of attribute 12 only.
+        assert!(read_creation_date(&payload).is_some());
+    }
+
+    #[test]
+    fn an_unusable_creation_date_means_now() {
+        let good = date("2024-08-06T12:00:00Z");
+        for (what, payload) in [
+            ("missing", set(&[attribute(&[2], &[])])),
+            ("empty", set(&[date("")])),
+            ("unreadable", set(&[date("not-a-date")])),
+            ("twice", set(&[good.clone(), good.clone()])),
+            (
+                "an entry the walk cannot read",
+                set(&[good.clone(), der(tag::SEQUENCE, &int(&[7]))]),
+            ),
+            (
+                "an entry whose type is out of range",
+                set(&[good.clone(), attribute(&[0x00, 0x80, 0, 0, 0], &[])]),
+            ),
+            ("no attribute SET at all", Vec::new()),
+            ("not a SET", der(tag::SEQUENCE, &good)),
+        ] {
+            assert_eq!(read_creation_date(&payload), None, "{what}");
+        }
     }
 }

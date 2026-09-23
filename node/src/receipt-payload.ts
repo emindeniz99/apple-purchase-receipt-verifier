@@ -123,6 +123,51 @@ function children(node: ASN1Node): ASN1Node[] {
   return node.children ?? [];
 }
 
+/**
+ * The receipt creation date (attribute 12), read the only way anything in a
+ * payload is read before its signer is trusted: the top-level attribute SET
+ * is walked shallowly, each entry's type is read, and only the value of type
+ * 12 is decoded.
+ *
+ * `null` means "judge the chain at now": no attribute 12, an empty one, one
+ * that does not decode, more than one, or a walk that fails anywhere. An
+ * entry the walk cannot read fails it as a whole rather than being skipped,
+ * since that entry might have been a second attribute 12. Never throws:
+ * nothing is trusted yet, so nothing here can blame anyone.
+ */
+export function readCreationDate(content: Uint8Array): Date | null {
+  try {
+    const dates = parseAttributeSet(content, 'receipt payload').filter(
+      ({ type }) => type === ATTR.CREATION_DATE,
+    );
+    return dates.length === 1 ? decodeDate(dates[0]!.value) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The full payload parse, run only after the chain and the signature have
+ * passed. A trusted signer signed these bytes, so anything that stops the
+ * parse (this library's grammar, a bound, an unexpected error) is the
+ * library's failure or a format Apple added, not the client's:
+ * INTERNAL_ERROR with the parser's error as its cause, never
+ * INVALID_RECEIPT_FORMAT, which the endpoint answers as 21002 and an app
+ * server reads as "deny".
+ */
+export function parseSignedReceiptPayload(content: Uint8Array): RawAppReceipt {
+  try {
+    return parseReceiptPayload(content);
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    throw new VerificationError(
+      Reason.INTERNAL_ERROR,
+      `signed receipt content could not be read: ${detail}`,
+      cause,
+    );
+  }
+}
+
 export function parseReceiptPayload(content: Uint8Array): RawAppReceipt {
   const attributes = parseAttributeSet(content, 'receipt payload');
   const fields: RawAppReceipt = {

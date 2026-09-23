@@ -14,7 +14,7 @@
 use crate::clock::{default_clock, unix_millis, Clock};
 use crate::datetime::{format_etc_gmt, format_pacific, unix_millis_of};
 use crate::environment::Environment;
-use crate::error::{ConfigError, Reason};
+use crate::error::{ConfigError, Reason, VerificationError};
 use crate::json_depth::nesting_exceeds_limit;
 use crate::receipt::{
     decode_receipt_string, verify_receipt_core_unchecked, AppReceipt, InAppPurchase,
@@ -54,7 +54,10 @@ pub mod status {
     pub const SANDBOX_RECEIPT_ON_PRODUCTION: i64 = 21007;
     /// A production receipt was sent to the sandbox environment.
     pub const PRODUCTION_RECEIPT_ON_SANDBOX: i64 = 21008;
-    /// An internal error.
+    /// Not the client's fault: signed receipt content this library cannot
+    /// read, or a contained panic
+    /// ([`Reason::InternalError`](crate::Reason::InternalError)). Alert and
+    /// retry or escalate; do not deny the user on it.
     pub const INTERNAL: i64 = 21009;
 }
 
@@ -136,12 +139,12 @@ pub enum VerifyReceiptOutcome {
     Verified(AppReceipt),
     /// There is no verified receipt.
     Failed {
-        /// Why. [`Reason::MalformedRequest`], [`Reason::RequestTooLarge`]
-        /// and [`Reason::InternalError`] appear only here, never from a
-        /// verifier.
+        /// Why. [`Reason::MalformedRequest`] and [`Reason::RequestTooLarge`]
+        /// appear only here, never from a verifier.
         reason: Reason,
-        /// The panic message behind [`Reason::InternalError`]; `None` for
-        /// every other reason.
+        /// What is behind [`Reason::InternalError`]: the panic message, or
+        /// the detail of the signed content that could not be read. `None`
+        /// for every other reason.
         cause: Option<String>,
     },
 }
@@ -205,7 +208,8 @@ impl VerifyReceiptResult {
         }
     }
 
-    /// The panic message behind [`Reason::InternalError`]; `None` for every
+    /// What is behind [`Reason::InternalError`] (a panic message, or the
+    /// detail of signed content that could not be read); `None` for every
     /// other outcome.
     #[must_use]
     pub fn failure_cause(&self) -> Option<&str> {
@@ -500,7 +504,7 @@ impl VerifyReceiptEndpoint {
     fn contained(
         &self,
         request_date: Option<SystemTime>,
-        verify: impl FnOnce() -> core::result::Result<AppReceipt, Reason>,
+        verify: impl FnOnce() -> core::result::Result<AppReceipt, Failure>,
     ) -> VerifyReceiptResult {
         let mut at = request_date;
         let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -509,10 +513,7 @@ impl VerifyReceiptEndpoint {
         }));
         let outcome = match caught {
             Ok(Ok(receipt)) => VerifyReceiptOutcome::Verified(receipt),
-            Ok(Err(reason)) => VerifyReceiptOutcome::Failed {
-                reason,
-                cause: None,
-            },
+            Ok(Err(Failure { reason, cause })) => VerifyReceiptOutcome::Failed { reason, cause },
             Err(payload) => VerifyReceiptOutcome::Failed {
                 reason: Reason::InternalError,
                 cause: Some(panic_message(payload.as_ref())),
@@ -525,23 +526,23 @@ impl VerifyReceiptEndpoint {
         }
     }
 
-    fn verify_body(&self, body: &str) -> core::result::Result<AppReceipt, Reason> {
+    fn verify_body(&self, body: &str) -> core::result::Result<AppReceipt, Failure> {
         // Both bounds before the parser: it allocates in proportion to the
         // body, and its own recursion limit (128) cannot be lowered. The size
         // first, so a huge malformed body is REQUEST_TOO_LARGE, as Apple's
         // 413 is.
         if body.len() > MAX_REQUEST_BYTES {
-            return Err(Reason::RequestTooLarge);
+            return Err(Reason::RequestTooLarge.into());
         }
         if nesting_exceeds_limit(body.as_bytes()) {
-            return Err(Reason::MalformedRequest);
+            return Err(Reason::MalformedRequest.into());
         }
         let Ok(Value::Object(parsed)) = serde_json::from_str::<Value>(body) else {
-            return Err(Reason::MalformedRequest);
+            return Err(Reason::MalformedRequest.into());
         };
         match parsed.get("receipt-data") {
             Some(Value::String(text)) => self.verify_base64(Some(text)),
-            _ => Err(Reason::MalformedRequest),
+            _ => Err(Reason::MalformedRequest.into()),
         }
     }
 
@@ -549,17 +550,46 @@ impl VerifyReceiptEndpoint {
     fn verify_base64(
         &self,
         receipt_data: Option<&str>,
-    ) -> core::result::Result<AppReceipt, Reason> {
+    ) -> core::result::Result<AppReceipt, Failure> {
         let Some(receipt_data) = receipt_data.filter(|d| !d.is_empty()) else {
-            return Err(Reason::MalformedRequest);
+            return Err(Reason::MalformedRequest.into());
         };
         // Capped before decoding, by the same check and with the same reason
         // as ReceiptVerifier::verify_base64.
-        let der = decode_receipt_string(receipt_data).map_err(|error| error.reason())?;
+        let der = decode_receipt_string(receipt_data).map_err(Failure::from)?;
         // The primitive itself, not a ReceiptVerifier built around a
         // wildcard bundle id: like Apple's endpoint, no bundle-id claim is
         // checked here (callers compare receipt.bundle_id).
-        verify_receipt_core_unchecked(&der, &self.anchors).map_err(|error| error.reason())
+        verify_receipt_core_unchecked(&der, &self.anchors).map_err(Failure::from)
+    }
+}
+
+/// Why one endpoint call has no receipt: the reason, and for
+/// [`Reason::InternalError`] the underlying failure, which becomes the
+/// result's `failure_cause`.
+struct Failure {
+    reason: Reason,
+    cause: Option<String>,
+}
+
+impl From<Reason> for Failure {
+    fn from(reason: Reason) -> Self {
+        Failure {
+            reason,
+            cause: None,
+        }
+    }
+}
+
+impl From<VerificationError> for Failure {
+    /// Only an `INTERNAL_ERROR` keeps its detail: it is the one reason whose
+    /// cause an integrator needs to see (what the library could not read).
+    fn from(error: VerificationError) -> Self {
+        let cause = (error.reason() == Reason::InternalError).then(|| error.detail().to_owned());
+        Failure {
+            reason: error.reason(),
+            cause,
+        }
     }
 }
 

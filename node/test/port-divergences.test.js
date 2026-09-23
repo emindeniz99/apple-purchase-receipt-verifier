@@ -7,13 +7,15 @@
 //   2. The endpoint's environment is the typed enum, not a boolean.
 //   3. verifyReceiptCore is public, and the endpoint uses it rather than a
 //      wildcard-bundle-id ReceiptVerifier.
-//   4. A receipt attribute TYPE above 2^31 - 1 is INVALID_RECEIPT_FORMAT.
+//   4. A receipt attribute TYPE above 2^31 - 1 is refused; under a trusted
+//      signer that is INTERNAL_ERROR.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import * as node from '../dist/index.js';
 import * as web from '../dist/web/index.js';
+import { mintReceiptPki, tlv } from './support/test-pki.js';
 
 const BUNDLE = 'com.example.app';
 
@@ -266,52 +268,15 @@ test('the endpoint accepts any bundle id without a wildcard verifier', () => {
 
 // --- (4) a receipt attribute type above 2^31 - 1 -------------------------
 
-// A synthetic CMS SignedData whose encapsulated payload is the given bytes.
-// The receipt payload is parsed before any certificate work, so nothing here
-// needs to be signed or to carry certificates for the parse to be reached.
-function tlv(tag, ...parts) {
-  const contents = Buffer.concat(parts);
-  const n = contents.length;
-  const header = n < 0x80 ? [n] : n < 0x100 ? [0x81, n] : [0x82, n >> 8, n & 0xff];
-  return Buffer.concat([Buffer.from([tag, ...header]), contents]);
-}
+// The full payload parse runs only after the chain and the signature pass, so
+// the payload is signed for real under a PKI minted here, which both builds
+// then trust.
+const PKI = mintReceiptPki();
 
-const SEQUENCE = 0x30;
-const SET = 0x31;
-const CONTEXT_0 = 0xa0;
 const INTEGER = 0x02;
 const OCTET_STRING = 0x04;
-const OID = 0x06;
-
-const OID_SIGNED_DATA = Buffer.from('2a864886f70d010702', 'hex');
-const OID_DATA = Buffer.from('2a864886f70d010701', 'hex');
-const OID_SHA256 = Buffer.from('608648016503040201', 'hex');
-
-function cmsAround(payload) {
-  const signerInfo = tlv(
-    SEQUENCE,
-    tlv(INTEGER, Buffer.from([1])),
-    tlv(SEQUENCE, tlv(SEQUENCE), tlv(INTEGER, Buffer.from([1]))),
-    tlv(SEQUENCE, tlv(OID, OID_SHA256)),
-    tlv(SEQUENCE),
-    tlv(OCTET_STRING),
-  );
-  return tlv(
-    SEQUENCE,
-    tlv(OID, OID_SIGNED_DATA),
-    tlv(
-      CONTEXT_0,
-      tlv(
-        SEQUENCE,
-        tlv(INTEGER, Buffer.from([1])),
-        tlv(SET),
-        tlv(SEQUENCE, tlv(OID, OID_DATA), tlv(CONTEXT_0, tlv(OCTET_STRING, payload))),
-        tlv(CONTEXT_0),
-        tlv(SET, signerInfo),
-      ),
-    ),
-  );
-}
+const SEQUENCE = 0x30;
+const SET = 0x31;
 
 /** A one-attribute receipt payload whose type INTEGER is `typeBytes`. */
 const payloadWithType = (typeBytes) =>
@@ -328,13 +293,12 @@ const payloadWithType = (typeBytes) =>
 // 2^31 - 1 is the largest type a port with an int-typed attribute field can
 // hold. Above it the value is unrepresentable, and a port that maps it onto
 // a sentinel (-1) and files it under unknownAttributes reports a different
-// receipt than one that does not — so every port fails closed instead.
-// Every case here is INVALID_RECEIPT_FORMAT — the synthetic CMS embeds no
-// certificates, so a payload that parses dies on the next check instead. The
-// message is what separates "rejected for its type" from "parsed, then
-// rejected for something else", so that is what each case asserts.
+// receipt than one that does not, so every port fails closed instead. A
+// trusted signer signed it, so failing closed is INTERNAL_ERROR; the message
+// is what separates "rejected for its type" from "rejected for something
+// else", so that is what each case asserts. 2^31 - 1 itself verifies.
 const ATTRIBUTE_TYPES = [
-  ['2^31 - 1', [0x7f, 0xff, 0xff, 0xff], /signer certificate not embedded/],
+  ['2^31 - 1', [0x7f, 0xff, 0xff, 0xff], null],
   ['2^31', [0x00, 0x80, 0x00, 0x00, 0x00], /2147483648 exceeds the 32-bit signed range/],
   ['2^32', [0x01, 0x00, 0x00, 0x00, 0x00], /4294967296 exceeds the 32-bit signed range/],
   ['2^53 - 1', [0x1f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff], /exceeds the 32-bit signed range/],
@@ -343,19 +307,23 @@ const ATTRIBUTE_TYPES = [
 for (const [name, build] of BUILDS) {
   for (const [label, typeBytes, message] of ATTRIBUTE_TYPES) {
     test(`${name}: attribute type ${label}`, async () => {
-      const der = asInput(build, cmsAround(payloadWithType(typeBytes)));
-      const verdict = await outcome(() => build.verifyReceiptCore(der, [gen('receipt-root.der')]));
-      assert.equal(verdict.reason, 'INVALID_RECEIPT_FORMAT', label);
+      const der = asInput(build, PKI.sign(payloadWithType(typeBytes)));
+      const verdict = await outcome(() => build.verifyReceiptCore(der, [asInput(build, PKI.root)]));
+      if (message === null) {
+        assert.ok(verdict.ok, `${label}: ${verdict.message}`);
+        return;
+      }
+      assert.equal(verdict.reason, 'INTERNAL_ERROR', label);
       assert.match(verdict.message, message, label);
     });
   }
 }
 
 test('both builds reject an oversized attribute type with the same message', async () => {
-  const der = cmsAround(payloadWithType([0x00, 0x80, 0x00, 0x00, 0x00]));
+  const der = PKI.sign(payloadWithType([0x00, 0x80, 0x00, 0x00, 0x00]));
   const message = async (build) => {
     try {
-      await build.verifyReceiptCore(asInput(build, der), [gen('receipt-root.der')]);
+      await build.verifyReceiptCore(asInput(build, der), [asInput(build, PKI.root)]);
       return null;
     } catch (error) {
       return error.message;

@@ -36,15 +36,17 @@ use ReflectionClass;
 final class ApiShapeTest extends TestCase
 {
     /**
-     * The eleven reasons, read out of `fixtures/cases.schema.json` rather
+     * The twelve reasons, read out of `fixtures/cases.schema.json` rather
      * than restated here. The schema is the source of truth for the
-     * vocabulary, so a typo in a case name — or a twelfth reason added
+     * vocabulary, so a typo in a case name — or a thirteenth reason added
      * without a cross-port change — fails here.
      *
-     * The enum also carries the three reasons every port's VerifyReceiptResult
-     * shares, MALFORMED_REQUEST, REQUEST_TOO_LARGE and INTERNAL_ERROR. They
-     * are not in the schema's `reason` because no verifier throws them; the
-     * schema lists them under `resultReason`, and they are the only extras.
+     * The enum also carries the two reasons every port's VerifyReceiptResult
+     * shares, MALFORMED_REQUEST and REQUEST_TOO_LARGE. They are not in the
+     * schema's `reason` because no verifier throws them; the schema lists
+     * them under `resultReason`, and they are the only extras.
+     * INTERNAL_ERROR is thrown (signed content that cannot be read), so it
+     * is in `reason`.
      */
     public function testTheReasonVocabularyIsExactlyTheOneTheSchemaDefines(): void
     {
@@ -61,8 +63,8 @@ final class ApiShapeTest extends TestCase
         sort($expected);
         sort($actual);
 
-        self::assertCount(11, $schema['$defs']['reason']['enum']);
-        self::assertSame(['MALFORMED_REQUEST', 'REQUEST_TOO_LARGE', 'INTERNAL_ERROR'], $resultOnly);
+        self::assertCount(12, $schema['$defs']['reason']['enum']);
+        self::assertSame(['MALFORMED_REQUEST', 'REQUEST_TOO_LARGE'], $resultOnly);
         self::assertSame($expected, $actual, 'the Reason vocabulary drifted from the schema');
     }
 

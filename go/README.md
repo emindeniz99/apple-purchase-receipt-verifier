@@ -134,8 +134,9 @@ A `*VerifyReceiptResult` is one verification:
   `Status() == 0` asks whether this endpoint's environment accepts the
   receipt, `Verified()` asks whether the receipt verified at all.
 - `Err()` is the failure as a `*VerificationError`, or nil. For
-  `INTERNAL_ERROR`, `errors.Unwrap(result.Err())` is the unexpected error or
-  panic behind it, for logging.
+  `INTERNAL_ERROR`, `errors.Unwrap(result.Err())` is what is behind it, for
+  logging: the parser's error for signed content that could not be read, or
+  the unexpected error or panic.
 - `RequestDate()` is the instant rendered as `request_date`.
 
 Only the endpoint creates a meaningful result, and it never changes. Each
@@ -169,13 +170,12 @@ error, as it is for `NewVerifyReceiptEndpoint`.
 |---|---|---|
 | `REQUEST_TOO_LARGE` | 21002 | the raw body is over `MaxRequestBytes` (3,145,728 bytes); Apple answers HTTP 413 here, see [Trust model](#trust-model) |
 | `MALFORMED_REQUEST` | 21002 | the body is not a JSON object or nests deeper than 64, or `receipt-data` is missing, empty or not a string |
-| `INVALID_RECEIPT_FORMAT` | 21002 | `receipt-data` is not base64, is over `MaxReceiptBytes`, or does not decode to a receipt |
+| `INVALID_RECEIPT_FORMAT` | 21002 | `receipt-data` is not base64, is over `MaxReceiptBytes`, or its CMS envelope does not parse |
 | `INVALID_CHAIN`, `INVALID_SIGNATURE`, other certificate reasons | 21003 | the receipt did not authenticate |
-| `INTERNAL_ERROR` | 21009 | an unexpected error or panic |
+| `INTERNAL_ERROR` | 21009 | not the client's fault: the receipt authenticated but its signed content cannot be read, or an unexpected error or panic. Alert and retry or escalate; do not deny the user |
 
-`MALFORMED_REQUEST`, `REQUEST_TOO_LARGE` and `INTERNAL_ERROR` only ever
-appear on a result. No verifier returns any of them, and `AllReasons()` does
-not list them.
+`MALFORMED_REQUEST` and `REQUEST_TOO_LARGE` only ever appear on a result. No
+verifier returns either, and `AllReasons()` does not list them.
 
 **`request_date`.** `VerifyReceiptAt`, `VerifyReceiptBodyAt` and
 `VerifyReceiptDataAt` take a `time.Time` that becomes `request_date` in place
@@ -212,7 +212,7 @@ including the majority that never touch this endpoint.
 ## Errors
 
 Every failed verification returns a `*VerificationError` carrying one of
-eleven `Reason` values, and nothing else — no logging, no metrics, no
+twelve `Reason` values, and nothing else — no logging, no metrics, no
 callbacks. The `Detail` string is safe to log: it never contains receipt
 bytes, claim values or key material.
 
@@ -242,9 +242,10 @@ cause. `ReasonOf(err)` is the one-line form.
 | `WRONG_BUNDLE_ID` | the payload's bundle id is not the configured one |
 | `WRONG_ENVIRONMENT` | the environment (or `receiptType`) claim is outside the accept set |
 | `WRONG_APP_APPLE_ID` | a Production `AppTransaction` whose app Apple id is unset or does not match |
-| `INVALID_RECEIPT_FORMAT` | unparseable CMS, trailing bytes after the blob, no encapsulated content, no `SignerInfo`, an embedded certificate that does not decode, signer not embedded, unsupported digest OID, bad attribute shape, a base64 string or a DER receipt over `MaxReceiptBytes` |
+| `INVALID_RECEIPT_FORMAT` | unparseable CMS, trailing bytes after the blob, no encapsulated content, no `SignerInfo`, an embedded certificate that does not decode, signer not embedded, unsupported digest OID, a base64 string or a DER receipt over `MaxReceiptBytes` |
 | `DEVICE_HASH_MISMATCH` | the device-hash check was requested and failed, or the receipt lacks the attributes it needs |
 | `STALE_PAYLOAD` | `MaxSignedAge` is set and the payload's own signing date is older than it |
+| `INTERNAL_ERROR` | the receipt's chain and signature verified, but its payload does not parse (bad attribute shape, an unreadable value, a bound hit); `errors.Unwrap` gives the parser's error. Not the client's fault: alert and retry or escalate, do not deny |
 
 Misconfiguration — no trust anchors, an empty bundle id, an environment other
 than Production or Sandbox on the endpoint — is a **plain error from the
@@ -373,6 +374,14 @@ func redeemReceipt(receipts *applereceipt.ReceiptVerifier, userID, receiptData, 
   `receiptCreationDate`, else the receipt's attribute-12 creation date, else
   the system clock. That is what lets a historical payload signed with a
   since-rotated certificate keep verifying.
+- **A receipt is read chain first.** CMS parse → the creation date alone
+  (nothing else in the payload is decoded yet; missing, empty, unreadable or
+  stated twice means the system clock) → chain → marker OID → CMS signature →
+  full payload parse → bundle id → device hash. Reading the date never
+  rejects. The chain comes before the signature so the attacker's own key is
+  never run before it is trusted, and a payload that fails the full parse was
+  signed by a trusted signer, so it is `INTERNAL_ERROR`, not
+  `INVALID_RECEIPT_FORMAT`.
 - **The injected clock cannot move a certificate verdict.** `Now` exists on
   `JWSVerifier` (for the `MaxSignedAge` rule) and on `VerifyReceiptEndpoint`
   (for `request_date`). It reaches nothing else, and `ReceiptVerifier` takes

@@ -20,6 +20,7 @@ from unittest import mock
 
 from apple_purchase_receipt_verifier import (
     Reason,
+    VerificationError,
     VerifyReceiptEndpoint,
     VerifyReceiptResult,
     apple_receipt_roots,
@@ -252,9 +253,14 @@ class VerifyReceiptResultTest(unittest.TestCase):
                 self.assertLessEqual(len(request), VerifyReceiptEndpoint.MAX_REQUEST_BYTES)
                 self.assertEqual(body, bare.to_json(), data[:40])
                 statuses.add(bare.status)
-                self.assertNotEqual(Reason.INTERNAL_ERROR, bare.failure_reason, data[:40])
-        # The corpus reaches every status except the internal error.
-        self.assertEqual({0, 21002, 21003, 21007, 21008}, statuses)
+                if bare.failure_reason == Reason.INTERNAL_ERROR:
+                    # Only the fixtures a trusted signer signed with content
+                    # the library cannot read may get here, and the cause is
+                    # then the parser's own verdict, never an escaped crash.
+                    self.assertIsInstance(bare.failure_cause, VerificationError, data[:40])
+        # The corpus reaches every status; 21009 only through signed content
+        # that cannot be read (receipt/*-under-a-trusted-chain and friends).
+        self.assertEqual({0, 21002, 21003, 21007, 21008, 21009}, statuses)
 
     def test_each_failure_names_its_reason(self) -> None:
         sandbox = endpoint("Sandbox")
@@ -319,6 +325,25 @@ class VerifyReceiptResultTest(unittest.TestCase):
                 '{"status":21009}',
                 sandbox.verify_receipt_json(json.dumps({"receipt-data": b64("receipt.der")})),
             )
+
+    def test_unreadable_signed_content_is_an_internal_error_with_its_cause(self) -> None:
+        # The other road to INTERNAL_ERROR: a trusted signer signed content
+        # the library cannot read. Same status, not the client's fault, and
+        # the parser's own verdict is what failure_cause carries.
+        roots = [
+            x509.load_der_x509_certificate((GENERATED / "verification-order-root.der").read_bytes())
+        ]
+        for environment in ENVIRONMENTS:
+            result = VerifyReceiptEndpoint(roots, environment).verify_receipt_data(
+                b64("receipt-unreadable-creation-date.der")
+            )
+            self.assert_invariant(result, environment)
+            self.assertEqual(Reason.INTERNAL_ERROR, result.failure_reason)
+            self.assertEqual(21009, result.status)
+            cause = result.failure_cause
+            assert isinstance(cause, VerificationError)
+            self.assertEqual(Reason.INVALID_RECEIPT_FORMAT, cause.reason)
+            self.assertIn("not-a-date", str(cause))
 
     def test_to_json_is_what_verify_receipt_json_answers(self) -> None:
         sandbox = endpoint("Sandbox")

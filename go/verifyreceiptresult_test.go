@@ -297,6 +297,30 @@ func TestInternalErrorBecomesAResult(t *testing.T) {
 	}
 }
 
+// The other road to INTERNAL_ERROR: a trusted signer signed content the
+// library cannot read. Same status, not the client's fault, and
+// errors.Unwrap gives the parser's own error.
+func TestUnreadableSignedContentIsAnInternalError(t *testing.T) {
+	pki := newReceiptPKI(t)
+	der := buildCMS(t, cmsSpec{
+		content: receiptPayload(append(
+			standardReceiptAttributes("com.example.app", "ProductionSandbox", time.Now()),
+			attr(17, []byte{0x04, 0x02, 0x13, 0x37}))...),
+		signer:          pki.leaf,
+		certificates:    pki.embedded(),
+		withSignedAttrs: true,
+	})
+	endpoint := endpointFor(t, pki.anchors(), applereceipt.EnvironmentSandbox, time.Now)
+	result := endpoint.VerifyReceiptData(base64.StdEncoding.EncodeToString(der))
+	if result.Reason() != applereceipt.ReasonInternalError || string(result.JSON()) != `{"status":21009}` {
+		t.Fatalf("got %s, %s", result.Reason(), result.JSON())
+	}
+	reason, ok := applereceipt.ReasonOf(errors.Unwrap(result.Err()))
+	if !ok || reason != applereceipt.ReasonInvalidReceiptFormat {
+		t.Fatalf("errors.Unwrap must give the parser's error, got %v", errors.Unwrap(result.Err()))
+	}
+}
+
 // Handing a result to encoding/json must produce Apple's body. Without
 // MarshalJSON it would be "{}", silently, for any caller that used to
 // encode the old VerifyReceiptResponse return value directly.
@@ -363,20 +387,25 @@ func TestReceiptDataMatchesTheBodyPathOverEveryReceiptFixture(t *testing.T) {
 	}
 }
 
-// The three endpoint-only reasons are real tokens other ports report, and
+// The two endpoint-only reasons are real tokens other ports report, and
 // they stay out of AllReasons, which is the shared schema's vocabulary
-// of verifier reasons.
+// of verifier reasons. INTERNAL_ERROR is a verifier reason too (signed
+// content that cannot be read), so it is in it.
 func TestEndpointOnlyReasons(t *testing.T) {
 	if applereceipt.ReasonMalformedRequest != "MALFORMED_REQUEST" ||
 		applereceipt.ReasonRequestTooLarge != "REQUEST_TOO_LARGE" ||
 		applereceipt.ReasonInternalError != "INTERNAL_ERROR" {
 		t.Fatal("the endpoint-only reason tokens are misspelled")
 	}
+	internal := false
 	for _, reason := range applereceipt.AllReasons() {
-		if reason == applereceipt.ReasonMalformedRequest || reason == applereceipt.ReasonRequestTooLarge ||
-			reason == applereceipt.ReasonInternalError {
+		if reason == applereceipt.ReasonMalformedRequest || reason == applereceipt.ReasonRequestTooLarge {
 			t.Fatalf("%s is endpoint-only and must not be in AllReasons", reason)
 		}
+		internal = internal || reason == applereceipt.ReasonInternalError
+	}
+	if !internal {
+		t.Fatal("INTERNAL_ERROR is a verifier reason and must be in AllReasons")
 	}
 }
 

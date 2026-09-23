@@ -275,6 +275,12 @@ public final class VerifyReceiptEndpoint {
             AppReceipt receipt = ReceiptVerifier.verifyCore(der, trustAnchors);
             return VerifyReceiptResult.verified(environment, receipt, at);
         } catch (VerificationException e) {
+            if (e.reason() == Reason.INTERNAL_ERROR) {
+                // Signed content that could not be read keeps what is behind
+                // it, the parser's exception, as the failure cause.
+                Throwable cause = e.getCause();
+                return VerifyReceiptResult.internalError(environment, cause != null ? cause : e, at);
+            }
             return VerifyReceiptResult.failed(environment, e.reason(), at);
         } catch (RuntimeException e) {
             return VerifyReceiptResult.internalError(environment, e, at);

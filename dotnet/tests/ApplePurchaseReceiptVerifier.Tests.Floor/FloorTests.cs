@@ -121,7 +121,7 @@ public class FloorTests
     [Fact]
     public void TheReasonVocabularyIsIntactOnTheFloorAsset()
     {
-        // Eleven verifier reasons plus the three only a VerifyReceiptResult carries.
+        // Twelve verifier reasons plus the two only a VerifyReceiptResult carries.
         Assert.Equal(14, Enum.GetValues(typeof(VerificationReason)).Length);
         Assert.Equal("STALE_PAYLOAD", VerificationReasonCodes.ToCode(VerificationReason.StalePayload));
         Assert.Equal("INTERNAL_ERROR", VerificationReasonCodes.ToCode(VerificationReason.InternalError));

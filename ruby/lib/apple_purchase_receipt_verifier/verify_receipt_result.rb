@@ -23,12 +23,14 @@ module ApplePurchaseReceiptVerifier
     attr_reader :receipt
 
     # @return [Symbol, nil] why there is no receipt, one of {Reason::ALL},
-    #   {Reason::MALFORMED_REQUEST}, {Reason::REQUEST_TOO_LARGE} or
-    #   {Reason::INTERNAL_ERROR}; nil exactly when {#receipt} is set
+    #   {Reason::MALFORMED_REQUEST} or {Reason::REQUEST_TOO_LARGE}; nil
+    #   exactly when {#receipt} is set
     attr_reader :failure_reason
 
-    # @return [Exception, nil] the unexpected error behind
-    #   {Reason::INTERNAL_ERROR}; nil for every other outcome
+    # @return [Exception, nil] what is behind {Reason::INTERNAL_ERROR}: the
+    #   unexpected error the endpoint caught, or the parser's error for
+    #   signed receipt content that could not be read; nil for every other
+    #   outcome
     attr_reader :failure_cause
 
     # @return [Time] the instant rendered as `request_date` (UTC), fixed when

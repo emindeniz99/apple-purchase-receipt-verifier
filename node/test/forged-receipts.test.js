@@ -7,7 +7,9 @@ import {
   VerificationError,
   VerifyReceiptEndpoint,
   appleReceiptRoots,
+  verifyReceiptCore,
 } from '../dist/index.js';
+import { mintReceiptPki } from './support/test-pki.js';
 
 // Forged CMS blobs built from a genuine receipt's certificates and SignerInfo
 // identifier: everything an attacker can reach without a private key. The
@@ -163,6 +165,14 @@ function payloadWithAttributeType(typeBytes) {
 
 const verifier = () => new ReceiptVerifier({ trustedRoots: appleReceiptRoots(), bundleId: BUNDLE });
 
+// The payload grammar is read only after the chain and the signature pass, so
+// the tests whose subject is that grammar sign their payload for real, under
+// a PKI minted here and trusted by `signed()`. A forgery on the donor's
+// signature would stop at INVALID_SIGNATURE, or at INVALID_CHAIN when its
+// creation date is unusable (the donor's leaf expired in August 2026).
+const PKI = mintReceiptPki();
+const signed = (payload) => verifyReceiptCore(PKI.sign(payload), [PKI.root]);
+
 // Attribute INTEGERs the parser refuses, each at the edge of its guard: 0x80 is
 // the smallest leading byte of a negative two's-complement INTEGER, nine bytes
 // is one past the cap, and 2^53 is the first value a JS number cannot hold
@@ -178,12 +188,15 @@ const REJECTED_ATTRIBUTE_INTEGERS = [
   ['2^31', [0x00, 0x80, 0, 0, 0], /2147483648 exceeds the 32-bit signed range/],
 ];
 for (const [label, bytes, message] of REJECTED_ATTRIBUTE_INTEGERS) {
-  test(`rejects an attribute type INTEGER of ${label} as INVALID_RECEIPT_FORMAT`, () => {
+  test(`rejects an attribute type INTEGER of ${label}, signed by a trusted signer, as INTERNAL_ERROR`, () => {
     assert.throws(
-      () => verifier().verify(forge({ payload: payloadWithAttributeType(bytes) })),
+      () => signed(payloadWithAttributeType(bytes)),
       (e) => {
-        assert.equal(e.reason, 'INVALID_RECEIPT_FORMAT');
+        // Trusted content the library cannot represent: not the client's
+        // fault. The parser's own verdict is kept as the cause.
+        assert.equal(e.reason, 'INTERNAL_ERROR');
         assert.match(e.message, message);
+        assert.equal(e.cause.reason, 'INVALID_RECEIPT_FORMAT');
         return true;
       },
     );
@@ -192,17 +205,10 @@ for (const [label, bytes, message] of REJECTED_ATTRIBUTE_INTEGERS) {
 
 test('parses an attribute type INTEGER of 2^31 - 1, the largest representable type', () => {
   // The boundary the guard above is written against: one below it the parse
-  // succeeds, so a comparison one step wider would reject a legal type. The
-  // forged payload no longer matches the donor signature, so a receipt that
-  // gets past the parse is rejected by the signature check instead.
+  // succeeds, so a comparison one step wider would reject a legal type.
   const largest = [0x7f, 0xff, 0xff, 0xff];
-  assert.throws(
-    () => verifier().verify(forge({ payload: payloadWithAttributeType(largest) })),
-    (e) => {
-      assert.equal(e.reason, 'INVALID_SIGNATURE', e.message);
-      return true;
-    },
-  );
+  const receipt = signed(payloadWithAttributeType(largest));
+  assert.ok(receipt.unknownAttributes.has(2147483647));
 });
 
 test('an attribute VALUE above 2^31 - 1 is still parsed — only the type is capped', () => {
@@ -236,13 +242,8 @@ test('an attribute VALUE above 2^31 - 1 is still parsed — only the type is cap
       ),
     ),
   );
-  assert.throws(
-    () => verifier().verify(forge({ payload })),
-    (e) => {
-      assert.equal(e.reason, 'INVALID_SIGNATURE', e.message);
-      return true;
-    },
-  );
+  const [purchase] = signed(payload).inAppPurchases;
+  assert.equal(purchase.webOrderLineItemId, 2147483648);
 });
 
 test('reports an unparseable embedded certificate as INVALID_RECEIPT_FORMAT', () => {
@@ -292,10 +293,12 @@ test('rejects a receipt date with no timezone designator', () => {
   // Without a designator the instant depends on the server's local timezone,
   // so the same receipt would verify on one host and fail on another; Java and
   // Swift reject it, and this keeps all four implementations in agreement.
+  // Before trust it only moves the chain instant to now; the full parse of a
+  // trusted signer's payload is where it is refused.
   assert.throws(
-    () => verifier().verify(NAIVE_CREATION_DATE),
+    () => signed(payloadDated('2025-12-26T17:43:07')),
     (e) => {
-      assert.equal(e.reason, 'INVALID_RECEIPT_FORMAT');
+      assert.equal(e.reason, 'INTERNAL_ERROR');
       assert.match(e.message, /unparseable receipt date: 2025-12-26T17:43:07$/);
       return true;
     },

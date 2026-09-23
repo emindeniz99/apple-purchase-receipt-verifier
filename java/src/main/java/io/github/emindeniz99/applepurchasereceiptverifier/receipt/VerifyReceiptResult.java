@@ -104,8 +104,9 @@ public final class VerifyReceiptResult {
     }
 
     /**
-     * The unexpected exception behind {@link Reason#INTERNAL_ERROR}; null for
-     * every other outcome.
+     * What is behind {@link Reason#INTERNAL_ERROR}: the unexpected exception
+     * the endpoint caught, or the parser's exception for signed receipt
+     * content that could not be read. Null for every other outcome.
      */
     public @Nullable Throwable failureCause() {
         return failureCause;

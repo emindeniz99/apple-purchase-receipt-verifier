@@ -33,9 +33,11 @@ export const Reason = {
    */
   MALFORMED_REQUEST: 'MALFORMED_REQUEST',
   /**
-   * An unexpected error inside the verifyReceipt endpoint, answered as
-   * status 21009. Reported only as a `VerifyReceiptResult.failureReason`;
-   * never thrown.
+   * Not the client's fault, status 21009 at the endpoint. Thrown when a
+   * trusted signer signed receipt content this library cannot read (found
+   * only after the chain and the signature passed; the parser's error is the
+   * `cause`), and reported by the endpoint for an unexpected error inside
+   * it. Alert and retry or escalate; do not deny the user on it.
    */
   INTERNAL_ERROR: 'INTERNAL_ERROR',
   /**

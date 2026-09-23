@@ -8,8 +8,10 @@
 # all, and every body — any bytes whatsoever — must come back as a JSON object
 # carrying a numeric status. Both halves are asserted after each call. The
 # typed result behind that body is checked too: exactly one of receipt and
-# failure_reason, the same status, and never INTERNAL_ERROR, which only an
-# unexpected error inside the pipeline produces.
+# failure_reason, the same status, and never INTERNAL_ERROR. That reason means
+# an unexpected error inside the pipeline, or content a trusted signer signed
+# that the library cannot read; a fuzzer cannot forge a trusted signature, so
+# for fuzz input it can only be the first, and that is a bug.
 
 require "ruzzy"
 require_relative "../support"

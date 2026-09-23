@@ -236,7 +236,7 @@ public class HostileInputTests
     public void AnAttributeTypeAboveTheThirtyTwoBitRangeIsRejected()
     {
         Assert.Equal(
-            VerificationReason.InvalidReceiptFormat,
+            VerificationReason.InternalError,
             PayloadReason(TestPki.AttributeSet(new (BigInteger, byte[])[]
             {
                 (BigInteger.Pow(2, 64), TestPki.Utf8("x")),
@@ -248,7 +248,7 @@ public class HostileInputTests
     public void ANegativeAttributeTypeIsRejected()
     {
         Assert.Equal(
-            VerificationReason.InvalidReceiptFormat,
+            VerificationReason.InternalError,
             PayloadReason(TestPki.AttributeSet(new (BigInteger, byte[])[] { (-1, TestPki.Utf8("x")) })));
     }
 
@@ -265,7 +265,7 @@ public class HostileInputTests
             }
         }
 
-        Assert.Equal(VerificationReason.InvalidReceiptFormat, PayloadReason(writer.Encode()));
+        Assert.Equal(VerificationReason.InternalError, PayloadReason(writer.Encode()));
     }
 
     [Fact]
@@ -277,14 +277,14 @@ public class HostileInputTests
             writer.WriteInteger(7);
         }
 
-        Assert.Equal(VerificationReason.InvalidReceiptFormat, PayloadReason(writer.Encode()));
+        Assert.Equal(VerificationReason.InternalError, PayloadReason(writer.Encode()));
     }
 
     [Fact]
     public void ADateOutsideTheRepresentableRangeIsRejected()
     {
         Assert.Equal(
-            VerificationReason.InvalidReceiptFormat,
+            VerificationReason.InternalError,
             PayloadReason(TestPki.AttributeSet(new (BigInteger, byte[])[]
             {
                 (2, TestPki.Utf8(ReceiptBundleId)),
@@ -299,7 +299,7 @@ public class HostileInputTests
         // date is the instant the chain's validity is judged at — the same
         // receipt would verify on one host and fail on another.
         Assert.Equal(
-            VerificationReason.InvalidReceiptFormat,
+            VerificationReason.InternalError,
             PayloadReason(TestPki.AttributeSet(new (BigInteger, byte[])[]
             {
                 (2, TestPki.Utf8(ReceiptBundleId)),
@@ -311,7 +311,7 @@ public class HostileInputTests
     public void AStringAttributeThatIsNotAStringIsRejected()
     {
         Assert.Equal(
-            VerificationReason.InvalidReceiptFormat,
+            VerificationReason.InternalError,
             PayloadReason(TestPki.AttributeSet(new (BigInteger, byte[])[] { (2, TestPki.Integer(7)) })));
     }
 
@@ -325,7 +325,7 @@ public class HostileInputTests
         octets[0] = 0x0C; // retag OCTET STRING as UTF8String
 
         Assert.Equal(
-            VerificationReason.InvalidReceiptFormat,
+            VerificationReason.InternalError,
             PayloadReason(TestPki.AttributeSet(new (BigInteger, byte[])[] { (2, octets) })));
     }
 
@@ -339,7 +339,7 @@ public class HostileInputTests
         padded[value.Length + 1] = 0x00;
 
         Assert.Equal(
-            VerificationReason.InvalidReceiptFormat,
+            VerificationReason.InternalError,
             PayloadReason(TestPki.AttributeSet(new (BigInteger, byte[])[] { (2, padded) })));
     }
 
@@ -872,10 +872,19 @@ public class HostileInputTests
     }
 
     /// <summary>The reason a receipt carrying <paramref name="payload"/> fails with.</summary>
+    /// <summary>
+    /// The verdict on <paramref name="payload"/> signed for real under a test
+    /// PKI the verifier trusts. The full payload parse runs only after the
+    /// chain and the signature pass, so a payload spliced into another
+    /// receipt without re-signing would stop at INVALID_SIGNATURE and never
+    /// reach the parser these tests are about.
+    /// </summary>
     private static VerificationReason PayloadReason(byte[] payload)
     {
-        byte[] receipt = ReplacePayload(Receipt, payload);
-        using ReceiptVerifier verifier = new(ReceiptRoots(), ReceiptBundleId);
+        X509Certificate2 root = TestPki.RsaRoot();
+        X509Certificate2 signer = TestPki.RsaChild(root, "CN=Signer", false, TestPki.LeafOid);
+        byte[] receipt = TestPki.SignReceipt(payload, signer, new[] { root });
+        using ReceiptVerifier verifier = new(new[] { TestPki.Public(root) }, ReceiptBundleId);
         return Assert.Throws<VerificationException>(() => verifier.Verify(receipt)).Reason;
     }
 

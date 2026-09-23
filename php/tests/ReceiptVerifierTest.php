@@ -290,9 +290,11 @@ final class ReceiptVerifierTest extends TestCase
         // 2^31 is the first attribute type outside the signed 32-bit space.
         // The leading 0x00 keeps it positive, so this is genuinely 2147483648
         // and not a negative INTEGER.
-        yield '2^31' => [[0x00, 0x80, 0, 0, 0], Reason::InvalidReceiptFormat];
-        yield 'a leading byte of 0x80 (negative)' => [[0x80], Reason::InvalidReceiptFormat];
-        yield 'nine bytes' => [[0, 0, 0, 0, 0, 0, 0, 0, 1], Reason::InvalidReceiptFormat];
+        // Signed by the trusted test chain, so the refusal comes from the full
+        // payload parse after the signature: INTERNAL_ERROR.
+        yield '2^31' => [[0x00, 0x80, 0, 0, 0], Reason::InternalError];
+        yield 'a leading byte of 0x80 (negative)' => [[0x80], Reason::InternalError];
+        yield 'nine bytes' => [[0, 0, 0, 0, 0, 0, 0, 0, 1], Reason::InternalError];
     }
 
     /** @param list<int> $typeBytes */
@@ -372,7 +374,9 @@ final class ReceiptVerifierTest extends TestCase
      * `new DateTimeImmutable()` ROLLS OVER nonsense rather than failing:
      * `2020-13-45T99:99:99Z` becomes 2021-02-18. Since this date is the
      * instant the chain's validity is judged at, a rollover is a security
-     * bug, not a cosmetic one.
+     * bug, not a cosmetic one. Before trust an unreadable date only moves the
+     * chain instant to now; under the trusted test chain the full parse then
+     * refuses it, which is INTERNAL_ERROR.
      */
     #[DataProvider('badDateProvider')]
     public function testRejectsAnUnparseableOrRolledOverCreationDate(string $text): void
@@ -385,7 +389,7 @@ final class ReceiptVerifierTest extends TestCase
             $pki->receiptSignerKey,
         );
 
-        $this->assertReason(Reason::InvalidReceiptFormat, fn () => $this->verifier()->verify($receipt));
+        $this->assertReason(Reason::InternalError, fn () => $this->verifier()->verify($receipt));
     }
 
     public function testAnEmptyDateAttributeMeansAbsentWhichRealReceiptsDo(): void
@@ -562,7 +566,7 @@ final class ReceiptVerifierTest extends TestCase
         $pki = MintedPki::get();
         $receipt = TestPki::receipt($payload, $pki->chain(), $pki->receiptSignerSid, $pki->receiptSignerKey);
 
-        $this->assertReason(Reason::InvalidReceiptFormat, fn () => $this->verifier()->verify($receipt));
+        $this->assertReason(Reason::InternalError, fn () => $this->verifier()->verify($receipt));
     }
 
     public function testRejectsTrailingBytesAfterTheCmsBlob(): void

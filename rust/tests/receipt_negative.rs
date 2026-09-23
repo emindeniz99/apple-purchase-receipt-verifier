@@ -290,10 +290,19 @@ fn an_attribute_type_above_the_signed_32_bit_range_is_rejected() {
         common::anchor("generated/divergence-receipt-root.der"),
         "com.example.app",
     );
+    // Trusted chain and valid signature, so the full parse is where the
+    // type is refused, and a trusted signer's unreadable content is
+    // INTERNAL_ERROR.
+    let error = verifier.verify(&der).unwrap_err();
     assert_eq!(
-        verifier.verify(&der).unwrap_err().reason(),
-        Reason::InvalidReceiptFormat,
+        error.reason(),
+        Reason::InternalError,
         "fail closed: never clamp such a type onto a sentinel"
+    );
+    assert!(
+        error.detail().contains("32-bit signed range"),
+        "{}",
+        error.detail()
     );
 }
 
@@ -445,100 +454,14 @@ fn base64_and_der_entry_points_agree() {
     );
 }
 
-#[test]
-fn an_attribute_set_that_is_not_a_set_is_rejected() {
-    let mut builder = common::CmsBuilder::from_shared();
-    builder.content = Some(common::der_seq(&[common::der_int(1)]));
-    builder.signed_attrs = None;
-    assert_eq!(reason_of(&builder.build()), Reason::InvalidReceiptFormat);
-}
-
-#[test]
-fn an_attribute_with_fewer_than_three_fields_is_rejected() {
-    let attribute = common::der_seq(&[common::der_int(2), common::der_int(1)]);
-    let mut builder = common::CmsBuilder::from_shared();
-    builder.content = Some(common::der_set(&[attribute]));
-    builder.signed_attrs = None;
-    assert_eq!(reason_of(&builder.build()), Reason::InvalidReceiptFormat);
-}
-
-#[test]
-fn a_negative_or_oversized_attribute_integer_is_rejected() {
-    let negative = common::der_seq(&[
-        common::der(tag::INTEGER, &[0xff]),
-        common::der_int(1),
-        common::der(tag::OCTET_STRING, &common::der(tag::UTF8_STRING, b"x")),
-    ]);
-    let mut builder = common::CmsBuilder::from_shared();
-    builder.content = Some(common::der_set(&[negative]));
-    builder.signed_attrs = None;
-    assert_eq!(reason_of(&builder.build()), Reason::InvalidReceiptFormat);
-
-    let nine_bytes = common::der_seq(&[
-        common::der(tag::INTEGER, &[0x00; 9]),
-        common::der_int(1),
-        common::der(tag::OCTET_STRING, &common::der(tag::UTF8_STRING, b"x")),
-    ]);
-    let mut builder = common::CmsBuilder::from_shared();
-    builder.content = Some(common::der_set(&[nine_bytes]));
-    builder.signed_attrs = None;
-    assert_eq!(reason_of(&builder.build()), Reason::InvalidReceiptFormat);
-}
-
-#[test]
-fn a_receipt_date_without_a_timezone_designator_is_rejected() {
-    // A naive date would be read as the server's local time, and that date
-    // is the instant the chain is judged at — the same receipt would verify
-    // on one host and fail on another.
-    for text in [
-        "2024-08-06T12:00:00",
-        "2024-08-06 12:00:00Z",
-        "06/08/2024",
-        "2024-02-31T00:00:00Z",
-    ] {
-        let attribute = common::der_seq(&[
-            common::der_int(12),
-            common::der_int(1),
-            common::der(
-                tag::OCTET_STRING,
-                &common::der(tag::IA5_STRING, text.as_bytes()),
-            ),
-        ]);
-        let mut builder = common::CmsBuilder::from_shared();
-        builder.content = Some(common::der_set(&[attribute]));
-        builder.signed_attrs = None;
-        assert_eq!(
-            reason_of(&builder.build()),
-            Reason::InvalidReceiptFormat,
-            "date {text} must be refused"
-        );
-    }
-}
-
-#[test]
-fn an_empty_receipt_date_means_absent() {
-    let attributes = [
-        common::der_seq(&[
-            common::der_int(2),
-            common::der_int(1),
-            common::der(
-                tag::OCTET_STRING,
-                &common::der(tag::UTF8_STRING, b"com.example.app"),
-            ),
-        ]),
-        common::der_seq(&[
-            common::der_int(21),
-            common::der_int(1),
-            common::der(tag::OCTET_STRING, &common::der(tag::IA5_STRING, b"")),
-        ]),
-    ];
-    let mut builder = common::CmsBuilder::from_shared();
-    builder.content = Some(common::der_set(&attributes));
-    builder.signed_attrs = None;
-    // The signature no longer verifies, but the payload parse is what is
-    // under test: it must reach the signature check, not fail before it.
-    assert_eq!(reason_of(&builder.build()), Reason::InvalidSignature);
-}
+// The payload grammar (attribute SET shape, attribute INTEGER bounds, date
+// spelling, empty dates) is tested against the parser itself, in
+// `src/receipt_payload.rs`. A payload spliced into the shared receipt is
+// not signed by the key the certificates name, so since the signature is
+// checked before the full payload parse, such a receipt stops at
+// INVALID_SIGNATURE and never reaches the parser this file used to probe.
+// What the verifier does with a parser failure under a trusted signer is
+// pinned below and by the `receipt/*` INTERNAL_ERROR vectors.
 
 // --- CMS re-encoding: one signature, one accepted spelling ---------------
 

@@ -41,19 +41,22 @@ class ApiShapeTest < Minitest::Test
     schema = TestSupport.cases_schema
     expected = schema["$defs"]["reason"]["enum"]
     assert_equal expected.sort, APRV::Reason::ALL.map(&:to_s).sort
-    assert_equal 11, APRV::Reason::ALL.size
+    assert_equal 12, APRV::Reason::ALL.size
     APRV::Reason::ALL.each { |reason| assert_kind_of Symbol, reason }
   end
 
-  # The endpoint's three extra reasons stay out of ALL and out of the shared
+  # The endpoint's two extra reasons stay out of ALL and out of the shared
   # thrown-reason schema: ALL is what a VerificationError can carry, and no
-  # verifier raises any of them.
+  # verifier raises either. INTERNAL_ERROR is raised (signed content that
+  # cannot be read), so it is in both.
   def test_the_endpoint_only_reasons_are_outside_the_verifier_vocabulary
-    %i[MALFORMED_REQUEST INTERNAL_ERROR REQUEST_TOO_LARGE].each do |reason|
+    %i[MALFORMED_REQUEST REQUEST_TOO_LARGE].each do |reason|
       assert_equal reason, APRV::Reason.const_get(reason)
       refute_includes APRV::Reason::ALL, reason
       refute_includes TestSupport.cases_schema["$defs"]["reason"]["enum"], reason.to_s
     end
+    assert_includes APRV::Reason::ALL, APRV::Reason::INTERNAL_ERROR
+    assert_includes TestSupport.cases_schema["$defs"]["reason"]["enum"], "INTERNAL_ERROR"
   end
 
   def test_the_environment_vocabulary_equals_the_shared_schema

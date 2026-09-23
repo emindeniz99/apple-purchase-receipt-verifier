@@ -174,11 +174,11 @@ is a `status` in the body:
 |---|---|
 | raw body over 3 MiB (`REQUEST_TOO_LARGE`; Apple answers HTTP 413) | `21002` |
 | body not an object or nested past 64 levels, or `receipt-data` missing / not a string / empty / undecodable | `21002` |
-| the receipt is malformed | `21002` |
+| the receipt's CMS envelope is malformed | `21002` |
 | the receipt fails to authenticate | `21003` |
 | endpoint is Production and the receipt is not a production one | `21007` |
 | endpoint is Sandbox and the receipt is a production one | `21008` |
-| anything unexpected | `21009` |
+| the receipt authenticated but its signed content cannot be read, or anything unexpected: not the client's fault, so alert and retry or escalate rather than deny | `21009` |
 | otherwise | `0`, plus `environment` and `receipt` |
 
 Environment routing fails closed: only receipt types `Production` and
@@ -197,8 +197,9 @@ A `VerifyReceiptResult` is one verification:
   `status() === 0`: `status() === 0` asks whether this endpoint's
   environment accepts the receipt, `isVerified()` asks whether the receipt
   verified at all.
-- `failureCause()` is the `Throwable` behind an `INTERNAL_ERROR`, for
-  logging.
+- `failureCause()` is what is behind an `INTERNAL_ERROR`, for logging: the
+  parser's error for signed content that could not be read, or the
+  unexpected `Throwable`.
 - `requestDate()` is the `DateTimeImmutable` rendered as `request_date`.
 
 The result is immutable, and only the endpoint creates one. The response is
@@ -230,9 +231,9 @@ the constructor does.
 |---|---|---|
 | `Reason::RequestTooLarge` | 21002 | the raw body is over `MAX_REQUEST_BYTES` (3,145,728 bytes); Apple answers HTTP 413 here, see [Defensive bounds](#defensive-bounds) |
 | `Reason::MalformedRequest` | 21002 | the body is not a JSON object or nests past 64 levels, or `receipt-data` is missing, empty or not a string |
-| `Reason::InvalidReceiptFormat` | 21002 | `receipt-data` is not canonical standard base64 (whitespace, base64url and omitted or extra padding all count, as at Apple), is over `ReceiptVerifier::MAX_RECEIPT_BYTES` (3,145,728 bytes), or does not decode to a receipt |
+| `Reason::InvalidReceiptFormat` | 21002 | `receipt-data` is not canonical standard base64 (whitespace, base64url and omitted or extra padding all count, as at Apple), is over `ReceiptVerifier::MAX_RECEIPT_BYTES` (3,145,728 bytes), or its CMS envelope does not parse |
 | `Reason::InvalidChain`, `Reason::InvalidSignature`, other certificate reasons | 21003 | the receipt did not authenticate |
-| `Reason::InternalError` | 21009 | an unexpected `Throwable`; `failureCause()` holds it |
+| `Reason::InternalError` | 21009 | not the client's fault: the receipt authenticated but its signed content cannot be read, or an unexpected `Throwable`; `failureCause()` holds what is behind it. Alert and retry or escalate; do not deny the user |
 
 **`request_date`.** `verifyReceiptResult()` and `verifyReceiptData()` take an
 optional `?DateTimeImmutable $now`, which becomes `request_date` in place of
@@ -271,7 +272,7 @@ try {
 }
 ```
 
-Eleven reasons, and the vocabulary is closed — a twelfth would be a change to
+Twelve reasons, and the vocabulary is closed — a thirteenth would be a change to
 every port of this library in one go. `$e->reason->value` is the canonical
 `SCREAMING_SNAKE` token, byte-identical to the other ports', so a log line and
 a metrics label read the same in every language.
@@ -286,14 +287,25 @@ a metrics label read the same in every language.
 | `Reason::WrongBundleId` | `WRONG_BUNDLE_ID` | the payload's bundle id is not the configured one |
 | `Reason::WrongEnvironment` | `WRONG_ENVIRONMENT` | the environment is outside the accepted set |
 | `Reason::WrongAppAppleId` | `WRONG_APP_APPLE_ID` | a Production AppTransaction does not name the configured app Apple id |
-| `Reason::InvalidReceiptFormat` | `INVALID_RECEIPT_FORMAT` | the receipt is not a parseable CMS SignedData / attribute set |
+| `Reason::InvalidReceiptFormat` | `INVALID_RECEIPT_FORMAT` | the receipt is not a parseable CMS SignedData |
 | `Reason::DeviceHashMismatch` | `DEVICE_HASH_MISMATCH` | the device binding does not hold |
 | `Reason::StalePayload` | `STALE_PAYLOAD` | signed longer ago than `maxSignedAgeSeconds` |
+| `Reason::InternalError` | `INTERNAL_ERROR` | the receipt's chain and signature verified, but its attribute set does not parse (`getPrevious()` is the parser's error). Not the client's fault: alert and retry or escalate, do not deny |
 
-`Reason` also has `MalformedRequest` (`MALFORMED_REQUEST`), `InternalError`
-(`INTERNAL_ERROR`) and `RequestTooLarge` (`REQUEST_TOO_LARGE`), but only as
+**Order of the receipt checks.** CMS parse → the creation date alone
+(attribute 12; nothing else in the payload is decoded yet) → chain at that
+date, or at the system clock when the date is missing, empty, unreadable or
+stated twice → receipt-signing marker OID → CMS signature → full payload
+parse → bundle id → device hash. Nothing is trusted before the chain and
+the signature, so reading the date never rejects. The chain comes first so
+the attacker's own key is never run before it is trusted. A payload that
+fails the full parse was signed by a trusted signer, so it is
+`INTERNAL_ERROR`, not `INVALID_RECEIPT_FORMAT`.
+
+`Reason` also has `MalformedRequest` (`MALFORMED_REQUEST`) and
+`RequestTooLarge` (`REQUEST_TOO_LARGE`), but only as
 `VerifyReceiptResult::failureReason()` values. No `VerificationException` is
-ever thrown with any of them, so a `match` over a caught exception's reason
+ever thrown with either, so a `match` over a caught exception's reason
 never sees them. A `match` over `failureReason()` without a `default` arm
 needs a `Reason::RequestTooLarge` arm.
 

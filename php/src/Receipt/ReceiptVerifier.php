@@ -179,17 +179,18 @@ final class ReceiptVerifier
     {
         $cms = Cms::parse($der, $nodeBudget);
 
-        // Parsed before the signature is checked only to learn the creation
-        // date, which is the instant the chain's validity is judged at.
-        // NOTHING from it is trusted, returned or acted on until the chain
-        // and signature checks below have passed.
-        $fields = ReceiptPayload::parse($cms->content, $nodeBudget);
-        $at = $fields->creationDate === null
-            // A receipt with no creation date falls back to the SYSTEM clock,
-            // never to an injected one. This is the whole reason this class
-            // takes no clock parameter.
+        // Only the creation date is read before trust is established, because
+        // it is the instant the chain's validity is judged at; nothing else in
+        // the payload is decoded until the chain and signature checks below
+        // have passed. A date that is missing, empty, unreadable or stated
+        // twice cannot blame anyone yet, so it only moves the chain instant to
+        // "now" and never rejects by itself.
+        $creationDate = ReceiptPayload::readCreationDate($cms->content, $nodeBudget);
+        $at = $creationDate === null
+            // "Now" is the SYSTEM clock, never an injected one. This is the
+            // whole reason this class takes no clock parameter.
             ? (int) (microtime(true) * 1000)
-            : $fields->creationDate->getTimestamp() * 1000;
+            : $creationDate->getTimestamp() * 1000;
 
         // The embedded certificates are attacker-supplied and would each be
         // decoded and RSA-checked as a candidate issuer, so a receipt
@@ -272,9 +273,28 @@ final class ReceiptVerifier
             );
         }
 
+        // The chain is checked BEFORE the signature on purpose: checking the
+        // signature first would run the attacker's own key (their choice of
+        // RSA size and exponent) before anything about it is trusted.
         self::verifyCmsSignature($cms, $signer);
 
-        return $fields;
+        // A trusted signer signed these bytes, so anything that stops the
+        // full parse (this library's grammar, a bound, an unexpected
+        // Throwable) is the library's failure or a format Apple added, not
+        // the client's: INTERNAL_ERROR, never INVALID_RECEIPT_FORMAT, which
+        // the endpoint answers as 21002 and an app server reads as "deny".
+        try {
+            return ReceiptPayload::parse($cms->content, $nodeBudget);
+        } catch (Throwable $e) {
+            $detail = $e instanceof VerificationException
+                ? substr($e->getMessage(), strlen($e->reason->value) + 2)
+                : $e::class;
+            throw new VerificationException(
+                Reason::InternalError,
+                'signed receipt content could not be read: ' . $detail,
+                $e,
+            );
+        }
     }
 
     /** @throws VerificationException */

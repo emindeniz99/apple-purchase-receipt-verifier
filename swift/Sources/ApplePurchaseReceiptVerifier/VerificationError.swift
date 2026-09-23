@@ -28,18 +28,26 @@ public struct VerificationError: Error, Sendable, CustomStringConvertible {
         /// HTTP 413; this reason lets an HTTP layer do the same. Reported
         /// only by ``VerifyReceiptResult/failureReason``; never thrown.
         case requestTooLarge = "REQUEST_TOO_LARGE"
-        /// An unexpected error inside the verifyReceipt endpoint, answered as
-        /// status 21009. Reported only by
-        /// ``VerifyReceiptResult/failureReason``; never thrown.
+        /// Not the client's fault, status 21009 at the endpoint. Thrown when a
+        /// trusted signer signed receipt content this library cannot read
+        /// (found only after the chain and the signature passed; the parser's
+        /// error is ``VerificationError/cause``), and reported by the endpoint
+        /// for an unexpected error inside it. Alert and retry or escalate; do
+        /// not deny the user on it.
         case internalError = "INTERNAL_ERROR"
     }
 
     public let reason: Reason
     public let message: String
+    /// What is behind this error, when there is something: for
+    /// ``Reason/internalError`` on a receipt, the parser's own error for
+    /// signed content that could not be read. Never part of the verdict.
+    public let cause: (any Error)?
 
-    public init(_ reason: Reason, _ message: String) {
+    public init(_ reason: Reason, _ message: String, cause: (any Error)? = nil) {
         self.reason = reason
         self.message = message
+        self.cause = cause
     }
 
     public var description: String { "\(reason.rawValue): \(message)" }

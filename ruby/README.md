@@ -154,7 +154,7 @@ result.status          # 0, 21002, 21003, 21007, 21008 or 21009, for this endpoi
 result.verified?       # true when the receipt verified, 21007 and 21008 included
 result.receipt         # the AppReceipt when verified?, else nil
 result.failure_reason  # a Reason Symbol when not verified?, else nil
-result.failure_cause   # the error behind INTERNAL_ERROR, else nil
+result.failure_cause   # what is behind INTERNAL_ERROR, else nil
 result.request_date    # the Time rendered as request_date, read once per call
 
 result.to_response     # the response body as a new Hash
@@ -181,14 +181,15 @@ creates one, so no caller can build a status 0. Passing a result to
 `JSON.generate` or to Rails' `render json:` embeds its own response.
 
 No request input makes the endpoint raise: failures come back as a result with
-a status, exactly as the real endpoint reports them. Three reasons exist only on
-a result, never on a `VerificationError`:
+a status, exactly as the real endpoint reports them. Two reasons exist only on
+a result, never on a `VerificationError`, and `INTERNAL_ERROR` has a second
+source there:
 
 | Reason | Status | When |
 |---|---|---|
 | `REQUEST_TOO_LARGE` | 21002 | the raw body is over `MAX_REQUEST_BYTES` (3,145,728 bytes); Apple answers HTTP 413 here, see [Input limits](#input-limits) |
 | `MALFORMED_REQUEST` | 21002 | the body is not a JSON object or nests past 64 levels, or `receipt-data` is missing, empty or not a String |
-| `INTERNAL_ERROR` | 21009 | an unexpected error inside the endpoint, including a clock that raises or returns something other than a `Time`; `failure_cause` holds it |
+| `INTERNAL_ERROR` | 21009 | not the client's fault: the receipt authenticated but its signed content cannot be read (`failure_cause` is the parser's error), or an unexpected error inside the endpoint, including a clock that raises or returns something other than a `Time` (`failure_cause` holds it). Alert and retry or escalate; do not deny the user |
 
 Like the real endpoint, it does **not** check the bundle id. Compare
 `result.receipt.bundle_id` yourself before granting anything, or use
@@ -270,10 +271,10 @@ end
 ```
 
 `e.reason.to_s` is the canonical cross-language token, with no mapping table
-anywhere. The vocabulary is closed by the cross-port contract: eleven reasons
-in `Reason::ALL`, and a twelfth would be a change to every implementation in
-one pull request. (The endpoint's `MALFORMED_REQUEST`, `REQUEST_TOO_LARGE` and
-`INTERNAL_ERROR` are outside it; no verifier raises them.)
+anywhere. The vocabulary is closed by the cross-port contract: twelve reasons
+in `Reason::ALL`, and a thirteenth would be a change to every implementation
+in one pull request. (The endpoint's `MALFORMED_REQUEST` and
+`REQUEST_TOO_LARGE` are outside it; no verifier raises them.)
 
 | Reason | Raised when |
 |---|---|
@@ -285,9 +286,20 @@ one pull request. (The endpoint's `MALFORMED_REQUEST`, `REQUEST_TOO_LARGE` and
 | `WRONG_BUNDLE_ID` | the payload names a different app |
 | `WRONG_ENVIRONMENT` | the environment is outside the accepted set |
 | `WRONG_APP_APPLE_ID` | a Production AppTransaction names a different app Apple id |
-| `INVALID_RECEIPT_FORMAT` | the receipt is over `MAX_RECEIPT_BYTES`, its base64 is not canonical standard base64 (whitespace, base64url and omitted or extra padding all count, as at Apple), or it is not a well-formed CMS blob or attribute set |
+| `INVALID_RECEIPT_FORMAT` | the receipt is over `MAX_RECEIPT_BYTES`, its base64 is not canonical standard base64 (whitespace, base64url and omitted or extra padding all count, as at Apple), or it is not a well-formed CMS blob |
 | `DEVICE_HASH_MISMATCH` | the receipt is not bound to the device GUID supplied |
 | `STALE_PAYLOAD` | the payload was signed longer ago than `max_signed_age_seconds` |
+| `INTERNAL_ERROR` | the receipt's chain and signature verified, but its attribute set does not parse (the parser's error is the raised error's `cause`). Not the client's fault: alert and retry or escalate, do not deny |
+
+**Order of the receipt checks.** CMS parse → the creation date alone
+(attribute 12; nothing else in the payload is decoded yet) → chain at that
+date, or at the system clock when the date is missing, empty, unreadable or
+stated twice → receipt-signing marker OID → CMS signature → full payload
+parse → bundle id → device hash. Nothing is trusted before the chain and
+the signature, so reading the date never rejects. The chain comes first so
+the attacker's own key is never run before it is trusted. A payload that
+fails the full parse was signed by a trusted signer, so it is
+`INTERNAL_ERROR`, not `INVALID_RECEIPT_FORMAT`.
 
 **Misconfiguration is not a verification verdict.** An empty `trusted_roots`,
 a nil `bundle_id`, an empty accepted-environment set, an endpoint environment
@@ -296,7 +308,9 @@ catch a typo as though a receipt were forged.
 
 Nothing else escapes an entry point. Containment is categorical, and it
 explicitly covers `SystemStackError`, which is not a `StandardError` and would
-otherwise walk through your `rescue` and take the request with it.
+otherwise walk through your `rescue` and take the request with it. A foreign
+error before trust is `INVALID_RECEIPT_FORMAT`; one in the full payload parse,
+after the chain and the signature passed, is `INTERNAL_ERROR`.
 
 ## Integrating: from verified payload to entitlement
 
@@ -443,9 +457,10 @@ contract, where those claims are integer epoch milliseconds, so
   bounded before any certificate is decoded. The budgets count structural
   elements, so the cost *inside* one element is bounded separately where it can
   grow: a date's fractional seconds are read to the nanosecond and no further.
-  Structural parsing runs before any cryptographic check in every port, because
-  the receipt's creation date is what the chain's validity is judged at, so
-  these ceilings are what an unsigned blob can spend.
+  The CMS structure and the creation date are read before any cryptographic
+  check in every port, because the creation date is what the chain's validity
+  is judged at, so these ceilings are what an unsigned blob can spend; the
+  rest of the payload is parsed only after the signature.
 - **No logging, no metrics, no callbacks.** The reason code is the entire
   observability surface, and messages carry no receipt bytes, claims or key
   material.

@@ -27,6 +27,14 @@ final class VerifyReceiptResultTests: XCTestCase {
         try generated(name).base64EncodedString()
     }
 
+    /// A generated receipt with one byte after the CMS: a defect of the CMS
+    /// itself, refused before anything is verified.
+    static func trailingByte(_ name: String) throws -> String {
+        var der = try generated(name)
+        der.append(0x00)
+        return der.base64EncodedString()
+    }
+
     // MARK: - the outcome invariant
 
     /// A caller reads `receipt` when it is there and `failureReason` when it
@@ -45,7 +53,7 @@ final class VerifyReceiptResultTests: XCTestCase {
             ("21008", await sandbox.verifyReceiptData(try Self.base64("receipt-type-production.der")), 21008, true),
             ("21002 envelope", await sandbox.verifyReceiptResult("not json"), 21002, false),
             ("21002 base64", await sandbox.verifyReceiptData("not base64!"), 21002, false),
-            ("21002 cms", await sandbox.verifyReceiptData(try Self.base64("receipt-empty-content.der")), 21002, false),
+            ("21002 cms", await sandbox.verifyReceiptData(try Self.trailingByte("receipt.der")), 21002, false),
             ("21003", await sandbox.verifyReceiptData(try Self.base64("receipt-foreign.der")), 21003, false),
             ("21009", await broken.verifyReceiptData(try Self.base64("receipt.der")), 21009, false),
         ]
@@ -113,6 +121,21 @@ final class VerifyReceiptResultTests: XCTestCase {
         XCTAssertEqual(.invalidSignature, rejected.failureReason)
         XCTAssertNil(rejected.failureCause)
         XCTAssertEqual(21003, rejected.status)
+    }
+
+    /// The other road to INTERNAL_ERROR: a trusted signer signed content the
+    /// library cannot read. Same status, not the client's fault, and the
+    /// parser's own verdict is the failure cause.
+    func testUnreadableSignedContentIsAnInternalErrorWithItsCause() async throws {
+        for environment: AppleEnvironment in [.production, .sandbox] {
+            let endpoint = try VerifyReceiptEndpoint(
+                trustedRoots: [try Self.generated("verification-order-root.der")], environment: environment)
+            let result = await endpoint.verifyReceiptData(try Self.base64("receipt-unreadable-creation-date.der"))
+            XCTAssertEqual(.internalError, result.failureReason)
+            XCTAssertEqual(21009, result.status)
+            XCTAssertEqual(.invalidReceiptFormat, (result.failureCause as? VerificationError)?.reason)
+            XCTAssertEqual("{\"status\":21009}", result.json())
+        }
     }
 
     // MARK: - rendering for either environment
@@ -273,8 +296,9 @@ final class VerifyReceiptResultTests: XCTestCase {
             }
         }
         // The comparison covers every answer the fixtures can give, not only
-        // the easy one.
-        XCTAssertEqual([0, 21002, 21003, 21007, 21008], statuses)
+        // the easy one; 21009 only through signed content that cannot be
+        // read.
+        XCTAssertEqual([0, 21002, 21003, 21007, 21008, 21009], statuses)
     }
 
     private func withoutRequestDate(_ json: String) throws -> String {

@@ -16,6 +16,7 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Fixtures;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\FrozenClock;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Shape;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\ThrowingClock;
+use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationException;
 use Error;
 use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -408,6 +409,26 @@ final class VerifyReceiptResultTest extends TestCase
                 self::assertInvariant($result, $label);
             }
             self::assertSame('{"status":21009}', $endpoint->verifyReceiptJson('{"receipt-data":"AQIDBA=="}'));
+        }
+    }
+
+    /**
+     * The other road to INTERNAL_ERROR: a trusted signer signed content the
+     * library cannot read. Same status, not the client's fault, and the
+     * parser's own verdict is the failure cause.
+     */
+    public function testUnreadableSignedContentIsAnInternalErrorWithItsCause(): void
+    {
+        foreach ([Environment::Production, Environment::Sandbox] as $environment) {
+            $result = self::endpoint($environment, 'verification-order-root')
+                ->verifyReceiptData(self::base64('receipt-unreadable-creation-date'));
+            self::assertSame(Reason::InternalError, $result->failureReason());
+            self::assertSame(VerifyReceiptEndpoint::STATUS_INTERNAL, $result->status());
+            $cause = $result->failureCause();
+            self::assertInstanceOf(VerificationException::class, $cause);
+            self::assertSame(Reason::InvalidReceiptFormat, $cause->reason);
+            self::assertSame('{"status":21009}', $result->toJson());
+            self::assertInvariant($result, $environment->value);
         }
     }
 

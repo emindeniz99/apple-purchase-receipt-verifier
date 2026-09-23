@@ -8,13 +8,12 @@ import (
 
 // Reason is the machine-readable cause of a verification failure.
 //
-// The eleven constants below are the complete vocabulary a verifier
+// The twelve constants below are the complete vocabulary a verifier
 // returns. It is closed by the cross-port contract
-// (fixtures/cases.schema.json); a twelfth reason is a change to every
+// (fixtures/cases.schema.json); a thirteenth reason is a change to every
 // implementation in one go, not a Go-local addition. A
-// [VerifyReceiptResult] can also report ReasonMalformedRequest,
-// ReasonRequestTooLarge and ReasonInternalError, which every port's
-// endpoint result shares.
+// [VerifyReceiptResult] can also report ReasonMalformedRequest and
+// ReasonRequestTooLarge, which every port's endpoint result shares.
 type Reason = apperr.Reason
 
 // The error vocabulary. The string values are normative — they are the
@@ -32,10 +31,17 @@ const (
 	ReasonInvalidReceiptFormat      = apperr.ReasonInvalidReceiptFormat
 	ReasonDeviceHashMismatch        = apperr.ReasonDeviceHashMismatch
 	ReasonStalePayload              = apperr.ReasonStalePayload
+	// ReasonInternalError is not the client's fault. A verifier returns it
+	// when a trusted signer signed receipt content this library cannot
+	// read, found only after the chain and the signature passed (Unwrap
+	// gives the parser's error); a VerifyReceiptEndpoint also reports it
+	// for an unexpected error or panic inside it. Status 21009. Alert and
+	// retry or escalate; do not deny the user on it.
+	ReasonInternalError = apperr.ReasonInternalError
 )
 
-// Three more reasons exist only on a [VerifyReceiptResult]. No verifier
-// returns any of them, and none is in AllReasons, which is the shared
+// Two more reasons exist only on a [VerifyReceiptResult]. No verifier
+// returns either, and neither is in AllReasons, which is the shared
 // schema's vocabulary.
 const (
 	// ReasonMalformedRequest: the verifyReceipt request envelope is
@@ -48,10 +54,6 @@ const (
 	// endpoint answers HTTP 413. Status 21002 in the response body; an
 	// HTTP layer can map it to 413 as Apple does.
 	ReasonRequestTooLarge = apperr.ReasonRequestTooLarge
-	// ReasonInternalError: an unexpected error or panic inside the
-	// verifyReceipt endpoint. Status 21009. errors.Unwrap on the
-	// result's Err gives the cause.
-	ReasonInternalError = apperr.ReasonInternalError
 )
 
 // AllReasons is the whole vocabulary, in the order the shared schema

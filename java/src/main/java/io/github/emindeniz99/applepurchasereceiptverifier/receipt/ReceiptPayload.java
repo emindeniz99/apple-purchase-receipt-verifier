@@ -24,9 +24,10 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Parses the ASN.1 payload of a legacy receipt, the attribute SET inside the
- * CMS envelope, into an {@link AppReceipt}. It checks no signature: callers
- * trust the result only after {@link ReceiptVerifier} has verified the
- * envelope around it.
+ * CMS envelope, into an {@link AppReceipt}. It checks no signature: before the
+ * envelope around it is verified, {@link ReceiptVerifier} reads only the
+ * creation date ({@link #readCreationDate}), and it runs the full
+ * {@link #parse} only after the chain and the signature have passed.
  */
 final class ReceiptPayload {
 
@@ -78,6 +79,36 @@ final class ReceiptPayload {
     private static final int IAP_IS_IN_INTRO_OFFER_PERIOD = 1719;
 
     private ReceiptPayload() {}
+
+    /**
+     * The receipt creation date (attribute 12), read the only way anything in
+     * a payload is read before its signer is trusted: the top-level attribute
+     * SET is walked shallowly, each entry's type is read, and only the value
+     * of type 12 is decoded.
+     *
+     * <p>{@code null} means "judge the chain at now": no attribute 12, an
+     * empty one, one that does not decode, more than one, or a walk that
+     * fails anywhere. An entry the walk cannot read fails it as a whole rather
+     * than being skipped, since that entry might have been a second attribute
+     * 12. Never throws: nothing is trusted yet, so nothing here can blame
+     * anyone.</p>
+     */
+    static @Nullable Instant readCreationDate(byte[] payload) {
+        try {
+            byte[] date = null;
+            int dates = 0;
+            for (ASN1Encodable element : parseAttributeSet(payload, "receipt payload")) {
+                Attribute attr = Attribute.of(element);
+                if (attr.type == ATTR_CREATION_DATE) {
+                    dates++;
+                    date = attr.value;
+                }
+            }
+            return dates == 1 && date != null ? decodeDate(date) : null;
+        } catch (VerificationException | RuntimeException e) {
+            return null;
+        }
+    }
 
     static AppReceipt parse(byte[] payload) throws VerificationException {
         ASN1Set attributes = parseAttributeSet(payload, "receipt payload");

@@ -258,14 +258,22 @@ public class VerifyReceiptResultTests
                     Assert.Equal(pinned.VerifyReceiptJson(body), bare.ToJson());
                 }
 
-                Assert.NotEqual(VerificationReason.InternalError, bare.FailureReason);
+                if (bare.FailureReason == VerificationReason.InternalError)
+                {
+                    // Only the fixtures a trusted signer signed with content
+                    // the library cannot read may get here, and the cause is
+                    // then the parser's own verdict, never an escaped crash.
+                    Assert.IsType<VerificationException>(bare.FailureCause);
+                }
+
                 AssertInvariant(bare, label);
                 statuses.Add(bare.Status);
             }
         }
 
-        // The corpus reaches every status except the internal error.
-        Assert.Equal(new HashSet<int> { 0, 21002, 21003, 21007, 21008 }, statuses);
+        // The corpus reaches every status; 21009 only through signed content
+        // that cannot be read.
+        Assert.Equal(new HashSet<int> { 0, 21002, 21003, 21007, 21008, 21009 }, statuses);
     }
 
     [Fact]
@@ -361,6 +369,27 @@ public class VerifyReceiptResultTests
         Assert.Equal(VerificationReason.InternalError, afterDispose.FailureReason);
         Assert.IsType<ObjectDisposedException>(afterDispose.FailureCause);
         AssertInvariant(afterDispose, "disposed");
+    }
+
+    /// <summary>
+    /// The other road to INTERNAL_ERROR: a trusted signer signed content the
+    /// library cannot read. Same status, not the client's fault, and the
+    /// parser's own verdict is the failure cause.
+    /// </summary>
+    [Fact]
+    public void UnreadableSignedContentIsAnInternalErrorWithItsCause()
+    {
+        foreach (AppleEnvironment environment in Environments)
+        {
+            using VerifyReceiptEndpoint endpoint = Endpoint(environment, "verification-order-root");
+            VerifyReceiptResult result = endpoint.VerifyReceiptData(B64("receipt-unreadable-creation-date"));
+            Assert.Equal(VerificationReason.InternalError, result.FailureReason);
+            Assert.Equal(21009, result.Status);
+            VerificationException cause = Assert.IsType<VerificationException>(result.FailureCause);
+            Assert.Equal(VerificationReason.InvalidReceiptFormat, cause.Reason);
+            Assert.Equal("{\"status\":21009}", result.ToJson());
+            AssertInvariant(result, environment.ToString());
+        }
     }
 
     [Fact]

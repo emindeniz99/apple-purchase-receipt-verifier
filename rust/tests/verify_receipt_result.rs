@@ -452,6 +452,26 @@ fn a_panic_inside_the_endpoint_becomes_internal_error_never_a_panic() {
     );
 }
 
+/// The other road to INTERNAL_ERROR: a trusted signer signed content the
+/// library cannot read. Same status as a contained panic, and the cause
+/// says what could not be read, so an integrator can alert on it.
+#[test]
+fn unreadable_signed_content_is_internal_error_with_its_cause() {
+    let endpoint = endpoint_with(
+        Environment::Sandbox,
+        [common::anchor("generated/verification-order-root.der")],
+        Arc::new(FixedClock::from_unix_millis(NOW)),
+    );
+    let result =
+        endpoint.verify_receipt_data(&b64("generated/receipt-unreadable-creation-date.der"));
+    assert_invariants("unreadable signed content", &result);
+    assert_eq!(result.failure_reason(), Some(Reason::InternalError));
+    assert_eq!(result.status(), status::INTERNAL);
+    let cause = result.failure_cause().unwrap();
+    assert!(cause.contains("could not be read"), "{cause}");
+    assert_eq!(result.to_json(), r#"{"status":21009}"#);
+}
+
 #[test]
 fn an_unusable_envelope_is_a_malformed_request_and_bad_receipt_data_an_invalid_format() {
     // Both answer 21002 on the wire; the reason tells a caller whether the
@@ -494,15 +514,16 @@ fn an_unusable_envelope_is_a_malformed_request_and_bad_receipt_data_an_invalid_f
 #[test]
 fn the_endpoint_only_reasons_stay_outside_the_verifier_vocabulary() {
     // Reason::all() is the cross-port contract and the C ABI's numbering;
-    // the three endpoint-only values must not grow it.
+    // the two endpoint-only values must not grow it. INTERNAL_ERROR is a
+    // verifier reason too (unreadable signed content), so it is in it.
     for (reason, token) in [
         (Reason::MalformedRequest, "MALFORMED_REQUEST"),
-        (Reason::InternalError, "INTERNAL_ERROR"),
         (Reason::RequestTooLarge, "REQUEST_TOO_LARGE"),
     ] {
         assert!(!Reason::all().contains(&reason));
         assert_eq!(reason.as_str(), token);
         assert_eq!(Reason::from_str(token).unwrap(), reason);
     }
-    assert_eq!(Reason::all().len(), 11);
+    assert!(Reason::all().contains(&Reason::InternalError));
+    assert_eq!(Reason::all().len(), 12);
 }

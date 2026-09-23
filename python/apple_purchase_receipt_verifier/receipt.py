@@ -231,16 +231,19 @@ def verify_receipt_core(der: bytes, trusted_roots: "Iterable[x509.Certificate]")
 def _verify_receipt_core_unguarded(der: bytes, roots: "list[x509.Certificate]") -> "AppReceipt":
     content, certificates, signer, unreadable = _parse_cms(der)
 
-    # Parsed before signature verification only to learn the creation
-    # date (chain validity anchors at signing time); nothing from it is
-    # trusted until the chain + signature checks pass.
-    fields = _parse_payload(content)
+    # Only the creation date is read before trust is established, because
+    # chain validity anchors at signing time; nothing else in the payload is
+    # decoded until the chain and the signature have passed. A date that is
+    # missing, empty, unreadable or stated twice cannot blame anyone yet, so
+    # it only moves the chain instant to "now" and never rejects by itself.
+    #
     # No clock seam here, deliberately: this path has no verdict that moves
     # with the current time. The chain window is anchored at the receipt
     # creation date, and the system-clock fallback below only fires for a
-    # receipt carrying no creation date at all — a certificate-validity
-    # judgement, which an injected clock must not be able to shift.
-    at = fields.creation_date if fields.creation_date is not None else as_utc(time.time() * 1000)
+    # receipt whose creation date is not usable, a certificate-validity
+    # judgement which an injected clock must not be able to shift.
+    creation_date = _read_creation_date(content)
+    at = creation_date if creation_date is not None else as_utc(time.time() * 1000)
 
     signer_cert = _find_signer_cert(certificates, signer, unreadable)
     # Everything cryptography's loader lets past that the checks below
@@ -266,8 +269,11 @@ def _verify_receipt_core_unguarded(der: bytes, roots: "list[x509.Certificate]") 
             "receipt signer certificate lacks Apple receipt-signing marker OID "
             f"{_RECEIPT_SIGNER_OID.dotted_string}",
         ) from e
+    # The chain is checked BEFORE the signature on purpose: checking the
+    # signature first would run the attacker's own key (their choice of RSA
+    # size and exponent) before anything about it is trusted.
     _verify_cms_signature(content, signer, signer_cert)
-    return fields
+    return _parse_signed_payload(content)
 
 
 def _parse_cms(
@@ -566,6 +572,45 @@ def _decode_date(der: bytes) -> datetime | None:
         return parsed.astimezone(timezone.utc)
     except (ValueError, OverflowError) as e:
         raise _fmt_error(f"unparseable receipt date: {text}") from e
+
+
+def _read_creation_date(content: bytes) -> datetime | None:
+    """The receipt creation date (attribute 12), read the only way anything
+    in a payload is read before its signer is trusted: the top-level
+    attribute SET is walked shallowly, each entry's type is read, and only
+    the value of type 12 is decoded.
+
+    ``None`` means "judge the chain at now": no attribute 12, an empty one,
+    one that does not decode, more than one, or a walk that fails anywhere.
+    An entry the walk cannot read fails it as a whole rather than being
+    skipped, since that entry might have been a second attribute 12. Never
+    raises: nothing is trusted yet, so nothing here can blame anyone."""
+    try:
+        dates = [
+            value
+            for attr_type, value in _parse_attribute_set(content, "receipt payload")
+            if attr_type == _ATTR_CREATION_DATE
+        ]
+        return _decode_date(dates[0]) if len(dates) == 1 else None
+    except Exception:
+        return None
+
+
+def _parse_signed_payload(content: bytes) -> AppReceipt:
+    """The full payload parse, run only after the chain and the signature
+    have passed. A trusted signer signed these bytes, so anything that stops
+    the parse (this library's grammar, a bound, an unexpected exception) is
+    the library's failure or a format Apple added, not the client's:
+    INTERNAL_ERROR with the parser's exception as its ``__cause__``, never
+    INVALID_RECEIPT_FORMAT, which the endpoint answers as 21002 and an app
+    server reads as "deny"."""
+    try:
+        return _parse_payload(content)
+    except Exception as e:
+        detail = e.args[0] if isinstance(e, VerificationError) else f"{type(e).__name__}: {e}"
+        raise VerificationError(
+            Reason.INTERNAL_ERROR, f"signed receipt content could not be read: {detail}"
+        ) from e
 
 
 def _parse_payload(content: bytes) -> AppReceipt:

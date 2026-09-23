@@ -170,7 +170,7 @@ func TestReceiptHostileStructures(t *testing.T) {
 				content: derSequence(derInt(1)), signer: pki.leaf,
 				certificates: pki.embedded(), withSignedAttrs: true,
 			}),
-			want: applereceipt.ReasonInvalidReceiptFormat,
+			want: applereceipt.ReasonInternalError,
 		},
 		{
 			name: "attribute is not a SEQUENCE of three",
@@ -178,7 +178,7 @@ func TestReceiptHostileStructures(t *testing.T) {
 				content: derSet(derSequence(derInt(1), derInt(1))), signer: pki.leaf,
 				certificates: pki.embedded(), withSignedAttrs: true,
 			}),
-			want: applereceipt.ReasonInvalidReceiptFormat,
+			want: applereceipt.ReasonInternalError,
 		},
 		{
 			name: "negative attribute type",
@@ -186,7 +186,7 @@ func TestReceiptHostileStructures(t *testing.T) {
 				content: receiptPayload(receiptAttribute(big.NewInt(-1), derUTF8String("x"))),
 				signer:  pki.leaf, certificates: pki.embedded(), withSignedAttrs: true,
 			}),
-			want: applereceipt.ReasonInvalidReceiptFormat,
+			want: applereceipt.ReasonInternalError,
 		},
 		{
 			name: "attribute type at 2^31 is out of range",
@@ -194,7 +194,7 @@ func TestReceiptHostileStructures(t *testing.T) {
 				content: receiptPayload(attr(1<<31, derUTF8String("x"))),
 				signer:  pki.leaf, certificates: pki.embedded(), withSignedAttrs: true,
 			}),
-			want: applereceipt.ReasonInvalidReceiptFormat,
+			want: applereceipt.ReasonInternalError,
 		},
 		{
 			name: "attribute type at 2^63 is out of range",
@@ -203,7 +203,7 @@ func TestReceiptHostileStructures(t *testing.T) {
 					new(big.Int).Lsh(big.NewInt(1), 63), derUTF8String("x"))),
 				signer: pki.leaf, certificates: pki.embedded(), withSignedAttrs: true,
 			}),
-			want: applereceipt.ReasonInvalidReceiptFormat,
+			want: applereceipt.ReasonInternalError,
 		},
 		{
 			name: "attribute value is not valid ASN.1",
@@ -211,7 +211,7 @@ func TestReceiptHostileStructures(t *testing.T) {
 				content: receiptPayload(attr(2, []byte{0x30, 0xff, 0xff})),
 				signer:  pki.leaf, certificates: pki.embedded(), withSignedAttrs: true,
 			}),
-			want: applereceipt.ReasonInvalidReceiptFormat,
+			want: applereceipt.ReasonInternalError,
 		},
 		{
 			name: "bundle id attribute is an integer, not a string",
@@ -219,7 +219,7 @@ func TestReceiptHostileStructures(t *testing.T) {
 				content: receiptPayload(attr(2, derInt(7))),
 				signer:  pki.leaf, certificates: pki.embedded(), withSignedAttrs: true,
 			}),
-			want: applereceipt.ReasonInvalidReceiptFormat,
+			want: applereceipt.ReasonInternalError,
 		},
 		{
 			name: "quantity attribute is a string, not an integer",
@@ -229,7 +229,7 @@ func TestReceiptHostileStructures(t *testing.T) {
 					attr(17, receiptPayload(attr(1701, derUTF8String("one"))))),
 				signer: pki.leaf, certificates: pki.embedded(), withSignedAttrs: true,
 			}),
-			want: applereceipt.ReasonInvalidReceiptFormat,
+			want: applereceipt.ReasonInternalError,
 		},
 		{
 			name: "creation date has no timezone designator",
@@ -239,7 +239,7 @@ func TestReceiptHostileStructures(t *testing.T) {
 					attr(12, derIA5String("2024-08-06T12:00:00"))),
 				signer: pki.leaf, certificates: pki.embedded(), withSignedAttrs: true,
 			}),
-			want: applereceipt.ReasonInvalidReceiptFormat,
+			want: applereceipt.ReasonInternalError,
 		},
 		{
 			name: "creation date is nonsense",
@@ -249,7 +249,7 @@ func TestReceiptHostileStructures(t *testing.T) {
 					attr(12, derIA5String("not a date"))),
 				signer: pki.leaf, certificates: pki.embedded(), withSignedAttrs: true,
 			}),
-			want: applereceipt.ReasonInvalidReceiptFormat,
+			want: applereceipt.ReasonInternalError,
 		},
 		{
 			name: "creation date at an expanded year",
@@ -259,7 +259,7 @@ func TestReceiptHostileStructures(t *testing.T) {
 					attr(12, derIA5String("+1000000000-01-01T00:00:00Z"))),
 				signer: pki.leaf, certificates: pki.embedded(), withSignedAttrs: true,
 			}),
-			want: applereceipt.ReasonInvalidReceiptFormat,
+			want: applereceipt.ReasonInternalError,
 		},
 		{
 			name: "web_order_line_item_id above the eight-octet cap",
@@ -270,7 +270,7 @@ func TestReceiptHostileStructures(t *testing.T) {
 						derInteger(new(big.Int).Lsh(big.NewInt(1), 200)))))),
 				signer: pki.leaf, certificates: pki.embedded(), withSignedAttrs: true,
 			}),
-			want: applereceipt.ReasonInvalidReceiptFormat,
+			want: applereceipt.ReasonInternalError,
 		},
 		{
 			name: "deeply nested attribute value",
@@ -278,7 +278,7 @@ func TestReceiptHostileStructures(t *testing.T) {
 				content: receiptPayload(attr(2, nestedSequences(64))),
 				signer:  pki.leaf, certificates: pki.embedded(), withSignedAttrs: true,
 			}),
-			want: applereceipt.ReasonInvalidReceiptFormat,
+			want: applereceipt.ReasonInternalError,
 		},
 	}
 	for _, test := range tests {

@@ -430,13 +430,15 @@ class ReceiptVerifierTest {
     @Test
     void rejectsDateOutsideRepresentableRange() throws Exception {
         // Instant.parse accepts an expanded year (+1000000000-...) whose epoch
-        // millis overflow a long; that conversion runs before verification, so it
-        // must surface as the library's VerificationException, not escape as a raw
-        // runtime exception past the declared throws clause.
+        // millis overflow a long. Before trust that only moves the chain instant
+        // to now; after the chain and signature pass, the full parse must
+        // surface it as the library's VerificationException (INTERNAL_ERROR,
+        // the signer being trusted), not as a raw runtime exception past the
+        // declared throws clause.
         byte[] receipt = pki.signReceipt(payload(BUNDLE, "+1000000000-01-01T00:00:00Z"));
         VerificationException e = assertThrows(
                 VerificationException.class, () -> verifier(pki, BUNDLE).verify(receipt));
-        assertEquals(Reason.INVALID_RECEIPT_FORMAT, e.reason());
+        assertEquals(Reason.INTERNAL_ERROR, e.reason());
     }
 
     @Test
@@ -450,7 +452,7 @@ class ReceiptVerifierTest {
                 BigInteger.ONE.shiftLeft(64).add(BigInteger.valueOf(2)), new DERUTF8String(BUNDLE).getEncoded()));
         VerificationException e = assertThrows(
                 VerificationException.class, () -> verifier(pki, BUNDLE).verify(receipt));
-        assertEquals(Reason.INVALID_RECEIPT_FORMAT, e.reason());
+        assertEquals(Reason.INTERNAL_ERROR, e.reason());
         assertTrue(e.getMessage().contains("out of range"), e.getMessage());
     }
 
@@ -473,7 +475,7 @@ class ReceiptVerifierTest {
                     pki.signReceipt(TestPki.singleAttributePayload(type, new DERUTF8String(BUNDLE).getEncoded()));
             VerificationException e = assertThrows(
                     VerificationException.class, () -> verifier(pki, BUNDLE).verify(receipt), type.toString());
-            assertEquals(Reason.INVALID_RECEIPT_FORMAT, e.reason(), type.toString());
+            assertEquals(Reason.INTERNAL_ERROR, e.reason(), type.toString());
             assertTrue(e.getMessage().contains("out of range"), e.getMessage());
         }
     }
@@ -496,7 +498,7 @@ class ReceiptVerifierTest {
             byte[] receipt = pki.signReceipt(TestPki.singleAttributePayload(2, value));
             VerificationException e = assertThrows(
                     VerificationException.class, () -> verifier(pki, BUNDLE).verify(receipt), Arrays.toString(value));
-            assertEquals(Reason.INVALID_RECEIPT_FORMAT, e.reason(), Arrays.toString(value));
+            assertEquals(Reason.INTERNAL_ERROR, e.reason(), Arrays.toString(value));
         }
     }
 
@@ -612,7 +614,7 @@ class ReceiptVerifierTest {
             byte[] receipt = pki.signReceipt(TestPki.singleAttributePayload(type, new byte[0]));
             VerificationException e = assertThrows(
                     VerificationException.class, () -> verifier(pki, BUNDLE).verify(receipt), type.toString());
-            assertEquals(Reason.INVALID_RECEIPT_FORMAT, e.reason(), type.toString());
+            assertEquals(Reason.INTERNAL_ERROR, e.reason(), type.toString());
             assertTrue(e.getMessage().contains("out of range"), e.getMessage());
         }
         List<byte[]> inApps = Collections.singletonList(TestPki.inAppPurchase(
