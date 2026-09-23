@@ -150,11 +150,13 @@ final class JwsVerifier
      */
     public function verifyTransaction(string $jws): TransactionPayload
     {
-        $claims = $this->verifySignature($jws);
-        $this->requireBundleId($claims['bundleId'] ?? null);
-        $this->requireAcceptedEnvironment($claims['environment'] ?? null);
+        // The typed read comes before the claim checks: a modelled claim of
+        // the wrong JSON type is INTERNAL_ERROR, whichever claim it is.
+        $transaction = JwsClaims::toTransaction($this->verifySignature($jws));
+        $this->requireBundleId($transaction->bundleId);
+        $this->requireAcceptedEnvironment($transaction->environment);
 
-        return JwsClaims::toTransaction($claims);
+        return $transaction;
     }
 
     /**
@@ -166,12 +168,12 @@ final class JwsVerifier
      */
     public function verifyAppTransaction(string $jws): AppTransactionPayload
     {
-        $claims = $this->verifySignature($jws);
-        $this->requireBundleId($claims['bundleId'] ?? null);
-        $environment = $this->requireAcceptedEnvironment($claims['receiptType'] ?? null);
-        $this->requireAppAppleId($environment, $claims['appAppleId'] ?? null);
+        $appTransaction = JwsClaims::toAppTransaction($this->verifySignature($jws));
+        $this->requireBundleId($appTransaction->bundleId);
+        $environment = $this->requireAcceptedEnvironment($appTransaction->receiptType);
+        $this->requireAppAppleId($environment, $appTransaction->appAppleId);
 
-        return JwsClaims::toAppTransaction($claims);
+        return $appTransaction;
     }
 
     /**
@@ -349,7 +351,7 @@ final class JwsVerifier
     }
 
     /** @throws VerificationException */
-    private function requireBundleId(mixed $actual): void
+    private function requireBundleId(?string $actual): void
     {
         if ($actual !== $this->bundleId) {
             throw new VerificationException(Reason::WrongBundleId, 'payload bundle id is not the configured one');
@@ -357,9 +359,9 @@ final class JwsVerifier
     }
 
     /** @throws VerificationException */
-    private function requireAcceptedEnvironment(mixed $claim): Environment
+    private function requireAcceptedEnvironment(?string $claim): Environment
     {
-        $environment = is_string($claim) ? Environment::tryFrom($claim) : null;
+        $environment = $claim !== null ? Environment::tryFrom($claim) : null;
         if ($environment === null || !isset($this->acceptedEnvironments[$environment->value])) {
             throw new VerificationException(
                 Reason::WrongEnvironment,
@@ -371,7 +373,7 @@ final class JwsVerifier
     }
 
     /** @throws VerificationException */
-    private function requireAppAppleId(Environment $environment, mixed $actual): void
+    private function requireAppAppleId(Environment $environment, ?int $actual): void
     {
         if ($environment === Environment::Production
             && ($this->appAppleId === null || $this->appAppleId !== $actual)) {

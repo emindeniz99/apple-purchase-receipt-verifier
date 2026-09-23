@@ -113,8 +113,8 @@ enum AprvReason
   APRV_REASON_DEVICE_HASH_MISMATCH = 10,
   // The payload was signed longer ago than the configured maximum.
   APRV_REASON_STALE_PAYLOAD = 11,
-  // Not the caller's fault: a trusted signer signed receipt content the
-  // library cannot read (found only after the chain and the signature
+  // Not the caller's fault: a trusted signer signed receipt or JWS content
+  // the library cannot read (found only after the chain and the signature
   // passed). Alert and retry or escalate; do not deny the user on it.
   APRV_REASON_INTERNAL_ERROR = 12,
   // A required pointer argument was `NULL`. Nothing was verified.

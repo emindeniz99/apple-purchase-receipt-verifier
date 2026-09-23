@@ -245,7 +245,7 @@ cause. `ReasonOf(err)` is the one-line form.
 | `INVALID_RECEIPT_FORMAT` | unparseable CMS, trailing bytes after the blob, no encapsulated content, no `SignerInfo`, an embedded certificate that does not decode, signer not embedded, unsupported digest OID, a base64 string or a DER receipt over `MaxReceiptBytes` |
 | `DEVICE_HASH_MISMATCH` | the device-hash check was requested and failed, or the receipt lacks the attributes it needs |
 | `STALE_PAYLOAD` | `MaxSignedAge` is set and the payload's own signing date is older than it |
-| `INTERNAL_ERROR` | the receipt's chain and signature verified, but its payload does not parse (bad attribute shape, an unreadable value, a bound hit); `errors.Unwrap` gives the parser's error. Not the client's fault: alert and retry or escalate, do not deny |
+| `INTERNAL_ERROR` | the receipt's chain and signature verified, but its payload does not parse (bad attribute shape, an unreadable value, a bound hit; `errors.Unwrap` gives the parser's error); a verified JWS claim that `TransactionPayload` or `AppTransactionPayload` models has the wrong JSON type (a string where an integer belongs, `1.5`, a whole number outside int64); or the runtime cannot compute the device hash (SHA-1 under `GODEBUG=fips140=only`). Not the client's fault: alert and retry or escalate, do not deny |
 
 Misconfiguration — no trust anchors, an empty bundle id, an environment other
 than Production or Sandbox on the endpoint — is a **plain error from the

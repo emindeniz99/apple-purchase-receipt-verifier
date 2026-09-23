@@ -31,8 +31,9 @@ public struct VerificationError: Error, Sendable, CustomStringConvertible {
         /// Not the client's fault, status 21009 at the endpoint. Thrown when a
         /// trusted signer signed receipt content this library cannot read
         /// (found only after the chain and the signature passed; the parser's
-        /// error is ``VerificationError/cause``), and reported by the endpoint
-        /// for an unexpected error inside it. Alert and retry or escalate; do
+        /// error is ``VerificationError/cause``) or a JWS claim the typed
+        /// payload models cannot hold (same point, same reasoning), and
+        /// reported by the endpoint for an unexpected error inside it. Alert and retry or escalate; do
         /// not deny the user on it.
         case internalError = "INTERNAL_ERROR"
     }

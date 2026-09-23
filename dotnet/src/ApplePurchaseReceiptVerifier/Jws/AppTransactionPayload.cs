@@ -10,7 +10,9 @@ namespace ApplePurchaseReceiptVerifier.Jws
     /// <remarks>
     /// The environment lives in <see cref="ReceiptType"/>. Dates are
     /// milliseconds since the epoch, exactly as Apple ships them;
-    /// <see langword="null"/> means the claim was absent.
+    /// <see langword="null"/> means the claim was absent or JSON null; a
+    /// modelled claim of the wrong JSON type fails verification with
+    /// <see cref="VerificationReason.InternalError"/>.
     /// </remarks>
     public sealed class AppTransactionPayload
     {
@@ -18,16 +20,16 @@ namespace ApplePurchaseReceiptVerifier.Jws
         {
             ClaimsMap = claims;
             AppAppleId = Internal.Claims.Int64(claims, "appAppleId");
-            AppTransactionId = Internal.Claims.String(claims, "appTransactionId");
-            ApplicationVersion = Internal.Claims.String(claims, "applicationVersion");
-            BundleId = Internal.Claims.String(claims, "bundleId");
-            DeviceVerification = Internal.Claims.String(claims, "deviceVerification");
-            DeviceVerificationNonce = Internal.Claims.String(claims, "deviceVerificationNonce");
-            OriginalApplicationVersion = Internal.Claims.String(claims, "originalApplicationVersion");
+            AppTransactionId = Internal.Claims.TypedString(claims, "appTransactionId");
+            ApplicationVersion = Internal.Claims.TypedString(claims, "applicationVersion");
+            BundleId = Internal.Claims.TypedString(claims, "bundleId");
+            DeviceVerification = Internal.Claims.TypedString(claims, "deviceVerification");
+            DeviceVerificationNonce = Internal.Claims.TypedString(claims, "deviceVerificationNonce");
+            OriginalApplicationVersion = Internal.Claims.TypedString(claims, "originalApplicationVersion");
             OriginalPurchaseDate = Internal.Claims.Int64(claims, "originalPurchaseDate");
             PreorderDate = Internal.Claims.Int64(claims, "preorderDate");
             ReceiptCreationDate = Internal.Claims.Int64(claims, "receiptCreationDate");
-            ReceiptType = Internal.Claims.String(claims, "receiptType");
+            ReceiptType = Internal.Claims.TypedString(claims, "receiptType");
             VersionExternalIdentifier = Internal.Claims.Int64(claims, "versionExternalIdentifier");
         }
 

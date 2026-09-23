@@ -124,23 +124,62 @@ func decodeJSONObject(b []byte) (Claims, error) {
 	return Claims(object), nil
 }
 
-func (c Claims) str(key string) string {
-	if value, ok := c[key].(string); ok {
+// typedClaims reads the claims a typed payload models, strictly. An absent
+// or null claim reads as the zero value; a claim of the wrong JSON type is
+// recorded in err, which the caller reports as ReasonInternalError: the
+// chain and the signature have passed by then, so Apple signed a payload
+// this model cannot read, and that is not the client's fault. The first
+// bad claim wins; later reads are still harmless.
+type typedClaims struct {
+	c   Claims
+	err error
+}
+
+func (r *typedClaims) fail(key, kind string) {
+	if r.err == nil {
+		r.err = newError(ReasonInternalError, "signed payload claim %s is not a %s", key, kind)
+	}
+}
+
+func (r *typedClaims) str(key string) string {
+	switch value := r.c[key].(type) {
+	case nil:
+	case string:
 		return value
+	default:
+		r.fail(key, "string")
 	}
 	return ""
 }
 
-func (c Claims) int64(key string) *int64 {
-	number, ok := c[key].(json.Number)
-	if !ok {
-		return nil
+func (r *typedClaims) int64(key string) *int64 {
+	switch number := r.c[key].(type) {
+	case nil:
+	case json.Number:
+		if value, ok := wholeInt64(number); ok {
+			return &value
+		}
+		r.fail(key, "integer")
+	default:
+		r.fail(key, "integer")
 	}
+	return nil
+}
+
+func (r *typedClaims) environment(key string) Environment { return Environment(r.str(key)) }
+
+// wholeInt64 is integralMillis without the truncation: 1.0 and 1e3 are
+// whole numbers and read, 1.5 is not and is refused, as is anything outside
+// the int64 range.
+func wholeInt64(number json.Number) (int64, bool) {
 	value, ok := integralMillis(number)
 	if !ok {
-		return nil
+		return 0, false
 	}
-	return &value
+	if f, err := number.Float64(); err == nil && f != math.Trunc(f) {
+		return 0, false
+	}
+	return value, true
 }
 
 // int64 bounds as float64. Both are exactly representable, and the upper
@@ -185,11 +224,10 @@ func integralMillis(number json.Number) (int64, bool) {
 	return int64(value), true
 }
 
-func (c Claims) environment(key string) Environment { return Environment(c.str(key)) }
-
-func newTransactionPayload(c Claims) *TransactionPayload {
-	return &TransactionPayload{
-		Claims:                      c,
+func newTransactionPayload(claims Claims) (*TransactionPayload, error) {
+	c := &typedClaims{c: claims}
+	payload := &TransactionPayload{
+		Claims:                      claims,
 		BundleID:                    c.str("bundleId"),
 		Environment:                 c.environment("environment"),
 		ProductID:                   c.str("productId"),
@@ -214,11 +252,16 @@ func newTransactionPayload(c Claims) *TransactionPayload {
 		OfferType:                   c.int64("offerType"),
 		RevocationReason:            c.int64("revocationReason"),
 	}
+	if c.err != nil {
+		return nil, c.err
+	}
+	return payload, nil
 }
 
-func newAppTransactionPayload(c Claims) *AppTransactionPayload {
-	return &AppTransactionPayload{
-		Claims:                     c,
+func newAppTransactionPayload(claims Claims) (*AppTransactionPayload, error) {
+	c := &typedClaims{c: claims}
+	payload := &AppTransactionPayload{
+		Claims:                     claims,
 		BundleID:                   c.str("bundleId"),
 		ReceiptType:                c.environment("receiptType"),
 		ApplicationVersion:         c.str("applicationVersion"),
@@ -232,6 +275,10 @@ func newAppTransactionPayload(c Claims) *AppTransactionPayload {
 		PreorderDate:               c.int64("preorderDate"),
 		VersionExternalIdentifier:  c.int64("versionExternalIdentifier"),
 	}
+	if c.err != nil {
+		return nil, c.err
+	}
+	return payload, nil
 }
 
 // signedAtMillis is the instant the payload says it was signed:

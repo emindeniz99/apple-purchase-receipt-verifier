@@ -240,7 +240,7 @@ One exception type, `VerificationException`. Switch on `.Reason`; report
 | `InvalidReceiptFormat` | `INVALID_RECEIPT_FORMAT` | not parseable CMS, trailing bytes, no payload (a detached CMS), no `SignerInfo`, or an unsupported digest |
 | `DeviceHashMismatch` | `DEVICE_HASH_MISMATCH` | the SHA-1 device binding failed, or the attributes it needs are absent |
 | `StalePayload` | `STALE_PAYLOAD` | the payload is older than `maxSignedAge` |
-| `InternalError` | `INTERNAL_ERROR` | the receipt's chain and signature verified, but its payload does not parse (`InnerException` is the parser's error). Not the client's fault: alert and retry or escalate, do not deny |
+| `InternalError` | `INTERNAL_ERROR` | the receipt's chain and signature verified, but its payload does not parse (`InnerException` is the parser's error); a verified JWS payload carries a claim `TransactionPayload` / `AppTransactionPayload` models with the wrong JSON type (a string that is not a string, an integer that is not a whole number in the property's range); or the host cannot run the device-hash check (SHA-1 unavailable). Not the client's fault: alert and retry or escalate, do not deny |
 
 **Order of the receipt checks.** CMS parse → the creation date alone
 (attribute 12; nothing else in the payload is decoded yet) → chain at that

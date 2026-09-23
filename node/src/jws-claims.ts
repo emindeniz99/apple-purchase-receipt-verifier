@@ -65,6 +65,91 @@ export interface AppTransactionPayload extends Claims {
 }
 
 /**
+ * The JSON type each modelled claim must have, derived from the interface so
+ * a claim added there without a type here does not compile.
+ */
+type ClaimTypes<T> = {
+  [K in keyof T as string extends K ? never : K]-?: NonNullable<T[K]> extends string
+    ? 'string'
+    : 'integer';
+};
+
+const TRANSACTION_CLAIM_TYPES: ClaimTypes<TransactionPayload> = {
+  bundleId: 'string',
+  environment: 'string',
+  productId: 'string',
+  transactionId: 'string',
+  originalTransactionId: 'string',
+  webOrderLineItemId: 'string',
+  subscriptionGroupIdentifier: 'string',
+  appAccountToken: 'string',
+  inAppOwnershipType: 'string',
+  type: 'string',
+  transactionReason: 'string',
+  storefront: 'string',
+  currency: 'string',
+  offerIdentifier: 'string',
+  signedDate: 'integer',
+  purchaseDate: 'integer',
+  originalPurchaseDate: 'integer',
+  expiresDate: 'integer',
+  revocationDate: 'integer',
+  price: 'integer',
+  quantity: 'integer',
+  offerType: 'integer',
+  revocationReason: 'integer',
+};
+
+const APP_TRANSACTION_CLAIM_TYPES: ClaimTypes<AppTransactionPayload> = {
+  bundleId: 'string',
+  receiptType: 'string',
+  applicationVersion: 'string',
+  originalApplicationVersion: 'string',
+  deviceVerification: 'string',
+  deviceVerificationNonce: 'string',
+  appTransactionId: 'string',
+  appAppleId: 'integer',
+  receiptCreationDate: 'integer',
+  originalPurchaseDate: 'integer',
+  preorderDate: 'integer',
+  versionExternalIdentifier: 'integer',
+};
+
+/**
+ * The typed read of a verified payload: every modelled claim that is present
+ * and not null must have its model's type (an integer is a whole JSON number,
+ * so 1.0 is 1). Claims the model does not carry are left alone. A trusted
+ * signer wrote a claim the model cannot hold, so this is INTERNAL_ERROR, not
+ * a verdict about the client's input.
+ */
+function requireClaimTypes(payload: Claims, types: Record<string, 'string' | 'integer'>): void {
+  for (const [name, type] of Object.entries(types)) {
+    const value = payload[name];
+    if (value === undefined || value === null) {
+      continue;
+    }
+    if (type === 'string' ? typeof value !== 'string' : !Number.isInteger(value)) {
+      throw new VerificationError(
+        Reason.INTERNAL_ERROR,
+        `signed payload claim ${name} is not ${type === 'string' ? 'a string' : 'an integer'}`,
+      );
+    }
+  }
+}
+
+/** A verified payload read as a transaction; runs before the claim checks. */
+export function readTransactionPayload(payload: Claims): TransactionPayload {
+  requireClaimTypes(payload, TRANSACTION_CLAIM_TYPES);
+  return payload as TransactionPayload;
+}
+
+/** A verified payload read as an AppTransaction; runs before the claim checks. */
+export function readAppTransactionPayload(payload: Claims): AppTransactionPayload {
+  requireClaimTypes(payload, APP_TRANSACTION_CLAIM_TYPES);
+  return payload as AppTransactionPayload;
+}
+
+/**
  * Entitlement helper for a verified transaction: not revoked, and (for
  * subscriptions) not expired at `now`. Point-in-time on the signed claims
  * only — later refunds or renewals are invisible to it.

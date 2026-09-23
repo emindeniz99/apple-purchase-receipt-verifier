@@ -491,9 +491,14 @@ module ApplePurchaseReceiptVerifier
         )
       end
 
-      computed = OpenSSL::Digest::SHA1.digest(
-        device_guid.b + receipt.opaque_value + receipt.bundle_id_bytes # steep:ignore ArgumentTypeMismatch
-      )
+      computed = begin
+        OpenSSL::Digest::SHA1.digest(
+          device_guid.b + receipt.opaque_value + receipt.bundle_id_bytes # steep:ignore ArgumentTypeMismatch
+        )
+      rescue OpenSSL::OpenSSLError
+        # Every input here is a byte string, so only the runtime can fail this.
+        raise VerificationError.new(Reason::INTERNAL_ERROR, "SHA-1 unavailable")
+      end
       return if secure_equal?(computed, receipt.sha1_hash) # steep:ignore ArgumentTypeMismatch
 
       raise VerificationError.new(Reason::DEVICE_HASH_MISMATCH,

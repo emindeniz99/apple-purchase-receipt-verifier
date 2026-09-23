@@ -311,7 +311,7 @@ do {
 | `.stalePayload` | `STALE_PAYLOAD` | the payload was signed longer ago than `maxSignedAgeMillis` |
 | `.malformedRequest` | `MALFORMED_REQUEST` | never thrown: reported only on a `VerifyReceiptResult`, for an unusable request envelope |
 | `.requestTooLarge` | `REQUEST_TOO_LARGE` | never thrown: reported only on a `VerifyReceiptResult`, for a raw body over `VerifyReceiptEndpoint.maxRequestBytes` (status 21002; Apple answers HTTP 413) |
-| `.internalError` | `INTERNAL_ERROR` | the receipt's chain and signature verified, but its payload does not parse (`cause` is the parser's error); also reported on a `VerifyReceiptResult` for an unexpected error. Status 21009. Not the client's fault: alert and retry or escalate, do not deny |
+| `.internalError` | `INTERNAL_ERROR` | the receipt's chain and signature verified, but its payload does not parse (`cause` is the parser's error), or a JWS passed chain and signature but `verifyTransaction`/`verifyAppTransaction` found a modelled claim of the wrong type (a string field not a JSON string, an integer field not a whole number that fits); also reported on a `VerifyReceiptResult` for an unexpected error. Status 21009. Not the client's fault: alert and retry or escalate, do not deny |
 
 **Order of the receipt checks.** CMS parse → the creation date alone
 (attribute 12; nothing else in the payload is decoded yet) → chain at that

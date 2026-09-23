@@ -19,14 +19,26 @@ module ApplePurchaseReceiptVerifier
   end
 
   class Payload
+    # The typed read the verifier runs before any claim is enforced.
+    def self.read: (claims claims) -> instance
+    def self.whole_number: (untyped value) -> Integer?
     def string_claim: (String name) -> String?
     def integer_claim: (String name) -> Integer?
-    def numeric_claim: (String name) -> Numeric?
 
     # Defines a snake_case reader over a camelCase claim. Called at class-body
     # level, so it is a singleton method however private it is made. Nothing
     # calls it today; the two subclasses define their readers inline.
     def self.claim: (Symbol ruby_name, String wire_name, Symbol kind) -> void
+  end
+
+  class TransactionPayload
+    STRING_CLAIMS: Array[String]
+    INTEGER_CLAIMS: Array[String]
+  end
+
+  class AppTransactionPayload
+    STRING_CLAIMS: Array[String]
+    INTEGER_CLAIMS: Array[String]
   end
 
   class JwsVerifier

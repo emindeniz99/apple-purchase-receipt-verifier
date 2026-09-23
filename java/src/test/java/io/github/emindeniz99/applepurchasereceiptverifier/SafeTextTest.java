@@ -68,12 +68,6 @@ class SafeTextTest {
         assertTrue(quoted.contains("WARN forged log line"), quoted);
     }
 
-    @Test
-    void singleCharacterQuotingCoversTheBase64Reader() {
-        assertEquals("\uFFFD", SafeText.quote('\n'));
-        assertEquals("!", SafeText.quote('!'));
-    }
-
     /**
      * The end-to-end form of both rules, at the site the finding was raised
      * on: {@code alg} is attacker-controlled, is read before any signature

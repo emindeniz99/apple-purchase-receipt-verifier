@@ -57,6 +57,85 @@ public struct AppTransactionPayload: Codable, Sendable {
     public let versionExternalIdentifier: Int64?
 }
 
+extension TransactionPayload {
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        bundleId = try c.claimString(.bundleId)
+        environment = try c.claimString(.environment)
+        productId = try c.claimString(.productId)
+        transactionId = try c.claimString(.transactionId)
+        originalTransactionId = try c.claimString(.originalTransactionId)
+        webOrderLineItemId = try c.claimString(.webOrderLineItemId)
+        subscriptionGroupIdentifier = try c.claimString(.subscriptionGroupIdentifier)
+        appAccountToken = try c.claimString(.appAccountToken)
+        inAppOwnershipType = try c.claimString(.inAppOwnershipType)
+        type = try c.claimString(.type)
+        transactionReason = try c.claimString(.transactionReason)
+        storefront = try c.claimString(.storefront)
+        currency = try c.claimString(.currency)
+        offerIdentifier = try c.claimString(.offerIdentifier)
+        signedDate = try c.claimInteger(.signedDate)
+        purchaseDate = try c.claimInteger(.purchaseDate)
+        originalPurchaseDate = try c.claimInteger(.originalPurchaseDate)
+        expiresDate = try c.claimInteger(.expiresDate)
+        revocationDate = try c.claimInteger(.revocationDate)
+        price = try c.claimInteger(.price)
+        quantity = try c.claimInteger(.quantity)
+        offerType = try c.claimInteger(.offerType)
+        revocationReason = try c.claimInteger(.revocationReason)
+    }
+}
+
+extension AppTransactionPayload {
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        bundleId = try c.claimString(.bundleId)
+        receiptType = try c.claimString(.receiptType)
+        applicationVersion = try c.claimString(.applicationVersion)
+        originalApplicationVersion = try c.claimString(.originalApplicationVersion)
+        deviceVerification = try c.claimString(.deviceVerification)
+        deviceVerificationNonce = try c.claimString(.deviceVerificationNonce)
+        appTransactionId = try c.claimString(.appTransactionId)
+        appAppleId = try c.claimInteger(.appAppleId)
+        receiptCreationDate = try c.claimInteger(.receiptCreationDate)
+        originalPurchaseDate = try c.claimInteger(.originalPurchaseDate)
+        preorderDate = try c.claimInteger(.preorderDate)
+        versionExternalIdentifier = try c.claimInteger(.versionExternalIdentifier)
+    }
+}
+
+/// The strict typed read of one signed claim. Absent and JSON null are nil;
+/// anything else must be exactly the modelled JSON type, or the read throws
+/// ``VerificationError/Reason/internalError``. Claims a model does not carry
+/// are never looked at, whatever their type.
+extension KeyedDecodingContainer {
+    /// A string claim takes a JSON string only; JSONDecoder already refuses a
+    /// number, a boolean or a structure for `String`.
+    func claimString(_ key: Key) throws -> String? {
+        guard contains(key), try !decodeNil(forKey: key) else { return nil }
+        guard let value = try? decode(String.self, forKey: key) else {
+            throw VerificationError(.internalError, "signed payload claim \(key.stringValue) is not a string")
+        }
+        return value
+    }
+
+    /// An integer claim takes a JSON number whose value is a whole number
+    /// that fits `T`: 1.0 is 1, while 1.5, a boolean and a whole number
+    /// outside `T` are refused. JSONDecoder is not left to decide on its own,
+    /// because whether it reads 1.0 as an integer has varied by platform, so
+    /// the number is read as a `Double` first and must have no fraction.
+    func claimInteger<T: FixedWidthInteger & Decodable>(_ key: Key) throws -> T? {
+        guard contains(key), try !decodeNil(forKey: key) else { return nil }
+        if let number = try? decode(Double.self, forKey: key), number.rounded(.towardZero) == number {
+            // The integer decode keeps full precision past 2^53; the Double
+            // is the fallback for a decoder that refuses 1.0 as an integer.
+            if let value = try? decode(T.self, forKey: key) { return value }
+            if let value = T(exactly: number) { return value }
+        }
+        throw VerificationError(.internalError, "signed payload claim \(key.stringValue) is not an integer")
+    }
+}
+
 /// Verifies Apple-signed JWS payloads (StoreKit 2 `jwsRepresentation`,
 /// `signedTransactionInfo` / `signedRenewalInfo`, Server Notifications V2)
 /// completely offline against pinned Apple roots — PLAN.md §2.1, mirroring
@@ -326,9 +405,15 @@ public struct JwsVerifier: Sendable {
         }
     }
 
+    /// The typed read, after the chain and the signature pass: a claim of
+    /// the wrong type was written by a trusted signer, so the payload models'
+    /// `init(from:)` throws ``VerificationError/Reason/internalError`` for it
+    /// and that passes through unchanged.
     private func decodePayload<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
         do {
             return try JSONDecoder().decode(type, from: data)
+        } catch let error as VerificationError {
+            throw error
         } catch {
             throw VerificationError(.invalidJwsFormat, "unparseable payload: \(error)")
         }

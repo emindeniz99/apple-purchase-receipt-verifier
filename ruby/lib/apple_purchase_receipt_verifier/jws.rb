@@ -90,10 +90,10 @@ module ApplePurchaseReceiptVerifier
     # @raise [VerificationError]
     def verify_transaction(jws)
       contained do
-        claims = verify_signature(jws)
-        require_bundle_id(claims["bundleId"])
-        require_accepted_environment(claims["environment"])
-        TransactionPayload.new(claims)
+        payload = TransactionPayload.read(verify_signature(jws))
+        require_bundle_id(payload.bundle_id)
+        require_accepted_environment(payload.environment)
+        payload
       end
     end
 
@@ -105,11 +105,11 @@ module ApplePurchaseReceiptVerifier
     # @raise [VerificationError]
     def verify_app_transaction(jws)
       contained do
-        claims = verify_signature(jws)
-        require_bundle_id(claims["bundleId"])
-        environment = require_accepted_environment(claims["receiptType"])
-        require_app_apple_id(environment, claims["appAppleId"])
-        AppTransactionPayload.new(claims)
+        payload = AppTransactionPayload.read(verify_signature(jws))
+        require_bundle_id(payload.bundle_id)
+        environment = require_accepted_environment(payload.receipt_type)
+        require_app_apple_id(environment, payload.app_apple_id)
+        payload
       end
     end
 
@@ -320,8 +320,14 @@ module ApplePurchaseReceiptVerifier
       der = OpenSSL::ASN1::Sequence.new(
         [OpenSSL::ASN1::Integer.new(r), OpenSSL::ASN1::Integer.new(s)]
       ).to_der
+      # No input chooses the digest, so a failure to create it is the runtime's.
+      digest = begin
+        OpenSSL::Digest.new("SHA256")
+      rescue OpenSSL::OpenSSLError
+        raise VerificationError.new(Reason::INTERNAL_ERROR, "SHA-256 unavailable")
+      end
       ok = begin
-        key.verify(OpenSSL::Digest.new("SHA256"), der, signing_input.b)
+        key.verify(digest, der, signing_input.b)
       rescue OpenSSL::OpenSSLError
         false
       end

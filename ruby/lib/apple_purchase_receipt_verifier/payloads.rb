@@ -23,6 +23,38 @@ module ApplePurchaseReceiptVerifier
       freeze
     end
 
+    # The typed read the verifier runs after the chain and the signature pass
+    # and before any claim is enforced. A modelled claim is absent, JSON null,
+    # or of its model type: a String, or a JSON number holding a whole number
+    # (`1.0` is 1). Anything else was written by a trusted signer, so it is the
+    # library's failure or a format Apple changed, not the client's:
+    # INTERNAL_ERROR, never read as absent. Unmodelled claims are not looked at.
+    def self.read(claims)
+      self::STRING_CLAIMS.each do |name| # steep:ignore UnknownConstant
+        value = claims[name]
+        next if value.nil? || value.is_a?(String)
+
+        raise VerificationError.new(Reason::INTERNAL_ERROR,
+                                    "signed payload claim #{name} is not a string")
+      end
+      self::INTEGER_CLAIMS.each do |name| # steep:ignore UnknownConstant
+        value = claims[name]
+        next if value.nil? || !whole_number(value).nil?
+
+        raise VerificationError.new(Reason::INTERNAL_ERROR,
+                                    "signed payload claim #{name} is not an integer")
+      end
+      new(claims)
+    end
+
+    # An Integer, or a finite Float with no fractional part as that Integer;
+    # `nil` for anything else. A boolean is not a number in Ruby.
+    def self.whole_number(value)
+      return value if value.is_a?(Integer)
+
+      value.to_i if value.is_a?(Float) && value.finite? && (value % 1).zero?
+    end
+
     # @return [Hash{String => Object}] the claims, Apple's own key spelling
     def to_h
       claims
@@ -44,13 +76,7 @@ module ApplePurchaseReceiptVerifier
     end
 
     def integer_claim(name)
-      value = claims[name]
-      value.is_a?(Integer) ? value : nil
-    end
-
-    def numeric_claim(name)
-      value = claims[name]
-      value.is_a?(Numeric) ? value : nil
+      Payload.whole_number(claims[name])
     end
 
     # Defines a snake_case reader over a camelCase Apple claim.
@@ -61,24 +87,23 @@ module ApplePurchaseReceiptVerifier
   end
 
   # A verified `JWSTransactionDecodedPayload`. Readers are snake_case views
-  # over {#claims}; a claim of an unexpected JSON type reads as `nil` rather
-  # than being coerced.
+  # over {#claims}; the verifier has already refused a modelled claim of the
+  # wrong JSON type ({Payload.read}), so a reader returns the claim or `nil`.
   class TransactionPayload < Payload
-    %w[bundleId environment productId transactionId originalTransactionId
-       webOrderLineItemId subscriptionGroupIdentifier appAccountToken
-       inAppOwnershipType type transactionReason storefront storefrontId
-       currency offerIdentifier appTransactionId].each do |wire|
+    STRING_CLAIMS = %w[bundleId environment productId transactionId originalTransactionId
+                       webOrderLineItemId subscriptionGroupIdentifier appAccountToken
+                       inAppOwnershipType type transactionReason storefront storefrontId
+                       currency offerIdentifier appTransactionId].freeze
+    # `price` is in milli-units of the currency, an integer like the dates.
+    INTEGER_CLAIMS = %w[signedDate purchaseDate originalPurchaseDate expiresDate revocationDate
+                        quantity offerType revocationReason price].freeze
+
+    STRING_CLAIMS.each do |wire|
       define_method(wire.gsub(/([a-z\d])([A-Z])/, '\1_\2').downcase) { string_claim(wire) } # steep:ignore
     end
 
-    %w[signedDate purchaseDate originalPurchaseDate expiresDate revocationDate
-       quantity offerType revocationReason].each do |wire|
+    INTEGER_CLAIMS.each do |wire|
       define_method(wire.gsub(/([a-z\d])([A-Z])/, '\1_\2').downcase) { integer_claim(wire) } # steep:ignore
-    end
-
-    # @return [Numeric, nil] Apple ships this in milli-units of the currency
-    def price
-      numeric_claim("price")
     end
 
     # Point-in-time entitlement check over the signed claims alone: not
@@ -103,13 +128,16 @@ module ApplePurchaseReceiptVerifier
 
   # A verified `AppTransaction`. The environment lives in `receipt_type`.
   class AppTransactionPayload < Payload
-    %w[bundleId receiptType applicationVersion originalApplicationVersion
-       deviceVerification deviceVerificationNonce appTransactionId].each do |wire|
+    STRING_CLAIMS = %w[bundleId receiptType applicationVersion originalApplicationVersion
+                       deviceVerification deviceVerificationNonce appTransactionId].freeze
+    INTEGER_CLAIMS = %w[appAppleId receiptCreationDate originalPurchaseDate preorderDate
+                        versionExternalIdentifier].freeze
+
+    STRING_CLAIMS.each do |wire|
       define_method(wire.gsub(/([a-z\d])([A-Z])/, '\1_\2').downcase) { string_claim(wire) } # steep:ignore
     end
 
-    %w[appAppleId receiptCreationDate originalPurchaseDate preorderDate
-       versionExternalIdentifier].each do |wire|
+    INTEGER_CLAIMS.each do |wire|
       define_method(wire.gsub(/([a-z\d])([A-Z])/, '\1_\2').downcase) { integer_claim(wire) } # steep:ignore
     end
   end

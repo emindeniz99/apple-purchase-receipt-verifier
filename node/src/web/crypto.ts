@@ -6,6 +6,7 @@
  * WebCrypto-only isolates.
  */
 import { ParseError, Tag, parse } from '../der.js';
+import { Reason, VerificationError } from '../errors.js';
 import type { ParsedCertificate } from '../x509.js';
 import { CURVES, OID_EC_PUBLIC_KEY, OID_RSA_ENCRYPTION, spkiToJwk } from './jwk.js';
 
@@ -50,7 +51,30 @@ export async function digest(name: string, data: Uint8Array): Promise<Uint8Array
   if (webName === undefined) {
     throw new ParseError(`unsupported digest algorithm ${name}`);
   }
-  return new Uint8Array(await crypto.subtle.digest(webName, source(data)));
+  // The name is one of the two parseCms admits, so a digest this runtime
+  // cannot compute is the environment's failure, never the input's.
+  const api = subtle();
+  try {
+    return new Uint8Array(await api.digest(webName, source(data)));
+  } catch (cause) {
+    throw new VerificationError(
+      Reason.INTERNAL_ERROR,
+      `${webName} digest is unavailable in this runtime`,
+      cause,
+    );
+  }
+}
+
+/**
+ * `crypto.subtle`, or INTERNAL_ERROR when the runtime has none. Read outside
+ * the catch in {@link verifyWith} so a missing WebCrypto is not reported as a
+ * bad signature or chain.
+ */
+function subtle(): SubtleCrypto {
+  if (typeof crypto === 'undefined' || crypto.subtle === undefined) {
+    throw new VerificationError(Reason.INTERNAL_ERROR, 'crypto.subtle is unavailable');
+  }
+  return crypto.subtle;
 }
 
 /** RSASSA-PKCS1-v1_5 over `data`, hash named by the CMS digest algorithm. */
@@ -92,7 +116,8 @@ export async function verifyEs256(
  * Whether `cert`'s signature was made by `issuer`'s key, per the algorithm
  * `cert` names. Mirrors `X509Certificate.verify(issuer.publicKey)`: any
  * failure — unknown algorithm, key/algorithm mismatch, malformed signature —
- * is a false, not a throw.
+ * is a false, not a throw. The one throw is a runtime with no `crypto.subtle`
+ * (INTERNAL_ERROR).
  */
 export async function verifyCertificateSignature(
   cert: ParsedCertificate,
@@ -144,11 +169,10 @@ async function verifyWith(
   signature: Uint8Array,
   data: Uint8Array,
 ): Promise<boolean> {
+  const api = subtle();
   try {
-    const key = await crypto.subtle.importKey('jwk', spkiToJwk(spki), importAlgorithm, false, [
-      'verify',
-    ]);
-    return await crypto.subtle.verify(verifyAlgorithm, key, source(signature), source(data));
+    const key = await api.importKey('jwk', spkiToJwk(spki), importAlgorithm, false, ['verify']);
+    return await api.verify(verifyAlgorithm, key, source(signature), source(data));
   } catch {
     return false;
   }

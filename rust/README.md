@@ -264,7 +264,7 @@ canonical token, identical in every port of this library.
 | `InvalidReceiptFormat` | `INVALID_RECEIPT_FORMAT` | the PKCS#7/CMS envelope could not be parsed |
 | `DeviceHashMismatch` | `DEVICE_HASH_MISMATCH` | the device hash does not match attribute 5 |
 | `StalePayload` | `STALE_PAYLOAD` | the payload was signed longer ago than `max_signed_age` |
-| `InternalError` | `INTERNAL_ERROR` | the receipt's chain and signature verified, but its signed content cannot be read: not the client's fault, so alert and retry or escalate rather than deny |
+| `InternalError` | `INTERNAL_ERROR` | the chain and signature verified, but the signed content cannot be read (a receipt payload that does not parse, or a modelled JWS claim of the wrong JSON type): not the client's fault, so alert and retry or escalate rather than deny |
 
 The vocabulary is **closed** by the cross-port contract: a thirteenth reason
 would be a change to the shared vector file and to every port at once.
@@ -442,8 +442,10 @@ early check reports that check's reason, not a later one.
 **JWS.** Segment shape → header JSON → `alg` → `x5c` → certificates parse →
 **leaf marker OID** `1.2.840.113635.100.6.11.1` → **intermediate marker
 OID** `1.2.840.113635.100.6.2.1` → payload JSON → chain at the signing
-instant → ES256 signature → staleness → bundle id → environment → app Apple
-id.
+instant → ES256 signature → staleness → **typed read of the modelled
+claims** (`verify_transaction` and `verify_app_transaction` only), where a
+claim of the wrong JSON type is `INTERNAL_ERROR` → bundle id → environment →
+app Apple id.
 
 **Receipt.** Base64 → CMS parse (trailing bytes after the blob are refused)
 → **the creation date alone** (attribute 12; nothing else in the payload is

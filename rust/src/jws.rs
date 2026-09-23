@@ -31,8 +31,39 @@ pub const INTERMEDIATE_OID: &str = "1.2.840.113635.100.6.2.1";
 /// is reachable here.
 pub type Claims = Map<String, Value>;
 
-fn string_claim(claims: &Claims, key: &str) -> Option<String> {
-    claims.get(key)?.as_str().map(str::to_owned)
+/// A modelled claim the typed read cannot represent. Apple signed it, so it
+/// is not the client's fault: the payload authenticated but this crate
+/// cannot read it, which is [`Reason::InternalError`].
+fn claim_type_error(key: &str, kind: &str) -> VerificationError {
+    VerificationError::new(
+        Reason::InternalError,
+        format!("signed payload claim {key} is not a {kind}"),
+    )
+}
+
+/// A string-valued claim: absent or JSON `null` is `None`, a string is read,
+/// anything else is an error.
+fn string_claim(claims: &Claims, key: &str) -> Result<Option<String>> {
+    match claims.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(text)) => Ok(Some(text.clone())),
+        Some(_) => Err(claim_type_error(key, "string")),
+    }
+}
+
+/// An integer-valued modelled claim: absent or JSON `null` is `None`, a
+/// JSON number with a whole value inside `i64` is read (`1.0` is `1`), and
+/// anything else is an error, including `1.5`, a boolean and a string.
+fn typed_int_claim(claims: &Claims, key: &str) -> Result<Option<i64>> {
+    match claims.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) if value.as_f64().is_some_and(|number| number.fract() == 0.0) => {
+            int_claim(claims, key)
+                .map(Some)
+                .ok_or_else(|| claim_type_error(key, "64-bit integer"))
+        }
+        Some(_) => Err(claim_type_error(key, "64-bit integer")),
+    }
 }
 
 /// An integer-valued claim.
@@ -141,34 +172,39 @@ impl TransactionPayload {
     /// that a caller then wants the modelled fields of. Passing it claims
     /// that no verifier produced models an unverified payload, which is
     /// exactly as meaningful as the JSON was.
-    #[must_use]
-    pub fn from_claims(claims: Claims) -> Self {
-        TransactionPayload {
-            bundle_id: string_claim(&claims, "bundleId"),
-            environment: string_claim(&claims, "environment"),
-            product_id: string_claim(&claims, "productId"),
-            transaction_id: string_claim(&claims, "transactionId"),
-            original_transaction_id: string_claim(&claims, "originalTransactionId"),
-            web_order_line_item_id: string_claim(&claims, "webOrderLineItemId"),
-            subscription_group_identifier: string_claim(&claims, "subscriptionGroupIdentifier"),
-            app_account_token: string_claim(&claims, "appAccountToken"),
-            in_app_ownership_type: string_claim(&claims, "inAppOwnershipType"),
-            transaction_type: string_claim(&claims, "type"),
-            transaction_reason: string_claim(&claims, "transactionReason"),
-            storefront: string_claim(&claims, "storefront"),
-            currency: string_claim(&claims, "currency"),
-            offer_identifier: string_claim(&claims, "offerIdentifier"),
-            signed_date: int_claim(&claims, "signedDate"),
-            purchase_date: int_claim(&claims, "purchaseDate"),
-            original_purchase_date: int_claim(&claims, "originalPurchaseDate"),
-            expires_date: int_claim(&claims, "expiresDate"),
-            revocation_date: int_claim(&claims, "revocationDate"),
-            price: int_claim(&claims, "price"),
-            quantity: int_claim(&claims, "quantity"),
-            offer_type: int_claim(&claims, "offerType"),
-            revocation_reason: int_claim(&claims, "revocationReason"),
+    ///
+    /// # Errors
+    /// [`Reason::InternalError`] when a modelled claim has the wrong JSON
+    /// type: a string claim that is not a string, or an integer claim that
+    /// is not a whole number inside `i64`. Absent and `null` claims are
+    /// `None`; unmodelled claims are never read.
+    pub fn from_claims(claims: Claims) -> Result<Self> {
+        Ok(TransactionPayload {
+            bundle_id: string_claim(&claims, "bundleId")?,
+            environment: string_claim(&claims, "environment")?,
+            product_id: string_claim(&claims, "productId")?,
+            transaction_id: string_claim(&claims, "transactionId")?,
+            original_transaction_id: string_claim(&claims, "originalTransactionId")?,
+            web_order_line_item_id: string_claim(&claims, "webOrderLineItemId")?,
+            subscription_group_identifier: string_claim(&claims, "subscriptionGroupIdentifier")?,
+            app_account_token: string_claim(&claims, "appAccountToken")?,
+            in_app_ownership_type: string_claim(&claims, "inAppOwnershipType")?,
+            transaction_type: string_claim(&claims, "type")?,
+            transaction_reason: string_claim(&claims, "transactionReason")?,
+            storefront: string_claim(&claims, "storefront")?,
+            currency: string_claim(&claims, "currency")?,
+            offer_identifier: string_claim(&claims, "offerIdentifier")?,
+            signed_date: typed_int_claim(&claims, "signedDate")?,
+            purchase_date: typed_int_claim(&claims, "purchaseDate")?,
+            original_purchase_date: typed_int_claim(&claims, "originalPurchaseDate")?,
+            expires_date: typed_int_claim(&claims, "expiresDate")?,
+            revocation_date: typed_int_claim(&claims, "revocationDate")?,
+            price: typed_int_claim(&claims, "price")?,
+            quantity: typed_int_claim(&claims, "quantity")?,
+            offer_type: typed_int_claim(&claims, "offerType")?,
+            revocation_reason: typed_int_claim(&claims, "revocationReason")?,
             claims,
-        }
+        })
     }
 
     /// Whether this transaction still entitles the user at `now`: not
@@ -230,23 +266,25 @@ pub struct AppTransactionPayload {
 impl AppTransactionPayload {
     /// The modelled view of a claim set. Verifies nothing; see
     /// [`TransactionPayload::from_claims`].
-    #[must_use]
-    pub fn from_claims(claims: Claims) -> Self {
-        AppTransactionPayload {
-            bundle_id: string_claim(&claims, "bundleId"),
-            receipt_type: string_claim(&claims, "receiptType"),
-            application_version: string_claim(&claims, "applicationVersion"),
-            original_application_version: string_claim(&claims, "originalApplicationVersion"),
-            device_verification: string_claim(&claims, "deviceVerification"),
-            device_verification_nonce: string_claim(&claims, "deviceVerificationNonce"),
-            app_transaction_id: string_claim(&claims, "appTransactionId"),
-            app_apple_id: int_claim(&claims, "appAppleId"),
-            receipt_creation_date: int_claim(&claims, "receiptCreationDate"),
-            original_purchase_date: int_claim(&claims, "originalPurchaseDate"),
-            preorder_date: int_claim(&claims, "preorderDate"),
-            version_external_identifier: int_claim(&claims, "versionExternalIdentifier"),
+    ///
+    /// # Errors
+    /// As [`TransactionPayload::from_claims`].
+    pub fn from_claims(claims: Claims) -> Result<Self> {
+        Ok(AppTransactionPayload {
+            bundle_id: string_claim(&claims, "bundleId")?,
+            receipt_type: string_claim(&claims, "receiptType")?,
+            application_version: string_claim(&claims, "applicationVersion")?,
+            original_application_version: string_claim(&claims, "originalApplicationVersion")?,
+            device_verification: string_claim(&claims, "deviceVerification")?,
+            device_verification_nonce: string_claim(&claims, "deviceVerificationNonce")?,
+            app_transaction_id: string_claim(&claims, "appTransactionId")?,
+            app_apple_id: typed_int_claim(&claims, "appAppleId")?,
+            receipt_creation_date: typed_int_claim(&claims, "receiptCreationDate")?,
+            original_purchase_date: typed_int_claim(&claims, "originalPurchaseDate")?,
+            preorder_date: typed_int_claim(&claims, "preorderDate")?,
+            version_external_identifier: typed_int_claim(&claims, "versionExternalIdentifier")?,
             claims,
-        }
+        })
     }
 }
 
@@ -380,27 +418,31 @@ impl JwsVerifier {
         JwsVerifierBuilder::default()
     }
 
-    /// Verifies a signed transaction, then checks bundle id and environment.
+    /// Verifies a signed transaction, reads its modelled claims, then checks
+    /// bundle id and environment.
     ///
     /// # Errors
     /// A [`VerificationError`] whose [`reason`](VerificationError::reason)
-    /// names the first check that failed.
+    /// names the first check that failed. A modelled claim of the wrong
+    /// JSON type is [`Reason::InternalError`]; see
+    /// [`TransactionPayload::from_claims`].
     pub fn verify_transaction(&self, jws: &str) -> Result<TransactionPayload> {
         let claims = self.verify_signature(jws)?;
-        let payload = TransactionPayload::from_claims(claims);
+        let payload = TransactionPayload::from_claims(claims)?;
         self.require_bundle_id(payload.bundle_id.as_deref())?;
         self.require_accepted_environment(payload.environment.as_deref())?;
         Ok(payload)
     }
 
-    /// Verifies a signed `AppTransaction`, then checks bundle id,
-    /// environment (`receiptType`) and — in Production — the app Apple id.
+    /// Verifies a signed `AppTransaction`, reads its modelled claims, then
+    /// checks bundle id, environment (`receiptType`) and — in Production —
+    /// the app Apple id.
     ///
     /// # Errors
     /// As [`JwsVerifier::verify_transaction`].
     pub fn verify_app_transaction(&self, jws: &str) -> Result<AppTransactionPayload> {
         let claims = self.verify_signature(jws)?;
-        let payload = AppTransactionPayload::from_claims(claims);
+        let payload = AppTransactionPayload::from_claims(claims)?;
         self.require_bundle_id(payload.bundle_id.as_deref())?;
         let environment = self.require_accepted_environment(payload.receipt_type.as_deref())?;
         self.require_app_apple_id(environment, payload.app_apple_id)?;

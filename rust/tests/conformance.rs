@@ -481,6 +481,18 @@ fn in_app_json(purchase: &InAppPurchase) -> Value {
     Value::Object(out)
 }
 
+/// The language-neutral view of a typed JWS payload: its claims, with each
+/// modelled integer claim replaced by the value the typed read produced, so
+/// a claim signed as `1.0` is compared as the `1` the model holds.
+fn typed_claims_json(mut claims: Map<String, Value>, ints: &[(&str, Option<i64>)]) -> Value {
+    for (key, value) in ints {
+        if let Some(value) = value {
+            claims.insert((*key).to_owned(), Value::from(*value));
+        }
+    }
+    Value::Object(claims)
+}
+
 /// The language-neutral view of an [`AppReceipt`]: dates as ISO-8601 UTC,
 /// byte fields as lowercase hex mirrored under `<name>Hex`, maps as objects
 /// keyed by the stringified attribute type.
@@ -762,16 +774,34 @@ fn run_case(dir: PathBuf, fixtures: BTreeMap<String, Fixture>, case: Case) -> Re
         "verifyTransaction" => {
             let verifier = jws_verifier(&dir, &fixtures, &config, clock)?;
             let jws = String::from_utf8_lossy(&input).into_owned();
-            verifier
-                .verify_transaction(&jws)
-                .map(|p| Value::Object(p.claims))
+            verifier.verify_transaction(&jws).map(|p| {
+                let ints = [
+                    ("signedDate", p.signed_date),
+                    ("purchaseDate", p.purchase_date),
+                    ("originalPurchaseDate", p.original_purchase_date),
+                    ("expiresDate", p.expires_date),
+                    ("revocationDate", p.revocation_date),
+                    ("price", p.price),
+                    ("quantity", p.quantity),
+                    ("offerType", p.offer_type),
+                    ("revocationReason", p.revocation_reason),
+                ];
+                typed_claims_json(p.claims, &ints)
+            })
         }
         "verifyAppTransaction" => {
             let verifier = jws_verifier(&dir, &fixtures, &config, clock)?;
             let jws = String::from_utf8_lossy(&input).into_owned();
-            verifier
-                .verify_app_transaction(&jws)
-                .map(|p| Value::Object(p.claims))
+            verifier.verify_app_transaction(&jws).map(|p| {
+                let ints = [
+                    ("appAppleId", p.app_apple_id),
+                    ("receiptCreationDate", p.receipt_creation_date),
+                    ("originalPurchaseDate", p.original_purchase_date),
+                    ("preorderDate", p.preorder_date),
+                    ("versionExternalIdentifier", p.version_external_identifier),
+                ];
+                typed_claims_json(p.claims, &ints)
+            })
         }
         "verifyRaw" => {
             let verifier = jws_verifier(&dir, &fixtures, &config, clock)?;

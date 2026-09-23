@@ -8,7 +8,9 @@ import io.github.emindeniz99.applepurchasereceiptverifier.internal.SafeText;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.security.GeneralSecurityException;
+import java.security.InvalidAlgorithmParameterException;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertPathBuilder;
 import java.security.cert.CertPathBuilderException;
 import java.security.cert.CertPathBuilderResult;
@@ -410,8 +412,12 @@ public final class ReceiptVerifier {
                     Reason.INVALID_CHAIN,
                     "signer chain does not validate to a pinned Apple root: " + e.getMessage(),
                     e);
+        } catch (NoSuchAlgorithmException | InvalidAlgorithmParameterException e) {
+            // A missing PKIX or Collection implementation, or parameters built
+            // from the pinned anchors: the runtime's failure, never the receipt's.
+            throw new VerificationException(Reason.INTERNAL_ERROR, "chain validation is not available", e);
         } catch (GeneralSecurityException e) {
-            throw new VerificationException(Reason.INVALID_CHAIN, "chain validation unavailable", e);
+            throw new VerificationException(Reason.INVALID_CHAIN, "embedded certificate could not be used", e);
         }
     }
 
@@ -602,7 +608,7 @@ public final class ReceiptVerifier {
                         Reason.DEVICE_HASH_MISMATCH, "computed device hash does not match attribute 5");
             }
         } catch (GeneralSecurityException e) {
-            throw new VerificationException(Reason.DEVICE_HASH_MISMATCH, "SHA-1 unavailable", e);
+            throw new VerificationException(Reason.INTERNAL_ERROR, "SHA-1 is not available", e);
         }
     }
 }

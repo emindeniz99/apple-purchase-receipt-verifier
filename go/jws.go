@@ -145,7 +145,10 @@ func (v *JWSVerifier) VerifyTransaction(jws string) (payload *TransactionPayload
 	if err != nil {
 		return nil, err
 	}
-	result := newTransactionPayload(claims)
+	result, err := newTransactionPayload(claims)
+	if err != nil {
+		return nil, err
+	}
 	if err := v.requireBundleID(result.BundleID); err != nil {
 		return nil, err
 	}
@@ -165,7 +168,10 @@ func (v *JWSVerifier) VerifyAppTransaction(jws string) (payload *AppTransactionP
 	if err != nil {
 		return nil, err
 	}
-	result := newAppTransactionPayload(claims)
+	result, err := newAppTransactionPayload(claims)
+	if err != nil {
+		return nil, err
+	}
 	if err := v.requireBundleID(result.BundleID); err != nil {
 		return nil, err
 	}

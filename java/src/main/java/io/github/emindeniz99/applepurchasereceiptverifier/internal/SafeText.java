@@ -48,9 +48,4 @@ public final class SafeText {
         }
         return out.toString();
     }
-
-    /** {@link #quote(String)} for a single character, so one control byte cannot forge a log line. */
-    public static String quote(char value) {
-        return quote(String.valueOf(value));
-    }
 }

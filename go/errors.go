@@ -32,10 +32,12 @@ const (
 	ReasonDeviceHashMismatch        = apperr.ReasonDeviceHashMismatch
 	ReasonStalePayload              = apperr.ReasonStalePayload
 	// ReasonInternalError is not the client's fault. A verifier returns it
-	// when a trusted signer signed receipt content this library cannot
-	// read, found only after the chain and the signature passed (Unwrap
-	// gives the parser's error); a VerifyReceiptEndpoint also reports it
-	// for an unexpected error or panic inside it. Status 21009. Alert and
+	// when a trusted signer signed receipt content or a modelled JWS claim
+	// this library cannot read, found only after the chain and the
+	// signature passed (for a receipt, Unwrap gives the parser's error), or
+	// when the runtime cannot compute the device hash; a
+	// VerifyReceiptEndpoint also reports it for an unexpected error or
+	// panic inside it. Status 21009. Alert and
 	// retry or escalate; do not deny the user on it.
 	ReasonInternalError = apperr.ReasonInternalError
 )

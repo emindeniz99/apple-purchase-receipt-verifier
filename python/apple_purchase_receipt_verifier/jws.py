@@ -98,6 +98,51 @@ def _json_segment(segment: str, what: str) -> "dict[str, Any]":
     return parsed
 
 
+#: The claims verify_transaction and verify_app_transaction read as typed,
+#: by name: "s" a JSON string, "i" a whole JSON number. The Java port's
+#: TransactionPayload and AppTransactionPayload, so every port refuses the
+#: same payloads. A claim not listed is returned as signed, whatever its type.
+_TRANSACTION_CLAIMS = {
+    "appAccountToken": "s", "bundleId": "s", "currency": "s", "environment": "s",
+    "expiresDate": "i", "inAppOwnershipType": "s", "offerIdentifier": "s", "offerType": "i",
+    "originalPurchaseDate": "i", "originalTransactionId": "s", "price": "i", "productId": "s",
+    "purchaseDate": "i", "quantity": "i", "revocationDate": "i", "revocationReason": "i",
+    "signedDate": "i", "storefront": "s", "subscriptionGroupIdentifier": "s",
+    "transactionId": "s", "transactionReason": "s", "type": "s", "webOrderLineItemId": "s",
+}  # fmt: skip
+_APP_TRANSACTION_CLAIMS = {
+    "appAppleId": "i", "appTransactionId": "s", "applicationVersion": "s", "bundleId": "s",
+    "deviceVerification": "s", "deviceVerificationNonce": "s",
+    "originalApplicationVersion": "s", "originalPurchaseDate": "i", "preorderDate": "i",
+    "receiptCreationDate": "i", "receiptType": "s", "versionExternalIdentifier": "i",
+}  # fmt: skip
+
+
+def _read_typed_claims(payload: dict[str, Any], claims: dict[str, str]) -> dict[str, Any]:
+    """Checks each modelled claim against its type, after the chain and the
+    signature pass. A trusted signer wrote the payload, so a claim of the
+    wrong type is a format this library does not know, INTERNAL_ERROR, and
+    never read as absent. JSON null is absent. A whole number spelled with a
+    fraction (1.0) is returned as that integer; bool is a subclass of int in
+    Python and is refused explicitly."""
+    for name, kind in claims.items():
+        value = payload.get(name)
+        if value is None:
+            continue
+        if kind == "s":
+            if not isinstance(value, str):
+                raise VerificationError(
+                    Reason.INTERNAL_ERROR, f"signed payload claim {name} is not a string"
+                )
+        elif isinstance(value, float) and value.is_integer():
+            payload[name] = int(value)
+        elif isinstance(value, bool) or not isinstance(value, int):
+            raise VerificationError(
+                Reason.INTERNAL_ERROR, f"signed payload claim {name} is not an integer"
+            )
+    return payload
+
+
 def _has_extension(cert: x509.Certificate, oid: x509.ObjectIdentifier) -> bool:
     # `cert.extensions` parses the whole extension block lazily, so ONE
     # malformed extension anywhere in an x5c certificate makes every lookup
@@ -195,7 +240,7 @@ class JwsVerifier:
 
     def verify_transaction(self, jws: str) -> dict[str, Any]:
         """Verifies a signed transaction and checks bundle id + environment."""
-        payload = self._verify_signature(jws)
+        payload = _read_typed_claims(self._verify_signature(jws), _TRANSACTION_CLAIMS)
         self._require_bundle_id(payload.get("bundleId"))
         self._require_accepted_environment(payload.get("environment"))
         return payload
@@ -203,7 +248,7 @@ class JwsVerifier:
     def verify_app_transaction(self, jws: str) -> dict[str, Any]:
         """Verifies a signed AppTransaction and checks bundle id, environment
         (``receiptType``), and — in Production — the app Apple id."""
-        payload = self._verify_signature(jws)
+        payload = _read_typed_claims(self._verify_signature(jws), _APP_TRANSACTION_CLAIMS)
         self._require_bundle_id(payload.get("bundleId"))
         environment = self._require_accepted_environment(payload.get("receiptType"))
         if environment == "Production" and (

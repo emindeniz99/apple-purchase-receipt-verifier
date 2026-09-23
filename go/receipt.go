@@ -394,12 +394,29 @@ func verifyDeviceHash(fields *AppReceipt, deviceGUID []byte) error {
 		return newError(ReasonDeviceHashMismatch,
 			"receipt lacks the attributes the device-hash check needs")
 	}
-	h := sha1.New()
-	h.Write(deviceGUID)
-	h.Write(fields.OpaqueValue)
-	h.Write(fields.BundleIDBytes)
-	if subtle.ConstantTimeCompare(h.Sum(nil), fields.SHA1Hash) != 1 {
+	computed, err := deviceHash(deviceGUID, fields.OpaqueValue, fields.BundleIDBytes)
+	if err != nil {
+		return err
+	}
+	if subtle.ConstantTimeCompare(computed, fields.SHA1Hash) != 1 {
 		return newError(ReasonDeviceHashMismatch, "computed device hash does not match attribute 5")
 	}
 	return nil
+}
+
+// deviceHash is SHA1(guid ‖ opaqueValue ‖ bundleIdBytes). Under
+// GODEBUG=fips140=only crypto/sha1 panics; the device hash is SHA-1 whatever
+// the receipt says, so that is this runtime failing, not the input, and it
+// is ReasonInternalError rather than the containPanic verdict.
+func deviceHash(parts ...[]byte) (sum []byte, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = newError(ReasonInternalError, "SHA-1 is unavailable for the device hash: %v", r)
+		}
+	}()
+	h := sha1.New()
+	for _, part := range parts {
+		h.Write(part)
+	}
+	return h.Sum(nil), nil
 }

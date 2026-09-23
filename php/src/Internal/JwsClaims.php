@@ -114,11 +114,11 @@ final class JwsClaims
      *
      * A float is therefore honoured when it is finite and inside the 64-bit
      * range, truncating toward zero — the same envelope and the same rounding
-     * as Java's `canConvertToLong()` / `asLong()`. Outside it the claim stays
-     * absent, so a number too large to be an `int` still cannot become a date.
-     * The two SIGNING-TIME claims are the exception and do not come through
-     * here: see {@see signedAtMillis()}, where "stated but unrepresentable"
-     * has to be told apart from "not stated".
+     * as Java's `canConvertToLong()` / `asLong()`. Outside it the answer is
+     * null, so a number too large to be an `int` still cannot become a date.
+     * Each caller decides what null means: {@see signedAtMillis()} has to tell
+     * "stated but unrepresentable" apart from "not stated", and the typed
+     * read in {@see int()} refuses the payload, fractions included.
      */
     private static function integral(mixed $value): ?int
     {
@@ -168,21 +168,55 @@ final class JwsClaims
         return null;
     }
 
-    /** @param array<string, mixed> $claims */
+    /**
+     * A modelled string claim: absent or JSON null reads as null, a string as
+     * itself, and any other type refuses the payload.
+     *
+     * @param array<string, mixed> $claims
+     *
+     * @throws VerificationException
+     */
     private static function str(array $claims, string $key): ?string
     {
         $value = $claims[$key] ?? null;
+        if ($value === null || is_string($value)) {
+            return $value;
+        }
 
-        return is_string($value) ? $value : null;
+        throw new VerificationException(Reason::InternalError, "signed payload claim {$key} is not a string");
     }
 
-    /** @param array<string, mixed> $claims */
+    /**
+     * A modelled integer claim: absent or JSON null reads as null, a whole
+     * JSON number inside the 64-bit range as an `int` (`1.0` is 1), and
+     * anything else (a string, a boolean, `1.5`, a number past `PHP_INT_MAX`)
+     * refuses the payload. The chain and signature have passed by now, so
+     * such a payload came from Apple and the model is what is wrong: that is
+     * INTERNAL_ERROR, not a verdict about the input.
+     *
+     * @param array<string, mixed> $claims
+     *
+     * @throws VerificationException
+     */
     private static function int(array $claims, string $key): ?int
     {
-        return self::integral($claims[$key] ?? null);
+        $value = $claims[$key] ?? null;
+        if ($value === null || is_int($value)) {
+            return $value;
+        }
+        $integral = is_float($value) && $value === floor($value) ? self::integral($value) : null;
+        if ($integral === null) {
+            throw new VerificationException(Reason::InternalError, "signed payload claim {$key} is not an integer");
+        }
+
+        return $integral;
     }
 
-    /** @param array<string, mixed> $claims */
+    /**
+     * @param array<string, mixed> $claims
+     *
+     * @throws VerificationException
+     */
     public static function toTransaction(array $claims): TransactionPayload
     {
         return new TransactionPayload(
@@ -213,7 +247,11 @@ final class JwsClaims
         );
     }
 
-    /** @param array<string, mixed> $claims */
+    /**
+     * @param array<string, mixed> $claims
+     *
+     * @throws VerificationException
+     */
     public static function toAppTransaction(array $claims): AppTransactionPayload
     {
         return new AppTransactionPayload(

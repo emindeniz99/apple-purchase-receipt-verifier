@@ -290,7 +290,7 @@ a metrics label read the same in every language.
 | `Reason::InvalidReceiptFormat` | `INVALID_RECEIPT_FORMAT` | the receipt is not a parseable CMS SignedData |
 | `Reason::DeviceHashMismatch` | `DEVICE_HASH_MISMATCH` | the device binding does not hold |
 | `Reason::StalePayload` | `STALE_PAYLOAD` | signed longer ago than `maxSignedAgeSeconds` |
-| `Reason::InternalError` | `INTERNAL_ERROR` | the receipt's chain and signature verified, but its attribute set does not parse (`getPrevious()` is the parser's error). Not the client's fault: alert and retry or escalate, do not deny |
+| `Reason::InternalError` | `INTERNAL_ERROR` | the receipt's chain and signature verified, but its attribute set does not parse (`getPrevious()` is the parser's error); or a verified JWS carries a modelled claim of the wrong JSON type (`verifyTransaction` / `verifyAppTransaction` only). Not the client's fault: alert and retry or escalate, do not deny |
 
 **Order of the receipt checks.** CMS parse → the creation date alone
 (attribute 12; nothing else in the payload is decoded yet) → chain at that

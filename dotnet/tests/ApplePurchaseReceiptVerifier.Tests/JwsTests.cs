@@ -175,6 +175,40 @@ public class JwsTests
                 () => verifier.VerifyTransaction(Fixtures.Text("transaction"))).Reason);
     }
 
+    // --- the typed read -----------------------------------------------------
+
+    /// <summary>
+    /// A modelled claim the typed payload cannot hold is INTERNAL_ERROR, not a
+    /// silently absent property: a <c>null</c> <see cref="TransactionPayload.RevocationDate"/>
+    /// would make <see cref="TransactionPayload.IsActiveAt"/> grant a revoked
+    /// purchase. The shared vectors cover the type mismatches; these are the
+    /// fixed-width and boolean edges they do not.
+    /// </summary>
+    [Theory]
+    [InlineData("{\"quantity\":2147483648}")]
+    [InlineData("{\"offerType\":-2147483649}")]
+    [InlineData("{\"revocationDate\":9223372036854775808}")]
+    [InlineData("{\"revocationDate\":1000.5}")]
+    [InlineData("{\"revocationDate\":true}")]
+    [InlineData("{\"productId\":false}")]
+    public void AModelledClaimOfTheWrongTypeIsAnInternalError(string json)
+    {
+        Assert.Equal(
+            VerificationReason.InternalError,
+            Assert.Throws<VerificationException>(() => Payload(json)).Reason);
+    }
+
+    [Fact]
+    public void AWholeNumberDoubleAndANullAreAccepted()
+    {
+        TransactionPayload payload = Payload(
+            "{\"quantity\":2147483647.0,\"revocationDate\":1e3,\"productId\":null,\"unmodelled\":true}");
+        Assert.Equal(int.MaxValue, payload.Quantity);
+        Assert.Equal(1000L, payload.RevocationDate);
+        Assert.Null(payload.ProductId);
+        Assert.Equal(true, payload.ClaimsMap["unmodelled"]);
+    }
+
     // --- the entitlement helper ---------------------------------------------
 
     [Fact]

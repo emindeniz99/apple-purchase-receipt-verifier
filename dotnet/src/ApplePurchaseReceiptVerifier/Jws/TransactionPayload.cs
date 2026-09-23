@@ -13,7 +13,9 @@ namespace ApplePurchaseReceiptVerifier.Jws
     /// Dates are milliseconds since the epoch, exactly as Apple ships them.
     /// They are deliberately not <see cref="DateTimeOffset"/>: converting loses
     /// the raw claim and invites a timezone bug, and every port pins the raw
-    /// integer. <see langword="null"/> means the claim was absent. Claims this
+    /// integer. <see langword="null"/> means the claim was absent or JSON
+    /// null; a modelled claim of the wrong JSON type fails verification with
+    /// <see cref="VerificationReason.InternalError"/>. Claims this
     /// class does not model stay reachable through <see cref="ClaimsMap"/>.
     /// </remarks>
     public sealed class TransactionPayload
@@ -21,29 +23,29 @@ namespace ApplePurchaseReceiptVerifier.Jws
         internal TransactionPayload(IReadOnlyDictionary<string, object?> claims)
         {
             ClaimsMap = claims;
-            AppAccountToken = Internal.Claims.String(claims, "appAccountToken");
-            BundleId = Internal.Claims.String(claims, "bundleId");
-            Currency = Internal.Claims.String(claims, "currency");
-            Environment = Internal.Claims.String(claims, "environment");
+            AppAccountToken = Internal.Claims.TypedString(claims, "appAccountToken");
+            BundleId = Internal.Claims.TypedString(claims, "bundleId");
+            Currency = Internal.Claims.TypedString(claims, "currency");
+            Environment = Internal.Claims.TypedString(claims, "environment");
             ExpiresDate = Internal.Claims.Int64(claims, "expiresDate");
-            InAppOwnershipType = Internal.Claims.String(claims, "inAppOwnershipType");
-            OfferIdentifier = Internal.Claims.String(claims, "offerIdentifier");
+            InAppOwnershipType = Internal.Claims.TypedString(claims, "inAppOwnershipType");
+            OfferIdentifier = Internal.Claims.TypedString(claims, "offerIdentifier");
             OfferType = Internal.Claims.Int32(claims, "offerType");
             OriginalPurchaseDate = Internal.Claims.Int64(claims, "originalPurchaseDate");
-            OriginalTransactionId = Internal.Claims.String(claims, "originalTransactionId");
+            OriginalTransactionId = Internal.Claims.TypedString(claims, "originalTransactionId");
             Price = Internal.Claims.Int64(claims, "price");
-            ProductId = Internal.Claims.String(claims, "productId");
+            ProductId = Internal.Claims.TypedString(claims, "productId");
             PurchaseDate = Internal.Claims.Int64(claims, "purchaseDate");
             Quantity = Internal.Claims.Int32(claims, "quantity");
             RevocationDate = Internal.Claims.Int64(claims, "revocationDate");
             RevocationReason = Internal.Claims.Int32(claims, "revocationReason");
             SignedDate = Internal.Claims.Int64(claims, "signedDate");
-            Storefront = Internal.Claims.String(claims, "storefront");
-            SubscriptionGroupIdentifier = Internal.Claims.String(claims, "subscriptionGroupIdentifier");
-            TransactionId = Internal.Claims.String(claims, "transactionId");
-            TransactionReason = Internal.Claims.String(claims, "transactionReason");
-            Type = Internal.Claims.String(claims, "type");
-            WebOrderLineItemId = Internal.Claims.String(claims, "webOrderLineItemId");
+            Storefront = Internal.Claims.TypedString(claims, "storefront");
+            SubscriptionGroupIdentifier = Internal.Claims.TypedString(claims, "subscriptionGroupIdentifier");
+            TransactionId = Internal.Claims.TypedString(claims, "transactionId");
+            TransactionReason = Internal.Claims.TypedString(claims, "transactionReason");
+            Type = Internal.Claims.TypedString(claims, "type");
+            WebOrderLineItemId = Internal.Claims.TypedString(claims, "webOrderLineItemId");
         }
 
         /// <summary>Every claim in the verified payload, including unmodelled ones.</summary>

@@ -710,7 +710,39 @@ fn is_active_at_reads_float_spelled_dates() {
 /// `from_claims`, so the date-reading helper under test is the same one.
 fn payload_from(json: &str) -> apple_purchase_receipt_verifier::TransactionPayload {
     let claims: serde_json::Map<String, Value> = serde_json::from_str(json).unwrap();
-    apple_purchase_receipt_verifier::TransactionPayload::from_claims(claims)
+    apple_purchase_receipt_verifier::TransactionPayload::from_claims(claims).unwrap()
+}
+
+/// The typed read shapes no shared vector covers. A boolean is not a number
+/// even where a language treats it as one, and `quantity` held in an `i64`
+/// must refuse a whole number it cannot hold rather than clamp or drop it:
+/// either would hand the caller a value Apple never signed.
+#[test]
+fn typed_read_refuses_what_the_model_cannot_hold() {
+    use apple_purchase_receipt_verifier::TransactionPayload;
+    for spelling in [
+        "true",
+        "9223372036854775808",
+        "1e19",
+        "-1e19",
+        "0.5",
+        "\"1\"",
+    ] {
+        let claims = serde_json::from_str(&format!("{{\"quantity\":{spelling}}}")).unwrap();
+        let error = TransactionPayload::from_claims(claims).unwrap_err();
+        assert_eq!(
+            error.reason(),
+            Reason::InternalError,
+            "quantity {spelling} must be refused"
+        );
+    }
+    for spelling in ["9223372036854775807", "-9223372036854775808", "2.0", "1e3"] {
+        let claims = serde_json::from_str(&format!("{{\"quantity\":{spelling}}}")).unwrap();
+        assert!(
+            TransactionPayload::from_claims(claims).is_ok(),
+            "quantity {spelling} is a whole i64 and must be read"
+        );
+    }
 }
 
 /// `x5c[2]` has to BE a certificate, in every spelling of "is not one".

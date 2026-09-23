@@ -133,6 +133,10 @@ namespace ApplePurchaseReceiptVerifier.Jws
             return Contained(() =>
             {
                 IReadOnlyDictionary<string, object?> claims = VerifySignature(jws);
+
+                // The typed read, after the signature and before any claim
+                // check: a claim the model cannot hold is INTERNAL_ERROR, and
+                // Contained lets that reason through unchanged.
                 TransactionPayload payload = new TransactionPayload(claims);
                 RequireBundleId(payload.BundleId);
                 RequireAcceptedEnvironment(payload.Environment);

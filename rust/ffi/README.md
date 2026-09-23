@@ -173,8 +173,8 @@ the point.
 * **`1`–`12`** is a verdict about the input: the canonical `Reason`
   vocabulary every port of this library shares, in the order that vocabulary
   declares it. These numbers never change and are never reused. `12` is
-  `APRV_REASON_INTERNAL_ERROR`: the receipt's chain and signature verified
-  but its signed content cannot be read, which is not the caller's fault, so
+  `APRV_REASON_INTERNAL_ERROR`: the chain and signature verified but the
+  signed receipt or JWS content cannot be read, which is not the caller's fault, so
   alert and retry or escalate rather than deny. Adding a thirteenth is a
   deliberate change to `fixtures/cases.schema.json`, `PLAN.md` and all nine
   ports at once, and it would be `13`.

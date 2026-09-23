@@ -63,4 +63,23 @@ func TestFIPSOnlyModeDoesNotCrashTheCaller(t *testing.T) {
 			t.Fatalf("a SHA-256 receipt must still verify in FIPS-140-only mode: %v", err)
 		}
 	})
+
+	// The device hash is SHA-1 whatever the receipt says, so no input can
+	// get past it here: that is the runtime failing, not the client.
+	t.Run("the device hash is an internal error", func(t *testing.T) {
+		receipt := fixtureBytes(t, "public-receipt-sandbox-g5")
+		fields, err := applereceipt.VerifyReceiptCore(receipt, applereceipt.AppleReceiptRoots())
+		if err != nil {
+			t.Fatal(err)
+		}
+		verifier, err := applereceipt.NewReceiptVerifier(applereceipt.ReceiptVerifierOptions{
+			TrustedRoots: applereceipt.AppleReceiptRoots(),
+			BundleID:     fields.BundleID,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = verifier.VerifyWithDeviceGUID(receipt, make([]byte, 16))
+		requireReason(t, err, applereceipt.ReasonInternalError)
+	})
 }
