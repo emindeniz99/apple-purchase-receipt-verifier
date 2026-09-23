@@ -262,9 +262,12 @@ Still worth filing as issues:
   aarch64) that binaries make and source does not, signing and attestation
   for every artifact, and a second thing to get right at every release.
   Source-only is honest until someone asks.
-- **Java speed beyond the parser work is not taken** (2026-09-23). Three
-  measured options each give up a guarantee java/README.md makes, so none
-  is queued:
+- **Java speed beyond removing waste is not taken** (2026-09-23). Our own
+  readers for DER attribute sets, short strings and integers, and receipt
+  dates took legacy `core` from about 3,560 to 1,500 µs, and were reverted
+  (8d7c870): the owner prefers BouncyCastle and java.time to a second
+  parser we would maintain. Three more options each give up a guarantee
+  java/README.md makes, so none is queued:
   - Checking the chain with a direct signature check instead of PKIX. PKIX
     costs about 90 µs per receipt, and keeping it is what makes
     `jdk.certpath.disabledAlgorithms` and the host's security policy apply;
