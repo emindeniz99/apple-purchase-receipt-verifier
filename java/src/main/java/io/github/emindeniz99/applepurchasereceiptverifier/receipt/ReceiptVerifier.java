@@ -2,6 +2,7 @@ package io.github.emindeniz99.applepurchasereceiptverifier.receipt;
 
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
+import io.github.emindeniz99.applepurchasereceiptverifier.internal.AppleTrust;
 import io.github.emindeniz99.applepurchasereceiptverifier.internal.SafeText;
 import java.io.IOException;
 import java.math.BigInteger;
@@ -16,17 +17,18 @@ import java.security.cert.PKIXBuilderParameters;
 import java.security.cert.TrustAnchor;
 import java.security.cert.X509CertSelector;
 import java.security.cert.X509Certificate;
+import java.security.interfaces.RSAPublicKey;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.bouncycastle.asn1.ASN1Encodable;
+import org.bouncycastle.asn1.ASN1IA5String;
 import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1Primitive;
@@ -34,7 +36,11 @@ import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.ASN1String;
 import org.bouncycastle.asn1.ASN1TaggedObject;
+import org.bouncycastle.asn1.ASN1UTF8String;
 import org.bouncycastle.asn1.cms.ContentInfo;
+import org.bouncycastle.asn1.cms.SignedData;
+import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
+import org.bouncycastle.asn1.oiw.OIWObjectIdentifiers;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
@@ -117,14 +123,6 @@ public final class ReceiptVerifier {
     private static final int IAP_IS_IN_INTRO_OFFER_PERIOD = 1719;
 
     /**
-     * Apple marker OID stamped on the receipt-signing leaf certificate. The
-     * chain check alone is not enough: developer "Apple Distribution" certs
-     * chain through the same WWDR intermediate to the same pinned root, so
-     * without this purpose check any developer could sign a forged receipt.
-     */
-    private static final String RECEIPT_SIGNER_OID = "1.2.840.113635.100.6.11.1";
-
-    /**
      * Ceiling on the certificates a receipt may embed. Genuine receipts carry
      * one to three (fixtures/public-receipts: xcode-with-purchases 1,
      * sandbox-g5 3, sandbox-legacy 3), so ten clears any chain Apple ships and
@@ -184,8 +182,9 @@ public final class ReceiptVerifier {
      * <p>3 MiB, in bytes: Apple's verifyReceipt refuses a request body over
      * 3,145,728 bytes (measured 2026-09-23), so no receipt it would accept is
      * larger. The same fixed constant in every port. The string is measured
-     * in UTF-8 bytes without being encoded; for base64, which is what a
-     * receipt string is, bytes and characters are the same count.
+     * in characters: any character above U+007F is invalid base64, which the
+     * decoder rejects with the same reason, so for every string that could
+     * decode, characters and UTF-8 bytes are the same count.
      */
     public static final int MAX_RECEIPT_BYTES = 3145728;
 
@@ -218,19 +217,8 @@ public final class ReceiptVerifier {
         if (bundleId == null) {
             throw new IllegalArgumentException("bundleId must not be null");
         }
-        this.trustAnchors = anchors(trustedRoots);
+        this.trustAnchors = AppleTrust.anchors(trustedRoots);
         this.bundleId = bundleId;
-    }
-
-    private static Set<TrustAnchor> anchors(Set<X509Certificate> trustedRoots) {
-        if (trustedRoots == null || trustedRoots.isEmpty()) {
-            throw new IllegalArgumentException("trustedRoots must not be empty");
-        }
-        Set<TrustAnchor> anchors = new HashSet<TrustAnchor>();
-        for (X509Certificate root : trustedRoots) {
-            anchors.add(new TrustAnchor(root, null));
-        }
-        return anchors;
     }
 
     /** Verifies a base64-encoded receipt (the usual client transport form). */
@@ -246,10 +234,8 @@ public final class ReceiptVerifier {
             throws VerificationException {
         // Before the decode, which would otherwise allocate a stripped copy of
         // the string and then the bytes it decodes to.
-        if (base64Receipt != null && Utf8Length.exceeds(base64Receipt, MAX_RECEIPT_BYTES)) {
-            throw new VerificationException(
-                    Reason.INVALID_RECEIPT_FORMAT,
-                    "receipt exceeds the maximum accepted size of " + MAX_RECEIPT_BYTES + " bytes");
+        if (base64Receipt != null && base64Receipt.length() > MAX_RECEIPT_BYTES) {
+            throw tooLarge();
         }
         return verify(ReceiptBase64.decode(base64Receipt), deviceGuid);
     }
@@ -301,18 +287,17 @@ public final class ReceiptVerifier {
      */
     public static AppReceipt verifyReceiptCore(byte @Nullable [] receiptDer, Set<X509Certificate> trustedRoots)
             throws VerificationException {
-        return verifyCore(receiptDer, anchors(trustedRoots));
+        return verifyCore(receiptDer, AppleTrust.anchors(trustedRoots));
     }
 
-    private static AppReceipt verifyCore(byte @Nullable [] receiptDer, Set<TrustAnchor> trustAnchors)
+    /** {@link #verifyReceiptCore} over anchors already built, for callers that keep them. */
+    static AppReceipt verifyCore(byte @Nullable [] receiptDer, Set<TrustAnchor> trustAnchors)
             throws VerificationException {
         if (receiptDer == null) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "receipt is null");
         }
         if (receiptDer.length > MAX_RECEIPT_BYTES) {
-            throw new VerificationException(
-                    Reason.INVALID_RECEIPT_FORMAT,
-                    "receipt exceeds the maximum accepted size of " + MAX_RECEIPT_BYTES + " bytes");
+            throw tooLarge();
         }
         // BouncyCastle's ASN.1 and CMS entry points report malformed input with
         // UNCHECKED exceptions, and which ones is neither documented nor stable
@@ -326,6 +311,12 @@ public final class ReceiptVerifier {
         } catch (RuntimeException e) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "malformed receipt: " + e, e);
         }
+    }
+
+    private static VerificationException tooLarge() {
+        return new VerificationException(
+                Reason.INVALID_RECEIPT_FORMAT,
+                "receipt exceeds the maximum accepted size of " + MAX_RECEIPT_BYTES + " bytes");
     }
 
     private static AppReceipt verifyCoreUnguarded(byte[] receiptDer, Set<TrustAnchor> trustAnchors)
@@ -366,24 +357,25 @@ public final class ReceiptVerifier {
         // to real time. node, python and swift read the system clock here too.
         Date at = receipt.creationDate() != null ? Date.from(receipt.creationDate()) : new Date();
 
-        X509Certificate signerCert = validateChain(cms, at, trustAnchors);
-        if (signerCert.getExtensionValue(RECEIPT_SIGNER_OID) == null) {
-            throw new VerificationException(
-                    Reason.INVALID_CERTIFICATE_PURPOSE,
-                    "receipt signer certificate lacks Apple receipt-signing marker OID " + RECEIPT_SIGNER_OID);
-        }
-        verifyCmsSignature(cms, signerCert);
-        return receipt;
-    }
-
-    /** PKIX-builds signer → (intermediates from the CMS) → pinned root at {@code at}. */
-    private static X509Certificate validateChain(CMSSignedData cms, Date at, Set<TrustAnchor> trustAnchors)
-            throws VerificationException {
         Iterator<SignerInformation> signers = cms.getSignerInfos().getSigners().iterator();
         if (!signers.hasNext()) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "no signer info");
         }
         SignerInformation signer = signers.next();
+        X509Certificate signerCert = validateChain(cms, signer, at, trustAnchors);
+        if (signerCert.getExtensionValue(AppleTrust.SIGNING_LEAF_OID) == null) {
+            throw new VerificationException(
+                    Reason.INVALID_CERTIFICATE_PURPOSE,
+                    "receipt signer certificate lacks Apple receipt-signing marker OID " + AppleTrust.SIGNING_LEAF_OID);
+        }
+        verifyCmsSignature(signer, signerCert);
+        return receipt;
+    }
+
+    /** PKIX-builds signer → (intermediates from the CMS) → pinned root at {@code at}. */
+    private static X509Certificate validateChain(
+            CMSSignedData cms, SignerInformation signer, Date at, Set<TrustAnchor> trustAnchors)
+            throws VerificationException {
         // The certificate bag is read from the raw SignedData rather than
         // through cms.getCertificates(), which decodes every entry eagerly
         // and throws on the first one it dislikes — losing WHICH entry it
@@ -404,6 +396,75 @@ public final class ReceiptVerifier {
                             + MAXIMUM_EMBEDDED_CERTIFICATES);
         }
         List<X509CertificateHolder> holders = new ArrayList<X509CertificateHolder>();
+        X509CertificateHolder signerHolder =
+                decodeEmbeddedAndFindSigner(certificateSet, embeddedCount, signer, holders);
+        JcaX509CertificateConverter converter = new JcaX509CertificateConverter();
+        X509Certificate signerCert;
+        try {
+            // The JCA decodes the whole X.509 template, including every
+            // extension VALUE, where BouncyCastle keeps extensions as encoded
+            // bytes, so this is where an extnValue that stops decoding is
+            // found, and it is a defect of the certificate rather than of the
+            // path it sits on.
+            signerCert = converter.getCertificate(signerHolder);
+            signerCert.getPublicKey();
+        } catch (GeneralSecurityException e) {
+            throw new VerificationException(
+                    Reason.INVALID_CERTIFICATE, "receipt signer certificate is not a valid certificate", e);
+        } catch (RuntimeException e) {
+            throw new VerificationException(
+                    Reason.INVALID_CERTIFICATE, "receipt signer certificate is not a valid certificate", e);
+        }
+        try {
+            List<X509Certificate> embedded = new ArrayList<X509Certificate>();
+            for (X509CertificateHolder holder : holders) {
+                // The signer was converted above; converting it again only
+                // re-encodes it and gets the same certificate back.
+                embedded.add(holder == signerHolder ? signerCert : converter.getCertificate(holder));
+            }
+            X509CertSelector target = new X509CertSelector();
+            target.setCertificate(signerCert);
+            PKIXBuilderParameters params = new PKIXBuilderParameters(trustAnchors, target);
+            params.addCertStore(CertStore.getInstance("Collection", new CollectionCertStoreParameters(embedded)));
+            params.setRevocationEnabled(false);
+            params.setDate(at);
+            params.setMaxPathLength(MAX_PATH_LENGTH - 1);
+            CertPathBuilderResult result = CertPathBuilder.getInstance("PKIX").build(params);
+            // getCertPath() excludes the trust anchor, so this is the count the
+            // other ports bound: certificates from the leaf up to the anchor.
+            if (result.getCertPath().getCertificates().size() > MAX_PATH_LENGTH) {
+                throw new VerificationException(Reason.INVALID_CHAIN, "chain exceeds maximum length");
+            }
+            return signerCert;
+        } catch (CertPathBuilderException e) {
+            throw new VerificationException(
+                    Reason.INVALID_CHAIN,
+                    "signer chain does not validate to a pinned Apple root: " + e.getMessage(),
+                    e);
+        } catch (GeneralSecurityException e) {
+            throw new VerificationException(Reason.INVALID_CHAIN, "chain validation unavailable", e);
+        }
+    }
+
+    /**
+     * Decodes every embedded certificate into {@code holders} and returns the
+     * one the SignerInfo names, or throws the verdict for the bag.
+     *
+     * <p>This walk over the raw set, and {@link #namesTheSigner}, exist so
+     * that a signer certificate no decoder accepts is reported as
+     * INVALID_CERTIFICATE rather than INVALID_RECEIPT_FORMAT. fixtures/cases.json
+     * pins that with receipt/reject-signer-certificate-version-11,
+     * reject-signer-carrying-one-extension-twice,
+     * reject-signer-on-an-unimplemented-curve and
+     * reject-signer-with-a-corrupt-extension; do not replace it with
+     * {@code cms.getCertificates()}.</p>
+     */
+    private static X509CertificateHolder decodeEmbeddedAndFindSigner(
+            @Nullable ASN1Set certificateSet,
+            int embeddedCount,
+            SignerInformation signer,
+            List<X509CertificateHolder> holders)
+            throws VerificationException {
         @Nullable Exception unreadable = null;
         boolean unreadableSigner = false;
         for (int i = 0; i < embeddedCount; i++) {
@@ -452,52 +513,7 @@ public final class ReceiptVerifier {
             throw new VerificationException(
                     Reason.INVALID_RECEIPT_FORMAT, "an embedded certificate is not a valid certificate", unreadable);
         }
-        JcaX509CertificateConverter converter = new JcaX509CertificateConverter();
-        X509Certificate signerCert;
-        try {
-            // The JCA decodes the whole X.509 template, including every
-            // extension VALUE, where BouncyCastle keeps extensions as encoded
-            // bytes — so this is where an extnValue that stops decoding is
-            // found, and it is a defect of the certificate rather than of the
-            // path it sits on.
-            signerCert = converter.getCertificate(signerHolder);
-            signerCert.getPublicKey();
-        } catch (GeneralSecurityException e) {
-            throw new VerificationException(
-                    Reason.INVALID_CERTIFICATE, "receipt signer certificate is not a valid certificate", e);
-        } catch (RuntimeException e) {
-            throw new VerificationException(
-                    Reason.INVALID_CERTIFICATE, "receipt signer certificate is not a valid certificate", e);
-        }
-        try {
-            List<X509Certificate> embedded = new ArrayList<X509Certificate>();
-            for (X509CertificateHolder holder : holders) {
-                // The signer was converted above; converting it again only
-                // re-encodes it and gets the same certificate back.
-                embedded.add(holder == signerHolder ? signerCert : converter.getCertificate(holder));
-            }
-            X509CertSelector target = new X509CertSelector();
-            target.setCertificate(signerCert);
-            PKIXBuilderParameters params = new PKIXBuilderParameters(trustAnchors, target);
-            params.addCertStore(CertStore.getInstance("Collection", new CollectionCertStoreParameters(embedded)));
-            params.setRevocationEnabled(false);
-            params.setDate(at);
-            params.setMaxPathLength(MAX_PATH_LENGTH - 1);
-            CertPathBuilderResult result = CertPathBuilder.getInstance("PKIX").build(params);
-            // getCertPath() excludes the trust anchor, so this is the count the
-            // other ports bound: certificates from the leaf up to the anchor.
-            if (result.getCertPath().getCertificates().size() > MAX_PATH_LENGTH) {
-                throw new VerificationException(Reason.INVALID_CHAIN, "chain exceeds maximum length");
-            }
-            return signerCert;
-        } catch (CertPathBuilderException e) {
-            throw new VerificationException(
-                    Reason.INVALID_CHAIN,
-                    "signer chain does not validate to a pinned Apple root: " + e.getMessage(),
-                    e);
-        } catch (GeneralSecurityException e) {
-            throw new VerificationException(Reason.INVALID_CHAIN, "chain validation unavailable", e);
-        }
+        return signerHolder;
     }
 
     /**
@@ -536,32 +552,25 @@ public final class ReceiptVerifier {
 
     /**
      * The raw {@code certificates [0] IMPLICIT SET} of the SignedData, or
-     * null when the receipt carries none. Read as generic ASN.1 so an entry
-     * no certificate decoder accepts is still counted and still locatable.
+     * null when the receipt carries none. BouncyCastle's ASN.1
+     * {@link SignedData} hands the set back undecoded, so an entry no
+     * certificate decoder accepts is still counted and still locatable.
      */
     private static @Nullable ASN1Set embeddedCertificateSet(CMSSignedData cms) {
-        ASN1Encodable content = cms.toASN1Structure().getContent();
-        ASN1Sequence signedData = ASN1Sequence.getInstance(content.toASN1Primitive());
-        for (int i = 0; i < signedData.size(); i++) {
-            ASN1Encodable field = signedData.getObjectAt(i);
-            if (field instanceof ASN1TaggedObject && ((ASN1TaggedObject) field).getTagNo() == 0) {
-                return ASN1Set.getInstance((ASN1TaggedObject) field, false);
-            }
-        }
-        return null;
+        return SignedData.getInstance(cms.toASN1Structure().getContent()).getCertificates();
     }
 
-    private static void verifyCmsSignature(CMSSignedData cms, X509Certificate signerCert) throws VerificationException {
-        if (!(signerCert.getPublicKey() instanceof java.security.interfaces.RSAPublicKey)) {
+    private static void verifyCmsSignature(SignerInformation signer, X509Certificate signerCert)
+            throws VerificationException {
+        if (!(signerCert.getPublicKey() instanceof RSAPublicKey)) {
             throw new VerificationException(Reason.INVALID_SIGNATURE, "receipt signer key is not RSA");
         }
         try {
-            SignerInformation signer =
-                    cms.getSignerInfos().getSigners().iterator().next();
             // Restrict to the digests Apple actually uses for receipts
             // (SHA-1 / SHA-256), matching the other three implementations.
             String digestOid = signer.getDigestAlgOID();
-            if (!"1.3.14.3.2.26".equals(digestOid) && !"2.16.840.1.101.3.4.2.1".equals(digestOid)) {
+            if (!OIWObjectIdentifiers.idSHA1.getId().equals(digestOid)
+                    && !NISTObjectIdentifiers.id_sha256.getId().equals(digestOid)) {
                 throw new VerificationException(
                         Reason.INVALID_RECEIPT_FORMAT,
                         "unsupported receipt digest algorithm " + SafeText.quote(digestOid));
@@ -844,9 +853,6 @@ public final class ReceiptVerifier {
                 return new Attribute((int) type, value);
             } catch (IllegalArgumentException e) {
                 throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "malformed receipt attribute", e);
-            } catch (ArithmeticException e) {
-                throw new VerificationException(
-                        Reason.INVALID_RECEIPT_FORMAT, "receipt attribute type out of range", e);
             }
         }
     }
@@ -859,12 +865,18 @@ public final class ReceiptVerifier {
         return value.longValue();
     }
 
+    /**
+     * A UTF8String or an IA5String, the two string types Apple's receipts
+     * use and the only two every other port accepts. Any other
+     * {@link ASN1String} (a BIT STRING or UniversalString included) is
+     * refused rather than rendered through {@code getString()}.
+     */
     private static String decodeString(byte[] der) throws VerificationException {
         try {
             ASN1Primitive parsed = ASN1Primitive.fromByteArray(der);
-            if (!(parsed instanceof ASN1String)) {
+            if (!(parsed instanceof ASN1UTF8String) && !(parsed instanceof ASN1IA5String)) {
                 throw new VerificationException(
-                        Reason.INVALID_RECEIPT_FORMAT, "attribute value is not an ASN.1 string");
+                        Reason.INVALID_RECEIPT_FORMAT, "attribute value is not a UTF8String or IA5String");
             }
             return ((ASN1String) parsed).getString();
         } catch (IOException e) {
@@ -882,8 +894,6 @@ public final class ReceiptVerifier {
             return Long.valueOf(boundedInt(((ASN1Integer) parsed).getValue()));
         } catch (IOException e) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "attribute value is not valid ASN.1", e);
-        } catch (ArithmeticException e) {
-            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "attribute integer out of range", e);
         }
     }
 

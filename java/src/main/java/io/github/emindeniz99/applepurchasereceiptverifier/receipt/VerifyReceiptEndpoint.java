@@ -1,17 +1,17 @@
 package io.github.emindeniz99.applepurchasereceiptverifier.receipt;
 
-import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.emindeniz99.applepurchasereceiptverifier.Environment;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
+import io.github.emindeniz99.applepurchasereceiptverifier.internal.AppleTrust;
+import io.github.emindeniz99.applepurchasereceiptverifier.internal.BoundedJson;
 import java.io.IOException;
+import java.security.cert.TrustAnchor;
 import java.security.cert.X509Certificate;
 import java.time.Clock;
 import java.time.Instant;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import org.jspecify.annotations.Nullable;
@@ -67,28 +67,13 @@ public final class VerifyReceiptEndpoint {
      */
     public static final int MAX_REQUEST_BYTES = 3145728;
 
-    /**
-     * How deep a JSON structure the request body may nest. Stated rather than
-     * inherited: Jackson 2.15 and later default to 1000, but a host BOM that
-     * pins an older Jackson 2 links cleanly and silently loses the guard. A
-     * verifyReceipt body is a flat object of strings.
-     */
-    private static final int MAX_JSON_NESTING_DEPTH = 64;
-
     // Shared with VerifyReceiptResult, which serializes the response.
-    static final ObjectMapper MAPPER = new ObjectMapper(JsonFactory.builder()
-            .streamReadConstraints(StreamReadConstraints.builder()
-                    .maxNestingDepth(MAX_JSON_NESTING_DEPTH)
-                    // Nothing inside the body can be larger than the body,
-                    // and a body within MAX_REQUEST_BYTES bytes is within it
-                    // in characters too, so both length bounds (counted in
-                    // characters for String input) are MAX_REQUEST_BYTES.
-                    .maxStringLength(MAX_REQUEST_BYTES)
-                    .maxDocumentLength(MAX_REQUEST_BYTES)
-                    .build())
-            .build());
+    // Nothing inside the body can be larger than the body, and a body within
+    // MAX_REQUEST_BYTES bytes is within it in characters too, so both length
+    // bounds (counted in characters for String input) are MAX_REQUEST_BYTES.
+    static final ObjectMapper MAPPER = new ObjectMapper(BoundedJson.factory(MAX_REQUEST_BYTES));
 
-    private final Set<X509Certificate> trustedRoots;
+    private final Set<TrustAnchor> trustAnchors;
     private final Environment environment;
     private final Clock clock;
 
@@ -116,13 +101,11 @@ public final class VerifyReceiptEndpoint {
      *              {@link ReceiptVerifier}.
      */
     public VerifyReceiptEndpoint(Set<X509Certificate> trustedRoots, Environment environment, @Nullable Clock clock) {
-        if (trustedRoots == null || trustedRoots.isEmpty()) {
-            throw new IllegalArgumentException("trustedRoots must not be empty");
-        }
+        Set<TrustAnchor> anchors = AppleTrust.anchors(trustedRoots);
         if (environment != Environment.PRODUCTION && environment != Environment.SANDBOX) {
             throw new IllegalArgumentException("environment must be PRODUCTION or SANDBOX, got " + environment);
         }
-        this.trustedRoots = new HashSet<X509Certificate>(trustedRoots);
+        this.trustAnchors = anchors;
         this.environment = environment;
         this.clock = clock == null ? Clock.systemUTC() : clock;
     }
@@ -282,14 +265,15 @@ public final class VerifyReceiptEndpoint {
             // cap, so the cap is applied to the transport string here: the
             // same string and the same limit ReceiptVerifier.verify(String)
             // would have measured, and the same reason it throws.
-            if (Utf8Length.exceeds(receiptData, ReceiptVerifier.MAX_RECEIPT_BYTES)) {
+            if (receiptData.length() > ReceiptVerifier.MAX_RECEIPT_BYTES) {
                 return VerifyReceiptResult.failed(environment, Reason.INVALID_RECEIPT_FORMAT, at);
             }
             byte[] der = ReceiptBase64.decode(receiptData);
-            // The primitive itself, not a ReceiptVerifier built around a
-            // wildcard bundle id: like Apple's endpoint, no bundle-id
-            // claim is checked here (callers compare receipt.bundle_id).
-            AppReceipt receipt = ReceiptVerifier.verifyReceiptCore(der, trustedRoots);
+            // The primitive under verifyReceiptCore, not a ReceiptVerifier
+            // built around a wildcard bundle id: like Apple's endpoint, no
+            // bundle-id claim is checked here (callers compare
+            // receipt.bundle_id). It takes the anchors built at construction.
+            AppReceipt receipt = ReceiptVerifier.verifyCore(der, trustAnchors);
             return VerifyReceiptResult.verified(environment, receipt, at);
         } catch (VerificationException e) {
             return VerifyReceiptResult.failed(environment, e.reason(), at);

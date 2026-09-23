@@ -2,6 +2,7 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -20,6 +21,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.bouncycastle.util.encoders.Hex;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -71,6 +73,23 @@ class AppleRootCertsTest {
     }
 
     /**
+     * The roots are parsed once, but a caller still owns the set it gets:
+     * emptying one must not reach the next caller, or one careless caller
+     * would strip every later verifier of its anchors.
+     */
+    @Test
+    void eachCallReturnsItsOwnSetOfTheSameCachedCertificates() {
+        Set<X509Certificate> first = AppleRootCerts.jwsRoots();
+        Set<X509Certificate> second = AppleRootCerts.receiptRoots();
+        assertNotSame(first, second);
+        for (X509Certificate root : first) {
+            assertTrue(second.stream().anyMatch(c -> c == root), "certificate was parsed again");
+        }
+        first.clear();
+        assertAllThreeRoots(AppleRootCerts.jwsRoots());
+    }
+
+    /**
      * Where the resources sit is the finding, not a detail. A jar-root
      * {@code /certs/} lookup is first-match across the whole classpath, so any
      * earlier jar, or a shaded uber-jar that merged its own {@code certs/}
@@ -109,8 +128,11 @@ class AppleRootCertsTest {
         Files.copy(fixtures.resolve("receipt-root.der"), certs.resolve("AppleRootCA-G3.cer"));
 
         URL library = AppleRootCerts.class.getProtectionDomain().getCodeSource().getLocation();
+        // The library's own runtime dependency, which the fingerprint check
+        // uses for its hex rendering.
+        URL bouncyCastle = Hex.class.getProtectionDomain().getCodeSource().getLocation();
         URLClassLoader shadowed = new URLClassLoader(
-                new URL[] {tmp.toUri().toURL(), library},
+                new URL[] {tmp.toUri().toURL(), library, bouncyCastle},
                 ClassLoader.getSystemClassLoader().getParent());
         try {
             // The premise: on this loader the planted directory really does

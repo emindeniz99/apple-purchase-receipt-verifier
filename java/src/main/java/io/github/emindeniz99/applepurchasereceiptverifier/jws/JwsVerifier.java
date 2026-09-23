@@ -1,15 +1,13 @@
 package io.github.emindeniz99.applepurchasereceiptverifier.jws;
 
-import com.fasterxml.jackson.annotation.JsonAutoDetect;
-import com.fasterxml.jackson.annotation.PropertyAccessor;
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.emindeniz99.applepurchasereceiptverifier.Environment;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
+import io.github.emindeniz99.applepurchasereceiptverifier.internal.AppleTrust;
+import io.github.emindeniz99.applepurchasereceiptverifier.internal.BoundedJson;
 import io.github.emindeniz99.applepurchasereceiptverifier.internal.SafeText;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -32,7 +30,6 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.Date;
 import java.util.EnumSet;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -61,8 +58,6 @@ import org.jspecify.annotations.Nullable;
  */
 public final class JwsVerifier {
 
-    /** Apple marker OID: leaf certificate used for App Store signing. */
-    static final String LEAF_OID = "1.2.840.113635.100.6.11.1";
     /** Apple marker OID: Worldwide Developer Relations intermediate CA. */
     static final String INTERMEDIATE_OID = "1.2.840.113635.100.6.2.1";
 
@@ -84,18 +79,6 @@ public final class JwsVerifier {
      * its bytes are the same count for any input that could verify.
      */
     public static final int MAX_JWS_BYTES = 262144;
-
-    /**
-     * How deep a JSON structure may nest inside a JWS segment.
-     *
-     * <p>Both segments are parsed <em>before</em> the signature is checked, so
-     * this bound guards attacker-chosen bytes. Jackson 2.15 and later default
-     * to 1000, but that is a default: a host BOM that pins an older Jackson 2
-     * links cleanly and silently loses the guard, so the constraint is stated
-     * here instead of inherited. Apple's payloads are flat objects, so 64 is
-     * far above anything real.
-     */
-    private static final int MAX_JSON_NESTING_DEPTH = 64;
 
     private final Set<TrustAnchor> trustAnchors;
     private final String bundleId;
@@ -156,18 +139,12 @@ public final class JwsVerifier {
             @Nullable Long appAppleId,
             @Nullable Long maxSignedAge,
             @Nullable Clock clock) {
-        if (trustedRoots == null || trustedRoots.isEmpty()) {
-            throw new IllegalArgumentException("trustedRoots must not be empty");
-        }
+        Set<TrustAnchor> anchors = AppleTrust.anchors(trustedRoots);
         if (bundleId == null) {
             throw new IllegalArgumentException("bundleId must not be null");
         }
         if (acceptedEnvironments == null || acceptedEnvironments.isEmpty()) {
             throw new IllegalArgumentException("acceptedEnvironments must not be empty");
-        }
-        Set<TrustAnchor> anchors = new HashSet<TrustAnchor>();
-        for (X509Certificate root : trustedRoots) {
-            anchors.add(new TrustAnchor(root, null));
         }
         this.trustAnchors = anchors;
         this.bundleId = bundleId;
@@ -175,29 +152,10 @@ public final class JwsVerifier {
         this.appAppleId = appAppleId;
         this.maxSignedAgeMillis = maxSignedAge;
         this.clock = clock == null ? Clock.systemUTC() : clock;
-        this.mapper =
-                new ObjectMapper(jsonFactory()).setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY);
-    }
-
-    /**
-     * The reader constraints, stated rather than inherited from whatever
-     * Jackson the host resolved. {@link StreamReadConstraints} needs Jackson
-     * 2.15 and {@code maxDocumentLength} needs 2.16; below that floor this
-     * call fails loudly at construction instead of leaving the library
-     * running with guards it believes it set.
-     */
-    private static JsonFactory jsonFactory() {
-        return JsonFactory.builder()
-                .streamReadConstraints(StreamReadConstraints.builder()
-                        .maxNestingDepth(MAX_JSON_NESTING_DEPTH)
-                        // A segment cannot outgrow the whole JWS, so both
-                        // length bounds are MAX_JWS_BYTES: consistent with the
-                        // entry-point bound rather than a second opinion about
-                        // it.
-                        .maxStringLength(MAX_JWS_BYTES)
-                        .maxDocumentLength(MAX_JWS_BYTES)
-                        .build())
-                .build();
+        // A segment cannot outgrow the whole JWS, so both length bounds are
+        // MAX_JWS_BYTES: consistent with the entry-point bound rather than a
+        // second opinion about it.
+        this.mapper = new ObjectMapper(BoundedJson.factory(MAX_JWS_BYTES));
     }
 
     /**
@@ -277,12 +235,14 @@ public final class JwsVerifier {
         if (!x5c.isArray() || x5c.size() != 3 || !allTextual(x5c)) {
             throw new VerificationException(Reason.INVALID_JWS_FORMAT, "x5c must contain exactly 3 certificates");
         }
+        // x5c[2] is decoded but unused: PKIX validates leaf + intermediate against the pinned anchors.
         List<X509Certificate> chain = decodeChain(x5c);
         X509Certificate leaf = chain.get(0);
         X509Certificate intermediate = chain.get(1);
-        if (leaf.getExtensionValue(LEAF_OID) == null) {
+        if (leaf.getExtensionValue(AppleTrust.SIGNING_LEAF_OID) == null) {
             throw new VerificationException(
-                    Reason.INVALID_CERTIFICATE_PURPOSE, "leaf certificate lacks Apple marker OID " + LEAF_OID);
+                    Reason.INVALID_CERTIFICATE_PURPOSE,
+                    "leaf certificate lacks Apple marker OID " + AppleTrust.SIGNING_LEAF_OID);
         }
         if (intermediate.getExtensionValue(INTERMEDIATE_OID) == null) {
             throw new VerificationException(
@@ -345,17 +305,15 @@ public final class JwsVerifier {
     }
 
     /**
-     * Strict base64url: the JWS alphabet only, no padding, no whitespace, no
-     * standard-base64 {@code +} or {@code /}, and the decoded bytes must
-     * re-encode to the same string (rejects a final character whose unused
-     * bits are non-zero). {@code java.util.Base64}'s URL decoder tolerates
-     * padding and non-canonical trailing bits, so both are checked here
-     * rather than left to it (RFC 7515 §2).
+     * Strict base64url (RFC 7515 §2): the JWS alphabet only, no padding, no
+     * whitespace, and the decoded bytes must re-encode to the same string.
+     * {@code java.util.Base64}'s URL decoder already rejects every character
+     * outside the URL alphabet (whitespace and the standard-base64 {@code +}
+     * and {@code /} included) and a length of 1 mod 4. It tolerates padding
+     * and a final character whose unused bits are non-zero, and the
+     * unpadded re-encode comparison rejects both.
      */
     private static byte[] decodeBase64Url(String value, String what) throws VerificationException {
-        if (!isStrictBase64Url(value)) {
-            throw new VerificationException(Reason.INVALID_JWS_FORMAT, what + " is not valid base64url");
-        }
         try {
             byte[] decoded = Base64.getUrlDecoder().decode(value);
             String reencoded = Base64.getUrlEncoder().withoutPadding().encodeToString(decoded);
@@ -368,27 +326,14 @@ public final class JwsVerifier {
         }
     }
 
-    private static boolean isStrictBase64Url(String value) {
-        if (value.length() % 4 == 1) {
-            return false;
-        }
-        for (int i = 0; i < value.length(); i++) {
-            char c = value.charAt(i);
-            boolean allowed =
-                    (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_';
-            if (!allowed) {
-                return false;
-            }
-        }
-        return true;
-    }
-
     private static List<X509Certificate> decodeChain(JsonNode x5c) throws VerificationException {
         List<X509Certificate> chain = new ArrayList<X509Certificate>(3);
         try {
             CertificateFactory cf = CertificateFactory.getInstance("X.509");
             for (JsonNode certNode : x5c) {
-                byte[] der = Base64.getMimeDecoder().decode(certNode.asText());
+                // RFC 7515 4.1.6: standard base64, no line breaks. The MIME
+                // decoder would silently skip any illegal character instead.
+                byte[] der = Base64.getDecoder().decode(certNode.asText());
                 chain.add((X509Certificate) cf.generateCertificate(new ByteArrayInputStream(der)));
             }
         } catch (IllegalArgumentException e) {

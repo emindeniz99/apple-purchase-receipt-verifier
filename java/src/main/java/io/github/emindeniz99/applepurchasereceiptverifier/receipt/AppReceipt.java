@@ -48,13 +48,13 @@ public final class AppReceipt {
             List<InAppPurchase> inAppPurchases,
             Map<Integer, List<byte[]>> unknownAttributes) {
         this.receiptType = receiptType;
-        this.originalPurchaseDate = originalPurchaseDate;
         this.bundleId = bundleId;
         this.bundleIdBytes = bundleIdBytes;
         this.appVersion = appVersion;
         this.opaqueValue = opaqueValue;
         this.sha1Hash = sha1Hash;
         this.creationDate = creationDate;
+        this.originalPurchaseDate = originalPurchaseDate;
         this.originalAppVersion = originalAppVersion;
         this.expirationDate = expirationDate;
         this.appItemId = appItemId;
@@ -149,8 +149,13 @@ public final class AppReceipt {
      * already clone for that reason.
      */
     public Map<Integer, List<byte[]>> unknownAttributes() {
-        Map<Integer, List<byte[]>> copy = new LinkedHashMap<Integer, List<byte[]>>(unknownAttributes.size());
-        for (Map.Entry<Integer, List<byte[]>> entry : unknownAttributes.entrySet()) {
+        return deepCopy(unknownAttributes);
+    }
+
+    /** An unmodifiable copy of {@code attributes}, down to fresh arrays. Shared with {@link InAppPurchase}. */
+    static Map<Integer, List<byte[]>> deepCopy(Map<Integer, List<byte[]>> attributes) {
+        Map<Integer, List<byte[]>> copy = new LinkedHashMap<Integer, List<byte[]>>(attributes.size());
+        for (Map.Entry<Integer, List<byte[]>> entry : attributes.entrySet()) {
             List<byte[]> values = new ArrayList<byte[]>(entry.getValue().size());
             for (byte[] value : entry.getValue()) {
                 values.add(value.clone());

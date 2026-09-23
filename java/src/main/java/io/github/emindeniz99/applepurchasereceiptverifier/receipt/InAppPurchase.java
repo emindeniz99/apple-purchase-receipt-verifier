@@ -1,9 +1,7 @@
 package io.github.emindeniz99.applepurchasereceiptverifier.receipt;
 
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.jspecify.annotations.Nullable;
@@ -115,14 +113,6 @@ public final class InAppPurchase {
      * contents could otherwise be rewritten by one caller for every other.
      */
     public Map<Integer, List<byte[]>> unknownAttributes() {
-        Map<Integer, List<byte[]>> copy = new LinkedHashMap<Integer, List<byte[]>>(unknownAttributes.size());
-        for (Map.Entry<Integer, List<byte[]>> entry : unknownAttributes.entrySet()) {
-            List<byte[]> values = new ArrayList<byte[]>(entry.getValue().size());
-            for (byte[] value : entry.getValue()) {
-                values.add(value.clone());
-            }
-            copy.put(entry.getKey(), Collections.unmodifiableList(values));
-        }
-        return Collections.unmodifiableMap(copy);
+        return AppReceipt.deepCopy(unknownAttributes);
     }
 }
