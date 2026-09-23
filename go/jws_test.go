@@ -434,6 +434,39 @@ func TestADateClaimOutsideTheInt64RangeIsAChainFailure(t *testing.T) {
 	}
 }
 
+// A modelled claim of the wrong JSON type is INTERNAL_ERROR, not a silent
+// zero value: Apple signed it, so it is not the client's fault, and reading
+// it as absent would drop a quantity or an expiry on the floor. The shared
+// cases pin strings, objects and 1.5; these are the Go-specific edges.
+func TestModelledClaimOfTheWrongTypeIsAnInternalError(t *testing.T) {
+	pki := newJWSPKI(t)
+	verifier := jwsVerifierFor(t, []*x509.Certificate{pki.root.cert}, nil)
+	for name, value := range map[string]any{
+		"a boolean":                 true,
+		"a whole number past int64": json.Number("1e19"),
+		"an array":                  []any{1},
+	} {
+		claims := transactionClaims()
+		claims["quantity"] = value
+		_, err := verifier.VerifyTransaction(pki.sign(t, claims))
+		requireReason(t, err, applereceipt.ReasonInternalError)
+		if !strings.Contains(err.Error(), "quantity") {
+			t.Fatalf("%s: the detail must name the claim: %v", name, err)
+		}
+		// VerifyRaw has no model and stays untyped.
+		if _, err := verifier.VerifyRaw(pki.sign(t, claims)); err != nil {
+			t.Fatalf("%s: VerifyRaw must not type the claims: %v", name, err)
+		}
+	}
+
+	claims := transactionClaims()
+	claims["quantity"] = json.Number("2.0")
+	payload, err := verifier.VerifyTransaction(pki.sign(t, claims))
+	if err != nil || payload.Quantity == nil || *payload.Quantity != 2 {
+		t.Fatalf("2.0 is a whole number and must read as 2: %v %v", payload, err)
+	}
+}
+
 func TestStalenessBoundaries(t *testing.T) {
 	pki := newJWSPKI(t)
 	// Inside the synthesized chain's validity window, so the only thing
