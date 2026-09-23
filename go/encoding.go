@@ -21,6 +21,9 @@ import (
 // There is deliberately no canonical-trailing-bits check: an unpadded
 // tail's unused low bits are simply dropped, same as before.
 //
+// An x5c entry passes isStandardBase64 first, which narrows ACCEPT to the
+// standard alphabet with no whitespace (RFC 7515 §4.1.6).
+//
 // A rejected input decodes to nil, not an error — decodeBase64 still
 // never fails. That is what lets every caller (VerifyBase64, the
 // verifyReceipt endpoint, and the JWS x5c decoder) stay a single
@@ -194,6 +197,24 @@ func decodeBase64Tolerant(text string, limit int) []byte {
 		return nil
 	}
 	return out
+}
+
+// isStandardBase64 reports whether text uses only what RFC 7515 §4.1.6
+// allows in an x5c entry: the standard alphabet of RFC 4648 §4 (not
+// base64url), no whitespace, and at most two '=' at the end. It checks the
+// characters only; decodeBase64 still decides the rest.
+func isStandardBase64(text string) bool {
+	end := len(text)
+	for pad := 0; pad < 2 && end > 0 && text[end-1] == '='; pad++ {
+		end--
+	}
+	for i := 0; i < end; i++ {
+		c := text[i]
+		if c >= 128 || base64Values[c] < 0 || c == '-' || c == '_' {
+			return false
+		}
+	}
+	return true
 }
 
 // decodeBase64URLStrict decodes one compact-JWS segment.

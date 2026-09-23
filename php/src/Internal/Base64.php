@@ -45,8 +45,10 @@ namespace EminDeniz99\ApplePurchaseReceiptVerifier\Internal;
  *
  * ## The three compact-JWS segments no longer go through this leniency
  *
- * `decode()` above still serves `x5c` certificate entries (a PEM/CMS
- * container, not a JWS segment) exactly as measured. The header, payload and
+ * `decode()` above still decodes `x5c` certificate entries, but only after
+ * `JwsVerifier` has refused any entry that is not standard base64 (RFC 7515
+ * §4.1.6: no junk, no whitespace, no base64url `-` or `_`), so its skipping
+ * never reaches an x5c character. The header, payload and
  * signature segments of a compact JWS are decoded by {@see decodeStrict()}
  * instead: RFC 7515 §2 defines them as unpadded canonical base64url, and
  * `fixtures/cases.json` now pins that a byte outside the alphabet, a `=`, or

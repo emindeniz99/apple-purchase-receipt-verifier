@@ -6,7 +6,7 @@
 //! fails an early check must report that check's reason, not a later one.
 //! `PLAN.md` §2.1 and `fixtures/cases.json` pin it.
 
-use crate::base64::{decode_base64url_strict, decode_lenient};
+use crate::base64::{decode_base64url_strict, decode_x5c};
 use crate::chain::validate_pair;
 use crate::clock::{default_clock, unix_millis, Clock};
 use crate::crypto::{curve_field_size, verify_es256};
@@ -667,9 +667,9 @@ fn parse_json_segment(segment: &str, what: &str) -> Result<Claims> {
 /// `transaction/reject-x5c-root-that-is-not-a-certificate` pinned java's
 /// answer for all nine.
 ///
-/// The entry itself is decoded leniently, not strictly: it is a certificate
-/// container, the same input Java hands to its MIME decoder and Swift to
-/// `.ignoreUnknownCharacters`, and it is not part of the signing input.
+/// The entry itself must be standard base64 (RFC 7515 §4.1.6): junk,
+/// whitespace or a base64url character is refused by [`decode_x5c`] rather
+/// than skipped on the way to a genuine certificate.
 fn parse_x5c_certificate(entry: Option<&String>) -> Result<Certificate> {
     let Some(entry) = entry else {
         return Err(VerificationError::new(
@@ -677,7 +677,13 @@ fn parse_x5c_certificate(entry: Option<&String>) -> Result<Certificate> {
             "x5c entry is not a valid certificate",
         ));
     };
-    let certificate = Certificate::from_der(&decode_lenient(entry)).map_err(|_| {
+    let Some(der) = decode_x5c(entry) else {
+        return Err(VerificationError::new(
+            Reason::InvalidCertificate,
+            "x5c entry is not a valid certificate",
+        ));
+    };
+    let certificate = Certificate::from_der(&der).map_err(|_| {
         VerificationError::new(
             Reason::InvalidCertificate,
             "x5c entry is not a valid certificate",

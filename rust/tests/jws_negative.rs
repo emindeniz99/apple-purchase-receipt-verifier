@@ -736,12 +736,12 @@ fn the_third_x5c_entry_must_be_a_certificate() {
     }
 }
 
-/// The asymmetry is deliberate: `x5c` entries are certificate containers,
-/// decoded the way Java's MIME decoder and Swift's `.ignoreUnknownCharacters`
-/// decode them, so line breaks and padding in one are not a rejection. Only
-/// the three JWS segments are strict.
+/// An `x5c` entry is standard base64 (RFC 7515 §4.1.6), which has no line
+/// breaks: a PEM-style wrapped entry is not a certificate, even though
+/// skipping the breaks would recover a genuine one. Java refused it first;
+/// `transaction/reject-x5c-leaf-with-line-breaks` pins it for every port.
 #[test]
-fn x5c_entries_are_still_decoded_leniently() {
+fn x5c_entries_with_line_breaks_are_not_certificates() {
     let jws = common::transaction_jws();
     let mut header = common::jws_header(&jws);
     let x5c = header
@@ -758,11 +758,10 @@ fn x5c_entries_are_still_decoded_leniently() {
             .join("\n");
         x5c[index] = Value::String(wrapped);
     }
-    // Still only INVALID_SIGNATURE — the rewritten header breaks the signing
-    // input — which means both certificates parsed, carried their marker
-    // OIDs and chained to the anchor.
+    // INVALID_CERTIFICATE, not the INVALID_SIGNATURE the rewritten header
+    // would earn: the entries are refused before the signature is checked.
     assert_eq!(
         reason_of(&common::with_header(&jws, &header)),
-        Reason::InvalidSignature
+        Reason::InvalidCertificate
     );
 }

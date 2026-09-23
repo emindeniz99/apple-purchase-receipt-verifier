@@ -4,10 +4,12 @@
 //! decision rather than a convenience.
 //!
 //! [`decode_lenient`] skips everything outside both alphabets. That is what
-//! the *container* formats need — a PEM body carrying line breaks, an `x5c`
-//! entry — and it matches Java's MIME decoder and Swift's
-//! `.ignoreUnknownCharacters`, which is what those ports use for exactly the
-//! same inputs.
+//! a PEM body carrying line breaks needs.
+//!
+//! [`decode_x5c`] is what an `x5c` entry is decoded with: RFC 7515 §4.1.6
+//! makes it standard base64, not base64url, so a character outside that
+//! alphabet (whitespace included) is a hard `None` before
+//! [`decode_lenient`] could skip it.
 //!
 //! [`decode_receipt_base64`] is what `receipt-data` — the base64 string a
 //! client actually sends — is decoded with. It is not lenient in
@@ -73,6 +75,23 @@ pub fn decode_lenient_bytes(text: &[u8]) -> Vec<u8> {
         }
     }
     out
+}
+
+/// Decodes one `x5c` entry, or `None` when it holds anything but the
+/// standard alphabet followed by at most two `=`: no whitespace, no junk,
+/// no base64url `-` or `_`. Only the characters are checked here; what is
+/// left decodes exactly as [`decode_lenient`] decodes it.
+#[must_use]
+pub fn decode_x5c(text: &str) -> Option<Vec<u8>> {
+    let data = text.trim_end_matches('=');
+    if text.len() - data.len() > 2
+        || !data
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'+' || byte == b'/')
+    {
+        return None;
+    }
+    Some(decode_lenient(text))
 }
 
 /// Decodes `receipt-data` — the base64 string a client sends — exactly as

@@ -158,6 +158,25 @@ export function receiptBase64DecodeStrict(text: string): Uint8Array | null {
   return base64Decode(stripped);
 }
 
+// An x5c entry is base64 of a DER certificate (RFC 7515 §4.1.6): the
+// standard alphabet of RFC 4648 §4, not base64url, and no whitespace. The
+// same pattern Python's b64decode(validate=True) applies.
+const X5C_BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
+
+/**
+ * Decodes one x5c entry. Throws on any character outside the standard
+ * alphabet (junk, whitespace, a base64url `-` or `_`, or `=` anywhere but
+ * the end) rather than skipping it as {@link base64Decode} does, so an
+ * entry that is not standard base64 cannot decode to a genuine certificate.
+ * Both builds call it inside the catch that answers INVALID_CERTIFICATE.
+ */
+export function x5cBase64Decode(text: string): Uint8Array {
+  if (!X5C_BASE64_PATTERN.test(text)) {
+    throw new Error('x5c entry is not standard base64');
+  }
+  return base64Decode(text);
+}
+
 /**
  * Strict, canonical base64url decode — RFC 7515 §2's compact-JWS segment
  * alphabet (`A-Za-z0-9-_`), no padding. Rejects a character outside that
