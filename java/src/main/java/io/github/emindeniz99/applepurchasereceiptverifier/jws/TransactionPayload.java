@@ -100,8 +100,8 @@ public final class TransactionPayload {
      * Entitlement helper: {@code true} if this transaction grants access at
      * {@code now} — i.e. not revoked, and (for subscriptions) not expired.
      * This is a point-in-time check on the signed claims only; a later refund
-     * or renewal is invisible to it (see INTENT.md — track status via
-     * transaction id server-side).
+     * or renewal is invisible to it; track status by transaction id
+     * server-side.
      *
      * @param now the instant to judge at; required, because there is no
      *            defensible default. Reading it as "now" would make a

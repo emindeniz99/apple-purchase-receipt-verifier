@@ -24,7 +24,7 @@ import org.jspecify.annotations.Nullable;
  * documents the JWS chain as ending in "an Apple root certificate" (not a
  * specific one) and its guidance is to trust every root on the PKI page, so
  * anchoring on a single root would break silently if Apple re-anchored a
- * path — see PLAN.md D15.
+ * path.
  *
  * <p><strong>The anchors are fingerprint-pinned.</strong> The resources are
  * loaded from this class's own package rather than from the jar root, so a

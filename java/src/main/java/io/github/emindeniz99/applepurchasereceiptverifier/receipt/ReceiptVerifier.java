@@ -58,8 +58,8 @@ import org.jspecify.annotations.Nullable;
 /**
  * Verifies legacy PKCS#7 app receipts (the blob apps used to send to the
  * deprecated {@code verifyReceipt} endpoint) completely offline, against the
- * pinned Apple Inc. Root CA — the server-side port of Apple's "Validating
- * receipts on the device" procedure (PLAN.md §2.2).
+ * pinned Apple roots: a server-side port of Apple's "Validating receipts on
+ * the device" procedure.
  *
  * <p>Thread-safe once constructed.</p>
  *
@@ -86,7 +86,7 @@ public final class ReceiptVerifier {
     // Types 1, 15, 16 and 1713 are on none of those pages either. They were
     // established by decoding a genuine production receipt and lining its
     // attributes up against the answer Apple's verifyReceipt endpoint gives
-    // for the same receipt (measured 2026-09-21):
+    // for the same receipt:
     //
     //   1     app item id                -> adam_id AND app_item_id
     //   15    download id                -> download_id
@@ -124,28 +124,20 @@ public final class ReceiptVerifier {
 
     /**
      * Ceiling on the certificates a receipt may embed. Genuine receipts carry
-     * one to three (fixtures/public-receipts: xcode-with-purchases 1,
-     * sandbox-g5 3, sandbox-legacy 3), so ten clears any chain Apple ships and
-     * still rejects a flood before a single certificate is decoded. With the
-     * bound, what is left of a flood is CMS parsing of the blob, which is
-     * proportional to the input a caller can already cap.
+     * one to three, so ten clears any chain Apple ships and still rejects a
+     * flood before a single certificate is decoded.
      *
-     * <p>The exponential case is a cross-signed mesh — layers of certificates
-     * that each name several equally valid issuers, which an unbounded
-     * backtracking path builder spends 2^layers on. Here it stays flat at
-     * 1.0-1.5 ms from fourteen layers to twenty-two (measured in
-     * ReceiptVerifierTest#rejectsCrossSignedCertificateMeshWithoutWalkingIt),
-     * because the path builder abandons every path at
-     * {@link #MAX_PATH_LENGTH}. Bounding the count does not rely on that
-     * depth bound, and matches the node, python and swift implementations.</p>
+     * <p>A cross-signed mesh (layers of certificates that each name several
+     * valid issuers) costs an unbounded backtracking path builder 2^layers.
+     * {@link #MAX_PATH_LENGTH} already cuts that off; this count bound does
+     * not rely on it.</p>
      */
     private static final int MAXIMUM_EMBEDDED_CERTIFICATES = 10;
 
     /**
-     * The longest path the builder will walk, anchor excluded — the same
-     * number and the same meaning as go, rust, node, python, php, ruby, dotnet
-     * and swift, all of which walk at most this many certificates starting at
-     * the leaf before they must reach a pinned anchor. Genuine receipt chains
+     * The longest path the builder will walk, anchor excluded: at most this
+     * many certificates starting at the leaf before a pinned anchor must be
+     * reached, the same bound in every port. Genuine receipt chains
      * are two certificates below the root, so six leaves room for a longer
      * Apple chain while bounding what a hostile embedded set can cost.
      *
@@ -161,8 +153,7 @@ public final class ReceiptVerifier {
      *   <li>That parameter exempts self-issued intermediates from its count
      *       (RFC 5280 6.1.4), so a path builder honouring it can still return
      *       a path longer than this constant. The built path is therefore
-     *       measured afterwards, which is the check the other ports perform
-     *       inherently by counting every hop they take.</li>
+     *       measured afterwards.</li>
      * </ul>
      */
     private static final int MAX_PATH_LENGTH = 6;
@@ -180,8 +171,8 @@ public final class ReceiptVerifier {
      * {@link VerificationException}.
      *
      * <p>3 MiB, in bytes: Apple's verifyReceipt refuses a request body over
-     * 3,145,728 bytes (measured 2026-09-23), so no receipt it would accept is
-     * larger. The same fixed constant in every port. The string is measured
+     * 3,145,728 bytes, so no receipt it would accept is larger. The same
+     * fixed constant in every port. The string is measured
      * in characters: any character above U+007F is invalid base64, which the
      * decoder rejects with the same reason, so for every string that could
      * decode, characters and UTF-8 bytes are the same count.
@@ -197,17 +188,14 @@ public final class ReceiptVerifier {
     private final String bundleId;
 
     /**
-     * <p>There is deliberately no clock option on this class, and there must
-     * not be one. Receipt verification has no staleness rule, so the only
-     * thing a clock could reach is the "else current time" fallback for the
-     * chain-validity instant of a receipt carrying no creation date (PLAN.md
-     * §2.2 step 2) — a certificate-validity verdict. A caller injecting a
-     * clock (to work around skew, or to pin a test) must not thereby be able
-     * to accept a chain that is expired in real time, so that fallback reads
-     * the system clock and nothing else. node, python and swift agree; the
-     * clock seam lives on {@code JwsVerifier} (max signed age) and on
-     * {@link VerifyReceiptEndpoint} (request_date stamping), where what it
-     * drives genuinely moves with wall-clock time.</p>
+     * Creates a verifier for one app.
+     *
+     * <p>This class takes no clock, on purpose. Receipt verification has no
+     * staleness rule, so a clock could only reach the chain-validity instant
+     * of a receipt carrying no creation date, and an injected clock must
+     * never be able to accept a chain that is expired in real time. The
+     * clock seams live on {@code JwsVerifier} (max signed age) and on
+     * {@link VerifyReceiptEndpoint} ({@code request_date}).</p>
      *
      * @param trustedRoots pinned root CAs (production:
      *                     {@code AppleRootCerts.receiptRoots()})
@@ -249,7 +237,7 @@ public final class ReceiptVerifier {
      * Verifies a receipt and additionally enforces the device-hash binding:
      * {@code SHA1(deviceGuid ‖ opaqueValue ‖ bundleIdBytes)} must equal
      * attribute 5. Optional because it requires the client to send its
-     * device GUID (PLAN.md D4) — the raw bytes of {@code identifierForVendor}
+     * device GUID, which not every client can: the raw bytes of {@code identifierForVendor}
      * on iOS, iPadOS, tvOS and watchOS, including an iOS app running on an
      * Apple silicon Mac, or the primary network interface's MAC address
      * from {@code copy_mac_address} on macOS and Mac Catalyst. Each
@@ -277,8 +265,8 @@ public final class ReceiptVerifier {
      * <p>Public, and static rather than an instance method, so that a caller
      * emulating Apple's endpoint gets the primitive itself instead of having
      * to build a {@link ReceiptVerifier} around a bundle id it does not want
-     * checked. Same name and same shape as node's {@code verifyReceiptCore}
-     * and python's {@code verify_receipt_core}.</p>
+     * checked. The other ports expose the same primitive under the same
+     * name.</p>
      *
      * <p>The receipt it returns has been proved Apple-signed, but NO claim in
      * it has been checked: the bundle id in particular is whatever the receipt
@@ -302,8 +290,8 @@ public final class ReceiptVerifier {
         // BouncyCastle's ASN.1 and CMS entry points report malformed input with
         // UNCHECKED exceptions, and which ones is neither documented nor stable
         // across releases, so hostile input is contained by category instead of
-        // by type — enumerating the types is exactly what let eleven characters
-        // of attacker base64 escape the declared VerificationException contract.
+        // by type: a list of types would miss the next one and let it escape
+        // the declared VerificationException contract.
         try {
             return verifyCoreUnguarded(receiptDer, trustAnchors);
         } catch (VerificationException e) {
@@ -323,8 +311,9 @@ public final class ReceiptVerifier {
             throws VerificationException {
         ASN1Primitive parsed;
         try {
-            // Rejects trailing bytes after the CMS blob (PLAN 2.3) - BC's
-            // fromByteArray throws when parsing does not exhaust the input.
+            // Rejects trailing bytes after the CMS blob, so bytes appended to a
+            // signed receipt cannot ride along: BC's fromByteArray throws when
+            // parsing does not exhaust the input.
             parsed = ASN1Primitive.fromByteArray(receiptDer);
         } catch (IOException e) {
             throw new VerificationException(
@@ -349,12 +338,8 @@ public final class ReceiptVerifier {
         // date (chain validity is anchored at signing time); nothing from it
         // is trusted until after the chain + signature checks pass.
         AppReceipt receipt = parsePayload(payload);
-        // Deliberately the system clock, with no seam to override it: this is
-        // a certificate-validity instant, and an injected clock must never be
-        // able to move a certificate-validity verdict. The fallback only fires
-        // for a receipt carrying no creation date (attribute 12), where
-        // PLAN.md §2.2 step 2's "else current time" leaves the window anchored
-        // to real time. node, python and swift read the system clock here too.
+        // Without a creation date (attribute 12) the chain is judged at the
+        // system clock, never an injected one; see the constructor.
         Date at = receipt.creationDate() != null ? Date.from(receipt.creationDate()) : new Date();
 
         Iterator<SignerInformation> signers = cms.getSignerInfos().getSigners().iterator();
@@ -430,8 +415,8 @@ public final class ReceiptVerifier {
             params.setDate(at);
             params.setMaxPathLength(MAX_PATH_LENGTH - 1);
             CertPathBuilderResult result = CertPathBuilder.getInstance("PKIX").build(params);
-            // getCertPath() excludes the trust anchor, so this is the count the
-            // other ports bound: certificates from the leaf up to the anchor.
+            // getCertPath() excludes the trust anchor, so this counts the
+            // certificates from the leaf up to the anchor.
             if (result.getCertPath().getCertificates().size() > MAX_PATH_LENGTH) {
                 throw new VerificationException(Reason.INVALID_CHAIN, "chain exceeds maximum length");
             }
@@ -567,7 +552,7 @@ public final class ReceiptVerifier {
         }
         try {
             // Restrict to the digests Apple actually uses for receipts
-            // (SHA-1 / SHA-256), matching the other three implementations.
+            // (SHA-1 / SHA-256), the same set in every port.
             String digestOid = signer.getDigestAlgOID();
             if (!OIWObjectIdentifiers.idSHA1.getId().equals(digestOid)
                     && !NISTObjectIdentifiers.id_sha256.getId().equals(digestOid)) {
@@ -692,8 +677,8 @@ public final class ReceiptVerifier {
                     expirationDate = decodeDate(attr.value);
                     break;
                 default:
-                    // Undocumented attribute types stay accessible for
-                    // forward compatibility (PLAN D10).
+                    // Undocumented attribute types stay accessible, so a
+                    // field Apple adds later is not lost.
                     recordUnknown(unknown, attr);
                     break;
             }
@@ -840,12 +825,9 @@ public final class ReceiptVerifier {
                 long type =
                         boundedInt(ASN1Integer.getInstance(seq.getObjectAt(0)).getValue());
                 byte[] value = ASN1OctetString.getInstance(seq.getObjectAt(2)).getOctets();
-                // A type wider than a 32-bit signed integer is not a valid
-                // attribute type, so the receipt is rejected rather than
-                // reinterpreted. Renaming an unrepresentable type (this used to
-                // file it under -1) invents an attribute the receipt never
-                // carried, and is how two ports start disagreeing about what a
-                // receipt says. Fail closed; node, python and swift agree.
+                // A type wider than a 32-bit signed integer is rejected rather
+                // than renamed: renaming invents an attribute the receipt never
+                // carried. All ports fail closed here.
                 if (type > Integer.MAX_VALUE) {
                     throw new VerificationException(
                             Reason.INVALID_RECEIPT_FORMAT, "receipt attribute type out of range: " + type);
@@ -867,7 +849,7 @@ public final class ReceiptVerifier {
 
     /**
      * A UTF8String or an IA5String, the two string types Apple's receipts
-     * use and the only two every other port accepts. Any other
+     * use and the only two any port accepts. Any other
      * {@link ASN1String} (a BIT STRING or UniversalString included) is
      * refused rather than rendered through {@code getString()}.
      */

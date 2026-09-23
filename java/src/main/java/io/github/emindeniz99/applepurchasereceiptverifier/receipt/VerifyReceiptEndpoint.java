@@ -22,8 +22,8 @@ import org.jspecify.annotations.Nullable;
  * but verified offline against the pinned Apple root instead of by calling
  * Apple. Field-by-field fidelity and the unavoidable gaps (fields that only
  * exist in Apple's server-side subscription database, like
- * {@code latest_receipt_info} / {@code pending_renewal_info}) are documented
- * in COMPARISON.md.
+ * {@code latest_receipt_info} / {@code pending_renewal_info}) are not
+ * produced.
  *
  * <p>Like Apple's endpoint, this does NOT check the bundle id — the caller
  * compares {@code receipt.bundle_id}, exactly as with the real endpoint.</p>
@@ -52,10 +52,9 @@ public final class VerifyReceiptEndpoint {
     /**
      * Ceiling on the raw request body {@link #verifyReceiptResult(String)}
      * and {@link #verifyReceiptJson(String)} will parse, in UTF-8 bytes:
-     * 3 MiB, Apple's own limit. Measured on 2026-09-23 against both of
-     * Apple's verifyReceipt endpoints, a body of 3,145,728 bytes is answered
-     * and one of 3,145,729 bytes gets HTTP 413, and the count is bytes, not
-     * characters. A larger body answers status 21002 with
+     * 3 MiB, Apple's own limit: both of Apple's verifyReceipt endpoints
+     * answer a body of 3,145,728 bytes and send HTTP 413 for 3,145,729, and
+     * the count is bytes, not characters. A larger body answers status 21002 with
      * {@link Reason#REQUEST_TOO_LARGE}, decided before any parsing. The body
      * is measured without being encoded, so a Java {@code String} of any
      * size costs no copy to refuse.
