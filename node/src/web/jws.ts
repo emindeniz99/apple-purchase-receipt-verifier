@@ -1,5 +1,5 @@
 import { Environment, Reason, VerificationError } from '../errors.js';
-import { asciiEncode, base64Decode } from '../bytes.js';
+import { asciiEncode, x5cBase64Decode } from '../bytes.js';
 import { requireDecodableExtensions } from '../der.js';
 import { parseCertificate, type ParsedCertificate } from '../x509.js';
 import {
@@ -118,7 +118,7 @@ export class JwsVerifier {
       // never trusted and never compared, so it has to BE a certificate and
       // nothing more.
       const parsed = [0, 1, 2].map((index) => {
-        const raw = base64Decode(x5c[index]!);
+        const raw = x5cBase64Decode(x5c[index]!);
         const certificate = parseCertificate(raw);
         requireDecodableExtensions(raw);
         requireBuildablePublicKey(certificate.publicKeyAlgorithmOid, certificate.spki);

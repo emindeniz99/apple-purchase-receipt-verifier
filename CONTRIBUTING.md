@@ -139,7 +139,7 @@ the sources every expectation was derived from.
 
 Fixtures under `fixtures/generated/` are signed by a fake Apple PKI built in
 `java/src/test/.../TestPki.java`, so no real Apple key material is needed.
-Nine generators write them, all at fixed epoch instants so nothing depends
+Ten generators write them, all at fixed epoch instants so nothing depends
 on generation time:
 
 - `FixtureGeneratorTest` — the original set. Gated behind
@@ -167,9 +167,13 @@ on generation time:
   receipt-signing end entity standing where the intermediate belongs, the
   intermediate absent from the certificate bag, a SignerInfo signature of
   zero bytes, and a CMS signed over zero bytes of encapsulated content.
+- `X5cBase64Fixtures` — the three transactions whose `x5c[0]` is the
+  genuine leaf spelled as something other than standard base64 (RFC 7515
+  §4.1.6): a junk character inside it, the base64url alphabet, and PEM-style
+  line breaks.
 
-The last eight run as a `main`, not a `@Test`, so none of them costs the
-suite a permanently skipped test. All eight regenerate the same way, only
+The last nine run as a `main`, not a `@Test`, so none of them costs the
+suite a permanently skipped test. All nine regenerate the same way, only
 the class name changes:
 
 ```bash

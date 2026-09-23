@@ -256,8 +256,12 @@ class JwsVerifier:
                 Reason.INVALID_JWS_FORMAT, "x5c must contain exactly 3 certificates"
             )
         try:
-            leaf = x509.load_der_x509_certificate(base64.b64decode(x5c[0]))
-            intermediate = x509.load_der_x509_certificate(base64.b64decode(x5c[1]))
+            # validate=True: an x5c entry is standard base64 (RFC 7515
+            # section 4.1.6), so a character outside that alphabet, whitespace
+            # and base64url's '-' and '_' included, is binascii.Error rather
+            # than skipped on the way to a genuine certificate.
+            leaf = x509.load_der_x509_certificate(base64.b64decode(x5c[0], validate=True))
+            intermediate = x509.load_der_x509_certificate(base64.b64decode(x5c[1], validate=True))
             # The third entry is loaded and then dropped. It is the
             # JWS-supplied root: never compared to an anchor and never
             # trusted, so swapping in a stranger's root still changes
@@ -265,7 +269,7 @@ class JwsVerifier:
             # INVALID_CERTIFICATE at every index, which java alone answered
             # until transaction/reject-x5c-root-that-is-not-a-certificate
             # pinned it for all nine ports.
-            supplied_root = x509.load_der_x509_certificate(base64.b64decode(x5c[2]))
+            supplied_root = x509.load_der_x509_certificate(base64.b64decode(x5c[2], validate=True))
             # cryptography decodes the SubjectPublicKeyInfo lazily, so a curve
             # it does not implement only surfaces later — as UnsupportedAlgorithm
             # out of the issuer check, where the chain gets blamed for a defect

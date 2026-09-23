@@ -492,16 +492,14 @@ The JWS side is closed instead of merely documented. The three segments are
 decoded as unpadded canonical base64url (RFC 7515 §2), so one signed payload
 has exactly one accepted spelling; a segment that is not that exact spelling
 is `INVALID_JWS_FORMAT`, decided before any cryptography runs, the same class
-as a header that is not base64url JSON. An `x5c` entry is a certificate
-container, not a segment, and stays leniently decoded — every character
-outside both alphabets silently skipped, the same input Java hands to its
-MIME decoder — so a padded or wrapped `x5c` entry keeps its own reason
-codes.
+as a header that is not base64url JSON. An `x5c` entry is a certificate,
+not a segment, and RFC 7515 §4.1.6 makes it standard base64: a character
+outside that alphabet, a line break or a base64url `-` or `_` is
+`INVALID_CERTIFICATE`, refused rather than skipped, as in every port.
 
-`receipt-data` sits between those two: not blanket-lenient like `x5c` (an
-unrecognised character is a hard `INVALID_RECEIPT_FORMAT`, not something
-skipped), and not closed to one spelling like a JWS segment either — see the
-`verify_base64` rule above.
+`receipt-data` is looser than either: an unrecognised character is a hard
+`INVALID_RECEIPT_FORMAT`, but both alphabets and line breaks are accepted,
+since Apple's own client can send them; see the `verify_base64` rule above.
 
 The receipt path draws one line worth stating: an embedded certificate that
 will not decode is fatal, but the reason depends on which one it is. A

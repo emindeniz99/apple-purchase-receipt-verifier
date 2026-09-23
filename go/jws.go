@@ -314,6 +314,12 @@ func parseJSONSegment(segment, what string) (Claims, error) {
 }
 
 func parseX5CCertificate(text, what string) (*x509.Certificate, error) {
+	// decodeBase64 is the receipt-data decoder: it takes base64url and
+	// whitespace too, and an x5c entry may carry neither.
+	if !isStandardBase64(text) {
+		return nil, newError(ReasonInvalidCertificate,
+			"x5c %s entry is not a valid certificate", what)
+	}
 	// The whole compact JWS is already under MaxJWSBytes, so that is the
 	// only ceiling an x5c entry can need.
 	cert, err := x509.ParseCertificate(decodeBase64(text, MaxJWSBytes))

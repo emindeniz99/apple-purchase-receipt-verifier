@@ -244,6 +244,12 @@ module ApplePurchaseReceiptVerifier
     # index (transaction/reject-x5c-root-that-is-not-a-certificate).
     def certificates(x5c)
       x5c.map do |entry|
+        # "m" skips what it does not know. An x5c entry is standard base64
+        # (RFC 7515 4.1.6): no junk, no whitespace, no base64url "-" or "_".
+        unless entry.match?(%r{\A[A-Za-z0-9+/]*={0,2}\z})
+          raise VerificationError.new(Reason::INVALID_CERTIFICATE, "x5c entry is not base64")
+        end
+
         begin
           der = entry.unpack1("m") #: String?
         rescue ArgumentError

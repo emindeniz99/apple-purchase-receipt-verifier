@@ -17,6 +17,7 @@ import {
   splitJws,
 } from './jws-claims.js';
 import { MAX_JWS_BYTES } from './limits.js';
+import { x5cBase64Decode } from './bytes.js';
 
 export { isTransactionActiveAt } from './jws-claims.js';
 export type { AppTransactionPayload, Claims, Clock, TransactionPayload } from './jws-claims.js';
@@ -100,15 +101,15 @@ export class JwsVerifier {
     let leaf: X509Certificate;
     let intermediate: X509Certificate;
     try {
-      leaf = new X509Certificate(Buffer.from(x5c[0]!, 'base64'));
-      intermediate = new X509Certificate(Buffer.from(x5c[1]!, 'base64'));
+      leaf = new X509Certificate(x5cBase64Decode(x5c[0]!));
+      intermediate = new X509Certificate(x5cBase64Decode(x5c[1]!));
       // The third entry is parsed and then dropped. It is the JWS-supplied
       // root: it is never compared to an anchor and never trusted, so
       // swapping in a stranger's root still changes nothing — but an entry
       // that is not a certificate is INVALID_CERTIFICATE at every index
       // (transaction/reject-x5c-root-that-is-not-a-certificate), and java
       // already answered that way when nobody else did.
-      const suppliedRoot = new X509Certificate(Buffer.from(x5c[2]!, 'base64'));
+      const suppliedRoot = new X509Certificate(x5cBase64Decode(x5c[2]!));
       // OpenSSL decodes an x5c entry far more leniently than the checks
       // below assume, so all four of the things it lets past are settled
       // here, while the verdict is still "this is not a certificate":

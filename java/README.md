@@ -308,7 +308,7 @@ try {
 | `Reason` | Raised when |
 |---|---|
 | `INVALID_JWS_FORMAT` | not three dot-separated segments, a segment that is not a base64url-encoded JSON *object*, `alg != ES256`, an `x5c` that is not exactly three entries, or a JWS over `MAX_JWS_BYTES` or nested past the reader limit |
-| `INVALID_CERTIFICATE` | an `x5c` entry does not decode to a parseable certificate. The base64 goes through `Base64.getMimeDecoder()`, which skips characters outside the alphabet, so a stray `!` inside an entry is dropped rather than refused — what is left has to fail to parse for this verdict |
+| `INVALID_CERTIFICATE` | an `x5c` entry does not decode to a parseable certificate. The base64 goes through `Base64.getDecoder()`, because RFC 7515 §4.1.6 makes an entry standard base64: a character outside that alphabet (a stray `!`, a space or line break, a base64url `-` or `_`) is refused, not skipped, so such an entry gets this verdict before any certificate is parsed |
 | `INVALID_CERTIFICATE_PURPOSE` | the leaf or intermediate lacks its Apple marker OID, or the receipt signer lacks its own |
 | `INVALID_CHAIN` | the path does not reach a pinned anchor, a certificate was not valid at the signing instant, or a receipt embeds more than ten certificates or a chain longer than six |
 | `INVALID_SIGNATURE` | the ES256 or CMS signature check failed, or the signer key is not RSA |
