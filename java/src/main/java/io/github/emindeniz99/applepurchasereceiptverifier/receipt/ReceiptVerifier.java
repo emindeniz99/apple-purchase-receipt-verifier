@@ -43,11 +43,15 @@ import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cms.CMSException;
 import org.bouncycastle.cms.CMSSignedData;
+import org.bouncycastle.cms.DefaultCMSSignatureAlgorithmNameGenerator;
 import org.bouncycastle.cms.SignerId;
 import org.bouncycastle.cms.SignerInformation;
-import org.bouncycastle.cms.jcajce.JcaSimpleSignerInfoVerifierBuilder;
+import org.bouncycastle.cms.SignerInformationVerifier;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.bouncycastle.operator.DefaultSignatureAlgorithmIdentifierFinder;
 import org.bouncycastle.operator.OperatorCreationException;
+import org.bouncycastle.operator.jcajce.JcaContentVerifierProviderBuilder;
+import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -193,6 +197,12 @@ public final class ReceiptVerifier {
     public static final int MAX_RECEIPT_BYTES = 2097152;
 
     private static final BouncyCastleProvider PROVIDER = new BouncyCastleProvider();
+
+    // Read-only after construction; see signerVerifier.
+    private static final DefaultCMSSignatureAlgorithmNameGenerator SIGNATURE_NAMES =
+            new DefaultCMSSignatureAlgorithmNameGenerator();
+    private static final DefaultSignatureAlgorithmIdentifierFinder SIGNATURE_ALGORITHMS =
+            new DefaultSignatureAlgorithmIdentifierFinder();
 
     private final Set<TrustAnchor> trustAnchors;
     private final String bundleId;
@@ -582,9 +592,7 @@ public final class ReceiptVerifier {
                         Reason.INVALID_RECEIPT_FORMAT,
                         "unsupported receipt digest algorithm " + SafeText.quote(digestOid));
             }
-            boolean valid = signer.verify(new JcaSimpleSignerInfoVerifierBuilder()
-                    .setProvider(PROVIDER)
-                    .build(signerCert));
+            boolean valid = signer.verify(signerVerifier(signerCert));
             if (!valid) {
                 throw new VerificationException(Reason.INVALID_SIGNATURE, "CMS signature check failed");
             }
@@ -593,6 +601,24 @@ public final class ReceiptVerifier {
         } catch (OperatorCreationException e) {
             throw new VerificationException(Reason.INVALID_SIGNATURE, "CMS signature check errored", e);
         }
+    }
+
+    /**
+     * What {@code new JcaSimpleSignerInfoVerifierBuilder().setProvider(PROVIDER)
+     * .build(signerCert)} returns, minus the rebuilding of two lookup tables
+     * on every call. The builder constructs a fresh
+     * {@link DefaultCMSSignatureAlgorithmNameGenerator} (a few hundred map
+     * entries) and {@link DefaultSignatureAlgorithmIdentifierFinder} each
+     * time; both are only read after construction, so one of each is shared.
+     * The certificate's verifier provider and the digest provider are built
+     * per call exactly as the builder builds them.
+     */
+    static SignerInformationVerifier signerVerifier(X509Certificate signerCert) throws OperatorCreationException {
+        return new SignerInformationVerifier(
+                SIGNATURE_NAMES,
+                SIGNATURE_ALGORITHMS,
+                new JcaContentVerifierProviderBuilder().setProvider(PROVIDER).build(signerCert),
+                new JcaDigestCalculatorProviderBuilder().setProvider(PROVIDER).build());
     }
 
     private static void verifyDeviceHash(AppReceipt receipt, byte[] deviceGuid) throws VerificationException {
