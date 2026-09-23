@@ -68,7 +68,9 @@ namespace ApplePurchaseReceiptVerifier
         /// Not the client's fault, status 21009 at the endpoint. Thrown when a
         /// trusted signer signed receipt content this library cannot read
         /// (found only after the chain and the signature passed; the parser's
-        /// error is the <see cref="Exception.InnerException"/>), and reported
+        /// error is the <see cref="Exception.InnerException"/>), when a
+        /// verified JWS payload carries a modelled claim of the wrong JSON
+        /// type, when the host cannot run the device-hash check, and reported
         /// by the endpoint for an unexpected exception inside it, with the
         /// exception in <see cref="Receipt.VerifyReceiptResult.FailureCause"/>.
         /// Alert and retry or escalate; do not deny the user on it.

@@ -62,6 +62,8 @@ public class SigningTimeTests
     /// The other half of the same defect: a fractional claim must also move the
     /// certificate-validity instant. This leaf expired in 2025, so judging it
     /// at the system clock rejects a payload the reference ports accept.
+    /// Asserted through VerifyRaw: the typed read refuses a fractional
+    /// <c>signedDate</c> afterwards, which is not the rule under test.
     /// </summary>
     [Fact]
     public void AFractionalSignedDateDrivesTheCertificateValidityInstant()
@@ -72,7 +74,7 @@ public class SigningTimeTests
         string jws = Jws(pki, "1722945600000.5");
 
         using JwsVerifier verifier = Verifier(pki);
-        Assert.Equal("com.example.app", verifier.VerifyTransaction(jws).BundleId);
+        Assert.Equal("com.example.app", verifier.VerifyRaw(jws)["bundleId"]);
     }
 
     /// <summary>
@@ -165,7 +167,8 @@ public class SigningTimeTests
     /// <summary>
     /// The genuine "no signing time" case is unchanged: a payload carrying
     /// neither claim, and one whose claim is not a number at all, falls back to
-    /// the system clock and has no age to be stale by.
+    /// the system clock and has no age to be stale by. Through VerifyRaw, since
+    /// the typed read refuses a string <c>signedDate</c> after this rule ran.
     /// </summary>
     [Theory]
     [InlineData("{\"bundleId\":\"com.example.app\",\"environment\":\"Sandbox\"}")]
@@ -178,14 +181,15 @@ public class SigningTimeTests
 
         using JwsVerifier verifier = Verifier(
             pki, TimeSpan.FromSeconds(1), new FixedClock(SignedAt.AddYears(50)));
-        Assert.Equal("com.example.app", verifier.VerifyTransaction(jws).BundleId);
+        Assert.Equal("com.example.app", verifier.VerifyRaw(jws)["bundleId"]);
     }
 
     /// <summary>
     /// An in-range fractional claim truncates toward zero for the validity
     /// instant, the way <c>new Date(x)</c> and Jackson's <c>asLong()</c> do —
     /// asserted at the boundary, where a round-half-up would cross into the
-    /// next millisecond and out of the leaf's window.
+    /// next millisecond and out of the leaf's window. Through VerifyRaw, which
+    /// has no typed read to refuse the fraction.
     /// </summary>
     [Fact]
     public void AFractionalSigningTimeTruncatesTowardZero()
@@ -197,12 +201,12 @@ public class SigningTimeTests
         using JwsVerifier verifier = Verifier(pki);
         Assert.Equal(
             "com.example.app",
-            verifier.VerifyTransaction(
-                Jws(pki, exact.ToString(CultureInfo.InvariantCulture) + ".9")).BundleId);
+            verifier.VerifyRaw(
+                Jws(pki, exact.ToString(CultureInfo.InvariantCulture) + ".9"))["bundleId"]);
         Assert.Equal(
             VerificationReason.InvalidChain,
             Assert.Throws<VerificationException>(
-                () => verifier.VerifyTransaction(
+                () => verifier.VerifyRaw(
                     Jws(pki, (exact + 1).ToString(CultureInfo.InvariantCulture) + ".0"))).Reason);
     }
 }
