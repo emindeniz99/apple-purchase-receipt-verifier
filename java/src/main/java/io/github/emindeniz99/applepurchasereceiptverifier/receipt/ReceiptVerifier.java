@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.bouncycastle.asn1.ASN1Encodable;
+import org.bouncycastle.asn1.ASN1IA5String;
 import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1Primitive;
@@ -34,6 +35,7 @@ import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.ASN1String;
 import org.bouncycastle.asn1.ASN1TaggedObject;
+import org.bouncycastle.asn1.ASN1UTF8String;
 import org.bouncycastle.asn1.cms.ContentInfo;
 import org.bouncycastle.asn1.cms.SignedData;
 import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
@@ -877,12 +879,18 @@ public final class ReceiptVerifier {
         return value.longValue();
     }
 
+    /**
+     * A UTF8String or an IA5String, the two string types Apple's receipts
+     * use and the only two every other port accepts. Any other
+     * {@link ASN1String} (a BIT STRING or UniversalString included) is
+     * refused rather than rendered through {@code getString()}.
+     */
     private static String decodeString(byte[] der) throws VerificationException {
         try {
             ASN1Primitive parsed = ASN1Primitive.fromByteArray(der);
-            if (!(parsed instanceof ASN1String)) {
+            if (!(parsed instanceof ASN1UTF8String) && !(parsed instanceof ASN1IA5String)) {
                 throw new VerificationException(
-                        Reason.INVALID_RECEIPT_FORMAT, "attribute value is not an ASN.1 string");
+                        Reason.INVALID_RECEIPT_FORMAT, "attribute value is not a UTF8String or IA5String");
             }
             return ((ASN1String) parsed).getString();
         } catch (IOException e) {

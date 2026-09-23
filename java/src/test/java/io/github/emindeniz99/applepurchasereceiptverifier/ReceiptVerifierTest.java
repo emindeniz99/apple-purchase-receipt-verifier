@@ -28,7 +28,12 @@ import java.util.List;
 import java.util.Set;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1Integer;
+import org.bouncycastle.asn1.DERBMPString;
+import org.bouncycastle.asn1.DERBitString;
+import org.bouncycastle.asn1.DERIA5String;
+import org.bouncycastle.asn1.DERPrintableString;
 import org.bouncycastle.asn1.DERUTF8String;
+import org.bouncycastle.asn1.DERUniversalString;
 import org.bouncycastle.cms.CMSSignedData;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -470,6 +475,28 @@ class ReceiptVerifierTest {
                     VerificationException.class, () -> verifier(pki, BUNDLE).verify(receipt), type.toString());
             assertEquals(Reason.INVALID_RECEIPT_FORMAT, e.reason(), type.toString());
             assertTrue(e.getMessage().contains("out of range"), e.getMessage());
+        }
+    }
+
+    /**
+     * String attributes are UTF8String or IA5String, as in Apple's receipts
+     * and in every other port. Any other ASN.1 string type used to decode
+     * too: a BIT STRING through BouncyCastle's getString() as "#" plus hex,
+     * so a bundle id was compared in a form the receipt never stated.
+     */
+    @Test
+    void acceptsOnlyUtf8OrIa5StringsForStringAttributes() throws Exception {
+        byte[] ia5 = pki.signReceipt(TestPki.singleAttributePayload(2, new DERIA5String(BUNDLE).getEncoded()));
+        assertEquals(BUNDLE, verifier(pki, BUNDLE).verify(ia5).bundleId());
+        for (byte[] value : Arrays.asList(
+                new DERBitString(BUNDLE.getBytes(StandardCharsets.US_ASCII)).getEncoded(),
+                new DERUniversalString(BUNDLE.getBytes(StandardCharsets.US_ASCII)).getEncoded(),
+                new DERPrintableString(BUNDLE).getEncoded(),
+                new DERBMPString(BUNDLE).getEncoded())) {
+            byte[] receipt = pki.signReceipt(TestPki.singleAttributePayload(2, value));
+            VerificationException e = assertThrows(
+                    VerificationException.class, () -> verifier(pki, BUNDLE).verify(receipt), Arrays.toString(value));
+            assertEquals(Reason.INVALID_RECEIPT_FORMAT, e.reason(), Arrays.toString(value));
         }
     }
 
