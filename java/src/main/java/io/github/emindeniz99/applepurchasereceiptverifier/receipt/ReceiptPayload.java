@@ -289,8 +289,8 @@ final class ReceiptPayload {
                             Reason.INVALID_RECEIPT_FORMAT,
                             "receipt attribute has " + seq.size() + " fields, expected 3");
                 }
-                long type =
-                        boundedInt(ASN1Integer.getInstance(seq.getObjectAt(0)).getValue());
+                long type = nonNegativeLong(
+                        ASN1Integer.getInstance(seq.getObjectAt(0)).getValue());
                 byte[] value = ASN1OctetString.getInstance(seq.getObjectAt(2)).getOctets();
                 // A type wider than a 32-bit signed integer is rejected rather
                 // than renamed: renaming invents an attribute the receipt never
@@ -306,8 +306,11 @@ final class ReceiptPayload {
         }
     }
 
-    /** Non-negative, <= 8 bytes — real receipts carry 7-byte integers. */
-    private static long boundedInt(BigInteger value) throws VerificationException {
+    /**
+     * The value as a long: non-negative and at most 63 bits, else the receipt
+     * is refused. Real receipts carry 7-byte integers.
+     */
+    private static long nonNegativeLong(BigInteger value) throws VerificationException {
         if (value.signum() < 0 || value.bitLength() > 63) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "receipt integer out of range");
         }
@@ -340,7 +343,7 @@ final class ReceiptPayload {
                 throw new VerificationException(
                         Reason.INVALID_RECEIPT_FORMAT, "attribute value is not an ASN.1 integer");
             }
-            return Long.valueOf(boundedInt(((ASN1Integer) parsed).getValue()));
+            return Long.valueOf(nonNegativeLong(((ASN1Integer) parsed).getValue()));
         } catch (IOException e) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "attribute value is not valid ASN.1", e);
         }

@@ -68,9 +68,6 @@ import org.jspecify.annotations.Nullable;
  */
 public final class JwsVerifier {
 
-    /** Apple marker OID: Worldwide Developer Relations intermediate CA. */
-    static final String INTERMEDIATE_OID = "1.2.840.113635.100.6.2.1";
-
     /**
      * Ceiling on the compact JWS this verifier will look at, in characters.
      *
@@ -248,10 +245,10 @@ public final class JwsVerifier {
                     Reason.INVALID_CERTIFICATE_PURPOSE,
                     "leaf certificate lacks Apple marker OID " + AppleTrust.SIGNING_LEAF_OID);
         }
-        if (intermediate.getExtensionValue(INTERMEDIATE_OID) == null) {
+        if (intermediate.getExtensionValue(AppleTrust.INTERMEDIATE_OID) == null) {
             throw new VerificationException(
                     Reason.INVALID_CERTIFICATE_PURPOSE,
-                    "intermediate certificate lacks Apple marker OID " + INTERMEDIATE_OID);
+                    "intermediate certificate lacks Apple marker OID " + AppleTrust.INTERMEDIATE_OID);
         }
 
         JsonNode payload = parseJson(parts[1], "payload");

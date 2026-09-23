@@ -335,9 +335,7 @@ public final class ReceiptVerifier {
                             + embeddedCount + " certificates, more than the maximum of "
                             + MAXIMUM_EMBEDDED_CERTIFICATES);
         }
-        List<X509CertificateHolder> holders = new ArrayList<X509CertificateHolder>();
-        X509CertificateHolder signerHolder =
-                decodeEmbeddedAndFindSigner(certificateSet, embeddedCount, signer, holders);
+        EmbeddedCertificates certificates = decodeEmbeddedAndFindSigner(certificateSet, signer);
         JcaX509CertificateConverter converter = new JcaX509CertificateConverter();
         X509Certificate signerCert;
         try {
@@ -346,25 +344,20 @@ public final class ReceiptVerifier {
             // bytes, so this is where an extnValue that stops decoding is
             // found, and it is a defect of the certificate rather than of the
             // path it sits on.
-            signerCert = converter.getCertificate(signerHolder);
+            signerCert = converter.getCertificate(certificates.signer);
             // Result unused: decoding the key here makes a key on an
             // unimplemented curve fail now, as INVALID_CERTIFICATE, instead
             // of later inside the path builder or the signature check under
             // another verdict.
             signerCert.getPublicKey();
-        } catch (GeneralSecurityException e) {
-            throw new VerificationException(
-                    Reason.INVALID_CERTIFICATE, "receipt signer certificate is not a valid certificate", e);
-        } catch (RuntimeException e) {
+        } catch (GeneralSecurityException | RuntimeException e) {
             throw new VerificationException(
                     Reason.INVALID_CERTIFICATE, "receipt signer certificate is not a valid certificate", e);
         }
         try {
             List<X509Certificate> embedded = new ArrayList<X509Certificate>();
-            for (X509CertificateHolder holder : holders) {
-                // The signer was converted above; converting it again only
-                // re-encodes it and gets the same certificate back.
-                embedded.add(holder == signerHolder ? signerCert : converter.getCertificate(holder));
+            for (X509CertificateHolder holder : certificates.all) {
+                embedded.add(converter.getCertificate(holder));
             }
             X509CertSelector target = new X509CertSelector();
             target.setCertificate(signerCert);
@@ -390,9 +383,20 @@ public final class ReceiptVerifier {
         }
     }
 
+    /** Every embedded certificate, decoded, and the one the SignerInfo names. */
+    private static final class EmbeddedCertificates {
+        final List<X509CertificateHolder> all;
+        final X509CertificateHolder signer;
+
+        EmbeddedCertificates(List<X509CertificateHolder> all, X509CertificateHolder signer) {
+            this.all = all;
+            this.signer = signer;
+        }
+    }
+
     /**
-     * Decodes every embedded certificate into {@code holders} and returns the
-     * one the SignerInfo names, or throws the verdict for the bag.
+     * Decodes every embedded certificate and finds the one the SignerInfo
+     * names, or throws the verdict for the bag.
      *
      * <p>This walk over the raw set, and {@link #namesTheSigner}, exist so
      * that a signer certificate no decoder accepts is reported as
@@ -405,12 +409,10 @@ public final class ReceiptVerifier {
      * unimplemented curve, a corrupt extension) pin INVALID_CERTIFICATE; do
      * not replace this walk with {@code cms.getCertificates()}.</p>
      */
-    private static X509CertificateHolder decodeEmbeddedAndFindSigner(
-            @Nullable ASN1Set certificateSet,
-            int embeddedCount,
-            SignerInformation signer,
-            List<X509CertificateHolder> holders)
-            throws VerificationException {
+    private static EmbeddedCertificates decodeEmbeddedAndFindSigner(
+            @Nullable ASN1Set certificateSet, SignerInformation signer) throws VerificationException {
+        List<X509CertificateHolder> holders = new ArrayList<X509CertificateHolder>();
+        int embeddedCount = certificateSet == null ? 0 : certificateSet.size();
         @Nullable Exception unreadable = null;
         boolean unreadableSigner = false;
         for (int i = 0; i < embeddedCount; i++) {
@@ -454,7 +456,7 @@ public final class ReceiptVerifier {
             throw new VerificationException(
                     Reason.INVALID_RECEIPT_FORMAT, "an embedded certificate is not a valid certificate", unreadable);
         }
-        return signerHolder;
+        return new EmbeddedCertificates(holders, signerHolder);
     }
 
     /**
@@ -482,9 +484,7 @@ public final class ReceiptVerifier {
             BigInteger serial = ASN1Integer.getInstance(tbs.getObjectAt(index)).getValue();
             X500Name issuer = X500Name.getInstance(tbs.getObjectAt(index + 2));
             return serial.equals(sid.getSerialNumber()) && issuer.equals(sid.getIssuer());
-        } catch (RuntimeException e) {
-            return false;
-        } catch (IOException e) {
+        } catch (RuntimeException | IOException e) {
             return false;
         }
     }

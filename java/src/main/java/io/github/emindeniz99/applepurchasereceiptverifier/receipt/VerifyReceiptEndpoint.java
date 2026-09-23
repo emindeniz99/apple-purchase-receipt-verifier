@@ -177,9 +177,7 @@ public final class VerifyReceiptEndpoint {
         Object parsed;
         try {
             parsed = readJson(requestJson);
-        } catch (IOException e) {
-            return VerifyReceiptResult.failed(environment, Reason.MALFORMED_REQUEST, at);
-        } catch (RuntimeException e) {
+        } catch (IOException | RuntimeException e) {
             // What the JSON parser throws unchecked is still a body it could
             // not read, and it has always answered 21002.
             return VerifyReceiptResult.failed(environment, Reason.MALFORMED_REQUEST, at);
