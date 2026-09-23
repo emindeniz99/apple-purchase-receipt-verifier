@@ -153,14 +153,84 @@ public struct VerifyReceiptResult: Sendable {
     /// Swift dictionaries have no insertion order, so keys are serialized
     /// sorted: equal inputs give equal bytes.
     private func serialize(_ response: [String: Any]) -> String {
-        guard
-            let encoded = try? JSONSerialization.data(
-                withJSONObject: response, options: [.sortedKeys]),
-            let json = String(data: encoded, encoding: .utf8)
-        else {
+        guard let json = responseJSON(response) else {
             return "{\"status\":\(VerifyReceiptEndpoint.statusInternal)}"
         }
         return json
+    }
+}
+
+/// `response` as JSON with its keys sorted, as `JSONSerialization` writes it
+/// with `.sortedKeys`, or nil when it cannot be written.
+///
+/// `JSONEncoder` writes it when ``ResponseValue`` can hold it, which is
+/// every answer the renderer builds: on Linux that takes about 8 ms for
+/// the 187-purchase legacy answer where `JSONSerialization` takes about
+/// 55 ms. Both escape strings the same way, but they sort keys
+/// differently (`JSONEncoder` by code point, `JSONSerialization` by a
+/// collation that puts "_" before digits and "a" before "B"), and they
+/// agree only on keys of lowercase ASCII letters and "_". Anything else
+/// still goes to `JSONSerialization`. ResponseJSONTests compares the two.
+func responseJSON(_ response: [String: Any]) -> String? {
+    if let value = ResponseValue(response) {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        if let encoded = try? encoder.encode(value) {
+            return String(decoding: encoded, as: UTF8.self)
+        }
+    }
+    guard
+        let encoded = try? JSONSerialization.data(withJSONObject: response, options: [.sortedKeys])
+    else { return nil }
+    return String(data: encoded, encoding: .utf8)
+}
+
+/// The value types a rendered answer holds, so `JSONEncoder` can write it.
+/// Nil for any other value type and for any key `JSONEncoder` would sort
+/// differently from `JSONSerialization` (``responseJSON(_:)`` says why).
+enum ResponseValue: Encodable {
+    case string(String)
+    case int(Int)
+    case int64(Int64)
+    case array([ResponseValue])
+    case object([String: ResponseValue])
+
+    init?(_ value: Any) {
+        switch value {
+        case let string as String: self = .string(string)
+        // Exact types only: on Apple platforms a Bool casts to Int through
+        // NSNumber, and JSONSerialization writes it as `true`, not `1`.
+        case let int as Int where type(of: value) == Int.self: self = .int(int)
+        case let int64 as Int64 where type(of: value) == Int64.self: self = .int64(int64)
+        case let array as [Any]:
+            var values: [ResponseValue] = []
+            for element in array {
+                guard let value = ResponseValue(element) else { return nil }
+                values.append(value)
+            }
+            self = .array(values)
+        case let object as [String: Any]:
+            var values: [String: ResponseValue] = [:]
+            for (key, element) in object {
+                guard key.utf8.allSatisfy({ $0 == UInt8(ascii: "_") || (0x61...0x7A).contains($0) }),
+                    let value = ResponseValue(element)
+                else { return nil }
+                values[key] = value
+            }
+            self = .object(values)
+        default: return nil
+        }
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .string(let string): try container.encode(string)
+        case .int(let int): try container.encode(int)
+        case .int64(let int64): try container.encode(int64)
+        case .array(let array): try container.encode(array)
+        case .object(let object): try container.encode(object)
+        }
     }
 }
 
@@ -216,17 +286,40 @@ private func put(_ json: inout [String: Any], _ key: String, _ value: Any?) {
 /// Apple's three date renderings: `x` (GMT), `x_ms` (epoch ms), `x_pst`.
 private func appleDates(_ json: inout [String: Any], _ prefix: String, _ date: Date?) {
     guard let date else { return }
-    json[prefix] = format(date, zone: TimeZone(identifier: "UTC")!) + " Etc/GMT"
+    json[prefix] = formatAppleDate(date, appleGMTDateStyle) + " Etc/GMT"
     json["\(prefix)_ms"] = String(Int64(date.timeIntervalSince1970 * 1000))
     json["\(prefix)_pst"] =
-        format(date, zone: TimeZone(identifier: "America/Los_Angeles")!)
-        + " America/Los_Angeles"
+        formatAppleDate(date, applePacificDateStyle) + " America/Los_Angeles"
 }
 
-private func format(_ date: Date, zone: TimeZone) -> String {
-    let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "en_US_POSIX")
-    formatter.timeZone = zone
-    formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-    return formatter.string(from: date)
+/// `yyyy-MM-dd HH:mm:ss` in GMT and in Los Angeles time. Value types and
+/// `Sendable`, so each is built once and serves every thread; Foundation
+/// caches the formatter behind them. A new `DateFormatter` per date, the
+/// alternative, cost about 95 µs on Linux, and swift-corelibs-foundation's
+/// `DateFormatter` has no lock, so one cannot be shared between threads.
+let appleGMTDateStyle = appleDateStyle(TimeZone(identifier: "UTC")!)
+let applePacificDateStyle = appleDateStyle(TimeZone(identifier: "America/Los_Angeles")!)
+
+private func appleDateStyle(_ zone: TimeZone) -> Date.VerbatimFormatStyle {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = zone
+    return Date.VerbatimFormatStyle(
+        format: """
+            \(year: .padded(4))-\(month: .twoDigits)-\(day: .twoDigits) \
+            \(hour: .twoDigits(clock: .twentyFourHour, hourCycle: .zeroBased)):\
+            \(minute: .twoDigits):\(second: .twoDigits)
+            """,
+        locale: Locale(identifier: "en_US_POSIX"), timeZone: zone, calendar: calendar)
+}
+
+/// `date` rendered with `style`, to the same text `DateFormatter` gives.
+///
+/// `DateFormatter` rounds the instant to the nearest millisecond before it
+/// renders it, and `VerbatimFormatStyle` truncates, so an instant less than
+/// half a millisecond below a whole second (a `request_date` from the clock)
+/// would render one second early. Rounding it the same way first gives the
+/// same text; ReceiptDateTests compares the two.
+func formatAppleDate(_ date: Date, _ style: Date.VerbatimFormatStyle) -> String {
+    let milliseconds = (date.timeIntervalSince1970 * 1000 + 0.5).rounded(.down)
+    return Date(timeIntervalSince1970: milliseconds / 1000).formatted(style)
 }
