@@ -314,21 +314,31 @@ public final class JwsVerifier {
         }
     }
 
+    /**
+     * Decodes one x5c entry. RFC 7515 4.1.6: standard base64, no line breaks.
+     * The MIME decoder would silently skip any illegal character instead. The
+     * basic decoder accepts omitted padding and decodes {@code ""}, so the
+     * length is held to a non-zero multiple of four first, as receipt-data
+     * is. Package-private so the conformance suite can run the shared base64
+     * spellings against it directly.
+     */
+    static byte[] decodeX5cEntry(String text) throws VerificationException {
+        if (text.isEmpty() || text.length() % 4 != 0) {
+            throw new VerificationException(Reason.INVALID_CERTIFICATE, "x5c entry is not canonically padded base64");
+        }
+        try {
+            return Base64.getDecoder().decode(text);
+        } catch (IllegalArgumentException e) {
+            throw new VerificationException(Reason.INVALID_CERTIFICATE, "x5c entry is not valid base64", e);
+        }
+    }
+
     private static List<X509Certificate> decodeChain(JsonNode x5c) throws VerificationException {
         List<X509Certificate> chain = new ArrayList<X509Certificate>(3);
         try {
             CertificateFactory cf = CertificateFactory.getInstance("X.509");
             for (JsonNode certNode : x5c) {
-                // RFC 7515 4.1.6: standard base64, no line breaks. The MIME
-                // decoder would silently skip any illegal character instead.
-                // The basic decoder accepts omitted padding, so the length is
-                // held to a multiple of four first, as receipt-data is.
-                String text = certNode.asText();
-                if (text.length() % 4 != 0) {
-                    throw new VerificationException(
-                            Reason.INVALID_CERTIFICATE, "x5c entry is not canonically padded base64");
-                }
-                byte[] der = Base64.getDecoder().decode(text);
+                byte[] der = decodeX5cEntry(certNode.asText());
                 chain.add((X509Certificate) cf.generateCertificate(new ByteArrayInputStream(der)));
             }
         } catch (IllegalArgumentException e) {

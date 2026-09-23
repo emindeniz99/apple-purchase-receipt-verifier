@@ -81,6 +81,8 @@ type expectation struct {
 	// present (verifyReceiptEndpoint only). It is not a wire field. A
 	// pointer, so an explicit null ("no failure") is told from absence.
 	FailureReason *json.RawMessage `json:"failureReason"`
+	// BytesHex is what every text of an ok decodeBase64 group decodes to.
+	BytesHex string `json:"bytesHex"`
 }
 
 type conformanceCase struct {
@@ -93,9 +95,13 @@ type conformanceCase struct {
 		// body (verifyReceiptEndpoint only), handed to VerifyReceiptBody
 		// verbatim: not wrapped in an envelope, not trimmed.
 		RequestBody string `json:"requestBody"`
+		// Texts are the spellings of a decodeBase64 group.
+		Texts []string `json:"texts"`
 	} `json:"input"`
-	Config caseConfig `json:"config"`
-	Clock  *struct {
+	// Decoders names the decoders a decodeBase64 group runs through.
+	Decoders []string   `json:"decoders"`
+	Config   caseConfig `json:"config"`
+	Clock    *struct {
 		Now string `json:"now"`
 	} `json:"clock"`
 	Expected expectation `json:"expected"`
@@ -485,7 +491,62 @@ func caseClock(t *testing.T, kase conformanceCase) func() time.Time {
 
 // --- one case ------------------------------------------------------------
 
+// base64Decoders are the two decoders a decodeBase64 group names, called
+// directly through export_test.go, each with the reason its refusal
+// carries. cases.json states INVALID_RECEIPT_FORMAT for an error group;
+// that is the receipt-data answer, and x5c answers INVALID_CERTIFICATE.
+var base64Decoders = map[string]struct {
+	decode  func(string) ([]byte, error)
+	refusal applereceipt.Reason
+}{
+	"receipt-data": {applereceipt.DecodeReceiptDataForTest, applereceipt.ReasonInvalidReceiptFormat},
+	"x5c":          {applereceipt.DecodeX5CEntryForTest, applereceipt.ReasonInvalidCertificate},
+}
+
+// runDecodeBase64 checks every text of the group through every named
+// decoder and reports each text that got the wrong answer, by case id,
+// decoder, index and quoted text, rather than stopping at the first.
+func runDecodeBase64(t *testing.T, kase conformanceCase) {
+	if len(kase.Input.Texts) == 0 || len(kase.Decoders) == 0 {
+		t.Fatalf("harness error: a decodeBase64 case needs input.texts and decoders")
+	}
+	want, err := hex.DecodeString(kase.Expected.BytesHex)
+	if err != nil {
+		t.Fatalf("harness error: expected.bytesHex is not hex: %v", err)
+	}
+	if kase.Expected.Status == "error" && kase.Expected.Reason != applereceipt.ReasonInvalidReceiptFormat {
+		t.Fatalf("harness error: a decodeBase64 error group must state INVALID_RECEIPT_FORMAT, got %s", kase.Expected.Reason)
+	}
+	for _, name := range kase.Decoders {
+		decoder, ok := base64Decoders[name]
+		if !ok {
+			t.Fatalf("harness error: no decoder %q", name)
+		}
+		for i, text := range kase.Input.Texts {
+			got, err := decoder.decode(text)
+			where := fmt.Sprintf("%s: %s texts[%d] %q", kase.ID, name, i, text)
+			var verr *applereceipt.VerificationError
+			switch {
+			case err != nil && !errors.As(err, &verr):
+				t.Errorf("%s: harness error: %T (%v) is not a *VerificationError", where, err, err)
+			case kase.Expected.Status == "ok" && err != nil:
+				t.Errorf("%s was refused (%s), want %s", where, verr.Reason, kase.Expected.BytesHex)
+			case kase.Expected.Status == "ok" && string(got) != string(want):
+				t.Errorf("%s decoded to %x, want %s", where, got, kase.Expected.BytesHex)
+			case kase.Expected.Status == "error" && err == nil:
+				t.Errorf("%s was accepted (decoded to %x)", where, got)
+			case kase.Expected.Status == "error" && verr.Reason != decoder.refusal:
+				t.Errorf("%s: reason %s, want %s", where, verr.Reason, decoder.refusal)
+			}
+		}
+	}
+}
+
 func runCase(t *testing.T, kase conformanceCase) {
+	if kase.Operation == "decodeBase64" {
+		runDecodeBase64(t, kase)
+		return
+	}
 	operation, ok := operations[kase.Operation]
 	if !ok {
 		t.Fatalf("harness error: no adapter for operation %q", kase.Operation)
@@ -624,11 +685,12 @@ func TestConformance(t *testing.T) {
 	for _, operation := range []string{
 		"verifyTransaction", "verifyAppTransaction", "verifyRaw",
 		"verifyReceipt", "verifyReceiptBase64", "verifyReceiptEndpoint",
+		"decodeBase64",
 	} {
 		if seen[operation] == 0 {
 			t.Errorf("no case exercised operation %q", operation)
 		}
-		if _, ok := operations[operation]; !ok {
+		if _, ok := operations[operation]; !ok && operation != "decodeBase64" {
 			t.Errorf("this adapter has no dispatch entry for operation %q", operation)
 		}
 	}

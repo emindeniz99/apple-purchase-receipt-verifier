@@ -18,10 +18,13 @@
 // compare the status, and read a few top-level fields off the JSON the ABI
 // returned.
 //
-// Every case in the file runs. The twelve that pin a clock go through the
-// _and_clock constructors, which take the instant itself rather than a
-// callback; nothing here is skipped, and a case the manifest ever marks
-// unsupported fails the run.
+// Every case in the file runs except the decodeBase64 groups, which call a
+// port's base64 decoders directly: the ABI exposes none, so the manifest
+// marks them abiUnreachable and they are counted, never passed. The twelve
+// that pin a clock go through the _and_clock constructors, which take the
+// instant itself rather than a callback; nothing else is skipped, a case the
+// manifest ever marks unsupported fails the run, and after the loop every id
+// the manifest lists must have run or been counted.
 //
 // The JSON reader below is a top-level scalar extractor and nothing more —
 // no vendored parser, and no ambition to become one. Nested paths
@@ -39,6 +42,7 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -583,6 +587,12 @@ int main(int argc, char **argv) {
   size_t pinned_clocks = 0;
   size_t skipped_fields = 0;
   size_t checked_fields = 0;
+  // Every id the manifest lists, which gen-cases-manifest.mjs writes one per
+  // case in cases.json, and the ids that reached a verdict or were counted
+  // as unreachable: the coverage self-check after the loop compares them.
+  std::vector<std::string> listed;
+  std::set<std::string> ran;
+  std::set<std::string> unreachable;
 
   std::string line;
   while (std::getline(stream, line)) {
@@ -598,6 +608,14 @@ int main(int argc, char **argv) {
       kase.entries.emplace_back(part.substr(0, equals), part.substr(equals + 1));
     }
     const std::string id = kase.get("id");
+    listed.push_back(id);
+
+    // A decodeBase64 group calls a port's base64 decoders directly; the ABI
+    // exposes none, so it is counted as not reachable, never as passed.
+    if (kase.has("abiUnreachable")) {
+      unreachable.insert(id);
+      continue;
+    }
     skipped_fields += static_cast<size_t>(std::stoul(kase.get("skippedFields", "0")));
     checked_fields += kase.all("field").size();
     if (kase.has("clockUnixMillis")) pinned_clocks += 1;
@@ -615,6 +633,7 @@ int main(int argc, char **argv) {
 
     std::string error;
     Outcome outcome;
+    ran.insert(id);
     if (!run_case(kase, error, outcome) || !check_expectations(kase, outcome, error)) {
       std::cerr << "FAIL  " << id << ": " << error << "\n";
       failed += 1;
@@ -627,9 +646,22 @@ int main(int argc, char **argv) {
             << pinned_clocks << " pin a clock, and every one of them ran)\n";
   std::cout << checked_fields << " expected fields checked here, " << skipped_fields
             << " nested paths left to rust/ffi/tests/conformance.py\n";
+  std::cout << unreachable.size() << " decodeBase64 groups not reachable: the ABI exposes no base64 decoder\n";
   if (passed + failed + skipped == 0) {
     std::cerr << "the manifest held no cases\n";
     return 2;
+  }
+  // Coverage self-check: every case id the manifest lists ran or was counted
+  // as unreachable, compared id by id rather than against a literal count.
+  std::vector<std::string> missing;
+  for (const std::string &id : listed) {
+    if (ran.count(id) == 0 && unreachable.count(id) == 0) missing.push_back(id);
+  }
+  if (!missing.empty()) {
+    std::cerr << missing.size() << " of " << listed.size() << " cases did not run:";
+    for (const std::string &id : missing) std::cerr << " " << id;
+    std::cerr << "\n";
+    return 1;
   }
   return failed == 0 ? 0 : 1;
 }

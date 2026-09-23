@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Security.Cryptography.X509Certificates;
@@ -7,6 +8,8 @@ using ApplePurchaseReceiptVerifier.Internal;
 using ApplePurchaseReceiptVerifier.Jws;
 using ApplePurchaseReceiptVerifier.Receipt;
 using Xunit;
+using Xunit.Sdk;
+using Xunit.v3;
 
 namespace ApplePurchaseReceiptVerifier.Tests;
 
@@ -23,6 +26,7 @@ namespace ApplePurchaseReceiptVerifier.Tests;
 /// special-case here. A case this adapter cannot map is a hard failure, never a
 /// skip.
 /// </remarks>
+[TestCaseOrderer(typeof(Conformance.CoverageCheckLast))]
 public class Conformance
 {
     // verifyRaw enforces no claim, so its cases may omit bundleId and
@@ -112,8 +116,16 @@ public class Conformance
     [MemberData(nameof(CaseIds))]
     public void Case(string id)
     {
+        Ran[id] = true;
         OrderedMap kase = Find(id);
         string operation = Str(kase, "operation");
+        if (operation == "decodeBase64")
+        {
+            List<string> failures = DecodeBase64Failures(kase);
+            Assert.True(failures.Count == 0, string.Join("\n", failures));
+            return;
+        }
+
         OrderedMap config = AsMap(kase["config"]);
         OrderedMap inputSpec = AsMap(kase["input"]);
         // A requestBody names a fixture too: the whole raw request body.
@@ -180,6 +192,180 @@ public class Conformance
 
             AssertEqual(field.Value, value, field.Key);
         }
+    }
+
+    /// <summary>Which case ids actually ran, for <see cref="EveryCaseInTheFileRan"/>.</summary>
+    private static readonly ConcurrentDictionary<string, bool> Ran = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Coverage self-check: every case id in the file ran, compared against
+    /// the parsed file and never against a literal count, so a case that was
+    /// skipped, or never discovered, fails the run. <see cref="CoverageCheckLast"/>
+    /// runs it after every other test of this class. An explicit filter on the
+    /// test process's command line is the one thing that may leave cases
+    /// unrun, so the check stands down for it and says so.
+    /// </summary>
+    [Fact]
+    public void EveryCaseInTheFileRan()
+    {
+        foreach (string argument in Environment.GetCommandLineArgs())
+        {
+            if (argument.StartsWith("--filter", StringComparison.Ordinal)
+                || argument.StartsWith("--treenode-filter", StringComparison.Ordinal)
+                || argument.StartsWith("-filter", StringComparison.Ordinal)
+                || argument is "-method" or "-class" or "-trait" or "-namespace")
+            {
+                TestContext.Current.SendDiagnosticMessage(
+                    $"{argument} filters tests; the coverage self-check needs a full run");
+                return;
+            }
+        }
+
+        List<string> missing = new();
+        foreach (object? entry in CaseList)
+        {
+            string id = Str(AsMap(entry), "id");
+            if (!Ran.ContainsKey(id))
+            {
+                missing.Add(id);
+            }
+        }
+
+        Assert.True(
+            missing.Count == 0,
+            $"{missing.Count} of {CaseList.Count} cases did not run: {string.Join(", ", missing)}");
+    }
+
+    /// <summary>
+    /// The default order, with <see cref="EveryCaseInTheFileRan"/> moved to the
+    /// end: the tests of one class run one after another, so it sees every
+    /// case that ran before it.
+    /// </summary>
+    public sealed class CoverageCheckLast : ITestCaseOrderer
+    {
+        public IReadOnlyCollection<TTestCase> OrderTestCases<TTestCase>(IReadOnlyCollection<TTestCase> testCases)
+            where TTestCase : notnull, ITestCase
+        {
+            List<TTestCase> ordered = new();
+            List<TTestCase> last = new();
+            foreach (TTestCase testCase in DefaultTestCaseOrderer.Instance.OrderTestCases(testCases))
+            {
+                (testCase.TestMethodName == nameof(EveryCaseInTheFileRan) ? last : ordered).Add(testCase);
+            }
+
+            ordered.AddRange(last);
+            return ordered;
+        }
+    }
+
+    /// <summary>
+    /// The decoders a decodeBase64 group can name, called directly, each with
+    /// the reason its refusal carries. An error group states
+    /// INVALID_RECEIPT_FORMAT, the receipt-data answer; x5c answers
+    /// INVALID_CERTIFICATE. <see cref="CanonicalBase64.Decode"/> answers null,
+    /// which the x5c path reports as InvalidCertificate, so that translation
+    /// happens here.
+    /// </summary>
+    private static readonly Dictionary<string, (Func<string, byte[]> Decode, string Refusal)> Base64Decoders =
+        new(StringComparer.Ordinal)
+        {
+            ["receipt-data"] = (ReceiptVerifier.DecodeBase64, "INVALID_RECEIPT_FORMAT"),
+            ["x5c"] = (
+                text => CanonicalBase64.Decode(text) ?? throw new VerificationException(
+                    VerificationReason.InvalidCertificate, "x5c entry is not valid base64"),
+                "INVALID_CERTIFICATE"),
+        };
+
+    /// <summary>
+    /// Every text of a decodeBase64 group that got the wrong answer from a
+    /// decoder the group names, by case id, decoder, index and escaped text,
+    /// rather than stopping at the first.
+    /// </summary>
+    private static List<string> DecodeBase64Failures(OrderedMap kase)
+    {
+        string id = Str(kase, "id");
+        OrderedMap expected = AsMap(kase["expected"]);
+        bool ok = Str(expected, "status") == "ok";
+        if (!ok)
+        {
+            Assert.Equal("INVALID_RECEIPT_FORMAT", Str(expected, "reason"));
+        }
+
+        string want = ok ? Str(expected, "bytesHex") : string.Empty;
+        List<object?> texts = AsMap(kase["input"])["texts"] as List<object?>
+            ?? throw new InvalidOperationException("harness error: input.texts is not a list");
+        List<object?> decoders = kase["decoders"] as List<object?>
+            ?? throw new InvalidOperationException("harness error: decoders is not a list");
+        Assert.True(texts.Count > 0 && decoders.Count > 0, $"harness error: {id}: no texts or no decoders");
+        List<string> failures = new();
+        foreach (object? decoder in decoders)
+        {
+            string name = decoder as string ?? throw new InvalidOperationException("harness error: decoder");
+            (Func<string, byte[]> decode, string refusal) = Base64Decoders[name];
+            for (int index = 0; index < texts.Count; index++)
+            {
+                string text = texts[index] as string
+                    ?? throw new InvalidOperationException("harness error: a text is not a string");
+                string where = $"{id}: {name} texts[{index}] {Escape(text)}";
+                string decoded;
+                try
+                {
+                    decoded = Convert.ToHexString(decode(text)).ToLowerInvariant();
+                }
+                catch (VerificationException e)
+                {
+                    if (ok)
+                    {
+                        failures.Add($"{where} was refused ({e.ReasonCode}), want {want}");
+                    }
+                    else if (e.ReasonCode != refusal)
+                    {
+                        failures.Add($"{where}: reason {e.ReasonCode}, want {refusal}");
+                    }
+
+                    continue;
+                }
+                catch (Exception e)
+                {
+                    failures.Add($"{where}: harness error: threw {e.GetType().FullName} ({e.Message})");
+                    continue;
+                }
+
+                if (!ok)
+                {
+                    failures.Add($"{where} was accepted (decoded to {decoded})");
+                }
+                else if (decoded != want)
+                {
+                    failures.Add($"{where} decoded to {decoded}, want {want}");
+                }
+            }
+        }
+
+        return failures;
+    }
+
+    /// <summary>A text as a quoted literal with every non-printable-ASCII character escaped.</summary>
+    private static string Escape(string text)
+    {
+        StringBuilder builder = new("\"");
+        foreach (char c in text)
+        {
+            if (c is '"' or '\\')
+            {
+                builder.Append('\\').Append(c);
+            }
+            else if (c < 0x20 || c > 0x7e)
+            {
+                builder.Append("\\u").Append(((int)c).ToString("x4", CultureInfo.InvariantCulture));
+            }
+            else
+            {
+                builder.Append(c);
+            }
+        }
+
+        return builder.Append('"').ToString();
     }
 
     private static object Run(

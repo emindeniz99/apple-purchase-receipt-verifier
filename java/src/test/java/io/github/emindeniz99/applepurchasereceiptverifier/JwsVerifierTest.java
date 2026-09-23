@@ -15,13 +15,11 @@ import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -161,31 +159,6 @@ class JwsVerifierTest {
                 VerificationException.class,
                 () -> verifier(pki, Environment.SANDBOX).verifyTransaction(jws));
         assertEquals(Reason.INVALID_JWS_FORMAT, e.reason());
-    }
-
-    /**
-     * An x5c entry is standard base64 (RFC 7515 4.1.6), so a character
-     * outside that alphabet makes the entry undecodable. The genuine leaf
-     * with junk spliced into it must not decode to the genuine certificate
-     * after the junk is skipped, which is what a lenient decoder does.
-     */
-    @Test
-    void rejectsX5cEntryCarryingCharactersOutsideTheBase64Alphabet() throws Exception {
-        for (String junk : new String[] {"!!", "\n", " ", "-_"}) {
-            List<String> x5c = new ArrayList<String>(pki.x5c());
-            String leaf = x5c.get(0);
-            x5c.set(0, leaf.substring(0, 8) + junk + leaf.substring(8));
-            Map<String, Object> header = new LinkedHashMap<String, Object>();
-            header.put("alg", "ES256");
-            header.put("x5c", x5c);
-            String jws = pki.signJwsWithHeader(
-                    MAPPER.writeValueAsString(header), MAPPER.writeValueAsString(transactionClaims("Sandbox")));
-            VerificationException e = assertThrows(
-                    VerificationException.class,
-                    () -> verifier(pki, Environment.SANDBOX).verifyTransaction(jws),
-                    "junk " + junk);
-            assertEquals(Reason.INVALID_CERTIFICATE, e.reason(), "junk " + junk);
-        }
     }
 
     @Test

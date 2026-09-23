@@ -11,6 +11,11 @@ import {
   appleJwsRoots,
   appleReceiptRoots,
 } from '../dist/index.js';
+// The decodeBase64 groups call the two decoders directly: the receipt-data
+// decoder of each build, and the x5c-entry decoder both builds share.
+import { decodeReceiptDataString } from '../dist/receipt.js';
+import { decodeReceiptDataString as webDecodeReceiptDataString } from '../dist/web/receipt.js';
+import { x5cBase64Decode } from '../dist/bytes.js';
 
 // Runs fixtures/cases.json — the normative cross-language conformance
 // vectors — against this implementation. The adapter below knows nothing
@@ -345,6 +350,85 @@ function resolvePath(root, path) {
   return current;
 }
 
+// --- decodeBase64 -------------------------------------------------------
+
+// Each decoder a decodeBase64 group can name, with the reason its refusal
+// carries. An error group states INVALID_RECEIPT_FORMAT, the receipt-data
+// answer; x5c answers INVALID_CERTIFICATE. x5cBase64Decode throws a plain
+// Error that both JWS verifiers turn into INVALID_CERTIFICATE, so that
+// translation happens here.
+const BASE64_DECODERS = {
+  'receipt-data': [
+    { build: 'node', decode: decodeReceiptDataString, refusal: 'INVALID_RECEIPT_FORMAT' },
+    { build: 'web', decode: webDecodeReceiptDataString, refusal: 'INVALID_RECEIPT_FORMAT' },
+  ],
+  x5c: [
+    {
+      build: 'node+web',
+      decode: (text) => {
+        try {
+          return x5cBase64Decode(text);
+        } catch (error) {
+          throw new VerificationError('INVALID_CERTIFICATE', error.message);
+        }
+      },
+      refusal: 'INVALID_CERTIFICATE',
+    },
+  ],
+};
+
+/**
+ * Runs every text of a decodeBase64 group through every decoder it names and
+ * reports every text that got the wrong answer, by case id, decoder, index
+ * and quoted text, rather than stopping at the first.
+ */
+function runDecodeBase64(kase) {
+  const { texts } = kase.input;
+  assert.ok(Array.isArray(texts) && texts.length > 0, 'harness error: input.texts is empty');
+  assert.ok(Array.isArray(kase.decoders) && kase.decoders.length > 0, 'harness error: no decoders');
+  const { status, bytesHex, reason } = kase.expected;
+  if (status === 'error') {
+    assert.equal(
+      reason,
+      'INVALID_RECEIPT_FORMAT',
+      'harness error: an error group states the receipt-data reason',
+    );
+  }
+  const failures = [];
+  for (const name of kase.decoders) {
+    const decoders = BASE64_DECODERS[name];
+    if (decoders === undefined) {
+      throw new Error(`harness error: no decoder "${name}"`);
+    }
+    for (const { build, decode, refusal } of decoders) {
+      texts.forEach((text, index) => {
+        const where = `${kase.id}: ${name} (${build}) texts[${index}] ${JSON.stringify(text)}`;
+        let decoded;
+        try {
+          decoded = Buffer.from(decode(text)).toString('hex');
+        } catch (error) {
+          if (!(error instanceof VerificationError)) {
+            failures.push(
+              `${where}: harness error: threw ${error?.constructor?.name} (${error?.message})`,
+            );
+          } else if (status === 'ok') {
+            failures.push(`${where} was refused (${error.reason}), want ${bytesHex}`);
+          } else if (error.reason !== refusal) {
+            failures.push(`${where}: reason ${error.reason}, want ${refusal}`);
+          }
+          return;
+        }
+        if (status === 'error') {
+          failures.push(`${where} was accepted (decoded to ${decoded})`);
+        } else if (decoded !== bytesHex) {
+          failures.push(`${where} decoded to ${decoded}, want ${bytesHex}`);
+        }
+      });
+    }
+  }
+  assert.deepEqual(failures, [], failures.join('\n'));
+}
+
 // --- one case -----------------------------------------------------------
 
 /**
@@ -363,6 +447,10 @@ function caseClock(kase) {
 }
 
 function runCase(kase) {
+  if (kase.operation === 'decodeBase64') {
+    runDecodeBase64(kase);
+    return;
+  }
   const operation = OPERATIONS[kase.operation];
   if (operation === undefined) {
     throw new Error(`harness error: no adapter for operation "${kase.operation}"`);
@@ -425,6 +513,31 @@ function runCase(kase) {
   }
 }
 
+// Which case ids actually ran, so the coverage check below is a fact rather
+// than a loop-shaped assumption.
+const RAN = new Set();
+
 for (const kase of CASES.cases) {
-  test(`cases.json ${kase.id}`, () => runCase(kase));
+  test(`cases.json ${kase.id}`, () => {
+    RAN.add(kase.id);
+    runCase(kase);
+  });
 }
+
+// A test filter on the command line is the one thing that may legitimately
+// leave cases unrun, so the check stands down for it and says so.
+const TEST_FILTER = [...process.execArgv, ...process.argv].find((arg) =>
+  /^--test-(name-pattern|skip-pattern|only)\b/.test(arg),
+);
+
+// Coverage self-check: every case in the file ran, compared against the
+// parsed file and never against a literal count, so a case the loop above
+// stopped reaching, or an operation that quietly returned early, fails here.
+test('cases.json every case ran', (t) => {
+  if (TEST_FILTER !== undefined) {
+    t.diagnostic(`${TEST_FILTER} filters tests; the coverage self-check needs a full run`);
+    return;
+  }
+  const missing = CASES.cases.map((kase) => kase.id).filter((id) => !RAN.has(id));
+  assert.deepEqual(missing, [], `${missing.length} of ${CASES.cases.length} cases did not run`);
+});

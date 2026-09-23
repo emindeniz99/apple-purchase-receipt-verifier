@@ -2,56 +2,21 @@
 
 require_relative "helper"
 
-# Receipt.decode_base64 must answer what Apple's verifyReceipt answered on
-# 2026-09-23 for the same spellings of genuine receipts
-# (docs/evidence/2026-09-23-verifyreceipt-base64.md). A spelling Apple
-# decodes must decode here to the same bytes; a spelling Apple answers 21002
-# must be INVALID_RECEIPT_FORMAT here, or a receipt verifies in this library
-# that Apple itself refuses. The conformance cases pin the rule on a real
-# receipt; this pins each shape on its own, including the ones Ruby's own
-# decoders would have decided differently.
+# The spellings Receipt.decode_base64 must accept and refuse are the
+# decodeBase64 groups of fixtures/cases.json, which conformance_test.rb runs
+# against both the receipt-data and the x5c decoder. What stays here is what a
+# shared vector cannot hold: a string that is not UTF-8 at all, which JSON text
+# cannot carry, and why neither of Ruby's own decoders is the rule alone.
 class ReceiptBase64Test < Minitest::Test
   Receipt = ApplePurchaseReceiptVerifier::Receipt
   VerificationError = ApplePurchaseReceiptVerifier::VerificationError
   Reason = ApplePurchaseReceiptVerifier::Reason
 
-  ACCEPTED = {
-    "QUJD" => "ABC",
-    "QUI=" => "AB",
-    "QQ==" => "A",
-    "+/8=" => "\xfb\xff".b,
-    # Unused low bits set in the last data character: Apple accepts them.
-    "QR==" => "A",
-    "Qf==" => "A",
-    "QUJ=" => "AB"
-  }.freeze
-
-  REFUSED = [
-    "",
-    "QQ", "QUI", # padding omitted
-    "QQ=", # under-padded
-    "QQ===", "QQ====", # extra padding
-    "QUJD=", "QUJD==", "QUJD====", "==", # padding after a full group
-    "Q===", "QUJDR", # impossible length
-    "QQ==QUJD", "QQ==!!!!", "QQ=A", # data or junk after the padding
-    "QU!D", # junk inside
-    "QUJD\n", "QUJD\r\n", "QUJD\nQUJD", # line feeds
-    " QUJD", "QU JD", "QU\tJD", "  QUJD  ", # other whitespace
-    "-_8=", "-_8", "+_8=", # base64url, unpadded, mixed
-    "QUJé", "QU\xffD".b # outside ASCII, and not UTF-8 at all
-  ].freeze
-
-  def test_canonical_spellings_and_trailing_bits_decode
-    ACCEPTED.each do |text, expected|
-      assert_equal expected.b, Receipt.decode_base64(text), text.inspect
-    end
-  end
-
-  def test_every_other_spelling_is_invalid_receipt_format
-    REFUSED.each do |text|
-      error = assert_raises(VerificationError, text.inspect) { Receipt.decode_base64(text) }
-      assert_equal Reason::INVALID_RECEIPT_FORMAT, error.reason, text.inspect
-    end
+  def test_a_string_that_is_not_utf8_is_invalid_receipt_format
+    text = "QU\xffD".b
+    error = assert_raises(VerificationError, text.inspect) { Receipt.decode_base64(text) }
+    assert_equal Reason::INVALID_RECEIPT_FORMAT, error.reason
+    assert_nil Receipt.decode_canonical_base64(text)
   end
 
   # Why the shape is checked by hand: Ruby's strict decoder refuses the
