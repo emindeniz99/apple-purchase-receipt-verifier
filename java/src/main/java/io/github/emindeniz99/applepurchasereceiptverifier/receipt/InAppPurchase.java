@@ -106,7 +106,8 @@ public final class InAppPurchase {
     }
 
     /**
-     * Raw unmodeled attributes by type — forward compatibility (PLAN D10).
+     * Raw unmodeled attributes by type, so a field Apple adds later is not
+     * lost.
      *
      * <p>A fresh copy each call, arrays included, for the same reason as
      * {@link AppReceipt#unknownAttributes()}: the shared {@code byte[]}

@@ -43,11 +43,11 @@ import org.jspecify.annotations.Nullable;
  * App Store Server {@code signedTransactionInfo} / {@code signedRenewalInfo},
  * Server Notifications V2) completely offline, against pinned Apple roots.
  *
- * <p>Algorithm: PLAN.md §2.1 — ES256 only, exactly 3 {@code x5c} certs,
- * Apple marker OIDs on leaf and intermediate, PKIX path validation to the
- * pinned roots at the payload's signing time, then signature + claim checks.
- * Mirrors the checks of Apple's official app-store-server-library in offline
- * mode (no OCSP — see PLAN.md §2.3 for the trade-off).</p>
+ * <p>Algorithm: ES256 only, exactly 3 {@code x5c} certs, Apple marker OIDs on
+ * leaf and intermediate, PKIX path validation to the pinned roots at the
+ * payload's signing time, then signature + claim checks. Mirrors the checks
+ * of Apple's official app-store-server-library in offline mode: no OCSP, so a
+ * revoked certificate is not detected, in exchange for no network call.</p>
  *
  * <p>Thread-safe once constructed.</p>
  *
@@ -55,11 +55,18 @@ import org.jspecify.annotations.Nullable;
  * on purpose: a null input is a verdict about the input, so it is reported as
  * {@link Reason#INVALID_JWS_FORMAT} like any other unusable one rather than as
  * a {@link NullPointerException} a caller cannot catch alongside the others.</p>
+ *
+ * <p><strong>Security providers.</strong> Every cryptographic lookup here
+ * resolves through the JVM's provider list: {@code CertificateFactory} for
+ * the {@code x5c} certificates, the {@code PKIX} {@code CertPathValidator},
+ * and {@code SHA256withECDSA}. BouncyCastle is used only to DER-encode the
+ * signature, not as a provider. A host that inserts BouncyCastle at position
+ * 1 therefore gets BouncyCastle's X.509 parser, path validator and ECDSA for
+ * all three. This library's tests run against the JDK's providers, so under
+ * that host an unusual certificate may get a different verdict. This class
+ * reads the provider order and never changes it.</p>
  */
 public final class JwsVerifier {
-
-    /** Apple marker OID: Worldwide Developer Relations intermediate CA. */
-    static final String INTERMEDIATE_OID = "1.2.840.113635.100.6.2.1";
 
     /**
      * Ceiling on the compact JWS this verifier will look at, in characters.
@@ -68,15 +75,15 @@ public final class JwsVerifier {
      * everything below allocates in proportion to it: base64url decoding
      * produces three quarters of the segment again as bytes, Jackson's tree
      * holds the parsed header and payload, and none of that is behind a
-     * signature check. A 64 MB input under {@code -Xmx256m} threw
-     * {@link OutOfMemoryError} out of {@code verifyTransaction} rather than
-     * the declared {@link VerificationException}.
+     * signature check, so an oversized input would surface as
+     * {@link OutOfMemoryError} rather than the declared
+     * {@link VerificationException}.
      *
-     * <p>The number is the php port's {@code MAX_JWS_BYTES}. Every JWS in the
-     * shared corpus, Apple's own mock notification data included, is under
-     * 2.5 KB, so 256 KiB is a hundredfold headroom over anything Apple has
-     * ever signed. A compact JWS is base64url and dots, so its characters and
-     * its bytes are the same count for any input that could verify.
+     * <p>Real Apple JWS payloads, Apple's own mock notification data
+     * included, are under 2.5 KB, so 256 KiB is a hundredfold headroom over
+     * anything Apple has ever signed. The same constant in every port. A
+     * compact JWS is base64url and dots, so its characters and its bytes are
+     * the same count for any input that could verify.
      */
     public static final int MAX_JWS_BYTES = 262144;
 
@@ -92,8 +99,10 @@ public final class JwsVerifier {
      * @param trustedRoots         pinned root CAs (production:
      *                             {@code AppleRootCerts.jwsRoots()})
      * @param bundleId             the app's bundle id every payload must carry
-     * @param acceptedEnvironments environments to accept — include SANDBOX in
-     *                             endpoints App Review can hit (PLAN.md D3)
+     * @param acceptedEnvironments environments to accept; include SANDBOX in
+     *                             endpoints App Review can hit, because App
+     *                             Review buys with sandbox accounts against
+     *                             the production app
      */
     public JwsVerifier(Set<X509Certificate> trustedRoots, String bundleId, Set<Environment> acceptedEnvironments) {
         this(trustedRoots, bundleId, acceptedEnvironments, null, null, null);
@@ -104,7 +113,8 @@ public final class JwsVerifier {
      *                     AppTransactions, unused otherwise
      * @param maxSignedAge if non-null, payloads whose signing time is older
      *                     than this many milliseconds are rejected as
-     *                     {@link Reason#STALE_PAYLOAD} (PLAN.md D5)
+     *                     {@link Reason#STALE_PAYLOAD}; {@code null} applies
+     *                     no age limit
      */
     public JwsVerifier(
             Set<X509Certificate> trustedRoots,
@@ -116,21 +126,12 @@ public final class JwsVerifier {
     }
 
     /**
-     * @param clock source of "now" for the time-dependent checks; {@code null}
-     *              (the default of every other constructor) means
-     *              {@link Clock#systemUTC()}, so existing callers are
-     *              unaffected. {@code java.time.Clock} is the JDK's own
-     *              injectable time source — it supplies an instant rather than
-     *              a timestamp or a duration, {@link Clock#fixed} pins it for
-     *              a test, and it is available on the Java 8 baseline (PLAN.md
-     *              D2), so no bespoke supplier interface is needed.
-     *
-     *              <p>It drives exactly one thing: the {@code maxSignedAge}
-     *              staleness rule. Certificate validity is NEVER judged by it
-     *              — at the payload's own signing date when the payload states
-     *              one (PLAN.md §2.1 step 4), and at the system clock when it
-     *              states none — so an injected clock cannot move a
-     *              chain verdict for any payload at all.</p>
+     * @param clock source of "now" for the {@code maxSignedAge} staleness
+     *              rule and nothing else; {@code null} (the default of every
+     *              other constructor) means {@link Clock#systemUTC()}.
+     *              Certificate validity is never judged by it (it uses the
+     *              payload's signing date, or the system clock when there is
+     *              none), so an injected clock cannot move a chain verdict.
      */
     public JwsVerifier(
             Set<X509Certificate> trustedRoots,
@@ -244,20 +245,17 @@ public final class JwsVerifier {
                     Reason.INVALID_CERTIFICATE_PURPOSE,
                     "leaf certificate lacks Apple marker OID " + AppleTrust.SIGNING_LEAF_OID);
         }
-        if (intermediate.getExtensionValue(INTERMEDIATE_OID) == null) {
+        if (intermediate.getExtensionValue(AppleTrust.INTERMEDIATE_OID) == null) {
             throw new VerificationException(
                     Reason.INVALID_CERTIFICATE_PURPOSE,
-                    "intermediate certificate lacks Apple marker OID " + INTERMEDIATE_OID);
+                    "intermediate certificate lacks Apple marker OID " + AppleTrust.INTERMEDIATE_OID);
         }
 
         JsonNode payload = parseJson(parts[1], "payload");
         Long signedAtMillis = signedAtMillis(payload);
-        // Deliberately System.currentTimeMillis(), not this.clock: the instant
-        // below is a certificate-validity instant, and an injected clock must
-        // never be able to move a certificate-validity verdict. The fallback
-        // only fires for a payload carrying neither signedDate nor
-        // receiptCreationDate, where PLAN.md §2.1 step 4's "else current time"
-        // leaves the window anchored to real time. node and python agree.
+        // The system clock, not this.clock: this is a certificate-validity
+        // instant, which an injected clock must never move. It is only used
+        // when the payload states no signing time.
         validateChain(leaf, intermediate, signedAtMillis != null ? new Date(signedAtMillis.longValue()) : new Date());
 
         byte[] signature = decodeBase64Url(parts[2], "signature");
@@ -278,17 +276,10 @@ public final class JwsVerifier {
     }
 
     /**
-     * A JWS header and a JWS payload are JSON <em>objects</em> (RFC 7515 §4,
-     * §3), so anything else is a malformed JWS and must be reported as one.
-     * The check is not decorative: a segment that decodes to nothing or to
-     * whitespace makes {@code readTree} answer a node carrying no value at
-     * all — {@code MissingNode} on this Jackson, {@code null} on others — and
-     * such a node survives every {@code path(...)} lookup only to fail later
-     * as a {@link NullPointerException} out of {@code treeToValue}, or to
-     * make {@code verifyRaw} hand back a null map. A scalar or array segment
-     * fails equally far downstream. Both leak past the
-     * {@link VerificationException} contract every caller codes against, so
-     * they are stopped here instead.
+     * A JWS header and payload must be JSON objects (RFC 7515). An empty
+     * segment reads as {@code MissingNode} or {@code null}, and a scalar or
+     * array fails later as a {@link NullPointerException} rather than a
+     * {@link VerificationException}, so {@code isObject()} is checked here.
      */
     private JsonNode parseJson(String base64Url, String what) throws VerificationException {
         byte[] bytes = decodeBase64Url(base64Url, what);
@@ -349,7 +340,7 @@ public final class JwsVerifier {
      * renewal info, notifications) or {@code receiptCreationDate}
      * (AppTransaction), or {@code null} when it states neither. Chain validity
      * is checked at this instant so payloads signed with since-rotated
-     * certificates keep verifying (PLAN.md §2.1 step 4).
+     * certificates keep verifying.
      */
     private static @Nullable Long signedAtMillis(JsonNode payload) throws VerificationException {
         Long signedDate = instantClaim(payload, "signedDate");
@@ -362,8 +353,7 @@ public final class JwsVerifier {
      * say — is not "not stated": treating it as absent would fall through to
      * the current-time anchor and validate the chain against today, which is
      * an attacker choosing the instant a certificate's window is judged at.
-     * An instant no calendar can express is inside no window, which is the
-     * verdict the other ports reach through their own date types.
+     * An instant no calendar can express is inside no window.
      */
     private static @Nullable Long instantClaim(JsonNode payload, String name) throws VerificationException {
         JsonNode claim = payload.path(name);
@@ -431,7 +421,7 @@ public final class JwsVerifier {
     /**
      * JWS ES256 signatures are raw {@code r ‖ s} (RFC 7515); JCA's
      * SHA256withECDSA wants ASN.1 DER. The P1363-format JCA algorithm would
-     * avoid this, but it's Java 9+ and our baseline is 8 (PLAN.md D2).
+     * avoid this, but it's Java 9+ and this library supports Java 8.
      */
     private static byte[] p1363ToDer(byte[] p1363) throws IOException {
         BigInteger r = new BigInteger(1, Arrays.copyOfRange(p1363, 0, 32));
@@ -446,7 +436,7 @@ public final class JwsVerifier {
         }
     }
 
-    /** Accept-set environment routing (PLAN.md D3): returns the matched environment. */
+    /** Checks the claim against the accepted set and returns the matched environment. */
     private Environment requireAcceptedEnvironment(@Nullable String claim) throws VerificationException {
         Environment env = Environment.fromValue(claim);
         if (env == null || !acceptedEnvironments.contains(env)) {

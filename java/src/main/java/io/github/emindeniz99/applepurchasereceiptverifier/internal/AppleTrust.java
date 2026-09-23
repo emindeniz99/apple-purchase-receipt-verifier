@@ -21,6 +21,9 @@ public final class AppleTrust {
      */
     public static final String SIGNING_LEAF_OID = "1.2.840.113635.100.6.11.1";
 
+    /** Apple marker OID: Worldwide Developer Relations intermediate CA. */
+    public static final String INTERMEDIATE_OID = "1.2.840.113635.100.6.2.1";
+
     private AppleTrust() {}
 
     /**

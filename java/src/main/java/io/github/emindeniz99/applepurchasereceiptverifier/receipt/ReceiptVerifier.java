@@ -18,25 +18,17 @@ import java.security.cert.TrustAnchor;
 import java.security.cert.X509CertSelector;
 import java.security.cert.X509Certificate;
 import java.security.interfaces.RSAPublicKey;
-import java.time.Instant;
-import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import org.bouncycastle.asn1.ASN1Encodable;
-import org.bouncycastle.asn1.ASN1IA5String;
 import org.bouncycastle.asn1.ASN1Integer;
-import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1Set;
-import org.bouncycastle.asn1.ASN1String;
 import org.bouncycastle.asn1.ASN1TaggedObject;
-import org.bouncycastle.asn1.ASN1UTF8String;
 import org.bouncycastle.asn1.cms.ContentInfo;
 import org.bouncycastle.asn1.cms.SignedData;
 import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
@@ -58,8 +50,8 @@ import org.jspecify.annotations.Nullable;
 /**
  * Verifies legacy PKCS#7 app receipts (the blob apps used to send to the
  * deprecated {@code verifyReceipt} endpoint) completely offline, against the
- * pinned Apple Inc. Root CA — the server-side port of Apple's "Validating
- * receipts on the device" procedure (PLAN.md §2.2).
+ * pinned Apple roots: a server-side port of Apple's "Validating receipts on
+ * the device" procedure.
  *
  * <p>Thread-safe once constructed.</p>
  *
@@ -72,80 +64,38 @@ import org.jspecify.annotations.Nullable;
  * {@code deviceGuid} is {@code @Nullable} because it is the optional
  * device-hash binding: null skips that check, exactly as the shorter overload
  * does.</p>
+ *
+ * <p><strong>Security providers.</strong> The CMS signature and its digest
+ * are checked with a private BouncyCastle instance that is never registered.
+ * Everything else resolves through the JVM's provider list: certificate
+ * decoding ({@code CertificateFactory}, through
+ * {@link JcaX509CertificateConverter}), the {@code PKIX}
+ * {@code CertPathBuilder} and its {@code Collection} {@code CertStore}, and
+ * the SHA-1 of the device-hash check. A host that inserts BouncyCastle at
+ * position 1 therefore gets BouncyCastle's X.509 parser and path builder for
+ * those steps instead of the JDK's. This library's tests run against the
+ * JDK's providers, so under that host an unusual certificate may get a
+ * different verdict.
+ * This class reads the provider order and never changes it.</p>
  */
 public final class ReceiptVerifier {
 
-    // Receipt attribute types from Apple's archived "Receipt Fields" chapter
-    // (developer.apple.com/library/archive/releasenotes/General/
-    // ValidateAppStoreReceipt/Chapters/ReceiptFields.html, last revised
-    // 2017-12-11; the live "Validating receipts on the device" page defers
-    // to it), plus two community-established ones (0: receipt type, 18:
-    // original purchase date) needed for verifyReceipt response
-    // compatibility.
-    //
-    // Types 1, 15, 16 and 1713 are on none of those pages either. They were
-    // established by decoding a genuine production receipt and lining its
-    // attributes up against the answer Apple's verifyReceipt endpoint gives
-    // for the same receipt (measured 2026-09-21):
-    //
-    //   1     app item id                -> adam_id AND app_item_id
-    //   15    download id                -> download_id
-    //   16    version external id        -> version_external_identifier
-    //   1713  is trial period (in-app)   -> is_trial_period
-    //
-    // All four are INTEGER attributes. Apple renders the three app-level ids
-    // as JSON numbers and 1713 as the string "true"/"false", exactly as it
-    // renders 1719.
-    private static final int ATTR_RECEIPT_TYPE = 0;
-    private static final int ATTR_APP_ITEM_ID = 1;
-    private static final int ATTR_ORIGINAL_PURCHASE_DATE = 18;
-    private static final int ATTR_BUNDLE_ID = 2;
-    private static final int ATTR_APP_VERSION = 3;
-    private static final int ATTR_OPAQUE_VALUE = 4;
-    private static final int ATTR_SHA1_HASH = 5;
-    private static final int ATTR_CREATION_DATE = 12;
-    private static final int ATTR_DOWNLOAD_ID = 15;
-    private static final int ATTR_VERSION_EXTERNAL_IDENTIFIER = 16;
-    private static final int ATTR_IN_APP = 17;
-    private static final int ATTR_ORIGINAL_APP_VERSION = 19;
-    private static final int ATTR_EXPIRATION_DATE = 21;
-
-    private static final int IAP_QUANTITY = 1701;
-    private static final int IAP_PRODUCT_ID = 1702;
-    private static final int IAP_TRANSACTION_ID = 1703;
-    private static final int IAP_PURCHASE_DATE = 1704;
-    private static final int IAP_ORIGINAL_TRANSACTION_ID = 1705;
-    private static final int IAP_ORIGINAL_PURCHASE_DATE = 1706;
-    private static final int IAP_EXPIRES_DATE = 1708;
-    private static final int IAP_WEB_ORDER_LINE_ITEM_ID = 1711;
-    private static final int IAP_CANCELLATION_DATE = 1712;
-    private static final int IAP_IS_TRIAL_PERIOD = 1713;
-    private static final int IAP_IS_IN_INTRO_OFFER_PERIOD = 1719;
-
     /**
      * Ceiling on the certificates a receipt may embed. Genuine receipts carry
-     * one to three (fixtures/public-receipts: xcode-with-purchases 1,
-     * sandbox-g5 3, sandbox-legacy 3), so ten clears any chain Apple ships and
-     * still rejects a flood before a single certificate is decoded. With the
-     * bound, what is left of a flood is CMS parsing of the blob, which is
-     * proportional to the input a caller can already cap.
+     * one to three, so ten clears any chain Apple ships and still rejects a
+     * flood before a single certificate is decoded.
      *
-     * <p>The exponential case is a cross-signed mesh — layers of certificates
-     * that each name several equally valid issuers, which an unbounded
-     * backtracking path builder spends 2^layers on. Here it stays flat at
-     * 1.0-1.5 ms from fourteen layers to twenty-two (measured in
-     * ReceiptVerifierTest#rejectsCrossSignedCertificateMeshWithoutWalkingIt),
-     * because the path builder abandons every path at
-     * {@link #MAX_PATH_LENGTH}. Bounding the count does not rely on that
-     * depth bound, and matches the node, python and swift implementations.</p>
+     * <p>A cross-signed mesh (layers of certificates that each name several
+     * valid issuers) costs an unbounded backtracking path builder 2^layers.
+     * {@link #MAX_PATH_LENGTH} already cuts that off; this count bound does
+     * not rely on it.</p>
      */
     private static final int MAXIMUM_EMBEDDED_CERTIFICATES = 10;
 
     /**
-     * The longest path the builder will walk, anchor excluded — the same
-     * number and the same meaning as go, rust, node, python, php, ruby, dotnet
-     * and swift, all of which walk at most this many certificates starting at
-     * the leaf before they must reach a pinned anchor. Genuine receipt chains
+     * The longest path the builder will walk, anchor excluded: at most this
+     * many certificates starting at the leaf before a pinned anchor must be
+     * reached, the same bound in every port. Genuine receipt chains
      * are two certificates below the root, so six leaves room for a longer
      * Apple chain while bounding what a hostile embedded set can cost.
      *
@@ -161,8 +111,7 @@ public final class ReceiptVerifier {
      *   <li>That parameter exempts self-issued intermediates from its count
      *       (RFC 5280 6.1.4), so a path builder honouring it can still return
      *       a path longer than this constant. The built path is therefore
-     *       measured afterwards, which is the check the other ports perform
-     *       inherently by counting every hop they take.</li>
+     *       measured afterwards.</li>
      * </ul>
      */
     private static final int MAX_PATH_LENGTH = 6;
@@ -180,34 +129,33 @@ public final class ReceiptVerifier {
      * {@link VerificationException}.
      *
      * <p>3 MiB, in bytes: Apple's verifyReceipt refuses a request body over
-     * 3,145,728 bytes (measured 2026-09-23), so no receipt it would accept is
-     * larger. The same fixed constant in every port. The string is measured
+     * 3,145,728 bytes, so no receipt it would accept is larger. The same
+     * fixed constant in every port. The string is measured
      * in characters: any character above U+007F is invalid base64, which the
      * decoder rejects with the same reason, so for every string that could
      * decode, characters and UTF-8 bytes are the same count.
      */
     public static final int MAX_RECEIPT_BYTES = 3145728;
 
+    // Used as an instance, never registered with Security.addProvider, so this
+    // library never changes the JVM's global provider list.
     private static final BouncyCastleProvider PROVIDER = new BouncyCastleProvider();
 
-    // Built once and reused; see signerVerifier.
+    // Built once and shared by every thread; see signerVerifier.
     private static final JcaSignerInfoVerifierBuilder SIGNER_VERIFIERS = signerVerifiers();
 
     private final Set<TrustAnchor> trustAnchors;
     private final String bundleId;
 
     /**
-     * <p>There is deliberately no clock option on this class, and there must
-     * not be one. Receipt verification has no staleness rule, so the only
-     * thing a clock could reach is the "else current time" fallback for the
-     * chain-validity instant of a receipt carrying no creation date (PLAN.md
-     * §2.2 step 2) — a certificate-validity verdict. A caller injecting a
-     * clock (to work around skew, or to pin a test) must not thereby be able
-     * to accept a chain that is expired in real time, so that fallback reads
-     * the system clock and nothing else. node, python and swift agree; the
-     * clock seam lives on {@code JwsVerifier} (max signed age) and on
-     * {@link VerifyReceiptEndpoint} (request_date stamping), where what it
-     * drives genuinely moves with wall-clock time.</p>
+     * Creates a verifier for one app.
+     *
+     * <p>This class takes no clock, on purpose. Receipt verification has no
+     * staleness rule, so a clock could only reach the chain-validity instant
+     * of a receipt carrying no creation date, and an injected clock must
+     * never be able to accept a chain that is expired in real time. The
+     * clock seams live on {@code JwsVerifier} (max signed age) and on
+     * {@link VerifyReceiptEndpoint} ({@code request_date}).</p>
      *
      * @param trustedRoots pinned root CAs (production:
      *                     {@code AppleRootCerts.receiptRoots()})
@@ -249,10 +197,11 @@ public final class ReceiptVerifier {
      * Verifies a receipt and additionally enforces the device-hash binding:
      * {@code SHA1(deviceGuid ‖ opaqueValue ‖ bundleIdBytes)} must equal
      * attribute 5. Optional because it requires the client to send its
-     * device GUID (PLAN.md D4) — the raw bytes of {@code identifierForVendor}
-     * on iOS, iPadOS, tvOS and watchOS, including an iOS app running on an
-     * Apple silicon Mac, or the primary network interface's MAC address
-     * from {@code copy_mac_address} on macOS and Mac Catalyst. Each
+     * device GUID, which not every client can: the raw bytes of
+     * {@code identifierForVendor} on iOS, iPadOS, tvOS and watchOS, including
+     * an iOS app running on an Apple silicon Mac, or the primary network
+     * interface's MAC address from {@code copy_mac_address} on macOS and Mac
+     * Catalyst. Each
      * device's own receipt embeds that device's GUID, so cross-device
      * restore still works: every device presents its own receipt.
      */
@@ -277,8 +226,8 @@ public final class ReceiptVerifier {
      * <p>Public, and static rather than an instance method, so that a caller
      * emulating Apple's endpoint gets the primitive itself instead of having
      * to build a {@link ReceiptVerifier} around a bundle id it does not want
-     * checked. Same name and same shape as node's {@code verifyReceiptCore}
-     * and python's {@code verify_receipt_core}.</p>
+     * checked. The other ports expose the same primitive under the same
+     * name.</p>
      *
      * <p>The receipt it returns has been proved Apple-signed, but NO claim in
      * it has been checked: the bundle id in particular is whatever the receipt
@@ -302,8 +251,8 @@ public final class ReceiptVerifier {
         // BouncyCastle's ASN.1 and CMS entry points report malformed input with
         // UNCHECKED exceptions, and which ones is neither documented nor stable
         // across releases, so hostile input is contained by category instead of
-        // by type — enumerating the types is exactly what let eleven characters
-        // of attacker base64 escape the declared VerificationException contract.
+        // by type: a list of types would miss the next one and let it escape
+        // the declared VerificationException contract.
         try {
             return verifyCoreUnguarded(receiptDer, trustAnchors);
         } catch (VerificationException e) {
@@ -323,8 +272,9 @@ public final class ReceiptVerifier {
             throws VerificationException {
         ASN1Primitive parsed;
         try {
-            // Rejects trailing bytes after the CMS blob (PLAN 2.3) - BC's
-            // fromByteArray throws when parsing does not exhaust the input.
+            // Rejects trailing bytes after the CMS blob, so bytes appended to a
+            // signed receipt cannot ride along: BC's fromByteArray throws when
+            // parsing does not exhaust the input.
             parsed = ASN1Primitive.fromByteArray(receiptDer);
         } catch (IOException e) {
             throw new VerificationException(
@@ -348,13 +298,9 @@ public final class ReceiptVerifier {
         // Parsed before signature verification only to learn the creation
         // date (chain validity is anchored at signing time); nothing from it
         // is trusted until after the chain + signature checks pass.
-        AppReceipt receipt = parsePayload(payload);
-        // Deliberately the system clock, with no seam to override it: this is
-        // a certificate-validity instant, and an injected clock must never be
-        // able to move a certificate-validity verdict. The fallback only fires
-        // for a receipt carrying no creation date (attribute 12), where
-        // PLAN.md §2.2 step 2's "else current time" leaves the window anchored
-        // to real time. node, python and swift read the system clock here too.
+        AppReceipt receipt = ReceiptPayload.parse(payload);
+        // Without a creation date (attribute 12) the chain is judged at the
+        // system clock, never an injected one; see the constructor.
         Date at = receipt.creationDate() != null ? Date.from(receipt.creationDate()) : new Date();
 
         Iterator<SignerInformation> signers = cms.getSignerInfos().getSigners().iterator();
@@ -376,13 +322,7 @@ public final class ReceiptVerifier {
     private static X509Certificate validateChain(
             CMSSignedData cms, SignerInformation signer, Date at, Set<TrustAnchor> trustAnchors)
             throws VerificationException {
-        // The certificate bag is read from the raw SignedData rather than
-        // through cms.getCertificates(), which decodes every entry eagerly
-        // and throws on the first one it dislikes — losing WHICH entry it
-        // was, and that is what decides the verdict. A stranger the receipt
-        // merely carries is a defect of the receipt; the SIGNER being
-        // unreadable is a defect of a certificate and gets the verdict an
-        // unreadable x5c entry gets on the JWS path (receipt/reject-signer-*).
+        // Raw set, not cms.getCertificates(); see decodeEmbeddedAndFindSigner.
         ASN1Set certificateSet = embeddedCertificateSet(cms);
         int embeddedCount = certificateSet == null ? 0 : certificateSet.size();
         // Bounded here, before a single embedded certificate is decoded or
@@ -395,9 +335,7 @@ public final class ReceiptVerifier {
                             + embeddedCount + " certificates, more than the maximum of "
                             + MAXIMUM_EMBEDDED_CERTIFICATES);
         }
-        List<X509CertificateHolder> holders = new ArrayList<X509CertificateHolder>();
-        X509CertificateHolder signerHolder =
-                decodeEmbeddedAndFindSigner(certificateSet, embeddedCount, signer, holders);
+        EmbeddedCertificates certificates = decodeEmbeddedAndFindSigner(certificateSet, signer);
         JcaX509CertificateConverter converter = new JcaX509CertificateConverter();
         X509Certificate signerCert;
         try {
@@ -406,21 +344,20 @@ public final class ReceiptVerifier {
             // bytes, so this is where an extnValue that stops decoding is
             // found, and it is a defect of the certificate rather than of the
             // path it sits on.
-            signerCert = converter.getCertificate(signerHolder);
+            signerCert = converter.getCertificate(certificates.signer);
+            // Result unused: decoding the key here makes a key on an
+            // unimplemented curve fail now, as INVALID_CERTIFICATE, instead
+            // of later inside the path builder or the signature check under
+            // another verdict.
             signerCert.getPublicKey();
-        } catch (GeneralSecurityException e) {
-            throw new VerificationException(
-                    Reason.INVALID_CERTIFICATE, "receipt signer certificate is not a valid certificate", e);
-        } catch (RuntimeException e) {
+        } catch (GeneralSecurityException | RuntimeException e) {
             throw new VerificationException(
                     Reason.INVALID_CERTIFICATE, "receipt signer certificate is not a valid certificate", e);
         }
         try {
             List<X509Certificate> embedded = new ArrayList<X509Certificate>();
-            for (X509CertificateHolder holder : holders) {
-                // The signer was converted above; converting it again only
-                // re-encodes it and gets the same certificate back.
-                embedded.add(holder == signerHolder ? signerCert : converter.getCertificate(holder));
+            for (X509CertificateHolder holder : certificates.all) {
+                embedded.add(converter.getCertificate(holder));
             }
             X509CertSelector target = new X509CertSelector();
             target.setCertificate(signerCert);
@@ -430,8 +367,8 @@ public final class ReceiptVerifier {
             params.setDate(at);
             params.setMaxPathLength(MAX_PATH_LENGTH - 1);
             CertPathBuilderResult result = CertPathBuilder.getInstance("PKIX").build(params);
-            // getCertPath() excludes the trust anchor, so this is the count the
-            // other ports bound: certificates from the leaf up to the anchor.
+            // getCertPath() excludes the trust anchor, so this counts the
+            // certificates from the leaf up to the anchor.
             if (result.getCertPath().getCertificates().size() > MAX_PATH_LENGTH) {
                 throw new VerificationException(Reason.INVALID_CHAIN, "chain exceeds maximum length");
             }
@@ -446,25 +383,36 @@ public final class ReceiptVerifier {
         }
     }
 
+    /** Every embedded certificate, decoded, and the one the SignerInfo names. */
+    private static final class EmbeddedCertificates {
+        final List<X509CertificateHolder> all;
+        final X509CertificateHolder signer;
+
+        EmbeddedCertificates(List<X509CertificateHolder> all, X509CertificateHolder signer) {
+            this.all = all;
+            this.signer = signer;
+        }
+    }
+
     /**
-     * Decodes every embedded certificate into {@code holders} and returns the
-     * one the SignerInfo names, or throws the verdict for the bag.
+     * Decodes every embedded certificate and finds the one the SignerInfo
+     * names, or throws the verdict for the bag.
      *
      * <p>This walk over the raw set, and {@link #namesTheSigner}, exist so
      * that a signer certificate no decoder accepts is reported as
-     * INVALID_CERTIFICATE rather than INVALID_RECEIPT_FORMAT. fixtures/cases.json
-     * pins that with receipt/reject-signer-certificate-version-11,
-     * reject-signer-carrying-one-extension-twice,
-     * reject-signer-on-an-unimplemented-curve and
-     * reject-signer-with-a-corrupt-extension; do not replace it with
-     * {@code cms.getCertificates()}.</p>
+     * INVALID_CERTIFICATE (as an unreadable x5c entry is on the JWS path),
+     * while an unreadable certificate the receipt merely carries is
+     * INVALID_RECEIPT_FORMAT. {@code cms.getCertificates()} decodes every
+     * entry eagerly and throws on the first bad one without saying which, so
+     * it cannot tell the two apart. The four broken-signer-certificate
+     * conformance cases (version 11, one extension carried twice, an
+     * unimplemented curve, a corrupt extension) pin INVALID_CERTIFICATE; do
+     * not replace this walk with {@code cms.getCertificates()}.</p>
      */
-    private static X509CertificateHolder decodeEmbeddedAndFindSigner(
-            @Nullable ASN1Set certificateSet,
-            int embeddedCount,
-            SignerInformation signer,
-            List<X509CertificateHolder> holders)
-            throws VerificationException {
+    private static EmbeddedCertificates decodeEmbeddedAndFindSigner(
+            @Nullable ASN1Set certificateSet, SignerInformation signer) throws VerificationException {
+        List<X509CertificateHolder> holders = new ArrayList<X509CertificateHolder>();
+        int embeddedCount = certificateSet == null ? 0 : certificateSet.size();
         @Nullable Exception unreadable = null;
         boolean unreadableSigner = false;
         for (int i = 0; i < embeddedCount; i++) {
@@ -476,12 +424,7 @@ public final class ReceiptVerifier {
                 if (unreadable == null) {
                     unreadable = e;
                 }
-                // Whether the SignerInfo means THIS entry has to be read out
-                // of the entry itself: an identity is still legible in bytes
-                // that are not a certificate all the way down, and matching
-                // the SignerInfo against the entries that DID decode answers
-                // a different question — wrongly, whenever the receipt names
-                // a certificate it does not carry at all.
+                // Read the identity from the entry itself; see namesTheSigner.
                 if (raw != null && namesTheSigner(raw, signer.getSID())) {
                     unreadableSigner = true;
                 }
@@ -513,18 +456,16 @@ public final class ReceiptVerifier {
             throw new VerificationException(
                     Reason.INVALID_RECEIPT_FORMAT, "an embedded certificate is not a valid certificate", unreadable);
         }
-        return signerHolder;
+        return new EmbeddedCertificates(holders, signerHolder);
     }
 
     /**
      * Whether {@code raw} carries the issuer Name and serialNumber
-     * {@code sid} names, read as generic ASN.1 rather than as a certificate.
-     *
-     * <p>That is the whole point: the entries this is asked about are the
-     * ones {@link X509CertificateHolder} refused, and an identity is still
-     * legible in bytes that are not a certificate all the way down. Node,
-     * Swift and Go resolve the signer the same way, off the raw DER, so all
-     * of them agree about which embedded entry a defect belongs to.</p>
+     * {@code sid} names, read as generic ASN.1 because the entries asked
+     * about are the ones {@link X509CertificateHolder} refused. Inferring it
+     * from the entries that did decode would blame the wrong entry whenever
+     * the receipt names a certificate it does not carry. All ports resolve
+     * the signer off the raw DER, so they agree which entry a defect is in.
      *
      * <p>{@code TBSCertificate ::= SEQUENCE { [0] version DEFAULT v1,
      * serialNumber INTEGER, signature AlgorithmIdentifier, issuer Name,
@@ -543,9 +484,7 @@ public final class ReceiptVerifier {
             BigInteger serial = ASN1Integer.getInstance(tbs.getObjectAt(index)).getValue();
             X500Name issuer = X500Name.getInstance(tbs.getObjectAt(index + 2));
             return serial.equals(sid.getSerialNumber()) && issuer.equals(sid.getIssuer());
-        } catch (RuntimeException e) {
-            return false;
-        } catch (IOException e) {
+        } catch (RuntimeException | IOException e) {
             return false;
         }
     }
@@ -567,7 +506,7 @@ public final class ReceiptVerifier {
         }
         try {
             // Restrict to the digests Apple actually uses for receipts
-            // (SHA-1 / SHA-256), matching the other three implementations.
+            // (SHA-1 / SHA-256), the same set in every port.
             String digestOid = signer.getDigestAlgOID();
             if (!OIWObjectIdentifiers.idSHA1.getId().equals(digestOid)
                     && !NISTObjectIdentifiers.id_sha256.getId().equals(digestOid)) {
@@ -593,6 +532,13 @@ public final class ReceiptVerifier {
      * tables (a few hundred entries) and builds only the per-certificate
      * parts in {@code build}, so reusing it avoids rebuilding the tables for
      * every receipt, which {@code JcaSimpleSignerInfoVerifierBuilder} does.
+     *
+     * <p>Sharing it across threads relies on BouncyCastle internals, checked
+     * in BouncyCastle 1.86: {@code build} writes no state, only reads fields
+     * set before class initialization finished (not declared final, but
+     * safely published by it), and makes a new content-verifier provider per
+     * certificate; the name generator, algorithm finder and digest provider
+     * it shares are only read. Re-check on every BouncyCastle upgrade.</p>
      */
     static SignerInformationVerifier signerVerifier(X509Certificate signerCert) throws OperatorCreationException {
         return SIGNER_VERIFIERS.build(signerCert);
@@ -626,303 +572,5 @@ public final class ReceiptVerifier {
         } catch (GeneralSecurityException e) {
             throw new VerificationException(Reason.DEVICE_HASH_MISMATCH, "SHA-1 unavailable", e);
         }
-    }
-
-    // --- ASN.1 payload parsing -------------------------------------------
-
-    private static AppReceipt parsePayload(byte[] payload) throws VerificationException {
-        ASN1Set attributes = parseAttributeSet(payload, "receipt payload");
-        String receiptType = null;
-        String parsedBundleId = null;
-        byte[] bundleIdBytes = null;
-        String appVersion = null;
-        byte[] opaqueValue = null;
-        byte[] sha1Hash = null;
-        Instant creationDate = null;
-        Instant originalPurchaseDate = null;
-        String originalAppVersion = null;
-        Instant expirationDate = null;
-        Long appItemId = null;
-        Long downloadId = null;
-        Long versionExternalIdentifier = null;
-        List<InAppPurchase> purchases = new ArrayList<InAppPurchase>();
-        Map<Integer, List<byte[]>> unknown = new LinkedHashMap<Integer, List<byte[]>>();
-
-        for (ASN1Encodable element : attributes) {
-            Attribute attr = Attribute.of(element);
-            switch (attr.type) {
-                case ATTR_RECEIPT_TYPE:
-                    receiptType = decodeString(attr.value);
-                    break;
-                case ATTR_APP_ITEM_ID:
-                    appItemId = decodeInteger(attr.value);
-                    break;
-                case ATTR_ORIGINAL_PURCHASE_DATE:
-                    originalPurchaseDate = decodeDate(attr.value);
-                    break;
-                case ATTR_BUNDLE_ID:
-                    parsedBundleId = decodeString(attr.value);
-                    bundleIdBytes = attr.value;
-                    break;
-                case ATTR_APP_VERSION:
-                    appVersion = decodeString(attr.value);
-                    break;
-                case ATTR_OPAQUE_VALUE:
-                    opaqueValue = attr.value;
-                    break;
-                case ATTR_SHA1_HASH:
-                    sha1Hash = attr.value;
-                    break;
-                case ATTR_CREATION_DATE:
-                    creationDate = decodeDate(attr.value);
-                    break;
-                case ATTR_DOWNLOAD_ID:
-                    downloadId = decodeInteger(attr.value);
-                    break;
-                case ATTR_VERSION_EXTERNAL_IDENTIFIER:
-                    versionExternalIdentifier = decodeInteger(attr.value);
-                    break;
-                case ATTR_IN_APP:
-                    purchases.add(parseInApp(attr.value));
-                    break;
-                case ATTR_ORIGINAL_APP_VERSION:
-                    originalAppVersion = decodeString(attr.value);
-                    break;
-                case ATTR_EXPIRATION_DATE:
-                    expirationDate = decodeDate(attr.value);
-                    break;
-                default:
-                    // Undocumented attribute types stay accessible for
-                    // forward compatibility (PLAN D10).
-                    recordUnknown(unknown, attr);
-                    break;
-            }
-        }
-        return new AppReceipt(
-                receiptType,
-                parsedBundleId,
-                bundleIdBytes,
-                appVersion,
-                opaqueValue,
-                sha1Hash,
-                creationDate,
-                originalPurchaseDate,
-                originalAppVersion,
-                expirationDate,
-                appItemId,
-                downloadId,
-                versionExternalIdentifier,
-                purchases,
-                unknown);
-    }
-
-    private static InAppPurchase parseInApp(byte[] inAppSet) throws VerificationException {
-        ASN1Set attributes = parseAttributeSet(inAppSet, "in-app purchase attribute");
-        Long quantity = null;
-        String productId = null;
-        String transactionId = null;
-        String originalTransactionId = null;
-        Instant purchaseDate = null;
-        Instant originalPurchaseDate = null;
-        Instant expiresDate = null;
-        Instant cancellationDate = null;
-        Long webOrderLineItemId = null;
-        Long isTrialPeriod = null;
-        Long isInIntroOfferPeriod = null;
-        Map<Integer, List<byte[]>> unknown = new LinkedHashMap<Integer, List<byte[]>>();
-
-        for (ASN1Encodable element : attributes) {
-            Attribute attr = Attribute.of(element);
-            switch (attr.type) {
-                case IAP_QUANTITY:
-                    quantity = decodeInteger(attr.value);
-                    break;
-                case IAP_PRODUCT_ID:
-                    productId = decodeString(attr.value);
-                    break;
-                case IAP_TRANSACTION_ID:
-                    transactionId = decodeString(attr.value);
-                    break;
-                case IAP_PURCHASE_DATE:
-                    purchaseDate = decodeDate(attr.value);
-                    break;
-                case IAP_ORIGINAL_TRANSACTION_ID:
-                    originalTransactionId = decodeString(attr.value);
-                    break;
-                case IAP_ORIGINAL_PURCHASE_DATE:
-                    originalPurchaseDate = decodeDate(attr.value);
-                    break;
-                case IAP_EXPIRES_DATE:
-                    expiresDate = decodeDate(attr.value);
-                    break;
-                case IAP_WEB_ORDER_LINE_ITEM_ID:
-                    webOrderLineItemId = decodeInteger(attr.value);
-                    break;
-                case IAP_CANCELLATION_DATE:
-                    cancellationDate = decodeDate(attr.value);
-                    break;
-                case IAP_IS_TRIAL_PERIOD:
-                    isTrialPeriod = decodeInteger(attr.value);
-                    break;
-                case IAP_IS_IN_INTRO_OFFER_PERIOD:
-                    isInIntroOfferPeriod = decodeInteger(attr.value);
-                    break;
-                default:
-                    recordUnknown(unknown, attr);
-                    break;
-            }
-        }
-        return new InAppPurchase(
-                quantity,
-                productId,
-                transactionId,
-                originalTransactionId,
-                purchaseDate,
-                originalPurchaseDate,
-                expiresDate,
-                cancellationDate,
-                webOrderLineItemId,
-                isTrialPeriod,
-                isInIntroOfferPeriod,
-                unknown);
-    }
-
-    private static void recordUnknown(Map<Integer, List<byte[]>> unknown, Attribute attr) {
-        List<byte[]> values = unknown.get(attr.type);
-        if (values == null) {
-            values = new ArrayList<byte[]>();
-            unknown.put(attr.type, values);
-        }
-        values.add(attr.value);
-    }
-
-    private static ASN1Set parseAttributeSet(byte[] der, String what) throws VerificationException {
-        ASN1Primitive parsed;
-        try {
-            parsed = ASN1Primitive.fromByteArray(der);
-        } catch (IOException e) {
-            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, what + " is not valid ASN.1", e);
-        }
-        if (parsed instanceof ASN1OctetString) {
-            // Xcode receipts double-wrap the payload in an extra OCTET
-            // STRING (upstream receipt_utility handles the same shape).
-            try {
-                parsed = ASN1Primitive.fromByteArray(((ASN1OctetString) parsed).getOctets());
-            } catch (IOException e) {
-                throw new VerificationException(
-                        Reason.INVALID_RECEIPT_FORMAT, what + " double-wrap is not valid ASN.1", e);
-            }
-        }
-        if (!(parsed instanceof ASN1Set)) {
-            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, what + " is not an ASN.1 SET");
-        }
-        return (ASN1Set) parsed;
-    }
-
-    /** {@code ReceiptAttribute ::= SEQUENCE { type INTEGER, version INTEGER, value OCTET STRING }} */
-    private static final class Attribute {
-        final int type;
-        final byte[] value;
-
-        private Attribute(int type, byte[] value) {
-            this.type = type;
-            this.value = value;
-        }
-
-        static Attribute of(ASN1Encodable element) throws VerificationException {
-            try {
-                ASN1Sequence seq = ASN1Sequence.getInstance(element);
-                if (seq.size() < 3) {
-                    throw new VerificationException(
-                            Reason.INVALID_RECEIPT_FORMAT,
-                            "receipt attribute has " + seq.size() + " fields, expected 3");
-                }
-                long type =
-                        boundedInt(ASN1Integer.getInstance(seq.getObjectAt(0)).getValue());
-                byte[] value = ASN1OctetString.getInstance(seq.getObjectAt(2)).getOctets();
-                // A type wider than a 32-bit signed integer is not a valid
-                // attribute type, so the receipt is rejected rather than
-                // reinterpreted. Renaming an unrepresentable type (this used to
-                // file it under -1) invents an attribute the receipt never
-                // carried, and is how two ports start disagreeing about what a
-                // receipt says. Fail closed; node, python and swift agree.
-                if (type > Integer.MAX_VALUE) {
-                    throw new VerificationException(
-                            Reason.INVALID_RECEIPT_FORMAT, "receipt attribute type out of range: " + type);
-                }
-                return new Attribute((int) type, value);
-            } catch (IllegalArgumentException e) {
-                throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "malformed receipt attribute", e);
-            }
-        }
-    }
-
-    /** Non-negative, <= 8 bytes — real receipts carry 7-byte integers. */
-    private static long boundedInt(BigInteger value) throws VerificationException {
-        if (value.signum() < 0 || value.bitLength() > 63) {
-            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "receipt integer out of range");
-        }
-        return value.longValue();
-    }
-
-    /**
-     * A UTF8String or an IA5String, the two string types Apple's receipts
-     * use and the only two every other port accepts. Any other
-     * {@link ASN1String} (a BIT STRING or UniversalString included) is
-     * refused rather than rendered through {@code getString()}.
-     */
-    private static String decodeString(byte[] der) throws VerificationException {
-        try {
-            ASN1Primitive parsed = ASN1Primitive.fromByteArray(der);
-            if (!(parsed instanceof ASN1UTF8String) && !(parsed instanceof ASN1IA5String)) {
-                throw new VerificationException(
-                        Reason.INVALID_RECEIPT_FORMAT, "attribute value is not a UTF8String or IA5String");
-            }
-            return ((ASN1String) parsed).getString();
-        } catch (IOException e) {
-            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "attribute value is not valid ASN.1", e);
-        }
-    }
-
-    private static Long decodeInteger(byte[] der) throws VerificationException {
-        try {
-            ASN1Primitive parsed = ASN1Primitive.fromByteArray(der);
-            if (!(parsed instanceof ASN1Integer)) {
-                throw new VerificationException(
-                        Reason.INVALID_RECEIPT_FORMAT, "attribute value is not an ASN.1 integer");
-            }
-            return Long.valueOf(boundedInt(((ASN1Integer) parsed).getValue()));
-        } catch (IOException e) {
-            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "attribute value is not valid ASN.1", e);
-        }
-    }
-
-    /** RFC 3339 date in an IA5String; empty means absent (real receipts do this). */
-    private static @Nullable Instant decodeDate(byte[] der) throws VerificationException {
-        String text = decodeString(der);
-        if (text.isEmpty()) {
-            return null;
-        }
-        Instant instant;
-        try {
-            instant = Instant.parse(text);
-        } catch (DateTimeParseException e) {
-            throw new VerificationException(
-                    Reason.INVALID_RECEIPT_FORMAT, "unparseable receipt date: " + SafeText.quote(text), e);
-        }
-        // Instant.parse accepts expanded years (e.g. +1000000000-...) that no
-        // longer fit an epoch-milli long; toEpochMilli overflows on those, and
-        // that conversion happens (via Date.from) before verification, so a
-        // hostile date is rejected here rather than escaping as an
-        // ArithmeticException past the declared VerificationException contract.
-        try {
-            instant.toEpochMilli();
-        } catch (ArithmeticException e) {
-            throw new VerificationException(
-                    Reason.INVALID_RECEIPT_FORMAT,
-                    "receipt date out of representable range: " + SafeText.quote(text),
-                    e);
-        }
-        return instant;
     }
 }
