@@ -1,7 +1,5 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -89,16 +87,20 @@ public final class AppleRootCerts {
     }
 
     private static X509Certificate load(String name, String expectedSha256) {
+        X509Certificate certificate;
         // Package-relative on purpose: an absolute "/certs/..." lookup is
         // first-match across the whole classpath, so any jar ahead of this one
         // carrying a certs/ tree would supply the trust anchors instead.
-        byte[] der = read(name);
-        X509Certificate certificate;
-        try {
-            certificate = (X509Certificate)
-                    CertificateFactory.getInstance("X.509").generateCertificate(new ByteArrayInputStream(der));
+        try (InputStream in = AppleRootCerts.class.getResourceAsStream("certs/" + name)) {
+            if (in == null) {
+                throw new IllegalStateException("bundled certificate missing: " + name);
+            }
+            certificate =
+                    (X509Certificate) CertificateFactory.getInstance("X.509").generateCertificate(in);
         } catch (CertificateException e) {
             throw new IllegalStateException("bundled certificate unparseable: " + name, e);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
         // The digest is taken over the certificate's own encoding rather than
         // over the file bytes, so what is pinned is the certificate this
@@ -115,28 +117,6 @@ public final class AppleRootCerts {
                     + expectedSha256 + ": the pinned Apple roots have been replaced");
         }
         return certificate;
-    }
-
-    private static byte[] read(String name) {
-        InputStream in = AppleRootCerts.class.getResourceAsStream("certs/" + name);
-        if (in == null) {
-            throw new IllegalStateException("bundled certificate missing: " + name);
-        }
-        try {
-            try {
-                ByteArrayOutputStream out = new ByteArrayOutputStream();
-                byte[] buffer = new byte[4096];
-                int read;
-                while ((read = in.read(buffer)) != -1) {
-                    out.write(buffer, 0, read);
-                }
-                return out.toByteArray();
-            } finally {
-                in.close();
-            }
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
     }
 
     private static String sha256Hex(byte[] bytes) {
