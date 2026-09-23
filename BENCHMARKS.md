@@ -146,27 +146,29 @@ and the median of ten samples for the rest. The .NET column was re-measured the 
 day on the same machine and library, after its benchmark moved from
 BenchmarkDotNet to the shared Stopwatch loop.
 
-The Swift column was re-measured on 2026-09-23, after the fix for its date
-and JSON handling, on a different 4 vCPU KVM guest (Intel Xeon @ 2.80GHz,
-15 GiB RAM), all ten rows in one run. On that machine the unfixed library
-measured 176,371 µs for legacy `core` and 330,478 µs for legacy
-`endpointJson`, within 10% of the 160,145 and 304,378 the first run
-recorded, so the two machines are close enough to compare, not identical.
+The Swift column was re-measured on 2026-09-23, after its date and JSON
+changes, on a different 4 vCPU KVM guest (Intel(R) Xeon(R) Processor @
+2.80GHz, 15 GiB RAM), all ten rows in one run. On that machine, run back to
+back with it, the library before those changes (`5d5d74a`) measured
+182,511 µs for legacy `core` and 343,070 µs for legacy `endpointJson`, 14%
+and 13% above the 160,145 and 304,378 the first run recorded, so the two
+machines are close enough to compare, not identical. The other columns were
+not re-measured.
 
 | benchmark | fixture | Java | Go | Rust | Node | Python | Ruby | PHP | .NET | Swift |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | `decodeBase64` | g5 | 2.4 | 6.9 | 3.3 | 16.3 | 17.9 | 6.6 | 0.4 | 6.0 | n/a |
-| `core` | g5 | 356 | 207 | 1,159 | 519 | 589 | 2,108 | 3,882 | 3,018 | 574 |
-| `verifierBase64` | g5 | 345 | 205 | 1,130 | 581 | 682 | 1,865 | 3,470 | 2,620 | 513 |
-| `endpointJson` | g5 | 366 | 338 | 1,219 | 674 | 914 | 2,264 | 3,842 | 3,030 | 598 |
-| `retryViaResult` | g5 | 375 | 248 | 1,202 | 668 | 784 | 2,151 | 3,527 | 2,639 | 560 |
-| `rejectTamperedSignature` | g5 | 380 | 201 | 1,191 | 563 | 612 | 2,053 | 3,410 | 2,812 | 586 |
+| `core` | g5 | 356 | 207 | 1,159 | 519 | 589 | 2,108 | 3,882 | 3,018 | 598 |
+| `verifierBase64` | g5 | 345 | 205 | 1,130 | 581 | 682 | 1,865 | 3,470 | 2,620 | 525 |
+| `endpointJson` | g5 | 366 | 338 | 1,219 | 674 | 914 | 2,264 | 3,842 | 3,030 | 780 |
+| `retryViaResult` | g5 | 375 | 248 | 1,202 | 668 | 784 | 2,151 | 3,527 | 2,639 | 786 |
+| `rejectTamperedSignature` | g5 | 380 | 201 | 1,191 | 563 | 612 | 2,053 | 3,410 | 2,812 | 614 |
 | `decodeBase64` | legacy | 27.3 | 96.3 | 47.4 | 192 | 235 | 80.1 | 5.0 | 76.2 | n/a |
-| `core` | legacy | 3,063 | 2,519 | 2,274 | 4,051 | 9,176 | 17,193 | 24,777 | 3,319 | 7,153 |
-| `verifierBase64` | legacy | 3,134 | 2,481 | 2,153 | 4,176 | 9,028 | 16,237 | 24,255 | 3,223 | 7,937 |
-| `endpointJson` | legacy | 4,401 | 5,758 | 3,969 | 8,170 | 13,659 | 24,503 | 26,855 | 4,929 | 10,653 |
-| `retryViaResult` | legacy | 4,061 | 4,655 | 4,103 | 6,187 | 12,421 | 22,131 | 24,997 | 4,800 | 10,269 |
-| `rejectTamperedSignature` | legacy | 3,152 | 2,381 | 2,438 | 3,386 | 9,106 | 14,852 | 23,731 | 3,747 | 7,315 |
+| `core` | legacy | 3,063 | 2,519 | 2,274 | 4,051 | 9,176 | 17,193 | 24,777 | 3,319 | 8,150 |
+| `verifierBase64` | legacy | 3,134 | 2,481 | 2,153 | 4,176 | 9,028 | 16,237 | 24,255 | 3,223 | 8,255 |
+| `endpointJson` | legacy | 4,401 | 5,758 | 3,969 | 8,170 | 13,659 | 24,503 | 26,855 | 4,929 | 19,273 |
+| `retryViaResult` | legacy | 4,061 | 4,655 | 4,103 | 6,187 | 12,421 | 22,131 | 24,997 | 4,800 | 18,660 |
+| `rejectTamperedSignature` | legacy | 3,152 | 2,381 | 2,438 | 3,386 | 9,106 | 14,852 | 23,731 | 3,747 | 8,122 |
 
 Read the ratios inside one column before the absolute values. PHP and the
 earlier BenchmarkDotNet run of .NET each ran twice, and the same benchmark
@@ -174,8 +176,11 @@ moved by up to 12% between those runs.
 A few gaps are larger than that. Swift used to take about 50 times as long
 as Java on the legacy receipt and about 8 times as long on g5. Each date cost
 a new `ISO8601DateFormatter` to parse and two `DateFormatter`s to render, and
-`JSONSerialization` wrote the answer; on Linux that was nearly all of the
-time. It now takes about 2.4 times as long as Java on legacy `endpointJson`.
+`JSONSerialization` with `.sortedKeys` wrote the answer; on Linux that was
+nearly all of the time. Foundation's `Date.ISO8601FormatStyle`,
+`Date.VerbatimFormatStyle` and `JSONEncoder` now do that work, giving the
+same bytes. Swift now takes about 2.7 times as long as Java on legacy `core`
+and 4.4 times on legacy `endpointJson`.
 PHP and Ruby take about 25 ms
 and 17 ms for legacy \`core\`. Rust is the one port whose g5 \`core\` costs half
 its legacy \`core\`; nobody has profiled why yet.
