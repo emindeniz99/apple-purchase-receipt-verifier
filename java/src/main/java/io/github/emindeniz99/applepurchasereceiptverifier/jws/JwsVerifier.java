@@ -371,7 +371,9 @@ public final class JwsVerifier {
         try {
             CertificateFactory cf = CertificateFactory.getInstance("X.509");
             for (JsonNode certNode : x5c) {
-                byte[] der = Base64.getMimeDecoder().decode(certNode.asText());
+                // RFC 7515 4.1.6: standard base64, no line breaks. The MIME
+                // decoder would silently skip any illegal character instead.
+                byte[] der = Base64.getDecoder().decode(certNode.asText());
                 chain.add((X509Certificate) cf.generateCertificate(new ByteArrayInputStream(der)));
             }
         } catch (IllegalArgumentException e) {
