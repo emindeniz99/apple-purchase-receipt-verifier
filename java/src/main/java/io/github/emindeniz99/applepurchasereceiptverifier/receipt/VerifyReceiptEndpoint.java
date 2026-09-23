@@ -5,12 +5,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.emindeniz99.applepurchasereceiptverifier.Environment;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
+import io.github.emindeniz99.applepurchasereceiptverifier.internal.AppleTrust;
 import io.github.emindeniz99.applepurchasereceiptverifier.internal.BoundedJson;
 import java.io.IOException;
+import java.security.cert.TrustAnchor;
 import java.security.cert.X509Certificate;
 import java.time.Clock;
 import java.time.Instant;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import org.jspecify.annotations.Nullable;
@@ -72,7 +73,7 @@ public final class VerifyReceiptEndpoint {
     // bounds (counted in characters for String input) are MAX_REQUEST_BYTES.
     static final ObjectMapper MAPPER = new ObjectMapper(BoundedJson.factory(MAX_REQUEST_BYTES));
 
-    private final Set<X509Certificate> trustedRoots;
+    private final Set<TrustAnchor> trustAnchors;
     private final Environment environment;
     private final Clock clock;
 
@@ -100,13 +101,11 @@ public final class VerifyReceiptEndpoint {
      *              {@link ReceiptVerifier}.
      */
     public VerifyReceiptEndpoint(Set<X509Certificate> trustedRoots, Environment environment, @Nullable Clock clock) {
-        if (trustedRoots == null || trustedRoots.isEmpty()) {
-            throw new IllegalArgumentException("trustedRoots must not be empty");
-        }
+        Set<TrustAnchor> anchors = AppleTrust.anchors(trustedRoots);
         if (environment != Environment.PRODUCTION && environment != Environment.SANDBOX) {
             throw new IllegalArgumentException("environment must be PRODUCTION or SANDBOX, got " + environment);
         }
-        this.trustedRoots = new HashSet<X509Certificate>(trustedRoots);
+        this.trustAnchors = anchors;
         this.environment = environment;
         this.clock = clock == null ? Clock.systemUTC() : clock;
     }
@@ -270,10 +269,11 @@ public final class VerifyReceiptEndpoint {
                 return VerifyReceiptResult.failed(environment, Reason.INVALID_RECEIPT_FORMAT, at);
             }
             byte[] der = ReceiptBase64.decode(receiptData);
-            // The primitive itself, not a ReceiptVerifier built around a
-            // wildcard bundle id: like Apple's endpoint, no bundle-id
-            // claim is checked here (callers compare receipt.bundle_id).
-            AppReceipt receipt = ReceiptVerifier.verifyReceiptCore(der, trustedRoots);
+            // The primitive under verifyReceiptCore, not a ReceiptVerifier
+            // built around a wildcard bundle id: like Apple's endpoint, no
+            // bundle-id claim is checked here (callers compare
+            // receipt.bundle_id). It takes the anchors built at construction.
+            AppReceipt receipt = ReceiptVerifier.verifyCore(der, trustAnchors);
             return VerifyReceiptResult.verified(environment, receipt, at);
         } catch (VerificationException e) {
             return VerifyReceiptResult.failed(environment, e.reason(), at);

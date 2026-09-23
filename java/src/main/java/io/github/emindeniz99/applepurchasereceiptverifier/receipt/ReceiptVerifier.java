@@ -288,7 +288,8 @@ public final class ReceiptVerifier {
         return verifyCore(receiptDer, AppleTrust.anchors(trustedRoots));
     }
 
-    private static AppReceipt verifyCore(byte @Nullable [] receiptDer, Set<TrustAnchor> trustAnchors)
+    /** {@link #verifyReceiptCore} over anchors already built, for callers that keep them. */
+    static AppReceipt verifyCore(byte @Nullable [] receiptDer, Set<TrustAnchor> trustAnchors)
             throws VerificationException {
         if (receiptDer == null) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "receipt is null");
