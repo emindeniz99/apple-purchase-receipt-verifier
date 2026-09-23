@@ -192,13 +192,19 @@ public struct JwsVerifier: Sendable {
                 .invalidJwsFormat,
                 "header/payload nests more than \(Self.maxJsonNestingDepth) levels deep")
         }
-        guard let header = try? JSONSerialization.jsonObject(with: headerData) as? [String: Any] else {
-            throw VerificationError(.invalidJwsFormat, "header/payload is not valid base64url JSON")
+        // JSONDecoder, not JSONSerialization: the latter drops a leading
+        // U+FEFF from a string value (always on Darwin), and an x5c entry
+        // starting with one must be refused like any other character outside
+        // the base64 alphabet. A header that is not an object, an alg or an
+        // x5c of the wrong type, and an x5c entry that is not a string all
+        // fail this decode.
+        guard let header = try? JSONDecoder().decode(JwsHeader.self, from: headerData) else {
+            throw VerificationError(.invalidJwsFormat, "header is not a JSON object with a string alg and string x5c entries")
         }
-        guard header["alg"] as? String == "ES256" else {
+        guard header.alg == "ES256" else {
             throw VerificationError(.invalidJwsFormat, "alg must be ES256")
         }
-        guard let x5c = header["x5c"] as? [String], x5c.count == 3 else {
+        guard let x5c = header.x5c, x5c.count == 3 else {
             throw VerificationError(.invalidJwsFormat, "x5c must contain exactly 3 certificates")
         }
         // The third entry is decoded and parsed like the other two and then
@@ -296,6 +302,12 @@ public struct JwsVerifier: Sendable {
                 "payload signed at \(Int64(signedAtMillis)) exceeds max age \(maxSignedAgeMillis)ms")
         }
         return payloadData
+    }
+
+    /// The two header fields the verifier reads; the rest are ignored.
+    private struct JwsHeader: Decodable {
+        let alg: String?
+        let x5c: [String]?
     }
 
     static func validateChain(

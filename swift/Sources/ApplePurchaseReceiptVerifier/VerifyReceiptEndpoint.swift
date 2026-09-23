@@ -40,9 +40,28 @@ public struct VerifyReceiptEndpoint: Sendable {
 
     /// How deep a JSON structure the request body may nest; the Java
     /// port's number. A verifyReceipt body is a flat object of strings.
-    /// `JSONSerialization` takes no depth option, so the depth is counted
+    /// `JSONDecoder` takes no depth option, so the depth is counted
     /// before it runs.
     static let maxJsonNestingDepth = 64
+
+    /// The one field the endpoint reads from a raw request body. Unknown
+    /// fields are ignored, as Apple ignores them.
+    ///
+    /// Decoded with `JSONDecoder` rather than `JSONSerialization`, which
+    /// drops a leading U+FEFF from a string value: always on Darwin, where
+    /// strings are built through `NSString`, and on Linux too with the Swift
+    /// 6.3 toolchain. A receipt-data string starting with a byte-order mark
+    /// then reached the base64 decoder without it and was accepted, while
+    /// Apple answers it 21002 (docs/evidence/2026-09-23-verifyreceipt-base64.md).
+    /// `JSONDecoder` keeps the string exactly. It keeps the FIRST of two
+    /// duplicate keys, where Apple keeps the last; no case pins either.
+    private struct RequestBody: Decodable {
+        let receiptData: String?
+
+        enum CodingKeys: String, CodingKey {
+            case receiptData = "receipt-data"
+        }
+    }
 
     private let roots: [Certificate]
     private let environment: AppleEnvironment
@@ -112,6 +131,11 @@ public struct VerifyReceiptEndpoint: Sendable {
     /// endpoint, failures are reported through the result's ``VerifyReceiptResult/status``
     /// and ``VerifyReceiptResult/failureReason``.
     ///
+    /// A dictionary built with `JSONSerialization` has already lost a
+    /// leading U+FEFF from `receipt-data`, so a body Apple refuses can reach
+    /// this method as one it accepts. When the raw body is at hand, pass it
+    /// to the `String` overload instead, which keeps the string exactly.
+    ///
     /// - Parameter now: the instant to render as `request_date`; nil reads
     ///   the endpoint's clock, once. It feeds `request_date` and nothing
     ///   else.
@@ -141,14 +165,15 @@ public struct VerifyReceiptEndpoint: Sendable {
         guard body.utf8.count <= Self.maxRequestBytes else {
             return failed(.requestTooLarge, at)
         }
+        // A receipt-data that is present but not a string fails the decode,
+        // so it is 21002 with MALFORMED_REQUEST like a body that is not an
+        // object; a null or missing one is the same answer through verify.
         guard !jsonNestingExceeds(body.utf8, limit: Self.maxJsonNestingDepth),
-            let data = body.data(using: .utf8),
-            let parsed = try? JSONSerialization.jsonObject(with: data),
-            let requestBody = parsed as? [String: Any]
+            let requestBody = try? JSONDecoder().decode(RequestBody.self, from: Data(body.utf8))
         else {
             return failed(.malformedRequest, at)
         }
-        return await verifyReceiptResult(requestBody, now: at)
+        return await verify(requestBody.receiptData, at)
     }
 
     /// Verifies a bare base64 receipt, the value a request body would carry

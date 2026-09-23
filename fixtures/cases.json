@@ -765,6 +765,18 @@
       "codec": "text",
       "contentSha256": "686c2e0f42b814cb09ce948e6dd9b1d76d801d6980975ad2218e5423668c1086"
     },
+    "receipt-der-trailing-byte": {
+      "path": "limits/receipt-der-trailing-byte.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "0426b02d8212bc2009630ea2d061331136211d5d375fb69dcdcf21974733d0dc"
+    },
+    "body-receipt-data-leading-bom": {
+      "path": "limits/body-receipt-data-leading-bom.json",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "2628ea5b5393368a7597819d5f695475b8b527cc5aa49b6f11f368949cc3b181"
+    },
     "verification-order-root": {
       "path": "generated/verification-order-root.der",
       "role": "trust-anchor",
@@ -6384,6 +6396,98 @@
         "negative",
         "resource-bounds",
         "apple-official"
+      ]
+    },
+    {
+      "id": "endpoint/receipt-data-leading-byte-order-mark-answers-21002",
+      "description": "A raw request body whose receipt-data is the genuine sandbox receipt's canonical base64 (01-genuine) with U+FEFF in front of it, the mark written as its UTF-8 bytes rather than as a JSON escape. Apple's verifyReceipt answered 21002 to a byte-order mark before the string on 2026-09-23 (docs/evidence/2026-09-23-verifyreceipt-base64.md, \"Around the string\"): U+FEFF is outside the base64 alphabet, so this is INVALID_RECEIPT_FORMAT like any other character there. What makes it worth a case of its own is the JSON parser, not the base64 rule: Foundation's JSONSerialization drops a leading U+FEFF from a string value (always on Darwin, where strings are built through NSString), so a port that parses the body with it hands the decoder the genuine base64 and answers 0. The input is the whole body, so the port's own parser is what reads it.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "requestBody": "body-receipt-data-leading-bom"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "builtin",
+          "name": "apple-receipt-roots"
+        },
+        "environment": "Sandbox"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "status": 21002,
+          "receipt": null,
+          "environment": null
+        },
+        "failureReason": "INVALID_RECEIPT_FORMAT"
+      },
+      "fault": "receipt-data-leading-byte-order-mark",
+      "tags": [
+        "endpoint",
+        "base64",
+        "negative",
+        "public"
+      ]
+    },
+    {
+      "id": "receipt/reject-one-trailing-byte-after-the-der",
+      "description": "The shared generated receipt, genuine and correctly signed, followed by one zero byte. Every port refuses bytes after the receipt's DER (THREAT-MODEL.md section 3.7), and this case pins that in the shared suite: INVALID_RECEIPT_FORMAT. Apple's verifyReceipt does NOT refuse this shape: on 2026-09-23 it decoded genuine receipts followed by one zero byte and by several other tails, reading the first complete value and ignoring the rest (docs/evidence/2026-09-23-verifyreceipt-base64.md, \"Bytes after the receipt\"). The library is deliberately stricter here, the one place it is: no genuine client produces trailing bytes, since appStoreReceiptURL yields the exact file, and refusing them keeps one receipt to one byte string.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt-der-trailing-byte"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "bundleId": "com.example.app"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "fault": "receipt-der-followed-by-one-byte",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "negative",
+        "generated"
+      ]
+    },
+    {
+      "id": "endpoint/receipt-with-one-trailing-byte-answers-21002",
+      "description": "The endpoint twin of receipt/reject-one-trailing-byte-after-the-der: the same DER, a genuine receipt followed by one zero byte, canonically base64-encoded into receipt-data. 21002 with INVALID_RECEIPT_FORMAT. Apple's endpoint decodes a genuine receipt with bytes after it and answers as if they were absent, so this is a deliberate divergence from Apple, for the reason that case gives.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "fixture": "receipt-der-trailing-byte"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "environment": "Sandbox"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "status": 21002,
+          "receipt": null,
+          "environment": null
+        },
+        "failureReason": "INVALID_RECEIPT_FORMAT"
+      },
+      "fault": "receipt-der-followed-by-one-byte",
+      "tags": [
+        "endpoint",
+        "receipt",
+        "negative",
+        "generated"
       ]
     }
   ]
