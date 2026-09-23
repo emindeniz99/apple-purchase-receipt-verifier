@@ -22,7 +22,7 @@ and the harness; nothing else needs installing beyond a JDK and Maven.
 | `receipt-base64` | `ReceiptVerifier.verify(String)` and its device-GUID overload — the string a client sends, so `ReceiptBase64` in front of all of the above, plus the SHA-1 device binding | the same anchor-set invariant, through the string entry point |
 | `jws` | `JwsVerifier.verifyTransaction` / `verifyAppTransaction` / `verifyRaw`: strict base64url, Jackson header and payload, x5c decode, marker OIDs, chain, ES256 | a JWS `verifyRaw` accepts under the fixture root is refused under Apple's production JWS roots |
 | `endpoint-json` | `VerifyReceiptEndpoint.verifyReceiptJson` on a raw request body | it never throws at all, and the answer is always a JSON object with a numeric `status` |
-| `readers` | `ReceiptVerifier.parsePayload`, `ReceiptBase64.decode` and `JwsVerifier.parseJson` called directly, with no CMS parse or chain build in front of them | see "Two containment invariants" below |
+| `readers` | `ReceiptPayload.parse`, `ReceiptBase64.decode` and `JwsVerifier.parseJson` called directly, with no CMS parse or chain build in front of them | see "Two containment invariants" below |
 
 Every accepted result is then taken apart. `Harness.touch` reads every accessor
 `AppReceipt`, `InAppPurchase`, `TransactionPayload` and `AppTransactionPayload`
@@ -57,7 +57,7 @@ cannot read back would each end the run.
 contract of whoever calls them — not the public one, which would report leaks
 that are contained by design one frame up:
 
-* **`ReceiptVerifier.parsePayload`** is reached only through
+* **`ReceiptPayload.parse`** is reached only through
   `ReceiptVerifier.verifyCore`, which catches `RuntimeException` and rewraps it
   as `INVALID_RECEIPT_FORMAT`. An unchecked exception out of BouncyCastle here
   is therefore contained and is *not* a finding — but an `Error` walks straight

@@ -2,7 +2,6 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.UncheckedIOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateEncodingException;
@@ -24,7 +23,7 @@ import org.jspecify.annotations.Nullable;
  * documents the JWS chain as ending in "an Apple root certificate" (not a
  * specific one) and its guidance is to trust every root on the PKI page, so
  * anchoring on a single root would break silently if Apple re-anchored a
- * path — see PLAN.md D15.
+ * path.
  *
  * <p><strong>The anchors are fingerprint-pinned.</strong> The resources are
  * loaded from this class's own package rather than from the jar root, so a
@@ -128,7 +127,7 @@ public final class AppleRootCerts {
         } catch (CertificateException e) {
             throw new IllegalStateException("bundled certificate unparseable: " + name, e);
         } catch (IOException e) {
-            throw new UncheckedIOException(e);
+            throw new IllegalStateException("bundled certificate unreadable: " + name, e);
         }
         // The digest is taken over the certificate's own encoding rather than
         // over the file bytes, so what is pinned is the certificate this

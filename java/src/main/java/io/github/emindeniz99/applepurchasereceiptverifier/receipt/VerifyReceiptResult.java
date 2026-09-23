@@ -33,7 +33,7 @@ import org.jspecify.annotations.Nullable;
 public final class VerifyReceiptResult {
 
     // Locale.ROOT pinned so a JVM default locale can never reach the
-    // rendering, matching node (en-CA) and swift (en_US_POSIX).
+    // rendering.
     private static final DateTimeFormatter FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withLocale(Locale.ROOT);
     private static final ZoneId PACIFIC = ZoneId.of("America/Los_Angeles");
@@ -118,8 +118,7 @@ public final class VerifyReceiptResult {
 
     /**
      * The response the endpoint's own environment answers, as a new map on
-     * each call. Same keys, order and types as Apple's endpoint; see
-     * COMPARISON.md.
+     * each call. Same keys, order and types as Apple's endpoint.
      */
     public Map<String, Object> toResponse() {
         return toResponse(environment);

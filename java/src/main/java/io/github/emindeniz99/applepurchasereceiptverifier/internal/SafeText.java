@@ -6,12 +6,9 @@ import org.jspecify.annotations.Nullable;
  * Renders attacker-controlled input for an exception message.
  *
  * <p>Every {@code VerificationException} detail that quotes something out of
- * the input goes through here first. Two things go wrong when it does not. A
- * multi-megabyte {@code alg} claim produced a multi-megabyte message, so an
- * input the library correctly refused still cost the caller the memory it was
- * refusing to spend, once per log line and once per exception kept. And a
- * newline inside a claim ended the log record and started a new one, so an
- * attacker chose what the next line of the log said.
+ * the input goes through here first. Truncation keeps a huge claim from
+ * making every message and log line huge; replacing control characters keeps
+ * a newline in a claim from forging the next log line.
  *
  * <p>This package is an implementation detail of the library. It is public
  * only because Java packages are not nested, and the classes that need it sit

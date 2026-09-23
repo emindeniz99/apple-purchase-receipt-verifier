@@ -138,7 +138,7 @@ public final class AppReceipt {
 
     /**
      * Raw values of attribute types this library does not model, keyed by
-     * type — forward compatibility for fields Apple may add (PLAN D10).
+     * type, so a field Apple adds later is not lost.
      * Values are the raw octet-string contents, verified but undecoded.
      *
      * <p>A fresh copy each call, arrays included. The unmodifiable wrapper

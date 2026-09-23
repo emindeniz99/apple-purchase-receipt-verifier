@@ -2,7 +2,6 @@ package io.github.emindeniz99.applepurchasereceiptverifier.fuzz;
 
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
 import io.github.emindeniz99.applepurchasereceiptverifier.jws.JwsVerifier;
-import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifier;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
@@ -15,7 +14,7 @@ import java.util.Base64;
  * the reader instead of on the certificate machinery.
  *
  * <ul>
- *   <li>{@code ReceiptVerifier.parsePayload} — the receipt attribute walk:
+ *   <li>{@code ReceiptPayload.parse}: the receipt attribute walk:
  *       the ASN.1 SET, the optional Xcode double wrap, the per-attribute type
  *       and value decode, the in-app sub-walk, the date and integer bounds.
  *   <li>{@code ReceiptBase64.decode} — the base64 dialect Apple's clients
@@ -29,7 +28,7 @@ import java.util.Base64;
  * nanoseconds against readers that take microseconds.
  *
  * <p><strong>The containment invariant differs per reader, and the difference
- * is real rather than a concession.</strong> {@code parsePayload} is reached
+ * is real rather than a concession.</strong> {@code ReceiptPayload.parse} is reached
  * only through {@code ReceiptVerifier.verifyCore}, which catches
  * {@code RuntimeException} and rewraps it as
  * {@code INVALID_RECEIPT_FORMAT} — so an unchecked exception out of
@@ -44,8 +43,8 @@ public final class FuzzReaders {
 
     private FuzzReaders() {}
 
-    private static final Method PARSE_PAYLOAD = method(ReceiptVerifier.class, "parsePayload", byte[].class);
-    private static final Method DECODE_BASE64 = method(receiptBase64(), "decode", String.class);
+    private static final Method PARSE_PAYLOAD = method(receiptClass("ReceiptPayload"), "parse", byte[].class);
+    private static final Method DECODE_BASE64 = method(receiptClass("ReceiptBase64"), "decode", String.class);
     private static final Method PARSE_JSON = method(JwsVerifier.class, "parseJson", String.class, String.class);
 
     public static void fuzzerTestOneInput(byte[] data) {
@@ -53,7 +52,7 @@ public final class FuzzReaders {
 
         // The attribute walk, on the payload bytes as they come out of the CMS
         // envelope. RuntimeException-contained: see the class javadoc.
-        call("ReceiptVerifier.parsePayload", PARSE_PAYLOAD, null, true, (Object) data);
+        call("ReceiptPayload.parse", PARSE_PAYLOAD, null, true, (Object) data);
 
         // The base64 decoder, on the same bytes read as a string.
         call("ReceiptBase64.decode", DECODE_BASE64, null, false, text);
@@ -92,11 +91,11 @@ public final class FuzzReaders {
         }
     }
 
-    private static Class<?> receiptBase64() {
+    private static Class<?> receiptClass(String simpleName) {
         try {
-            return Class.forName("io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptBase64");
+            return Class.forName("io.github.emindeniz99.applepurchasereceiptverifier.receipt." + simpleName);
         } catch (ClassNotFoundException e) {
-            throw new IllegalStateException("ReceiptBase64 moved or was renamed", e);
+            throw new IllegalStateException(simpleName + " moved or was renamed", e);
         }
     }
 

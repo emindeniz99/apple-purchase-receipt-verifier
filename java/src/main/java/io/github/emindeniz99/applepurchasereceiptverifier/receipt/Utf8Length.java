@@ -18,8 +18,7 @@ package io.github.emindeniz99.applepurchasereceiptverifier.receipt;
  * bytes: what it takes in CESU-8 and WTF-8, and never less than any encoder
  * emits for it ({@code getBytes(UTF_8)} substitutes the one byte {@code '?'}).
  * It cannot arrive from the wire, where a decoder turns invalid bytes into
- * U+FFFD, itself three bytes. The shared conformance vectors avoid lone
- * surrogates, so no port has to agree on this.</p>
+ * U+FFFD, itself three bytes.</p>
  */
 final class Utf8Length {
 
