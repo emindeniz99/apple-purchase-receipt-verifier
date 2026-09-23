@@ -55,6 +55,16 @@ import org.jspecify.annotations.Nullable;
  * on purpose: a null input is a verdict about the input, so it is reported as
  * {@link Reason#INVALID_JWS_FORMAT} like any other unusable one rather than as
  * a {@link NullPointerException} a caller cannot catch alongside the others.</p>
+ *
+ * <p><strong>Security providers.</strong> Every cryptographic lookup here
+ * resolves through the JVM's provider list: {@code CertificateFactory} for
+ * the {@code x5c} certificates, the {@code PKIX} {@code CertPathValidator},
+ * and {@code SHA256withECDSA}. BouncyCastle is used only to DER-encode the
+ * signature, not as a provider. A host that inserts BouncyCastle at position
+ * 1 therefore gets BouncyCastle's X.509 parser, path validator and ECDSA for
+ * all three. This library's tests run against the JDK's providers, so under
+ * that host an unusual certificate may get a different verdict. This class
+ * reads the provider order and never changes it.</p>
  */
 public final class JwsVerifier {
 

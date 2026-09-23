@@ -72,6 +72,19 @@ import org.jspecify.annotations.Nullable;
  * {@code deviceGuid} is {@code @Nullable} because it is the optional
  * device-hash binding: null skips that check, exactly as the shorter overload
  * does.</p>
+ *
+ * <p><strong>Security providers.</strong> The CMS signature and its digest
+ * are checked with a private BouncyCastle instance that is never registered.
+ * Everything else resolves through the JVM's provider list: certificate
+ * decoding ({@code CertificateFactory}, through
+ * {@link JcaX509CertificateConverter}), the {@code PKIX}
+ * {@code CertPathBuilder} and its {@code Collection} {@code CertStore}, and
+ * the SHA-1 of the device-hash check. A host that inserts BouncyCastle at
+ * position 1 therefore gets BouncyCastle's X.509 parser and path builder for
+ * those steps instead of the JDK's. This library's tests run against the
+ * JDK's providers, so under that host an unusual certificate may get a
+ * different verdict.
+ * This class reads the provider order and never changes it.</p>
  */
 public final class ReceiptVerifier {
 
