@@ -40,14 +40,12 @@ import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cms.CMSException;
 import org.bouncycastle.cms.CMSSignedData;
-import org.bouncycastle.cms.DefaultCMSSignatureAlgorithmNameGenerator;
 import org.bouncycastle.cms.SignerId;
 import org.bouncycastle.cms.SignerInformation;
 import org.bouncycastle.cms.SignerInformationVerifier;
+import org.bouncycastle.cms.jcajce.JcaSignerInfoVerifierBuilder;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
-import org.bouncycastle.operator.DefaultSignatureAlgorithmIdentifierFinder;
 import org.bouncycastle.operator.OperatorCreationException;
-import org.bouncycastle.operator.jcajce.JcaContentVerifierProviderBuilder;
 import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
 import org.jspecify.annotations.Nullable;
 
@@ -195,11 +193,8 @@ public final class ReceiptVerifier {
 
     private static final BouncyCastleProvider PROVIDER = new BouncyCastleProvider();
 
-    // Read-only after construction; see signerVerifier.
-    private static final DefaultCMSSignatureAlgorithmNameGenerator SIGNATURE_NAMES =
-            new DefaultCMSSignatureAlgorithmNameGenerator();
-    private static final DefaultSignatureAlgorithmIdentifierFinder SIGNATURE_ALGORITHMS =
-            new DefaultSignatureAlgorithmIdentifierFinder();
+    // Built once and reused; see signerVerifier.
+    private static final JcaSignerInfoVerifierBuilder SIGNER_VERIFIERS = signerVerifiers();
 
     private final Set<TrustAnchor> trustAnchors;
     private final String bundleId;
@@ -603,21 +598,26 @@ public final class ReceiptVerifier {
     }
 
     /**
-     * What {@code new JcaSimpleSignerInfoVerifierBuilder().setProvider(PROVIDER)
-     * .build(signerCert)} returns, minus the rebuilding of two lookup tables
-     * on every call. The builder constructs a fresh
-     * {@link DefaultCMSSignatureAlgorithmNameGenerator} (a few hundred map
-     * entries) and {@link DefaultSignatureAlgorithmIdentifierFinder} each
-     * time; both are only read after construction, so one of each is shared.
-     * The certificate's verifier provider and the digest provider are built
-     * per call exactly as the builder builds them.
+     * The CMS signature verifier for {@code signerCert}, from one
+     * {@link JcaSignerInfoVerifierBuilder} kept for the life of the class.
+     * BouncyCastle's builder holds its algorithm-name and algorithm-finder
+     * tables (a few hundred entries) and builds only the per-certificate
+     * parts in {@code build}, so reusing it avoids rebuilding the tables for
+     * every receipt, which {@code JcaSimpleSignerInfoVerifierBuilder} does.
      */
     static SignerInformationVerifier signerVerifier(X509Certificate signerCert) throws OperatorCreationException {
-        return new SignerInformationVerifier(
-                SIGNATURE_NAMES,
-                SIGNATURE_ALGORITHMS,
-                new JcaContentVerifierProviderBuilder().setProvider(PROVIDER).build(signerCert),
-                new JcaDigestCalculatorProviderBuilder().setProvider(PROVIDER).build());
+        return SIGNER_VERIFIERS.build(signerCert);
+    }
+
+    private static JcaSignerInfoVerifierBuilder signerVerifiers() {
+        try {
+            return new JcaSignerInfoVerifierBuilder(new JcaDigestCalculatorProviderBuilder()
+                            .setProvider(PROVIDER)
+                            .build())
+                    .setProvider(PROVIDER);
+        } catch (OperatorCreationException e) {
+            throw new IllegalStateException("BouncyCastle digest provider unavailable", e);
+        }
     }
 
     private static void verifyDeviceHash(AppReceipt receipt, byte[] deviceGuid) throws VerificationException {
