@@ -54,8 +54,8 @@ public final class VerifyReceiptEndpoint {
      * and {@link #verifyReceiptJson(String)} will parse, in UTF-8 bytes:
      * 3 MiB, Apple's own limit: both of Apple's verifyReceipt endpoints
      * answer a body of 3,145,728 bytes and send HTTP 413 for 3,145,729, and
-     * the count is bytes, not characters. A larger body answers status 21002 with
-     * {@link Reason#REQUEST_TOO_LARGE}, decided before any parsing. The body
+     * the count is bytes, not characters. A larger body answers status 21002
+     * with {@link Reason#REQUEST_TOO_LARGE}, decided before any parsing. The body
      * is measured without being encoded, so a Java {@code String} of any
      * size costs no copy to refuse.
      *
