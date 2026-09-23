@@ -114,15 +114,15 @@ public class FloorTests
         VerificationException error = Assert.Throws<VerificationException>(() => verifier.Verify(atCap + "\n"));
         Assert.Equal(VerificationReason.InvalidReceiptFormat, error.Reason);
         Assert.Equal(
-            "INVALID_RECEIPT_FORMAT: receipt exceeds the maximum accepted size of 2097152 characters",
+            "INVALID_RECEIPT_FORMAT: receipt exceeds the maximum accepted size of 3145728 bytes",
             error.Message);
     }
 
     [Fact]
     public void TheReasonVocabularyIsIntactOnTheFloorAsset()
     {
-        // Eleven verifier reasons plus the two only a VerifyReceiptResult carries.
-        Assert.Equal(13, Enum.GetValues(typeof(VerificationReason)).Length);
+        // Eleven verifier reasons plus the three only a VerifyReceiptResult carries.
+        Assert.Equal(14, Enum.GetValues(typeof(VerificationReason)).Length);
         Assert.Equal("STALE_PAYLOAD", VerificationReasonCodes.ToCode(VerificationReason.StalePayload));
         Assert.Equal("INTERNAL_ERROR", VerificationReasonCodes.ToCode(VerificationReason.InternalError));
     }

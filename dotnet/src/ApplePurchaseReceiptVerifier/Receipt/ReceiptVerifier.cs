@@ -50,21 +50,23 @@ namespace ApplePurchaseReceiptVerifier.Receipt
         internal const int MaximumEmbeddedCertificates = 10;
 
         /// <summary>
-        /// The largest receipt this library will look at: 2 MiB (2,097,152),
-        /// counted in characters for the base64 string and in bytes for the
-        /// DER. A larger one fails with
+        /// The largest receipt this library will look at: 3 MiB (3,145,728
+        /// bytes), counted in UTF-8 bytes for the base64 string and in bytes
+        /// for the DER. A larger one fails with
         /// <see cref="VerificationReason.InvalidReceiptFormat"/> before it is
         /// decoded or parsed.
         /// </summary>
         /// <remarks>
-        /// Base64 decoding allocates about three quarters of the input again,
-        /// the CMS parse allocates in proportion to the DER, and none of that
-        /// is behind a signature check. The number is the Java, PHP and Python
-        /// ports'. It clears the normative floor in fixtures/cases.json, a
-        /// receipt of up to 1 MiB of DER (about 1.38 MB of base64); the
-        /// largest genuine receipt in the corpus is 79 KB.
+        /// Apple's verifyReceipt refuses a request body over 3,145,728 bytes
+        /// (measured 2026-09-23), so no receipt it would accept is larger. The
+        /// same fixed constant in every port. Base64 decoding allocates about
+        /// three quarters of the input again, the CMS parse allocates in
+        /// proportion to the DER, and none of that is behind a signature
+        /// check. The string is measured without being encoded; for base64,
+        /// which is what a receipt string is, bytes and characters are the
+        /// same count.
         /// </remarks>
-        public const int MaxReceiptBytes = 2097152;
+        public const int MaxReceiptBytes = 3145728;
 
         private readonly List<X509Certificate2> _anchors;
         private readonly string _bundleId;
@@ -226,12 +228,12 @@ namespace ApplePurchaseReceiptVerifier.Receipt
 
             // Before either decoder, both of which allocate in proportion to
             // the string.
-            if (base64Receipt.Length > MaxReceiptBytes)
+            if (Utf8Length.Exceeds(base64Receipt, MaxReceiptBytes))
             {
                 throw new VerificationException(
                     VerificationReason.InvalidReceiptFormat,
                     "receipt exceeds the maximum accepted size of "
-                    + MaxReceiptBytes.ToString(CultureInfo.InvariantCulture) + " characters");
+                    + MaxReceiptBytes.ToString(CultureInfo.InvariantCulture) + " bytes");
             }
 
             return DecodeBase64Fast(base64Receipt) ?? DecodeBase64Tolerant(base64Receipt);
