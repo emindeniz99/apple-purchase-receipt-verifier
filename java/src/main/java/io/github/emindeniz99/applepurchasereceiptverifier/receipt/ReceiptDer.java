@@ -2,9 +2,13 @@ package io.github.emindeniz99.applepurchasereceiptverifier.receipt;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.util.Arrays;
 import org.bouncycastle.asn1.ASN1InputStream;
 import org.bouncycastle.asn1.ASN1Primitive;
+import org.bouncycastle.asn1.BERTags;
 import org.bouncycastle.util.Exceptions;
+import org.bouncycastle.util.Strings;
+import org.jspecify.annotations.Nullable;
 
 /**
  * BouncyCastle's {@link ASN1Primitive#fromByteArray} without its one
@@ -42,6 +46,59 @@ final class ReceiptDer {
         } catch (ClassCastException e) {
             throw Exceptions.ioException("cannot recognise object in stream", e);
         }
+    }
+
+    /**
+     * The string BouncyCastle decodes from {@code der} when {@code der} is a
+     * single primitive UTF8String or IA5String whose short-form length spans
+     * the rest of the array, which is how receipts encode nearly every string
+     * and date; {@code null} for any other shape, which the caller then
+     * parses in full.
+     *
+     * <p>Same answer, including the same exception for invalid UTF-8: for
+     * these two tags BouncyCastle's parse only copies the content octets, and
+     * {@code getString()} hands them to exactly the {@link Strings} function
+     * called here. A length octet of 0x80 or above (long form or indefinite)
+     * or one that disagrees with the array's length is left to the parser,
+     * which owns those errors.</p>
+     */
+    static @Nullable String shortString(byte[] der) {
+        if (der.length < 2 || der[1] < 0 || der[1] != der.length - 2) {
+            return null;
+        }
+        if (der[0] == BERTags.UTF8_STRING) {
+            return Strings.fromUTF8ByteArray(Arrays.copyOfRange(der, 2, der.length));
+        }
+        if (der[0] == BERTags.IA5_STRING) {
+            return Strings.fromByteArray(Arrays.copyOfRange(der, 2, der.length));
+        }
+        return null;
+    }
+
+    /**
+     * The value of {@code der} when it is a single primitive INTEGER of one
+     * to eight content octets, minimally encoded and non-negative, which is
+     * every integer a genuine receipt carries; -1 for any other shape, which
+     * the caller then parses in full.
+     *
+     * <p>Non-minimal encodings are left to the parser on purpose: whether
+     * BouncyCastle accepts them depends on the
+     * {@code org.bouncycastle.asn1.allow_unsafe_integer} system property.
+     * Negative values are left to it too, so they fail with the message they
+     * always had.</p>
+     */
+    static long shortNonNegativeInteger(byte[] der) {
+        if (der.length < 3 || der.length > 10 || der[0] != BERTags.INTEGER || der[1] != der.length - 2) {
+            return -1;
+        }
+        if (der[2] < 0 || (der.length > 3 && der[2] == 0 && der[3] >= 0)) {
+            return -1;
+        }
+        long value = 0;
+        for (int i = 2; i < der.length; i++) {
+            value = (value << 8) | (der[i] & 0xff);
+        }
+        return value;
     }
 
     /**

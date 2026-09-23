@@ -851,7 +851,15 @@ public final class ReceiptVerifier {
         return value.longValue();
     }
 
-    private static String decodeString(byte[] der) throws VerificationException {
+    static String decodeString(byte[] der) throws VerificationException {
+        // A legacy receipt carries thousands of these; parsing each one with
+        // a fresh ASN1InputStream was most of the cost of reading it.
+        String simple = ReceiptDer.shortString(der);
+        return simple != null ? simple : decodeStringParsed(der);
+    }
+
+    /** {@link #decodeString} without the shortcut, for any shape of value. */
+    static String decodeStringParsed(byte[] der) throws VerificationException {
         try {
             ASN1Primitive parsed = ReceiptDer.fromByteArray(der);
             if (!(parsed instanceof ASN1String)) {
@@ -864,7 +872,13 @@ public final class ReceiptVerifier {
         }
     }
 
-    private static Long decodeInteger(byte[] der) throws VerificationException {
+    static Long decodeInteger(byte[] der) throws VerificationException {
+        long simple = ReceiptDer.shortNonNegativeInteger(der);
+        return simple >= 0 ? Long.valueOf(simple) : decodeIntegerParsed(der);
+    }
+
+    /** {@link #decodeInteger} without the shortcut, for any shape of value. */
+    static Long decodeIntegerParsed(byte[] der) throws VerificationException {
         try {
             ASN1Primitive parsed = ReceiptDer.fromByteArray(der);
             if (!(parsed instanceof ASN1Integer)) {
