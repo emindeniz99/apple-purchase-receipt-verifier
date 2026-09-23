@@ -39,6 +39,13 @@
  *   body-nested-*.json     {"receipt-data":"<genuine>","deep":[[...1...]]}
  *   jws-*.jws              Apple's mock renewal info, signature padded with 'A'
  *
+ * Two more files pin no limit but are built the same way, from the same
+ * genuine inputs, so they live here rather than as hand-made bytes:
+ *
+ *   receipt-der-trailing-byte.der        the shared generated receipt, then
+ *                                        one zero byte
+ *   body-receipt-data-leading-bom.json   {"receipt-data":"<U+FEFF><genuine>"}
+ *
  * None contains a lone surrogate or any character outside the Basic
  * Multilingual Plane, so no port has to agree on how those are counted.
  */
@@ -99,6 +106,11 @@ const files = {
   'body-nested-65.json': nested(64),
   'jws-at-cap.jws': padded(jws, 'A', text(''), JWS_CAP),
   'jws-over-cap.jws': padded(jws, 'A', text(''), JWS_CAP + 1),
+  // Apple decodes a receipt with bytes after it; every port refuses them.
+  'receipt-der-trailing-byte.der': Buffer.concat([receiptDer, Buffer.alloc(1)]),
+  // The mark as raw UTF-8 bytes (EF BB BF), not a JSON escape: a parser that
+  // builds strings through NSString drops it from the start of a value.
+  'body-receipt-data-leading-bom.json': text(`{"receipt-data":"\uFEFF${receiptText.toString('ascii')}"}`),
 };
 
 mkdirSync(OUT, { recursive: true });
