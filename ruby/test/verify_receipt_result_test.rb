@@ -202,8 +202,10 @@ class VerifyReceiptResultTest < Minitest::Test
     root = TestSupport.fixtures_root
     roots = APRV.apple_receipt_roots +
             Dir[File.join(root, "generated", "*receipt*root.der")].map { |path| File.binread(path) }
+    # The two DER-cap receipts are left out: 3 MiB of DER is 4 MiB of
+    # base64, which no request can carry.
     receipts = Dir[File.join(root, "generated", "receipt*.der")]
-               .reject { |path| path.end_with?("root.der") }
+               .reject { |path| path.end_with?("root.der") || path.include?("der-cap") }
                .map { |path| [File.binread(path)].pack("m0") }
     texts = Dir[File.join(root, "generated", "receipt-b64", "*.txt")] +
             Dir[File.join(root, "public-receipts", "*.b64")]
