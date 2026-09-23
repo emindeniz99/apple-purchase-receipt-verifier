@@ -537,6 +537,54 @@
       "codec": "utf8",
       "contentSha256": "38da992395819ccf30d32dffc1168c467c4ba0d125a746fbb2aec5db5265a8cf"
     },
+    "jws-claim-type-root": {
+      "path": "generated/jws-claim-type-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "60e8feadb1639d9342068b9daf6098751514e4f9e2318196c43b46c1641590b2"
+    },
+    "transaction-claim-quantity-string": {
+      "path": "generated/transaction-claim-quantity-string.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "589c2b8bb1c3eb0f1c96151e33a5fd86249c3f015bf6646e7aeb2f3a7e1c70c3"
+    },
+    "transaction-claim-product-id-number": {
+      "path": "generated/transaction-claim-product-id-number.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "eed357b105800b00295e8dc34b4f86b2281973ba4e6bebbcd422146f423f998d"
+    },
+    "transaction-claim-price-fractional": {
+      "path": "generated/transaction-claim-price-fractional.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "4dc10fe8b94f61e7dcd968a1db1fd19f1a787b32bf9372c9bca13521d999db63"
+    },
+    "transaction-claim-expires-date-object": {
+      "path": "generated/transaction-claim-expires-date-object.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "09374623cdc94c30e3227753b70716f605a4f4582784d6f7a9263f013acb39b5"
+    },
+    "transaction-claim-bundle-id-number": {
+      "path": "generated/transaction-claim-bundle-id-number.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "1fcd35217810432ebff9402740b33d96a99c17f7bbab4c8c336f76a2ec1b47de"
+    },
+    "app-transaction-claim-app-apple-id-string": {
+      "path": "generated/app-transaction-claim-app-apple-id-string.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "483ee3fb8479d1fd8ec4c4deeb4649fbf803318e2ee03adf5b9542a085b6b7c8"
+    },
+    "transaction-claims-null-and-unmodelled": {
+      "path": "generated/transaction-claims-null-and-unmodelled.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "06e9f6552024b3f8c4f8f78333c0e85e66bdb5b8fa2d35d5ba8eef74c29b3aae"
+    },
     "receipt-signer-root": {
       "path": "generated/receipt-signer-root.der",
       "role": "trust-anchor",
@@ -6487,6 +6535,268 @@
         "endpoint",
         "receipt",
         "negative",
+        "generated"
+      ]
+    },
+    {
+      "id": "transaction/internal-error-on-quantity-string",
+      "description": "The payload's quantity is the string \"1\" where the model holds an integer. The chain and the ES256 signature are genuine, so a trusted signer wrote this claim, and the typed read runs only after both pass. A claim the typed model cannot hold is the library's failure or a format Apple changed, not the client's, so it is INTERNAL_ERROR (retry and alert) and never a reason a caller reads as deny, such as INVALID_JWS_FORMAT. It is not skipped either: reading it as absent would hand the caller a null the payload never stated.",
+      "operation": "verifyTransaction",
+      "input": {
+        "fixture": "transaction-claim-quantity-string"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-claim-type-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INTERNAL_ERROR"
+      },
+      "fault": "claim-quantity-is-a-string",
+      "tags": [
+        "jws",
+        "transaction",
+        "negative",
+        "claims",
+        "generated"
+      ]
+    },
+    {
+      "id": "transaction/internal-error-on-product-id-number",
+      "description": "The payload's productId is the number 42 where the model holds a string. A string field takes a JSON string and nothing else: no port turns a number into its decimal text. The chain and the ES256 signature are genuine, so a trusted signer wrote this claim, and the typed read runs only after both pass. A claim the typed model cannot hold is the library's failure or a format Apple changed, not the client's, so it is INTERNAL_ERROR (retry and alert) and never a reason a caller reads as deny, such as INVALID_JWS_FORMAT. It is not skipped either: reading it as absent would hand the caller a null the payload never stated.",
+      "operation": "verifyTransaction",
+      "input": {
+        "fixture": "transaction-claim-product-id-number"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-claim-type-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INTERNAL_ERROR"
+      },
+      "fault": "claim-product-id-is-a-number",
+      "tags": [
+        "jws",
+        "transaction",
+        "negative",
+        "claims",
+        "generated"
+      ]
+    },
+    {
+      "id": "transaction/internal-error-on-price-fractional",
+      "description": "The payload's price is 1.5 where the model holds an integer. An integer field takes a JSON number whose value is a whole number, so 1.0 is read as 1 (transaction/accept-null-and-unmodelled-claims pins that side) and 1.5 is refused rather than truncated to 1. Where a whole number is too large for the field's type is not pinned, because the ports type the same field with different widths. The chain and the ES256 signature are genuine, so a trusted signer wrote this claim, and the typed read runs only after both pass. A claim the typed model cannot hold is the library's failure or a format Apple changed, not the client's, so it is INTERNAL_ERROR (retry and alert) and never a reason a caller reads as deny, such as INVALID_JWS_FORMAT. It is not skipped either: reading it as absent would hand the caller a null the payload never stated.",
+      "operation": "verifyTransaction",
+      "input": {
+        "fixture": "transaction-claim-price-fractional"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-claim-type-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INTERNAL_ERROR"
+      },
+      "fault": "claim-price-is-fractional",
+      "tags": [
+        "jws",
+        "transaction",
+        "negative",
+        "claims",
+        "generated"
+      ]
+    },
+    {
+      "id": "transaction/internal-error-on-expires-date-object",
+      "description": "The payload's expiresDate is a JSON object where the model holds an integer. This is the claim where reading a wrong type as absent does the most harm: a caller can take a null expiresDate to mean the purchase never expires. The chain and the ES256 signature are genuine, so a trusted signer wrote this claim, and the typed read runs only after both pass. A claim the typed model cannot hold is the library's failure or a format Apple changed, not the client's, so it is INTERNAL_ERROR (retry and alert) and never a reason a caller reads as deny, such as INVALID_JWS_FORMAT. It is not skipped either: reading it as absent would hand the caller a null the payload never stated.",
+      "operation": "verifyTransaction",
+      "input": {
+        "fixture": "transaction-claim-expires-date-object"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-claim-type-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INTERNAL_ERROR"
+      },
+      "fault": "claim-expires-date-is-an-object",
+      "tags": [
+        "jws",
+        "transaction",
+        "negative",
+        "claims",
+        "generated"
+      ]
+    },
+    {
+      "id": "transaction/internal-error-on-bundle-id-number",
+      "description": "The payload's bundleId is the number 7. The typed read of every modelled claim comes before the bundle-id and environment checks, so the answer is about the type and not WRONG_BUNDLE_ID. The chain and the ES256 signature are genuine, so a trusted signer wrote this claim, and the typed read runs only after both pass. A claim the typed model cannot hold is the library's failure or a format Apple changed, not the client's, so it is INTERNAL_ERROR (retry and alert) and never a reason a caller reads as deny, such as INVALID_JWS_FORMAT. It is not skipped either: reading it as absent would hand the caller a null the payload never stated.",
+      "operation": "verifyTransaction",
+      "input": {
+        "fixture": "transaction-claim-bundle-id-number"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-claim-type-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INTERNAL_ERROR"
+      },
+      "fault": "claim-bundle-id-is-a-number",
+      "tags": [
+        "jws",
+        "transaction",
+        "negative",
+        "claims",
+        "generated"
+      ]
+    },
+    {
+      "id": "app-transaction/internal-error-on-app-apple-id-string",
+      "description": "The AppTransaction payload's appAppleId is the string \"123456789\" where the model holds an integer. The receipt type is Sandbox, where appAppleId is not compared, so only the typed read can object. The chain and the ES256 signature are genuine, so a trusted signer wrote this claim, and the typed read runs only after both pass. A claim the typed model cannot hold is the library's failure or a format Apple changed, not the client's, so it is INTERNAL_ERROR (retry and alert) and never a reason a caller reads as deny, such as INVALID_JWS_FORMAT. It is not skipped either: reading it as absent would hand the caller a null the payload never stated.",
+      "operation": "verifyAppTransaction",
+      "input": {
+        "fixture": "app-transaction-claim-app-apple-id-string"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-claim-type-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ],
+        "appAppleId": 123456789
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INTERNAL_ERROR"
+      },
+      "fault": "claim-app-apple-id-is-a-string",
+      "tags": [
+        "jws",
+        "app-transaction",
+        "negative",
+        "claims",
+        "generated"
+      ]
+    },
+    {
+      "id": "transaction/accept-null-and-unmodelled-claims",
+      "description": "The boundary of the internal-error-on-* claim cases. The payload spells quantity 1.0, states expiresDate and offerIdentifier as JSON null, and carries futureClaim, a claim no model has, holding an object with an array of mixed types. It verifies: a whole number spelled with a decimal point is that number, JSON null is read as absent, and a claim the model does not have is ignored whatever its type, because Apple adds claims over time. A port cannot pass the strict cases by refusing every payload that looks unusual.",
+      "operation": "verifyTransaction",
+      "input": {
+        "fixture": "transaction-claims-null-and-unmodelled"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-claim-type-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ]
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "bundleId": "com.example.app",
+          "productId": "com.example.app.pro",
+          "quantity": 1
+        }
+      },
+      "tags": [
+        "jws",
+        "transaction",
+        "positive",
+        "claims",
+        "generated"
+      ]
+    },
+    {
+      "id": "raw/return-claims-of-any-type",
+      "description": "verifyRaw has no typed model, so it has no typed read to fail: the payload whose quantity is the string \"1\" verifies through it and comes back as signed. Only verifyTransaction and verifyAppTransaction refuse a modelled claim of the wrong type.",
+      "operation": "verifyRaw",
+      "input": {
+        "fixture": "transaction-claim-quantity-string"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-claim-type-root"
+          ]
+        },
+        "bundleId": "com.example.app",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ]
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "bundleId": "com.example.app",
+          "productId": "com.example.app.pro"
+        }
+      },
+      "tags": [
+        "jws",
+        "raw",
+        "positive",
+        "claims",
         "generated"
       ]
     }
