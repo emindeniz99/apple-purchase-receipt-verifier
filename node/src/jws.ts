@@ -13,6 +13,8 @@ import {
   JwsClaimChecker,
   LEAF_OID,
   parseJsonSegment,
+  readAppTransactionPayload,
+  readTransactionPayload,
   signedAtMillisOf,
   splitJws,
 } from './jws-claims.js';
@@ -68,7 +70,7 @@ export class JwsVerifier {
 
   /** Verifies a signed transaction and checks bundle id + environment. */
   verifyTransaction(jws: string): TransactionPayload {
-    const payload = this.#verifySignature(jws) as TransactionPayload;
+    const payload = readTransactionPayload(this.#verifySignature(jws));
     this.#claims.requireBundleId(payload.bundleId);
     this.#claims.requireAcceptedEnvironment(payload.environment);
     return payload;
@@ -79,7 +81,7 @@ export class JwsVerifier {
    * (`receiptType`), and — in Production — the app Apple id.
    */
   verifyAppTransaction(jws: string): AppTransactionPayload {
-    const payload = this.#verifySignature(jws) as AppTransactionPayload;
+    const payload = readAppTransactionPayload(this.#verifySignature(jws));
     this.#claims.requireBundleId(payload.bundleId);
     const environment = this.#claims.requireAcceptedEnvironment(payload.receiptType);
     this.#claims.requireAppAppleId(environment, payload.appAppleId);

@@ -199,6 +199,24 @@ const cases = [
     jws: genText('expired-cert-fresh.jws'),
     expect: 'INVALID_CHAIN',
   }),
+  // The typed claim read lives in jws-claims.ts, which both builds share;
+  // these pin that both call it, before the bundle-id check.
+  jwsCase('modelled claim of the wrong type', {
+    roots: [gen('jws-claim-type-root.der')],
+    jws: genText('transaction-claim-bundle-id-number.jws'),
+    expect: 'INTERNAL_ERROR',
+  }),
+  jwsCase('AppTransaction modelled claim of the wrong type', {
+    roots: [gen('jws-claim-type-root.der')],
+    jws: genText('app-transaction-claim-app-apple-id-string.jws'),
+    method: 'verifyAppTransaction',
+    expect: 'INTERNAL_ERROR',
+  }),
+  jwsCase('null and unmodelled claims', {
+    roots: [gen('jws-claim-type-root.der')],
+    jws: genText('transaction-claims-null-and-unmodelled.jws'),
+    check: (p) => assert.equal(p.quantity, 1),
+  }),
   receiptCase('shared receipt fixture with device hash', {
     roots: [RECEIPT_ROOT],
     receipt: gen('receipt.der'),
