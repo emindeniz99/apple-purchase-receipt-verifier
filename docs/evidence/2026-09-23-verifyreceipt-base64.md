@@ -19,12 +19,18 @@ decoded like the canonical one.
   `sandbox.itunes.apple.com`, once in its canonical spelling and once in each
   spelling below. Every spelling differs from the canonical string in one way
   only, so the spelling is the only thing that can move the answer.
-- The whole set was run twice. Both runs gave identical results.
+- The first seventeen spellings were run twice, with identical results. The
+  rest were added in later passes the same day and run once.
 - Reading the status: 0, 21007 (a sandbox receipt sent to production) and
   21008 (a production receipt sent to sandbox) all mean Apple decoded the
   base64 and reached the receipt. 21002 means Apple refused `receipt-data` as
-  malformed. Every spelling got the same verdict on all four receipts and both
-  endpoints.
+  malformed.
+- Every spelling got the same verdict on every receipt it applies to, on both
+  endpoints, with two expected exceptions. One receipt's length needs no
+  padding, so for it "padding omitted" is the canonical string itself, and
+  "base64 characters after the padding" is valid base64 of the receipt plus
+  three bytes (see "Bytes after the receipt" below). The under-padding
+  spelling exists only for the two receipts that need two `=`.
 
 ## Spelling by spelling
 
@@ -56,6 +62,40 @@ decoded like the canonical one.
 | Impossible length, unpadded | 21002 | refused |
 | Empty string | 21002 | refused |
 | Canonical followed by 100,000 newlines | 21002 | refused |
+
+## Around the string
+
+Sent once each, on two of the receipts, both endpoints:
+
+| Request | Apple | Verdict |
+|---|---|---|
+| `data:application/pkcs7-mime;base64,` prefix | 21002 | refused |
+| Byte-order mark (U+FEFF) before the string | 21002 | refused |
+| No-break space (U+00A0) inside | 21002 | refused |
+| `+` and `/` percent-encoded | 21002 | refused |
+| JSON `\/` escapes, as PHP's `json_encode` writes them | 0 / 21008 | decoded |
+| A JSON `\u` escape for one character | 0 / 21008 | decoded |
+| An extra unknown field beside `receipt-data` | 0 / 21008 | decoded |
+| `receipt-data` null, a number, an array, or missing | 21002 | refused |
+| `receipt-data` twice, a bad value first and the genuine one last | 0 / 21008 | decoded |
+
+JSON escapes are undone by the JSON parser before the base64 rule sees the
+string, so they are not spellings of the base64 at all. The duplicate key shows
+Apple keeping the last value; what each port does with a duplicate key is not
+pinned by this rule.
+
+## Bytes after the receipt
+
+Also measured, on all four receipts and both endpoints: appending bytes to the
+receipt's DER and base64-encoding the result canonically. One zero byte, three
+zero bytes, one `A`, 100 arbitrary bytes, an ASN.1 NULL and a second copy of
+the whole receipt were all decoded. Apple reads the first complete value and
+ignores what follows.
+
+The ports refuse this on purpose (THREAT-MODEL.md §3.7): no genuine client can
+produce it, since `appStoreReceiptURL` yields the exact file, and refusing it
+keeps one receipt to one byte string. It is the one place the library is
+deliberately stricter than Apple.
 
 ## The Python equivalence
 
@@ -100,8 +140,8 @@ multiple of four, and only the standard alphabet before at most two trailing
   the public sandbox receipt already under `fixtures/`.
 - Four receipts, two per environment. The rule held identically on all of
   them, but that is the extent of the sample.
-- Unicode whitespace (U+00A0, U+2028 and the like) was not sent to Apple. The
-  rule refuses it anyway, since it is outside the alphabet.
+- Of Unicode whitespace, only U+00A0 and U+FEFF were sent to Apple (both
+  refused). The rule refuses the rest anyway, since it is outside the alphabet.
 - Swift was measured on Linux only. Darwin's Foundation is a different
   implementation; the shape check in front of it is what keeps the two
   platforms on the same answer.
