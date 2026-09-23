@@ -484,29 +484,6 @@ builds its own `Verifier` and `CertificateStore`, so concurrent calls share
 nothing to wait on, and the library has no actor, lock or global actor of
 its own.
 
-Measured on 2026-09-23 in release mode on a 4-core Linux x86_64 container
-(Swift 6.3.3), verifying the `receipt-sandbox-g5` receipt through one
-shared `ReceiptVerifier`: 800 verifications split across N tasks, median of
-three rounds. The machine was shared with other jobs (load average 7 to 9
-on 4 cores), so a pure-CPU control ran alongside: 800 SHA-256 hashes of
-1 MiB, split the same way.
-
-| tasks | receipts/s | CPU, % of one core | SHA-256 control/s | control CPU |
-|---|---|---|---|---|
-| 1 | 317 | 95% | 331 | 97% |
-| 4 | 332 | 126% | 333 | 100% |
-| 8 | 424 | 172% | 570 | 168% |
-
-The process used more than one core during verification (up to 240% in
-single rounds), which a serializing actor would not allow. Throughput scaled
-about as far as the control did, so on that machine the ceiling was the
-cores the scheduler handed over, not the library. The numbers do not show
-how far it scales on idle cores. One cost is visible: total CPU time per
-verification rose by roughly a fifth to a third with 4 or 8 tasks
-(2.5 s for 800 alone, 2.8 s to 3.3 s in parallel), where the control's did
-not. A `ReceiptVerifier` per task showed the same rise, so sharing the
-instance is not its cause; the cause was not investigated.
-
 ## Resource bounds
 
 `ReceiptVerifier.verifyCore` bounds a receipt's embedded certificates at ten,
