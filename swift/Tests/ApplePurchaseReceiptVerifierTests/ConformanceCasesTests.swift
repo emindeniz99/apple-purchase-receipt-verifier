@@ -68,6 +68,12 @@ private let unmatchableEnvironments: Set<AppleEnvironment> = [.localTesting]
 private struct Vectors {
     let fixtures: [String: Any]
     let cases: [[String: Any]]
+    /// decodeBase64 texts by case id, read with JSONDecoder rather than
+    /// JSONSerialization: on Darwin, JSONSerialization builds its strings
+    /// through NSString, which drops a leading U+FEFF, so a text that starts
+    /// with a byte-order mark would reach the decoder without it and the
+    /// group would test a different spelling than the file states.
+    let base64Texts: [String: [String]]
 
     init() throws {
         let data = try Data(contentsOf: fixturesDirectory.appendingPathComponent("cases.json"))
@@ -79,6 +85,12 @@ private struct Vectors {
         }
         self.fixtures = fixtures
         self.cases = cases
+        let exact = try JSONDecoder().decode(TextsFile.self, from: data)
+        var texts: [String: [String]] = [:]
+        for kase in exact.cases {
+            if let caseTexts = kase.input?.texts { texts[kase.id] = caseTexts }
+        }
+        self.base64Texts = texts
     }
 
     /// Decodes a registered fixture to its logical bytes (fixture.codec) and
@@ -496,6 +508,16 @@ private func describe(_ value: Any?) -> String {
 
 // MARK: - decodeBase64
 
+/// Just enough of cases.json for JSONDecoder to read every case's texts.
+private struct TextsFile: Decodable {
+    struct Case: Decodable {
+        struct Input: Decodable { let texts: [String]? }
+        let id: String
+        let input: Input?
+    }
+    let cases: [Case]
+}
+
 /// The reason each decoder a decodeBase64 group can name refuses with. Both
 /// are `decodeReceiptBase64`, which answers nil: the receipt paths report
 /// that as INVALID_RECEIPT_FORMAT and the x5c path as INVALID_CERTIFICATE.
@@ -524,8 +546,8 @@ private func escaped(_ text: String) -> String {
 /// Every text of a decodeBase64 group that got the wrong answer from a
 /// decoder the group names, by case id, decoder, index and escaped text,
 /// rather than stopping at the first.
-private func decodeBase64Failures(_ kase: [String: Any], id: String) throws -> [String] {
-    guard let texts = (kase["input"] as? [String: Any])?["texts"] as? [String], !texts.isEmpty,
+private func decodeBase64Failures(_ kase: [String: Any], id: String, texts: [String]?) throws -> [String] {
+    guard let texts, !texts.isEmpty,
         let decoders = kase["decoders"] as? [String], !decoders.isEmpty,
         let expected = kase["expected"] as? [String: Any],
         let status = expected["status"] as? String
@@ -690,9 +712,9 @@ final class ConformanceCasesTests: XCTestCase {
             "\(missing.count) \(operation) cases did not run: \(missing.joined(separator: ", "))")
     }
 
-    private func runDecodeBase64(_ kase: [String: Any], id: String) {
+    private func runDecodeBase64(_ kase: [String: Any], id: String, texts: [String]?) {
         do {
-            let failures = try decodeBase64Failures(kase, id: id)
+            let failures = try decodeBase64Failures(kase, id: id, texts: texts)
             XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
         } catch {
             XCTFail("harness error: \(error)")
@@ -703,7 +725,7 @@ final class ConformanceCasesTests: XCTestCase {
         let id = kase["id"] as? String ?? "<case without an id>"
         ran.insert(id)
         if kase["operation"] as? String == "decodeBase64" {
-            runDecodeBase64(kase, id: id)
+            runDecodeBase64(kase, id: id, texts: vectors.base64Texts[id])
             return
         }
         guard let operation = kase["operation"] as? String,
