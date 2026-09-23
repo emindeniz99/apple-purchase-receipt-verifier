@@ -65,8 +65,8 @@ func (r *VerifyReceiptResult) Receipt() *AppReceipt {
 
 // Reason is why there is no receipt. It is empty exactly when Receipt is
 // non-nil. Besides the verifier reasons it can be
-// ReasonMalformedRequest or ReasonInternalError, which only a result
-// reports.
+// ReasonMalformedRequest, ReasonRequestTooLarge or ReasonInternalError,
+// which only a result reports.
 func (r *VerifyReceiptResult) Reason() Reason {
 	if failure := r.failure(); failure != nil {
 		return failure.Reason
@@ -157,7 +157,7 @@ func (r *VerifyReceiptResult) response(environment Environment) VerifyReceiptRes
 func (r *VerifyReceiptResult) status(environment Environment) int {
 	if r.receipt == nil {
 		switch r.Reason() {
-		case ReasonMalformedRequest, ReasonInvalidReceiptFormat:
+		case ReasonMalformedRequest, ReasonRequestTooLarge, ReasonInvalidReceiptFormat:
 			return StatusMalformed
 		case ReasonInternalError:
 			return StatusInternal

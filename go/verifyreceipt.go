@@ -49,16 +49,17 @@ const (
 )
 
 // MaxRequestBytes is the ceiling on a raw request body handed to
-// VerifyReceiptBody, VerifyReceiptBodyAt or VerifyReceiptJSON. A larger
-// body is ReasonMalformedRequest, status 21002, before it is parsed:
-// JSON parsing allocates a multiple of the body, and that happens before
-// any verification.
+// VerifyReceiptBody, VerifyReceiptBodyAt or VerifyReceiptJSON, in bytes:
+// 3 MiB, Apple's own limit, fixed and the same in every port of this
+// library. Measured on 2026-09-23 against both of Apple's verifyReceipt
+// endpoints, a body of 3,145,728 bytes is answered and one of 3,145,729
+// bytes gets HTTP 413, and the count is UTF-8 bytes, not characters. The
+// body is a []byte, so len is that count.
 //
-// The number is the Java, PHP and Python ports' (1 MiB). It is
-// deliberately below DefaultMaxReceiptBytes: the JSON entry point has an
-// amplification the pre-decoded entry points do not. The largest genuine
-// receipt in the corpus is 106 KB of base64.
-const MaxRequestBytes = 1 << 20
+// A larger body is ReasonRequestTooLarge, status 21002, decided before
+// the depth scan and before parsing: JSON parsing allocates a multiple of
+// the body, and that happens before any verification.
+const MaxRequestBytes = 3145728
 
 // MaxJSONNestingDepth is how many arrays and objects a request body or a
 // JWS header or payload may hold open at once. It is counted before the
@@ -117,12 +118,6 @@ type VerifyReceiptEndpointOptions struct {
 	// error naming the one-line remedy rather than silently rendering the
 	// wrong instant.
 	PacificLocation *time.Location
-
-	// MaxReceiptBytes is the ceiling on receipt-data: on the base64
-	// string before it is decoded, and on the DER before it is parsed.
-	// Zero means DefaultMaxReceiptBytes. A request body is separately
-	// capped at MaxRequestBytes, whatever this is set to.
-	MaxReceiptBytes int
 }
 
 // VerifyReceiptEndpoint answers verifyReceipt request bodies locally.
@@ -130,11 +125,10 @@ type VerifyReceiptEndpointOptions struct {
 // It is immutable after construction and safe for concurrent use by
 // multiple goroutines.
 type VerifyReceiptEndpoint struct {
-	roots           []*x509.Certificate
-	environment     Environment
-	now             func() time.Time
-	pacific         *time.Location
-	maxReceiptBytes int
+	roots       []*x509.Certificate
+	environment Environment
+	now         func() time.Time
+	pacific     *time.Location
 }
 
 // NewVerifyReceiptEndpoint validates the options and returns an endpoint.
@@ -151,9 +145,6 @@ func NewVerifyReceiptEndpoint(opts VerifyReceiptEndpointOptions) (*VerifyReceipt
 	if err := checkEndpointEnvironment(opts.Environment); err != nil {
 		return nil, err
 	}
-	if opts.MaxReceiptBytes < 0 {
-		return nil, errors.New("applereceipt: MaxReceiptBytes must not be negative")
-	}
 	pacific := opts.PacificLocation
 	if pacific == nil {
 		loaded, err := time.LoadLocation("America/Los_Angeles")
@@ -169,16 +160,11 @@ func NewVerifyReceiptEndpoint(opts VerifyReceiptEndpointOptions) (*VerifyReceipt
 	if now == nil {
 		now = time.Now
 	}
-	maxBytes := opts.MaxReceiptBytes
-	if maxBytes == 0 {
-		maxBytes = DefaultMaxReceiptBytes
-	}
 	return &VerifyReceiptEndpoint{
-		roots:           append([]*x509.Certificate(nil), opts.TrustedRoots...),
-		environment:     opts.Environment,
-		now:             now,
-		pacific:         pacific,
-		maxReceiptBytes: maxBytes,
+		roots:       append([]*x509.Certificate(nil), opts.TrustedRoots...),
+		environment: opts.Environment,
+		now:         now,
+		pacific:     pacific,
 	}, nil
 }
 
@@ -223,11 +209,12 @@ func (e *VerifyReceiptEndpoint) VerifyReceiptDataAt(receiptData string, now time
 // VerifyReceiptBody handles one verifyReceipt request body in its raw
 // wire form, the JSON an HTTP framework hands over.
 //
-// A body that is not a JSON object (unparseable, null, an array, a
-// scalar), that is longer than MaxRequestBytes or nests deeper than
+// A body over MaxRequestBytes is ReasonRequestTooLarge, status 21002,
+// where Apple answers HTTP 413. A body that is not a JSON object
+// (unparseable, null, an array, a scalar), that nests deeper than
 // MaxJSONNestingDepth, or whose receipt-data is not a JSON string, is
 // ReasonMalformedRequest, status 21002. Both caps are checked before the
-// body is parsed. Apple has no status code for
+// body is parsed, the size first. Apple has no status code for
 // "that wasn't JSON"; 21002 is the closest, and it is what a JSON object
 // with no usable receipt-data gets anyway.
 func (e *VerifyReceiptEndpoint) VerifyReceiptBody(body []byte) *VerifyReceiptResult {
@@ -291,7 +278,7 @@ func (e *VerifyReceiptEndpoint) run(at *time.Time,
 
 func (e *VerifyReceiptEndpoint) verifyBody(body []byte, requestDate time.Time) *VerifyReceiptResult {
 	if len(body) > MaxRequestBytes {
-		return e.failed(newError(ReasonMalformedRequest,
+		return e.failed(newError(ReasonRequestTooLarge,
 			"the request body exceeds the %d byte limit", MaxRequestBytes), requestDate)
 	}
 	if jsonNestingExceeds(body, MaxJSONNestingDepth) {
@@ -325,10 +312,10 @@ func (e *VerifyReceiptEndpoint) verify(receiptData string, requestDate time.Time
 	// The string is checked against the ceiling before it is decoded: this
 	// is the hostile-network surface, and a receipt-data far above the
 	// ceiling must not buy more work than one at it.
-	der, err := receiptFromBase64(receiptData, e.maxReceiptBytes)
+	der, err := receiptFromBase64(receiptData)
 	var fields *AppReceipt
 	if err == nil {
-		fields, err = verifyReceiptCore(der, e.roots, e.maxReceiptBytes)
+		fields, err = verifyReceiptCore(der, e.roots)
 	}
 	if err != nil {
 		var verr *VerificationError
