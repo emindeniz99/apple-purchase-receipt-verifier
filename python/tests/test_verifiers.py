@@ -322,6 +322,29 @@ class ReviewFixesTest(unittest.TestCase):
         self.assertTrue(is_transaction_active_at({"expiresDate": 2000}, 1000))
 
 
+class TypedClaimReadTest(unittest.TestCase):
+    """What cases.json cannot pin for this port: bool is a subclass of int in
+    Python, so a boolean where an integer claim belongs passes a bare
+    isinstance(value, int) check. The signature step is stubbed so the test
+    reaches the typed read with any payload; the shared cases cover the real
+    signed path."""
+
+    def verify(self, payload):
+        with mock.patch.object(JwsVerifier, "_verify_signature", return_value=payload):
+            return jws_verifier().verify_transaction("unused")
+
+    def test_refuses_a_boolean_integer_claim(self):
+        with self.assertRaises(VerificationError) as ctx:
+            self.verify({"bundleId": BUNDLE, "environment": "Sandbox", "quantity": True})
+        self.assertEqual(ctx.exception.reason, "INTERNAL_ERROR")
+
+    def test_returns_a_whole_float_as_int(self):
+        # A caller comparing or serializing the claim must see the integer the
+        # model promises, not 1.0.
+        result = self.verify({"bundleId": BUNDLE, "environment": "Sandbox", "quantity": 1.0})
+        self.assertIs(type(result["quantity"]), int)
+
+
 class PublicReceiptsTest(unittest.TestCase):
     """Genuine Apple-signed receipts vs the REAL pinned Apple root. The
     verdicts live in fixtures/cases.json; what stays here is the base64-string
