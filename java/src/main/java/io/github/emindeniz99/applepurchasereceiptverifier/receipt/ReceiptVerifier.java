@@ -35,6 +35,7 @@ import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.ASN1String;
 import org.bouncycastle.asn1.ASN1TaggedObject;
 import org.bouncycastle.asn1.cms.ContentInfo;
+import org.bouncycastle.asn1.cms.SignedData;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
@@ -536,19 +537,12 @@ public final class ReceiptVerifier {
 
     /**
      * The raw {@code certificates [0] IMPLICIT SET} of the SignedData, or
-     * null when the receipt carries none. Read as generic ASN.1 so an entry
-     * no certificate decoder accepts is still counted and still locatable.
+     * null when the receipt carries none. BouncyCastle's ASN.1
+     * {@link SignedData} hands the set back undecoded, so an entry no
+     * certificate decoder accepts is still counted and still locatable.
      */
     private static @Nullable ASN1Set embeddedCertificateSet(CMSSignedData cms) {
-        ASN1Encodable content = cms.toASN1Structure().getContent();
-        ASN1Sequence signedData = ASN1Sequence.getInstance(content.toASN1Primitive());
-        for (int i = 0; i < signedData.size(); i++) {
-            ASN1Encodable field = signedData.getObjectAt(i);
-            if (field instanceof ASN1TaggedObject && ((ASN1TaggedObject) field).getTagNo() == 0) {
-                return ASN1Set.getInstance((ASN1TaggedObject) field, false);
-            }
-        }
-        return null;
+        return SignedData.getInstance(cms.toASN1Structure().getContent()).getCertificates();
     }
 
     private static void verifyCmsSignature(CMSSignedData cms, X509Certificate signerCert) throws VerificationException {
