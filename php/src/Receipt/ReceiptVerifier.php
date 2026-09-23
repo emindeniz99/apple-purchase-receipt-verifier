@@ -55,8 +55,14 @@ final class ReceiptVerifier
      */
     public const MAX_EMBEDDED_CERTIFICATES = 10;
 
-    /** Apple receipts are tens of KB; the largest public fixture is 79 KB. */
-    public const DEFAULT_MAX_RECEIPT_BYTES = 2097152;
+    /**
+     * Ceiling on a receipt, in bytes: the base64 string before it is decoded,
+     * and the DER. 3 MiB, Apple's verifyReceipt request limit (measured on
+     * 2026-09-23): no receipt Apple accepts can be larger than the request
+     * that carries it. A larger receipt is {@see Reason::InvalidReceiptFormat}.
+     * A fixed constant, the same in every port; `strlen()` counts bytes.
+     */
+    public const MAX_RECEIPT_BYTES = 3145728;
 
     /** @var list<string> */
     private readonly array $trustedRoots;
@@ -68,8 +74,6 @@ final class ReceiptVerifier
      *        code path to it. Keys are ignored: the anchors are reindexed
      *        into a list, so a caller may pass any string-keyed array.
      * @param string $bundleId the bundle id the receipt must carry
-     * @param int $maxReceiptBytes input larger than this is rejected before
-     *        parsing; raise it only for a genuinely unusual corpus
      * @param int $nodeBudget ceiling on ASN.1 nodes one receipt may decode to
      *
      * @throws InvalidArgumentException on misconfiguration — which is a
@@ -78,16 +82,12 @@ final class ReceiptVerifier
     public function __construct(
         array $trustedRoots,
         private readonly string $bundleId,
-        private readonly int $maxReceiptBytes = self::DEFAULT_MAX_RECEIPT_BYTES,
         private readonly int $nodeBudget = Der::DEFAULT_NODE_BUDGET,
     ) {
         self::requireSixtyFourBit();
         ChainValidator::normalizeRoots($trustedRoots); // validate eagerly
         if ($bundleId === '') {
             throw new InvalidArgumentException('bundleId is required');
-        }
-        if ($maxReceiptBytes < 1) {
-            throw new InvalidArgumentException('maxReceiptBytes must be positive');
         }
         if ($nodeBudget < 1) {
             throw new InvalidArgumentException('nodeBudget must be positive');
@@ -116,7 +116,6 @@ final class ReceiptVerifier
         $fields = self::verifyReceiptCore(
             $receipt,
             $this->trustedRoots,
-            $this->maxReceiptBytes,
             $this->nodeBudget,
         );
         if ($fields->bundleId !== $this->bundleId) {
@@ -151,7 +150,6 @@ final class ReceiptVerifier
     public static function verifyReceiptCore(
         string $receipt,
         array $trustedRoots,
-        int $maxReceiptBytes = self::DEFAULT_MAX_RECEIPT_BYTES,
         int $nodeBudget = Der::DEFAULT_NODE_BUDGET,
     ): AppReceipt {
         self::requireSixtyFourBit();
@@ -164,7 +162,7 @@ final class ReceiptVerifier
         // deep in a parser is indistinguishable, from here, from a hostile
         // input that found one — and must not reach the caller as a 500.
         try {
-            return self::verifyDecoded(self::toDer($receipt, $maxReceiptBytes), $anchors, $nodeBudget);
+            return self::verifyDecoded(self::toDer($receipt), $anchors, $nodeBudget);
         } catch (VerificationException $e) {
             throw $e;
         } catch (Throwable $e) {
@@ -341,15 +339,15 @@ final class ReceiptVerifier
     }
 
     /** @throws VerificationException */
-    private static function toDer(string $receipt, int $maxReceiptBytes): string
+    private static function toDer(string $receipt): string
     {
         if ($receipt === '') {
             throw new VerificationException(Reason::InvalidReceiptFormat, 'receipt is empty');
         }
         // Checked before the transport form is decided so an oversized base64
         // blob is rejected without allocating its decoding.
-        if (strlen($receipt) > $maxReceiptBytes) {
-            throw new VerificationException(Reason::InvalidReceiptFormat, 'receipt exceeds the configured size limit');
+        if (strlen($receipt) > self::MAX_RECEIPT_BYTES) {
+            throw new VerificationException(Reason::InvalidReceiptFormat, 'receipt exceeds the size limit');
         }
         $der = $receipt[0] === "\x30" ? $receipt : Base64::decodeReceipt($receipt);
         if ($der === null) {
@@ -358,8 +356,8 @@ final class ReceiptVerifier
         if ($der === '') {
             throw new VerificationException(Reason::InvalidReceiptFormat, 'receipt is empty');
         }
-        if (strlen($der) > $maxReceiptBytes) {
-            throw new VerificationException(Reason::InvalidReceiptFormat, 'receipt exceeds the configured size limit');
+        if (strlen($der) > self::MAX_RECEIPT_BYTES) {
+            throw new VerificationException(Reason::InvalidReceiptFormat, 'receipt exceeds the size limit');
         }
 
         return $der;
