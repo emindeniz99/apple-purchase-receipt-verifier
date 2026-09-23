@@ -2,7 +2,6 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.UncheckedIOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateEncodingException;
@@ -128,7 +127,7 @@ public final class AppleRootCerts {
         } catch (CertificateException e) {
             throw new IllegalStateException("bundled certificate unparseable: " + name, e);
         } catch (IOException e) {
-            throw new UncheckedIOException(e);
+            throw new IllegalStateException("bundled certificate unreadable: " + name, e);
         }
         // The digest is taken over the certificate's own encoding rather than
         // over the file bytes, so what is pinned is the certificate this
