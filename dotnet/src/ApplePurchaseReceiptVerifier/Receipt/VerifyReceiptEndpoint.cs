@@ -315,8 +315,10 @@ namespace ApplePurchaseReceiptVerifier.Receipt
 
                 // The primitive itself, not a ReceiptVerifier built around a
                 // wildcard bundle id: like Apple's endpoint, no bundle-id claim
-                // is checked here.
-                AppReceipt receipt = ReceiptVerifier.VerifyReceiptCore(der, _anchors);
+                // is checked here. VerifyCore rather than the public
+                // VerifyReceiptCore: that one copies the anchors on every
+                // call, and _anchors is already this endpoint's private copy.
+                AppReceipt receipt = ReceiptVerifier.VerifyCore(der, _anchors);
                 return Result.Verified(_environment, _pacific, receipt, at);
             }
             catch (VerificationException e)
