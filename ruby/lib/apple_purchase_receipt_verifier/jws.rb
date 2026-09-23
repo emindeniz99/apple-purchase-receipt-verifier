@@ -320,8 +320,14 @@ module ApplePurchaseReceiptVerifier
       der = OpenSSL::ASN1::Sequence.new(
         [OpenSSL::ASN1::Integer.new(r), OpenSSL::ASN1::Integer.new(s)]
       ).to_der
+      # No input chooses the digest, so a failure to create it is the runtime's.
+      digest = begin
+        OpenSSL::Digest.new("SHA256")
+      rescue OpenSSL::OpenSSLError
+        raise VerificationError.new(Reason::INTERNAL_ERROR, "SHA-256 unavailable")
+      end
       ok = begin
-        key.verify(OpenSSL::Digest.new("SHA256"), der, signing_input.b)
+        key.verify(digest, der, signing_input.b)
       rescue OpenSSL::OpenSSLError
         false
       end
