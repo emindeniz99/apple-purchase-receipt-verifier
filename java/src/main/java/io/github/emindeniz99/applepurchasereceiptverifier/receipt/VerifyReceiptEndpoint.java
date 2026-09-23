@@ -265,7 +265,7 @@ public final class VerifyReceiptEndpoint {
             // cap, so the cap is applied to the transport string here: the
             // same string and the same limit ReceiptVerifier.verify(String)
             // would have measured, and the same reason it throws.
-            if (Utf8Length.exceeds(receiptData, ReceiptVerifier.MAX_RECEIPT_BYTES)) {
+            if (receiptData.length() > ReceiptVerifier.MAX_RECEIPT_BYTES) {
                 return VerifyReceiptResult.failed(environment, Reason.INVALID_RECEIPT_FORMAT, at);
             }
             byte[] der = ReceiptBase64.decode(receiptData);

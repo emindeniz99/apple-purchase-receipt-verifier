@@ -181,8 +181,9 @@ public final class ReceiptVerifier {
      * <p>3 MiB, in bytes: Apple's verifyReceipt refuses a request body over
      * 3,145,728 bytes (measured 2026-09-23), so no receipt it would accept is
      * larger. The same fixed constant in every port. The string is measured
-     * in UTF-8 bytes without being encoded; for base64, which is what a
-     * receipt string is, bytes and characters are the same count.
+     * in characters: any character above U+007F is invalid base64, which the
+     * decoder rejects with the same reason, so for every string that could
+     * decode, characters and UTF-8 bytes are the same count.
      */
     public static final int MAX_RECEIPT_BYTES = 3145728;
 
@@ -232,7 +233,7 @@ public final class ReceiptVerifier {
             throws VerificationException {
         // Before the decode, which would otherwise allocate a stripped copy of
         // the string and then the bytes it decodes to.
-        if (base64Receipt != null && Utf8Length.exceeds(base64Receipt, MAX_RECEIPT_BYTES)) {
+        if (base64Receipt != null && base64Receipt.length() > MAX_RECEIPT_BYTES) {
             throw tooLarge();
         }
         return verify(ReceiptBase64.decode(base64Receipt), deviceGuid);
