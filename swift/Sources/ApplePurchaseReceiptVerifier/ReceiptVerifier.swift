@@ -922,14 +922,7 @@ func isRepresentableAsCertificateValidationTime(_ date: Date) -> Bool {
 private func decodeDate(_ der: [UInt8]) throws -> Date? {
     let text = try decodeString(der)
     if text.isEmpty { return nil }
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    var parsed = formatter.date(from: text)
-    if parsed == nil {
-        formatter.formatOptions = [.withInternetDateTime]
-        parsed = formatter.date(from: text)
-    }
-    guard let date = parsed else {
+    guard let date = parseReceiptDate(text) else {
         throw VerificationError(.invalidReceiptFormat, "unparseable receipt date: \(text)")
     }
     guard isRepresentableAsCertificateValidationTime(date) else {

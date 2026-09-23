@@ -216,17 +216,7 @@ private func put(_ json: inout [String: Any], _ key: String, _ value: Any?) {
 /// Apple's three date renderings: `x` (GMT), `x_ms` (epoch ms), `x_pst`.
 private func appleDates(_ json: inout [String: Any], _ prefix: String, _ date: Date?) {
     guard let date else { return }
-    json[prefix] = format(date, zone: TimeZone(identifier: "UTC")!) + " Etc/GMT"
+    json[prefix] = appleGMTString(date)
     json["\(prefix)_ms"] = String(Int64(date.timeIntervalSince1970 * 1000))
-    json["\(prefix)_pst"] =
-        format(date, zone: TimeZone(identifier: "America/Los_Angeles")!)
-        + " America/Los_Angeles"
-}
-
-private func format(_ date: Date, zone: TimeZone) -> String {
-    let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "en_US_POSIX")
-    formatter.timeZone = zone
-    formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-    return formatter.string(from: date)
+    json["\(prefix)_pst"] = applePacificString(date)
 }
