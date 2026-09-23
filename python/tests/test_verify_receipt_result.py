@@ -226,10 +226,12 @@ class VerifyReceiptResultTest(unittest.TestCase):
                 for path in sorted(GENERATED.glob("*receipt*root.der"))
             ),
         ]
+        # The two DER-cap receipts are left out: 3 MiB of DER is 4 MiB of
+        # base64, which no request can carry.
         receipt_data = [
             b64(path.name)
             for path in sorted(GENERATED.glob("receipt*.der"))
-            if not path.name.endswith("root.der")
+            if not path.name.endswith("root.der") and "der-cap" not in path.name
         ]
         receipt_data += [
             path.read_text() for path in sorted((GENERATED / "receipt-b64").glob("*.txt"))
