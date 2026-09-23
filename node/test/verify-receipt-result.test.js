@@ -221,9 +221,14 @@ for (const [name, build] of BUILDS) {
         .map(gen),
       ...build.appleReceiptRoots(),
     ];
+    // The two DER-cap receipts are left out: 3 MiB of DER is 4 MiB of
+    // base64, which no request can carry.
     const inputs = [
       ...readdirSync(repo('generated'))
-        .filter((file) => file.startsWith('receipt') && file.endsWith('.der'))
+        .filter(
+          (file) =>
+            file.startsWith('receipt') && file.endsWith('.der') && !file.includes('der-cap'),
+        )
         .map((file) => [file, b64(file)]),
       ...readdirSync(repo('generated/receipt-b64')).map((file) => [
         file,
