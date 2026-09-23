@@ -153,14 +153,84 @@ public struct VerifyReceiptResult: Sendable {
     /// Swift dictionaries have no insertion order, so keys are serialized
     /// sorted: equal inputs give equal bytes.
     private func serialize(_ response: [String: Any]) -> String {
-        guard
-            let encoded = try? JSONSerialization.data(
-                withJSONObject: response, options: [.sortedKeys]),
-            let json = String(data: encoded, encoding: .utf8)
-        else {
+        guard let json = responseJSON(response) else {
             return "{\"status\":\(VerifyReceiptEndpoint.statusInternal)}"
         }
         return json
+    }
+}
+
+/// `response` as JSON with its keys sorted, as `JSONSerialization` writes it
+/// with `.sortedKeys`, or nil when it cannot be written.
+///
+/// `JSONEncoder` writes it when ``ResponseValue`` can hold it, which is
+/// every answer the renderer builds: on Linux that takes about 8 ms for
+/// the 187-purchase legacy answer where `JSONSerialization` takes about
+/// 55 ms. Both escape strings the same way, but they sort keys
+/// differently (`JSONEncoder` by code point, `JSONSerialization` by a
+/// collation that puts "_" before digits and "a" before "B"), and they
+/// agree only on keys of lowercase ASCII letters and "_". Anything else
+/// still goes to `JSONSerialization`. ResponseJSONTests compares the two.
+func responseJSON(_ response: [String: Any]) -> String? {
+    if let value = ResponseValue(response) {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        if let encoded = try? encoder.encode(value) {
+            return String(decoding: encoded, as: UTF8.self)
+        }
+    }
+    guard
+        let encoded = try? JSONSerialization.data(withJSONObject: response, options: [.sortedKeys])
+    else { return nil }
+    return String(data: encoded, encoding: .utf8)
+}
+
+/// The value types a rendered answer holds, so `JSONEncoder` can write it.
+/// Nil for any other value type and for any key `JSONEncoder` would sort
+/// differently from `JSONSerialization` (``responseJSON(_:)`` says why).
+enum ResponseValue: Encodable {
+    case string(String)
+    case int(Int)
+    case int64(Int64)
+    case array([ResponseValue])
+    case object([String: ResponseValue])
+
+    init?(_ value: Any) {
+        switch value {
+        case let string as String: self = .string(string)
+        // Exact types only: on Apple platforms a Bool casts to Int through
+        // NSNumber, and JSONSerialization writes it as `true`, not `1`.
+        case let int as Int where type(of: value) == Int.self: self = .int(int)
+        case let int64 as Int64 where type(of: value) == Int64.self: self = .int64(int64)
+        case let array as [Any]:
+            var values: [ResponseValue] = []
+            for element in array {
+                guard let value = ResponseValue(element) else { return nil }
+                values.append(value)
+            }
+            self = .array(values)
+        case let object as [String: Any]:
+            var values: [String: ResponseValue] = [:]
+            for (key, element) in object {
+                guard key.utf8.allSatisfy({ $0 == UInt8(ascii: "_") || (0x61...0x7A).contains($0) }),
+                    let value = ResponseValue(element)
+                else { return nil }
+                values[key] = value
+            }
+            self = .object(values)
+        default: return nil
+        }
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .string(let string): try container.encode(string)
+        case .int(let int): try container.encode(int)
+        case .int64(let int64): try container.encode(int64)
+        case .array(let array): try container.encode(array)
+        case .object(let object): try container.encode(object)
+        }
     }
 }
 
