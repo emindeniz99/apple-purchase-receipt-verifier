@@ -153,7 +153,11 @@ public struct VerifyReceiptResult: Sendable {
     /// Swift dictionaries have no insertion order, so keys are serialized
     /// sorted: equal inputs give equal bytes.
     private func serialize(_ response: [String: Any]) -> String {
-        guard let json = serializeResponse(response) else {
+        guard
+            let encoded = try? JSONSerialization.data(
+                withJSONObject: response, options: [.sortedKeys]),
+            let json = String(data: encoded, encoding: .utf8)
+        else {
             return "{\"status\":\(VerifyReceiptEndpoint.statusInternal)}"
         }
         return json
@@ -212,7 +216,17 @@ private func put(_ json: inout [String: Any], _ key: String, _ value: Any?) {
 /// Apple's three date renderings: `x` (GMT), `x_ms` (epoch ms), `x_pst`.
 private func appleDates(_ json: inout [String: Any], _ prefix: String, _ date: Date?) {
     guard let date else { return }
-    json[prefix] = appleGMTString(date)
+    json[prefix] = format(date, zone: TimeZone(identifier: "UTC")!) + " Etc/GMT"
     json["\(prefix)_ms"] = String(Int64(date.timeIntervalSince1970 * 1000))
-    json["\(prefix)_pst"] = applePacificString(date)
+    json["\(prefix)_pst"] =
+        format(date, zone: TimeZone(identifier: "America/Los_Angeles")!)
+        + " America/Los_Angeles"
+}
+
+private func format(_ date: Date, zone: TimeZone) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = zone
+    formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+    return formatter.string(from: date)
 }
