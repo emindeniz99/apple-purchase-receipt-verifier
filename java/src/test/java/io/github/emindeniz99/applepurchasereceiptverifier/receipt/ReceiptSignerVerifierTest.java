@@ -32,7 +32,7 @@ class ReceiptSignerVerifierTest {
         int valid = 0;
         int invalid = 0;
         JcaX509CertificateConverter converter = new JcaX509CertificateConverter();
-        for (byte[] input : ReceiptDerTest.corpus()) {
+        for (byte[] input : ReceiptContentInfoTest.corpus()) {
             SignerInformation signer;
             X509Certificate certificate;
             try {

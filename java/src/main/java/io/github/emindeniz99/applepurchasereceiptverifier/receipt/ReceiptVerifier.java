@@ -341,7 +341,7 @@ public final class ReceiptVerifier {
         try {
             // Rejects trailing bytes after the CMS blob (PLAN 2.3) - BC's
             // fromByteArray throws when parsing does not exhaust the input.
-            parsed = ReceiptDer.fromByteArray(receiptDer);
+            parsed = ASN1Primitive.fromByteArray(receiptDer);
         } catch (IOException e) {
             throw new VerificationException(
                     Reason.INVALID_RECEIPT_FORMAT, "receipt has trailing or unparseable bytes", e);
@@ -810,7 +810,7 @@ public final class ReceiptVerifier {
     private static ASN1Set parseAttributeSet(byte[] der, String what) throws VerificationException {
         ASN1Primitive parsed;
         try {
-            parsed = ReceiptDer.fromByteArray(der);
+            parsed = ASN1Primitive.fromByteArray(der);
         } catch (IOException e) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, what + " is not valid ASN.1", e);
         }
@@ -818,7 +818,7 @@ public final class ReceiptVerifier {
             // Xcode receipts double-wrap the payload in an extra OCTET
             // STRING (upstream receipt_utility handles the same shape).
             try {
-                parsed = ReceiptDer.fromByteArray(((ASN1OctetString) parsed).getOctets());
+                parsed = ASN1Primitive.fromByteArray(((ASN1OctetString) parsed).getOctets());
             } catch (IOException e) {
                 throw new VerificationException(
                         Reason.INVALID_RECEIPT_FORMAT, what + " double-wrap is not valid ASN.1", e);
@@ -881,7 +881,7 @@ public final class ReceiptVerifier {
 
     private static String decodeString(byte[] der) throws VerificationException {
         try {
-            ASN1Primitive parsed = ReceiptDer.fromByteArray(der);
+            ASN1Primitive parsed = ASN1Primitive.fromByteArray(der);
             if (!(parsed instanceof ASN1String)) {
                 throw new VerificationException(
                         Reason.INVALID_RECEIPT_FORMAT, "attribute value is not an ASN.1 string");
@@ -894,7 +894,7 @@ public final class ReceiptVerifier {
 
     private static Long decodeInteger(byte[] der) throws VerificationException {
         try {
-            ASN1Primitive parsed = ReceiptDer.fromByteArray(der);
+            ASN1Primitive parsed = ASN1Primitive.fromByteArray(der);
             if (!(parsed instanceof ASN1Integer)) {
                 throw new VerificationException(
                         Reason.INVALID_RECEIPT_FORMAT, "attribute value is not an ASN.1 integer");
