@@ -1241,3 +1241,32 @@ final class ChainBuildingBoundTests: XCTestCase {
         }
     }
 }
+
+// The typed claim read at its edges the shared cases do not reach: a boolean
+// is not an integer, and a whole number wider than the field is refused
+// rather than wrapped. The decoder alone is not trusted with either.
+final class TypedClaimReadTests: XCTestCase {
+    private func reason(_ json: String) -> VerificationError.Reason? {
+        do {
+            _ = try JSONDecoder().decode(TransactionPayload.self, from: Data(json.utf8))
+            return nil
+        } catch {
+            return (error as? VerificationError)?.reason
+        }
+    }
+
+    func testIntegerClaimsTakeWholeNumbersOnly() throws {
+        let whole = try JSONDecoder().decode(
+            TransactionPayload.self, from: Data(#"{"quantity":1.0,"price":9007199254740993}"#.utf8))
+        XCTAssertEqual(whole.quantity, 1)
+        XCTAssertEqual(whole.price, 9_007_199_254_740_993)
+        XCTAssertEqual(reason(#"{"price":1.5}"#), .internalError)
+        XCTAssertEqual(reason(#"{"quantity":true}"#), .internalError)
+        XCTAssertEqual(reason(#"{"signedDate":9223372036854775808}"#), .internalError)
+    }
+
+    func testStringClaimsTakeStringsOnly() {
+        XCTAssertEqual(reason(#"{"bundleId":true}"#), .internalError)
+        XCTAssertNil(reason(#"{"bundleId":null,"unmodelled":[1,{"a":false}]}"#))
+    }
+}
