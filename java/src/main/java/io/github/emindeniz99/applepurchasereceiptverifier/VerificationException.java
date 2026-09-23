@@ -26,7 +26,11 @@ public class VerificationException extends Exception {
         WRONG_ENVIRONMENT,
         /** Payload's app Apple id does not match (production only). */
         WRONG_APP_APPLE_ID,
-        /** Receipt is not parseable PKCS#7/CMS or its payload is malformed. */
+        /**
+         * The receipt is not usable PKCS#7/CMS: not canonical base64, over the
+         * size cap, not well-formed, or carrying bytes after it. Signed content
+         * that cannot be read is {@link #INTERNAL_ERROR} instead.
+         */
         INVALID_RECEIPT_FORMAT,
         /** SHA-1 device-hash binding check failed. */
         DEVICE_HASH_MISMATCH,
@@ -41,11 +45,13 @@ public class VerificationException extends Exception {
         MALFORMED_REQUEST,
         /**
          * Not the client's fault, status 21009 at the endpoint. Thrown when a
-         * trusted signer signed receipt content this library cannot read
-         * (found only after the chain and the signature passed; the parser's
-         * exception is the {@link #getCause() cause}), and reported by the
+         * trusted signer signed receipt content or a JWS claim this library
+         * cannot read (found only after the chain and the signature passed;
+         * the parser's exception is the {@link #getCause() cause}), when the
+         * runtime lacks an algorithm the check needs, and reported by the
          * endpoint for an unexpected runtime exception inside it. Alert and
-         * retry or escalate; do not deny the user on it. It keeps the position
+         * retry or escalate; do not deny the user on it, and do not grant
+         * access on it either. It keeps the position
          * it had when it was endpoint-only, so no ordinal moved.
          */
         INTERNAL_ERROR,

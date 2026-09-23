@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.InvalidAlgorithmParameterException;
+import java.security.NoSuchAlgorithmException;
 import java.security.Signature;
 import java.security.cert.CertPath;
 import java.security.cert.CertPathValidator;
@@ -323,14 +324,12 @@ public final class JwsVerifier {
 
     private static List<X509Certificate> decodeChain(JsonNode x5c) throws VerificationException {
         List<X509Certificate> chain = new ArrayList<X509Certificate>(3);
+        CertificateFactory cf = x509Factory();
         try {
-            CertificateFactory cf = CertificateFactory.getInstance("X.509");
             for (JsonNode certNode : x5c) {
                 byte[] der = decodeX5cEntry(certNode.asText());
                 chain.add((X509Certificate) cf.generateCertificate(new ByteArrayInputStream(der)));
             }
-        } catch (IllegalArgumentException e) {
-            throw new VerificationException(Reason.INVALID_CERTIFICATE, "x5c entry is not valid base64", e);
         } catch (CertificateException e) {
             throw new VerificationException(Reason.INVALID_CERTIFICATE, "x5c entry is not a valid certificate", e);
         }
@@ -381,22 +380,37 @@ public final class JwsVerifier {
 
     private void validateChain(X509Certificate leaf, X509Certificate intermediate, Date at)
             throws VerificationException {
+        CertPathValidator validator;
         try {
-            CertificateFactory cf = CertificateFactory.getInstance("X.509");
-            CertPath path = cf.generateCertPath(Arrays.asList(leaf, intermediate));
+            validator = CertPathValidator.getInstance("PKIX");
+        } catch (NoSuchAlgorithmException e) {
+            throw new VerificationException(Reason.INTERNAL_ERROR, "PKIX path validation is not available", e);
+        }
+        try {
+            CertPath path = x509Factory().generateCertPath(Arrays.asList(leaf, intermediate));
             PKIXParameters params = new PKIXParameters(trustAnchors);
             params.setRevocationEnabled(false);
             params.setDate(at);
-            CertPathValidator.getInstance("PKIX").validate(path, params);
+            validator.validate(path, params);
         } catch (CertPathValidatorException e) {
             throw new VerificationException(
                     Reason.INVALID_CHAIN,
                     "certificate chain does not validate to a pinned Apple root: " + e.getMessage(),
                     e);
         } catch (InvalidAlgorithmParameterException e) {
-            throw new VerificationException(Reason.INVALID_CHAIN, "chain validation rejected parameters", e);
+            // Raised for the pinned anchors or the path type, never for a certificate.
+            throw new VerificationException(Reason.INTERNAL_ERROR, "chain validation rejected its parameters", e);
         } catch (GeneralSecurityException e) {
-            throw new VerificationException(Reason.INVALID_CHAIN, "chain validation unavailable", e);
+            throw new VerificationException(Reason.INVALID_CHAIN, "chain validation failed", e);
+        }
+    }
+
+    /** The JVM's X.509 factory; its absence is the runtime's failure, not the input's. */
+    private static CertificateFactory x509Factory() throws VerificationException {
+        try {
+            return CertificateFactory.getInstance("X.509");
+        } catch (CertificateException e) {
+            throw new VerificationException(Reason.INTERNAL_ERROR, "X.509 certificate decoding is not available", e);
         }
     }
 
@@ -406,13 +420,18 @@ public final class JwsVerifier {
             throw new VerificationException(
                     Reason.INVALID_SIGNATURE, "ES256 signature must be 64 bytes, got " + signature.length);
         }
+        Signature verifier;
+        try {
+            verifier = Signature.getInstance("SHA256withPLAIN-ECDSA", BouncyCastle.PROVIDER);
+        } catch (NoSuchAlgorithmException e) {
+            throw new VerificationException(Reason.INTERNAL_ERROR, "ES256 verification is not available", e);
+        }
         try {
             // JWS ES256 signatures are raw r || s (RFC 7515), which
             // BouncyCastle's PLAIN-ECDSA takes as is. The JDK's own name for
             // it, SHA256withECDSAinP1363Format, is Java 9+ and this library
             // supports Java 8. An r or s not below the curve order throws
             // here where the JDK returned false; both are INVALID_SIGNATURE.
-            Signature verifier = Signature.getInstance("SHA256withPLAIN-ECDSA", BouncyCastle.PROVIDER);
             verifier.initVerify(leaf.getPublicKey());
             verifier.update(signingInput.getBytes(StandardCharsets.US_ASCII));
             if (!verifier.verify(signature)) {
