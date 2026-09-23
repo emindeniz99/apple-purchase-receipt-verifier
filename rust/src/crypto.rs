@@ -269,3 +269,29 @@ pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     use subtle::ConstantTimeEq;
     a.len() == b.len() && bool::from(a.ct_eq(b))
 }
+
+#[cfg(test)]
+mod tests {
+    use rsa::BigUint;
+
+    /// Every receipt pays for three RSA-2048 verifies (two chain links and
+    /// the CMS signature), and they are most of a small receipt's cost.
+    /// `num-bigint-dig` does that arithmetic in 32-bit limbs unless `rsa`'s
+    /// `u64_digit` feature is on, which `default-features = false` silently
+    /// drops, and the 32-bit build takes about 1.7x as long per verify. The
+    /// limb width is visible through `get_limb`: with 64-bit limbs 2^32 fits
+    /// in limb 0, with 32-bit limbs limb 0 is zero.
+    ///
+    /// The `u64::from` is a no-op only while the test passes; it is what lets
+    /// the test still compile, and fail, when the limbs are `u32`.
+    #[allow(clippy::useless_conversion)]
+    #[test]
+    fn rsa_arithmetic_uses_64_bit_limbs() {
+        let two_pow_32 = BigUint::from(1u64 << 32);
+        assert_eq!(
+            u64::from(two_pow_32.get_limb(0)),
+            1u64 << 32,
+            "rsa's u64_digit feature is off; restore it in Cargo.toml"
+        );
+    }
+}
