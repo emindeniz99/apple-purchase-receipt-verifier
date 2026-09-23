@@ -189,12 +189,11 @@ class PortDivergenceTest < Minitest::Test
   # The staleness rule is step 11 for all three JWS operations, and a claim
   # this port declined to read meant it never ran at all.
   #
-  # `TransactionPayload#signed_date` still reads `nil` here: the payload models
-  # Apple's wire contract, where these claims are Integer epoch milliseconds,
-  # and a claim of an unexpected JSON type reads as nil rather than being
-  # coerced (the same policy every other reader on that class follows). What
-  # changed is the verifier, which now judges and ages the payload at the
-  # stated instant like the other four ports.
+  # `TransactionPayload#signed_date` reads this whole number as an Integer: the
+  # payload models Apple's wire contract, where these claims are Integer epoch
+  # milliseconds, and a fractional one is refused as INTERNAL_ERROR by the
+  # typed read. What changed is the verifier, which now judges and ages the
+  # payload at the stated instant like the other four ports.
   def test_a_non_integer_signed_date_is_reported_and_ages
     pki = TestPki.jws_pki
     claims = TestPki.default_claims("signedDate" => 1_722_945_600_000.0)

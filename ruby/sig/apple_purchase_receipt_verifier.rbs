@@ -82,7 +82,7 @@ module ApplePurchaseReceiptVerifier
     def quantity: () -> Integer?
     def offer_type: () -> Integer?
     def revocation_reason: () -> Integer?
-    def price: () -> Numeric?
+    def price: () -> Integer?
     def active_at?: (Time now) -> bool
   end
 

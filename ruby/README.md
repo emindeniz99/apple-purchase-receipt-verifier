@@ -428,8 +428,11 @@ family represents.
 JWS signing dates (`signedDate`, `receiptCreationDate`) are read as sent, JSON
 number and all — a fractional one drives the chain instant and the staleness
 rule exactly like an integer. The payload readers still model Apple's wire
-contract, where those claims are integer epoch milliseconds, so
-`payload.signed_date` reads `nil` for a value of an unexpected JSON type;
+contract, where those claims are integer epoch milliseconds: a whole number
+spelled `1.0` reads as `1`, and `verify_transaction` / `verify_app_transaction`
+refuse a modelled claim of the wrong JSON type (a string, a fractional number,
+an object) with `INTERNAL_ERROR` once the chain and signature have passed.
+`verify_raw` has no model and returns every claim as signed;
 `payload["signedDate"]` always has the raw claim.
 
 ## Security model
