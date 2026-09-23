@@ -28,6 +28,22 @@ class ConformanceTest < Minitest::Test
     "apple-receipt-roots" => -> { APRV.apple_receipt_roots }
   }.freeze
 
+  # The decoders a decodeBase64 group can name, called directly, each with the
+  # reason its refusal carries. An error group states INVALID_RECEIPT_FORMAT,
+  # the receipt-data answer; x5c answers INVALID_CERTIFICATE. The x5c decoder
+  # answers nil, which Jws#certificates reports as INVALID_CERTIFICATE, so that
+  # translation happens here.
+  BASE64_DECODERS = {
+    "receipt-data" => [->(text) { APRV::Receipt.decode_base64(text) }, "INVALID_RECEIPT_FORMAT"],
+    "x5c" => [
+      lambda do |text|
+        APRV::Receipt.decode_canonical_base64(text) ||
+          raise(APRV::VerificationError.new(APRV::Reason::INVALID_CERTIFICATE, "x5c entry is not base64"))
+      end,
+      "INVALID_CERTIFICATE"
+    ]
+  }.freeze
+
   # Mutable on purpose: the coverage self-check below records what actually
   # ran, which is the point.
   EXECUTED = [] # rubocop:disable Style/MutableConstant
@@ -166,7 +182,44 @@ class ConformanceTest < Minitest::Test
     end
   end
 
+  # Runs every text of the group through every decoder it names and reports
+  # every text that got the wrong answer, by case id, decoder, index and the
+  # inspected text, rather than stopping at the first.
+  def run_decode_base64(kase)
+    expected = kase["expected"]
+    texts = kase["input"]["texts"]
+    raise "harness error: #{kase["id"]}: no texts or no decoders" if texts.empty? || kase["decoders"].empty?
+    if expected["status"] == "error" && expected["reason"] != "INVALID_RECEIPT_FORMAT"
+      raise "harness error: #{kase["id"]}: an error group states INVALID_RECEIPT_FORMAT"
+    end
+
+    failures = kase["decoders"].flat_map do |name|
+      decode, refusal = BASE64_DECODERS.fetch(name)
+      texts.each_with_index.filter_map do |text, index|
+        where = "#{kase["id"]}: #{name} texts[#{index}] #{text.inspect}"
+        decode_base64_failure(expected, where, refusal) { decode.call(text) }
+      end
+    end
+    assert_empty failures, failures.join("\n")
+  end
+
+  # The failure message for one text, or nil when it got the group's answer.
+  def decode_base64_failure(expected, where, refusal)
+    decoded = yield.unpack1("H*")
+    return "#{where} was accepted (decoded to #{decoded})" if expected["status"] == "error"
+
+    "#{where} decoded to #{decoded}, want #{expected["bytesHex"]}" unless decoded == expected["bytesHex"]
+  rescue APRV::VerificationError => e
+    return "#{where} was refused (#{e.reason}), want #{expected["bytesHex"]}" if expected["status"] == "ok"
+
+    "#{where}: reason #{e.reason}, want #{refusal}" unless e.reason.to_s == refusal
+  rescue StandardError => e
+    "#{where}: harness error: raised #{e.class} (#{e.message})"
+  end
+
   def run_case(kase)
+    return run_decode_base64(kase) if kase["operation"] == "decodeBase64"
+
     input_spec = kase["input"]
     input = TestSupport.fixture_bytes(input_spec["requestBody"] || input_spec["fixture"]).dup
     expected = kase["expected"]
