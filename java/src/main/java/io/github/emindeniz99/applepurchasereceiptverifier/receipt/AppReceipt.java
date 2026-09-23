@@ -48,13 +48,13 @@ public final class AppReceipt {
             List<InAppPurchase> inAppPurchases,
             Map<Integer, List<byte[]>> unknownAttributes) {
         this.receiptType = receiptType;
-        this.originalPurchaseDate = originalPurchaseDate;
         this.bundleId = bundleId;
         this.bundleIdBytes = bundleIdBytes;
         this.appVersion = appVersion;
         this.opaqueValue = opaqueValue;
         this.sha1Hash = sha1Hash;
         this.creationDate = creationDate;
+        this.originalPurchaseDate = originalPurchaseDate;
         this.originalAppVersion = originalAppVersion;
         this.expirationDate = expirationDate;
         this.appItemId = appItemId;

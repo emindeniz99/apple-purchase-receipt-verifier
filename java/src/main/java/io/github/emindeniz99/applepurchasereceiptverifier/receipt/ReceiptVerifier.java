@@ -17,6 +17,7 @@ import java.security.cert.PKIXBuilderParameters;
 import java.security.cert.TrustAnchor;
 import java.security.cert.X509CertSelector;
 import java.security.cert.X509Certificate;
+import java.security.interfaces.RSAPublicKey;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -561,7 +562,7 @@ public final class ReceiptVerifier {
 
     private static void verifyCmsSignature(SignerInformation signer, X509Certificate signerCert)
             throws VerificationException {
-        if (!(signerCert.getPublicKey() instanceof java.security.interfaces.RSAPublicKey)) {
+        if (!(signerCert.getPublicKey() instanceof RSAPublicKey)) {
             throw new VerificationException(Reason.INVALID_SIGNATURE, "receipt signer key is not RSA");
         }
         try {

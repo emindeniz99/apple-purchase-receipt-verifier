@@ -5,6 +5,7 @@ import io.github.emindeniz99.applepurchasereceiptverifier.Environment;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -35,7 +36,6 @@ public final class VerifyReceiptResult {
     // rendering, matching node (en-CA) and swift (en_US_POSIX).
     private static final DateTimeFormatter FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withLocale(Locale.ROOT);
-    private static final ZoneId GMT = ZoneId.of("UTC");
     private static final ZoneId PACIFIC = ZoneId.of("America/Los_Angeles");
 
     private final Environment environment;
@@ -254,7 +254,7 @@ public final class VerifyReceiptResult {
         if (instant == null) {
             return;
         }
-        json.put(prefix, FORMAT.format(instant.atZone(GMT)) + " Etc/GMT");
+        json.put(prefix, FORMAT.format(instant.atZone(ZoneOffset.UTC)) + " Etc/GMT");
         json.put(prefix + "_ms", String.valueOf(instant.toEpochMilli()));
         json.put(prefix + "_pst", FORMAT.format(instant.atZone(PACIFIC)) + " America/Los_Angeles");
     }
