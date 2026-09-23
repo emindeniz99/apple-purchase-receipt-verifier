@@ -51,10 +51,14 @@ final class MemoryExhaustionTest extends TestCase
     /**
      * The `memory_limit` the README asks of a worker that hands raw request
      * bodies to the endpoint: the costliest body under Apple's 3 MiB cap
-     * peaks at about 331 MB (PHP 8.4), above the `php.ini-production`
-     * default of 128M.
+     * peaks at about 331 MB on PHP 8.4 and about 561 MB on PHP 8.1, whose
+     * packed arrays take twice the memory per slot, both above the
+     * `php.ini-production` default of 128M.
      */
-    private const REQUEST_BODY_MEMORY_LIMIT = '384M';
+    private const REQUEST_BODY_MEMORY_LIMIT = PHP_VERSION_ID < 80200 ? '640M' : '384M';
+
+    /** The ceiling that vector's peak must stay under, in MB, per the above. */
+    private const REQUEST_BODY_PEAK_MB = PHP_VERSION_ID < 80200 ? 600.0 : 352.0;
 
     /**
      * Shared prelude: DER length encoding and a "deep but large" blob, which
@@ -293,7 +297,7 @@ final class MemoryExhaustionTest extends TestCase
      * The JWS runs at the `php.ini-production` limit and peaks at about 10 MB.
      * The request cap is Apple's 3 MiB, and `json_decode` of the costliest
      * body that fits, chains of arrays nested 60 deep, peaks at about 331 MB
-     * on PHP 8.4, so that vector runs at {@see REQUEST_BODY_MEMORY_LIMIT}, the
+     * on PHP 8.4 (561 MB on 8.1), so that vector runs at {@see REQUEST_BODY_MEMORY_LIMIT}, the
      * figure the README gives for a worker that accepts raw bodies.
      */
     public function testAnInputSizedExactlyAtEachCapIsStillAffordable(): void
@@ -340,7 +344,7 @@ final class MemoryExhaustionTest extends TestCase
             );
             report($endpoint->verifyReceiptJson($body));
             PHP, self::REQUEST_BODY_MEMORY_LIMIT);
-        self::assertLessThan(352.0, $peak, 'a request body at the cap cost ' . $peak . ' MB');
+        self::assertLessThan(self::REQUEST_BODY_PEAK_MB, $peak, 'a request body at the cap cost ' . $peak . ' MB');
     }
 
     /** The declared bounds sit far above any real input, and are documented. */

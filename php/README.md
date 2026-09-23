@@ -535,13 +535,14 @@ refuses bodies Apple would answer.
 handed, not what it allocates. A genuine body at the cap, a real receipt
 padded to 3 MiB, peaks at about 8 MB. A hostile body at the cap costs far
 more: the costliest shape measured, chains of arrays nested 60 deep, peaks at
-about 331 MB on PHP 8.4.19, because every level is two bytes of JSON and a
-whole PHP array; the flat `[[]]` bomb peaks at about 155 MB. Both are over the
+about 331 MB on PHP 8.4.19 and about 561 MB on PHP 8.1.34, because every
+level is two bytes of JSON and a whole PHP array, and PHP 8.1's packed arrays
+take twice the memory per slot that 8.2 and later do; the flat `[[]]` bomb peaks at about 155 MB. Both are over the
 `php.ini-production` default of 128M, and running out of memory is a fatal
 error no `catch` can answer (below). Give a worker that passes raw bodies to
-the endpoint a `memory_limit` of at least 384M, more if the rest of the
-request holds much at the same time; `MemoryExhaustionTest` runs that vector
-at 384M. Decoding the body yourself does not avoid the cost, it only moves the
+the endpoint a `memory_limit` of at least 384M on PHP 8.2 or later and 640M
+on PHP 8.1, more if the rest of the request holds much at the same time;
+`MemoryExhaustionTest` runs that vector at those limits. Decoding the body yourself does not avoid the cost, it only moves the
 same `json_decode` out of this library.
 
 **Why a node budget is not enough on its own.** Depth and node count bound

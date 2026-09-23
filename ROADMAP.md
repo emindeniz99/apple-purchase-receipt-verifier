@@ -268,9 +268,9 @@ Still worth filing as issues:
   for every artifact, and a second thing to get right at every release.
   Source-only is honest until someone asks.
 - **PHP worst-case JSON body memory**: a 3 MiB request body of arrays
-  nested 60 deep peaks at about 331 MB inside `json_decode` on PHP 8.4, so
-  php/README.md tells you to give a worker at least 384M of
-  `memory_limit`. A pre-scan of the raw body could reject that shape before
+  nested 60 deep peaks at about 331 MB inside `json_decode` on PHP 8.4 and
+  about 561 MB on PHP 8.1, so php/README.md tells you to give a worker at
+  least 384M of `memory_limit` (640M on 8.1). A pre-scan of the raw body could reject that shape before
   `json_decode` runs. Not queued.
 - **.NET fixed cost per receipt, a trust-model decision**: what remains
   after the caps work is OpenSSL 3.0 decoding each certificate (about 150
