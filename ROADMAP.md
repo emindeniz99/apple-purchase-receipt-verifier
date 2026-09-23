@@ -278,6 +278,23 @@ Still worth filing as issues:
   aarch64) that binaries make and source does not, signing and attestation
   for every artifact, and a second thing to get right at every release.
   Source-only is honest until someone asks.
+- **Java speed beyond removing waste is not taken** (2026-09-23). Our own
+  readers for DER attribute sets, short strings and integers, and receipt
+  dates took legacy `core` from about 3,560 to 1,500 µs, and were reverted
+  (8d7c870): the owner prefers BouncyCastle and java.time to a second
+  parser we would maintain. Three more options each give up a guarantee
+  java/README.md makes, so none is queued:
+  - Checking the chain with a direct signature check instead of PKIX. PKIX
+    costs about 90 µs per receipt, and keeping it is what makes
+    `jdk.certpath.disabledAlgorithms` and the host's security policy apply;
+    `java-hardened-policy` and `TrustStoreIsolationTest` depend on it.
+  - Hashing the CMS content with the JDK's provider instead of the pinned
+    BouncyCastle one: about 90 µs saved on the legacy receipt (SHA-1 over
+    75 KB), but the digest would come from whichever JCA provider the JVM
+    lists first, which widens the trust boundary.
+  - A cache of parsed embedded certificates keyed by their DER: maybe 25%
+    on a small receipt, but it is process-wide mutable state, which the
+    thread-safety design and `ConcurrencyTest` avoid on purpose.
 - **PHP worst-case JSON body memory**: a 3 MiB request body of arrays
   nested 60 deep peaks at about 331 MB inside `json_decode` on PHP 8.4 and
   about 561 MB on PHP 8.1, so php/README.md tells you to give a worker at

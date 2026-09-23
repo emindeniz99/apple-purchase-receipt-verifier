@@ -34,6 +34,7 @@ import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.ASN1String;
 import org.bouncycastle.asn1.ASN1TaggedObject;
+import org.bouncycastle.asn1.cms.ContentInfo;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
@@ -41,9 +42,11 @@ import org.bouncycastle.cms.CMSException;
 import org.bouncycastle.cms.CMSSignedData;
 import org.bouncycastle.cms.SignerId;
 import org.bouncycastle.cms.SignerInformation;
-import org.bouncycastle.cms.jcajce.JcaSimpleSignerInfoVerifierBuilder;
+import org.bouncycastle.cms.SignerInformationVerifier;
+import org.bouncycastle.cms.jcajce.JcaSignerInfoVerifierBuilder;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.operator.OperatorCreationException;
+import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -188,6 +191,9 @@ public final class ReceiptVerifier {
 
     private static final BouncyCastleProvider PROVIDER = new BouncyCastleProvider();
 
+    // Built once and reused; see signerVerifier.
+    private static final JcaSignerInfoVerifierBuilder SIGNER_VERIFIERS = signerVerifiers();
+
     private final Set<TrustAnchor> trustAnchors;
     private final String bundleId;
 
@@ -324,17 +330,22 @@ public final class ReceiptVerifier {
 
     private static AppReceipt verifyCoreUnguarded(byte[] receiptDer, Set<TrustAnchor> trustAnchors)
             throws VerificationException {
+        ASN1Primitive parsed;
         try {
             // Rejects trailing bytes after the CMS blob (PLAN 2.3) - BC's
             // fromByteArray throws when parsing does not exhaust the input.
-            ASN1Primitive.fromByteArray(receiptDer);
+            parsed = ASN1Primitive.fromByteArray(receiptDer);
         } catch (IOException e) {
             throw new VerificationException(
                     Reason.INVALID_RECEIPT_FORMAT, "receipt has trailing or unparseable bytes", e);
         }
         CMSSignedData cms;
         try {
-            cms = new CMSSignedData(receiptDer);
+            // The tree parsed above, not the bytes: new CMSSignedData(byte[])
+            // would parse the whole receipt a second time. A tree that is not
+            // a ContentInfo makes getInstance throw an unchecked exception,
+            // which verifyCore reports as INVALID_RECEIPT_FORMAT.
+            cms = new CMSSignedData(ContentInfo.getInstance(parsed));
         } catch (CMSException e) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "not a PKCS#7/CMS blob", e);
         }
@@ -461,7 +472,9 @@ public final class ReceiptVerifier {
         try {
             List<X509Certificate> embedded = new ArrayList<X509Certificate>();
             for (X509CertificateHolder holder : holders) {
-                embedded.add(converter.getCertificate(holder));
+                // The signer was converted above; converting it again only
+                // re-encodes it and gets the same certificate back.
+                embedded.add(holder == signerHolder ? signerCert : converter.getCertificate(holder));
             }
             X509CertSelector target = new X509CertSelector();
             target.setCertificate(signerCert);
@@ -553,9 +566,7 @@ public final class ReceiptVerifier {
                         Reason.INVALID_RECEIPT_FORMAT,
                         "unsupported receipt digest algorithm " + SafeText.quote(digestOid));
             }
-            boolean valid = signer.verify(new JcaSimpleSignerInfoVerifierBuilder()
-                    .setProvider(PROVIDER)
-                    .build(signerCert));
+            boolean valid = signer.verify(signerVerifier(signerCert));
             if (!valid) {
                 throw new VerificationException(Reason.INVALID_SIGNATURE, "CMS signature check failed");
             }
@@ -563,6 +574,29 @@ public final class ReceiptVerifier {
             throw new VerificationException(Reason.INVALID_SIGNATURE, "CMS signature check failed", e);
         } catch (OperatorCreationException e) {
             throw new VerificationException(Reason.INVALID_SIGNATURE, "CMS signature check errored", e);
+        }
+    }
+
+    /**
+     * The CMS signature verifier for {@code signerCert}, from one
+     * {@link JcaSignerInfoVerifierBuilder} kept for the life of the class.
+     * BouncyCastle's builder holds its algorithm-name and algorithm-finder
+     * tables (a few hundred entries) and builds only the per-certificate
+     * parts in {@code build}, so reusing it avoids rebuilding the tables for
+     * every receipt, which {@code JcaSimpleSignerInfoVerifierBuilder} does.
+     */
+    static SignerInformationVerifier signerVerifier(X509Certificate signerCert) throws OperatorCreationException {
+        return SIGNER_VERIFIERS.build(signerCert);
+    }
+
+    private static JcaSignerInfoVerifierBuilder signerVerifiers() {
+        try {
+            return new JcaSignerInfoVerifierBuilder(new JcaDigestCalculatorProviderBuilder()
+                            .setProvider(PROVIDER)
+                            .build())
+                    .setProvider(PROVIDER);
+        } catch (OperatorCreationException e) {
+            throw new IllegalStateException("BouncyCastle digest provider unavailable", e);
         }
     }
 
