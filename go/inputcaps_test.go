@@ -9,13 +9,14 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	applereceipt "github.com/emindeniz99/apple-purchase-receipt-verifier/go"
 )
 
 // Every input this library decodes or parses is capped BEFORE the
-// expensive step, with the same numbers the Java, PHP and Python ports
-// use: base64 decoding, CMS parsing and JSON parsing all allocate in
+// expensive step, with the same fixed numbers every port uses: base64
+// decoding, CMS parsing and JSON parsing all allocate in
 // proportion to their input, and none of that work sits behind a
 // signature check. Each cap is pinned three ways: one unit over is refused
 // by the cap itself (its own message, and an allocation far below what the
@@ -27,18 +28,22 @@ import (
 // here is at least 256 KiB.
 const capAllocationBudget = 64 << 10
 
+// The request and receipt caps are Apple's: its verifyReceipt answers a
+// 3,145,728-byte request body and refuses a 3,145,729-byte one with HTTP
+// 413 (measured 2026-09-23), and no receipt it accepts can be larger than
+// the body that carries it. fixtures/cases.json holds every port to them.
 func TestCapNumbersMatchTheOtherPorts(t *testing.T) {
 	for _, entry := range []struct {
 		name      string
 		got, want int
 	}{
-		{"DefaultMaxReceiptBytes", applereceipt.DefaultMaxReceiptBytes, 2097152},
-		{"MaxRequestBytes", applereceipt.MaxRequestBytes, 1048576},
+		{"MaxReceiptBytes", applereceipt.MaxReceiptBytes, 3145728},
+		{"MaxRequestBytes", applereceipt.MaxRequestBytes, 3145728},
 		{"MaxJWSBytes", applereceipt.MaxJWSBytes, 262144},
 		{"MaxJSONNestingDepth", applereceipt.MaxJSONNestingDepth, 64},
 	} {
 		if entry.got != entry.want {
-			t.Errorf("%s = %d, want %d (the Java, PHP and Python number)", entry.name, entry.got, entry.want)
+			t.Errorf("%s = %d, want %d (the number every port uses)", entry.name, entry.got, entry.want)
 		}
 	}
 }
@@ -80,7 +85,7 @@ func padToLength(encoded string, length int) string {
 	return encoded + strings.Repeat("\n", length-len(encoded))
 }
 
-// --- receipt base64 string: 2 MiB, before the decode ---------------------
+// --- receipt base64 string: 3 MiB, before the decode ---------------------
 
 func TestReceiptBase64CapIsCheckedBeforeDecoding(t *testing.T) {
 	pki := newReceiptPKI(t)
@@ -88,7 +93,7 @@ func TestReceiptBase64CapIsCheckedBeforeDecoding(t *testing.T) {
 	endpoint := endpointFor(t, pki.anchors(), applereceipt.EnvironmentSandbox, fixedClock)
 	genuine := receiptOfType(t, pki, "ProductionSandbox")
 
-	atCap := padToLength(genuine, applereceipt.DefaultMaxReceiptBytes)
+	atCap := padToLength(genuine, applereceipt.MaxReceiptBytes)
 	if _, err := verifier.VerifyBase64(atCap); err != nil {
 		t.Fatalf("a receipt string of exactly the cap was refused: %v", err)
 	}
@@ -99,9 +104,9 @@ func TestReceiptBase64CapIsCheckedBeforeDecoding(t *testing.T) {
 	requireVerifiedBody(t, endpoint.VerifyReceiptData(atCap))
 
 	// One over, and made of valid base64 so that a decode, had it run,
-	// would have allocated 1.5 MiB.
-	overCap := strings.Repeat("QUFB", applereceipt.DefaultMaxReceiptBytes/4) + "Q"
-	const message = "INVALID_RECEIPT_FORMAT: receipt base64 exceeds the 2097152 byte limit"
+	// would have allocated 2.25 MiB.
+	overCap := strings.Repeat("QUFB", applereceipt.MaxReceiptBytes/4) + "Q"
+	const message = "INVALID_RECEIPT_FORMAT: receipt base64 exceeds the 3145728 byte limit"
 	for _, entry := range []struct {
 		name string
 		call func() error
@@ -125,7 +130,7 @@ func TestReceiptBase64CapIsCheckedBeforeDecoding(t *testing.T) {
 
 	// The same genuine receipt one character past the cap: the cap is the
 	// only thing wrong with it.
-	_, err := verifier.VerifyBase64(padToLength(genuine, applereceipt.DefaultMaxReceiptBytes+1))
+	_, err := verifier.VerifyBase64(padToLength(genuine, applereceipt.MaxReceiptBytes+1))
 	requireMessage(t, err, message)
 
 	var result *applereceipt.VerifyReceiptResult
@@ -136,7 +141,7 @@ func TestReceiptBase64CapIsCheckedBeforeDecoding(t *testing.T) {
 	}
 }
 
-// --- receipt DER: 2 MiB, before the CMS parse ----------------------------
+// --- receipt DER: 3 MiB, before the CMS parse ----------------------------
 
 // receiptOfSize builds a genuine signed receipt of exactly size bytes by
 // growing an unmodelled attribute.
@@ -159,7 +164,7 @@ func TestReceiptDERCapIsCheckedBeforeParsing(t *testing.T) {
 	pki := newReceiptPKI(t)
 	verifier := receiptVerifier(t, pki, "com.example.app")
 
-	atCap := receiptOfSize(t, pki, applereceipt.DefaultMaxReceiptBytes)
+	atCap := receiptOfSize(t, pki, applereceipt.MaxReceiptBytes)
 	if _, err := verifier.Verify(atCap); err != nil {
 		t.Fatalf("a genuine receipt of exactly the cap was refused: %v", err)
 	}
@@ -168,8 +173,8 @@ func TestReceiptDERCapIsCheckedBeforeParsing(t *testing.T) {
 	}
 
 	// Genuine in every respect but its size, so only the cap can refuse it.
-	overCap := receiptOfSize(t, pki, applereceipt.DefaultMaxReceiptBytes+1)
-	const message = "INVALID_RECEIPT_FORMAT: receipt exceeds the 2097152 byte limit"
+	overCap := receiptOfSize(t, pki, applereceipt.MaxReceiptBytes+1)
+	const message = "INVALID_RECEIPT_FORMAT: receipt exceeds the 3145728 byte limit"
 	for _, entry := range []struct {
 		name string
 		call func() error
@@ -196,7 +201,7 @@ func TestReceiptDERCapIsCheckedBeforeParsing(t *testing.T) {
 	}
 }
 
-// --- request body: 1 MiB, before the JSON parse --------------------------
+// --- request body: 3 MiB, before the JSON parse --------------------------
 
 // bodyOfLength wraps receipt-data in a request body of exactly length
 // bytes, padded with JSON whitespace.
@@ -216,14 +221,62 @@ func TestRequestBodyCapIsCheckedBeforeParsing(t *testing.T) {
 	overCap := bodyOfLength(genuine, applereceipt.MaxRequestBytes+1)
 	var result *applereceipt.VerifyReceiptResult
 	allocated := allocatedBy(func() { result = endpoint.VerifyReceiptBody(overCap) })
-	requireRefusal21002(t, result, applereceipt.ReasonMalformedRequest,
-		"MALFORMED_REQUEST: the request body exceeds the 1048576 byte limit")
+	requireRefusal21002(t, result, applereceipt.ReasonRequestTooLarge,
+		"REQUEST_TOO_LARGE: the request body exceeds the 3145728 byte limit")
 	if allocated > capAllocationBudget {
 		t.Errorf("refusing an over-cap body allocated %d bytes; the JSON parse ran", allocated)
 	}
 	if got := string(endpoint.VerifyReceiptJSON(overCap)); got != `{"status":21002}` {
 		t.Fatalf("VerifyReceiptJSON = %s, want {\"status\":21002}", got)
 	}
+
+	// The size is decided first: a body over the cap that is also nested
+	// too deep and not JSON at all is still REQUEST_TOO_LARGE, the answer
+	// Apple gives (413) before it reads anything.
+	junk := []byte(strings.Repeat("[", applereceipt.MaxRequestBytes+1))
+	requireRefusal21002(t, endpoint.VerifyReceiptBody(junk), applereceipt.ReasonRequestTooLarge,
+		"REQUEST_TOO_LARGE: the request body exceeds the 3145728 byte limit")
+}
+
+// twoBytePadding is exactly n bytes of U+00E9 (two bytes each in UTF-8),
+// with one ASCII character when n is odd.
+func twoBytePadding(n int) string {
+	pad := strings.Repeat("\u00e9", n/2)
+	if n%2 == 1 {
+		pad += "a"
+	}
+	return pad
+}
+
+// Apple's limit counts UTF-8 bytes, not characters. A body padded with
+// U+00E9 to one byte over the cap is barely half the cap in characters, so
+// a character count would let it through; the same shape one byte shorter
+// verifies. The padding sits in password, which is accepted and never read.
+func TestRequestBodyIsMeasuredInUTF8BytesNotCharacters(t *testing.T) {
+	pki := newReceiptPKI(t)
+	endpoint := endpointFor(t, pki.anchors(), applereceipt.EnvironmentSandbox, fixedClock)
+	genuine := receiptOfType(t, pki, "ProductionSandbox")
+	limit := applereceipt.MaxRequestBytes
+	bodyWith := func(padding string) []byte {
+		return []byte(`{"receipt-data":"` + genuine + `","password":"` + padding + `"}`)
+	}
+	fixed := len(bodyWith(""))
+
+	over := bodyWith(twoBytePadding(limit + 1 - fixed))
+	if len(over) != limit+1 {
+		t.Fatalf("built a %d byte body, want %d", len(over), limit+1)
+	}
+	if chars := utf8.RuneCount(over); chars >= limit/2+fixed {
+		t.Fatalf("the over-cap body is %d characters; a character count must call it far under the cap", chars)
+	}
+	requireRefusal21002(t, endpoint.VerifyReceiptBody(over), applereceipt.ReasonRequestTooLarge,
+		"REQUEST_TOO_LARGE: the request body exceeds the 3145728 byte limit")
+
+	at := bodyWith(twoBytePadding(limit - fixed))
+	if len(at) != limit {
+		t.Fatalf("built a %d byte body, want %d", len(at), limit)
+	}
+	requireVerifiedBody(t, endpoint.VerifyReceiptBody(at))
 }
 
 // --- request body nesting: 64, counted before the JSON parse ------------
@@ -267,11 +320,8 @@ func TestRequestBodyNestingIsCountedBeforeParsing(t *testing.T) {
 
 // The normative floor receipt (1 MiB of DER) must verify through every
 // verifier entry point. Its base64 is about 1.38 MB, so its JSON body is
-// over the 1 MiB request cap and the body path answers 21002: the request
-// cap bounds a wire request, not a receipt, exactly as in Java, PHP and
-// Python. VerifyReceiptData takes the same string without the JSON
-// envelope and verifies it.
-func TestByteFloorReceiptVerifiesButItsBodyIsOverTheRequestCap(t *testing.T) {
+// well under the 3 MiB request cap and the body path verifies it too.
+func TestByteFloorReceiptVerifiesThroughEveryEntryPoint(t *testing.T) {
 	var config caseConfig
 	for _, kase := range mustCases(t).Cases {
 		if kase.ID == "receipt/verify-at-the-byte-floor" {
@@ -306,11 +356,12 @@ func TestByteFloorReceiptVerifiesButItsBodyIsOverTheRequestCap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(body) <= applereceipt.MaxRequestBytes {
-		t.Fatalf("the byte floor's body is %d bytes; this test assumes it is over the request cap", len(body))
+	if len(body) > applereceipt.MaxRequestBytes {
+		t.Fatalf("the byte floor's body is %d bytes, over the request cap", len(body))
 	}
-	requireRefusal21002(t, endpoint.VerifyReceiptBody(body), applereceipt.ReasonMalformedRequest,
-		"MALFORMED_REQUEST: the request body exceeds the 1048576 byte limit")
+	if status := endpoint.VerifyReceiptBody(body).Status(); status == applereceipt.StatusMalformed {
+		t.Fatalf("VerifyReceiptBody answered 21002 for the byte floor")
+	}
 }
 
 // --- JWS: 256 KiB before any split, and 64 levels before each parse -----

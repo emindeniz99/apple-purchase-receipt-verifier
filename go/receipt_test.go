@@ -524,22 +524,6 @@ func overlaps(a, b []byte) bool {
 	return &a[0] == &b[0]
 }
 
-func TestOversizedReceiptIsRejectedBeforeParsing(t *testing.T) {
-	pki := newReceiptPKI(t)
-	verifier, err := applereceipt.NewReceiptVerifier(applereceipt.ReceiptVerifierOptions{
-		TrustedRoots: pki.anchors(), BundleID: "com.example.app", MaxReceiptBytes: 1024,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = verifier.Verify(bytes.Repeat([]byte{0x30}, 2048))
-	requireReason(t, err, applereceipt.ReasonInvalidReceiptFormat)
-	if _, err := verifier.Verify(pki.receipt(t)); err == nil {
-		t.Fatal("the default-sized synthesized receipt is larger than 1024 bytes; " +
-			"this test would not be testing the bound")
-	}
-}
-
 func TestUnknownAttributesArePreserved(t *testing.T) {
 	pki := newReceiptPKI(t)
 	der := pki.receipt(t,

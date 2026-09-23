@@ -30,10 +30,11 @@ const (
 	ReasonStalePayload              Reason = "STALE_PAYLOAD"
 )
 
-// The two reasons only a verifyReceipt endpoint result reports. No
-// verifier returns either, so they are not in AllReasons.
+// The three reasons only a verifyReceipt endpoint result reports. No
+// verifier returns any of them, so they are not in AllReasons.
 const (
 	ReasonMalformedRequest Reason = "MALFORMED_REQUEST"
+	ReasonRequestTooLarge  Reason = "REQUEST_TOO_LARGE"
 	ReasonInternalError    Reason = "INTERNAL_ERROR"
 )
 
