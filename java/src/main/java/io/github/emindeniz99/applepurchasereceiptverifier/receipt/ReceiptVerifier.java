@@ -865,9 +865,6 @@ public final class ReceiptVerifier {
                 return new Attribute((int) type, value);
             } catch (IllegalArgumentException e) {
                 throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "malformed receipt attribute", e);
-            } catch (ArithmeticException e) {
-                throw new VerificationException(
-                        Reason.INVALID_RECEIPT_FORMAT, "receipt attribute type out of range", e);
             }
         }
     }
@@ -903,8 +900,6 @@ public final class ReceiptVerifier {
             return Long.valueOf(boundedInt(((ASN1Integer) parsed).getValue()));
         } catch (IOException e) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "attribute value is not valid ASN.1", e);
-        } catch (ArithmeticException e) {
-            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "attribute integer out of range", e);
         }
     }
 
