@@ -1,8 +1,9 @@
 // Input size caps: every input an attacker controls is measured before the
 // step that would allocate in proportion to it (base64 decode, CMS parse,
 // JSON parse, JWS split), because all of those run before any signature has
-// been checked. The numbers are the Java, PHP and Python ports' so the same
-// input gets the same answer everywhere.
+// been checked. The receipt and request caps are Apple's own limit, fixed in
+// every port by fixtures/cases.json, so the same input gets the same answer
+// everywhere.
 //
 // For each cap: one unit over is refused with the exact reason and message,
 // and the step it guards provably did not run; exactly at the cap is not
@@ -20,8 +21,8 @@ const BUILDS = [
   ['web', web],
 ];
 
-const MAX_RECEIPT_BYTES = 2097152;
-const MAX_REQUEST_BYTES = 1048576;
+const MAX_RECEIPT_BYTES = 3145728;
+const MAX_REQUEST_BYTES = 3145728;
 const MAX_JWS_BYTES = 262144;
 const MAX_DEPTH = 64;
 const BUNDLE = 'com.example.app';
@@ -108,7 +109,10 @@ for (const [name, build] of BUILDS) {
       acceptedEnvironments: ['Sandbox'],
     });
 
-  test(`${name}: the caps are public and are the other ports' numbers`, () => {
+  // Apple's verifyReceipt answers a 3,145,728-byte request body and refuses a
+  // 3,145,729-byte one with HTTP 413 (measured 2026-09-23), and no receipt it
+  // accepts can be larger than the body that carries it.
+  test(`${name}: the caps are public and are Apple's numbers`, () => {
     assert.equal(build.ReceiptVerifier.MAX_RECEIPT_BYTES, MAX_RECEIPT_BYTES);
     assert.equal(build.VerifyReceiptEndpoint.MAX_REQUEST_BYTES, MAX_REQUEST_BYTES);
     assert.equal(build.JwsVerifier.MAX_JWS_BYTES, MAX_JWS_BYTES);
@@ -137,7 +141,7 @@ for (const [name, build] of BUILDS) {
     assert.equal(error.reason, build.Reason.INVALID_RECEIPT_FORMAT);
     assert.equal(
       error.message,
-      'INVALID_RECEIPT_FORMAT: receipt exceeds the maximum accepted size of 2097152 characters',
+      'INVALID_RECEIPT_FORMAT: receipt exceeds the maximum accepted size of 3145728 bytes',
     );
     assert.equal(replaces, 0);
   });
@@ -158,7 +162,7 @@ for (const [name, build] of BUILDS) {
     assert.equal(over.reason, build.Reason.INVALID_RECEIPT_FORMAT);
     assert.equal(
       over.message,
-      'INVALID_RECEIPT_FORMAT: receipt exceeds the maximum accepted size of 2097152 bytes',
+      'INVALID_RECEIPT_FORMAT: receipt exceeds the maximum accepted size of 3145728 bytes',
     );
   });
 
@@ -205,11 +209,34 @@ for (const [name, build] of BUILDS) {
         },
       );
       assert.equal(parses, 0, `JSON.parse ran on a body padded with ${unit}`);
-      assert.equal(result.failureReason, build.Reason.MALFORMED_REQUEST);
+      // REQUEST_TOO_LARGE, the reason an HTTP layer maps to 413 as Apple does.
+      assert.equal(result.failureReason, build.Reason.REQUEST_TOO_LARGE);
       assert.equal(result.status, 21002);
       assert.equal(result.toJson(), '{"status":21002}');
       assert.equal(await endpoint().verifyReceiptJson(body), '{"status":21002}');
     }
+  });
+
+  // Apple counts UTF-8 bytes: 3,145,729 bytes of U+00E9, barely half the cap
+  // in characters, got HTTP 413 on 2026-09-23. A port that measured the body
+  // in UTF-16 units would let this body through and verify it.
+  test(`${name}: a request body is measured in UTF-8 bytes, not characters`, async () => {
+    const over = bodyOfBytes(MAX_REQUEST_BYTES + 1, 'é');
+    assert.ok(over.length < MAX_REQUEST_BYTES * 0.6, 'a character count calls this far under');
+    const overResult = await endpoint().verifyReceiptResult(over);
+    assert.equal(overResult.failureReason, build.Reason.REQUEST_TOO_LARGE);
+    assert.equal(overResult.status, 21002);
+
+    const at = bodyOfBytes(MAX_REQUEST_BYTES, 'é');
+    assert.equal((await endpoint().verifyReceiptResult(at)).status, 0);
+  });
+
+  // The size check comes before any other look at the body, so a huge body
+  // that is not even JSON is REQUEST_TOO_LARGE, not MALFORMED_REQUEST.
+  test(`${name}: an oversized body that is not JSON is REQUEST_TOO_LARGE`, async () => {
+    const result = await endpoint().verifyReceiptResult('['.repeat(MAX_REQUEST_BYTES + 1));
+    assert.equal(result.failureReason, build.Reason.REQUEST_TOO_LARGE);
+    assert.equal(result.toJson(), '{"status":21002}');
   });
 
   // --- endpoint nesting depth ------------------------------------------------
