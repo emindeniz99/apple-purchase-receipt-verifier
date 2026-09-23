@@ -24,21 +24,19 @@ public struct VerifyReceiptEndpoint: Sendable {
     /// Internal error.
     public static let statusInternal = 21009
 
-    /// Ceiling on a raw JSON request body, in UTF-8 bytes (`utf8.count`). A
-    /// larger body fails with ``VerificationError/Reason/malformedRequest``,
-    /// status 21002, before it is parsed: JSON parsing allocates a multiple
-    /// of the body, and that happens before any verification. The number is
-    /// the Java, PHP and Python ports'. PHP measures bytes too; Java and
-    /// Python measure a string in UTF-16 units or characters, so a body of
-    /// non-ASCII text can pass there and be refused here. No body that
-    /// carries only a receipt is affected, since base64 is ASCII.
+    /// Ceiling on a raw JSON request body, in UTF-8 bytes: Apple's own limit,
+    /// a fixed constant in every port. Measured on 2026-09-23 against both
+    /// of Apple's verifyReceipt endpoints, a body of 3,145,728 bytes is
+    /// answered and one of 3,145,729 bytes gets HTTP 413, counted in UTF-8
+    /// bytes rather than characters. A larger body fails with
+    /// ``VerificationError/Reason/requestTooLarge``, status 21002, before
+    /// the depth scan and the parse: JSON parsing allocates a multiple of the
+    /// body, and that happens before any verification.
     ///
-    /// It is deliberately below ``ReceiptVerifier/maxReceiptBytes``: the
-    /// JSON entry point has an amplification the dictionary entry point does
-    /// not. A 1 MiB body carries any real request with room to spare; the
-    /// largest genuine receipt in the corpus is 106 KB of base64. A body
-    /// already decoded to a dictionary is not measured.
-    public static let maxRequestBytes = 1_048_576
+    /// Measured with `utf8.count`, which is constant time for a native Swift
+    /// string (UTF-8 storage) and exact, though linear, for a bridged one. A
+    /// body already decoded to a dictionary is not measured.
+    public static let maxRequestBytes = 3_145_728
 
     /// How deep a JSON structure the request body may nest; the Java
     /// port's number. A verifyReceipt body is a flat object of strings.
@@ -128,17 +126,22 @@ public struct VerifyReceiptEndpoint: Sendable {
     /// Handles one verifyReceipt request body in its raw wire form, the JSON
     /// text an HTTP framework hands over. Never throws.
     ///
-    /// A body that is not a JSON object (unparseable, `null`, an array, a
-    /// scalar), is over ``maxRequestBytes`` UTF-8 bytes or nests more than 64
-    /// levels deep fails with ``VerificationError/Reason/malformedRequest``,
-    /// status 21002, and the last two are refused before it is parsed. Apple has no status code for "that wasn't JSON"; 21002
-    /// ("The data in the receipt-data property was malformed or missing") is
-    /// the closest, and it is what a JSON object without usable
-    /// `receipt-data` gets anyway.
+    /// A body over ``maxRequestBytes`` UTF-8 bytes fails with
+    /// ``VerificationError/Reason/requestTooLarge``, status 21002, before
+    /// anything else looks at it; Apple answers that body with HTTP 413. A
+    /// body that is not a JSON object (unparseable, `null`, an array, a
+    /// scalar) or nests more than 64 levels deep fails with
+    /// ``VerificationError/Reason/malformedRequest``, status 21002, and the
+    /// depth is checked before it is parsed. Apple has no status code for
+    /// "that wasn't JSON"; 21002 ("The data in the receipt-data property was
+    /// malformed or missing") is the closest, and it is what a JSON object
+    /// without usable `receipt-data` gets anyway.
     public func verifyReceiptResult(_ body: String, now: Date? = nil) async -> VerifyReceiptResult {
         let at = now ?? clock()
-        guard body.utf8.count <= Self.maxRequestBytes,
-            !jsonNestingExceeds(body.utf8, limit: Self.maxJsonNestingDepth),
+        guard body.utf8.count <= Self.maxRequestBytes else {
+            return failed(.requestTooLarge, at)
+        }
+        guard !jsonNestingExceeds(body.utf8, limit: Self.maxJsonNestingDepth),
             let data = body.data(using: .utf8),
             let parsed = try? JSONSerialization.jsonObject(with: data),
             let requestBody = parsed as? [String: Any]

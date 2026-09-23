@@ -184,15 +184,32 @@ private struct Vectors {
     }
 
     /// Dispatches one case on its `operation`. Everything it returns is fed
-    /// to ``normalize(_:)``; everything it throws is a verdict only when it
-    /// is a ``VerificationError``. Resolves `fixtureId` to bytes itself (this
-    /// is also where the fixture's digest is checked) so it can also read
-    /// the fixture's codec, needed to decide how `verifyReceiptEndpoint`
+    /// to ``normalize(_:)`` (an ``EndpointAnswer``'s response, for the
+    /// endpoint); everything it throws is a verdict only when it is a
+    /// ``VerificationError``. Resolves the input fixture to bytes itself
+    /// (this is also where the fixture's digest is checked) so it can also
+    /// read the fixture's codec, needed to decide how `verifyReceiptEndpoint`
     /// fills `receipt-data` for a `text` fixture.
+    ///
+    /// An endpoint case whose input is `requestBody` hands that fixture's
+    /// text, verbatim, to the raw-body entry point, the one that measures and
+    /// parses the JSON; an `input.fixture` case goes through the dictionary
+    /// entry point as `receipt-data`.
     func invoke(
-        operation: String, config: [String: Any], fixtureId: String,
+        operation: String, config: [String: Any], input spec: [String: Any],
         clock: (@Sendable () -> Date)?
     ) async throws -> Any {
+        if let bodyId = spec["requestBody"] as? String {
+            guard operation == "verifyReceiptEndpoint" else {
+                throw HarnessError("input.requestBody is only defined for verifyReceiptEndpoint")
+            }
+            let endpoint = try endpoint(config, clock: clock)
+            let result = await endpoint.verifyReceiptResult(String(decoding: try bytes(of: bodyId), as: UTF8.self))
+            return EndpointAnswer(response: result.response(), failureReason: result.failureReason)
+        }
+        guard let fixtureId = spec["fixture"] as? String else {
+            throw HarnessError("input carries neither fixture nor requestBody")
+        }
         let input = try bytes(of: fixtureId)
         switch operation {
         case "verifyTransaction":
@@ -223,16 +240,7 @@ private struct Vectors {
             return try await verifier.verify(
                 base64Receipt: String(decoding: input, as: UTF8.self), deviceGuid: guid)
         case "verifyReceiptEndpoint":
-            guard let name = config["environment"] as? String,
-                let environment = AppleEnvironment(rawValue: name),
-                environment == .production || environment == .sandbox
-            else {
-                throw HarnessError("config.environment must be Production or Sandbox")
-            }
-            let endpoint = try VerifyReceiptEndpoint(
-                trustedRoots: try trustedRoots(config),
-                environment: environment,
-                clock: clock)
+            let endpoint = try endpoint(config, clock: clock)
             // A text fixture hands receipt-data the text verbatim (pinning
             // how the endpoint decodes what a client sent); raw/base64
             // fixtures keep the existing re-encode to canonical base64.
@@ -240,10 +248,24 @@ private struct Vectors {
             let receiptData =
                 codec == "text"
                 ? String(decoding: input, as: UTF8.self) : input.base64EncodedString()
-            return await endpoint.verifyReceiptResult(["receipt-data": receiptData]).response()
+            let result = await endpoint.verifyReceiptResult(["receipt-data": receiptData])
+            return EndpointAnswer(response: result.response(), failureReason: result.failureReason)
         default:
             throw HarnessError("no adapter for operation \"\(operation)\"")
         }
+    }
+
+    private func endpoint(_ config: [String: Any], clock: (@Sendable () -> Date)?) throws -> VerifyReceiptEndpoint {
+        guard let name = config["environment"] as? String,
+            let environment = AppleEnvironment(rawValue: name),
+            environment == .production || environment == .sandbox
+        else {
+            throw HarnessError("config.environment must be Production or Sandbox")
+        }
+        return try VerifyReceiptEndpoint(
+            trustedRoots: try trustedRoots(config),
+            environment: environment,
+            clock: clock)
     }
 
     private static func text(_ data: Data) throws -> String {
@@ -267,6 +289,15 @@ private struct Vectors {
         }
         return Data(bytes)
     }
+}
+
+/// What an endpoint case yields: Apple's response, which the field paths
+/// are asserted against, and the result's failure reason, which is not a
+/// wire field and is asserted against `expected.failureReason` when the case
+/// carries one.
+struct EndpointAnswer {
+    let response: [String: Any]
+    let failureReason: VerificationError.Reason?
 }
 
 // MARK: - result normalization
@@ -582,7 +613,7 @@ final class ConformanceCasesTests: XCTestCase {
         let id = kase["id"] as? String ?? "<case without an id>"
         guard let operation = kase["operation"] as? String,
             let config = kase["config"] as? [String: Any],
-            let fixture = (kase["input"] as? [String: Any])?["fixture"] as? String,
+            let input = kase["input"] as? [String: Any],
             let expected = kase["expected"] as? [String: Any],
             let status = expected["status"] as? String
         else {
@@ -593,7 +624,7 @@ final class ConformanceCasesTests: XCTestCase {
         do {
             result = try await vectors.invoke(
                 operation: operation, config: config,
-                fixtureId: fixture,
+                input: input,
                 clock: try clockSource(kase))
         } catch let error as VerificationError {
             guard status == "error" else {
@@ -623,7 +654,16 @@ final class ConformanceCasesTests: XCTestCase {
             XCTFail("harness error: \(id): expected.fields is missing")
             return
         }
-        let actual = normalize(result)
+        var answer: Any = result
+        if let endpoint = result as? EndpointAnswer {
+            if let want = expected["failureReason"] {
+                XCTAssertEqual(
+                    endpoint.failureReason?.rawValue, want as? String,
+                    "\(id): failureReason")
+            }
+            answer = endpoint.response
+        }
+        let actual = normalize(answer)
         for path in fields.keys.sorted() {
             guard let want = fields[path] else { continue }
             do {
