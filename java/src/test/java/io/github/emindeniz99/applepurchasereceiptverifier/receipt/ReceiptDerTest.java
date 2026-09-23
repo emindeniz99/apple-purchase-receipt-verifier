@@ -180,25 +180,6 @@ class ReceiptDerTest {
 
     /** Every receipt fixture, and seeded corruptions of each. */
     static List<byte[]> corpus() throws IOException {
-        List<byte[]> fixtures = corpusFixtures();
-        Random random = new Random(SEED);
-        List<byte[]> corpus = new ArrayList<byte[]>(fixtures);
-        for (byte[] fixture : fixtures) {
-            for (int i = 0; i < MUTATIONS_PER_FIXTURE; i++) {
-                corpus.add(mutate(fixture, random));
-            }
-        }
-        corpus.add(new byte[0]);
-        corpus.add(new byte[] {0});
-        corpus.add(new byte[] {0, 0});
-        corpus.add(new byte[] {0x30, (byte) 0x80, 0, 0});
-        corpus.add(new byte[] {0x04, (byte) 0x80, 0, 0});
-        corpus.add(new byte[] {0x30, (byte) 0x85, 1, 1, 1, 1, 1});
-        return corpus;
-    }
-
-    /** Every receipt fixture: the generated ones and the public genuine ones. */
-    static List<byte[]> corpusFixtures() throws IOException {
         List<byte[]> fixtures = new ArrayList<byte[]>();
         Path generated = Paths.get("..", "fixtures", "generated");
         DirectoryStream<Path> files = Files.newDirectoryStream(generated, "receipt*.der");
@@ -217,7 +198,21 @@ class ReceiptDerTest {
             fixtures.add(Base64.getMimeDecoder().decode(text));
         }
         assertTrue(fixtures.size() > 30, "found only " + fixtures.size() + " receipt fixtures");
-        return fixtures;
+
+        Random random = new Random(SEED);
+        List<byte[]> corpus = new ArrayList<byte[]>(fixtures);
+        for (byte[] fixture : fixtures) {
+            for (int i = 0; i < MUTATIONS_PER_FIXTURE; i++) {
+                corpus.add(mutate(fixture, random));
+            }
+        }
+        corpus.add(new byte[0]);
+        corpus.add(new byte[] {0});
+        corpus.add(new byte[] {0, 0});
+        corpus.add(new byte[] {0x30, (byte) 0x80, 0, 0});
+        corpus.add(new byte[] {0x04, (byte) 0x80, 0, 0});
+        corpus.add(new byte[] {0x30, (byte) 0x85, 1, 1, 1, 1, 1});
+        return corpus;
     }
 
     private static byte[] mutate(byte[] fixture, Random random) {

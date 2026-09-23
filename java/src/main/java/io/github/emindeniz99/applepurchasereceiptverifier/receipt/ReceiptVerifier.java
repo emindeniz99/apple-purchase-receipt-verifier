@@ -17,9 +17,6 @@ import java.security.cert.TrustAnchor;
 import java.security.cert.X509CertSelector;
 import java.security.cert.X509Certificate;
 import java.time.Instant;
-import java.time.LocalDate;
-import java.time.Month;
-import java.time.chrono.IsoChronology;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Date;
@@ -645,7 +642,7 @@ public final class ReceiptVerifier {
     // --- ASN.1 payload parsing -------------------------------------------
 
     private static AppReceipt parsePayload(byte[] payload) throws VerificationException {
-        Attributes attributes = attributes(payload, "receipt payload");
+        ASN1Set attributes = parseAttributeSet(payload, "receipt payload");
         String receiptType = null;
         String parsedBundleId = null;
         byte[] bundleIdBytes = null;
@@ -662,8 +659,8 @@ public final class ReceiptVerifier {
         List<InAppPurchase> purchases = new ArrayList<InAppPurchase>();
         Map<Integer, List<byte[]>> unknown = new LinkedHashMap<Integer, List<byte[]>>();
 
-        for (int i = 0; i < attributes.size(); i++) {
-            Attribute attr = attributes.get(i);
+        for (ASN1Encodable element : attributes) {
+            Attribute attr = Attribute.of(element);
             switch (attr.type) {
                 case ATTR_RECEIPT_TYPE:
                     receiptType = decodeString(attr.value);
@@ -731,7 +728,7 @@ public final class ReceiptVerifier {
     }
 
     private static InAppPurchase parseInApp(byte[] inAppSet) throws VerificationException {
-        Attributes attributes = attributes(inAppSet, "in-app purchase attribute");
+        ASN1Set attributes = parseAttributeSet(inAppSet, "in-app purchase attribute");
         Long quantity = null;
         String productId = null;
         String transactionId = null;
@@ -745,8 +742,8 @@ public final class ReceiptVerifier {
         Long isInIntroOfferPeriod = null;
         Map<Integer, List<byte[]>> unknown = new LinkedHashMap<Integer, List<byte[]>>();
 
-        for (int i = 0; i < attributes.size(); i++) {
-            Attribute attr = attributes.get(i);
+        for (ASN1Encodable element : attributes) {
+            Attribute attr = Attribute.of(element);
             switch (attr.type) {
                 case IAP_QUANTITY:
                     quantity = decodeInteger(attr.value);
@@ -810,56 +807,6 @@ public final class ReceiptVerifier {
         values.add(attr.value);
     }
 
-    /**
-     * The attributes of a receipt payload or in-app purchase set. The plain
-     * DER shape every genuine receipt uses is read by
-     * {@link ReceiptDer#simpleAttributes}, which builds none of
-     * BouncyCastle's per-element objects; anything else takes the full parse,
-     * and each of its elements becomes an {@link Attribute} only when the
-     * caller reaches it, so a receipt with several defects still reports the
-     * first one in the order it always did.
-     */
-    static Attributes attributes(byte[] der, String what) throws VerificationException {
-        final List<Attribute> simple = ReceiptDer.simpleAttributes(der);
-        if (simple != null) {
-            return new Attributes() {
-                @Override
-                int size() {
-                    return simple.size();
-                }
-
-                @Override
-                Attribute get(int index) {
-                    return simple.get(index);
-                }
-            };
-        }
-        return parsedAttributes(der, what);
-    }
-
-    /** {@link #attributes} without the shortcut. */
-    static Attributes parsedAttributes(byte[] der, String what) throws VerificationException {
-        final ASN1Set set = parseAttributeSet(der, what);
-        return new Attributes() {
-            @Override
-            int size() {
-                return set.size();
-            }
-
-            @Override
-            Attribute get(int index) throws VerificationException {
-                return Attribute.of(set.getObjectAt(index));
-            }
-        };
-    }
-
-    /** A sequence of attributes whose elements may be checked only when read. */
-    abstract static class Attributes {
-        abstract int size();
-
-        abstract Attribute get(int index) throws VerificationException;
-    }
-
     private static ASN1Set parseAttributeSet(byte[] der, String what) throws VerificationException {
         ASN1Primitive parsed;
         try {
@@ -884,11 +831,11 @@ public final class ReceiptVerifier {
     }
 
     /** {@code ReceiptAttribute ::= SEQUENCE { type INTEGER, version INTEGER, value OCTET STRING }} */
-    static final class Attribute {
+    private static final class Attribute {
         final int type;
         final byte[] value;
 
-        Attribute(int type, byte[] value) {
+        private Attribute(int type, byte[] value) {
             this.type = type;
             this.value = value;
         }
@@ -932,15 +879,7 @@ public final class ReceiptVerifier {
         return value.longValue();
     }
 
-    static String decodeString(byte[] der) throws VerificationException {
-        // A legacy receipt carries thousands of these; parsing each one with
-        // a fresh ASN1InputStream was most of the cost of reading it.
-        String simple = ReceiptDer.shortString(der);
-        return simple != null ? simple : decodeStringParsed(der);
-    }
-
-    /** {@link #decodeString} without the shortcut, for any shape of value. */
-    static String decodeStringParsed(byte[] der) throws VerificationException {
+    private static String decodeString(byte[] der) throws VerificationException {
         try {
             ASN1Primitive parsed = ReceiptDer.fromByteArray(der);
             if (!(parsed instanceof ASN1String)) {
@@ -953,13 +892,7 @@ public final class ReceiptVerifier {
         }
     }
 
-    static Long decodeInteger(byte[] der) throws VerificationException {
-        long simple = ReceiptDer.shortNonNegativeInteger(der);
-        return simple >= 0 ? Long.valueOf(simple) : decodeIntegerParsed(der);
-    }
-
-    /** {@link #decodeInteger} without the shortcut, for any shape of value. */
-    static Long decodeIntegerParsed(byte[] der) throws VerificationException {
+    private static Long decodeInteger(byte[] der) throws VerificationException {
         try {
             ASN1Primitive parsed = ReceiptDer.fromByteArray(der);
             if (!(parsed instanceof ASN1Integer)) {
@@ -980,7 +913,13 @@ public final class ReceiptVerifier {
         if (text.isEmpty()) {
             return null;
         }
-        Instant instant = parseDate(text);
+        Instant instant;
+        try {
+            instant = Instant.parse(text);
+        } catch (DateTimeParseException e) {
+            throw new VerificationException(
+                    Reason.INVALID_RECEIPT_FORMAT, "unparseable receipt date: " + SafeText.quote(text), e);
+        }
         // Instant.parse accepts expanded years (e.g. +1000000000-...) that no
         // longer fit an epoch-milli long; toEpochMilli overflows on those, and
         // that conversion happens (via Date.from) before verification, so a
@@ -995,77 +934,5 @@ public final class ReceiptVerifier {
                     e);
         }
         return instant;
-    }
-
-    /**
-     * {@link Instant#parse}, reporting failure as the receipt's defect. The
-     * shape every receipt date has, {@code yyyy-MM-ddTHH:mm:ssZ}, is read
-     * directly: the JDK's ISO_INSTANT parser costs about a microsecond a
-     * date, and a legacy receipt carries hundreds of dates.
-     */
-    static Instant parseDate(String text) throws VerificationException {
-        Instant simple = simpleUtcInstant(text);
-        return simple != null ? simple : parseDateFully(text);
-    }
-
-    /** {@link #parseDate} without the shortcut. */
-    static Instant parseDateFully(String text) throws VerificationException {
-        try {
-            return Instant.parse(text);
-        } catch (DateTimeParseException e) {
-            throw new VerificationException(
-                    Reason.INVALID_RECEIPT_FORMAT, "unparseable receipt date: " + SafeText.quote(text), e);
-        }
-    }
-
-    /**
-     * The instant {@code text} names when it is exactly
-     * {@code yyyy-MM-ddTHH:mm:ssZ} in ASCII digits with an upper-case T and Z,
-     * a real calendar date and a time from 00:00:00 to 23:59:59; null for
-     * everything else. Each of those strings is one {@link Instant#parse}
-     * accepts with this value, and anything it might read differently (hour
-     * 24, second 60, lower case, fractions, offsets, other widths) is left to
-     * it.
-     */
-    static @Nullable Instant simpleUtcInstant(String text) {
-        if (text.length() != 20
-                || text.charAt(4) != '-'
-                || text.charAt(7) != '-'
-                || text.charAt(10) != 'T'
-                || text.charAt(13) != ':'
-                || text.charAt(16) != ':'
-                || text.charAt(19) != 'Z') {
-            return null;
-        }
-        int year = digits(text, 0, 4);
-        int month = digits(text, 5, 2);
-        int day = digits(text, 8, 2);
-        int hour = digits(text, 11, 2);
-        int minute = digits(text, 14, 2);
-        int second = digits(text, 17, 2);
-        if (year < 0 || month < 1 || month > 12 || day < 1 || hour < 0 || hour > 23) {
-            return null;
-        }
-        if (minute < 0 || minute > 59 || second < 0 || second > 59) {
-            return null;
-        }
-        if (day > Month.of(month).length(IsoChronology.INSTANCE.isLeapYear(year))) {
-            return null;
-        }
-        long epochDay = LocalDate.of(year, month, day).toEpochDay();
-        return Instant.ofEpochSecond(epochDay * 86400L + hour * 3600L + minute * 60L + second);
-    }
-
-    /** The ASCII digits at {@code text[start, start + count)} as a number, or -1. */
-    private static int digits(String text, int start, int count) {
-        int value = 0;
-        for (int i = start; i < start + count; i++) {
-            char c = text.charAt(i);
-            if (c < '0' || c > '9') {
-                return -1;
-            }
-            value = value * 10 + (c - '0');
-        }
-        return value;
     }
 }
