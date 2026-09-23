@@ -122,6 +122,21 @@ format Apple added, not a defect of the client's request. It is therefore
 paying user. An integrator should alert and retry or escalate on it, not
 deny.
 
+A JWS follows the same rule. After the chain and the signature pass,
+`verifyTransaction` and `verifyAppTransaction` read the claims their
+typed model carries, before the bundle-id and environment checks. A
+claim that is absent or JSON null reads as null. A string field takes
+only a JSON string and an integer field only a whole number that fits,
+so `1.0` is 1. Anything else is `INTERNAL_ERROR`: Apple signed it, so it
+is not the client's fault, and reading it as null would be worse, since a
+null `expiresDate` can look like a purchase that never expires. Claims
+the model does not carry are ignored whatever their type, and
+`verifyRaw` stays untyped. A runtime that lacks an algorithm no input
+chooses (the device-hash SHA-1, a PKIX implementation) is
+`INTERNAL_ERROR` too. A key or signature algorithm the certificate
+names keeps its input reason, because a missing algorithm and a hostile
+certificate cannot be told apart there.
+
 *Proof.* Tampering: `transaction/reject-tampered-payload` and
 `receipt/reject-tampered-payload`, both `INVALID_SIGNATURE`. Order:
 `receipt/reject-unreadable-creation-date-under-a-foreign-chain` (the chain
@@ -130,7 +145,9 @@ answers, not the payload), `receipt/unreadable-creation-date-is-judged-at-now`,
 `receipt/reject-unreadable-entry-under-a-trusted-chain`,
 `receipt/reject-empty-encapsulated-content` and the two attribute-type
 ceilings (all `INTERNAL_ERROR`), and
-`endpoint/unreadable-signed-content-answers-21009`. Claims:
+`endpoint/unreadable-signed-content-answers-21009`. JWS claim types: the
+six `internal-error-on-*` cases, `transaction/accept-null-and-unmodelled-claims`
+and `raw/return-claims-of-any-type`. Claims:
 `transaction/reject-wrong-bundle-id`, `receipt/reject-wrong-bundle-id`,
 `transaction/reject-apple-official-wrong-bundle-id` (Apple's own negative
 fixture), `transaction/reject-environment-outside-accept-set` and
