@@ -220,6 +220,18 @@ bool json_string(const std::string &token, std::string &out, std::string &error)
   return true;
 }
 
+// Whether two JSON number tokens spell the same value. Only values a double
+// holds exactly (below 2^53) qualify, so two different large integers cannot
+// round to a match.
+bool same_number(const std::string &a, const std::string &b) {
+  char *a_end = nullptr;
+  char *b_end = nullptr;
+  const double x = std::strtod(a.c_str(), &a_end);
+  const double y = std::strtod(b.c_str(), &b_end);
+  if (a.empty() || b.empty() || *a_end != '\0' || *b_end != '\0') return false;
+  return x == y && x < 9007199254740992.0 && x > -9007199254740992.0;
+}
+
 // The number of elements in a top-level JSON array token.
 bool array_length(const std::string &token, size_t &out) {
   if (token.size() < 2 || token.front() != '[' || token.back() != ']') return false;
@@ -553,7 +565,9 @@ bool check_expectations(const Case &kase, const Outcome &outcome, std::string &e
       continue;
     }
     if (tag == 'n') {
-      if (token != wanted) {
+      // Compared as numbers when the spellings differ: the ABI returns the
+      // claims as signed, so a claim signed as `1.0` is the expected `1`.
+      if (token != wanted && !same_number(token, wanted)) {
         error = path + ": expected " + wanted + ", got " + token;
         return false;
       }

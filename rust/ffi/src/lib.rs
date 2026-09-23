@@ -95,8 +95,8 @@ pub enum AprvReason {
     DeviceHashMismatch = 10,
     /// The payload was signed longer ago than the configured maximum.
     StalePayload = 11,
-    /// Not the caller's fault: a trusted signer signed receipt content the
-    /// library cannot read (found only after the chain and the signature
+    /// Not the caller's fault: a trusted signer signed receipt or JWS content
+    /// the library cannot read (found only after the chain and the signature
     /// passed). Alert and retry or escalate; do not deny the user on it.
     InternalError = 12,
 

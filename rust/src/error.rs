@@ -55,8 +55,8 @@ pub enum Reason {
     /// 21002); never returned by a verifier.
     MalformedRequest,
     /// Not the client's fault, status 21009 at the endpoint. Either a
-    /// trusted signer signed receipt content this library cannot read,
-    /// found only after the chain and the signature passed, or a panic
+    /// trusted signer signed receipt or JWS content this library cannot
+    /// read, found only after the chain and the signature passed, or a panic
     /// inside the `verifyReceipt` endpoint was contained. Alert and retry
     /// or escalate; do not deny the user on it.
     InternalError,
