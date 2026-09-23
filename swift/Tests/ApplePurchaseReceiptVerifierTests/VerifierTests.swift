@@ -90,6 +90,30 @@ final class VerifierTests: XCTestCase {
         }
     }
 
+    /// An x5c entry starting with U+FEFF is outside the base64 alphabet and
+    /// must be INVALID_CERTIFICATE, like any other character there. A header
+    /// parsed with `JSONSerialization` loses that leading mark (always on
+    /// Darwin), the genuine leaf decodes, and the answer becomes whatever
+    /// the signature check says; for a header signed in its mutated state,
+    /// that would be a verified JWS. Here the header is not re-signed, so
+    /// the old parse answers INVALID_SIGNATURE and only the reason tells the
+    /// two apart.
+    func testRejectsAnX5cEntryStartingWithAByteOrderMark() async throws {
+        let segments = try text("generated", "transaction.jws").components(separatedBy: ".")
+        var header = String(decoding: try XCTUnwrap(base64URLDecode(segments[0])), as: UTF8.self)
+        let x5c = try XCTUnwrap(header.range(of: "\"x5c\""))
+        let firstEntry = try XCTUnwrap(header.range(of: "\"", range: x5c.upperBound..<header.endIndex))
+        header.insert("\u{FEFF}", at: firstEntry.upperBound)
+        let mutated = Data(header.utf8).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        await assertReason(.invalidCertificate) {
+            try await self.jwsVerifier().verifyTransaction(
+                "\(mutated).\(segments[1]).\(segments[2])")
+        }
+    }
+
     func testRejectsStalePayloadAndGarbage() async throws {
         let jws = try text("generated", "transaction.jws")
         await assertReason(.stalePayload) {
@@ -357,6 +381,62 @@ final class VerifyReceiptEndpointTests: XCTestCase {
         ] {
             let response = await endpoint.verifyReceiptJSON(body)
             XCTAssertEqual(response, "{\"status\":21002}", body)
+        }
+    }
+
+    /// Apple answers 21002 to a receipt-data string that starts with a
+    /// byte-order mark (docs/evidence/2026-09-23-verifyreceipt-base64.md).
+    /// `JSONSerialization` drops that mark from a string value (always on
+    /// Darwin, and on Linux with the Swift 6.3 toolchain), which let the
+    /// genuine base64 behind it verify. The escaped spelling is the same
+    /// string once parsed, so it must get the same answer.
+    func testVerifyReceiptJSONRefusesReceiptDataStartingWithAByteOrderMark() async throws {
+        let endpoint = try endpoint(.sandbox)
+        let base64 = try fixture("generated", "receipt.der").base64EncodedString()
+        for mark in ["\u{FEFF}", "\\ufeff", "\\uFEFF"] {
+            let result = await endpoint.verifyReceiptResult("{\"receipt-data\":\"\(mark)\(base64)\"}")
+            XCTAssertEqual(result.status, 21002, mark)
+            XCTAssertEqual(result.failureReason, .invalidReceiptFormat, mark)
+        }
+    }
+
+    /// Two `receipt-data` keys: the endpoint reads the FIRST, as
+    /// `JSONDecoder` does. Apple reads the last (measured 2026-09-23), and so
+    /// did this port while it parsed with `JSONSerialization`; no shared case
+    /// pins either, and a body with a duplicate key is not one a genuine
+    /// client sends. Pinned so a change of parser shows up here.
+    func testVerifyReceiptJSONReadsTheFirstOfTwoReceiptDataKeys() async throws {
+        let endpoint = try endpoint(.sandbox)
+        let base64 = try fixture("generated", "receipt.der").base64EncodedString()
+        let genuineFirst = await endpoint.verifyReceiptResult(
+            "{\"receipt-data\":\"\(base64)\",\"receipt-data\":\"AQIDBA==\"}")
+        XCTAssertEqual(genuineFirst.status, 0)
+        let genuineLast = await endpoint.verifyReceiptResult(
+            "{\"receipt-data\":\"AQIDBA==\",\"receipt-data\":\"\(base64)\"}")
+        XCTAssertEqual(genuineLast.status, 21002)
+        XCTAssertEqual(genuineLast.failureReason, .invalidReceiptFormat)
+        let wrongTypeFirst = await endpoint.verifyReceiptResult(
+            "{\"receipt-data\":3,\"receipt-data\":\"\(base64)\"}")
+        XCTAssertEqual(wrongTypeFirst.status, 21002)
+        XCTAssertEqual(wrongTypeFirst.failureReason, .malformedRequest)
+    }
+
+    /// The decode reads one field and ignores the rest, whatever they hold.
+    func testVerifyReceiptJSONIgnoresUnknownFieldsAndRefusesAWrongTypedReceiptData() async throws {
+        let endpoint = try endpoint(.sandbox)
+        let base64 = try fixture("generated", "receipt.der").base64EncodedString()
+        let extra = await endpoint.verifyReceiptResult(
+            "{\"password\":\"s\",\"exclude-old-transactions\":true,\"x\":{\"y\":[1,null]},\"receipt-data\":\"\(base64)\"}")
+        XCTAssertEqual(extra.status, 0)
+        for value in ["3", "[]", "{}", "true"] {
+            let result = await endpoint.verifyReceiptResult("{\"receipt-data\":\(value)}")
+            XCTAssertEqual(result.status, 21002, value)
+            XCTAssertEqual(result.failureReason, .malformedRequest, value)
+        }
+        for body in ["{\"receipt-data\":null}", "{}"] {
+            let result = await endpoint.verifyReceiptResult(body)
+            XCTAssertEqual(result.status, 21002, body)
+            XCTAssertEqual(result.failureReason, .malformedRequest, body)
         }
     }
 
