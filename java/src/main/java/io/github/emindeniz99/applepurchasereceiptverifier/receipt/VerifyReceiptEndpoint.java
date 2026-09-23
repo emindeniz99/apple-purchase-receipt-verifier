@@ -1,6 +1,7 @@
 package io.github.emindeniz99.applepurchasereceiptverifier.receipt;
 
 import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.emindeniz99.applepurchasereceiptverifier.Environment;
@@ -185,7 +186,7 @@ public final class VerifyReceiptEndpoint {
         }
         Object parsed;
         try {
-            parsed = MAPPER.readValue(requestJson, Object.class);
+            parsed = readJson(requestJson);
         } catch (IOException e) {
             return VerifyReceiptResult.failed(environment, Reason.MALFORMED_REQUEST, at);
         } catch (RuntimeException e) {
@@ -235,6 +236,26 @@ public final class VerifyReceiptEndpoint {
      */
     public String verifyReceiptJson(@Nullable String requestJson) {
         return verifyReceiptResult(requestJson).toJson();
+    }
+
+    /**
+     * {@code MAPPER.readValue(json, Object.class)}, with the parser reading
+     * the whole body from one array.
+     *
+     * <p>Given a String longer than 32,768 characters, Jackson wraps it in a
+     * StringReader and reads it in chunks of a few thousand characters, and a
+     * string value longer than a chunk goes through its slow
+     * character-at-a-time path. {@code receipt-data} is such a value for any
+     * receipt with more than a handful of purchases (105,000 characters for
+     * the 187-purchase legacy fixture), and reading it that way took longer
+     * than decoding it. Over a char array Jackson builds the same parser
+     * class it uses for a short String, with the same constraints and
+     * features; the only difference is that the buffer is not recycled.</p>
+     */
+    static @Nullable Object readJson(String json) throws IOException {
+        try (JsonParser parser = MAPPER.getFactory().createParser(json.toCharArray())) {
+            return MAPPER.readValue(parser, Object.class);
+        }
     }
 
     private Instant requestDate(@Nullable Instant requestDate) {
