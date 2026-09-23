@@ -61,6 +61,7 @@ enum Reason: string
      * Not the client's fault. Status 21009. Thrown when a trusted signer
      * signed receipt content this library cannot read (found only after the
      * chain and the signature passed; the parser's error is `getPrevious()`),
+     * when a verified JWS carries a modelled claim of the wrong JSON type,
      * and reported by the endpoint for an unexpected `Throwable` inside it.
      * Alert and retry or escalate; do not deny the user on it.
      */

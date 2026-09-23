@@ -42,9 +42,9 @@ use PHPUnit\Framework\TestCase;
  * so the conformance suite cannot see it.
  *
  * The accepted envelope is Java's: finite, and inside the 64-bit range.
- * Outside it the claim stays ABSENT rather than being coerced into a bogus
- * timestamp, which is what keeps a `signedDate` past `PHP_INT_MAX` from
- * becoming a date.
+ * Outside it (or with a fraction) the typed read refuses the payload rather
+ * than coercing it into a bogus timestamp, which is what keeps a `signedDate`
+ * past `PHP_INT_MAX` from becoming a date.
  */
 #[CoversClass(JwsVerifier::class)]
 final class JsonNumberClaimTest extends TestCase
@@ -211,8 +211,9 @@ final class JsonNumberClaimTest extends TestCase
      * windows are judged at — and the payload verified. The shared vector
      * `transaction/reject-signed-date-out-of-range` pins INVALID_CHAIN
      * instead: an instant no calendar can express is inside no validity
-     * window. Only the two signing-time claims are affected; every other
-     * numeric claim is still absent rather than coerced.
+     * window. Only the two signing-time claims are affected here; any other
+     * modelled numeric claim is refused later by the typed read
+     * (INTERNAL_ERROR, see below).
      */
     #[DataProvider('unrepresentableNumberProvider')]
     public function testANumberOutsideTheSixtyFourBitRangeIsRefused(string $literal): void
@@ -237,16 +238,38 @@ final class JsonNumberClaimTest extends TestCase
         }
     }
 
-    /** A claim that is not a number at all is still absent, not coerced. */
-    public function testANonNumericDateClaimIsAbsentRatherThanCoerced(): void
+    /**
+     * The typed read is strict for every modelled integer claim: a value that
+     * is not a whole number inside the 64-bit range refuses the payload with
+     * INTERNAL_ERROR instead of reading as absent. Absent, the numeric STRING
+     * made `signedDate` null and a past-`PHP_INT_MAX` `expiresDate` read as
+     * "no expiry". A boolean is refused too, and `verifyRaw()` has no typed
+     * read, so it still returns the claim as sent.
+     *
+     * @return iterable<string, array{string, string}>
+     */
+    public static function unreadableIntegerClaimProvider(): iterable
+    {
+        yield 'numeric string' => ['signedDate', '"1722945600000"'];
+        yield 'boolean' => ['quantity', 'true'];
+        yield 'fraction' => ['expiresDate', '1722945600000.5'];
+        yield 'beyond PHP_INT_MAX' => ['expiresDate', '123456789012345678901234567890'];
+    }
+
+    #[DataProvider('unreadableIntegerClaimProvider')]
+    public function testAModelledIntegerClaimThatIsNotAWholeNumberIsInternalError(string $claim, string $literal): void
     {
         $jws = self::jwsWithPayloadJson(
-            '{"bundleId":"com.example.app","environment":"Sandbox","signedDate":"1722945600000"}',
+            '{"bundleId":"com.example.app","environment":"Sandbox","' . $claim . '":' . $literal . '}',
         );
-        $payload = (new JwsVerifier([MintedPki::get()->rootDer], 'com.example.app', [Environment::Sandbox]))
-            ->verifyTransaction($jws);
+        $verifier = new JwsVerifier([MintedPki::get()->rootDer], 'com.example.app', [Environment::Sandbox]);
 
-        self::assertNull($payload->signedDate, 'a numeric STRING must not become a timestamp');
-        self::assertSame('1722945600000', $payload->claims['signedDate']);
+        try {
+            $verifier->verifyTransaction($jws);
+            self::fail("{$claim} spelled `{$literal}` must not reach the typed payload");
+        } catch (VerificationException $e) {
+            self::assertSame(Reason::InternalError, $e->reason);
+        }
+        self::assertArrayHasKey($claim, $verifier->verifyRaw($jws));
     }
 }
