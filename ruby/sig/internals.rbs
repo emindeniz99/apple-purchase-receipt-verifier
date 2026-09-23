@@ -188,9 +188,8 @@ module ApplePurchaseReceiptVerifier
     # Both take whatever a caller passed; rejecting a non-String is their job.
     def self.binary: (untyped input) -> String
     def self.decode_base64: (untyped text) -> String
-    # nil hands the string to the tolerant path in decode_base64.
-    def self.decode_base64_strict: (String text) -> String?
-    def self.decode_base64_tolerant: (String text) -> String
+    # nil when the text is not canonical standard base64.
+    def self.decode_canonical_base64: (String text) -> String?
     # The readable certificates, the first error from an unreadable one, and
     # whether an unreadable one is the certificate the SignerInfo names.
     def self.decode_certificates: (Array[String] ders, Cms::SignerInfo signer_info)

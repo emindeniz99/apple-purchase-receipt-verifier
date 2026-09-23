@@ -254,6 +254,11 @@ reason and message. `ReceiptBase64FastPathTest` checks this on 20,000 seeded
 inputs plus hand-picked edges, comparing `decode` with the tolerant path
 alone.
 
+Superseded on 2026-09-23: `receipt-data` is now canonical standard base64
+only, as Apple's verifyReceipt measured, so the tolerant parser and
+`ReceiptBase64FastPathTest` are gone and `decode` is the JDK decoder behind
+a length check.
+
 ## 2026-09-22: `VerifyReceiptResult`
 
 The endpoint benchmarks moved to `verifyReceiptResult`, and two were added:

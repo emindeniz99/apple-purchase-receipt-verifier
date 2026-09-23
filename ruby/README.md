@@ -285,7 +285,7 @@ one pull request. (The endpoint's `MALFORMED_REQUEST`, `REQUEST_TOO_LARGE` and
 | `WRONG_BUNDLE_ID` | the payload names a different app |
 | `WRONG_ENVIRONMENT` | the environment is outside the accepted set |
 | `WRONG_APP_APPLE_ID` | a Production AppTransaction names a different app Apple id |
-| `INVALID_RECEIPT_FORMAT` | the receipt is over `MAX_RECEIPT_BYTES`, or is not a well-formed CMS blob or attribute set |
+| `INVALID_RECEIPT_FORMAT` | the receipt is over `MAX_RECEIPT_BYTES`, its base64 is not canonical standard base64 (whitespace, base64url and omitted or extra padding all count, as at Apple), or it is not a well-formed CMS blob or attribute set |
 | `DEVICE_HASH_MISMATCH` | the receipt is not bound to the device GUID supplied |
 | `STALE_PAYLOAD` | the payload was signed longer ago than `max_signed_age_seconds` |
 

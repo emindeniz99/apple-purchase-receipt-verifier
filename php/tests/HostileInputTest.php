@@ -181,26 +181,31 @@ final class HostileInputTest extends TestCase
     }
 
     /**
-     * Base64 leniency is not a security property, but it does have to be the
-     * same leniency the other ports have, or the same client transport form
-     * would work in one language and not another.
+     * The transport form is canonical standard base64 and nothing else, as
+     * Apple's verifyReceipt accepts it (measured 2026-09-23): the canonical
+     * string verifies, and each spelling a lenient decoder would map to the
+     * same DER is refused, as it is by Apple and by every other port.
      */
-    public function testBase64TransportAcceptsWhitespaceAndTheUrlSafeAlphabet(): void
+    public function testBase64TransportIsCanonicalStandardBase64Only(): void
     {
         $der = MintedPki::get()->receipt();
         $standard = base64_encode($der);
+        self::assertSame('com.example.app', self::receiptVerifier()->verify($standard)->bundleId);
 
         foreach ([
             'wrapped' => chunk_split($standard, 64, "\n"),
             'spaced' => implode(' ', str_split($standard, 40)),
-            'url-safe' => rtrim(strtr($standard, '+/', '-_'), '='),
-            'unpadded' => rtrim($standard, '='),
+            'url-safe' => strtr($standard, '+/', '-_'),
+            // Whichever way the padding is wrong for this DER's length.
+            'mis-padded' => str_ends_with($standard, '=') ? rtrim($standard, '=') : $standard . '=',
         ] as $label => $variant) {
-            self::assertSame(
-                'com.example.app',
-                self::receiptVerifier()->verify($variant)->bundleId,
-                $label,
-            );
+            self::assertNotSame($standard, $variant, $label);
+            try {
+                self::receiptVerifier()->verify($variant);
+                self::fail("{$label}: a non-canonical spelling was accepted");
+            } catch (VerificationException $e) {
+                self::assertSame(Reason::InvalidReceiptFormat, $e->reason, $label);
+            }
         }
     }
 

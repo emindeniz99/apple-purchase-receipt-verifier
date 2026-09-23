@@ -168,15 +168,17 @@ func VerifyReceiptCore(receipt []byte, trustedRoots []*x509.Certificate) (result
 
 // receiptFromBase64 is the one way a base64 receipt becomes DER: the
 // string's length is checked against the ceiling BEFORE anything is
-// decoded. decodeBase64 already stops one byte past the ceiling, but it
-// still walks every character it skips (whitespace, CR/LF), so without
-// this check a long run of whitespace would be scanned in full.
+// scanned or decoded.
 func receiptFromBase64(text string) ([]byte, error) {
 	if len(text) > MaxReceiptBytes {
 		return nil, newError(ReasonInvalidReceiptFormat,
 			"receipt base64 exceeds the %d byte limit", MaxReceiptBytes)
 	}
-	return decodeBase64(text, MaxReceiptBytes), nil
+	der := decodeBase64(text)
+	if der == nil {
+		return nil, newError(ReasonInvalidReceiptFormat, "receipt is not canonical standard base64")
+	}
+	return der, nil
 }
 
 func verifyReceiptCore(receipt []byte, roots []*x509.Certificate) (*AppReceipt, error) {

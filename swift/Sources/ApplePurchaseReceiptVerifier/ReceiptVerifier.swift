@@ -327,56 +327,31 @@ public struct ReceiptVerifier: Sendable {
 
 // MARK: - receipt-data base64
 
-/// Decodes a `receipt-data` string exactly as a client transports one,
-/// shared by ``ReceiptVerifier/verify(base64Receipt:deviceGuid:)`` and
-/// ``VerifyReceiptEndpoint/verifyReceipt(_:)``. Apple's rule: `receipt-data`
-/// is Base64 as defined in RFC 4648, and Foundation's
-/// `base64EncodedString(options:)` can emit the standard (`+/`) or the
-/// base64url (`-_`) alphabet, with or without padding, with CR/LF line
-/// endings at 64 or 76 columns — so every one of those is accepted, with
-/// whitespace (CR, LF, space, tab) tolerated anywhere. Rejected (`nil`):
-/// a character outside both alphabets, both alphabets in one string,
-/// anything but whitespace after the padding, a stripped length congruent
-/// to 1 mod 4, and an empty or whitespace-only string. No canonical-
-/// trailing-bits check — that discipline is left to `Data(base64Encoded:)`.
+/// Decodes a `receipt-data` string, shared by
+/// ``ReceiptVerifier/verify(base64Receipt:deviceGuid:)`` and
+/// ``VerifyReceiptEndpoint/verifyReceipt(_:)``, by the rule Apple's
+/// verifyReceipt applies (measured 2026-09-23, see
+/// `docs/evidence/2026-09-23-verifyreceipt-base64.md`): non-empty standard
+/// base64 (`[A-Za-z0-9+/]`) carrying exactly the canonical `=` padding for
+/// its length, and nothing else. Whitespace anywhere, base64url, omitted or
+/// extra padding and anything after the padding are rejected (`nil`). Unused
+/// low bits in the last data character are accepted, as Apple accepts them.
+/// An x5c entry is held to the same rule (``JwsVerifier``).
 ///
-/// Whitespace is stripped and the alphabet normalized to standard by
-/// walking UTF-8 bytes rather than `Character`s: Swift's `String` groups a
-/// `"\r\n"` pair into a single extended grapheme cluster, so comparing
-/// `Character`s against `"\r"` and `"\n"` individually never matches a
-/// PEM-wrapped receipt's line endings and rejects every 76-column input.
-/// Padding is validated in place rather than discarded and recomputed: `pad`
-/// counts the trailing `=` characters and `data` is the stripped length
-/// without them. The input is accepted only when `pad == 0` (no padding
-/// supplied) or `pad` equals the canonical amount for `data`'s length mod 4
-/// (`(4 - data % 4) % 4`) — any other count is rejected, including both
-/// over- and under-padded input. `data % 4 == 1` is rejected below and stays
-/// rejected regardless of padding.
+/// `Data(base64Encoded:)` alone is not the rule: on Linux
+/// (swift-corelibs-foundation, Swift 6.3) it accepts over-padded input such
+/// as "AA===", "AAAA=" and "AAAA====", and the Darwin implementation is a
+/// different code base again. So the shape is checked first, byte by byte,
+/// and the decoder only ever sees canonical input.
 func decodeReceiptBase64(_ text: String) -> Data? {
-    // Fast path for the common case, a canonical standard-alphabet string
-    // with no whitespace: hand it to Foundation's decoder directly, without
-    // the copy the tolerant path builds. Foundation alone is NOT a subset of
-    // the rule above: on Linux (swift-corelibs-foundation, Swift 6.3)
-    // `Data(base64Encoded:)` accepts over-padded input such as "AA===",
-    // "AAAA=" and "AAAA====", and the Darwin implementation is a different
-    // code base again. So the shape is checked here first, byte by byte, and
-    // the decoder only ever sees a string the tolerant path would accept and
-    // pass to it unchanged: [A-Za-z0-9+/] data, then exactly the canonical
-    // '=' run. The bytes are then identical on every platform by
-    // construction. Anything else, or a nil from the decoder, falls through
-    // to the tolerant path, so rejections are unchanged.
-    // ReceiptBase64FastPathTests compares the two on 20,000 seeded inputs.
-    if isCanonicalStandardBase64(text), let decoded = Data(base64Encoded: text) {
-        return decoded
-    }
-    return decodeReceiptBase64Tolerant(text)
+    guard isCanonicalStandardBase64(text) else { return nil }
+    return Data(base64Encoded: text)
 }
 
 /// True when `text` is non-empty `[A-Za-z0-9+/]` data followed by the
 /// canonical padding for its length and nothing else: total length a
-/// multiple of four with at most two trailing `=`. Every such string passes
-/// each rule of ``decodeReceiptBase64Tolerant(_:)`` with nothing stripped or
-/// translated, and that function then hands the decoder the same bytes.
+/// multiple of four with at most two trailing `=`. Walks UTF-8 bytes rather
+/// than `Character`s, which would fuse "\r\n" into one grapheme.
 func isCanonicalStandardBase64(_ text: String) -> Bool {
     var count = 0
     var padding = 0
@@ -395,64 +370,6 @@ func isCanonicalStandardBase64(_ text: String) -> Bool {
         }
     }
     return count > 0 && count % 4 == 0 && padding <= 2
-}
-
-/// The full rule described on ``decodeReceiptBase64(_:)``, without the fast
-/// path. Internal so the differential test can compare the two.
-func decodeReceiptBase64Tolerant(_ text: String) -> Data? {
-    var body: [UInt8] = []
-    var sawPadding = false
-    var padCount = 0
-    var standardAlphabet = false
-    var urlsafeAlphabet = false
-
-    for byte in text.utf8 {
-        switch byte {
-        case 0x0D, 0x0A, 0x20, 0x09:  // \r \n space \t
-            continue
-        default:
-            break
-        }
-        if sawPadding {
-            guard byte == 0x3D else { return nil }  // only '=' may follow padding
-            padCount += 1
-            continue
-        }
-        switch byte {
-        case 0x3D:  // '='
-            sawPadding = true
-            padCount = 1
-        case 0x2B:  // '+'
-            standardAlphabet = true
-            body.append(0x2B)
-        case 0x2F:  // '/'
-            standardAlphabet = true
-            body.append(0x2F)
-        case 0x2D:  // '-'
-            urlsafeAlphabet = true
-            body.append(0x2B)
-        case 0x5F:  // '_'
-            urlsafeAlphabet = true
-            body.append(0x2F)
-        case 0x30...0x39, 0x41...0x5A, 0x61...0x7A:  // 0-9 A-Z a-z
-            body.append(byte)
-        default:
-            return nil
-        }
-    }
-
-    guard !(standardAlphabet && urlsafeAlphabet) else { return nil }
-    guard !body.isEmpty else { return nil }
-    // The impossible-length test is on the DATA, not the padded string:
-    // "A===" is a multiple of four in total and still encodes no whole byte.
-    guard body.count % 4 != 1 else { return nil }
-
-    let remainder = body.count % 4
-    guard padCount == 0 || padCount == (4 - remainder) % 4 else { return nil }
-    if remainder != 0 {
-        body.append(contentsOf: repeatElement(UInt8(ascii: "="), count: 4 - remainder))
-    }
-    return Data(base64Encoded: Data(body), options: [])
 }
 
 // MARK: - CMS SignedData (BER-tolerant)

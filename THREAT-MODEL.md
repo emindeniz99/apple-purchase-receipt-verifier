@@ -184,14 +184,37 @@ nothing about why. PLAN.md D16 makes this the price of hand-written readers.
 ### 3.8 Base64 malleability at the endpoint
 
 The string a client sends is not the receipt, and two decoders that disagree
-about what a string means are two verdicts. Everything Foundation's
-`base64EncodedString(options:)` can emit is accepted: both alphabets, padded
-or unpadded, CR/LF wrapped at 64 or 76 columns, with padding omitted or
-canonical but never over- or under-supplied. Anything else is
-`INVALID_RECEIPT_FORMAT`, which is 21002 at the endpoint. *Proof:* the sixteen
-`receipt-base64/*` cases, eight accepting and eight rejecting, plus
-`endpoint/receipt-data-urlsafe-padded`,
-`endpoint/receipt-data-junk-after-padding` and `endpoint/receipt-data-empty`.
+about what a string means are two verdicts. The rule is the one Apple's
+verifyReceipt applies, measured on 2026-09-23 against production and sandbox
+with genuine receipts
+([`docs/evidence/2026-09-23-verifyreceipt-base64.md`](./docs/evidence/2026-09-23-verifyreceipt-base64.md)):
+`receipt-data` is accepted only as non-empty standard base64 (`[A-Za-z0-9+/]`)
+carrying exactly the canonical `=` padding for its length, with nothing else in
+the string. Whitespace anywhere (a trailing line feed, line breaks at 64 or 76
+columns, a leading space), the base64url alphabet, omitted, partial or extra
+padding, anything after the padding and the empty string are all
+`INVALID_RECEIPT_FORMAT`, which is 21002 at the endpoint. The one freedom left
+is the unused low bits of the last data character, which Apple accepts, so
+every port accepts them too. Every port decodes with its standard library's
+base64 decoder (the `base64` crate in Rust) behind a shape check for whatever
+that decoder does not refuse on its own.
+
+The rule this replaced accepted everything Foundation's
+`base64EncodedString(options:)` can emit. It was reasoned from Apple's
+documentation and never measured, and Apple refuses base64url, omitted padding
+and line breaks alike.
+
+An `x5c` entry follows the same rule and fails as `INVALID_CERTIFICATE`.
+
+*Proof:* the nineteen `receipt-base64/*` cases, three accepting and sixteen
+rejecting, plus `endpoint/receipt-data-urlsafe-padded`,
+`endpoint/receipt-data-junk-after-padding`, `endpoint/receipt-data-empty` and
+`endpoint/receipt-data-noncanonical-trailing-bits`; for `x5c`,
+`transaction/reject-x5c-leaf-with-junk-character`,
+`transaction/reject-x5c-leaf-in-base64url-alphabet`,
+`transaction/reject-x5c-leaf-with-line-breaks`,
+`transaction/reject-x5c-leaf-without-padding` and
+`transaction/reject-x5c-leaf-with-extra-padding`.
 
 ### 3.9 Port divergence is itself a finding, and roots do not move
 

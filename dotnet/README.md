@@ -160,7 +160,7 @@ No endpoint method throws: the Apple status code is a field of the answer.
 |---|---|---|
 | the raw body is over `MaxRequestBytes` (3,145,728 UTF-8 bytes); Apple answers HTTP 413 here | `21002` | `RequestTooLarge` |
 | body is not a JSON object or nests deeper than 64, or `receipt-data` is missing, empty or not a string | `21002` | `MalformedRequest` |
-| `receipt-data` is not base64, is over `MaxReceiptBytes`, or does not decode to a receipt | `21002` | `InvalidReceiptFormat` |
+| `receipt-data` is not canonical standard base64 (whitespace, base64url and omitted or extra padding all count, as at Apple), is over `MaxReceiptBytes`, or does not decode to a receipt | `21002` | `InvalidReceiptFormat` |
 | the receipt could not be authenticated | `21003` | `InvalidChain`, `InvalidSignature`, other certificate reasons |
 | an unexpected exception (including a throwing `IClock` or request dictionary, or a disposed endpoint) | `21009` | `InternalError`, with the exception in `FailureCause` |
 | a Production endpoint, and `receiptType ∉ {Production, ProductionVPP}` | `21007` | none: `Receipt` is set |
@@ -230,7 +230,7 @@ One exception type, `VerificationException`. Switch on `.Reason`; report
 | `VerificationReason` | `ReasonCode` | Raised when |
 |---|---|---|
 | `InvalidJwsFormat` | `INVALID_JWS_FORMAT` | not three dot-separated segments, `alg != ES256`, `x5c` absent or not exactly three, header or payload not base64url JSON |
-| `InvalidCertificate` | `INVALID_CERTIFICATE` | an `x5c` entry is not base64, or not a parseable certificate |
+| `InvalidCertificate` | `INVALID_CERTIFICATE` | an `x5c` entry is not canonical standard base64, or not a parseable certificate |
 | `InvalidCertificatePurpose` | `INVALID_CERTIFICATE_PURPOSE` | a required Apple marker OID is missing |
 | `InvalidChain` | `INVALID_CHAIN` | the chain does not reach a pinned root at the signing time, an issuer is not a CA, the path is too long, or the receipt embeds more than ten certificates |
 | `InvalidSignature` | `INVALID_SIGNATURE` | the ES256 or CMS signature check failed, or the key is of the wrong type |

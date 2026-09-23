@@ -27,9 +27,8 @@ endpoint = []
 # ASN.1 — certificates, CMS, receipt payloads, keys, signatures — is parsed
 # by this crate's own bounded reader, so no third-party parser decides what a
 # key or a signature is. What is delegated is arithmetic: modular
-# exponentiation, two curves, three digests, and the canonical-base64 fast
-# path for `receipt-data` (anything `base64` refuses falls through to this
-# crate's own tolerant decoder; see `src/base64.rs`).
+# exponentiation, two curves, three digests, and the base64 decode of
+# `receipt-data` and `x5c` entries (`src/base64.rs`).
 #
 # `deny.toml` bans, as a build-breaking rule, every crate that could bring a
 # system trust store or a network client into the tree.

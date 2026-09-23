@@ -438,12 +438,12 @@ func TestBase64AndDERPathsAgree(t *testing.T) {
 	if fromDER.BundleID != fromBase64.BundleID || !fromDER.CreationDate.Equal(*fromBase64.CreationDate) {
 		t.Fatal("the DER and base64 entry points must decode the same receipt identically")
 	}
-	// Base64 leniency parity with Java's MIME decoder and Node's Buffer:
-	// PEM-style line breaks and whitespace are skipped, not rejected.
+	// Apple's verifyReceipt answers 21002 to line-wrapped base64 (measured
+	// 2026-09-23), so the base64 path refuses it rather than skipping the
+	// line breaks on the way to the same DER.
 	wrapped := wrapLines(base64.StdEncoding.EncodeToString(der), 64)
-	if _, err := verifier.VerifyBase64(wrapped); err != nil {
-		t.Fatalf("line-wrapped base64 must decode, as it does in the other ports: %v", err)
-	}
+	_, err = verifier.VerifyBase64(wrapped)
+	requireReason(t, err, applereceipt.ReasonInvalidReceiptFormat)
 }
 
 func wrapLines(text string, width int) string {

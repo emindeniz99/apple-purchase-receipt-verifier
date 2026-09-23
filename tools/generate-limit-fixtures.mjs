@@ -22,11 +22,17 @@
  * contentSha256 in cases.json has to change with it, and the script prints
  * the digests to copy.
  *
- * Every file is built from one genuine input plus padding the input's own
- * format allows, so the limit is the only thing that can refuse the file
- * that is one byte over:
+ * Every file but one is built from one genuine input plus padding the
+ * input's own format allows, so the limit is the only thing that can refuse
+ * the file that is one byte over. The exception is the receipt string:
+ * receipt-data must be canonical base64 with nothing around it, so no
+ * padding exists that keeps it valid. Its at-cap file is a genuinely signed
+ * receipt whose canonical base64 is exactly the cap, written by
+ * java/src/test/.../ReceiptBase64CapFixture.java and only READ here; the
+ * over-cap file is that string plus one LF, which the strict rule would
+ * refuse even without the cap.
  *
- *   receipt-b64-*.txt      the genuine sandbox receipt string, then LF
+ *   receipt-b64-over-cap   limits/receipt-b64-at-cap.txt, then LF
  *   receipt-der-*.der      the shared generated receipt, then zero bytes
  *   body-ascii-*.json      {"receipt-data":"<genuine>"<spaces>}
  *   body-2byte-*.json      {"receipt-data":"<genuine>","password":"<U+00E9...>"}
@@ -55,6 +61,9 @@ const read = (path) => readFileSync(join(FIXTURES, path));
 const receiptText = read('generated/receipt-b64/01-genuine.txt');
 // The shared generated receipt, as DER.
 const receiptDer = read('generated/receipt.der');
+// ReceiptBase64CapFixture's canonical string of exactly CAP characters.
+const receiptAtCap = read('limits/receipt-b64-at-cap.txt');
+if (receiptAtCap.length !== CAP) throw new Error(`limits/receipt-b64-at-cap.txt is ${receiptAtCap.length} bytes`);
 // Apple's mock renewal-info JWS, trimmed like the utf8 codec trims it.
 const jws = Buffer.from(read('apple-official/mock_signed_data/renewalInfo').toString('utf8').trim(), 'utf8');
 
@@ -77,8 +86,7 @@ function nested(arrays) {
 }
 
 const files = {
-  'receipt-b64-at-cap.txt': padded(receiptText, '\n', text(''), CAP),
-  'receipt-b64-over-cap.txt': padded(receiptText, '\n', text(''), CAP + 1),
+  'receipt-b64-over-cap.txt': padded(receiptAtCap, '\n', text(''), CAP + 1),
   'receipt-der-over-cap.der': padded(receiptDer, '\u0000', text(''), CAP + 1),
   'body-ascii-at-cap.json': padded(Buffer.concat([bodyStart, text('"')]), ' ', text('}'), CAP),
   'body-ascii-over-cap.json': padded(Buffer.concat([bodyStart, text('"')]), ' ', text('}'), CAP + 1),

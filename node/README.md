@@ -272,7 +272,7 @@ verified it. Any environment other than `'Production'` or `'Sandbox'` is a
 |---|---|---|
 | `REQUEST_TOO_LARGE` | 21002 | the raw body is over `MAX_REQUEST_BYTES` (3,145,728 UTF-8 bytes); Apple answers HTTP 413 here, see [Input limits](#input-limits) |
 | `MALFORMED_REQUEST` | 21002 | the request is not an object, the string is not a JSON object or nests past 64 levels, or `receipt-data` is missing, empty or not a string |
-| `INVALID_RECEIPT_FORMAT` | 21002 | `receipt-data` is over `MAX_RECEIPT_BYTES`, is not base64 or does not decode to a receipt |
+| `INVALID_RECEIPT_FORMAT` | 21002 | `receipt-data` is over `MAX_RECEIPT_BYTES`, is not canonical standard base64 (whitespace, base64url and omitted or extra padding all count, as at Apple) or does not decode to a receipt |
 | `INVALID_CHAIN`, `INVALID_SIGNATURE`, other certificate reasons | 21003 | the receipt did not authenticate |
 | `INTERNAL_ERROR` | 21009 | an unexpected error; `failureCause` holds it |
 

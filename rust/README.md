@@ -42,9 +42,8 @@ Synchronous, `#![forbid(unsafe_code)]`, Rust 1.85 or newer.
   `Cargo.lock`, which is committed and resolved for that floor. Edition 2021.
 - **Nine direct dependencies**, all of them primitives: `rsa`, `p256`,
   `p384`, `sha1`, `sha2`, `digest` and `subtle` for the arithmetic,
-  `serde_json` for the JWS payloads, which are JSON, and `base64` for the
-  fast path over canonical `receipt-data` (anything it refuses falls through
-  to this crate's own decoder for Apple's tolerant rule). Every byte of
+  `serde_json` for the JWS payloads, which are JSON, and `base64` for
+  `receipt-data` and `x5c` entries. Every byte of
   attacker-supplied ASN.1 — certificates, CMS,
   receipt payloads, keys, signatures — is parsed by this crate's own bounded
   reader, so no third-party parser decides what a key or a signature is.
@@ -130,17 +129,14 @@ verifier.verify_base64_with_device_guid(text, guid)?;
 ```
 
 `verify_base64` and `verify_base64_with_device_guid` decode exactly what
-Apple's `receipt-data` accepts: Base64 as RFC 4648 defines it, the way
-Foundation's `base64EncodedString(options:)` can emit it — the standard
-alphabet or base64url, padded or not, with `CR`/`LF` line breaks at 64 or 76
-columns. Concretely: `+`/`/` or `-`/`_` (never both in the same string),
-padding present or omitted, and `\r`, `\n`, ` ` or `\t` anywhere. A character
-neither alphabet defines, both alphabets in one string, anything but
-whitespace once padding has started, an empty or whitespace-only string, or a
-`=` count other than zero or the exact count the data length requires (no
-over- or under-padding) is `INVALID_RECEIPT_FORMAT` (`21002` at the endpoint)
-before any bytes reach the CMS parser — see `decode_receipt_base64` in
-`base64.rs`.
+Apple's verifyReceipt accepts as `receipt-data` (measured 2026-09-23, see
+[`docs/evidence/2026-09-23-verifyreceipt-base64.md`](../docs/evidence/2026-09-23-verifyreceipt-base64.md)):
+standard base64 (`+`/`/`) with the canonical `=` padding and nothing else.
+Whitespace anywhere, the base64url alphabet, omitted or extra padding,
+anything after the padding and an empty string are `INVALID_RECEIPT_FORMAT`
+(`21002` at the endpoint) before any bytes reach the CMS parser. Unused low
+bits in the last data character are accepted, as Apple accepts them. See
+`decode_receipt_base64` in `base64.rs`.
 
 Every input form is reachable with and without the device GUID. Passing one
 additionally enforces the device binding:
@@ -494,12 +490,11 @@ has exactly one accepted spelling; a segment that is not that exact spelling
 is `INVALID_JWS_FORMAT`, decided before any cryptography runs, the same class
 as a header that is not base64url JSON. An `x5c` entry is a certificate,
 not a segment, and RFC 7515 §4.1.6 makes it standard base64: a character
-outside that alphabet, a line break or a base64url `-` or `_` is
-`INVALID_CERTIFICATE`, refused rather than skipped, as in every port.
-
-`receipt-data` is looser than either: an unrecognised character is a hard
-`INVALID_RECEIPT_FORMAT`, but both alphabets and line breaks are accepted,
-since Apple's own client can send them; see the `verify_base64` rule above.
+outside that alphabet, a line break, a base64url `-` or `_`, or omitted or
+extra `=` padding is `INVALID_CERTIFICATE`, refused rather than skipped, as in
+every port. It follows the `receipt-data` rule above, which differs from the
+segment rule in one way: the unused low bits of the last data character are
+not checked, because Apple does not check them.
 
 The receipt path draws one line worth stating: an embedded certificate that
 will not decode is fatal, but the reason depends on which one it is. A

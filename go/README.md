@@ -405,8 +405,8 @@ func redeemReceipt(receipts *applereceipt.ReceiptVerifier, userID, receiptData, 
   | compact JWS | `MaxJWSBytes` = 262,144 bytes | split and base64url decode | `INVALID_JWS_FORMAT` |
   | JWS header and payload nesting | `MaxJSONNestingDepth` = 64 | JSON parse | `INVALID_JWS_FORMAT` |
 
-  A string is measured as sent, in bytes, whitespace and PEM line breaks
-  included, because the decoder walks those characters too. A Go string or
+  A string is measured as sent, in bytes, before the decoder's shape check
+  walks it. A Go string or
   `[]byte` already holds UTF-8 bytes, so `len` is Apple's measure and nothing
   is copied to take it. Nesting is counted in one pass over the bytes
   (brackets inside strings do not count) before `encoding/json` sees them.
@@ -474,18 +474,18 @@ toolchain; if a future Go closes it, the documented replacement is
 `rsa.VerifyPKCS1v15(pub, crypto.SHA1, sha1(tbs), sig)`, which that test also
 exercises.
 
-**Base64 strictness.** Receipt base64 — `ReceiptVerifier.VerifyBase64` and the
+**Base64 strictness.** Receipt base64 (`ReceiptVerifier.VerifyBase64` and the
 `verifyReceipt` endpoint's `receipt-data`, and `x5c` along with it, since they
-share a decoder — accepts what Foundation's `base64EncodedString(options:)`
-can emit and rejects everything else: the standard (`+/`) or the base64url
-(`-_`) alphabet, not both in the same string; padding present or omitted; and
-CR, LF, space or tab anywhere, stripped before decoding. A character outside
-both alphabets, a mixed alphabet, anything but whitespace after the padding
-starts, padding whose length is not exactly what the unpadded data requires
-(over- or under-padded), a stripped length congruent to 1 mod 4, or an empty
-or whitespace-only string is `INVALID_RECEIPT_FORMAT` (`21002` at the
-endpoint).
-There is no canonical-trailing-bits check. This is the cross-port contract
+share a decoder) is accepted exactly as Apple's verifyReceipt accepts it
+(measured 2026-09-23, see
+[`docs/evidence/2026-09-23-verifyreceipt-base64.md`](../docs/evidence/2026-09-23-verifyreceipt-base64.md)):
+standard base64 (`+/`) with the canonical `=` padding and nothing else. CR,
+LF, space or tab anywhere, the base64url alphabet, omitted or extra padding,
+anything after the padding, an impossible length and an empty string are
+`INVALID_RECEIPT_FORMAT` (`21002` at the endpoint; `INVALID_CERTIFICATE` for
+an `x5c` entry). Unused low bits in the last data character are accepted, as
+Apple accepts them, which is why the decoder is `base64.StdEncoding` behind a
+shape check rather than `StdEncoding.Strict()`. This is the cross-port contract
 every implementation is held to (`fixtures/cases.json`'s `receipt-base64/*`
 and `endpoint/receipt-data-*` vectors), not a Go-specific choice. Compact-JWS
 segments are decoded **strictly**, by a separate decoder — a character

@@ -230,7 +230,7 @@ the constructor does.
 |---|---|---|
 | `Reason::RequestTooLarge` | 21002 | the raw body is over `MAX_REQUEST_BYTES` (3,145,728 bytes); Apple answers HTTP 413 here, see [Defensive bounds](#defensive-bounds) |
 | `Reason::MalformedRequest` | 21002 | the body is not a JSON object or nests past 64 levels, or `receipt-data` is missing, empty or not a string |
-| `Reason::InvalidReceiptFormat` | 21002 | `receipt-data` is not base64, is over `ReceiptVerifier::MAX_RECEIPT_BYTES` (3,145,728 bytes), or does not decode to a receipt |
+| `Reason::InvalidReceiptFormat` | 21002 | `receipt-data` is not canonical standard base64 (whitespace, base64url and omitted or extra padding all count, as at Apple), is over `ReceiptVerifier::MAX_RECEIPT_BYTES` (3,145,728 bytes), or does not decode to a receipt |
 | `Reason::InvalidChain`, `Reason::InvalidSignature`, other certificate reasons | 21003 | the receipt did not authenticate |
 | `Reason::InternalError` | 21009 | an unexpected `Throwable`; `failureCause()` holds it |
 

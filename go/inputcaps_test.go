@@ -79,8 +79,9 @@ func requireVerifiedBody(t *testing.T, result *applereceipt.VerifyReceiptResult)
 	}
 }
 
-// padToLength appends newlines, which the base64 decoder skips, so a
-// genuine receipt's string can be placed exactly at, or one past, the cap.
+// padToLength appends newlines to place a genuine receipt's string one past
+// the cap. receipt-data is canonical base64 only, so such a string is
+// refused with or without the cap; the message shows which one answered.
 func padToLength(encoded string, length int) string {
 	return encoded + strings.Repeat("\n", length-len(encoded))
 }
@@ -93,7 +94,13 @@ func TestReceiptBase64CapIsCheckedBeforeDecoding(t *testing.T) {
 	endpoint := endpointFor(t, pki.anchors(), applereceipt.EnvironmentSandbox, fixedClock)
 	genuine := receiptOfType(t, pki, "ProductionSandbox")
 
-	atCap := padToLength(genuine, applereceipt.MaxReceiptBytes)
+	// Canonical base64 admits nothing around the data, so the string at the
+	// cap is a genuine receipt whose base64 is exactly the cap: 3/4 of it
+	// in DER, no padding.
+	atCap := base64.StdEncoding.EncodeToString(receiptOfSize(t, pki, applereceipt.MaxReceiptBytes/4*3))
+	if len(atCap) != applereceipt.MaxReceiptBytes {
+		t.Fatalf("built a %d-character receipt string, want %d", len(atCap), applereceipt.MaxReceiptBytes)
+	}
 	if _, err := verifier.VerifyBase64(atCap); err != nil {
 		t.Fatalf("a receipt string of exactly the cap was refused: %v", err)
 	}
@@ -128,8 +135,8 @@ func TestReceiptBase64CapIsCheckedBeforeDecoding(t *testing.T) {
 		})
 	}
 
-	// The same genuine receipt one character past the cap: the cap is the
-	// only thing wrong with it.
+	// A genuine receipt padded one character past the cap: the message
+	// shows the cap answered, not the decode that would refuse the padding.
 	_, err := verifier.VerifyBase64(padToLength(genuine, applereceipt.MaxReceiptBytes+1))
 	requireMessage(t, err, message)
 

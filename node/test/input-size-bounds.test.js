@@ -59,10 +59,18 @@ async function countingCalls(owner, name, isOversized, call) {
   return calls;
 }
 
-// A genuine receipt followed by whitespace, which the receipt-data decoder
-// strips: the padded string decodes to the same verifying DER at any length,
-// so a refusal of it can only come from the cap.
+// A genuine receipt followed by spaces. receipt-data is canonical base64
+// only, so this is refused with or without the cap: the over-cap tests show
+// the cap fired by its message and by the shape check never running.
 const paddedReceipt = (length) => receiptB64 + ' '.repeat(length - receiptB64.length);
+
+// Canonical base64 admits nothing around the data, so the string AT the cap
+// is a genuinely signed receipt whose base64 is exactly the cap
+// (ReceiptBase64CapFixture), under a root of its own.
+const atCapReceipt = readFileSync(
+  fileURLToPath(new URL('../../fixtures/limits/receipt-b64-at-cap.txt', import.meta.url)),
+  'ascii',
+);
 
 // A verifyReceipt body of exactly `bytes` UTF-8 bytes: the genuine receipt
 // plus an extra member whose value fills the rest with `unit`.
@@ -120,20 +128,24 @@ for (const [name, build] of BUILDS) {
 
   // --- receipt base64 string ------------------------------------------------
 
+  const atCapRoots = [gen('receipt-b64-cap-root.der')];
+
   test(`${name}: a receipt string at the cap still verifies`, async () => {
-    const receipt = await receiptVerifier().verify(paddedReceipt(MAX_RECEIPT_BYTES));
+    assert.equal(atCapReceipt.length, MAX_RECEIPT_BYTES);
+    const verifier = new build.ReceiptVerifier({ trustedRoots: atCapRoots, bundleId: BUNDLE });
+    const receipt = await verifier.verify(atCapReceipt);
     assert.equal(receipt.bundleId, BUNDLE);
   });
 
   test(`${name}: a receipt string one over the cap is refused before decoding`, async () => {
     const input = paddedReceipt(MAX_RECEIPT_BYTES + 1);
     let error;
-    // The strict decode starts by stripping whitespace with replace(); the
-    // oversized string must never get that far.
-    const replaces = await countingCalls(
-      String.prototype,
-      'replace',
-      (self) => typeof self === 'string' && self.length > MAX_RECEIPT_BYTES,
+    // The decode starts with the shape check, a RegExp test over the whole
+    // string; the oversized string must never get that far.
+    const shapeChecks = await countingCalls(
+      RegExp.prototype,
+      'test',
+      (_self, args) => typeof args[0] === 'string' && args[0].length > MAX_RECEIPT_BYTES,
       async () => {
         error = await failureOf(() => receiptVerifier().verify(input));
       },
@@ -143,7 +155,7 @@ for (const [name, build] of BUILDS) {
       error.message,
       'INVALID_RECEIPT_FORMAT: receipt exceeds the maximum accepted size of 3145728 bytes',
     );
-    assert.equal(replaces, 0);
+    assert.equal(shapeChecks, 0);
   });
 
   // --- receipt DER -----------------------------------------------------------
@@ -169,7 +181,10 @@ for (const [name, build] of BUILDS) {
   // --- endpoint receipt-data -------------------------------------------------
 
   test(`${name}: endpoint receipt-data at the cap verifies, one over is 21002`, async () => {
-    const atCap = await endpoint().verifyReceiptData(paddedReceipt(MAX_RECEIPT_BYTES));
+    const atCap = await new build.VerifyReceiptEndpoint({
+      trustedRoots: atCapRoots,
+      environment: 'Sandbox',
+    }).verifyReceiptData(atCapReceipt);
     assert.equal(atCap.status, 0);
 
     const over = await endpoint().verifyReceiptData(paddedReceipt(MAX_RECEIPT_BYTES + 1));

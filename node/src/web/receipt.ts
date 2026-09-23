@@ -1,5 +1,5 @@
 import { Reason, VerificationError } from '../errors.js';
-import { concatBytes, receiptBase64DecodeStrict, timingSafeBytesEqual } from '../bytes.js';
+import { base64Decode, concatBytes, isCanonicalBase64, timingSafeBytesEqual } from '../bytes.js';
 import {
   findMessageDigestAttribute,
   findSignerCertIndex,
@@ -47,19 +47,18 @@ export interface ReceiptVerifierOptions {
  * Shared by {@link ReceiptVerifier.verify} and the web VerifyReceiptEndpoint.
  */
 export function decodeReceiptDataString(text: string): Uint8Array {
-  // Before the decode, which allocates a stripped copy of the string and
-  // then the bytes it decodes to.
+  // Before the shape check and the decode, which scan the whole string and
+  // allocate the bytes it decodes to.
   if (utf8LengthExceeds(text, MAX_RECEIPT_BYTES)) {
     throw new VerificationError(
       Reason.INVALID_RECEIPT_FORMAT,
       `receipt exceeds the maximum accepted size of ${MAX_RECEIPT_BYTES} bytes`,
     );
   }
-  const decoded = receiptBase64DecodeStrict(text);
-  if (decoded === null) {
+  if (!isCanonicalBase64(text)) {
     throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'receipt-data is not valid base64');
   }
-  return decoded;
+  return base64Decode(text);
 }
 
 /**
@@ -165,9 +164,9 @@ export class ReceiptVerifier {
   /**
    * Verifies a receipt (DER bytes, or its base64 string — the usual client
    * transport form). A string is decoded per the receipt-data contract
-   * (RFC 4648, standard or base64url alphabet, not mixed, padding optional —
-   * see {@link receiptBase64DecodeStrict}, matching the Node build); anything
-   * that decode rejects throws {@link Reason.INVALID_RECEIPT_FORMAT}. Passing
+   * (canonical standard base64 and nothing else, as Apple's verifyReceipt
+   * accepts it — see {@link isCanonicalBase64}, matching the Node build);
+   * anything else throws {@link Reason.INVALID_RECEIPT_FORMAT}. Passing
    * `deviceGuid` additionally enforces the device-hash binding:
    * SHA1(guid ‖ opaqueValue ‖ bundleIdBytes) must equal attribute 5
    * (optional — PLAN.md D4).

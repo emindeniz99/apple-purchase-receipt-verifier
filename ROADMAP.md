@@ -29,7 +29,10 @@ Delete a line in the commit that ships it.
   at 256 KiB, and `fixtures/cases.json` holds every cap as a MUST from both
   sides. Swift's release-build crash on Linux x86_64 with
   Swift 6.3.3 is fixed (#126), and CI now runs the Swift tests in release
-  mode. PORTS.md has the per-port detail.
+  mode. PORTS.md has the per-port detail. The tolerant decoder and its
+  fast path were replaced on 2026-09-23 by the rule Apple's verifyReceipt
+  was measured to apply, canonical standard base64 only (THREAT-MODEL.md
+  §3.8).
 - **0.6.0 release notes must warn Swift users of 0.4.0 to 0.5.1**: release
   builds of those versions crash on a genuine receipt on Linux x86_64
   under Swift 6.3.3 (a miscompiled throw path, #126). Debug builds and

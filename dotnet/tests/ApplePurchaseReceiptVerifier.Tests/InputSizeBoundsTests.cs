@@ -39,16 +39,25 @@ public class InputSizeBoundsTests
     private static string B64(string fixture) => Convert.ToBase64String(Fixtures.Bytes(fixture));
 
     /// <summary>
-    /// A genuine receipt's base64, wrapped the way Foundation may send it and
-    /// padded with trailing line feeds to exactly <paramref name="length"/>.
-    /// Trailing whitespace is accepted by the decoder, so the padding changes
-    /// the length and nothing else.
+    /// A genuine receipt's base64 padded with trailing line feeds to exactly
+    /// <paramref name="length"/>. receipt-data is canonical base64 only, so
+    /// the decoder would refuse the line feeds too: an over-cap test shows the
+    /// cap answered by its message, not by the verdict.
     /// </summary>
     private static string PaddedReceipt(int length)
     {
         string base64 = B64("receipt");
         return base64 + new string('\n', length - base64.Length);
     }
+
+    /// <summary>
+    /// Canonical base64 admits nothing around the data, so the string AT the
+    /// cap is a genuinely signed receipt whose base64 is exactly the cap
+    /// (ReceiptBase64CapFixture), verified under a root of its own.
+    /// </summary>
+    private static string AtCapReceipt() => Fixtures.Text("limit-receipt-b64-at-cap");
+
+    private static IReadOnlyList<X509Certificate2> AtCapRoots() => Roots("receipt-b64-cap-root");
 
     [Fact]
     public void TheCapsAreTheCrossPortNumbers()
@@ -64,18 +73,18 @@ public class InputSizeBoundsTests
     [Fact]
     public void AReceiptStringAtTheCapIsNotRefusedByIt()
     {
-        string atCap = PaddedReceipt(ReceiptVerifier.MaxReceiptBytes);
+        string atCap = AtCapReceipt();
         Assert.Equal(ReceiptVerifier.MaxReceiptBytes, atCap.Length);
 
-        using ReceiptVerifier verifier = new(Roots(), "com.example.app");
+        using ReceiptVerifier verifier = new(AtCapRoots(), "com.example.app");
         Assert.Equal("com.example.app", verifier.Verify(atCap).BundleId);
     }
 
     [Fact]
     public void AReceiptStringOneOverTheCapIsRefusedBeforeDecoding()
     {
-        // The same receipt that verifies at the cap. Only the cap can refuse
-        // it, and its message is not one the decoder or the CMS parse emits.
+        // Its message is not one the decoder or the CMS parse emits, so the
+        // cap is what answered.
         string overCap = PaddedReceipt(ReceiptVerifier.MaxReceiptBytes + 1);
 
         using ReceiptVerifier verifier = new(Roots(), "com.example.app");
@@ -146,8 +155,8 @@ public class InputSizeBoundsTests
     [Fact]
     public void ReceiptDataAtTheCapVerifiesAtTheEndpoint()
     {
-        using VerifyReceiptEndpoint endpoint = new(Roots(), AppleEnvironment.Sandbox);
-        string atCap = PaddedReceipt(ReceiptVerifier.MaxReceiptBytes);
+        using VerifyReceiptEndpoint endpoint = new(AtCapRoots(), AppleEnvironment.Sandbox);
+        string atCap = AtCapReceipt();
 
         Assert.Equal(0, endpoint.VerifyReceiptData(atCap, Now).Status);
         Dictionary<string, object?> body = new(StringComparer.Ordinal) { ["receipt-data"] = atCap };

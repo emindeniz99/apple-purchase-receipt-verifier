@@ -106,8 +106,7 @@ public func fail(_ message: String) -> Never {
 /// The three readers this port writes by hand, exposed so the `readers`
 /// target can drive them directly rather than through a verifier.
 public enum Readers {
-    /// The receipt base64 rule: whitespace-tolerant, one alphabet at a time,
-    /// padding validated in place.
+    /// The receipt base64 rule: canonical standard base64 and nothing else.
     public static func decodeReceiptBase64(_ text: String) -> Data? {
         ApplePurchaseReceiptVerifier.decodeReceiptBase64(text)
     }

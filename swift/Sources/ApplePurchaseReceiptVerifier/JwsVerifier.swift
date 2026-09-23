@@ -206,13 +206,13 @@ public struct JwsVerifier: Sendable {
         // swapping in a stranger's root still changes nothing — but an entry
         // that is not a certificate is INVALID_CERTIFICATE at every index
         // (transaction/reject-x5c-root-that-is-not-a-certificate).
-        // `.ignoreUnknownCharacters` would skip junk, whitespace and
-        // base64url characters on the way to a genuine certificate, so each
-        // entry is held to standard base64 (RFC 7515 §4.1.6) first.
-        guard x5c.allSatisfy(isStandardBase64),
-            let leafDER = Data(base64Encoded: x5c[0], options: [.ignoreUnknownCharacters]),
-            let intermediateDER = Data(base64Encoded: x5c[1], options: [.ignoreUnknownCharacters]),
-            let rootDER = Data(base64Encoded: x5c[2], options: [.ignoreUnknownCharacters]),
+        // Each entry is standard base64 with canonical padding (RFC 7515
+        // §4.1.6), the receipt-data rule: junk, whitespace, base64url
+        // characters and a wrong '=' count are refused rather than skipped
+        // on the way to a genuine certificate.
+        guard let leafDER = decodeReceiptBase64(x5c[0]),
+            let intermediateDER = decodeReceiptBase64(x5c[1]),
+            let rootDER = decodeReceiptBase64(x5c[2]),
             let leaf = try? Certificate(derEncoded: [UInt8](leafDER)),
             let intermediate = try? Certificate(derEncoded: [UInt8](intermediateDER)),
             let suppliedRoot = try? Certificate(derEncoded: [UInt8](rootDER))
@@ -342,23 +342,6 @@ public struct JwsVerifier: Sendable {
     }
 }
 
-/// The x5c entry alphabet (RFC 7515 §4.1.6): standard base64, not base64url.
-private let base64Alphabet = CharacterSet(
-    charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
-
-/// Whether an x5c entry is standard base64: the alphabet above followed by
-/// at most two `=`, with no whitespace and no base64url `-` or `_`. Only the
-/// characters are checked; the decode that follows decides the rest.
-func isStandardBase64(_ text: String) -> Bool {
-    var data = Substring(text)
-    var padding = 0
-    while padding < 2, data.last == "=" {
-        data = data.dropLast()
-        padding += 1
-    }
-    return data.unicodeScalars.allSatisfy(base64Alphabet.contains)
-}
-
 /// The compact-JWS segment alphabet (RFC 7515 §2): unpadded base64url.
 private let base64URLAlphabet = CharacterSet(
     charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
@@ -384,9 +367,9 @@ func requireDecodableExtensions(_ certificate: Certificate, what: String) throws
 /// unused bits — checked by re-encoding the decoded bytes and requiring an
 /// exact match against the padded input.
 ///
-/// x5c certificate entries (after `isStandardBase64`) and the legacy
-/// receipt's base64 are decoded elsewhere with `Data(base64Encoded:)`
-/// directly; only these three segments go through this function.
+/// x5c certificate entries and the legacy receipt's base64 are decoded by
+/// `decodeReceiptBase64`; only these three segments go through this
+/// function.
 func base64URLDecode(_ segment: String) -> Data? {
     guard segment.unicodeScalars.allSatisfy(base64URLAlphabet.contains),
         segment.utf8.count % 4 != 1

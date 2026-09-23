@@ -1213,9 +1213,20 @@ class InputSizeBoundsTest(unittest.TestCase):
 
     @staticmethod
     def padded(text, length):
-        # Whitespace is accepted anywhere in a receipt string and around a
-        # JSON body, so padding a genuine input keeps it genuine.
+        # Whitespace around a JSON body keeps a genuine body genuine. A
+        # receipt string padded this way is not valid receipt-data, which is
+        # why the over-cap receipt tests prove the decoder never ran rather
+        # than relying on the verdict.
         return text + "\n" * (length - len(text))
+
+    @staticmethod
+    def at_cap_receipt():
+        # Canonical base64 admits nothing around the data, so the string at
+        # the cap is a genuinely signed receipt whose base64 is exactly the
+        # cap (ReceiptBase64CapFixture), under a root of its own.
+        return fixture("limits", "receipt-b64-at-cap.txt").decode("ascii"), [
+            cert("generated", "receipt-b64-cap-root.der")
+        ]
 
     def request_body(self, extra=""):
         return '{"receipt-data":"' + self.receipt_b64 + '"' + extra + "}"
@@ -1231,8 +1242,9 @@ class InputSizeBoundsTest(unittest.TestCase):
         self.assertEqual("INVALID_RECEIPT_FORMAT", ctx.exception.reason)
 
     def test_receipt_string_at_the_cap_still_verifies(self):
-        receipt = self.padded(self.receipt_b64, ReceiptVerifier.MAX_RECEIPT_BYTES)
-        self.assertEqual(BUNDLE, self.verifier.verify(receipt).bundle_id)
+        receipt, roots = self.at_cap_receipt()
+        self.assertEqual(ReceiptVerifier.MAX_RECEIPT_BYTES, len(receipt))
+        self.assertEqual(BUNDLE, ReceiptVerifier(roots, BUNDLE).verify(receipt).bundle_id)
 
     def test_receipt_der_over_the_cap_is_refused_before_it_is_parsed(self):
         # verify_receipt_core is the primitive under the endpoint, so the
@@ -1286,8 +1298,10 @@ class InputSizeBoundsTest(unittest.TestCase):
             self.assertEqual("INVALID_RECEIPT_FORMAT", result.failure_reason, label)
             self.assertEqual(21002, result.status, label)
 
-        at_cap = self.padded(self.receipt_b64, ReceiptVerifier.MAX_RECEIPT_BYTES)
-        self.assertEqual(0, self.endpoint.verify_receipt_data(at_cap).status)
+        at_cap, roots = self.at_cap_receipt()
+        self.assertEqual(
+            0, VerifyReceiptEndpoint(roots, "Sandbox").verify_receipt_data(at_cap).status
+        )
 
     def test_request_body_over_the_cap_answers_21002_without_parsing(self):
         body = self.padded(self.request_body(), VerifyReceiptEndpoint.MAX_REQUEST_BYTES + 1)

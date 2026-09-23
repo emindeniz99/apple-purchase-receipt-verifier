@@ -22,7 +22,7 @@ DER, and the endpoints read a fixed clock (2026-01-01T00:00:00Z).
 
 | benchmark | call |
 |---|---|
-| `decodeBase64` | the library's own receipt-data decoder on the canonical string, which takes the fast path |
+| `decodeBase64` | the library's own receipt-data decoder on the canonical string |
 | `core` | `verifyReceiptCore(der, roots)` on pre-decoded DER: chain and signature, no bundle check |
 | `verifierBase64` | a `ReceiptVerifier` built in setup, `verify` on the base64 string |
 | `endpointJson` | a Sandbox `VerifyReceiptEndpoint`, `verifyReceiptJson` from request JSON to response JSON |

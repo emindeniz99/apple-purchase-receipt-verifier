@@ -6,7 +6,7 @@
 //! fails an early check must report that check's reason, not a later one.
 //! `PLAN.md` §2.1 and `fixtures/cases.json` pin it.
 
-use crate::base64::{decode_base64url_strict, decode_x5c};
+use crate::base64::{decode_base64url_strict, decode_receipt_base64};
 use crate::chain::validate_pair;
 use crate::clock::{default_clock, unix_millis, Clock};
 use crate::crypto::{curve_field_size, verify_es256};
@@ -667,9 +667,10 @@ fn parse_json_segment(segment: &str, what: &str) -> Result<Claims> {
 /// `transaction/reject-x5c-root-that-is-not-a-certificate` pinned java's
 /// answer for all nine.
 ///
-/// The entry itself must be standard base64 (RFC 7515 §4.1.6): junk,
-/// whitespace or a base64url character is refused by [`decode_x5c`] rather
-/// than skipped on the way to a genuine certificate.
+/// The entry itself must be standard base64 with canonical padding
+/// (RFC 7515 §4.1.6), the `receipt-data` rule: junk, whitespace, a base64url
+/// character or a wrong `=` count is refused by [`decode_receipt_base64`]
+/// rather than skipped on the way to a genuine certificate.
 fn parse_x5c_certificate(entry: Option<&String>) -> Result<Certificate> {
     let Some(entry) = entry else {
         return Err(VerificationError::new(
@@ -677,7 +678,7 @@ fn parse_x5c_certificate(entry: Option<&String>) -> Result<Certificate> {
             "x5c entry is not a valid certificate",
         ));
     };
-    let Some(der) = decode_x5c(entry) else {
+    let Some(der) = decode_receipt_base64(entry) else {
         return Err(VerificationError::new(
             Reason::InvalidCertificate,
             "x5c entry is not a valid certificate",

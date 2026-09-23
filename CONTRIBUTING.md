@@ -139,7 +139,7 @@ the sources every expectation was derived from.
 
 Fixtures under `fixtures/generated/` are signed by a fake Apple PKI built in
 `java/src/test/.../TestPki.java`, so no real Apple key material is needed.
-Ten generators write them, all at fixed epoch instants so nothing depends
+Eleven generators write them, all at fixed epoch instants so nothing depends
 on generation time:
 
 - `FixtureGeneratorTest` — the original set. Gated behind
@@ -167,13 +167,19 @@ on generation time:
   receipt-signing end entity standing where the intermediate belongs, the
   intermediate absent from the certificate bag, a SignerInfo signature of
   zero bytes, and a CMS signed over zero bytes of encapsulated content.
-- `X5cBase64Fixtures` — the three transactions whose `x5c[0]` is the
-  genuine leaf spelled as something other than standard base64 (RFC 7515
-  §4.1.6): a junk character inside it, the base64url alphabet, and PEM-style
-  line breaks.
+- `X5cBase64Fixtures` — the five transactions whose `x5c[0]` is the
+  genuine leaf spelled as something other than canonical standard base64
+  (RFC 7515 §4.1.6): a junk character inside it, the base64url alphabet,
+  PEM-style line breaks, the `=` padding omitted, and one `=` too many.
+- `ReceiptBase64CapFixture` — the receipt string at the base64 receipt cap,
+  `fixtures/limits/receipt-b64-at-cap.txt`: the canonical base64 of a
+  genuinely signed receipt of 2,359,296 bytes, which is exactly 3,145,728
+  characters. It takes `fixtures` rather than `fixtures/generated` as its
+  argument, and `node tools/generate-limit-fixtures.mjs` must run after it,
+  because the over-cap twin is built from its output.
 
-The last nine run as a `main`, not a `@Test`, so none of them costs the
-suite a permanently skipped test. All nine regenerate the same way, only
+The last ten run as a `main`, not a `@Test`, so none of them costs the
+suite a permanently skipped test. All ten regenerate the same way, only
 the class name changes:
 
 ```bash

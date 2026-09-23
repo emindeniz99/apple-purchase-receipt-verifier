@@ -120,59 +120,30 @@ export function base64Decode(text: string): Uint8Array {
   return out.subarray(0, length);
 }
 
-// receipt-data as Apple's own client can send it: RFC 4648, either the
-// standard (`+/`) or base64url (`-_`) alphabet — never both in the same
-// string — padding present or omitted, and CR/LF/space/tab anywhere
-// (Foundation's base64EncodedString(options:) line-wraps at 64 or 76
-// columns). Unlike base64UrlDecodeStrict this has no canonical-trailing-bits
-// check — that is not part of the receipt-data contract.
-const RECEIPT_BASE64_PATTERN = /^[A-Za-z0-9+/_-]*={0,2}$/;
+// Canonical standard base64 (RFC 4648 §4) and nothing else: the rule
+// Apple's verifyReceipt applies to receipt-data (measured 2026-09-23, see
+// docs/evidence/2026-09-23-verifyreceipt-base64.md) and the one RFC 7515
+// §4.1.6 gives an x5c entry. No whitespace, no base64url, and with a
+// non-empty length that is a multiple of four this pattern leaves exactly
+// the canonical padding. The unused low bits of the last data character are
+// not checked: Apple accepts them set.
+const CANONICAL_BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
 
-/**
- * Strict receipt-data base64 decode (the `verifyReceiptBase64` / `receipt-data`
- * contract, PLAN §receipt-base64). Strips CR, LF, space and tab first, then
- * rejects: any other character; a string mixing the standard and base64url
- * alphabets; anything (beyond the already-stripped whitespace) after the
- * `=` padding; a stripped length congruent to 1 mod 4; a `=` count that
- * does not match what the unpadded data length requires (over- or
- * under-padded); and an empty or whitespace-only string. Returns null
- * rather than throwing.
- */
-export function receiptBase64DecodeStrict(text: string): Uint8Array | null {
-  const stripped = text.replace(/[\r\n \t]/g, '');
-  if (stripped.length === 0 || !RECEIPT_BASE64_PATTERN.test(stripped)) {
-    return null;
-  }
-  const hasStandard = stripped.includes('+') || stripped.includes('/');
-  const hasUrlSafe = stripped.includes('-') || stripped.includes('_');
-  if (hasStandard && hasUrlSafe) {
-    return null;
-  }
-  const pad = stripped.length - stripped.replace(/=+$/, '').length;
-  const data = stripped.length - pad;
-  // The impossible-length test is on the DATA, not the padded string: 'A==='
-  // is a multiple of four in total and still encodes no whole byte.
-  if (data === 0 || data % 4 === 1 || (pad !== 0 && pad !== (4 - (data % 4)) % 4)) {
-    return null;
-  }
-  return base64Decode(stripped);
+/** Whether `text` is non-empty canonical standard base64, per the rule above. */
+export function isCanonicalBase64(text: string): boolean {
+  return text.length !== 0 && text.length % 4 === 0 && CANONICAL_BASE64.test(text);
 }
 
-// An x5c entry is base64 of a DER certificate (RFC 7515 §4.1.6): the
-// standard alphabet of RFC 4648 §4, not base64url, and no whitespace. The
-// same pattern Python's b64decode(validate=True) applies.
-const X5C_BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
-
 /**
- * Decodes one x5c entry. Throws on any character outside the standard
- * alphabet (junk, whitespace, a base64url `-` or `_`, or `=` anywhere but
- * the end) rather than skipping it as {@link base64Decode} does, so an
- * entry that is not standard base64 cannot decode to a genuine certificate.
- * Both builds call it inside the catch that answers INVALID_CERTIFICATE.
+ * Decodes one x5c entry. Throws unless it is canonical standard base64
+ * ({@link isCanonicalBase64}) rather than skipping what it does not expect as
+ * {@link base64Decode} does, so an entry that is not canonical base64 cannot
+ * decode to a genuine certificate. Both builds call it inside the catch that
+ * answers INVALID_CERTIFICATE.
  */
 export function x5cBase64Decode(text: string): Uint8Array {
-  if (!X5C_BASE64_PATTERN.test(text)) {
-    throw new Error('x5c entry is not standard base64');
+  if (!isCanonicalBase64(text)) {
+    throw new Error('x5c entry is not canonical standard base64');
   }
   return base64Decode(text);
 }
