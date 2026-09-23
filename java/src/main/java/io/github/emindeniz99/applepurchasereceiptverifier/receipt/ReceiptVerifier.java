@@ -500,7 +500,9 @@ public final class ReceiptVerifier {
         try {
             List<X509Certificate> embedded = new ArrayList<X509Certificate>();
             for (X509CertificateHolder holder : holders) {
-                embedded.add(converter.getCertificate(holder));
+                // The signer was converted above; converting it again only
+                // re-encodes it and gets the same certificate back.
+                embedded.add(holder == signerHolder ? signerCert : converter.getCertificate(holder));
             }
             X509CertSelector target = new X509CertSelector();
             target.setCertificate(signerCert);
