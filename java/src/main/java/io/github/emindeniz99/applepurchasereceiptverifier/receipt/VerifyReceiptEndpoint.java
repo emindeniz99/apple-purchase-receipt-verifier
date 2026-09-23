@@ -1,12 +1,11 @@
 package io.github.emindeniz99.applepurchasereceiptverifier.receipt;
 
-import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.emindeniz99.applepurchasereceiptverifier.Environment;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
+import io.github.emindeniz99.applepurchasereceiptverifier.internal.BoundedJson;
 import java.io.IOException;
 import java.security.cert.X509Certificate;
 import java.time.Clock;
@@ -67,26 +66,11 @@ public final class VerifyReceiptEndpoint {
      */
     public static final int MAX_REQUEST_BYTES = 3145728;
 
-    /**
-     * How deep a JSON structure the request body may nest. Stated rather than
-     * inherited: Jackson 2.15 and later default to 1000, but a host BOM that
-     * pins an older Jackson 2 links cleanly and silently loses the guard. A
-     * verifyReceipt body is a flat object of strings.
-     */
-    private static final int MAX_JSON_NESTING_DEPTH = 64;
-
     // Shared with VerifyReceiptResult, which serializes the response.
-    static final ObjectMapper MAPPER = new ObjectMapper(JsonFactory.builder()
-            .streamReadConstraints(StreamReadConstraints.builder()
-                    .maxNestingDepth(MAX_JSON_NESTING_DEPTH)
-                    // Nothing inside the body can be larger than the body,
-                    // and a body within MAX_REQUEST_BYTES bytes is within it
-                    // in characters too, so both length bounds (counted in
-                    // characters for String input) are MAX_REQUEST_BYTES.
-                    .maxStringLength(MAX_REQUEST_BYTES)
-                    .maxDocumentLength(MAX_REQUEST_BYTES)
-                    .build())
-            .build());
+    // Nothing inside the body can be larger than the body, and a body within
+    // MAX_REQUEST_BYTES bytes is within it in characters too, so both length
+    // bounds (counted in characters for String input) are MAX_REQUEST_BYTES.
+    static final ObjectMapper MAPPER = new ObjectMapper(BoundedJson.factory(MAX_REQUEST_BYTES));
 
     private final Set<X509Certificate> trustedRoots;
     private final Environment environment;
