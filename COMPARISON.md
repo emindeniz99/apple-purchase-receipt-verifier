@@ -29,6 +29,21 @@ the first part — cryptographically verified.
 | `password` (shared secret) | required for auto-renewable subs; wrong value → 21004 | ⚠️ **never read** — a shared secret can only be validated against Apple's account database, which doesn't exist locally. We never return 21004. |
 | `exclude-old-transactions` | trims `latest_receipt_info` | ⚠️ **never read** — there is nothing to trim, since we never produce `latest_receipt_info` (below). |
 
+### Size limit
+
+We match Apple. On 2026-09-23 we measured both of Apple's endpoints,
+`buy.itunes.apple.com/verifyReceipt` and the sandbox one: Apple answers a
+request body of 3,145,728 bytes and returns HTTP 413 for 3,145,729 bytes.
+Apple counts UTF-8 bytes, not characters. A body of 3,145,729 bytes of `é`
+(1,572,874 characters) also got 413, and 3,145,727 bytes of it got 200.
+
+Every port refuses a raw body over 3,145,728 UTF-8 bytes before parsing it.
+The answer is status 21002 with the result-only reason `REQUEST_TOO_LARGE`,
+so your HTTP layer can send 413 as Apple does. A `receipt-data` over
+3,145,728 bytes, or DER over that size, is `INVALID_RECEIPT_FORMAT` (21002).
+The limits are fixed constants, and `fixtures/cases.json` holds every port
+to them from both sides.
+
 ## Status codes
 
 | Code | Apple meaning | Ours |

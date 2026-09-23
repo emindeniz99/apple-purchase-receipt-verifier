@@ -33,8 +33,13 @@ endpoint = []
 #
 # `deny.toml` bans, as a build-breaking rule, every crate that could bring a
 # system trust store or a network client into the tree.
+#
+# `u64_digit` is on `rsa`'s default list and is restored here after
+# `default-features = false` dropped it. Without it `num-bigint-dig` works in
+# 32-bit limbs and each RSA-2048 verify, three per receipt, costs about 1.7x
+# as much. A unit test in `src/crypto.rs` fails if the feature goes missing.
 [dependencies]
-rsa = { version = "0.9.10", default-features = false, features = ["std"] }
+rsa = { version = "0.9.10", default-features = false, features = ["std", "u64_digit"] }
 p256 = { version = "0.13.2", default-features = false, features = ["ecdsa", "arithmetic", "std"] }
 p384 = { version = "0.13.1", default-features = false, features = ["ecdsa", "arithmetic", "std"] }
 sha1 = { version = "0.10.7", default-features = false, features = ["oid"] }

@@ -12,6 +12,7 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Jws\JwsVerifier;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\VerifyReceiptEndpoint;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\VerifyReceiptResult;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Fixtures;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\FrozenClock;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Shape;
@@ -123,10 +124,18 @@ final class ConformanceCasesTest extends TestCase
 
         /** @var array<string, mixed> $config */
         $config = $case['config'];
-        /** @var array{fixture: string} $input */
+        /** @var array{fixture?: string, requestBody?: string} $input */
         $input = $case['input'];
-        $bytes = Fixtures::bytes($input['fixture']);
-        $inputCodec = Fixtures::registry()[$input['fixture']]['codec'];
+        if (isset($input['requestBody'])) {
+            // verifyReceiptEndpoint only: that text fixture is the whole raw
+            // request body, which the endpoint adapter tells apart by codec.
+            $bytes = Fixtures::bytes($input['requestBody']);
+            $inputCodec = 'requestBody';
+        } else {
+            $fixture = Shape::asString($input['fixture'] ?? null, 'input.fixture');
+            $bytes = Fixtures::bytes($fixture);
+            $inputCodec = Fixtures::registry()[$fixture]['codec'];
+        }
         $clock = self::caseClock($case);
         // cases.schema.json makes these types normative, so a case that does
         // not have them is a harness failure rather than a verdict.
@@ -162,6 +171,14 @@ final class ConformanceCasesTest extends TestCase
             'expected ' . Shape::asString($expected['reason'] ?? '?', 'expected.reason')
                 . ' but the call returned a value',
         );
+        if ($result instanceof VerifyReceiptResult) {
+            // failureReason is not on Apple's wire, so an endpoint case pins
+            // it beside the wire fields rather than among them.
+            if (array_key_exists('failureReason', $expected)) {
+                self::assertSame($expected['failureReason'], $result->failureReason()?->value, 'failureReason');
+            }
+            $result = $result->toResponse();
+        }
         $actual = self::normalize($result);
         /** @var array<string, scalar|null> $fields */
         $fields = $expected['fields'];
@@ -219,12 +236,16 @@ final class ConformanceCasesTest extends TestCase
                 self::trustedRoots($config),
                 Environment::from(Shape::asString($config['environment'], 'environment')),
                 $clock,
-            ))->verifyReceiptResult([
-                // A text fixture is the string a client would actually send;
-                // a raw/base64 fixture is decoded bytes this harness must
-                // re-encode to put back on the wire.
-                'receipt-data' => $inputCodec === 'text' ? $input : base64_encode($input),
-            ])->toResponse(),
+            ))->verifyReceiptResult(
+                // A requestBody is the whole raw body, verbatim, through the
+                // entry point that parses JSON: never wrapped, never trimmed.
+                // A text fixture is the string a client would actually send
+                // as receipt-data; a raw/base64 fixture is decoded bytes this
+                // harness must re-encode to put back on the wire.
+                $inputCodec === 'requestBody' ? $input : [
+                    'receipt-data' => $inputCodec === 'text' ? $input : base64_encode($input),
+                ],
+            ),
             default => throw new RuntimeException("harness error: no adapter for operation \"{$operation}\""),
         };
     }

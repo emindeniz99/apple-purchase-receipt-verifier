@@ -8,6 +8,7 @@ import {
   parseRequestJson,
   receiptDataOf,
   requestInstant,
+  requestTooLarge,
   requireEndpointEnvironment,
   verifiedResult,
   type EndpointEnvironment,
@@ -58,10 +59,11 @@ export interface VerifyReceiptEndpointOptions {
 export class VerifyReceiptEndpoint {
   /**
    * Ceiling on a raw JSON request body, in UTF-8 bytes, checked before it is
-   * parsed. A larger body, or one nesting JSON more than 64 levels deep,
-   * answers 21002 with `MALFORMED_REQUEST`. Deliberately below
-   * `ReceiptVerifier.MAX_RECEIPT_BYTES`: the JSON path parses the body as
-   * well as decoding the receipt. A body passed as an object is not measured.
+   * parsed: 3,145,728, Apple's own limit (measured 2026-09-23; one byte more
+   * gets HTTP 413 there). A larger body answers 21002 with
+   * `REQUEST_TOO_LARGE`, which an HTTP layer can map to 413. A fixed
+   * constant, the same in every port. A body passed as an object is not
+   * measured.
    */
   static readonly MAX_REQUEST_BYTES = MAX_REQUEST_BYTES;
 
@@ -85,10 +87,12 @@ export class VerifyReceiptEndpoint {
    * A request that is not an object, a string that is not a JSON object
    * (unparseable, `null`, an array, a scalar), and a `receipt-data` that is
    * missing, empty or not a string fail with `MALFORMED_REQUEST`, status
-   * 21002. So does a string body over {@link MAX_REQUEST_BYTES} UTF-8 bytes
-   * or nesting JSON more than 64 levels deep, before it is parsed. A
-   * `receipt-data` over `ReceiptVerifier.MAX_RECEIPT_BYTES` characters fails
-   * with `INVALID_RECEIPT_FORMAT`, also 21002, before it is decoded.
+   * 21002. So does a string body nesting JSON more than 64 levels deep,
+   * before it is parsed. A string body over {@link MAX_REQUEST_BYTES} UTF-8
+   * bytes fails with `REQUEST_TOO_LARGE`, also 21002, before anything else
+   * looks at it; Apple answers HTTP 413 there. A `receipt-data` over
+   * `ReceiptVerifier.MAX_RECEIPT_BYTES` UTF-8 bytes fails with
+   * `INVALID_RECEIPT_FORMAT`, also 21002, before it is decoded.
    *
    * `requestDate`, when given, becomes `request_date` in place of the
    * endpoint's clock. It reaches `request_date` and nothing else: receipt
@@ -98,6 +102,10 @@ export class VerifyReceiptEndpoint {
     let at: number | undefined;
     try {
       at = requestInstant(requestDate, this.#clock);
+      const tooLarge = requestTooLarge(this.#environment, requestBody, at);
+      if (tooLarge !== null) {
+        return tooLarge;
+      }
       const body = typeof requestBody === 'string' ? parseRequestJson(requestBody) : requestBody;
       return this.#verify(receiptDataOf(body), at);
     } catch (error) {

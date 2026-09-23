@@ -336,7 +336,6 @@ final class VerifyReceiptResultTest extends TestCase
             'body not JSON' => $endpoint->verifyReceiptResult('not json'),
             'body a JSON list' => $endpoint->verifyReceiptResult('[{"receipt-data":"AQIDBA=="}]'),
             'body a JSON string' => $endpoint->verifyReceiptResult('"AQIDBA=="'),
-            'body too large' => $endpoint->verifyReceiptResult($tooLarge),
             'body null' => $endpoint->verifyReceiptResult(null),
             'body an integer' => $endpoint->verifyReceiptResult(42),
             'receipt-data missing' => $endpoint->verifyReceiptResult([]),
@@ -352,12 +351,19 @@ final class VerifyReceiptResultTest extends TestCase
             self::assertInvariant($result, $label);
         }
 
+        // Over Apple's request limit: 21002 like the malformed bodies, but its
+        // own reason, so an HTTP layer can answer 413 where Apple does.
+        $tooLargeResult = $endpoint->verifyReceiptResult($tooLarge);
+        self::assertSame(Reason::RequestTooLarge, $tooLargeResult->failureReason());
+        self::assertSame(VerifyReceiptEndpoint::STATUS_MALFORMED, $tooLargeResult->status());
+        self::assertInvariant($tooLargeResult, 'body too large');
+
         $format = [
             'not base64' => $endpoint->verifyReceiptResult(['receipt-data' => 'not base64!']),
             'blank' => $endpoint->verifyReceiptData(" \r\n"),
             'not a receipt' => $endpoint->verifyReceiptResult(['receipt-data' => 'AQIDBA==']),
             'over the receipt cap' => $endpoint->verifyReceiptResult([
-                'receipt-data' => str_repeat('A', ReceiptVerifier::DEFAULT_MAX_RECEIPT_BYTES + 4),
+                'receipt-data' => str_repeat('A', ReceiptVerifier::MAX_RECEIPT_BYTES + 4),
             ]),
         ];
         foreach ($format as $label => $result) {

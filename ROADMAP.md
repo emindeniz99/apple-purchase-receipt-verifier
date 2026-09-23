@@ -24,19 +24,24 @@ Delete a line in the commit that ships it.
   `VerifyReceiptResult` with a verified flag and re-renders for the other
   environment without verifying again; every port decodes canonical base64
   on a fast path held to the tolerant decoder by a differential test; every
-  port caps the receipt (2 MiB), the request body (1 MiB), JSON depth (64)
-  and the JWS (256 KiB). Swift's release-build crash on Linux x86_64 with
+  port caps the receipt and the request body at Apple's 3,145,728 UTF-8
+  bytes (measured 2026-09-23, COMPARISON.md), JSON depth at 64 and the JWS
+  at 256 KiB, and `fixtures/cases.json` holds every cap as a MUST from both
+  sides. Swift's release-build crash on Linux x86_64 with
   Swift 6.3.3 is fixed (#126), and CI now runs the Swift tests in release
   mode. PORTS.md has the per-port detail.
 - **0.6.0 release notes must warn Swift users of 0.4.0 to 0.5.1**: release
   builds of those versions crash on a genuine receipt on Linux x86_64
   under Swift 6.3.3 (a miscompiled throw path, #126). Debug builds and
   tests pass, so a consumer's CI does not show it. Tell them to upgrade.
-- **Make the input caps a MUST in `fixtures/cases.json`**, with vectors at
-  and over each cap. Blocked on one decision: the request body unit. Java
-  and .NET count UTF-16 characters, Python counts code points for a `str`,
-  the other six count bytes. UTF-8 bytes is the recommendation, since that
-  is what arrives on the wire.
+- **JWS cap, to be discussed**: it stays at 262,144 bytes. The request and
+  receipt caps now match Apple's measured limit; nobody has checked whether
+  Apple states a size limit for a JWS anywhere we could match.
+- **SwiftPM checkouts carry the fixtures (owner decision)**: SwiftPM
+  consumers check out the whole repository, and `fixtures/limits/` adds
+  about 21.5 MB on disk to every checkout. The git transfer stays small
+  because git compresses the padding. Package.swift declares only `certs`
+  as resources, so nothing ships in a built product.
 - **Cross-port benchmarks** (in progress): only `java-bench/` is committed.
   `go/bench_test.go` has five benchmarks with no recorded baseline.
 - **A date round-trip conformance vector**: a date string parsed to an
@@ -180,7 +185,18 @@ Delete a line in the commit that ships it.
   (PRs #22–#24, #26, #27) are closed and the versions are ignored in
   `.github/dependabot.yml`'s cargo entry; the `@dependabot ignore` comments
   on the PRs never reached the bot. Take the whole wave in one commit once
-  `rsa` 0.10 is stable.
+  `rsa` 0.10 is stable. It is also the next Rust speed step: measured
+  2026-09-23, one RSA-2048 verify takes about 92 µs on 0.10.0-rc.18
+  against 221 µs on 0.9.10, and a receipt does three, which would take the
+  g5 receipt from about 740 µs to about 350 µs.
+- **Faster Rust RSA beyond `rsa` 0.10 is not taken** (2026-09-23). `ring`
+  (27 µs per verify) or `aws-lc-rs` (24 µs) would make the g5 receipt about
+  5 times faster, but both bring C and assembly into a crate whose C ABI is
+  cross-compiled, plus a licence review. Caching verified certificate
+  signatures would skip two of the three verifies with the current crate,
+  but it puts shared mutable state in the security core and an attacker's
+  own chain could fill the cache, so it needs a THREAT-MODEL decision
+  first.
 - **Three Dependabot alerts on `node/package-lock.json` stay open**
   (2026-09-05): `decompress` 4.2.1 (critical, Zip Slip) and two moderates
   in the chain `@fastly/js-compute` → `@bytecodealliance/weval` →
@@ -279,6 +295,18 @@ Still worth filing as issues:
   - A cache of parsed embedded certificates keyed by their DER: maybe 25%
     on a small receipt, but it is process-wide mutable state, which the
     thread-safety design and `ConcurrencyTest` avoid on purpose.
+- **PHP worst-case JSON body memory**: a 3 MiB request body of arrays
+  nested 60 deep peaks at about 331 MB inside `json_decode` on PHP 8.4 and
+  about 561 MB on PHP 8.1, so php/README.md tells you to give a worker at
+  least 384M of `memory_limit` (640M on 8.1). A pre-scan of the raw body could reject that shape before
+  `json_decode` runs. Not queued.
+- **.NET fixed cost per receipt, a trust-model decision**: what remains
+  after the caps work is OpenSSL 3.0 decoding each certificate (about 150
+  to 190 us) and importing its RSA key (about 125 us), and both get slower
+  per call as threads are added. Three options: check the signer info
+  ourselves instead of through `SignedCms`, cache the anchors' keys, or
+  cache embedded certificates' keys by their exact DER. Each changes what
+  the port trusts between calls, so the owner decides first.
 - Optional OCSP revocation checking (opt-in "online mode", like the official
   library) for consumers who accept Apple calls.
 - Notification-envelope convenience (typed `verifyNotification` that also

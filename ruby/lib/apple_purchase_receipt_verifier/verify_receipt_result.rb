@@ -23,8 +23,8 @@ module ApplePurchaseReceiptVerifier
     attr_reader :receipt
 
     # @return [Symbol, nil] why there is no receipt, one of {Reason::ALL},
-    #   {Reason::MALFORMED_REQUEST} or {Reason::INTERNAL_ERROR}; nil exactly
-    #   when {#receipt} is set
+    #   {Reason::MALFORMED_REQUEST}, {Reason::REQUEST_TOO_LARGE} or
+    #   {Reason::INTERNAL_ERROR}; nil exactly when {#receipt} is set
     attr_reader :failure_reason
 
     # @return [Exception, nil] the unexpected error behind
@@ -117,7 +117,7 @@ module ApplePurchaseReceiptVerifier
       receipt = @receipt
       if receipt.nil?
         case @failure_reason
-        when Reason::MALFORMED_REQUEST, Reason::INVALID_RECEIPT_FORMAT
+        when Reason::MALFORMED_REQUEST, Reason::REQUEST_TOO_LARGE, Reason::INVALID_RECEIPT_FORMAT
           return VerifyReceiptEndpoint::Status::MALFORMED
         when Reason::INTERNAL_ERROR
           return VerifyReceiptEndpoint::Status::INTERNAL

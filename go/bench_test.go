@@ -101,7 +101,7 @@ func certificateFlood(tb testing.TB) []byte {
 	tb.Helper()
 	// Synthetic rather than an edited genuine receipt: the point is the
 	// count, not the contents. Sized to stay comfortably under
-	// DefaultMaxReceiptBytes, so it is the certificate bound being
+	// MaxReceiptBytes, so it is the certificate bound being
 	// exercised and not the input-size bound.
 	filler := derSequence(derOctetString(make([]byte, 256)))
 	certificates := make([][]byte, 0, 1024)
@@ -181,10 +181,10 @@ func TestRejectionCostIsBounded(t *testing.T) {
 	// A generous ceiling: the point is to catch a regression that starts
 	// decoding every embedded certificate, which costs orders of
 	// magnitude, not to pin a ratio.
-	if len(flood) >= applereceipt.DefaultMaxReceiptBytes {
+	if len(flood) >= applereceipt.MaxReceiptBytes {
 		t.Fatalf("the flood is %d bytes, at or above the %d-byte input bound: this test "+
 			"would be measuring the size check rather than the certificate bound",
-			len(flood), applereceipt.DefaultMaxReceiptBytes)
+			len(flood), applereceipt.MaxReceiptBytes)
 	}
 	if reject > 5*accept {
 		t.Fatalf("rejecting the flood cost %v against %v to accept a genuine receipt; "+

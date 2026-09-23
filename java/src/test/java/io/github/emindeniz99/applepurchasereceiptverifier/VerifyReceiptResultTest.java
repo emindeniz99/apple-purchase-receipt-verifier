@@ -252,7 +252,6 @@ class VerifyReceiptResultTest {
         Map<String, VerifyReceiptResult> malformed = new LinkedHashMap<String, VerifyReceiptResult>();
         malformed.put("body not JSON", endpoint.verifyReceiptResult("not json"));
         malformed.put("body a JSON array", endpoint.verifyReceiptResult("[{\"receipt-data\":\"AQIDBA==\"}]"));
-        malformed.put("body too large", endpoint.verifyReceiptResult(tooLarge.toString()));
         malformed.put("null body", endpoint.verifyReceiptResult((String) null));
         malformed.put("null map", endpoint.verifyReceiptResult((Map<String, Object>) null));
         malformed.put("receipt-data missing", endpoint.verifyReceiptResult(Collections.<String, Object>emptyMap()));
@@ -266,6 +265,13 @@ class VerifyReceiptResultTest {
                     VerifyReceiptEndpoint.STATUS_MALFORMED, entry.getValue().status(), entry.getKey());
             assertInvariant(entry.getValue(), entry.getKey());
         }
+
+        // Over Apple's request limit: 21002 like the malformed bodies, but its
+        // own reason, so an HTTP layer can answer 413 where Apple does.
+        VerifyReceiptResult tooLargeResult = endpoint.verifyReceiptResult(tooLarge.toString());
+        assertEquals(Reason.REQUEST_TOO_LARGE, tooLargeResult.failureReason());
+        assertEquals(VerifyReceiptEndpoint.STATUS_MALFORMED, tooLargeResult.status());
+        assertInvariant(tooLargeResult, "body too large");
 
         Map<String, VerifyReceiptResult> format = new LinkedHashMap<String, VerifyReceiptResult>();
         format.put("not base64", endpoint.verifyReceiptResult(body("not base64!")));

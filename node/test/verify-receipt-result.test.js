@@ -221,9 +221,14 @@ for (const [name, build] of BUILDS) {
         .map(gen),
       ...build.appleReceiptRoots(),
     ];
+    // The two DER-cap receipts are left out: 3 MiB of DER is 4 MiB of
+    // base64, which no request can carry.
     const inputs = [
       ...readdirSync(repo('generated'))
-        .filter((file) => file.startsWith('receipt') && file.endsWith('.der'))
+        .filter(
+          (file) =>
+            file.startsWith('receipt') && file.endsWith('.der') && !file.includes('der-cap'),
+        )
         .map((file) => [file, b64(file)]),
       ...readdirSync(repo('generated/receipt-b64')).map((file) => [
         file,
@@ -243,22 +248,19 @@ for (const [name, build] of BUILDS) {
         const body = JSON.stringify({ 'receipt-data': receiptData });
         const viaJson = await ep.verifyReceiptResult(body, EXPLICIT);
         statuses.add(bare.status);
-        // The one place the two paths may differ: a body over the request
-        // cap is refused before it is parsed, while the same receipt handed
-        // over bare is still verified. The receipt byte floor (1 MiB of DER,
-        // 1.38 MB of base64) is such a body, as in the Java, PHP and Python
-        // ports.
+        // A body over the request cap would be refused before it is parsed
+        // while the same receipt handed over bare is still verified. The
+        // request cap is Apple's 3 MiB, so no receipt in the corpus, the
+        // byte floor (1 MiB of DER, 1.38 MB of base64) included, makes one.
         if (Buffer.byteLength(body) > build.VerifyReceiptEndpoint.MAX_REQUEST_BYTES) {
           overRequestCap.add(label);
-          assert.equal(viaJson.toJson(), '{"status":21002}', `${label} on ${environment}`);
-          assert.equal(viaJson.failureReason, build.Reason.MALFORMED_REQUEST, label);
           continue;
         }
         assert.equal(bare.toJson(), viaJson.toJson(), `${label} on ${environment}`);
         assert.equal(bare.failureReason, viaJson.failureReason, label);
       }
     }
-    assert.deepEqual([...overRequestCap], ['receipt-byte-floor.der']);
+    assert.deepEqual([...overRequestCap], []);
     // The corpus reaches every status a receipt can produce, so the equality
     // above was checked on verified and failed results alike.
     for (const status of [0, 21002, 21003, 21007, 21008]) {

@@ -93,13 +93,13 @@ public struct ReceiptVerifier: Sendable {
     /// none of it behind a signature check.
     ///
     /// A string is measured in UTF-8 bytes (`utf8.count`, constant time for a
-    /// native string). For base64, which is what a receipt string is, that is
-    /// the character count the Java and Python ports measure. The number is
-    /// theirs and PHP's. It clears the normative floor in
-    /// fixtures/cases.json, which requires accepting a receipt of up to 1 MiB
-    /// of DER (about 1.38 MB of base64); the largest genuine receipt in the
-    /// corpus is 79 KB.
-    public static let maxReceiptBytes = 2_097_152
+    /// native string). The number is Apple's request limit (see
+    /// ``VerifyReceiptEndpoint/maxRequestBytes``), a fixed constant in every
+    /// port: a receipt Apple would accept in a request is never refused
+    /// here. It clears the normative floor in fixtures/cases.json, which
+    /// requires accepting a receipt of up to 1 MiB of DER (about 1.38 MB of
+    /// base64); the largest genuine receipt in the corpus is 79 KB.
+    public static let maxReceiptBytes = 3_145_728
 
     private let roots: [Certificate]
     private let bundleId: String

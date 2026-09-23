@@ -45,11 +45,11 @@ class ApiShapeTest < Minitest::Test
     APRV::Reason::ALL.each { |reason| assert_kind_of Symbol, reason }
   end
 
-  # The endpoint's two extra reasons stay out of ALL and out of the shared
-  # schema: ALL is what a VerificationError can carry, and no verifier raises
-  # either of them.
+  # The endpoint's three extra reasons stay out of ALL and out of the shared
+  # thrown-reason schema: ALL is what a VerificationError can carry, and no
+  # verifier raises any of them.
   def test_the_endpoint_only_reasons_are_outside_the_verifier_vocabulary
-    %i[MALFORMED_REQUEST INTERNAL_ERROR].each do |reason|
+    %i[MALFORMED_REQUEST INTERNAL_ERROR REQUEST_TOO_LARGE].each do |reason|
       assert_equal reason, APRV::Reason.const_get(reason)
       refute_includes APRV::Reason::ALL, reason
       refute_includes TestSupport.cases_schema["$defs"]["reason"]["enum"], reason.to_s

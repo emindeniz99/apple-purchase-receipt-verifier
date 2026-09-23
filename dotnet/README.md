@@ -158,8 +158,9 @@ No endpoint method throws: the Apple status code is a field of the answer.
 
 | Condition | `Status` | `FailureReason` |
 |---|---|---|
-| body is not a JSON object, or `receipt-data` is missing, empty or not a string | `21002` | `MalformedRequest` |
-| `receipt-data` is not base64, or does not decode to a receipt | `21002` | `InvalidReceiptFormat` |
+| the raw body is over `MaxRequestBytes` (3,145,728 UTF-8 bytes); Apple answers HTTP 413 here | `21002` | `RequestTooLarge` |
+| body is not a JSON object or nests deeper than 64, or `receipt-data` is missing, empty or not a string | `21002` | `MalformedRequest` |
+| `receipt-data` is not base64, is over `MaxReceiptBytes`, or does not decode to a receipt | `21002` | `InvalidReceiptFormat` |
 | the receipt could not be authenticated | `21003` | `InvalidChain`, `InvalidSignature`, other certificate reasons |
 | an unexpected exception (including a throwing `IClock` or request dictionary, or a disposed endpoint) | `21009` | `InternalError`, with the exception in `FailureCause` |
 | a Production endpoint, and `receiptType ∉ {Production, ProductionVPP}` | `21007` | none: `Receipt` is set |
@@ -242,11 +243,11 @@ One exception type, `VerificationException`. Switch on `.Reason`; report
 
 The vocabulary is closed. Adding a twelfth reason is a change to every port and
 to the shared schema in one pull request. `VerificationReason` also carries
-`MalformedRequest` (`MALFORMED_REQUEST`) and `InternalError`
-(`INTERNAL_ERROR`), but only as
+`MalformedRequest` (`MALFORMED_REQUEST`), `RequestTooLarge`
+(`REQUEST_TOO_LARGE`) and `InternalError` (`INTERNAL_ERROR`), but only as
 [`VerifyReceiptResult.FailureReason`](#the-verifyreceipt-compatible-endpoint)
-values: no `VerificationException` is ever thrown with either, so a `switch`
-over a caught exception's `Reason` never sees them.
+values: no `VerificationException` is ever thrown with any of them, so a
+`switch` over a caught exception's `Reason` never sees them.
 
 **Misconfiguration is not a verification verdict.** Empty trust anchors, an
 empty bundle id, an empty accepted-environment set, or an endpoint environment
@@ -390,21 +391,38 @@ public sealed class RedeemReceipt
   hops; JSON nested at most 64 arrays and objects deep; the payload
   double-unwrap is bounded at one, and a nested in-app attribute is recorded
   rather than recursed into.
-- **Input size caps, checked before anything is decoded.** A receipt may be at
-  most `ReceiptVerifier.MaxReceiptBytes` (2 MiB, 2,097,152) long: characters
-  for the base64 string, bytes for the DER. A larger one is
-  `INVALID_RECEIPT_FORMAT`, and status 21002 at the endpoint. A raw request
-  body passed to `VerifyReceiptEndpoint` may be at most
-  `VerifyReceiptEndpoint.MaxRequestBytes` (1 MiB, 1,048,576 characters); a
-  longer one, or one nested more than 64 levels deep, is 21002 with
-  `MALFORMED_REQUEST`. A compact JWS may be at most `JwsVerifier.MaxJwsBytes`
-  (256 KiB, 262,144 characters); a longer one is `INVALID_JWS_FORMAT`. Decoding
-  and parsing allocate in proportion to the input before any signature is
-  checked, so without these a large enough input exhausts memory. The numbers
-  are the other ports'. A receipt of 1 MiB of DER, the normative floor, still
-  verifies; its base64 is about 1.38 MB, so it is over the request cap as a
-  JSON body and reaches the endpoint only through `VerifyReceiptData` or the
-  dictionary overload.
+- **Input size caps, checked before anything is decoded.** The request and
+  receipt caps are Apple's, fixed constants in every port of this library.
+  Measured on 2026-09-23 against both of Apple's verifyReceipt endpoints
+  (production and sandbox), a request body of 3,145,728 bytes is answered and
+  one of 3,145,729 bytes gets HTTP 413. Apple counts UTF-8 bytes, not
+  characters: 3,145,729 bytes of `é`, only 1,572,874 characters, also got 413.
+  A raw request body passed to `VerifyReceiptEndpoint` may be at most
+  `VerifyReceiptEndpoint.MaxRequestBytes` (3 MiB, 3,145,728 bytes); a larger
+  one is 21002 with `REQUEST_TOO_LARGE`, decided before any parsing. One
+  nested more than 64 levels deep is 21002 with `MALFORMED_REQUEST`. A receipt
+  may be at most `ReceiptVerifier.MaxReceiptBytes` (3 MiB, 3,145,728 bytes),
+  for the base64 string and for the DER; a larger one is
+  `INVALID_RECEIPT_FORMAT`, and status 21002 at the endpoint. A compact JWS
+  may be at most `JwsVerifier.MaxJwsBytes` (256 KiB, 262,144 characters); a
+  longer one is `INVALID_JWS_FORMAT`. Decoding and parsing allocate in
+  proportion to the input before any signature is checked, so without these a
+  large enough input exhausts memory. Strings are measured in UTF-8 bytes
+  without being encoded: more UTF-16 units than the limit is over it, three
+  times the units within the limit is within it, and only a string between
+  the two is walked, stopping at the first byte past the limit. A lone
+  surrogate counts three bytes, as `Encoding.UTF8` counts it.
+- **Answering 413 like Apple.** `RequestTooLarge` exists so an HTTP layer can
+  send the status Apple sends. The body is Apple's 21002 either way:
+
+  ```csharp
+  VerifyReceiptResult result = endpoint.VerifyReceiptResult(rawRequestBody);
+  int httpStatus = result.FailureReason == VerificationReason.RequestTooLarge ? 413 : 200;
+  return Results.Content(result.ToJson(), "application/json", statusCode: httpStatus);
+  ```
+
+  A framework or proxy that caps request bodies itself has to allow at least
+  3 MiB, or it refuses bodies Apple would answer.
 - **Only this library's own exception escapes.** Containment is categorical,
   not a list of types: `AsnContentException` derives from `Exception` and not
   from `CryptographicException`, so a type-by-type catch leaks.

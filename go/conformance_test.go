@@ -77,6 +77,10 @@ type expectation struct {
 	Status string              `json:"status"`
 	Reason applereceipt.Reason `json:"reason"`
 	Fields map[string]any      `json:"fields"`
+	// FailureReason is the endpoint result's reason token, asserted when
+	// present (verifyReceiptEndpoint only). It is not a wire field. A
+	// pointer, so an explicit null ("no failure") is told from absence.
+	FailureReason *json.RawMessage `json:"failureReason"`
 }
 
 type conformanceCase struct {
@@ -85,6 +89,10 @@ type conformanceCase struct {
 	Operation   string `json:"operation"`
 	Input       struct {
 		Fixture string `json:"fixture"`
+		// RequestBody names a text fixture holding a whole raw request
+		// body (verifyReceiptEndpoint only), handed to VerifyReceiptBody
+		// verbatim: not wrapped in an envelope, not trimmed.
+		RequestBody string `json:"requestBody"`
 	} `json:"input"`
 	Config caseConfig `json:"config"`
 	Clock  *struct {
@@ -444,8 +452,23 @@ var operations = map[string]func(t *testing.T, config caseConfig, input []byte, 
 		}
 		return endpoint.VerifyReceipt(applereceipt.VerifyReceiptRequest{
 			ReceiptData: receiptData,
-		}).Response(), nil
+		}), nil
 	},
+}
+
+// endpointFromBody runs a requestBody case: the fixture's bytes are the
+// whole raw request body, and they go to the raw-body entry point that
+// parses JSON, never to the structured one.
+func endpointFromBody(t *testing.T, config caseConfig, body []byte, clock func() time.Time) *applereceipt.VerifyReceiptResult {
+	endpoint, err := applereceipt.NewVerifyReceiptEndpoint(applereceipt.VerifyReceiptEndpointOptions{
+		TrustedRoots: trustedRootsFor(t, config.TrustedRoots),
+		Environment:  config.Environment,
+		Now:          clock,
+	})
+	if err != nil {
+		t.Fatalf("harness error: building a VerifyReceiptEndpoint: %v", err)
+	}
+	return endpoint.VerifyReceiptBody(body)
 }
 
 func caseClock(t *testing.T, kase conformanceCase) func() time.Time {
@@ -467,10 +490,36 @@ func runCase(t *testing.T, kase conformanceCase) {
 	if !ok {
 		t.Fatalf("harness error: no adapter for operation %q", kase.Operation)
 	}
-	input := fixtureBytes(t, kase.Input.Fixture)
-	codec := fixtureCodec(t, kase.Input.Fixture)
-
-	result, err := operation(t, kase.Config, input, codec, caseClock(t, kase))
+	var result any
+	var err error
+	if kase.Input.RequestBody != "" {
+		if kase.Operation != "verifyReceiptEndpoint" {
+			t.Fatalf("harness error: input.requestBody is only defined for verifyReceiptEndpoint")
+		}
+		if codec := fixtureCodec(t, kase.Input.RequestBody); codec != "text" {
+			t.Fatalf("harness error: a requestBody fixture must be text, got codec %q", codec)
+		}
+		result = endpointFromBody(t, kase.Config, fixtureBytes(t, kase.Input.RequestBody), caseClock(t, kase))
+	} else {
+		input := fixtureBytes(t, kase.Input.Fixture)
+		codec := fixtureCodec(t, kase.Input.Fixture)
+		result, err = operation(t, kase.Config, input, codec, caseClock(t, kase))
+	}
+	if endpointResult, ok := result.(*applereceipt.VerifyReceiptResult); ok {
+		if kase.Expected.FailureReason != nil {
+			var want *string
+			if err := json.Unmarshal(*kase.Expected.FailureReason, &want); err != nil {
+				t.Fatalf("harness error: expected.failureReason is not a string or null: %v", err)
+			}
+			got := string(endpointResult.Reason())
+			if want == nil && got != "" || want != nil && got != *want {
+				t.Fatalf("failureReason: got %q, want %s (%v)", got, *kase.Expected.FailureReason, endpointResult.Err())
+			}
+		}
+		result = endpointResult.Response()
+	} else if kase.Expected.FailureReason != nil {
+		t.Fatalf("harness error: expected.failureReason is only defined for verifyReceiptEndpoint")
+	}
 	if err != nil {
 		// Only a *VerificationError carries a canonical Reason. Anything
 		// else is a defect in the library or in this harness and must

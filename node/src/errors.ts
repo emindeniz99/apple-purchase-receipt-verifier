@@ -27,8 +27,9 @@ export const Reason = {
   STALE_PAYLOAD: 'STALE_PAYLOAD',
   /**
    * The verifyReceipt request envelope is unusable: the body is not a JSON
-   * object, or `receipt-data` is missing, empty or not a string. Reported
-   * only as a `VerifyReceiptResult.failureReason`; never thrown.
+   * object or nests deeper than 64, or `receipt-data` is missing, empty or
+   * not a string. Reported only as a `VerifyReceiptResult.failureReason`;
+   * never thrown.
    */
   MALFORMED_REQUEST: 'MALFORMED_REQUEST',
   /**
@@ -37,6 +38,14 @@ export const Reason = {
    * never thrown.
    */
   INTERNAL_ERROR: 'INTERNAL_ERROR',
+  /**
+   * The raw verifyReceipt request body is over
+   * `VerifyReceiptEndpoint.MAX_REQUEST_BYTES` (3,145,728 UTF-8 bytes), the
+   * size at which Apple's endpoint answers HTTP 413. Status 21002 in the
+   * response body; an HTTP layer can map it to 413 as Apple does. Reported
+   * only as a `VerifyReceiptResult.failureReason`; never thrown.
+   */
+  REQUEST_TOO_LARGE: 'REQUEST_TOO_LARGE',
 } as const;
 
 export type Reason = (typeof Reason)[keyof typeof Reason];

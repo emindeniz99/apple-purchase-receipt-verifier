@@ -19,6 +19,7 @@ from apple_purchase_receipt_verifier import (
     ReceiptVerifier,
     VerificationError,
     VerifyReceiptEndpoint,
+    VerifyReceiptResult,
     apple_jws_roots,
     apple_receipt_roots,
 )
@@ -138,21 +139,22 @@ def _receipt_base64(config, data, clock, codec):
 
 
 def _receipt_endpoint(config, data, clock, codec):
+    endpoint = VerifyReceiptEndpoint(
+        trusted_roots(config["trustedRoots"]),
+        config["environment"],
+        clock,
+    )
+    if codec == "requestBody":
+        # The whole raw request body, verbatim, through the entry point that
+        # parses JSON: never wrapped as receipt-data, never trimmed.
+        return endpoint.verify_receipt_result(data.decode("utf-8"))
     # A "text" fixture goes into receipt-data verbatim, exactly as a client
     # sent it; a "raw"/"base64" fixture is the DER the runner decoded, so it
     # is re-encoded as canonical base64 the way today's cases always have.
     receipt_data = (
         data.decode("utf-8") if codec == "text" else base64.b64encode(data).decode("ascii")
     )
-    return (
-        VerifyReceiptEndpoint(
-            trusted_roots(config["trustedRoots"]),
-            config["environment"],
-            clock,
-        )
-        .verify_receipt_result({"receipt-data": receipt_data})
-        .to_response()
-    )
+    return endpoint.verify_receipt_result({"receipt-data": receipt_data})
 
 
 OPERATIONS = {
@@ -279,9 +281,16 @@ class ConformanceCasesTest(unittest.TestCase):
         operation = OPERATIONS.get(case["operation"])
         if operation is None:
             raise AssertionError(f"harness error: no adapter for operation {case['operation']!r}")
-        fixture_id = case["input"]["fixture"]
-        data = fixture_bytes(fixture_id)
-        codec = CASES["fixtures"][fixture_id]["codec"]
+        request_body = case["input"].get("requestBody")
+        if request_body is not None:
+            # verifyReceiptEndpoint only: that text fixture is the whole raw
+            # request body, which the endpoint adapter tells apart by codec.
+            data = fixture_bytes(request_body)
+            codec = "requestBody"
+        else:
+            fixture_id = case["input"]["fixture"]
+            data = fixture_bytes(fixture_id)
+            codec = CASES["fixtures"][fixture_id]["codec"]
         expected = case["expected"]
         try:
             result = operation(case["config"], data, case_clock(case), codec)
@@ -304,6 +313,14 @@ class ConformanceCasesTest(unittest.TestCase):
             "ok",
             f"{case['id']}: expected {expected.get('reason')} but the call returned a value",
         )
+        if isinstance(result, VerifyReceiptResult):
+            # failureReason is not on Apple's wire, so an endpoint case pins
+            # it beside the wire fields rather than among them.
+            if "failureReason" in expected:
+                self.assertEqual(
+                    result.failure_reason, expected["failureReason"], f"{case['id']}: failureReason"
+                )
+            result = result.to_response()
         actual = normalize(result)
         for path, want in expected["fields"].items():
             got = resolve_path(actual, path)

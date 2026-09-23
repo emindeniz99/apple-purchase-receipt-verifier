@@ -98,4 +98,5 @@ class ScalaInteropTest:
       case Reason.STALE_PAYLOAD                => "stale"
       case Reason.MALFORMED_REQUEST            => "malformed request"
       case Reason.INTERNAL_ERROR               => "internal error"
+      case Reason.REQUEST_TOO_LARGE            => "request too large"
     assertEquals("wrong bundle", description)

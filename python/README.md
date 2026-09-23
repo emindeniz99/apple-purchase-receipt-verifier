@@ -189,13 +189,14 @@ verified it. Any environment other than `"Production"` or `"Sandbox"` raises
 
 | `failure_reason` | status | when |
 |---|---|---|
-| `MALFORMED_REQUEST` | 21002 | the body is not a JSON object, is over `MAX_REQUEST_BYTES` or nests past 64 levels, or `receipt-data` is missing, empty or not a string |
+| `REQUEST_TOO_LARGE` | 21002 | the raw body is over `MAX_REQUEST_BYTES` (3,145,728 UTF-8 bytes); Apple answers HTTP 413 here, see [Input limits](#input-limits) |
+| `MALFORMED_REQUEST` | 21002 | the body is not a JSON object or nests past 64 levels, or `receipt-data` is missing, empty or not a string |
 | `INVALID_RECEIPT_FORMAT` | 21002 | `receipt-data` is over `MAX_RECEIPT_BYTES`, is not base64 or does not decode to a receipt |
 | `INVALID_CHAIN`, `INVALID_SIGNATURE`, other certificate reasons | 21003 | the receipt did not authenticate |
 | `INTERNAL_ERROR` | 21009 | an unexpected exception; `failure_cause` holds it |
 
-`MALFORMED_REQUEST` and `INTERNAL_ERROR` only ever appear on a result. No
-`VerificationError` is raised with either.
+`MALFORMED_REQUEST`, `REQUEST_TOO_LARGE` and `INTERNAL_ERROR` only ever
+appear on a result. No `VerificationError` is raised with any of them.
 
 **`request_date`.** `verify_receipt_result` and `verify_receipt_data` take
 a keyword-only `now`, a timezone-aware `datetime` that becomes
@@ -214,21 +215,26 @@ Migrating from 0.5: `endpoint.verify_receipt(body)` is removed; use
 ## Input limits
 
 Base64 decoding and JSON parsing both allocate a multiple of their input
-before any signature is checked, so the input is measured first. These are
-constants, not constructor options, and they match the Java and PHP ports.
+before any signature is checked, so the input is measured first. The byte
+limits are Apple's, fixed constants in every port of this library, not
+constructor options. Measured on 2026-09-23 against both of Apple's
+verifyReceipt endpoints (production and sandbox), a request body of
+3,145,728 bytes is answered normally and one of 3,145,729 bytes gets HTTP
+413. Apple counts UTF-8 bytes, not characters: 3,145,729 bytes of `é`, only
+1,572,874 characters, also got 413. `fixtures/cases.json` holds every port
+to these numbers from both sides.
 
-- **`ReceiptVerifier.MAX_RECEIPT_BYTES` (2 MiB).** Applied to the base64
-  string at `ReceiptVerifier.verify` and at the endpoint's `receipt-data`,
-  in characters, before decoding, and to the DER at every entry point that
-  takes bytes, `verify_receipt_core` included. A larger receipt is
-  `INVALID_RECEIPT_FORMAT`. `fixtures/cases.json` requires every port to
-  accept a receipt of up to 1 MiB of DER, about 1.38 MB of base64; the
-  largest genuine receipt in the corpus is 79 KB.
-- **`VerifyReceiptEndpoint.MAX_REQUEST_BYTES` (1 MiB).** Applied to a raw
-  JSON body (`str` in characters, `bytes` in bytes) before it is parsed. A
-  larger body answers 21002 with `MALFORMED_REQUEST`. It is below the
-  receipt cap on purpose: the JSON path parses the body as well as decoding
-  the receipt. A body already decoded to a dict is not measured.
+- **`VerifyReceiptEndpoint.MAX_REQUEST_BYTES` (3 MiB, 3,145,728 bytes).**
+  Applied to a raw JSON body before it is parsed: a `str` in UTF-8 bytes, a
+  `bytes` body by its length. A larger body answers 21002 with
+  `REQUEST_TOO_LARGE`, before the parse and the depth check. A body already
+  decoded to a dict is not measured.
+- **`ReceiptVerifier.MAX_RECEIPT_BYTES` (3 MiB, 3,145,728 bytes).** Applied
+  to the base64 string at `ReceiptVerifier.verify` and at the endpoint's
+  `receipt-data`, in UTF-8 bytes, before decoding, and to the DER at every
+  entry point that takes bytes, `verify_receipt_core` included. No receipt
+  Apple accepts can be larger than the request that carries it. A larger
+  receipt is `INVALID_RECEIPT_FORMAT`.
 - **JSON nesting depth 64.** `json.loads` has no depth option and recurses
   once per level, so the depth is counted before it runs. A deeper body
   answers 21002 with `MALFORMED_REQUEST`. A verifyReceipt body is a flat
@@ -239,6 +245,25 @@ constants, not constructor options, and they match the Java and PHP ports.
   are also capped at nesting depth 64, checked before `json.loads` runs, for
   the same reason as the request body above. Apple's JWS payloads are a few
   KB at most.
+
+A `str` holds code points, one to four UTF-8 bytes each, so its length
+decides most checks without encoding it: more code points than the limit is
+over it, four times the code points within the limit is within it, and an
+ASCII string is exactly its length. Only a non-ASCII string between those
+bounds is encoded to be counted, a copy of at most four times the limit. A
+lone surrogate counts as three bytes.
+
+**Answering 413 like Apple.** `REQUEST_TOO_LARGE` exists so an HTTP layer can
+send the status Apple sends. The body is Apple's 21002 either way:
+
+```python
+result = endpoint.verify_receipt_result(raw_request_body)
+http_status = 413 if result.failure_reason == Reason.REQUEST_TOO_LARGE else 200
+return Response(result.to_json(), status=http_status, media_type="application/json")
+```
+
+A framework that caps request bodies itself has to allow at least 3 MiB, or
+it refuses bodies Apple would answer.
 
 ## Why offline
 

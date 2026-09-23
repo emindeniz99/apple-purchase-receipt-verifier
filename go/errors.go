@@ -12,8 +12,9 @@ import (
 // returns. It is closed by the cross-port contract
 // (fixtures/cases.schema.json); a twelfth reason is a change to every
 // implementation in one go, not a Go-local addition. A
-// [VerifyReceiptResult] can also report ReasonMalformedRequest and
-// ReasonInternalError, which every port's endpoint result shares.
+// [VerifyReceiptResult] can also report ReasonMalformedRequest,
+// ReasonRequestTooLarge and ReasonInternalError, which every port's
+// endpoint result shares.
 type Reason = apperr.Reason
 
 // The error vocabulary. The string values are normative — they are the
@@ -33,14 +34,20 @@ const (
 	ReasonStalePayload              = apperr.ReasonStalePayload
 )
 
-// Two more reasons exist only on a [VerifyReceiptResult]. No verifier
-// returns either, and neither is in AllReasons, which is the shared
+// Three more reasons exist only on a [VerifyReceiptResult]. No verifier
+// returns any of them, and none is in AllReasons, which is the shared
 // schema's vocabulary.
 const (
 	// ReasonMalformedRequest: the verifyReceipt request envelope is
-	// unusable. The body is not a JSON object, or receipt-data is
-	// missing, empty or not a string. Status 21002.
+	// unusable. The body is not a JSON object or nests deeper than
+	// MaxJSONNestingDepth, or receipt-data is missing, empty or not a
+	// string. Status 21002.
 	ReasonMalformedRequest = apperr.ReasonMalformedRequest
+	// ReasonRequestTooLarge: the raw request body is over
+	// MaxRequestBytes (3,145,728 bytes), the size at which Apple's
+	// endpoint answers HTTP 413. Status 21002 in the response body; an
+	// HTTP layer can map it to 413 as Apple does.
+	ReasonRequestTooLarge = apperr.ReasonRequestTooLarge
 	// ReasonInternalError: an unexpected error or panic inside the
 	// verifyReceipt endpoint. Status 21009. errors.Unwrap on the
 	// result's Err gives the cause.

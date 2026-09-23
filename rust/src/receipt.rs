@@ -44,14 +44,15 @@ pub const MAX_EMBEDDED_CERTIFICATES: usize = 10;
 /// the DER, all of it before any signature is checked, so an unbounded input
 /// is decoded and parsed in full for free.
 ///
-/// 2 MiB, the same number as Java's `ReceiptVerifier.MAX_RECEIPT_BYTES`,
-/// PHP's `DEFAULT_MAX_RECEIPT_BYTES` and Python's cap. It clears the
-/// normative floor in `fixtures/cases.json` (every port MUST accept 1 MiB of
-/// DER, whose base64 is about 1.38 MB); the largest genuine receipt in the
-/// corpus is 79 KB. The string is measured in UTF-8 bytes (`str::len`),
-/// which for base64 is the same count as characters; a string carrying
-/// non-ASCII can only be refused sooner, and it is not base64 anyway.
-pub const MAX_RECEIPT_BYTES: usize = 2 * 1024 * 1024;
+/// 3 MiB (3,145,728 bytes), Apple's own request limit, fixed and the same
+/// in every port of this library: no receipt Apple accepts can be larger
+/// than the request that carries it (see
+/// [`MAX_REQUEST_BYTES`](crate::MAX_REQUEST_BYTES)). Over it is
+/// [`Reason::InvalidReceiptFormat`] on every entry point. The string is
+/// measured in UTF-8 bytes (`str::len`), which for base64 is the same count
+/// as characters; a string carrying non-ASCII can only be refused sooner,
+/// and it is not base64 anyway.
+pub const MAX_RECEIPT_BYTES: usize = 3_145_728;
 
 /// Decodes a receipt string after checking it against [`MAX_RECEIPT_BYTES`],
 /// so an oversized one is refused before a byte of it is decoded. The one

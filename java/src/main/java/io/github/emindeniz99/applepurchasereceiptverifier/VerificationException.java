@@ -34,8 +34,8 @@ public class VerificationException extends Exception {
         STALE_PAYLOAD,
         /**
          * The verifyReceipt request envelope is unusable: the body is not a
-         * JSON object or is too large, or {@code receipt-data} is missing,
-         * empty or not a string. Reported only by
+         * JSON object or nests deeper than 64, or {@code receipt-data} is
+         * missing, empty or not a string. Reported only by
          * {@code VerifyReceiptResult.failureReason()}; never thrown.
          */
         MALFORMED_REQUEST,
@@ -44,7 +44,16 @@ public class VerificationException extends Exception {
          * answered as status 21009. Reported only by
          * {@code VerifyReceiptResult.failureReason()}; never thrown.
          */
-        INTERNAL_ERROR
+        INTERNAL_ERROR,
+        /**
+         * The raw verifyReceipt request body is over
+         * {@code VerifyReceiptEndpoint.MAX_REQUEST_BYTES} (3,145,728 UTF-8
+         * bytes), the size at which Apple's endpoint answers HTTP 413. Status
+         * 21002 in the response body; an HTTP layer can map it to 413 as
+         * Apple does. Reported only by
+         * {@code VerifyReceiptResult.failureReason()}; never thrown.
+         */
+        REQUEST_TOO_LARGE
     }
 
     private final Reason reason;

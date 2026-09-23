@@ -6,6 +6,7 @@ import {
   parseRequestJson,
   receiptDataOf,
   requestInstant,
+  requestTooLarge,
   requireEndpointEnvironment,
   verifiedResult,
   type EndpointEnvironment,
@@ -44,10 +45,11 @@ export interface VerifyReceiptEndpointOptions {
 export class VerifyReceiptEndpoint {
   /**
    * Ceiling on a raw JSON request body, in UTF-8 bytes, checked before it is
-   * parsed. A larger body, or one nesting JSON more than 64 levels deep,
-   * answers 21002 with `MALFORMED_REQUEST`. Deliberately below
-   * `ReceiptVerifier.MAX_RECEIPT_BYTES`: the JSON path parses the body as
-   * well as decoding the receipt. A body passed as an object is not measured.
+   * parsed: 3,145,728, Apple's own limit (measured 2026-09-23; one byte more
+   * gets HTTP 413 there). A larger body answers 21002 with
+   * `REQUEST_TOO_LARGE`, which an HTTP layer can map to 413. A fixed
+   * constant, the same in every port. A body passed as an object is not
+   * measured.
    */
   static readonly MAX_REQUEST_BYTES = MAX_REQUEST_BYTES;
 
@@ -71,6 +73,10 @@ export class VerifyReceiptEndpoint {
     let at: number | undefined;
     try {
       at = requestInstant(requestDate, this.#clock);
+      const tooLarge = requestTooLarge(this.#environment, requestBody, at);
+      if (tooLarge !== null) {
+        return tooLarge;
+      }
       const body = typeof requestBody === 'string' ? parseRequestJson(requestBody) : requestBody;
       return await this.#verify(receiptDataOf(body), at);
     } catch (error) {

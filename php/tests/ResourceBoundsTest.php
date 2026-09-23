@@ -87,8 +87,9 @@ final class ResourceBoundsTest extends TestCase
      */
     public function testAnOversizedReceiptIsRejectedBeforeParsing(): void
     {
-        $verifier = new ReceiptVerifier([MintedPki::get()->rootDer], 'com.example.app', 1024);
+        $verifier = new ReceiptVerifier([MintedPki::get()->rootDer], 'com.example.app');
         $big = DerWriter::tlv(DerWriter::SEQUENCE, str_repeat("\x05\x00", 2000000));
+        self::assertGreaterThan(ReceiptVerifier::MAX_RECEIPT_BYTES, strlen($big));
 
         $start = microtime(true);
         try {
@@ -207,7 +208,7 @@ final class ResourceBoundsTest extends TestCase
 
         // And it parses under a budget an order of magnitude below the default,
         // which is the claim the default is chosen against.
-        $tight = new ReceiptVerifier(AppleRootCerts::receiptRoots(), 'com.nutcall.alert', 2097152, 6000);
+        $tight = new ReceiptVerifier(AppleRootCerts::receiptRoots(), 'com.nutcall.alert', 6000);
         self::assertSame('com.nutcall.alert', $tight->verify($legacy)->bundleId);
     }
 

@@ -115,7 +115,10 @@ public class Conformance
         OrderedMap kase = Find(id);
         string operation = Str(kase, "operation");
         OrderedMap config = AsMap(kase["config"]);
-        string fixtureId = Str(AsMap(kase["input"]), "fixture");
+        OrderedMap inputSpec = AsMap(kase["input"]);
+        // A requestBody names a fixture too: the whole raw request body.
+        bool rawBody = inputSpec.TryGetValue("requestBody", out _);
+        string fixtureId = Str(inputSpec, rawBody ? "requestBody" : "fixture");
         byte[] input = Fixtures.Bytes(fixtureId);
         IClock? clock = Clock(kase);
         OrderedMap expected = AsMap(kase["expected"]);
@@ -123,7 +126,7 @@ public class Conformance
         object? result;
         try
         {
-            result = Run(operation, config, input, fixtureId, clock);
+            result = Run(operation, config, input, fixtureId, rawBody, clock);
         }
         catch (VerificationException e)
         {
@@ -148,6 +151,22 @@ public class Conformance
             Str(expected, "status") == "ok",
             $"expected {expectedReason} but the call returned a value");
 
+        if (result is VerifyReceiptResult endpointResult)
+        {
+            // FailureReason is not on Apple's wire, so an endpoint case pins
+            // it beside the wire fields rather than among them.
+            if (expected.TryGetValue("failureReason", out object? failureReason))
+            {
+                Assert.Equal(
+                    failureReason as string,
+                    endpointResult.FailureReason is VerificationReason reason
+                        ? VerificationReasonCodes.ToCode(reason)
+                        : null);
+            }
+
+            result = endpointResult.ToResponse();
+        }
+
         object? actual = Normalize.Value(result);
         foreach (KeyValuePair<string, object?> field in AsMap(expected["fields"]))
         {
@@ -163,8 +182,15 @@ public class Conformance
         }
     }
 
-    private static object Run(string operation, OrderedMap config, byte[] input, string fixtureId, IClock? clock)
+    private static object Run(
+        string operation, OrderedMap config, byte[] input, string fixtureId, bool rawBody, IClock? clock)
     {
+        if (rawBody && operation != "verifyReceiptEndpoint")
+        {
+            throw new InvalidOperationException(
+                $"harness error: requestBody is only defined for verifyReceiptEndpoint, not \"{operation}\"");
+        }
+
         switch (operation)
         {
             case "verifyTransaction":
@@ -211,6 +237,13 @@ public class Conformance
                         AppleEnvironments.TryParse(Str(config, "environment"), out AppleEnvironment environment),
                         "harness error: unknown endpoint environment");
                     using VerifyReceiptEndpoint endpoint = new(Roots(config), environment, clock);
+                    if (rawBody)
+                    {
+                        // The whole raw body, verbatim, through the entry
+                        // point that parses it.
+                        return endpoint.VerifyReceiptResult(Encoding.UTF8.GetString(input));
+                    }
+
                     OrderedMap body = new();
                     // A text fixture is what a client actually sent, verbatim;
                     // a raw or base64 fixture is DER this harness re-encodes
@@ -220,7 +253,7 @@ public class Conformance
                         Fixtures.Codec(fixtureId) == "text"
                             ? Encoding.UTF8.GetString(input)
                             : Convert.ToBase64String(input));
-                    return endpoint.VerifyReceiptResult(body).ToResponse();
+                    return endpoint.VerifyReceiptResult(body);
                 }
 
             default:

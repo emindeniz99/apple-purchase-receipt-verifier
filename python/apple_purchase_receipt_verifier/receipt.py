@@ -23,6 +23,7 @@ from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from ._chain import as_utc, build_and_validate_path
 from ._receipt_base64 import decode_receipt_base64
+from ._utf8 import utf8_exceeds
 from .exceptions import Reason, VerificationError
 
 # Apple marker OID on the receipt-signing leaf. The chain check alone does not
@@ -147,16 +148,16 @@ class ReceiptVerifier:
     :param bundle_id: the app's bundle id the receipt must carry
     """
 
-    #: Ceiling on the receipt this library will look at: the base64 string at
-    #: :meth:`verify`, in characters, and the DER at every entry point that
-    #: takes bytes, :func:`verify_receipt_core` included. Checked before
-    #: anything is decoded: base64 decoding allocates about three quarters of
-    #: the input again and the CMS parse allocates in proportion to the DER,
-    #: none of it behind a signature check. The number is the Java and PHP
-    #: ports'. It clears the normative floor in fixtures/cases.json, which
-    #: requires accepting a receipt of up to 1 MiB of DER (about 1.38 MB of
-    #: base64); the largest genuine receipt in the corpus is 79 KB.
-    MAX_RECEIPT_BYTES: ClassVar[int] = 2097152
+    #: Ceiling on the receipt this library will look at, in bytes: the base64
+    #: string at :meth:`verify`, measured in UTF-8, and the DER at every entry
+    #: point that takes bytes, :func:`verify_receipt_core` included. Checked
+    #: before anything is decoded: base64 decoding allocates about three
+    #: quarters of the input again and the CMS parse allocates in proportion
+    #: to the DER, none of it behind a signature check. 3 MiB: Apple's
+    #: verifyReceipt refuses a request body over 3,145,728 bytes (measured
+    #: 2026-09-23), so no receipt it would accept is larger. The same fixed
+    #: constant in every port.
+    MAX_RECEIPT_BYTES: ClassVar[int] = 3145728
 
     def __init__(self, trusted_roots: "Iterable[x509.Certificate]", bundle_id: str) -> None:
         roots = list(trusted_roots)
@@ -175,11 +176,11 @@ class ReceiptVerifier:
         if isinstance(receipt, str):
             # Before the decode, which would otherwise allocate a stripped
             # copy of the string and then the bytes it decodes to.
-            if len(receipt) > ReceiptVerifier.MAX_RECEIPT_BYTES:
+            if utf8_exceeds(receipt, ReceiptVerifier.MAX_RECEIPT_BYTES):
                 raise VerificationError(
                     Reason.INVALID_RECEIPT_FORMAT,
                     "receipt exceeds the maximum accepted size of "
-                    f"{ReceiptVerifier.MAX_RECEIPT_BYTES} characters",
+                    f"{ReceiptVerifier.MAX_RECEIPT_BYTES} bytes",
                 )
             der = decode_receipt_base64(receipt)
         else:

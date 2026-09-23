@@ -140,6 +140,16 @@ class ConformanceTest < Minitest::Test
       guid = config["deviceGuidHex"] && [config["deviceGuidHex"]].pack("H*")
       verifier.verify_base64(input, device_guid: guid)
     when "verifyReceiptEndpoint"
+      endpoint = APRV::VerifyReceiptEndpoint.new(
+        trusted_roots: trusted_roots(config["trustedRoots"]),
+        environment: config["environment"], clock: clock
+      )
+      # A requestBody fixture is the whole raw body, verbatim: it goes to the
+      # raw-body entry point, never wrapped in an envelope or trimmed.
+      if kase["input"].key?("requestBody")
+        return endpoint.verify_receipt_result(input.force_encoding(Encoding::UTF_8))
+      end
+
       fixture = kase["input"]["fixture"]
       # A text fixture is what a client would put in receipt-data as-is; a
       # raw or base64 fixture is decoded bytes this harness re-encodes, since
@@ -150,17 +160,15 @@ class ConformanceTest < Minitest::Test
         else
           [input].pack("m0")
         end
-      APRV::VerifyReceiptEndpoint.new(
-        trusted_roots: trusted_roots(config["trustedRoots"]),
-        environment: config["environment"], clock: clock
-      ).verify_receipt_result({ "receipt-data" => receipt_data }).to_response
+      endpoint.verify_receipt_result({ "receipt-data" => receipt_data })
     else
       raise "harness error: no adapter for operation #{kase["operation"].inspect}"
     end
   end
 
   def run_case(kase)
-    input = TestSupport.fixture_bytes(kase["input"]["fixture"]).dup
+    input_spec = kase["input"]
+    input = TestSupport.fixture_bytes(input_spec["requestBody"] || input_spec["fixture"]).dup
     expected = kase["expected"]
     begin
       result = dispatch(kase, input, case_clock(kase))
@@ -179,6 +187,15 @@ class ConformanceTest < Minitest::Test
 
     assert_equal "ok", expected["status"],
                  "expected #{expected["reason"]} but the call returned a value"
+    if result.is_a?(APRV::VerifyReceiptResult)
+      # Not a wire field, so asserted beside the fields rather than among them.
+      if expected.key?("failureReason")
+        want = expected["failureReason"]
+        got = result.failure_reason&.to_s
+        want.nil? ? assert_nil(got, "failureReason") : assert_equal(want, got, "failureReason")
+      end
+      result = result.to_response
+    end
     actual = normalize(result)
     expected["fields"].each do |path, want|
       got = resolve_path(actual, path)

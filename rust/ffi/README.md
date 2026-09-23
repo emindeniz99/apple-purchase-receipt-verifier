@@ -106,6 +106,14 @@ breaks needs no JSON escaping. Like Apple's endpoint, it does not check the
 bundle id. Compare `receipt.bundle_id` in the response before granting
 anything, or use the receipt verifier calls, which check it for you.
 
+A request body over 3,145,728 UTF-8 bytes, the size at which Apple's own
+endpoint answers HTTP 413, gets `{"status":21002}` without being parsed. The
+Rust library reports that as the result-only reason `REQUEST_TOO_LARGE`, but
+this call returns Apple's response body only, so no reason reaches the
+caller and the ABI gains no status code for it. To answer 413 as Apple
+does, check the body's length in bytes before the call: over 3,145,728 is
+413.
+
 ### The clock
 
 The two `_and_clock` constructors take `const int64_t *fixed_clock_unix_millis`:

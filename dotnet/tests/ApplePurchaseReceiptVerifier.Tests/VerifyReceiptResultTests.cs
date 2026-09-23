@@ -246,11 +246,11 @@ public class VerifyReceiptResultTests
                 string label = data.Substring(0, Math.Min(40, data.Length));
                 VerifyReceiptResult bare = pinned.VerifyReceiptData(data);
                 string body = Body(data);
-                if (body.Length > VerifyReceiptEndpoint.MaxRequestBytes)
+                if (Encoding.UTF8.GetByteCount(body) > VerifyReceiptEndpoint.MaxRequestBytes)
                 {
-                    // The byte-floor receipt: its base64 is under the receipt
-                    // cap, so the bare string is answered, but as a JSON body
-                    // it is over the request cap and never parsed.
+                    // A receipt string over the receipt cap: as a JSON body it
+                    // is over the request cap too and never parsed.
+                    Assert.Equal(VerificationReason.RequestTooLarge, pinned.VerifyReceiptResult(body).FailureReason);
                     Assert.Equal("{\"status\":21002}", pinned.VerifyReceiptJson(body));
                 }
                 else
@@ -295,6 +295,14 @@ public class VerifyReceiptResultTests
         }
 
         Assert.Equal("{\"status\":21002}", sandbox.VerifyReceiptJson(new string('[', 100_000)));
+
+        // Over Apple's request limit: 21002 like the malformed bodies, but its
+        // own reason, so an HTTP layer can answer 413 where Apple does.
+        VerifyReceiptResult tooLarge = sandbox.VerifyReceiptResult(
+            new string(' ', VerifyReceiptEndpoint.MaxRequestBytes + 1));
+        Assert.Equal(VerificationReason.RequestTooLarge, tooLarge.FailureReason);
+        Assert.Equal(21002, tooLarge.Status);
+        AssertInvariant(tooLarge, "body too large");
 
         Dictionary<string, VerifyReceiptResult> invalid = new(StringComparer.Ordinal)
         {
