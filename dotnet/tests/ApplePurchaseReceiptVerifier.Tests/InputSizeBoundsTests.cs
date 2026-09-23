@@ -14,8 +14,10 @@ namespace ApplePurchaseReceiptVerifier.Tests;
 /// <summary>
 /// The size caps every port applies before it decodes or parses anything.
 /// Unbounded input is decoded and parsed in full before any signature is
-/// checked, so each cap is a denial-of-service bound, and the numbers are
-/// shared with the Java, PHP and Python ports.
+/// checked, so each cap is a denial-of-service bound. The request and receipt
+/// caps are Apple's: its verifyReceipt answers a 3,145,728-byte request body
+/// and refuses a 3,145,729-byte one (measured 2026-09-23), counting UTF-8
+/// bytes, and every port holds the same fixed numbers.
 /// </summary>
 /// <remarks>
 /// Each cap is pinned from both sides with the same content: an input at the
@@ -25,8 +27,8 @@ namespace ApplePurchaseReceiptVerifier.Tests;
 /// </remarks>
 public class InputSizeBoundsTests
 {
-    private const string ReceiptCapMessage = "INVALID_RECEIPT_FORMAT: receipt exceeds the maximum accepted size of 2097152 characters";
-    private const string DerCapMessage = "INVALID_RECEIPT_FORMAT: receipt exceeds the maximum accepted size of 2097152 bytes";
+    private const string ReceiptCapMessage = "INVALID_RECEIPT_FORMAT: receipt exceeds the maximum accepted size of 3145728 bytes";
+    private const string DerCapMessage = ReceiptCapMessage;
     private const string JwsCapMessage = "INVALID_JWS_FORMAT: jws exceeds the maximum accepted size of 262144 characters";
 
     private static readonly DateTimeOffset Now = new(2025, 1, 1, 0, 0, 0, TimeSpan.Zero);
@@ -51,8 +53,8 @@ public class InputSizeBoundsTests
     [Fact]
     public void TheCapsAreTheCrossPortNumbers()
     {
-        Assert.Equal(2097152, ReceiptVerifier.MaxReceiptBytes);
-        Assert.Equal(1048576, VerifyReceiptEndpoint.MaxRequestBytes);
+        Assert.Equal(3145728, ReceiptVerifier.MaxReceiptBytes);
+        Assert.Equal(3145728, VerifyReceiptEndpoint.MaxRequestBytes);
         Assert.Equal(262144, JwsVerifier.MaxJwsBytes);
         Assert.Equal(64, Json.MaxDepth);
     }
@@ -87,6 +89,21 @@ public class InputSizeBoundsTests
     {
         // The decoder would object to the first character. It never sees it.
         string overCap = "!" + new string('A', ReceiptVerifier.MaxReceiptBytes);
+
+        using ReceiptVerifier verifier = new(Roots(), "com.example.app");
+        Assert.Equal(
+            ReceiptCapMessage,
+            Assert.Throws<VerificationException>(() => verifier.Verify(overCap)).Message);
+    }
+
+    [Fact]
+    public void AReceiptStringIsMeasuredInUtf8BytesNotCharacters()
+    {
+        // Half the cap in characters, one byte over it in UTF-8. A character
+        // count would hand it to the decoder, which would answer with its own
+        // message instead of the cap's.
+        string overCap = "a" + new string('\u00e9', ReceiptVerifier.MaxReceiptBytes / 2);
+        Assert.Equal(ReceiptVerifier.MaxReceiptBytes + 1, Encoding.UTF8.GetByteCount(overCap));
 
         using ReceiptVerifier verifier = new(Roots(), "com.example.app");
         Assert.Equal(
@@ -178,15 +195,56 @@ public class InputSizeBoundsTests
     public void ARequestBodyOneOverTheCapIsRefusedBeforeParsing()
     {
         // The body that verifies at the cap plus one space: a parser would
-        // have accepted it, so a 21002 here can only come from the cap.
+        // have accepted it, so a 21002 here can only come from the cap. The
+        // reason is RequestTooLarge, the one an HTTP layer maps to 413 as
+        // Apple does.
         using VerifyReceiptEndpoint endpoint = new(Roots(), AppleEnvironment.Sandbox);
         string overCap = RequestBody(VerifyReceiptEndpoint.MaxRequestBytes + 1);
 
         VerifyReceiptResult result = endpoint.VerifyReceiptResult(overCap, Now);
         Assert.Equal(21002, result.Status);
-        Assert.Equal(VerificationReason.MalformedRequest, result.FailureReason);
+        Assert.Equal(VerificationReason.RequestTooLarge, result.FailureReason);
         Assert.Equal("{\"status\":21002}", result.ToJson());
         Assert.Equal("{\"status\":21002}", endpoint.VerifyReceiptJson(overCap));
+    }
+
+    /// <summary>
+    /// Apple's limit counts UTF-8 bytes. A body padded with U+00E9 to one byte
+    /// over the limit is barely half the limit in characters, so a character
+    /// count lets it through; the same shape one byte shorter verifies.
+    /// </summary>
+    [Fact]
+    public void ARequestBodyIsMeasuredInUtf8BytesNotCharacters()
+    {
+        int limit = VerifyReceiptEndpoint.MaxRequestBytes;
+        string prefix = "{\"receipt-data\":\"" + B64("receipt") + "\",\"password\":\"";
+        const string Suffix = "\"}";
+        int fixedBytes = prefix.Length + Suffix.Length;
+        string Body(int paddingBytes) =>
+            prefix + new string('\u00e9', paddingBytes / 2) + (paddingBytes % 2 == 1 ? "a" : string.Empty) + Suffix;
+
+        using VerifyReceiptEndpoint endpoint = new(Roots(), AppleEnvironment.Sandbox);
+
+        string overBody = Body(limit + 1 - fixedBytes);
+        Assert.Equal(limit + 1, Encoding.UTF8.GetByteCount(overBody));
+        Assert.True(overBody.Length < (limit / 2) + fixedBytes, "a character count calls this one far under the limit");
+        Assert.Equal(VerificationReason.RequestTooLarge, endpoint.VerifyReceiptResult(overBody, Now).FailureReason);
+
+        string atBody = Body(limit - fixedBytes);
+        Assert.Equal(limit, Encoding.UTF8.GetByteCount(atBody));
+        Assert.Equal(0, endpoint.VerifyReceiptResult(atBody, Now).Status);
+    }
+
+    /// <summary>
+    /// The size check comes before the parse and the depth scan: a body that
+    /// is both too large and malformed is answered as too large.
+    /// </summary>
+    [Fact]
+    public void AnOversizedMalformedBodyIsRequestTooLargeNotMalformedRequest()
+    {
+        using VerifyReceiptEndpoint endpoint = new(Roots(), AppleEnvironment.Sandbox);
+        string deep = new('[', VerifyReceiptEndpoint.MaxRequestBytes + 1);
+        Assert.Equal(VerificationReason.RequestTooLarge, endpoint.VerifyReceiptResult(deep, Now).FailureReason);
     }
 
     // --- endpoint nesting depth ------------------------------------------
@@ -402,17 +460,16 @@ public class InputSizeBoundsTests
     // --- the byte floor --------------------------------------------------
 
     /// <summary>
-    /// The normative 1 MiB receipt floor sits under the receipt cap at every
-    /// verifier entry point, and over the request cap as a JSON body: base64
-    /// of 1 MB is 1.38 MB. The cap on a request bounds a wire request, not a
-    /// receipt, which is why the floor is not pinned through that path.
+    /// The normative 1 MiB receipt floor sits under both caps: its base64 is
+    /// about 1.38 MB, so it verifies at every verifier entry point and as a
+    /// raw JSON request body.
     /// </summary>
     [Fact]
-    public void TheByteFloorReceiptVerifiesEverywhereButAsAnOversizedRequestBody()
+    public void TheByteFloorReceiptVerifiesEverywhere()
     {
         byte[] der = Fixtures.Bytes("receipt-byte-floor");
         string base64 = Convert.ToBase64String(der);
-        Assert.InRange(base64.Length, VerifyReceiptEndpoint.MaxRequestBytes, ReceiptVerifier.MaxReceiptBytes);
+        Assert.True(base64.Length < VerifyReceiptEndpoint.MaxRequestBytes / 2);
 
         using ReceiptVerifier verifier = new(Roots("large-receipt-root"), "com.example.app");
         Assert.Equal(2300, verifier.Verify(der).InAppPurchases.Count);
@@ -422,8 +479,7 @@ public class InputSizeBoundsTests
         Assert.Equal(0, endpoint.VerifyReceiptData(base64, Now).Status);
 
         VerifyReceiptResult asBody = endpoint.VerifyReceiptResult("{\"receipt-data\":\"" + base64 + "\"}", Now);
-        Assert.Equal(21002, asBody.Status);
-        Assert.Equal(VerificationReason.MalformedRequest, asBody.FailureReason);
-        Assert.Equal("{\"status\":21002}", asBody.ToJson());
+        Assert.Equal(0, asBody.Status);
+        Assert.Equal(2300, asBody.Receipt!.InAppPurchases.Count);
     }
 }
