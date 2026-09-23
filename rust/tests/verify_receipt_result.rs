@@ -362,7 +362,9 @@ fn the_bare_base64_path_answers_what_the_json_body_path_answers_for_every_receip
             if let Ok(anchor) = TrustAnchor::from_der(&bytes) {
                 anchors.push(anchor);
             }
-        } else if name.starts_with("receipt") {
+        } else if name.starts_with("receipt") && !name.contains("der-cap") {
+            // The two DER-cap receipts are left out: 3 MiB of DER is 4 MiB
+            // of base64, which no request can carry.
             texts.push((name, base64::encode(&bytes)));
         }
     }
