@@ -114,8 +114,10 @@ visibility is checked at compile time.
    fails every suite.
 2. Append the case: a unique `id` shaped `<area>/<what-it-pins>`, a
    `description` of the fact it pins, the `operation` (`verifyTransaction`,
-   `verifyAppTransaction`, `verifyRaw`, `verifyReceipt` or
-   `verifyReceiptEndpoint`), `input.fixture`, the `config`, and `expected`.
+   `verifyAppTransaction`, `verifyRaw`, `verifyReceipt`,
+   `verifyReceiptBase64` or `verifyReceiptEndpoint`), `input.fixture`, the
+   `config`, and `expected`. A base64 spelling is a `decodeBase64` group
+   instead; see "Adding a base64 spelling" below.
    A positive case carries `status: "ok"` plus the `fields` it pins; a field
    it does not list is not pinned. A negative case carries `status: "error"`
    plus a `reason` from the canonical vocabulary, and a `fault` naming its
@@ -126,7 +128,35 @@ visibility is checked at compile time.
    fails on a fixture file no case registers or an `input` fixture no case
    uses. CI runs the same command in the `conformance` job.
 4. Run all nine suites. The case must pass in every language; a disagreement
-   is the finding, not something to paper over in an adapter.
+   is the finding, not something to paper over in an adapter. Every runner
+   also checks that each case id in the file ran, so a case an adapter
+   silently skips fails the suite. Only an explicit test filter turns that
+   check off.
+
+### Adding a base64 spelling
+
+The `receipt-data` and `x5c` base64 spellings live in `cases.json` as
+`decodeBase64` groups, one list for all nine ports. Do not add a spelling
+list to a port's own tests. Put the string in the group for its category
+(`base64/reject-whitespace-inside`, `base64/decodes-to-41`, ...) or start a
+new group:
+
+- `input.texts` holds the exact strings; the empty string and control
+  characters are allowed. A string appears in one group only.
+- An accepting group has `expected: {"status": "ok", "bytesHex": "<hex>"}`,
+  the bytes every text decodes to. A refusing group has
+  `expected: {"status": "error", "reason": "INVALID_RECEIPT_FORMAT"}`.
+- `decoders` names the decoders the group runs through, normally
+  `["receipt-data", "x5c"]`. Each runner calls the port's decoders
+  directly. A refusal is `INVALID_RECEIPT_FORMAT` from the receipt-data
+  decoder and `INVALID_CERTIFICATE` from the x5c decoder; the runner maps
+  the reason, so a case never repeats it.
+- The `description` says why, citing the Apple measurement in
+  `docs/evidence/2026-09-23-verifyreceipt-base64.md` where there is one.
+
+`lint-cases.mjs` checks each spelling against the rule on its own and
+refuses a string listed twice. When a text fails, the runner names the case
+id, the index and the escaped text.
 
 Field paths in `expected.fields` are language-neutral: the shared camelCase
 API names for the library operations, the literal Apple wire keys for

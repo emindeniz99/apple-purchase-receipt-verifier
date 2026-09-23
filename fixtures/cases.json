@@ -1,7 +1,7 @@
 {
   "$schema": "./cases.schema.json",
   "schemaVersion": 1,
-  "comment": "Normative cross-language conformance vectors for apple-purchase-receipt-verifier.\nOne case per semantic fact: java/, node/, python/, swift/, go/, ruby/, rust/, php/ and dotnet/\neach assert many of these under their own test names, and the duplicates are merged here.\nEvery expectation in this file was derived by hand from the four test-suite inventories,\nfrom PLAN.md sections 2.1-2.3, from COMPARISON.md and from the fixture generator\n(java/src/test/.../FixtureGeneratorTest.java) plus fixtures/generated/manifest.json.\nNOTHING here was produced by running an implementation and recording what it did:\na vector that disagrees with an implementation is a bug report against that implementation\nuntil a human decides otherwise.\n\nPaths in \"fields\" are language-neutral. Scalars use the shared API names from PLAN.md section 3\n(camelCase) for verifyTransaction/verifyAppTransaction/verifyRaw/verifyReceipt, and the literal\nApple wire keys (snake_case) for verifyReceiptEndpoint. \"x.length\" is a collection size.\n\"list[key=value].field\" selects the single element of list whose key equals value.\n\"unknownAttributes[9999][0]\" indexes the raw values recorded for receipt attribute type 9999,\nexpressed as a lowercase hex string. Dates are ISO-8601 UTC strings; claims that Apple ships as\nepoch milliseconds (signedDate, receiptCreationDate) stay numbers. null means \"absent or unset\".\nA field a case does not list is simply not pinned by that case.\n\nCertificate-validity windows are judged at the payload signedDate / receipt creationDate, and\nwhere the input states neither (for a receipt: a creation date that is missing, empty,\nunreadable or stated twice, or a top-level attribute entry that cannot be read), at the SYSTEM clock — never at an injected one (PLAN.md 2.1\nstep 4, 2.2 step 2). The expired-chain cases are therefore deterministic. \"clock\" appears where\nthe answer genuinely moves with time — the max-signed-age staleness rule and the request_date\ntriple of the verifyReceipt endpoint — and, on the four dateless inputs, precisely to pin that\nthe answer does NOT move: a receipt or payload carrying no date of its own, verified under a\nclock planted inside an expired certificate's window or far past a live one's, must reach the\nverdict it reaches on real time. A caller injecting a clock to test staleness, or to work\naround clock skew, must not thereby accept a chain that is expired. verifyReceipt cases cannot\ncarry a clock at all — the schema refuses one — because ReceiptVerifier takes no clock\nparameter in any port. Where the schema does allow one, a runner MUST hand the case's clock to\nthe verifier rather than fake time; a case carrying a clock that is run against the system\nclock is not running the case.\n\nEvery fixture records the SHA-256 of its DECODED logical bytes (post-codec: the file bytes for\nraw, the base64-decoded bytes for base64, the trimmed UTF-8 for utf8). contentSha256 is not\ndocumentation: tools/lint-cases.mjs re-hashes every registered fixture, and so does every\nadapter — over the whole registry before any case runs, and again for each fixture a case\nloads. A fixture that is regenerated, re-encoded or quietly edited fails loudly in every\nlanguage instead of silently changing what these vectors mean.\n\nFour places where the ports had drifted apart were adjudicated and are pinned here: the\ncertificate-validity fallback clock (the dateless cases), the typed endpoint environment\n(config.environment is the enum, and both values are exercised), and a receipt attribute type\nabove 2^31-1, which every port must reject as INVALID_RECEIPT_FORMAT rather than rename or\nclamp. The fourth — verifyReceiptCore being public in every port, so no endpoint has to build a\nwildcard-bundle-id verifier to reach it — changes no observable answer, so no vector can hold\nit; the native suites carry that one.\n\n\"fault\" names the one intentional defect of a negative case. It is documentation, not an\nassertion: implementations are not required to report it, only to report the given reason.\n\nReceipt base64 (added 2026-09-04, rule replaced 2026-09-23). Every runner decodes a base64 fixture itself and hands DER to the library, so no verifyReceipt case can say how a port treats the string a client actually sent. The text codec and the verifyReceiptBase64 operation close that: the fixture bytes go to the string entry point verbatim, and a verifyReceiptEndpoint case over a text fixture puts them in receipt-data verbatim. The rule they pin is the one Apple's verifyReceipt applies, measured on 2026-09-23 against the production and sandbox endpoints with genuine receipts (docs/evidence/2026-09-23-verifyreceipt-base64.md): receipt-data is accepted if and only if it is non-empty standard-alphabet base64 ([A-Za-z0-9+/]) carrying exactly the canonical '=' padding for its data length, and nothing else. Whitespace anywhere (a trailing line feed, line breaks at 64 or 76 columns, a leading space), the base64url alphabet, omitted, partial or extra padding, anything after the padding, an impossible length and the empty string are all INVALID_RECEIPT_FORMAT (21002 at the endpoint). Unused low bits in the last data character are accepted, because Apple accepts them. The rule this replaced accepted everything Foundation's base64EncodedString(options:) can emit, base64url, omitted padding and line breaks included; it was reasoned from the documentation and never measured, and Apple refuses all of those, so seven accept-* cases became reject-*.\n\nHostile JWS (added 2026-09-05). Six inputs that Python's coverage-guided fuzzing walked out of the library as bare exceptions rather than verdicts are pinned here, so that all nine ports answer them and answer them the same way. A seventh input sits with them carrying no defect at all: the same signedDate spelled 1722945600000.0, which must verify, because a port could otherwise pass the out-of-range vector by refusing every number that is not a bare integer. Each is a real JWS over the generated test PKI carrying exactly one mutation; the header is signed in its hostile state so the ES256 signature covers the bytes served, and a mutated certificate is re-signed by its issuer so a broken issuer signature can never be the first thing a port objects to. The reasons were adjudicated against Node and Python, which already agreed on three of the five, and on the fourth the majority was overruled for the reason that case states: x5c entries that are not strings are INVALID_JWS_FORMAT, a signedDate of 1e300 is INVALID_CHAIN, a certificate that stops decoding inside its extension block is INVALID_CERTIFICATE, an unimplemented EC curve on the intermediate is INVALID_CERTIFICATE, and a certificate claiming X.509 version 11 is INVALID_CERTIFICATE, and a certificate carrying the same extension twice is INVALID_CERTIFICATE. The per-case descriptions carry the reasoning for each. What these five have in common is where the defect sits: in the JWS header and in the x5c certificates, both of which every port decodes BEFORE the signature that would have rejected them, and neither of which any signature in the input authenticates. An eighth input joined them when the x5c[2] differential was closed: the third x5c entry holding base64 of \"not a certificate\", which java alone rejected because java alone parsed that entry. The other eight ports verified the JWS, and the majority lost to the same rule the unimplemented curve lost to \u2014 pinning acceptance would have made java drop a rejection it already makes. Every port now parses all three entries; none of them trusts the third, which is what the differential was always about.\n\nReceipt signer certificates (added 2026-09-05). The four certificate mutations above sit in a JWS header, and four ports answered them from checks written on the JWS path alone (node, python, ruby and dotnet; rust and php had them in a shared certificate parser, and java, swift and go get them from a platform decoder). So the same four mutations \u2014 X.509 version 11, a duplicated basicConstraints, an unassigned EC curve and an extension block that stops decoding \u2014 are built into the certificate a legacy PKCS#7 receipt is signed by, and carry the reason their JWS twins carry: INVALID_CERTIFICATE. Each receipt is genuine in every other respect, with the signer re-signed by the intermediate wherever the mutation touched its TBS, so the certificate is the only thing a port can object to. The curve case is the one where the signer's KEY is the mutation: the receipt is signed with a real P-256 key whose certificate then names a curve that does not exist, so the port has to refuse the certificate before it can reach the signature \u2014 and it must not answer instead that the key is not RSA, which is a different input.\n\nCompact-JWS segments that are empty or are not JSON objects (added 2026-09-05). RFC 7515 7.1 gives a compact JWS three base64url segments whose first two decode to JSON OBJECTS, and nothing here said what happens when one is empty or decodes to an array or a bare scalar. Six inputs pin it, all INVALID_JWS_FORMAT: the whole input `..`, an empty header, an empty payload, a header that is a JSON array, a header that is a bare scalar, and a payload that is a JSON array. The two with the defect in the PAYLOAD carry a genuine header and signature, so a port answers about the payload rather than about the certificates in a fake header; the four with the defect in the header need no signing, because the header is read first. Two things make these worth pinning rather than assuming. An empty segment is valid base64url of zero bytes, and a JSON reader that answers \"nothing\" instead of raising hands the caller a null the next line dereferences \u2014 which is how `..` left java as a NullPointerException rather than a verdict. And an empty or non-object PAYLOAD makes every claim read as absent, which fails OPEN: a payload stating no signedDate moves certificate validity onto the current-time fallback and silences the staleness rule, the same pair transaction/reject-signed-date-out-of-range guards from the other side.\n\nResource bounds (added 2026-09-05, rewritten 2026-09-23). The byte limits are a contract, and they are Apple's. Measured on 2026-09-23 against both https://buy.itunes.apple.com/verifyReceipt and the sandbox endpoint: a request body of 3,145,728 bytes is answered normally and one of 3,145,729 bytes gets HTTP 413, and the limit counts UTF-8 bytes, not characters: 3,145,729 bytes of U+00E9 (only 1,572,874 characters) also got 413, while 3,145,727 bytes of it got 200. So every port applies exactly these limits, as fixed constants no caller can change. A raw request body over 3,145,728 UTF-8 bytes is status 21002 with the result-only reason REQUEST_TOO_LARGE, decided before the body is parsed; a caller's HTTP layer can map it to 413 as Apple does. A receipt over 3,145,728 bytes, measured on the base64 string before it is decoded and again on the DER, is INVALID_RECEIPT_FORMAT (21002 at the endpoint). A request body nesting more than 64 arrays and objects at once is 21002 with MALFORMED_REQUEST. A compact JWS over 262,144 bytes is INVALID_JWS_FORMAT. At or under each limit nothing may be refused for its size. The resource-bounds vectors hold each number from both sides where an input can say so. Their inputs are real files under fixtures/limits/, registered like every other fixture, so every runner reads identical bytes; tools/generate-limit-fixtures.mjs wrote them and says how each is built, and git stores their padding compressed to a few kilobytes. None contains a lone surrogate, so ports need not agree on how one would be counted. A verifyReceiptEndpoint case may name its input as requestBody instead of fixture: that text fixture is the WHOLE raw request body, handed to the port's raw-body entry point (the one that parses JSON) rather than wrapped as receipt-data by the runner. expected.failureReason on an endpoint case pins the reason the result carries, beside the wire fields because it is not on the wire: any thrown reason, or one of the result-only MALFORMED_REQUEST, REQUEST_TOO_LARGE and INTERNAL_ERROR, which no verifier ever throws. The ASN.1 node budgets stay port-local (200,000 nodes per parse in ruby, 100,000 in rust and go, 20,000 in php, none elsewhere), so for nodes the contract states the floor beneath them: every port MUST accept a well-formed, correctly signed receipt whose largest single ASN.1 parse holds up to 20,000 nodes. A node is one TLV, counted descending into constructed values only, because a primitive OCTET STRING's contents (an in-app purchase, an attribute value, the encapsulated payload) are a separate parse with a separate budget in every port that has one. Two receipts pin the accepting side, one number each: `receipt-byte-floor` is 1,034,681 bytes at 9,237 nodes and `receipt-node-floor` is 19,897 nodes at 74,569 bytes. One receipt under both limits would not do it: a port could lower either limit to just above what that single receipt happened to use, which is what the 809,069-byte, 16,037-node receipt they replace allowed. The byte-floor receipt, 1,379,576 characters of base64, now also runs through verifyReceiptEndpoint. The DER cap is held from both sides by genuine receipts in the byte-floor shape: `receipt-at-der-cap` is a well-formed, correctly signed receipt of exactly 3,145,728 bytes that every port MUST accept, and `receipt-over-der-cap` is the same receipt one product-id character longer, 3,145,729 bytes, well-formed and correctly signed, so the cap is the only thing that can refuse it. Both carry 9,237 nodes. They run through verifyReceipt only: the base64 cap is 3,145,728 characters, which decode to at most 2,359,296 bytes of DER, so a DER receipt at the cap is reachable only through the raw-DER entry point and never through verifyReceiptBase64 or the endpoint. The string side of the receipt cap is held from below by `limit-receipt-b64-at-cap`, the canonical base64 of a genuinely signed receipt of exactly 2,359,296 bytes, which is 3,145,728 characters: canonical base64 admits nothing around it, so no padding can stretch a smaller receipt to the cap.\n\nLegacy receipt ids (added 2026-09-21). Four attribute types the library used to leave raw in unknownAttributes are modelled: app-level 1 (app item id), 15 (download id) and 16 (version external identifier), and in-app 1713 (is trial period). None is on Apple's archived Receipt Fields chapter. They were established by decoding a genuine production receipt and lining its attributes up against the answer Apple's verifyReceipt endpoint gives for the same receipt, and against Apple's published response reference. All four are INTEGER attributes, decoded like 1711. At the endpoint, attribute 1 is echoed under BOTH adam_id and app_item_id \u2014 Apple's reference defines adam_id as \"See app_item_id\" \u2014 and the three app-level ids are JSON numbers while 1713 is the string \"true\"/\"false\", exactly like 1719. An attribute a receipt does not carry leaves its key OUT of the answer rather than emitting JSON null, and a value of 0 is a value: Apple's sandbox sends 0 for the three ids. The fixture's download id is 2^53+1, the first integer an IEEE-754 double cannot hold, because Apple's real download_id values run to eighteen digits: a port carrying receipt integers as a JavaScript number answers 9007199254740992 here, or refuses the receipt, and either way the vector catches it.\n\nPrior-art vectors (added 2026-09-22). Seven cases from the audit of the tikhop/TPInAppReceipt test suite and the objc.io \"Receipt Validation\" walkthrough recorded in PLAN.md's prior-art table. Two of them pin the device hash against Apple-signed bytes rather than against bytes this repository generated: TPInAppReceipt's HashVerifierTests publishes the device identifier of the genuine sandbox receipt vendored under fixtures/public-receipts/, and SHA1(deviceId bytes || attribute 4 || the DER of attribute 2) over it reproduces that receipt's attribute 5 byte for byte, so a port whose concatenation order, UUID byte order or bundle-id encoding is wrong cannot pass by agreeing with the generator that made the fixture. One pins that attribute 2 is compared byte for byte, so a bundle id differing only in the case of one letter is WRONG_BUNDLE_ID. Four are receipts whose single defect sits in the CMS structure rather than in a certificate or in the payload, all from the generator java/src/test/.../ReceiptCmsDefectFixtures.java: a receipt-signing end entity standing where the intermediate belongs, with the signer genuinely issued by it and basicConstraints the only objection (INVALID_CHAIN); the intermediate simply absent from the bag (INVALID_CHAIN, the other way an issuer can be wrong); a SignerInfo signature of zero bytes, which is well-formed DER, so a port must reach verification and take a negative answer from it (INVALID_SIGNATURE); and a CMS signed over zero bytes of encapsulated content, so the chain, the purpose and the signature are all genuine and the empty payload is the only thing left to object to (INVALID_RECEIPT_FORMAT). The audit also asked for receiptType assertions on the genuine receipts. receipt/verify-genuine-sandbox-g5-against-apple-roots already pins \"ProductionSandbox\" on genuine Apple bytes, and nothing here can pin \"Production\" on them: both genuine receipts in the corpus are sandbox receipts, which fixtures/public-receipts/README.md records as the cost of removing the production one, so the generated receipt-type-production fixture carries that value instead.\n\nx5c spelling (added 2026-09-23). RFC 7515 section 4.1.6 makes every x5c entry base64 of a DER certificate: the standard alphabet of RFC 4648 section 4, not base64url, and nothing in RFC 7515 lets an entry carry whitespace. So a character outside that alphabet, a base64url '-' or '_', and a line break are each INVALID_CERTIFICATE, never skipped or translated on the way to a genuine certificate. Three vectors pin it on x5c[0], each signed in its mutated state so the spelling is the only defect: before them, six ports skipped a junk character, four read the base64url alphabet and eight stripped line breaks, and each of those VERIFIED the JWS. Padding joined the family the same day: an entry with its '=' omitted, or with one '=' more than its length calls for, is INVALID_CERTIFICATE too, so an x5c entry now follows the receipt-data rule exactly (standard alphabet, canonical padding, nothing else) and a violation is reported as a certificate defect.",
+  "comment": "Normative cross-language conformance vectors for apple-purchase-receipt-verifier.\nOne case per semantic fact: java/, node/, python/, swift/, go/, ruby/, rust/, php/ and dotnet/\neach assert many of these under their own test names, and the duplicates are merged here.\nEvery expectation in this file was derived by hand from the four test-suite inventories,\nfrom PLAN.md sections 2.1-2.3, from COMPARISON.md and from the fixture generator\n(java/src/test/.../FixtureGeneratorTest.java) plus fixtures/generated/manifest.json.\nNOTHING here was produced by running an implementation and recording what it did:\na vector that disagrees with an implementation is a bug report against that implementation\nuntil a human decides otherwise.\n\nPaths in \"fields\" are language-neutral. Scalars use the shared API names from PLAN.md section 3\n(camelCase) for verifyTransaction/verifyAppTransaction/verifyRaw/verifyReceipt, and the literal\nApple wire keys (snake_case) for verifyReceiptEndpoint. \"x.length\" is a collection size.\n\"list[key=value].field\" selects the single element of list whose key equals value.\n\"unknownAttributes[9999][0]\" indexes the raw values recorded for receipt attribute type 9999,\nexpressed as a lowercase hex string. Dates are ISO-8601 UTC strings; claims that Apple ships as\nepoch milliseconds (signedDate, receiptCreationDate) stay numbers. null means \"absent or unset\".\nA field a case does not list is simply not pinned by that case.\n\nCertificate-validity windows are judged at the payload signedDate / receipt creationDate, and\nwhere the input states neither (for a receipt: a creation date that is missing, empty,\nunreadable or stated twice, or a top-level attribute entry that cannot be read), at the SYSTEM clock — never at an injected one (PLAN.md 2.1\nstep 4, 2.2 step 2). The expired-chain cases are therefore deterministic. \"clock\" appears where\nthe answer genuinely moves with time — the max-signed-age staleness rule and the request_date\ntriple of the verifyReceipt endpoint — and, on the four dateless inputs, precisely to pin that\nthe answer does NOT move: a receipt or payload carrying no date of its own, verified under a\nclock planted inside an expired certificate's window or far past a live one's, must reach the\nverdict it reaches on real time. A caller injecting a clock to test staleness, or to work\naround clock skew, must not thereby accept a chain that is expired. verifyReceipt cases cannot\ncarry a clock at all — the schema refuses one — because ReceiptVerifier takes no clock\nparameter in any port. Where the schema does allow one, a runner MUST hand the case's clock to\nthe verifier rather than fake time; a case carrying a clock that is run against the system\nclock is not running the case.\n\nEvery fixture records the SHA-256 of its DECODED logical bytes (post-codec: the file bytes for\nraw, the base64-decoded bytes for base64, the trimmed UTF-8 for utf8). contentSha256 is not\ndocumentation: tools/lint-cases.mjs re-hashes every registered fixture, and so does every\nadapter — over the whole registry before any case runs, and again for each fixture a case\nloads. A fixture that is regenerated, re-encoded or quietly edited fails loudly in every\nlanguage instead of silently changing what these vectors mean.\n\nFour places where the ports had drifted apart were adjudicated and are pinned here: the\ncertificate-validity fallback clock (the dateless cases), the typed endpoint environment\n(config.environment is the enum, and both values are exercised), and a receipt attribute type\nabove 2^31-1, which every port must reject as INVALID_RECEIPT_FORMAT rather than rename or\nclamp. The fourth — verifyReceiptCore being public in every port, so no endpoint has to build a\nwildcard-bundle-id verifier to reach it — changes no observable answer, so no vector can hold\nit; the native suites carry that one.\n\n\"fault\" names the one intentional defect of a negative case. It is documentation, not an\nassertion: implementations are not required to report it, only to report the given reason.\n\nReceipt base64 (added 2026-09-04, rule replaced 2026-09-23). Every runner decodes a base64 fixture itself and hands DER to the library, so no verifyReceipt case can say how a port treats the string a client actually sent. The text codec and the verifyReceiptBase64 operation close that: the fixture bytes go to the string entry point verbatim, and a verifyReceiptEndpoint case over a text fixture puts them in receipt-data verbatim. The rule they pin is the one Apple's verifyReceipt applies, measured on 2026-09-23 against the production and sandbox endpoints with genuine receipts (docs/evidence/2026-09-23-verifyreceipt-base64.md): receipt-data is accepted if and only if it is non-empty standard-alphabet base64 ([A-Za-z0-9+/]) carrying exactly the canonical '=' padding for its data length, and nothing else. Whitespace anywhere (a trailing line feed, line breaks at 64 or 76 columns, a leading space), the base64url alphabet, omitted, partial or extra padding, anything after the padding, an impossible length and the empty string are all INVALID_RECEIPT_FORMAT (21002 at the endpoint). Unused low bits in the last data character are accepted, because Apple accepts them. The rule this replaced accepted everything Foundation's base64EncodedString(options:) can emit, base64url, omitted padding and line breaks included; it was reasoned from the documentation and never measured, and Apple refuses all of those, so seven accept-* cases became reject-*.\n\nHostile JWS (added 2026-09-05). Six inputs that Python's coverage-guided fuzzing walked out of the library as bare exceptions rather than verdicts are pinned here, so that all nine ports answer them and answer them the same way. A seventh input sits with them carrying no defect at all: the same signedDate spelled 1722945600000.0, which must verify, because a port could otherwise pass the out-of-range vector by refusing every number that is not a bare integer. Each is a real JWS over the generated test PKI carrying exactly one mutation; the header is signed in its hostile state so the ES256 signature covers the bytes served, and a mutated certificate is re-signed by its issuer so a broken issuer signature can never be the first thing a port objects to. The reasons were adjudicated against Node and Python, which already agreed on three of the five, and on the fourth the majority was overruled for the reason that case states: x5c entries that are not strings are INVALID_JWS_FORMAT, a signedDate of 1e300 is INVALID_CHAIN, a certificate that stops decoding inside its extension block is INVALID_CERTIFICATE, an unimplemented EC curve on the intermediate is INVALID_CERTIFICATE, and a certificate claiming X.509 version 11 is INVALID_CERTIFICATE, and a certificate carrying the same extension twice is INVALID_CERTIFICATE. The per-case descriptions carry the reasoning for each. What these five have in common is where the defect sits: in the JWS header and in the x5c certificates, both of which every port decodes BEFORE the signature that would have rejected them, and neither of which any signature in the input authenticates. An eighth input joined them when the x5c[2] differential was closed: the third x5c entry holding base64 of \"not a certificate\", which java alone rejected because java alone parsed that entry. The other eight ports verified the JWS, and the majority lost to the same rule the unimplemented curve lost to \u2014 pinning acceptance would have made java drop a rejection it already makes. Every port now parses all three entries; none of them trusts the third, which is what the differential was always about.\n\nReceipt signer certificates (added 2026-09-05). The four certificate mutations above sit in a JWS header, and four ports answered them from checks written on the JWS path alone (node, python, ruby and dotnet; rust and php had them in a shared certificate parser, and java, swift and go get them from a platform decoder). So the same four mutations \u2014 X.509 version 11, a duplicated basicConstraints, an unassigned EC curve and an extension block that stops decoding \u2014 are built into the certificate a legacy PKCS#7 receipt is signed by, and carry the reason their JWS twins carry: INVALID_CERTIFICATE. Each receipt is genuine in every other respect, with the signer re-signed by the intermediate wherever the mutation touched its TBS, so the certificate is the only thing a port can object to. The curve case is the one where the signer's KEY is the mutation: the receipt is signed with a real P-256 key whose certificate then names a curve that does not exist, so the port has to refuse the certificate before it can reach the signature \u2014 and it must not answer instead that the key is not RSA, which is a different input.\n\nCompact-JWS segments that are empty or are not JSON objects (added 2026-09-05). RFC 7515 7.1 gives a compact JWS three base64url segments whose first two decode to JSON OBJECTS, and nothing here said what happens when one is empty or decodes to an array or a bare scalar. Six inputs pin it, all INVALID_JWS_FORMAT: the whole input `..`, an empty header, an empty payload, a header that is a JSON array, a header that is a bare scalar, and a payload that is a JSON array. The two with the defect in the PAYLOAD carry a genuine header and signature, so a port answers about the payload rather than about the certificates in a fake header; the four with the defect in the header need no signing, because the header is read first. Two things make these worth pinning rather than assuming. An empty segment is valid base64url of zero bytes, and a JSON reader that answers \"nothing\" instead of raising hands the caller a null the next line dereferences \u2014 which is how `..` left java as a NullPointerException rather than a verdict. And an empty or non-object PAYLOAD makes every claim read as absent, which fails OPEN: a payload stating no signedDate moves certificate validity onto the current-time fallback and silences the staleness rule, the same pair transaction/reject-signed-date-out-of-range guards from the other side.\n\nResource bounds (added 2026-09-05, rewritten 2026-09-23). The byte limits are a contract, and they are Apple's. Measured on 2026-09-23 against both https://buy.itunes.apple.com/verifyReceipt and the sandbox endpoint: a request body of 3,145,728 bytes is answered normally and one of 3,145,729 bytes gets HTTP 413, and the limit counts UTF-8 bytes, not characters: 3,145,729 bytes of U+00E9 (only 1,572,874 characters) also got 413, while 3,145,727 bytes of it got 200. So every port applies exactly these limits, as fixed constants no caller can change. A raw request body over 3,145,728 UTF-8 bytes is status 21002 with the result-only reason REQUEST_TOO_LARGE, decided before the body is parsed; a caller's HTTP layer can map it to 413 as Apple does. A receipt over 3,145,728 bytes, measured on the base64 string before it is decoded and again on the DER, is INVALID_RECEIPT_FORMAT (21002 at the endpoint). A request body nesting more than 64 arrays and objects at once is 21002 with MALFORMED_REQUEST. A compact JWS over 262,144 bytes is INVALID_JWS_FORMAT. At or under each limit nothing may be refused for its size. The resource-bounds vectors hold each number from both sides where an input can say so. Their inputs are real files under fixtures/limits/, registered like every other fixture, so every runner reads identical bytes; tools/generate-limit-fixtures.mjs wrote them and says how each is built, and git stores their padding compressed to a few kilobytes. None contains a lone surrogate, so ports need not agree on how one would be counted. A verifyReceiptEndpoint case may name its input as requestBody instead of fixture: that text fixture is the WHOLE raw request body, handed to the port's raw-body entry point (the one that parses JSON) rather than wrapped as receipt-data by the runner. expected.failureReason on an endpoint case pins the reason the result carries, beside the wire fields because it is not on the wire: any thrown reason, or one of the result-only MALFORMED_REQUEST, REQUEST_TOO_LARGE and INTERNAL_ERROR, which no verifier ever throws. The ASN.1 node budgets stay port-local (200,000 nodes per parse in ruby, 100,000 in rust and go, 20,000 in php, none elsewhere), so for nodes the contract states the floor beneath them: every port MUST accept a well-formed, correctly signed receipt whose largest single ASN.1 parse holds up to 20,000 nodes. A node is one TLV, counted descending into constructed values only, because a primitive OCTET STRING's contents (an in-app purchase, an attribute value, the encapsulated payload) are a separate parse with a separate budget in every port that has one. Two receipts pin the accepting side, one number each: `receipt-byte-floor` is 1,034,681 bytes at 9,237 nodes and `receipt-node-floor` is 19,897 nodes at 74,569 bytes. One receipt under both limits would not do it: a port could lower either limit to just above what that single receipt happened to use, which is what the 809,069-byte, 16,037-node receipt they replace allowed. The byte-floor receipt, 1,379,576 characters of base64, now also runs through verifyReceiptEndpoint. The DER cap is held from both sides by genuine receipts in the byte-floor shape: `receipt-at-der-cap` is a well-formed, correctly signed receipt of exactly 3,145,728 bytes that every port MUST accept, and `receipt-over-der-cap` is the same receipt one product-id character longer, 3,145,729 bytes, well-formed and correctly signed, so the cap is the only thing that can refuse it. Both carry 9,237 nodes. They run through verifyReceipt only: the base64 cap is 3,145,728 characters, which decode to at most 2,359,296 bytes of DER, so a DER receipt at the cap is reachable only through the raw-DER entry point and never through verifyReceiptBase64 or the endpoint. The string side of the receipt cap is held from below by `limit-receipt-b64-at-cap`, the canonical base64 of a genuinely signed receipt of exactly 2,359,296 bytes, which is 3,145,728 characters: canonical base64 admits nothing around it, so no padding can stretch a smaller receipt to the cap.\n\nLegacy receipt ids (added 2026-09-21). Four attribute types the library used to leave raw in unknownAttributes are modelled: app-level 1 (app item id), 15 (download id) and 16 (version external identifier), and in-app 1713 (is trial period). None is on Apple's archived Receipt Fields chapter. They were established by decoding a genuine production receipt and lining its attributes up against the answer Apple's verifyReceipt endpoint gives for the same receipt, and against Apple's published response reference. All four are INTEGER attributes, decoded like 1711. At the endpoint, attribute 1 is echoed under BOTH adam_id and app_item_id \u2014 Apple's reference defines adam_id as \"See app_item_id\" \u2014 and the three app-level ids are JSON numbers while 1713 is the string \"true\"/\"false\", exactly like 1719. An attribute a receipt does not carry leaves its key OUT of the answer rather than emitting JSON null, and a value of 0 is a value: Apple's sandbox sends 0 for the three ids. The fixture's download id is 2^53+1, the first integer an IEEE-754 double cannot hold, because Apple's real download_id values run to eighteen digits: a port carrying receipt integers as a JavaScript number answers 9007199254740992 here, or refuses the receipt, and either way the vector catches it.\n\nPrior-art vectors (added 2026-09-22). Seven cases from the audit of the tikhop/TPInAppReceipt test suite and the objc.io \"Receipt Validation\" walkthrough recorded in PLAN.md's prior-art table. Two of them pin the device hash against Apple-signed bytes rather than against bytes this repository generated: TPInAppReceipt's HashVerifierTests publishes the device identifier of the genuine sandbox receipt vendored under fixtures/public-receipts/, and SHA1(deviceId bytes || attribute 4 || the DER of attribute 2) over it reproduces that receipt's attribute 5 byte for byte, so a port whose concatenation order, UUID byte order or bundle-id encoding is wrong cannot pass by agreeing with the generator that made the fixture. One pins that attribute 2 is compared byte for byte, so a bundle id differing only in the case of one letter is WRONG_BUNDLE_ID. Four are receipts whose single defect sits in the CMS structure rather than in a certificate or in the payload, all from the generator java/src/test/.../ReceiptCmsDefectFixtures.java: a receipt-signing end entity standing where the intermediate belongs, with the signer genuinely issued by it and basicConstraints the only objection (INVALID_CHAIN); the intermediate simply absent from the bag (INVALID_CHAIN, the other way an issuer can be wrong); a SignerInfo signature of zero bytes, which is well-formed DER, so a port must reach verification and take a negative answer from it (INVALID_SIGNATURE); and a CMS signed over zero bytes of encapsulated content, so the chain, the purpose and the signature are all genuine and the empty payload is the only thing left to object to (INVALID_RECEIPT_FORMAT). The audit also asked for receiptType assertions on the genuine receipts. receipt/verify-genuine-sandbox-g5-against-apple-roots already pins \"ProductionSandbox\" on genuine Apple bytes, and nothing here can pin \"Production\" on them: both genuine receipts in the corpus are sandbox receipts, which fixtures/public-receipts/README.md records as the cost of removing the production one, so the generated receipt-type-production fixture carries that value instead.\n\nx5c spelling (added 2026-09-23). RFC 7515 section 4.1.6 makes every x5c entry base64 of a DER certificate: the standard alphabet of RFC 4648 section 4, not base64url, and nothing in RFC 7515 lets an entry carry whitespace. So a character outside that alphabet, a base64url '-' or '_', and a line break are each INVALID_CERTIFICATE, never skipped or translated on the way to a genuine certificate. Three vectors pin it on x5c[0], each signed in its mutated state so the spelling is the only defect: before them, six ports skipped a junk character, four read the base64url alphabet and eight stripped line breaks, and each of those VERIFIED the JWS. Padding joined the family the same day: an entry with its '=' omitted, or with one '=' more than its length calls for, is INVALID_CERTIFICATE too, so an x5c entry now follows the receipt-data rule exactly (standard alphabet, canonical padding, nothing else) and a violation is reported as a certificate defect.\n\nBase64 spellings (added 2026-09-23). The decodeBase64 cases are the one list of base64 spellings every port runs, replacing the nine per-port lists that had drifted apart. Each case is a group: every string in input.texts must get the same answer, and the runner checks each string on its own and names the case id, the index and the escaped string when one fails. An ok group pins expected.bytesHex, the exact bytes every string decodes to; an error group is refused. \"decoders\" names the decoders a group runs through, each called directly rather than through a verifier: \"receipt-data\" is the port's receipt-data decoder, and a refusal from it is INVALID_RECEIPT_FORMAT; \"x5c\" is the port's x5c-entry decoder, and a refusal from it is INVALID_CERTIFICATE. Error groups state INVALID_RECEIPT_FORMAT, the receipt-data answer, and a runner maps it to INVALID_CERTIFICATE for x5c; that mapping lives here and in the schema, never per case. The rule is the one the Receipt base64 and x5c spelling paragraphs above state: non-empty standard-alphabet base64 with exactly the canonical '=' padding and nothing else, unused low bits of the last data character accepted, as Apple's verifyReceipt answered on 2026-09-23 (docs/evidence/2026-09-23-verifyreceipt-base64.md). The list is the union of every spelling the ports' own decoder tests, x5c spelling tests and endpoint tests used, with exact duplicates dropped, extended to every row of the evidence table at the three padding lengths, every value of the unused trailing bits, every ASCII whitespace character and the alphabet's range boundaries. tools/lint-cases.mjs re-derives each answer from the rule and refuses a string listed twice. One spelling cannot live here because JSON text cannot hold it: a string that is not valid UTF-8 (ruby's \"QU\\xffD\".b), which stays in the ruby suite.",
   "fixtures": {
     "generated-manifest": {
       "path": "generated/manifest.json",
@@ -5135,6 +5135,866 @@
         "negative",
         "resource-bounds",
         "generated"
+      ]
+    },
+    {
+      "id": "base64/decodes-to-414243",
+      "description": "No padding: four data characters, three bytes. Apple's verifyReceipt accepted this shape of genuine receipts, production and sandbox, on 2026-09-23 (docs/evidence/2026-09-23-verifyreceipt-base64.md), so both decoders do.",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "QUJD"
+        ]
+      },
+      "expected": {
+        "status": "ok",
+        "bytesHex": "414243"
+      },
+      "tags": [
+        "base64",
+        "positive"
+      ]
+    },
+    {
+      "id": "base64/decodes-to-4142",
+      "description": "One '=': the canonical 'QUI=' and the three spellings whose last data character has its two unused low bits set. Apple's verifyReceipt accepted this shape of genuine receipts, production and sandbox, on 2026-09-23 (docs/evidence/2026-09-23-verifyreceipt-base64.md), so both decoders do. The rule checks the alphabet, the padding and the length, never the trailing bits, so a decoder that refuses them (Go's StdEncoding.Strict(), Ruby's strict_decode64, the base64 crate's default engine, System.Buffers.Text.Base64) answers INVALID_RECEIPT_FORMAT where Apple answers 0.",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "QUI=",
+          "QUJ=",
+          "QUK=",
+          "QUL="
+        ]
+      },
+      "expected": {
+        "status": "ok",
+        "bytesHex": "4142"
+      },
+      "tags": [
+        "base64",
+        "positive"
+      ]
+    },
+    {
+      "id": "base64/decodes-to-41",
+      "description": "Two '=': the canonical 'QQ==' and all fifteen spellings whose last data character has some of its four unused low bits set, 'QR==' through 'Qf=='. Apple's verifyReceipt accepted this shape of genuine receipts, production and sandbox, on 2026-09-23 (docs/evidence/2026-09-23-verifyreceipt-base64.md), so both decoders do. Every value of the unused bits is listed, so a decoder that masks the wrong bits cannot pass on a lucky subset.",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "QQ==",
+          "QR==",
+          "QS==",
+          "QT==",
+          "QU==",
+          "QV==",
+          "QW==",
+          "QX==",
+          "QY==",
+          "QZ==",
+          "Qa==",
+          "Qb==",
+          "Qc==",
+          "Qd==",
+          "Qe==",
+          "Qf=="
+        ]
+      },
+      "expected": {
+        "status": "ok",
+        "bytesHex": "41"
+      },
+      "tags": [
+        "base64",
+        "positive"
+      ]
+    },
+    {
+      "id": "base64/decodes-to-fbff",
+      "description": "The two characters outside the letters and digits, '+' and '/', each in a data position and as the last data character with its unused bits set. A decoder whose table maps them wrongly, or maps base64url's '-' and '_' onto the same values, is caught here and in base64/reject-base64url.",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "+/8=",
+          "+/9=",
+          "+/+=",
+          "+//="
+        ]
+      },
+      "expected": {
+        "status": "ok",
+        "bytesHex": "fbff"
+      },
+      "tags": [
+        "base64",
+        "positive"
+      ]
+    },
+    {
+      "id": "base64/decodes-to-01020304",
+      "description": "Two groups, the second padded with '=='; 'AQIDBP==' sets all four unused bits of the last data character. The canonical spelling is the tiny receipt the endpoint suites send.",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "AQIDBA==",
+          "AQIDBP=="
+        ]
+      },
+      "expected": {
+        "status": "ok",
+        "bytesHex": "01020304"
+      },
+      "tags": [
+        "base64",
+        "positive"
+      ]
+    },
+    {
+      "id": "base64/decodes-to-414243414243414243",
+      "description": "Three full groups and no padding: the base the junk, whitespace and base64url insertions of the x5c tests are spliced into (base64/reject-junk-inside, base64/reject-whitespace-inside, base64/reject-base64url).",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "QUJDQUJDQUJD"
+        ]
+      },
+      "expected": {
+        "status": "ok",
+        "bytesHex": "414243414243414243"
+      },
+      "tags": [
+        "base64",
+        "positive"
+      ]
+    },
+    {
+      "id": "base64/decodes-to-41424344454647",
+      "description": "Seven bytes, two groups and '=='; the second spelling sets the last character's unused bits. Its unpadded form, 'QUJDREVGRw', is in base64/reject-padding-omitted.",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "QUJDREVGRw==",
+          "QUJDREVGRx=="
+        ]
+      },
+      "expected": {
+        "status": "ok",
+        "bytesHex": "41424344454647"
+      },
+      "tags": [
+        "base64",
+        "positive"
+      ]
+    },
+    {
+      "id": "base64/decodes-the-whole-alphabet",
+      "description": "All 64 characters of the standard alphabet in order, which is canonical base64 of 48 bytes. A hand-written table with one wrong entry, or a range check off by one at any of 'A', 'Z', 'a', 'z', '0', '9', '+' and '/', decodes this to other bytes.",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+        ]
+      },
+      "expected": {
+        "status": "ok",
+        "bytesHex": "00108310518720928b30d38f41149351559761969b71d79f8218a39259a7a29aabb2dbafc31cb3d35db7e39ebbf3dfbf"
+      },
+      "tags": [
+        "base64",
+        "positive"
+      ]
+    },
+    {
+      "id": "base64/decodes-eighty-characters-on-one-line",
+      "description": "Eighty characters on one line, the unwrapped form of the base64/reject-line-breaks spellings: one line is the only way long base64 is accepted.",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD"
+        ]
+      },
+      "expected": {
+        "status": "ok",
+        "bytesHex": "414243414243414243414243414243414243414243414243414243414243414243414243414243414243414243414243414243414243414243414243"
+      },
+      "tags": [
+        "base64",
+        "positive"
+      ]
+    },
+    {
+      "id": "base64/decodes-to-not-a-certificate",
+      "description": "Canonical base64 of bytes that are not DER. The base64 is valid, so both decoders return the bytes; refusing them is the certificate or CMS parser's job, which the rust suite's x5c tests and the verifyTransaction vectors pin, and which is a different stage from the one this operation pins.",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "bm90IGEgY2VydGlmaWNhdGU="
+        ]
+      },
+      "expected": {
+        "status": "ok",
+        "bytesHex": "6e6f742061206365727469666963617465"
+      },
+      "tags": [
+        "base64",
+        "positive"
+      ]
+    },
+    {
+      "id": "base64/decodes-to-not-a-certificate-at-all",
+      "description": "Canonical base64 with no padding of bytes that are not DER, the x5c[2] entry of the rust suite's third-entry test. Valid base64, so both decoders return the bytes.",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "bm90IGEgY2VydGlmaWNhdGUgYXQgYWxs"
+        ]
+      },
+      "expected": {
+        "status": "ok",
+        "bytesHex": "6e6f74206120636572746966696361746520617420616c6c"
+      },
+      "tags": [
+        "base64",
+        "positive"
+      ]
+    },
+    {
+      "id": "base64/reject-empty",
+      "description": "The empty string. Apple's verifyReceipt answered 21002 to this shape of genuine receipts, production and sandbox, on 2026-09-23 (docs/evidence/2026-09-23-verifyreceipt-base64.md). Every platform decoder in the nine ports decodes it to zero bytes, so each port refuses it before decoding. receipt-data is non-empty standard-alphabet base64 with exactly the canonical '=' padding and nothing else, and an x5c entry follows the same rule (RFC 7515 section 4.1.6).",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          ""
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "tags": [
+        "base64",
+        "negative"
+      ]
+    },
+    {
+      "id": "base64/reject-padding-omitted",
+      "description": "The canonical '=' padding left off, at one and two missing '=' and after full groups. Apple's verifyReceipt answered 21002 to this shape of genuine receipts, production and sandbox, on 2026-09-23 (docs/evidence/2026-09-23-verifyreceipt-base64.md). Java's Base64.getDecoder() and PHP's base64_decode($s, true) accept this alone. receipt-data is non-empty standard-alphabet base64 with exactly the canonical '=' padding and nothing else, and an x5c entry follows the same rule (RFC 7515 section 4.1.6).",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "QQ",
+          "QUI",
+          "QUJDQQ",
+          "QUJDQUI",
+          "QUJDREVGRw",
+          "AQIDBA"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "tags": [
+        "base64",
+        "negative"
+      ]
+    },
+    {
+      "id": "base64/reject-padding-partial",
+      "description": "One '=' where two are required. Apple's verifyReceipt answered 21002 to this shape of genuine receipts, production and sandbox, on 2026-09-23 (docs/evidence/2026-09-23-verifyreceipt-base64.md). receipt-data is non-empty standard-alphabet base64 with exactly the canonical '=' padding and nothing else, and an x5c entry follows the same rule (RFC 7515 section 4.1.6).",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "QQ=",
+          "QUJDQQ=",
+          "AQIDBA="
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "tags": [
+        "base64",
+        "negative"
+      ]
+    },
+    {
+      "id": "base64/reject-padding-extra",
+      "description": "One, two or more '=' beyond the canonical run, including padding after a full group. Apple's verifyReceipt answered 21002 to this shape of genuine receipts, production and sandbox, on 2026-09-23 (docs/evidence/2026-09-23-verifyreceipt-base64.md). Swift's Data(base64Encoded:) on Linux and Python's b64decode(validate=True) before 3.13 accept some of these alone. receipt-data is non-empty standard-alphabet base64 with exactly the canonical '=' padding and nothing else, and an x5c entry follows the same rule (RFC 7515 section 4.1.6).",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "QQ===",
+          "QQ====",
+          "QUI==",
+          "QUI===",
+          "QUJD=",
+          "QUJD==",
+          "QUJD===",
+          "QUJD===="
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "tags": [
+        "base64",
+        "negative"
+      ]
+    },
+    {
+      "id": "base64/reject-padding-only",
+      "description": "Padding and nothing else. No data character means no bytes to pad, so these are neither canonical nor the empty string's encoding, which is itself refused (base64/reject-empty). receipt-data is non-empty standard-alphabet base64 with exactly the canonical '=' padding and nothing else, and an x5c entry follows the same rule (RFC 7515 section 4.1.6).",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "=",
+          "==",
+          "===",
+          "===="
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "tags": [
+        "base64",
+        "negative"
+      ]
+    },
+    {
+      "id": "base64/reject-impossible-length",
+      "description": "A data length of 4n+1 characters, which no encoding produces, with and without padding; 'Q===' and 'QUJDR===' make the total a multiple of four. Apple's verifyReceipt answered 21002 to this shape of genuine receipts, production and sandbox, on 2026-09-23 (docs/evidence/2026-09-23-verifyreceipt-base64.md). The data length must be checked, not only the total, and three '=' is never canonical. receipt-data is non-empty standard-alphabet base64 with exactly the canonical '=' padding and nothing else, and an x5c entry follows the same rule (RFC 7515 section 4.1.6).",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "Q",
+          "Q=",
+          "Q==",
+          "Q===",
+          "QUJDR",
+          "QUJDR=",
+          "QUJDR==",
+          "QUJDR==="
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "tags": [
+        "base64",
+        "negative"
+      ]
+    },
+    {
+      "id": "base64/reject-data-after-padding",
+      "description": "Base64 characters after an '=', including two canonical strings concatenated. Apple's verifyReceipt answered 21002 to this shape of genuine receipts, production and sandbox, on 2026-09-23 (docs/evidence/2026-09-23-verifyreceipt-base64.md). Padding ends the encoding; a decoder that restarts after it gives one receipt many spellings. receipt-data is non-empty standard-alphabet base64 with exactly the canonical '=' padding and nothing else, and an x5c entry follows the same rule (RFC 7515 section 4.1.6).",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "QQ==QUJD",
+          "QQ==QQ==",
+          "QQ=A",
+          "QUI=QUJD",
+          "QUI=QUI=",
+          "Q=Q="
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "tags": [
+        "base64",
+        "negative"
+      ]
+    },
+    {
+      "id": "base64/reject-junk-inside",
+      "description": "An ASCII character outside the alphabet inside the data, including the '!!' the java x5c test splices into a genuine leaf. Apple's verifyReceipt answered 21002 to this shape of genuine receipts, production and sandbox, on 2026-09-23 (docs/evidence/2026-09-23-verifyreceipt-base64.md). Node's Buffer.from and every other skip-what-you-do-not-know decoder drop it and recover the original bytes. receipt-data is non-empty standard-alphabet base64 with exactly the canonical '=' padding and nothing else, and an x5c entry follows the same rule (RFC 7515 section 4.1.6).",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "QU!D",
+          "QUJDQUJD!!QUJD",
+          "QU\"D",
+          "QU\\D",
+          "QU%D",
+          "QU~D"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "tags": [
+        "base64",
+        "negative"
+      ]
+    },
+    {
+      "id": "base64/reject-junk-around",
+      "description": "Junk before or after the data, or junk and nothing else, including the x5c[2] entry '!!!!!!!!' of the rust suite. Apple's verifyReceipt answered 21002 to this shape of genuine receipts, production and sandbox, on 2026-09-23 (docs/evidence/2026-09-23-verifyreceipt-base64.md). receipt-data is non-empty standard-alphabet base64 with exactly the canonical '=' padding and nothing else, and an x5c entry follows the same rule (RFC 7515 section 4.1.6).",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "QQ==!!!!",
+          "QUJD!!!!",
+          "!QUJD",
+          "QUJD!",
+          "!!!!",
+          "!!!!!!",
+          "!!!!!!!!",
+          "%%%%",
+          "~~~~"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "tags": [
+        "base64",
+        "negative"
+      ]
+    },
+    {
+      "id": "base64/reject-alphabet-boundary",
+      "description": "The ASCII neighbours of each alphabet range: '@' and '[' around 'A'-'Z', '`' and '{' around 'a'-'z', ':' after '9', and ',', '.' and '*' around '+' and '/'. A hand-written range check that is off by one accepts one of them. receipt-data is non-empty standard-alphabet base64 with exactly the canonical '=' padding and nothing else, and an x5c entry follows the same rule (RFC 7515 section 4.1.6).",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "QU@D",
+          "QU[D",
+          "QU`D",
+          "QU{D",
+          "QU:D",
+          "QU,D",
+          "QU.D",
+          "QU*D"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "tags": [
+        "base64",
+        "negative"
+      ]
+    },
+    {
+      "id": "base64/reject-text-that-is-not-base64",
+      "description": "Prose the ports' endpoint, fuzz and x5c tests send as a receipt or an x5c entry. Spaces and punctuation are outside the alphabet; 'not a certificate at all' is 24 characters, so only the alphabet check refuses it. receipt-data is non-empty standard-alphabet base64 with exactly the canonical '=' padding and nothing else, and an x5c entry follows the same rule (RFC 7515 section 4.1.6).",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "not base64",
+          "not base64!",
+          "not base64 at all",
+          "!!!not-base64!!!",
+          "!!!not base64!!!",
+          "!!!!not base64!!!!",
+          "!!!! not base64 !!!!",
+          "not a certificate at all"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "tags": [
+        "base64",
+        "negative"
+      ]
+    },
+    {
+      "id": "base64/reject-percent-encoded",
+      "description": "'+', '/' and '=' percent-encoded, as a form or URL encoder writes them. Apple's verifyReceipt answered 21002 to this shape of genuine receipts, production and sandbox, on 2026-09-23 (docs/evidence/2026-09-23-verifyreceipt-base64.md). receipt-data is non-empty standard-alphabet base64 with exactly the canonical '=' padding and nothing else, and an x5c entry follows the same rule (RFC 7515 section 4.1.6).",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "%2B%2F8=",
+          "QUJD%3D"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "tags": [
+        "base64",
+        "negative"
+      ]
+    },
+    {
+      "id": "base64/reject-data-uri-prefix",
+      "description": "A data: URI prefix in front of canonical base64. Apple's verifyReceipt answered 21002 to this shape of genuine receipts, production and sandbox, on 2026-09-23 (docs/evidence/2026-09-23-verifyreceipt-base64.md). receipt-data is non-empty standard-alphabet base64 with exactly the canonical '=' padding and nothing else, and an x5c entry follows the same rule (RFC 7515 section 4.1.6).",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "data:application/pkcs7-mime;base64,QUJD"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "tags": [
+        "base64",
+        "negative"
+      ]
+    },
+    {
+      "id": "base64/reject-whitespace-trailing",
+      "description": "Whitespace after the data, at all three padding lengths; 'QUJD\\n\\n\\n\\n' keeps the total a multiple of four. Apple's verifyReceipt answered 21002 to this shape of genuine receipts, production and sandbox, on 2026-09-23 (docs/evidence/2026-09-23-verifyreceipt-base64.md). Go's StdEncoding skips CR and LF, and .NET's Convert.FromBase64String and PHP's base64_decode also skip space and tab. receipt-data is non-empty standard-alphabet base64 with exactly the canonical '=' padding and nothing else, and an x5c entry follows the same rule (RFC 7515 section 4.1.6).",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "QUJD\n",
+          "QUJD\r\n",
+          "QUJD\r",
+          "QUJD ",
+          "QUJD\t",
+          "QUI=\n",
+          "QUI=\r\n",
+          "QQ==\n",
+          "QQ==\r\n",
+          "QUJD\n\n\n\n"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "tags": [
+        "base64",
+        "negative"
+      ]
+    },
+    {
+      "id": "base64/reject-whitespace-leading",
+      "description": "Whitespace before the data. Apple's verifyReceipt answered 21002 to this shape of genuine receipts, production and sandbox, on 2026-09-23 (docs/evidence/2026-09-23-verifyreceipt-base64.md). receipt-data is non-empty standard-alphabet base64 with exactly the canonical '=' padding and nothing else, and an x5c entry follows the same rule (RFC 7515 section 4.1.6).",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          " QUJD",
+          "\nQUJD",
+          "\r\nQUJD",
+          "\tQUJD",
+          " QUI=",
+          " QQ=="
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "tags": [
+        "base64",
+        "negative"
+      ]
+    },
+    {
+      "id": "base64/reject-whitespace-inside",
+      "description": "Whitespace inside the data: every ASCII whitespace character, a line break between groups and inside one, and the line feed and space the java x5c test splices into a genuine leaf. Apple's verifyReceipt answered 21002 to this shape of genuine receipts, production and sandbox, on 2026-09-23 (docs/evidence/2026-09-23-verifyreceipt-base64.md). receipt-data is non-empty standard-alphabet base64 with exactly the canonical '=' padding and nothing else, and an x5c entry follows the same rule (RFC 7515 section 4.1.6).",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "QU JD",
+          "QU\tJD",
+          "QU\nJD",
+          "QU\rJD",
+          "QU\u000bJD",
+          "QU\fJD",
+          "QUJD\nQUJD",
+          "QUJ\r\nD\r\n",
+          "QU\r\nJD\r\n",
+          "Q UI=",
+          "Q\tQ==",
+          "QUJDQUJD\nQUJD",
+          "QUJDQUJD QUJD"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "tags": [
+        "base64",
+        "negative"
+      ]
+    },
+    {
+      "id": "base64/reject-whitespace-around",
+      "description": "Whitespace on both sides, and whitespace and nothing else. Apple's verifyReceipt answered 21002 to this shape of genuine receipts, production and sandbox, on 2026-09-23 (docs/evidence/2026-09-23-verifyreceipt-base64.md). A decoder that trims first turns the whitespace-only strings into the empty string, which is refused too (base64/reject-empty). receipt-data is non-empty standard-alphabet base64 with exactly the canonical '=' padding and nothing else, and an x5c entry follows the same rule (RFC 7515 section 4.1.6).",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "  QUJD  ",
+          " ",
+          "\n",
+          "\t",
+          "   ",
+          " \r\n"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "tags": [
+        "base64",
+        "negative"
+      ]
+    },
+    {
+      "id": "base64/reject-line-breaks",
+      "description": "base64/decodes-eighty-characters-on-one-line wrapped at 64 and at 76 columns with LF and with CRLF, the MIME and PEM line lengths Foundation's base64EncodedString(options:) can emit, and once with a final line feed as a PEM body ends. Apple's verifyReceipt answered 21002 to this shape of genuine receipts, production and sandbox, on 2026-09-23 (docs/evidence/2026-09-23-verifyreceipt-base64.md). receipt-data is non-empty standard-alphabet base64 with exactly the canonical '=' padding and nothing else, and an x5c entry follows the same rule (RFC 7515 section 4.1.6).",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nQUJDQUJDQUJDQUJD",
+          "QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\r\nQUJDQUJDQUJDQUJD",
+          "QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nQUJD",
+          "QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\r\nQUJD",
+          "QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nQUJDQUJDQUJDQUJD\n"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "tags": [
+        "base64",
+        "negative"
+      ]
+    },
+    {
+      "id": "base64/reject-base64url",
+      "description": "The base64url alphabet ('-' and '_' for '+' and '/'), padded and unpadded, including the '-_' the java x5c test splices into a genuine leaf. Apple's verifyReceipt answered 21002 to this shape of genuine receipts, production and sandbox, on 2026-09-23 (docs/evidence/2026-09-23-verifyreceipt-base64.md). A decoder that accepts both alphabets reads '-_8=' as the bytes of '+/8=' (base64/decodes-to-fbff). receipt-data is non-empty standard-alphabet base64 with exactly the canonical '=' padding and nothing else, and an x5c entry follows the same rule (RFC 7515 section 4.1.6).",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "-_8=",
+          "-_8",
+          "-_-_",
+          "QUJD-_8=",
+          "QU-D",
+          "QU_D",
+          "QUJDQUJD-_QUJD"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "tags": [
+        "base64",
+        "negative"
+      ]
+    },
+    {
+      "id": "base64/reject-mixed-alphabet",
+      "description": "Both alphabets in one string, which no encoder produces. Apple's verifyReceipt answered 21002 to this shape of genuine receipts, production and sandbox, on 2026-09-23 (docs/evidence/2026-09-23-verifyreceipt-base64.md). receipt-data is non-empty standard-alphabet base64 with exactly the canonical '=' padding and nothing else, and an x5c entry follows the same rule (RFC 7515 section 4.1.6).",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "+_8=",
+          "-/8=",
+          "+/-_",
+          "QU+D-_8="
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "tags": [
+        "base64",
+        "negative"
+      ]
+    },
+    {
+      "id": "base64/reject-non-ascii",
+      "description": "Characters outside ASCII: an accented letter, a no-break space (U+00A0) and a byte-order mark (U+FEFF), both of which Apple answered 21002 on 2026-09-23 (docs/evidence/2026-09-23-verifyreceipt-base64.md), an ideographic space (U+3000), fullwidth 'QUJD' (which Unicode compatibility normalization folds to 'QUJD', and whose UTF-8 is 12 bytes, a multiple of four), and an emoji (two UTF-16 units, so the string is four UTF-16 units long). A port that counts or checks UTF-16 units, code points or bytes must refuse every one. receipt-data is non-empty standard-alphabet base64 with exactly the canonical '=' padding and nothing else, and an x5c entry follows the same rule (RFC 7515 section 4.1.6).",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "QUJ\u00e9",
+          "QU\u00a0D",
+          "\ufeffQUJD",
+          "QU\u3000D",
+          "\uff31\uff35\uff2a\uff24",
+          "QU\ud83d\ude00"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "tags": [
+        "base64",
+        "negative"
+      ]
+    },
+    {
+      "id": "base64/reject-control-characters",
+      "description": "ASCII control characters: NUL inside, after and before the data (a C-string reader stops at it and sees 'QU' or 'QUJD'), four NULs that keep the total a multiple of four, ESC and DEL. receipt-data is non-empty standard-alphabet base64 with exactly the canonical '=' padding and nothing else, and an x5c entry follows the same rule (RFC 7515 section 4.1.6).",
+      "operation": "decodeBase64",
+      "decoders": [
+        "receipt-data",
+        "x5c"
+      ],
+      "input": {
+        "texts": [
+          "QU\u0000D",
+          "QUJD\u0000",
+          "\u0000QUJD",
+          "QUJD\u0000\u0000\u0000\u0000",
+          "QU\u001bD",
+          "QU\u007fD"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_RECEIPT_FORMAT"
+      },
+      "tags": [
+        "base64",
+        "negative"
       ]
     },
     {

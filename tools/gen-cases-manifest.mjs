@@ -31,7 +31,7 @@
  *   id                  the case id
  *   op                  verifyTransaction | verifyAppTransaction | verifyRaw
  *                       | verifyReceipt | verifyReceiptBase64
- *                       | verifyReceiptEndpoint
+ *                       | verifyReceiptEndpoint | decodeBase64
  *   input               path to the decoded input bytes
  *   request             path to the endpoint request body (endpoint cases);
  *                       for a `requestBody` case, the fixture's bytes verbatim
@@ -50,6 +50,11 @@
  *   field               one expected top-level field (repeated)
  *   skippedFields       how many expected field paths this manifest DROPPED
  *   unsupported         set when the C ABI cannot run the case at all
+ *   abiUnreachable      set on every decodeBase64 group, and only there: the
+ *                       group calls a port's base64 decoders directly and
+ *                       the ABI exposes none, so the line carries nothing
+ *                       but its id, op and this reason. The harnesses count
+ *                       these as not reachable, never as passed.
  *
  * NOTHING IS DROPPED for want of an ABI seam any more: `clockUnixMillis`
  * feeds aprv_verifier_new_jws_with_roots_and_clock and
@@ -210,8 +215,15 @@ function main() {
   let pinnedClocks = 0;
   let skippedFields = 0;
 
+  let unreachable = 0;
   for (const kase of file.cases) {
     const parts = [`id=${kase.id}`, `op=${kase.operation}`];
+    if (kase.operation === 'decodeBase64') {
+      parts.push('abiUnreachable=the C ABI exposes no base64 decoder');
+      lines.push(parts.join('\t'));
+      unreachable += 1;
+      continue;
+    }
     const config = kase.config;
 
     if (kase.clock) {
@@ -311,10 +323,16 @@ function main() {
     lines.push(parts.join('\t'));
   }
 
+  // One line per case in the parsed file, so a harness that checks every
+  // manifest id ran is checking every case id in cases.json.
+  if (lines.length !== file.cases.length) {
+    fail(`wrote ${lines.length} lines for ${file.cases.length} cases`);
+  }
   writeFileSync(join(out, 'cases.tsv'), `${lines.join('\n')}\n`);
   process.stdout.write(
     `${lines.length} cases -> ${join(out, 'cases.tsv')} ` +
-      `(${pinnedClocks} pin a clock, ${skippedFields} nested field paths dropped)\n`,
+      `(${pinnedClocks} pin a clock, ${skippedFields} nested field paths dropped, ` +
+      `${unreachable} decodeBase64 groups the ABI cannot reach)\n`,
   );
 }
 

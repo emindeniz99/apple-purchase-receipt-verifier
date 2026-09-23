@@ -13,7 +13,11 @@ defmodule ConformanceTest do
   library itself. Reusing it keeps this file about the boundary.
 
   Both this and `rust/ffi/examples/cpp/conformance.cpp` run every case in
-  `fixtures/cases.json` and skip none. The cases that pin a clock go through
+  `fixtures/cases.json` and skip none, except the `decodeBase64` groups: they
+  call a port's base64 decoders directly, the ABI exposes none, and the
+  manifest marks them `abiUnreachable`, so they are counted and never passed.
+  After the run, every case id in the manifest must have run or been counted.
+  The cases that pin a clock go through
   `aprv_verifier_new_jws_with_roots_and_clock` and
   `aprv_endpoint_new_with_roots_and_clock`, which take the instant itself
   rather than a callback; the generator has already parsed it to epoch
@@ -55,24 +59,8 @@ defmodule ConformanceTest do
 
     pinned_clocks = Enum.count(cases, &(get(&1, "clockUnixMillis") != nil))
 
-    {failures, passed, skipped, checked_fields} =
-      Enum.reduce(cases, {[], 0, 0, 0}, fn kase, {failures, passed, skipped, fields} ->
-        fields = fields + length(all(kase, "field"))
-
-        case get(kase, "unsupported") do
-          nil ->
-            case run_and_check(kase) do
-              :ok -> {failures, passed + 1, skipped, fields}
-              {:error, why} -> {[{get(kase, "id"), why} | failures], passed, skipped, fields}
-            end
-
-          other ->
-            # Nothing is skipped any more. A case the manifest cannot express
-            # for this ABI is a finding, not a smaller run.
-            why = "the manifest marks it unsupported (#{inspect(other)})"
-            {[{get(kase, "id"), why} | failures], passed, skipped + 1, fields}
-        end
-      end)
+    {failures, passed, skipped, checked_fields, ran, unreachable} =
+      Enum.reduce(cases, {[], 0, 0, 0, MapSet.new(), MapSet.new()}, &tally/2)
 
     IO.puts(
       "#{passed} passed, #{length(failures)} failed, #{skipped} skipped " <>
@@ -81,8 +69,49 @@ defmodule ConformanceTest do
 
     IO.puts("#{checked_fields} expected fields checked here, nested paths left to conformance.py")
 
+    IO.puts(
+      "#{MapSet.size(unreachable)} decodeBase64 groups not reachable: the ABI exposes no base64 decoder"
+    )
+
     assert failures == [],
            Enum.map_join(Enum.reverse(failures), "\n", fn {id, why} -> "FAIL  #{id}: #{why}" end)
+
+    # Coverage self-check: every case id the manifest lists, one per case in
+    # cases.json, ran or was counted as unreachable, compared id by id.
+    missing =
+      cases
+      |> Enum.map(&get(&1, "id"))
+      |> Enum.reject(&(MapSet.member?(ran, &1) or MapSet.member?(unreachable, &1)))
+
+    assert missing == [],
+           "#{length(missing)} of #{length(cases)} cases did not run: #{Enum.join(missing, ", ")}"
+  end
+
+  # One case into the running totals. A decodeBase64 group is counted as
+  # unreachable and never passed: it calls a port's base64 decoders directly,
+  # and the ABI exposes none.
+  defp tally(kase, {failures, passed, skipped, fields, ran, unreachable}) do
+    id = get(kase, "id")
+    fields = fields + length(all(kase, "field"))
+
+    cond do
+      get(kase, "abiUnreachable") != nil ->
+        {failures, passed, skipped, fields, ran, MapSet.put(unreachable, id)}
+
+      get(kase, "unsupported") != nil ->
+        # Nothing is skipped any more. A case the manifest cannot express
+        # for this ABI is a finding, not a smaller run.
+        why = "the manifest marks it unsupported (#{inspect(get(kase, "unsupported"))})"
+        {[{id, why} | failures], passed, skipped + 1, fields, ran, unreachable}
+
+      true ->
+        ran = MapSet.put(ran, id)
+
+        case run_and_check(kase) do
+          :ok -> {failures, passed + 1, skipped, fields, ran, unreachable}
+          {:error, why} -> {[{id, why} | failures], passed, skipped, fields, ran, unreachable}
+        end
+    end
   end
 
   # --- the manifest -------------------------------------------------------

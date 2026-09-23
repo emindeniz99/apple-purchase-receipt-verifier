@@ -68,6 +68,12 @@ private let unmatchableEnvironments: Set<AppleEnvironment> = [.localTesting]
 private struct Vectors {
     let fixtures: [String: Any]
     let cases: [[String: Any]]
+    /// decodeBase64 texts by case id, read with JSONDecoder rather than
+    /// JSONSerialization: on Darwin, JSONSerialization builds its strings
+    /// through NSString, which drops a leading U+FEFF, so a text that starts
+    /// with a byte-order mark would reach the decoder without it and the
+    /// group would test a different spelling than the file states.
+    let base64Texts: [String: [String]]
 
     init() throws {
         let data = try Data(contentsOf: fixturesDirectory.appendingPathComponent("cases.json"))
@@ -79,6 +85,12 @@ private struct Vectors {
         }
         self.fixtures = fixtures
         self.cases = cases
+        let exact = try JSONDecoder().decode(TextsFile.self, from: data)
+        var texts: [String: [String]] = [:]
+        for kase in exact.cases {
+            if let caseTexts = kase.input?.texts { texts[kase.id] = caseTexts }
+        }
+        self.base64Texts = texts
     }
 
     /// Decodes a registered fixture to its logical bytes (fixture.codec) and
@@ -494,6 +506,81 @@ private func describe(_ value: Any?) -> String {
     return "\(value)"
 }
 
+// MARK: - decodeBase64
+
+/// Just enough of cases.json for JSONDecoder to read every case's texts.
+private struct TextsFile: Decodable {
+    struct Case: Decodable {
+        struct Input: Decodable { let texts: [String]? }
+        let id: String
+        let input: Input?
+    }
+    let cases: [Case]
+}
+
+/// The reason each decoder a decodeBase64 group can name refuses with. Both
+/// are `decodeReceiptBase64`, which answers nil: the receipt paths report
+/// that as INVALID_RECEIPT_FORMAT and the x5c path as INVALID_CERTIFICATE.
+/// An error group states INVALID_RECEIPT_FORMAT, the receipt-data answer.
+private let base64Refusals: [String: String] = [
+    "receipt-data": "INVALID_RECEIPT_FORMAT",
+    "x5c": "INVALID_CERTIFICATE",
+]
+
+/// A text as a quoted literal with every scalar outside printable ASCII
+/// escaped, so a failure names the exact spelling.
+private func escaped(_ text: String) -> String {
+    var out = "\""
+    for scalar in text.unicodeScalars {
+        if scalar == "\"" || scalar == "\\" {
+            out += "\\\(scalar)"
+        } else if scalar.value >= 0x20 && scalar.value <= 0x7E {
+            out.unicodeScalars.append(scalar)
+        } else {
+            out += "\\u{\(String(scalar.value, radix: 16))}"
+        }
+    }
+    return out + "\""
+}
+
+/// Every text of a decodeBase64 group that got the wrong answer from a
+/// decoder the group names, by case id, decoder, index and escaped text,
+/// rather than stopping at the first.
+private func decodeBase64Failures(_ kase: [String: Any], id: String, texts: [String]?) throws -> [String] {
+    guard let texts, !texts.isEmpty,
+        let decoders = kase["decoders"] as? [String], !decoders.isEmpty,
+        let expected = kase["expected"] as? [String: Any],
+        let status = expected["status"] as? String
+    else {
+        throw HarnessError("\(id): a decodeBase64 case needs texts, decoders and expected.status")
+    }
+    let ok = status == "ok"
+    if !ok && expected["reason"] as? String != "INVALID_RECEIPT_FORMAT" {
+        throw HarnessError("\(id): an error group states INVALID_RECEIPT_FORMAT")
+    }
+    let want = ok ? expected["bytesHex"] as? String ?? "" : ""
+    var failures: [String] = []
+    for decoder in decoders {
+        guard let refusal = base64Refusals[decoder] else {
+            throw HarnessError("\(id): no decoder \"\(decoder)\"")
+        }
+        for (index, text) in texts.enumerated() {
+            let at = "\(id): \(decoder) texts[\(index)] \(escaped(text))"
+            switch (decodeReceiptBase64(text).map { hexString($0) }, ok) {
+            case (let decoded?, false):
+                failures.append("\(at) was accepted (decoded to \(decoded))")
+            case (let decoded?, true) where decoded != want:
+                failures.append("\(at) decoded to \(decoded), want \(want)")
+            case (nil, true):
+                failures.append("\(at) was refused (\(refusal)), want \(want)")
+            default:
+                break
+            }
+        }
+    }
+    return failures
+}
+
 // MARK: - the cases
 
 /// One test method per `operation`, each running every case in
@@ -511,6 +598,7 @@ final class ConformanceCasesTests: XCTestCase {
     static let coveredOperations: Set<String> = [
         "verifyTransaction", "verifyAppTransaction", "verifyRaw",
         "verifyReceipt", "verifyReceiptBase64", "verifyReceiptEndpoint",
+        "decodeBase64",
     ]
 
     override func setUp() {
@@ -529,6 +617,8 @@ final class ConformanceCasesTests: XCTestCase {
     func testVerifyReceiptBase64Cases() async { await run(operation: "verifyReceiptBase64") }
 
     func testVerifyReceiptEndpointCases() async { await run(operation: "verifyReceiptEndpoint") }
+
+    func testDecodeBase64Cases() async { await run(operation: "decodeBase64") }
 
     /// Pins that every operation in the file is claimed by a method above — a
     /// new operation must not slip in unrun — and that every case pinning a
@@ -604,13 +694,40 @@ final class ConformanceCasesTests: XCTestCase {
         }
         let selected = vectors.cases.filter { ($0["operation"] as? String) == operation }
         XCTAssertFalse(selected.isEmpty, "cases.json carries no \(operation) case")
+        var ran = Set<String>()
         for kase in selected {
-            await run(kase, from: vectors)
+            await run(kase, from: vectors, ran: &ran)
+        }
+        // Coverage self-check, per method because XCTest has no hook after
+        // the last test that can fail a run on both platforms: every case of
+        // this operation in the parsed file ran, compared id by id and never
+        // against a literal count. testReportsItsCoverageAndRunsEveryCase
+        // pins that every operation in the file has a method here.
+        let missing = vectors.cases
+            .filter { ($0["operation"] as? String) == operation }
+            .compactMap { $0["id"] as? String }
+            .filter { !ran.contains($0) }
+        XCTAssertTrue(
+            missing.isEmpty,
+            "\(missing.count) \(operation) cases did not run: \(missing.joined(separator: ", "))")
+    }
+
+    private func runDecodeBase64(_ kase: [String: Any], id: String, texts: [String]?) {
+        do {
+            let failures = try decodeBase64Failures(kase, id: id, texts: texts)
+            XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
+        } catch {
+            XCTFail("harness error: \(error)")
         }
     }
 
-    private func run(_ kase: [String: Any], from vectors: Vectors) async {
+    private func run(_ kase: [String: Any], from vectors: Vectors, ran: inout Set<String>) async {
         let id = kase["id"] as? String ?? "<case without an id>"
+        ran.insert(id)
+        if kase["operation"] as? String == "decodeBase64" {
+            runDecodeBase64(kase, id: id, texts: vectors.base64Texts[id])
+            return
+        }
         guard let operation = kase["operation"] as? String,
             let config = kase["config"] as? [String: Any],
             let input = kase["input"] as? [String: Any],

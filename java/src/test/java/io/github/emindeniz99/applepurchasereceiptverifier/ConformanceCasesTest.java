@@ -18,6 +18,8 @@ import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifie
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.VerifyReceiptEndpoint;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.VerifyReceiptResult;
 import java.io.ByteArrayInputStream;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -86,16 +88,40 @@ class ConformanceCasesTest {
         JsonNode document = MAPPER.readTree(FIXTURES.resolve("cases.json").toFile());
         final JsonNode fixtures = document.get("fixtures");
         List<DynamicTest> tests = new ArrayList<DynamicTest>();
+        final List<String> ids = new ArrayList<String>();
+        final Set<String> ran = Collections.synchronizedSet(new HashSet<String>());
         int pinned = 0;
         for (JsonNode node : document.get("cases")) {
             final JsonNode kase = node;
             if (kase.has("clock")) {
                 pinned++;
             }
-            tests.add(DynamicTest.dynamicTest(kase.get("id").asText(), () -> runCase(fixtures, kase)));
+            final String id = kase.get("id").asText();
+            ids.add(id);
+            tests.add(DynamicTest.dynamicTest(id, () -> {
+                ran.add(id);
+                runCase(fixtures, kase);
+            }));
         }
         System.out.println("conformance: " + tests.size() + " cases in fixtures/cases.json, " + pinned
                 + " with a pinned clock, 0 skipped");
+        // Coverage self-check, last in the list and so run after every case:
+        // each case id in the parsed file ran, compared against the file and
+        // never against a literal count, so a case this factory stopped
+        // reaching fails here. A run that selects individual dynamic tests
+        // (an IDE rerun, a unique-id selector) does not select this one, so
+        // a filtered run needs no stand-down of its own.
+        tests.add(DynamicTest.dynamicTest("cases.json every case ran", () -> {
+            List<String> missing = new ArrayList<String>();
+            for (String id : ids) {
+                if (!ran.contains(id)) {
+                    missing.add(id);
+                }
+            }
+            assertTrue(
+                    missing.isEmpty(),
+                    missing.size() + " of " + ids.size() + " cases did not run: " + String.join(", ", missing));
+        }));
         return tests;
     }
 
@@ -104,6 +130,11 @@ class ConformanceCasesTest {
     private static void runCase(JsonNode fixtures, JsonNode kase) throws Exception {
         String id = kase.get("id").asText();
         JsonNode expected = kase.get("expected");
+        if ("decodeBase64".equals(kase.get("operation").asText())) {
+            List<String> failures = decodeBase64Failures(kase);
+            assertTrue(failures.isEmpty(), String.join("\n", failures));
+            return;
+        }
         boolean expectError = "error".equals(expected.get("status").asText());
         Object result;
         try {
@@ -140,6 +171,99 @@ class ConformanceCasesTest {
             result = endpointResult.toResponse();
         }
         assertFields(id, expected.get("fields"), result);
+    }
+
+    // ------------------------------------------------------------ decodeBase64
+
+    /**
+     * The two decoders a decodeBase64 group can name, reached by reflection
+     * because both are package-private in other packages: receipt-data is
+     * {@code receipt.ReceiptBase64#decode} and x5c is
+     * {@code jws.JwsVerifier#decodeX5cEntry}. Each answers with its own
+     * reason; an error group states INVALID_RECEIPT_FORMAT, the receipt-data
+     * answer, and x5c answers INVALID_CERTIFICATE.
+     */
+    private static Method base64Decoder(String name) throws Exception {
+        Method method;
+        if ("receipt-data".equals(name)) {
+            method = Class.forName("io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptBase64")
+                    .getDeclaredMethod("decode", String.class);
+        } else if ("x5c".equals(name)) {
+            method = JwsVerifier.class.getDeclaredMethod("decodeX5cEntry", String.class);
+        } else {
+            throw new IllegalStateException("harness error: no decoder " + name);
+        }
+        method.setAccessible(true);
+        return method;
+    }
+
+    private static Reason base64Refusal(String name) {
+        return "x5c".equals(name) ? Reason.INVALID_CERTIFICATE : Reason.INVALID_RECEIPT_FORMAT;
+    }
+
+    /**
+     * Every text of a decodeBase64 group that got the wrong answer from a
+     * decoder the group names, by case id, decoder, index and escaped text,
+     * rather than stopping at the first.
+     */
+    private static List<String> decodeBase64Failures(JsonNode kase) throws Exception {
+        String id = kase.get("id").asText();
+        JsonNode expected = kase.get("expected");
+        boolean ok = "ok".equals(expected.get("status").asText());
+        if (!ok) {
+            assertEquals("INVALID_RECEIPT_FORMAT", expected.get("reason").asText(), id + ": harness error");
+        }
+        String want = ok ? expected.get("bytesHex").asText() : "";
+        JsonNode texts = kase.get("input").get("texts");
+        assertTrue(texts.size() > 0 && kase.get("decoders").size() > 0, id + ": harness error: no texts");
+        List<String> failures = new ArrayList<String>();
+        for (JsonNode decoderName : kase.get("decoders")) {
+            String name = decoderName.asText();
+            Method decoder = base64Decoder(name);
+            Reason refusal = base64Refusal(name);
+            for (int index = 0; index < texts.size(); index++) {
+                String text = texts.get(index).asText();
+                String where = id + ": " + name + " texts[" + index + "] " + escape(text);
+                String decoded;
+                try {
+                    decoded = hex((byte[]) decoder.invoke(null, text));
+                } catch (InvocationTargetException e) {
+                    Throwable cause = e.getCause();
+                    if (!(cause instanceof VerificationException)) {
+                        failures.add(where + ": harness error: threw " + cause);
+                    } else if (ok) {
+                        failures.add(where + " was refused (" + ((VerificationException) cause).reason() + "), want "
+                                + want);
+                    } else if (((VerificationException) cause).reason() != refusal) {
+                        failures.add(
+                                where + ": reason " + ((VerificationException) cause).reason() + ", want " + refusal);
+                    }
+                    continue;
+                }
+                if (!ok) {
+                    failures.add(where + " was accepted (decoded to " + decoded + ")");
+                } else if (!decoded.equals(want)) {
+                    failures.add(where + " decoded to " + decoded + ", want " + want);
+                }
+            }
+        }
+        return failures;
+    }
+
+    /** A text as a quoted literal with every non-printable-ASCII character escaped. */
+    private static String escape(String text) {
+        StringBuilder out = new StringBuilder("\"");
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '"' || c == '\\') {
+                out.append('\\').append(c);
+            } else if (c < 0x20 || c > 0x7e) {
+                out.append(String.format("\\u%04x", (int) c));
+            } else {
+                out.append(c);
+            }
+        }
+        return out.append('"').toString();
     }
 
     // ---------------------------------------------------------------- dispatch
