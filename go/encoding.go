@@ -64,12 +64,10 @@ func isCanonicalBase64(text string) bool {
 // alphabet and trailing-bits checks — so this is a direct call, nothing
 // is stripped first.
 //
-// It is deliberately stricter than Java's MIME decoder and Node's
-// Buffer.from(s, "base64url"), both of which skip characters they do not
-// recognise and tolerate padding. The difference is observable in
-// exactly one place: appending junk to a compact JWS, padding a segment,
-// or flipping the unused bits of a segment's last character, leaves
-// those ports' answer unchanged, and makes this one answer
+// Every port decodes segments this strictly, and the
+// transaction/reject-signature-segment-* vectors in fixtures/cases.json
+// hold them to it: junk appended to the signature segment, "=" padding
+// on it, or flipped unused bits in its last character is
 // INVALID_JWS_FORMAT. Strictness here can only turn an accept into a
 // reject, never the reverse, and it means every byte of a JWS this port
 // accepts is a byte the signature covers.

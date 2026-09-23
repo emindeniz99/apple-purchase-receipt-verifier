@@ -48,7 +48,7 @@ final class Harness {
     /**
      * The bundle id of the base64 receipt corpus — {@code fixtures/public-receipts}
      * and {@code fixtures/generated/receipt-b64}, which are the same genuine
-     * Apple-signed sandbox receipt in ten encodings.
+     * Apple-signed sandbox receipt in many spellings.
      *
      * <p>It is not {@link #BUNDLE_ID}, and the difference matters: bound to
      * {@code com.example.app} the string verifier rejects every seed it has
@@ -56,7 +56,7 @@ final class Harness {
      * fuzzer still reports coverage and finds no crash — while in fact no
      * input ever reaches acceptance, so the anchor-set invariant below never
      * fires and the code past the bundle check is never entered from this
-     * entry point. Measured here: 0 of 16 receipt-b64 fixtures accepted.
+     * entry point. Measured here: none of the receipt-b64 fixtures accepted.
      */
     static final String RECEIPT_BUNDLE_ID = "dev.bonzer.weeka.app";
 

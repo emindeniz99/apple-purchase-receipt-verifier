@@ -91,8 +91,8 @@ if the Java API were unfriendly to that language:
   either `kotlinc` or `scalac` — both a Kotlin `when` and a Scala 3 `match`
   over `VerificationException.Reason` are treated as fully checked without
   an `else`/wildcard branch, because it is a plain Java `enum` and both
-  compilers recognize Java enums as closed sets for this purpose. Adding a
-  twelfth `Reason` constant to the library would fail this module's build
+  compilers recognize Java enums as closed sets for this purpose. Adding
+  another `Reason` constant to the library would fail this module's build
   at the `when`/`match` sites until updated — which is the point.
 - No other friction: constructors, methods, and returned model types
   (`AppReceipt`, `TransactionPayload`) read naturally from both languages;

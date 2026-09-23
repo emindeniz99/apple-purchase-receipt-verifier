@@ -458,11 +458,11 @@ impl JwsVerifier {
                 "leaf key is not EC",
             ));
         }
-        // Strict, not lenient: see `base64`. Node and Python decode this
-        // segment leniently and so accept junk appended to it; Java and
-        // Swift reject it. The lenient reading makes one Apple-signed
-        // transaction have unboundedly many accepted wire forms, so an
-        // integrator deduping on the JWS string is defeated by one
+        // Strict, not lenient: see `base64`. Every port decodes this
+        // segment strictly, and the transaction/reject-signature-segment-*
+        // vectors hold them to it. A lenient reading would give one
+        // Apple-signed transaction unboundedly many accepted wire forms, so
+        // an integrator deduping on the JWS string would be defeated by one
         // character.
         //
         // A segment that isn't canonical base64url is a *format* failure,

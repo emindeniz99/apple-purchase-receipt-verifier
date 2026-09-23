@@ -535,10 +535,9 @@ and many hardened enterprise `java.security` files do, fails every genuine
 legacy receipt with `INVALID_CHAIN: signer chain does not validate to a
 pinned Apple root: unable to find valid certification path to requested
 target`. Measured on Temurin 21 with
-`jdk.certpath.disabledAlgorithms=MD2, MD5, SHA1, RSA keySize < 1024`: 104 of
-the 105 conformance cases pass and `receipt/verify-genuine-legacy-sha1-chain`
-is the one that fails, which the `java-hardened-policy` CI job asserts on
-every push.
+`jdk.certpath.disabledAlgorithms=MD2, MD5, SHA1, RSA keySize < 1024`: every
+conformance case passes except `receipt/verify-genuine-legacy-sha1-chain`,
+and the `java-hardened-policy` CI job asserts exactly that on every push.
 
 The library will not silently route around the policy: chain building stays
 on the JDK provider, so the platform's rule is the rule. The escape hatch is
@@ -723,20 +722,19 @@ categorically refuses named-argument syntax against any Java-declared
 constructor, which is a Kotlin/Java-interop rule and not a fixable property
 of this jar's compiled metadata.
 
-## Port-specific: `x5c[2]` is parsed here, and only here
+## `x5c[2]` is parsed, never trusted
 
 `x5c[2]`, the JWS header's third certificate, is never trusted anywhere in
 this library: it is never compared to an anchor and the chain terminates at
-the pinned root regardless of what it contains. Node, Python and Swift never
-even decode it. `decodeChain` in `JwsVerifier` decodes all three `x5c`
-entries as certificates before the leaf and intermediate are looked at, so a
-`x5c[2]` that is not a parseable certificate is `INVALID_CERTIFICATE` in
-Java, where it reaches the ES256 signature check unremarked in the other
-four ports. No verdict about a well-formed JWS moves — see
-[rust/README.md](../rust/README.md#a-verified-blob-is-not-an-identifier) for
-the full cross-port account. This is a recorded, deliberate divergence with
-no shared conformance vector yet (see [ROADMAP.md](../ROADMAP.md)), not a
-bug to fix unilaterally in either direction.
+the pinned root regardless of what it contains. `decodeChain` in
+`JwsVerifier` still decodes all three `x5c` entries as certificates before
+the leaf and intermediate are looked at, so an `x5c[2]` that is not a
+parseable certificate is `INVALID_CERTIFICATE`. This port used to be the
+only one that did this; every port does now, and the shared vector
+`transaction/reject-x5c-root-that-is-not-a-certificate` holds all nine to
+it. No verdict about a well-formed JWS moves. See
+[rust/README.md](../rust/README.md#what-the-checks-are-and-in-what-order)
+for the cross-port account.
 
 ## Why offline
 

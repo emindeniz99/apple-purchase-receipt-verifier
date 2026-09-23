@@ -270,10 +270,10 @@ rejecting, plus `endpoint/receipt-data-urlsafe-padded`,
 
 ### 3.9 Port divergence is itself a finding, and roots do not move
 
-One vector file, `fixtures/cases.json`: 117 cases over 106 registered fixtures,
-read by all nine ports through a thin adapter. Every fixture's SHA-256 is
-re-hashed before any case runs, so a quietly edited fixture fails loudly in
-every language. `node tools/lint-cases.mjs` validates it against
+One vector file, `fixtures/cases.json`, read in full by all nine ports
+through a thin adapter. Every fixture's SHA-256 is re-hashed before any case
+runs, so a quietly edited fixture fails loudly in every language.
+`node tools/lint-cases.mjs` validates it against
 `fixtures/cases.schema.json`, the `conformance` job in
 [`.github/workflows/ci.yml`](./.github/workflows/ci.yml) runs the same check,
 and each port carries a port-divergence suite.

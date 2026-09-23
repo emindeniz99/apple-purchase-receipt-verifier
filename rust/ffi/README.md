@@ -257,8 +257,8 @@ and hands over plain files.
 field paths the C++ harness cannot reach — `receipt.bundle_id`,
 `inAppPurchases[productId=…].expiresDate`, `unknownAttributes[9999][0]`.
 
-Both harnesses run all 117 cases and skip none. The twelve that pin a clock go
-through the `_and_clock` constructors described above. Nothing is skipped and
+Both harnesses run every case in `cases.json` and skip none. The cases that
+pin a clock go through the `_and_clock` constructors described above. Nothing is skipped and
 nothing is assumed: a case the manifest ever marks unsupported fails the run
 rather than shrinking it quietly, and both harnesses print how many pinned a
 clock alongside the pass count.
@@ -318,11 +318,11 @@ It needs Elixir 1.18 on OTP 27 or newer. CI runs that floor and a current
 pair; `examples/elixir/README.md` says what each proves.
 
 ```
-apple-purchase-receipt-verifier 0.4.0 — C ABI conformance over NIFs
-104 passed, 0 failed, 0 skipped (12 pin a clock, and every one of them ran)
+apple-purchase-receipt-verifier <version> — C ABI conformance over NIFs
+<N> passed, 0 failed, 0 skipped (<C> pin a clock, and every one of them ran)
 ```
 
-The same 117 cases as the C++ harness, which is the point of running it: two
+The same cases as the C++ harness, which is the point of running it: two
 consumers, one manifest, identical counts.
 
 Two things the shim does that a C caller does not have to think about.
