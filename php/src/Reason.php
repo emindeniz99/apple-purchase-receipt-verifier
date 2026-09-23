@@ -16,11 +16,12 @@ namespace EminDeniz99\ApplePurchaseReceiptVerifier;
  *
  * Adding a twelfth case is a cross-port change, not a PHP one.
  *
- * Two more cases, {@see Reason::MalformedRequest} and
- * {@see Reason::InternalError}, exist only as
+ * Three more cases, {@see Reason::MalformedRequest},
+ * {@see Reason::InternalError} and {@see Reason::RequestTooLarge}, exist only
+ * as
  * {@see \EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\VerifyReceiptResult::failureReason()}
- * values. No {@see VerificationException} is ever thrown with either, so a
- * `match` over a caught exception's reason never sees them.
+ * values. No {@see VerificationException} is ever thrown with any of them, so
+ * a `match` over a caught exception's reason never sees them.
  */
 enum Reason: string
 {
@@ -59,7 +60,7 @@ enum Reason: string
 
     /**
      * The verifyReceipt request envelope is unusable: the body is not a JSON
-     * object or is over the size cap, or `receipt-data` is missing, empty or
+     * object or nests deeper than 64, or `receipt-data` is missing, empty or
      * not a string. Status 21002. Only ever a result's failure reason.
      */
     case MalformedRequest = 'MALFORMED_REQUEST';
@@ -69,4 +70,13 @@ enum Reason: string
      * 21009. Only ever a result's failure reason.
      */
     case InternalError = 'INTERNAL_ERROR';
+
+    /**
+     * The raw verifyReceipt request body is over
+     * {@see \EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\VerifyReceiptEndpoint::MAX_REQUEST_BYTES}
+     * (3,145,728 bytes), the size at which Apple's endpoint answers HTTP 413.
+     * Status 21002 in the response body; an HTTP layer can map it to 413 as
+     * Apple does. Only ever a result's failure reason.
+     */
+    case RequestTooLarge = 'REQUEST_TOO_LARGE';
 }

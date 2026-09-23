@@ -32,7 +32,7 @@ use PHPUnit\Framework\TestCase;
  * - `Der::MAX_DEPTH` bounds nesting, not bytes;
  * - `Der::DEFAULT_NODE_BUDGET` bounds node count, and deep-but-large nesting
  *   costs ~33 nodes for megabytes of retained state;
- * - `ReceiptVerifier::DEFAULT_MAX_RECEIPT_BYTES` bounds the receipt path only,
+ * - `ReceiptVerifier::MAX_RECEIPT_BYTES` bounds the receipt path only,
  *   and the JWS and endpoint paths had no byte cap at all.
  *
  * The missing bound is on the **product**: PHP has no zero-copy slice, so
@@ -48,6 +48,14 @@ use PHPUnit\Framework\TestCase;
 #[CoversNothing]
 final class MemoryExhaustionTest extends TestCase
 {
+    /**
+     * The `memory_limit` the README asks of a worker that hands raw request
+     * bodies to the endpoint: the costliest body under Apple's 3 MiB cap
+     * peaks at about 331 MB (PHP 8.4), above the `php.ini-production`
+     * default of 128M.
+     */
+    private const REQUEST_BODY_MEMORY_LIMIT = '384M';
+
     /**
      * Shared prelude: DER length encoding and a "deep but large" blob, which
      * is the shape all three declared bounds wave through.
@@ -197,7 +205,7 @@ final class MemoryExhaustionTest extends TestCase
      * The load-bearing one, and the vector every declared bound waved through:
      * 600 sibling chains, each 31 SEQUENCEs deep around ~3 KB, is 19,201 nodes
      * (under the 20,000 budget), depth 31 (under the 32 ceiling) and 1.9 MB
-     * (under the 2 MiB receipt cap) — and cost 92 MB of parser state, because
+     * (under the 3 MiB receipt cap), and cost 92 MB of parser state, because
      * every level of nesting copies the bytes below it again.
      *
      * Run with no memory limit so the cost is *measured* rather than merely
@@ -210,7 +218,7 @@ final class MemoryExhaustionTest extends TestCase
             $blob = '';
             for ($c = 0; $c < 600; ++$c) { $blob .= nested(31, 3100); }
             $blob = "\x30" . derLen(strlen($blob)) . $blob;
-            if (strlen($blob) > \EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier::DEFAULT_MAX_RECEIPT_BYTES) {
+            if (strlen($blob) > \EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier::MAX_RECEIPT_BYTES) {
                 throw new RuntimeException('harness error: vector is outside the declared byte cap, so it proves nothing');
             }
             $verifier = new \EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier(
@@ -243,7 +251,7 @@ final class MemoryExhaustionTest extends TestCase
             $blob = '';
             for ($c = 0; $c < 480; ++$c) { $blob .= nested(31, 3100); }
             $blob = "\x30" . derLen(strlen($blob)) . $blob;
-            if (strlen(base64_encode($blob)) > \EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier::DEFAULT_MAX_RECEIPT_BYTES) {
+            if (strlen(base64_encode($blob)) > \EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier::MAX_RECEIPT_BYTES) {
                 throw new RuntimeException('harness error: the base64 form is over the cap, so the parser never runs');
             }
             $endpoint = new \EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\VerifyReceiptEndpoint(
@@ -282,7 +290,11 @@ final class MemoryExhaustionTest extends TestCase
      * most expensive shape that fits: an `x5c` entry nested to
      * `Der::MAX_DEPTH`, and a request body that is nothing but JSON-bomb nodes.
      *
-     * Measured at the `php.ini-production` limit: 10 MB and 52 MB peak.
+     * The JWS runs at the `php.ini-production` limit and peaks at about 10 MB.
+     * The request cap is Apple's 3 MiB, and `json_decode` of the costliest
+     * body that fits, chains of arrays nested 60 deep, peaks at about 331 MB
+     * on PHP 8.4, so that vector runs at {@see REQUEST_BODY_MEMORY_LIMIT}, the
+     * figure the README gives for a worker that accepts raw bodies.
      */
     public function testAnInputSizedExactlyAtEachCapIsStillAffordable(): void
     {
@@ -311,22 +323,24 @@ final class MemoryExhaustionTest extends TestCase
             PHP, Subprocess::PRODUCTION_MEMORY_LIMIT);
         self::assertLessThan(32.0, $peak, 'a JWS at the cap cost ' . $peak . ' MB');
 
-        [$status, $output] = self::child(<<<'PHP'
+        $peak = self::assertVerdict('{"status":21002}', <<<'PHP'
             $cap = \EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\VerifyReceiptEndpoint::MAX_REQUEST_BYTES;
-            $body = '{"receipt-data":"AA","x":[' . str_repeat('[[]],', intdiv($cap - 40, 5));
+            // Each level costs two bytes of body and a whole PHP array, so a
+            // deep chain is the costliest shape per byte; 60 plus the two
+            // enclosing levels stays inside the depth limit of 64.
+            $chain = str_repeat('[', 60) . '0' . str_repeat(']', 60) . ',';
+            $body = '{"receipt-data":"AA","x":[' . str_repeat($chain, intdiv($cap - 40, strlen($chain)));
             $body = rtrim($body, ',') . ']}';
-            if (strlen($body) > $cap) {
-                throw new RuntimeException('harness error: over the cap, so json_decode never runs');
+            if (strlen($body) > $cap || strlen($body) < $cap - 200) {
+                throw new RuntimeException('harness error: not just inside the cap, so it proves nothing');
             }
             $endpoint = new \EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\VerifyReceiptEndpoint(
                 [file_get_contents(\EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Fixtures::directory() . '/generated/receipt-root.der')],
                 \EminDeniz99\ApplePurchaseReceiptVerifier\Environment::Production,
             );
             report($endpoint->verifyReceiptJson($body));
-            PHP);
-
-        self::assertSame(0, $status, "a request body at the cap did not survive:\n" . $output);
-        self::assertStringContainsString('VERDICT={"status":21002}', $output, $output);
+            PHP, self::REQUEST_BODY_MEMORY_LIMIT);
+        self::assertLessThan(352.0, $peak, 'a request body at the cap cost ' . $peak . ' MB');
     }
 
     /** The declared bounds sit far above any real input, and are documented. */

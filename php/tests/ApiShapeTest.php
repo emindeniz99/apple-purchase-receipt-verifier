@@ -41,25 +41,28 @@ final class ApiShapeTest extends TestCase
      * vocabulary, so a typo in a case name — or a twelfth reason added
      * without a cross-port change — fails here.
      *
-     * The enum also carries the two reasons every port's VerifyReceiptResult
-     * shares, MALFORMED_REQUEST and INTERNAL_ERROR. They are not in the
-     * schema because no verifier throws them, and they are the only extras.
+     * The enum also carries the three reasons every port's VerifyReceiptResult
+     * shares, MALFORMED_REQUEST, REQUEST_TOO_LARGE and INTERNAL_ERROR. They
+     * are not in the schema's `reason` because no verifier throws them; the
+     * schema lists them under `resultReason`, and they are the only extras.
      */
     public function testTheReasonVocabularyIsExactlyTheOneTheSchemaDefines(): void
     {
-        /** @var array{'$defs': array{reason: array{enum: list<string>}}} $schema */
+        /** @var array{'$defs': array{reason: array{enum: list<string>}, resultReason: array{oneOf: array{0: mixed, 1: array{enum: list<string>}}}}} $schema */
         $schema = json_decode(
             (string) file_get_contents(Fixtures::directory() . '/cases.schema.json'),
             true,
             64,
             JSON_THROW_ON_ERROR,
         );
-        $expected = [...$schema['$defs']['reason']['enum'], 'MALFORMED_REQUEST', 'INTERNAL_ERROR'];
+        $resultOnly = $schema['$defs']['resultReason']['oneOf'][1]['enum'];
+        $expected = [...$schema['$defs']['reason']['enum'], ...$resultOnly];
         $actual = array_map(static fn (Reason $r): string => $r->value, Reason::cases());
         sort($expected);
         sort($actual);
 
         self::assertCount(11, $schema['$defs']['reason']['enum']);
+        self::assertSame(['MALFORMED_REQUEST', 'REQUEST_TOO_LARGE', 'INTERNAL_ERROR'], $resultOnly);
         self::assertSame($expected, $actual, 'the Reason vocabulary drifted from the schema');
     }
 
@@ -152,11 +155,8 @@ final class ApiShapeTest extends TestCase
         ];
         yield 'receipt: empty roots' => [static fn () => new ReceiptVerifier([], 'com.example.app')];
         yield 'receipt: empty bundle id' => [static fn () => new ReceiptVerifier([$root()], '')];
-        yield 'receipt: a zero size limit' => [
-            static fn () => new ReceiptVerifier([$root()], 'com.example.app', 0),
-        ];
         yield 'receipt: a zero node budget' => [
-            static fn () => new ReceiptVerifier([$root()], 'com.example.app', 2097152, 0),
+            static fn () => new ReceiptVerifier([$root()], 'com.example.app', 0),
         ];
         yield 'endpoint: empty roots' => [
             static fn () => new VerifyReceiptEndpoint([], Environment::Sandbox),

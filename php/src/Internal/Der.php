@@ -62,10 +62,17 @@ final class Der
      * The largest genuine fixture — the 79 KB legacy receipt with 187 in-app
      * purchases — retains 967 KB, a ratio of 12× that comes from real receipts
      * being shallow. The attack ratio is `2 × MAX_DEPTH`, i.e. 64×. So 32 MiB
-     * is ~34× the largest real receipt while still covering a legitimate
-     * receipt at the full {@see \EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier::DEFAULT_MAX_RECEIPT_BYTES}
-     * at realistic ASN.1 shapes, and it caps hostile input at roughly a third
-     * of a default 128M `memory_limit` instead of blowing straight through it.
+     * is ~34× the largest real receipt, and it caps hostile input at roughly a
+     * third of a default 128M `memory_limit` instead of blowing straight
+     * through it.
+     *
+     * It does not reach the full
+     * {@see \EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier::MAX_RECEIPT_BYTES}
+     * of 3 MiB: the CMS envelope parse retains 14 times the DER (measured on
+     * the 1,034,681-byte `receipt-byte-floor` fixture), so it covers a
+     * receipt of up to about 2.28 MiB of DER. A genuine receipt between that
+     * and 3 MiB would be refused here as INVALID_RECEIPT_FORMAT. The largest
+     * genuine receipt in the corpus is 79 KB.
      */
     public const DEFAULT_BYTE_BUDGET = 33554432;
 
