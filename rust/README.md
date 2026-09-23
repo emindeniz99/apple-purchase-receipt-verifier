@@ -228,9 +228,9 @@ Apple's do.
 |---|---|---|
 | `RequestTooLarge` | 21002 | the raw body is over `MAX_REQUEST_BYTES` (3,145,728 UTF-8 bytes); Apple answers HTTP 413 here, see [Defensive parsing](#defensive-parsing) |
 | `MalformedRequest` | 21002 | the body is not a JSON object or nests deeper than 64, or `receipt-data` is missing, empty or not a string |
-| `InvalidReceiptFormat` | 21002 | `receipt-data` is not receipt base64, is over `MAX_RECEIPT_BYTES`, or does not decode to a receipt |
+| `InvalidReceiptFormat` | 21002 | `receipt-data` is not receipt base64, is over `MAX_RECEIPT_BYTES`, or its CMS envelope does not parse |
 | `InvalidChain`, `InvalidSignature`, other certificate reasons | 21003 | the receipt did not authenticate |
-| `InternalError` | 21009 | a panic inside the endpoint, contained; `failure_cause()` holds its message |
+| `InternalError` | 21009 | not the client's fault: the receipt authenticated but this crate cannot read its signed content (`failure_cause()` holds the parser's detail), or a panic inside the endpoint was contained (`failure_cause()` holds its message). Alert and retry or escalate; do not deny the user |
 
 **`request_date`.** Each entry point has an `_at` variant that takes a
 `SystemTime` for `request_date` in place of the endpoint's clock. Without
@@ -261,21 +261,22 @@ canonical token, identical in every port of this library.
 | `WrongBundleId` | `WRONG_BUNDLE_ID` | the verified payload names another bundle |
 | `WrongEnvironment` | `WRONG_ENVIRONMENT` | the environment is outside the accepted set |
 | `WrongAppAppleId` | `WRONG_APP_APPLE_ID` | a Production `AppTransaction` does not name the configured app Apple id |
-| `InvalidReceiptFormat` | `INVALID_RECEIPT_FORMAT` | the PKCS#7 receipt could not be parsed |
+| `InvalidReceiptFormat` | `INVALID_RECEIPT_FORMAT` | the PKCS#7/CMS envelope could not be parsed |
 | `DeviceHashMismatch` | `DEVICE_HASH_MISMATCH` | the device hash does not match attribute 5 |
 | `StalePayload` | `STALE_PAYLOAD` | the payload was signed longer ago than `max_signed_age` |
+| `InternalError` | `INTERNAL_ERROR` | the receipt's chain and signature verified, but its signed content cannot be read: not the client's fault, so alert and retry or escalate rather than deny |
 
-The vocabulary is **closed** by the cross-port contract: a twelfth reason
+The vocabulary is **closed** by the cross-port contract: a thirteenth reason
 would be a change to the shared vector file and to every port at once.
 `Reason` is nevertheless `#[non_exhaustive]`, so that if that ever happens a
 caller with a `_ => reject` arm keeps compiling and keeps failing closed.
 That arm is a safety net, not an extension point.
 
-`Reason` also has `MalformedRequest` (`MALFORMED_REQUEST`),
-`RequestTooLarge` (`REQUEST_TOO_LARGE`) and `InternalError`
-(`INTERNAL_ERROR`), but only as a `VerifyReceiptResult` failure reason. No
-verifier returns any of them, and `Reason::all()` lists only the eleven
-above, so the C ABI's reason codes do not move.
+`Reason` also has `MalformedRequest` (`MALFORMED_REQUEST`) and
+`RequestTooLarge` (`REQUEST_TOO_LARGE`), but only as a `VerifyReceiptResult`
+failure reason. No verifier returns either, and `Reason::all()` lists only
+the twelve above. `InternalError` joined that list last, so every earlier C
+ABI reason code kept its number and `INTERNAL_ERROR` is 12.
 
 **Misconfiguration is a different type.** Empty trust anchors, an empty
 bundle id, an empty accepted-environment set, an unparseable anchor and an
@@ -445,10 +446,21 @@ instant → ES256 signature → staleness → bundle id → environment → app 
 id.
 
 **Receipt.** Base64 → CMS parse (trailing bytes after the blob are refused)
-→ payload parse → **at most ten embedded certificates**, checked before any
-is decoded → signer is among them → **the signer is a certificate this
-crate can read** → chain at the creation date → **signer marker OID** → RSA
-key, SHA-1 or SHA-256 digest → CMS signature → bundle id → device hash.
+→ **the creation date alone** (attribute 12; nothing else in the payload is
+decoded yet) → **at most ten embedded certificates**, checked before any is
+decoded → signer is among them → **the signer is a certificate this crate
+can read** → chain at the creation date, or at the system clock when that
+date is missing, empty, unreadable or stated twice → **signer marker OID** →
+RSA key, SHA-1 or SHA-256 digest → CMS signature → **full payload parse**,
+where any failure is `INTERNAL_ERROR` → bundle id → device hash.
+
+Nothing is trusted before the chain and the signature, so reading the
+creation date never rejects a receipt. The chain comes before the signature
+so the attacker's own key (their RSA size and exponent) is never run before
+it is trusted. A payload the crate cannot read after that is content a
+trusted signer signed, so it is `INTERNAL_ERROR` (21009): reporting it as
+`INVALID_RECEIPT_FORMAT` (21002) would tell an app server to deny a user
+who may well have paid.
 
 Two orderings are load-bearing and deliberately opposite. On the JWS path
 the marker OIDs are checked **before** the chain; on the receipt path the
@@ -584,7 +596,7 @@ The shape, in one paragraph: three opaque handles (`AprvJwsVerifier`,
 one `AprvResult { int32_t status; char *json; }`. JSON is the interchange
 because a claim set is open-ended and modelling it as C structs would make
 every field Apple adds a breaking ABI change. `status` is `0`, one of the
-eleven canonical [`Reason`] codes in declaration order (stable and
+twelve canonical [`Reason`] codes in declaration order (stable and
 append-only), or a `100`+ code meaning the *call* was malformed and nothing
 was checked. Every exported function runs its body inside `catch_unwind`, so
 no panic ever crosses the boundary.

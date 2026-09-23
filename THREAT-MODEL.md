@@ -92,8 +92,45 @@ step 6). The environment is a *set* deliberately, because App Review runs
 production builds against sandbox and a single-environment hard fail would
 reject genuine purchases during review (PLAN.md D3).
 
+A legacy receipt is verified in a fixed order, the same in all nine ports:
+
+1. Parse the CMS. Trailing bytes after it, absent content or no
+   `SignerInfo` are `INVALID_RECEIPT_FORMAT`.
+2. Read the receipt creation date, attribute 12, and nothing else: walk the
+   top-level attribute SET, read each entry's type, decode only the value of
+   type 12. No usable date means the chain is judged at the system clock.
+   This step never rejects.
+3. Build the chain to the pinned roots at that instant and check the
+   receipt-signing marker OID (`INVALID_CHAIN`, `INVALID_CERTIFICATE`,
+   `INVALID_CERTIFICATE_PURPOSE`).
+4. Check the CMS signature with the now-trusted signer key
+   (`INVALID_SIGNATURE`).
+5. Parse the whole payload. A failure here is `INTERNAL_ERROR`.
+
+Then the bundle id and, when asked, the device hash.
+
+Nothing is trusted before steps 3 and 4, so step 2 reads as little as it
+can and blames no one: an unreadable date only moves the chain instant to
+"now". The chain comes before the signature on purpose. Checking the
+signature first would run the attacker's own key, with an RSA size and
+exponent the attacker chose, before anything about that key is trusted,
+which is CPU spent on demand for free. A failure in step 5 means a trusted
+signer signed content this library cannot read: a gap in the library or a
+format Apple added, not a defect of the client's request. It is therefore
+`INTERNAL_ERROR`, status 21009 at the endpoint, and never
+`INVALID_RECEIPT_FORMAT`, whose 21002 would tell an app server to deny a
+paying user. An integrator should alert and retry or escalate on it, not
+deny.
+
 *Proof.* Tampering: `transaction/reject-tampered-payload` and
-`receipt/reject-tampered-payload`, both `INVALID_SIGNATURE`. Claims:
+`receipt/reject-tampered-payload`, both `INVALID_SIGNATURE`. Order:
+`receipt/reject-unreadable-creation-date-under-a-foreign-chain` (the chain
+answers, not the payload), `receipt/unreadable-creation-date-is-judged-at-now`,
+`receipt/reject-garbage-in-app-purchase-under-a-trusted-chain`,
+`receipt/reject-unreadable-entry-under-a-trusted-chain`,
+`receipt/reject-empty-encapsulated-content` and the two attribute-type
+ceilings (all `INTERNAL_ERROR`), and
+`endpoint/unreadable-signed-content-answers-21009`. Claims:
 `transaction/reject-wrong-bundle-id`, `receipt/reject-wrong-bundle-id`,
 `transaction/reject-apple-official-wrong-bundle-id` (Apple's own negative
 fixture), `transaction/reject-environment-outside-accept-set` and
@@ -115,7 +152,11 @@ including `endpoint/vpp-sandbox-receipt-on-production-answers-21007`,
 Apple's signing certificates rotate, so a receipt signed under a since-expired
 certificate is still genuine. The validity window is checked at the payload's
 `signedDate` or the receipt's creation date, falling back to the system clock
-when the input carries neither (PLAN.md §2.1 step 4, §2.2 step 2). Separately,
+when the input carries neither (PLAN.md §2.1 step 4, §2.2 step 2). For a
+receipt, a creation date that is empty, unreadable, stated twice, or sits
+beside a top-level entry the walk cannot read counts as carried by nothing:
+the chain is judged at the system clock and the date is refused later, by
+the full parse, if the signer turns out to be trusted. Separately,
 `JwsVerifier` takes an optional max signed age; a payload signed longer ago is
 `STALE_PAYLOAD` (PLAN.md D5). An injected clock drives that policy only, never
 chain authentication. Staleness bounds how old a genuinely signed payload may
@@ -125,7 +166,14 @@ be. It is not replay protection.
 `transaction/accept-historical-payload-under-expired-chain`,
 `receipt/accept-historical-creation-date-under-expired-chain`,
 `transaction/reject-fresh-payload-under-expired-chain`,
-`receipt/reject-fresh-creation-date-under-expired-chain`. Clock, both
+`receipt/reject-fresh-creation-date-under-expired-chain`. An unusable
+creation date judged at now: `receipt/accept-missing-creation-date`,
+`receipt/unreadable-creation-date-is-judged-at-now`,
+`receipt/reject-unreadable-creation-date-under-an-expired-chain`,
+`receipt/creation-date-twice-is-judged-at-now` and
+`receipt/reject-unreadable-entry-under-an-expired-chain`; the trusted test
+PKI they use is valid 2024-01-01 to 2050-01-01 and the expired one 2020-01-01
+to 2021-01-01, so every answer is fixed until 2050. Clock, both
 directions: `transaction/injected-clock-cannot-authenticate-an-expired-chain`,
 `endpoint/injected-clock-cannot-expire-a-valid-chain`. Staleness, boundary and
 dateless case: `transaction/accept-payload-at-exact-max-signed-age`,
@@ -144,7 +192,11 @@ accepts, `receipt/reject-wrong-device-guid` is `DEVICE_HASH_MISMATCH`.
 
 Every hand-written reader caps nesting depth (32 in rust, php, ruby and node),
 refuses bytes after the outermost value, and caps how many certificates a
-receipt may embed (10 in rust and node). Rust, go, ruby and php also cap the
+receipt may embed (10 in rust and node). Before the signer is trusted the
+payload is read only as far as attribute 12 (§3.3), so the attacker's bytes
+reach the full payload grammar only under a trusted signature; a bound hit
+there is `INTERNAL_ERROR`, since only a trusted signer could have put the
+bytes in front of it. Rust, go, ruby and php also cap the
 decoded node count, and rust, php and go the input size; §5 records that those
 two are not yet uniform. Failures surface as the library's own error type,
 never as a language-level crash.

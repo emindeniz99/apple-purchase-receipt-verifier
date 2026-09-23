@@ -160,9 +160,9 @@ No endpoint method throws: the Apple status code is a field of the answer.
 |---|---|---|
 | the raw body is over `MaxRequestBytes` (3,145,728 UTF-8 bytes); Apple answers HTTP 413 here | `21002` | `RequestTooLarge` |
 | body is not a JSON object or nests deeper than 64, or `receipt-data` is missing, empty or not a string | `21002` | `MalformedRequest` |
-| `receipt-data` is not canonical standard base64 (whitespace, base64url and omitted or extra padding all count, as at Apple), is over `MaxReceiptBytes`, or does not decode to a receipt | `21002` | `InvalidReceiptFormat` |
+| `receipt-data` is not canonical standard base64 (whitespace, base64url and omitted or extra padding all count, as at Apple), is over `MaxReceiptBytes`, or its CMS envelope does not parse | `21002` | `InvalidReceiptFormat` |
 | the receipt could not be authenticated | `21003` | `InvalidChain`, `InvalidSignature`, other certificate reasons |
-| an unexpected exception (including a throwing `IClock` or request dictionary, or a disposed endpoint) | `21009` | `InternalError`, with the exception in `FailureCause` |
+| the receipt authenticated but its signed content cannot be read, or an unexpected exception (including a throwing `IClock` or request dictionary, or a disposed endpoint). Not the client's fault: alert and retry or escalate, do not deny the user | `21009` | `InternalError`, with the parser's error or the exception in `FailureCause` |
 | a Production endpoint, and `receiptType ∉ {Production, ProductionVPP}` | `21007` | none: `Receipt` is set |
 | a Sandbox endpoint, and `receiptType ∈ {Production, ProductionVPP}` | `21008` | none: `Receipt` is set |
 | otherwise | `0`, plus `environment` and `receipt` | none: `Receipt` is set |
@@ -237,17 +237,29 @@ One exception type, `VerificationException`. Switch on `.Reason`; report
 | `WrongBundleId` | `WRONG_BUNDLE_ID` | the bundle id claim does not match |
 | `WrongEnvironment` | `WRONG_ENVIRONMENT` | the environment / `receiptType` is outside the accepted set |
 | `WrongAppAppleId` | `WRONG_APP_APPLE_ID` | a Production `AppTransaction` names a different app Apple id, or none is configured |
-| `InvalidReceiptFormat` | `INVALID_RECEIPT_FORMAT` | not parseable CMS, trailing bytes, no payload, no `SignerInfo`, an unsupported digest, or a malformed attribute |
+| `InvalidReceiptFormat` | `INVALID_RECEIPT_FORMAT` | not parseable CMS, trailing bytes, no payload (a detached CMS), no `SignerInfo`, or an unsupported digest |
 | `DeviceHashMismatch` | `DEVICE_HASH_MISMATCH` | the SHA-1 device binding failed, or the attributes it needs are absent |
 | `StalePayload` | `STALE_PAYLOAD` | the payload is older than `maxSignedAge` |
+| `InternalError` | `INTERNAL_ERROR` | the receipt's chain and signature verified, but its payload does not parse (`InnerException` is the parser's error). Not the client's fault: alert and retry or escalate, do not deny |
 
-The vocabulary is closed. Adding a twelfth reason is a change to every port and
-to the shared schema in one pull request. `VerificationReason` also carries
-`MalformedRequest` (`MALFORMED_REQUEST`), `RequestTooLarge`
-(`REQUEST_TOO_LARGE`) and `InternalError` (`INTERNAL_ERROR`), but only as
+**Order of the receipt checks.** CMS parse → the creation date alone
+(attribute 12; nothing else in the payload is decoded yet) → chain at that
+date, or at the system clock when the date is missing, empty, unreadable or
+stated twice → receipt-signing marker OID → CMS signature → full payload
+parse → bundle id → device hash. Nothing is trusted before the chain and
+the signature, so reading the date never rejects. The chain comes first so
+the attacker's own key is never run before it is trusted. A payload that
+fails the full parse was signed by a trusted signer, so it is
+`InternalError`, not `InvalidReceiptFormat`.
+
+The vocabulary is closed. Adding a thirteenth reason is a change to every port
+and to the shared schema in one pull request. `VerificationReason` also
+carries `MalformedRequest` (`MALFORMED_REQUEST`) and `RequestTooLarge`
+(`REQUEST_TOO_LARGE`), but only as
 [`VerifyReceiptResult.FailureReason`](#the-verifyreceipt-compatible-endpoint)
-values: no `VerificationException` is ever thrown with any of them, so a
-`switch` over a caught exception's `Reason` never sees them.
+values: no `VerificationException` is ever thrown with either, so a `switch`
+over a caught exception's `Reason` never sees them. `InternalError` keeps the
+position it had when it was endpoint-only, so no member's value moved.
 
 **Misconfiguration is not a verification verdict.** Empty trust anchors, an
 empty bundle id, an empty accepted-environment set, or an endpoint environment

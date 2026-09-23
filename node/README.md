@@ -230,7 +230,7 @@ if (result.verified) {
   result.receipt.bundleId;     // the verified AppReceipt; compare the bundle id yourself
 } else {
   result.failureReason;        // a Reason, e.g. 'INVALID_CHAIN' or 'MALFORMED_REQUEST'
-  result.failureCause;         // the caught error, for INTERNAL_ERROR only; otherwise null
+  result.failureCause;         // what is behind INTERNAL_ERROR only; otherwise null
 }
 result.status;                 // the status for the endpoint's own environment
 result.requestDate;            // the instant rendered as request_date
@@ -272,12 +272,24 @@ verified it. Any environment other than `'Production'` or `'Sandbox'` is a
 |---|---|---|
 | `REQUEST_TOO_LARGE` | 21002 | the raw body is over `MAX_REQUEST_BYTES` (3,145,728 UTF-8 bytes); Apple answers HTTP 413 here, see [Input limits](#input-limits) |
 | `MALFORMED_REQUEST` | 21002 | the request is not an object, the string is not a JSON object or nests past 64 levels, or `receipt-data` is missing, empty or not a string |
-| `INVALID_RECEIPT_FORMAT` | 21002 | `receipt-data` is over `MAX_RECEIPT_BYTES`, is not canonical standard base64 (whitespace, base64url and omitted or extra padding all count, as at Apple) or does not decode to a receipt |
+| `INVALID_RECEIPT_FORMAT` | 21002 | `receipt-data` is over `MAX_RECEIPT_BYTES`, is not canonical standard base64 (whitespace, base64url and omitted or extra padding all count, as at Apple) or its CMS envelope does not parse |
 | `INVALID_CHAIN`, `INVALID_SIGNATURE`, other certificate reasons | 21003 | the receipt did not authenticate |
-| `INTERNAL_ERROR` | 21009 | an unexpected error; `failureCause` holds it |
+| `INTERNAL_ERROR` | 21009 | not the client's fault: the receipt authenticated but its signed content cannot be read (`failureCause` is the parser's error), or an unexpected error inside the endpoint (`failureCause` holds it). Alert and retry or escalate; do not deny the user |
 
-`MALFORMED_REQUEST`, `REQUEST_TOO_LARGE` and `INTERNAL_ERROR` appear only on
-a result. No `VerificationError` is ever thrown with any of them.
+`MALFORMED_REQUEST` and `REQUEST_TOO_LARGE` appear only on a result. No
+`VerificationError` is ever thrown with either. `INTERNAL_ERROR` is also
+thrown by `ReceiptVerifier` and `verifyReceiptCore`, with the parser's error
+as its `cause`.
+
+**Order of the receipt checks.** CMS parse → the creation date alone
+(attribute 12; nothing else in the payload is decoded yet) → chain at that
+date, or at the system clock when the date is missing, empty, unreadable or
+stated twice → receipt-signing marker OID → CMS signature → full payload
+parse → bundle id → device hash. Nothing is trusted before the chain and
+the signature, so reading the date never rejects. The chain comes first so
+the attacker's own key is never run before it is trusted. A payload that
+fails the full parse was signed by a trusted signer, so it is
+`INTERNAL_ERROR`, not `INVALID_RECEIPT_FORMAT`.
 
 **`request_date`.** Every method takes an optional `Date` as its second
 argument, which becomes `request_date` in place of the endpoint's `clock`.

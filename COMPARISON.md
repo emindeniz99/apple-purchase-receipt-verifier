@@ -51,13 +51,13 @@ to them from both sides.
 | 0 | valid | ✅ same semantics (chain + signature to pinned Apple root) |
 | 21000 | the request didn't use HTTP POST | ❌ out of scope — this is a body-level API with no HTTP layer, so there is no request method to get wrong. Your framework decides what a non-POST gets |
 | 21001 | "The App Store no longer sends this status code." | ❌ never produced; Apple retired it |
-| 21002 | receipt-data malformed or missing | ✅ returned when `receipt-data` is absent, empty, not a string, not base64, or not a parseable receipt |
+| 21002 | receipt-data malformed or missing | ✅ returned when `receipt-data` is absent, empty, not a string, not base64, or its CMS envelope does not parse. Payload content that a trusted signer signed and the library cannot read is 21009, not 21002 |
 | 21003 | receipt could not be authenticated | ✅ chain or signature failure |
 | 21004 | shared secret mismatch | ❌ never produced (see `password`) |
 | 21005 | Apple's receipt server is unavailable | ❌ never produced — there is no server to be unavailable; this is a *benefit* |
 | 21006 | valid but subscription expired (iOS 6 style only) | ❌ never produced (legacy iOS 6 transaction receipts unsupported) |
 | 21007 / 21008 | sandbox↔production routing | ✅ reproduced locally from the receipt's `receipt_type` attribute — the classic "try production, retry sandbox on 21007" dance still works unchanged. Fails closed: only `Production`/`ProductionVPP` count as production; sandbox variants and a missing attribute are treated as sandbox. `Xcode` is in that fail-closed set for completeness only — an Xcode-generated receipt is not Apple-signed, so it stops at 21003 before routing is reached |
-| 21009 / 21010 | internal error / account not found | 21009 on unexpected internal errors; 21010 never (no account database) |
+| 21009 / 21010 | internal error / account not found | 21009 (`INTERNAL_ERROR`) when the receipt authenticates (trusted chain, valid signature) but its signed content cannot be read, and on unexpected internal errors: neither is the client's fault, so alert and retry or escalate rather than deny. 21010 never (no account database) |
 | 21100–21199 (+ `is_retryable`) | Apple internal data access error; `is_retryable` says whether retrying may help | ❌ never produced, and we never emit an `is_retryable` field either — these codes report the state of Apple's own datastore, and there is no remote call here to retry |
 
 A tampered receipt shows 21002 and 21003 diverging in practice. Altering one

@@ -275,13 +275,20 @@ send to `verifyReceipt`), expected `bundleId`, trusted roots (Apple Inc.
 Root CA), optional device GUID.
 
 1. Parse as CMS `SignedData`; require signed content present (the payload).
+   Present but zero bytes long counts as present.
 2. Extract the embedded certificate chain; identify the signer cert; build
    and PKIX-validate signer → WWDR CA → pinned Apple Inc. Root CA,
    revocation disabled.
    - Validity is checked at the receipt's **creation date** (attribute 12) —
      Apple's receipt-signing certs expire and rotate; a receipt is valid if
-     its chain was valid when Apple signed it. (Requires parsing the payload
-     before trusting it — parse defensively, trust only after step 3.)
+     its chain was valid when Apple signed it. Only that date is read before
+     trust: walk the top-level attribute SET, read each entry's type, decode
+     the value of type 12 alone. Missing, empty, unreadable, present more
+     than once, or a walk that fails on any entry: judge the chain at the
+     system clock instead. Reading the date never rejects a receipt.
+   - The chain is checked before the signature (step 4) on purpose: the
+     signature check would otherwise run the attacker's own key, with an
+     RSA size and exponent of their choosing, before anything is trusted.
 3. **Signer purpose check (critical):** require the signer leaf to carry
    extension OID `1.2.840.113635.100.6.11.1` (the Apple receipt-signing
    marker, present on the genuine "Mac App Store and iTunes Store Receipt
@@ -295,8 +302,12 @@ Root CA), optional device GUID.
    (Apple signs receipts with SHA-1/RSA or SHA-256/RSA — accept what the CMS
    `SignerInfo` declares, but only after the chain anchored at our pinned root
    and the signer-purpose check). Require the signer key to be RSA.
-5. Parse the payload: `SET OF ReceiptAttribute ::= SEQUENCE { type INTEGER,
-   version INTEGER, value OCTET STRING }`. App-level attributes:
+5. Parse the whole payload, now that its signer is trusted. Any failure here
+   is `INTERNAL_ERROR` (status 21009 at the endpoint), never
+   `INVALID_RECEIPT_FORMAT`: a trusted signer signed content this library
+   cannot read, which is the library's gap or a new Apple format and not a
+   malformed client request. Grammar: `SET OF ReceiptAttribute ::= SEQUENCE {
+   type INTEGER, version INTEGER, value OCTET STRING }`. App-level attributes:
    | type | field | value encoding |
    |------|-------|----------------|
    | 2 | bundle id | UTF8String (keep raw bytes too — needed for hash) |

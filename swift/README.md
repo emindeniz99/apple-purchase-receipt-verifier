@@ -185,7 +185,9 @@ struct, and only the endpoint creates one.
   21007 and 21008, so it is not the same check as `status == 0`:
   `status == 0` asks whether this endpoint's environment accepts the
   receipt, `isVerified` asks whether the receipt verified at all.
-- `failureCause` is the error behind an `.internalError`, for logging.
+- `failureCause` is what is behind an `.internalError`, for logging: the
+  parser's error for signed content that could not be read, or the
+  unexpected error the endpoint caught.
 - `status` is the answer for the endpoint's own environment.
 - `requestDate` is the instant rendered as `request_date`.
 
@@ -228,12 +230,13 @@ verified it. `.xcode` and `.localTesting` throw
 |---|---|---|
 | `.requestTooLarge` | 21002 | the raw body is over `VerifyReceiptEndpoint.maxRequestBytes` (3,145,728 UTF-8 bytes); Apple answers HTTP 413 here |
 | `.malformedRequest` | 21002 | the body is not a JSON object or nests past 64 levels, or `receipt-data` is missing, empty or not a string |
-| `.invalidReceiptFormat` | 21002 | `receipt-data` is over `ReceiptVerifier.maxReceiptBytes`, is not base64 or does not decode to a receipt |
+| `.invalidReceiptFormat` | 21002 | `receipt-data` is over `ReceiptVerifier.maxReceiptBytes`, is not base64 or its CMS envelope does not parse |
 | `.invalidChain`, `.invalidSignature`, other certificate reasons | 21003 | the receipt did not authenticate |
-| `.internalError` | 21009 | an unexpected error; `failureCause` holds it |
+| `.internalError` | 21009 | not the client's fault: the receipt authenticated but its signed content cannot be read, or an unexpected error; `failureCause` holds what is behind it. Alert and retry or escalate; do not deny the user |
 
-`.malformedRequest`, `.requestTooLarge` and `.internalError` only ever
-appear on a result. No `VerificationError` is thrown with any of them.
+`.malformedRequest` and `.requestTooLarge` only ever appear on a result. No
+`VerificationError` is thrown with either. `.internalError` is also thrown
+by `ReceiptVerifier`, with the parser's error as `VerificationError.cause`.
 
 **`request_date`.** `verifyReceiptResult` and `verifyReceiptData` take an
 optional `now: Date?` that becomes `request_date` in place of the
@@ -303,12 +306,22 @@ do {
 | `.wrongBundleId` | `WRONG_BUNDLE_ID` | the verified payload or receipt names another bundle |
 | `.wrongEnvironment` | `WRONG_ENVIRONMENT` | the environment is outside the accepted set |
 | `.wrongAppAppleId` | `WRONG_APP_APPLE_ID` | a Production `AppTransaction` does not name the configured app Apple id |
-| `.invalidReceiptFormat` | `INVALID_RECEIPT_FORMAT` | the receipt is over `ReceiptVerifier.maxReceiptBytes`, the CMS blob does not parse, has no signer info, or an attribute is malformed |
+| `.invalidReceiptFormat` | `INVALID_RECEIPT_FORMAT` | the receipt is over `ReceiptVerifier.maxReceiptBytes`, the CMS blob does not parse, or it has no signer info |
 | `.deviceHashMismatch` | `DEVICE_HASH_MISMATCH` | the device hash does not match attribute 5, or the receipt lacks the attributes the check needs |
 | `.stalePayload` | `STALE_PAYLOAD` | the payload was signed longer ago than `maxSignedAgeMillis` |
 | `.malformedRequest` | `MALFORMED_REQUEST` | never thrown: reported only on a `VerifyReceiptResult`, for an unusable request envelope |
 | `.requestTooLarge` | `REQUEST_TOO_LARGE` | never thrown: reported only on a `VerifyReceiptResult`, for a raw body over `VerifyReceiptEndpoint.maxRequestBytes` (status 21002; Apple answers HTTP 413) |
-| `.internalError` | `INTERNAL_ERROR` | never thrown: reported only on a `VerifyReceiptResult`, for an unexpected error (status 21009) |
+| `.internalError` | `INTERNAL_ERROR` | the receipt's chain and signature verified, but its payload does not parse (`cause` is the parser's error); also reported on a `VerifyReceiptResult` for an unexpected error. Status 21009. Not the client's fault: alert and retry or escalate, do not deny |
+
+**Order of the receipt checks.** CMS parse → the creation date alone
+(attribute 12; nothing else in the payload is decoded yet) → chain at that
+date, or at the system clock when the date is missing, empty, unreadable or
+stated twice → receipt-signing marker OID → CMS signature → full payload
+parse → bundle id → device hash. Nothing is trusted before the chain and
+the signature, so reading the date never rejects. The chain comes first so
+the attacker's own key is never run before it is trusted. A payload that
+fails the full parse was signed by a trusted signer, so it is
+`.internalError`, not `.invalidReceiptFormat`.
 
 The vocabulary is **closed** by the cross-port contract, and it doubles as
 the misconfiguration channel: an empty `trustedRoots`, an empty `bundleId`,

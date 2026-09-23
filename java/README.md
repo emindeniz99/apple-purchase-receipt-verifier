@@ -262,9 +262,9 @@ verified it. 21007 and 21008 bodies carry the status alone, as Apple's do.
 |---|---|---|
 | `REQUEST_TOO_LARGE` | 21002 | the raw body is over `MAX_REQUEST_BYTES` (3,145,728 UTF-8 bytes); Apple answers HTTP 413 here, see [Resource bounds](#resource-bounds) |
 | `MALFORMED_REQUEST` | 21002 | the body is not JSON, not a JSON object or nests deeper than 64, or `receipt-data` is missing, empty or not a string |
-| `INVALID_RECEIPT_FORMAT` | 21002 | `receipt-data` is not base64, is over `MAX_RECEIPT_BYTES`, or does not decode to a receipt |
+| `INVALID_RECEIPT_FORMAT` | 21002 | `receipt-data` is not base64, is over `MAX_RECEIPT_BYTES`, or its CMS envelope does not parse |
 | `INVALID_CHAIN`, `INVALID_SIGNATURE`, other certificate reasons | 21003 | the receipt did not authenticate |
-| `INTERNAL_ERROR` | 21009 | an unexpected runtime exception; `failureCause()` holds it |
+| `INTERNAL_ERROR` | 21009 | not the client's fault: the receipt authenticated but its signed content cannot be read (`failureCause()` is the parser's exception), or an unexpected runtime exception (`failureCause()` holds it). Alert and retry or escalate; do not deny the user |
 
 **`request_date`.** Every method has an overload taking an `Instant`, which
 becomes `request_date` in place of the endpoint's clock; without one the
@@ -284,7 +284,7 @@ field-by-field fidelity account.
 
 ## The error vocabulary
 
-Every failure is a checked `VerificationException` carrying one of eleven
+Every failure is a checked `VerificationException` carrying one of twelve
 `VerificationException.Reason` values, and nothing else — no logging, no
 metrics, no callbacks. The message is `Reason + ": " + detail`; match on
 `reason()`, never parse it.
@@ -317,17 +317,28 @@ try {
 | `WRONG_BUNDLE_ID` | the verified payload or receipt names another bundle |
 | `WRONG_ENVIRONMENT` | the environment is outside the accepted set |
 | `WRONG_APP_APPLE_ID` | a Production `AppTransaction` does not name the configured app Apple id |
-| `INVALID_RECEIPT_FORMAT` | the PKCS#7/CMS blob does not parse, has trailing bytes, has no signer info, an attribute is malformed, or the receipt is over `MAX_RECEIPT_BYTES` |
+| `INVALID_RECEIPT_FORMAT` | the PKCS#7/CMS blob does not parse, has trailing bytes, has no signer info, or the receipt is over `MAX_RECEIPT_BYTES` |
 | `DEVICE_HASH_MISMATCH` | the device hash does not match attribute 5, or the receipt lacks the attributes the check needs |
 | `STALE_PAYLOAD` | the payload was signed longer ago than `maxSignedAge` |
+| `INTERNAL_ERROR` | the receipt's chain and signature verified, but its payload does not parse; `getCause()` is the parser's exception. Not the client's fault: alert and retry or escalate, do not deny |
 
-The vocabulary is **closed** by the cross-port contract: a twelfth reason
+**Order of the receipt checks.** CMS parse → the creation date alone
+(attribute 12; nothing else in the payload is decoded yet) → chain at that
+date, or at the system clock when the date is missing, empty, unreadable or
+stated twice → receipt-signing marker OID → CMS signature → full payload
+parse → bundle id → device hash. Nothing is trusted before the chain and
+the signature, so reading the date never rejects. The chain comes first so
+the attacker's own key is never run before it is trusted. A payload that
+fails the full parse was signed by a trusted signer, so it is
+`INTERNAL_ERROR`, not `INVALID_RECEIPT_FORMAT`.
+
+The vocabulary is **closed** by the cross-port contract: a thirteenth reason
 would be a change to the shared vector file and to every port at once.
-`Reason` also carries `MALFORMED_REQUEST`, `REQUEST_TOO_LARGE` and
-`INTERNAL_ERROR`, but only as
-[`VerifyReceiptResult.failureReason()`](#the-verifyreceipt-compatible-endpoint)
-values: no `VerificationException` is ever thrown with any of them, so a
-`switch` over a caught exception's `reason()` never sees them.
+`Reason` also carries `MALFORMED_REQUEST` and `REQUEST_TOO_LARGE`, but only
+as [`VerifyReceiptResult.failureReason()`](#the-verifyreceipt-compatible-endpoint)
+values: no `VerificationException` is ever thrown with either, so a `switch`
+over a caught exception's `reason()` never sees them. `INTERNAL_ERROR` keeps
+the position it had when it was endpoint-only, so no ordinal moved.
 
 **Misconfiguration is a different failure mode.** Empty or null trust
 anchors, a null bundle id, an empty accepted-environment set, and an
