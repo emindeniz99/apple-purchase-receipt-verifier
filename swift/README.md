@@ -32,9 +32,10 @@ Swift **6.1** or newer, macOS 13+ or Linux (`Package.swift` declares
 The manifest lives at the repository root — SwiftPM resolves a package's
 manifest only there — while the sources themselves stay under `swift/`.
 
-Every type is `Sendable`, and every verification method is `async throws`:
-`JwsVerifier` and `ReceiptVerifier` call into `swift-certificates`' actor-
-isolated `Verifier`, so `await` is structural, not decorative.
+Every type is `Sendable`, and every verification method is `async throws`,
+because `swift-certificates`' chain validation is an `async` method. Share
+one instance of each verifier across requests; see
+[Thread safety](#thread-safety).
 
 ## The three JWS entry points
 
@@ -458,6 +459,53 @@ The closure type is deliberately `@Sendable () -> Date`, not Swift's `Clock`
 protocol (`ContinuousClock`, `SuspendingClock`): those measure elapsed time
 from an arbitrary origin and cannot name a wall-clock instant like
 2025-01-01, which is exactly what pinning "now" for a test requires.
+
+## Thread safety
+
+`JwsVerifier`, `ReceiptVerifier` and `VerifyReceiptEndpoint` are immutable
+structs, meant to be shared: build one of each at startup and hand it to
+every request. Each holds only `let` properties (the parsed roots, the
+configuration and, where there is one, a `@Sendable` clock) and keeps
+per-call state in locals.
+Every public type, the results included, is `Sendable`, and the package
+builds in Swift 6 language mode, so the compiler rejects a data race on a
+shared verifier or a verified payload instead of leaving it to review.
+
+`ConcurrencyTests` is the runtime check: sixteen child tasks in a
+`TaskGroup`, fifty iterations each, through one shared `ReceiptVerifier`
+(`verify(base64Receipt:)`), `VerifyReceiptEndpoint` (the dictionary and
+raw JSON entry points) and `JwsVerifier` (`verifyTransaction`), each answer
+compared to the answer a sequential call gets.
+
+**Nothing in the verification path is serialized.** `swift-certificates`'
+`Verifier` is a struct, not an actor, and its `validate` is a nonisolated
+`async` method, which runs on the global concurrent executor. Each call
+builds its own `Verifier` and `CertificateStore`, so concurrent calls share
+nothing to wait on, and the library has no actor, lock or global actor of
+its own.
+
+Measured on 2026-09-23 in release mode on a 4-core Linux x86_64 container
+(Swift 6.3.3), verifying the `receipt-sandbox-g5` receipt through one
+shared `ReceiptVerifier`: 800 verifications split across N tasks, median of
+three rounds. The machine was shared with other jobs (load average 7 to 9
+on 4 cores), so a pure-CPU control ran alongside: 800 SHA-256 hashes of
+1 MiB, split the same way.
+
+| tasks | receipts/s | CPU, % of one core | SHA-256 control/s | control CPU |
+|---|---|---|---|---|
+| 1 | 317 | 95% | 331 | 97% |
+| 4 | 332 | 126% | 333 | 100% |
+| 8 | 424 | 172% | 570 | 168% |
+
+The process used more than one core during verification (up to 240% in
+single rounds), which a serializing actor would not allow. Throughput scaled
+about as far as the control did, so on that machine the ceiling was the
+cores the scheduler handed over, not the library. The numbers do not show
+how far it scales on idle cores. One cost is visible: total CPU time per
+verification rose by roughly a fifth to a third with 4 or 8 tasks
+(2.5 s for 800 alone, 2.8 s to 3.3 s in parallel), where the control's did
+not. A `ReceiptVerifier` per task showed the same rise, so sharing the
+instance is not its cause; the cause was not investigated.
 
 ## Resource bounds
 
