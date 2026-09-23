@@ -330,7 +330,7 @@ function verifyCmsSignature(cms: ParsedCms, signerCert: X509Certificate): void {
   }
   let valid: boolean;
   if (signedAttrs !== null) {
-    const contentDigest = createHash(digest).update(cms.content).digest();
+    const contentDigest = newHash(digest).update(cms.content).digest();
     const messageDigest = findMessageDigestAttribute(signedAttrs);
     if (messageDigest === null || !timingSafeEqualPadded(asBuffer(messageDigest), contentDigest)) {
       throw new VerificationError(
@@ -352,6 +352,22 @@ function verifyCmsSignature(cms: ParsedCms, signerCert: X509Certificate): void {
   }
 }
 
+/**
+ * The digest is one of the two parseCms admits, so a runtime that cannot
+ * build it is the environment's failure, never the receipt's.
+ */
+function newHash(algorithm: string): ReturnType<typeof createHash> {
+  try {
+    return createHash(algorithm);
+  } catch (cause) {
+    throw new VerificationError(
+      Reason.INTERNAL_ERROR,
+      `${algorithm} digest is unavailable in this runtime`,
+      cause,
+    );
+  }
+}
+
 function timingSafeEqualPadded(a: Buffer, b: Buffer): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
@@ -363,7 +379,7 @@ function verifyDeviceHash(fields: AppReceipt, deviceGuid: Buffer): void {
       'receipt lacks the attributes needed for the device-hash check',
     );
   }
-  const computed = createHash('sha1')
+  const computed = newHash('sha1')
     .update(deviceGuid)
     .update(fields.opaqueValue)
     .update(fields.bundleIdBytes)
