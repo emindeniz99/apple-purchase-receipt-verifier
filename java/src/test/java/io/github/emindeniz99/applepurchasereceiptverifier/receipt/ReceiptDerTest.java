@@ -156,12 +156,26 @@ class ReceiptDerTest {
         }
         StringBuilder out = new StringBuilder();
         for (Throwable t = e; t != null; t = t.getCause()) {
-            out.append(t.getClass().getName())
-                    .append(": ")
-                    .append(t.getMessage())
-                    .append(" <- ");
+            out.append(t.getClass().getName()).append(": ");
+            // HotSpot replaces an implicit exception it has thrown often from
+            // compiled code with a preallocated one that has no message
+            // (OmitStackTraceInFastThrow), so the same input can carry the
+            // message on one path and null on the other depending only on
+            // JIT state. The class still has to match.
+            if (!isJvmImplicit(t)) {
+                out.append(t.getMessage());
+            }
+            out.append(" <- ");
         }
         return out.toString();
+    }
+
+    private static boolean isJvmImplicit(Throwable t) {
+        return t instanceof ClassCastException
+                || t instanceof NullPointerException
+                || t instanceof ArrayIndexOutOfBoundsException
+                || t instanceof ArithmeticException
+                || t instanceof ArrayStoreException;
     }
 
     /** Every receipt fixture, and seeded corruptions of each. */

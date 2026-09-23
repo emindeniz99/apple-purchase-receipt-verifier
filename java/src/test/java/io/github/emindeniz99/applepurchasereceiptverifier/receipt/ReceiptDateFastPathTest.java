@@ -43,7 +43,9 @@ class ReceiptDateFastPathTest {
             }
         }
         assertTrue(shortcut > 5_000, "shortcut read only " + shortcut);
-        assertTrue(parsedFully > 5_000, "full parse accepted only " + parsedFully);
+        // Before JDK 12, ISO_INSTANT refuses an offset such as +00:00, so
+        // fewer generated dates reach the full parse and pass it on 8 and 11.
+        assertTrue(parsedFully > 2_000, "full parse accepted only " + parsedFully);
         assertTrue(rejected > 20_000, "rejected only " + rejected);
     }
 
