@@ -9,6 +9,7 @@ use DateTimeInterface;
 use DateTimeZone;
 use EminDeniz99\ApplePurchaseReceiptVerifier\AppleRootCerts;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Base64;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Jws\JwsVerifier;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\VerifyReceiptEndpoint;
@@ -121,6 +122,12 @@ final class ConformanceCasesTest extends TestCase
         /** @var string $id */
         $id = $case['id'];
         self::$executed[$id] = true;
+        if ($case['operation'] === 'decodeBase64') {
+            $failures = self::decodeBase64Failures($case);
+            self::assertSame([], $failures, implode("\n", $failures));
+
+            return;
+        }
 
         /** @var array<string, mixed> $config */
         $config = $case['config'];
@@ -208,6 +215,69 @@ final class ConformanceCasesTest extends TestCase
         $missing = array_values(array_diff($ids, array_keys(self::$executed)));
         self::assertSame([], $missing, 'cases in the file that never ran');
         self::assertCount(count($ids), self::$executed);
+    }
+
+    /**
+     * The decoders a decodeBase64 group can name, each with the reason its
+     * refusal carries. Both are {@see Base64::decodeCanonical()}, which
+     * answers null; the receipt paths report that as INVALID_RECEIPT_FORMAT
+     * and the x5c path as INVALID_CERTIFICATE. An error group states
+     * INVALID_RECEIPT_FORMAT, the receipt-data answer.
+     */
+    private const BASE64_REFUSALS = [
+        'receipt-data' => 'INVALID_RECEIPT_FORMAT',
+        'x5c' => 'INVALID_CERTIFICATE',
+    ];
+
+    /**
+     * Every text of a decodeBase64 group that got the wrong answer from a
+     * decoder the group names, by case id, decoder, index and JSON-escaped
+     * text, rather than stopping at the first.
+     *
+     * @param array<string, mixed> $case
+     *
+     * @return list<string>
+     */
+    private static function decodeBase64Failures(array $case): array
+    {
+        $id = Shape::asString($case['id'], 'id');
+        $expected = Shape::asArray($case['expected'], 'expected');
+        $texts = Shape::asArray(Shape::asArray($case['input'], 'input')['texts'] ?? null, 'input.texts');
+        $decoders = Shape::asArray($case['decoders'] ?? null, 'decoders');
+        self::assertNotEmpty($texts, "harness error: {$id}: input.texts is empty");
+        self::assertNotEmpty($decoders, "harness error: {$id}: decoders is empty");
+        $ok = $expected['status'] === 'ok';
+        if (!$ok) {
+            self::assertSame('INVALID_RECEIPT_FORMAT', $expected['reason'], "harness error: {$id}: an error group states INVALID_RECEIPT_FORMAT");
+        }
+        $want = $ok ? Shape::asString($expected['bytesHex'], 'expected.bytesHex') : '';
+        $failures = [];
+        foreach ($decoders as $decoder) {
+            $decoder = Shape::asString($decoder, 'decoder');
+            $refusal = self::BASE64_REFUSALS[$decoder] ?? throw new RuntimeException("harness error: no decoder \"{$decoder}\"");
+            foreach ($texts as $index => $text) {
+                $text = Shape::asString($text, 'text');
+                $where = sprintf(
+                    '%s: %s texts[%d] %s',
+                    $id,
+                    $decoder,
+                    $index,
+                    json_encode($text, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+                );
+                $decoded = Base64::decodeCanonical($text);
+                if ($decoded === null) {
+                    if ($ok) {
+                        $failures[] = "{$where} was refused ({$refusal}), want {$want}";
+                    }
+                } elseif (!$ok) {
+                    $failures[] = "{$where} was accepted (decoded to " . bin2hex($decoded) . ')';
+                } elseif (bin2hex($decoded) !== $want) {
+                    $failures[] = "{$where} decoded to " . bin2hex($decoded) . ", want {$want}";
+                }
+            }
+        }
+
+        return $failures;
     }
 
     /**

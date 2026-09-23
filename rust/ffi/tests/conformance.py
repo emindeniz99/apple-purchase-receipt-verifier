@@ -19,10 +19,14 @@ Second, it checks the field paths C++ cannot reach. `receipt.bundle_id`,
 against a real JSON parser, so the 51 paths the manifest generator drops for
 the C++ harness are covered rather than lost.
 
-Every case in the file runs, this harness and the C++ one alike. The twelve
-that pin a clock go through the `_and_clock` constructors, which take the
-instant as epoch milliseconds rather than a callback. A case this adapter
-cannot run raises rather than being counted as a skip.
+Every case in the file runs, this harness and the C++ one alike, except the
+`decodeBase64` groups: they call a port's base64 decoders directly, and the
+ABI exposes no decoder, only whole verifications. Those are counted and
+printed as not reachable, never as passed. The twelve that pin a clock go
+through the `_and_clock` constructors, which take the instant as epoch
+milliseconds rather than a callback. Any other case this adapter cannot run
+raises rather than being counted as a skip, and after the run every case id
+in the file must have run or be one of those counted groups.
 
 An endpoint case with `input.requestBody` sends that fixture's bytes, as
 they are, as the whole request body. An endpoint case's
@@ -543,6 +547,8 @@ def main() -> int:
         fixture_bytes(directory, registry, name)
 
     passed = failed = skipped = 0
+    ran: set[str] = set()
+    not_reachable: set[str] = set()
     pinned_clocks = 0
     unchecked_reasons = 0
     checked_fields = 0
@@ -550,6 +556,14 @@ def main() -> int:
         # Nothing is skipped: a case that pins a clock is built through the
         # _and_clock constructor, and one this adapter cannot run raises out
         # of run_case rather than being counted away.
+        if case["operation"] == "decodeBase64":
+            # The ABI has no base64 decoder to call, and a decoded string
+            # that is not a receipt fails verification as
+            # INVALID_RECEIPT_FORMAT whichever way the decoder answered, so
+            # no ABI call could tell a right answer from a wrong one here.
+            not_reachable.add(case["id"])
+            continue
+        ran.add(case["id"])
         if case.get("clock"):
             pinned_clocks += 1
         checked_fields += len(case["expected"].get("fields") or {})
@@ -572,9 +586,21 @@ def main() -> int:
         f"{unchecked_reasons} endpoint failureReason expectations not checked: "
         "the ABI answers Apple's response JSON, which carries no reason"
     )
+    print(
+        f"{len(not_reachable)} decodeBase64 groups not reachable: the ABI exposes no base64 decoder"
+    )
     if passed == 0:
         print("no case ran", file=sys.stderr)
         return 2
+    # Coverage self-check: every case id in the parsed file ran or is one of
+    # the counted decodeBase64 groups, never compared against a literal count.
+    missing = [c["id"] for c in file["cases"] if c["id"] not in ran | not_reachable]
+    if missing:
+        print(
+            f"{len(missing)} of {len(file['cases'])} cases did not run: {', '.join(missing)}",
+            file=sys.stderr,
+        )
+        return 1
     return 1 if failed else 0
 
 

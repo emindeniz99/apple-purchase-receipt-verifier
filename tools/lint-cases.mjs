@@ -18,6 +18,9 @@
  *   - a case references an unregistered fixture
  *   - an expected reason is outside the canonical vocabulary
  *   - a verifyReceiptBase64 case names a fixture whose codec is not "text"
+ *   - a decodeBase64 case lists a decoder twice, lists a spelling another
+ *     decodeBase64 case already lists, or holds a spelling whose answer
+ *     disagrees with the base64 rule as stated here independently
  *
  * SCOPE NOTE — fixtures/apple-official/ is deliberately NOT scanned for
  * unregistered files. That tier is vendored verbatim from Apple's
@@ -204,6 +207,46 @@ function decode(bytes, codec) {
   throw new Error(`unknown codec ${codec}`);
 }
 
+// The receipt-data / x5c base64 rule, stated independently of every port:
+// non-empty, a multiple of four, the standard alphabet followed by at most
+// two '='. Trailing bits are not checked. Returns the bytes, or null.
+const CANONICAL_BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+function ruleDecode(text) {
+  if (text.length === 0 || text.length % 4 !== 0 || !CANONICAL_BASE64.test(text)) return null;
+  return Buffer.from(text, 'base64');
+}
+
+// Every decodeBase64 spelling appears once across all groups, so the list
+// stays a union rather than growing copies.
+const base64Spellings = new Map();
+
+function lintDecodeBase64(where, testCase) {
+  const decoders = testCase.decoders;
+  if (Array.isArray(decoders) && new Set(decoders).size !== decoders.length) {
+    fail(where, `decoders lists a decoder twice: ${JSON.stringify(decoders)}`);
+  }
+  const texts = testCase.input?.texts;
+  if (!Array.isArray(texts)) return;
+  const expected = testCase.expected ?? {};
+  texts.forEach((text, index) => {
+    if (typeof text !== 'string') return;
+    const spot = `${where} texts[${index}] ${JSON.stringify(text)}`;
+    if (base64Spellings.has(text)) {
+      fail(spot, `is already listed by ${base64Spellings.get(text)}`);
+    } else {
+      base64Spellings.set(text, where);
+    }
+    const decoded = ruleDecode(text);
+    if (expected.status === 'ok' && decoded === null) {
+      fail(spot, 'is in an ok group, but the rule refuses it');
+    } else if (expected.status === 'ok' && decoded.toString('hex') !== expected.bytesHex) {
+      fail(spot, `decodes to ${decoded.toString('hex')} under the rule, not ${expected.bytesHex}`);
+    } else if (expected.status === 'error' && decoded !== null) {
+      fail(spot, `is in an error group, but the rule decodes it to ${decoded.toString('hex')}`);
+    }
+  });
+}
+
 const schema = readJson(SCHEMA_PATH);
 const doc = readJson(CASES_PATH);
 
@@ -312,6 +355,8 @@ if (doc && typeOf(doc.fixtures) === 'object' && Array.isArray(doc.cases)) {
           + `have codec "text" (got ${JSON.stringify(codec)}) -- any other codec makes the runner decode it first`);
       }
     }
+
+    if (testCase.operation === 'decodeBase64') lintDecodeBase64(where, testCase);
 
     const expected = testCase.expected;
     if (typeOf(expected) === 'object' && expected.status === 'error') {

@@ -702,6 +702,102 @@
               "$ref": "#/$defs/tags"
             }
           }
+        },
+        {
+          "title": "decodeBase64 -- one group of base64 spellings, each run through the named decoders called directly",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "description",
+            "operation",
+            "decoders",
+            "input",
+            "expected",
+            "tags"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/caseId"
+            },
+            "description": {
+              "type": "string",
+              "minLength": 1
+            },
+            "operation": {
+              "const": "decodeBase64"
+            },
+            "decoders": {
+              "description": "The decoders every text of the group runs through, each called directly rather than through a verifier. \"receipt-data\" is the port's receipt-data decoder (the one ReceiptVerifier's string entry point and the verifyReceipt endpoint use): a refusal from it is INVALID_RECEIPT_FORMAT. \"x5c\" is the port's decoder for one JWS x5c entry: a refusal from it is INVALID_CERTIFICATE. An error group states INVALID_RECEIPT_FORMAT and a runner maps it to INVALID_CERTIFICATE for x5c; the mapping is defined here and in the cases.json comment, never per case. No decoder may be listed twice (tools/lint-cases.mjs checks it).",
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "enum": [
+                  "receipt-data",
+                  "x5c"
+                ]
+              }
+            },
+            "input": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "texts"
+              ],
+              "properties": {
+                "texts": {
+                  "description": "The spellings, as the exact strings a client or a JWS header carries. Every one must get the group's answer. Any JSON string is allowed, the empty string and control characters included; a spelling appears in one group only (tools/lint-cases.mjs checks it). A runner that finds a text answered wrongly names the case id, the index and the escaped text.",
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "expected": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "status",
+                    "bytesHex"
+                  ],
+                  "properties": {
+                    "status": {
+                      "const": "ok"
+                    },
+                    "bytesHex": {
+                      "description": "The bytes every text decodes to, as lowercase hex.",
+                      "type": "string",
+                      "pattern": "^([0-9a-f]{2})+$"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "status",
+                    "reason"
+                  ],
+                  "properties": {
+                    "status": {
+                      "const": "error"
+                    },
+                    "reason": {
+                      "description": "The receipt-data decoder's answer. The x5c decoder's answer is INVALID_CERTIFICATE; see decoders.",
+                      "const": "INVALID_RECEIPT_FORMAT"
+                    }
+                  }
+                }
+              ]
+            },
+            "tags": {
+              "$ref": "#/$defs/tags"
+            }
+          }
         }
       ]
     }

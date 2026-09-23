@@ -10,6 +10,7 @@ import base64
 import hashlib
 import json
 import re
+import sys
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,6 +24,11 @@ from apple_purchase_receipt_verifier import (
     apple_jws_roots,
     apple_receipt_roots,
 )
+from apple_purchase_receipt_verifier._receipt_base64 import (
+    decode_canonical_base64,
+    decode_receipt_base64,
+)
+from apple_purchase_receipt_verifier.exceptions import Reason
 from cryptography import x509
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures"
@@ -173,6 +179,62 @@ OPERATIONS = {
 }
 
 
+# --- decodeBase64 -------------------------------------------------------
+
+
+def _decode_x5c_entry(text):
+    # jws.py hands an x5c entry to decode_canonical_base64 and answers any
+    # exception out of it as INVALID_CERTIFICATE; that translation is here.
+    try:
+        return decode_canonical_base64(text)
+    except ValueError as e:
+        raise VerificationError(Reason.INVALID_CERTIFICATE, str(e)) from e
+
+
+# The decoders a decodeBase64 group can name, each with the reason its
+# refusal carries. An error group states INVALID_RECEIPT_FORMAT, the
+# receipt-data answer; x5c answers INVALID_CERTIFICATE.
+BASE64_DECODERS = {
+    "receipt-data": (decode_receipt_base64, "INVALID_RECEIPT_FORMAT"),
+    "x5c": (_decode_x5c_entry, "INVALID_CERTIFICATE"),
+}
+
+
+def decode_base64_failures(case):
+    """Every text of the group that got the wrong answer from a decoder the
+    group names, by case id, decoder, index and repr of the text."""
+    expected = case["expected"]
+    if expected["status"] == "error" and expected["reason"] != "INVALID_RECEIPT_FORMAT":
+        raise AssertionError(
+            f"harness error: {case['id']}: an error group states INVALID_RECEIPT_FORMAT"
+        )
+    texts = case["input"]["texts"]
+    if not texts or not case["decoders"]:
+        raise AssertionError(f"harness error: {case['id']}: no texts or no decoders")
+    failures = []
+    for name in case["decoders"]:
+        decode, refusal = BASE64_DECODERS[name]
+        for index, text in enumerate(texts):
+            where = f"{case['id']}: {name} texts[{index}] {text!r}"
+            try:
+                decoded = decode(text).hex()
+            except VerificationError as e:
+                if expected["status"] == "ok":
+                    want = expected["bytesHex"]
+                    failures.append(f"{where} was refused ({e.reason}), want {want}")
+                elif e.reason != refusal:
+                    failures.append(f"{where}: reason {e.reason}, want {refusal}")
+                continue
+            except Exception as e:
+                failures.append(f"{where}: harness error: raised {type(e).__name__} ({e})")
+                continue
+            if expected["status"] == "error":
+                failures.append(f"{where} was accepted (decoded to {decoded})")
+            elif decoded != expected["bytesHex"]:
+                failures.append(f"{where} decoded to {decoded}, want {expected['bytesHex']}")
+    return failures
+
+
 # --- result normalization ----------------------------------------------
 
 MISSING = object()
@@ -278,6 +340,11 @@ class ConformanceCasesTest(unittest.TestCase):
     """One test method per case in fixtures/cases.json — generated below."""
 
     def run_case(self, case):
+        RAN.add(case["id"])
+        if case["operation"] == "decodeBase64":
+            failures = decode_base64_failures(case)
+            self.assertEqual([], failures, "\n".join(failures))
+            return
         operation = OPERATIONS.get(case["operation"])
         if operation is None:
             raise AssertionError(f"harness error: no adapter for operation {case['operation']!r}")
@@ -347,6 +414,20 @@ class FixtureRegistryTest(unittest.TestCase):
                 fixture_bytes(fixture_id)  # raises on a digest mismatch
 
 
+# Which case ids actually ran, so the coverage check in tearDownModule is a
+# fact rather than a loop-shaped assumption.
+RAN: set[str] = set()
+
+
+def _test_filter():
+    """The command-line argument that selects a subset of the tests, if any:
+    unittest's -k, or a test named below this module."""
+    for arg in sys.argv[1:]:
+        if arg.startswith("-k") or re.search(r"test_conformance\.\w", arg):
+            return arg
+    return None
+
+
 def _method_name(case_id):
     return "test_" + re.sub(r"[^0-9a-z]+", "_", case_id)
 
@@ -365,6 +446,23 @@ def setUpModule():
         f"conformance: {len(CASES['cases'])} cases, 0 skipped; "
         f"{len(clocked)} run against an injected clock {clocked}"
     )
+
+
+def tearDownModule():
+    # Coverage self-check: every case in the file ran, compared against the
+    # parsed file and never against a literal count, so a case whose method
+    # stopped being generated, or an operation that quietly returned early,
+    # fails the run. An explicit filter is the one thing that may leave cases
+    # unrun, so the check stands down for it and says so.
+    selector = _test_filter()
+    if selector is not None:
+        print(f"conformance: {selector!r} filters tests; the coverage self-check needs a full run")
+        return
+    missing = [c["id"] for c in CASES["cases"] if c["id"] not in RAN]
+    if missing:
+        raise AssertionError(
+            f"{len(missing)} of {len(CASES['cases'])} cases did not run: {', '.join(missing)}"
+        )
 
 
 if __name__ == "__main__":
