@@ -196,6 +196,12 @@ public struct VerifyReceiptEndpoint: Sendable {
             // is checked here (callers compare receipt.bundle_id).
             let receipt = try await core(der, roots)
             return VerifyReceiptResult(environment: environment, outcome: .verified(receipt), requestDate: at)
+        } catch let error as VerificationError where error.reason == .internalError {
+            // Signed content that could not be read keeps what is behind it,
+            // the parser's error, as the failure cause.
+            return VerifyReceiptResult(
+                environment: environment, outcome: .failed(reason: .internalError, cause: error.cause ?? error),
+                requestDate: at)
         } catch let error as VerificationError {
             return failed(error.reason, at)
         } catch {

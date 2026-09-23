@@ -184,14 +184,15 @@ public struct ReceiptVerifier: Sendable {
         // decoded and nothing below ever sees more than the bound.
         let cms = try CMSReceipt(parsing: [UInt8](receipt))
 
-        // Parsed before signature verification only to learn the creation
-        // date (chain validity anchors at signing time); nothing from it is
-        // trusted until the chain + signature checks pass.
-        let fields = try parsePayload(cms.content)
-        // Wall-clock only as the stand-in for a missing creation date: chain
-        // validity is judged at the receipt's signing time (PLAN.md 2.2 step
-        // 2), so this is deliberately not routed through any injected clock.
-        let at = fields.creationDate ?? Date()
+        // Only the creation date is read before trust is established, because
+        // chain validity anchors at signing time; nothing else in the payload
+        // is decoded until the chain and the signature have passed. A date
+        // that is missing, empty, unreadable or stated twice cannot blame
+        // anyone yet, so it only moves the chain instant to "now" and never
+        // rejects by itself. Wall-clock only as that stand-in (PLAN.md 2.2
+        // step 2), so this is deliberately not routed through any injected
+        // clock.
+        let at = readCreationDate(cms.content) ?? Date()
 
         let signerCert = cms.certificates[try cms.signerIndex()]
         try requireDecodableExtensions(signerCert, what: "receipt signer certificate")
@@ -297,8 +298,11 @@ public struct ReceiptVerifier: Sendable {
                 .invalidCertificatePurpose,
                 "receipt signer certificate lacks Apple receipt-signing marker OID")
         }
+        // The chain is checked BEFORE the signature on purpose: checking the
+        // signature first would run the attacker's own key (their choice of
+        // RSA size and exponent) before anything about it is trusted.
         try cms.verifySignature(signerCert: signerCert)
-        return fields
+        return try parseSignedPayload(cms.content)
     }
 
     private func verifyDeviceHash(_ fields: AppReceipt, deviceGuid: Data) throws {
@@ -682,7 +686,44 @@ private let attrInApp = 17
 private let attrOriginalAppVersion = 19
 private let attrExpirationDate = 21
 
-private func parsePayload(_ content: [UInt8]) throws -> AppReceipt {
+/// The receipt creation date (attribute 12), read the only way anything in a
+/// payload is read before its signer is trusted: the top-level attribute SET
+/// is walked shallowly, each entry's type is read, and only the value of type
+/// 12 is decoded.
+///
+/// nil means "judge the chain at now": no attribute 12, an empty one, one
+/// that does not decode, more than one, or a walk that fails anywhere. An
+/// entry the walk cannot read fails it as a whole rather than being skipped,
+/// since that entry might have been a second attribute 12. Never throws:
+/// nothing is trusted yet, so nothing here can blame anyone.
+func readCreationDate(_ content: [UInt8]) -> Date? {
+    guard let attributes = try? parseAttributeSet(content) else { return nil }
+    let dates = attributes.filter { $0.0 == attrCreationDate }
+    guard dates.count == 1 else { return nil }
+    return (try? decodeDate(dates[0].1)) ?? nil
+}
+
+/// The full payload parse, run only after the chain and the signature have
+/// passed. A trusted signer signed these bytes, so anything that stops the
+/// parse (this library's grammar, a bound, an unexpected error) is the
+/// library's failure or a format Apple added, not the client's:
+/// `internalError` with the parser's error as its `cause`, never
+/// `invalidReceiptFormat`, which the endpoint answers as 21002 and an app
+/// server reads as "deny".
+private func parseSignedPayload(_ content: [UInt8]) throws -> AppReceipt {
+    do {
+        return try parsePayload(content)
+    } catch {
+        let detail = (error as? VerificationError)?.message ?? String(describing: type(of: error))
+        throw VerificationError(
+            .internalError, "signed receipt content could not be read: \(detail)", cause: error)
+    }
+}
+
+/// The full payload grammar. Internal rather than private so the test target
+/// can drive the grammar directly: through the verifier it is reached only
+/// under a trusted signer.
+func parsePayload(_ content: [UInt8]) throws -> AppReceipt {
     var receipt = AppReceipt()
     for (type, value) in try parseAttributeSet(content) {
         switch type {

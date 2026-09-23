@@ -7,7 +7,7 @@ import {
   signedAttrsSignedBytes,
   type ParsedCms,
 } from '../cms.js';
-import { parseReceiptPayload } from '../receipt-payload.js';
+import { parseSignedReceiptPayload, readCreationDate } from '../receipt-payload.js';
 import { MAX_RECEIPT_BYTES, utf8LengthExceeds } from '../limits.js';
 import { requireDecodableExtensions } from '../der.js';
 import { parseCertificate, type ParsedCertificate } from '../x509.js';
@@ -84,15 +84,11 @@ export async function verifyReceiptCore(
   }
   const cms = parseCms(der);
 
-  // Parsed before signature verification only to learn the creation date
-  // (chain validity anchors at signing time); nothing from it is trusted
-  // until the chain + signature checks pass.
-  const fields = parseReceiptPayload(cms.content);
-  // A receipt with no creation date falls back to the SYSTEM clock, never to
-  // an injected one: a caller injecting a clock (to test staleness, or to
-  // work around skew) must not thereby accept an expired chain. That is why
-  // the receipt path takes no clock option at all.
-  const at = fields.creationDate === null ? new Date() : fields.creationDate;
+  // Only the creation date is read before trust is established; see the
+  // Node build's verifyReceiptCore for the whole of the reasoning. An
+  // unusable date moves the chain instant to the SYSTEM clock, never to an
+  // injected one, and never rejects by itself.
+  const at = readCreationDate(cms.content) ?? new Date();
 
   // Everything below walks attacker-supplied DER through the certificate
   // parser and through child lists that may be any shape. Callers
@@ -125,6 +121,8 @@ export async function verifyReceiptCore(
         `receipt signer certificate lacks Apple receipt-signing marker OID ${RECEIPT_SIGNER_OID}`,
       );
     }
+    // Chain before signature: the attacker's own key is not run until the
+    // chain has made it a trusted one.
     await verifyCmsSignature(cms, signerCert);
   } catch (cause) {
     if (cause instanceof VerificationError) {
@@ -132,7 +130,8 @@ export async function verifyReceiptCore(
     }
     throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'malformed CMS structure', cause);
   }
-  return fields;
+  // A trusted signer signed it: unreadable content is INTERNAL_ERROR.
+  return parseSignedReceiptPayload(cms.content);
 }
 
 /**

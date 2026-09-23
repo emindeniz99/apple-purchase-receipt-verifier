@@ -264,6 +264,7 @@ int reason_code(const std::string &token) {
       {"INVALID_RECEIPT_FORMAT", APRV_REASON_INVALID_RECEIPT_FORMAT},
       {"DEVICE_HASH_MISMATCH", APRV_REASON_DEVICE_HASH_MISMATCH},
       {"STALE_PAYLOAD", APRV_REASON_STALE_PAYLOAD},
+      {"INTERNAL_ERROR", APRV_REASON_INTERNAL_ERROR},
   };
   auto found = codes.find(token);
   return found == codes.end() ? -1 : found->second;

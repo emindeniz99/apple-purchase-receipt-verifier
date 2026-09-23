@@ -16,7 +16,8 @@ import {
 import { isCanonicalBase64 } from './bytes.js';
 import { MAX_RECEIPT_BYTES, utf8LengthExceeds } from './limits.js';
 import {
-  parseReceiptPayload,
+  parseSignedReceiptPayload,
+  readCreationDate,
   type RawAppReceipt,
   type RawInAppPurchase,
 } from './receipt-payload.js';
@@ -179,15 +180,17 @@ export function verifyReceiptCore(der: Buffer, trustedRoots: RootInput[]): AppRe
   }
   const cms = parseCms(der);
 
-  // Parsed before signature verification only to learn the creation date
-  // (chain validity anchors at signing time); nothing from it is trusted
-  // until the chain + signature checks pass.
-  const fields = parseReceiptPayload(cms.content);
-  // A receipt with no creation date falls back to the SYSTEM clock, never to
-  // an injected one: a caller injecting a clock (to test staleness, or to
-  // work around skew) must not thereby accept an expired chain. That is why
-  // the receipt path takes no clock option at all.
-  const at = fields.creationDate === null ? new Date() : fields.creationDate;
+  // Only the creation date is read before trust is established, because
+  // chain validity anchors at signing time; nothing else in the payload is
+  // decoded until the chain and the signature have passed. A date that is
+  // missing, empty, unreadable or stated twice cannot blame anyone yet, so it
+  // only moves the chain instant to "now" and never rejects by itself.
+  //
+  // "Now" is the SYSTEM clock, never an injected one: a caller injecting a
+  // clock (to test staleness, or to work around skew) must not thereby accept
+  // an expired chain. That is why the receipt path takes no clock option at
+  // all.
+  const at = readCreationDate(cms.content) ?? new Date();
 
   // Everything below walks attacker-supplied DER through OpenSSL and through
   // child lists that may be any shape. Callers discriminate on
@@ -230,6 +233,9 @@ export function verifyReceiptCore(der: Buffer, trustedRoots: RootInput[]): AppRe
         `receipt signer certificate lacks Apple receipt-signing marker OID ${RECEIPT_SIGNER_OID}`,
       );
     }
+    // The chain is checked BEFORE the signature on purpose: checking the
+    // signature first would run the attacker's own key (their choice of RSA
+    // size and exponent) before anything about it is trusted.
     verifyCmsSignature(cms, signerCert);
   } catch (cause) {
     if (cause instanceof VerificationError) {
@@ -237,7 +243,7 @@ export function verifyReceiptCore(der: Buffer, trustedRoots: RootInput[]): AppRe
     }
     throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'malformed CMS structure', cause);
   }
-  return toAppReceipt(fields);
+  return toAppReceipt(parseSignedReceiptPayload(cms.content));
 }
 
 /**

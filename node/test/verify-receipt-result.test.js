@@ -352,6 +352,25 @@ for (const [name, build] of BUILDS) {
     }
   });
 
+  // The other road to INTERNAL_ERROR: a trusted signer signed content the
+  // library cannot read. Same status, not the client's fault, and the
+  // parser's own error is what failureCause carries.
+  test(`${name}: unreadable signed content is an INTERNAL_ERROR with its cause`, async () => {
+    for (const environment of ENVIRONMENTS) {
+      const result = await endpoint(
+        build,
+        environment,
+        'verification-order-root.der',
+      ).verifyReceiptData(b64('receipt-unreadable-creation-date.der'));
+      assertInvariant(result, environment);
+      assert.equal(result.failureReason, 'INTERNAL_ERROR');
+      assert.equal(result.status, 21009);
+      assert.equal(result.failureCause.reason, 'INVALID_RECEIPT_FORMAT');
+      assert.match(result.failureCause.message, /unparseable receipt date: not-a-date/);
+      assert.equal(result.toJson(), '{"status":21009}');
+    }
+  });
+
   test(`${name}: a status-0 body that cannot be rendered answers 21009`, async () => {
     // An invalid request date makes Intl throw while formatting, the same
     // way a runtime without full ICU does. The endpoint has always answered

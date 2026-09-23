@@ -59,6 +59,7 @@ REASONS = [
     "INVALID_RECEIPT_FORMAT",
     "DEVICE_HASH_MISMATCH",
     "STALE_PAYLOAD",
+    "INTERNAL_ERROR",
 ]
 REASON_CODES = {token: index + 1 for index, token in enumerate(REASONS)}
 

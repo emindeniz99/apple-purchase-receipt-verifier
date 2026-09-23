@@ -4,16 +4,16 @@ use core::fmt;
 
 /// Why a verification failed.
 ///
-/// The vocabulary is **closed** by the cross-port contract: the eleven
+/// The vocabulary is **closed** by the cross-port contract: the twelve
 /// reasons in [`Reason::all`] are the whole observability surface of the
-/// verifiers, and adding a twelfth requires changing
+/// verifiers, and adding a thirteenth requires changing
 /// `fixtures/cases.schema.json`, `PLAN.md` and every port in one change.
 ///
-/// Three more values, [`Reason::MalformedRequest`],
-/// [`Reason::InternalError`] and [`Reason::RequestTooLarge`], exist only as
-/// the failure reason of a `VerifyReceiptResult` from the `verifyReceipt`
-/// endpoint. No verifier ever returns a [`VerificationError`] carrying any
-/// of them, and none is in [`Reason::all`].
+/// Two more values, [`Reason::MalformedRequest`] and
+/// [`Reason::RequestTooLarge`], exist only as the failure reason of a
+/// `VerifyReceiptResult` from the `verifyReceipt` endpoint. No verifier ever
+/// returns a [`VerificationError`] carrying either, and neither is in
+/// [`Reason::all`].
 ///
 /// The enum is nonetheless `#[non_exhaustive]` so that, if that ever
 /// happens, a Rust caller with a `_ => reject` arm keeps compiling and keeps
@@ -54,9 +54,11 @@ pub enum Reason {
     /// Reported only as a `VerifyReceiptResult` failure reason (status
     /// 21002); never returned by a verifier.
     MalformedRequest,
-    /// A panic inside the `verifyReceipt` endpoint, contained and answered
-    /// as status 21009. Reported only as a `VerifyReceiptResult` failure
-    /// reason; never returned by a verifier.
+    /// Not the client's fault, status 21009 at the endpoint. Either a
+    /// trusted signer signed receipt content this library cannot read,
+    /// found only after the chain and the signature passed, or a panic
+    /// inside the `verifyReceipt` endpoint was contained. Alert and retry
+    /// or escalate; do not deny the user on it.
     InternalError,
     /// The raw `verifyReceipt` request body is over
     /// [`MAX_REQUEST_BYTES`](crate::MAX_REQUEST_BYTES) (3,145,728 UTF-8
@@ -90,9 +92,11 @@ impl Reason {
     }
 
     /// Every reason a verifier can return, in the order the contract lists
-    /// them. The three endpoint-only reasons, [`Reason::MalformedRequest`],
-    /// [`Reason::InternalError`] and [`Reason::RequestTooLarge`], are not in
-    /// it.
+    /// them. [`Reason::InternalError`] is last because it joined the list
+    /// last, which keeps every earlier position (and the C ABI code derived
+    /// from it) where it was. The two endpoint-only reasons,
+    /// [`Reason::MalformedRequest`] and [`Reason::RequestTooLarge`], are not
+    /// in it.
     #[must_use]
     pub const fn all() -> &'static [Reason] {
         &[
@@ -107,6 +111,7 @@ impl Reason {
             Reason::InvalidReceiptFormat,
             Reason::DeviceHashMismatch,
             Reason::StalePayload,
+            Reason::InternalError,
         ]
     }
 }
@@ -134,11 +139,7 @@ impl core::str::FromStr for Reason {
     type Err = UnknownReason;
 
     fn from_str(s: &str) -> core::result::Result<Self, Self::Err> {
-        let endpoint_only = [
-            Reason::MalformedRequest,
-            Reason::InternalError,
-            Reason::RequestTooLarge,
-        ];
+        let endpoint_only = [Reason::MalformedRequest, Reason::RequestTooLarge];
         for reason in Reason::all().iter().chain(&endpoint_only) {
             if reason.as_str() == s {
                 return Ok(*reason);

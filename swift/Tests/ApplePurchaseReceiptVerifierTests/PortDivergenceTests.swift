@@ -16,9 +16,9 @@ import XCTest
 /// holds the payload, so replacing that one primitive node needs no ancestor
 /// length fixups — the same property the certificate-bag surgery in
 /// VerifierTests relies on. The CMS signature covers a messageDigest over the
-/// payload, so a spliced receipt cannot pass signature verification: what these
-/// tests read is the verdict the parser reaches BEFORE that check, which is
-/// where receipt-format decisions are made.
+/// payload, so a spliced receipt cannot pass signature verification; a test
+/// about the payload grammar re-signs the spliced payload under
+/// ``TestReceiptPki``, since the full parse runs only after that check.
 private enum ReceiptSurgery {
     static func children(_ node: ASN1Node) throws -> [ASN1Node] {
         guard case .constructed(let nodes) = node.content else { throw CocoaError(.formatting) }
@@ -159,26 +159,36 @@ final class OversizedAttributeTypeTests: XCTestCase {
         }
     }
 
-    /// 2^31 is rejected as a receipt-format error, and 2^31-1 — the largest
-    /// type that IS representable — is not. The control is what makes this a
-    /// test of the bound rather than of splicing: both receipts carry a
-    /// payload the messageDigest no longer covers, so the in-range one still
-    /// fails, but it fails LATER and for the signature, which it can only
-    /// reach by getting through the parser first.
+    /// The spliced receipt's payload, re-signed under a test PKI the returned
+    /// verifier trusts. The full payload parse runs only after the chain and
+    /// the signature pass, so a splice that kept the donor's signature would
+    /// stop at INVALID_SIGNATURE and never reach the bound under test.
+    func signed(_ spliced: Data) throws -> (receipt: Data, verifier: ReceiptVerifier, root: Data) {
+        let pki = try TestReceiptPki()
+        let receipt = try pki.sign(try ReceiptSurgery.payload(of: spliced))
+        let verifier = try ReceiptVerifier(trustedRoots: [pki.rootDer], bundleId: VerifierTests.bundle)
+        return (receipt, verifier, pki.rootDer)
+    }
+
+    /// 2^31 is refused and 2^31-1, the largest type that IS representable, is
+    /// not. Both payloads are signed by a trusted signer, so the refusal is
+    /// INTERNAL_ERROR (content the library cannot represent, not a malformed
+    /// client request) and the control verifies outright.
     func testRejectsAnAttributeTypeAboveTheSignedThirtyTwoBitRange() async throws {
         let genuine = try fixture("receipt.der")
-        let oversized = try ReceiptSurgery.appendingAttribute(
-            ReceiptSurgery.attribute(typeBytes: Self.outOfRange, value: [0x2A]), to: genuine)
-        let representable = try ReceiptSurgery.appendingAttribute(
-            ReceiptSurgery.attribute(typeBytes: Self.largestInRange, value: [0x2A]), to: genuine)
+        let oversized = try signed(
+            try ReceiptSurgery.appendingAttribute(
+                ReceiptSurgery.attribute(typeBytes: Self.outOfRange, value: [0x2A]), to: genuine))
+        let representable = try signed(
+            try ReceiptSurgery.appendingAttribute(
+                ReceiptSurgery.attribute(typeBytes: Self.largestInRange, value: [0x2A]), to: genuine))
 
-        let verifier = try verifier()
-        let onOversized = await reason { try await verifier.verify(receipt: oversized) }
-        let onRepresentable = await reason { try await verifier.verify(receipt: representable) }
-        XCTAssertEqual(.invalidReceiptFormat, onOversized)
-        XCTAssertEqual(
-            .invalidSignature, onRepresentable,
-            "2^31-1 is representable and must reach the signature check")
+        let onOversized = await reason { try await oversized.verifier.verify(receipt: oversized.receipt) }
+        let onRepresentable = await reason {
+            try await representable.verifier.verify(receipt: representable.receipt)
+        }
+        XCTAssertEqual(.internalError, onOversized)
+        XCTAssertNil(onRepresentable, "2^31-1 is representable and must parse")
     }
 
     /// In-app attribute sets go through the same parser, so the same bound
@@ -186,48 +196,49 @@ final class OversizedAttributeTypeTests: XCTestCase {
     /// find a set that is parsed more leniently.
     func testRejectsAnOversizedTypeInsideAnInAppAttributeSet() async throws {
         let genuine = try fixture("receipt.der")
-        let oversized = try ReceiptSurgery.appendingInAppAttribute(
-            ReceiptSurgery.attribute(typeBytes: Self.outOfRange, value: [0x2A]), to: genuine)
-        let representable = try ReceiptSurgery.appendingInAppAttribute(
-            ReceiptSurgery.attribute(typeBytes: Self.largestInRange, value: [0x2A]), to: genuine)
+        let oversized = try signed(
+            try ReceiptSurgery.appendingInAppAttribute(
+                ReceiptSurgery.attribute(typeBytes: Self.outOfRange, value: [0x2A]), to: genuine))
+        let representable = try signed(
+            try ReceiptSurgery.appendingInAppAttribute(
+                ReceiptSurgery.attribute(typeBytes: Self.largestInRange, value: [0x2A]), to: genuine))
 
-        let verifier = try verifier()
-        let onOversized = await reason { try await verifier.verify(receipt: oversized) }
-        let onRepresentable = await reason { try await verifier.verify(receipt: representable) }
-        XCTAssertEqual(.invalidReceiptFormat, onOversized)
-        XCTAssertEqual(.invalidSignature, onRepresentable)
+        let onOversized = await reason { try await oversized.verifier.verify(receipt: oversized.receipt) }
+        let onRepresentable = await reason {
+            try await representable.verifier.verify(receipt: representable.receipt)
+        }
+        XCTAssertEqual(.internalError, onOversized)
+        XCTAssertNil(onRepresentable)
     }
 
     /// The bound is on the attribute TYPE only. Values keep their full 8-byte
     /// range — real receipts carry 7-byte `web_order_line_item_id` integers,
     /// and Apple has no stated ceiling under 2^63 — so a value far above
-    /// 2^31-1 must still parse. It reaches the signature check, which is as
-    /// far as a spliced receipt can get.
+    /// 2^31-1 must still parse, and a trusted receipt carrying it verifies.
     func testTheBoundDoesNotReachAttributeValues() async throws {
         // Attribute 1711 (web_order_line_item_id), value 2^63-1: the widest
         // integer the parser accepts, and 2^32 times over the type's bound.
         let huge = ReceiptSurgery.attribute(
             typeBytes: [0x06, 0xAF],
             value: ReceiptSurgery.tlv(0x02, [0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]))
-        let spliced = try ReceiptSurgery.appendingInAppAttribute(
-            huge, to: try fixture("receipt.der"))
-        let verdict = await reason { try await self.verifier().verify(receipt: spliced) }
-        XCTAssertEqual(
-            .invalidSignature, verdict,
-            "the type bound must not reach attribute values")
+        let spliced = try signed(
+            try ReceiptSurgery.appendingInAppAttribute(huge, to: try fixture("receipt.der")))
+        let verdict = await reason { try await spliced.verifier.verify(receipt: spliced.receipt) }
+        XCTAssertNil(verdict, "the type bound must not reach attribute values")
     }
 
-    /// Through the endpoint the same input is a malformed-receipt answer
-    /// (21002), not an authentication failure (21003).
-    func testTheEndpointReportsAnOversizedTypeAs21002() async throws {
-        let endpoint = try VerifyReceiptEndpoint(
-            trustedRoots: [try fixture("receipt-root.der")], environment: .sandbox)
-        let oversized = try ReceiptSurgery.appendingAttribute(
-            ReceiptSurgery.attribute(typeBytes: Self.outOfRange, value: [0x2A]),
-            to: try fixture("receipt.der"))
+    /// Through the endpoint the same trusted input is INTERNAL_ERROR (21009):
+    /// neither a malformed client request (21002) nor an authentication
+    /// failure (21003).
+    func testTheEndpointReportsAnOversizedTypeAs21009() async throws {
+        let oversized = try signed(
+            try ReceiptSurgery.appendingAttribute(
+                ReceiptSurgery.attribute(typeBytes: Self.outOfRange, value: [0x2A]),
+                to: try fixture("receipt.der")))
+        let endpoint = try VerifyReceiptEndpoint(trustedRoots: [oversized.root], environment: .sandbox)
         let response = await endpoint.verifyReceiptResult(
-            ["receipt-data": oversized.base64EncodedString()]).response()
-        XCTAssertEqual(21002, response["status"] as? Int)
+            ["receipt-data": oversized.receipt.base64EncodedString()]).response()
+        XCTAssertEqual(21009, response["status"] as? Int)
     }
 }
 

@@ -18,7 +18,7 @@ use std::time::Duration;
 
 #[test]
 fn every_reason_spells_the_canonical_token() {
-    // These eleven strings are the cross-port contract. A change here is a
+    // These twelve strings are the cross-port contract. A change here is a
     // change to fixtures/cases.schema.json and to all nine ports.
     let expected = [
         "INVALID_JWS_FORMAT",
@@ -32,10 +32,11 @@ fn every_reason_spells_the_canonical_token() {
         "INVALID_RECEIPT_FORMAT",
         "DEVICE_HASH_MISMATCH",
         "STALE_PAYLOAD",
+        "INTERNAL_ERROR",
     ];
     let actual: Vec<&str> = Reason::all().iter().map(|r| r.as_str()).collect();
     assert_eq!(actual, expected);
-    assert_eq!(Reason::all().len(), 11);
+    assert_eq!(Reason::all().len(), 12);
 }
 
 #[test]
@@ -47,7 +48,7 @@ fn reason_round_trips_through_from_str_and_display() {
 }
 
 #[test]
-fn reason_from_str_rejects_a_twelfth_token() {
+fn reason_from_str_rejects_a_thirteenth_token() {
     let err = Reason::from_str("INVALID_EVERYTHING").unwrap_err();
     assert!(err.to_string().contains("INVALID_EVERYTHING"));
     assert!(

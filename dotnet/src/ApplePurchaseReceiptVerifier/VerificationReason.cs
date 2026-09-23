@@ -11,12 +11,14 @@ namespace ApplePurchaseReceiptVerifier
     /// <remarks>
     /// <para>Members are PascalCase because that is the .NET naming rule; the
     /// SCREAMING_SNAKE token lives in <see cref="VerificationReasonCodes"/>.</para>
-    /// <para>The first eleven are the verifier vocabulary the schema pins.
-    /// <see cref="MalformedRequest"/>, <see cref="InternalError"/> and
+    /// <para>The first eleven and <see cref="InternalError"/> are the verifier
+    /// vocabulary the schema pins. <see cref="InternalError"/> keeps the
+    /// position it had when it was endpoint-only, so no member's numeric
+    /// value moved. <see cref="MalformedRequest"/> and
     /// <see cref="RequestTooLarge"/> appear only on a
     /// <see cref="Receipt.VerifyReceiptResult"/>: no
-    /// <see cref="VerificationException"/> is ever thrown with any of them, so
-    /// a <c>switch</c> over a caught exception's reason never sees them.</para>
+    /// <see cref="VerificationException"/> is ever thrown with either, so a
+    /// <c>switch</c> over a caught exception's reason never sees them.</para>
     /// </remarks>
     public enum VerificationReason
     {
@@ -63,11 +65,13 @@ namespace ApplePurchaseReceiptVerifier
         MalformedRequest,
 
         /// <summary>
-        /// An unexpected exception inside the verifyReceipt endpoint, answered
-        /// as status 21009. Reported only by
-        /// <see cref="Receipt.VerifyReceiptResult.FailureReason"/>, with the
-        /// exception in <see cref="Receipt.VerifyReceiptResult.FailureCause"/>;
-        /// never thrown.
+        /// Not the client's fault, status 21009 at the endpoint. Thrown when a
+        /// trusted signer signed receipt content this library cannot read
+        /// (found only after the chain and the signature passed; the parser's
+        /// error is the <see cref="Exception.InnerException"/>), and reported
+        /// by the endpoint for an unexpected exception inside it, with the
+        /// exception in <see cref="Receipt.VerifyReceiptResult.FailureCause"/>.
+        /// Alert and retry or escalate; do not deny the user on it.
         /// </summary>
         InternalError,
 

@@ -226,11 +226,17 @@ class VerifyReceiptResultTest < Minitest::Test
         assert_operator json.bytesize, :<=, APRV::VerifyReceiptEndpoint::MAX_REQUEST_BYTES, data[0, 40]
         assert_equal body, bare.to_json, data[0, 40]
         statuses << bare.status
-        refute_equal APRV::Reason::INTERNAL_ERROR, bare.failure_reason, data[0, 40]
+        next unless bare.failure_reason == APRV::Reason::INTERNAL_ERROR
+
+        # Only the fixtures a trusted signer signed with content the library
+        # cannot read may get here, and the cause is then the parser's own
+        # verdict, never an escaped crash.
+        assert_kind_of APRV::VerificationError, bare.failure_cause, data[0, 40]
       end
     end
-    # The corpus reaches every status except the internal error.
-    assert_equal [0, 21_002, 21_003, 21_007, 21_008], statuses.uniq.sort
+    # The corpus reaches every status; 21009 only through signed content
+    # that cannot be read.
+    assert_equal [0, 21_002, 21_003, 21_007, 21_008, 21_009], statuses.uniq.sort
   end
 
   def test_each_failure_names_its_reason

@@ -10,11 +10,11 @@ package apperr
 import "fmt"
 
 // Reason is the machine-readable cause of a verification failure. The
-// eleven constants below are the complete vocabulary; it is closed by
+// twelve constants below are the complete vocabulary; it is closed by
 // fixtures/cases.schema.json and changing it is a cross-port change.
 type Reason string
 
-// The eleven reasons. The string values are normative: they are the tokens
+// The twelve reasons. The string values are normative: they are the tokens
 // fixtures/cases.json pins and every port reports.
 const (
 	ReasonInvalidJWSFormat          Reason = "INVALID_JWS_FORMAT"
@@ -28,14 +28,14 @@ const (
 	ReasonInvalidReceiptFormat      Reason = "INVALID_RECEIPT_FORMAT"
 	ReasonDeviceHashMismatch        Reason = "DEVICE_HASH_MISMATCH"
 	ReasonStalePayload              Reason = "STALE_PAYLOAD"
+	ReasonInternalError             Reason = "INTERNAL_ERROR"
 )
 
-// The three reasons only a verifyReceipt endpoint result reports. No
-// verifier returns any of them, so they are not in AllReasons.
+// The two reasons only a verifyReceipt endpoint result reports. No
+// verifier returns either, so they are not in AllReasons.
 const (
 	ReasonMalformedRequest Reason = "MALFORMED_REQUEST"
 	ReasonRequestTooLarge  Reason = "REQUEST_TOO_LARGE"
-	ReasonInternalError    Reason = "INTERNAL_ERROR"
 )
 
 // AllReasons is every reason, in the order fixtures/cases.schema.json
@@ -52,6 +52,7 @@ var AllReasons = []Reason{
 	ReasonInvalidReceiptFormat,
 	ReasonDeviceHashMismatch,
 	ReasonStalePayload,
+	ReasonInternalError,
 }
 
 // Error lets a bare Reason be used as an errors.Is target:

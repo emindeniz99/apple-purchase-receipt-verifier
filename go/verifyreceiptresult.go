@@ -64,9 +64,8 @@ func (r *VerifyReceiptResult) Receipt() *AppReceipt {
 }
 
 // Reason is why there is no receipt. It is empty exactly when Receipt is
-// non-nil. Besides the verifier reasons it can be
-// ReasonMalformedRequest, ReasonRequestTooLarge or ReasonInternalError,
-// which only a result reports.
+// non-nil. Besides the verifier reasons it can be ReasonMalformedRequest
+// or ReasonRequestTooLarge, which only a result reports.
 func (r *VerifyReceiptResult) Reason() Reason {
 	if failure := r.failure(); failure != nil {
 		return failure.Reason
@@ -76,8 +75,9 @@ func (r *VerifyReceiptResult) Reason() Reason {
 
 // Err is the failure as a [*VerificationError], or nil when the receipt
 // verified. For a verifier reason it is the error the verification
-// returned. For ReasonInternalError, errors.Unwrap gives the unexpected
-// error or panic behind it.
+// returned. For ReasonInternalError, errors.Unwrap gives what is behind
+// it: the unexpected error or panic, or the parser's error for signed
+// receipt content that could not be read.
 func (r *VerifyReceiptResult) Err() error {
 	if failure := r.failure(); failure != nil {
 		return failure

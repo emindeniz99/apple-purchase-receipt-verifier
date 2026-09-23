@@ -240,7 +240,7 @@ fn five_thousand_mutations_of_a_genuine_receipt_never_panic_and_never_verify() {
                 accepted_unchanged += 1;
             }
             Err(error) => {
-                // Every reason must still be one of the eleven.
+                // Every reason must still be one of the twelve.
                 assert!(
                     apple_purchase_receipt_verifier::Reason::all().contains(&error.reason()),
                     "mutation {iteration} produced {:?}",

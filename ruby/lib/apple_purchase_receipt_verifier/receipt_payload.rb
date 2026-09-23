@@ -119,6 +119,27 @@ module ApplePurchaseReceiptVerifier
     RFC_3339 = /\A(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d+)?(?:Z|([+-])(\d{2}):(\d{2}))\z/
 
     class << self
+      # The receipt creation date (attribute 12), read the only way anything
+      # in a payload is read before its signer is trusted: the top-level
+      # attribute SET is walked shallowly, each entry's type is read, and only
+      # the value of type 12 is decoded.
+      #
+      # nil means "judge the chain at now": no attribute 12, an empty one, one
+      # that does not decode, more than one, or a walk that fails anywhere. An
+      # entry the walk cannot read fails it as a whole rather than being
+      # skipped, since that entry might have been a second attribute 12. Never
+      # raises: nothing is trusted yet, so nothing here can blame anyone.
+      #
+      # @param content [String] the encapsulated content bytes, not yet verified
+      # @return [Time, nil]
+      def creation_date(content)
+        dates = [] #: Array[String]
+        each_attribute(content, "receipt payload") { |type, value| dates << value if type == CREATION_DATE }
+        dates.size == 1 ? decode_date(dates.fetch(0)) : nil
+      rescue SystemStackError, StandardError
+        nil
+      end
+
       # @param content [String] the verified encapsulated content bytes
       # @return [AppReceipt]
       def parse(content)

@@ -33,7 +33,7 @@
  *
  * ERRORS: a NULL pointer, a non-UTF-8 string or a rejected configuration is
  * reported in the 100+ band of AprvReason and means nothing about the input
- * was checked. The 1..11 band is a verdict about the input. Never conflate
+ * was checked. The 1..12 band is a verdict about the input. Never conflate
  * the two.
  *
  * JSON is the interchange because a verified payload is an open-ended claim
@@ -72,7 +72,7 @@ typedef uint32_t AprvEnvironment;
 // The value of [`AprvResult::status`], and the return value of every
 // verification call.
 //
-// Two bands, and the split is the point: `1..=11` is a **verdict about the
+// Two bands, and the split is the point: `1..=12` is a **verdict about the
 // input** — the canonical cross-port [`Reason`] vocabulary, in the order
 // `Reason` declares it — while `100..` is a **mistake in the call itself**,
 // where nothing about the input was checked. A caller that treats
@@ -81,8 +81,9 @@ typedef uint32_t AprvEnvironment;
 //
 // **Stable and append-only.** These numbers are part of the ABI: a value is
 // never reused for a different meaning and an existing value never changes.
-// A twelfth verification reason — which the cross-port contract makes a
-// deliberate, all-nine-ports change — would be 12.
+// A new verification reason is a deliberate, all-nine-ports change of the
+// cross-port contract and takes the next number: `INTERNAL_ERROR` joined
+// as 12, and a thirteenth would be 13.
 enum AprvReason
 #ifdef __cplusplus
   : int32_t
@@ -112,6 +113,10 @@ enum AprvReason
   APRV_REASON_DEVICE_HASH_MISMATCH = 10,
   // The payload was signed longer ago than the configured maximum.
   APRV_REASON_STALE_PAYLOAD = 11,
+  // Not the caller's fault: a trusted signer signed receipt content the
+  // library cannot read (found only after the chain and the signature
+  // passed). Alert and retry or escalate; do not deny the user on it.
+  APRV_REASON_INTERNAL_ERROR = 12,
   // A required pointer argument was `NULL`. Nothing was verified.
   APRV_REASON_NULL_POINTER = 100,
   // A `const char *` argument was not valid UTF-8. Nothing was verified.

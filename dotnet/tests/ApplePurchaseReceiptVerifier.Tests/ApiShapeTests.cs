@@ -17,7 +17,7 @@ namespace ApplePurchaseReceiptVerifier.Tests;
 public class ApiShapeTests
 {
     /// <summary>
-    /// The eleven canonical tokens, read out of
+    /// The twelve canonical tokens, read out of
     /// <c>fixtures/cases.schema.json</c> rather than retyped — so a drifted
     /// spelling fails here instead of in another port's CI.
     /// </summary>
@@ -36,14 +36,15 @@ public class ApiShapeTests
     }
 
     /// <summary>
-    /// The three reasons only a <c>VerifyReceiptResult</c> carries. They describe
-    /// the endpoint's request envelope and its own failures, not a verdict on
-    /// a payload, so they are outside the schema's verifier vocabulary.
+    /// The two reasons only a <c>VerifyReceiptResult</c> carries. They describe
+    /// the endpoint's request envelope, not a verdict on a payload, so they
+    /// are outside the schema's verifier vocabulary. INTERNAL_ERROR is thrown
+    /// by a verifier too (signed content that cannot be read), so it is in it.
     /// </summary>
-    private static readonly string[] ResultOnlyCodes = { "MALFORMED_REQUEST", "INTERNAL_ERROR", "REQUEST_TOO_LARGE" };
+    private static readonly string[] ResultOnlyCodes = { "MALFORMED_REQUEST", "REQUEST_TOO_LARGE" };
 
     [Fact]
-    public void ReasonHasTheElevenVerifierMembersAndTheThreeResultOnlyOnes()
+    public void ReasonHasTheTwelveVerifierMembersAndTheTwoResultOnlyOnes()
     {
         Assert.Equal(14, Enum.GetValues<VerificationReason>().Length);
     }

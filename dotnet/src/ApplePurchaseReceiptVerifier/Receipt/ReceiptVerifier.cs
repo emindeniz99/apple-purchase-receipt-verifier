@@ -306,17 +306,23 @@ namespace ApplePurchaseReceiptVerifier.Receipt
                 throw Malformed("not a PKCS#7/CMS blob", e);
             }
 
+            // A detached CMS carries no content at all, which is a defect of
+            // the CMS. Content that is present but zero bytes long is not: a
+            // trusted signer may have signed it, and whether it can be read is
+            // decided after the signature, like any other payload.
             byte[]? content = cms.ContentInfo.Content;
-            if (content is null || content.Length == 0)
+            if (content is null || cms.Detached)
             {
                 throw Malformed("no encapsulated payload");
             }
 
-            // Parsed before the signature is checked only to learn the creation
-            // date, which is the instant the chain's validity is judged at.
-            // Nothing from it is trusted, returned or acted on until every
-            // check below has passed.
-            AppReceipt receipt = ReceiptPayload.Parse(content);
+            // Only the creation date is read before trust is established,
+            // because it is the instant the chain's validity is judged at;
+            // nothing else in the payload is decoded until the chain and the
+            // signature have passed. A date that is missing, empty, unreadable
+            // or stated twice cannot blame anyone yet, so it only moves the
+            // chain instant to "now" and never rejects by itself.
+            DateTimeOffset? creationDate = ReceiptPayload.ReadCreationDate(content);
 
             if (cms.SignerInfos.Count == 0)
             {
@@ -368,8 +374,8 @@ namespace ApplePurchaseReceiptVerifier.Receipt
 
             // Deliberately the system clock, with no seam to override it: this
             // is a certificate-validity instant. The fallback only fires for a
-            // receipt carrying no creation date (attribute 12).
-            DateTimeOffset at = receipt.CreationDate ?? DateTimeOffset.UtcNow;
+            // receipt whose creation date (attribute 12) is not usable.
+            DateTimeOffset at = creationDate ?? DateTimeOffset.UtcNow;
             CertificateChain.BuildPath(signerCertificate, embedded, anchors, at);
 
             // After the chain, not before: a foreign chain must report
@@ -413,7 +419,27 @@ namespace ApplePurchaseReceiptVerifier.Receipt
                     VerificationReason.InvalidSignature, "the CMS signature check failed", e);
             }
 
-            return receipt;
+            // The chain is checked BEFORE the signature on purpose: checking
+            // the signature first would run the attacker's own key (their
+            // choice of RSA size and exponent) before anything about it is
+            // trusted. A trusted signer signed these bytes, so anything that
+            // stops the full parse (this library's grammar, a bound, an
+            // unexpected exception) is the library's failure or a format Apple
+            // added, not the client's: INTERNAL_ERROR, never
+            // INVALID_RECEIPT_FORMAT, which the endpoint answers as 21002 and
+            // an app server reads as "deny".
+            try
+            {
+                return ReceiptPayload.Parse(content);
+            }
+            catch (Exception e)
+            {
+                string detail = e is VerificationException known
+                    ? known.Message.Substring(known.ReasonCode.Length + 2)
+                    : e.GetType().Name;
+                throw new VerificationException(
+                    VerificationReason.InternalError, "signed receipt content could not be read: " + detail, e);
+            }
         }
 
         private static void VerifyDeviceHash(AppReceipt receipt, byte[] deviceGuid)

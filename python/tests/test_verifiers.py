@@ -374,8 +374,10 @@ def payload_with_in_app_integer(attribute_type, value_bytes):
 
 
 # An anonymous 162-byte blob: no certificates, no signature, one creation date
-# of 0001-01-01T00:00:00+10:00. The payload is parsed before the chain check,
-# so this reaches the date decoder against the real pinned Apple roots.
+# of 0001-01-01T00:00:00+10:00. Only the creation date is read before trust,
+# and an unreadable one only moves the chain instant to now, so through the
+# verifier this stops at "signer not embedded"; the date decoder itself is
+# driven directly below.
 OUT_OF_RANGE_DATE_RECEIPT = (
     "MIGfBgkqhkiG9w0BBwKggZEwgY4CAQExDzANBglghkgBZQMEAgEFADA2BgkqhkiG9w0BBwGgKQQnMSUw"
     "IwIBDAIBAQQbFhkwMDAxLTAxLTAxVDAwOjAwOjAwKzEwOjAwMUAwPgIBATARMAwxCjAIBgNVBAMMAXgC"
@@ -452,11 +454,28 @@ def spliced_receipt(signed_attrs=None, digest_algorithm=None, signature=None):
 
 
 class HostileInputTest(unittest.TestCase):
-    """The payload and the signedAttrs are decoded BEFORE any signature check,
-    so an attacker reaches both decoders with arbitrary bytes and neither may
-    leak a raw Python exception."""
+    """The creation date (attribute 12) and the signedAttrs are decoded BEFORE
+    any signature check, so an attacker reaches both decoders with arbitrary
+    bytes and neither may leak a raw Python exception. The rest of the payload
+    is decoded only after the chain and the signature pass."""
 
     def test_rejects_a_date_astimezone_cannot_convert(self):
+        from apple_purchase_receipt_verifier.receipt import (
+            _parse_payload,
+            _read_creation_date,
+        )
+
+        out_of_range = date_payload("0001-01-01T00:00:00+10:00")
+        # Before trust: not a verdict, only "judge the chain at now".
+        self.assertIsNone(_read_creation_date(out_of_range))
+        # After trust: the parser's own verdict, which the verifier reports
+        # as INTERNAL_ERROR for a trusted signer.
+        with self.assertRaises(VerificationError) as ctx:
+            _parse_payload(out_of_range)
+        self.assertEqual(ctx.exception.reason, "INVALID_RECEIPT_FORMAT")
+        self.assertIsInstance(ctx.exception.__cause__, OverflowError)
+        # Through the verifier the blob embeds no signer, which is a defect
+        # of the CMS and so still a format error, never a leaked exception.
         verifier = ReceiptVerifier(apple_receipt_roots(), "com.anything")
         with self.assertRaises(VerificationError) as ctx:
             verifier.verify(OUT_OF_RANGE_DATE_RECEIPT)

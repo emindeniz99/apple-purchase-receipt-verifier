@@ -100,7 +100,8 @@ public class ReceiptEncodingTests
     /// End to end, and the reason it matters: CMS binds the whole encapsulated
     /// content, so a receipt whose eContent carries the junk verifies its own
     /// signature. Without the exhaustion check the structural gate never fires
-    /// and the port accepts an encoding every sibling rejects.
+    /// and the port accepts an encoding every sibling rejects. The signer is
+    /// trusted, so the refusal is INTERNAL_ERROR.
     /// </summary>
     [Fact]
     public void ASignedReceiptWithTrailingBytesInTheContentIsRejected()
@@ -114,7 +115,7 @@ public class ReceiptEncodingTests
 
         using ReceiptVerifier verifier = new(new[] { TestPki.Public(root) }, "com.example.app");
         Assert.Equal(
-            VerificationReason.InvalidReceiptFormat,
+            VerificationReason.InternalError,
             Assert.Throws<VerificationException>(() => verifier.Verify(receipt)).Reason);
     }
 

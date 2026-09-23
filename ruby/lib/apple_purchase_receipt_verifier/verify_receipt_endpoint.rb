@@ -198,6 +198,10 @@ module ApplePurchaseReceiptVerifier
       receipt = Receipt.verify(Receipt.decode_base64(receipt_data), @roots)
       result(receipt, nil, nil, at)
     rescue VerificationError => e
+      # Signed content that could not be read keeps what is behind it, the
+      # parser's error, as the failure cause, as a crash below does.
+      return internal_error(e.cause || e, at) if e.reason == Reason::INTERNAL_ERROR
+
       failed(e.reason, at)
     rescue SystemStackError, StandardError => e
       internal_error(e, at)

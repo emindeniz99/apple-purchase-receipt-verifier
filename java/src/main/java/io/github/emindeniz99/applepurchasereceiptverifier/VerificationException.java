@@ -40,9 +40,13 @@ public class VerificationException extends Exception {
          */
         MALFORMED_REQUEST,
         /**
-         * An unexpected runtime exception inside the verifyReceipt endpoint,
-         * answered as status 21009. Reported only by
-         * {@code VerifyReceiptResult.failureReason()}; never thrown.
+         * Not the client's fault, status 21009 at the endpoint. Thrown when a
+         * trusted signer signed receipt content this library cannot read
+         * (found only after the chain and the signature passed; the parser's
+         * exception is the {@link #getCause() cause}), and reported by the
+         * endpoint for an unexpected runtime exception inside it. Alert and
+         * retry or escalate; do not deny the user on it. It keeps the position
+         * it had when it was endpoint-only, so no ordinal moved.
          */
         INTERNAL_ERROR,
         /**

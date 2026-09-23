@@ -62,16 +62,17 @@ module ApplePurchaseReceiptVerifier
 
           cms = Cms.parse(bytes)
 
-          # Parsed before the signature is checked, and only to learn the
-          # creation date the chain's validity is judged at. Nothing from it is
-          # returned or acted on until every check below has passed.
-          receipt = ReceiptPayload.parse(cms.content)
-
-          # A receipt with no creation date falls back to the SYSTEM clock,
-          # never to an injected one — which is why ReceiptVerifier takes no
-          # clock parameter at all. A caller injecting a clock must not be able
-          # to authenticate a chain that expired.
-          instant = receipt.creation_date || Time.now.utc
+          # Only the creation date is read before trust is established,
+          # because it is the instant the chain's validity is judged at;
+          # nothing else in the payload is decoded until the chain and the
+          # signature have passed. A date that is missing, empty, unreadable
+          # or stated twice cannot blame anyone yet, so it only moves the chain
+          # instant to "now" and never rejects by itself.
+          #
+          # "Now" is the SYSTEM clock, never an injected one — which is why
+          # ReceiptVerifier takes no clock parameter at all. A caller injecting
+          # a clock must not be able to authenticate a chain that expired.
+          instant = ReceiptPayload.creation_date(cms.content) || Time.now.utc
 
           if cms.certificate_ders.size > MAX_EMBEDDED_CERTIFICATES
             raise VerificationError.new(
@@ -132,10 +133,28 @@ module ApplePurchaseReceiptVerifier
             )
           end
 
+          # The chain is checked BEFORE the signature on purpose: checking
+          # the signature first would run the attacker's own key (their choice
+          # of RSA size and exponent) before anything about it is trusted.
           verify_cms_signature(bytes, signer, cms.content)
 
-          receipt
+          parse_signed_payload(cms.content)
         end
+      end
+
+      # The full payload parse, run only after the chain and the signature
+      # have passed. A trusted signer signed these bytes, so anything that
+      # stops the parse (this library's grammar, a bound, a foreign error, a
+      # SystemStackError) is the library's failure or a format Apple added,
+      # not the client's: INTERNAL_ERROR, never INVALID_RECEIPT_FORMAT, which
+      # the endpoint answers as 21002 and an app server reads as "deny". The
+      # parser's error is kept as the raised error's `cause`.
+      def parse_signed_payload(content)
+        ReceiptPayload.parse(content)
+      rescue SystemStackError, StandardError => e
+        detail = e.is_a?(VerificationError) ? e.message.delete_prefix("#{e.reason}: ") : e.class.name
+        raise VerificationError.new(Reason::INTERNAL_ERROR,
+                                    "signed receipt content could not be read: #{detail}")
       end
 
       # Only VerificationError escapes. Containment is categorical, and

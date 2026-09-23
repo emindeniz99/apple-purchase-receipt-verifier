@@ -14,14 +14,13 @@ namespace EminDeniz99\ApplePurchaseReceiptVerifier;
  * Read it with `$e->reason` and switch on the case; `$e->reason->value` is the
  * canonical `SCREAMING_SNAKE` token.
  *
- * Adding a twelfth case is a cross-port change, not a PHP one.
+ * Adding a thirteenth case is a cross-port change, not a PHP one.
  *
- * Three more cases, {@see Reason::MalformedRequest},
- * {@see Reason::InternalError} and {@see Reason::RequestTooLarge}, exist only
- * as
+ * Two more cases, {@see Reason::MalformedRequest} and
+ * {@see Reason::RequestTooLarge}, exist only as
  * {@see \EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\VerifyReceiptResult::failureReason()}
- * values. No {@see VerificationException} is ever thrown with any of them, so
- * a `match` over a caught exception's reason never sees them.
+ * values. No {@see VerificationException} is ever thrown with either, so a
+ * `match` over a caught exception's reason never sees them.
  */
 enum Reason: string
 {
@@ -59,17 +58,20 @@ enum Reason: string
     case StalePayload = 'STALE_PAYLOAD';
 
     /**
+     * Not the client's fault. Status 21009. Thrown when a trusted signer
+     * signed receipt content this library cannot read (found only after the
+     * chain and the signature passed; the parser's error is `getPrevious()`),
+     * and reported by the endpoint for an unexpected `Throwable` inside it.
+     * Alert and retry or escalate; do not deny the user on it.
+     */
+    case InternalError = 'INTERNAL_ERROR';
+
+    /**
      * The verifyReceipt request envelope is unusable: the body is not a JSON
      * object or nests deeper than 64, or `receipt-data` is missing, empty or
      * not a string. Status 21002. Only ever a result's failure reason.
      */
     case MalformedRequest = 'MALFORMED_REQUEST';
-
-    /**
-     * An unexpected `Throwable` inside the verifyReceipt endpoint. Status
-     * 21009. Only ever a result's failure reason.
-     */
-    case InternalError = 'INTERNAL_ERROR';
 
     /**
      * The raw verifyReceipt request body is over

@@ -55,7 +55,7 @@
 //! # Errors
 //!
 //! Every verification entry point returns [`VerificationError`], whose
-//! [`reason`](VerificationError::reason) is one of eleven [`Reason`] values.
+//! [`reason`](VerificationError::reason) is one of twelve [`Reason`] values.
 //! Match on the value; never parse the message.
 //!
 //! Configuration mistakes are a different type, [`ConfigError`], because

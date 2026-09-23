@@ -10,7 +10,7 @@ use crate::cms::{
 use crate::crypto::{constant_time_eq, curve_field_size, verify_rsa_pkcs1, DigestAlgorithm};
 use crate::datetime::unix_millis_of;
 use crate::error::{ConfigError, CoreError, Reason, Result, VerificationError};
-use crate::receipt_payload::parse_receipt_payload;
+use crate::receipt_payload::{parse_receipt_payload, read_creation_date};
 use crate::roots::{normalize_anchors, TrustAnchor};
 use crate::x509::{Certificate, OID_EC_PUBLIC_KEY, OID_RSA_ENCRYPTION};
 use std::sync::Arc;
@@ -120,16 +120,17 @@ pub(crate) fn verify_receipt_core_unchecked(
     }
     let cms = parse_cms(der).map_err(|err| malformed(format!("malformed CMS structure: {err}")))?;
 
-    // Parsed before the signature is checked, and only to learn the creation
-    // date: chain validity anchors at signing time. Nothing from it is
-    // returned or acted on until every check below has passed.
-    let fields = parse_receipt_payload(&cms.content)?;
-    // A receipt with no creation date falls back to the SYSTEM clock, never
-    // to an injected one: a caller injecting a clock — to test staleness, or
-    // to work around skew — must not thereby accept an expired chain. That
-    // is why the receipt path takes no clock option at all.
-    let at_millis = fields
-        .creation_date
+    // Only the creation date is read before trust is established, because
+    // chain validity anchors at signing time; nothing else in the payload is
+    // decoded until the chain and the signature have passed. A date that is
+    // missing, empty, unreadable or stated twice cannot blame anyone yet, so
+    // it only moves the chain instant to "now" and never rejects by itself.
+    //
+    // "Now" is the SYSTEM clock, never an injected one: a caller injecting a
+    // clock — to test staleness, or to work around skew — must not thereby
+    // accept an expired chain. That is why the receipt path takes no clock
+    // option at all.
+    let at_millis = read_creation_date(&cms.content)
         .map_or_else(|| unix_millis_of(SystemTime::now()), unix_millis_of);
 
     // The embedded certificates are attacker-supplied and are walked into a
@@ -216,8 +217,20 @@ pub(crate) fn verify_receipt_core_unchecked(
             format!("receipt signer certificate lacks Apple receipt-signing marker OID {RECEIPT_SIGNER_OID}"),
         ));
     }
+    // The chain is checked BEFORE the signature on purpose: checking the
+    // signature first would run the attacker's own key (their choice of RSA
+    // size and exponent) before anything about it is trusted.
     verify_cms_signature(&cms, signer)?;
-    Ok(fields)
+    // A trusted signer signed these bytes, so a payload this crate cannot
+    // read is the library's failure (or a format Apple added), not the
+    // client's: INTERNAL_ERROR, never INVALID_RECEIPT_FORMAT, which the
+    // endpoint answers as 21002 and an app server reads as "deny".
+    parse_receipt_payload(&cms.content).map_err(|err| {
+        VerificationError::new(
+            Reason::InternalError,
+            format!("signed receipt content could not be read: {}", err.detail()),
+        )
+    })
 }
 
 /// Whether `raw` carries the issuer Name and serialNumber the `SignerInfo`

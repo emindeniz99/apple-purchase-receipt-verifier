@@ -331,6 +331,12 @@ namespace ApplePurchaseReceiptVerifier.Receipt
                 AppReceipt receipt = ReceiptVerifier.VerifyCore(der, _anchors);
                 return Result.Verified(_environment, _pacific, receipt, at);
             }
+            catch (VerificationException e) when (e.Reason == VerificationReason.InternalError)
+            {
+                // Signed content that could not be read keeps what is behind
+                // it, the parser's error, as the failure cause.
+                return Result.InternalError(_environment, _pacific, e.InnerException ?? e, at);
+            }
             catch (VerificationException e)
             {
                 return Result.Failed(_environment, _pacific, e.Reason, at);

@@ -7,8 +7,10 @@
  * throws at all — so that is what is asserted: any body, any bytes, gets a
  * JSON object with a numeric `status` back. The typed result behind that
  * body is checked too: exactly one of receipt and failureReason, the same
- * status, and never INTERNAL_ERROR, which only an unexpected error inside
- * the pipeline produces.
+ * status, and never INTERNAL_ERROR. That reason means an unexpected error
+ * inside the pipeline, or content a trusted signer signed that the library
+ * cannot read; a fuzzer cannot forge a trusted signature, so for fuzz input
+ * it can only be the first, and that is a bug.
  */
 import { VerifyReceiptEndpoint } from '../../dist/index.js';
 import { RECEIPT_ANCHORS, asUtf8 } from '../harness.mjs';

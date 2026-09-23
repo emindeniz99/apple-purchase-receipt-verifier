@@ -152,8 +152,10 @@ class VerifyReceiptResult:
 
     @property
     def failure_cause(self) -> Exception | None:
-        """The unexpected exception behind :attr:`Reason.INTERNAL_ERROR`;
-        ``None`` for every other outcome."""
+        """What is behind :attr:`Reason.INTERNAL_ERROR`: the unexpected
+        exception the endpoint caught, or the parser's exception for signed
+        receipt content that could not be read. ``None`` for every other
+        outcome."""
         return self._failure_cause
 
     @property
@@ -388,6 +390,11 @@ class VerifyReceiptEndpoint:
             der = decode_receipt_base64(receipt_data)
             receipt = verify_receipt_core(der, self._roots)
         except VerificationError as e:
+            if e.reason == Reason.INTERNAL_ERROR:
+                cause = e.__cause__ if isinstance(e.__cause__, Exception) else e
+                return VerifyReceiptResult._create(
+                    self._environment, None, Reason.INTERNAL_ERROR, cause, at
+                )
             return self._failed(e.reason, at)
         except Exception as e:
             return VerifyReceiptResult._create(

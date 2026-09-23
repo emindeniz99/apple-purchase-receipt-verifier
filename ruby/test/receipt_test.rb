@@ -162,7 +162,7 @@ class ReceiptTest < Minitest::Test
     assert_equal 2**56, verifier.verify_der(accepted).in_app_purchases[0].web_order_line_item_id
 
     [nine, negative].each do |value|
-      assert_reason(:INVALID_RECEIPT_FORMAT) { verifier.verify_der(in_app_receipt([[1711, value]])) }
+      assert_reason(:INTERNAL_ERROR) { verifier.verify_der(in_app_receipt([[1711, value]])) }
     end
   end
 
@@ -170,7 +170,7 @@ class ReceiptTest < Minitest::Test
   # clamped onto a sentinel and filed under unknown attributes.
   def test_rejects_an_attribute_type_above_the_32_bit_signed_range
     payload = TestPki.receipt_payload([[2**31, TestPki.utf8("x")]])
-    assert_reason(:INVALID_RECEIPT_FORMAT) { verifier.verify_der(TestPki.sign_receipt(@pki, payload)) }
+    assert_reason(:INTERNAL_ERROR) { verifier.verify_der(TestPki.sign_receipt(@pki, payload)) }
 
     ok = TestPki.receipt_payload([[(2**31) - 1, TestPki.utf8("x")],
                                   [2, TestPki.utf8("com.example.app")]])
@@ -233,7 +233,7 @@ class ReceiptTest < Minitest::Test
       .each do |text|
       payload = TestPki.receipt_payload([[2, TestPki.utf8("com.example.app")],
                                          [12, TestPki.ia5(text)]])
-      assert_reason(:INVALID_RECEIPT_FORMAT) { verifier.verify_der(TestPki.sign_receipt(@pki, payload)) }
+      assert_reason(:INTERNAL_ERROR) { verifier.verify_der(TestPki.sign_receipt(@pki, payload)) }
     end
   end
 
@@ -246,12 +246,12 @@ class ReceiptTest < Minitest::Test
 
   def test_rejects_an_attribute_value_that_is_not_valid_utf8
     payload = TestPki.receipt_payload([[2, "\x0c\x02\xff\xfe".b]])
-    assert_reason(:INVALID_RECEIPT_FORMAT) { verifier.verify_der(TestPki.sign_receipt(@pki, payload)) }
+    assert_reason(:INTERNAL_ERROR) { verifier.verify_der(TestPki.sign_receipt(@pki, payload)) }
   end
 
   def test_rejects_a_string_attribute_whose_value_is_the_wrong_asn1_type
     payload = TestPki.receipt_payload([[2, TestPki.integer(7)]])
-    assert_reason(:INVALID_RECEIPT_FORMAT) { verifier.verify_der(TestPki.sign_receipt(@pki, payload)) }
+    assert_reason(:INTERNAL_ERROR) { verifier.verify_der(TestPki.sign_receipt(@pki, payload)) }
   end
 
   def test_verify_receipt_core_skips_the_bundle_id_check

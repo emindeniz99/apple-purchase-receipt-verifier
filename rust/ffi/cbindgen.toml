@@ -60,7 +60,7 @@ header = """
  *
  * ERRORS: a NULL pointer, a non-UTF-8 string or a rejected configuration is
  * reported in the 100+ band of AprvReason and means nothing about the input
- * was checked. The 1..11 band is a verdict about the input. Never conflate
+ * was checked. The 1..12 band is a verdict about the input. Never conflate
  * the two.
  *
  * JSON is the interchange because a verified payload is an open-ended claim

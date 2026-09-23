@@ -529,14 +529,31 @@ final class ReviewFixesTests: XCTestCase {
     }
 
     func testRejectsAReceiptDateOutsideTheRepresentableRange() async throws {
+        // Attribute 12 = "999999-12-31T23:59:59Z", the payload the blob below
+        // carries. Before trust it is only "no usable date, judge the chain at
+        // now"; the grammar refuses it, and never by trapping.
+        let payload: [UInt8] =
+            [0x31, 0x22, 0x30, 0x20, 0x02, 0x01, 0x0C, 0x02, 0x01, 0x01, 0x04, 0x18, 0x16, 0x16]
+            + Array("999999-12-31T23:59:59Z".utf8)
+        XCTAssertNil(readCreationDate(payload))
+        do {
+            _ = try parsePayload(payload)
+            XCTFail("expected INVALID_RECEIPT_FORMAT")
+        } catch let error as VerificationError {
+            XCTAssertEqual(error.reason, .invalidReceiptFormat)
+        }
+
+        // Through the verifier the blob's own chain is judged at now, and it
+        // does not reach this root: the chain answers, before any payload
+        // grammar is consulted.
         let verifier = try ReceiptVerifier(
             trustedRoots: [try fixture("generated", "receipt-root.der")],
             bundleId: "com.example.app")
         do {
             _ = try await verifier.verify(receipt: Self.outOfRangeDateReceipt)
-            XCTFail("expected INVALID_RECEIPT_FORMAT")
+            XCTFail("expected INVALID_CHAIN")
         } catch let error as VerificationError {
-            XCTAssertEqual(error.reason, .invalidReceiptFormat)
+            XCTAssertEqual(error.reason, .invalidChain)
         }
     }
 

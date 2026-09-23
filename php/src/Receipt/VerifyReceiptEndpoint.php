@@ -261,6 +261,12 @@ final class VerifyReceiptEndpoint
 
             return self::newResult($this->environment, $receipt, null, null, $at);
         } catch (VerificationException $e) {
+            if ($e->reason === Reason::InternalError) {
+                // Signed content that could not be read keeps what is behind
+                // it, the parser's error, as the failure cause.
+                return self::newResult($this->environment, null, Reason::InternalError, $e->getPrevious() ?? $e, $at);
+            }
+
             return $this->failed($e->reason, $at);
         } catch (Throwable $e) {
             // "Never throws" is the contract, so it holds for a bug or an

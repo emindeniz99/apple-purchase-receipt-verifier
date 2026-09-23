@@ -48,8 +48,11 @@ public final class FuzzEndpointJson {
         }
 
         // The typed result behind that body: exactly one of receipt and
-        // failureReason, and never INTERNAL_ERROR, which only an unexpected
-        // runtime exception inside the pipeline produces.
+        // failureReason, and never INTERNAL_ERROR. That reason means an
+        // unexpected runtime exception inside the pipeline, or content a
+        // trusted signer signed that the library cannot read; a fuzzer cannot
+        // forge a trusted signature, so for fuzz input it can only be the
+        // first, and that is a bug.
         VerifyReceiptResult result;
         try {
             result = Harness.ENDPOINT.verifyReceiptResult(body);

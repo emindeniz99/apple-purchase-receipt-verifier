@@ -22,9 +22,10 @@ public struct VerifyReceiptResult: Sendable {
         /// 21007 or 21008 answer: those say the receipt belongs to the other
         /// environment, not that it failed to verify.
         case verified(AppReceipt)
-        /// There is no receipt. `cause` is the unexpected error behind
-        /// ``VerificationError/Reason/internalError`` and nil for every other
-        /// reason.
+        /// There is no receipt. `cause` is what is behind
+        /// ``VerificationError/Reason/internalError`` (the unexpected error,
+        /// or the parser's error for signed content that could not be read)
+        /// and nil for every other reason.
         case failed(reason: VerificationError.Reason, cause: (any Error)?)
     }
 
@@ -63,8 +64,9 @@ public struct VerifyReceiptResult: Sendable {
         return nil
     }
 
-    /// The unexpected error behind ``VerificationError/Reason/internalError``;
-    /// nil for every other outcome.
+    /// What is behind ``VerificationError/Reason/internalError``: the
+    /// unexpected error the endpoint caught, or the parser's error for signed
+    /// receipt content that could not be read. nil for every other outcome.
     public var failureCause: (any Error)? {
         if case .failed(_, let cause) = outcome { return cause }
         return nil

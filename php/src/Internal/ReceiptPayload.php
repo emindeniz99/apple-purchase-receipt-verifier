@@ -17,10 +17,10 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationException;
  *
  *     ReceiptAttribute ::= SEQUENCE { type INTEGER, version INTEGER, value OCTET STRING }
  *
- * Ported from `node/src/receipt-payload.ts`. The payload is decoded *before*
- * the signature is checked, because the creation date is the instant the
- * chain's validity is judged at — nothing decoded here may be returned or
- * acted on until the chain and signature checks have passed.
+ * Ported from `node/src/receipt-payload.ts`. Only the creation date is read
+ * *before* the signature is checked ({@see readCreationDate()}), because it
+ * is the instant the chain's validity is judged at; the full {@see parse()}
+ * runs only after the chain and signature checks have passed.
  *
  * @internal
  */
@@ -74,6 +74,35 @@ final class ReceiptPayload
      */
     private const RFC_3339 =
         '/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|[+-]\d{2}:\d{2})$/';
+
+    /** @throws VerificationException */
+    /**
+     * The receipt creation date (attribute 12), read the only way anything in
+     * a payload is read before its signer is trusted: the top-level attribute
+     * SET is walked shallowly, each entry's type is read, and only the value
+     * of type 12 is decoded.
+     *
+     * Null means "judge the chain at now": no attribute 12, an empty one, one
+     * that does not decode, more than one, or a walk that fails anywhere. An
+     * entry the walk cannot read fails it as a whole rather than being
+     * skipped, since that entry might have been a second attribute 12. Never
+     * throws: nothing is trusted yet, so nothing here can blame anyone.
+     */
+    public static function readCreationDate(string $content, int $nodeBudget): ?DateTimeImmutable
+    {
+        try {
+            $dates = [];
+            foreach (self::parseAttributeSet($content, 'receipt payload', $nodeBudget) as [$type, $value]) {
+                if ($type === self::ATTR_CREATION_DATE) {
+                    $dates[] = $value;
+                }
+            }
+
+            return count($dates) === 1 ? self::decodeDate($dates[0], $nodeBudget) : null;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
 
     /** @throws VerificationException */
     public static function parse(string $content, int $nodeBudget): AppReceipt

@@ -80,10 +80,11 @@ class HostileReceiptInputTest {
     void containsInvalidUtf8AttributeValue() throws Exception {
         // A UTF8String whose single content byte is 0xFF: ASN1UTF8String.getString()
         // rejects it with IllegalArgumentException, the same shape as the receipt
-        // date that overflowed epoch millis.
+        // date that overflowed epoch millis. The signer is trusted, so it is
+        // INTERNAL_ERROR, never a leaked runtime exception.
         byte[] receipt = pki.signReceipt(TestPki.singleAttributePayload(2, new byte[] {0x0c, 0x01, (byte) 0xff}));
         VerificationException e = assertThrows(VerificationException.class, () -> verifier.verify(receipt));
-        assertEquals(Reason.INVALID_RECEIPT_FORMAT, e.reason());
+        assertEquals(Reason.INTERNAL_ERROR, e.reason());
     }
 
     @Test

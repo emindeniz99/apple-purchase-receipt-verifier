@@ -39,7 +39,8 @@ defmodule ConformanceTest do
     "WRONG_APP_APPLE_ID" => :wrong_app_apple_id,
     "INVALID_RECEIPT_FORMAT" => :invalid_receipt_format,
     "DEVICE_HASH_MISMATCH" => :device_hash_mismatch,
-    "STALE_PAYLOAD" => :stale_payload
+    "STALE_PAYLOAD" => :stale_payload,
+    "INTERNAL_ERROR" => :internal_error
   }
 
   test "the version crosses the boundary" do

@@ -15,7 +15,7 @@ defmodule AppleReceiptExample do
       {:ok, claims} = AppleReceiptExample.verify_transaction(verifier, jws)
 
   A failed verification is `{:error, reason, body}`, where `reason` is one of
-  the eleven canonical tokens every port of this library shares and `body`
+  the twelve canonical tokens every port of this library shares and `body`
   also carries a short non-sensitive message. Match on the reason; never
   parse the message.
   """
@@ -24,7 +24,7 @@ defmodule AppleReceiptExample do
 
   @environments %{production: 1, sandbox: 2, xcode: 4, local_testing: 8}
 
-  # The 1..11 band is a verdict about the input; the 100+ band is a mistake
+  # The 1..12 band is a verdict about the input; the 100+ band is a mistake
   # in the call itself and means nothing about the input was checked. Keeping
   # both as atoms keeps the distinction visible at the call site.
   @reasons %{
@@ -39,6 +39,7 @@ defmodule AppleReceiptExample do
     9 => :invalid_receipt_format,
     10 => :device_hash_mismatch,
     11 => :stale_payload,
+    12 => :internal_error,
     100 => :null_pointer,
     101 => :invalid_utf8,
     102 => :invalid_argument,

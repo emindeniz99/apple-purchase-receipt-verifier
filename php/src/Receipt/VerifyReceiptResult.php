@@ -75,8 +75,10 @@ final class VerifyReceiptResult
     }
 
     /**
-     * The unexpected `Throwable` behind {@see Reason::InternalError}, for
-     * logging; null for every other outcome.
+     * What is behind {@see Reason::InternalError}, for logging: the
+     * unexpected `Throwable` the endpoint caught, or the parser's error for
+     * signed receipt content that could not be read. Null for every other
+     * outcome.
      */
     public function failureCause(): ?Throwable
     {

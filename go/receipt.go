@@ -194,19 +194,16 @@ func verifyReceiptCore(receipt []byte, roots []*x509.Certificate) (*AppReceipt, 
 		return nil, wrapError(ReasonInvalidReceiptFormat, err, "receipt is not a parseable CMS SignedData")
 	}
 
-	// The payload is parsed before anything is verified, because the
-	// creation date is the instant the chain's validity is judged at.
-	// NOTHING from it is returned or acted on until every check below
-	// passes.
-	fields, err := parseReceiptPayload(cms.content)
-	if err != nil {
-		return nil, err
-	}
-	// A receipt with no creation date falls back to the SYSTEM clock,
-	// never to an injected one — which is why this path takes no clock.
+	// Only the creation date is read before trust is established, because
+	// it is the instant the chain's validity is judged at; nothing else in
+	// the payload is decoded until the chain and the signature have passed.
+	// A date that is missing, empty, unreadable or stated twice cannot
+	// blame anyone yet, so it only moves the chain instant to "now" and
+	// never rejects by itself. "Now" is the SYSTEM clock, never an injected
+	// one — which is why this path takes no clock.
 	at := time.Now()
-	if fields.CreationDate != nil {
-		at = *fields.CreationDate
+	if date := readCreationDate(cms.content); date != nil {
+		at = *date
 	}
 
 	if len(cms.certificates) > maxEmbeddedCertificates {
@@ -273,10 +270,13 @@ func verifyReceiptCore(receipt []byte, roots []*x509.Certificate) (*AppReceipt, 
 		return nil, newError(ReasonInvalidCertificatePurpose,
 			"receipt signer lacks Apple receipt-signing marker OID %s", oidAppleLeafMarker)
 	}
+	// The chain is checked BEFORE the signature on purpose: checking the
+	// signature first would run the attacker's own key (their choice of
+	// RSA size and exponent) before anything about it is trusted.
 	if err := verifyCMSSignature(cms, signer); err != nil {
 		return nil, err
 	}
-	return fields, nil
+	return parseSignedReceiptPayload(cms.content)
 }
 
 // findSignerCertificate resolves the SignerInfo's issuerAndSerialNumber

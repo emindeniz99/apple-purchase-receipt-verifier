@@ -312,6 +312,25 @@ class VerifyReceiptResultTest {
         }
     }
 
+    /**
+     * The other road to INTERNAL_ERROR: a trusted signer signed content the
+     * library cannot read. Same status, not the client's fault, and the
+     * parser's own verdict is the failure cause.
+     */
+    @Test
+    void unreadableSignedContentIsAnInternalErrorWithItsCause() throws Exception {
+        for (Environment environment : Arrays.asList(Environment.PRODUCTION, Environment.SANDBOX)) {
+            VerifyReceiptResult result = endpoint(environment, "verification-order-root.der")
+                    .verifyReceiptData(base64("receipt-unreadable-creation-date.der"));
+            assertEquals(Reason.INTERNAL_ERROR, result.failureReason());
+            assertEquals(VerifyReceiptEndpoint.STATUS_INTERNAL, result.status());
+            Throwable cause = result.failureCause();
+            assertTrue(cause instanceof VerificationException, String.valueOf(cause));
+            assertEquals(Reason.INVALID_RECEIPT_FORMAT, ((VerificationException) cause).reason());
+            assertEquals("{\"status\":21009}", result.toJson());
+        }
+    }
+
     private static final IllegalStateException BOOM = new IllegalStateException("broken request map");
 
     private static Map<String, Object> throwingMap() {

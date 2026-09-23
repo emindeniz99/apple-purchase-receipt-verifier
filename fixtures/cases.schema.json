@@ -86,7 +86,7 @@
       }
     },
     "reason": {
-      "description": "The canonical error vocabulary. Java's VerificationException.Reason is the source of truth; the other three mirror it.",
+      "description": "The canonical error vocabulary. Java's VerificationException.Reason is the source of truth; the other ports mirror it. INTERNAL_ERROR (status 21009 at the endpoint) is not the client's fault: either the library failed unexpectedly or a trusted signer signed receipt content the library cannot read, found only after the chain and the signature passed.",
       "enum": [
         "INVALID_JWS_FORMAT",
         "INVALID_CERTIFICATE",
@@ -98,11 +98,12 @@
         "WRONG_APP_APPLE_ID",
         "INVALID_RECEIPT_FORMAT",
         "DEVICE_HASH_MISMATCH",
-        "STALE_PAYLOAD"
+        "STALE_PAYLOAD",
+        "INTERNAL_ERROR"
       ]
     },
     "resultReason": {
-      "description": "What VerifyReceiptResult.failureReason can hold: every reason a verifier throws, plus the three that only an endpoint result reports and nothing ever throws. MALFORMED_REQUEST: the envelope is unusable (not a JSON object, nested deeper than 64, receipt-data missing, empty or not a string). REQUEST_TOO_LARGE: the raw body is over 3,145,728 UTF-8 bytes. INTERNAL_ERROR: an unexpected exception, status 21009.",
+      "description": "What VerifyReceiptResult.failureReason can hold: every reason a verifier throws, plus the two that only an endpoint result reports and nothing ever throws. MALFORMED_REQUEST: the envelope is unusable (not a JSON object, nested deeper than 64, receipt-data missing, empty or not a string). REQUEST_TOO_LARGE: the raw body is over 3,145,728 UTF-8 bytes. INTERNAL_ERROR is a verifier reason too, and the endpoint also reports it for an unexpected exception; either way it is status 21009.",
       "oneOf": [
         {
           "$ref": "#/$defs/reason"
@@ -110,8 +111,7 @@
         {
           "enum": [
             "MALFORMED_REQUEST",
-            "REQUEST_TOO_LARGE",
-            "INTERNAL_ERROR"
+            "REQUEST_TOO_LARGE"
           ]
         }
       ]
