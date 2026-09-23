@@ -129,7 +129,9 @@ namespace ApplePurchaseReceiptVerifier.Receipt
                 // Inside the same categorical guard as the rest: SHA-1 is
                 // unavailable outright on a host under a FIPS policy, and that
                 // must surface as a verdict rather than as a platform
-                // exception the caller has no contract for.
+                // exception the caller has no contract for. The verdict is
+                // INTERNAL_ERROR: no input reaches this catch, so blaming the
+                // device would deny a user for the host's configuration.
                 try
                 {
                     VerifyDeviceHash(receipt, deviceGuid);
@@ -141,7 +143,7 @@ namespace ApplePurchaseReceiptVerifier.Receipt
                 catch (Exception e)
                 {
                     throw new VerificationException(
-                        VerificationReason.DeviceHashMismatch,
+                        VerificationReason.InternalError,
                         "the device-hash check could not be performed", e);
                 }
             }
