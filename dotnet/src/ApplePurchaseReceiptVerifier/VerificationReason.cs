@@ -12,10 +12,11 @@ namespace ApplePurchaseReceiptVerifier
     /// <para>Members are PascalCase because that is the .NET naming rule; the
     /// SCREAMING_SNAKE token lives in <see cref="VerificationReasonCodes"/>.</para>
     /// <para>The first eleven are the verifier vocabulary the schema pins.
-    /// <see cref="MalformedRequest"/> and <see cref="InternalError"/> appear
-    /// only on a <see cref="Receipt.VerifyReceiptResult"/>: no
-    /// <see cref="VerificationException"/> is ever thrown with either, so a
-    /// <c>switch</c> over a caught exception's reason never sees them.</para>
+    /// <see cref="MalformedRequest"/>, <see cref="InternalError"/> and
+    /// <see cref="RequestTooLarge"/> appear only on a
+    /// <see cref="Receipt.VerifyReceiptResult"/>: no
+    /// <see cref="VerificationException"/> is ever thrown with any of them, so
+    /// a <c>switch</c> over a caught exception's reason never sees them.</para>
     /// </remarks>
     public enum VerificationReason
     {
@@ -54,8 +55,8 @@ namespace ApplePurchaseReceiptVerifier
 
         /// <summary>
         /// The verifyReceipt request envelope is unusable: the body is not a
-        /// JSON object, or <c>receipt-data</c> is missing, empty or not a
-        /// string. Reported only by
+        /// JSON object or nests deeper than 64, or <c>receipt-data</c> is
+        /// missing, empty or not a string. Reported only by
         /// <see cref="Receipt.VerifyReceiptResult.FailureReason"/>; never
         /// thrown.
         /// </summary>
@@ -69,6 +70,17 @@ namespace ApplePurchaseReceiptVerifier
         /// never thrown.
         /// </summary>
         InternalError,
+
+        /// <summary>
+        /// The raw verifyReceipt request body is over
+        /// <see cref="Receipt.VerifyReceiptEndpoint.MaxRequestBytes"/>
+        /// (3,145,728 UTF-8 bytes), the size at which Apple's endpoint answers
+        /// HTTP 413. Status 21002 in the response body; an HTTP layer can map
+        /// it to 413 as Apple does. Reported only by
+        /// <see cref="Receipt.VerifyReceiptResult.FailureReason"/>; never
+        /// thrown.
+        /// </summary>
+        RequestTooLarge,
     }
 
     /// <summary>
@@ -104,6 +116,7 @@ namespace ApplePurchaseReceiptVerifier
                 case VerificationReason.StalePayload: return "STALE_PAYLOAD";
                 case VerificationReason.MalformedRequest: return "MALFORMED_REQUEST";
                 case VerificationReason.InternalError: return "INTERNAL_ERROR";
+                case VerificationReason.RequestTooLarge: return "REQUEST_TOO_LARGE";
                 default:
                     throw new ArgumentOutOfRangeException(nameof(reason), reason,
                         "no canonical code for this reason");
@@ -111,7 +124,7 @@ namespace ApplePurchaseReceiptVerifier
         }
 
         /// <summary>Parses a canonical token back into a <see cref="VerificationReason"/>.</summary>
-        /// <returns><see langword="true"/> when <paramref name="code"/> is one of the thirteen tokens.</returns>
+        /// <returns><see langword="true"/> when <paramref name="code"/> is one of the fourteen tokens.</returns>
         public static bool TryParse(string? code, out VerificationReason reason)
         {
             switch (code)
@@ -129,6 +142,7 @@ namespace ApplePurchaseReceiptVerifier
                 case "STALE_PAYLOAD": reason = VerificationReason.StalePayload; return true;
                 case "MALFORMED_REQUEST": reason = VerificationReason.MalformedRequest; return true;
                 case "INTERNAL_ERROR": reason = VerificationReason.InternalError; return true;
+                case "REQUEST_TOO_LARGE": reason = VerificationReason.RequestTooLarge; return true;
                 default: reason = default; return false;
             }
         }

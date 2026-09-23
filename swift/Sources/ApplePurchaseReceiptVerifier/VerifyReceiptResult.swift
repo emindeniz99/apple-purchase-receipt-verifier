@@ -110,7 +110,7 @@ public struct VerifyReceiptResult: Sendable {
         switch outcome {
         case .failed(let reason, _):
             switch reason {
-            case .malformedRequest, .invalidReceiptFormat:
+            case .malformedRequest, .requestTooLarge, .invalidReceiptFormat:
                 return VerifyReceiptEndpoint.statusMalformed
             case .internalError:
                 return VerifyReceiptEndpoint.statusInternal

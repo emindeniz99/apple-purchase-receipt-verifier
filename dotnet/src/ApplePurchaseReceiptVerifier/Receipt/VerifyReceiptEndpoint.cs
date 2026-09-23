@@ -44,19 +44,22 @@ namespace ApplePurchaseReceiptVerifier.Receipt
 
         /// <summary>
         /// The longest raw request body <see cref="VerifyReceiptResult(string, DateTimeOffset?)"/>
-        /// will parse: 1 MiB (1,048,576), counted in characters. A longer one
-        /// fails with <see cref="VerificationReason.MalformedRequest"/>, status
-        /// 21002, before it is parsed.
+        /// will parse: 3 MiB (3,145,728), counted in UTF-8 bytes, Apple's own
+        /// limit. A longer one fails with
+        /// <see cref="VerificationReason.RequestTooLarge"/>, status 21002,
+        /// before it is parsed.
         /// </summary>
         /// <remarks>
-        /// JSON parsing allocates a multiple of the body, and that happens
-        /// before any verification. The number is the Java, PHP and Python
-        /// ports'. It is deliberately below
-        /// <see cref="ReceiptVerifier.MaxReceiptBytes"/>: the JSON entry point
-        /// has an amplification the dictionary entry point does not. The
-        /// largest genuine receipt in the corpus is 106 KB of base64.
+        /// Measured on 2026-09-23 against both of Apple's verifyReceipt
+        /// endpoints, a body of 3,145,728 bytes is answered and one of
+        /// 3,145,729 bytes gets HTTP 413, and the count is bytes, not
+        /// characters. The body is measured without being encoded, so a string
+        /// of any size costs no copy to refuse. A fixed constant, the same in
+        /// every port: JSON parsing allocates a multiple of the body before
+        /// any verification, so the bound is what keeps "never throws" true on
+        /// hostile input.
         /// </remarks>
-        public const int MaxRequestBytes = 1048576;
+        public const int MaxRequestBytes = 3145728;
 
         private readonly List<X509Certificate2> _anchors;
         private readonly AppleEnvironment _environment;
@@ -157,9 +160,11 @@ namespace ApplePurchaseReceiptVerifier.Receipt
         /// the endpoint's clock; it reaches nothing else.
         /// </param>
         /// <remarks>
-        /// A body that is not a JSON object (unparseable, <c>null</c>, an array,
-        /// a scalar), is longer than <see cref="MaxRequestBytes"/> characters or
-        /// nests more than 64 arrays and objects deep fails with
+        /// A body over <see cref="MaxRequestBytes"/> UTF-8 bytes fails with
+        /// <see cref="VerificationReason.RequestTooLarge"/>, status 21002,
+        /// where Apple answers HTTP 413; it is refused before any parsing. A
+        /// body that is not a JSON object (unparseable, <c>null</c>, an array,
+        /// a scalar) or nests more than 64 arrays and objects deep fails with
         /// <see cref="VerificationReason.MalformedRequest"/>, status 21002. Apple has no status code for "that wasn't JSON"; 21002
         /// is the closest, and it is what a JSON object without usable
         /// <c>receipt-data</c> gets anyway.
@@ -171,9 +176,14 @@ namespace ApplePurchaseReceiptVerifier.Receipt
                 return refused;
             }
 
-            if (requestJson is null || requestJson.Length > MaxRequestBytes)
+            if (requestJson is null)
             {
                 return Result.Failed(_environment, _pacific, VerificationReason.MalformedRequest, at);
+            }
+
+            if (Utf8Length.Exceeds(requestJson, MaxRequestBytes))
+            {
+                return Result.Failed(_environment, _pacific, VerificationReason.RequestTooLarge, at);
             }
 
             OrderedMap body;

@@ -149,7 +149,9 @@ final class VerifyReceiptResult
         }
         if ($this->receipt === null) {
             return match ($this->failureReason) {
-                Reason::MalformedRequest, Reason::InvalidReceiptFormat => VerifyReceiptEndpoint::STATUS_MALFORMED,
+                Reason::MalformedRequest,
+                Reason::RequestTooLarge,
+                Reason::InvalidReceiptFormat => VerifyReceiptEndpoint::STATUS_MALFORMED,
                 Reason::InternalError => VerifyReceiptEndpoint::STATUS_INTERNAL,
                 default => VerifyReceiptEndpoint::STATUS_NOT_AUTHENTICATED,
             };

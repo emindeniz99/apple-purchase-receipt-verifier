@@ -230,8 +230,9 @@ Apple's do.
 
 | `failure_reason()` | status | when |
 |---|---|---|
-| `MalformedRequest` | 21002 | the body is not a JSON object, or `receipt-data` is missing, empty or not a string |
-| `InvalidReceiptFormat` | 21002 | `receipt-data` is not receipt base64, or does not decode to a receipt |
+| `RequestTooLarge` | 21002 | the raw body is over `MAX_REQUEST_BYTES` (3,145,728 UTF-8 bytes); Apple answers HTTP 413 here, see [Defensive parsing](#defensive-parsing) |
+| `MalformedRequest` | 21002 | the body is not a JSON object or nests deeper than 64, or `receipt-data` is missing, empty or not a string |
+| `InvalidReceiptFormat` | 21002 | `receipt-data` is not receipt base64, is over `MAX_RECEIPT_BYTES`, or does not decode to a receipt |
 | `InvalidChain`, `InvalidSignature`, other certificate reasons | 21003 | the receipt did not authenticate |
 | `InternalError` | 21009 | a panic inside the endpoint, contained; `failure_cause()` holds its message |
 
@@ -274,10 +275,11 @@ would be a change to the shared vector file and to every port at once.
 caller with a `_ => reject` arm keeps compiling and keeps failing closed.
 That arm is a safety net, not an extension point.
 
-`Reason` also has `MalformedRequest` (`MALFORMED_REQUEST`) and
-`InternalError` (`INTERNAL_ERROR`), but only as a `VerifyReceiptResult`
-failure reason. No verifier returns either, and `Reason::all()` lists only
-the eleven above, so the C ABI's reason codes do not move.
+`Reason` also has `MalformedRequest` (`MALFORMED_REQUEST`),
+`RequestTooLarge` (`REQUEST_TOO_LARGE`) and `InternalError`
+(`INTERNAL_ERROR`), but only as a `VerifyReceiptResult` failure reason. No
+verifier returns any of them, and `Reason::all()` lists only the eleven
+above, so the C ABI's reason codes do not move.
 
 **Misconfiguration is a different type.** Empty trust anchors, an empty
 bundle id, an empty accepted-environment set, an unparseable anchor and an
@@ -523,14 +525,24 @@ refused, at most ten embedded certificates enforced before decoding, a path
 length of at most six with each candidate issuer tried once per hop.
 
 Input size is capped before anything is decoded or parsed, because all of
-that work happens before a signature is checked. The numbers are the Java,
-PHP and Python ports' numbers, and each is a public constant:
+that work happens before a signature is checked. Each cap is a fixed public
+constant, the same in every port of this library, not a builder option.
 
-- `MAX_RECEIPT_BYTES` (2 MiB): the receipt base64 string, checked before it
-  is decoded, and the receipt DER, checked before the CMS parse. Over it is
+The request and receipt caps are Apple's own limit. Measured on 2026-09-23
+against both of Apple's verifyReceipt endpoints (production and sandbox), a
+request body of 3,145,728 bytes is answered normally and one of 3,145,729
+bytes gets HTTP 413. Apple counts UTF-8 bytes, not characters: 3,145,729
+bytes of `é`, only 1,572,874 characters, also got 413. `fixtures/cases.json`
+holds every port to these numbers from both sides.
+
+- `MAX_REQUEST_BYTES` (3 MiB, 3,145,728 bytes): the endpoint's raw JSON
+  request body, checked before the depth scan and before `serde_json` runs.
+  Over it is 21002 with `REQUEST_TOO_LARGE`.
+- `MAX_RECEIPT_BYTES` (3 MiB, 3,145,728 bytes): the receipt base64 string,
+  checked before it is decoded (the endpoint's `receipt-data` included), and
+  the receipt DER, checked before the CMS parse. No receipt Apple accepts can
+  be larger than the request that carries it. Over it is
   `INVALID_RECEIPT_FORMAT`, and 21002 at the endpoint.
-- `MAX_REQUEST_BYTES` (1 MiB): the endpoint's raw JSON request body, checked
-  before `serde_json` runs. Over it is 21002 with `MALFORMED_REQUEST`.
 - `MAX_JWS_BYTES` (256 KiB): the compact JWS, checked before it is split.
   Over it is `INVALID_JWS_FORMAT`.
 - `MAX_JSON_NESTING_DEPTH` (64): the request body and the JWS header and
@@ -538,16 +550,21 @@ PHP and Python ports' numbers, and each is a public constant:
   in one pass before the parser runs. Deeper is 21002 with
   `MALFORMED_REQUEST` at the endpoint and `INVALID_JWS_FORMAT` on a JWS.
 
-String lengths are UTF-8 bytes (`str::len`). For base64 and a compact JWS
-that is the same count as characters. For the request body it is the unit
-the Node port uses; the Java, .NET and Python ports count characters, which
-differs only for a body carrying non-ASCII text.
+String lengths are UTF-8 bytes (`str::len`), Apple's unit. A `&str` is
+UTF-8, so the count costs nothing and copies nothing. For base64 and a
+compact JWS it is the same count as characters.
 
-The receipt cap clears the 1 MiB DER floor `cases.json` makes every port
-accept. The base64 of such a receipt is about 1.38 MB, so it verifies through
-`ReceiptVerifier::verify_base64` and the endpoint's `verify_receipt_data`,
-and through a JSON body it answers 21002, because the body is over the
-request cap.
+**Answering 413 like Apple.** `REQUEST_TOO_LARGE` exists so an HTTP layer can
+send the status Apple sends. The body is Apple's 21002 either way:
+
+```rust
+let result = endpoint.verify_receipt_result_from_json(&raw_request_body);
+let http_status = if result.failure_reason() == Some(Reason::RequestTooLarge) { 413 } else { 200 };
+(http_status, result.to_json())
+```
+
+A framework that caps request bodies itself has to allow at least 3 MiB, or
+it refuses bodies Apple would answer.
 
 An attribute type above `2^31 − 1` is a malformed receipt, not an attribute
 filed under a sentinel: fail closed, never clamp.

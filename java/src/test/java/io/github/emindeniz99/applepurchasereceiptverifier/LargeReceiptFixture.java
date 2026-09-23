@@ -10,8 +10,8 @@ import java.util.List;
 import org.bouncycastle.asn1.ASN1Encodable;
 
 /**
- * Writes the two receipts that pin the contract's normative resource floor
- * into {@code fixtures/generated/} (ROADMAP "Before 1.0" item 1). The floor
+ * Writes the receipts that pin the contract's normative resource floor and
+ * its DER cap into {@code fixtures/generated/} (ROADMAP "Before 1.0" item 1). The floor
  * has two numbers — 1,048,576 bytes of DER and 20,000 nodes in any single
  * ASN.1 parse — and one receipt cannot pin both: sitting under both at once
  * leaves a port free to lower either cap to just above whatever that one
@@ -39,6 +39,11 @@ import org.bouncycastle.asn1.ASN1Encodable;
  * accepted. {@link #main} checks each lands inside its band before writing,
  * so a regeneration cannot quietly drift off the boundary it exists to hold.
  *
+ * <p><b>receipt-at-der-cap</b> and <b>receipt-over-der-cap</b> hold the DER
+ * cap from both sides: the byte-floor shape with longer product ids, landed
+ * on exactly 3,145,728 and 3,145,729 bytes. Both are genuine; the first MUST
+ * be accepted and the second can only be refused for its size.
+ *
  * <p>Same technique as {@link PortDivergenceFixtures} and a {@code main} for
  * the same reason. Regenerate with:</p>
  *
@@ -63,6 +68,9 @@ public final class LargeReceiptFixture {
     private static final int BYTE_FLOOR = 1024 * 1024;
 
     private static final int NODE_FLOOR = 20000;
+
+    /** The receipt cap every port enforces on DER: Apple's 3 MiB request limit. */
+    private static final int DER_CAP = 3 * 1024 * 1024;
 
     /** Each receipt must land within 2% below the number it pins. */
     private static final double BAND = 0.02;
@@ -115,10 +123,62 @@ public final class LargeReceiptFixture {
 
         writeByteFloor(out, pki);
         writeNodeFloor(out, pki);
+        writeExactSize(out, pki, "receipt-at-der-cap.der", DER_CAP);
+        writeExactSize(out, pki, "receipt-over-der-cap.der", DER_CAP + 1);
     }
 
     /** Near 1 MiB of DER, at well under half the node budget. */
     private static void writeByteFloor(Path out, TestPki pki) throws Exception {
+        byte[] payload = paddedPurchasesPayload(PRODUCT_ID_LENGTH, 0);
+        byte[] receipt = pki.signReceipt(payload, new Date(SIGNED_DATE));
+        int nodes = nodes(payload);
+        System.out.println("byte-floor payload " + payload.length + " bytes, " + nodes + " nodes");
+        requireInBand("receipt-byte-floor bytes", receipt.length, BYTE_FLOOR);
+        requireBelow("receipt-byte-floor nodes", nodes, NODE_FLOOR / 2);
+        write(out, "receipt-byte-floor.der", receipt);
+    }
+
+    /**
+     * The byte-floor shape grown to exactly {@code bytes} of DER: the same
+     * 2,300 purchases, with every padded product id longer and one of them
+     * extended by whatever is still missing. Past the first pass every length
+     * in the structure already takes the octets it will keep, so the total
+     * moves one byte per character and the loop settles within a few passes.
+     */
+    private static void writeExactSize(Path out, TestPki pki, String name, int bytes) throws Exception {
+        int perPurchase = BYTE_FLOOR_PURCHASES - 2;
+        int floorLength = pki.signReceipt(paddedPurchasesPayload(PRODUCT_ID_LENGTH, 0), new Date(SIGNED_DATE)).length;
+        int idLength = PRODUCT_ID_LENGTH + (bytes - floorLength) / perPurchase;
+        int remainder = 0;
+        for (int attempt = 0; attempt < 10; attempt++) {
+            byte[] payload = paddedPurchasesPayload(idLength, remainder);
+            byte[] receipt = pki.signReceipt(payload, new Date(SIGNED_DATE));
+            if (receipt.length == bytes) {
+                int nodes = nodes(payload);
+                System.out.println(name + " payload " + payload.length + " bytes, " + nodes + " nodes, product ids "
+                        + idLength + " characters");
+                requireBelow(name + " nodes", nodes, NODE_FLOOR / 2);
+                write(out, name, receipt);
+                return;
+            }
+            int missing = bytes - receipt.length;
+            if (remainder + missing >= 0) {
+                remainder += missing;
+            } else {
+                // Overshot: every padded id gives back enough, then the one
+                // extended id makes up the difference on the next pass.
+                idLength -= (-missing + perPurchase - 1) / perPurchase;
+                remainder = 0;
+            }
+        }
+        throw new IllegalStateException(name + " did not settle on " + bytes + " bytes");
+    }
+
+    /**
+     * {@link #BYTE_FLOOR_PURCHASES} in-app purchases with product ids padded
+     * to {@code idLength} characters, the second one by {@code extra} more.
+     */
+    private static byte[] paddedPurchasesPayload(int idLength, int extra) throws Exception {
         List<byte[]> inApps = new ArrayList<byte[]>(BYTE_FLOOR_PURCHASES);
         for (int i = 0; i < BYTE_FLOOR_PURCHASES; i++) {
             // Ids are unique per purchase, as a real receipt's are, so no port
@@ -129,20 +189,14 @@ public final class LargeReceiptFixture {
             boolean selectable = i == 0 || i == BYTE_FLOOR_PURCHASES - 1;
             inApps.add(TestPki.inAppPurchase(
                     1,
-                    selectable ? BUNDLE + ".coins" + i : pad(BUNDLE + ".coins" + i),
+                    selectable ? BUNDLE + ".coins" + i : pad(BUNDLE + ".coins" + i, idLength + (i == 1 ? extra : 0)),
                     transactionId,
                     transactionId,
                     "2024-01-15T12:00:00Z",
                     i == BYTE_FLOOR_PURCHASES - 1 ? "2030-02-01T09:30:00Z" : null));
         }
-        byte[] payload = TestPki.receiptPayload(
+        return TestPki.receiptPayload(
                 BUNDLE, "1.2.3", OPAQUE, TestPki.deviceHash(GUID, OPAQUE, BUNDLE), CREATION_DATE, inApps);
-        byte[] receipt = pki.signReceipt(payload, new Date(SIGNED_DATE));
-        int nodes = nodes(payload);
-        System.out.println("byte-floor payload " + payload.length + " bytes, " + nodes + " nodes");
-        requireInBand("receipt-byte-floor bytes", receipt.length, BYTE_FLOOR);
-        requireBelow("receipt-byte-floor nodes", nodes, NODE_FLOOR / 2);
-        write(out, "receipt-byte-floor.der", receipt);
     }
 
     /** Near 20,000 nodes in one parse, at a small fraction of the byte floor. */
@@ -180,10 +234,10 @@ public final class LargeReceiptFixture {
         write(out, "receipt-node-floor.der", receipt);
     }
 
-    /** A product id padded to {@link #PRODUCT_ID_LENGTH} characters. */
-    private static String pad(String productId) {
+    /** A product id padded to {@code length} characters. */
+    private static String pad(String productId, int length) {
         StringBuilder padded = new StringBuilder(productId);
-        while (padded.length() < PRODUCT_ID_LENGTH) {
+        while (padded.length() < length) {
             padded.append('x');
         }
         return padded.toString();

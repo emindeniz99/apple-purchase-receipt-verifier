@@ -23,6 +23,14 @@ Every case in the file runs, this harness and the C++ one alike. The twelve
 that pin a clock go through the `_and_clock` constructors, which take the
 instant as epoch milliseconds rather than a callback. A case this adapter
 cannot run raises rather than being counted as a skip.
+
+An endpoint case with `input.requestBody` sends that fixture's bytes, as
+they are, as the whole request body. An endpoint case's
+`expected.failureReason` is not asserted: the ABI's endpoint call answers
+Apple's response JSON only, which carries the status and no reason token.
+Its `fields` (the status among them) are asserted as for every other case,
+and the run prints how many failureReason expectations the ABI could not
+check.
 """
 
 from __future__ import annotations
@@ -361,7 +369,12 @@ def run_case(lib, directory: Path, registry: dict, case: dict):
     config = case["config"]
     operation = case["operation"]
     anchors = anchors_for(directory, registry, config["trustedRoots"])
-    data = fixture_bytes(directory, registry, case["input"]["fixture"])
+    request_body = case["input"].get("requestBody")
+    if request_body is not None and operation != "verifyReceiptEndpoint":
+        raise SystemExit(f'{case["id"]}: input.requestBody on operation "{operation}"')
+    data = fixture_bytes(
+        directory, registry, request_body if request_body is not None else case["input"]["fixture"]
+    )
 
     bundle_id = (config.get("bundleId") or UNMATCHABLE_BUNDLE_ID).encode("utf-8")
     mask = 0
@@ -448,12 +461,23 @@ def run_case(lib, directory: Path, registry: dict, case: dict):
             handle = lib.aprv_endpoint_new_with_roots(environment, ders, lens, count)
         if not handle:
             raise SystemExit(f'{case["id"]}: aprv_endpoint_new refused the configuration')
-        # A "text" fixture carries the exact string a client sent; raw and
-        # base64 fixtures have no client-facing string of their own, so they
-        # are re-encoded as canonical base64. Same rule as every other port.
-        codec = registry[case["input"]["fixture"]]["codec"]
-        receipt_data = data.decode("utf-8") if codec == "text" else b64encode(data).decode("ascii")
-        body = json.dumps({"receipt-data": receipt_data}).encode("utf-8")
+        if request_body is not None:
+            # The whole raw request body, verbatim: not wrapped, not trimmed.
+            # The ABI takes a NUL-terminated string, so a body holding a NUL
+            # could not be sent whole; no vector has one.
+            if b"\0" in data:
+                raise SystemExit(f'{case["id"]}: the request body holds a NUL byte')
+            body = data
+        else:
+            # A "text" fixture carries the exact string a client sent; raw
+            # and base64 fixtures have no client-facing string of their own,
+            # so they are re-encoded as canonical base64. Same rule as every
+            # other port.
+            codec = registry[case["input"]["fixture"]]["codec"]
+            receipt_data = (
+                data.decode("utf-8") if codec == "text" else b64encode(data).decode("ascii")
+            )
+            body = json.dumps({"receipt-data": receipt_data}).encode("utf-8")
         response = ctypes.c_void_p()
         status = lib.aprv_verify_receipt_endpoint_json(handle, body, ctypes.byref(response))
         lib.aprv_endpoint_free(handle)
@@ -519,6 +543,7 @@ def main() -> int:
 
     passed = failed = skipped = 0
     pinned_clocks = 0
+    unchecked_reasons = 0
     checked_fields = 0
     for case in file["cases"]:
         # Nothing is skipped: a case that pins a clock is built through the
@@ -527,6 +552,8 @@ def main() -> int:
         if case.get("clock"):
             pinned_clocks += 1
         checked_fields += len(case["expected"].get("fields") or {})
+        if "failureReason" in case["expected"]:
+            unchecked_reasons += 1
         status, payload = run_case(lib, directory, registry, case)
         problem = check(case, status, payload)
         if problem:
@@ -540,6 +567,10 @@ def main() -> int:
         f"({pinned_clocks} pin a clock, and every one of them ran)"
     )
     print(f"{checked_fields} expected fields checked, nested paths included")
+    print(
+        f"{unchecked_reasons} endpoint failureReason expectations not checked: "
+        "the ABI answers Apple's response JSON, which carries no reason"
+    )
     if passed == 0:
         print("no case ran", file=sys.stderr)
         return 2

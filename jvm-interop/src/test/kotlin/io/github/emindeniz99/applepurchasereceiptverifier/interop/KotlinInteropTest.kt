@@ -184,6 +184,7 @@ class KotlinInteropTest {
             Reason.STALE_PAYLOAD -> "stale"
             Reason.MALFORMED_REQUEST -> "malformed request"
             Reason.INTERNAL_ERROR -> "internal error"
+            Reason.REQUEST_TOO_LARGE -> "request too large"
         }
         assertEquals("wrong bundle", description)
     }

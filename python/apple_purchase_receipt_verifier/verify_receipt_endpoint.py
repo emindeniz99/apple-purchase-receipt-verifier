@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 from cryptography import x509
 
 from ._receipt_base64 import decode_receipt_base64
+from ._utf8 import utf8_exceeds
 from .exceptions import Reason, VerificationError
 from .receipt import AppReceipt, InAppPurchase, ReceiptVerifier, verify_receipt_core
 
@@ -205,7 +206,11 @@ class VerifyReceiptResult:
         if environment not in _ENDPOINT_ENVIRONMENTS:
             raise ValueError(_ENVIRONMENT_ERROR)
         if self._receipt is None:
-            if self._failure_reason in (Reason.MALFORMED_REQUEST, Reason.INVALID_RECEIPT_FORMAT):
+            if self._failure_reason in (
+                Reason.MALFORMED_REQUEST,
+                Reason.REQUEST_TOO_LARGE,
+                Reason.INVALID_RECEIPT_FORMAT,
+            ):
                 return STATUS_MALFORMED
             if self._failure_reason == Reason.INTERNAL_ERROR:
                 return STATUS_INTERNAL
@@ -250,15 +255,15 @@ class VerifyReceiptEndpoint:
     instant.
     """
 
-    #: Ceiling on a raw request body, in characters for ``str`` and bytes for
-    #: ``bytes``. A larger one fails with :attr:`Reason.MALFORMED_REQUEST`,
-    #: status 21002, before it is parsed: JSON parsing allocates a multiple of
-    #: the body, and that happens before any verification. The number is the
-    #: Java and PHP ports'. It is deliberately below
-    #: :attr:`ReceiptVerifier.MAX_RECEIPT_BYTES`: the JSON entry point has an
-    #: amplification the pre-decoded mapping entry point does not. The
-    #: largest genuine receipt in the corpus is 106 KB of base64.
-    MAX_REQUEST_BYTES: ClassVar[int] = 1048576
+    #: Ceiling on a raw request body, in bytes: UTF-8 bytes for ``str``,
+    #: ``len`` for ``bytes``. 3 MiB, Apple's own limit: measured on 2026-09-23
+    #: against both of Apple's verifyReceipt endpoints, a body of 3,145,728
+    #: bytes is answered and one of 3,145,729 bytes gets HTTP 413, and the
+    #: count is bytes, not characters. A larger body fails with
+    #: :attr:`Reason.REQUEST_TOO_LARGE`, status 21002, before it is parsed:
+    #: JSON parsing allocates a multiple of the body, and that happens before
+    #: any verification. A fixed constant, the same in every port.
+    MAX_REQUEST_BYTES: ClassVar[int] = 3145728
 
     def __init__(
         self,
@@ -284,12 +289,13 @@ class VerifyReceiptEndpoint:
         """Handles one verifyReceipt request: a request body already decoded
         to a mapping, or the raw JSON text an HTTP framework hands over.
 
-        A body that is not a JSON object (unparseable, ``null``, an array, a
-        scalar), a raw body over :attr:`MAX_REQUEST_BYTES` or nested more
-        than 64 levels deep, or a ``receipt-data`` that is missing, empty or
-        not a string, fails with :attr:`Reason.MALFORMED_REQUEST`, status
-        21002. A ``receipt-data`` over
-        :attr:`ReceiptVerifier.MAX_RECEIPT_BYTES` characters fails with
+        A raw body over :attr:`MAX_REQUEST_BYTES` UTF-8 bytes fails with
+        :attr:`Reason.REQUEST_TOO_LARGE`, status 21002, where Apple answers
+        HTTP 413. A body that is not a JSON object (unparseable, ``null``, an
+        array, a scalar) or nested more than 64 levels deep, or a
+        ``receipt-data`` that is missing, empty or not a string, fails with
+        :attr:`Reason.MALFORMED_REQUEST`, status 21002. A ``receipt-data``
+        over :attr:`ReceiptVerifier.MAX_RECEIPT_BYTES` UTF-8 bytes fails with
         :attr:`Reason.INVALID_RECEIPT_FORMAT`, also 21002, before it is
         decoded.
         Apple has no status code for "that wasn't JSON"; 21002 ("The data in
@@ -331,11 +337,17 @@ class VerifyReceiptEndpoint:
         return VerifyReceiptResult._create(self._environment, None, reason, None, at)
 
     def _from_json(self, body: object, at: datetime) -> VerifyReceiptResult:
-        if (
-            isinstance(body, (str, bytes, bytearray))
-            and len(body) > VerifyReceiptEndpoint.MAX_REQUEST_BYTES
-        ):
-            return self._failed(Reason.MALFORMED_REQUEST, at)
+        # Before anything else, the depth scan included, so a huge body is
+        # REQUEST_TOO_LARGE however malformed it is.
+        if isinstance(body, str):
+            too_large = utf8_exceeds(body, VerifyReceiptEndpoint.MAX_REQUEST_BYTES)
+        else:
+            too_large = (
+                isinstance(body, (bytes, bytearray))
+                and len(body) > VerifyReceiptEndpoint.MAX_REQUEST_BYTES
+            )
+        if too_large:
+            return self._failed(Reason.REQUEST_TOO_LARGE, at)
         try:
             if isinstance(body, (bytes, bytearray)):
                 # What json.loads would do with bytes, done first so the depth
@@ -371,7 +383,7 @@ class VerifyReceiptEndpoint:
             # The decode below runs before verify_receipt_core could apply
             # its own cap, so the cap is applied to the string here, as
             # ReceiptVerifier.verify does, and nothing is allocated first.
-            if len(receipt_data) > ReceiptVerifier.MAX_RECEIPT_BYTES:
+            if utf8_exceeds(receipt_data, ReceiptVerifier.MAX_RECEIPT_BYTES):
                 return self._failed(Reason.INVALID_RECEIPT_FORMAT, at)
             der = decode_receipt_base64(receipt_data)
             receipt = verify_receipt_core(der, self._roots)

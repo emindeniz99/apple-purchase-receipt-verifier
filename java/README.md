@@ -258,7 +258,8 @@ verified it. 21007 and 21008 bodies carry the status alone, as Apple's do.
 
 | `failureReason()` | status | when |
 |---|---|---|
-| `MALFORMED_REQUEST` | 21002 | the body is not JSON, not a JSON object or over `MAX_REQUEST_BYTES`, or `receipt-data` is missing, empty or not a string |
+| `REQUEST_TOO_LARGE` | 21002 | the raw body is over `MAX_REQUEST_BYTES` (3,145,728 UTF-8 bytes); Apple answers HTTP 413 here, see [Resource bounds](#resource-bounds) |
+| `MALFORMED_REQUEST` | 21002 | the body is not JSON, not a JSON object or nests deeper than 64, or `receipt-data` is missing, empty or not a string |
 | `INVALID_RECEIPT_FORMAT` | 21002 | `receipt-data` is not base64, is over `MAX_RECEIPT_BYTES`, or does not decode to a receipt |
 | `INVALID_CHAIN`, `INVALID_SIGNATURE`, other certificate reasons | 21003 | the receipt did not authenticate |
 | `INTERNAL_ERROR` | 21009 | an unexpected runtime exception; `failureCause()` holds it |
@@ -320,10 +321,11 @@ try {
 
 The vocabulary is **closed** by the cross-port contract: a twelfth reason
 would be a change to the shared vector file and to every port at once.
-`Reason` also carries `MALFORMED_REQUEST` and `INTERNAL_ERROR`, but only as
+`Reason` also carries `MALFORMED_REQUEST`, `REQUEST_TOO_LARGE` and
+`INTERNAL_ERROR`, but only as
 [`VerifyReceiptResult.failureReason()`](#the-verifyreceipt-compatible-endpoint)
-values: no `VerificationException` is ever thrown with either, so a `switch`
-over a caught exception's `reason()` never sees them.
+values: no `VerificationException` is ever thrown with any of them, so a
+`switch` over a caught exception's `reason()` never sees them.
 
 **Misconfiguration is a different failure mode.** Empty or null trust
 anchors, a null bundle id, an empty accepted-environment set, and an
@@ -585,29 +587,49 @@ hand-rolled one, so there is no depth or node-count knob to expose:
   six-certificate bound directly.
 
 Three more bound the input itself, checked at every public entry point before
-anything is decoded. They are constants rather than constructor parameters:
-they exist to keep the `VerificationException` contract true on hostile
-input, not to be tuned per deployment.
+anything is decoded. They are Apple's limits, fixed constants in every port
+of this library, not constructor parameters. Measured on 2026-09-23 against
+both of Apple's verifyReceipt endpoints (production and sandbox), a request
+body of 3,145,728 bytes is answered normally and one of 3,145,729 bytes gets
+HTTP 413. Apple counts UTF-8 bytes, not characters: 3,145,729 bytes of `é`,
+only 1,572,874 characters, also got 413. `fixtures/cases.json` holds every
+port to these numbers from both sides.
 
-- **`ReceiptVerifier.MAX_RECEIPT_BYTES` (2 MiB)**, applied to the transport
-  string at `verify(String)` and to the DER at every entry point that takes
-  bytes, `verifyReceiptCore` included. The number is the PHP port's. It has
-  to clear the normative floor in `fixtures/cases.json`, which requires every
-  port to accept a well-formed receipt of up to 1 MiB of DER, whose base64 is
-  about 1.38 MB; the largest genuine receipt in the corpus is 79 KB.
+- **`VerifyReceiptEndpoint.MAX_REQUEST_BYTES` (3 MiB, 3,145,728 bytes)**,
+  applied to the raw body at `verifyReceiptJson` and
+  `verifyReceiptResult(String)`. A larger body answers `{"status":21002}`
+  with `failureReason()` `REQUEST_TOO_LARGE`, before any parsing.
+- **`ReceiptVerifier.MAX_RECEIPT_BYTES` (3 MiB, 3,145,728 bytes)**, applied
+  to the transport string at `verify(String)` and at the endpoint's
+  `receipt-data`, and to the DER at every entry point that takes bytes,
+  `verifyReceiptCore` included. No receipt Apple accepts can be larger than
+  the request that carries it. Over the limit is `INVALID_RECEIPT_FORMAT`.
 - **`JwsVerifier.MAX_JWS_BYTES` (256 KiB)**, applied to the compact JWS before
-  it is split. Also the PHP port's number: every JWS in the shared corpus,
-  Apple's own mock notification data included, is under 2.5 KB.
-- **`VerifyReceiptEndpoint.MAX_REQUEST_BYTES` (1 MiB)**, applied to the raw
-  body at `verifyReceiptJson` and `verifyReceiptResult(String)`, which answer
-  `{"status":21002}` for a larger one. Deliberately below the receipt bound:
-  the JSON entry point has a parsing amplification the pre-decoded
-  `verifyReceiptResult(Map)` entry point does not.
+  it is split. Every JWS in the shared corpus, Apple's own mock notification
+  data included, is under 2.5 KB. Over the limit is `INVALID_JWS_FORMAT`.
 
-Over-limit input is `INVALID_RECEIPT_FORMAT` or `INVALID_JWS_FORMAT`, so no
-new reason enters the closed vocabulary. Without these bounds a 64 MB input
-under `-Xmx256m` left `verify` as an `OutOfMemoryError`, which is neither
-catchable as a verdict nor reportable as one.
+Strings are measured in UTF-8 bytes without being encoded. A Java `String`
+holds UTF-16 units, so the check takes two shortcuts before it looks at a
+character: more units than the limit is over it, and three times the units
+within the limit is within it. Only a string between the two is walked, and
+the walk stops at the first byte past the limit. A lone surrogate counts as
+three bytes.
+
+Without these bounds a 64 MB input under `-Xmx256m` left `verify` as an
+`OutOfMemoryError`, which is neither catchable as a verdict nor reportable as
+one.
+
+**Answering 413 like Apple.** `REQUEST_TOO_LARGE` exists so an HTTP layer can
+send the status Apple sends. The body is Apple's 21002 either way:
+
+```java
+VerifyReceiptResult result = endpoint.verifyReceiptResult(rawRequestBody);
+int httpStatus = result.failureReason() == Reason.REQUEST_TOO_LARGE ? 413 : 200;
+return ResponseEntity.status(httpStatus).body(result.toJson());
+```
+
+A framework that caps request bodies itself has to allow at least 3 MiB, or
+it refuses bodies Apple would answer.
 
 **JSON reader limits.** Both mappers state `StreamReadConstraints` explicitly:
 nesting depth 64, and string and document lengths matching the bounds above.

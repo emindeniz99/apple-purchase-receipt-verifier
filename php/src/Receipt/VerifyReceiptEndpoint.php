@@ -58,23 +58,26 @@ final class VerifyReceiptEndpoint
 
     /**
      * Ceiling on the raw request body {@see verifyReceiptResult()} and
-     * {@see verifyReceiptJson()} will parse.
+     * {@see verifyReceiptJson()} will parse, in bytes. A PHP string is bytes,
+     * so `strlen()` is the UTF-8 byte count Apple measures.
+     *
+     * 3 MiB, Apple's own limit: measured on 2026-09-23 against both of
+     * Apple's verifyReceipt endpoints, a body of 3,145,728 bytes is answered
+     * and one of 3,145,729 bytes gets HTTP 413, and the count is bytes, not
+     * characters. A larger body fails with {@see Reason::RequestTooLarge},
+     * status 21002, before it is parsed. A fixed constant, the same in every
+     * port.
      *
      * "No method ever throws" is a promise about `Throwable`s, and a
      * `memory_limit` exhaustion is not one: it is a fatal error, so the worker
-     * dies with no body at all and the promise silently stops holding on
-     * exactly the hostile input it exists for. `json_decode` expands a breadth
-     * bomb — a flat array of millions of tiny nodes — by about 48×, and
-     * `JSON_MAX_DEPTH` bounds nesting, not breadth, so a 3.3 MB body was
-     * enough at the `php.ini-production` default of 128M.
-     *
-     * The largest genuine receipt in the corpus is 106 KB of base64, so 1 MiB
-     * carries any real request with room to spare while bounding the parse to
-     * tens of MB. It is deliberately below {@see \EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier::DEFAULT_MAX_RECEIPT_BYTES}:
-     * the JSON entry point has an amplification the pre-decoded
-     * array entry point of {@see verifyReceiptResult()} does not.
+     * dies with no body at all. `json_decode` expands a JSON bomb, millions of
+     * tiny arrays, by roughly 50 to 105 times its size (measured on PHP 8.4),
+     * and `JSON_MAX_DEPTH` bounds nesting, not breadth, so a body at this cap
+     * can need more than the `php.ini-production` default `memory_limit` of
+     * 128M. The README's
+     * "Defensive bounds" section gives the figure.
      */
-    public const MAX_REQUEST_BYTES = 1048576;
+    public const MAX_REQUEST_BYTES = 3145728;
 
     /** @var (Closure(Environment, ?AppReceipt, ?Reason, ?Throwable, DateTimeImmutable): VerifyReceiptResult)|null */
     private static ?Closure $newResult = null;
@@ -122,13 +125,19 @@ final class VerifyReceiptEndpoint
      * throws; a failure is the result's status and
      * {@see VerifyReceiptResult::failureReason()}.
      *
-     * Anything that is not an array with a usable `receipt-data` fails with
+     * A raw body over {@see MAX_REQUEST_BYTES} bytes fails with
+     * {@see Reason::RequestTooLarge}, status 21002, where Apple answers HTTP
+     * 413; it is checked before the body is parsed. Anything else that is not
+     * an array with a usable `receipt-data` fails with
      * {@see Reason::MalformedRequest}, status 21002: a body that is not a
-     * JSON object (unparseable, `null`, a list, a scalar), a raw body over
-     * {@see MAX_REQUEST_BYTES}, or a `receipt-data` that is missing, empty or
-     * not a string. Apple has no status code for "that wasn't JSON"; 21002 is
-     * the closest, and it is what a JSON object without usable `receipt-data`
-     * gets anyway.
+     * JSON object (unparseable, `null`, a list, a scalar) or nests deeper than
+     * 64 levels, or a `receipt-data` that is missing, empty or not a string.
+     * A `receipt-data` over
+     * {@see \EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier::MAX_RECEIPT_BYTES}
+     * bytes fails with {@see Reason::InvalidReceiptFormat}, also 21002,
+     * before it is decoded. Apple has no status code for "that wasn't JSON";
+     * 21002 is the closest, and it is what a JSON object without usable
+     * `receipt-data` gets anyway.
      *
      * `password` and `exclude-old-transactions` are accepted for wire
      * compatibility and never read: the first cannot be validated offline,
@@ -201,11 +210,16 @@ final class VerifyReceiptEndpoint
 
     private function fromJson(string $requestJson, DateTimeImmutable $at): VerifyReceiptResult
     {
+        // Before the parse and its depth limit, so a huge body is
+        // REQUEST_TOO_LARGE however malformed it is.
         if (strlen($requestJson) > self::MAX_REQUEST_BYTES) {
-            return $this->failed(Reason::MalformedRequest, $at);
+            return $this->failed(Reason::RequestTooLarge, $at);
         }
         try {
-            $parsed = json_decode($requestJson, true, 64, JSON_THROW_ON_ERROR);
+            // json_decode's depth is one more than the nesting levels (`[]`
+            // needs 2), so 65 admits 64 levels and refuses 65, the limit
+            // every port shares.
+            $parsed = json_decode($requestJson, true, 65, JSON_THROW_ON_ERROR);
         } catch (Throwable) {
             return $this->failed(Reason::MalformedRequest, $at);
         }
@@ -233,7 +247,7 @@ final class VerifyReceiptEndpoint
             // same string, the same limit and the same reason that
             // `ReceiptVerifier::toDer()` would have used, and nothing is
             // allocated first.
-            if (strlen($receiptData) > ReceiptVerifier::DEFAULT_MAX_RECEIPT_BYTES) {
+            if (strlen($receiptData) > ReceiptVerifier::MAX_RECEIPT_BYTES) {
                 return $this->failed(Reason::InvalidReceiptFormat, $at);
             }
             $der = Base64::decodeReceipt($receiptData);

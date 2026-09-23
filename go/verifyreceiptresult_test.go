@@ -316,9 +316,10 @@ func TestResultMarshalsAsTheResponseBody(t *testing.T) {
 // The bare-base64 entry point and the JSON-body entry point must be the
 // same endpoint: over every receipt the conformance vectors use, in both
 // environments, the answers must match byte for byte. The one exception is
-// a body over MaxRequestBytes (the byte-floor receipt's), which the body
-// path refuses before parsing and the bare path, which has no envelope to
-// cap, still verifies.
+// a body over MaxRequestBytes (the receipt-cap vectors' 3 MiB strings plus
+// their envelope), which the body path refuses as REQUEST_TOO_LARGE before
+// parsing while the bare path, which has no envelope to cap, answers on the
+// receipt-data alone.
 func TestReceiptDataMatchesTheBodyPathOverEveryReceiptFixture(t *testing.T) {
 	compared := 0
 	for _, kase := range mustCases(t).Cases {
@@ -326,6 +327,9 @@ func TestReceiptDataMatchesTheBodyPathOverEveryReceiptFixture(t *testing.T) {
 		case "verifyReceipt", "verifyReceiptBase64", "verifyReceiptEndpoint":
 		default:
 			continue
+		}
+		if kase.Input.RequestBody != "" {
+			continue // already a whole body, not a receipt
 		}
 		input := fixtureBytes(t, kase.Input.Fixture)
 		receiptData := base64.StdEncoding.EncodeToString(input)
@@ -342,9 +346,10 @@ func TestReceiptDataMatchesTheBodyPathOverEveryReceiptFixture(t *testing.T) {
 			fromData := endpoint.VerifyReceiptData(receiptData).JSON()
 			fromBody := endpoint.VerifyReceiptJSON(body)
 			if len(body) > applereceipt.MaxRequestBytes {
-				if string(fromBody) != `{"status":21002}` || bytes.Equal(fromData, fromBody) {
-					t.Errorf("%s on %s: a %d byte body must be 21002 on the body path only:\n%s\n%s",
-						kase.ID, environment, len(body), fromData, fromBody)
+				bodyResult := endpoint.VerifyReceiptBody(body)
+				if string(fromBody) != `{"status":21002}` || bodyResult.Reason() != applereceipt.ReasonRequestTooLarge {
+					t.Errorf("%s on %s: a %d byte body must be 21002 REQUEST_TOO_LARGE on the body path, got %s %s",
+						kase.ID, environment, len(body), fromBody, bodyResult.Reason())
 				}
 			} else if !bytes.Equal(fromData, fromBody) {
 				t.Errorf("%s on %s: VerifyReceiptData and VerifyReceiptJSON differ:\n%s\n%s",
@@ -358,16 +363,18 @@ func TestReceiptDataMatchesTheBodyPathOverEveryReceiptFixture(t *testing.T) {
 	}
 }
 
-// The two endpoint-only reasons are real tokens other ports report, and
+// The three endpoint-only reasons are real tokens other ports report, and
 // they stay out of AllReasons, which is the shared schema's vocabulary
 // of verifier reasons.
 func TestEndpointOnlyReasons(t *testing.T) {
 	if applereceipt.ReasonMalformedRequest != "MALFORMED_REQUEST" ||
+		applereceipt.ReasonRequestTooLarge != "REQUEST_TOO_LARGE" ||
 		applereceipt.ReasonInternalError != "INTERNAL_ERROR" {
 		t.Fatal("the endpoint-only reason tokens are misspelled")
 	}
 	for _, reason := range applereceipt.AllReasons() {
-		if reason == applereceipt.ReasonMalformedRequest || reason == applereceipt.ReasonInternalError {
+		if reason == applereceipt.ReasonMalformedRequest || reason == applereceipt.ReasonRequestTooLarge ||
+			reason == applereceipt.ReasonInternalError {
 			t.Fatalf("%s is endpoint-only and must not be in AllReasons", reason)
 		}
 	}

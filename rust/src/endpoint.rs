@@ -25,18 +25,18 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 /// The largest request body [`VerifyReceiptEndpoint`] will parse, in UTF-8
-/// bytes (`str::len`), checked before the JSON parser runs.
+/// bytes (`str::len`), checked before the depth scan and the JSON parser.
 ///
-/// JSON parsing allocates a multiple of the body, all of it before any
-/// verification. 1 MiB, the same number as Java's
-/// `VerifyReceiptEndpoint.MAX_REQUEST_BYTES` and the PHP and Python ports,
-/// and deliberately below [`MAX_RECEIPT_BYTES`](crate::MAX_RECEIPT_BYTES):
-/// the JSON entry points have an amplification the pre-decoded ones do not.
-/// The largest genuine receipt in the corpus is 106 KB of base64. The ports
-/// do not agree on the unit (Node counts UTF-8 bytes as this crate does;
-/// Java, .NET and Python count characters), which differs only for a body
-/// carrying non-ASCII, and a `verifyReceipt` body has no reason to.
-pub const MAX_REQUEST_BYTES: usize = 1024 * 1024;
+/// 3 MiB (3,145,728 bytes), Apple's own limit, fixed and the same in every
+/// port of this library. Measured on 2026-09-23 against both of Apple's
+/// `verifyReceipt` endpoints, a body of 3,145,728 bytes is answered and one
+/// of 3,145,729 bytes gets HTTP 413, and the count is UTF-8 bytes, not
+/// characters. A `&str` is UTF-8, so `str::len` is that count.
+///
+/// A larger body fails with [`Reason::RequestTooLarge`], status 21002,
+/// before it is parsed: JSON parsing allocates a multiple of the body, all
+/// of it before any verification.
+pub const MAX_REQUEST_BYTES: usize = 3_145_728;
 
 /// The Apple status codes this local implementation can produce.
 ///
@@ -136,8 +136,9 @@ pub enum VerifyReceiptOutcome {
     Verified(AppReceipt),
     /// There is no verified receipt.
     Failed {
-        /// Why. [`Reason::MalformedRequest`] and [`Reason::InternalError`]
-        /// appear only here, never from a verifier.
+        /// Why. [`Reason::MalformedRequest`], [`Reason::RequestTooLarge`]
+        /// and [`Reason::InternalError`] appear only here, never from a
+        /// verifier.
         reason: Reason,
         /// The panic message behind [`Reason::InternalError`]; `None` for
         /// every other reason.
@@ -282,7 +283,9 @@ impl VerifyReceiptResult {
             VerifyReceiptOutcome::Verified(receipt) => receipt,
             VerifyReceiptOutcome::Failed { reason, .. } => {
                 return match reason {
-                    Reason::MalformedRequest | Reason::InvalidReceiptFormat => status::MALFORMED,
+                    Reason::MalformedRequest
+                    | Reason::RequestTooLarge
+                    | Reason::InvalidReceiptFormat => status::MALFORMED,
                     Reason::InternalError => status::INTERNAL,
                     _ => status::NOT_AUTHENTICATED,
                 };
@@ -429,13 +432,15 @@ impl VerifyReceiptEndpoint {
     /// Handles one request body in its raw wire form, the JSON text a
     /// framework hands over.
     ///
-    /// A body that is not a JSON object — unparseable, `null`, an array, a
-    /// scalar — fails with [`Reason::MalformedRequest`], status 21002. Apple
+    /// A body longer than [`MAX_REQUEST_BYTES`] fails with
+    /// [`Reason::RequestTooLarge`], status 21002, where Apple answers HTTP
+    /// 413. A body that is not a JSON object (unparseable, `null`, an array,
+    /// a scalar) fails with [`Reason::MalformedRequest`], status 21002. Apple
     /// has no status code for "that wasn't JSON"; 21002 is the closest, and
     /// it is what a JSON object without usable `receipt-data` gets anyway.
-    /// A body longer than [`MAX_REQUEST_BYTES`] or nesting deeper than
+    /// A body nesting deeper than
     /// [`MAX_JSON_NESTING_DEPTH`](crate::MAX_JSON_NESTING_DEPTH) gets the
-    /// same answer without being parsed.
+    /// same answer without being parsed. The size is checked first.
     #[must_use]
     pub fn verify_receipt_result_from_json(&self, body: &str) -> VerifyReceiptResult {
         self.contained(None, || self.verify_body(body))
@@ -522,8 +527,13 @@ impl VerifyReceiptEndpoint {
 
     fn verify_body(&self, body: &str) -> core::result::Result<AppReceipt, Reason> {
         // Both bounds before the parser: it allocates in proportion to the
-        // body, and its own recursion limit (128) cannot be lowered.
-        if body.len() > MAX_REQUEST_BYTES || nesting_exceeds_limit(body.as_bytes()) {
+        // body, and its own recursion limit (128) cannot be lowered. The size
+        // first, so a huge malformed body is REQUEST_TOO_LARGE, as Apple's
+        // 413 is.
+        if body.len() > MAX_REQUEST_BYTES {
+            return Err(Reason::RequestTooLarge);
+        }
+        if nesting_exceeds_limit(body.as_bytes()) {
             return Err(Reason::MalformedRequest);
         }
         let Ok(Value::Object(parsed)) = serde_json::from_str::<Value>(body) else {

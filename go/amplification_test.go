@@ -78,7 +78,7 @@ func TestNestedReceiptDoesNotAmplify(t *testing.T) {
 	for _, levels := range [][2]int{{1, 1}, {6, 12}, {12, 24}} {
 		outer, inner := levels[0], levels[1]
 		blob := hostileNestedReceipt(t, pki, 1200, 700, outer, inner)
-		if len(blob) > applereceipt.DefaultMaxReceiptBytes {
+		if len(blob) > applereceipt.MaxReceiptBytes {
 			t.Fatalf("levels=%v: fixture is %d bytes, above the library's own ceiling", levels, len(blob))
 		}
 		var before, after runtime.MemStats
