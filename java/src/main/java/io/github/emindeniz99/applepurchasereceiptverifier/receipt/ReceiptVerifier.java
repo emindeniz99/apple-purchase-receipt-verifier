@@ -3,6 +3,7 @@ package io.github.emindeniz99.applepurchasereceiptverifier.receipt;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
 import io.github.emindeniz99.applepurchasereceiptverifier.internal.AppleTrust;
+import io.github.emindeniz99.applepurchasereceiptverifier.internal.BouncyCastle;
 import io.github.emindeniz99.applepurchasereceiptverifier.internal.SafeText;
 import java.io.IOException;
 import java.math.BigInteger;
@@ -42,7 +43,6 @@ import org.bouncycastle.cms.SignerId;
 import org.bouncycastle.cms.SignerInformation;
 import org.bouncycastle.cms.SignerInformationVerifier;
 import org.bouncycastle.cms.jcajce.JcaSignerInfoVerifierBuilder;
-import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.operator.OperatorCreationException;
 import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
 import org.jspecify.annotations.Nullable;
@@ -136,10 +136,6 @@ public final class ReceiptVerifier {
      * decode, characters and UTF-8 bytes are the same count.
      */
     public static final int MAX_RECEIPT_BYTES = 3145728;
-
-    // Used as an instance, never registered with Security.addProvider, so this
-    // library never changes the JVM's global provider list.
-    private static final BouncyCastleProvider PROVIDER = new BouncyCastleProvider();
 
     // Built once and shared by every thread; see signerVerifier.
     private static final JcaSignerInfoVerifierBuilder SIGNER_VERIFIERS = signerVerifiers();
@@ -547,9 +543,9 @@ public final class ReceiptVerifier {
     private static JcaSignerInfoVerifierBuilder signerVerifiers() {
         try {
             return new JcaSignerInfoVerifierBuilder(new JcaDigestCalculatorProviderBuilder()
-                            .setProvider(PROVIDER)
+                            .setProvider(BouncyCastle.PROVIDER)
                             .build())
-                    .setProvider(PROVIDER);
+                    .setProvider(BouncyCastle.PROVIDER);
         } catch (OperatorCreationException e) {
             throw new IllegalStateException("BouncyCastle digest provider unavailable", e);
         }

@@ -124,8 +124,10 @@ Delete a line in the commit that ships it.
   of runtime jars behind a 46 KB library, of which `bcprov` is 10.1 MB
   and `jackson-databind` 1.7 MB (re-measured 2026-09-21 at BouncyCastle
   1.86: 11.2 MiB total, `bcprov` 7.2 MB; java/README.md has the table). `JwsVerifier` needs BouncyCastle for
-  exactly one thing, the P1363-to-DER signature re-encoding (a
-  `DERSequence` of two integers, about twenty lines by hand), and binds
+  exactly one thing, the ES256 check over the raw `r || s` signature
+  (`SHA256withPLAIN-ECDSA`; the JDK's own `SHA256withECDSAinP1363Format`
+  is Java 9+, so on Java 8 dropping BouncyCastle means DER-encoding the
+  signature by hand, about twenty lines), and binds
   two flat POJOs plus one `Map`, which `jackson-core` alone could do. A
   JWS-only consumer could then drop 12 MB. Revisit if a consumer asks.
 - **The `cryptography>=40` floor is never installed.** Every python CI leg

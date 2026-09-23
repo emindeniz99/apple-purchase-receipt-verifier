@@ -7,11 +7,11 @@ import io.github.emindeniz99.applepurchasereceiptverifier.Environment;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
 import io.github.emindeniz99.applepurchasereceiptverifier.internal.AppleTrust;
+import io.github.emindeniz99.applepurchasereceiptverifier.internal.BouncyCastle;
 import io.github.emindeniz99.applepurchasereceiptverifier.internal.BoundedJson;
 import io.github.emindeniz99.applepurchasereceiptverifier.internal.SafeText;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.InvalidAlgorithmParameterException;
@@ -33,9 +33,6 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import org.bouncycastle.asn1.ASN1Encodable;
-import org.bouncycastle.asn1.ASN1Integer;
-import org.bouncycastle.asn1.DERSequence;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -56,15 +53,15 @@ import org.jspecify.annotations.Nullable;
  * {@link Reason#INVALID_JWS_FORMAT} like any other unusable one rather than as
  * a {@link NullPointerException} a caller cannot catch alongside the others.</p>
  *
- * <p><strong>Security providers.</strong> Every cryptographic lookup here
- * resolves through the JVM's provider list: {@code CertificateFactory} for
- * the {@code x5c} certificates, the {@code PKIX} {@code CertPathValidator},
- * and {@code SHA256withECDSA}. BouncyCastle is used only to DER-encode the
- * signature, not as a provider. A host that inserts BouncyCastle at position
- * 1 therefore gets BouncyCastle's X.509 parser, path validator and ECDSA for
- * all three. This library's tests run against the JDK's providers, so under
- * that host an unusual certificate may get a different verdict. This class
- * reads the provider order and never changes it.</p>
+ * <p><strong>Security providers.</strong> Two cryptographic lookups here
+ * resolve through the JVM's provider list: {@code CertificateFactory} for
+ * the {@code x5c} certificates, and the {@code PKIX} {@code CertPathValidator}.
+ * The ES256 signature itself is checked with a private BouncyCastle instance
+ * that is never registered. A host that inserts BouncyCastle at position 1
+ * therefore gets BouncyCastle's X.509 parser and path validator for those
+ * two. This library's tests run against the JDK's providers, so under that
+ * host an unusual certificate may get a different verdict. This class reads
+ * the provider order and never changes it.</p>
  */
 public final class JwsVerifier {
 
@@ -405,28 +402,20 @@ public final class JwsVerifier {
                     Reason.INVALID_SIGNATURE, "ES256 signature must be 64 bytes, got " + signature.length);
         }
         try {
-            Signature verifier = Signature.getInstance("SHA256withECDSA");
+            // JWS ES256 signatures are raw r || s (RFC 7515), which
+            // BouncyCastle's PLAIN-ECDSA takes as is. The JDK's own name for
+            // it, SHA256withECDSAinP1363Format, is Java 9+ and this library
+            // supports Java 8. An r or s not below the curve order throws
+            // here where the JDK returned false; both are INVALID_SIGNATURE.
+            Signature verifier = Signature.getInstance("SHA256withPLAIN-ECDSA", BouncyCastle.PROVIDER);
             verifier.initVerify(leaf.getPublicKey());
             verifier.update(signingInput.getBytes(StandardCharsets.US_ASCII));
-            if (!verifier.verify(p1363ToDer(signature))) {
+            if (!verifier.verify(signature)) {
                 throw new VerificationException(Reason.INVALID_SIGNATURE, "ES256 signature check failed");
             }
         } catch (GeneralSecurityException e) {
             throw new VerificationException(Reason.INVALID_SIGNATURE, "ES256 signature check errored", e);
-        } catch (IOException e) {
-            throw new VerificationException(Reason.INVALID_SIGNATURE, "signature re-encoding failed", e);
         }
-    }
-
-    /**
-     * JWS ES256 signatures are raw {@code r ‖ s} (RFC 7515); JCA's
-     * SHA256withECDSA wants ASN.1 DER. The P1363-format JCA algorithm would
-     * avoid this, but it's Java 9+ and this library supports Java 8.
-     */
-    private static byte[] p1363ToDer(byte[] p1363) throws IOException {
-        BigInteger r = new BigInteger(1, Arrays.copyOfRange(p1363, 0, 32));
-        BigInteger s = new BigInteger(1, Arrays.copyOfRange(p1363, 32, 64));
-        return new DERSequence(new ASN1Encodable[] {new ASN1Integer(r), new ASN1Integer(s)}).getEncoded();
     }
 
     private void requireBundleId(@Nullable String actual) throws VerificationException {
