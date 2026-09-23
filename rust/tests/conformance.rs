@@ -10,6 +10,7 @@
 //! disagrees with the library is a bug report against one of the two, and it
 //! is never something to special-case here.
 
+use apple_purchase_receipt_verifier::base64::decode_receipt_base64;
 use apple_purchase_receipt_verifier::{
     apple_jws_roots, apple_receipt_roots, datetime, status, AppReceipt, Environment, FixedClock,
     InAppPurchase, JwsVerifier, Reason, ReceiptVerifier, TrustAnchor, VerificationError,
@@ -22,7 +23,7 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 // --- the vector file ----------------------------------------------------
@@ -59,8 +60,13 @@ struct Case {
     #[serde(rename = "description")]
     _description: String,
     operation: String,
+    /// `decodeBase64` only: the decoders the group runs through.
+    #[serde(default)]
+    decoders: Option<Vec<String>>,
     input: Input,
-    config: Config,
+    /// Absent exactly on `decodeBase64`, which builds no verifier.
+    #[serde(default)]
+    config: Option<Config>,
     #[serde(default)]
     clock: Option<ClockSpec>,
     expected: Expected,
@@ -82,6 +88,9 @@ struct Input {
     /// request body, handed verbatim to the endpoint's JSON entry point.
     #[serde(default)]
     request_body: Option<String>,
+    /// `decodeBase64` only: the spellings of the group.
+    #[serde(default)]
+    texts: Option<Vec<String>>,
 }
 
 /// `deny_unknown_fields` here is load-bearing: a new config key added to
@@ -133,6 +142,9 @@ struct Expected {
     /// a wire field, so it sits beside `fields`.
     #[serde(default, rename = "failureReason")]
     failure_reason: Option<String>,
+    /// `decodeBase64` only: what every text of an ok group decodes to.
+    #[serde(default, rename = "bytesHex")]
+    bytes_hex: Option<String>,
 }
 
 // --- locating and decoding fixtures -------------------------------------
@@ -641,9 +653,94 @@ fn resolve_path(root: &Value, path: &str) -> Result<Option<Value>, Failed> {
     Ok(Some(current))
 }
 
+// --- decodeBase64 --------------------------------------------------------
+
+/// The reason each decoder a `decodeBase64` group can name refuses with. Both
+/// decode with the public `base64::decode_receipt_base64`, which answers
+/// `None`: `receipt-data` reports that as `INVALID_RECEIPT_FORMAT` and an
+/// `x5c` entry as `INVALID_CERTIFICATE`. An error group states
+/// `INVALID_RECEIPT_FORMAT`, the receipt-data answer.
+fn base64_refusal(decoder: &str) -> Result<Reason, Failed> {
+    match decoder {
+        "receipt-data" => Ok(Reason::InvalidReceiptFormat),
+        "x5c" => Ok(Reason::InvalidCertificate),
+        other => Err(Failed::from(format!(
+            "harness error: no decoder \"{other}\""
+        ))),
+    }
+}
+
+/// Runs every text of the group through every decoder it names and reports
+/// every text that got the wrong answer, by case id, decoder, index and
+/// escaped text, rather than stopping at the first.
+fn run_decode_base64(case: &Case) -> Result<(), Failed> {
+    let texts = case
+        .input
+        .texts
+        .as_ref()
+        .filter(|texts| !texts.is_empty())
+        .ok_or_else(|| Failed::from("harness error: decodeBase64 needs input.texts"))?;
+    let decoders = case
+        .decoders
+        .as_ref()
+        .filter(|decoders| !decoders.is_empty())
+        .ok_or_else(|| Failed::from("harness error: decodeBase64 needs decoders"))?;
+    let ok = case.expected.status == "ok";
+    let want = if ok {
+        case.expected
+            .bytes_hex
+            .clone()
+            .ok_or_else(|| Failed::from("harness error: an ok group with no bytesHex"))?
+    } else if case.expected.reason.as_deref() == Some("INVALID_RECEIPT_FORMAT") {
+        String::new()
+    } else {
+        return Err(Failed::from(
+            "harness error: an error group states INVALID_RECEIPT_FORMAT",
+        ));
+    };
+    let mut failures = Vec::new();
+    for decoder in decoders {
+        let refusal = base64_refusal(decoder)?;
+        for (index, text) in texts.iter().enumerate() {
+            let at = format!("{}: {decoder} texts[{index}] {text:?}", case.id);
+            match decode_receipt_base64(text) {
+                Some(bytes) if !ok => failures.push(format!(
+                    "{at} was accepted (decoded to {})",
+                    hex::encode(bytes)
+                )),
+                Some(bytes) if hex::encode(&bytes) != want => failures.push(format!(
+                    "{at} decoded to {}, want {want}",
+                    hex::encode(&bytes)
+                )),
+                None if ok => failures.push(format!("{at} was refused ({refusal}), want {want}")),
+                _ => {}
+            }
+        }
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(Failed::from(failures.join("\n")))
+    }
+}
+
 // --- one case ------------------------------------------------------------
 
+/// Which case ids actually ran, so the coverage check after the run is a
+/// fact rather than a loop-shaped assumption.
+static RAN: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
 fn run_case(dir: PathBuf, fixtures: BTreeMap<String, Fixture>, case: Case) -> Result<(), Failed> {
+    RAN.lock()
+        .map_err(|_| Failed::from("harness error: the ran-case list is poisoned"))?
+        .push(case.id.clone());
+    if case.operation == "decodeBase64" {
+        return run_decode_base64(&case);
+    }
+    let config = case
+        .config
+        .clone()
+        .ok_or_else(|| Failed::from("harness error: a case with no config"))?;
     let input_id = match (&case.input.fixture, &case.input.request_body) {
         (Some(id), None) => id.clone(),
         (None, Some(id)) if case.operation == "verifyReceiptEndpoint" => id.clone(),
@@ -663,31 +760,31 @@ fn run_case(dir: PathBuf, fixtures: BTreeMap<String, Fixture>, case: Case) -> Re
     let clock = case_clock(&case)?;
     let outcome: Result<Value, VerificationError> = match case.operation.as_str() {
         "verifyTransaction" => {
-            let verifier = jws_verifier(&dir, &fixtures, &case.config, clock)?;
+            let verifier = jws_verifier(&dir, &fixtures, &config, clock)?;
             let jws = String::from_utf8_lossy(&input).into_owned();
             verifier
                 .verify_transaction(&jws)
                 .map(|p| Value::Object(p.claims))
         }
         "verifyAppTransaction" => {
-            let verifier = jws_verifier(&dir, &fixtures, &case.config, clock)?;
+            let verifier = jws_verifier(&dir, &fixtures, &config, clock)?;
             let jws = String::from_utf8_lossy(&input).into_owned();
             verifier
                 .verify_app_transaction(&jws)
                 .map(|p| Value::Object(p.claims))
         }
         "verifyRaw" => {
-            let verifier = jws_verifier(&dir, &fixtures, &case.config, clock)?;
+            let verifier = jws_verifier(&dir, &fixtures, &config, clock)?;
             let jws = String::from_utf8_lossy(&input).into_owned();
             verifier.verify_raw(&jws).map(Value::Object)
         }
         "verifyReceipt" => {
             require_no_clock(clock, "verifyReceipt")?;
-            let bundle_id = case.config.bundle_id.clone().ok_or_else(|| {
+            let bundle_id = config.bundle_id.clone().ok_or_else(|| {
                 Failed::from("harness error: verifyReceipt case without a bundleId")
             })?;
             let verifier = ReceiptVerifier::builder()
-                .trusted_roots(trust_anchors(&dir, &fixtures, &case.config.trusted_roots)?)
+                .trusted_roots(trust_anchors(&dir, &fixtures, &config.trusted_roots)?)
                 .bundle_id(bundle_id)
                 .build()
                 .map_err(|err| {
@@ -695,7 +792,7 @@ fn run_case(dir: PathBuf, fixtures: BTreeMap<String, Fixture>, case: Case) -> Re
                         "harness error: cannot build ReceiptVerifier: {err}"
                     ))
                 })?;
-            let result = match &case.config.device_guid_hex {
+            let result = match &config.device_guid_hex {
                 Some(guid_hex) => {
                     let guid = hex::decode(guid_hex).map_err(|err| {
                         Failed::from(format!("harness error: deviceGuidHex is not hex: {err}"))
@@ -708,11 +805,11 @@ fn run_case(dir: PathBuf, fixtures: BTreeMap<String, Fixture>, case: Case) -> Re
         }
         "verifyReceiptBase64" => {
             require_no_clock(clock, "verifyReceiptBase64")?;
-            let bundle_id = case.config.bundle_id.clone().ok_or_else(|| {
+            let bundle_id = config.bundle_id.clone().ok_or_else(|| {
                 Failed::from("harness error: verifyReceiptBase64 case without a bundleId")
             })?;
             let verifier = ReceiptVerifier::builder()
-                .trusted_roots(trust_anchors(&dir, &fixtures, &case.config.trusted_roots)?)
+                .trusted_roots(trust_anchors(&dir, &fixtures, &config.trusted_roots)?)
                 .bundle_id(bundle_id)
                 .build()
                 .map_err(|err| {
@@ -721,7 +818,7 @@ fn run_case(dir: PathBuf, fixtures: BTreeMap<String, Fixture>, case: Case) -> Re
                     ))
                 })?;
             let text = String::from_utf8_lossy(&input).into_owned();
-            let result = match &case.config.device_guid_hex {
+            let result = match &config.device_guid_hex {
                 Some(guid_hex) => {
                     let guid = hex::decode(guid_hex).map_err(|err| {
                         Failed::from(format!("harness error: deviceGuidHex is not hex: {err}"))
@@ -733,13 +830,13 @@ fn run_case(dir: PathBuf, fixtures: BTreeMap<String, Fixture>, case: Case) -> Re
             result.map(|receipt| app_receipt_json(&receipt))
         }
         "verifyReceiptEndpoint" => {
-            let name = case.config.environment.as_deref().ok_or_else(|| {
+            let name = config.environment.as_deref().ok_or_else(|| {
                 Failed::from("harness error: verifyReceiptEndpoint case without an environment")
             })?;
             let environment = Environment::from_str(name)
                 .map_err(|err| Failed::from(format!("harness error: {err}")))?;
             let mut builder = VerifyReceiptEndpoint::builder()
-                .trusted_roots(trust_anchors(&dir, &fixtures, &case.config.trusted_roots)?)
+                .trusted_roots(trust_anchors(&dir, &fixtures, &config.trusted_roots)?)
                 .environment(environment);
             if let Some(clock) = clock {
                 builder = builder.clock(Arc::new(clock));
@@ -943,5 +1040,40 @@ fn main() -> std::process::ExitCode {
         }));
     }
 
-    libtest_mimic::run(&arguments, trials).exit_code()
+    let conclusion = libtest_mimic::run(&arguments, trials);
+
+    // Coverage self-check after the run, the way go/conformance_test.go does
+    // it: every case id in the parsed file actually ran, never compared
+    // against a literal count. A filter, a skip or an ignored-only run is the
+    // one thing that may leave cases unrun, so the check stands down for it.
+    if arguments.filter.is_some()
+        || !arguments.skip.is_empty()
+        || arguments.ignored
+        || arguments.list
+    {
+        return conclusion.exit_code();
+    }
+    let ran = match RAN.lock() {
+        Ok(ran) => ran.clone(),
+        Err(_) => {
+            eprintln!("harness error: the ran-case list is poisoned");
+            return std::process::ExitCode::FAILURE;
+        }
+    };
+    let missing: Vec<&str> = file
+        .cases
+        .iter()
+        .map(|case| case.id.as_str())
+        .filter(|id| !ran.iter().any(|ran| ran == id))
+        .collect();
+    if !missing.is_empty() {
+        eprintln!(
+            "coverage self-check: {} of {} cases did not run: {}",
+            missing.len(),
+            file.cases.len(),
+            missing.join(", ")
+        );
+        return std::process::ExitCode::FAILURE;
+    }
+    conclusion.exit_code()
 }
