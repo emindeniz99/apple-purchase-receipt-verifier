@@ -345,17 +345,15 @@ public final class JwsVerifier {
     }
 
     /**
-     * Strict base64url: the JWS alphabet only, no padding, no whitespace, no
-     * standard-base64 {@code +} or {@code /}, and the decoded bytes must
-     * re-encode to the same string (rejects a final character whose unused
-     * bits are non-zero). {@code java.util.Base64}'s URL decoder tolerates
-     * padding and non-canonical trailing bits, so both are checked here
-     * rather than left to it (RFC 7515 §2).
+     * Strict base64url (RFC 7515 §2): the JWS alphabet only, no padding, no
+     * whitespace, and the decoded bytes must re-encode to the same string.
+     * {@code java.util.Base64}'s URL decoder already rejects every character
+     * outside the URL alphabet (whitespace and the standard-base64 {@code +}
+     * and {@code /} included) and a length of 1 mod 4. It tolerates padding
+     * and a final character whose unused bits are non-zero, and the
+     * unpadded re-encode comparison rejects both.
      */
     private static byte[] decodeBase64Url(String value, String what) throws VerificationException {
-        if (!isStrictBase64Url(value)) {
-            throw new VerificationException(Reason.INVALID_JWS_FORMAT, what + " is not valid base64url");
-        }
         try {
             byte[] decoded = Base64.getUrlDecoder().decode(value);
             String reencoded = Base64.getUrlEncoder().withoutPadding().encodeToString(decoded);
@@ -366,21 +364,6 @@ public final class JwsVerifier {
         } catch (IllegalArgumentException e) {
             throw new VerificationException(Reason.INVALID_JWS_FORMAT, what + " is not valid base64url", e);
         }
-    }
-
-    private static boolean isStrictBase64Url(String value) {
-        if (value.length() % 4 == 1) {
-            return false;
-        }
-        for (int i = 0; i < value.length(); i++) {
-            char c = value.charAt(i);
-            boolean allowed =
-                    (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_';
-            if (!allowed) {
-                return false;
-            }
-        }
-        return true;
     }
 
     private static List<X509Certificate> decodeChain(JsonNode x5c) throws VerificationException {
