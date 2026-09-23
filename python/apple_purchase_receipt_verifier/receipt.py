@@ -411,6 +411,11 @@ def _signed_attrs_to_sign(signed_attrs: Any, digest_name: str, content: bytes) -
     to surface as a format error instead of escaping verify() raw."""
     try:
         content_digest = hashlib.new(digest_name, content).digest()
+    except ValueError as e:
+        # digest_name is a _DIGESTS key by now, so only a runtime that lacks
+        # the hash (a FIPS build without SHA-1) gets here, not an input.
+        raise VerificationError(Reason.INTERNAL_ERROR, f"{digest_name} unavailable") from e
+    try:
         message_digest = None
         for attr in signed_attrs:
             if attr["type"].native == "message_digest":
@@ -443,7 +448,13 @@ def _verify_device_hash(fields: AppReceipt, device_guid: bytes) -> None:
             Reason.DEVICE_HASH_MISMATCH,
             "receipt lacks the attributes needed for the device-hash check",
         )
-    computed = hashlib.sha1(device_guid + fields.opaque_value + fields.bundle_id_bytes).digest()
+    try:
+        hasher = hashlib.new("sha1")
+    except ValueError as e:
+        # No input reaches this: only a runtime without SHA-1 (a FIPS build).
+        raise VerificationError(Reason.INTERNAL_ERROR, "SHA-1 is not available") from e
+    hasher.update(device_guid + fields.opaque_value + fields.bundle_id_bytes)
+    computed = hasher.digest()
     if not hmac.compare_digest(computed, fields.sha1_hash):
         raise VerificationError(
             Reason.DEVICE_HASH_MISMATCH, "computed device hash does not match attribute 5"
