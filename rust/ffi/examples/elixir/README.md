@@ -101,16 +101,19 @@ expired chain.
 ## The conformance run
 
 `test/conformance_test.exs` reads the same flat manifest
-`tools/gen-cases-manifest.mjs` writes for the C++ harness, and drives all 104
-cases through the NIF:
+`tools/gen-cases-manifest.mjs` writes for the C++ harness, and drives every
+case in it through the NIF:
 
 ```
-apple-purchase-receipt-verifier 0.4.0 — C ABI conformance over NIFs
-104 passed, 0 failed, 0 skipped (12 pin a clock, and every one of them ran)
-157 expected fields checked here, nested paths left to conformance.py
+apple-purchase-receipt-verifier <version> — C ABI conformance over NIFs
+<N> passed, 0 failed, 0 skipped (<C> pin a clock, and every one of them ran)
+<F> expected fields checked here, nested paths left to conformance.py
 ```
 
-Nothing is skipped: the twelve cases that pin a clock are built through the
+`<N>` is the number of cases in `cases.json`, `<C>` the ones among them that
+pin a clock, and `<F>` the expected fields this harness checks.
+
+Nothing is skipped: the cases that pin a clock are built through the
 `_and_clock` constructors. A case the manifest marks unsupported fails the
 run rather than shrinking it. The counts match `examples/cpp/conformance.cpp`
 exactly, because both read the same manifest.

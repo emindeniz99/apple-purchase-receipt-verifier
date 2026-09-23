@@ -465,9 +465,10 @@ namespace ApplePurchaseReceiptVerifier.Jws
                 try
                 {
                     // A JWS ES256 signature is already IEEE P1363 r‖s (RFC
-                    // 7515), which is exactly what this overload wants. Do not
-                    // port Java's p1363ToDer conversion: .NET's default is the
-                    // opposite of JCA's.
+                    // 7515), which is exactly what this overload wants, so it
+                    // needs no conversion to DER. The JCA's standard ECDSA
+                    // signature takes DER instead, which is why Java verifies
+                    // through BouncyCastle's SHA256withPLAIN-ECDSA.
                     valid = key.VerifyData(
                         Encoding.ASCII.GetBytes(signingInput), signature, HashAlgorithmName.SHA256);
                 }

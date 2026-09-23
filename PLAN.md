@@ -392,9 +392,8 @@ so tests need no real Apple secrets and prove the anchor pinning works.
 7. **Cross-language fixture parity**: one shared fixture set
    (`fixtures/generated/`, the vendored Apple-official set in
    `fixtures/apple-official/`, and the genuine Apple receipts in
-   `fixtures/public-receipts/`) driven by `fixtures/cases.json` —
-   82 vectors over 73 registered fixtures — and verified byte-identically
-   by all nine suites. ✅
+   `fixtures/public-receipts/`) driven by `fixtures/cases.json`, every
+   vector verified byte-identically by all nine suites. ✅
 8. **CI per language**: `.github/workflows/ci.yml` carries a test job per
    port plus its runtime, lint, format and fuzz legs; alongside it sit
    `release.yml`, `release-please.yml`, `post-publish-smoke.yml` and the

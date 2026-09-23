@@ -482,7 +482,7 @@ the attacker owns the client. This package is meant for a server.
 
 ## Support and testing
 
-Conformance: all 82 cases of `fixtures/cases.json`, with no skips.
+Conformance: every case in `fixtures/cases.json`, with no skips.
 
 Beyond that the suite covers the anti-forgery matrix against a generated fake
 Apple PKI, a mutation sweep over the genuine receipt and JWS fixtures, the

@@ -12,12 +12,12 @@ defmodule ConformanceTest do
   generator already does once for every consumer that is not the Rust
   library itself. Reusing it keeps this file about the boundary.
 
-  Both this and `rust/ffi/examples/cpp/conformance.cpp` run every case and
-  skip none, except the `decodeBase64` groups: they call a port's base64
-  decoders directly, the ABI exposes none, and the manifest marks them
-  `abiUnreachable`, so they are counted and never passed. After the run,
-  every case id in the manifest must have run or been counted. The twelve
-  that pin a clock go through
+  Both this and `rust/ffi/examples/cpp/conformance.cpp` run every case in
+  `fixtures/cases.json` and skip none, except the `decodeBase64` groups: they
+  call a port's base64 decoders directly, the ABI exposes none, and the
+  manifest marks them `abiUnreachable`, so they are counted and never passed.
+  After the run, every case id in the manifest must have run or been counted.
+  The cases that pin a clock go through
   `aprv_verifier_new_jws_with_roots_and_clock` and
   `aprv_endpoint_new_with_roots_and_clock`, which take the instant itself
   rather than a callback; the generator has already parsed it to epoch

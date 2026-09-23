@@ -653,8 +653,8 @@ The C ABI in `ffi/` has three test layers of its own — its own unit tests
 for null, non-UTF-8 and refused configurations; `fixtures/cases.json` driven
 through the ABI from C++17; and the same vectors again from Python over
 ctypes, which checks the nested field paths a dependency-free C++ program
-cannot reach. Both conformance harnesses run all 117 cases and skip none: the
-twelve that pin a clock go through the ABI's `_and_clock` constructors, which
+cannot reach. Both conformance harnesses run every case in `cases.json` and
+skip none: the cases that pin a clock go through the ABI's `_and_clock` constructors, which
 take the instant as epoch milliseconds rather than a callback.
 `ffi/README.md` says what that clock can and cannot move.
 

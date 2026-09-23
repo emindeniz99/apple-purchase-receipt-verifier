@@ -81,8 +81,15 @@ Sent once each, on two of the receipts, both endpoints:
 
 JSON escapes are undone by the JSON parser before the base64 rule sees the
 string, so they are not spellings of the base64 at all. The duplicate key shows
-Apple keeping the last value; what each port does with a duplicate key is not
-pinned by this rule.
+Apple keeping the last value.
+
+The ports do not pin duplicate keys, on purpose. Each one takes whichever
+value its platform's JSON parser keeps: the last in most ports, the first in
+Swift, whose `JSONDecoder` offers no choice. Either way the value it takes
+goes through the full signature and chain check, so the most a duplicate can
+do is make a genuine receipt pass or a bad one fail. It cannot make an
+unsigned one pass. A body with a key twice is a defect in the caller's JSON,
+and no genuine client sends one, so it gets no special code.
 
 ## Bytes after the receipt
 
