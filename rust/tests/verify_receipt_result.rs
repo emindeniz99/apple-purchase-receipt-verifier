@@ -396,15 +396,10 @@ fn the_bare_base64_path_answers_what_the_json_body_path_answers_for_every_receip
             let bare = endpoint.verify_receipt_data(text);
             let typed = endpoint.verify_receipt_result(&VerifyReceiptRequest::new(text.clone()));
             assert_eq!(typed.to_json(), bare.to_json(), "{name} on {environment}");
-            // The one place the paths part on purpose: the request-body cap
-            // bounds a wire request, not a receipt, so a receipt whose JSON
-            // body is over it (receipt-byte-floor, ~1.38 MB of base64) still
-            // verifies bare and answers 21002 through the body.
-            if request_body.len() > MAX_REQUEST_BYTES {
-                assert_eq!(via_body, r#"{"status":21002}"#, "{name} on {environment}");
-            } else {
-                assert_eq!(bare.to_json(), via_body, "{name} on {environment}");
-            }
+            // Every corpus body, receipt-byte-floor's ~1.38 MB of base64
+            // included, is under the 3 MiB request cap, so the paths agree.
+            assert!(request_body.len() <= MAX_REQUEST_BYTES, "{name}");
+            assert_eq!(bare.to_json(), via_body, "{name} on {environment}");
             *statuses.entry(bare.status()).or_default() += 1;
         }
     }
@@ -497,10 +492,11 @@ fn an_unusable_envelope_is_a_malformed_request_and_bad_receipt_data_an_invalid_f
 #[test]
 fn the_endpoint_only_reasons_stay_outside_the_verifier_vocabulary() {
     // Reason::all() is the cross-port contract and the C ABI's numbering;
-    // the two endpoint-only values must not grow it.
+    // the three endpoint-only values must not grow it.
     for (reason, token) in [
         (Reason::MalformedRequest, "MALFORMED_REQUEST"),
         (Reason::InternalError, "INTERNAL_ERROR"),
+        (Reason::RequestTooLarge, "REQUEST_TOO_LARGE"),
     ] {
         assert!(!Reason::all().contains(&reason));
         assert_eq!(reason.as_str(), token);
