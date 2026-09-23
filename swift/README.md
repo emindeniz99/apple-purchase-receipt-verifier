@@ -223,13 +223,14 @@ verified it. `.xcode` and `.localTesting` throw
 
 | `failureReason` | status | when |
 |---|---|---|
-| `.malformedRequest` | 21002 | the body is not a JSON object, is over `VerifyReceiptEndpoint.maxRequestBytes` or nests past 64 levels, or `receipt-data` is missing, empty or not a string |
+| `.requestTooLarge` | 21002 | the raw body is over `VerifyReceiptEndpoint.maxRequestBytes` (3,145,728 UTF-8 bytes); Apple answers HTTP 413 here |
+| `.malformedRequest` | 21002 | the body is not a JSON object or nests past 64 levels, or `receipt-data` is missing, empty or not a string |
 | `.invalidReceiptFormat` | 21002 | `receipt-data` is over `ReceiptVerifier.maxReceiptBytes`, is not base64 or does not decode to a receipt |
 | `.invalidChain`, `.invalidSignature`, other certificate reasons | 21003 | the receipt did not authenticate |
 | `.internalError` | 21009 | an unexpected error; `failureCause` holds it |
 
-`.malformedRequest` and `.internalError` only ever appear on a result. No
-`VerificationError` is thrown with either.
+`.malformedRequest`, `.requestTooLarge` and `.internalError` only ever
+appear on a result. No `VerificationError` is thrown with any of them.
 
 **`request_date`.** `verifyReceiptResult` and `verifyReceiptData` take an
 optional `now: Date?` that becomes `request_date` in place of the
@@ -303,6 +304,7 @@ do {
 | `.deviceHashMismatch` | `DEVICE_HASH_MISMATCH` | the device hash does not match attribute 5, or the receipt lacks the attributes the check needs |
 | `.stalePayload` | `STALE_PAYLOAD` | the payload was signed longer ago than `maxSignedAgeMillis` |
 | `.malformedRequest` | `MALFORMED_REQUEST` | never thrown: reported only on a `VerifyReceiptResult`, for an unusable request envelope |
+| `.requestTooLarge` | `REQUEST_TOO_LARGE` | never thrown: reported only on a `VerifyReceiptResult`, for a raw body over `VerifyReceiptEndpoint.maxRequestBytes` (status 21002; Apple answers HTTP 413) |
 | `.internalError` | `INTERNAL_ERROR` | never thrown: reported only on a `VerifyReceiptResult`, for an unexpected error (status 21009) |
 
 The vocabulary is **closed** by the cross-port contract, and it doubles as
@@ -479,23 +481,27 @@ attacker-supplied year like `999999` is therefore `.invalidChain` (JWS) or
 
 Base64 decoding and JSON parsing both allocate a multiple of their input
 before any signature is checked, so the input is measured first. These are
-constants, not initializer options, and they are the numbers the Java, PHP
-and Python ports use.
+constants, not initializer options.
 
-- **`ReceiptVerifier.maxReceiptBytes` (2 MiB, 2,097,152).** Applied to the
-  base64 string at `verify(base64Receipt:)` and at the endpoint's
-  `receipt-data`, before decoding, and to the DER at every entry point that
-  takes bytes, both `verifyCore` overloads included. A larger receipt is
-  `.invalidReceiptFormat` (21002 at the endpoint). `fixtures/cases.json`
-  requires every port to accept a receipt of up to 1 MiB of DER, about
-  1.38 MB of base64; the largest genuine receipt in the corpus is 79 KB.
-- **`VerifyReceiptEndpoint.maxRequestBytes` (1 MiB, 1,048,576).** Applied to
-  a raw JSON body before it is parsed. A larger body answers 21002 with
-  `.malformedRequest`. It is below the receipt cap on purpose: the JSON path
-  parses the body as well as decoding the receipt. A body already decoded to
-  a dictionary is not measured. The byte-floor receipt from
-  `fixtures/cases.json` therefore verifies through `verifyReceiptData` and
-  the dictionary entry point, and answers 21002 inside a JSON body.
+The request and receipt caps are Apple's, fixed in every port of this
+library. Measured on 2026-09-23 against both of Apple's verifyReceipt
+endpoints (production and sandbox), a request body of 3,145,728 bytes is
+answered and one of 3,145,729 bytes gets HTTP 413. Apple counts UTF-8
+bytes, not characters: 3,145,729 bytes of `é`, only 1,572,874 characters,
+also got 413.
+
+- **`VerifyReceiptEndpoint.maxRequestBytes` (3 MiB, 3,145,728 bytes).**
+  Applied to a raw JSON body before the depth scan and the parse. A larger
+  body answers 21002 with `.requestTooLarge`. A body already decoded to a
+  dictionary is not measured.
+- **`ReceiptVerifier.maxReceiptBytes` (3 MiB, 3,145,728 bytes).** Applied to
+  the base64 string at `verify(base64Receipt:)` and at the endpoint's
+  `receipt-data` (every entry point), before decoding, and to the DER at
+  every entry point that takes bytes, both `verifyCore` overloads included.
+  A larger receipt is `.invalidReceiptFormat` (21002 at the endpoint).
+  `fixtures/cases.json` requires every port to accept a receipt of up to
+  1 MiB of DER, about 1.38 MB of base64, which fits in a JSON body too; the
+  largest genuine receipt in the corpus is 79 KB.
 - **`JwsVerifier.maxJwsBytes` (256 KiB, 262,144).** Applied to a compact JWS
   before it is split. A longer one is `.invalidJwsFormat`. Every JWS in the
   corpus is under 2.5 KB.
@@ -505,12 +511,21 @@ and Python ports use.
   21002 with `.malformedRequest`; a deeper JWS segment is
   `.invalidJwsFormat`. Brackets inside strings are not counted.
 
-Every string is measured in UTF-8 bytes (`utf8.count`, constant time for a
-native Swift string). For base64 and a compact JWS that is also the
-character count. For a request body it is not: a body carrying non-ASCII
-text is counted in bytes here and in PHP, where the Java and Python ports
-count UTF-16 units or characters today, so such a body can be refused here
-and parsed there. No body that carries only a receipt is affected.
+Every string is measured in UTF-8 bytes with `utf8.count`, which copies
+nothing and is constant time for a native Swift string (a string bridged
+from `NSString` may walk its contents, and the count is still exact).
+
+**Answering 413 like Apple.** `.requestTooLarge` exists so an HTTP layer
+can send the status Apple sends. The body is Apple's 21002 either way:
+
+```swift
+let result = await endpoint.verifyReceiptResult(rawRequestBody)
+let httpStatus = result.failureReason == .requestTooLarge ? 413 : 200
+return Response(status: httpStatus, body: result.json())
+```
+
+A framework or proxy that caps request bodies itself has to allow at least
+3 MiB, or it refuses bodies Apple would answer.
 
 ## Testing
 

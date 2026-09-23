@@ -8,19 +8,23 @@ import XCTest
 /// make the verifier allocate in proportion to them. Each cap below is
 /// pinned three ways: one unit over is refused, and refused before the
 /// expensive step (the test says how it knows); exactly at the cap the cap
-/// does not fire; and the exact answer a caller sees. The numbers are the
-/// Java, PHP and Python ports', so a caller moving between ports sees the
-/// same boundary.
+/// does not fire; and the exact answer a caller sees. The request and
+/// receipt caps are Apple's (measured 2026-09-23: a 3,145,728-byte body is
+/// answered, a 3,145,729-byte one gets HTTP 413) and fixed in every port, so
+/// a caller moving between ports, or away from Apple, sees the same
+/// boundary.
 final class InputSizeBoundsTests: XCTestCase {
-    static let receiptCap = 2_097_152
-    static let requestCap = 1_048_576
+    static let receiptCap = 3_145_728
+    static let requestCap = 3_145_728
     static let jwsCap = 262_144
-    static let receiptCapMessage = "receipt exceeds the maximum accepted size of 2097152 bytes"
+    static let receiptCapMessage = "receipt exceeds the maximum accepted size of 3145728 bytes"
     static let jwsCapMessage = "jws exceeds the maximum accepted size of 262144 bytes"
     static let depthMessage = "header/payload nests more than 64 levels deep"
 
     /// The numbers are part of the public contract: a caller sizing an HTTP
-    /// body limit in front of this library reads them from here.
+    /// body limit in front of this library reads them from here. The request
+    /// and receipt caps are Apple's 3 MiB, and no receipt Apple accepts can
+    /// be larger than the body that carries it.
     func testCapsAreTheCrossPortNumbers() {
         XCTAssertEqual(ReceiptVerifier.maxReceiptBytes, Self.receiptCap)
         XCTAssertEqual(VerifyReceiptEndpoint.maxRequestBytes, Self.requestCap)
@@ -169,13 +173,14 @@ final class InputSizeBoundsTests: XCTestCase {
 
     // MARK: - request body
 
-    /// Over the cap the body is never parsed: 21002 MALFORMED_REQUEST, where
-    /// the same body parsed would have reached the spy primitive (21003).
-    /// Exactly at the cap it is parsed and does reach it.
+    /// Over the cap the body is never parsed: 21002 REQUEST_TOO_LARGE, the
+    /// reason an HTTP layer maps to 413 as Apple does, where the same body
+    /// parsed would have reached the spy primitive (21003). Exactly at the
+    /// cap it is parsed and does reach it.
     func testRequestBodyOverTheCapIsRefusedBeforeParsing() async throws {
         let endpoint = try spyEndpoint()
         let over = await endpoint.verifyReceiptResult(body(bytes: Self.requestCap + 1))
-        XCTAssertEqual(over.failureReason, .malformedRequest)
+        XCTAssertEqual(over.failureReason, .requestTooLarge)
         XCTAssertEqual(over.status, 21002)
         XCTAssertEqual(over.json(), #"{"status":21002}"#)
         let wire = await endpoint.verifyReceiptJSON(body(bytes: Self.requestCap + 1))
@@ -185,17 +190,40 @@ final class InputSizeBoundsTests: XCTestCase {
         XCTAssertEqual(at.failureReason, .invalidSignature, "at the cap the body is parsed")
     }
 
-    /// The body is measured in UTF-8 bytes: a body of fewer characters than
-    /// the cap whose UTF-8 is longer is refused. Java and Python measure
-    /// UTF-16 units or characters today and would parse this body; the unit
-    /// is to be unified across ports later.
-    func testRequestBodyIsMeasuredInUTF8Bytes() async throws {
-        let text = #"{"receipt-data":"AAAA","pad":""# + String(repeating: "é", count: Self.requestCap / 2) + #""}"#
-        XCTAssertLessThan(text.count, Self.requestCap)
-        XCTAssertGreaterThan(text.utf8.count, Self.requestCap)
+    /// Apple's limit counts UTF-8 bytes. A body padded with U+00E9 to one
+    /// byte over the cap is barely half the cap in characters, so a
+    /// character count would let it through; it is refused. The same shape
+    /// exactly at the cap is parsed and reaches the spy primitive.
+    func testRequestBodyIsMeasuredInUTF8BytesNotCharacters() async throws {
+        func body(bytes: Int) -> String {
+            let head = #"{"receipt-data":"AAAA","pad":""#
+            let tail = #""}"#
+            let padding = bytes - head.utf8.count - tail.utf8.count
+            return head + String(repeating: "é", count: padding / 2) + (padding % 2 == 1 ? "a" : "") + tail
+        }
         let endpoint = try spyEndpoint()
-        let result = await endpoint.verifyReceiptResult(text)
-        XCTAssertEqual(result.failureReason, .malformedRequest)
+
+        let over = body(bytes: Self.requestCap + 1)
+        XCTAssertEqual(over.utf8.count, Self.requestCap + 1)
+        XCTAssertLessThan(over.count, Self.requestCap / 2 + 64, "a character count calls this far under the cap")
+        let refused = await endpoint.verifyReceiptResult(over)
+        XCTAssertEqual(refused.failureReason, .requestTooLarge)
+        XCTAssertEqual(refused.status, 21002)
+
+        let at = body(bytes: Self.requestCap)
+        XCTAssertEqual(at.utf8.count, Self.requestCap)
+        let parsed = await endpoint.verifyReceiptResult(at)
+        XCTAssertEqual(parsed.failureReason, .invalidSignature, "at the cap the body is parsed")
+    }
+
+    /// The size is decided before the depth scan: a body both over the cap
+    /// and nested past 64 answers REQUEST_TOO_LARGE, not MALFORMED_REQUEST.
+    func testRequestBodyOverTheCapWinsOverNesting() async throws {
+        let deep = #"{"receipt-data":"AAAA","x":"# + nested(65) + "}"
+        let body = deep + String(repeating: " ", count: Self.requestCap + 1 - deep.utf8.count)
+        let endpoint = try spyEndpoint()
+        let result = await endpoint.verifyReceiptResult(body)
+        XCTAssertEqual(result.failureReason, .requestTooLarge)
     }
 
     // MARK: - request nesting depth
@@ -229,11 +257,10 @@ final class InputSizeBoundsTests: XCTestCase {
     // MARK: - byte-floor receipt
 
     /// fixtures/cases.json requires every port to accept this 1 MiB-class
-    /// receipt, so the receipt cap must sit above it on every verifier entry
-    /// point. Its JSON body (about 1.38 MB of base64) is over the request
-    /// cap, so the endpoint's JSON path answers 21002: that is the request
-    /// cap working, and Java, PHP and Python answer the same.
-    func testByteFloorReceiptVerifiesAndItsJSONBodyIsOverTheRequestCap() async throws {
+    /// receipt, so both caps must sit above it on every entry point. Its JSON
+    /// body (about 1.38 MB of base64) is under Apple's request cap, so the
+    /// endpoint's JSON path verifies it too.
+    func testByteFloorReceiptVerifiesOnEveryEntryPoint() async throws {
         let der = try VerifyReceiptResultTests.generated("receipt-byte-floor.der")
         let root = try VerifyReceiptResultTests.generated("large-receipt-root.der")
         let base64 = der.base64EncodedString()
@@ -252,10 +279,10 @@ final class InputSizeBoundsTests: XCTestCase {
         XCTAssertTrue(decoded.isVerified)
 
         let body = #"{"receipt-data":""# + base64 + #""}"#
-        XCTAssertGreaterThan(body.utf8.count, Self.requestCap)
+        XCTAssertLessThan(body.utf8.count, Self.requestCap)
         let wire = await endpoint.verifyReceiptResult(body)
-        XCTAssertEqual(wire.failureReason, .malformedRequest)
-        XCTAssertEqual(wire.json(), #"{"status":21002}"#)
+        XCTAssertTrue(wire.isVerified)
+        XCTAssertEqual(wire.receipt?.inAppPurchases.count, 2300)
     }
 
     // MARK: - JWS
