@@ -36,6 +36,8 @@ import org.bouncycastle.asn1.ASN1String;
 import org.bouncycastle.asn1.ASN1TaggedObject;
 import org.bouncycastle.asn1.cms.ContentInfo;
 import org.bouncycastle.asn1.cms.SignedData;
+import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
+import org.bouncycastle.asn1.oiw.OIWObjectIdentifiers;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
@@ -555,7 +557,8 @@ public final class ReceiptVerifier {
             // Restrict to the digests Apple actually uses for receipts
             // (SHA-1 / SHA-256), matching the other three implementations.
             String digestOid = signer.getDigestAlgOID();
-            if (!"1.3.14.3.2.26".equals(digestOid) && !"2.16.840.1.101.3.4.2.1".equals(digestOid)) {
+            if (!OIWObjectIdentifiers.idSHA1.getId().equals(digestOid)
+                    && !NISTObjectIdentifiers.id_sha256.getId().equals(digestOid)) {
                 throw new VerificationException(
                         Reason.INVALID_RECEIPT_FORMAT,
                         "unsupported receipt digest algorithm " + SafeText.quote(digestOid));
