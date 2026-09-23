@@ -128,6 +128,8 @@ public final class VerifyReceiptEndpoint {
             @Nullable Map<String, ? extends @Nullable Object> requestBody, @Nullable Instant requestDate) {
         Instant at = requestDate(requestDate);
         Object receiptData;
+        // The caller's Map can be any implementation, and its get may throw
+        // (a Map that rejects String keys, say); "never throws" still holds.
         try {
             receiptData = requestBody == null ? null : requestBody.get("receipt-data");
         } catch (RuntimeException e) {

@@ -179,9 +179,11 @@ public final class ReceiptVerifier {
      */
     public static final int MAX_RECEIPT_BYTES = 3145728;
 
+    // Used as an instance, never registered with Security.addProvider, so this
+    // library never changes the JVM's global provider list.
     private static final BouncyCastleProvider PROVIDER = new BouncyCastleProvider();
 
-    // Built once and reused; see signerVerifier.
+    // Built once and shared by every thread; see signerVerifier.
     private static final JcaSignerInfoVerifierBuilder SIGNER_VERIFIERS = signerVerifiers();
 
     private final Set<TrustAnchor> trustAnchors;
@@ -387,6 +389,10 @@ public final class ReceiptVerifier {
             // found, and it is a defect of the certificate rather than of the
             // path it sits on.
             signerCert = converter.getCertificate(signerHolder);
+            // Result unused: decoding the key here makes a key on an
+            // unimplemented curve fail now, as INVALID_CERTIFICATE, instead
+            // of later inside the path builder or the signature check under
+            // another verdict.
             signerCert.getPublicKey();
         } catch (GeneralSecurityException e) {
             throw new VerificationException(
@@ -568,6 +574,13 @@ public final class ReceiptVerifier {
      * tables (a few hundred entries) and builds only the per-certificate
      * parts in {@code build}, so reusing it avoids rebuilding the tables for
      * every receipt, which {@code JcaSimpleSignerInfoVerifierBuilder} does.
+     *
+     * <p>Sharing it across threads relies on BouncyCastle internals, checked
+     * in BouncyCastle 1.86: {@code build} writes no state, only reads fields
+     * set before class initialization finished (not declared final, but
+     * safely published by it), and makes a new content-verifier provider per
+     * certificate; the name generator, algorithm finder and digest provider
+     * it shares are only read. Re-check on every BouncyCastle upgrade.</p>
      */
     static SignerInformationVerifier signerVerifier(X509Certificate signerCert) throws OperatorCreationException {
         return SIGNER_VERIFIERS.build(signerCert);
@@ -807,6 +820,9 @@ public final class ReceiptVerifier {
         static Attribute of(ASN1Encodable element) throws VerificationException {
             try {
                 ASN1Sequence seq = ASN1Sequence.getInstance(element);
+                // Fields beyond type, version and value are tolerated on
+                // purpose, as in the node and swift ports, so a field Apple
+                // appends later does not break parsing.
                 if (seq.size() < 3) {
                     throw new VerificationException(
                             Reason.INVALID_RECEIPT_FORMAT,
