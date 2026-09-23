@@ -34,6 +34,7 @@ import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.ASN1String;
 import org.bouncycastle.asn1.ASN1TaggedObject;
+import org.bouncycastle.asn1.cms.ContentInfo;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
@@ -326,17 +327,20 @@ public final class ReceiptVerifier {
 
     private static AppReceipt verifyCoreUnguarded(byte[] receiptDer, Set<TrustAnchor> trustAnchors)
             throws VerificationException {
+        ASN1Primitive parsed;
         try {
             // Rejects trailing bytes after the CMS blob (PLAN 2.3) - BC's
             // fromByteArray throws when parsing does not exhaust the input.
-            ASN1Primitive.fromByteArray(receiptDer);
+            parsed = ReceiptDer.fromByteArray(receiptDer);
         } catch (IOException e) {
             throw new VerificationException(
                     Reason.INVALID_RECEIPT_FORMAT, "receipt has trailing or unparseable bytes", e);
         }
         CMSSignedData cms;
         try {
-            cms = new CMSSignedData(receiptDer);
+            // The tree parsed above, not the bytes: new CMSSignedData(byte[])
+            // would parse the whole receipt a second time.
+            cms = new CMSSignedData(contentInfo(parsed));
         } catch (CMSException e) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "not a PKCS#7/CMS blob", e);
         }
@@ -365,6 +369,26 @@ public final class ReceiptVerifier {
         }
         verifyCmsSignature(cms, signerCert);
         return receipt;
+    }
+
+    /**
+     * What {@code new CMSSignedData(byte[])} does with its bytes once they
+     * are parsed (BouncyCastle's {@code CMSUtils.readContentInfo}), with the
+     * same exceptions, so the one parse above can serve both the trailing
+     * bytes check and the CMS.
+     */
+    static ContentInfo contentInfo(@Nullable ASN1Primitive parsed) throws CMSException {
+        try {
+            ContentInfo info = ContentInfo.getInstance(parsed);
+            if (info == null) {
+                throw new CMSException("No content found.");
+            }
+            return info;
+        } catch (ClassCastException e) {
+            throw new CMSException("Malformed content.", e);
+        } catch (IllegalArgumentException e) {
+            throw new CMSException("Malformed content.", e);
+        }
     }
 
     /** PKIX-builds signer → (intermediates from the CMS) → pinned root at {@code at}. */
@@ -758,7 +782,7 @@ public final class ReceiptVerifier {
     private static ASN1Set parseAttributeSet(byte[] der, String what) throws VerificationException {
         ASN1Primitive parsed;
         try {
-            parsed = ASN1Primitive.fromByteArray(der);
+            parsed = ReceiptDer.fromByteArray(der);
         } catch (IOException e) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, what + " is not valid ASN.1", e);
         }
@@ -766,7 +790,7 @@ public final class ReceiptVerifier {
             // Xcode receipts double-wrap the payload in an extra OCTET
             // STRING (upstream receipt_utility handles the same shape).
             try {
-                parsed = ASN1Primitive.fromByteArray(((ASN1OctetString) parsed).getOctets());
+                parsed = ReceiptDer.fromByteArray(((ASN1OctetString) parsed).getOctets());
             } catch (IOException e) {
                 throw new VerificationException(
                         Reason.INVALID_RECEIPT_FORMAT, what + " double-wrap is not valid ASN.1", e);
@@ -829,7 +853,7 @@ public final class ReceiptVerifier {
 
     private static String decodeString(byte[] der) throws VerificationException {
         try {
-            ASN1Primitive parsed = ASN1Primitive.fromByteArray(der);
+            ASN1Primitive parsed = ReceiptDer.fromByteArray(der);
             if (!(parsed instanceof ASN1String)) {
                 throw new VerificationException(
                         Reason.INVALID_RECEIPT_FORMAT, "attribute value is not an ASN.1 string");
@@ -842,7 +866,7 @@ public final class ReceiptVerifier {
 
     private static Long decodeInteger(byte[] der) throws VerificationException {
         try {
-            ASN1Primitive parsed = ASN1Primitive.fromByteArray(der);
+            ASN1Primitive parsed = ReceiptDer.fromByteArray(der);
             if (!(parsed instanceof ASN1Integer)) {
                 throw new VerificationException(
                         Reason.INVALID_RECEIPT_FORMAT, "attribute value is not an ASN.1 integer");
