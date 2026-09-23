@@ -8,7 +8,7 @@ import {
   type ParsedCms,
 } from '../cms.js';
 import { parseReceiptPayload } from '../receipt-payload.js';
-import { MAX_RECEIPT_BYTES } from '../limits.js';
+import { MAX_RECEIPT_BYTES, utf8LengthExceeds } from '../limits.js';
 import { requireDecodableExtensions } from '../der.js';
 import { parseCertificate, type ParsedCertificate } from '../x509.js';
 import { buildAndValidatePath, normalizeRoots, type RootInput } from './chain.js';
@@ -49,10 +49,10 @@ export interface ReceiptVerifierOptions {
 export function decodeReceiptDataString(text: string): Uint8Array {
   // Before the decode, which allocates a stripped copy of the string and
   // then the bytes it decodes to.
-  if (text.length > MAX_RECEIPT_BYTES) {
+  if (utf8LengthExceeds(text, MAX_RECEIPT_BYTES)) {
     throw new VerificationError(
       Reason.INVALID_RECEIPT_FORMAT,
-      `receipt exceeds the maximum accepted size of ${MAX_RECEIPT_BYTES} characters`,
+      `receipt exceeds the maximum accepted size of ${MAX_RECEIPT_BYTES} bytes`,
     );
   }
   const decoded = receiptBase64DecodeStrict(text);
@@ -143,10 +143,10 @@ export async function verifyReceiptCore(
  */
 export class ReceiptVerifier {
   /**
-   * Ceiling on a receipt, as in the Node build: the base64 string in characters before it is
-   * decoded, and the DER in bytes before it is parsed, at every entry point
-   * ({@link verifyReceiptCore} included). A larger receipt is
-   * {@link Reason.INVALID_RECEIPT_FORMAT}.
+   * Ceiling on a receipt, as in the Node build: 3,145,728 bytes, the base64
+   * string in UTF-8 bytes before it is decoded, and the DER in bytes before
+   * it is parsed, at every entry point ({@link verifyReceiptCore} included).
+   * A larger receipt is {@link Reason.INVALID_RECEIPT_FORMAT}.
    */
   static readonly MAX_RECEIPT_BYTES = MAX_RECEIPT_BYTES;
 

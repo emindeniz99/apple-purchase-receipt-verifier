@@ -27,18 +27,19 @@ import (
 // Apple chain.
 const maxEmbeddedCertificates = 10
 
-// DefaultMaxReceiptBytes is the default ceiling on receipt size: on the
-// base64 string, in bytes, before it is decoded, and on the DER before it
-// is parsed. Both checks run before the expensive step, because decoding
-// and parsing allocate in proportion to the input and none of that work is
-// behind a signature check.
+// MaxReceiptBytes is the ceiling on receipt size: on the base64 string,
+// in bytes, before it is decoded, and on the DER before it is parsed. Both
+// checks run before the expensive step, because decoding and parsing
+// allocate in proportion to the input and none of that work is behind a
+// signature check.
 //
-// The number is the Java, PHP and Python ports' (2 MiB). It clears the
-// normative floor in fixtures/cases.json, which requires accepting a
-// receipt of up to 1 MiB of DER (about 1.38 MB of base64); the largest
-// genuine receipt in this repository's corpus is 79 KB. A caller with an
-// unusual corpus can raise it through the options.
-const DefaultMaxReceiptBytes = 2 << 20
+// It is 3 MiB, Apple's own limit, fixed and the same in every port of this
+// library. Measured on 2026-09-23 against both of Apple's verifyReceipt
+// endpoints, a request body of 3,145,728 bytes is answered and one of
+// 3,145,729 bytes gets HTTP 413, and no receipt Apple accepts can be larger
+// than the request that carries it. A Go string is already UTF-8 bytes, so
+// len is the measure.
+const MaxReceiptBytes = 3145728
 
 // ReceiptVerifierOptions configures a ReceiptVerifier.
 //
@@ -55,12 +56,6 @@ type ReceiptVerifierOptions struct {
 
 	// BundleID the receipt must carry. Required.
 	BundleID string
-
-	// MaxReceiptBytes is the ceiling on a receipt: on the length of the
-	// base64 string before it is decoded, and on the DER before it is
-	// parsed, so an oversized input is rejected without ever being
-	// decoded. Zero means DefaultMaxReceiptBytes.
-	MaxReceiptBytes int
 }
 
 // ReceiptVerifier verifies legacy PKCS#7 app receipts entirely offline
@@ -70,9 +65,8 @@ type ReceiptVerifierOptions struct {
 // A ReceiptVerifier is immutable after construction and safe for
 // concurrent use by multiple goroutines.
 type ReceiptVerifier struct {
-	roots           []*x509.Certificate
-	bundleID        string
-	maxReceiptBytes int
+	roots    []*x509.Certificate
+	bundleID string
 }
 
 // NewReceiptVerifier validates the options and returns a verifier. A
@@ -89,17 +83,9 @@ func NewReceiptVerifier(opts ReceiptVerifierOptions) (*ReceiptVerifier, error) {
 	if opts.BundleID == "" {
 		return nil, errors.New("applereceipt: BundleID is required")
 	}
-	if opts.MaxReceiptBytes < 0 {
-		return nil, errors.New("applereceipt: MaxReceiptBytes must not be negative")
-	}
-	maxBytes := opts.MaxReceiptBytes
-	if maxBytes == 0 {
-		maxBytes = DefaultMaxReceiptBytes
-	}
 	return &ReceiptVerifier{
-		roots:           append([]*x509.Certificate(nil), opts.TrustedRoots...),
-		bundleID:        opts.BundleID,
-		maxReceiptBytes: maxBytes,
+		roots:    append([]*x509.Certificate(nil), opts.TrustedRoots...),
+		bundleID: opts.BundleID,
 	}, nil
 }
 
@@ -126,14 +112,14 @@ func (v *ReceiptVerifier) VerifyWithDeviceGUID(receipt, deviceGUID []byte) (*App
 // A string longer than MaxReceiptBytes is refused before it is decoded,
 // so an arbitrarily long string costs no more than an at-the-ceiling one.
 func (v *ReceiptVerifier) VerifyBase64(receipt string) (*AppReceipt, error) {
-	return v.verify(func() ([]byte, error) { return receiptFromBase64(receipt, v.maxReceiptBytes) }, nil, false)
+	return v.verify(func() ([]byte, error) { return receiptFromBase64(receipt) }, nil, false)
 }
 
 // VerifyBase64WithDeviceGUID verifies a base64 receipt and enforces the
 // device binding. Every input form is reachable with and without the
 // device GUID.
 func (v *ReceiptVerifier) VerifyBase64WithDeviceGUID(receipt string, deviceGUID []byte) (*AppReceipt, error) {
-	return v.verify(func() ([]byte, error) { return receiptFromBase64(receipt, v.maxReceiptBytes) }, deviceGUID, true)
+	return v.verify(func() ([]byte, error) { return receiptFromBase64(receipt) }, deviceGUID, true)
 }
 
 // verify takes the input as a thunk so that decoding happens INSIDE the
@@ -146,7 +132,7 @@ func (v *ReceiptVerifier) verify(decode func() ([]byte, error), deviceGUID []byt
 	if err != nil {
 		return nil, err
 	}
-	fields, err := verifyReceiptCore(der, v.roots, v.maxReceiptBytes)
+	fields, err := verifyReceiptCore(der, v.roots)
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +163,7 @@ func VerifyReceiptCore(receipt []byte, trustedRoots []*x509.Certificate) (result
 	if len(trustedRoots) == 0 {
 		return nil, errors.New("applereceipt: trustedRoots must not be empty")
 	}
-	return verifyReceiptCore(receipt, trustedRoots, DefaultMaxReceiptBytes)
+	return verifyReceiptCore(receipt, trustedRoots)
 }
 
 // receiptFromBase64 is the one way a base64 receipt becomes DER: the
@@ -185,21 +171,21 @@ func VerifyReceiptCore(receipt []byte, trustedRoots []*x509.Certificate) (result
 // decoded. decodeBase64 already stops one byte past the ceiling, but it
 // still walks every character it skips (whitespace, CR/LF), so without
 // this check a long run of whitespace would be scanned in full.
-func receiptFromBase64(text string, maxBytes int) ([]byte, error) {
-	if len(text) > maxBytes {
+func receiptFromBase64(text string) ([]byte, error) {
+	if len(text) > MaxReceiptBytes {
 		return nil, newError(ReasonInvalidReceiptFormat,
-			"receipt base64 exceeds the %d byte limit", maxBytes)
+			"receipt base64 exceeds the %d byte limit", MaxReceiptBytes)
 	}
-	return decodeBase64(text, maxBytes), nil
+	return decodeBase64(text, MaxReceiptBytes), nil
 }
 
-func verifyReceiptCore(receipt []byte, roots []*x509.Certificate, maxBytes int) (*AppReceipt, error) {
+func verifyReceiptCore(receipt []byte, roots []*x509.Certificate) (*AppReceipt, error) {
 	if len(receipt) == 0 {
 		return nil, newError(ReasonInvalidReceiptFormat, "receipt is empty")
 	}
-	if len(receipt) > maxBytes {
+	if len(receipt) > MaxReceiptBytes {
 		return nil, newError(ReasonInvalidReceiptFormat,
-			"receipt exceeds the %d byte limit", maxBytes)
+			"receipt exceeds the %d byte limit", MaxReceiptBytes)
 	}
 	cms, err := parseCMS(receipt)
 	if err != nil {

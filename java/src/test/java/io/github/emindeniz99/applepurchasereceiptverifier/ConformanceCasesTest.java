@@ -16,6 +16,7 @@ import io.github.emindeniz99.applepurchasereceiptverifier.receipt.AppReceipt;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.InAppPurchase;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifier;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.VerifyReceiptEndpoint;
+import io.github.emindeniz99.applepurchasereceiptverifier.receipt.VerifyReceiptResult;
 import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -125,6 +126,19 @@ class ConformanceCasesTest {
         if (expectError) {
             fail(id + ": expected " + expected.get("reason").asText() + " but the operation succeeded");
         }
+        if (result instanceof VerifyReceiptResult) {
+            // failureReason is not on Apple's wire, so an endpoint case pins
+            // it beside the wire fields rather than among them.
+            VerifyReceiptResult endpointResult = (VerifyReceiptResult) result;
+            if (expected.has("failureReason")) {
+                Reason failure = endpointResult.failureReason();
+                assertEquals(
+                        expected.get("failureReason").asText(),
+                        failure == null ? null : failure.name(),
+                        id + " failureReason");
+            }
+            result = endpointResult.toResponse();
+        }
         assertFields(id, expected.get("fields"), result);
     }
 
@@ -133,7 +147,11 @@ class ConformanceCasesTest {
     private static Object invoke(JsonNode fixtures, JsonNode kase) throws Exception {
         JsonNode config = kase.get("config");
         Set<X509Certificate> roots = trustedRoots(fixtures, config.get("trustedRoots"));
-        String fixtureId = kase.get("input").get("fixture").asText();
+        JsonNode inputSpec = kase.get("input");
+        // A requestBody names a fixture too: the whole raw request body.
+        String fixtureId = inputSpec.has("requestBody")
+                ? inputSpec.get("requestBody").asText()
+                : inputSpec.get("fixture").asText();
         byte[] input = fixtureBytes(fixtures, fixtureId);
         String operation = kase.get("operation").asText();
         Clock clock = clock(kase);
@@ -175,15 +193,18 @@ class ConformanceCasesTest {
                 throw new IllegalStateException(
                         "unknown environment " + config.get("environment").asText());
             }
+            VerifyReceiptEndpoint endpoint = new VerifyReceiptEndpoint(roots, environment, clock);
+            if (inputSpec.has("requestBody")) {
+                // The whole raw body, through the entry point that parses it.
+                return endpoint.verifyReceiptResult(text(input));
+            }
             // A text fixture's bytes go into receipt-data verbatim, exactly
             // as a client would send them; a raw or base64 fixture is
             // re-encoded as canonical base64, as before.
             String codec = fixtures.get(fixtureId).get("codec").asText();
             String receiptData =
                     "text".equals(codec) ? text(input) : Base64.getEncoder().encodeToString(input);
-            return new VerifyReceiptEndpoint(roots, environment, clock)
-                    .verifyReceiptResult(Collections.singletonMap("receipt-data", receiptData))
-                    .toResponse();
+            return endpoint.verifyReceiptResult(Collections.singletonMap("receipt-data", receiptData));
         }
         throw new IllegalStateException("unknown operation " + operation);
     }

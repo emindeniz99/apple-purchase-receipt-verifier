@@ -153,16 +153,15 @@ class InputSizeBoundsTest {
     }
 
     /**
-     * The normative floor in {@code fixtures/cases.json}: every port MUST
-     * accept a well-formed receipt of up to 1 MiB of DER. Asserted here as
-     * well as by the conformance suite, because that floor is what decides
-     * whether {@link ReceiptVerifier#MAX_RECEIPT_BYTES} may ever be lowered.
+     * The limits are Apple's, fixed in every port by fixtures/cases.json:
+     * Apple's verifyReceipt answers a 3,145,728-byte request body and refuses
+     * a 3,145,729-byte one (measured 2026-09-23), and no receipt it accepts
+     * can be larger than the body that carries it.
      */
     @Test
-    void theBoundClearsTheNormativeOneMebibyteReceiptFloor() {
-        assertTrue(
-                ReceiptVerifier.MAX_RECEIPT_BYTES >= 1048576 * 4 / 3,
-                "the receipt bound must clear the base64 of a 1 MiB DER receipt");
+    void theBoundsAreApplesThreeMebibytes() {
+        assertEquals(3145728, VerifyReceiptEndpoint.MAX_REQUEST_BYTES);
+        assertEquals(3145728, ReceiptVerifier.MAX_RECEIPT_BYTES);
     }
 
     // ------------------------------------------------------------------
@@ -171,21 +170,40 @@ class InputSizeBoundsTest {
 
     /**
      * A request body over the limit carries a receipt that verifies, so
-     * without the bound the answer is 0 rather than 21002.
+     * without the bound the answer is 0 rather than 21002. The reason is
+     * REQUEST_TOO_LARGE, the one an HTTP layer maps to 413 as Apple does.
      */
     @Test
     void requestBodyOverTheSizeLimitAnswers21002WithoutParsingIt() throws Exception {
         String body = requestJson(repeat('x', VerifyReceiptEndpoint.MAX_REQUEST_BYTES));
         assertTrue(body.length() > VerifyReceiptEndpoint.MAX_REQUEST_BYTES);
         assertEquals("{\"status\":21002}", endpoint().verifyReceiptJson(body));
+        assertEquals(
+                Reason.REQUEST_TOO_LARGE, endpoint().verifyReceiptResult(body).failureReason());
     }
 
-    /** And the same body with the padding removed is the verifying request it was built from. */
+    /**
+     * Apple's limit counts UTF-8 bytes. A body padded with U+00E9 to one byte
+     * over the limit is barely half the limit in characters, so a character
+     * count lets it through; the same shape one byte shorter verifies.
+     */
     @Test
-    void theSameRequestBodyUnderTheLimitVerifies() throws Exception {
-        String body = requestJson("");
-        assertTrue(body.length() <= VerifyReceiptEndpoint.MAX_REQUEST_BYTES);
-        assertTrue(endpoint().verifyReceiptJson(body).contains("\"status\":0"), "the unpadded request did not verify");
+    void requestBodyIsMeasuredInUtf8BytesNotCharacters() throws Exception {
+        int limit = VerifyReceiptEndpoint.MAX_REQUEST_BYTES;
+        int fixed = requestJson(null).length() + ",\"padding\":\"\"".length();
+
+        String overBody = requestJson(twoBytePadding(limit + 1 - fixed));
+        assertEquals(limit + 1, overBody.getBytes(StandardCharsets.UTF_8).length);
+        assertTrue(overBody.length() < limit / 2 + fixed, "a character count calls this one far under the limit");
+        assertEquals(
+                Reason.REQUEST_TOO_LARGE,
+                endpoint().verifyReceiptResult(overBody).failureReason());
+
+        String atBody = requestJson(twoBytePadding(limit - fixed));
+        assertEquals(limit, atBody.getBytes(StandardCharsets.UTF_8).length);
+        assertEquals(
+                VerifyReceiptEndpoint.STATUS_OK,
+                endpoint().verifyReceiptResult(atBody).status());
     }
 
     /** Nesting in the body is bounded for the same reason it is in a JWS header. */
@@ -210,6 +228,9 @@ class InputSizeBoundsTest {
         assertNotEquals(
                 Integer.valueOf(VerifyReceiptEndpoint.STATUS_OK),
                 endpoint().verifyReceiptResult(request).toResponse().get("status"));
+        assertEquals(
+                Reason.INVALID_RECEIPT_FORMAT,
+                endpoint().verifyReceiptResult(request).failureReason());
     }
 
     // ------------------------------------------------------------------
@@ -280,6 +301,11 @@ class InputSizeBoundsTest {
             json.append(']');
         }
         return json.toString();
+    }
+
+    /** Exactly {@code bytes} UTF-8 bytes of U+00E9, with one ASCII character when the count is odd. */
+    private static String twoBytePadding(int bytes) {
+        return repeat('\u00e9', bytes / 2) + (bytes % 2 == 1 ? "a" : "");
     }
 
     /** Java 8 has no {@code String.repeat}, and the artifact's floor is 8. */

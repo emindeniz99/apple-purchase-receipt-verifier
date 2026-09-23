@@ -185,6 +185,7 @@ namespace ApplePurchaseReceiptVerifier.Receipt
                 switch (FailureReason)
                 {
                     case VerificationReason.MalformedRequest:
+                    case VerificationReason.RequestTooLarge:
                     case VerificationReason.InvalidReceiptFormat:
                         return VerifyReceiptEndpoint.StatusMalformed;
                     case VerificationReason.InternalError:

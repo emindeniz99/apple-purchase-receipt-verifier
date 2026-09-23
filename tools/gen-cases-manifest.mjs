@@ -33,7 +33,8 @@
  *                       | verifyReceipt | verifyReceiptBase64
  *                       | verifyReceiptEndpoint
  *   input               path to the decoded input bytes
- *   request             path to the endpoint request body (endpoint cases)
+ *   request             path to the endpoint request body (endpoint cases);
+ *                       for a `requestBody` case, the fixture's bytes verbatim
  *   roots               "builtin" or "files"
  *   root                path to one DER anchor (repeated, roots=files)
  *   bundleId            verifier bundle id
@@ -225,9 +226,11 @@ function main() {
       pinnedClocks += 1;
     }
 
-    const inputBytes = decoded.get(kase.input.fixture);
+    // A requestBody is a fixture too: the whole raw request body.
+    const inputId = kase.input.fixture ?? kase.input.requestBody;
+    const inputBytes = decoded.get(inputId);
     if (inputBytes === undefined) fail(`case "${kase.id}" names an unregistered input fixture`);
-    parts.push(`input=${join(out, 'fixtures', `${safeName(kase.input.fixture)}.bin`)}`);
+    parts.push(`input=${join(out, 'fixtures', `${safeName(inputId)}.bin`)}`);
 
     const roots = config.trustedRoots;
     if (roots.source === 'builtin') {
@@ -270,11 +273,16 @@ function main() {
       // A "text" fixture carries the exact string a client sent; raw and
       // base64 fixtures have no client-facing string of their own, so they
       // are re-encoded as canonical base64. Same rule as every other port.
-      const codec = file.fixtures[kase.input.fixture].codec;
-      const receiptData =
-        codec === 'text' ? inputBytes.toString('utf8') : inputBytes.toString('base64');
       const requestPath = join(out, 'requests', `${safeName(kase.id)}.json`);
-      writeFileSync(requestPath, JSON.stringify({ 'receipt-data': receiptData }));
+      if (kase.input.requestBody !== undefined) {
+        // The fixture IS the request body, byte for byte.
+        writeFileSync(requestPath, inputBytes);
+      } else {
+        const codec = file.fixtures[kase.input.fixture].codec;
+        const receiptData =
+          codec === 'text' ? inputBytes.toString('utf8') : inputBytes.toString('base64');
+        writeFileSync(requestPath, JSON.stringify({ 'receipt-data': receiptData }));
+      }
       parts.push(`request=${requestPath}`);
     }
 

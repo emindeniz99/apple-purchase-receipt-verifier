@@ -1,6 +1,7 @@
 package io.github.emindeniz99.applepurchasereceiptverifier.receipt;
 
 import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.emindeniz99.applepurchasereceiptverifier.Environment;
@@ -49,23 +50,22 @@ public final class VerifyReceiptEndpoint {
     public static final int STATUS_INTERNAL = 21009;
 
     /**
-     * Ceiling on the raw request body {@link #verifyReceiptJson(String)} will
-     * parse, in characters.
+     * Ceiling on the raw request body {@link #verifyReceiptResult(String)}
+     * and {@link #verifyReceiptJson(String)} will parse, in UTF-8 bytes:
+     * 3 MiB, Apple's own limit. Measured on 2026-09-23 against both of
+     * Apple's verifyReceipt endpoints, a body of 3,145,728 bytes is answered
+     * and one of 3,145,729 bytes gets HTTP 413, and the count is bytes, not
+     * characters. A larger body answers status 21002 with
+     * {@link Reason#REQUEST_TOO_LARGE}, decided before any parsing. The body
+     * is measured without being encoded, so a Java {@code String} of any
+     * size costs no copy to refuse.
      *
-     * <p>"No method ever throws" is a promise about exceptions, and heap
-     * exhaustion is not one: it is an {@link OutOfMemoryError}, so the caller
-     * gets no body at all and the promise stops holding on exactly the hostile
-     * input it exists for. JSON parsing allocates a multiple of the body, and
-     * that happens before any verification.
-     *
-     * <p>The number is the php port's {@code MAX_REQUEST_BYTES}, and it is
-     * deliberately below {@link ReceiptVerifier#MAX_RECEIPT_BYTES}: the JSON
-     * entry point has an amplification the pre-decoded {@link
-     * #verifyReceiptResult(Map)} entry point does not. A 1 MiB body carries any real
-     * request with room to spare; the largest genuine receipt in the shared
-     * corpus is 106 KB of base64.
+     * <p>A fixed constant, the same in every port. "No method ever throws"
+     * is a promise about exceptions, and heap exhaustion is not one: JSON
+     * parsing allocates a multiple of the body, so the bound is what keeps
+     * the promise on hostile input.</p>
      */
-    public static final int MAX_REQUEST_BYTES = 1048576;
+    public static final int MAX_REQUEST_BYTES = 3145728;
 
     /**
      * How deep a JSON structure the request body may nest. Stated rather than
@@ -79,8 +79,10 @@ public final class VerifyReceiptEndpoint {
     static final ObjectMapper MAPPER = new ObjectMapper(JsonFactory.builder()
             .streamReadConstraints(StreamReadConstraints.builder()
                     .maxNestingDepth(MAX_JSON_NESTING_DEPTH)
-                    // Nothing inside the body can be larger than the body, so
-                    // both length bounds are MAX_REQUEST_BYTES.
+                    // Nothing inside the body can be larger than the body,
+                    // and a body within MAX_REQUEST_BYTES bytes is within it
+                    // in characters too, so both length bounds (counted in
+                    // characters for String input) are MAX_REQUEST_BYTES.
                     .maxStringLength(MAX_REQUEST_BYTES)
                     .maxDocumentLength(MAX_REQUEST_BYTES)
                     .build())
@@ -159,9 +161,11 @@ public final class VerifyReceiptEndpoint {
      * Handles one verifyReceipt request body in its raw wire form, the JSON
      * text an HTTP framework hands over. Never throws.
      *
-     * <p>A body that is not a JSON object (unparseable, {@code null}, an
-     * array, a scalar) or is longer than {@link #MAX_REQUEST_BYTES} fails
-     * with {@link Reason#MALFORMED_REQUEST}, status 21002. Apple has no
+     * <p>A body over {@link #MAX_REQUEST_BYTES} UTF-8 bytes fails with
+     * {@link Reason#REQUEST_TOO_LARGE}, status 21002, where Apple answers
+     * HTTP 413. A body that is not a JSON object (unparseable, {@code null},
+     * an array, a scalar) or nests deeper than 64 fails with
+     * {@link Reason#MALFORMED_REQUEST}, status 21002. Apple has no
      * status code for "that wasn't JSON"; 21002 ("The data in the
      * receipt-data property was malformed or missing") is the closest, and
      * it is what a JSON object without usable {@code receipt-data} gets
@@ -180,12 +184,15 @@ public final class VerifyReceiptEndpoint {
      */
     public VerifyReceiptResult verifyReceiptResult(@Nullable String requestJson, @Nullable Instant requestDate) {
         Instant at = requestDate(requestDate);
-        if (requestJson == null || requestJson.length() > MAX_REQUEST_BYTES) {
+        if (requestJson == null) {
             return VerifyReceiptResult.failed(environment, Reason.MALFORMED_REQUEST, at);
+        }
+        if (Utf8Length.exceeds(requestJson, MAX_REQUEST_BYTES)) {
+            return VerifyReceiptResult.failed(environment, Reason.REQUEST_TOO_LARGE, at);
         }
         Object parsed;
         try {
-            parsed = MAPPER.readValue(requestJson, Object.class);
+            parsed = readJson(requestJson);
         } catch (IOException e) {
             return VerifyReceiptResult.failed(environment, Reason.MALFORMED_REQUEST, at);
         } catch (RuntimeException e) {
@@ -237,6 +244,26 @@ public final class VerifyReceiptEndpoint {
         return verifyReceiptResult(requestJson).toJson();
     }
 
+    /**
+     * {@code MAPPER.readValue(json, Object.class)}, with the parser reading
+     * the whole body from one array.
+     *
+     * <p>Given a String longer than 32,768 characters, Jackson wraps it in a
+     * StringReader and reads it in chunks of a few thousand characters, and a
+     * string value longer than a chunk goes through its slow
+     * character-at-a-time path. {@code receipt-data} is such a value for any
+     * receipt with more than a handful of purchases (105,000 characters for
+     * the 187-purchase legacy fixture), and reading it that way took longer
+     * than decoding it. Over a char array Jackson builds the same parser
+     * class it uses for a short String, with the same constraints and
+     * features; the only difference is that the buffer is not recycled.</p>
+     */
+    static @Nullable Object readJson(String json) throws IOException {
+        try (JsonParser parser = MAPPER.getFactory().createParser(json.toCharArray())) {
+            return MAPPER.readValue(parser, Object.class);
+        }
+    }
+
     private Instant requestDate(@Nullable Instant requestDate) {
         return requestDate != null ? requestDate : clock.instant();
     }
@@ -255,7 +282,7 @@ public final class VerifyReceiptEndpoint {
             // cap, so the cap is applied to the transport string here: the
             // same string and the same limit ReceiptVerifier.verify(String)
             // would have measured, and the same reason it throws.
-            if (receiptData.length() > ReceiptVerifier.MAX_RECEIPT_BYTES) {
+            if (Utf8Length.exceeds(receiptData, ReceiptVerifier.MAX_RECEIPT_BYTES)) {
                 return VerifyReceiptResult.failed(environment, Reason.INVALID_RECEIPT_FORMAT, at);
             }
             byte[] der = ReceiptBase64.decode(receiptData);

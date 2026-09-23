@@ -30,6 +30,7 @@ module ApplePurchaseReceiptVerifier
     ALL: Array[Symbol]
     MALFORMED_REQUEST: Symbol
     INTERNAL_ERROR: Symbol
+    REQUEST_TOO_LARGE: Symbol
   end
 
   module Environment

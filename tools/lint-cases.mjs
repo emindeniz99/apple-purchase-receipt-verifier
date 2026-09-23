@@ -11,7 +11,8 @@
  * It fails, listing EVERY problem rather than the first, when:
  *   - cases.json does not match cases.schema.json structurally
  *   - a registered fixture file is missing, or its contentSha256 is wrong
- *   - a file under fixtures/generated/ or fixtures/public-receipts/ is not registered
+ *   - a file under fixtures/generated/, fixtures/public-receipts/ or
+ *     fixtures/limits/ is not registered
  *   - a fixture with role "input" is referenced by no case
  *   - two cases share an id
  *   - a case references an unregistered fixture
@@ -38,7 +39,7 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const FIXTURES_DIR = join(REPO, 'fixtures');
 const CASES_PATH = join(FIXTURES_DIR, 'cases.json');
 const SCHEMA_PATH = join(FIXTURES_DIR, 'cases.schema.json');
-const SCANNED_TIERS = ['generated', 'public-receipts'];
+const SCANNED_TIERS = ['generated', 'public-receipts', 'limits'];
 
 const REASONS = [
   'INVALID_JWS_FORMAT', 'INVALID_CERTIFICATE', 'INVALID_CERTIFICATE_PURPOSE',
@@ -284,6 +285,14 @@ if (doc && typeOf(doc.fixtures) === 'object' && Array.isArray(doc.cases)) {
     const refs = [];
     if (typeOf(testCase.input) === 'object' && typeof testCase.input.fixture === 'string') {
       refs.push(['input', testCase.input.fixture]);
+    }
+    if (typeOf(testCase.input) === 'object' && typeof testCase.input.requestBody === 'string') {
+      refs.push(['input.requestBody', testCase.input.requestBody]);
+      const codec = fixtures[testCase.input.requestBody]?.codec;
+      if (codec !== undefined && codec !== 'text') {
+        fail(where, `a requestBody is handed to the raw-body entry point verbatim, so its fixture must have codec `
+          + `"text" (got ${JSON.stringify(codec)})`);
+      }
     }
     const roots = testCase.config?.trustedRoots;
     if (typeOf(roots) === 'object' && Array.isArray(roots.fixtures)) {

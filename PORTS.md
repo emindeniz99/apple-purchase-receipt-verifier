@@ -8,7 +8,7 @@ which language versions CI runs.
 The C ABI in [`rust/ffi/`](rust/ffi/) wraps the Rust port. It inherits every
 Rust verification decision; its column shows what the ABI exposes.
 
-Checked against the code on `main`, 2026-09-22.
+Checked against the code on `main`, 2026-09-23.
 
 | Feature | Java | Node | Python | Go | Ruby | PHP | .NET | Rust | Swift | C ABI |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -18,8 +18,9 @@ Checked against the code on `main`, 2026-09-22.
 | `VerifyReceiptResult` with a verified flag | ✅ `isVerified()` | ✅ `verified` | ✅ `verified` | ✅ `Verified()` | ✅ `verified?` | ✅ `isVerified()` | ✅ `IsVerified` | ✅ `verified()` | ✅ `isVerified` | ❌ the ABI returns Apple's JSON only; use the generic verifier calls for a pass/fail answer |
 | Re-render for the other environment (21007/21008 retry, no second verification) | ✅ `toJson(env)` | ✅ `toJson(env)`, `toResponse(env)` | ✅ `to_json(env)` | ✅ `JSONFor`, `ResponseFor` | ✅ `to_json(env)` | ✅ `toJson(env)` | ✅ `ToJson(env)` | ✅ `to_json_in` | ✅ `json(for:)` | ❌ no result handle crosses the ABI; call a second endpoint handle, which verifies again |
 | Strict base64 fast path for `receipt-data` | ✅ `java.util.Base64.getDecoder()`, falls back on its exception | ✅ default build: `Buffer.from` behind a canonical-shape regex and `length % 4` check. ❌ web build: no `Buffer`, it runs the tolerant decoder only | ✅ `b64decode(validate=True)`, guarded by `len % 4 == 0`, no trailing `===`, non-empty | ✅ `base64.StdEncoding`, guarded by `DecodedLen <= limit` and a non-empty result | ✅ `unpack1("m0")`, guarded by non-empty input | ✅ `base64_decode($s, true)`, guarded by a non-empty result | ✅ net8.0: `Convert.TryFromBase64String` sized by `Base64.IsValid`. ❌ netstandard2.0: no `TryFromBase64String`, tolerant decoder only | ✅ `base64` crate `STANDARD`, guarded by non-empty input | ✅ `Data(base64Encoded:)` behind a byte-level canonical-shape check, since Foundation accepts over-padding on Linux | ✅ inherits Rust |
-| Receipt cap, 2 MiB | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ inherits Rust |
-| Request body cap, 1 MiB, and its unit | ✅ UTF-16 chars | ✅ UTF-8 bytes | ✅ chars for `str`, bytes for `bytes` | ✅ bytes | ✅ bytes (`bytesize`) | ✅ bytes (`strlen`) | ✅ UTF-16 chars | ✅ UTF-8 bytes | ✅ UTF-8 bytes | ✅ UTF-8 bytes, inherits Rust |
+| Receipt cap, 3,145,728 bytes, fixed | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ inherits Rust |
+| Request body cap, 3,145,728 UTF-8 bytes, fixed, and how it is counted | ✅ `Utf8Length`, walks the string only between two length shortcuts | ✅ `utf8LengthExceeds`, same shortcuts, both builds | ✅ `utf8_exceeds`: length shortcuts, then encodes a non-ASCII `str` (`surrogatepass`); `len` of `bytes` | ✅ `len` of `[]byte` | ✅ `bytesize` | ✅ `strlen` | ✅ `Utf8Length.Exceeds`, same shortcuts | ✅ `str::len` | ✅ `utf8.count` | ✅ bytes, inherits Rust |
+| `REQUEST_TOO_LARGE` for a body over the cap (result-only, status 21002) | ✅ `Reason.REQUEST_TOO_LARGE` | ✅ `Reason.REQUEST_TOO_LARGE` | ✅ `Reason.REQUEST_TOO_LARGE` | ✅ `ReasonRequestTooLarge` | ✅ `Reason::REQUEST_TOO_LARGE` | ✅ `Reason::RequestTooLarge` | ✅ `VerificationReason.RequestTooLarge` | ✅ `Reason::RequestTooLarge` | ✅ `.requestTooLarge` | ❌ the ABI returns Apple's JSON only, `{"status":21002}` |
 | JSON depth 64 (request body and JWS header/payload) | ✅ Jackson limit | ✅ | ✅ | ✅ | ✅ | ✅ `json_decode` depth | ✅ | ✅ | ✅ | ✅ inherits Rust |
 | JWS cap, 256 KiB | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ inherits Rust |
 | Fuzz target | ✅ `java-fuzz` | ✅ `node-fuzz`, default build | ✅ `python-fuzz` | ✅ `go-fuzz` | ✅ `ruby-fuzz` | ✅ `php-fuzz` | ✅ `dotnet-fuzz` | ✅ `rust-fuzz` | ✅ `swift-fuzz` | ❌ none of its own; `rust-fuzz` covers the parsers it calls, `cargo test` covers the ABI's edge cases |
@@ -29,11 +30,13 @@ Checked against the code on `main`, 2026-09-22.
 
 Notes:
 
-- The request cap constant is named `MAX_REQUEST_BYTES` (or `MaxRequestBytes`)
-  in every port, but Java and .NET measure `String.length`, and Python
-  measures a `str` in code points. A body of multi-byte characters can pass
-  there and fail in the byte-counting ports. The contract does not pin the
-  unit yet; see ROADMAP.md.
+- Both caps are Apple's: 3,145,728 bytes answered, 3,145,729 refused with
+  HTTP 413, counted in UTF-8 bytes (measured 2026-09-23, COMPARISON.md).
+  `fixtures/cases.json` pins them as a MUST. The request cap constant is
+  `MAX_REQUEST_BYTES` (or `MaxRequestBytes`) in every port, and no caller
+  can change either cap.
+- A lone surrogate has no UTF-8 encoding; ports may count it differently.
+  No vector contains one.
 - The receipt cap applies twice: to the `receipt-data` string before it is
   decoded, and to the DER after.
 - No endpoint checks the bundle id, as Apple's did not. Each port's README

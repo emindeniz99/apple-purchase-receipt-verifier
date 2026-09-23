@@ -72,8 +72,16 @@ struct Case {
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct Input {
-    fixture: String,
+    /// The fixture every operation reads, absent exactly when
+    /// `request_body` is given.
+    #[serde(default)]
+    fixture: Option<String>,
+    /// `verifyReceiptEndpoint` only: a `text` fixture holding the whole raw
+    /// request body, handed verbatim to the endpoint's JSON entry point.
+    #[serde(default)]
+    request_body: Option<String>,
 }
 
 /// `deny_unknown_fields` here is load-bearing: a new config key added to
@@ -121,6 +129,10 @@ struct Expected {
     fields: Option<Map<String, Value>>,
     #[serde(default)]
     reason: Option<String>,
+    /// `verifyReceiptEndpoint` only: the result's failure reason token. Not
+    /// a wire field, so it sits beside `fields`.
+    #[serde(default, rename = "failureReason")]
+    failure_reason: Option<String>,
 }
 
 // --- locating and decoding fixtures -------------------------------------
@@ -632,7 +644,22 @@ fn resolve_path(root: &Value, path: &str) -> Result<Option<Value>, Failed> {
 // --- one case ------------------------------------------------------------
 
 fn run_case(dir: PathBuf, fixtures: BTreeMap<String, Fixture>, case: Case) -> Result<(), Failed> {
-    let input = fixture_bytes(&dir, &fixtures, &case.input.fixture)?;
+    let input_id = match (&case.input.fixture, &case.input.request_body) {
+        (Some(id), None) => id.clone(),
+        (None, Some(id)) if case.operation == "verifyReceiptEndpoint" => id.clone(),
+        _ => {
+            return Err(Failed::from(
+                "harness error: input needs exactly one of fixture and requestBody \
+                 (requestBody on verifyReceiptEndpoint only)",
+            ))
+        }
+    };
+    if case.expected.failure_reason.is_some() && case.operation != "verifyReceiptEndpoint" {
+        return Err(Failed::from(
+            "harness error: expected.failureReason on an operation other than verifyReceiptEndpoint",
+        ));
+    }
+    let input = fixture_bytes(&dir, &fixtures, &input_id)?;
     let clock = case_clock(&case)?;
     let outcome: Result<Value, VerificationError> = match case.operation.as_str() {
         "verifyTransaction" => {
@@ -722,24 +749,41 @@ fn run_case(dir: PathBuf, fixtures: BTreeMap<String, Fixture>, case: Case) -> Re
                     "harness error: cannot build VerifyReceiptEndpoint: {err}"
                 ))
             })?;
-            // A `text` fixture hands its verbatim bytes to `receipt-data`,
-            // exactly as a client sent them; raw/base64 fixtures have no
-            // client-facing string of their own, so they are re-encoded as
-            // canonical base64.
-            let fixture = fixtures.get(&case.input.fixture).ok_or_else(|| {
+            let fixture = fixtures.get(&input_id).ok_or_else(|| {
                 Failed::from(format!(
-                    "harness error: cases.json registers no fixture \"{}\"",
-                    case.input.fixture
+                    "harness error: cases.json registers no fixture \"{input_id}\""
                 ))
             })?;
-            let receipt_data = if fixture.codec == "text" {
-                String::from_utf8_lossy(&input).into_owned()
+            let result = if case.input.request_body.is_some() {
+                // The whole raw body, verbatim: not wrapped in receipt-data,
+                // not trimmed. A body that is not UTF-8 could not reach this
+                // `&str` entry point at all.
+                let body = String::from_utf8(input).map_err(|_| {
+                    Failed::from("harness error: a requestBody fixture is not UTF-8")
+                })?;
+                endpoint.verify_receipt_result_from_json(&body)
             } else {
-                apple_purchase_receipt_verifier::base64::encode(&input)
+                // A `text` fixture hands its verbatim bytes to
+                // `receipt-data`, exactly as a client sent them; raw/base64
+                // fixtures have no client-facing string of their own, so
+                // they are re-encoded as canonical base64.
+                let receipt_data = if fixture.codec == "text" {
+                    String::from_utf8_lossy(&input).into_owned()
+                } else {
+                    apple_purchase_receipt_verifier::base64::encode(&input)
+                };
+                endpoint.verify_receipt_result(&VerifyReceiptRequest::new(receipt_data))
             };
-            let response = endpoint
-                .verify_receipt_result(&VerifyReceiptRequest::new(receipt_data))
-                .to_response();
+            if let Some(wanted) = &case.expected.failure_reason {
+                let got = result.failure_reason().map(Reason::as_str);
+                if got != Some(wanted.as_str()) {
+                    return Err(Failed::from(format!(
+                        "failureReason: expected {wanted}, got {}",
+                        got.unwrap_or("none")
+                    )));
+                }
+            }
+            let response = result.to_response();
             if !matches!(
                 response.status,
                 status::OK

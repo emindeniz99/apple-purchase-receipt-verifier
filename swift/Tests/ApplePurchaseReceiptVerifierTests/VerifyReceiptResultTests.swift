@@ -266,13 +266,6 @@ final class VerifyReceiptResultTests: XCTestCase {
                     as: UTF8.self)
                 let bare = await endpoint.verifyReceiptData(receiptData).json()
                 let viaBody = await endpoint.verifyReceiptJSON(body)
-                if body.utf8.count > VerifyReceiptEndpoint.maxRequestBytes {
-                    // The byte-floor receipt: its body is over the request
-                    // cap, so the body is refused unparsed while the bare
-                    // string is still verified. InputSizeBoundsTests pins it.
-                    XCTAssertEqual(viaBody, #"{"status":21002}"#, "\(name) on \(environment)")
-                    continue
-                }
                 XCTAssertEqual(viaBody, bare, "\(name) on \(environment)")
                 let result = await endpoint.verifyReceiptResult(body)
                 XCTAssertEqual(viaBody, result.json(), "\(name) on \(environment)")

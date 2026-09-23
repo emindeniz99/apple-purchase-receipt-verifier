@@ -9,11 +9,11 @@ use core::fmt;
 /// verifiers, and adding a twelfth requires changing
 /// `fixtures/cases.schema.json`, `PLAN.md` and every port in one change.
 ///
-/// Two more values, [`Reason::MalformedRequest`] and
-/// [`Reason::InternalError`], exist only as the failure reason of a
-/// `VerifyReceiptResult` from the `verifyReceipt` endpoint. No verifier ever
-/// returns a [`VerificationError`] carrying either, and neither is in
-/// [`Reason::all`].
+/// Three more values, [`Reason::MalformedRequest`],
+/// [`Reason::InternalError`] and [`Reason::RequestTooLarge`], exist only as
+/// the failure reason of a `VerifyReceiptResult` from the `verifyReceipt`
+/// endpoint. No verifier ever returns a [`VerificationError`] carrying any
+/// of them, and none is in [`Reason::all`].
 ///
 /// The enum is nonetheless `#[non_exhaustive]` so that, if that ever
 /// happens, a Rust caller with a `_ => reject` arm keeps compiling and keeps
@@ -49,7 +49,8 @@ pub enum Reason {
     /// The payload was signed longer ago than the configured maximum.
     StalePayload,
     /// The `verifyReceipt` request envelope is unusable: the body is not a
-    /// JSON object, or `receipt-data` is missing, empty or not a string.
+    /// JSON object or nests deeper than 64, or `receipt-data` is missing,
+    /// empty or not a string.
     /// Reported only as a `VerifyReceiptResult` failure reason (status
     /// 21002); never returned by a verifier.
     MalformedRequest,
@@ -57,6 +58,13 @@ pub enum Reason {
     /// as status 21009. Reported only as a `VerifyReceiptResult` failure
     /// reason; never returned by a verifier.
     InternalError,
+    /// The raw `verifyReceipt` request body is over
+    /// [`MAX_REQUEST_BYTES`](crate::MAX_REQUEST_BYTES) (3,145,728 UTF-8
+    /// bytes), the size at which Apple's endpoint answers HTTP 413. Status
+    /// 21002 in the response body; an HTTP layer can map it to 413 as Apple
+    /// does. Reported only as a `VerifyReceiptResult` failure reason; never
+    /// returned by a verifier.
+    RequestTooLarge,
 }
 
 impl Reason {
@@ -77,12 +85,14 @@ impl Reason {
             Reason::StalePayload => "STALE_PAYLOAD",
             Reason::MalformedRequest => "MALFORMED_REQUEST",
             Reason::InternalError => "INTERNAL_ERROR",
+            Reason::RequestTooLarge => "REQUEST_TOO_LARGE",
         }
     }
 
     /// Every reason a verifier can return, in the order the contract lists
-    /// them. The two endpoint-only reasons, [`Reason::MalformedRequest`] and
-    /// [`Reason::InternalError`], are not in it.
+    /// them. The three endpoint-only reasons, [`Reason::MalformedRequest`],
+    /// [`Reason::InternalError`] and [`Reason::RequestTooLarge`], are not in
+    /// it.
     #[must_use]
     pub const fn all() -> &'static [Reason] {
         &[
@@ -124,7 +134,11 @@ impl core::str::FromStr for Reason {
     type Err = UnknownReason;
 
     fn from_str(s: &str) -> core::result::Result<Self, Self::Err> {
-        let endpoint_only = [Reason::MalformedRequest, Reason::InternalError];
+        let endpoint_only = [
+            Reason::MalformedRequest,
+            Reason::InternalError,
+            Reason::RequestTooLarge,
+        ];
         for reason in Reason::all().iter().chain(&endpoint_only) {
             if reason.as_str() == s {
                 return Ok(*reason);

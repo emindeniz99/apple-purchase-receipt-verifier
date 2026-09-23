@@ -15,13 +15,20 @@ class Reason:
     DEVICE_HASH_MISMATCH = "DEVICE_HASH_MISMATCH"
     STALE_PAYLOAD = "STALE_PAYLOAD"
     #: The verifyReceipt request envelope is unusable: the body is not a JSON
-    #: object, or ``receipt-data`` is missing, empty or not a string. Only
-    #: ever a ``VerifyReceiptResult.failure_reason``; never raised.
+    #: object or nests deeper than 64, or ``receipt-data`` is missing, empty
+    #: or not a string. Only ever a ``VerifyReceiptResult.failure_reason``;
+    #: never raised.
     MALFORMED_REQUEST = "MALFORMED_REQUEST"
     #: An unexpected exception inside the verifyReceipt endpoint, answered as
     #: status 21009. Only ever a ``VerifyReceiptResult.failure_reason``;
     #: never raised.
     INTERNAL_ERROR = "INTERNAL_ERROR"
+    #: The raw verifyReceipt request body is over
+    #: ``VerifyReceiptEndpoint.MAX_REQUEST_BYTES`` (3,145,728 UTF-8 bytes),
+    #: the size at which Apple's endpoint answers HTTP 413. Status 21002 in
+    #: the response body; an HTTP layer can map it to 413 as Apple does. Only
+    #: ever a ``VerifyReceiptResult.failure_reason``; never raised.
+    REQUEST_TOO_LARGE = "REQUEST_TOO_LARGE"
 
 
 class VerificationError(Exception):

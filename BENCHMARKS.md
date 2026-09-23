@@ -183,4 +183,9 @@ same bytes. Swift now takes about 2.7 times as long as Java on legacy `core`
 and 4.4 times on legacy `endpointJson`.
 PHP and Ruby take about 25 ms
 and 17 ms for legacy \`core\`. Rust is the one port whose g5 \`core\` costs half
-its legacy \`core\`; nobody has profiled why yet.
+its legacy \`core\`. The table predates the fix for that: `rsa` was built
+without its `u64_digit` feature, so the three RSA-2048 verifies every receipt
+needs ran on 32-bit limbs at about 370 µs each. With the feature back, g5
+`core` went from 1,187 to about 740 µs, measured on a different machine (Xeon
+at 2.80 GHz), and RSA is still about 90% of it. See the Rust entries in
+`ROADMAP.md` for the next steps.

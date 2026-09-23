@@ -52,7 +52,7 @@ func BenchmarkCrossPort(b *testing.B) {
 		b.Run("decodeBase64/"+fixture.name, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				if decodeBase64(in.base64, DefaultMaxReceiptBytes) == nil {
+				if decodeBase64(in.base64, MaxReceiptBytes) == nil {
 					b.Fatal("decode failed")
 				}
 			}
@@ -141,7 +141,7 @@ func crossPortSetUp(b *testing.B, fixture crossPortFixture, roots []*x509.Certif
 		b.Fatal(err)
 	}
 
-	if !bytes.Equal(decodeBase64(in.base64, DefaultMaxReceiptBytes), der) {
+	if !bytes.Equal(decodeBase64(in.base64, MaxReceiptBytes), der) {
 		b.Fatal("decodeBase64 did not return the fixture's DER")
 	}
 	for _, verify := range []func() (*AppReceipt, error){

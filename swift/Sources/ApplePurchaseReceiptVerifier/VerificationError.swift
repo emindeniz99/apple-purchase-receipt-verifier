@@ -18,10 +18,16 @@ public struct VerificationError: Error, Sendable, CustomStringConvertible {
         case deviceHashMismatch = "DEVICE_HASH_MISMATCH"
         case stalePayload = "STALE_PAYLOAD"
         /// The verifyReceipt request envelope is unusable: the body is not a
-        /// JSON object, or `receipt-data` is missing, empty or not a string.
-        /// Reported only by ``VerifyReceiptResult/failureReason``; never
-        /// thrown.
+        /// JSON object or nests more than 64 levels deep, or `receipt-data`
+        /// is missing, empty or not a string. Reported only by
+        /// ``VerifyReceiptResult/failureReason``; never thrown.
         case malformedRequest = "MALFORMED_REQUEST"
+        /// The raw request body is over
+        /// ``VerifyReceiptEndpoint/maxRequestBytes`` UTF-8 bytes, answered as
+        /// status 21002 before it is parsed. Apple answers such a body with
+        /// HTTP 413; this reason lets an HTTP layer do the same. Reported
+        /// only by ``VerifyReceiptResult/failureReason``; never thrown.
+        case requestTooLarge = "REQUEST_TOO_LARGE"
         /// An unexpected error inside the verifyReceipt endpoint, answered as
         /// status 21009. Reported only by
         /// ``VerifyReceiptResult/failureReason``; never thrown.

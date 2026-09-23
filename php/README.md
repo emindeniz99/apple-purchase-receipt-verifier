@@ -119,10 +119,12 @@ Every claim Apple sent, modelled or not, stays reachable through
 new ReceiptVerifier(
     array $trustedRoots,
     string $bundleId,
-    int $maxReceiptBytes = 2097152,
     int $nodeBudget = 20000,
 );
 ```
+
+The receipt size limit is the fixed constant `ReceiptVerifier::MAX_RECEIPT_BYTES`
+(3 MiB); see [Defensive bounds](#defensive-bounds).
 
 - `verify(string $receipt, ?string $deviceGuid = null): AppReceipt`.
   `$receipt` is the DER bytes or their base64 — a value starting with the DER
@@ -170,7 +172,8 @@ is a `status` in the body:
 
 | Condition | `status` |
 |---|---|
-| body not an object, or `receipt-data` missing / not a string / empty / undecodable | `21002` |
+| raw body over 3 MiB (`REQUEST_TOO_LARGE`; Apple answers HTTP 413) | `21002` |
+| body not an object or nested past 64 levels, or `receipt-data` missing / not a string / empty / undecodable | `21002` |
 | the receipt is malformed | `21002` |
 | the receipt fails to authenticate | `21003` |
 | endpoint is Production and the receipt is not a production one | `21007` |
@@ -225,8 +228,9 @@ the constructor does.
 
 | `failureReason()` | status | when |
 |---|---|---|
-| `Reason::MalformedRequest` | 21002 | the body is not a JSON object or is over `MAX_REQUEST_BYTES`, or `receipt-data` is missing, empty or not a string |
-| `Reason::InvalidReceiptFormat` | 21002 | `receipt-data` is not base64, is over 2 MiB, or does not decode to a receipt |
+| `Reason::RequestTooLarge` | 21002 | the raw body is over `MAX_REQUEST_BYTES` (3,145,728 bytes); Apple answers HTTP 413 here, see [Defensive bounds](#defensive-bounds) |
+| `Reason::MalformedRequest` | 21002 | the body is not a JSON object or nests past 64 levels, or `receipt-data` is missing, empty or not a string |
+| `Reason::InvalidReceiptFormat` | 21002 | `receipt-data` is not base64, is over `ReceiptVerifier::MAX_RECEIPT_BYTES` (3,145,728 bytes), or does not decode to a receipt |
 | `Reason::InvalidChain`, `Reason::InvalidSignature`, other certificate reasons | 21003 | the receipt did not authenticate |
 | `Reason::InternalError` | 21009 | an unexpected `Throwable`; `failureCause()` holds it |
 
@@ -286,10 +290,12 @@ a metrics label read the same in every language.
 | `Reason::DeviceHashMismatch` | `DEVICE_HASH_MISMATCH` | the device binding does not hold |
 | `Reason::StalePayload` | `STALE_PAYLOAD` | signed longer ago than `maxSignedAgeSeconds` |
 
-`Reason` also has `MalformedRequest` (`MALFORMED_REQUEST`) and `InternalError`
-(`INTERNAL_ERROR`), but only as `VerifyReceiptResult::failureReason()` values.
-No `VerificationException` is ever thrown with either, so a `match` over a
-caught exception's reason never sees them.
+`Reason` also has `MalformedRequest` (`MALFORMED_REQUEST`), `InternalError`
+(`INTERNAL_ERROR`) and `RequestTooLarge` (`REQUEST_TOO_LARGE`), but only as
+`VerifyReceiptResult::failureReason()` values. No `VerificationException` is
+ever thrown with any of them, so a `match` over a caught exception's reason
+never sees them. A `match` over `failureReason()` without a `default` arm
+needs a `Reason::RequestTooLarge` arm.
 
 The exception message is `"REASON: detail"` for readability only. It is not
 part of the API, nothing should parse it, and it never contains receipt bytes,
@@ -477,15 +483,67 @@ about 72 MB of parser state, against a `php.ini-production` default
 |---|---|---|
 | ASN.1 nesting depth | 32 | PHP gained `zend.max_allowed_stack_size` in 8.3; on 8.1 an unbounded recursive parser segfaults rather than raising |
 | ASN.1 nodes per parse | 20,000 | the largest genuine fixture — a 79 KB receipt with 187 in-app purchases — decodes to under 3,000 |
-| ASN.1 retained bytes per parse | 32 MiB | that same fixture retains 967 KB; see below for why bounding node count is not enough |
-| Receipt size | 2 MiB | Apple receipts are tens of KB |
+| ASN.1 retained bytes per parse | 48 MiB | a receipt at the 3 MiB cap retains 42 MiB (14 times its DER), that same fixture 967 KB; see below for why bounding node count is not enough |
+| Receipt size (`ReceiptVerifier::MAX_RECEIPT_BYTES`) | 3 MiB | Apple's request limit, see below; no receipt Apple accepts is larger than the request carrying it |
 | JWS size | 256 KiB | every JWS in the corpus, Apple's own mock notification data included, is under 2.5 KB |
-| raw JSON request body (`verifyReceiptResult(string)`, `verifyReceiptJson`) | 1 MiB | the largest genuine receipt is 106 KB of base64, and `json_decode` expands a breadth bomb ~48× |
+| raw JSON request body (`verifyReceiptResult(string)`, `verifyReceiptJson`; `VerifyReceiptEndpoint::MAX_REQUEST_BYTES`) | 3 MiB | Apple's own limit, see below |
+| JSON nesting of a request body | 64 levels | `json_decode` recurses once per level |
 | Embedded certificates | 10 | enforced *before* any certificate is decoded, because decoding and RSA-checking candidate issuers is the expensive half |
 | Chain path length | 6 | well past any Apple chain |
 
-The receipt size and node bounds are constructor arguments if your corpus is
-unusual. The rest are not: they are security properties.
+The node budget is a constructor argument if your corpus is unusual. The rest
+are not: they are security properties, and the two size limits are Apple's.
+
+**Apple's limits.** The request and receipt limits are fixed constants in
+every port of this library, not options. Measured on 2026-09-23 against both
+of Apple's verifyReceipt endpoints (production and sandbox), a request body of
+3,145,728 bytes is answered normally and one of 3,145,729 bytes gets HTTP 413.
+Apple counts UTF-8 bytes, not characters: 3,145,729 bytes of `é`, only
+1,572,874 characters, also got 413. A PHP string is bytes, so `strlen()` is
+that count, and this port measures a raw body, a base64 receipt and the DER
+with it. Never compare `mb_strlen()` against these limits.
+`fixtures/cases.json` holds every port to these numbers from both sides.
+
+- A raw body over `VerifyReceiptEndpoint::MAX_REQUEST_BYTES` answers 21002 with
+  `Reason::RequestTooLarge`, decided before the body is parsed, so a huge
+  malformed body is `REQUEST_TOO_LARGE`, not `MALFORMED_REQUEST`. A body
+  already decoded to an array is not measured.
+- A `receipt-data`, or a receipt passed to `ReceiptVerifier`, over
+  `ReceiptVerifier::MAX_RECEIPT_BYTES` is `INVALID_RECEIPT_FORMAT`, checked on
+  the base64 string before it is decoded and again on the DER. The
+  retained-byte budget is sized so a receipt at the cap is parsed: its CMS
+  envelope retains 14 times its DER, 42 MiB at 3 MiB, under the 48 MiB budget.
+  Verifying the 3,145,728-byte `receipt-at-der-cap` fixture peaks about 40 MB
+  above the baseline on PHP 8.4.19. The largest genuine receipt in the corpus
+  is 79 KB.
+
+**Answering 413 like Apple.** `REQUEST_TOO_LARGE` exists so an HTTP layer can
+send the status Apple sends. The body is Apple's 21002 either way:
+
+```php
+$result = $endpoint->verifyReceiptResult((string) $request->getBody());
+$status = $result->failureReason() === Reason::RequestTooLarge ? 413 : 200;
+// $streams: any PSR-17 StreamFactoryInterface.
+return $response->withStatus($status)->withBody($streams->createStream($result->toJson()));
+```
+
+A web server or framework that caps request bodies itself (nginx's
+`client_max_body_size` defaults to 1m) has to allow at least 3 MiB, or it
+refuses bodies Apple would answer.
+
+**`memory_limit` headroom.** The request cap bounds what `json_decode` can be
+handed, not what it allocates. A genuine body at the cap, a real receipt
+padded to 3 MiB, peaks at about 8 MB. A hostile body at the cap costs far
+more: the costliest shape measured, chains of arrays nested 60 deep, peaks at
+about 331 MB on PHP 8.4.19 and about 561 MB on PHP 8.1.34, because every
+level is two bytes of JSON and a whole PHP array, and PHP 8.1's packed arrays
+take twice the memory per slot that 8.2 and later do; the flat `[[]]` bomb peaks at about 155 MB. Both are over the
+`php.ini-production` default of 128M, and running out of memory is a fatal
+error no `catch` can answer (below). Give a worker that passes raw bodies to
+the endpoint a `memory_limit` of at least 384M on PHP 8.2 or later and 640M
+on PHP 8.1, more if the rest of the request holds much at the same time;
+`MemoryExhaustionTest` runs that vector at those limits. Decoding the body yourself does not avoid the cost, it only moves the
+same `json_decode` out of this library.
 
 **Why a node budget is not enough on its own.** Depth and node count bound
 different axes, and the cost is their *product*: a value nested N levels deep is
@@ -494,7 +552,8 @@ copied N times on the way down, so retained parser state is roughly
 sibling chains of 31 `SEQUENCE`s around 3 KB each is 19,201 nodes at depth 31 in
 1.9 MB of input, inside the node budget, the depth ceiling and the receipt cap
 alike — and cost 92 MB of parser state. The retained-byte budget bounds that
-product; it brings the same input down to 28 MB.
+product; it brings the same input down to 38 MB, and the same shape grown to
+the 3 MiB receipt cap peaks at about 46 MB.
 
 **These are correctness bounds, not tuning knobs.** Running out of memory in PHP
 raises a *fatal error*, and a fatal error is not a `Throwable`: no `catch` in

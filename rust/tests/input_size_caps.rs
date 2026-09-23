@@ -4,8 +4,9 @@
 //!
 //! Every one of these inputs is decoded or parsed before any signature is
 //! checked, so without a cap an attacker gets that work, and the memory it
-//! allocates, for free. The numbers are the Java, PHP and Python ports'
-//! numbers. Each cap is pinned three ways: one unit over is refused WITHOUT
+//! allocates, for free. The receipt and request caps are Apple's own limit,
+//! 3 MiB (measured 2026-09-23), fixed and the same in every port; the JWS
+//! and depth caps are the shared cross-port numbers. Each cap is pinned three ways: one unit over is refused WITHOUT
 //! the expensive step running, exactly at the cap is not refused by the cap,
 //! and the exact answer a caller sees.
 //!
@@ -116,7 +117,7 @@ fn nested(depth: usize) -> String {
     format!("{}{}", "[".repeat(depth), "]".repeat(depth))
 }
 
-// --- receipt string: 2 MiB, before base64 decode -------------------------
+// --- receipt string: 3 MiB, before base64 decode -------------------------
 
 #[test]
 fn a_receipt_string_one_byte_over_the_cap_is_refused_before_decoding() {
@@ -128,9 +129,9 @@ fn a_receipt_string_one_byte_over_the_cap_is_refused_before_decoding() {
     assert_eq!(error.reason(), Reason::InvalidReceiptFormat);
     assert_eq!(
         error.detail(),
-        "receipt exceeds the maximum accepted size of 2097152 bytes of base64"
+        "receipt exceeds the maximum accepted size of 3145728 bytes of base64"
     );
-    // Decoding would have allocated 1.5 MiB.
+    // Decoding would have allocated 2.25 MiB.
     assert!(allocated < REFUSAL_BUDGET, "allocated {allocated} bytes");
 
     let (error, allocated) = measure(|| {
@@ -148,7 +149,7 @@ fn a_receipt_string_exactly_at_the_cap_is_decoded() {
     let verifier = receipt_verifier(common::receipt_root());
     let at = "A".repeat(MAX_RECEIPT_BYTES);
     let (error, allocated) = measure(|| verifier.verify_base64(&at).unwrap_err());
-    // Refused, but by the CMS parser: 1.5 MiB of zeros is not a receipt.
+    // Refused, but by the CMS parser: 2.25 MiB of zeros is not a receipt.
     assert_eq!(error.reason(), Reason::InvalidReceiptFormat);
     assert!(!error.detail().contains("maximum accepted size"), "{error}");
     // And decoded to get there.
@@ -189,13 +190,13 @@ fn receipt_data_exactly_at_the_cap_is_decoded_at_the_endpoint() {
     assert_eq!(result.to_json(), FAILED_BODY);
 }
 
-// --- receipt DER: 2 MiB, before the CMS parse ----------------------------
+// --- receipt DER: 3 MiB, before the CMS parse ----------------------------
 
 #[test]
 fn receipt_der_one_byte_over_the_cap_is_refused_before_parsing() {
     let verifier = receipt_verifier(common::receipt_root());
     let over = vec![0x30u8; MAX_RECEIPT_BYTES + 1];
-    let expected = "receipt exceeds the maximum accepted size of 2097152 bytes";
+    let expected = "receipt exceeds the maximum accepted size of 3145728 bytes";
 
     let (error, allocated) = measure(|| verifier.verify(&over).unwrap_err());
     assert_eq!(error.reason(), Reason::InvalidReceiptFormat);
@@ -224,10 +225,10 @@ fn receipt_der_exactly_at_the_cap_reaches_the_parser() {
 #[test]
 fn the_byte_floor_receipt_still_verifies_through_every_receipt_entry_point() {
     // cases.json: every port MUST accept 1 MiB of DER. Its base64 is about
-    // 1.38 MB, under the 2 MiB string cap.
+    // 1.38 MB, under the 3 MiB string cap, and so is the body carrying it.
     let der = common::read_fixture("generated/receipt-byte-floor.der");
     let text = base64::encode(&der);
-    assert!(text.len() < MAX_RECEIPT_BYTES && text.len() > MAX_REQUEST_BYTES);
+    assert!(text.len() < MAX_RECEIPT_BYTES);
     let anchor = common::anchor("generated/large-receipt-root.der");
 
     let verifier = receipt_verifier(anchor.clone());
@@ -249,26 +250,27 @@ fn the_byte_floor_receipt_still_verifies_through_every_receipt_entry_point() {
             .status(),
         status::OK
     );
-    // Wrapped in a JSON body it is over the 1 MiB request cap, which bounds
-    // a wire request rather than a receipt: 21002, as Java, PHP and Python
-    // answer.
+    // Wrapped in a JSON body it is still under the 3 MiB request cap, as it
+    // is under Apple's.
     let body = json!({ "receipt-data": text }).to_string();
+    assert!(body.len() < MAX_REQUEST_BYTES);
     let result = endpoint.verify_receipt_result_from_json(&body);
-    assert_eq!(result.failure_reason(), Some(Reason::MalformedRequest));
-    assert_eq!(endpoint.verify_receipt_json(&body), FAILED_BODY);
+    assert_eq!(result.status(), status::OK);
+    assert_eq!(result.receipt().unwrap().in_app_purchases.len(), 2300);
 }
 
-// --- request body: 1 MiB of UTF-8, before serde_json ---------------------
+// --- request body: 3 MiB of UTF-8, before serde_json ---------------------
 
 #[test]
 fn a_body_one_byte_over_the_cap_answers_21002_without_being_parsed() {
+    // REQUEST_TOO_LARGE, the reason an HTTP layer maps to 413 as Apple does.
     let endpoint = endpoint(common::receipt_root());
     let over = body_of_len(MAX_REQUEST_BYTES + 1);
     let (result, allocated) = measure(|| endpoint.verify_receipt_result_from_json(&over));
-    // Parsing would have allocated the 1 MiB pad string again.
+    // Parsing would have allocated the 3 MiB pad string again.
     assert!(allocated < REFUSAL_BUDGET, "allocated {allocated} bytes");
     assert_eq!(result.status(), status::MALFORMED);
-    assert_eq!(result.failure_reason(), Some(Reason::MalformedRequest));
+    assert_eq!(result.failure_reason(), Some(Reason::RequestTooLarge));
     assert_eq!(result.to_json(), FAILED_BODY);
     assert_eq!(endpoint.verify_receipt_json(&over), FAILED_BODY);
 }
@@ -282,17 +284,54 @@ fn a_body_exactly_at_the_cap_verifies() {
 
 #[test]
 fn the_body_cap_counts_utf8_bytes_not_characters() {
-    // Rust's `str::len` is UTF-8 bytes, the unit Node uses; Java, .NET and
-    // Python count characters. Pinned so the choice cannot drift silently:
-    // this body is under the cap in characters and over it in bytes.
+    // Apple's limit counts UTF-8 bytes, and so does `str::len`. A body
+    // padded with U+00E9 to one byte over the cap is barely half the cap in
+    // characters, so a character count would let it through; the same shape
+    // one byte shorter verifies.
     let endpoint = endpoint(common::receipt_root());
-    let empty = body_with(r#","pad":"""#);
-    let pad = "é".repeat((MAX_REQUEST_BYTES - empty.len()) / 2 + 1);
-    let body = body_with(&format!(r#","pad":"{pad}""#));
-    assert!(body.chars().count() <= MAX_REQUEST_BYTES && body.len() > MAX_REQUEST_BYTES);
-    let result = endpoint.verify_receipt_result_from_json(&body);
-    assert_eq!(result.failure_reason(), Some(Reason::MalformedRequest));
+    let fixed = body_with(r#","pad":"""#).len();
+    let padded = |bytes: usize| {
+        let pad = format!("{}{}", "é".repeat(bytes / 2), "a".repeat(bytes % 2));
+        body_with(&format!(r#","pad":"{pad}""#))
+    };
+
+    let over = padded(MAX_REQUEST_BYTES + 1 - fixed);
+    assert_eq!(over.len(), MAX_REQUEST_BYTES + 1);
+    assert!(over.chars().count() < MAX_REQUEST_BYTES / 2 + fixed);
+    let result = endpoint.verify_receipt_result_from_json(&over);
+    assert_eq!(result.failure_reason(), Some(Reason::RequestTooLarge));
     assert_eq!(result.to_json(), FAILED_BODY);
+
+    let at = padded(MAX_REQUEST_BYTES - fixed);
+    assert_eq!(at.len(), MAX_REQUEST_BYTES);
+    assert_eq!(
+        endpoint.verify_receipt_result_from_json(&at).status(),
+        status::OK
+    );
+}
+
+#[test]
+fn the_caps_are_apples_three_mebibytes() {
+    // Measured 2026-09-23: Apple's verifyReceipt answers a 3,145,728-byte
+    // body and refuses a 3,145,729-byte one with HTTP 413. No receipt it
+    // accepts can be larger than the body carrying it.
+    assert_eq!(MAX_REQUEST_BYTES, 3_145_728);
+    assert_eq!(MAX_RECEIPT_BYTES, 3_145_728);
+}
+
+#[test]
+fn an_oversized_body_is_too_large_before_it_is_malformed() {
+    // The size is decided before the depth scan and the parse, so a huge
+    // body that is also not JSON is REQUEST_TOO_LARGE, as Apple's 413 is.
+    let endpoint = endpoint(common::receipt_root());
+    for body in [
+        "[".repeat(MAX_REQUEST_BYTES + 1),
+        "x".repeat(MAX_REQUEST_BYTES + 1),
+    ] {
+        let result = endpoint.verify_receipt_result_from_json(&body);
+        assert_eq!(result.failure_reason(), Some(Reason::RequestTooLarge));
+        assert_eq!(result.to_json(), FAILED_BODY);
+    }
 }
 
 // --- request body nesting: 64, counted before serde_json -----------------

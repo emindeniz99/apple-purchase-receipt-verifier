@@ -59,7 +59,7 @@
         "path": {
           "type": "string",
           "description": "Path relative to fixtures/.",
-          "pattern": "^(generated|public-receipts|apple-official)/[A-Za-z0-9._/-]+$"
+          "pattern": "^(generated|public-receipts|apple-official|limits)/[A-Za-z0-9._/-]+$"
         },
         "role": {
           "description": "input = bytes handed to the operation; trust-anchor = certificate the verifier is configured with; support = neither, kept registered so the tier stays fully accounted for.",
@@ -99,6 +99,21 @@
         "INVALID_RECEIPT_FORMAT",
         "DEVICE_HASH_MISMATCH",
         "STALE_PAYLOAD"
+      ]
+    },
+    "resultReason": {
+      "description": "What VerifyReceiptResult.failureReason can hold: every reason a verifier throws, plus the three that only an endpoint result reports and nothing ever throws. MALFORMED_REQUEST: the envelope is unusable (not a JSON object, nested deeper than 64, receipt-data missing, empty or not a string). REQUEST_TOO_LARGE: the raw body is over 3,145,728 UTF-8 bytes. INTERNAL_ERROR: an unexpected exception, status 21009.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/reason"
+        },
+        {
+          "enum": [
+            "MALFORMED_REQUEST",
+            "REQUEST_TOO_LARGE",
+            "INTERNAL_ERROR"
+          ]
+        }
       ]
     },
     "environment": {
@@ -165,6 +180,26 @@
         }
       },
       "description": "One registered fixture. A verifyReceiptBase64 case must name a text fixture; a verifyReceiptEndpoint case whose fixture is text hands that text to receipt-data verbatim, where a raw or base64 fixture is re-encoded as canonical base64."
+    },
+    "endpointInput": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/input"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "requestBody"
+          ],
+          "properties": {
+            "requestBody": {
+              "$ref": "#/$defs/fixtureId"
+            }
+          },
+          "description": "A text fixture that is the WHOLE raw request body. The runner hands its bytes, as text, to the port's raw-body entry point (the one that parses JSON) instead of wrapping receipt-data itself."
+        }
+      ]
     },
     "clock": {
       "type": "object",
@@ -284,6 +319,10 @@
               ]
             }
           }
+        },
+        "failureReason": {
+          "$ref": "#/$defs/resultReason",
+          "description": "When present, the reason the result carries. Not part of Apple's wire body, so it sits beside fields rather than in them."
         }
       }
     },
@@ -628,7 +667,7 @@
               "const": "verifyReceiptEndpoint"
             },
             "input": {
-              "$ref": "#/$defs/input"
+              "$ref": "#/$defs/endpointInput"
             },
             "config": {
               "type": "object",

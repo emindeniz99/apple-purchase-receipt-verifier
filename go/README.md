@@ -167,13 +167,15 @@ error, as it is for `NewVerifyReceiptEndpoint`.
 
 | `Reason()` | status | when |
 |---|---|---|
-| `MALFORMED_REQUEST` | 21002 | the body is not a JSON object, or `receipt-data` is missing, empty or not a string |
-| `INVALID_RECEIPT_FORMAT` | 21002 | `receipt-data` is not base64 or does not decode to a receipt |
+| `REQUEST_TOO_LARGE` | 21002 | the raw body is over `MaxRequestBytes` (3,145,728 bytes); Apple answers HTTP 413 here, see [Trust model](#trust-model) |
+| `MALFORMED_REQUEST` | 21002 | the body is not a JSON object or nests deeper than 64, or `receipt-data` is missing, empty or not a string |
+| `INVALID_RECEIPT_FORMAT` | 21002 | `receipt-data` is not base64, is over `MaxReceiptBytes`, or does not decode to a receipt |
 | `INVALID_CHAIN`, `INVALID_SIGNATURE`, other certificate reasons | 21003 | the receipt did not authenticate |
 | `INTERNAL_ERROR` | 21009 | an unexpected error or panic |
 
-`MALFORMED_REQUEST` and `INTERNAL_ERROR` only ever appear on a result. No
-verifier returns either, and `AllReasons()` does not list them.
+`MALFORMED_REQUEST`, `REQUEST_TOO_LARGE` and `INTERNAL_ERROR` only ever
+appear on a result. No verifier returns any of them, and `AllReasons()` does
+not list them.
 
 **`request_date`.** `VerifyReceiptAt`, `VerifyReceiptBodyAt` and
 `VerifyReceiptDataAt` take a `time.Time` that becomes `request_date` in place
@@ -385,29 +387,46 @@ func redeemReceipt(receipts *applereceipt.ReceiptVerifier, userID, receiptData, 
   Receipts are capped at ten embedded certificates, enforced *before* any
   certificate is decoded.
 - **Input size limits, checked before anything is decoded or parsed.** The
-  numbers are the Java, PHP and Python ports' own, and each is exported:
+  request and receipt limits are Apple's. Measured on 2026-09-23 against
+  both of Apple's verifyReceipt endpoints (production and sandbox), a request
+  body of 3,145,728 bytes is answered normally and one of 3,145,729 bytes
+  gets HTTP 413. Apple counts UTF-8 bytes, not characters: 3,145,729 bytes of
+  `é`, only 1,572,874 characters, also got 413. No receipt Apple accepts can
+  be larger than the request that carries it. Every limit is a fixed
+  constant, the same in every port, and `fixtures/cases.json` holds every
+  port to them from both sides:
 
   | Input | Limit | Checked before | Answer |
   |---|---|---|---|
-  | receipt base64 string (`VerifyBase64*`, `receipt-data`) | `MaxReceiptBytes`, default `DefaultMaxReceiptBytes` = 2,097,152 bytes | base64 decode | `INVALID_RECEIPT_FORMAT`; `21002` at the endpoint |
-  | receipt DER (`Verify*`, `VerifyReceiptCore`) | the same, 2,097,152 bytes | CMS parse | `INVALID_RECEIPT_FORMAT` |
-  | raw request body (`VerifyReceiptBody*`, `VerifyReceiptJSON`) | `MaxRequestBytes` = 1,048,576 bytes | JSON parse | `21002`, `MALFORMED_REQUEST` |
+  | receipt base64 string (`VerifyBase64*`, `receipt-data`) | `MaxReceiptBytes` = 3,145,728 bytes | base64 decode | `INVALID_RECEIPT_FORMAT`; `21002` at the endpoint |
+  | receipt DER (`Verify*`, `VerifyReceiptCore`) | the same, 3,145,728 bytes | CMS parse | `INVALID_RECEIPT_FORMAT` |
+  | raw request body (`VerifyReceiptBody*`, `VerifyReceiptJSON`) | `MaxRequestBytes` = 3,145,728 bytes | nesting count and JSON parse | `21002`, `REQUEST_TOO_LARGE` |
   | request body nesting | `MaxJSONNestingDepth` = 64 | JSON parse | `21002`, `MALFORMED_REQUEST` |
   | compact JWS | `MaxJWSBytes` = 262,144 bytes | split and base64url decode | `INVALID_JWS_FORMAT` |
   | JWS header and payload nesting | `MaxJSONNestingDepth` = 64 | JSON parse | `INVALID_JWS_FORMAT` |
 
   A string is measured as sent, in bytes, whitespace and PEM line breaks
-  included, because the decoder walks those characters too. Nesting is
-  counted in one pass over the bytes (brackets inside strings do not count)
-  before `encoding/json` sees them. `MaxReceiptBytes` stays configurable on
-  `ReceiptVerifierOptions` and `VerifyReceiptEndpointOptions`, and one
-  setting caps both the string and the DER; the request body and JWS limits
-  are fixed. The 2 MiB receipt limit clears the normative floor in
-  `fixtures/cases.json` (a receipt of up to 1 MiB of DER must verify), and
-  the byte-floor fixture verifies through every verifier entry point and
-  through `VerifyReceiptData`. Its JSON body is about 1.38 MB, over the
-  request limit, so through `VerifyReceiptBody` it answers `21002`, as it
-  does in the other ports.
+  included, because the decoder walks those characters too. A Go string or
+  `[]byte` already holds UTF-8 bytes, so `len` is Apple's measure and nothing
+  is copied to take it. Nesting is counted in one pass over the bytes
+  (brackets inside strings do not count) before `encoding/json` sees them.
+  The body size is checked first, so a huge body that is also malformed is
+  `REQUEST_TOO_LARGE`. The byte-floor fixture (1 MiB of DER, about 1.38 MB of
+  base64) verifies through every entry point, the raw body included.
+
+  **Answering 413 like Apple.** `REQUEST_TOO_LARGE` exists so an HTTP layer
+  can send the status Apple sends. The body is Apple's 21002 either way:
+
+  ```go
+  result := endpoint.VerifyReceiptBody(body)
+  if result.Reason() == applereceipt.ReasonRequestTooLarge {
+  	w.WriteHeader(http.StatusRequestEntityTooLarge)
+  }
+  w.Write(result.JSON())
+  ```
+
+  An `http.MaxBytesReader` or proxy limit in front of the endpoint has to
+  allow at least 3 MiB, or it refuses bodies Apple would answer.
 - **An embedded certificate that does not decode is fatal.** The CMS
   certificate bag is the one region of a receipt the `SignerInfo` signature
   does not cover, so it is where a genuine receipt can be rewritten for

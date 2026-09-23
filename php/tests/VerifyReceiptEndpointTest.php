@@ -6,6 +6,8 @@ namespace EminDeniz99\ApplePurchaseReceiptVerifier\Tests;
 
 use DateTimeImmutable;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Reason;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\VerifyReceiptEndpoint;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Fixtures;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\FrozenClock;
@@ -245,6 +247,78 @@ final class VerifyReceiptEndpointTest extends TestCase
         ), 'response body');
 
         self::assertSame(21002, $decoded['status']);
+    }
+
+    /**
+     * The limits are Apple's, fixed in every port by fixtures/cases.json:
+     * Apple's verifyReceipt answers a 3,145,728-byte request body and refuses
+     * a 3,145,729-byte one (measured 2026-09-23), and no receipt it accepts
+     * can be larger than the body that carries it.
+     */
+    public function testTheBoundsAreApplesThreeMebibytes(): void
+    {
+        self::assertSame(3145728, VerifyReceiptEndpoint::MAX_REQUEST_BYTES);
+        self::assertSame(3145728, ReceiptVerifier::MAX_RECEIPT_BYTES);
+    }
+
+    /**
+     * Apple's limit counts UTF-8 bytes. A body padded with U+00E9 to one byte
+     * over the limit is barely half the limit in characters, so a character
+     * count (a port counting code points or UTF-16 units) lets it through;
+     * the same shape one byte shorter verifies. A PHP string is bytes, so
+     * `strlen()` is the count Apple makes.
+     */
+    public function testTheRequestBodyIsMeasuredInUtf8BytesNotCharacters(): void
+    {
+        $limit = VerifyReceiptEndpoint::MAX_REQUEST_BYTES;
+        $receipt = base64_encode(MintedPki::get()->receipt());
+        $body = static fn (int $padding): string => '{"receipt-data":"' . $receipt . '","password":"'
+            . str_repeat("\u{e9}", intdiv($padding, 2)) . ($padding % 2 === 1 ? 'a' : '') . '"}';
+        $fixed = strlen($body(0));
+
+        $over = $body($limit + 1 - $fixed);
+        self::assertSame($limit + 1, strlen($over));
+        // Each two-byte U+00E9 is one character; mbstring is not required.
+        $characters = strlen($over) - substr_count($over, "\u{e9}");
+        self::assertLessThan(intdiv($limit, 2) + $fixed, $characters);
+        $result = $this->endpoint()->verifyReceiptResult($over);
+        self::assertSame(Reason::RequestTooLarge, $result->failureReason());
+        self::assertSame(VerifyReceiptEndpoint::STATUS_MALFORMED, $result->status());
+
+        $at = $body($limit - $fixed);
+        self::assertSame($limit, strlen($at));
+        self::assertSame(VerifyReceiptEndpoint::STATUS_OK, $this->endpoint()->verifyReceiptResult($at)->status());
+    }
+
+    /**
+     * The size is decided before the body is parsed, so a body over the limit
+     * is REQUEST_TOO_LARGE however malformed it is, not MALFORMED_REQUEST.
+     */
+    public function testAnOversizedMalformedBodyIsTooLargeRatherThanMalformed(): void
+    {
+        $body = str_repeat('[', VerifyReceiptEndpoint::MAX_REQUEST_BYTES + 1);
+
+        self::assertSame(Reason::RequestTooLarge, $this->endpoint()->verifyReceiptResult($body)->failureReason());
+        self::assertSame(
+            Reason::MalformedRequest,
+            $this->endpoint()->verifyReceiptResult(substr($body, 1))->failureReason(),
+        );
+    }
+
+    /**
+     * The receipt cap applies to `receipt-data` in every entry point, so a
+     * decoded body whose `receipt-data` is one byte over it is
+     * INVALID_RECEIPT_FORMAT, not REQUEST_TOO_LARGE: only a raw body has a
+     * request size.
+     */
+    public function testAReceiptDataOverTheReceiptCapIsAnInvalidReceiptFormat(): void
+    {
+        $result = $this->endpoint()->verifyReceiptResult([
+            'receipt-data' => str_repeat('A', ReceiptVerifier::MAX_RECEIPT_BYTES + 1),
+        ]);
+
+        self::assertSame(Reason::InvalidReceiptFormat, $result->failureReason());
+        self::assertSame(VerifyReceiptEndpoint::STATUS_MALFORMED, $result->status());
     }
 
     /**

@@ -166,7 +166,9 @@ public final class VerifyReceiptResult {
             throw new IllegalArgumentException("environment must be PRODUCTION or SANDBOX, got " + environment);
         }
         if (receipt == null) {
-            if (failureReason == Reason.MALFORMED_REQUEST || failureReason == Reason.INVALID_RECEIPT_FORMAT) {
+            if (failureReason == Reason.MALFORMED_REQUEST
+                    || failureReason == Reason.REQUEST_TOO_LARGE
+                    || failureReason == Reason.INVALID_RECEIPT_FORMAT) {
                 return VerifyReceiptEndpoint.STATUS_MALFORMED;
             }
             if (failureReason == Reason.INTERNAL_ERROR) {
