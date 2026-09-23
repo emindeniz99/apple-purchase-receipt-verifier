@@ -483,7 +483,7 @@ about 72 MB of parser state, against a `php.ini-production` default
 |---|---|---|
 | ASN.1 nesting depth | 32 | PHP gained `zend.max_allowed_stack_size` in 8.3; on 8.1 an unbounded recursive parser segfaults rather than raising |
 | ASN.1 nodes per parse | 20,000 | the largest genuine fixture — a 79 KB receipt with 187 in-app purchases — decodes to under 3,000 |
-| ASN.1 retained bytes per parse | 32 MiB | that same fixture retains 967 KB; see below for why bounding node count is not enough |
+| ASN.1 retained bytes per parse | 48 MiB | a receipt at the 3 MiB cap retains 42 MiB (14 times its DER), that same fixture 967 KB; see below for why bounding node count is not enough |
 | Receipt size (`ReceiptVerifier::MAX_RECEIPT_BYTES`) | 3 MiB | Apple's request limit, see below; no receipt Apple accepts is larger than the request carrying it |
 | JWS size | 256 KiB | every JWS in the corpus, Apple's own mock notification data included, is under 2.5 KB |
 | raw JSON request body (`verifyReceiptResult(string)`, `verifyReceiptJson`; `VerifyReceiptEndpoint::MAX_REQUEST_BYTES`) | 3 MiB | Apple's own limit, see below |
@@ -510,10 +510,12 @@ with it. Never compare `mb_strlen()` against these limits.
   already decoded to an array is not measured.
 - A `receipt-data`, or a receipt passed to `ReceiptVerifier`, over
   `ReceiptVerifier::MAX_RECEIPT_BYTES` is `INVALID_RECEIPT_FORMAT`, checked on
-  the base64 string before it is decoded and again on the DER. In this port a
-  DER receipt over about 2.28 MiB is refused anyway, with the same verdict, by
-  the retained-byte budget: its CMS envelope retains about 14 times its size.
-  The largest genuine receipt in the corpus is 79 KB.
+  the base64 string before it is decoded and again on the DER. The
+  retained-byte budget is sized so a receipt at the cap is parsed: its CMS
+  envelope retains 14 times its DER, 42 MiB at 3 MiB, under the 48 MiB budget.
+  Verifying the 3,145,728-byte `receipt-at-der-cap` fixture peaks about 40 MB
+  above the baseline on PHP 8.4.19. The largest genuine receipt in the corpus
+  is 79 KB.
 
 **Answering 413 like Apple.** `REQUEST_TOO_LARGE` exists so an HTTP layer can
 send the status Apple sends. The body is Apple's 21002 either way:
@@ -549,7 +551,8 @@ copied N times on the way down, so retained parser state is roughly
 sibling chains of 31 `SEQUENCE`s around 3 KB each is 19,201 nodes at depth 31 in
 1.9 MB of input, inside the node budget, the depth ceiling and the receipt cap
 alike — and cost 92 MB of parser state. The retained-byte budget bounds that
-product; it brings the same input down to 28 MB.
+product; it brings the same input down to 38 MB, and the same shape grown to
+the 3 MiB receipt cap peaks at about 46 MB.
 
 **These are correctness bounds, not tuning knobs.** Running out of memory in PHP
 raises a *fatal error*, and a fatal error is not a `Throwable`: no `catch` in

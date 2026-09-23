@@ -61,20 +61,18 @@ final class Der
      *
      * The largest genuine fixture — the 79 KB legacy receipt with 187 in-app
      * purchases — retains 967 KB, a ratio of 12× that comes from real receipts
-     * being shallow. The attack ratio is `2 × MAX_DEPTH`, i.e. 64×. So 32 MiB
-     * is ~34× the largest real receipt, and it caps hostile input at roughly a
-     * third of a default 128M `memory_limit` instead of blowing straight
-     * through it.
+     * being shallow. The attack ratio is `2 × MAX_DEPTH`, i.e. 64×.
      *
-     * It does not reach the full
+     * The budget is sized by the receipt cap: the CMS envelope parse retains
+     * 14 times the DER (measured on `receipt-byte-floor` and on
+     * `receipt-at-der-cap`, whose 3,145,728 bytes retain 44,028,800), so
      * {@see \EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier::MAX_RECEIPT_BYTES}
-     * of 3 MiB: the CMS envelope parse retains 14 times the DER (measured on
-     * the 1,034,681-byte `receipt-byte-floor` fixture), so it covers a
-     * receipt of up to about 2.28 MiB of DER. A genuine receipt between that
-     * and 3 MiB would be refused here as INVALID_RECEIPT_FORMAT. The largest
-     * genuine receipt in the corpus is 79 KB.
+     * of 3 MiB needs 42 MiB. 48 MiB covers a receipt of up to about 3.43 MiB
+     * of DER, so every receipt the cap lets through is parsed. The costliest
+     * hostile shape at the cap, chains of SEQUENCEs 31 deep, still stops at a
+     * peak of about 46 MB on PHP 8.4, under half of a 128M `memory_limit`.
      */
-    public const DEFAULT_BYTE_BUDGET = 33554432;
+    public const DEFAULT_BYTE_BUDGET = 50331648;
 
     public const TAG_BOOLEAN = 0x01;
     public const TAG_INTEGER = 0x02;
