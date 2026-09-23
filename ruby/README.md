@@ -181,12 +181,13 @@ creates one, so no caller can build a status 0. Passing a result to
 `JSON.generate` or to Rails' `render json:` embeds its own response.
 
 No request input makes the endpoint raise: failures come back as a result with
-a status, exactly as the real endpoint reports them. Two reasons exist only on
+a status, exactly as the real endpoint reports them. Three reasons exist only on
 a result, never on a `VerificationError`:
 
 | Reason | Status | When |
 |---|---|---|
-| `MALFORMED_REQUEST` | 21002 | the body is not a JSON object, is over `MAX_REQUEST_BYTES` or nests past 64 levels, or `receipt-data` is missing, empty or not a String |
+| `REQUEST_TOO_LARGE` | 21002 | the raw body is over `MAX_REQUEST_BYTES` (3,145,728 bytes); Apple answers HTTP 413 here, see [Input limits](#input-limits) |
+| `MALFORMED_REQUEST` | 21002 | the body is not a JSON object or nests past 64 levels, or `receipt-data` is missing, empty or not a String |
 | `INTERNAL_ERROR` | 21009 | an unexpected error inside the endpoint, including a clock that raises or returns something other than a `Time`; `failure_cause` holds it |
 
 Like the real endpoint, it does **not** check the bundle id. Compare
@@ -208,23 +209,24 @@ returns the same Hash.
 
 Base64 decoding, the CMS parse and JSON parsing all allocate in proportion to
 their input before any signature is checked, so the input is measured first.
-These are constants, not constructor options, and they match the Java, PHP
-and Python ports.
+The two size limits are Apple's, fixed constants in every port of this
+library, not constructor options. Measured on 2026-09-23 against both of
+Apple's verifyReceipt endpoints (production and sandbox), a request body of
+3,145,728 bytes is answered normally and one of 3,145,729 bytes gets HTTP 413.
+Apple counts UTF-8 bytes, not characters: 3,145,729 bytes of `é`, only
+1,572,874 characters, also got 413. `fixtures/cases.json` holds every port to
+these numbers from both sides.
 
-- **`ReceiptVerifier::MAX_RECEIPT_BYTES` (2 MiB).** Applied to base64 text in
-  characters, before decoding: at `ReceiptVerifier#verify`, `#verify_base64`
-  and the endpoint's `receipt-data`. Applied to DER in bytes, before parsing:
-  at `#verify_der` and `verify_receipt_core`. A larger receipt is
-  `INVALID_RECEIPT_FORMAT` (21002 at the endpoint). `fixtures/cases.json`
-  requires every port to accept a receipt of up to 1 MiB of DER, about
-  1.38 MB of base64; the largest genuine receipt in the corpus is 79 KB.
-- **`VerifyReceiptEndpoint::MAX_REQUEST_BYTES` (1 MiB).** Applied to a raw
-  JSON body in bytes, before it is parsed. A larger body answers 21002 with
-  `MALFORMED_REQUEST`. It sits below the receipt cap on purpose: the JSON
-  path parses the body as well as decoding the receipt. So a receipt at the
-  1 MiB DER floor verifies through `verify_receipt_data` or a Hash request,
-  and answers 21002 inside a JSON body. A request already decoded to a Hash
-  is not measured; its `receipt-data` still is.
+- **`VerifyReceiptEndpoint::MAX_REQUEST_BYTES` (3 MiB, 3,145,728 bytes).**
+  Applied to a raw JSON body before it is parsed. A larger body answers
+  21002 with `REQUEST_TOO_LARGE`. A request already decoded to a Hash is not
+  measured; its `receipt-data` still is.
+- **`ReceiptVerifier::MAX_RECEIPT_BYTES` (3 MiB, 3,145,728 bytes).** Applied
+  to base64 text before decoding: at `ReceiptVerifier#verify`,
+  `#verify_base64` and the endpoint's `receipt-data`. Applied to DER before
+  parsing: at `#verify_der` and `verify_receipt_core`. No receipt Apple
+  accepts can be larger than the request that carries it. A larger receipt is
+  `INVALID_RECEIPT_FORMAT` (21002 at the endpoint).
 - **JSON nesting depth 64.** Applies to the request body and to the JWS
   header and payload. A deeper body answers 21002 with `MALFORMED_REQUEST`; a
   deeper JWS segment is `INVALID_JWS_FORMAT`. The depth is enforced by the
@@ -233,6 +235,23 @@ and Python ports.
 - **`JwsVerifier::MAX_JWS_BYTES` (256 KiB).** Applied to the compact JWS in
   characters, before it is split or decoded. A longer one is
   `INVALID_JWS_FORMAT`. Every JWS in the shared corpus is under 2.5 KB.
+
+The request and receipt limits measure with `String#bytesize`, which counts
+bytes without copying. For a UTF-8 String that is its UTF-8 length. A body in another
+encoding, such as the `ASCII-8BIT` String Rack hands over, is measured in its
+own bytes, which are the bytes that arrived on the wire.
+
+**Answering 413 like Apple.** `REQUEST_TOO_LARGE` exists so an HTTP layer can
+send the status Apple sends. The body is Apple's 21002 either way:
+
+```ruby
+result = ENDPOINT.verify_receipt_result(request.body.read)
+status = result.failure_reason == APRV::Reason::REQUEST_TOO_LARGE ? 413 : 200
+[status, { "content-type" => "application/json" }, [result.to_json]]
+```
+
+A framework or proxy that caps request bodies itself has to allow at least
+3 MiB, or it refuses bodies Apple would answer.
 
 ## Errors
 
@@ -253,8 +272,8 @@ end
 `e.reason.to_s` is the canonical cross-language token, with no mapping table
 anywhere. The vocabulary is closed by the cross-port contract: eleven reasons
 in `Reason::ALL`, and a twelfth would be a change to every implementation in
-one pull request. (The endpoint's `MALFORMED_REQUEST` and `INTERNAL_ERROR` are
-outside it; no verifier raises them.)
+one pull request. (The endpoint's `MALFORMED_REQUEST`, `REQUEST_TOO_LARGE` and
+`INTERNAL_ERROR` are outside it; no verifier raises them.)
 
 | Reason | Raised when |
 |---|---|

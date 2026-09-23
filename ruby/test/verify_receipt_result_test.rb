@@ -218,14 +218,11 @@ class VerifyReceiptResultTest < Minitest::Test
         json = JSON.generate({ "receipt-data" => data })
         body = pinned.verify_receipt_json(json)
         bare = pinned.verify_receipt_data(data)
-        if json.bytesize > APRV::VerifyReceiptEndpoint::MAX_REQUEST_BYTES
-          # The byte-floor receipt: its 1.38 MB of base64 is a receipt the
-          # contract requires accepting, inside a body over the request cap.
-          # The two caps bound different things, so the answers part here.
-          assert_equal '{"status":21002}', body, data[0, 40]
-        else
-          assert_equal body, bare.to_json, data[0, 40]
-        end
+        # Every corpus body fits Apple's request cap, the byte-floor
+        # receipt's 1.38 MB of base64 included, so the JSON path and the
+        # bare path must give the same answer for all of them.
+        assert_operator json.bytesize, :<=, APRV::VerifyReceiptEndpoint::MAX_REQUEST_BYTES, data[0, 40]
+        assert_equal body, bare.to_json, data[0, 40]
         statuses << bare.status
         refute_equal APRV::Reason::INTERNAL_ERROR, bare.failure_reason, data[0, 40]
       end

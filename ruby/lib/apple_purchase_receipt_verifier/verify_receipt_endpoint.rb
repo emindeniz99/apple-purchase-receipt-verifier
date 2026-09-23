@@ -47,15 +47,18 @@ module ApplePurchaseReceiptVerifier
     # PLAN.md D10.
     PRODUCTION_RECEIPT_TYPES = %w[Production ProductionVPP].freeze
 
-    # Ceiling on a raw JSON request body, in bytes. A larger one fails with
-    # {Reason::MALFORMED_REQUEST}, status 21002, before it is parsed: JSON
-    # parsing allocates a multiple of the body, and that happens before any
-    # verification. The number is the Java, PHP and Python ports'. It is
-    # deliberately below {ReceiptVerifier::MAX_RECEIPT_BYTES}: the JSON entry
-    # points parse the body as well as decoding the receipt. A request already
-    # decoded to a Hash is not measured; its `receipt-data` still is. The
-    # largest genuine receipt in the corpus is 106 KB of base64.
-    MAX_REQUEST_BYTES = 1_048_576
+    # Ceiling on a raw JSON request body, in bytes: 3 MiB, Apple's own limit.
+    # Measured on 2026-09-23 against both of Apple's verifyReceipt endpoints,
+    # a body of 3,145,728 bytes is answered and one of 3,145,729 bytes gets
+    # HTTP 413, and the count is bytes, not characters. A larger body fails
+    # with {Reason::REQUEST_TOO_LARGE}, status 21002, before it is parsed:
+    # JSON parsing allocates a multiple of the body, and that happens before
+    # any verification. The body is measured with String#bytesize, which is
+    # the byte count in whatever encoding the String carries, so a binary
+    # body from Rack is measured as it arrived on the wire. A fixed constant,
+    # the same in every port. A request already decoded to a Hash is not
+    # measured; its `receipt-data` still is.
+    MAX_REQUEST_BYTES = 3_145_728
 
     # @param trusted_roots [Array<OpenSSL::X509::Certificate, String>]
     # @param environment [String] which environment this instance emulates,
@@ -82,11 +85,13 @@ module ApplePurchaseReceiptVerifier
     # Handles one verifyReceipt request: a request body already decoded to a
     # Hash, or the raw JSON text an HTTP framework hands over.
     #
+    # A raw body over {MAX_REQUEST_BYTES} bytes fails with
+    # {Reason::REQUEST_TOO_LARGE}, status 21002, where Apple answers HTTP 413.
     # A body that is not a JSON object (unparseable, `null`, an array, a
-    # scalar), a raw body over {MAX_REQUEST_BYTES} or nested more than 64
-    # levels deep, or a `receipt-data` that is missing, empty or not a String,
-    # fails with {Reason::MALFORMED_REQUEST}, status 21002. A `receipt-data`
-    # over {ReceiptVerifier::MAX_RECEIPT_BYTES} characters fails with
+    # scalar), a raw body nested more than 64 levels deep, or a
+    # `receipt-data` that is missing, empty or not a String, fails with
+    # {Reason::MALFORMED_REQUEST}, status 21002. A `receipt-data` over
+    # {ReceiptVerifier::MAX_RECEIPT_BYTES} bytes fails with
     # {Reason::INVALID_RECEIPT_FORMAT}, also 21002, before it is decoded.
     # Apple has no status
     # code for "that was not JSON"; 21002 ("the data in the receipt-data
@@ -161,9 +166,8 @@ module ApplePurchaseReceiptVerifier
       # Measured before the parser sees it. A non-String answers 21002 here
       # too, rather than reaching JSON.parse through an implicit #to_str that
       # would bypass the measurement.
-      unless body.is_a?(String) && body.bytesize <= MAX_REQUEST_BYTES
-        return failed(Reason::MALFORMED_REQUEST, at)
-      end
+      return failed(Reason::MALFORMED_REQUEST, at) unless body.is_a?(String)
+      return failed(Reason::REQUEST_TOO_LARGE, at) if body.bytesize > MAX_REQUEST_BYTES
 
       begin
         parsed = JsonLimits.parse(body)

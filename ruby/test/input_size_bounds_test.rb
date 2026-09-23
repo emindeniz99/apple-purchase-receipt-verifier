@@ -12,11 +12,13 @@ require_relative "test_pki"
 # things: one unit over the cap is refused WITHOUT the expensive step running
 # (a spy fails the test if it does), exactly at the cap the cap does not
 # refuse (the input goes on to be judged on its merits), and the exact answer
-# a caller branches on. The numbers are the Java, PHP and Python ports'.
+# a caller branches on. The receipt and request numbers are Apple's: its
+# verifyReceipt answers a 3,145,728-byte body and refuses a 3,145,729-byte one
+# with HTTP 413, counting UTF-8 bytes (measured 2026-09-23).
 class InputSizeBoundsTest < Minitest::Test
   APRV = ApplePurchaseReceiptVerifier
-  RECEIPT_CAP = 2_097_152
-  REQUEST_CAP = 1_048_576
+  RECEIPT_CAP = 3_145_728
+  REQUEST_CAP = 3_145_728
   JWS_CAP = 262_144
   DEPTH_CAP = 64
 
@@ -93,26 +95,38 @@ class InputSizeBoundsTest < Minitest::Test
 
   # -- receipt base64 string -------------------------------------------------
 
-  def test_a_base64_receipt_one_character_over_the_cap_is_refused_before_decoding
+  def test_a_base64_receipt_one_byte_over_the_cap_is_refused_before_decoding
     text = "A" * (RECEIPT_CAP + 1)
     forbidding_base64_decode do
       [-> { @receipt_verifier.verify_base64(text) }, -> { @receipt_verifier.verify(text) }].each do |call|
         error = assert_reason(:INVALID_RECEIPT_FORMAT) { call.call }
         assert_equal "INVALID_RECEIPT_FORMAT: receipt exceeds the maximum accepted size of " \
-                     "2097152 characters", error.message
+                     "3145728 bytes", error.message
       end
     end
   end
 
-  # Characters, not bytes: a client sends text. 2,097,152 two-byte characters
-  # (4 MiB) pass the cap and are refused as not base64.
-  def test_the_base64_cap_counts_characters
-    at_cap = assert_reason(:INVALID_RECEIPT_FORMAT) { @receipt_verifier.verify_base64("é" * RECEIPT_CAP) }
-    refute_match(/maximum accepted size/, at_cap.message)
+  # Bytes, not characters, as Apple counts them. Half the cap in two-byte
+  # characters is exactly the cap and passes it (then fails as not base64);
+  # one more byte is refused by the cap although it is far fewer characters.
+  def test_the_base64_cap_counts_utf8_bytes_not_characters
+    at_cap = "é" * (RECEIPT_CAP / 2)
+    assert_equal RECEIPT_CAP, at_cap.bytesize
+    error = assert_reason(:INVALID_RECEIPT_FORMAT) { @receipt_verifier.verify_base64(at_cap) }
+    refute_match(/maximum accepted size/, error.message)
+
+    over = "#{at_cap}A"
+    assert_operator over.length, :<, RECEIPT_CAP
+    forbidding_base64_decode do
+      error = assert_reason(:INVALID_RECEIPT_FORMAT) { @receipt_verifier.verify_base64(over) }
+      assert_match(/maximum accepted size of 3145728 bytes/, error.message)
+      assert_equal APRV::Reason::INVALID_RECEIPT_FORMAT,
+                   @endpoint.verify_receipt_result({ "receipt-data" => over }).failure_reason
+    end
   end
 
   def test_a_base64_receipt_exactly_at_the_cap_is_decoded
-    # Valid base64 of 1.5 MiB of zero bytes: past the cap check it decodes,
+    # Valid base64 of 2.25 MiB of zero bytes: past the cap check it decodes,
     # and the DER scan is what refuses it.
     text = "A" * RECEIPT_CAP
     error = nil
@@ -134,7 +148,7 @@ class InputSizeBoundsTest < Minitest::Test
         -> { APRV.verify_receipt_core(der, trusted_roots: [TestPki.receipt_pki.root]) }
       ].each do |call|
         error = assert_reason(:INVALID_RECEIPT_FORMAT) { call.call }
-        assert_equal "INVALID_RECEIPT_FORMAT: receipt exceeds the maximum accepted size of 2097152 bytes",
+        assert_equal "INVALID_RECEIPT_FORMAT: receipt exceeds the maximum accepted size of 3145728 bytes",
                      error.message
       end
     end
@@ -151,13 +165,13 @@ class InputSizeBoundsTest < Minitest::Test
   end
 
   # The contract's byte floor (1 MiB of DER, 1.38 MB of base64) is far under
-  # the receipt cap and must keep verifying through every receipt entry point.
-  def test_the_byte_floor_receipt_verifies_through_every_receipt_entry_point
+  # both caps and must keep verifying through every entry point, the JSON
+  # body included.
+  def test_the_byte_floor_receipt_verifies_through_every_entry_point
     der = TestSupport.fixture_bytes("receipt-byte-floor")
     root = TestSupport.fixture_certificate("large-receipt-root")
     verifier = APRV::ReceiptVerifier.new(trusted_roots: [root], bundle_id: "com.example.app")
     base64 = [der].pack("m0")
-    assert_operator base64.length, :>, REQUEST_CAP
 
     [
       verifier.verify_der(der), verifier.verify(der),
@@ -171,11 +185,9 @@ class InputSizeBoundsTest < Minitest::Test
     assert_predicate endpoint.verify_receipt_data(base64), :verified?
     assert_predicate endpoint.verify_receipt_result({ "receipt-data" => base64 }), :verified?
 
-    # Its JSON body, though, is over the request cap: 21002 on the JSON path.
     body = JSON.generate({ "receipt-data" => base64 })
-    result = endpoint.verify_receipt_result(body)
-    assert_equal APRV::Reason::MALFORMED_REQUEST, result.failure_reason
-    assert_equal '{"status":21002}', endpoint.verify_receipt_json(body)
+    assert_operator body.bytesize, :<=, REQUEST_CAP
+    assert_predicate endpoint.verify_receipt_result(body), :verified?
   end
 
   # -- the endpoint's receipt-data ------------------------------------------
@@ -200,35 +212,65 @@ class InputSizeBoundsTest < Minitest::Test
     JSON.generate({ "receipt-data" => "A" * (size - frame) })
   end
 
-  def test_a_body_one_byte_over_the_cap_answers_21002_malformed_request_without_parsing
+  def test_a_body_one_byte_over_the_cap_answers_21002_request_too_large_without_parsing
     body = body_of(REQUEST_CAP + 1)
     assert_equal REQUEST_CAP + 1, body.bytesize
     forbidding(APRV::JsonLimits, :parse) do
       result = @endpoint.verify_receipt_result(body)
       assert_equal 21_002, result.status
-      assert_equal APRV::Reason::MALFORMED_REQUEST, result.failure_reason
+      assert_equal APRV::Reason::REQUEST_TOO_LARGE, result.failure_reason
       assert_equal '{"status":21002}', @endpoint.verify_receipt_json(body)
+    end
+  end
+
+  # The size is decided before the JSON is looked at, so a body that is both
+  # too large and not JSON is REQUEST_TOO_LARGE, the answer Apple gives it.
+  def test_an_oversized_malformed_body_is_request_too_large_not_malformed_request
+    body = "[" * (REQUEST_CAP + 1)
+    forbidding(APRV::JsonLimits, :parse) do
+      assert_equal APRV::Reason::REQUEST_TOO_LARGE, @endpoint.verify_receipt_result(body).failure_reason
     end
   end
 
   def test_a_body_exactly_at_the_cap_is_parsed
     body = body_of(REQUEST_CAP)
     assert_equal REQUEST_CAP, body.bytesize
-    # Parsed, so the answer is about the receipt it carries (1 MiB of "A" is
+    # Parsed, so the answer is about the receipt it carries (3 MiB of "A" is
     # base64 of zero bytes, which is no receipt), not about the body.
     result = @endpoint.verify_receipt_result(body)
     assert_equal 21_002, result.status
     assert_equal APRV::Reason::INVALID_RECEIPT_FORMAT, result.failure_reason
   end
 
-  # The request cap is in bytes: a body short enough in characters but over
-  # the cap in UTF-8 is still refused.
-  def test_the_body_cap_counts_utf8_bytes
-    frame = '{"receipt-data":"","x":"é"}'.bytesize
-    body = JSON.generate({ "receipt-data" => "A" * (REQUEST_CAP + 1 - frame), "x" => "é" })
-    assert_equal REQUEST_CAP + 1, body.bytesize
-    assert_operator body.length, :<=, REQUEST_CAP
-    assert_equal APRV::Reason::MALFORMED_REQUEST, @endpoint.verify_receipt_result(body).failure_reason
+  # The request cap is in bytes, as Apple counts it: a body of two-byte
+  # characters exactly at the cap in bytes is parsed, and one byte more is
+  # refused although it is barely half the cap in characters. Counting
+  # characters would let the second one through.
+  def test_the_body_cap_counts_utf8_bytes_not_characters
+    frame = '{"receipt-data":"AQIDBA==","password":""}'.bytesize
+    padding = "é" * ((REQUEST_CAP - frame) / 2)
+    at_cap = JSON.generate({ "receipt-data" => "AQIDBA==", "password" => padding })
+    at_cap = "#{at_cap} " while at_cap.bytesize < REQUEST_CAP
+    assert_equal REQUEST_CAP, at_cap.bytesize
+    # Parsed, and read as far as receipt-data (four bytes of no receipt).
+    assert_equal APRV::Reason::INVALID_RECEIPT_FORMAT,
+                 @endpoint.verify_receipt_result(at_cap).failure_reason
+
+    over = "#{at_cap} "
+    assert_equal REQUEST_CAP + 1, over.bytesize
+    assert_operator over.length, :<=, REQUEST_CAP
+    assert_equal APRV::Reason::REQUEST_TOO_LARGE, @endpoint.verify_receipt_result(over).failure_reason
+  end
+
+  # A body in another encoding, such as the ASCII-8BIT String Rack hands over,
+  # is measured in its own bytes: the bytes that arrived on the wire.
+  def test_a_binary_body_is_measured_in_its_bytes
+    over = body_of(REQUEST_CAP + 1).b
+    assert_equal Encoding::BINARY, over.encoding
+    assert_equal APRV::Reason::REQUEST_TOO_LARGE, @endpoint.verify_receipt_result(over).failure_reason
+    at_cap = body_of(REQUEST_CAP).b
+    assert_equal APRV::Reason::INVALID_RECEIPT_FORMAT,
+                 @endpoint.verify_receipt_result(at_cap).failure_reason
   end
 
   # -- JSON nesting depth ----------------------------------------------------

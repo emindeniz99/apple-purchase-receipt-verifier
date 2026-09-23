@@ -305,7 +305,7 @@ class HostileInputTest < Minitest::Test
 
   # The same input through the endpoint the README advertises for Rails, which
   # is the surface an unauthenticated caller actually reaches. 1.5e6 digits
-  # keeps the receipt's base64 just under ReceiptVerifier::MAX_RECEIPT_BYTES,
+  # keeps the receipt's base64 under ReceiptVerifier::MAX_RECEIPT_BYTES,
   # so the fraction is still read rather than refused by the size cap.
   def test_the_endpoint_is_not_superlinear_on_a_long_fractional_second
     milliseconds = elapsed { assert_endpoint_accepts_fraction_of("9" * 1_500_000) }

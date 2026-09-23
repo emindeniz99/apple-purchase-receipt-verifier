@@ -29,16 +29,22 @@ module ApplePurchaseReceiptVerifier
       STALE_PAYLOAD
     ].freeze
 
-    # The two reasons below are not in ALL: no verifier raises them, so no
+    # The three reasons below are not in ALL: no verifier raises them, so no
     # {VerificationError} ever carries one. They exist only as a
     # {VerifyReceiptResult#failure_reason}.
 
     # The verifyReceipt request envelope is unusable: the body is not a JSON
-    # object, or `receipt-data` is missing, empty or not a String.
+    # object or nests deeper than 64, or `receipt-data` is missing, empty or
+    # not a String.
     MALFORMED_REQUEST = :MALFORMED_REQUEST
     # An unexpected error inside the verifyReceipt endpoint, answered as
     # status 21009. {VerifyReceiptResult#failure_cause} holds the error.
     INTERNAL_ERROR = :INTERNAL_ERROR
+    # The raw verifyReceipt request body is over
+    # {VerifyReceiptEndpoint::MAX_REQUEST_BYTES} (3,145,728 bytes), the size
+    # at which Apple's endpoint answers HTTP 413. Status 21002 in the
+    # response body; an HTTP layer can map it to 413 as Apple does.
+    REQUEST_TOO_LARGE = :REQUEST_TOO_LARGE
   end
 
   # The four environment names, spelled as Apple's claims spell them.
