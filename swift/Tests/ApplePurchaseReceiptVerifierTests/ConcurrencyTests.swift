@@ -76,16 +76,25 @@ final class ConcurrencyTests: XCTestCase {
     /// task's parse. Dictionary keys are sorted so the text does not depend
     /// on hash order.
     static func describe(_ receipt: AppReceipt) -> String {
-        let purchases = receipt.inAppPurchases.map {
-            "\($0.productId ?? "-")/\($0.transactionId ?? "-")/\($0.purchaseDate?.timeIntervalSince1970 ?? -1)"
+        // Built one typed statement at a time: Swift 6.1 and 6.2 time out
+        // type-checking this as a single array literal of `??` expressions.
+        let purchases: [String] = receipt.inAppPurchases.map { purchase -> String in
+            let productId: String = purchase.productId ?? "-"
+            let transactionId: String = purchase.transactionId ?? "-"
+            let purchased: Double = purchase.purchaseDate?.timeIntervalSince1970 ?? -1
+            return "\(productId)/\(transactionId)/\(purchased)"
         }
-        return [
-            receipt.bundleId ?? "-", receipt.receiptType ?? "-", receipt.appVersion ?? "-",
-            "\(receipt.creationDate?.timeIntervalSince1970 ?? -1)",
-            receipt.sha1Hash?.base64EncodedString() ?? "-", receipt.opaqueValue?.base64EncodedString() ?? "-",
-            receipt.unknownAttributes.keys.sorted().map(String.init).joined(separator: ","),
-            purchases.joined(separator: ","),
-        ].joined(separator: "|")
+        let created: Double = receipt.creationDate?.timeIntervalSince1970 ?? -1
+        var parts: [String] = []
+        parts.append(receipt.bundleId ?? "-")
+        parts.append(receipt.receiptType ?? "-")
+        parts.append(receipt.appVersion ?? "-")
+        parts.append("\(created)")
+        parts.append(receipt.sha1Hash?.base64EncodedString() ?? "-")
+        parts.append(receipt.opaqueValue?.base64EncodedString() ?? "-")
+        parts.append(receipt.unknownAttributes.keys.sorted().map(String.init).joined(separator: ","))
+        parts.append(purchases.joined(separator: ","))
+        return parts.joined(separator: "|")
     }
 
     /// Every claim, encoded with sorted keys, so a field left unwritten by a
