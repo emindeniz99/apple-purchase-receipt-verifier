@@ -191,12 +191,12 @@ module ApplePurchaseReceiptVerifier
                                       "receipt must be a base64 String")
         end
         # Before either decoder: both allocate in proportion to the input,
-        # and none of it is behind a signature check. Characters, as a client
-        # sends them; for base64 the count equals the byte count.
-        if text.length > ReceiptVerifier::MAX_RECEIPT_BYTES
+        # and none of it is behind a signature check. Bytes, as Apple counts
+        # them; for base64 the count equals the character count.
+        if text.bytesize > ReceiptVerifier::MAX_RECEIPT_BYTES
           raise VerificationError.new(
             Reason::INVALID_RECEIPT_FORMAT,
-            "receipt exceeds the maximum accepted size of #{ReceiptVerifier::MAX_RECEIPT_BYTES} characters"
+            "receipt exceeds the maximum accepted size of #{ReceiptVerifier::MAX_RECEIPT_BYTES} bytes"
           )
         end
 
@@ -439,18 +439,17 @@ module ApplePurchaseReceiptVerifier
   class ReceiptVerifier
     # Ceiling on the receipt this library will look at: the base64 text at
     # every entry point that takes it ({#verify}, {#verify_base64} and the
-    # endpoint's `receipt-data`), in characters, and the DER at every entry
-    # point that takes bytes, {ApplePurchaseReceiptVerifier.verify_receipt_core}
+    # endpoint's `receipt-data`), in bytes, and the DER at every entry point
+    # that takes bytes, {ApplePurchaseReceiptVerifier.verify_receipt_core}
     # included. A larger receipt is {Reason::INVALID_RECEIPT_FORMAT}.
     #
-    # Checked before anything is decoded: base64 decoding allocates about
-    # three quarters of the input again, the CMS parse allocates in proportion
-    # to the DER, and none of that is behind a signature check. The number is
-    # the Java, PHP and Python ports'. It clears the normative floor in
-    # fixtures/cases.json, which requires accepting a receipt of up to 1 MiB
-    # of DER (about 1.38 MB of base64); the largest genuine receipt in the
-    # corpus is 79 KB.
-    MAX_RECEIPT_BYTES = 2_097_152
+    # 3 MiB: Apple's verifyReceipt refuses a request body over 3,145,728
+    # bytes (measured 2026-09-23), so no receipt it would accept is larger.
+    # A fixed constant, the same in every port. Checked before anything is
+    # decoded: base64 decoding allocates about three quarters of the input
+    # again, the CMS parse allocates in proportion to the DER, and none of
+    # that is behind a signature check.
+    MAX_RECEIPT_BYTES = 3_145_728
 
     # @param trusted_roots [Array<OpenSSL::X509::Certificate, String>]
     # @param bundle_id [String] the bundle id the receipt must carry
