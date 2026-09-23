@@ -1,7 +1,5 @@
 package io.github.emindeniz99.applepurchasereceiptverifier.jws;
 
-import com.fasterxml.jackson.annotation.JsonAutoDetect;
-import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -175,8 +173,7 @@ public final class JwsVerifier {
         this.appAppleId = appAppleId;
         this.maxSignedAgeMillis = maxSignedAge;
         this.clock = clock == null ? Clock.systemUTC() : clock;
-        this.mapper =
-                new ObjectMapper(jsonFactory()).setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY);
+        this.mapper = new ObjectMapper(jsonFactory());
     }
 
     /**
