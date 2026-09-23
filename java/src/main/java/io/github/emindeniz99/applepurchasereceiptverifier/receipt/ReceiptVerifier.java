@@ -645,7 +645,7 @@ public final class ReceiptVerifier {
     // --- ASN.1 payload parsing -------------------------------------------
 
     private static AppReceipt parsePayload(byte[] payload) throws VerificationException {
-        ASN1Set attributes = parseAttributeSet(payload, "receipt payload");
+        Attributes attributes = attributes(payload, "receipt payload");
         String receiptType = null;
         String parsedBundleId = null;
         byte[] bundleIdBytes = null;
@@ -662,8 +662,8 @@ public final class ReceiptVerifier {
         List<InAppPurchase> purchases = new ArrayList<InAppPurchase>();
         Map<Integer, List<byte[]>> unknown = new LinkedHashMap<Integer, List<byte[]>>();
 
-        for (ASN1Encodable element : attributes) {
-            Attribute attr = Attribute.of(element);
+        for (int i = 0; i < attributes.size(); i++) {
+            Attribute attr = attributes.get(i);
             switch (attr.type) {
                 case ATTR_RECEIPT_TYPE:
                     receiptType = decodeString(attr.value);
@@ -731,7 +731,7 @@ public final class ReceiptVerifier {
     }
 
     private static InAppPurchase parseInApp(byte[] inAppSet) throws VerificationException {
-        ASN1Set attributes = parseAttributeSet(inAppSet, "in-app purchase attribute");
+        Attributes attributes = attributes(inAppSet, "in-app purchase attribute");
         Long quantity = null;
         String productId = null;
         String transactionId = null;
@@ -745,8 +745,8 @@ public final class ReceiptVerifier {
         Long isInIntroOfferPeriod = null;
         Map<Integer, List<byte[]>> unknown = new LinkedHashMap<Integer, List<byte[]>>();
 
-        for (ASN1Encodable element : attributes) {
-            Attribute attr = Attribute.of(element);
+        for (int i = 0; i < attributes.size(); i++) {
+            Attribute attr = attributes.get(i);
             switch (attr.type) {
                 case IAP_QUANTITY:
                     quantity = decodeInteger(attr.value);
@@ -810,6 +810,56 @@ public final class ReceiptVerifier {
         values.add(attr.value);
     }
 
+    /**
+     * The attributes of a receipt payload or in-app purchase set. The plain
+     * DER shape every genuine receipt uses is read by
+     * {@link ReceiptDer#simpleAttributes}, which builds none of
+     * BouncyCastle's per-element objects; anything else takes the full parse,
+     * and each of its elements becomes an {@link Attribute} only when the
+     * caller reaches it, so a receipt with several defects still reports the
+     * first one in the order it always did.
+     */
+    static Attributes attributes(byte[] der, String what) throws VerificationException {
+        final List<Attribute> simple = ReceiptDer.simpleAttributes(der);
+        if (simple != null) {
+            return new Attributes() {
+                @Override
+                int size() {
+                    return simple.size();
+                }
+
+                @Override
+                Attribute get(int index) {
+                    return simple.get(index);
+                }
+            };
+        }
+        return parsedAttributes(der, what);
+    }
+
+    /** {@link #attributes} without the shortcut. */
+    static Attributes parsedAttributes(byte[] der, String what) throws VerificationException {
+        final ASN1Set set = parseAttributeSet(der, what);
+        return new Attributes() {
+            @Override
+            int size() {
+                return set.size();
+            }
+
+            @Override
+            Attribute get(int index) throws VerificationException {
+                return Attribute.of(set.getObjectAt(index));
+            }
+        };
+    }
+
+    /** A sequence of attributes whose elements may be checked only when read. */
+    abstract static class Attributes {
+        abstract int size();
+
+        abstract Attribute get(int index) throws VerificationException;
+    }
+
     private static ASN1Set parseAttributeSet(byte[] der, String what) throws VerificationException {
         ASN1Primitive parsed;
         try {
@@ -834,11 +884,11 @@ public final class ReceiptVerifier {
     }
 
     /** {@code ReceiptAttribute ::= SEQUENCE { type INTEGER, version INTEGER, value OCTET STRING }} */
-    private static final class Attribute {
+    static final class Attribute {
         final int type;
         final byte[] value;
 
-        private Attribute(int type, byte[] value) {
+        Attribute(int type, byte[] value) {
             this.type = type;
             this.value = value;
         }
