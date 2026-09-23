@@ -161,13 +161,7 @@ public final class JwsVerifier {
      * {@code signedTransactionInfo}) and checks bundle id + environment.
      */
     public TransactionPayload verifyTransaction(@Nullable String jws) throws VerificationException {
-        JsonNode node = verifySignature(jws);
-        TransactionPayload payload;
-        try {
-            payload = mapper.treeToValue(node, TransactionPayload.class);
-        } catch (IOException e) {
-            throw new VerificationException(Reason.INVALID_JWS_FORMAT, "unparseable transaction payload", e);
-        }
+        TransactionPayload payload = StrictClaims.read(verifySignature(jws), TransactionPayload.class);
         requireBundleId(payload.bundleId());
         requireAcceptedEnvironment(payload.environment());
         return payload;
@@ -178,13 +172,7 @@ public final class JwsVerifier {
      * environment ({@code receiptType}), and — in PRODUCTION — the app Apple id.
      */
     public AppTransactionPayload verifyAppTransaction(@Nullable String jws) throws VerificationException {
-        JsonNode node = verifySignature(jws);
-        AppTransactionPayload payload;
-        try {
-            payload = mapper.treeToValue(node, AppTransactionPayload.class);
-        } catch (IOException e) {
-            throw new VerificationException(Reason.INVALID_JWS_FORMAT, "unparseable AppTransaction payload", e);
-        }
+        AppTransactionPayload payload = StrictClaims.read(verifySignature(jws), AppTransactionPayload.class);
         requireBundleId(payload.bundleId());
         Environment env = requireAcceptedEnvironment(payload.receiptType());
         if (env == Environment.PRODUCTION && (appAppleId == null || !appAppleId.equals(payload.appAppleId()))) {
