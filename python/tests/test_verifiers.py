@@ -1266,11 +1266,13 @@ class InputSizeBoundsTest(unittest.TestCase):
             self.verifier.verify(der)
         parse.assert_called_once()
 
-    def test_receipt_cap_clears_the_normative_one_mebibyte_floor(self):
-        # fixtures/cases.json: every port MUST accept 1 MiB of DER, and the
-        # string cap measures that receipt's base64, a third larger. Lowering
-        # the cap below this turns a defence into a wrong verdict.
-        self.assertGreaterEqual(ReceiptVerifier.MAX_RECEIPT_BYTES, -(-1048576 * 4 // 3))
+    def test_the_caps_are_apples_three_mebibytes(self):
+        # The limits are Apple's, fixed in every port by fixtures/cases.json:
+        # Apple's verifyReceipt answers a 3,145,728-byte request body and
+        # refuses a 3,145,729-byte one (measured 2026-09-23), and no receipt
+        # it accepts can be larger than the body that carries it.
+        self.assertEqual(3145728, VerifyReceiptEndpoint.MAX_REQUEST_BYTES)
+        self.assertEqual(3145728, ReceiptVerifier.MAX_RECEIPT_BYTES)
 
     def test_endpoint_receipt_data_over_the_cap_answers_21002_without_decoding(self):
         receipt = self.padded(self.receipt_b64, ReceiptVerifier.MAX_RECEIPT_BYTES + 1)
@@ -1298,13 +1300,81 @@ class InputSizeBoundsTest(unittest.TestCase):
         loads.assert_not_called()
         self.assertEqual('{"status":21002}', wire)
         for label, result in results.items():
-            self.assertEqual("MALFORMED_REQUEST", result.failure_reason, label)
+            # REQUEST_TOO_LARGE, the reason an HTTP layer maps to 413 as
+            # Apple does, not the MALFORMED_REQUEST of an unusable body.
+            self.assertEqual("REQUEST_TOO_LARGE", result.failure_reason, label)
             self.assertEqual(21002, result.status, label)
 
     def test_request_body_at_the_cap_still_verifies(self):
         body = self.padded(self.request_body(), VerifyReceiptEndpoint.MAX_REQUEST_BYTES)
         self.assertEqual(0, self.endpoint.verify_receipt_result(body).status)
         self.assertEqual(0, self.endpoint.verify_receipt_result(body.encode()).status)
+
+    def test_request_body_is_measured_in_utf8_bytes_not_characters(self):
+        # Apple's limit counts UTF-8 bytes. A body padded with U+00E9 to one
+        # byte over the limit is barely half the limit in code points, so a
+        # len() check lets it through; the same shape one byte shorter
+        # verifies. Both forms of the body must agree.
+        limit = VerifyReceiptEndpoint.MAX_REQUEST_BYTES
+        fixed = len(self.request_body(',"password":""'))
+
+        def body(size):
+            padding = "\u00e9" * ((size - fixed) // 2) + "a" * ((size - fixed) % 2)
+            return self.request_body(',"password":"' + padding + '"')
+
+        over = body(limit + 1)
+        self.assertEqual(limit + 1, len(over.encode()))
+        self.assertLess(len(over), limit // 2 + fixed, "len() calls this one far under")
+        at = body(limit)
+        self.assertEqual(limit, len(at.encode()))
+        for form in (over, over.encode()):
+            with self.subTest(type=type(form).__name__):
+                result = self.endpoint.verify_receipt_result(form)
+                self.assertEqual("REQUEST_TOO_LARGE", result.failure_reason)
+                self.assertEqual(21002, result.status)
+        for form in (at, at.encode()):
+            with self.subTest(type=type(form).__name__):
+                self.assertEqual(0, self.endpoint.verify_receipt_result(form).status)
+
+    def test_receipt_string_is_measured_in_utf8_bytes_not_characters(self):
+        # The receipt cap counts the same unit. Two-byte characters are not
+        # base64, so one byte over is refused for its size before the decode
+        # could object to its alphabet.
+        receipt = "\u00e9" * (ReceiptVerifier.MAX_RECEIPT_BYTES // 2) + "a"
+        self.assertLess(len(receipt), ReceiptVerifier.MAX_RECEIPT_BYTES)
+        with (
+            mock.patch("apple_purchase_receipt_verifier.receipt.decode_receipt_base64") as decode,
+            self.assertRaises(VerificationError) as ctx,
+        ):
+            self.verifier.verify(receipt)
+        decode.assert_not_called()
+        self.assertEqual("INVALID_RECEIPT_FORMAT", ctx.exception.reason)
+        with mock.patch(f"{self.endpoint_module}.decode_receipt_base64") as decode:
+            result = self.endpoint.verify_receipt_data(receipt)
+        decode.assert_not_called()
+        self.assertEqual("INVALID_RECEIPT_FORMAT", result.failure_reason)
+
+    def test_utf8_count_matches_the_encoder_on_each_side_of_the_limit(self):
+        # The shortcuts decide on len() alone; each width is checked at the
+        # limit and one byte past it, so a wrong shortcut factor shows up as
+        # a verdict that disagrees with the encoder.
+        from apple_purchase_receipt_verifier._utf8 import utf8_exceeds
+
+        limit = 12
+        for char in ("a", "é", "€", "\U0001f600", "\ud800"):
+            width = len(char.encode("utf-8", "surrogatepass"))
+            for text in (char * (limit // width), char * (limit // width) + "a"):
+                with self.subTest(char=ascii(char), length=len(text)):
+                    size = len(text.encode("utf-8", "surrogatepass"))
+                    self.assertEqual(size > limit, utf8_exceeds(text, limit))
+
+    def test_huge_malformed_body_is_too_large_rather_than_malformed(self):
+        # The size is decided before the parse and before the depth scan.
+        body = "[" * (VerifyReceiptEndpoint.MAX_REQUEST_BYTES + 1)
+        with mock.patch(f"{self.endpoint_module}._nesting_exceeds_limit") as scan:
+            result = self.endpoint.verify_receipt_result(body)
+        scan.assert_not_called()
+        self.assertEqual("REQUEST_TOO_LARGE", result.failure_reason)
 
     def test_body_nested_past_the_limit_answers_21002_before_parsing(self):
         # json.loads recurses once per level and has no depth option, so a

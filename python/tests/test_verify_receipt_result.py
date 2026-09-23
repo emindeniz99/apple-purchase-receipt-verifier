@@ -245,12 +245,10 @@ class VerifyReceiptResultTest(unittest.TestCase):
                 request = json.dumps({"receipt-data": data})
                 body = pinned.verify_receipt_json(request)
                 bare = pinned.verify_receipt_data(data)
-                if len(request) > VerifyReceiptEndpoint.MAX_REQUEST_BYTES:
-                    # The 1 MiB byte-floor receipt: its body is refused before
-                    # parsing, while the bare receipt is under the receipt cap.
-                    self.assertEqual('{"status":21002}', body, data[:40])
-                else:
-                    self.assertEqual(body, bare.to_json(), data[:40])
+                # Every body fits under the 3 MiB request cap, the byte-floor
+                # receipt's included, so both entry points agree on all of them.
+                self.assertLessEqual(len(request), VerifyReceiptEndpoint.MAX_REQUEST_BYTES)
+                self.assertEqual(body, bare.to_json(), data[:40])
                 statuses.add(bare.status)
                 self.assertNotEqual(Reason.INTERNAL_ERROR, bare.failure_reason, data[:40])
         # The corpus reaches every status except the internal error.
