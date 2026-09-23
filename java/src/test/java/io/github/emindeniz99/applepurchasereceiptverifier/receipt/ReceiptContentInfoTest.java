@@ -15,17 +15,20 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Random;
 import org.bouncycastle.asn1.ASN1Primitive;
+import org.bouncycastle.asn1.cms.ContentInfo;
 import org.bouncycastle.cms.CMSSignedData;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@link ReceiptVerifier#contentInfo} builds the CMS from the tree the
+ * ReceiptVerifier builds the CMS with
+ * {@code new CMSSignedData(ContentInfo.getInstance(tree))} from the tree the
  * trailing-bytes check already parsed, instead of letting
  * {@code new CMSSignedData(byte[])} parse the whole receipt a second time. If
- * it ever built, rejected or explained a rejection differently from that
- * constructor, a hostile receipt could get a different verdict or message. So
- * the two are compared on every receipt fixture and on seeded corruptions of
- * them: truncations, bit flips, appended bytes and overwritten length octets.
+ * the two ever disagreed on which receipts make a CMS, or built different
+ * ones, a hostile receipt could get a different verdict. Either way a refusal
+ * is INVALID_RECEIPT_FORMAT, so only the outcome is compared, not the
+ * exception: on every receipt fixture and on seeded corruptions of them
+ * (truncations, bit flips, appended bytes and overwritten length octets).
  */
 class ReceiptContentInfoTest {
 
@@ -45,7 +48,7 @@ class ReceiptContentInfoTest {
                 continue;
             }
             String expected = cmsOutcome(() -> new CMSSignedData(input));
-            String actual = cmsOutcome(() -> new CMSSignedData(ReceiptVerifier.contentInfo(tree)));
+            String actual = cmsOutcome(() -> new CMSSignedData(ContentInfo.getInstance(tree)));
             assertEquals(expected, actual, "CMS outcome differs for " + hex(input));
             if (expected.startsWith("ok ")) {
                 built++;
@@ -65,36 +68,8 @@ class ReceiptContentInfoTest {
         try {
             return "ok " + Base64.getEncoder().encodeToString(build.build().getEncoded());
         } catch (Exception e) {
-            return describe(e);
+            return "refused";
         }
-    }
-
-    private static String describe(Throwable e) {
-        if (e == null) {
-            return "no error";
-        }
-        StringBuilder out = new StringBuilder();
-        for (Throwable t = e; t != null; t = t.getCause()) {
-            out.append(t.getClass().getName()).append(": ");
-            // HotSpot replaces an implicit exception it has thrown often from
-            // compiled code with a preallocated one that has no message
-            // (OmitStackTraceInFastThrow), so the same input can carry the
-            // message on one path and null on the other depending only on
-            // JIT state. The class still has to match.
-            if (!isJvmImplicit(t)) {
-                out.append(t.getMessage());
-            }
-            out.append(" <- ");
-        }
-        return out.toString();
-    }
-
-    private static boolean isJvmImplicit(Throwable t) {
-        return t instanceof ClassCastException
-                || t instanceof NullPointerException
-                || t instanceof ArrayIndexOutOfBoundsException
-                || t instanceof ArithmeticException
-                || t instanceof ArrayStoreException;
     }
 
     /** Every receipt fixture, and seeded corruptions of each. */

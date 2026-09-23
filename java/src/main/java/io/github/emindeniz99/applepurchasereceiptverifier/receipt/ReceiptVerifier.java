@@ -342,8 +342,10 @@ public final class ReceiptVerifier {
         CMSSignedData cms;
         try {
             // The tree parsed above, not the bytes: new CMSSignedData(byte[])
-            // would parse the whole receipt a second time.
-            cms = new CMSSignedData(contentInfo(parsed));
+            // would parse the whole receipt a second time. A tree that is not
+            // a ContentInfo makes getInstance throw an unchecked exception,
+            // which verifyCore reports as INVALID_RECEIPT_FORMAT.
+            cms = new CMSSignedData(ContentInfo.getInstance(parsed));
         } catch (CMSException e) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "not a PKCS#7/CMS blob", e);
         }
@@ -372,26 +374,6 @@ public final class ReceiptVerifier {
         }
         verifyCmsSignature(cms, signerCert);
         return receipt;
-    }
-
-    /**
-     * What {@code new CMSSignedData(byte[])} does with its bytes once they
-     * are parsed (BouncyCastle's {@code CMSUtils.readContentInfo}), with the
-     * same exceptions, so the one parse above can serve both the trailing
-     * bytes check and the CMS.
-     */
-    static ContentInfo contentInfo(@Nullable ASN1Primitive parsed) throws CMSException {
-        try {
-            ContentInfo info = ContentInfo.getInstance(parsed);
-            if (info == null) {
-                throw new CMSException("No content found.");
-            }
-            return info;
-        } catch (ClassCastException e) {
-            throw new CMSException("Malformed content.", e);
-        } catch (IllegalArgumentException e) {
-            throw new CMSException("Malformed content.", e);
-        }
     }
 
     /** PKIX-builds signer → (intermediates from the CMS) → pinned root at {@code at}. */
