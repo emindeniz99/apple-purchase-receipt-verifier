@@ -92,13 +92,15 @@ try await verifier.verify(receipt: receiptDER, deviceGuid: deviceGuid)
 try await verifier.verify(base64Receipt: receiptBase64, deviceGuid: deviceGuid)
 ```
 
-`verify(base64Receipt:)` decodes exactly what Apple's `receipt-data` accepts:
-RFC 4648 Base64, the standard (`+`/`/`) or base64url (`-`/`_`) alphabet —
-never both in the same string — padding present or omitted, and CR/LF/space/
-tab anywhere. A character neither alphabet defines, anything but whitespace
-after padding starts, or a `=` count other than zero or the exact count the
-data length requires is `.invalidReceiptFormat` before any bytes reach the
-CMS parser — see `decodeReceiptBase64` in `ReceiptVerifier.swift`.
+`verify(base64Receipt:)` decodes exactly what Apple's verifyReceipt accepts
+as `receipt-data` (measured 2026-09-23, see
+[`docs/evidence/2026-09-23-verifyreceipt-base64.md`](../docs/evidence/2026-09-23-verifyreceipt-base64.md)):
+standard base64 (`+`/`/`) with the canonical `=` padding and nothing else.
+Whitespace anywhere, the base64url alphabet, omitted or extra padding,
+anything after the padding and an empty string are `.invalidReceiptFormat`
+before any bytes reach the CMS parser. Unused low bits in the last data
+character are accepted, as Apple accepts them. See `decodeReceiptBase64` in
+`ReceiptVerifier.swift`.
 
 Passing `deviceGuid` additionally enforces the device binding:
 `SHA1(guid ‖ opaqueValue ‖ bundleIdBytes)` must equal attribute 5, compared in
@@ -294,7 +296,7 @@ do {
 | `Reason` | Raw value | Raised when |
 |---|---|---|
 | `.invalidJwsFormat` | `INVALID_JWS_FORMAT` | longer than `JwsVerifier.maxJwsBytes`, a header or payload nesting past 64 levels, not three dot-separated segments, a segment that is not base64url JSON, `alg != "ES256"`, or an `x5c` that is not exactly three entries |
-| `.invalidCertificate` | `INVALID_CERTIFICATE` | `x5c[0]` or `x5c[1]` does not parse as a certificate. An entry that is not standard base64 (RFC 7515 §4.1.6) is refused before it is decoded: a junk character, a space or line break, or a base64url `-` or `_` gets this verdict rather than being skipped by `ignoreUnknownCharacters`, as in every port. The one divergence is `x5c[2]`, which this port never decodes and java decodes and parses, so an unparseable third certificate is `INVALID_CERTIFICATE` there and unremarked here (ROADMAP.md records it) |
+| `.invalidCertificate` | `INVALID_CERTIFICATE` | `x5c[0]` or `x5c[1]` does not parse as a certificate. An entry that is not standard base64 with canonical padding (RFC 7515 §4.1.6) is refused before it is decoded: a junk character, a space or line break, a base64url `-` or `_`, or omitted or extra `=` padding gets this verdict rather than being skipped, as in every port. The one divergence is `x5c[2]`, which this port never decodes and java decodes and parses, so an unparseable third certificate is `INVALID_CERTIFICATE` there and unremarked here (ROADMAP.md records it) |
 | `.invalidCertificatePurpose` | `INVALID_CERTIFICATE_PURPOSE` | the leaf or intermediate lacks its Apple marker OID, or the receipt signer lacks its own |
 | `.invalidChain` | `INVALID_CHAIN` | the path does not reach a pinned anchor, a certificate was not valid at the signing instant, or a receipt embeds more than ten certificates |
 | `.invalidSignature` | `INVALID_SIGNATURE` | the ES256 or CMS signature check failed, or the signer key is not RSA |

@@ -12,8 +12,9 @@ namespace ApplePurchaseReceiptVerifier.Fuzz.Targets
     /// </summary>
     /// <remarks>
     /// A separate target from <see cref="ReceiptDer"/> because the transport
-    /// form has its own rules (whitespace, PEM line breaks, URL-safe alphabet,
-    /// padding) and its own fixture family under
+    /// form has its own rule (canonical standard base64 only, so whitespace,
+    /// the URL-safe alphabet and wrong padding are refused) and its own
+    /// fixture family under
     /// <c>fixtures/generated/receipt-b64/</c>. The bundle id is the genuine
     /// fixture's, so a real receipt reaches the claim check rather than
     /// stopping at WRONG_BUNDLE_ID; the device-guid overload is driven too,

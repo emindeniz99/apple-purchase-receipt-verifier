@@ -250,7 +250,7 @@ final class VerifyReceiptEndpoint
             if (strlen($receiptData) > ReceiptVerifier::MAX_RECEIPT_BYTES) {
                 return $this->failed(Reason::InvalidReceiptFormat, $at);
             }
-            $der = Base64::decodeReceipt($receiptData);
+            $der = Base64::decodeCanonical($receiptData);
             if ($der === null) {
                 return $this->failed(Reason::InvalidReceiptFormat, $at);
             }

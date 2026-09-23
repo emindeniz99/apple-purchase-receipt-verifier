@@ -133,7 +133,7 @@ foreach (FIXTURES as [$name, $bundleId, $inAppCount, $sha256]) {
 
     // Every call once, with the answer the conformance suite expects, so no
     // benchmark can time a fast failure by accident.
-    check(Base64::decodeReceipt($base64) === $der, 'decodeBase64');
+    check(Base64::decodeCanonical($base64) === $der, 'decodeBase64');
     foreach ([ReceiptVerifier::verifyReceiptCore($der, $roots), $verifier->verify($base64)] as $receipt) {
         check($receipt->bundleId === $bundleId && count($receipt->inAppPurchases) === $inAppCount, 'receipt');
     }
@@ -149,7 +149,7 @@ foreach (FIXTURES as [$name, $bundleId, $inAppCount, $sha256]) {
     $rejected = reject($tampered, $roots);
     check($rejected instanceof VerificationException && $rejected->reason === Reason::InvalidSignature, 'rejectTamperedSignature');
 
-    $results[] = measure('decodeBase64', $name, static fn () => Base64::decodeReceipt($base64));
+    $results[] = measure('decodeBase64', $name, static fn () => Base64::decodeCanonical($base64));
     $results[] = measure('core', $name, static fn () => ReceiptVerifier::verifyReceiptCore($der, $roots));
     $results[] = measure('verifierBase64', $name, static fn () => $verifier->verify($base64));
     $results[] = measure('endpointJson', $name, static fn () => $sandbox->verifyReceiptJson($requestJson));

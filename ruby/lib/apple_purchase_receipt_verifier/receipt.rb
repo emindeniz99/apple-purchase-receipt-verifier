@@ -164,23 +164,21 @@ module ApplePurchaseReceiptVerifier
         input.b
       end
 
-      # The full allowed character set, as a String#count pattern (a trailing
-      # "-" in a count/tr pattern is literal, not a range). A receipt is
-      # attacker-controlled and unbounded in size (hostile_input_test.rb), so
-      # this is checked with #count and #index rather than a Regexp: on a
-      # multi-megabyte string a `\A...\z` match costs tens of milliseconds
-      # where #count costs a handful — measured, not assumed.
-      BASE64_DISALLOWED = "^A-Za-z0-9+/_=-"
+      # Everything but the standard alphabet and "=", as a String#count
+      # pattern. A receipt is attacker-controlled and up to 3 MiB, so its
+      # shape is checked with #count and #index rather than a Regexp: on a
+      # string that size a `\A...\z` match measured about 85 ms where #count
+      # takes under 2.
+      BASE64_DISALLOWED = "^A-Za-z0-9+/="
       private_constant :BASE64_DISALLOWED
 
-      # Decodes the base64 text a client actually sends `receipt-data` as, per
-      # Apple's rule: RFC 4648, the standard (`+/`) or base64url (`-_`)
-      # alphabet — never both in one string — with padding present or
-      # correctly omitted, and CR, LF, space and tab stripped from anywhere
-      # first. Foundation's `base64EncodedString(options:)` can emit any
-      # combination of those, and every one of them decodes to the same
-      # bytes. Nothing else is a receipt: a stray character, data after the
-      # padding, or an empty (or all-whitespace) string is rejected.
+      # Decodes the base64 text a client sends as `receipt-data` by the rule
+      # Apple's verifyReceipt applies (measured 2026-09-23, see
+      # docs/evidence/2026-09-23-verifyreceipt-base64.md): non-empty standard
+      # base64 with exactly the canonical padding, and nothing else.
+      # Whitespace anywhere, base64url, omitted or extra padding and anything
+      # after the padding are rejected. Unused low bits in the last data
+      # character are accepted, as Apple accepts them.
       #
       # @param text [String] the receipt's base64 text, as a client sent it
       # @return [String] the decoded DER bytes
@@ -190,8 +188,8 @@ module ApplePurchaseReceiptVerifier
           raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
                                       "receipt must be a base64 String")
         end
-        # Before either decoder: both allocate in proportion to the input,
-        # and none of it is behind a signature check. Bytes, as Apple counts
+        # Before the decode: it allocates in proportion to the input, and
+        # none of it is behind a signature check. Bytes, as Apple counts
         # them; for base64 the count equals the character count.
         if text.bytesize > ReceiptVerifier::MAX_RECEIPT_BYTES
           raise VerificationError.new(
@@ -200,90 +198,29 @@ module ApplePurchaseReceiptVerifier
           )
         end
 
-        decode_base64_strict(text) || decode_base64_tolerant(text)
+        decode_canonical_base64(text) ||
+          raise(VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
+                                      "receipt is not canonical standard base64"))
       end
 
-      # The accept/reject rule above, spelled out step by step.
-      def decode_base64_tolerant(text)
-        # One owned copy, mutated in place from here on (delete!/tr!/slice!
-        # never reallocate the whole buffer) — a receipt is attacker-sized
-        # and unbounded (hostile_input_test.rb), so this path is written to
-        # take one pass per check rather than build intermediate copies of
-        # it.
-        stripped = text.b
-        stripped.delete!("\r\n \t")
-        raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT, "receipt is empty") if stripped.empty?
-
-        if stripped.count(BASE64_DISALLOWED).positive?
-          raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
-                                      "receipt contains a character outside the base64 alphabet")
-        end
-
-        # `=` never starts a run of data, so its first occurrence is where
-        # padding begins; everything from there on must be padding too, or
-        # data resumed after it (a caller-hostile shape no encoder emits).
-        # The tail checked here is at most a few bytes — encoders pad to at
-        # most 2 `=` — so slicing it costs nothing.
-        pad_at = stripped.index("=") || stripped.length
-        if stripped[pad_at..].count("^=").positive? # steep:ignore NoMethod
-          raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
-                                      "receipt has data after its base64 padding")
-        end
-
-        # Counted over the whole string rather than a `data` slice of it:
-        # padding is already known to hold nothing but `=`, so it can only
-        # add zero to either count.
-        if stripped.count("+/").positive? && stripped.count("_-").positive?
-          raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
-                                      "receipt mixes the standard and base64url alphabets")
-        end
-        if (pad_at % 4) == 1
-          raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
-                                      "receipt has an invalid base64 length")
-        end
-
-        # Supplied padding must be either absent or exactly the canonical
-        # count for `pad_at`'s length — not any other amount. Over- and
-        # under-padded receipts (extra or missing trailing `=`) are rejected
-        # here rather than silently corrected below.
-        pad = stripped.length - pad_at
-        unless pad.zero? || pad == ((4 - (pad_at % 4)) % 4)
-          raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
-                                      "receipt has an incorrect base64 padding length")
-        end
-
-        stripped.tr!("-_", "+/")
-        # Whatever padding the client sent is discarded and rebuilt to the
-        # canonical count for `pad_at` — "present or omitted" is accepted,
-        # not "present in any amount".
-        stripped.slice!(pad_at..)
-        stripped << ("=" * ((4 - (pad_at % 4)) % 4))
-        begin
-          stripped.unpack1("m0") #: String
-        rescue ArgumentError
-          raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT, "receipt is not base64")
-        end
-      end
-
-      # The fast path for the common case, canonical standard base64 with no
-      # whitespace: Ruby's strict decoder alone, without the copy and the
-      # passes above. `nil` hands the string to the tolerant path, which then
-      # decides exactly as it did before.
+      # The rule above as a plain decoder: the bytes, or nil. An x5c entry is
+      # held to it too (Jws), with its own verdict.
       #
-      # `unpack1("m0")` accepts only `[A-Za-z0-9+/]` data in groups of four,
-      # exactly the canonical padding, and zero bits in the unused tail
-      # (measured on Ruby 3.1, 3.2 and 3.3). The tolerant path accepts every
-      # such string and ends in this same call on the same characters, so the
-      # bytes are identical. The one string it accepts that the tolerant path
-      # rejects is the empty one, hence the guard.
-      # test/receipt_base64_fast_path_test.rb holds this to 20,000 seeded
-      # inputs on every Ruby the CI matrix runs.
-      def decode_base64_strict(text)
-        return nil if text.empty?
+      # `unpack1("m0")`, Ruby's strict RFC 4648 decoder, refuses the unused
+      # trailing bits Apple accepts, so the shape is checked here instead
+      # and `unpack1("m")` decodes what passes: a non-empty length that is
+      # a multiple of four, only the standard alphabet and "=", and "=" only
+      # as a run of at most two at the end. That leaves exactly the canonical
+      # padding, and "m" skips nothing in such a string.
+      def decode_canonical_base64(text)
+        bytes = text.b
+        size = bytes.bytesize
+        return nil if size.zero? || !(size % 4).zero? || bytes.count(BASE64_DISALLOWED).positive?
 
-        text.unpack1("m0") #: String
-      rescue ArgumentError
-        nil
+        pad_at = bytes.index("=")
+        return nil unless pad_at.nil? || (pad_at >= size - 2 && bytes.count("=") == size - pad_at)
+
+        bytes.unpack1("m") #: String
       end
 
       # Returns the entries OpenSSL could read, the first error from one it

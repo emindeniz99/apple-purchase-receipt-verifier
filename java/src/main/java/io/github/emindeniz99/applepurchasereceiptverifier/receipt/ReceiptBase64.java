@@ -2,26 +2,23 @@ package io.github.emindeniz99.applepurchasereceiptverifier.receipt;
 
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
-import io.github.emindeniz99.applepurchasereceiptverifier.internal.SafeText;
 import java.util.Base64;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Decodes the base64 text a client actually sends as {@code receipt-data},
- * per Apple's contract: RFC 4648 Base64, standard ("+/") or base64url
- * ("-_") alphabet, padding present or omitted, CR/LF/space/tab anywhere.
- * Rejected as {@link Reason#INVALID_RECEIPT_FORMAT}: any other character,
- * both alphabets in one string, anything but whitespace after the padding,
- * a stripped length congruent to 1 mod 4, and an empty or whitespace-only
- * string. No canonical-trailing-bits check.
+ * Decodes the base64 text a client sends as {@code receipt-data} by the rule
+ * Apple's verifyReceipt applies (measured 2026-09-23, see
+ * {@code docs/evidence/2026-09-23-verifyreceipt-base64.md}): non-empty,
+ * standard alphabet ({@code [A-Za-z0-9+/]}), exactly the canonical {@code =}
+ * padding for the data length, and nothing else. Whitespace anywhere,
+ * base64url, omitted or extra padding and anything after the padding are
+ * {@link Reason#INVALID_RECEIPT_FORMAT}. Unused low bits in the last data
+ * character are accepted, as Apple accepts them.
  *
- * <p>{@link Base64#getMimeDecoder()} — used at both call sites before this
- * class existed — is wrong in two opposite directions: it silently DROPS
- * {@code -}/{@code _} instead of treating them as base64url, so base64url
- * input (which Foundation's {@code base64EncodedString(options:)} can emit)
- * decodes to corrupt DER and is misreported as
- * {@code INVALID_RECEIPT_FORMAT}; and it silently drops any other illegal
- * character instead of rejecting the receipt.</p>
+ * <p>{@link Base64#getDecoder()} enforces all of that except two things: it
+ * accepts omitted padding and decodes {@code ""} to nothing. Both are refused
+ * by requiring a non-empty length that is a multiple of four first. The MIME
+ * decoder is not an option: it skips every character it does not know.</p>
  */
 final class ReceiptBase64 {
 
@@ -31,115 +28,15 @@ final class ReceiptBase64 {
         if (receipt == null) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "receipt is null");
         }
-        if (isEmptyOrWhitespace(receipt)) {
-            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "receipt is empty or whitespace-only");
+        if (receipt.isEmpty() || receipt.length() % 4 != 0) {
+            throw new VerificationException(
+                    Reason.INVALID_RECEIPT_FORMAT, "receipt is not canonically padded standard base64");
         }
-        // Fast path for the common case, a canonical standard-alphabet
-        // string. The JDK's strict decoder accepts exactly: characters from
-        // [A-Za-z0-9+/], a data length not congruent to 1 mod 4, and either
-        // no padding or exactly the canonical run of '=' at the end, nothing
-        // after it. Every such non-empty string also passes each rule of
-        // decodeTolerant (nothing to strip, one alphabet, only '=' after the
-        // padding, same length and padding checks), and decodeTolerant then
-        // hands the JDK decoder the same data with canonical padding, which
-        // it decodes to the same bytes. Anything the JDK refuses falls
-        // through, so rejections and their messages are unchanged.
         try {
             return Base64.getDecoder().decode(receipt);
         } catch (IllegalArgumentException e) {
-            return decodeTolerant(receipt);
-        }
-    }
-
-    private static boolean isEmptyOrWhitespace(String receipt) {
-        for (int i = 0; i < receipt.length(); i++) {
-            char c = receipt.charAt(i);
-            if (c != '\r' && c != '\n' && c != ' ' && c != '\t') {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    /**
-     * The full decoder described in the class comment, without the fast
-     * path. Package-private so the differential test can compare it against
-     * {@link #decode}.
-     */
-    static byte[] decodeTolerant(String receipt) throws VerificationException {
-        StringBuilder stripped = new StringBuilder(receipt.length());
-        for (int i = 0; i < receipt.length(); i++) {
-            char c = receipt.charAt(i);
-            if (c != '\r' && c != '\n' && c != ' ' && c != '\t') {
-                stripped.append(c);
-            }
-        }
-        if (stripped.length() == 0) {
-            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "receipt is empty or whitespace-only");
-        }
-
-        // Split into the data run and the (optional, trailing-only) padding
-        // run, mapping base64url characters onto their standard twins as we
-        // go and remembering which alphabet(s) were used.
-        StringBuilder data = new StringBuilder(stripped.length());
-        boolean sawStandard = false;
-        boolean sawUrlSafe = false;
-        int padStart = stripped.length();
-        for (int i = 0; i < stripped.length(); i++) {
-            char c = stripped.charAt(i);
-            if (c == '=') {
-                padStart = i;
-                break;
-            } else if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
-                data.append(c);
-            } else if (c == '+' || c == '/') {
-                sawStandard = true;
-                data.append(c);
-            } else if (c == '-' || c == '_') {
-                sawUrlSafe = true;
-                data.append(c == '-' ? '+' : '/');
-            } else {
-                throw new VerificationException(
-                        Reason.INVALID_RECEIPT_FORMAT,
-                        "receipt has an invalid base64 character: '" + SafeText.quote(c) + "'");
-            }
-        }
-        for (int i = padStart; i < stripped.length(); i++) {
-            if (stripped.charAt(i) != '=') {
-                throw new VerificationException(
-                        Reason.INVALID_RECEIPT_FORMAT, "receipt has a character after base64 padding");
-            }
-        }
-        if (sawStandard && sawUrlSafe) {
             throw new VerificationException(
-                    Reason.INVALID_RECEIPT_FORMAT, "receipt mixes the standard and base64url alphabets");
-        }
-        if (data.length() == 0) {
-            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "receipt has no base64 data");
-        }
-        if (data.length() % 4 == 1) {
-            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "receipt has an invalid base64 length");
-        }
-        int pad = stripped.length() - padStart;
-        int expectedPad = (4 - data.length() % 4) % 4;
-        if (pad != 0 && pad != expectedPad) {
-            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "receipt has incorrect base64 padding");
-        }
-
-        // Padding is not trusted from the input (it may be present or
-        // absent, but its trailing-run shape and count were checked above);
-        // it is recomputed canonically instead, so java.util.Base64's strict
-        // decoder always sees a well-formed standard-alphabet string.
-        int remainder = data.length() % 4;
-        if (remainder == 2) {
-            data.append("==");
-        } else if (remainder == 3) {
-            data.append("=");
-        }
-        try {
-            return Base64.getDecoder().decode(data.toString());
-        } catch (IllegalArgumentException e) {
-            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "receipt is not valid base64", e);
+                    Reason.INVALID_RECEIPT_FORMAT, "receipt is not canonically padded standard base64", e);
         }
     }
 }

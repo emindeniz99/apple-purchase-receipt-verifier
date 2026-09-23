@@ -229,24 +229,27 @@ final class JwsVerifier
         }
         [$headerB64, $payloadB64, $signatureB64, $x5c] = JwsClaims::split($jws);
 
-        // Base64::decode() skips what it does not know. An x5c entry is
-        // standard base64 (RFC 7515 4.1.6): no junk, no whitespace, no
-        // base64url '-' or '_', so any of those is refused here instead.
+        // An x5c entry is standard base64 (RFC 7515 4.1.6) with canonical
+        // padding, the receipt-data rule: no junk, no whitespace, no
+        // base64url '-' or '_', no omitted or extra '='.
+        $ders = [];
         foreach ($x5c as $entry) {
-            if (preg_match('~\A[A-Za-z0-9+/]*={0,2}\z~', $entry) !== 1) {
+            $der = Base64::decodeCanonical($entry);
+            if ($der === null) {
                 throw new VerificationException(Reason::InvalidCertificate, 'x5c entry is not a valid certificate');
             }
+            $ders[] = $der;
         }
 
         try {
-            $leaf = Certificate::parse(Base64::decode($x5c[0]));
-            $intermediate = Certificate::parse(Base64::decode($x5c[1]));
+            $leaf = Certificate::parse($ders[0]);
+            $intermediate = Certificate::parse($ders[1]);
             // The third entry is parsed and then dropped: it is never
             // compared to an anchor and never trusted, so swapping in a
             // stranger's root still changes nothing — but an entry that is
             // not a certificate is INVALID_CERTIFICATE at every index
             // (transaction/reject-x5c-root-that-is-not-a-certificate).
-            $suppliedRoot = Certificate::parse(Base64::decode($x5c[2]));
+            $suppliedRoot = Certificate::parse($ders[2]);
         } catch (ParseException $e) {
             throw new VerificationException(Reason::InvalidCertificate, 'x5c entry is not a valid certificate', $e);
         }

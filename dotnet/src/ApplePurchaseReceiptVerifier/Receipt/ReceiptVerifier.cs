@@ -208,15 +208,11 @@ namespace ApplePurchaseReceiptVerifier.Receipt
         }
 
         /// <summary>
-        /// Decodes the base64 text a client actually sends. <c>receipt-data</c>
-        /// is "Base64 as defined in RFC 4648", and Foundation's
-        /// <c>base64EncodedString(options:)</c> can emit either the standard
-        /// (<c>+/</c>) or the URL-safe (<c>-_</c>) alphabet, padded or not,
-        /// wrapped with CR/LF at 64 or 76 columns. Everything Foundation can
-        /// emit is accepted; a character outside both alphabets, both
-        /// alphabets in one string, anything but whitespace after the
-        /// padding, and an empty (or whitespace-only) string are rejected.
-        /// There is no canonical-trailing-bits check.
+        /// Decodes the base64 text a client actually sends as
+        /// <c>receipt-data</c>: canonical standard base64 and nothing else,
+        /// as Apple's verifyReceipt accepts it (<see cref="CanonicalBase64"/>).
+        /// Whitespace anywhere, base64url, omitted or extra padding, anything
+        /// after the padding and the empty string are rejected.
         /// </summary>
         internal static byte[] DecodeBase64(string base64Receipt)
         {
@@ -226,8 +222,7 @@ namespace ApplePurchaseReceiptVerifier.Receipt
                     VerificationReason.InvalidReceiptFormat, "receipt is null");
             }
 
-            // Before either decoder, both of which allocate in proportion to
-            // the string.
+            // Before the decode, which allocates in proportion to the string.
             if (Utf8Length.Exceeds(base64Receipt, MaxReceiptBytes))
             {
                 throw new VerificationException(
@@ -236,147 +231,10 @@ namespace ApplePurchaseReceiptVerifier.Receipt
                     + MaxReceiptBytes.ToString(CultureInfo.InvariantCulture) + " bytes");
             }
 
-            return DecodeBase64Fast(base64Receipt) ?? DecodeBase64Tolerant(base64Receipt);
+            return CanonicalBase64.Decode(base64Receipt)
+                ?? throw new VerificationException(
+                    VerificationReason.InvalidReceiptFormat, "receipt is not canonical standard base64");
         }
-
-        /// <summary>
-        /// The fast path for the common input, standard base64 as
-        /// <see cref="Convert.ToBase64String(byte[])"/> writes it. Returns
-        /// <see langword="null"/> for anything it does not take, and the
-        /// caller then runs <see cref="DecodeBase64Tolerant"/> unchanged.
-        /// </summary>
-        /// <remarks>
-        /// <para><c>Convert.TryFromBase64String</c> is not a strict
-        /// decoder: it skips the same four whitespace characters the tolerant
-        /// path strips, anywhere in the string. What it accepts is
-        /// <c>[A-Za-z0-9+/]</c> data of a length that is a multiple of four
-        /// once whitespace is skipped, ending in at most the canonical
-        /// <c>=</c> run with nothing but whitespace after it. The tolerant path
-        /// accepts every such string, strips the same whitespace, and hands
-        /// the result to <see cref="Convert.FromBase64String"/>, the same
-        /// decoder, so the bytes are the same. The one string it accepts that
-        /// the tolerant path rejects is the empty (or whitespace-only) one,
-        /// which decodes to zero bytes, so a zero-byte result is refused here.
-        /// The seeded differential test in the test project holds this on
-        /// every runtime the suite runs on.</para>
-        /// <para>Only the net8.0 build has it. netstandard2.0 has no
-        /// <c>TryFromBase64String</c>, and the runtimes that load that asset
-        /// (.NET Framework, Mono, Unity) are not ones this repository can run
-        /// the differential test on, so that build keeps the tolerant path
-        /// alone.</para>
-        /// </remarks>
-        internal static byte[]? DecodeBase64Fast(string base64Receipt)
-        {
-#if NET8_0_OR_GREATER
-            // IsValid sizes the output exactly; its verdict is not relied on,
-            // since TryFromBase64String decides acceptance below.
-            if (System.Buffers.Text.Base64.IsValid(base64Receipt.AsSpan(), out int length) && length > 0)
-            {
-                byte[] buffer = new byte[length];
-                if (Convert.TryFromBase64String(base64Receipt, buffer, out int written) && written == length)
-                {
-                    return buffer;
-                }
-            }
-#endif
-            return null;
-        }
-
-        /// <summary>
-        /// The full decoder described on <see cref="DecodeBase64"/>, without
-        /// the fast path. Internal so the differential test can compare the
-        /// two.
-        /// </summary>
-        internal static byte[] DecodeBase64Tolerant(string base64Receipt)
-        {
-            char[] compact = new char[base64Receipt.Length];
-            int length = 0;
-            foreach (char c in base64Receipt)
-            {
-                if (c != '\r' && c != '\n' && c != ' ' && c != '\t')
-                {
-                    compact[length++] = c;
-                }
-            }
-
-            // A trailing run of '=' is padding. Anything else there means a
-            // '=' sits before the run ends, which the alphabet scan below
-            // rejects: '=' is not a recognised data character.
-            int dataLength = length;
-            while (dataLength > 0 && compact[dataLength - 1] == '=')
-            {
-                dataLength--;
-            }
-
-            if (dataLength == 0)
-            {
-                throw new VerificationException(
-                    VerificationReason.InvalidReceiptFormat, "receipt is empty");
-            }
-
-            if (dataLength % 4 == 1)
-            {
-                throw new VerificationException(
-                    VerificationReason.InvalidReceiptFormat, "receipt has an impossible base64 length");
-            }
-
-            // Padding is optional, but if present it must be exactly what the
-            // data length calls for: neither over- nor under-padded.
-            int pad = length - dataLength;
-            int requiredPad = (4 - dataLength % 4) % 4;
-            if (pad != 0 && pad != requiredPad)
-            {
-                throw new VerificationException(
-                    VerificationReason.InvalidReceiptFormat, "receipt has incorrect base64 padding");
-            }
-
-            bool sawStandard = false;
-            bool sawUrlSafe = false;
-            for (int i = 0; i < dataLength; i++)
-            {
-                char c = compact[i];
-                if (c == '+' || c == '/')
-                {
-                    sawStandard = true;
-                }
-                else if (c == '-' || c == '_')
-                {
-                    sawUrlSafe = true;
-                    compact[i] = c == '-' ? '+' : '/';
-                }
-                else if (!IsBase64Alphanumeric(c))
-                {
-                    throw new VerificationException(
-                        VerificationReason.InvalidReceiptFormat,
-                        "receipt contains a character outside the base64 or base64url alphabet");
-                }
-            }
-
-            if (sawStandard && sawUrlSafe)
-            {
-                throw new VerificationException(
-                    VerificationReason.InvalidReceiptFormat,
-                    "receipt mixes the standard and URL-safe base64 alphabets");
-            }
-
-            int remainder = dataLength % 4;
-            string canonical = remainder == 0
-                ? new string(compact, 0, dataLength)
-                : new string(compact, 0, dataLength) + new string('=', 4 - remainder);
-
-            try
-            {
-                return Convert.FromBase64String(canonical);
-            }
-            catch (FormatException e)
-            {
-                throw new VerificationException(
-                    VerificationReason.InvalidReceiptFormat, "receipt is not valid base64", e);
-            }
-        }
-
-        private static bool IsBase64Alphanumeric(char c) =>
-            (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
 
         /// <summary>
         /// Containment by category. <c>SignedCms</c> and <c>AsnReader</c> report

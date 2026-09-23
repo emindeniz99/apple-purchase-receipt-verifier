@@ -13,8 +13,8 @@ import FuzzSupport
 // costs a chain build and an RSA verification per execution, and sharing an
 // execution with these would drag them down to that rate for nothing.
 //
-//  1. `decodeReceiptBase64` — the receipt transport rule: whitespace
-//     tolerated, exactly one alphabet, padding validated in place. Invariant:
+//  1. `decodeReceiptBase64` — the receipt transport rule: canonical standard
+//     base64 and nothing else. Invariant:
 //     an accepted string decodes to exactly as many bytes as its data
 //     characters encode, so no padding rule can silently drop or invent one.
 //  2. `base64URLDecode` — the compact-JWS segment rule, documented as strict
@@ -42,14 +42,12 @@ public func fuzzReaders(_ start: UnsafePointer<UInt8>?, _ count: Int) -> CInt {
 
 private func checkReceiptBase64(_ text: String) {
     guard let decoded = Readers.decodeReceiptBase64(text) else { return }
-    // The data characters are the alphabet characters before the first `=`;
-    // whitespace is skipped by the reader and skipped here for the same
-    // reason. Four of them carry three bytes, and a trailing group of two or
-    // three carries one or two.
+    // The data characters are the characters before the first `=`. Four of
+    // them carry three bytes, and a trailing group of two or three carries
+    // one or two.
     var characters = 0
     for byte in text.utf8 {
         if byte == 0x3D { break }  // '='
-        if byte == 0x0D || byte == 0x0A || byte == 0x20 || byte == 0x09 { continue }
         characters += 1
     }
     let expected = characters / 4 * 3 + [0, 0, 1, 2][characters % 4]

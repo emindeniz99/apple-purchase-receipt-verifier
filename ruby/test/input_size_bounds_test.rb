@@ -79,9 +79,7 @@ class InputSizeBoundsTest < Minitest::Test
   end
 
   def forbidding_base64_decode(&)
-    forbidding(APRV::Receipt, :decode_base64_strict) do
-      forbidding(APRV::Receipt, :decode_base64_tolerant, &)
-    end
+    forbidding(APRV::Receipt, :decode_canonical_base64, &)
   end
 
   # -- the constants themselves ---------------------------------------------
@@ -130,7 +128,7 @@ class InputSizeBoundsTest < Minitest::Test
     # and the DER scan is what refuses it.
     text = "A" * RECEIPT_CAP
     error = nil
-    calls = counting(APRV::Receipt, :decode_base64_strict) do
+    calls = counting(APRV::Receipt, :decode_canonical_base64) do
       error = assert_reason(:INVALID_RECEIPT_FORMAT) { @receipt_verifier.verify_base64(text) }
     end
     assert_equal 1, calls

@@ -347,29 +347,14 @@ namespace ApplePurchaseReceiptVerifier.Jws
             return DateTimeOffset.FromUnixTimeMilliseconds((long)truncated);
         }
 
-        private static readonly char[] Base64Whitespace = { ' ', '\t', '\r', '\n' };
-
         private static X509Certificate2 LoadX5cEntry(string base64)
         {
-            // Convert.FromBase64String skips space, tab, CR and LF. An x5c
-            // entry is standard base64 with none of them (RFC 7515 4.1.6);
-            // everything else outside the alphabet it already refuses.
-            if (base64.IndexOfAny(Base64Whitespace) >= 0)
-            {
-                throw new VerificationException(
+            // An x5c entry is standard base64 with canonical padding (RFC 7515
+            // 4.1.6), the receipt-data rule: no whitespace, no base64url, no
+            // omitted or extra '='.
+            byte[] der = CanonicalBase64.Decode(base64)
+                ?? throw new VerificationException(
                     VerificationReason.InvalidCertificate, "x5c entry is not valid base64");
-            }
-
-            byte[] der;
-            try
-            {
-                der = Convert.FromBase64String(base64);
-            }
-            catch (FormatException e)
-            {
-                throw new VerificationException(
-                    VerificationReason.InvalidCertificate, "x5c entry is not valid base64", e);
-            }
 
             X509Certificate2 certificate = Certificates.TryLoad(der)
                 ?? throw new VerificationException(

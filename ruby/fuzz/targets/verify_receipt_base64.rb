@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 # ReceiptVerifier#verify_base64 — the string a client actually sends, through
-# the receipt-base64 rule (alphabet, mixed alphabets, padding position and
-# length, whitespace stripping) and then the whole DER path.
+# the receipt-base64 rule (canonical standard base64 only: alphabet, padding
+# position and length) and then the whole DER path.
 #
 # Seeded from the receipt-b64 fixtures, the public receipts and the Xcode
 # fixtures, so the fuzzer starts from strings that decode rather than from

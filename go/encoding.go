@@ -4,213 +4,50 @@ import (
 	"encoding/base64"
 )
 
-// Base64 decoding for receipt-data and x5c entries, matching what
-// Foundation's base64EncodedString(options:) can emit and rejecting
-// everything else — the rule adjudicated for the receipt-base64 contract
-// (fixtures/cases.json, "Receipt base64" paragraph):
+// decodeBase64 decodes receipt-data and x5c entries by the one rule both
+// follow: non-empty standard base64 ([A-Za-z0-9+/]) with exactly the
+// canonical '=' padding for its length, and nothing else. It is the rule
+// Apple's verifyReceipt applies to receipt-data (measured 2026-09-23, see
+// docs/evidence/2026-09-23-verifyreceipt-base64.md) and the one RFC 7515
+// §4.1.6 gives an x5c entry. Unused low bits in the last data character
+// are accepted, as Apple accepts them.
 //
-//   - ACCEPT: the standard (+/) or the base64url (-_) alphabet, not both
-//     in the same string; padding present or omitted; CR, LF, space and
-//     tab anywhere, stripped before decoding.
-//   - REJECT (yields no bytes): any character outside both alphabets;
-//     both alphabets in one string; anything but whitespace after the
-//     padding starts; padding whose length is not exactly what the
-//     unpadded data requires (over- or under-padded); a stripped length
-//     congruent to 1 mod 4; an empty or whitespace-only string.
+// base64.StdEncoding enforces the alphabet, the padding and the length,
+// ignores the trailing bits, and does two things the rule does not: it
+// skips CR and LF anywhere, and it decodes "" to nothing. isCanonicalBase64
+// refuses both first. StdEncoding.Strict() is not used because it refuses
+// the trailing bits Apple accepts.
 //
-// There is deliberately no canonical-trailing-bits check: an unpadded
-// tail's unused low bits are simply dropped, same as before.
-//
-// An x5c entry passes isStandardBase64 first, which narrows ACCEPT to the
-// standard alphabet with no whitespace (RFC 7515 §4.1.6).
-//
-// A rejected input decodes to nil, not an error — decodeBase64 still
-// never fails. That is what lets every caller (VerifyBase64, the
-// verifyReceipt endpoint, and the JWS x5c decoder) stay a single
-// assignment: nil is empty is "not a certificate" / "not a CMS blob",
-// the same downstream reasons a garbage decode already produced.
-
-var base64Values = func() [128]int8 {
-	var table [128]int8
-	for i := range table {
-		table[i] = -1
-	}
-	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-	for i := 0; i < len(alphabet); i++ {
-		table[alphabet[i]] = int8(i)
-	}
-	table['-'] = 62
-	table['_'] = 63
-	return table
-}()
-
-// decodeBase64 decodes standard or URL-safe base64, padded or not,
-// tolerating CR/LF/space/tab anywhere, and rejecting (as nil) anything
-// the doc comment above does not accept.
-//
-// It stops as soon as it has produced limit+1 bytes, for input it has
-// not already rejected. That one extra byte is all a caller needs to
-// answer "over the limit", because the full decode can only be longer —
-// so the verdict is identical to decoding everything and measuring
-// afterwards, and the memory and CPU are bounded by the limit instead of
-// by the attacker's input. A rejection found before the ceiling — an
-// out-of-alphabet character, a mixed alphabet, non-whitespace after
-// padding — short-circuits even earlier, without scanning the rest of
-// the string.
-//
-// This matters because the base64 entry points are the untrusted-network
-// surface: VerifyReceiptEndpoint emulates Apple's public verifyReceipt
-// host. Decoding first and checking the ceiling afterwards would let a
-// 300 MB request body allocate 225 MB against a 1 MB ceiling. The
-// ceiling counts DECODED bytes, so skipped characters — PEM line breaks,
-// whitespace — still do not count against it.
-//
-// The empty/mod-4 checks need the whole string's length, so they run
-// only once the loop finishes without an early per-character rejection
-// or an early ceiling return; a ceiling return already carries its own
-// verdict ("exceeds the limit") regardless of how the rest of the string
-// would have checked out.
-func decodeBase64(text string, limit int) []byte {
-	if limit < 0 {
-		limit = 0
-	}
-	if decoded := decodeBase64Fast(text, limit); decoded != nil {
-		return decoded
-	}
-	return decodeBase64Tolerant(text, limit)
-}
-
-// decodeBase64Fast handles the common case, canonical padded standard
-// base64, with the standard library's decoder alone. nil hands the
-// string to decodeBase64Tolerant, which then gives the answer, so a
-// rejection here never changes a verdict.
-//
-// base64.StdEncoding accepts [A-Za-z0-9+/] data followed by exactly the
-// canonical padding, nothing after it, and skips CR and LF anywhere.
-// decodeBase64Tolerant accepts every such string too (it strips CR and
-// LF, sees one alphabet, the canonical padding and a legal length) and
-// decodes it to the same bytes, as neither checks the trailing bits.
-// Two cases are excluded before the call so that the subset holds:
-//
-//   - a string whose decoded size could exceed limit, since the tolerant
-//     path answers that with a truncated prefix. DecodedLen is an upper
-//     bound on the output, so below it both paths decode everything;
-//   - an empty result, which the standard decoder returns for "" and for
-//     a string of only CR and LF, and which the tolerant path rejects.
-//
-// base64.RawStdEncoding is not tried: it covers only unpadded input,
-// which Foundation does not emit by default, and a second attempt would
-// cost every string that falls through. Unpadded input takes the
-// tolerant path. encoding_internal_test.go holds this subset property to
-// a seeded differential run on every Go version in the CI matrix.
-func decodeBase64Fast(text string, limit int) []byte {
-	if base64.StdEncoding.DecodedLen(len(text)) > limit {
+// A rejected input decodes to nil, not an error, so every caller stays a
+// single assignment: nil is empty is "not a certificate" / "not a CMS
+// blob", the same downstream reasons a garbage decode already produced.
+// Callers cap the string before calling (MaxReceiptBytes, MaxJWSBytes),
+// so the decode is bounded by the cap.
+func decodeBase64(text string) []byte {
+	if !isCanonicalBase64(text) {
 		return nil
 	}
 	decoded, err := base64.StdEncoding.DecodeString(text)
-	if err != nil || len(decoded) == 0 {
+	if err != nil {
 		return nil
 	}
 	return decoded
 }
 
-// decodeBase64Tolerant is the full decoder described above decodeBase64,
-// without the fast path. limit must not be negative.
-func decodeBase64Tolerant(text string, limit int) []byte {
-	// One past the limit is the most this can usefully produce. Clamping
-	// the capacity this way also keeps len(text)*3/4 from overflowing the
-	// slice length on a 32-bit build.
-	capacity := len(text)/4*3 + 3
-	if limit < capacity-1 {
-		capacity = limit + 1
+// isCanonicalBase64 reports whether text is non-empty, a multiple of four
+// long, and made of the standard alphabet followed by at most two '='.
+// With the length check that leaves exactly the canonical padding.
+func isCanonicalBase64(text string) bool {
+	if len(text) == 0 || len(text)%4 != 0 {
+		return false
 	}
-	out := make([]byte, 0, capacity)
-	accumulator := uint32(0)
-	bits := 0
-	coreLen := 0
-	padLen := 0
-	sawStd := false
-	sawURL := false
-	sawPad := false
-	for i := 0; i < len(text); i++ {
-		c := text[i]
-		switch c {
-		case ' ', '\t', '\r', '\n':
-			continue
-		}
-		if sawPad {
-			// Nothing but more padding — or whitespace, handled above —
-			// may follow the first '='.
-			if c != '=' {
-				return nil
-			}
-			coreLen++
-			padLen++
-			continue
-		}
-		if c == '=' {
-			sawPad = true
-			coreLen++
-			padLen++
-			continue
-		}
-		if c >= 128 {
-			return nil
-		}
-		value := base64Values[c]
-		if value < 0 {
-			return nil
-		}
-		switch c {
-		case '+', '/':
-			if sawURL {
-				return nil
-			}
-			sawStd = true
-		case '-', '_':
-			if sawStd {
-				return nil
-			}
-			sawURL = true
-		}
-		coreLen++
-		accumulator = accumulator<<6 | uint32(value)
-		bits += 6
-		if bits >= 8 {
-			bits -= 8
-			out = append(out, byte(accumulator>>uint(bits)))
-			if len(out) > limit {
-				return out
-			}
-		}
-	}
-	// The impossible-length test is on the DATA, not the padded string:
-	// "A===" is a multiple of four in total and still encodes no whole byte.
-	dataLen := coreLen - padLen
-	if dataLen == 0 || dataLen%4 == 1 {
-		return nil
-	}
-	// Padding, if present, must be the exact amount needed to round the
-	// unpadded data up to a multiple of 4 — no more, no less. An unpadded
-	// string (padLen == 0) is still accepted.
-	if padLen != 0 && padLen != (4-dataLen%4)%4 {
-		return nil
-	}
-	return out
-}
-
-// isStandardBase64 reports whether text uses only what RFC 7515 §4.1.6
-// allows in an x5c entry: the standard alphabet of RFC 4648 §4 (not
-// base64url), no whitespace, and at most two '=' at the end. It checks the
-// characters only; decodeBase64 still decides the rest.
-func isStandardBase64(text string) bool {
 	end := len(text)
-	for pad := 0; pad < 2 && end > 0 && text[end-1] == '='; pad++ {
+	for pad := 0; pad < 2 && text[end-1] == '='; pad++ {
 		end--
 	}
 	for i := 0; i < end; i++ {
 		c := text[i]
-		if c >= 128 || base64Values[c] < 0 || c == '-' || c == '_' {
+		if !('A' <= c && c <= 'Z' || 'a' <= c && c <= 'z' || '0' <= c && c <= '9' || c == '+' || c == '/') {
 			return false
 		}
 	}
@@ -219,7 +56,7 @@ func isStandardBase64(text string) bool {
 
 // decodeBase64URLStrict decodes one compact-JWS segment.
 //
-// Unlike decodeBase64 this one FAILS on anything that is not canonical
+// Unlike decodeBase64 this one also FAILS on anything that is not canonical
 // base64url: a character outside the alphabet, "=" padding (RFC 7515 §2
 // requires the padding to be omitted), a wrong length, or non-zero bits
 // in the final quantum. base64.RawURLEncoding.Strict() rejects all four

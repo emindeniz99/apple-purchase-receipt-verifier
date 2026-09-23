@@ -321,7 +321,14 @@ public final class JwsVerifier {
             for (JsonNode certNode : x5c) {
                 // RFC 7515 4.1.6: standard base64, no line breaks. The MIME
                 // decoder would silently skip any illegal character instead.
-                byte[] der = Base64.getDecoder().decode(certNode.asText());
+                // The basic decoder accepts omitted padding, so the length is
+                // held to a multiple of four first, as receipt-data is.
+                String text = certNode.asText();
+                if (text.length() % 4 != 0) {
+                    throw new VerificationException(
+                            Reason.INVALID_CERTIFICATE, "x5c entry is not canonically padded base64");
+                }
+                byte[] der = Base64.getDecoder().decode(text);
                 chain.add((X509Certificate) cf.generateCertificate(new ByteArrayInputStream(der)));
             }
         } catch (IllegalArgumentException e) {

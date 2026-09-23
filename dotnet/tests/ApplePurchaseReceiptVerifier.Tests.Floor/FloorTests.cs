@@ -97,18 +97,18 @@ public class FloorTests
     }
 
     /// <summary>
-    /// This asset has no base64 fast path, so the receipt cap is checked here
-    /// in front of the tolerant decoder alone: a genuine receipt padded with
-    /// line feeds to the cap verifies, and one more line feed is refused.
+    /// The receipt cap on this asset's decoder: a genuinely signed receipt
+    /// whose canonical base64 is exactly the cap verifies, and one more
+    /// character is refused by the cap, as its message shows.
     /// </summary>
     [Fact]
     public void TheReceiptCapHoldsOnTheFloorAsset()
     {
-        string base64 = Convert.ToBase64String(Bytes("generated/receipt.der"));
-        string atCap = base64 + new string('\n', ReceiptVerifier.MaxReceiptBytes - base64.Length);
+        string atCap = Encoding.ASCII.GetString(Bytes("limits/receipt-b64-at-cap.txt"));
+        Assert.Equal(ReceiptVerifier.MaxReceiptBytes, atCap.Length);
 
         using ReceiptVerifier verifier = new(
-            new[] { Certificate("generated/receipt-root.der") }, "com.example.app");
+            new[] { Certificate("generated/receipt-b64-cap-root.der") }, "com.example.app");
         Assert.Equal("com.example.app", verifier.Verify(atCap).BundleId);
 
         VerificationException error = Assert.Throws<VerificationException>(() => verifier.Verify(atCap + "\n"));

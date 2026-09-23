@@ -164,13 +164,15 @@ A null receipt is a verdict (`INVALID_RECEIPT_FORMAT`), not a
 overload: `verify((String) null)`. A typed variable that happens to be null
 resolves on its own.
 
-`verify(String)` decodes exactly what Apple's `receipt-data` accepts: RFC
-4648 Base64, the standard (`+`/`/`) or base64url (`-`/`_`) alphabet — never
-both in the same string — padding present or omitted, and `CR`/`LF`/space/tab
-anywhere. A character neither alphabet defines, anything but whitespace after
-padding starts, or a `=` count other than zero or the exact count the data
-length requires is `INVALID_RECEIPT_FORMAT` before any bytes reach the CMS
-parser — see `ReceiptBase64` in `receipt/ReceiptBase64.java`.
+`verify(String)` decodes exactly what Apple's verifyReceipt accepts as
+`receipt-data` (measured 2026-09-23, see
+[`docs/evidence/2026-09-23-verifyreceipt-base64.md`](../docs/evidence/2026-09-23-verifyreceipt-base64.md)):
+standard base64 (`+`/`/`) with the canonical `=` padding and nothing else.
+Whitespace anywhere, the base64url alphabet, omitted or extra padding,
+anything after the padding and an empty string are `INVALID_RECEIPT_FORMAT`
+before any bytes reach the CMS parser. Unused low bits in the last data
+character are accepted, as Apple accepts them. See `ReceiptBase64` in
+`receipt/ReceiptBase64.java`.
 
 Passing `deviceGuid` additionally enforces the device binding:
 `SHA1(guid ‖ opaqueValue ‖ bundleIdBytes)` must equal attribute 5, compared in
@@ -308,7 +310,7 @@ try {
 | `Reason` | Raised when |
 |---|---|
 | `INVALID_JWS_FORMAT` | not three dot-separated segments, a segment that is not a base64url-encoded JSON *object*, `alg != ES256`, an `x5c` that is not exactly three entries, or a JWS over `MAX_JWS_BYTES` or nested past the reader limit |
-| `INVALID_CERTIFICATE` | an `x5c` entry does not decode to a parseable certificate. The base64 goes through `Base64.getDecoder()`, because RFC 7515 §4.1.6 makes an entry standard base64: a character outside that alphabet (a stray `!`, a space or line break, a base64url `-` or `_`) is refused, not skipped, so such an entry gets this verdict before any certificate is parsed |
+| `INVALID_CERTIFICATE` | an `x5c` entry does not decode to a parseable certificate. The base64 goes through `Base64.getDecoder()` behind a length check, because RFC 7515 §4.1.6 makes an entry standard base64: a character outside that alphabet (a stray `!`, a space or line break, a base64url `-` or `_`) or omitted or extra `=` padding is refused, not skipped, so such an entry gets this verdict before any certificate is parsed |
 | `INVALID_CERTIFICATE_PURPOSE` | the leaf or intermediate lacks its Apple marker OID, or the receipt signer lacks its own |
 | `INVALID_CHAIN` | the path does not reach a pinned anchor, a certificate was not valid at the signing instant, or a receipt embeds more than ten certificates or a chain longer than six |
 | `INVALID_SIGNATURE` | the ES256 or CMS signature check failed, or the signer key is not RSA |

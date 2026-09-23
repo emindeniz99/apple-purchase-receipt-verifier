@@ -11,8 +11,8 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationException;
 /**
  * `ReceiptVerifier::verify()` on the transport string a client actually sends
  * — the receipt-base64 rule (`fixtures/cases.json`'s "Receipt base64"
- * paragraph: either alphabet, padding present or omitted, CR/LF/space/tab
- * tolerated anywhere) and then the whole DER path behind it.
+ * paragraph: canonical standard base64 and nothing else, as Apple's
+ * verifyReceipt accepts it) and then the whole DER path behind it.
  *
  * Seeded from the `receipt-b64` fixtures and the public receipts, so the
  * fuzzer starts from strings that decode and verify rather than from noise it

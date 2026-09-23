@@ -146,6 +146,15 @@ public final class LargeReceiptFixture {
      * moves one byte per character and the loop settles within a few passes.
      */
     private static void writeExactSize(Path out, TestPki pki, String name, int bytes) throws Exception {
+        write(out, name, exactSize(pki, name, bytes));
+    }
+
+    /**
+     * The receipt {@link #writeExactSize} writes, returned instead. Package
+     * private for {@link ReceiptBase64CapFixture}, which needs the same shape
+     * at another size under a root of its own.
+     */
+    static byte[] exactSize(TestPki pki, String name, int bytes) throws Exception {
         int perPurchase = BYTE_FLOOR_PURCHASES - 2;
         int floorLength = pki.signReceipt(paddedPurchasesPayload(PRODUCT_ID_LENGTH, 0), new Date(SIGNED_DATE)).length;
         int idLength = PRODUCT_ID_LENGTH + (bytes - floorLength) / perPurchase;
@@ -158,8 +167,7 @@ public final class LargeReceiptFixture {
                 System.out.println(name + " payload " + payload.length + " bytes, " + nodes + " nodes, product ids "
                         + idLength + " characters");
                 requireBelow(name + " nodes", nodes, NODE_FLOOR / 2);
-                write(out, name, receipt);
-                return;
+                return receipt;
             }
             int missing = bytes - receipt.length;
             if (remainder + missing >= 0) {

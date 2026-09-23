@@ -109,10 +109,10 @@ class InputSizeBoundsTest {
     // ------------------------------------------------------------------
 
     /**
-     * The oversize string is a genuine receipt padded with spaces, which Apple's
-     * {@code receipt-data} contract allows anywhere and {@code ReceiptBase64}
-     * strips: without the bound this input VERIFIES, so the refusal can only
-     * come from the bound.
+     * The oversize string is a genuine receipt padded with spaces. The strict
+     * decoder would refuse the spaces too, so the verdict alone cannot show
+     * which check fired; the message can, and it names the size bound, which
+     * runs before anything is decoded.
      */
     @Test
     void receiptStringOverTheSizeLimitIsRefusedBeforeItIsDecoded() throws Exception {
@@ -123,11 +123,20 @@ class InputSizeBoundsTest {
         assertTrue(thrown.getMessage().contains("exceeds the maximum accepted size"), thrown.getMessage());
     }
 
-    /** The same receipt one character shorter still verifies, so the bound is where it says it is. */
+    /**
+     * A string exactly at the bound still verifies, so the bound is where it
+     * says it is. Canonical base64 admits nothing around the data, so the
+     * string is a genuinely signed receipt whose base64 is exactly the bound
+     * (fixtures/limits/receipt-b64-at-cap.txt, from ReceiptBase64CapFixture).
+     */
     @Test
     void receiptStringAtTheSizeLimitStillVerifies() throws Exception {
-        String receipt = paddedGenuineReceipt(ReceiptVerifier.MAX_RECEIPT_BYTES);
-        assertEquals(BUNDLE, receiptVerifier().verify(receipt).bundleId());
+        String receipt = new String(
+                Files.readAllBytes(Paths.get("..", "fixtures", "limits", "receipt-b64-at-cap.txt")),
+                StandardCharsets.US_ASCII);
+        assertEquals(ReceiptVerifier.MAX_RECEIPT_BYTES, receipt.length());
+        ReceiptVerifier verifier = new ReceiptVerifier(Collections.singleton(root("receipt-b64-cap-root.der")), BUNDLE);
+        assertEquals(BUNDLE, verifier.verify(receipt).bundleId());
     }
 
     @Test
@@ -215,8 +224,10 @@ class InputSizeBoundsTest {
 
     /**
      * The {@code Map} entry point does not see the request body, so it applies
-     * the receipt bound to {@code receipt-data} itself. Padded with spaces, so
-     * without the bound the receipt verifies and the status is 0.
+     * the receipt bound to {@code receipt-data} itself. No string over the
+     * bound is valid receipt-data, so without the bound this would be 21002
+     * too; what it pins is that the endpoint's answer stays 21002 with
+     * INVALID_RECEIPT_FORMAT rather than anything the decode could throw.
      */
     @Test
     void receiptDataOverTheReceiptLimitAnswers21002() throws Exception {

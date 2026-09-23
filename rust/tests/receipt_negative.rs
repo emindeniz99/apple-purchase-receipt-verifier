@@ -432,15 +432,16 @@ fn base64_and_der_entry_points_agree() {
         verifier().verify(&der).unwrap(),
         verifier().verify_base64(&base64).unwrap()
     );
-    // Line-wrapped base64, as a client might send it.
+    // Line-wrapped base64 is refused, as Apple's verifyReceipt refuses it
+    // (21002, measured 2026-09-23), rather than read as the same receipt.
     let wrapped: String = base64
         .as_bytes()
         .chunks(64)
         .map(|c| format!("{}\n", String::from_utf8_lossy(c)))
         .collect();
     assert_eq!(
-        verifier().verify(&der).unwrap(),
-        verifier().verify_base64(&wrapped).unwrap()
+        verifier().verify_base64(&wrapped).unwrap_err().reason(),
+        Reason::InvalidReceiptFormat
     );
 }
 

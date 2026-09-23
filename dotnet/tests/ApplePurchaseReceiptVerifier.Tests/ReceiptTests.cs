@@ -32,13 +32,17 @@ public class ReceiptTests
     }
 
     [Fact]
-    public void ABase64ReceiptWithWhitespaceIsAccepted()
+    public void ABase64ReceiptWithLineBreaksIsRefusedAsAppleRefusesIt()
     {
+        // Apple's verifyReceipt answers 21002 to line-wrapped base64
+        // (measured 2026-09-23), so the same receipt is not accepted here.
         string wrapped = string.Join(
             "\n",
             Chunks(Convert.ToBase64String(Fixtures.Bytes("receipt")), 64));
         using ReceiptVerifier verifier = new(Roots(), "com.example.app");
-        Assert.Equal("com.example.app", verifier.Verify(wrapped).BundleId);
+        Assert.Equal(
+            VerificationReason.InvalidReceiptFormat,
+            Assert.Throws<VerificationException>(() => verifier.Verify(wrapped)).Reason);
     }
 
     [Fact]

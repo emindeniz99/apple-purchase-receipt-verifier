@@ -13,7 +13,7 @@ import {
   requireKnownVersion,
   requireNoDuplicateExtensions,
 } from './der.js';
-import { receiptBase64DecodeStrict } from './bytes.js';
+import { isCanonicalBase64 } from './bytes.js';
 import { MAX_RECEIPT_BYTES, utf8LengthExceeds } from './limits.js';
 import {
   parseReceiptPayload,
@@ -35,10 +35,6 @@ const RECEIPT_SIGNER_OID = '1.2.840.113635.100.6.11.1';
 // them measured 122-172 ms to reject, 26 to 45 times the cost of verifying
 // the genuine 79 KB legacy receipt.
 const MAX_EMBEDDED_CERTIFICATES = 10;
-
-// Standard alphabet and at most two '=' at the end; with a length that is a
-// multiple of four this is exactly canonical padded base64.
-const CANONICAL_BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
 
 /** One in-app purchase from a legacy app receipt (attribute 17). */
 export interface InAppPurchase {
@@ -121,30 +117,21 @@ export interface ReceiptVerifierOptions {
  * Shared by {@link ReceiptVerifier.verify} and {@link VerifyReceiptEndpoint}.
  */
 export function decodeReceiptDataString(text: string): Buffer {
-  // Before the decode, which allocates a stripped copy of the string and
-  // then the bytes it decodes to.
+  // Before the shape check and the decode, which scan the whole string and
+  // allocate the bytes it decodes to.
   if (utf8LengthExceeds(text, MAX_RECEIPT_BYTES)) {
     throw new VerificationError(
       Reason.INVALID_RECEIPT_FORMAT,
       `receipt exceeds the maximum accepted size of ${MAX_RECEIPT_BYTES} bytes`,
     );
   }
-  // Fast path for the string a client usually sends: canonical standard
-  // base64, one run with correct padding and nothing else. Every such
-  // non-empty string passes each rule of receiptBase64DecodeStrict (nothing
-  // to strip, one alphabet, only '=' after the data, a data length that is
-  // not 1 mod 4 and the padding that length requires), and Buffer.from
-  // decodes it to the same bytes. Buffer.from itself never rejects
-  // anything, so the gate is what makes this path strict; everything it
-  // turns away takes the full decode below, unchanged.
-  if (text.length !== 0 && text.length % 4 === 0 && CANONICAL_BASE64.test(text)) {
-    return Buffer.from(text, 'base64');
-  }
-  const decoded = receiptBase64DecodeStrict(text);
-  if (decoded === null) {
+  // Buffer.from never rejects anything, so the rule is checked first; after
+  // it Buffer.from decodes exactly the canonical string, trailing bits
+  // ignored as Apple ignores them.
+  if (!isCanonicalBase64(text)) {
     throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'receipt-data is not valid base64');
   }
-  return asBuffer(decoded);
+  return Buffer.from(text, 'base64');
 }
 
 /** Zero-copy Buffer view over shared-parser output, which is Uint8Array. */
@@ -282,8 +269,8 @@ export class ReceiptVerifier {
   /**
    * Verifies a receipt (DER Buffer, or its base64 string — the usual client
    * transport form). A string is decoded per the receipt-data contract
-   * (RFC 4648, standard or base64url alphabet, not mixed, padding optional —
-   * see {@link receiptBase64DecodeStrict}); anything that decode rejects
+   * (canonical standard base64 and nothing else, as Apple's verifyReceipt
+   * accepts it — see {@link isCanonicalBase64}); anything else
    * throws {@link Reason.INVALID_RECEIPT_FORMAT}. Passing `deviceGuid`
    * additionally enforces the device-hash binding: SHA1(guid ‖ opaqueValue ‖
    * bundleIdBytes) must equal attribute 5 (optional — PLAN.md D4).

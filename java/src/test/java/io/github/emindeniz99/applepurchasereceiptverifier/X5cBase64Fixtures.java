@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Writes the three x5c-spelling fixtures into {@code fixtures/generated/}.
+ * Writes the five x5c-spelling fixtures into {@code fixtures/generated/}.
  *
  * <p>RFC 7515 §4.1.6 makes every {@code x5c} entry base64 of a DER
  * certificate: the standard alphabet of RFC 4648 §4, not base64url, and
@@ -28,10 +28,17 @@ import java.util.Map;
  *       for {@code +} and {@code /}), which a decoder that accepts both
  *       alphabets reads as the same certificate;</li>
  *   <li>the entry wrapped at 64 columns with LF, as a PEM body is, which a
- *       decoder that tolerates whitespace reads as the same certificate.</li>
+ *       decoder that tolerates whitespace reads as the same certificate;</li>
+ *   <li>the entry with its {@code =} padding omitted, which a decoder that
+ *       makes padding optional (Java's {@code Base64.getDecoder()}, PHP's
+ *       strict {@code base64_decode}) reads as the same certificate;</li>
+ *   <li>the entry with one {@code =} more than its length calls for, which
+ *       a decoder that stops at the first {@code =} or skips surplus padding
+ *       (Swift's {@code Data(base64Encoded:)} on Linux) reads as the same
+ *       certificate.</li>
  * </ol>
  *
- * <p>All three are {@code INVALID_CERTIFICATE}. The header is signed in its
+ * <p>All five are {@code INVALID_CERTIFICATE}. The header is signed in its
  * mutated state, so the ES256 signature covers exactly the bytes served and
  * the spelling is the only defect: a port that decodes the entry leniently
  * recovers a genuine chain and VERIFIES, rather than failing on a stale
@@ -125,6 +132,18 @@ public final class X5cBase64Fixtures {
             wrapped.append(leaf, i, Math.min(leaf.length(), i + 64));
         }
         write(out, "transaction-x5c-leaf-line-breaks.jws", sign(pki, wrapped.toString(), claimsJson));
+
+        // --- 4. padding omitted -------------------------------------------
+        // Only meaningful when the DER length leaves a partial group, which
+        // fresh keys decide per run, so that is checked too.
+        String unpadded = leaf.replace("=", "");
+        if (unpadded.equals(leaf)) {
+            throw new IllegalStateException("x5c[0] has no '=' padding; rerun for fresh keys");
+        }
+        write(out, "transaction-x5c-leaf-unpadded.jws", sign(pki, unpadded, claimsJson));
+
+        // --- 5. one '=' more than canonical ---------------------------------
+        write(out, "transaction-x5c-leaf-overpadded.jws", sign(pki, leaf + "=", claimsJson));
     }
 
     /** Signs a header whose x5c[0] is {@code leafText} and whose other two entries are genuine. */
