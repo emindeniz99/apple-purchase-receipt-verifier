@@ -9,6 +9,9 @@ import io.github.emindeniz99.applepurchasereceiptverifier.receipt.VerifyReceiptE
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.VerifyReceiptResult;
 import java.io.File;
 import java.io.IOException;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.MessageDigest;
@@ -16,6 +19,7 @@ import java.security.cert.X509Certificate;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collection;
 import java.util.Collections;
@@ -65,6 +69,14 @@ public class ReceiptBenchmark {
     /** Any fixed instant: it only feeds the endpoint's request_date fields. */
     private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
 
+    /**
+     * The library's own receipt-data decoder, {@code ReceiptBase64.decode},
+     * which is package-private. Bound once by reflection so the cross-port
+     * {@code decodeBase64} benchmark (BENCHMARKS.md) can time it alone; a
+     * static final handle costs nothing per call once compiled.
+     */
+    private static final MethodHandle DECODE = decodeHandle();
+
     private Set<X509Certificate> roots;
     private byte[] der;
     private byte[] tamperedDer;
@@ -76,7 +88,7 @@ public class ReceiptBenchmark {
     private VerifyReceiptEndpoint productionEndpoint;
 
     @Setup
-    public void setUp() throws Exception {
+    public void setUp() throws Throwable {
         String bundleId;
         int inAppCount;
         String sha256;
@@ -110,6 +122,9 @@ public class ReceiptBenchmark {
         sandboxEndpoint = new VerifyReceiptEndpoint(roots, Environment.SANDBOX, CLOCK);
         productionEndpoint = new VerifyReceiptEndpoint(roots, Environment.PRODUCTION, CLOCK);
 
+        if (!Arrays.equals(decodeBase64(), der)) {
+            throw new IllegalStateException("decodeBase64 did not return the fixture's DER");
+        }
         checkReceipt(ReceiptVerifier.verifyReceiptCore(der, roots), bundleId, inAppCount);
         checkReceipt(verifier.verify(base64), bundleId, inAppCount);
         Map<String, Object> ok = sandboxEndpoint.verifyReceiptResult(request).toResponse();
@@ -147,6 +162,11 @@ public class ReceiptBenchmark {
                 throw new IllegalStateException("tampered " + fixture + " rejected with " + e.reason(), e);
             }
         }
+    }
+
+    @Benchmark
+    public byte[] decodeBase64() throws Throwable {
+        return (byte[]) DECODE.invokeExact(base64);
     }
 
     @Benchmark
@@ -232,6 +252,17 @@ public class ReceiptBenchmark {
             return i;
         }
         return -1;
+    }
+
+    private static MethodHandle decodeHandle() {
+        try {
+            Method decode = Class.forName("io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptBase64")
+                    .getDeclaredMethod("decode", String.class);
+            decode.setAccessible(true);
+            return MethodHandles.lookup().unreflect(decode);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("ReceiptBase64.decode(String) is not where this expects it", e);
+        }
     }
 
     /** Walks up from the working directory to the repository's fixtures/. */

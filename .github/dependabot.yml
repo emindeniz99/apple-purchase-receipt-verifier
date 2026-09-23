@@ -56,6 +56,15 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+  # java-bench (the JMH benchmarks) is a third standalone pom, pinning JMH and
+  # its Maven plugins, and dependabot watches only the directories it is told
+  # about.
+  - package-ecosystem: maven
+    directory: /java-bench
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
   - package-ecosystem: swift
     directory: /
     schedule:

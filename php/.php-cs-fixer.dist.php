@@ -20,5 +20,7 @@ return (new PhpCsFixer\Config())
             // `fuzz/crashes` are the fuzzer's own working directories and
             // hold no source.
             ->in(__DIR__ . '/fuzz')
+            // The cross-port benchmark (BENCHMARKS.md at the repository root).
+            ->in(__DIR__ . '/bench')
             ->exclude(['tools', 'corpus', 'crashes', 'coverage'])
     );

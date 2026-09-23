@@ -38,6 +38,10 @@
         {
           "type": "generic",
           "path": "jvm-interop/pom.xml"
+        },
+        {
+          "type": "generic",
+          "path": "java-bench/pom.xml"
         }
       ]
     }

@@ -384,6 +384,8 @@ acceptance, not only a crash. Each `<port>/fuzz/README.md` lists its targets;
 [THREAT-MODEL.md](./THREAT-MODEL.md) says what they are for and PLAN.md D16
 why the parsers they cover are hand-written.
 
+Cross-port benchmarks (same operations, same fixtures): [BENCHMARKS.md](./BENCHMARKS.md).
+
 Production trust anchors are all three published Apple root certificates in
 [`certs/`](./certs) (from [Apple PKI](https://www.apple.com/certificateauthority/)):
 `AppleIncRootCertificate.cer`, `AppleRootCA-G2.cer` and `AppleRootCA-G3.cer`.
