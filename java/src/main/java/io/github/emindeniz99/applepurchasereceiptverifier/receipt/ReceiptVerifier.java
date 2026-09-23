@@ -407,6 +407,75 @@ public final class ReceiptVerifier {
                             + MAXIMUM_EMBEDDED_CERTIFICATES);
         }
         List<X509CertificateHolder> holders = new ArrayList<X509CertificateHolder>();
+        X509CertificateHolder signerHolder =
+                decodeEmbeddedAndFindSigner(certificateSet, embeddedCount, signer, holders);
+        JcaX509CertificateConverter converter = new JcaX509CertificateConverter();
+        X509Certificate signerCert;
+        try {
+            // The JCA decodes the whole X.509 template, including every
+            // extension VALUE, where BouncyCastle keeps extensions as encoded
+            // bytes, so this is where an extnValue that stops decoding is
+            // found, and it is a defect of the certificate rather than of the
+            // path it sits on.
+            signerCert = converter.getCertificate(signerHolder);
+            signerCert.getPublicKey();
+        } catch (GeneralSecurityException e) {
+            throw new VerificationException(
+                    Reason.INVALID_CERTIFICATE, "receipt signer certificate is not a valid certificate", e);
+        } catch (RuntimeException e) {
+            throw new VerificationException(
+                    Reason.INVALID_CERTIFICATE, "receipt signer certificate is not a valid certificate", e);
+        }
+        try {
+            List<X509Certificate> embedded = new ArrayList<X509Certificate>();
+            for (X509CertificateHolder holder : holders) {
+                // The signer was converted above; converting it again only
+                // re-encodes it and gets the same certificate back.
+                embedded.add(holder == signerHolder ? signerCert : converter.getCertificate(holder));
+            }
+            X509CertSelector target = new X509CertSelector();
+            target.setCertificate(signerCert);
+            PKIXBuilderParameters params = new PKIXBuilderParameters(trustAnchors, target);
+            params.addCertStore(CertStore.getInstance("Collection", new CollectionCertStoreParameters(embedded)));
+            params.setRevocationEnabled(false);
+            params.setDate(at);
+            params.setMaxPathLength(MAX_PATH_LENGTH - 1);
+            CertPathBuilderResult result = CertPathBuilder.getInstance("PKIX").build(params);
+            // getCertPath() excludes the trust anchor, so this is the count the
+            // other ports bound: certificates from the leaf up to the anchor.
+            if (result.getCertPath().getCertificates().size() > MAX_PATH_LENGTH) {
+                throw new VerificationException(Reason.INVALID_CHAIN, "chain exceeds maximum length");
+            }
+            return signerCert;
+        } catch (CertPathBuilderException e) {
+            throw new VerificationException(
+                    Reason.INVALID_CHAIN,
+                    "signer chain does not validate to a pinned Apple root: " + e.getMessage(),
+                    e);
+        } catch (GeneralSecurityException e) {
+            throw new VerificationException(Reason.INVALID_CHAIN, "chain validation unavailable", e);
+        }
+    }
+
+    /**
+     * Decodes every embedded certificate into {@code holders} and returns the
+     * one the SignerInfo names, or throws the verdict for the bag.
+     *
+     * <p>This walk over the raw set, and {@link #namesTheSigner}, exist so
+     * that a signer certificate no decoder accepts is reported as
+     * INVALID_CERTIFICATE rather than INVALID_RECEIPT_FORMAT. fixtures/cases.json
+     * pins that with receipt/reject-signer-certificate-version-11,
+     * reject-signer-carrying-one-extension-twice,
+     * reject-signer-on-an-unimplemented-curve and
+     * reject-signer-with-a-corrupt-extension; do not replace it with
+     * {@code cms.getCertificates()}.</p>
+     */
+    private static X509CertificateHolder decodeEmbeddedAndFindSigner(
+            @Nullable ASN1Set certificateSet,
+            int embeddedCount,
+            SignerInformation signer,
+            List<X509CertificateHolder> holders)
+            throws VerificationException {
         @Nullable Exception unreadable = null;
         boolean unreadableSigner = false;
         for (int i = 0; i < embeddedCount; i++) {
@@ -455,52 +524,7 @@ public final class ReceiptVerifier {
             throw new VerificationException(
                     Reason.INVALID_RECEIPT_FORMAT, "an embedded certificate is not a valid certificate", unreadable);
         }
-        JcaX509CertificateConverter converter = new JcaX509CertificateConverter();
-        X509Certificate signerCert;
-        try {
-            // The JCA decodes the whole X.509 template, including every
-            // extension VALUE, where BouncyCastle keeps extensions as encoded
-            // bytes — so this is where an extnValue that stops decoding is
-            // found, and it is a defect of the certificate rather than of the
-            // path it sits on.
-            signerCert = converter.getCertificate(signerHolder);
-            signerCert.getPublicKey();
-        } catch (GeneralSecurityException e) {
-            throw new VerificationException(
-                    Reason.INVALID_CERTIFICATE, "receipt signer certificate is not a valid certificate", e);
-        } catch (RuntimeException e) {
-            throw new VerificationException(
-                    Reason.INVALID_CERTIFICATE, "receipt signer certificate is not a valid certificate", e);
-        }
-        try {
-            List<X509Certificate> embedded = new ArrayList<X509Certificate>();
-            for (X509CertificateHolder holder : holders) {
-                // The signer was converted above; converting it again only
-                // re-encodes it and gets the same certificate back.
-                embedded.add(holder == signerHolder ? signerCert : converter.getCertificate(holder));
-            }
-            X509CertSelector target = new X509CertSelector();
-            target.setCertificate(signerCert);
-            PKIXBuilderParameters params = new PKIXBuilderParameters(trustAnchors, target);
-            params.addCertStore(CertStore.getInstance("Collection", new CollectionCertStoreParameters(embedded)));
-            params.setRevocationEnabled(false);
-            params.setDate(at);
-            params.setMaxPathLength(MAX_PATH_LENGTH - 1);
-            CertPathBuilderResult result = CertPathBuilder.getInstance("PKIX").build(params);
-            // getCertPath() excludes the trust anchor, so this is the count the
-            // other ports bound: certificates from the leaf up to the anchor.
-            if (result.getCertPath().getCertificates().size() > MAX_PATH_LENGTH) {
-                throw new VerificationException(Reason.INVALID_CHAIN, "chain exceeds maximum length");
-            }
-            return signerCert;
-        } catch (CertPathBuilderException e) {
-            throw new VerificationException(
-                    Reason.INVALID_CHAIN,
-                    "signer chain does not validate to a pinned Apple root: " + e.getMessage(),
-                    e);
-        } catch (GeneralSecurityException e) {
-            throw new VerificationException(Reason.INVALID_CHAIN, "chain validation unavailable", e);
-        }
+        return signerHolder;
     }
 
     /**
