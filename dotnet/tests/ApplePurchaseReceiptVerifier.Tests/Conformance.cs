@@ -26,8 +26,7 @@ namespace ApplePurchaseReceiptVerifier.Tests;
 /// special-case here. A case this adapter cannot map is a hard failure, never a
 /// skip.
 /// </remarks>
-[TestCaseOrderer(typeof(Conformance.CoverageCheckLast))]
-public class Conformance
+public class Conformance : IClassFixture<Conformance.Coverage>
 {
     // verifyRaw enforces no claim, so its cases may omit bundleId and
     // acceptedEnvironments — but the constructor still demands both. These
@@ -194,67 +193,53 @@ public class Conformance
         }
     }
 
-    /// <summary>Which case ids actually ran, for <see cref="EveryCaseInTheFileRan"/>.</summary>
+    /// <summary>Which case ids actually ran, for <see cref="Coverage"/>.</summary>
     private static readonly ConcurrentDictionary<string, bool> Ran = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Coverage self-check: every case id in the file ran, compared against
     /// the parsed file and never against a literal count, so a case that was
-    /// skipped, or never discovered, fails the run. <see cref="CoverageCheckLast"/>
-    /// runs it after every other test of this class. An explicit filter on the
-    /// test process's command line is the one thing that may leave cases
-    /// unrun, so the check stands down for it and says so.
+    /// skipped, or never discovered, fails the run.
     /// </summary>
-    [Fact]
-    public void EveryCaseInTheFileRan()
+    /// <remarks>
+    /// It runs as the class fixture's cleanup, which xUnit calls once after
+    /// every test of this class has finished, whatever order they ran in, and
+    /// reports a throw there as a failure of the run. A [Fact] with a test-case
+    /// orderer was tried first; the orderer did not hold on net10.0 in CI and
+    /// the check ran before any case. An explicit filter on the test process's
+    /// command line is the one thing that may leave cases unrun, so the check
+    /// stands down for it.
+    /// </remarks>
+    public sealed class Coverage : IDisposable
     {
-        foreach (string argument in Environment.GetCommandLineArgs())
+        public void Dispose()
         {
-            if (argument.StartsWith("--filter", StringComparison.Ordinal)
-                || argument.StartsWith("--treenode-filter", StringComparison.Ordinal)
-                || argument.StartsWith("-filter", StringComparison.Ordinal)
-                || argument is "-method" or "-class" or "-trait" or "-namespace")
+            foreach (string argument in Environment.GetCommandLineArgs())
             {
-                TestContext.Current.SendDiagnosticMessage(
-                    $"{argument} filters tests; the coverage self-check needs a full run");
-                return;
-            }
-        }
-
-        List<string> missing = new();
-        foreach (object? entry in CaseList)
-        {
-            string id = Str(AsMap(entry), "id");
-            if (!Ran.ContainsKey(id))
-            {
-                missing.Add(id);
-            }
-        }
-
-        Assert.True(
-            missing.Count == 0,
-            $"{missing.Count} of {CaseList.Count} cases did not run: {string.Join(", ", missing)}");
-    }
-
-    /// <summary>
-    /// The default order, with <see cref="EveryCaseInTheFileRan"/> moved to the
-    /// end: the tests of one class run one after another, so it sees every
-    /// case that ran before it.
-    /// </summary>
-    public sealed class CoverageCheckLast : ITestCaseOrderer
-    {
-        public IReadOnlyCollection<TTestCase> OrderTestCases<TTestCase>(IReadOnlyCollection<TTestCase> testCases)
-            where TTestCase : notnull, ITestCase
-        {
-            List<TTestCase> ordered = new();
-            List<TTestCase> last = new();
-            foreach (TTestCase testCase in DefaultTestCaseOrderer.Instance.OrderTestCases(testCases))
-            {
-                (testCase.TestMethodName == nameof(EveryCaseInTheFileRan) ? last : ordered).Add(testCase);
+                if (argument.StartsWith("--filter", StringComparison.Ordinal)
+                    || argument.StartsWith("--treenode-filter", StringComparison.Ordinal)
+                    || argument.StartsWith("-filter", StringComparison.Ordinal)
+                    || argument is "-method" or "-class" or "-trait" or "-namespace")
+                {
+                    return;
+                }
             }
 
-            ordered.AddRange(last);
-            return ordered;
+            List<string> missing = new();
+            foreach (object? entry in CaseList)
+            {
+                string id = Str(AsMap(entry), "id");
+                if (!Ran.ContainsKey(id))
+                {
+                    missing.Add(id);
+                }
+            }
+
+            if (missing.Count != 0)
+            {
+                throw new InvalidOperationException(
+                    $"{missing.Count} of {CaseList.Count} cases did not run: {string.Join(", ", missing)}");
+            }
         }
     }
 
