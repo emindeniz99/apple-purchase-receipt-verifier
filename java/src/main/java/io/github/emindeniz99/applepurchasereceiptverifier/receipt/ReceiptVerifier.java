@@ -223,13 +223,14 @@ public final class ReceiptVerifier {
      * <p>What it checks, in order: the DER is at most
      * {@link #MAX_RECEIPT_BYTES}, parses completely with no trailing bytes,
      * and is a CMS SignedData with an encapsulated payload and a SignerInfo;
-     * the receipt embeds at most ten certificates, every one of them decodes,
+     * the receipt embeds at most ten certificates, every one of them decodes
+     * (a public key only when the chain uses it),
      * and the certificate the SignerInfo names is among them; a path from
      * that signer through the embedded certificates reaches one of
      * {@code trustedRoots} at the receipt's creation date (the current time
      * when the receipt states none), with no revocation check; the signer
-     * carries Apple's receipt-signing marker OID; the signer key is RSA, the
-     * digest is SHA-1 or SHA-256, and the CMS signature verifies. Only then
+     * carries Apple's receipt-signing marker OID; and the CMS signature
+     * verifies, with whatever algorithm the signer used. Only then
      * is the payload parsed.</p>
      *
      * <p>What it does NOT check: the bundle id, the environment
@@ -247,15 +248,15 @@ public final class ReceiptVerifier {
      * @return the parsed receipt
      * @throws VerificationException with {@link Reason#INVALID_RECEIPT_FORMAT}
      *         for input that is not a usable receipt (including an
-     *         unreadable embedded certificate that is not the signer, a
-     *         signer that is not embedded, and an unsupported digest),
+     *         unreadable embedded certificate that is not the signer, and a
+     *         signer that is not embedded),
      *         {@link Reason#INVALID_CERTIFICATE} for a signer certificate
      *         that does not decode, {@link Reason#INVALID_CHAIN} when no
      *         valid path reaches a trusted root or the receipt carries too
      *         many certificates, {@link Reason#INVALID_CERTIFICATE_PURPOSE}
      *         for a signer without the marker OID,
-     *         {@link Reason#INVALID_SIGNATURE} for a non-RSA signer key or a
-     *         signature that does not verify, and
+     *         {@link Reason#INVALID_SIGNATURE} for a signature that does
+     *         not verify, and
      *         {@link Reason#INTERNAL_ERROR} when signed content cannot be
      *         read or the runtime lacks an algorithm the check needs. Never
      *         {@link Reason#WRONG_BUNDLE_ID} or
@@ -413,8 +414,19 @@ public final class ReceiptVerifier {
             X509CertSelector target = new X509CertSelector();
             target.setCertificate(signerCert);
             PKIXBuilderParameters params = new PKIXBuilderParameters(trustAnchors, target);
+            List<X509Certificate> authenticated = authenticatedTopDown(certificates.all, trustAnchors);
+            if (authenticated.contains(signerCert)) {
+                // Issued under a pinned root, so decoding its key is safe now;
+                // a key no decoder accepts is a verdict about the certificate.
+                try {
+                    signerCert.getPublicKey();
+                } catch (RuntimeException e) {
+                    throw new VerificationException(
+                            Reason.INVALID_CERTIFICATE, "receipt signer certificate does not decode", e);
+                }
+            }
             params.addCertStore(CertStore.getInstance(
-                    "Collection", new CollectionCertStoreParameters(certificates.all), BouncyCastle.PROVIDER));
+                    "Collection", new CollectionCertStoreParameters(authenticated), BouncyCastle.PROVIDER));
             params.setRevocationEnabled(false);
             params.setDate(at);
             params.setMaxPathLength(MAX_PATH_LENGTH - 1);
@@ -447,6 +459,53 @@ public final class ReceiptVerifier {
         }
     }
 
+    /**
+     * The embedded certificates whose signature verifies under a pinned root,
+     * or under a certificate already accepted this way, walking down from the
+     * roots. Only these reach the path builder.
+     *
+     * <p>A certificate's own public key is decoded only after its signature
+     * has verified. BouncyCastle validates an RSA key as it decodes it, with
+     * a primality test that costs seconds for a 16384-bit modulus, and the
+     * path builder verifies signatures with whatever keys it is given. Walking
+     * down from the roots means no key Apple did not sign is ever decoded or
+     * used, so a receipt padded with such certificates costs milliseconds,
+     * and the certificates are simply left out.</p>
+     */
+    private static List<X509Certificate> authenticatedTopDown(
+            List<X509Certificate> embedded, Set<TrustAnchor> trustAnchors) {
+        List<X509Certificate> issuers = new ArrayList<X509Certificate>();
+        for (TrustAnchor anchor : trustAnchors) {
+            issuers.add(anchor.getTrustedCert());
+        }
+        List<X509Certificate> accepted = new ArrayList<X509Certificate>();
+        List<X509Certificate> pending = new ArrayList<X509Certificate>(embedded);
+        for (int round = 0; round < MAX_PATH_LENGTH && !pending.isEmpty(); round++) {
+            List<X509Certificate> acceptedThisRound = new ArrayList<X509Certificate>();
+            for (X509Certificate candidate : pending) {
+                for (X509Certificate issuer : issuers) {
+                    if (!candidate.getIssuerX500Principal().equals(issuer.getSubjectX500Principal())) {
+                        continue;
+                    }
+                    try {
+                        candidate.verify(issuer.getPublicKey(), BouncyCastle.PROVIDER);
+                        acceptedThisRound.add(candidate);
+                        break;
+                    } catch (Exception e) {
+                        // Not signed by this issuer; try the next one.
+                    }
+                }
+            }
+            if (acceptedThisRound.isEmpty()) {
+                break;
+            }
+            pending.removeAll(acceptedThisRound);
+            accepted.addAll(acceptedThisRound);
+            issuers = acceptedThisRound;
+        }
+        return accepted;
+    }
+
     /** Every embedded certificate, decoded, and the one the SignerInfo names. */
     private static final class EmbeddedCertificates {
         final List<X509Certificate> all;
@@ -459,15 +518,16 @@ public final class ReceiptVerifier {
     }
 
     /**
-     * Decodes every embedded certificate completely and finds the one the
-     * SignerInfo names, or throws the verdict for the bag.
+     * Decodes every embedded certificate, except its public key, and finds
+     * the one the SignerInfo names, or throws the verdict for the bag.
      *
      * <p>This is the only place a receipt certificate is decoded, so a
      * defect gets one verdict whichever layer finds it: the X.509 structure,
      * a basicConstraints or keyUsage value (which only the JCA object
-     * decodes), a key on an unimplemented curve, or a signature BIT STRING
-     * that is not whole octets (both of which BouncyCastle reads lazily, and
-     * would otherwise throw from inside the path builder). The signer is
+     * decodes), or a signature BIT STRING that is not whole octets (which
+     * BouncyCastle reads lazily, and would otherwise throw from inside the
+     * path builder). Keys are decoded later, and only for certificates a
+     * pinned root vouches for; see {@link #authenticatedTopDown}. The signer is
      * then INVALID_CERTIFICATE, as an unreadable x5c entry is on the JWS
      * path; any other entry is INVALID_RECEIPT_FORMAT, because the bag is
      * unsigned and bytes that cannot be read there are a defect of the
@@ -497,9 +557,9 @@ public final class ReceiptVerifier {
                 raw = certificateSet.getObjectAt(i).toASN1Primitive().getEncoded("DER");
                 holder = new X509CertificateHolder(raw);
                 X509Certificate certificate = converter.getCertificate(holder);
-                // Results unused: reading them here is what makes a lazily
-                // decoded key or signature fail in this loop.
-                certificate.getPublicKey();
+                // Result unused: reading it here is what makes a lazily
+                // decoded signature fail in this loop. The key is not read:
+                // see authenticatedTopDown.
                 certificate.getSignature();
                 certificates.add(certificate);
                 if (signerCert == null && signer.getSID().match(holder)) {
@@ -574,11 +634,10 @@ public final class ReceiptVerifier {
 
     private static void verifyCmsSignature(SignerInformation signer, X509Certificate signerCert)
             throws VerificationException {
-        // No algorithm or key-type allowlist (owner decision for 0.6.0): the
-        // signer is already pinned to an Apple root and carries Apple's
-        // receipt-signing marker, so whatever algorithm Apple signs with is
-        // accepted, and a change on Apple's side cannot reject genuine
-        // receipts. A weak hash only helps an attacker holding a signature
+        // No algorithm or key-type allowlist, by design: the signer is
+        // already pinned to an Apple root and carries Apple's receipt-signing
+        // marker, so whatever algorithm Apple signs with is accepted, and a
+        // change on Apple's side cannot reject genuine receipts. A weak hash only helps an attacker holding a signature
         // Apple made over that hash, and an RSA signature binds its hash
         // algorithm in the DigestInfo, so relabelling the field fails.
         try {

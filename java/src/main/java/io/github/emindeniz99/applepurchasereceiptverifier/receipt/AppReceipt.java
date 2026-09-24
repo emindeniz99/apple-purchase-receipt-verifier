@@ -12,6 +12,9 @@ import org.jspecify.annotations.Nullable;
  * A verified legacy app receipt (PKCS#7 payload). Only receipts returned by
  * {@link ReceiptVerifier} should be trusted — this class carries no proof by
  * itself. {@code null} fields were absent from the receipt.
+ *
+ * <p>Not designed for serialization: to cache or store it, copy the fields
+ * you need into your own type.</p>
  */
 public final class AppReceipt {
 

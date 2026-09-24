@@ -85,21 +85,24 @@ class CertificateDecodeTest {
                 .getEncoded();
     }
 
+    /**
+     * The certificate bag is outside the signature, so anyone can add to a
+     * genuine receipt. A key is decoded only when the chain needs it, so an
+     * extra certificate whose key no decoder accepts is never read, and the
+     * receipt still verifies. Decoding every key up front is what let a
+     * receipt padded with huge RSA keys cost seconds of CPU.
+     */
     @Test
-    void aNonSignerCertificateWithAnUnreadableKeyIsInvalidReceiptFormat() throws Exception {
+    void aNonSignerCertificateWithAnUnreadableKeyIsIgnored() throws Exception {
         byte[] genuine = Files.readAllBytes(GENERATED.resolve("receipt.der"));
         X509Certificate receiptRoot = root("receipt-root.der");
-        assertNotNull(ReceiptVerifier.verifyReceiptCore(genuine, Collections.singleton(receiptRoot)));
 
         CMSSignedData withBadKey =
                 new CMSSignedData(Files.readAllBytes(GENERATED.resolve("receipt-signer-unimplemented-curve.der")));
-        byte[] tampered = receiptWithExtraCertificates(
+        byte[] padded = receiptWithExtraCertificates(
                 genuine, withBadKey.getCertificates().getMatches(null));
 
-        VerificationException e = assertThrows(
-                VerificationException.class,
-                () -> ReceiptVerifier.verifyReceiptCore(tampered, Collections.singleton(receiptRoot)));
-        assertEquals(Reason.INVALID_RECEIPT_FORMAT, e.reason(), e.getMessage());
+        assertNotNull(ReceiptVerifier.verifyReceiptCore(padded, Collections.singleton(receiptRoot)));
     }
 
     @Test

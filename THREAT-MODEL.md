@@ -358,7 +358,10 @@ Not defended against here, by decision rather than omission.
   signature is checked. An embedded certificate that is not the signer keeps
   its old verdict: the bag is unsigned, so bytes that cannot be read there
   are a defect of the receipt (`INVALID_RECEIPT_FORMAT`), not of a
-  certificate. Telling the two apart means resolving the SignerInfo's issuer
+  certificate. Java is narrower since 0.6.0: it decodes a public key only
+  once a pinned root vouches for its certificate, so a stranger whose only
+  defect is its key is never read and the receipt is judged without it.
+  Telling the two apart means resolving the SignerInfo's issuer
   and serial against every entry's raw DER, before any entry is judged —
   python, rust, java, php and ruby instead blamed whichever entry would not
   decode, so a receipt naming a signer it does not carry came out as a

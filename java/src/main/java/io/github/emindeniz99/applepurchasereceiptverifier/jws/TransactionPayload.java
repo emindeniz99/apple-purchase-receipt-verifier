@@ -16,6 +16,9 @@ import org.jspecify.annotations.Nullable;
  * exists: Jackson's default field binding leaves every field a non-final write
  * that another thread may or may not see, which is the one way a verified
  * payload could be read blank by the thread it was handed to.
+ *
+ * <p>Not designed for serialization: to cache or store it, copy the fields
+ * you need into your own type.</p>
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public final class TransactionPayload {

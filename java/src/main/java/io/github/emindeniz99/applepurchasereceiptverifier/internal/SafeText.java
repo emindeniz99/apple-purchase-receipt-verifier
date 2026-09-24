@@ -76,6 +76,6 @@ public final class SafeText {
      * everything a log viewer or {@code String.lines()} may treat as a break.
      */
     private static boolean breaksALine(char c) {
-        return c < 0x20 || (c >= 0x7F && c <= 0x9F) || c == ' ' || c == ' ';
+        return c < 0x20 || (c >= 0x7F && c <= 0x9F) || c == '\u2028' || c == '\u2029';
     }
 }

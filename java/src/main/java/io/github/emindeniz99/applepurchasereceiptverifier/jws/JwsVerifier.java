@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.NoSuchAlgorithmException;
+import java.security.PublicKey;
 import java.security.Signature;
 import java.security.cert.CertPath;
 import java.security.cert.CertPathValidator;
@@ -249,6 +250,7 @@ public final class JwsVerifier {
 
         JsonNode payload = parseJson(parts[1], "payload");
         Long signedAtMillis = signedAtMillis(payload);
+        authenticateTopDown(leaf, intermediate);
         // The system clock, only when the payload states no signing time.
         validateChain(leaf, intermediate, signedAtMillis != null ? new Date(signedAtMillis.longValue()) : new Date());
 
@@ -324,12 +326,11 @@ public final class JwsVerifier {
             for (JsonNode certNode : x5c) {
                 byte[] der = decodeX5cEntry(certNode.asText());
                 X509Certificate certificate = (X509Certificate) cf.generateCertificate(new ByteArrayInputStream(der));
-                // Results unused: BouncyCastle decodes the key and the
-                // signature BIT STRING lazily, so a key on an unimplemented
-                // curve or a signature that is not whole octets would
+                // Result unused: BouncyCastle decodes the signature BIT
+                // STRING lazily, so one that is not whole octets would
                 // otherwise fail later, inside the path validator, as an
-                // unchecked exception.
-                certificate.getPublicKey();
+                // unchecked exception. The key is not read here: see
+                // authenticateTopDown.
                 certificate.getSignature();
                 chain.add(certificate);
             }
@@ -379,6 +380,56 @@ public final class JwsVerifier {
             }
         }
         return true;
+    }
+
+    /**
+     * Checks the two signatures from a pinned root down, decoding each
+     * certificate's key only after the certificate above it has signed it.
+     *
+     * <p>BouncyCastle validates an RSA key as it decodes it, with a primality
+     * test that costs seconds for a 16384-bit modulus, so decoding the keys
+     * of certificates nobody has vouched for would let a small JWS cost
+     * seconds of CPU. Here no key Apple did not sign is ever decoded, and
+     * {@link #validateChain} then works on keys already authenticated.</p>
+     */
+    private void authenticateTopDown(X509Certificate leaf, X509Certificate intermediate) throws VerificationException {
+        if (!signedByAPinnedRoot(intermediate)) {
+            throw new VerificationException(
+                    Reason.INVALID_CHAIN, "intermediate certificate is not signed by a pinned Apple root");
+        }
+        PublicKey intermediateKey = decodeKey(intermediate, 1);
+        try {
+            leaf.verify(intermediateKey, BouncyCastle.PROVIDER);
+        } catch (GeneralSecurityException | RuntimeException e) {
+            throw new VerificationException(
+                    Reason.INVALID_CHAIN, "leaf certificate is not signed by the intermediate", e);
+        }
+        decodeKey(leaf, 0);
+    }
+
+    private boolean signedByAPinnedRoot(X509Certificate certificate) {
+        for (TrustAnchor anchor : trustAnchors) {
+            X509Certificate root = anchor.getTrustedCert();
+            if (!certificate.getIssuerX500Principal().equals(root.getSubjectX500Principal())) {
+                continue;
+            }
+            try {
+                certificate.verify(root.getPublicKey(), BouncyCastle.PROVIDER);
+                return true;
+            } catch (GeneralSecurityException | RuntimeException e) {
+                // Not signed by this root; try the next one.
+            }
+        }
+        return false;
+    }
+
+    /** The key of an x5c entry whose signature has already verified; one no decoder accepts is its verdict. */
+    private static PublicKey decodeKey(X509Certificate certificate, int index) throws VerificationException {
+        try {
+            return certificate.getPublicKey();
+        } catch (RuntimeException e) {
+            throw new VerificationException(Reason.INVALID_CERTIFICATE, "x5c[" + index + "] does not decode", e);
+        }
     }
 
     private void validateChain(X509Certificate leaf, X509Certificate intermediate, Date at)

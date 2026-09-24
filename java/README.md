@@ -1491,6 +1491,14 @@ libraries.
 - **All cryptography runs on the library's private BouncyCastle provider.**
   `jdk.certpath.disabledAlgorithms` and the JVM provider list no longer
   affect a verdict (see [One platform caveat worth knowing](#one-platform-caveat-worth-knowing)).
+- **The receipt signer's algorithm is no longer restricted.** 0.5 accepted
+  only an RSA signer with SHA-1 or SHA-256. Now any algorithm verifies when
+  the signer chains to a pinned Apple root and carries Apple's marker OID,
+  so a receipt Apple signs a new way keeps verifying.
+- **A certificate the chain does not use is ignored.** Keys are decoded
+  only for certificates a pinned root vouches for, so an extra certificate
+  with an unreadable key no longer turns a genuine receipt into
+  `INVALID_RECEIPT_FORMAT`.
 
 ## Stability
 
