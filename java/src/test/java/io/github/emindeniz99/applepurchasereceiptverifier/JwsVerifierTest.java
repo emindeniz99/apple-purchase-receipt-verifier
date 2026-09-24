@@ -224,6 +224,38 @@ class JwsVerifierTest {
         assertEquals(Reason.INVALID_JWS_FORMAT, e.reason());
     }
 
+    /**
+     * A compact JWS has exactly three segments. A fourth is not a JWE or an
+     * extension to tolerate: anything that is not header.payload.signature
+     * is rejected before a byte of it is decoded.
+     */
+    @Test
+    void rejectsFourSegments() {
+        VerificationException e = assertThrows(
+                VerificationException.class,
+                () -> verifier(pki, Environment.SANDBOX).verifyTransaction("a.b.c.d"));
+        assertEquals(Reason.INVALID_JWS_FORMAT, e.reason());
+    }
+
+    /**
+     * Claims are UTF-8 on the wire (RFC 7519), whatever the JVM's default
+     * charset is. Product ids, offer ids and storefront-facing strings can
+     * carry non-ASCII text; decoding them with the platform charset would
+     * hand the caller a different string than Apple signed. The literals are
+     * Unicode escapes so this file's own encoding cannot mask the check.
+     */
+    @Test
+    void nonAsciiClaimsRoundTripAsUtf8() throws Exception {
+        String productId = "com.example.app.é€中";
+        String offerIdentifier = "über-€-中文-😀";
+        Map<String, Object> claims = transactionClaims("Sandbox");
+        claims.put("productId", productId);
+        claims.put("offerIdentifier", offerIdentifier);
+        TransactionPayload payload = verifier(pki, Environment.SANDBOX).verifyTransaction(pki.signJws(claims));
+        assertEquals(productId, payload.productId());
+        assertEquals(offerIdentifier, payload.offerIdentifier());
+    }
+
     @Test
     void verifiesProductionAppTransactionWithMatchingAppleId() throws Exception {
         Map<String, Object> claims = TestPki.claims(
