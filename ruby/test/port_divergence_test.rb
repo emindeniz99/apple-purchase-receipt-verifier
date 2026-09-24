@@ -175,7 +175,7 @@ class PortDivergenceTest < Minitest::Test
   # is not necessarily an integer. node (`typeof === 'number'`), java
   # (`canConvertToLong`), python (`isinstance(..., (int, float))`) and swift
   # (`as? Double`) all use a non-integer value; dropping it silently would
-  # judge the chain at "now" instead and skip the staleness check entirely.
+  # judge the chain at "now" instead.
   def test_a_non_integer_signed_date_still_drives_the_chain_instant
     pki = TestPki.jws_pki(not_before: Time.utc(2020, 1, 1), not_after: Time.utc(2035, 1, 1))
     verifier = APRV::JwsVerifier.new(trusted_roots: [pki.root], bundle_id: "com.example.app",
@@ -186,31 +186,22 @@ class PortDivergenceTest < Minitest::Test
     assert_equal :INVALID_CHAIN, error.reason, error.message
   end
 
-  # The staleness rule is step 11 for all three JWS operations, and a claim
-  # this port declined to read meant it never ran at all.
+  # A claim this port declined to read would also vanish from what the caller
+  # judges freshness on.
   #
   # `TransactionPayload#signed_date` reads this whole number as an Integer: the
   # payload models Apple's wire contract, where these claims are Integer epoch
   # milliseconds, and a fractional one is refused as INTERNAL_ERROR by the
-  # typed read. What changed is the verifier, which now judges and ages the
-  # payload at the stated instant like the other four ports.
-  def test_a_non_integer_signed_date_is_reported_and_ages
+  # typed read. What changed is the verifier, which now judges the payload at
+  # the stated instant like the other four ports.
+  def test_a_non_integer_signed_date_is_reported
     pki = TestPki.jws_pki
     claims = TestPki.default_claims("signedDate" => 1_722_945_600_000.0)
     jws = TestPki.sign_jws(pki, claims)
 
-    fresh = APRV::JwsVerifier.new(trusted_roots: [pki.root], bundle_id: "com.example.app",
-                                  accepted_environments: [APRV::Environment::SANDBOX],
-                                  max_signed_age_seconds: 60,
-                                  clock: -> { Time.at(1_722_945_600) })
-    assert_in_delta 1_722_945_600_000.0, fresh.verify_transaction(jws)["signedDate"], 0
-
-    stale = APRV::JwsVerifier.new(trusted_roots: [pki.root], bundle_id: "com.example.app",
-                                  accepted_environments: [APRV::Environment::SANDBOX],
-                                  max_signed_age_seconds: 60,
-                                  clock: -> { Time.at(1_722_945_600 + 3_600) })
-    error = assert_raises(APRV::VerificationError) { stale.verify_transaction(jws) }
-    assert_equal :STALE_PAYLOAD, error.reason, error.message
+    verifier = APRV::JwsVerifier.new(trusted_roots: [pki.root], bundle_id: "com.example.app",
+                                     accepted_environments: [APRV::Environment::SANDBOX])
+    assert_in_delta 1_722_945_600_000.0, verifier.verify_transaction(jws)["signedDate"], 0
   end
 
   # A JSON number can also be non-finite (`1e400` parses to Infinity) or
