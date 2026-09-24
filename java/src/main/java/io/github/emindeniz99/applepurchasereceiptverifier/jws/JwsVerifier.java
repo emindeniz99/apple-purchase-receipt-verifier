@@ -82,8 +82,7 @@ public final class JwsVerifier {
      *
      * <p>Real Apple JWS payloads, Apple's own mock notification data
      * included, are under 2.5 KB, so 256 KiB is a hundredfold headroom over
-     * anything Apple has ever signed. The same constant in every port. A
-     * compact JWS is base64url and dots, so its characters and its bytes are
+     * anything Apple has ever signed. A compact JWS is base64url and dots, so its characters and its bytes are
      * the same count for any input that could verify.
      */
     public static final int MAX_JWS_BYTES = 262144;
@@ -305,8 +304,7 @@ public final class JwsVerifier {
      * The MIME decoder would silently skip any illegal character instead. The
      * basic decoder accepts omitted padding and decodes {@code ""}, so the
      * length is held to a non-zero multiple of four first, as receipt-data
-     * is. Package-private so the conformance suite can run the shared base64
-     * spellings against it directly.
+     * is. Package-private so tests can call it directly.
      */
     static byte[] decodeX5cEntry(String text) throws VerificationException {
         if (text.isEmpty() || text.length() % 4 != 0) {

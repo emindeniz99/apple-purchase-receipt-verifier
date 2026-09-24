@@ -36,7 +36,7 @@
   </scm>
 
   <properties>
-    <!-- Java 8 baseline (PLAN.md D2): enterprise consumers still run 8. -->
+    <!-- Java 8 baseline: enterprise consumers still run 8. -->
     <maven.compiler.release>8</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <!-- Reproducible build: with this set, the jar, sources and javadoc
@@ -141,7 +141,7 @@
                    a stable module name instead of one derived from the jar
                    file name, which changes with every version. The jar stays
                    a plain classpath jar with no module-info: the Java 8
-                   baseline (PLAN.md D2) cannot compile one. -->
+                   baseline cannot compile one. -->
               <Automatic-Module-Name>io.github.emindeniz99.applepurchasereceiptverifier</Automatic-Module-Name>
               <!-- Implementation-* so a deployed jar can say which build it
                    is: Package.getImplementationVersion() answers from these,

@@ -72,8 +72,8 @@ public final class VerifyReceiptEndpoint {
      * is measured without being encoded, so a Java {@code String} of any
      * size costs no copy to refuse.
      *
-     * <p>A fixed constant, the same in every port. "No method ever throws"
-     * is a promise about exceptions, and heap exhaustion is not one: JSON
+     * <p>"No method throws" is a promise about exceptions, and heap
+     * exhaustion is not one: JSON
      * parsing allocates a multiple of the body, so the bound is what keeps
      * the promise on hostile input.</p>
      */
@@ -194,7 +194,7 @@ public final class VerifyReceiptEndpoint {
             parsed = readJson(requestJson);
         } catch (IOException | RuntimeException e) {
             // What the JSON parser throws unchecked is still a body it could
-            // not read, and it has always answered 21002.
+            // not read: 21002.
             return VerifyReceiptResult.failed(environment, Reason.MALFORMED_REQUEST, at);
         }
         if (!(parsed instanceof Map)) {
@@ -252,8 +252,8 @@ public final class VerifyReceiptEndpoint {
      * string value longer than a chunk goes through its slow
      * character-at-a-time path. {@code receipt-data} is such a value for any
      * receipt with more than a handful of purchases (105,000 characters for
-     * the 187-purchase legacy fixture), and reading it that way took longer
-     * than decoding it. Over a char array Jackson builds the same parser
+     * a legacy receipt with 187 purchases), and reading it that way took
+     * longer than decoding it. Over a char array Jackson builds the same parser
      * class it uses for a short String, with the same constraints and
      * features; the only difference is that the buffer is not recycled.</p>
      */
