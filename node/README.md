@@ -407,6 +407,22 @@ the `verifyReceiptJson` text.
 An attribute the receipt does not carry reads `null` on the object, and its
 key is left out of the endpoint's answer rather than sent as JSON null.
 
+## Known issue: legacy receipts on RHEL 9's own Node.js
+
+The legacy Apple receipt chain and its CMS signature are SHA-1. Node.js from
+nodejs.org, nvm or the official Docker images bundles its own OpenSSL and is
+not affected. RHEL's `nodejs` package (also on Alma and Rocky) is built
+against the system OpenSSL, which the DEFAULT crypto policy stops from
+verifying SHA-1 signatures, so with it a genuine legacy receipt is
+`INVALID_CHAIN`. Observed on AlmaLinux 9.8 on 2026-09-24. Newer receipts
+(SHA-256 chains) and every JWS are unaffected; FIPS mode is untested.
+
+Until the fix ships, use an upstream Node.js build, or run
+`update-crypto-policies --set DEFAULT:SHA1` on that host. The planned fix
+checks SHA-1 signatures on Apple's pinned legacy chain with
+`crypto.publicDecrypt` and an exact byte comparison, and adds an AlmaLinux 9
+CI job (ROADMAP.md).
+
 ## Why offline
 
 Signature verification cannot fail because a vendor endpoint is down, so a
