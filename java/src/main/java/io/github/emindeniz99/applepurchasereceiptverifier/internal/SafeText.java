@@ -20,6 +20,12 @@ public final class SafeText {
     /** Longer input is cut here. Long enough to identify a claim, short enough to be free. */
     private static final int MAX_LENGTH = 64;
 
+    /**
+     * The cut for {@link #detail}: a validator's message quoting two
+     * distinguished names still fits, a flood does not.
+     */
+    private static final int MAX_DETAIL_LENGTH = 256;
+
     /** Stands in for a character that must not reach a log line as itself. */
     private static final char PLACEHOLDER = '\uFFFD';
 
@@ -34,16 +40,32 @@ public final class SafeText {
      *              {@code "null"}, the same as string concatenation would
      */
     public static String quote(@Nullable String value) {
+        return render(value, MAX_LENGTH);
+    }
+
+    /**
+     * A third-party exception message (BouncyCastle, Jackson) rendered as
+     * {@link #quote} renders a claim, with a longer cut. Such a message can
+     * quote the input, a distinguished name out of a certificate, say, so it
+     * is attacker-controlled too.
+     *
+     * @param message the message; {@code null} renders as {@code "null"}
+     */
+    public static String detail(@Nullable String message) {
+        return render(message, MAX_DETAIL_LENGTH);
+    }
+
+    private static String render(@Nullable String value, int maxLength) {
         if (value == null) {
             return "null";
         }
-        String head = value.length() <= MAX_LENGTH ? value : value.substring(0, MAX_LENGTH);
+        String head = value.length() <= maxLength ? value : value.substring(0, maxLength);
         StringBuilder out = new StringBuilder(head.length() + 32);
         for (int i = 0; i < head.length(); i++) {
             char c = head.charAt(i);
             out.append(c < 0x20 || c == 0x7F ? PLACEHOLDER : c);
         }
-        if (value.length() > MAX_LENGTH) {
+        if (value.length() > maxLength) {
             out.append("... (").append(value.length()).append(" characters)");
         }
         return out.toString();

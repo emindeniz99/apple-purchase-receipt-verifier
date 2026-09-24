@@ -298,7 +298,8 @@ public final class ReceiptVerifier {
             // reconcile") would let anyone trigger that alert at will. Signed
             // content that cannot be read is INTERNAL_ERROR, and is caught
             // in parseSignedPayload, not here.
-            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "unexpected " + e, e);
+            throw new VerificationException(
+                    Reason.INVALID_RECEIPT_FORMAT, "unexpected " + e.getClass().getName(), e);
         }
     }
 
@@ -432,7 +433,7 @@ public final class ReceiptVerifier {
         } catch (CertPathBuilderException e) {
             throw new VerificationException(
                     Reason.INVALID_CHAIN,
-                    "signer chain does not validate to a pinned Apple root: " + e.getMessage(),
+                    "signer chain does not validate to a pinned Apple root: " + SafeText.detail(e.getMessage()),
                     e);
         } catch (NoSuchAlgorithmException | InvalidAlgorithmParameterException e) {
             // Not raised by the pinned BouncyCastle PKIX and Collection
@@ -445,7 +446,8 @@ public final class ReceiptVerifier {
             // As in JwsVerifier.validateChain: unchecked exceptions BouncyCastle
             // raises from inside the builder for malformed, unverified
             // certificate content are the chain's failure.
-            throw new VerificationException(Reason.INVALID_CHAIN, "path builder raised " + e, e);
+            throw new VerificationException(
+                    Reason.INVALID_CHAIN, "path builder raised " + e.getClass().getName(), e);
         }
     }
 

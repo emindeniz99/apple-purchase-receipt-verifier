@@ -12,8 +12,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.KeyPairGenerator;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
+import java.security.spec.ECGenParameterSpec;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collections;
@@ -86,6 +88,45 @@ class SafeTextTest {
                 thrown.getMessage().length() < 200,
                 "the message is " + thrown.getMessage().length() + " characters");
         assertFalse(thrown.getMessage().contains("\n"), thrown.getMessage());
+    }
+
+    /**
+     * The same rule where the text comes from BouncyCastle rather than from
+     * this library: a path validator's refusal can quote a distinguished name
+     * out of the x5c chain, which the attacker chose. Here the leaf names an
+     * issuer carrying a CR LF, signed by the genuine intermediate so it gets
+     * as far as the name check, whose message quotes both names.
+     */
+    @Test
+    void aHostileNameInTheChainCannotForgeALogLineThroughTheValidatorsMessage() throws Exception {
+        TestPki pki = TestPki.jws();
+        KeyPairGenerator ec = KeyPairGenerator.getInstance("EC");
+        ec.initialize(new ECGenParameterSpec("secp256r1"));
+        X509Certificate hostileLeaf = TestPki.cert(
+                "CN=Fake App Store Signing",
+                ec.generateKeyPair(),
+                "CN=Fake Apple WWDR CA\r\nWARN forged log line",
+                pki.intermediateKey,
+                false,
+                "1.2.840.113635.100.6.11.1",
+                pki.leaf.getNotBefore(),
+                pki.leaf.getNotAfter(),
+                "SHA256withECDSA");
+        String header = "{\"alg\":\"ES256\",\"x5c\":[\"" + TestPki.b64(hostileLeaf.getEncoded()) + "\",\""
+                + TestPki.b64(pki.intermediate.getEncoded()) + "\",\"" + TestPki.b64(pki.root.getEncoded()) + "\"]}";
+        // The chain is judged before the signature, so the signature need not be real.
+        String payload = "{\"signedDate\":" + System.currentTimeMillis() + "}";
+        final String jws = TestPki.b64url(header.getBytes(StandardCharsets.UTF_8)) + "."
+                + TestPki.b64url(payload.getBytes(StandardCharsets.UTF_8))
+                + "." + TestPki.b64url(new byte[64]);
+        JwsVerifier verifier =
+                new JwsVerifier(Collections.singleton(pki.root), "com.example.app", EnumSet.of(Environment.SANDBOX));
+
+        VerificationException thrown = assertThrows(VerificationException.class, () -> verifier.verifyRaw(jws));
+        assertEquals(VerificationException.Reason.INVALID_CHAIN, thrown.reason(), thrown.getMessage());
+        assertTrue(thrown.getMessage().contains("WARN forged log line"), thrown.getMessage());
+        assertFalse(thrown.getMessage().contains("\n"), thrown.getMessage());
+        assertFalse(thrown.getMessage().contains("\r"), thrown.getMessage());
     }
 
     private static JwsVerifier verifier() throws Exception {

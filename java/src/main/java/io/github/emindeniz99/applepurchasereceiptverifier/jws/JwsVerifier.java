@@ -200,7 +200,8 @@ public final class JwsVerifier {
         } catch (VerificationException e) {
             throw e;
         } catch (RuntimeException e) {
-            throw new VerificationException(Reason.INVALID_JWS_FORMAT, "unexpected " + e, e);
+            throw new VerificationException(
+                    Reason.INVALID_JWS_FORMAT, "unexpected " + e.getClass().getName(), e);
         }
     }
 
@@ -399,7 +400,7 @@ public final class JwsVerifier {
         } catch (CertPathValidatorException e) {
             throw new VerificationException(
                     Reason.INVALID_CHAIN,
-                    "certificate chain does not validate to a pinned Apple root: " + e.getMessage(),
+                    "certificate chain does not validate to a pinned Apple root: " + SafeText.detail(e.getMessage()),
                     e);
         } catch (InvalidAlgorithmParameterException e) {
             // Raised for the pinned anchors or the path type, never for a certificate.
@@ -411,7 +412,10 @@ public final class JwsVerifier {
             // unchecked exceptions from inside the validator. Everything here
             // is attacker-controlled and unverified, so it is the chain's
             // failure, and it must not escape as anything but a verdict.
-            throw new VerificationException(Reason.INVALID_CHAIN, "path validator raised " + e, e);
+            throw new VerificationException(
+                    Reason.INVALID_CHAIN,
+                    "path validator raised " + e.getClass().getName(),
+                    e);
         }
     }
 
