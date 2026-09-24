@@ -29,10 +29,15 @@ self-signed `testCA` chain and `mock_signed_data`, with no production
 receipt anywhere.
 
 **What this costs us, measured rather than assumed:** nothing in the
-certificate path. All three remaining genuine receipts chain to the same
-real Apple Root CA and the same Apple Worldwide Developer Relations
-intermediate, so the pinned-root verification is still exercised against
-real Apple-signed bytes. What is no longer covered is the
+certificate path. The two remaining Apple-signed receipts both chain to the
+real Apple Inc. Root CA, through different Apple Worldwide Developer
+Relations intermediates: `receipt-sandbox-legacy` through WWDR G1 (SHA-1)
+and `receipt-sandbox-g5` through WWDR G5 (SHA-256),
+per [RECEIPT-FIELDS.md](../../RECEIPT-FIELDS.md#what-was-measured-and-how).
+The third file, `receipt-xcode-with-purchases`, is not Apple-signed and is
+there to be rejected (`INVALID_CHAIN`). So the pinned-root verification is
+still exercised against real Apple-signed bytes on both intermediates. What
+is no longer covered is the
 `receiptType == "Production"` field value and production-only attribute
 combinations; the sandbox receipts assert `"ProductionSandbox"` instead.
 
