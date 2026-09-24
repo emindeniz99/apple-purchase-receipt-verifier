@@ -16,7 +16,6 @@ public struct VerificationError: Error, Sendable, CustomStringConvertible {
         case wrongAppAppleId = "WRONG_APP_APPLE_ID"
         case invalidReceiptFormat = "INVALID_RECEIPT_FORMAT"
         case deviceHashMismatch = "DEVICE_HASH_MISMATCH"
-        case stalePayload = "STALE_PAYLOAD"
         /// The verifyReceipt request envelope is unusable: the body is not a
         /// JSON object or nests more than 64 levels deep, or `receipt-data`
         /// is missing, empty or not a string. Reported only by

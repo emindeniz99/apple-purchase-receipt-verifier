@@ -175,6 +175,11 @@ private struct Vectors {
         _ config: [String: Any],
         clock: (@Sendable () -> Date)?
     ) throws -> JwsVerifier {
+        // JwsVerifier takes no clock in any port: no verdict on that path
+        // moves with the current time.
+        guard clock == nil else {
+            throw HarnessError("JwsVerifier has no clock seam, but the case pins one")
+        }
         var environments = unmatchableEnvironments
         if let names = config["acceptedEnvironments"] as? [String] {
             environments = Set(
@@ -185,14 +190,11 @@ private struct Vectors {
                     return environment
                 })
         }
-        let maxSignedAgeSeconds = (config["maxSignedAgeSeconds"] as? NSNumber)?.int64Value
         return try JwsVerifier(
             trustedRoots: try trustedRoots(config),
             bundleId: config["bundleId"] as? String ?? unmatchableBundleId,
             acceptedEnvironments: environments,
-            appAppleId: (config["appAppleId"] as? NSNumber)?.int64Value,
-            maxSignedAgeMillis: maxSignedAgeSeconds.map { $0 * 1000 },
-            clock: clock)
+            appAppleId: (config["appAppleId"] as? NSNumber)?.int64Value)
     }
 
     /// Dispatches one case on its `operation`. Everything it returns is fed

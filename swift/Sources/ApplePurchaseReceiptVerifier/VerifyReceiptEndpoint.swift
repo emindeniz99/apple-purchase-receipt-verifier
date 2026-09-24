@@ -83,9 +83,12 @@ public struct VerifyReceiptEndpoint: Sendable {
     ///     fixtures/cases.json use.
     ///   - clock: the source of "now" for the response's `request_date`
     ///     fields, which Apple's endpoint stamps with the wall-clock time the
-    ///     request was served. Same type and same meaning as
-    ///     ``JwsVerifier/init(trustedRoots:bundleId:acceptedEnvironments:appAppleId:maxSignedAgeMillis:clock:)``:
-    ///     omitted, the system clock is read. It is read once per call, and
+    ///     request was served. Omitted, the system clock is read. The type is
+    ///     a `@Sendable () -> Date` rather than a `Clock`: Swift's `Clock`
+    ///     protocol (`ContinuousClock`, `SuspendingClock`) measures elapsed
+    ///     time from an arbitrary origin and cannot name a wall-clock instant
+    ///     like 2025-01-01, which is exactly what pinning "now" requires, and
+    ///     `@Sendable` keeps this struct `Sendable`. It is read once per call, and
     ///     not at all when the call passes its own `now`. It moves no
     ///     verdict: the status code and every verified field are unaffected.
     ///     In particular it never reaches a certificate-validity decision: the

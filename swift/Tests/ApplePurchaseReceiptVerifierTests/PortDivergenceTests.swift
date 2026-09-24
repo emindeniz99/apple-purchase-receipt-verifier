@@ -246,11 +246,10 @@ final class OversizedAttributeTypeTests: XCTestCase {
 
 /// Certificate validity is judged at the payload's signedDate or the receipt's
 /// creation date, and — when the payload carries neither — at the SYSTEM
-/// clock, never at an injected one. A caller injecting a clock to test
-/// staleness, or to work around skew, must not thereby accept a chain that is
-/// expired. This port already routed both fallbacks to the system clock and
-/// never offered a clock on the receipt verifier at all; these tests are what
-/// keeps that true.
+/// clock, never at an injected one. A caller injecting a clock to pin
+/// request_date, or to work around skew, must not thereby accept a chain that
+/// is expired. Neither verifier takes a clock at all; these tests are what
+/// keeps the fallbacks on the system clock.
 final class CertificateValidityClockTests: XCTestCase {
     /// Decades either side of every fixture's certificate window, plus "no
     /// clock at all". If a clock could reach a validity decision, these three
@@ -284,13 +283,10 @@ final class CertificateValidityClockTests: XCTestCase {
         }
     }
 
-    /// A JWS payload carrying NO signedDate — the case the fallback exists
+    /// A JWS payload carrying NO signedDate, the case the fallback exists
     /// for. fixtures/generated/transaction.jws is signed by a chain valid
     /// 2024-01-01 to 2050-01-01, so at the system clock the chain validates
     /// and the (re-encoded, no longer signed) payload fails on its signature.
-    /// Had the fallback been the injected clock, the 1970 and 2100 runs would
-    /// report INVALID_CHAIN instead — which is exactly the verdict a clock
-    /// must not be able to move.
     func testAPayloadWithNoSignedDateIsJudgedAtTheSystemClock() async throws {
         let segments = try text("transaction.jws").components(separatedBy: ".")
         var claims =
@@ -305,15 +301,13 @@ final class CertificateValidityClockTests: XCTestCase {
             .replacingOccurrences(of: "=", with: "")
         let jws = "\(segments[0]).\(dateless).\(segments[2])"
 
-        for clock in Self.clocks {
-            let verifier = try JwsVerifier(
-                trustedRoots: [try fixture("jws-root.der")], bundleId: VerifierTests.bundle,
-                acceptedEnvironments: [.sandbox], maxSignedAgeMillis: nil, clock: clock)
-            let verdict = await self.reason { try await verifier.verifyTransaction(jws) }
-            XCTAssertEqual(
-                .invalidSignature, verdict,
-                "the certificate-validity verdict moved with the clock")
-        }
+        let verifier = try JwsVerifier(
+            trustedRoots: [try fixture("jws-root.der")], bundleId: VerifierTests.bundle,
+            acceptedEnvironments: [.sandbox])
+        let verdict = await self.reason { try await verifier.verifyTransaction(jws) }
+        XCTAssertEqual(
+            .invalidSignature, verdict,
+            "a dateless payload was not judged at the system clock")
     }
 
     /// The receipt equivalent: attribute 12 (the creation date) removed, so
