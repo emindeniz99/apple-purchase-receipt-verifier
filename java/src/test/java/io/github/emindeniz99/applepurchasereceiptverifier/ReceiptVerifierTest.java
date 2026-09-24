@@ -12,11 +12,13 @@ import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.AppReceipt;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.InAppPurchase;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifier;
+import io.github.emindeniz99.applepurchasereceiptverifier.receipt.VerifyReceiptEndpoint;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -635,6 +637,35 @@ class ReceiptVerifierTest {
         VerificationException e = assertThrows(
                 VerificationException.class, () -> verifier(pki, BUNDLE).verify("!!!not-base64!!!"));
         assertEquals(Reason.INVALID_RECEIPT_FORMAT, e.reason());
+    }
+
+    /**
+     * Intentional: the pre-2018 per-transaction receipt (base64 around an
+     * old-style plist holding "purchase-info") is not supported. Apple's
+     * ReceiptUtility reads a transaction id out of it without verifying
+     * anything; this library only returns what it has verified, and that
+     * format is not the PKCS#7 container the signature lives in. Apple's own
+     * mock of it must fail as a format error, and the endpoint must answer
+     * 21002 like Apple's service does for data it cannot read.
+     */
+    @Test
+    void rejectsTheLegacyPurchaseInfoTransactionReceipt() throws Exception {
+        String legacy = new String(
+                        Files.readAllBytes(
+                                TestFixtures.root().resolve("apple-official/mock_signed_data/legacyTransaction")),
+                        StandardCharsets.US_ASCII)
+                .trim();
+        VerificationException e = assertThrows(
+                VerificationException.class,
+                () -> new ReceiptVerifier(AppleRootCerts.receiptRoots(), "com.example").verify(legacy));
+        assertEquals(Reason.INVALID_RECEIPT_FORMAT, e.reason(), e.getMessage());
+
+        VerifyReceiptEndpoint endpoint = new VerifyReceiptEndpoint(AppleRootCerts.receiptRoots(), Environment.SANDBOX);
+        assertEquals(
+                21002,
+                endpoint.verifyReceiptResult(Collections.<String, Object>singletonMap("receipt-data", legacy))
+                        .toResponse()
+                        .get("status"));
     }
 
     @Test
