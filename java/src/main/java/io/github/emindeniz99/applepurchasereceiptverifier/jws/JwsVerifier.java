@@ -193,8 +193,33 @@ public final class JwsVerifier {
         return mapper.convertValue(node, new TypeReference<Map<String, @Nullable Object>>() {});
     }
 
-    /** Cryptographic verification: format → certs → OIDs → chain → signature. */
+    /**
+     * {@link #verifySignatureUnguarded}, with any unchecked exception it lets
+     * out reported as {@link Reason#INVALID_JWS_FORMAT}, as
+     * {@code ReceiptVerifier.verifyCore} does for receipts.
+     *
+     * <p>The steps that are known to throw unchecked (the x5c decode, the
+     * chain check) already map it themselves; this catches the ones nobody
+     * has found yet, from Jackson or BouncyCastle, so they cannot escape the
+     * declared {@link VerificationException} contract. INVALID_JWS_FORMAT
+     * rather than INTERNAL_ERROR on purpose: everything in here runs on
+     * input no signature has vouched for, and answering an unknown error
+     * with INTERNAL_ERROR ("not the client's fault, retry or escalate")
+     * would let anyone raise that alert at will. The claims are mapped to
+     * their model only after this returns, once the signature has passed.</p>
+     */
     private JsonNode verifySignature(@Nullable String jws) throws VerificationException {
+        try {
+            return verifySignatureUnguarded(jws);
+        } catch (VerificationException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            throw new VerificationException(Reason.INVALID_JWS_FORMAT, "malformed jws: " + e, e);
+        }
+    }
+
+    /** Cryptographic verification: format → certs → OIDs → chain → signature. */
+    private JsonNode verifySignatureUnguarded(@Nullable String jws) throws VerificationException {
         if (jws == null) {
             throw new VerificationException(Reason.INVALID_JWS_FORMAT, "jws is null");
         }
