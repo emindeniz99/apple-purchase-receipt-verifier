@@ -550,8 +550,14 @@ achieves nothing.
 ### What to log
 
 Per call: `status()`, `failureReason()`, the receipt's `receipt_type` and
-`bundle_id`, the transaction ids you granted, and the library version. For
-21009 also `failureCause()`. Never log the full receipt or JWS: it carries
+`bundle_id`, the transaction ids you granted, and the library version.
+For every failed verification also log `failureCause().getMessage()`: it
+holds the `VerificationException` behind the status, so a 21003 says
+whether the chain did not reach a pinned root, a certificate had expired or
+the signature did not match. It is null only when the request itself was
+refused before any verification (`MALFORMED_REQUEST`, `REQUEST_TOO_LARGE`,
+or `receipt-data` over the size cap), never appears in the JSON, and quotes
+input only after replacing control characters. Never log the full receipt or JWS: it carries
 the user's purchase history and can be replayed.
 
 ### Metrics
@@ -1301,12 +1307,19 @@ mvn spotless:check                                        # format/lint (not bou
 `ConformanceCasesTest` runs every case in `fixtures/cases.json`, the
 normative cross-language vector file every port of this library answers.
 
+The tests read the repository's `fixtures/` directory, which sits next to
+`java/`. If you vendor the Java port, copy `java/` and `fixtures/` together;
+if `fixtures/` lives elsewhere, point the tests at it with
+`mvn test -Daprv.fixtures.dir=/path/to/fixtures`.
+
 `AppleRootCertsTest` pins the three bundled roots to their fingerprints and
 plants a directory of impostor `.cer` files ahead of the library on a class
 loader, showing the anchor load fails closed instead of returning them.
 `InputSizeBoundsTest` holds the bounds above, each over-limit input built so
 that it verifies or is refused differently without them.
-`ConcurrencyTest` runs the shared-instance claim across sixteen threads.
+`ConcurrencyTest` runs the shared-instance claim across sixteen threads, and
+releases 128 threads at once on freshly built verifiers to cover the first
+calls.
 
 `TrustStoreIsolationTest`
 (`src/test/java/.../TrustStoreIsolationTest.java`) asserts the trust-pinning
