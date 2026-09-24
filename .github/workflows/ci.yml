@@ -73,13 +73,14 @@ jobs:
   # The genuine legacy receipt chain is SHA-1 end to end, and ReceiptVerifier
   # builds it with the JDK's PKIX CertPathBuilder, which obeys
   # jdk.certpath.disabledAlgorithms. A hardened java.security that disables
-  # SHA-1 outright (RHEL crypto policies, many enterprise images) therefore
-  # fails that one receipt with INVALID_CHAIN, and the library deliberately
-  # does not route around the policy (java/README.md, "One platform caveat").
-  # This job pins the fact rather than the folklore: under that policy the
-  # conformance suite must fail exactly one case, the SHA-1 chain, and
-  # nothing else. A second failure means the exposure grew; zero failures
-  # means the JDK stopped enforcing the property and the README is wrong.
+  # SHA-1 outright (RHEL crypto policies, many enterprise images) used to fail
+  # every genuine legacy receipt with INVALID_CHAIN, one request at a time.
+  # The constructor now checks each chain algorithm against the JVM's policy
+  # and refuses to start instead (java/README.md, "One platform caveat"). This
+  # job runs HostPolicyProbe under that policy, in a JVM started with it, and
+  # asserts all three halves by name: the default constructor throws and names
+  # the fix, a verifier without SHA-1 still verifies current receipts, and it
+  # answers INVALID_CHAIN for legacy ones.
   java-hardened-policy:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -92,17 +93,17 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
-      - name: Run the conformance suite with SHA-1 disabled for certpath
+      - name: Run the host-policy probe with SHA-1 disabled for certpath
         working-directory: java
         run: |
           printf 'jdk.certpath.disabledAlgorithms=MD2, MD5, SHA1, RSA keySize < 1024\n' > "$RUNNER_TEMP/hardened.properties"
-          set +e
-          mvn -B test -Dtest=ConformanceCasesTest "-DargLine=-Djava.security.properties=$RUNNER_TEMP/hardened.properties" > "$RUNNER_TEMP/hardened.log" 2>&1
-          status=$?
-          set -e
-          grep -E 'Tests run: [0-9]+, Failures: 1, Errors: 0, Skipped: 0' "$RUNNER_TEMP/hardened.log"
-          grep -F 'receipt/verify-genuine-legacy-sha1-chain: expected success but failed with INVALID_CHAIN' "$RUNNER_TEMP/hardened.log"
-          test "$status" -ne 0
+          mvn -B -q test-compile dependency:build-classpath -Dmdep.outputFile="$RUNNER_TEMP/cp.txt"
+          java "-Djava.security.properties=$RUNNER_TEMP/hardened.properties" \
+            -cp "target/test-classes:target/classes:$(cat "$RUNNER_TEMP/cp.txt")" \
+            io.github.emindeniz99.applepurchasereceiptverifier.HostPolicyProbe | tee "$RUNNER_TEMP/hardened.log"
+          grep -F 'default: IllegalStateException SHA1withRSA' "$RUNNER_TEMP/hardened.log"
+          grep -F 'without SHA-1: current receipt verifies' "$RUNNER_TEMP/hardened.log"
+          grep -F 'without SHA-1: legacy receipt INVALID_CHAIN' "$RUNNER_TEMP/hardened.log"
 
   # The deployment surface rather than the build surface. `ReceiptVerifier`
   # builds the genuine legacy receipt chain -- sha1WithRSAEncryption at both
@@ -110,7 +111,7 @@ jobs:
   # CertPathBuilder, so `jdk.certpath.disabledAlgorithms` in whichever
   # java.security the production image ships decides whether every legacy
   # receipt verifies or none does. java/README.md ("One platform caveat worth
-  # knowing") states the caveat and java-hardened-policy pins the failing
+  # knowing") states the caveat and java-hardened-policy pins the hardened
   # side; this job pins the passing side on the images the library is actually
   # deployed on, with the image's own JVM and its own java.security.
   #
@@ -223,35 +224,27 @@ jobs:
           grep -E '^\[[[:space:]]+0 tests failed[[:space:]]+\]' "$RUNNER_TEMP/stock.log"
         env:
           IMAGE: ${{ matrix.image }}
-      # The other half of the claim: the caveat is real, it is one case wide,
-      # and it is the operator's java.security that fires it -- not anything
-      # the image ships. Same property line as java-hardened-policy.
-      - name: Assert the SHA-1 case, and only it, fails under a hardened java.security
+      # The other half of the claim: it is the operator's java.security that
+      # disables SHA-1, not anything the image ships, and on the image's own
+      # JVM the constructor catches it. Same property line and assertions as
+      # java-hardened-policy.
+      - name: Assert the constructor catches a hardened java.security
         run: |
           set -euo pipefail
           # A single `=` layers this over the image's own java.security instead
           # of replacing it (`==` would replace), so exactly one property moves.
           printf 'jdk.certpath.disabledAlgorithms=MD2, MD5, SHA1, RSA keySize < 1024\n' \
             > java/target/hardened.properties
-          set +e
           docker run --rm \
             -v "$GITHUB_WORKSPACE:/w:ro" -w /w/java \
             --entrypoint /usr/bin/java \
             "$IMAGE" \
             -Djava.security.properties=/w/java/target/hardened.properties \
-            -cp 'target/junit-console.jar:target/classes:target/test-classes:target/dep/*' \
-            org.junit.platform.console.ConsoleLauncher execute \
-            --select-class=io.github.emindeniz99.applepurchasereceiptverifier.ConformanceCasesTest \
-            --fail-if-no-tests --details=testfeed \
-            --disable-ansi-colors --disable-banner > "$RUNNER_TEMP/hardened.log" 2>&1
-          status=$?
-          set -e
-          cat "$RUNNER_TEMP/hardened.log"
-          grep -F 'receipt/verify-genuine-legacy-sha1-chain :: FAILED' "$RUNNER_TEMP/hardened.log"
-          failed=$(grep -cE ' :: FAILED$' "$RUNNER_TEMP/hardened.log" || true)
-          test "$failed" -eq 1
-          grep -E '^\[[[:space:]]+1 tests failed[[:space:]]+\]' "$RUNNER_TEMP/hardened.log"
-          test "$status" -ne 0
+            -cp 'target/classes:target/test-classes:target/dep/*' \
+            io.github.emindeniz99.applepurchasereceiptverifier.HostPolicyProbe | tee "$RUNNER_TEMP/hardened.log"
+          grep -F 'default: IllegalStateException SHA1withRSA' "$RUNNER_TEMP/hardened.log"
+          grep -F 'without SHA-1: current receipt verifies' "$RUNNER_TEMP/hardened.log"
+          grep -F 'without SHA-1: legacy receipt INVALID_CHAIN' "$RUNNER_TEMP/hardened.log"
         env:
           IMAGE: ${{ matrix.image }}
 
