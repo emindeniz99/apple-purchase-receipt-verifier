@@ -2,7 +2,6 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.AppReceipt;
@@ -68,50 +67,38 @@ class ReceiptSignerInfoTest {
     }
 
     /**
-     * Receipt signatures are RSA. A signer certificate with any other key is
-     * refused before BouncyCastle is asked to verify with it, so a key type
-     * the check was never designed for cannot be the one that passes.
+     * No key-type allowlist: Apple signs receipts with RSA today, but a
+     * signer that chains to the pinned root and carries the marker is
+     * trusted whatever its key, so a change of key type on Apple's side does
+     * not reject genuine receipts.
      */
     @Test
-    void aSignerWithANonRsaKeyIsAnInvalidSignature() throws Exception {
+    void aSignerWithAnEcKeyUnderThePinnedRootVerifies() throws Exception {
         KeyPairGenerator ec = KeyPairGenerator.getInstance("EC");
         ec.initialize(new ECGenParameterSpec("secp256r1"));
         KeyPair signerKey = ec.generateKeyPair();
         X509Certificate signer = signerUnderTheIntermediate(signerKey);
-        byte[] receipt = signAs(signerKey, "SHA256withECDSA", signer);
-
-        VerificationException e =
-                assertThrows(VerificationException.class, () -> verifier().verify(receipt));
-        assertEquals(Reason.INVALID_SIGNATURE, e.reason(), e.getMessage());
-        assertTrue(e.getMessage().contains("not RSA"), e.getMessage());
+        AppReceipt receipt = verifier().verify(signAs(signerKey, "SHA256withECDSA", signer));
+        assertEquals(BUNDLE, receipt.bundleId());
     }
 
-    /**
-     * Apple signs receipts with SHA-1 or SHA-256. A SignerInfo naming any
-     * other digest is not a receipt this library knows how to judge, so it is
-     * refused as a format defect rather than verified under a digest nobody
-     * reviewed.
-     */
+    /** No digest allowlist: a digest Apple does not use today verifies when the signature holds. */
     @Test
-    void aDigestOutsideTheAllowlistIsAnInvalidReceiptFormat() throws Exception {
+    void aSha512SignatureUnderThePinnedRootVerifies() throws Exception {
         KeyPair signerKey = rsaKeyPair();
         X509Certificate signer = signerUnderTheIntermediate(signerKey);
-        byte[] receipt = signAs(signerKey, "SHA512withRSA", signer);
-
-        VerificationException e =
-                assertThrows(VerificationException.class, () -> verifier().verify(receipt));
-        assertEquals(Reason.INVALID_RECEIPT_FORMAT, e.reason(), e.getMessage());
-        assertTrue(e.getMessage().contains("unsupported receipt digest algorithm"), e.getMessage());
+        AppReceipt receipt = verifier().verify(signAs(signerKey, "SHA512withRSA", signer));
+        assertEquals(BUNDLE, receipt.bundleId());
     }
 
     /**
-     * BouncyCastle hashes for the signature by the signatureAlgorithm field,
-     * not by digestAlgorithm. A SignerInfo that names SHA-1 as its digest but
-     * md5WithRSAEncryption as its signature, with a valid MD5 signature over
-     * its signed attributes, verified before that field was restricted too.
+     * Without an allowlist, the signature still has to hold as labelled. A
+     * SignerInfo that names SHA-1 as its digest but md5WithRSAEncryption as
+     * its signature, with an MD5 signature over its signed attributes, is
+     * refused by the CMS verifier because the two disagree.
      */
     @Test
-    void aSignatureAlgorithmOutsideTheAllowlistIsAnInvalidReceiptFormat() throws Exception {
+    void aSignatureAlgorithmThatContradictsTheDigestIsAnInvalidSignature() throws Exception {
         KeyPair signerKey = rsaKeyPair();
         X509Certificate signer = signerUnderTheIntermediate(signerKey);
         SignedData signedData = signedData(signAs(signerKey, "SHA1withRSA", signer));
@@ -130,8 +117,7 @@ class ReceiptSignerInfoTest {
 
         VerificationException e =
                 assertThrows(VerificationException.class, () -> verifier().verify(receipt));
-        assertEquals(Reason.INVALID_RECEIPT_FORMAT, e.reason(), e.getMessage());
-        assertTrue(e.getMessage().contains("unsupported receipt signature algorithm"), e.getMessage());
+        assertEquals(Reason.INVALID_SIGNATURE, e.reason(), e.getMessage());
     }
 
     /**
