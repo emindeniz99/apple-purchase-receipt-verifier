@@ -17,9 +17,12 @@ Currently exercised: the `mock_signed_data/*` JWS fixtures (positive +
 negative) and the `xcode/*` receipts/payloads (pinning rejection).
 `xcode/xcode-app-receipt-with-transaction` is byte-identical to
 `../public-receipts/receipt-xcode-with-purchases.b64`, so `cases.json`
-registers those bytes once, under the public-receipts entry. The
-`certs/testInvalid*` variants and `mock_signed_data/legacyTransaction` are
-vendored for potential future use but are **not** referenced by any test yet.
+registers those bytes once, under the public-receipts entry.
+`mock_signed_data/legacyTransaction` (the pre-2018 purchase-info format)
+is not in `cases.json`; the Java suite pins its rejection
+(`ReceiptVerifierTest`) and the Node suite rejects it as a JWS in
+`web-parity.test.js`. The `certs/testInvalid*` variants are vendored for
+potential future use but are **not** referenced by any test yet.
 
 These complement (not replace) the generated fake-Apple-PKI fixtures in
 each language's test suite, and the real receipts in
