@@ -254,6 +254,13 @@ public final class ReceiptVerifier {
         } catch (VerificationException e) {
             throw e;
         } catch (RuntimeException e) {
+            // INVALID_RECEIPT_FORMAT (21002), not INTERNAL_ERROR (21009), on
+            // purpose. Everything that can throw here runs before the CMS
+            // signature is verified, so it is attacker input; answering an
+            // unknown error with 21009 ("not the client's fault, retry or
+            // escalate") would let anyone trigger that alert at will. Signed
+            // content that cannot be read is INTERNAL_ERROR, and is caught
+            // in parseSignedPayload, not here.
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "malformed receipt: " + e, e);
         }
     }
