@@ -274,10 +274,23 @@ branch:
 
 ```text
 POST /apple/notifications { signedPayload }
-    claims = jwsVerifier.verifyRaw(signedPayload)   // enforces no claim:
-                                                    // check bundleId yourself
-    on REFUND or REVOKE: revoke(userId, transactionId)
+    n = jwsVerifier.verifyRaw(signedPayload)     // enforces no claim
+    if n.notificationUUID was handled before:
+        answer 200                               // Apple retries for days
+    data = n.data                                // absent on summary types
+    check data.bundleId, data.environment, and data.appAppleId in
+        Production: they live under data, not at the top level
+    tx = jwsVerifier.verifyTransaction(data.signedTransactionInfo)
+    renewal = jwsVerifier.verifyRaw(data.signedRenewalInfo)   // if present
+    on REFUND or REVOKE: revoke(tx.transactionId)
+    record n.notificationUUID, answer 200
 ```
+
+The nested `signedTransactionInfo` and `signedRenewalInfo` are JWS of their
+own and need their own verification. No freshness window applies here:
+Apple retries an unanswered notification for days.
+[java/README.md](java/README.md#app-store-server-notifications-v2) has a
+complete handler.
 
 **Why a fresh payload needs no network call.** Apple re-signs a transaction
 every time the app fetches it, and a refunded transaction carries
