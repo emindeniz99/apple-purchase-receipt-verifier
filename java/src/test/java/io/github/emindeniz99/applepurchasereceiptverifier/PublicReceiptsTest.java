@@ -7,7 +7,6 @@ import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifie
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -30,7 +29,7 @@ import org.junit.jupiter.api.Test;
  */
 class PublicReceiptsTest {
 
-    private static final Path FIXTURES = Paths.get("..", "fixtures", "public-receipts");
+    private static final Path FIXTURES = TestFixtures.publicReceipts();
 
     private static String receipt(String name) throws Exception {
         return new String(Files.readAllBytes(FIXTURES.resolve(name + ".b64")), StandardCharsets.US_ASCII).trim();

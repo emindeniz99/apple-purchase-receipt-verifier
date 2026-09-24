@@ -11,7 +11,6 @@ import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.security.KeyPairGenerator;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
@@ -34,7 +33,7 @@ import org.junit.jupiter.api.Test;
  */
 class SafeTextTest {
 
-    private static final Path FIXTURES = Paths.get("..", "fixtures", "generated");
+    private static final Path FIXTURES = TestFixtures.generated();
 
     @Test
     void shortInputIsQuotedUnchanged() {

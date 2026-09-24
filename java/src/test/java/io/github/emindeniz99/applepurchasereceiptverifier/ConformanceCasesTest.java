@@ -24,7 +24,6 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
@@ -75,7 +74,7 @@ import org.junit.jupiter.api.TestFactory;
  */
 class ConformanceCasesTest {
 
-    private static final Path FIXTURES = Paths.get("..", "fixtures");
+    private static final Path FIXTURES = TestFixtures.root();
 
     /** FIELD visibility so the payload models normalize without accessors. */
     private static final ObjectMapper MAPPER =

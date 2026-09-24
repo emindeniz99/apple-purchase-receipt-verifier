@@ -12,7 +12,6 @@ import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.time.Clock;
@@ -47,8 +46,8 @@ import org.junit.jupiter.api.Test;
  */
 class ConcurrencyTest {
 
-    private static final Path FIXTURES = Paths.get("..", "fixtures", "generated");
-    private static final Path PUBLIC_RECEIPTS = Paths.get("..", "fixtures", "public-receipts");
+    private static final Path FIXTURES = TestFixtures.generated();
+    private static final Path PUBLIC_RECEIPTS = TestFixtures.publicReceipts();
     private static final String BUNDLE = "com.example.app";
     private static final int THREADS = 16;
     private static final int ITERATIONS = 50;

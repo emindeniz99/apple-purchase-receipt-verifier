@@ -97,7 +97,7 @@ import org.junit.jupiter.api.io.TempDir;
  */
 class TrustStoreIsolationTest {
 
-    private static final Path FIXTURES = Paths.get("..", "fixtures");
+    private static final Path FIXTURES = TestFixtures.root();
     private static final Path MAIN_SOURCES = Paths.get("src", "main", "java");
     private static final String BUNDLE = "com.example.app";
     private static final String GENUINE_BUNDLE = "dev.bonzer.weeka.app";

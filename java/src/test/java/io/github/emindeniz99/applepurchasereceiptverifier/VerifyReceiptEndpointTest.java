@@ -13,7 +13,6 @@ import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.time.Clock;
@@ -36,7 +35,7 @@ import org.junit.jupiter.api.Test;
  */
 class VerifyReceiptEndpointTest {
 
-    private static final Path FIXTURES = Paths.get("..", "fixtures", "generated");
+    private static final Path FIXTURES = TestFixtures.generated();
 
     private static VerifyReceiptEndpoint endpoint(boolean production) throws Exception {
         return new VerifyReceiptEndpoint(
@@ -146,7 +145,7 @@ class VerifyReceiptEndpointTest {
 
     @Test
     void rawJsonOverloadRendersIsInIntroOfferPeriodAsAString() throws Exception {
-        Path publicReceipts = Paths.get("..", "fixtures", "public-receipts");
+        Path publicReceipts = TestFixtures.publicReceipts();
         String receiptData = new String(
                         Files.readAllBytes(publicReceipts.resolve("receipt-sandbox-g5.b64")), StandardCharsets.US_ASCII)
                 .trim();

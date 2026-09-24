@@ -36,6 +36,10 @@
   </scm>
 
   <properties>
+    <!-- The shared fixtures the tests read (TestFixtures). A vendored copy
+         that keeps fixtures/ elsewhere overrides it with
+         -Daprv.fixtures.dir=... -->
+    <aprv.fixtures.dir>${project.basedir}/../fixtures</aprv.fixtures.dir>
     <!-- Java 8 baseline: enterprise consumers still run 8. -->
     <maven.compiler.release>8</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -129,6 +133,11 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <version>3.6.0</version>
+        <configuration>
+          <systemPropertyVariables>
+            <aprv.fixtures.dir>${aprv.fixtures.dir}</aprv.fixtures.dir>
+          </systemPropertyVariables>
+        </configuration>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>

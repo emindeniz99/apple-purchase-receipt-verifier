@@ -15,7 +15,6 @@ import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.util.Arrays;
@@ -48,7 +47,7 @@ import org.junit.jupiter.api.Test;
  */
 class InputSizeBoundsTest {
 
-    private static final Path FIXTURES = Paths.get("..", "fixtures", "generated");
+    private static final Path FIXTURES = TestFixtures.generated();
     private static final String BUNDLE = "com.example.app";
 
     // ------------------------------------------------------------------
@@ -132,7 +131,7 @@ class InputSizeBoundsTest {
     @Test
     void receiptStringAtTheSizeLimitStillVerifies() throws Exception {
         String receipt = new String(
-                Files.readAllBytes(Paths.get("..", "fixtures", "limits", "receipt-b64-at-cap.txt")),
+                Files.readAllBytes(TestFixtures.root().resolve("limits").resolve("receipt-b64-at-cap.txt")),
                 StandardCharsets.US_ASCII);
         assertEquals(ReceiptVerifier.MAX_RECEIPT_BYTES, receipt.length());
         ReceiptVerifier verifier = new ReceiptVerifier(Collections.singleton(root("receipt-b64-cap-root.der")), BUNDLE);

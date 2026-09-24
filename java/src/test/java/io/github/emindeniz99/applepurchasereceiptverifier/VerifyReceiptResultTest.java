@@ -13,7 +13,6 @@ import io.github.emindeniz99.applepurchasereceiptverifier.receipt.VerifyReceiptR
 import java.io.ByteArrayInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.time.Clock;
@@ -41,7 +40,7 @@ import org.junit.jupiter.api.Test;
  */
 class VerifyReceiptResultTest {
 
-    private static final Path FIXTURES = Paths.get("..", "fixtures", "generated");
+    private static final Path FIXTURES = TestFixtures.generated();
     private static final Instant CLOCK_NOW = Instant.parse("2026-01-01T00:00:00Z");
     private static final Instant EXPLICIT = Instant.parse("2025-06-15T12:34:56.789Z");
 

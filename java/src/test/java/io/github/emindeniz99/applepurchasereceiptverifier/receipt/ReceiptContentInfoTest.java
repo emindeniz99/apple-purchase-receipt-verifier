@@ -3,12 +3,12 @@ package io.github.emindeniz99.applepurchasereceiptverifier.receipt;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.emindeniz99.applepurchasereceiptverifier.TestFixtures;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
@@ -75,7 +75,7 @@ class ReceiptContentInfoTest {
     /** Every receipt fixture, and seeded corruptions of each. */
     static List<byte[]> corpus() throws IOException {
         List<byte[]> fixtures = new ArrayList<byte[]>();
-        Path generated = Paths.get("..", "fixtures", "generated");
+        Path generated = TestFixtures.generated();
         DirectoryStream<Path> files = Files.newDirectoryStream(generated, "receipt*.der");
         try {
             for (Path file : files) {
@@ -84,7 +84,7 @@ class ReceiptContentInfoTest {
         } finally {
             files.close();
         }
-        Path publicReceipts = Paths.get("..", "fixtures", "public-receipts");
+        Path publicReceipts = TestFixtures.publicReceipts();
         for (String name :
                 new String[] {"receipt-sandbox-g5.b64", "receipt-sandbox-legacy.b64", "receipt-xcode-with-purchases.b64"
                 }) {

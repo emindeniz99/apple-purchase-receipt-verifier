@@ -108,7 +108,7 @@ public final class PortDivergenceFixtures {
     private PortDivergenceFixtures() {}
 
     public static void main(String[] args) throws Exception {
-        Path out = Paths.get(args.length > 0 ? args[0] : "../fixtures/generated");
+        Path out = args.length > 0 ? Paths.get(args[0]) : TestFixtures.generated();
         Files.createDirectories(out);
         byte[] deviceHash = TestPki.deviceHash(GUID, OPAQUE, BUNDLE);
 
