@@ -98,7 +98,6 @@
         "WRONG_APP_APPLE_ID",
         "INVALID_RECEIPT_FORMAT",
         "DEVICE_HASH_MISMATCH",
-        "STALE_PAYLOAD",
         "INTERNAL_ERROR"
       ]
     },
@@ -421,15 +420,8 @@
                 "appAppleId": {
                   "type": "integer",
                   "minimum": 0
-                },
-                "maxSignedAgeSeconds": {
-                  "type": "integer",
-                  "minimum": 1
                 }
               }
-            },
-            "clock": {
-              "$ref": "#/$defs/clock"
             },
             "expected": {
               "$ref": "#/$defs/expectedVerify"
@@ -497,9 +489,6 @@
                   }
                 }
               }
-            },
-            "clock": {
-              "$ref": "#/$defs/clock"
             },
             "expected": {
               "$ref": "#/$defs/expectedVerify"

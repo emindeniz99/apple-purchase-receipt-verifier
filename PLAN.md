@@ -35,8 +35,13 @@ recorded here.
   requiring it would force client changes. Replay defense = server-side
   transaction-id bookkeeping (owner confirmed the server can keep them).
 - **D5 — Subscriptions supported**: payloads expose `expiresDate` /
-  `revocationDate` with an `isActiveAt(now)` helper, and the JWS verifier
-  takes an optional max-signed-age (staleness) policy. Refund/renewal
+  `revocationDate` with an `isActiveAt(now)` helper. How old a signed
+  payload may be is the caller's decision, made on `signedDate` or the
+  receipt creation date: the optional max-signed-age policy the JWS
+  verifier used to take was removed (2026-09-24), because Apple's own App
+  Store Server Libraries have none and the right limit depends on the
+  endpoint (Apple retries server notifications for days; a device may
+  present an old but genuine payload). Refund/renewal
   *state* still requires Apple's server API — out of scope (INTENT.md).
 - **D6 — Real receipt corpus pending**: owner will supply real production +
   sandbox receipts as fixtures later; until then generated fake-Apple-PKI
@@ -351,7 +356,7 @@ Root CA), optional device GUID.
 ```
 Environment = { PRODUCTION, SANDBOX, XCODE, LOCAL_TESTING }
 
-JwsVerifier(trustedRoots, bundleId, acceptedEnvironments, appAppleId?, maxSignedAge?)
+JwsVerifier(trustedRoots, bundleId, acceptedEnvironments, appAppleId?)
   .verifyTransaction(jws)      -> TransactionPayload   (decoded fields + isActiveAt helper)
   .verifyAppTransaction(jws)   -> AppTransactionPayload
   .verifyRaw(jws)              -> claims map — signature/chain only, caller checks
