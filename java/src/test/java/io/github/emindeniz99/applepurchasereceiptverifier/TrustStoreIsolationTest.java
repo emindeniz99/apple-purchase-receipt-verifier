@@ -2,7 +2,6 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -20,24 +19,13 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.security.InvalidAlgorithmParameterException;
 import java.security.KeyStore;
+import java.security.NoSuchAlgorithmException;
 import java.security.Provider;
 import java.security.Security;
-import java.security.cert.CertPath;
-import java.security.cert.CertPathBuilder;
-import java.security.cert.CertPathBuilderException;
-import java.security.cert.CertPathBuilderResult;
-import java.security.cert.CertPathBuilderSpi;
-import java.security.cert.CertPathParameters;
-import java.security.cert.CertPathValidator;
-import java.security.cert.CertPathValidatorException;
-import java.security.cert.CertPathValidatorResult;
-import java.security.cert.CertPathValidatorSpi;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
 import java.security.cert.PKIXParameters;
-import java.security.cert.TrustAnchor;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -92,11 +80,15 @@ import org.junit.jupiter.api.io.TempDir;
  *       accept.</li>
  *   <li><b>structurally</b> — no file under {@code src/main/java} names a
  *       trust store, a trust manager, a key store, a socket, an HTTP client or
- *       a subprocess, and both PKIX parameter objects are built from the
- *       caller's {@code Set<TrustAnchor>} and never from a {@code KeyStore}.</li>
- *   <li><b>positively</b> — the anchor set that reaches the JDK's path builder
- *       and path validator is captured, and it is exactly the caller's roots:
- *       nothing appended, dropped or substituted in transit.</li>
+ *       a subprocess, both PKIX parameter objects are built from the
+ *       caller's {@code Set<TrustAnchor>} and never from a {@code KeyStore},
+ *       and every JCA lookup names the library's own BouncyCastle
+ *       instance.</li>
+ *   <li><b>positively</b>: a provider installed ahead of every other one,
+ *       shadowing each engine the verifiers use, is never asked for one, so
+ *       the only path builder and path validator that see the anchors are the
+ *       library's own; and the verdict follows the caller's roots alone,
+ *       whatever else is passed with them.</li>
  * </ul>
  *
  * <p>This test class names {@code javax.net.ssl}, {@code TrustManagerFactory}
@@ -491,140 +483,211 @@ class TrustStoreIsolationTest {
                 revocationDisabled++;
             }
         }
-        // One per verified path, the receipt path builder and the JWS path
-        // validator, plus ChainAlgorithms' check of the JVM's algorithm
-        // policy, which anchors a chain it mints itself and trusts nothing
-        // with the result. A fourth would be a new trust seam nobody reviewed.
-        assertEquals(3, constructions, "the number of PKIX parameter objects this library builds changed");
+        // One per verified path: the receipt path builder and the JWS path
+        // validator. A third would be a new trust seam nobody reviewed.
+        assertEquals(2, constructions, "the number of PKIX parameter objects this library builds changed");
         assertTrue(declarations >= 2, "no trustAnchors declaration was found, so the type check above scanned nothing");
-        assertEquals(3, revocationDisabled, "a PKIX parameter object no longer disables revocation checking");
+        assertEquals(2, revocationDisabled, "a PKIX parameter object no longer disables revocation checking");
+    }
+
+    /**
+     * Every JCA engine lookup and every BouncyCastle JCA builder in the main
+     * sources names the library's private BouncyCastle instance. A lookup by
+     * name alone resolves through the JVM's provider list, where a host
+     * provider or the JDK's own {@code jdk.certpath.disabledAlgorithms} would
+     * decide the verdict.
+     */
+    @Test
+    void everyCryptographicLookupNamesTheLibrarysOwnProvider() throws Exception {
+        Pattern lookup = Pattern.compile("\\b(" + String.join("|", JCA_ENGINES) + ")\\s*\\.\\s*getInstance\\s*\\(");
+        Pattern builder = Pattern.compile("new\\s+Jca\\w+\\s*\\(");
+        int lookups = 0;
+        int builders = 0;
+        for (Path source : mainSources()) {
+            String code = codeStrippedOfComments(new String(Files.readAllBytes(source), StandardCharsets.UTF_8));
+            Matcher matcher = lookup.matcher(code);
+            while (matcher.find()) {
+                lookups++;
+                String arguments = balancedArguments(code, matcher.end());
+                assertTrue(
+                        arguments.contains("BouncyCastle.PROVIDER"),
+                        source.getFileName() + " looks up " + matcher.group(1) + "(" + arguments
+                                + ") through the JVM's provider list");
+            }
+            Matcher built = builder.matcher(code);
+            while (built.find()) {
+                builders++;
+                String statement = code.substring(built.start(), code.indexOf(';', built.start()));
+                int created = count(statement, builder);
+                int pinned = count(statement, Pattern.compile("\\.setProvider\\(\\s*BouncyCastle\\.PROVIDER\\s*\\)"));
+                assertTrue(
+                        pinned >= created,
+                        source.getFileName() + " builds a BouncyCastle JCA helper without setProvider(PROVIDER): "
+                                + statement);
+            }
+        }
+        // Certificate factory (twice), path builder, cert store, path
+        // validator, ES256 signature and two digests; the certificate
+        // converter and the CMS verifier builders.
+        assertTrue(lookups >= 8, "only " + lookups + " JCA lookups were found, so the scan is not reading the code");
+        assertTrue(builders >= 3, "only " + builders + " JCA builders were found, so the scan is not reading the code");
+    }
+
+    /** The JCA engine classes a {@code getInstance} lookup can resolve through the provider list. */
+    private static final String[] JCA_ENGINES = {
+        "CertPathBuilder",
+        "CertPathValidator",
+        "CertStore",
+        "CertificateFactory",
+        "MessageDigest",
+        "Signature",
+        "KeyFactory",
+        "KeyPairGenerator",
+        "KeyAgreement",
+        "Mac",
+        "Cipher",
+        "SecureRandom",
+        "AlgorithmParameters",
+    };
+
+    /** The text between the parenthesis before {@code from} and the one that closes it. */
+    private static String balancedArguments(String code, int from) {
+        int depth = 1;
+        for (int i = from; i < code.length(); i++) {
+            char c = code.charAt(i);
+            if (c == '(') {
+                depth++;
+            } else if (c == ')' && --depth == 0) {
+                return code.substring(from, i);
+            }
+        }
+        throw new AssertionError("unbalanced parentheses after offset " + from);
+    }
+
+    private static int count(String text, Pattern pattern) {
+        int n = 0;
+        Matcher matcher = pattern.matcher(text);
+        while (matcher.find()) {
+            n++;
+        }
+        return n;
     }
 
     // ------------------------------------------------------------------
-    // (c) positive — the anchors that actually reach the JDK
+    // (c) positive: the only PKIX code that sees the anchors
     // ------------------------------------------------------------------
 
     /**
-     * A source scan proves nothing was <em>imported</em>; this proves nothing
-     * was <em>added</em>. A JCE provider shadowing {@code CertPathBuilder.PKIX}
-     * captures the very parameter object the library hands the JDK, and its
-     * anchor set is the caller's roots, exactly — no host root folded in, none
-     * of the caller's dropped.
+     * A source scan proves nothing was <em>imported</em>; this proves the
+     * JVM's provider list is not consulted at all. A provider installed at
+     * position 1 shadows every engine the verifiers use and records each
+     * request for one, and the verification runs without a single request:
+     * the anchors reach the library's own BouncyCastle path builder and
+     * nothing else, so no host provider can add, drop or substitute one.
      *
      * <p>Two anchors are passed, one of which cannot possibly issue this
-     * chain, so an implementation that filtered, deduplicated or substituted
-     * the set would show here rather than pass silently.</p>
+     * chain, and the chain still verifies; dropping the one that issued it
+     * refuses the chain, so no ambient set makes up for it.</p>
      */
     @Test
-    void theReceiptPathBuilderSeesExactlyTheCallersAnchors() throws Exception {
-        Set<X509Certificate> passed = new LinkedHashSet<X509Certificate>(
-                Arrays.asList(cert("generated", "jws-root.der"), cert("generated", "receipt-root.der")));
-        List<PKIXParameters> captured = capture(() -> assertEquals(
-                BUNDLE,
-                new ReceiptVerifier(passed, BUNDLE)
-                        .verify(fixture("generated", "receipt.der"))
-                        .bundleId()));
-        assertAnchorsAre(passed, captured);
-
-        // Nothing added, either: drop the anchor that signed the chain and no
-        // ambient set makes up for it.
-        assertInvalidChain(() -> ReceiptVerifier.verifyReceiptCore(
-                fixture("generated", "receipt.der"), Collections.singleton(cert("generated", "jws-root.der"))));
+    void theReceiptChainIsAnchoredOnlyByTheCallersRoots() throws Exception {
+        byte[] receipt = fixture("generated", "receipt.der");
+        X509Certificate jwsRoot = cert("generated", "jws-root.der");
+        Set<X509Certificate> passed =
+                new LinkedHashSet<X509Certificate>(Arrays.asList(jwsRoot, cert("generated", "receipt-root.der")));
+        List<String> requests = hostProviderRequestsDuring(() -> {
+            assertEquals(
+                    BUNDLE, new ReceiptVerifier(passed, BUNDLE).verify(receipt).bundleId());
+            // The device-hash digest too, which a wrong GUID still computes.
+            VerificationException e = assertThrows(
+                    VerificationException.class,
+                    () -> new ReceiptVerifier(passed, BUNDLE).verify(receipt, new byte[16]));
+            assertEquals(Reason.DEVICE_HASH_MISMATCH, e.reason());
+            assertInvalidChain(() -> ReceiptVerifier.verifyReceiptCore(receipt, Collections.singleton(jwsRoot)));
+        });
+        assertEquals(Collections.emptyList(), requests, "the receipt verifier asked the JVM's provider list");
     }
 
     /** The same for the JWS path, which validates rather than builds. */
     @Test
-    void theJwsPathValidatorSeesExactlyTheCallersAnchors() throws Exception {
-        Set<X509Certificate> passed = new LinkedHashSet<X509Certificate>(
-                Arrays.asList(cert("generated", "receipt-root.der"), cert("generated", "jws-root.der")));
-        List<PKIXParameters> captured = capture(() -> assertEquals(
-                BUNDLE,
-                new JwsVerifier(passed, BUNDLE, EnumSet.of(Environment.SANDBOX))
-                        .verifyTransaction(fixtureText("generated", "transaction.jws"))
-                        .bundleId()));
-        assertAnchorsAre(passed, captured);
-
-        assertInvalidChain(() -> new JwsVerifier(
-                        Collections.singleton(cert("generated", "receipt-root.der")),
-                        BUNDLE,
-                        EnumSet.of(Environment.SANDBOX))
-                .verifyTransaction(fixtureText("generated", "transaction.jws")));
-    }
-
-    private static void assertAnchorsAre(Set<X509Certificate> expected, List<PKIXParameters> captured) {
-        assertEquals(1, captured.size(), "the library did not run exactly one PKIX validation");
-        Set<TrustAnchor> anchors = captured.get(0).getTrustAnchors();
-        Set<X509Certificate> certificates = new HashSet<X509Certificate>();
-        for (TrustAnchor anchor : anchors) {
-            // A name-constrained or CA-name-only anchor would be a different
-            // trust decision from the one the caller asked for.
-            assertNull(anchor.getNameConstraints(), "an anchor grew name constraints in transit");
-            assertNull(anchor.getCAName(), "an anchor is not the caller's certificate");
-            certificates.add(anchor.getTrustedCert());
-        }
-        assertEquals(expected.size(), anchors.size(), "the anchor set changed size in transit");
-        assertEquals(new HashSet<X509Certificate>(expected), certificates, "the anchor set is not the caller's");
-        assertFalse(captured.get(0).isRevocationEnabled(), "revocation checking would reach the network");
+    void theJwsChainIsAnchoredOnlyByTheCallersRoots() throws Exception {
+        String jws = fixtureText("generated", "transaction.jws");
+        X509Certificate receiptRoot = cert("generated", "receipt-root.der");
+        Set<X509Certificate> passed =
+                new LinkedHashSet<X509Certificate>(Arrays.asList(receiptRoot, cert("generated", "jws-root.der")));
+        List<String> requests = hostProviderRequestsDuring(() -> {
+            assertEquals(
+                    BUNDLE,
+                    new JwsVerifier(passed, BUNDLE, EnumSet.of(Environment.SANDBOX))
+                            .verifyTransaction(jws)
+                            .bundleId());
+            assertInvalidChain(
+                    () -> new JwsVerifier(Collections.singleton(receiptRoot), BUNDLE, EnumSet.of(Environment.SANDBOX))
+                            .verifyTransaction(jws));
+        });
+        assertEquals(Collections.emptyList(), requests, "the JWS verifier asked the JVM's provider list");
     }
 
     /**
-     * Runs {@code body} with a provider that shadows the JDK's PKIX path
-     * builder and validator, and returns the parameter objects it saw. The
-     * real implementations are resolved before the shadow is installed, both
-     * so the delegation cannot recurse and so the verification under test
-     * still genuinely runs.
+     * Runs {@code body} with {@link SpyProvider} ahead of every other provider
+     * and returns what was asked of it, as {@code type.algorithm}. The spy
+     * refuses every request after recording it, so a lookup by name falls
+     * through to the next provider and the code under test still runs as it
+     * would without it.
      */
-    private static List<PKIXParameters> capture(Body body) throws Exception {
-        CAPTURED.clear();
-        REAL_BUILDER = CertPathBuilder.getInstance("PKIX");
-        REAL_VALIDATOR = CertPathValidator.getInstance("PKIX");
+    private static List<String> hostProviderRequestsDuring(Body body) throws Exception {
+        REQUESTS.clear();
         Security.insertProviderAt(new SpyProvider(), 1);
         try {
             body.run();
         } finally {
             Security.removeProvider(SPY_PROVIDER);
         }
-        return new ArrayList<PKIXParameters>(CAPTURED);
+        return new ArrayList<String>(REQUESTS);
     }
 
-    private static final List<PKIXParameters> CAPTURED = Collections.synchronizedList(new ArrayList<PKIXParameters>());
-    private static CertPathBuilder REAL_BUILDER;
-    private static CertPathValidator REAL_VALIDATOR;
+    private static final List<String> REQUESTS = Collections.synchronizedList(new ArrayList<String>());
 
-    /** Public and instantiable by name because the JCA loads SPIs reflectively. */
+    /** Every engine and algorithm a receipt or JWS verification could ask the JVM for. */
+    private static final String[][] SHADOWED = {
+        {"CertPathBuilder", "PKIX"},
+        {"CertPathValidator", "PKIX"},
+        {"CertStore", "Collection"},
+        {"CertificateFactory", "X.509"},
+        {"MessageDigest", "SHA-1"},
+        {"MessageDigest", "SHA-256"},
+        {"Signature", "SHA1withRSA"},
+        {"Signature", "SHA256withRSA"},
+        {"Signature", "SHA256withECDSA"},
+        {"Signature", "SHA384withECDSA"},
+        {"Signature", "SHA256withPLAIN-ECDSA"},
+        {"KeyFactory", "RSA"},
+        {"KeyFactory", "EC"},
+    };
+
     public static final class SpyProvider extends Provider {
 
         private static final long serialVersionUID = 1L;
 
         @SuppressWarnings("deprecation") // the (String, String, String) constructor is Java 9+; this is a Java 8 port.
         public SpyProvider() {
-            super(SPY_PROVIDER, 1.0d, "captures the PKIX parameters this library builds");
-            put("CertPathBuilder.PKIX", SpyCertPathBuilder.class.getName());
-            put("CertPathValidator.PKIX", SpyCertPathValidator.class.getName());
+            super(SPY_PROVIDER, 1.0d, "records every request the JVM's provider list receives");
+            for (String[] engine : SHADOWED) {
+                putService(new RecordingService(this, engine[0], engine[1]));
+            }
         }
     }
 
-    public static final class SpyCertPathBuilder extends CertPathBuilderSpi {
+    private static final class RecordingService extends Provider.Service {
 
-        public SpyCertPathBuilder() {}
-
-        @Override
-        public CertPathBuilderResult engineBuild(CertPathParameters params)
-                throws CertPathBuilderException, InvalidAlgorithmParameterException {
-            CAPTURED.add((PKIXParameters) params);
-            return REAL_BUILDER.build(params);
+        RecordingService(Provider provider, String type, String algorithm) {
+            super(provider, type, algorithm, RecordingService.class.getName(), null, null);
         }
-    }
-
-    public static final class SpyCertPathValidator extends CertPathValidatorSpi {
-
-        public SpyCertPathValidator() {}
 
         @Override
-        public CertPathValidatorResult engineValidate(CertPath path, CertPathParameters params)
-                throws CertPathValidatorException, InvalidAlgorithmParameterException {
-            CAPTURED.add((PKIXParameters) params);
-            return REAL_VALIDATOR.validate(path, params);
+        public Object newInstance(Object constructorParameter) throws NoSuchAlgorithmException {
+            REQUESTS.add(getType() + "." + getAlgorithm());
+            throw new NoSuchAlgorithmException("recorded, not provided");
         }
     }
 

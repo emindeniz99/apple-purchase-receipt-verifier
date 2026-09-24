@@ -1,11 +1,9 @@
 package io.github.emindeniz99.applepurchasereceiptverifier.receipt;
 
-import io.github.emindeniz99.applepurchasereceiptverifier.SignatureAlgorithm;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
 import io.github.emindeniz99.applepurchasereceiptverifier.internal.AppleTrust;
 import io.github.emindeniz99.applepurchasereceiptverifier.internal.BouncyCastle;
-import io.github.emindeniz99.applepurchasereceiptverifier.internal.ChainAlgorithms;
 import io.github.emindeniz99.applepurchasereceiptverifier.internal.SafeText;
 import java.io.IOException;
 import java.math.BigInteger;
@@ -25,9 +23,7 @@ import java.security.cert.X509Certificate;
 import java.security.interfaces.RSAPublicKey;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Date;
-import java.util.EnumSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
@@ -72,18 +68,15 @@ import org.jspecify.annotations.Nullable;
  * device-hash binding: null skips that check, exactly as the shorter overload
  * does.</p>
  *
- * <p><strong>Security providers.</strong> The CMS signature and its digest
- * are checked with a private BouncyCastle instance that is never registered.
- * Everything else resolves through the JVM's provider list: certificate
- * decoding ({@code CertificateFactory}, through
- * {@link JcaX509CertificateConverter}), the {@code PKIX}
- * {@code CertPathBuilder} and its {@code Collection} {@code CertStore}, and
- * the SHA-1 of the device-hash check. A host that inserts BouncyCastle at
- * position 1 therefore gets BouncyCastle's X.509 parser and path builder for
- * those steps instead of the JDK's. This library's tests run against the
- * JDK's providers, so under that host an unusual certificate may get a
- * different verdict.
- * This class reads the provider order and never changes it.</p>
+ * <p><strong>Security providers.</strong> Every cryptographic step uses a
+ * private BouncyCastle instance that is never registered: certificate
+ * decoding, the {@code PKIX} {@code CertPathBuilder} and its
+ * {@code Collection} {@code CertStore}, the CMS signature and its digest, and
+ * the SHA-1 of the device-hash check. The JVM's provider list and its
+ * {@code java.security} policy, {@code jdk.certpath.disabledAlgorithms}
+ * included, do not reach any of them, so they cannot change a verdict. The
+ * trade-off: an administrator cannot restrict this class through that
+ * policy either.</p>
  */
 public final class ReceiptVerifier {
 
@@ -147,15 +140,7 @@ public final class ReceiptVerifier {
     // Built once and shared by every thread; see signerVerifier.
     private static final JcaSignerInfoVerifierBuilder SIGNER_VERIFIERS = signerVerifiers();
 
-    /**
-     * The certificate signature algorithms Apple signs receipt chains with:
-     * SHA-1 for legacy receipts, SHA-256 for current ones.
-     */
-    public static final Set<SignatureAlgorithm> DEFAULT_CHAIN_ALGORITHMS = Collections.unmodifiableSet(
-            EnumSet.of(SignatureAlgorithm.SHA1_WITH_RSA, SignatureAlgorithm.SHA256_WITH_RSA));
-
     private final Set<TrustAnchor> trustAnchors;
-    private final Set<SignatureAlgorithm> chainAlgorithms;
     private final String bundleId;
 
     /**
@@ -171,42 +156,12 @@ public final class ReceiptVerifier {
      * @param trustedRoots pinned root CAs (production:
      *                     {@code AppleRootCerts.receiptRoots()})
      * @param bundleId     the app's bundle id the receipt must carry
-     * @throws IllegalStateException if this JVM cannot validate a chain
-     *                               signed with one of
-     *                               {@link #DEFAULT_CHAIN_ALGORITHMS}; see
-     *                               {@link #ReceiptVerifier(Set, String, Set)}
      */
     public ReceiptVerifier(Set<X509Certificate> trustedRoots, String bundleId) {
-        this(trustedRoots, bundleId, DEFAULT_CHAIN_ALGORITHMS);
-    }
-
-    /**
-     * Creates a verifier that accepts only the chain signature algorithms in
-     * {@code chainAlgorithms}.
-     *
-     * <p>A chain with a certificate signed with any other algorithm is
-     * {@code INVALID_CHAIN}, genuine or not: leave out
-     * {@link SignatureAlgorithm#SHA1_WITH_RSA} and every legacy receipt is
-     * {@code INVALID_CHAIN}, leave out
-     * {@link SignatureAlgorithm#SHA256_WITH_RSA} and every current one is.
-     * The constructor checks that this JVM can validate a chain signed with
-     * each algorithm in the set and throws if it cannot, so a
-     * {@code jdk.certpath.disabledAlgorithms} entry that disables one fails
-     * here, at startup, and not as {@code INVALID_CHAIN} on genuine
-     * receipts. The check runs once per algorithm per process.</p>
-     *
-     * @param chainAlgorithms non-empty; {@link #DEFAULT_CHAIN_ALGORITHMS}
-     *                        covers every receipt Apple signs
-     * @throws IllegalStateException if this JVM cannot validate a chain
-     *                               signed with one of {@code chainAlgorithms}
-     */
-    public ReceiptVerifier(
-            Set<X509Certificate> trustedRoots, String bundleId, Set<SignatureAlgorithm> chainAlgorithms) {
         if (bundleId == null) {
             throw new IllegalArgumentException("bundleId must not be null");
         }
         this.trustAnchors = AppleTrust.anchors(trustedRoots);
-        this.chainAlgorithms = ChainAlgorithms.require(chainAlgorithms);
         this.bundleId = bundleId;
     }
 
@@ -247,7 +202,7 @@ public final class ReceiptVerifier {
      * restore still works: every device presents its own receipt.
      */
     public AppReceipt verify(byte @Nullable [] receiptDer, byte @Nullable [] deviceGuid) throws VerificationException {
-        AppReceipt receipt = verifyCore(receiptDer, trustAnchors, chainAlgorithms);
+        AppReceipt receipt = verifyCore(receiptDer, trustAnchors);
         if (!bundleId.equals(receipt.bundleId())) {
             throw new VerificationException(
                     Reason.WRONG_BUNDLE_ID,
@@ -277,26 +232,11 @@ public final class ReceiptVerifier {
      */
     public static AppReceipt verifyReceiptCore(byte @Nullable [] receiptDer, Set<X509Certificate> trustedRoots)
             throws VerificationException {
-        return verifyReceiptCore(receiptDer, trustedRoots, DEFAULT_CHAIN_ALGORITHMS);
+        return verifyCore(receiptDer, AppleTrust.anchors(trustedRoots));
     }
 
-    /**
-     * {@link #verifyReceiptCore(byte[], Set)} accepting only the chain
-     * signature algorithms in {@code chainAlgorithms}, as
-     * {@link #ReceiptVerifier(Set, String, Set)} describes. There is no
-     * constructor here to fail at startup, so the JVM check runs on the first
-     * call and, when it fails, every call throws the same
-     * {@link IllegalStateException}.
-     */
-    public static AppReceipt verifyReceiptCore(
-            byte @Nullable [] receiptDer, Set<X509Certificate> trustedRoots, Set<SignatureAlgorithm> chainAlgorithms)
-            throws VerificationException {
-        return verifyCore(receiptDer, AppleTrust.anchors(trustedRoots), ChainAlgorithms.require(chainAlgorithms));
-    }
-
-    /** {@link #verifyReceiptCore} over anchors and algorithms already checked, for callers that keep them. */
-    static AppReceipt verifyCore(
-            byte @Nullable [] receiptDer, Set<TrustAnchor> trustAnchors, Set<SignatureAlgorithm> chainAlgorithms)
+    /** {@link #verifyReceiptCore} over anchors already built, for callers that keep them. */
+    static AppReceipt verifyCore(byte @Nullable [] receiptDer, Set<TrustAnchor> trustAnchors)
             throws VerificationException {
         if (receiptDer == null) {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "receipt is null");
@@ -310,7 +250,7 @@ public final class ReceiptVerifier {
         // by type: a list of types would miss the next one and let it escape
         // the declared VerificationException contract.
         try {
-            return verifyCoreUnguarded(receiptDer, trustAnchors, chainAlgorithms);
+            return verifyCoreUnguarded(receiptDer, trustAnchors);
         } catch (VerificationException e) {
             throw e;
         } catch (RuntimeException e) {
@@ -324,8 +264,7 @@ public final class ReceiptVerifier {
                 "receipt exceeds the maximum accepted size of " + MAX_RECEIPT_BYTES + " bytes");
     }
 
-    private static AppReceipt verifyCoreUnguarded(
-            byte[] receiptDer, Set<TrustAnchor> trustAnchors, Set<SignatureAlgorithm> chainAlgorithms)
+    private static AppReceipt verifyCoreUnguarded(byte[] receiptDer, Set<TrustAnchor> trustAnchors)
             throws VerificationException {
         ASN1Primitive parsed;
         try {
@@ -367,7 +306,7 @@ public final class ReceiptVerifier {
             throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "no signer info");
         }
         SignerInformation signer = signers.next();
-        X509Certificate signerCert = validateChain(cms, signer, at, trustAnchors, chainAlgorithms);
+        X509Certificate signerCert = validateChain(cms, signer, at, trustAnchors);
         if (signerCert.getExtensionValue(AppleTrust.SIGNING_LEAF_OID) == null) {
             throw new VerificationException(
                     Reason.INVALID_CERTIFICATE_PURPOSE,
@@ -412,11 +351,7 @@ public final class ReceiptVerifier {
 
     /** PKIX-builds signer → (intermediates from the CMS) → pinned root at {@code at}. */
     private static X509Certificate validateChain(
-            CMSSignedData cms,
-            SignerInformation signer,
-            Date at,
-            Set<TrustAnchor> trustAnchors,
-            Set<SignatureAlgorithm> chainAlgorithms)
+            CMSSignedData cms, SignerInformation signer, Date at, Set<TrustAnchor> trustAnchors)
             throws VerificationException {
         // Raw set, not cms.getCertificates(); see decodeEmbeddedAndFindSigner.
         ASN1Set certificateSet = embeddedCertificateSet(cms);
@@ -432,14 +367,14 @@ public final class ReceiptVerifier {
                             + MAXIMUM_EMBEDDED_CERTIFICATES);
         }
         EmbeddedCertificates certificates = decodeEmbeddedAndFindSigner(certificateSet, signer);
-        JcaX509CertificateConverter converter = new JcaX509CertificateConverter();
+        JcaX509CertificateConverter converter = new JcaX509CertificateConverter().setProvider(BouncyCastle.PROVIDER);
         X509Certificate signerCert;
         try {
-            // The JCA decodes the whole X.509 template, including every
-            // extension VALUE, where BouncyCastle keeps extensions as encoded
-            // bytes, so this is where an extnValue that stops decoding is
-            // found, and it is a defect of the certificate rather than of the
-            // path it sits on.
+            // The JCA certificate object decodes the basicConstraints and
+            // keyUsage VALUES, which the holder keeps as encoded bytes, so
+            // this is where such a value that stops decoding is found, and it
+            // is a defect of the certificate rather than of the path it sits
+            // on.
             signerCert = converter.getCertificate(certificates.signer);
             // Result unused: decoding the key here makes a key on an
             // unimplemented curve fail now, as INVALID_CERTIFICATE, instead
@@ -450,30 +385,36 @@ public final class ReceiptVerifier {
             throw new VerificationException(
                     Reason.INVALID_CERTIFICATE, "receipt signer certificate is not a valid certificate", e);
         }
+        List<X509Certificate> embedded = new ArrayList<X509Certificate>();
         try {
-            List<X509Certificate> embedded = new ArrayList<X509Certificate>();
             for (X509CertificateHolder holder : certificates.all) {
-                embedded.add(converter.getCertificate(holder));
+                X509Certificate certificate = converter.getCertificate(holder);
+                // Same reason as the signer's: BouncyCastle decodes a key
+                // lazily and raises an unchecked exception from inside the
+                // path builder when it cannot, so every candidate is decoded
+                // here, where the failure is a certificate verdict.
+                certificate.getPublicKey();
+                embedded.add(certificate);
             }
+        } catch (GeneralSecurityException | RuntimeException e) {
+            throw new VerificationException(
+                    Reason.INVALID_CERTIFICATE, "an embedded certificate is not a valid certificate", e);
+        }
+        try {
             X509CertSelector target = new X509CertSelector();
             target.setCertificate(signerCert);
             PKIXBuilderParameters params = new PKIXBuilderParameters(trustAnchors, target);
-            params.addCertStore(CertStore.getInstance("Collection", new CollectionCertStoreParameters(embedded)));
+            params.addCertStore(CertStore.getInstance(
+                    "Collection", new CollectionCertStoreParameters(embedded), BouncyCastle.PROVIDER));
             params.setRevocationEnabled(false);
             params.setDate(at);
             params.setMaxPathLength(MAX_PATH_LENGTH - 1);
-            CertPathBuilderResult result = CertPathBuilder.getInstance("PKIX").build(params);
+            CertPathBuilderResult result =
+                    CertPathBuilder.getInstance("PKIX", BouncyCastle.PROVIDER).build(params);
             // getCertPath() excludes the trust anchor, so this counts the
             // certificates from the leaf up to the anchor.
             if (result.getCertPath().getCertificates().size() > MAX_PATH_LENGTH) {
                 throw new VerificationException(Reason.INVALID_CHAIN, "chain exceeds maximum length");
-            }
-            String rejected = ChainAlgorithms.firstRejected(result.getCertPath().getCertificates(), chainAlgorithms);
-            if (rejected != null) {
-                throw new VerificationException(
-                        Reason.INVALID_CHAIN,
-                        "chain certificate signed with " + SafeText.quote(rejected)
-                                + ", which this verifier's chain algorithms leave out");
             }
             return signerCert;
         } catch (CertPathBuilderException e) {
@@ -482,8 +423,9 @@ public final class ReceiptVerifier {
                     "signer chain does not validate to a pinned Apple root: " + e.getMessage(),
                     e);
         } catch (NoSuchAlgorithmException | InvalidAlgorithmParameterException e) {
-            // A missing PKIX or Collection implementation, or parameters built
-            // from the pinned anchors: the runtime's failure, never the receipt's.
+            // Not raised by the pinned BouncyCastle PKIX and Collection
+            // implementations for parameters built from the pinned anchors.
+            // Should it happen, it is the library's failure, never the receipt's.
             throw new VerificationException(Reason.INTERNAL_ERROR, "chain validation is not available", e);
         } catch (GeneralSecurityException e) {
             throw new VerificationException(Reason.INVALID_CHAIN, "embedded certificate could not be used", e);
@@ -668,7 +610,7 @@ public final class ReceiptVerifier {
                     Reason.DEVICE_HASH_MISMATCH, "receipt lacks the attributes needed for the device-hash check");
         }
         try {
-            MessageDigest sha1 = MessageDigest.getInstance("SHA-1");
+            MessageDigest sha1 = MessageDigest.getInstance("SHA-1", BouncyCastle.PROVIDER);
             sha1.update(deviceGuid);
             sha1.update(receipt.opaqueValue());
             sha1.update(receipt.bundleIdBytes());

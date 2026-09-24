@@ -4,13 +4,11 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.emindeniz99.applepurchasereceiptverifier.Environment;
-import io.github.emindeniz99.applepurchasereceiptverifier.SignatureAlgorithm;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
 import io.github.emindeniz99.applepurchasereceiptverifier.internal.AppleTrust;
 import io.github.emindeniz99.applepurchasereceiptverifier.internal.BouncyCastle;
 import io.github.emindeniz99.applepurchasereceiptverifier.internal.BoundedJson;
-import io.github.emindeniz99.applepurchasereceiptverifier.internal.ChainAlgorithms;
 import io.github.emindeniz99.applepurchasereceiptverifier.internal.SafeText;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -31,7 +29,6 @@ import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
-import java.util.Collections;
 import java.util.Date;
 import java.util.EnumSet;
 import java.util.List;
@@ -57,15 +54,14 @@ import org.jspecify.annotations.Nullable;
  * {@link Reason#INVALID_JWS_FORMAT} like any other unusable one rather than as
  * a {@link NullPointerException} a caller cannot catch alongside the others.</p>
  *
- * <p><strong>Security providers.</strong> Two cryptographic lookups here
- * resolve through the JVM's provider list: {@code CertificateFactory} for
- * the {@code x5c} certificates, and the {@code PKIX} {@code CertPathValidator}.
- * The ES256 signature itself is checked with a private BouncyCastle instance
- * that is never registered. A host that inserts BouncyCastle at position 1
- * therefore gets BouncyCastle's X.509 parser and path validator for those
- * two. This library's tests run against the JDK's providers, so under that
- * host an unusual certificate may get a different verdict. This class reads
- * the provider order and never changes it.</p>
+ * <p><strong>Security providers.</strong> Every cryptographic step uses a
+ * private BouncyCastle instance that is never registered: the
+ * {@code CertificateFactory} for the {@code x5c} certificates, the
+ * {@code PKIX} {@code CertPathValidator}, and the ES256 signature check. The
+ * JVM's provider list and its {@code java.security} policy,
+ * {@code jdk.certpath.disabledAlgorithms} included, do not reach any of them,
+ * so they cannot change a verdict. The trade-off: an administrator cannot
+ * restrict this class through that policy either.</p>
  */
 public final class JwsVerifier {
 
@@ -88,16 +84,7 @@ public final class JwsVerifier {
      */
     public static final int MAX_JWS_BYTES = 262144;
 
-    /**
-     * The certificate signature algorithms Apple signs JWS chains with:
-     * ECDSA P-384 with SHA-384 on the WWDR intermediate, P-256 with SHA-256
-     * on the signing leaf.
-     */
-    public static final Set<SignatureAlgorithm> DEFAULT_CHAIN_ALGORITHMS = Collections.unmodifiableSet(
-            EnumSet.of(SignatureAlgorithm.SHA256_WITH_ECDSA, SignatureAlgorithm.SHA384_WITH_ECDSA));
-
     private final Set<TrustAnchor> trustAnchors;
-    private final Set<SignatureAlgorithm> chainAlgorithms;
     private final String bundleId;
     private final Set<Environment> acceptedEnvironments;
     private final @Nullable Long appAppleId;
@@ -150,28 +137,6 @@ public final class JwsVerifier {
             @Nullable Long appAppleId,
             @Nullable Long maxSignedAge,
             @Nullable Clock clock) {
-        this(trustedRoots, bundleId, acceptedEnvironments, appAppleId, maxSignedAge, clock, DEFAULT_CHAIN_ALGORITHMS);
-    }
-
-    /**
-     * @param chainAlgorithms the certificate signature algorithms to accept
-     *                        on the x5c chain; a chain using another one is
-     *                        {@link Reason#INVALID_CHAIN}, genuine or not, so
-     *                        leaving out either default makes every Apple JWS
-     *                        {@code INVALID_CHAIN}. The constructor checks
-     *                        that this JVM can validate a chain signed with
-     *                        each one (once per algorithm per process).
-     * @throws IllegalStateException if this JVM cannot validate a chain
-     *                               signed with one of {@code chainAlgorithms}
-     */
-    public JwsVerifier(
-            Set<X509Certificate> trustedRoots,
-            String bundleId,
-            Set<Environment> acceptedEnvironments,
-            @Nullable Long appAppleId,
-            @Nullable Long maxSignedAge,
-            @Nullable Clock clock,
-            Set<SignatureAlgorithm> chainAlgorithms) {
         Set<TrustAnchor> anchors = AppleTrust.anchors(trustedRoots);
         if (bundleId == null) {
             throw new IllegalArgumentException("bundleId must not be null");
@@ -180,7 +145,6 @@ public final class JwsVerifier {
             throw new IllegalArgumentException("acceptedEnvironments must not be empty");
         }
         this.trustAnchors = anchors;
-        this.chainAlgorithms = ChainAlgorithms.require(chainAlgorithms);
         this.bundleId = bundleId;
         this.acceptedEnvironments = EnumSet.copyOf(acceptedEnvironments);
         this.appAppleId = appAppleId;
@@ -363,9 +327,14 @@ public final class JwsVerifier {
         try {
             for (JsonNode certNode : x5c) {
                 byte[] der = decodeX5cEntry(certNode.asText());
-                chain.add((X509Certificate) cf.generateCertificate(new ByteArrayInputStream(der)));
+                X509Certificate certificate = (X509Certificate) cf.generateCertificate(new ByteArrayInputStream(der));
+                // Result unused: BouncyCastle decodes the key lazily, so a key
+                // on an unimplemented curve would otherwise fail later, inside
+                // the path validator, as an unchecked exception.
+                certificate.getPublicKey();
+                chain.add(certificate);
             }
-        } catch (CertificateException e) {
+        } catch (CertificateException | RuntimeException e) {
             throw new VerificationException(Reason.INVALID_CERTIFICATE, "x5c entry is not a valid certificate", e);
         }
         return chain;
@@ -415,16 +384,9 @@ public final class JwsVerifier {
 
     private void validateChain(X509Certificate leaf, X509Certificate intermediate, Date at)
             throws VerificationException {
-        String rejected = ChainAlgorithms.firstRejected(Arrays.asList(leaf, intermediate), chainAlgorithms);
-        if (rejected != null) {
-            throw new VerificationException(
-                    Reason.INVALID_CHAIN,
-                    "x5c certificate signed with " + SafeText.quote(rejected)
-                            + ", which this verifier's chain algorithms leave out");
-        }
         CertPathValidator validator;
         try {
-            validator = CertPathValidator.getInstance("PKIX");
+            validator = CertPathValidator.getInstance("PKIX", BouncyCastle.PROVIDER);
         } catch (NoSuchAlgorithmException e) {
             throw new VerificationException(Reason.INTERNAL_ERROR, "PKIX path validation is not available", e);
         }
@@ -447,10 +409,10 @@ public final class JwsVerifier {
         }
     }
 
-    /** The JVM's X.509 factory; its absence is the runtime's failure, not the input's. */
+    /** BouncyCastle's X.509 factory; its absence would be the library's failure, not the input's. */
     private static CertificateFactory x509Factory() throws VerificationException {
         try {
-            return CertificateFactory.getInstance("X.509");
+            return CertificateFactory.getInstance("X.509", BouncyCastle.PROVIDER);
         } catch (CertificateException e) {
             throw new VerificationException(Reason.INTERNAL_ERROR, "X.509 certificate decoding is not available", e);
         }

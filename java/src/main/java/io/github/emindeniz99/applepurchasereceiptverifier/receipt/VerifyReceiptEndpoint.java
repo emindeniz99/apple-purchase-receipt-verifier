@@ -3,12 +3,10 @@ package io.github.emindeniz99.applepurchasereceiptverifier.receipt;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.emindeniz99.applepurchasereceiptverifier.Environment;
-import io.github.emindeniz99.applepurchasereceiptverifier.SignatureAlgorithm;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
 import io.github.emindeniz99.applepurchasereceiptverifier.internal.AppleTrust;
 import io.github.emindeniz99.applepurchasereceiptverifier.internal.BoundedJson;
-import io.github.emindeniz99.applepurchasereceiptverifier.internal.ChainAlgorithms;
 import java.io.IOException;
 import java.security.cert.TrustAnchor;
 import java.security.cert.X509Certificate;
@@ -74,7 +72,6 @@ public final class VerifyReceiptEndpoint {
     static final ObjectMapper MAPPER = new ObjectMapper(BoundedJson.factory(MAX_REQUEST_BYTES));
 
     private final Set<TrustAnchor> trustAnchors;
-    private final Set<SignatureAlgorithm> chainAlgorithms;
     private final Environment environment;
     private final Clock clock;
 
@@ -102,28 +99,11 @@ public final class VerifyReceiptEndpoint {
      *              {@link ReceiptVerifier}.
      */
     public VerifyReceiptEndpoint(Set<X509Certificate> trustedRoots, Environment environment, @Nullable Clock clock) {
-        this(trustedRoots, environment, clock, ReceiptVerifier.DEFAULT_CHAIN_ALGORITHMS);
-    }
-
-    /**
-     * @param chainAlgorithms the chain signature algorithms to accept, as
-     *                        {@link ReceiptVerifier#ReceiptVerifier(Set, String, Set)}
-     *                        describes: a receipt whose chain uses another
-     *                        one answers 21002 ({@code INVALID_CHAIN})
-     * @throws IllegalStateException if this JVM cannot validate a chain
-     *                               signed with one of {@code chainAlgorithms}
-     */
-    public VerifyReceiptEndpoint(
-            Set<X509Certificate> trustedRoots,
-            Environment environment,
-            @Nullable Clock clock,
-            Set<SignatureAlgorithm> chainAlgorithms) {
         Set<TrustAnchor> anchors = AppleTrust.anchors(trustedRoots);
         if (environment != Environment.PRODUCTION && environment != Environment.SANDBOX) {
             throw new IllegalArgumentException("environment must be PRODUCTION or SANDBOX, got " + environment);
         }
         this.trustAnchors = anchors;
-        this.chainAlgorithms = ChainAlgorithms.require(chainAlgorithms);
         this.environment = environment;
         this.clock = clock == null ? Clock.systemUTC() : clock;
     }
@@ -291,7 +271,7 @@ public final class VerifyReceiptEndpoint {
             // built around a wildcard bundle id: like Apple's endpoint, no
             // bundle-id claim is checked here (callers compare
             // receipt.bundle_id). It takes the anchors built at construction.
-            AppReceipt receipt = ReceiptVerifier.verifyCore(der, trustAnchors, chainAlgorithms);
+            AppReceipt receipt = ReceiptVerifier.verifyCore(der, trustAnchors);
             return VerifyReceiptResult.verified(environment, receipt, at);
         } catch (VerificationException e) {
             if (e.reason() == Reason.INTERNAL_ERROR) {

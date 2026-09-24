@@ -3,8 +3,10 @@ package io.github.emindeniz99.applepurchasereceiptverifier.internal;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 
 /**
- * The one BouncyCastle provider instance this library uses, shared by the
- * receipt verifier's CMS check and the JWS verifier's ES256 check.
+ * The one BouncyCastle provider instance this library uses, and the only
+ * provider it uses: every certificate decode, chain build or validation,
+ * signature check and digest goes through it, so the JVM's provider list and
+ * {@code java.security} policy cannot change a verdict.
  *
  * <p>This package is an implementation detail of the library. It is public
  * only because Java packages are not nested, and the classes that need it sit

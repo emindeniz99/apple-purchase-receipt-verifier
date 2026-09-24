@@ -524,57 +524,38 @@ none of which a signature can express.
 
 ### One platform caveat worth knowing
 
-The genuine legacy Apple receipt chain is SHA-1 end to end: the leaf and the
-WWDR intermediate are both `sha1WithRSAEncryption`. `ReceiptVerifier` builds
-that chain with the JDK's own PKIX `CertPathBuilder`, which obeys
-`jdk.certpath.disabledAlgorithms` in `java.security`. Stock OpenJDK qualifies
-its SHA-1 entry (`SHA1 jdkCA & usage TLSServer`, or similar), so the pinned
-Apple root is unaffected. A JVM whose policy disables SHA-1 outright, which
-is what RHEL and Fedora system crypto policies and many hardened enterprise
-`java.security` files do, cannot validate that chain.
+The Java port verifies chains and signatures with its own pinned
+BouncyCastle, so `jdk.certpath.disabledAlgorithms` and the JVM provider list
+do not affect it. Every cryptographic lookup names a private
+`BouncyCastleProvider` instance that is never registered with `Security`:
+certificate parsing, chain building and validation (`PKIX`), the CMS and
+ES256 signature checks, and every digest, the device-hash SHA-1 included.
+The host's provider order, its `java.security` file and the JVM version do
+not change a verdict.
 
-Every verifier therefore checks its chain signature algorithms when it is
-constructed. `ReceiptVerifier.DEFAULT_CHAIN_ALGORITHMS` is `SHA1_WITH_RSA`
-and `SHA256_WITH_RSA`; `JwsVerifier.DEFAULT_CHAIN_ALGORITHMS` is
-`SHA256_WITH_ECDSA` and `SHA384_WITH_ECDSA`. The constructor signs a
-throwaway two-certificate chain with each one, using the key type and size
-Apple uses, and validates it with the same PKIX code. If the JVM refuses one,
-the constructor throws `IllegalStateException` naming the algorithm, the
-property, and what leaving it out costs:
+Why: the genuine legacy Apple receipt chain is SHA-1 end to end (the leaf and
+the WWDR intermediate are both `sha1WithRSAEncryption`). The JDK's own PKIX
+code obeys `jdk.certpath.disabledAlgorithms`, and RHEL and Fedora system
+crypto policies and many hardened enterprise `java.security` files disable
+SHA-1 there outright. Built with the JDK's PKIX code, every genuine legacy
+receipt failed on such a host as `INVALID_CHAIN`, as if it were forged.
+BouncyCastle's PKIX code does not read that property.
+
+The trade-off is deliberate: an administrator cannot restrict this library
+through `java.security` either. What it accepts is fixed by the library and
+the roots the caller passes, and it is the same on every JVM.
+
+The `java-hardened-policy` and `java-distroless` CI jobs run the full
+conformance suite under this policy and require every case to pass,
+`receipt/verify-genuine-legacy-sha1-chain` included:
 
 ```
-SHA1withRSA is in this verifier's chain algorithms, but this JVM cannot
-validate a certificate signed with it (...). Apple signs legacy receipts with
-it. Take it out of jdk.certpath.disabledAlgorithms (java.security), or pass a
-set without SHA1_WITH_RSA; legacy receipts then fail with INVALID_CHAIN.
+jdk.certpath.disabledAlgorithms=MD2, MD5, SHA1, RSA keySize < 1024
 ```
 
-The check runs once per algorithm per process. So a policy that disables an
-algorithm Apple signs with stops the service at startup, instead of turning
-every affected receipt into `INVALID_CHAIN` as if it were forged.
-
-There are two ways out, and both are the operator's choice:
-
-- Allow the algorithm: a `java.security` override that leaves SHA-1 out of
-  `jdk.certpath.disabledAlgorithms` (`-Djava.security.properties=<file>` for
-  one JVM, `update-crypto-policies --set LEGACY` on RHEL).
-- Accept fewer algorithms: pass a smaller set to the constructor. Any chain
-  signed with an algorithm outside the set is `INVALID_CHAIN`, genuine or
-  not. Without `SHA1_WITH_RSA` every legacy receipt is `INVALID_CHAIN` and
-  current (SHA-256) receipts still verify:
-
-```java
-new ReceiptVerifier(AppleRootCerts.receiptRoots(), bundleId,
-        EnumSet.of(SignatureAlgorithm.SHA256_WITH_RSA));
-```
-
-`VerifyReceiptEndpoint` and `JwsVerifier` take the same set as their last
-constructor argument, and `ReceiptVerifier.verifyReceiptCore` has an
-overload for it; having no constructor, it runs the check on its first call
-and throws the same `IllegalStateException` from every call if it fails.
-The `java-hardened-policy` CI job and `ChainAlgorithmsTest` run this under
-`jdk.certpath.disabledAlgorithms=MD2, MD5, SHA1, RSA keySize < 1024` on every
-push. Ruby, PHP and Go carry the same caveat for their runtimes.
+`HostPolicyTest` checks the same in a child JVM on every build, after showing
+that the JDK's own PKIX code refuses the chain under that policy. Ruby, PHP
+and Go still depend on their runtime's policy for this chain.
 
 ## Environment routing and staleness
 
@@ -726,9 +707,11 @@ matching receipt and JWS under the bundled Apple anchors (and that this
 machine's real `cacerts`, handed to the library as its whole anchor set,
 refuses a genuine Apple receipt the bundled roots accept); **structurally**,
 by scanning every file under `src/main/java` for any spelling that could
-reach a trust store, a socket, or a subprocess; and **positively**, by
-installing a JCA provider that shadows the JDK's PKIX path builder and
-validator and capturing the exact anchor set that reaches it.
+reach a trust store, a socket, or a subprocess, and for any JCA lookup that
+does not name the library's own BouncyCastle instance; and **positively**, by
+installing a JCA provider ahead of all others that shadows every engine the
+verifiers use, and showing it is never asked for one while the verdict
+follows the caller's roots alone.
 
 Beyond conformance and trust isolation, the suite covers hostile and
 malformed input (`HostileJwsFixtures`, `HostileReceiptInputTest`), the
