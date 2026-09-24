@@ -82,8 +82,13 @@ step 3). *Proof:* `transaction/reject-leaf-without-apple-marker-oid`,
 ### 3.3 Signature over the exact bytes, then claim binding
 
 ES256 over `ASCII(header + "." + payload)` for JWS. For receipts, the CMS
-signature over the content, with an RSA signer key required and the digest OID
-read from the `SignerInfo` and matched against a SHA-1/SHA-256 allow-list. No
+signature over the content. Eight ports require an RSA signer key and match
+the digest OID from the `SignerInfo` against a SHA-1/SHA-256 allow-list; Java
+has no algorithm or key-type allow-list since 0.6.0 (owner decision: a signer
+pinned to an Apple root and carrying Apple's marker is trusted whatever it
+signs with, so a change on Apple's side cannot reject genuine receipts; an RSA
+signature binds its hash algorithm in the DigestInfo, and a weak hash helps
+only an attacker holding an Apple signature over it). No
 port re-encodes the input first: the readers keep input slices, one reason
 library parsers that normalise to DER were rejected (PLAN.md D16). Only once
 that passes are claims checked: `bundleId` must match, `environment` must be
