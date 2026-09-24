@@ -64,7 +64,8 @@ final class VerifierTests: XCTestCase {
 
     func testVerifiesSharedTransactionFixture() async throws {
         let payload = try await jwsVerifier().verifyTransaction(try text("generated", "transaction.jws"))
-        XCTAssertTrue(payload.isActive(at: Date()))
+        XCTAssertEqual(Self.bundle, payload.bundleId)
+        XCTAssertNil(payload.revocationDate)
     }
 
     // MARK: negatives

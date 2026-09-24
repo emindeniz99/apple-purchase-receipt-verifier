@@ -66,10 +66,18 @@ converting them to `Date` would lose the raw claim and put this port out of
 step with the other eight. Receipt *attribute* dates are the opposite case
 and are `Date?` on `AppReceipt` and `InAppPurchase`.
 
-`TransactionPayload.isActive(at:)` answers the entitlement question from the
-signed claims alone: not revoked, and for a subscription not expired at the
-given date. A refund or a renewal after signing is invisible to it, since it
-reads only what was true when Apple signed the payload.
+**Entitlement is your rule.** There is no "is active" helper, as in Apple's
+own libraries; read the signed fields:
+
+```swift
+let nowMillis = Int64(Date().timeIntervalSince1970 * 1000)
+let entitled = payload.revocationDate == nil && (payload.expiresDate.map { $0 > nowMillis } ?? true)
+```
+
+That is only what the payload said when it was signed. A billing grace
+period (it lives in the renewal info), an upgrade (`isUpgraded`) and a refund
+after signing are yours to handle; App Store Server Notifications V2 or the
+App Store Server API give the live status. `isActive(at:)` is gone.
 
 `JwsVerifier.init` throws `VerificationError`, not only its verification
 methods: an empty `trustedRoots`, an empty `bundleId`, or an empty

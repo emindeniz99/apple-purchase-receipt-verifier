@@ -29,16 +29,6 @@ public struct TransactionPayload: Codable, Sendable {
     public let quantity: Int?
     public let offerType: Int?
     public let revocationReason: Int?
-
-    /// Entitlement helper: not revoked, and (for subscriptions) not expired
-    /// at `date`. Point-in-time on the signed claims only — later refunds
-    /// or renewals are invisible (track status via transaction id).
-    public func isActive(at date: Date) -> Bool {
-        let millis = Int64(date.timeIntervalSince1970 * 1000)
-        if let revocationDate, millis >= revocationDate { return false }
-        if let expiresDate { return millis < expiresDate }
-        return true
-    }
 }
 
 /// Decoded `AppTransaction` payload; environment lives in ``receiptType``.
