@@ -82,7 +82,6 @@ module ApplePurchaseReceiptVerifier
     def offer_type: () -> Integer?
     def revocation_reason: () -> Integer?
     def price: () -> Integer?
-    def active_at?: (Time now) -> bool
   end
 
   class AppTransactionPayload < Payload

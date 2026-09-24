@@ -105,25 +105,6 @@ module ApplePurchaseReceiptVerifier
     INTEGER_CLAIMS.each do |wire|
       define_method(wire.gsub(/([a-z\d])([A-Z])/, '\1_\2').downcase) { integer_claim(wire) } # steep:ignore
     end
-
-    # Point-in-time entitlement check over the signed claims alone: not
-    # revoked, and — for a subscription — not yet expired at `now`.
-    #
-    # It cannot see a refund or a renewal that happened after this payload was
-    # signed; that needs Apple's server API (INTENT.md).
-    #
-    # @param now [Time]
-    # @return [Boolean]
-    def active_at?(now)
-      millis = (now.to_r * 1000).to_i
-      revoked = revocation_date
-      return false if revoked && millis >= revoked
-
-      expires = expires_date
-      return millis < expires if expires
-
-      true
-    end
   end
 
   # A verified `AppTransaction`. The environment lives in `receipt_type`.

@@ -49,9 +49,22 @@ transaction = verifier.verify_transaction(jws)
 transaction.product_id          # => "com.example.app.pro"
 transaction.transaction_id      # => "2000000000000001"
 transaction.signed_date         # => 1722945600000  (epoch milliseconds)
-transaction.active_at?(Time.now)
 transaction.claims              # every claim, as Apple sent it
 ```
+
+**Entitlement is your rule.** There is no "is active" helper, as in Apple's
+own libraries; read the signed fields:
+
+```ruby
+now_millis = (Time.now.to_r * 1000).to_i
+expires = transaction.expires_date
+entitled = transaction.revocation_date.nil? && (expires.nil? || expires > now_millis)
+```
+
+That is only what the payload said when it was signed. A billing grace
+period (it lives in the renewal info), an upgrade (`isUpgraded`) and a refund
+after signing are yours to handle; App Store Server Notifications V2 or the
+App Store Server API give the live status. `active_at?` is gone.
 
 Three operations:
 
