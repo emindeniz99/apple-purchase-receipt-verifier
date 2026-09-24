@@ -17,6 +17,8 @@ root certificates.
 Versions before 0.4.0 must not be used: their trust anchors can be replaced
 from the classpath (see [Trust anchors](#trust-anchors)). Coming from 0.5,
 read [Upgrading from 0.5](#upgrading-from-05) first.
+Coming from Apple's own library, read
+[Coming from Apple's app-store-server-library](#coming-from-apples-app-store-server-library).
 
 Replacing a `verifyReceipt` call? Read these in order:
 [Differences from Apple's verifyReceipt](#differences-from-apples-verifyreceipt-read-before-migrating),
@@ -453,6 +455,53 @@ never waits for the second call:
    switching, confirm nothing downstream reads them.
 5. Count mismatches by field and log the transaction ids involved, not the
    receipt. Switch when only the expected differences remain.
+
+## Coming from Apple's app-store-server-library
+
+Apple's [app-store-server-library-java](https://github.com/apple/app-store-server-library-java)
+`SignedDataVerifier` makes the same JWS checks. Each `VerificationStatus`
+it raises maps onto a `Reason`:
+
+| Apple `VerificationStatus` | `Reason` here |
+|---|---|
+| `VERIFICATION_FAILURE` | Split three ways. `INVALID_JWS_FORMAT` when the JWS does not decode, `x5c` is missing, `alg` is not ES256 or the payload is not a JSON object. `INVALID_SIGNATURE` when the ES256 check fails. `INTERNAL_ERROR` when the chain and signature verified but a claim's type does not fit the model (Apple fails that while mapping the payload, before any chain work) |
+| `INVALID_APP_IDENTIFIER` | `WRONG_BUNDLE_ID` for the bundle id, `WRONG_APP_APPLE_ID` for the app Apple id of a Production `AppTransaction` |
+| `INVALID_ENVIRONMENT` | `WRONG_ENVIRONMENT` |
+| `INVALID_CERTIFICATE` | `INVALID_CERTIFICATE`. The entry count is checked first here, so an `x5c` that is both the wrong length and unreadable is `INVALID_JWS_FORMAT` |
+| `INVALID_CHAIN_LENGTH` | `INVALID_JWS_FORMAT`: `x5c` must hold exactly three certificates |
+| `INVALID_CHAIN` | `INVALID_CHAIN`, or `INVALID_CERTIFICATE_PURPOSE` when the leaf or intermediate lacks its Apple marker OID (Apple reports a missing OID as `INVALID_CHAIN`) |
+| `RETRYABLE_VERIFICATION_FAILURE` | Never. Nothing here goes online, so no OCSP lookup can fail |
+
+Differences to plan for:
+
+- **Xcode and LocalTesting payloads are rejected.** Apple's verifier, built
+  for `XCODE` or `LOCAL_TESTING`, decodes the payload without verifying it.
+  Here every payload goes through the chain, and Xcode signs with a
+  one-certificate `x5c`, so it fails as `INVALID_JWS_FORMAT` even with
+  `Environment.XCODE` in `acceptedEnvironments`.
+- **No OCSP.** `enableOnlineChecks` has no equivalent. Apple's flag adds a
+  revocation check and judges the chain at the current time; here the chain
+  is judged at `signedDate` (or `receiptCreationDate`) and never checked for
+  revocation. See [Why offline](#why-offline).
+- **Notifications and renewal info go through `verifyRaw`.** There is no
+  `verifyAndDecodeNotification` or `verifyAndDecodeRenewalInfo`. `verifyRaw`
+  checks the chain and the signature and no claim, so compare
+  `data.bundleId`, `data.appAppleId` and `data.environment` yourself (Apple
+  reads `summary`, `externalPurchaseToken` or `appData` instead for the
+  notification types that carry those; renewal info has only
+  `environment`). See [App Store Server Notifications V2](#app-store-server-notifications-v2).
+- **Legacy receipts are verified, not scraped.** Apple's `ReceiptUtility`
+  reads a transaction id out of an app receipt, or out of a pre-2018
+  purchase-info transaction receipt, without verifying anything.
+  `ReceiptVerifier` checks the PKCS#7 chain, signature and bundle id before
+  it returns anything. The purchase-info format is not PKCS#7 and is not
+  supported: it fails as `INVALID_RECEIPT_FORMAT` (21002 from the endpoint).
+- **More than one environment.** Apple's verifier takes one `Environment`;
+  `acceptedEnvironments` is a set, so one `JwsVerifier` can accept
+  `PRODUCTION` and `SANDBOX` (see [Environment routing and freshness](#environment-routing-and-freshness)).
+  Apple also requires `appAppleId` at construction for Production. Here it
+  is optional, and without it a Production `AppTransaction` fails as
+  `WRONG_APP_APPLE_ID`.
 
 ## Serving it from Spring
 
