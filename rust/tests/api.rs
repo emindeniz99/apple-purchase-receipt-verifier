@@ -14,11 +14,10 @@ use apple_purchase_receipt_verifier::{
 };
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Duration;
 
 #[test]
 fn every_reason_spells_the_canonical_token() {
-    // These twelve strings are the cross-port contract. A change here is a
+    // These eleven strings are the cross-port contract. A change here is a
     // change to fixtures/cases.schema.json and to all nine ports.
     let expected = [
         "INVALID_JWS_FORMAT",
@@ -31,12 +30,11 @@ fn every_reason_spells_the_canonical_token() {
         "WRONG_APP_APPLE_ID",
         "INVALID_RECEIPT_FORMAT",
         "DEVICE_HASH_MISMATCH",
-        "STALE_PAYLOAD",
         "INTERNAL_ERROR",
     ];
     let actual: Vec<&str> = Reason::all().iter().map(|r| r.as_str()).collect();
     assert_eq!(actual, expected);
-    assert_eq!(Reason::all().len(), 12);
+    assert_eq!(Reason::all().len(), 11);
 }
 
 #[test]
@@ -48,7 +46,7 @@ fn reason_round_trips_through_from_str_and_display() {
 }
 
 #[test]
-fn reason_from_str_rejects_a_thirteenth_token() {
+fn reason_from_str_rejects_a_twelfth_token() {
     let err = Reason::from_str("INVALID_EVERYTHING").unwrap_err();
     assert!(err.to_string().contains("INVALID_EVERYTHING"));
     assert!(
@@ -241,10 +239,6 @@ fn one_verifier_answers_identically_from_sixteen_threads() {
             .trusted_roots([common::jws_root()])
             .bundle_id("com.example.app")
             .accepted_environments([Environment::Sandbox])
-            .max_signed_age(Duration::from_secs(60))
-            .clock(Arc::new(
-                apple_purchase_receipt_verifier::FixedClock::from_unix_millis(1_722_945_610_000),
-            ))
             .build()
             .unwrap(),
     );
@@ -395,34 +389,6 @@ fn returned_byte_fields_are_copies_not_views_into_the_input() {
     // already-verified receipt.
     der.iter_mut().for_each(|byte| *byte = 0);
     assert_eq!(receipt.opaque_value, opaque);
-}
-
-#[test]
-fn is_active_at_reads_only_the_signed_claims() {
-    use apple_purchase_receipt_verifier::datetime::system_time_from_millis;
-    let verifier = JwsVerifier::builder()
-        .trusted_roots([common::jws_root()])
-        .bundle_id("com.example.app")
-        .accepted_environments([Environment::Sandbox])
-        .build()
-        .unwrap();
-    let mut payload = verifier
-        .verify_transaction(&common::transaction_jws())
-        .unwrap();
-    // No expiry and no revocation: always active.
-    assert!(payload.is_active_at(system_time_from_millis(0)));
-    assert!(payload.is_active_at(system_time_from_millis(4_070_908_800_000)));
-
-    payload.expires_date = Some(2_000);
-    assert!(payload.is_active_at(system_time_from_millis(1_999)));
-    assert!(!payload.is_active_at(system_time_from_millis(2_000)));
-
-    payload.revocation_date = Some(1_000);
-    assert!(payload.is_active_at(system_time_from_millis(999)));
-    assert!(
-        !payload.is_active_at(system_time_from_millis(1_000)),
-        "revocation wins"
-    );
 }
 
 #[test]

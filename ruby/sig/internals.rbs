@@ -46,8 +46,6 @@ module ApplePurchaseReceiptVerifier
     @bundle_id: String
     @accepted_environments: Array[String]
     @app_apple_id: Integer?
-    @max_signed_age_seconds: Numeric?
-    @clock: clock?
 
     EC_ORDER: OpenSSL::BN
 
@@ -69,7 +67,6 @@ module ApplePurchaseReceiptVerifier
     def require_bundle_id: (untyped actual) -> void
     def require_accepted_environment: (untyped claim) -> String
     def require_app_apple_id: (String environment, untyped actual) -> void
-    def require_fresh: ((Integer | Float)? signed_at_millis) -> void
   end
 
   class ReceiptVerifier

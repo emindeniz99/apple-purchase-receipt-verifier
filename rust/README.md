@@ -87,7 +87,6 @@ let verifier = JwsVerifier::builder()
     .bundle_id("com.example.app")
     .accepted_environments([Environment::Production, Environment::Sandbox])
     .app_apple_id(1_234_567_890)          // required for Production AppTransactions
-    .max_signed_age(Duration::from_secs(300))
     .build()?;
 
 let transaction = verifier.verify_transaction(jws)?;   // JWSTransactionDecodedPayload
@@ -98,6 +97,13 @@ let claims = verifier.verify_raw(jws)?;                // renewal info, notifica
 `verify_raw` checks the chain and the signature and **enforces no claim** —
 the caller checks bundle id, environment and app Apple id in the returned
 claims itself.
+
+**Freshness is your call.** No payload is rejected for its age, as in Apple's
+own App Store Server Libraries: `signedDate` only decides the instant the
+chain is judged at. The right limit depends on the endpoint (Apple retries a
+server notification for days, and a device may present an old but genuine
+payload), so apply one yourself where it fits:
+`let too_old = transaction.signed_date.map_or(true, |at| now_millis - at > 300_000);`
 
 Include `Environment::Sandbox` on any endpoint App Review can reach: App
 Review runs production builds against sandbox.
@@ -111,8 +117,18 @@ ports disagree about what the same payload says. Only *receipt attribute*
 dates become `SystemTime`.
 
 Every claim, modelled or not, is on `payload.claims`.
-`payload.is_active_at(now)` answers the entitlement question from the signed
-claims alone — a refund or a renewal after signing is invisible to it.
+**Entitlement is your rule.** There is no "is active" helper, as in Apple's
+own libraries; read the signed fields:
+
+```rust
+let entitled = payload.revocation_date.is_none()
+    && payload.expires_date.map_or(true, |expires| expires > now_millis);
+```
+
+That is only what the payload said when it was signed. A billing grace
+period (it lives in the renewal info), an upgrade (`isUpgraded`) and a refund
+after signing are yours to handle; App Store Server Notifications V2 or the
+App Store Server API give the live status. `is_active_at` is gone.
 
 ### `ReceiptVerifier` — legacy PKCS#7 app receipts
 
@@ -263,10 +279,9 @@ canonical token, identical in every port of this library.
 | `WrongAppAppleId` | `WRONG_APP_APPLE_ID` | a Production `AppTransaction` does not name the configured app Apple id |
 | `InvalidReceiptFormat` | `INVALID_RECEIPT_FORMAT` | the PKCS#7/CMS envelope could not be parsed |
 | `DeviceHashMismatch` | `DEVICE_HASH_MISMATCH` | the device hash does not match attribute 5 |
-| `StalePayload` | `STALE_PAYLOAD` | the payload was signed longer ago than `max_signed_age` |
 | `InternalError` | `INTERNAL_ERROR` | the chain and signature verified, but the signed content cannot be read (a receipt payload that does not parse, or a modelled JWS claim of the wrong JSON type): not the client's fault, so alert and retry or escalate rather than deny |
 
-The vocabulary is **closed** by the cross-port contract: a thirteenth reason
+The vocabulary is **closed** by the cross-port contract: a twelfth reason
 would be a change to the shared vector file and to every port at once.
 `Reason` is nevertheless `#[non_exhaustive]`, so that if that ever happens a
 caller with a `_ => reject` arm keeps compiling and keeps failing closed.
@@ -275,8 +290,8 @@ That arm is a safety net, not an extension point.
 `Reason` also has `MalformedRequest` (`MALFORMED_REQUEST`) and
 `RequestTooLarge` (`REQUEST_TOO_LARGE`), but only as a `VerifyReceiptResult`
 failure reason. No verifier returns either, and `Reason::all()` lists only
-the twelve above. `InternalError` joined that list last, so every earlier C
-ABI reason code kept its number and `INTERNAL_ERROR` is 12.
+the eleven above. The C ABI pins its own codes: `INTERNAL_ERROR` is 12, and
+11, which was `STALE_PAYLOAD`, stays retired.
 
 **Misconfiguration is a different type.** Empty trust anchors, an empty
 bundle id, an empty accepted-environment set, an unparseable anchor and an
@@ -298,18 +313,15 @@ port's API.
 A StoreKit 2 signed transaction:
 
 ```rust
-use std::time::Duration;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use apple_purchase_receipt_verifier::{
-    apple_jws_roots, ConfigError, Environment, JwsVerifier, Reason,
-};
+use apple_purchase_receipt_verifier::{apple_jws_roots, ConfigError, Environment, JwsVerifier};
 
 fn build_verifier() -> Result<JwsVerifier, ConfigError> {
     JwsVerifier::builder()
         .trusted_roots(apple_jws_roots().iter().cloned())
         .bundle_id("com.example.app")
         .accepted_environments([Environment::Production, Environment::Sandbox])
-        .max_signed_age(Duration::from_secs(300)) // the freshness window
         .build()
 }
 
@@ -317,11 +329,6 @@ fn redeem_transaction(verifier: &JwsVerifier, user_id: &str, jws: &str) -> Verdi
     let payload = match verifier.verify_transaction(jws) {
         // step 2
         Ok(payload) => payload,
-        Err(e) if e.reason() == Reason::StalePayload => {
-            // step 4: ask the client for a fresh jwsRepresentation, or fetch
-            // one from the App Store Server API and verify that instead
-            return Verdict::Refresh;
-        }
         Err(e) => {
             tracing::warn!(reason = e.reason().as_str(), "purchase rejected");
             return Verdict::Denied;
@@ -331,6 +338,17 @@ fn redeem_transaction(verifier: &JwsVerifier, user_id: &str, jws: &str) -> Verdi
     if payload.revocation_date.is_some() {
         // step 3
         return Verdict::Denied;
+    }
+
+    // step 4, your call: past the window, ask the client for a fresh
+    // jwsRepresentation, or fetch one from the App Store Server API and
+    // verify that instead
+    let now_millis = i64::try_from(
+        SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis(),
+    )
+    .unwrap_or(i64::MAX);
+    if payload.signed_date.map_or(true, |at| now_millis - at > 300_000) {
+        return Verdict::Refresh;
     }
 
     let Some(id) = payload.transaction_id.as_deref() else {
@@ -391,7 +409,7 @@ fn redeem_receipt(
         return Verdict::Denied;
     }
 
-    // step 4: no max_signed_age here, so compare the creation date. Past the
+    // step 4: the same caller-side check, on the creation date. Past the
     // window, ask the client to refresh its receipt, or call the App Store
     // Server API by transaction_id and verify the JWS it returns.
     let fresh = receipt
@@ -418,19 +436,17 @@ fn redeem_receipt(
 
 ## The clock
 
-The injected `Clock` is read in exactly two places and nowhere else:
-
-1. the `STALE_PAYLOAD` comparison in `JwsVerifier`;
-2. the `request_date` / `_ms` / `_pst` triple in `VerifyReceiptEndpoint`.
+The injected `Clock` is read in exactly one place and nowhere else: the
+`request_date` / `_ms` / `_pst` triple in `VerifyReceiptEndpoint`.
 
 **Certificate validity is never judged at it.** Validity is judged at the
 payload's `signedDate` / `receiptCreationDate`, or at the receipt's
 attribute-12 creation date; where the input states no date of its own, the
-fallback reads the system clock directly. A caller injecting a clock — to
-test staleness, or to work around skew — must not thereby be able to accept
+fallback reads the system clock directly. A caller injecting a clock (to pin
+`request_date`, or to work around skew) must not thereby be able to accept
 an expired chain or expire a live one.
 
-`ReceiptVerifier` therefore takes **no clock at all**: it would have no
+`JwsVerifier` and `ReceiptVerifier` therefore take **no clock at all**: it would have no
 consumer, and an option with no consumer is an invitation to wire it into
 the one place it must never reach.
 
@@ -442,7 +458,7 @@ early check reports that check's reason, not a later one.
 **JWS.** Segment shape → header JSON → `alg` → `x5c` → certificates parse →
 **leaf marker OID** `1.2.840.113635.100.6.11.1` → **intermediate marker
 OID** `1.2.840.113635.100.6.2.1` → payload JSON → chain at the signing
-instant → ES256 signature → staleness → **typed read of the modelled
+instant → ES256 signature → **typed read of the modelled
 claims** (`verify_transaction` and `verify_app_transaction` only), where a
 claim of the wrong JSON type is `INTERNAL_ERROR` → bundle id → environment →
 app Apple id.
@@ -598,8 +614,8 @@ The shape, in one paragraph: three opaque handles (`AprvJwsVerifier`,
 one `AprvResult { int32_t status; char *json; }`. JSON is the interchange
 because a claim set is open-ended and modelling it as C structs would make
 every field Apple adds a breaking ABI change. `status` is `0`, one of the
-twelve canonical [`Reason`] codes in declaration order (stable and
-append-only), or a `100`+ code meaning the *call* was malformed and nothing
+eleven canonical [`Reason`] codes (stable and append-only; `11` is
+retired), or a `100`+ code meaning the *call* was malformed and nothing
 was checked. Every exported function runs its body inside `catch_unwind`, so
 no panic ever crosses the boundary.
 
@@ -656,8 +672,8 @@ for null, non-UTF-8 and refused configurations; `fixtures/cases.json` driven
 through the ABI from C++17; and the same vectors again from Python over
 ctypes, which checks the nested field paths a dependency-free C++ program
 cannot reach. Both conformance harnesses run every case in `cases.json` and
-skip none: the cases that pin a clock go through the ABI's `_and_clock` constructors, which
-take the instant as epoch milliseconds rather than a callback.
+skip none: the endpoint cases that pin a clock go through the ABI's `_and_clock` constructor, which
+takes the instant as epoch milliseconds rather than a callback.
 `ffi/README.md` says what that clock can and cannot move.
 
 `fuzz/` holds seven `cargo fuzz` targets — the ASN.1, X.509 and CMS readers

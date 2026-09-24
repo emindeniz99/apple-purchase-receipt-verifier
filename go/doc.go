@@ -43,7 +43,7 @@
 // # Errors
 //
 // Every failed verification returns a [*VerificationError] carrying one
-// of the twelve [Reason] constants and nothing else — no logging, no
+// of the eleven [Reason] constants and nothing else — no logging, no
 // metrics, no callbacks (PLAN.md D11). Read it with errors.As:
 //
 //	var verr *applereceipt.VerificationError

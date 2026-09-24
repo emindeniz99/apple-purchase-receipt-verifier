@@ -71,8 +71,7 @@ verifier, err := applereceipt.NewJWSVerifier(applereceipt.JWSVerifierOptions{
 		applereceipt.EnvironmentProduction,
 		applereceipt.EnvironmentSandbox,
 	},
-	AppAppleID:   &appAppleID,   // required to accept a Production AppTransaction
-	MaxSignedAge: 5 * time.Minute, // optional staleness policy; zero disables it
+	AppAppleID: &appAppleID, // required to accept a Production AppTransaction
 })
 
 payload, err := verifier.VerifyTransaction(jws)          // JWSTransactionDecodedPayload
@@ -85,13 +84,33 @@ claims, err := verifier.VerifyRaw(jws)                   // renewal info, notifi
 `VerifyRaw` verifies the chain and the signature and enforces no claim at all;
 the caller checks `bundleId`, `environment` and `appAppleId` itself.
 
+**Freshness is your call.** No verifier rejects a payload for its age, as in
+Apple's own App Store Server Libraries: `signedDate` only decides the instant
+the chain is judged at. The right limit depends on the endpoint (Apple retries
+a server notification for days, and a device may present an old but genuine
+payload), so apply one yourself where it fits:
+
+```go
+if payload.SignedDate != nil && time.Since(time.UnixMilli(*payload.SignedDate)) > 5*time.Minute { /* too old for this endpoint */ }
+```
+
 **Date claims are epoch milliseconds, as `*int64`, exactly as Apple ships
 them.** That is contractual across all ports: converting to `time.Time` loses
 the raw claim and invites a timezone bug. Only legacy receipt attributes
 (`AppReceipt`, `InAppPurchase`) use `time.Time`.
 
-`(*TransactionPayload).IsActiveAt(t)` answers the entitlement question from
-the signed claims: not revoked, and not expired if it is a subscription.
+**Entitlement is your rule.** The library has no "is active" helper, as in
+Apple's own App Store Server Libraries. Read the signed fields yourself:
+
+```go
+expired := payload.ExpiresDate != nil && *payload.ExpiresDate <= time.Now().UnixMilli()
+entitled := payload.RevocationDate == nil && !expired
+```
+
+That is only what the payload said when it was signed. A billing grace
+period (it lives in the renewal info), an upgrade (`isUpgraded`) and a refund
+after signing are yours to handle; App Store Server Notifications V2 or the
+App Store Server API give the live status.
 
 ## The verifyReceipt-compatible endpoint
 
@@ -212,7 +231,7 @@ including the majority that never touch this endpoint.
 ## Errors
 
 Every failed verification returns a `*VerificationError` carrying one of
-twelve `Reason` values, and nothing else — no logging, no metrics, no
+eleven `Reason` values, and nothing else — no logging, no metrics, no
 callbacks. The `Detail` string is safe to log: it never contains receipt
 bytes, claim values or key material.
 
@@ -228,7 +247,7 @@ if errors.As(err, &verr) {
 }
 ```
 
-`errors.Is(err, applereceipt.ReasonStalePayload)` also works, as sugar;
+`errors.Is(err, applereceipt.ReasonInvalidChain)` also works, as sugar;
 `errors.As` is canonical because it also carries the detail and any wrapped
 cause. `ReasonOf(err)` is the one-line form.
 
@@ -244,7 +263,6 @@ cause. `ReasonOf(err)` is the one-line form.
 | `WRONG_APP_APPLE_ID` | a Production `AppTransaction` whose app Apple id is unset or does not match |
 | `INVALID_RECEIPT_FORMAT` | unparseable CMS, trailing bytes after the blob, no encapsulated content, no `SignerInfo`, an embedded certificate that does not decode, signer not embedded, unsupported digest OID, a base64 string or a DER receipt over `MaxReceiptBytes` |
 | `DEVICE_HASH_MISMATCH` | the device-hash check was requested and failed, or the receipt lacks the attributes it needs |
-| `STALE_PAYLOAD` | `MaxSignedAge` is set and the payload's own signing date is older than it |
 | `INTERNAL_ERROR` | the receipt's chain and signature verified, but its payload does not parse (bad attribute shape, an unreadable value, a bound hit; `errors.Unwrap` gives the parser's error); a verified JWS claim that `TransactionPayload` or `AppTransactionPayload` models has the wrong JSON type (a string where an integer belongs, `1.5`, a whole number outside int64); or the runtime cannot compute the device hash (SHA-1 under `GODEBUG=fips140=only`). Not the client's fault: alert and retry or escalate, do not deny |
 
 Misconfiguration — no trust anchors, an empty bundle id, an environment other
@@ -273,25 +291,25 @@ func newVerifier() (*applereceipt.JWSVerifier, error) {
 			applereceipt.EnvironmentProduction,
 			applereceipt.EnvironmentSandbox,
 		},
-		MaxSignedAge: 5 * time.Minute, // the freshness window
 	})
 }
 
 func redeemTransaction(verifier *applereceipt.JWSVerifier, userID, jws string) string {
 	payload, err := verifier.VerifyTransaction(jws) // step 2
 	if err != nil {
-		var verr *applereceipt.VerificationError
-		if errors.As(err, &verr) && verr.Reason == applereceipt.ReasonStalePayload {
-			// step 4: ask the client for a fresh jwsRepresentation, or fetch
-			// one from the App Store Server API and verify that instead
-			return "refresh"
-		}
 		log.Printf("purchase rejected: %v", err)
 		return "denied"
 	}
 
 	if payload.RevocationDate != nil { // step 3
 		return "denied"
+	}
+
+	// step 4, your call: past the window, ask the client for a fresh
+	// jwsRepresentation, or fetch one from the App Store Server API and
+	// verify that instead
+	if payload.SignedDate == nil || time.Since(time.UnixMilli(*payload.SignedDate)) > 5*time.Minute {
+		return "refresh"
 	}
 
 	if grants.Exists(payload.TransactionID) { // step 5
@@ -334,7 +352,7 @@ func redeemReceipt(receipts *applereceipt.ReceiptVerifier, userID, receiptData, 
 		if purchase.ExpiresDate != nil && !purchase.ExpiresDate.After(now) {
 			return "denied"
 		}
-		// step 4: no MaxSignedAge here, so compare the creation date. Past the
+		// step 4: the same caller-side check, on the creation date. Past the
 		// window, ask the client to refresh its receipt, or call the App Store
 		// Server API by TransactionID and verify the JWS it returns.
 		if receipt.CreationDate == nil || now.Sub(*receipt.CreationDate) > 5*time.Minute {
@@ -382,12 +400,11 @@ func redeemReceipt(receipts *applereceipt.ReceiptVerifier, userID, receiptData, 
   never run before it is trusted, and a payload that fails the full parse was
   signed by a trusted signer, so it is `INTERNAL_ERROR`, not
   `INVALID_RECEIPT_FORMAT`.
-- **The injected clock cannot move a certificate verdict.** `Now` exists on
-  `JWSVerifier` (for the `MaxSignedAge` rule) and on `VerifyReceiptEndpoint`
-  (for `request_date`). It reaches nothing else, and `ReceiptVerifier` takes
-  no clock at all: a caller injecting one to test staleness, or to work around
-  skew, must not thereby be able to accept a receipt signed under an expired
-  chain.
+- **The injected clock cannot move a certificate verdict.** `Now` exists
+  only on `VerifyReceiptEndpoint` (for `request_date`). It reaches nothing
+  else, and `JWSVerifier` and `ReceiptVerifier` take no clock at all: a caller
+  injecting one to pin `request_date`, or to work around skew, must not
+  thereby be able to accept a receipt signed under an expired chain.
 - **Defensive parsing.** The BER/DER reader bounds nesting depth (32), node
   count (100,000 — the genuine 79 KB legacy receipt parses to 271 nodes),
   long-form lengths, and rejects trailing bytes after the outermost value.

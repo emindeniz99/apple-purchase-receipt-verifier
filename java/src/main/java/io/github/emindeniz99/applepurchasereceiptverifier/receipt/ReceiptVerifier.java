@@ -147,11 +147,10 @@ public final class ReceiptVerifier {
      * Creates a verifier for one app.
      *
      * <p>This class takes no clock, on purpose. Receipt verification has no
-     * staleness rule, so a clock could only reach the chain-validity instant
-     * of a receipt carrying no creation date, and an injected clock must
-     * never be able to accept a chain that is expired in real time. The
-     * clock seams live on {@code JwsVerifier} (max signed age) and on
-     * {@link VerifyReceiptEndpoint} ({@code request_date}).</p>
+     * age rule, so a clock could only reach the chain-validity instant of a
+     * receipt carrying no creation date, and an injected clock must never be
+     * able to accept a chain that is expired in real time. The one clock seam
+     * lives on {@link VerifyReceiptEndpoint} ({@code request_date}).</p>
      *
      * @param trustedRoots pinned root CAs (production:
      *                     {@code AppleRootCerts.receiptRoots()})

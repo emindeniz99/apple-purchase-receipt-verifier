@@ -39,15 +39,11 @@ final class VerifierTests: XCTestCase {
         root: String = "jws-root.der",
         bundleId: String = VerifierTests.bundle,
         environments: Set<AppleEnvironment> = [.sandbox],
-        appAppleId: Int64? = nil,
-        maxSignedAgeMillis: Int64? = nil,
-        clock: (@Sendable () -> Date)? = nil
+        appAppleId: Int64? = nil
     ) throws -> JwsVerifier {
         try JwsVerifier(
             trustedRoots: [try fixture("generated", root)], bundleId: bundleId,
-            acceptedEnvironments: environments, appAppleId: appAppleId,
-            maxSignedAgeMillis: maxSignedAgeMillis,
-            clock: clock)
+            acceptedEnvironments: environments, appAppleId: appAppleId)
     }
 
     func assertReason<T>(
@@ -68,7 +64,8 @@ final class VerifierTests: XCTestCase {
 
     func testVerifiesSharedTransactionFixture() async throws {
         let payload = try await jwsVerifier().verifyTransaction(try text("generated", "transaction.jws"))
-        XCTAssertTrue(payload.isActive(at: Date()))
+        XCTAssertEqual(Self.bundle, payload.bundleId)
+        XCTAssertNil(payload.revocationDate)
     }
 
     // MARK: negatives
@@ -114,11 +111,12 @@ final class VerifierTests: XCTestCase {
         }
     }
 
-    func testRejectsStalePayloadAndGarbage() async throws {
+    func testNeverRejectsAPayloadForItsAgeButRejectsGarbage() async throws {
+        // Freshness is the caller's decision (PLAN.md D5): a payload signed in
+        // 2024 still verifies, and its signedDate is there for the caller.
         let jws = try text("generated", "transaction.jws")
-        await assertReason(.stalePayload) {
-            try await self.jwsVerifier(maxSignedAgeMillis: 60_000).verifyTransaction(jws)
-        }
+        let payload = try await jwsVerifier().verifyTransaction(jws)
+        XCTAssertEqual(1_722_945_600_000, payload.signedDate)
         await assertReason(.invalidJwsFormat) {
             try await self.jwsVerifier().verifyTransaction("not-a-jws")
         }
@@ -140,74 +138,20 @@ final class VerifierTests: XCTestCase {
         }
     }
 
-    // MARK: the clock seam
+    // MARK: time
 
-    /// fixtures/generated/transaction.jws is signed at this instant, and both
-    /// expired-chain fixtures below sign at a fixed instant too — every
-    /// expectation in this section is arithmetic on those, not on "now".
-    static let transactionSignedAt = Date(timeIntervalSince1970: 1_722_945_600)
-
-    func testOmittedClockReadsTheSystemClock() async throws {
-        let jws = try text("generated", "transaction.jws")
-        // No clock supplied: the age is measured against the real now, so a
-        // max age well under the fixture's real age rejects and one well over
-        // it accepts. Both bounds are derived from the system clock at run
-        // time — an implementation that had quietly frozen "now" would fail
-        // one of them.
-        let realAgeMillis = Int64(Date().timeIntervalSince(Self.transactionSignedAt) * 1000)
-        XCTAssertGreaterThan(realAgeMillis, 0, "the fixture is signed in the past")
-        await assertReason(.stalePayload) {
-            try await self.jwsVerifier(maxSignedAgeMillis: realAgeMillis / 2)
-                .verifyTransaction(jws)
-        }
-        _ = try await jwsVerifier(maxSignedAgeMillis: realAgeMillis * 2).verifyTransaction(jws)
-    }
-
-    func testInjectedClockMovesTheStalenessVerdictDeterministically() async throws {
-        let jws = try text("generated", "transaction.jws")
-        let signedAt = Self.transactionSignedAt
-        // 30 s after signing, under a 60 s max age: accepted.
-        let fresh = try await jwsVerifier(
-            maxSignedAgeMillis: 60_000,
-            clock: { signedAt.addingTimeInterval(30) }
-        ).verifyTransaction(jws)
-        XCTAssertEqual(Self.bundle, fresh.bundleId)
-        // 61 s after signing, same policy: stale. Nothing but the clock moved.
-        await assertReason(.stalePayload) {
-            try await self.jwsVerifier(
-                maxSignedAgeMillis: 60_000,
-                clock: { signedAt.addingTimeInterval(61) }
-            ).verifyTransaction(jws)
-        }
-        // The instant fixtures/cases.json pins for transaction/reject-stale-payload.
-        await assertReason(.stalePayload) {
-            try await self.jwsVerifier(
-                maxSignedAgeMillis: 60_000,
-                clock: { Date(timeIntervalSince1970: 1_735_689_600) }
-            ).verifyTransaction(jws)
-        }
-    }
-
-    func testInjectedClockDoesNotMoveCertificateValidityVerdicts() async throws {
+    func testCertificateValidityIsJudgedAtTheSignedDate() async throws {
         // Chain validity is judged at the payload's signedDate (PLAN.md 2.1
-        // step 4). Both verdicts must therefore be identical under a clock
-        // decades before and decades after the certificate's window, and
-        // identical again with no clock at all.
+        // step 4): the historical payload verifies under a chain that has
+        // since expired, and the one signed after it expired does not.
         let historical = try text("generated", "expired-cert-historical.jws")
         let freshPayload = try text("generated", "expired-cert-fresh.jws")
-        let clocks: [(@Sendable () -> Date)?] = [
-            nil,
-            { Date(timeIntervalSince1970: 0) },  // 1970
-            { Date(timeIntervalSince1970: 4_102_444_800) },  // 2100
-        ]
-        for clock in clocks {
-            let payload = try await jwsVerifier(root: "jws-expired-root.der", clock: clock)
-                .verifyTransaction(historical)
-            XCTAssertEqual(1_590_969_600_000, payload.signedDate)
-            await assertReason(.invalidChain) {
-                try await self.jwsVerifier(root: "jws-expired-root.der", clock: clock)
-                    .verifyTransaction(freshPayload)
-            }
+        let payload = try await jwsVerifier(root: "jws-expired-root.der")
+            .verifyTransaction(historical)
+        XCTAssertEqual(1_590_969_600_000, payload.signedDate)
+        await assertReason(.invalidChain) {
+            try await self.jwsVerifier(root: "jws-expired-root.der")
+                .verifyTransaction(freshPayload)
         }
     }
 
@@ -261,8 +205,8 @@ final class VerifyReceiptEndpointTests: XCTestCase {
     }
 
     /// `request_date` is the response's one wall-clock field — Apple stamps
-    /// it with the time the request was served — so the clock drives it too,
-    /// for the same reason it drives staleness. It moves no verdict.
+    /// it with the time the request was served, so the clock drives it. It
+    /// moves no verdict.
     func testInjectedClockStampsRequestDateAndMovesNoVerdict() async throws {
         let now = Date(timeIntervalSince1970: 1_735_689_600)  // 2025-01-01T00:00:00Z
         let pinned = try VerifyReceiptEndpoint(

@@ -82,45 +82,32 @@ function withoutCreationDate(der) {
 }
 
 for (const [name, build] of BUILDS) {
-  const jwsVerifier = (root, clock) =>
+  const jwsVerifier = (root) =>
     new build.JwsVerifier({
       trustedRoots: [gen(root)],
       bundleId: BUNDLE,
       acceptedEnvironments: ['Sandbox'],
-      clock,
     });
 
   test(`${name}: a dateless JWS anchors chain validity on the system clock`, async () => {
     // The expired chain is valid 2020-01-01..2021-01-01 only, so judging a
-    // dateless payload at the real "now" rejects it. A clock set inside that
-    // window would rescue it — and must not: a caller injecting a clock to
-    // test staleness must never thereby accept an expired chain.
-    await Promise.all(
-      CLOCKS.map(async ([label, clock]) => {
-        const verdict = await outcome(() =>
-          jwsVerifier('jws-expired-root.der', clock).verifyTransaction(
-            withoutSignedDate(genText('expired-cert-historical.jws')),
-          ),
-        );
-        assert.equal(verdict.reason, 'INVALID_CHAIN', label);
-      }),
+    // dateless payload at the real "now" rejects it.
+    const verdict = await outcome(() =>
+      jwsVerifier('jws-expired-root.der').verifyTransaction(
+        withoutSignedDate(genText('expired-cert-historical.jws')),
+      ),
     );
+    assert.equal(verdict.reason, 'INVALID_CHAIN');
   });
 
-  test(`${name}: an injected clock cannot expire a dateless JWS either`, async () => {
+  test(`${name}: a dateless JWS under a live chain gets past the chain`, async () => {
     // The mirror image: this chain is valid 2024..2050, so at the real "now"
     // the dateless payload gets past the chain and dies at the signature
-    // check. A clock outside 2024..2050 would turn that into INVALID_CHAIN.
-    await Promise.all(
-      CLOCKS.map(async ([label, clock]) => {
-        const verdict = await outcome(() =>
-          jwsVerifier('jws-root.der', clock).verifyTransaction(
-            withoutSignedDate(genText('transaction.jws')),
-          ),
-        );
-        assert.equal(verdict.reason, 'INVALID_SIGNATURE', label);
-      }),
+    // check.
+    const verdict = await outcome(() =>
+      jwsVerifier('jws-root.der').verifyTransaction(withoutSignedDate(genText('transaction.jws'))),
     );
+    assert.equal(verdict.reason, 'INVALID_SIGNATURE');
   });
 
   test(`${name}: a dateless receipt anchors chain validity on the system clock`, async () => {
@@ -145,8 +132,8 @@ for (const [name, build] of BUILDS) {
   test(`${name}: the receipt verifier exposes no clock option at all`, async () => {
     // Structural, not behavioural: an ignored extra property proves nothing
     // in JavaScript, so the published type is what is asserted. The clock
-    // seam belongs to the JWS verifier (max signed age) and the endpoint
-    // (request_date) — nothing on the receipt path consumes one.
+    // seam belongs to the endpoint (request_date) alone: nothing on the
+    // receipt path consumes one.
     const declaration = repo(
       name === 'node' ? 'node/dist/receipt.d.ts' : 'node/dist/web/receipt.d.ts',
     ).toString('utf8');

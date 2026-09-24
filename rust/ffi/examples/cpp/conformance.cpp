@@ -20,9 +20,10 @@
 //
 // Every case in the file runs except the decodeBase64 groups, which call a
 // port's base64 decoders directly: the ABI exposes none, so the manifest
-// marks them abiUnreachable and they are counted, never passed. The twelve
-// that pin a clock go through the _and_clock constructors, which take the
-// instant itself rather than a callback; nothing else is skipped, a case the
+// marks them abiUnreachable and they are counted, never passed. The endpoint
+// cases that pin a clock go through aprv_endpoint_new_with_roots_and_clock,
+// which takes the instant itself rather than a callback; nothing else is
+// skipped, a case the
 // manifest ever marks unsupported fails the run, and after the loop every id
 // the manifest lists must have run or been counted.
 //
@@ -279,7 +280,6 @@ int reason_code(const std::string &token) {
       {"WRONG_APP_APPLE_ID", APRV_REASON_WRONG_APP_APPLE_ID},
       {"INVALID_RECEIPT_FORMAT", APRV_REASON_INVALID_RECEIPT_FORMAT},
       {"DEVICE_HASH_MISMATCH", APRV_REASON_DEVICE_HASH_MISMATCH},
-      {"STALE_PAYLOAD", APRV_REASON_STALE_PAYLOAD},
       {"INTERNAL_ERROR", APRV_REASON_INTERNAL_ERROR},
   };
   auto found = codes.find(token);
@@ -365,27 +365,20 @@ bool run_case(const Case &kase, std::string &error, Outcome &outcome) {
   const int64_t *clock = pinned ? &clock_value : nullptr;
 
   if (op == "verifyTransaction" || op == "verifyAppTransaction" || op == "verifyRaw") {
-    // Three constructors, and the harness calls all three: the _and_clock
-    // one is the superset — NULL anchors with a count of zero select the
-    // bundled roots — but a case that pins no clock goes through the plain
-    // ones, so the run is evidence that those symbols link and answer too.
+    // The JWS verifier takes no clock, so no JWS case may pin one.
+    if (pinned) {
+      error = "harness error: the JWS verifier has no clock seam, but the case pins one";
+      return false;
+    }
     AprvJwsVerifier *verifier =
-        pinned ? aprv_verifier_new_jws_with_roots_and_clock(
-                     kase.get("bundleId").c_str(),
-                     static_cast<uint32_t>(std::stoul(kase.get("envs"))),
-                     std::stoull(kase.get("appAppleId")),
-                     std::stoull(kase.get("maxSignedAgeSecs")), anchors.ders(), anchors.lens(),
-                     anchors.count(), clock)
-        : anchors.builtin()
+        anchors.builtin()
             ? aprv_verifier_new_jws(kase.get("bundleId").c_str(),
                                     static_cast<uint32_t>(std::stoul(kase.get("envs"))),
-                                    std::stoull(kase.get("appAppleId")),
-                                    std::stoull(kase.get("maxSignedAgeSecs")))
+                                    std::stoull(kase.get("appAppleId")))
             : aprv_verifier_new_jws_with_roots(
                   kase.get("bundleId").c_str(),
                   static_cast<uint32_t>(std::stoul(kase.get("envs"))),
-                  std::stoull(kase.get("appAppleId")),
-                  std::stoull(kase.get("maxSignedAgeSecs")), anchors.ders(), anchors.lens(),
+                  std::stoull(kase.get("appAppleId")), anchors.ders(), anchors.lens(),
                   anchors.count());
     if (verifier == nullptr) {
       error = "aprv_verifier_new_jws refused the configuration";
@@ -636,7 +629,7 @@ int main(int argc, char **argv) {
     if (kase.has("clockUnixMillis")) pinned_clocks += 1;
 
     // Nothing is skipped any more: the clock cases run through the
-    // _and_clock constructors. An `unsupported` marker would mean the
+    // _and_clock endpoint constructor. An `unsupported` marker would mean the
     // generator found a case this ABI cannot reach, which is a finding.
     if (kase.has("unsupported")) {
       std::cerr << "FAIL  " << id << ": the manifest marks it unsupported (\""

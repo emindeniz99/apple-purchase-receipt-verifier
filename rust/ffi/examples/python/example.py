@@ -46,7 +46,6 @@ def load(directory: Path) -> ctypes.CDLL:
         ctypes.c_char_p,
         ctypes.c_uint32,
         ctypes.c_uint64,
-        ctypes.c_uint64,
         ctypes.POINTER(u8p),
         ctypes.POINTER(ctypes.c_size_t),
         ctypes.c_size_t,
@@ -94,7 +93,7 @@ def main(library_dir: str) -> int:
     )
     lens = (ctypes.c_size_t * 1)(len(root))
     jws_verifier = lib.aprv_verifier_new_jws_with_roots(
-        b"com.example.app", APRV_ENVIRONMENT_SANDBOX, 0, 0, ders, lens, 1
+        b"com.example.app", APRV_ENVIRONMENT_SANDBOX, 0, ders, lens, 1
     )
     transaction = AprvResult()
     lib.aprv_verify_transaction(jws_verifier, jws, ctypes.byref(transaction))

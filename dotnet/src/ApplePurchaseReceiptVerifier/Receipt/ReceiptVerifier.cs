@@ -18,7 +18,7 @@ namespace ApplePurchaseReceiptVerifier.Receipt
     /// on the device" procedure. No OCSP, no CRL, no AIA fetch; the OS trust
     /// store is never consulted.</para>
     /// <para>There is deliberately <strong>no clock option</strong> on this
-    /// class, and there must not be one. Receipt verification has no staleness
+    /// class, and there must not be one. Receipt verification has no age
     /// rule, so the only thing a clock could reach is the "else current time"
     /// fallback for the chain-validity instant of a receipt carrying no
     /// creation date — a certificate-validity verdict. A caller injecting a

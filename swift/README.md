@@ -44,8 +44,7 @@ let verifier = try JwsVerifier(
     trustedRoots: appleJwsRoots(),
     bundleId: "com.example.app",
     acceptedEnvironments: [.production, .sandbox],
-    appAppleId: 1_234_567_890,       // required to accept a Production AppTransaction
-    maxSignedAgeMillis: 300_000)     // omit, or pass nil, to disable the rule
+    appAppleId: 1_234_567_890)       // required to accept a Production AppTransaction
 
 let transaction = try await verifier.verifyTransaction(jws)     // TransactionPayload
 let app = try await verifier.verifyAppTransaction(jws)          // AppTransactionPayload
@@ -54,10 +53,7 @@ let claims = try await verifier.verifyRaw(jws)                  // [String: Any]
 
 `verifyRaw` checks the chain and the signature, and enforces no *identity*
 claim: the caller checks `bundleId`, `environment` and `appAppleId` in the
-returned dictionary itself. It is not claim-free, though — it runs the same
-signed path as `verifyTransaction`, so a configured `maxSignedAgeMillis`
-applies to it too and a payload older than that is `.stalePayload` rather
-than a returned dictionary.
+returned dictionary itself.
 
 Include `.sandbox` in `acceptedEnvironments` on any endpoint App Review can
 reach: App Review runs production builds against sandbox.
@@ -70,10 +66,18 @@ converting them to `Date` would lose the raw claim and put this port out of
 step with the other eight. Receipt *attribute* dates are the opposite case
 and are `Date?` on `AppReceipt` and `InAppPurchase`.
 
-`TransactionPayload.isActive(at:)` answers the entitlement question from the
-signed claims alone: not revoked, and for a subscription not expired at the
-given date. A refund or a renewal after signing is invisible to it, since it
-reads only what was true when Apple signed the payload.
+**Entitlement is your rule.** There is no "is active" helper, as in Apple's
+own libraries; read the signed fields:
+
+```swift
+let nowMillis = Int64(Date().timeIntervalSince1970 * 1000)
+let entitled = payload.revocationDate == nil && (payload.expiresDate.map { $0 > nowMillis } ?? true)
+```
+
+That is only what the payload said when it was signed. A billing grace
+period (it lives in the renewal info), an upgrade (`isUpgraded`) and a refund
+after signing are yours to handle; App Store Server Notifications V2 or the
+App Store Server API give the live status. `isActive(at:)` is gone.
 
 `JwsVerifier.init` throws `VerificationError`, not only its verification
 methods: an empty `trustedRoots`, an empty `bundleId`, or an empty
@@ -308,7 +312,6 @@ do {
 | `.wrongAppAppleId` | `WRONG_APP_APPLE_ID` | a Production `AppTransaction` does not name the configured app Apple id |
 | `.invalidReceiptFormat` | `INVALID_RECEIPT_FORMAT` | the receipt is over `ReceiptVerifier.maxReceiptBytes`, the CMS blob does not parse, or it has no signer info |
 | `.deviceHashMismatch` | `DEVICE_HASH_MISMATCH` | the device hash does not match attribute 5, or the receipt lacks the attributes the check needs |
-| `.stalePayload` | `STALE_PAYLOAD` | the payload was signed longer ago than `maxSignedAgeMillis` |
 | `.malformedRequest` | `MALFORMED_REQUEST` | never thrown: reported only on a `VerifyReceiptResult`, for an unusable request envelope |
 | `.requestTooLarge` | `REQUEST_TOO_LARGE` | never thrown: reported only on a `VerifyReceiptResult`, for a raw body over `VerifyReceiptEndpoint.maxRequestBytes` (status 21002; Apple answers HTTP 413) |
 | `.internalError` | `INTERNAL_ERROR` | the receipt's chain and signature verified, but its payload does not parse (`cause` is the parser's error), or a JWS passed chain and signature but `verifyTransaction`/`verifyAppTransaction` found a modelled claim of the wrong type (a string field not a JSON string, an integer field not a whole number that fits); also reported on a `VerifyReceiptResult` for an unexpected error. Status 21009. Not the client's fault: alert and retry or escalate, do not deny |
@@ -349,8 +352,7 @@ func makeVerifier() throws -> JwsVerifier {
     try JwsVerifier(
         trustedRoots: appleJwsRoots(),
         bundleId: "com.example.app",
-        acceptedEnvironments: [.production, .sandbox],
-        maxSignedAgeMillis: 300_000)          // the freshness window
+        acceptedEnvironments: [.production, .sandbox])
 }
 
 func redeemTransaction(_ verifier: JwsVerifier, userId: String, jws: String) async -> Verdict {
@@ -358,11 +360,6 @@ func redeemTransaction(_ verifier: JwsVerifier, userId: String, jws: String) asy
     do {
         payload = try await verifier.verifyTransaction(jws)          // step 2
     } catch let error as VerificationError {
-        if error.reason == .stalePayload {
-            // step 4: ask the client for a fresh jwsRepresentation, or fetch
-            // one from the App Store Server API and verify that instead
-            return .refresh
-        }
         logger.warning("purchase rejected: \(error.reason.rawValue)")
         return .denied
     } catch {
@@ -370,6 +367,12 @@ func redeemTransaction(_ verifier: JwsVerifier, userId: String, jws: String) asy
     }
 
     if payload.revocationDate != nil { return .denied }              // step 3
+
+    // step 4, your call: past the window, ask the client for a fresh
+    // jwsRepresentation, or fetch one from the App Store Server API and
+    // verify that instead
+    let nowMillis = Int64(Date().timeIntervalSince1970 * 1000)
+    guard let signed = payload.signedDate, nowMillis - signed <= 300_000 else { return .refresh }
 
     guard let id = payload.transactionId else { return .denied }
     if grants.exists(id) { return .denied }                          // step 5
@@ -401,7 +404,7 @@ func redeemReceipt(
     }
     if let expires = purchase.expiresDate, expires <= now { return .denied }
 
-    // step 4: no maxSignedAgeMillis here, so compare the creation date. Past
+    // step 4: the same caller-side check, on the creation date. Past
     // the window, ask the client to refresh its receipt, or call the App Store
     // Server API by transactionId and verify the JWS it returns.
     guard let created = receipt.creationDate, now.timeIntervalSince(created) <= 300 else {
@@ -437,7 +440,7 @@ silently switch this library onto the platform trust store on Linux.
 `TrustStoreIsolationTests` (below) is what proves that, rather than only
 documenting it.
 
-## Environment routing and staleness
+## Environment routing and freshness
 
 `acceptedEnvironments` on `JwsVerifier` is a `Set<AppleEnvironment>` checked
 against the payload's `environment` (or `receiptType`, for an
@@ -445,28 +448,28 @@ against the payload's `environment` (or `receiptType`, for an
 `VerifyReceiptEndpoint`'s single `environment` drives the 21007/21008 status
 routing the same way the other ports do.
 
-`maxSignedAgeMillis` is optional; a payload signed longer ago than that is
-`.stalePayload`. A payload that states no signing date at all has no age to
-be stale by, so the rule never fires for it.
+**Freshness is your call.** No payload is rejected for its age, as in Apple's
+own App Store Server Libraries: `signedDate` only decides the instant the
+chain is judged at. The right limit depends on the endpoint (Apple retries a
+server notification for days, and a device may present an old but genuine
+payload), so apply one yourself where it fits:
+`let tooOld = Int64(Date().timeIntervalSince1970 * 1000) - (transaction.signedDate ?? 0) > 300_000`
 
 ## The clock
 
-`JwsVerifier.init` and `VerifyReceiptEndpoint.init` both take an optional
+`VerifyReceiptEndpoint.init` takes an optional
 `clock: (@Sendable () -> Date)?`; `nil` (the default) reads `Date()`. It is
-read in exactly two places:
-
-1. the `.stalePayload` comparison in `JwsVerifier`;
-2. the `request_date` / `_ms` / `_pst` triple in `VerifyReceiptEndpoint`,
-   once per call and only when the call passes no `now`.
+read in exactly one place: the `request_date` / `_ms` / `_pst` triple, once
+per call and only when the call passes no `now`.
 
 **Certificate validity is never judged by the injected clock.** It is judged
 at the payload's own `signedDate` / `receiptCreationDate`, or at the
 receipt's attribute-12 creation date; where the input states no date of its
-own, the fallback reads `Date()` directly — not the injected clock — so a
-caller injecting a clock to test staleness, or to work around skew, cannot
-thereby accept an expired chain or expire a live one.
+own, the fallback reads `Date()` directly, not the injected clock, so a
+caller injecting a clock to pin `request_date`, or to work around skew,
+cannot thereby accept an expired chain or expire a live one.
 
-`ReceiptVerifier` therefore takes **no clock at all**: it would have no
+`JwsVerifier` and `ReceiptVerifier` therefore take **no clock at all**: it would have no
 consumer, and an option with no consumer is an invitation to wire it into the
 one place it must never reach.
 

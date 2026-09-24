@@ -42,37 +42,57 @@ grant. That section also carries the policy table saying what each reason
 means and which ones are worth an alert. Here are its two branches in this
 port's API.
 
+**Freshness is your call.** `JwsVerifier` rejects no payload for its age, as
+in Apple's own App Store Server Libraries: `signedDate` only decides the
+instant the chain is judged at. The right limit depends on the endpoint
+(Apple retries a server notification for days, and a device may present an
+old but genuine payload), so apply one yourself where it fits:
+`if time.time() * 1000 - payload["signedDate"] > 5 * 60 * 1000: ...`.
+
+**Entitlement is your rule too.** There is no "is active" helper, as in
+Apple's own libraries; read the signed fields:
+
+```python
+now = time.time() * 1000
+expires = payload.get("expiresDate")
+entitled = payload.get("revocationDate") is None and (expires is None or expires > now)
+```
+
+That is only what the payload said when it was signed. A billing grace
+period (it lives in the renewal info), an upgrade (`isUpgraded`) and a refund
+after signing are yours to handle; App Store Server Notifications V2 or the
+App Store Server API give the live status. `is_transaction_active_at` is
+gone.
+
 A StoreKit 2 signed transaction:
 
 ```python
+import time
+
 from apple_purchase_receipt_verifier import (
     JwsVerifier,
-    Reason,
     VerificationError,
     apple_jws_roots,
 )
 
-verifier = JwsVerifier(
-    apple_jws_roots(),
-    "com.example.app",
-    ["Production", "Sandbox"],
-    max_signed_age_millis=5 * 60 * 1000,  # the freshness window
-)
+verifier = JwsVerifier(apple_jws_roots(), "com.example.app", ["Production", "Sandbox"])
 
 
 def redeem_transaction(user_id: str, jws: str) -> str:
     try:
         payload = verifier.verify_transaction(jws)  # step 2
     except VerificationError as error:
-        if error.reason == Reason.STALE_PAYLOAD:
-            # step 4: ask the client for a fresh jwsRepresentation, or fetch
-            # one from the App Store Server API and verify that instead
-            return "refresh"
         log.warning("purchase rejected: %s", error.reason)
         return "denied"
 
     if payload.get("revocationDate") is not None:  # step 3
         return "denied"
+
+    # step 4, your call: past the window, ask the client for a fresh
+    # jwsRepresentation, or fetch one from the App Store Server API and
+    # verify that instead
+    if time.time() * 1000 - (payload.get("signedDate") or 0) > 5 * 60 * 1000:
+        return "refresh"
 
     transaction_id = payload["transactionId"]  # step 5
     if grants.exists(transaction_id):
@@ -106,7 +126,7 @@ def redeem_receipt(user_id: str, receipt_data: str, product_id: str) -> str:
     if purchase.expires_date is not None and purchase.expires_date <= now:
         return "denied"
 
-    # step 4: no max_signed_age_millis here, so compare the creation date. Past
+    # step 4: the same caller-side check, on the creation date. Past
     # the window, ask the client to refresh its receipt, or call the App Store
     # Server API by purchase.transaction_id and verify the JWS it returns.
     if now - receipt.creation_date > timedelta(minutes=5):

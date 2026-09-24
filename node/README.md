@@ -121,18 +121,40 @@ grant. That section also carries the policy table saying what each reason
 means and which ones are worth an alert. Here are its two branches in this
 port's API.
 
+**Freshness is your call.** `JwsVerifier` rejects no payload for its age, as
+in Apple's own App Store Server Libraries: `signedDate` only decides the
+instant the chain is judged at. The right limit depends on the endpoint
+(Apple retries a server notification for days, and a device may present an
+old but genuine payload), so apply one yourself where it fits:
+`if (Date.now() - (payload.signedDate ?? 0) > 5 * 60 * 1000) { /* too old here */ }`.
+The `maxSignedAgeMillis` option is gone, and passing it throws a `TypeError`
+rather than being ignored.
+
+**Entitlement is your rule too.** There is no "is active" helper, as in
+Apple's own libraries; read the signed fields:
+
+```js
+const entitled =
+  payload.revocationDate == null && (payload.expiresDate == null || payload.expiresDate > Date.now());
+```
+
+That is only what the payload said when it was signed. A billing grace
+period (it lives in the renewal info), an upgrade (`isUpgraded`) and a refund
+after signing are yours to handle; App Store Server Notifications V2 or the
+App Store Server API give the live status. The `isTransactionActiveAt`
+helper is gone.
+
 A StoreKit 2 signed transaction:
 
 ```js
 import {
-  JwsVerifier, Reason, VerificationError, appleJwsRoots,
+  JwsVerifier, VerificationError, appleJwsRoots,
 } from 'apple-purchase-receipt-verifier';
 
 const verifier = new JwsVerifier({
   trustedRoots: appleJwsRoots(),
   bundleId: 'com.example.app',
   acceptedEnvironments: ['Production', 'Sandbox'],
-  maxSignedAgeMillis: 5 * 60 * 1000,        // the freshness window
 });
 
 export function redeemTransaction(userId, jws) {
@@ -141,16 +163,16 @@ export function redeemTransaction(userId, jws) {
     payload = verifier.verifyTransaction(jws);                    // step 2
   } catch (error) {
     if (!(error instanceof VerificationError)) throw error;
-    if (error.reason === Reason.STALE_PAYLOAD) {
-      // step 4: ask the client for a fresh jwsRepresentation, or fetch one
-      // from the App Store Server API and verifyTransaction that instead
-      return 'refresh';
-    }
     log.warn({ reason: error.reason }, 'purchase rejected');
     return 'denied';
   }
 
   if (payload.revocationDate !== undefined) return 'denied';      // step 3
+
+  // step 4, your call: past the window, ask the client for a fresh
+  // jwsRepresentation, or fetch one from the App Store Server API and
+  // verifyTransaction that instead
+  if (Date.now() - (payload.signedDate ?? 0) > 5 * 60 * 1000) return 'refresh';
 
   const id = payload.transactionId;                               // step 5
   if (grants.exists(id)) return 'denied';
@@ -182,7 +204,7 @@ export function redeemReceipt(userId, receiptData, productId) {
   if (purchase.cancellationDate !== null) return 'denied';          // step 3
   if (purchase.expiresDate !== null && purchase.expiresDate <= new Date()) return 'denied';
 
-  // step 4: no maxSignedAge here, so compare the receipt's creation date. Past
+  // step 4: the same caller-side check, on the receipt's creation date. Past
   // the window, ask the client to refresh its receipt, or call the App Store
   // Server API by purchase.transactionId and verify the JWS it returns.
   if (Date.now() - receipt.creationDate.getTime() > 5 * 60 * 1000) return 'refresh';

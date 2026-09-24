@@ -33,7 +33,7 @@ public class SmokeApplication {
     @Bean
     JwsVerifier jwsVerifier() throws IOException, CertificateException {
         Set<X509Certificate> roots = Collections.singleton(fixtureRoot("jws-root.der"));
-        return new JwsVerifier(roots, "com.example.app", EnumSet.of(Environment.SANDBOX), 123456789L, null);
+        return new JwsVerifier(roots, "com.example.app", EnumSet.of(Environment.SANDBOX), 123456789L);
     }
 
     /** Anchored on the bundled Apple roots: this bean also proves the anchors load on a Boot classpath. */

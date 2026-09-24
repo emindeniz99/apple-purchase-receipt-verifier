@@ -16,8 +16,8 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\MintedPki;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Shape;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\TestPki;
 use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationException;
+use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Clock\ClockInterface;
 use ReflectionClass;
@@ -26,11 +26,11 @@ use ReflectionNamedType;
 /**
  * What the injected clock may and may not move.
  *
- * The rule the whole design hangs on: the clock drives the staleness rule and
- * the endpoint's `request_date`, and NOTHING else. Certificate validity is
- * judged at the payload's own date, and where a payload states none, at the
- * SYSTEM clock. A caller injecting a clock — to test staleness, or to paper
- * over skew — must not thereby accept an expired chain or expire a live one.
+ * The rule the whole design hangs on: the endpoint's clock drives its
+ * `request_date`, and NOTHING else. The JWS and receipt verifiers take no
+ * clock, and no payload is rejected for its age (PLAN.md D5). Certificate
+ * validity is judged at the payload's own date, and where a payload states
+ * none, at the system clock.
  */
 #[CoversClass(JwsVerifier::class)]
 #[CoversClass(SystemClock::class)]
@@ -38,16 +38,9 @@ final class ClockTest extends TestCase
 {
     private const SIGNED_AT = 1722945600000; // 2024-08-06T12:00:00Z
 
-    private function verifier(?ClockInterface $clock, ?int $maxAgeSeconds): JwsVerifier
+    private function verifier(): JwsVerifier
     {
-        return new JwsVerifier(
-            [MintedPki::get()->rootDer],
-            'com.example.app',
-            [Environment::Sandbox],
-            null,
-            $maxAgeSeconds,
-            $clock,
-        );
+        return new JwsVerifier([MintedPki::get()->rootDer], 'com.example.app', [Environment::Sandbox]);
     }
 
     private static function at(string $iso): FrozenClock
@@ -55,50 +48,26 @@ final class ClockTest extends TestCase
         return new FrozenClock(new DateTimeImmutable($iso));
     }
 
-    /** @return iterable<string, array{string, int, bool}> */
-    public static function stalenessProvider(): iterable
-    {
-        yield 'exactly at the limit' => ['2024-08-06T12:01:00Z', 60, true];
-        yield 'one second past the limit' => ['2024-08-06T12:01:01Z', 60, false];
-        yield 'one second inside the limit' => ['2024-08-06T12:00:59Z', 60, true];
-        yield 'far past the limit' => ['2025-01-01T00:00:00Z', 60, false];
-        yield 'before the payload was signed' => ['2024-08-06T11:00:00Z', 60, true];
-    }
-
-    #[DataProvider('stalenessProvider')]
-    public function testTheClockDrivesTheStalenessRuleAtItsExactBoundary(
-        string $now,
-        int $maxAgeSeconds,
-        bool $accepted,
-    ): void {
-        $jws = MintedPki::get()->jws(MintedPki::transactionClaims());
-        $verifier = $this->verifier(self::at($now), $maxAgeSeconds);
-
-        if ($accepted) {
-            self::assertSame(self::SIGNED_AT, $verifier->verifyTransaction($jws)->signedDate);
-
-            return;
-        }
-        try {
-            $verifier->verifyTransaction($jws);
-            self::fail('expected STALE_PAYLOAD');
-        } catch (VerificationException $e) {
-            self::assertSame(Reason::StalePayload, $e->reason);
-        }
-    }
-
-    public function testWithNoMaxSignedAgeTheClockIsNeverConsulted(): void
+    /** Freshness is the caller's decision: a 2024 payload still verifies. */
+    public function testAPayloadIsNeverRejectedForItsAge(): void
     {
         $jws = MintedPki::get()->jws(MintedPki::transactionClaims());
 
-        self::assertSame(
-            self::SIGNED_AT,
-            $this->verifier(self::at('2099-01-01T00:00:00Z'), null)->verifyTransaction($jws)->signedDate,
-        );
+        self::assertSame(self::SIGNED_AT, $this->verifier()->verifyTransaction($jws)->signedDate);
     }
 
-    /** A payload with no date of its own can never be stale. */
-    public function testAPayloadWithoutASignedDateIsNeverStale(): void
+    /**
+     * PHP passes surplus positional arguments through silently, so a caller
+     * still handing over the removed max age and clock must be refused rather
+     * than lose the check without a word.
+     */
+    public function testTheRemovedMaxAgeAndClockArgumentsAreRefused(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        new JwsVerifier([MintedPki::get()->rootDer], 'com.example.app', [Environment::Sandbox], null, 60);
+    }
+
+    public function testAPayloadWithoutASignedDateVerifies(): void
     {
         $jws = MintedPki::get()->jws([
             'bundleId' => 'com.example.app',
@@ -106,16 +75,14 @@ final class ClockTest extends TestCase
             'productId' => 'com.example.app.pro',
         ]);
 
-        $payload = $this->verifier(self::at('2099-01-01T00:00:00Z'), 60)->verifyTransaction($jws);
-        self::assertNull($payload->signedDate);
+        self::assertNull($this->verifier()->verifyTransaction($jws)->signedDate);
     }
 
     /**
-     * The load-bearing one. The chain here is expired and the payload carries
-     * no date, so validity falls back to the system clock. A clock planted
-     * inside the expired window must NOT rescue it.
+     * The chain here is expired and the payload carries no date, so validity
+     * falls back to the system clock, where the chain has expired.
      */
-    public function testAnInjectedClockCannotAuthenticateAnExpiredChain(): void
+    public function testADatelessPayloadUnderAnExpiredChainIsJudgedAtTheSystemClock(): void
     {
         $pki = MintedPki::get();
         $expiredRoot = TestPki::certificate(
@@ -151,60 +118,44 @@ final class ClockTest extends TestCase
             $pki->jwsLeafKey,
         );
 
-        $verifier = new JwsVerifier(
-            [$expiredRoot['der']],
-            'com.example.app',
-            [Environment::Sandbox],
-            null,
-            60,
-            self::at('2019-06-01T00:00:00Z'), // inside the expired window
-        );
+        $verifier = new JwsVerifier([$expiredRoot['der']], 'com.example.app', [Environment::Sandbox]);
 
         try {
             $verifier->verifyTransaction($jws);
-            self::fail('an injected clock authenticated an expired chain');
+            self::fail('a dateless payload under an expired chain verified');
         } catch (VerificationException $e) {
             self::assertSame(Reason::InvalidChain, $e->reason);
         }
     }
 
-    /** The mirror image: a clock far in the future must not expire a live chain. */
-    public function testAnInjectedClockCannotExpireAValidChain(): void
-    {
-        $jws = MintedPki::get()->jws(['bundleId' => 'com.example.app', 'environment' => 'Sandbox']);
-
-        self::assertSame(
-            'com.example.app',
-            $this->verifier(self::at('2099-01-01T00:00:00Z'), 60)->verifyTransaction($jws)->bundleId,
-        );
-    }
-
     /**
-     * C2/S6, mechanised: `ReceiptVerifier` must have no clock parameter at
-     * all. An option with no consumer is an invitation to wire it into the
-     * one place it must never reach, so this asserts the seam does not exist
+     * C2/S6, mechanised: neither verifier may have a clock parameter at all.
+     * An option with no consumer is an invitation to wire it into the one
+     * place it must never reach, so this asserts the seam does not exist
      * rather than that it is unused.
      */
-    public function testReceiptVerifierExposesNoClockSeamAnywhere(): void
+    public function testNoVerifierExposesAClockSeamAnywhere(): void
     {
-        $class = new ReflectionClass(ReceiptVerifier::class);
-        foreach ($class->getMethods() as $method) {
-            foreach ($method->getParameters() as $parameter) {
-                $type = $parameter->getType();
-                $name = $type instanceof ReflectionNamedType ? $type->getName() : '';
-                self::assertNotSame(
-                    ClockInterface::class,
-                    $name,
-                    "ReceiptVerifier::{$method->getName()}() takes a clock; it must not",
-                );
-                self::assertStringNotContainsStringIgnoringCase(
-                    'clock',
-                    $parameter->getName(),
-                    "ReceiptVerifier::{$method->getName()}() has a clock-shaped parameter",
-                );
+        foreach ([ReceiptVerifier::class, JwsVerifier::class] as $verifier) {
+            $class = new ReflectionClass($verifier);
+            foreach ($class->getMethods() as $method) {
+                foreach ($method->getParameters() as $parameter) {
+                    $type = $parameter->getType();
+                    $name = $type instanceof ReflectionNamedType ? $type->getName() : '';
+                    self::assertNotSame(
+                        ClockInterface::class,
+                        $name,
+                        "{$verifier}::{$method->getName()}() takes a clock; it must not",
+                    );
+                    self::assertStringNotContainsStringIgnoringCase(
+                        'clock',
+                        $parameter->getName(),
+                        "{$verifier}::{$method->getName()}() has a clock-shaped parameter",
+                    );
+                }
             }
+            self::assertFalse($class->hasProperty('clock'));
         }
-        self::assertFalse($class->hasProperty('clock'));
     }
 
     /** The receipt path's fallback reads real time, so it is deterministic. */

@@ -110,8 +110,7 @@ JwsVerifier verifier = new JwsVerifier(
         roots,
         "com.example.app",
         EnumSet.of(Environment.PRODUCTION, Environment.SANDBOX),
-        1_234_567_890L,   // appAppleId — required to accept a PRODUCTION AppTransaction
-        300_000L);        // maxSignedAge, milliseconds — null disables the rule
+        1_234_567_890L);  // appAppleId, required to accept a PRODUCTION AppTransaction
 
 TransactionPayload transaction = verifier.verifyTransaction(jws);      // JWSTransactionDecodedPayload
 AppTransactionPayload app = verifier.verifyAppTransaction(jws);        // AppTransaction
@@ -120,17 +119,14 @@ Map<String, Object> claims = verifier.verifyRaw(jws);                  // renewa
 
 `verifyRaw` checks the chain and the signature, and enforces no *identity*
 claim: the caller checks bundle id, environment and app Apple id in the
-returned map itself. It is not claim-free, though — it runs the same signed
-path as `verifyTransaction`, so a configured `maxSignedAge` applies to it
-too and a payload older than that is `STALE_PAYLOAD` rather than a returned
-map.
+returned map itself.
 
 Include `Environment.SANDBOX` in `acceptedEnvironments` on any endpoint App
 Review can reach: App Review runs production builds against sandbox.
 
-`JwsVerifier` has three constructors, each the previous one plus optional
-trailing parameters (`appAppleId`, `maxSignedAge`, then `clock`); passing
-`null` for a trailing parameter has the same effect as omitting it.
+`JwsVerifier` has two constructors, the second the first plus the optional
+trailing `appAppleId`; passing `null` for it has the same effect as omitting
+it.
 
 **Date claims on `TransactionPayload` and `AppTransactionPayload` are
 `Long` epoch-millisecond fields** — `signedDate`, `purchaseDate`,
@@ -141,9 +137,20 @@ step with the other eight. Receipt *attribute* dates are the opposite case
 and are exposed as `Instant`.
 
 Every claim, modelled or not, is reachable through `verifyRaw`.
-`TransactionPayload.isActiveAt(Date now)` answers the entitlement question
-from the signed claims alone: not revoked, and for a subscription not
-expired. A refund or a renewal after signing is invisible to it.
+
+**Entitlement is your rule.** There is no "is active" helper, as in Apple's
+own libraries; read the signed fields:
+
+```java
+long now = System.currentTimeMillis();
+boolean entitled = payload.revocationDate() == null
+        && (payload.expiresDate() == null || payload.expiresDate() > now);
+```
+
+That is only what the payload said when it was signed. A billing grace
+period (it lives in the renewal info), an upgrade (`isUpgraded`) and a refund
+after signing are yours to handle; App Store Server Notifications V2 or the
+App Store Server API give the live status. `isActiveAt(Date)` is gone.
 
 ## Legacy PKCS#7 app receipts
 
@@ -284,7 +291,7 @@ field-by-field fidelity account.
 
 ## The error vocabulary
 
-Every failure is a checked `VerificationException` carrying one of twelve
+Every failure is a checked `VerificationException` carrying one of eleven
 `VerificationException.Reason` values, and nothing else — no logging, no
 metrics, no callbacks. The message is `Reason + ": " + detail`; match on
 `reason()`, never parse it.
@@ -319,7 +326,6 @@ try {
 | `WRONG_APP_APPLE_ID` | a Production `AppTransaction` does not name the configured app Apple id |
 | `INVALID_RECEIPT_FORMAT` | the PKCS#7/CMS blob does not parse, has trailing bytes, has no signer info, embeds a certificate other than the signer that cannot be read (the certificate bag is not signed, so that is a defect of the receipt), or the receipt is over `MAX_RECEIPT_BYTES` |
 | `DEVICE_HASH_MISMATCH` | the device hash does not match attribute 5, or the receipt lacks the attributes the check needs |
-| `STALE_PAYLOAD` | the payload was signed longer ago than `maxSignedAge` |
 | `INTERNAL_ERROR` | the receipt's chain and signature verified, but its payload does not parse; `getCause()` is the parser's exception. Not the client's fault: alert and retry or escalate, do not deny |
 
 **Order of the receipt checks.** CMS parse → the creation date alone
@@ -332,7 +338,7 @@ the attacker's own key is never run before it is trusted. A payload that
 fails the full parse was signed by a trusted signer, so it is
 `INTERNAL_ERROR`, not `INVALID_RECEIPT_FORMAT`.
 
-The vocabulary is **closed** by the cross-port contract: a thirteenth reason
+The vocabulary is **closed** by the cross-port contract: a twelfth reason
 would be a change to the shared vector file and to every port at once.
 `Reason` also carries `MALFORMED_REQUEST` and `REQUEST_TOO_LARGE`, but only
 as [`VerifyReceiptResult.failureReason()`](#the-verifyreceipt-compatible-endpoint)
@@ -350,8 +356,6 @@ not be catchable as a verification verdict.
 `IllegalStateException` when a bundled root is missing or does not match its
 pinned SHA-256 (see [Trust anchors](#trust-anchors)). That is a statement
 about the deployment, not about any payload, so it is not a `Reason` either.
-`TransactionPayload.isActiveAt(null)` throws `NullPointerException` for the
-same kind of reason: it is a call that was never made correctly.
 
 ## Integrating: from verified payload to entitlement
 
@@ -378,25 +382,27 @@ public class Redeem {
             AppleRootCerts.jwsRoots(),
             "com.example.app",
             EnumSet.of(Environment.PRODUCTION, Environment.SANDBOX),
-            null,          // appAppleId: only AppTransactions need it
-            300_000L);     // maxSignedAge, milliseconds: the freshness window
+            null);         // appAppleId: only AppTransactions need it
 
     public String redeemTransaction(String userId, String jws) {
         TransactionPayload payload;
         try {
             payload = verifier.verifyTransaction(jws);              // step 2
         } catch (VerificationException e) {
-            if (e.reason() == VerificationException.Reason.STALE_PAYLOAD) {
-                // step 4: ask the client for a fresh jwsRepresentation, or
-                // fetch one from the App Store Server API and verify that
-                return "refresh";
-            }
             log.warn("purchase rejected: {}", e.reason());
             return "denied";
         }
 
         if (payload.revocationDate() != null) {                     // step 3
             return "denied";
+        }
+
+        // step 4, your call: past the window, ask the client for a fresh
+        // jwsRepresentation, or fetch one from the App Store Server API and
+        // verify that instead
+        Long signed = payload.signedDate();
+        if (signed == null || System.currentTimeMillis() - signed > 300_000L) {
+            return "refresh";
         }
 
         String id = payload.transactionId();                        // step 5
@@ -444,7 +450,7 @@ public class RedeemReceipt {
             if (purchase.expiresDate() != null && !purchase.expiresDate().isAfter(now)) {
                 return "denied";
             }
-            // step 4: no maxSignedAge here, so compare the creation date. Past
+            // step 4: the same caller-side check, on the creation date. Past
             // the window, ask the client to refresh its receipt, or call the
             // App Store Server API by transactionId and verify the JWS back.
             if (receipt.creationDate() == null
@@ -474,8 +480,8 @@ What is `@Nullable`: every claim accessor on `TransactionPayload` and
 `AppTransactionPayload` and every attribute accessor on `AppReceipt` and
 `InAppPurchase`, because Apple sends only the claims and attributes that
 apply and an absent one reads as `null`; `Environment.fromValue` for an
-unrecognised claim; the optional constructor parameters `appAppleId`,
-`maxSignedAge` and `clock`; the `deviceGuid` that switches the device-hash
+unrecognised claim; the optional constructor parameter `appAppleId` and the
+endpoint's `clock`; the `deviceGuid` that switches the device-hash
 check on; the values of the map `verifyRaw` returns and of the one
 `verifyReceiptResult` accepts, since a JSON `null` stays one on both sides; and the
 receipt or JWS a `verify` overload is handed, which is reported as
@@ -557,7 +563,7 @@ jdk.certpath.disabledAlgorithms=MD2, MD5, SHA1, RSA keySize < 1024
 that the JDK's own PKIX code refuses the chain under that policy. Ruby, PHP
 and Go still depend on their runtime's policy for this chain.
 
-## Environment routing and staleness
+## Environment routing and freshness
 
 `acceptedEnvironments` on `JwsVerifier` is a `Set<Environment>` checked
 against the payload's `environment` (or `receiptType`, for an
@@ -565,28 +571,28 @@ against the payload's `environment` (or `receiptType`, for an
 `VerifyReceiptEndpoint`'s single `Environment` drives the 21007/21008 status
 routing the same way the other ports do.
 
-`maxSignedAge` (milliseconds) is optional; a payload signed longer ago than
-that is `STALE_PAYLOAD`. A payload that states no signing date at all has no
-age to be stale by, so the rule never fires for it.
+**Freshness is your call.** No payload is rejected for its age, as in Apple's
+own App Store Server Libraries: `signedDate` only decides the instant the
+chain is judged at. The right limit depends on the endpoint (Apple retries a
+server notification for days, and a device may present an old but genuine
+payload), so apply one yourself where it fits:
+`boolean tooOld = payload.signedDate() == null || System.currentTimeMillis() - payload.signedDate() > 300_000L;`
 
 ## The clock
 
-`JwsVerifier`'s six-argument constructor and `VerifyReceiptEndpoint`'s
-three-argument constructor both take an optional `java.time.Clock`; `null`
-(the default of every shorter constructor) means `Clock.systemUTC()`. It is
-read in exactly two places:
-
-1. the `STALE_PAYLOAD` comparison in `JwsVerifier`;
-2. the `request_date` / `_ms` / `_pst` triple in `VerifyReceiptEndpoint`.
+`VerifyReceiptEndpoint`'s three-argument constructor takes an optional
+`java.time.Clock`; `null` (the default of the shorter constructor) means
+`Clock.systemUTC()`. It is read in exactly one place: the `request_date` /
+`_ms` / `_pst` triple.
 
 **Certificate validity is never judged by the injected clock.** It is judged
 at the payload's own `signedDate` / `receiptCreationDate`, or at the
 receipt's attribute-12 creation date; where the input states no date of its
-own, the fallback reads `System.currentTimeMillis()` directly — not the
-injected clock — so a caller injecting a clock to test staleness, or to work
-around skew, cannot thereby accept an expired chain or expire a live one.
+own, the fallback reads the system clock directly, not the injected clock, so
+a caller injecting a clock to pin `request_date`, or to work around skew,
+cannot thereby accept an expired chain or expire a live one.
 
-`ReceiptVerifier` therefore takes **no clock at all**: it would have no
+`JwsVerifier` and `ReceiptVerifier` therefore take **no clock at all**: it would have no
 consumer, and an option with no consumer is an invitation to wire it into
 the one place it must never reach.
 

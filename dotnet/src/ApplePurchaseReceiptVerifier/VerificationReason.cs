@@ -11,10 +11,11 @@ namespace ApplePurchaseReceiptVerifier
     /// <remarks>
     /// <para>Members are PascalCase because that is the .NET naming rule; the
     /// SCREAMING_SNAKE token lives in <see cref="VerificationReasonCodes"/>.</para>
-    /// <para>The first eleven and <see cref="InternalError"/> are the verifier
+    /// <para>The first ten and <see cref="InternalError"/> are the verifier
     /// vocabulary the schema pins. <see cref="InternalError"/> keeps the
-    /// position it had when it was endpoint-only, so no member's numeric
-    /// value moved. <see cref="MalformedRequest"/> and
+    /// position it had when it was endpoint-only, and value 10 (the removed
+    /// <c>StalePayload</c>) stays unassigned, so no member's numeric value
+    /// moved. <see cref="MalformedRequest"/> and
     /// <see cref="RequestTooLarge"/> appear only on a
     /// <see cref="Receipt.VerifyReceiptResult"/>: no
     /// <see cref="VerificationException"/> is ever thrown with either, so a
@@ -52,9 +53,6 @@ namespace ApplePurchaseReceiptVerifier
         /// <summary>The SHA-1 device-hash binding check failed.</summary>
         DeviceHashMismatch,
 
-        /// <summary>The payload is older than the verifier's configured max signed age.</summary>
-        StalePayload,
-
         /// <summary>
         /// The verifyReceipt request envelope is unusable: the body is not a
         /// JSON object or nests deeper than 64, or <c>receipt-data</c> is
@@ -62,7 +60,7 @@ namespace ApplePurchaseReceiptVerifier
         /// <see cref="Receipt.VerifyReceiptResult.FailureReason"/>; never
         /// thrown.
         /// </summary>
-        MalformedRequest,
+        MalformedRequest = 11,
 
         /// <summary>
         /// Not the client's fault, status 21009 at the endpoint. Thrown when a
@@ -119,7 +117,6 @@ namespace ApplePurchaseReceiptVerifier
                 case VerificationReason.WrongAppAppleId: return "WRONG_APP_APPLE_ID";
                 case VerificationReason.InvalidReceiptFormat: return "INVALID_RECEIPT_FORMAT";
                 case VerificationReason.DeviceHashMismatch: return "DEVICE_HASH_MISMATCH";
-                case VerificationReason.StalePayload: return "STALE_PAYLOAD";
                 case VerificationReason.MalformedRequest: return "MALFORMED_REQUEST";
                 case VerificationReason.InternalError: return "INTERNAL_ERROR";
                 case VerificationReason.RequestTooLarge: return "REQUEST_TOO_LARGE";
@@ -130,7 +127,7 @@ namespace ApplePurchaseReceiptVerifier
         }
 
         /// <summary>Parses a canonical token back into a <see cref="VerificationReason"/>.</summary>
-        /// <returns><see langword="true"/> when <paramref name="code"/> is one of the fourteen tokens.</returns>
+        /// <returns><see langword="true"/> when <paramref name="code"/> is one of the thirteen tokens.</returns>
         public static bool TryParse(string? code, out VerificationReason reason)
         {
             switch (code)
@@ -145,7 +142,6 @@ namespace ApplePurchaseReceiptVerifier
                 case "WRONG_APP_APPLE_ID": reason = VerificationReason.WrongAppAppleId; return true;
                 case "INVALID_RECEIPT_FORMAT": reason = VerificationReason.InvalidReceiptFormat; return true;
                 case "DEVICE_HASH_MISMATCH": reason = VerificationReason.DeviceHashMismatch; return true;
-                case "STALE_PAYLOAD": reason = VerificationReason.StalePayload; return true;
                 case "MALFORMED_REQUEST": reason = VerificationReason.MalformedRequest; return true;
                 case "INTERNAL_ERROR": reason = VerificationReason.InternalError; return true;
                 case "REQUEST_TOO_LARGE": reason = VerificationReason.RequestTooLarge; return true;

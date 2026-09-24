@@ -42,17 +42,29 @@ verifier = APRV::JwsVerifier.new(
   trusted_roots: APRV.apple_jws_roots,
   bundle_id: "com.example.app",
   accepted_environments: [APRV::Environment::PRODUCTION, APRV::Environment::SANDBOX],
-  app_apple_id: 123_456_789,
-  max_signed_age_seconds: 300
+  app_apple_id: 123_456_789
 )
 
 transaction = verifier.verify_transaction(jws)
 transaction.product_id          # => "com.example.app.pro"
 transaction.transaction_id      # => "2000000000000001"
 transaction.signed_date         # => 1722945600000  (epoch milliseconds)
-transaction.active_at?(Time.now)
 transaction.claims              # every claim, as Apple sent it
 ```
+
+**Entitlement is your rule.** There is no "is active" helper, as in Apple's
+own libraries; read the signed fields:
+
+```ruby
+now_millis = (Time.now.to_r * 1000).to_i
+expires = transaction.expires_date
+entitled = transaction.revocation_date.nil? && (expires.nil? || expires > now_millis)
+```
+
+That is only what the payload said when it was signed. A billing grace
+period (it lives in the renewal info), an upgrade (`isUpgraded`) and a refund
+after signing are yours to handle; App Store Server Notifications V2 or the
+App Store Server API give the live status. `active_at?` is gone.
 
 Three operations:
 
@@ -70,8 +82,12 @@ Include `Sandbox` in `accepted_environments` on any endpoint App Review can
 reach — App Review runs production builds against sandbox, and a
 single-environment hard fail rejects real purchases during review.
 
-`max_signed_age_seconds` is optional. The unit is in the name because a bare
-`300` at a call site otherwise says nothing.
+**Freshness is your call.** No payload is rejected for its age, as in Apple's
+own App Store Server Libraries: `signed_date` only decides the instant the
+chain is judged at. The right limit depends on the endpoint (Apple retries a
+server notification for days, and a device may present an old but genuine
+payload), so apply one yourself where it fits:
+`too_old = (Time.now.to_f * 1000) - transaction.signed_date.to_i > 300_000`.
 
 ## Verifying a legacy app receipt
 
@@ -264,15 +280,14 @@ begin
 rescue ApplePurchaseReceiptVerifier::VerificationError => e
   case e.reason
   when APRV::Reason::WRONG_ENVIRONMENT then retry_against_sandbox
-  when APRV::Reason::STALE_PAYLOAD     then ask_the_client_to_refresh
   else                                      reject_and_alert(e.reason)
   end
 end
 ```
 
 `e.reason.to_s` is the canonical cross-language token, with no mapping table
-anywhere. The vocabulary is closed by the cross-port contract: twelve reasons
-in `Reason::ALL`, and a thirteenth would be a change to every implementation
+anywhere. The vocabulary is closed by the cross-port contract: eleven reasons
+in `Reason::ALL`, and a twelfth would be a change to every implementation
 in one pull request. (The endpoint's `MALFORMED_REQUEST` and
 `REQUEST_TOO_LARGE` are outside it; no verifier raises them.)
 
@@ -288,7 +303,6 @@ in one pull request. (The endpoint's `MALFORMED_REQUEST` and
 | `WRONG_APP_APPLE_ID` | a Production AppTransaction names a different app Apple id |
 | `INVALID_RECEIPT_FORMAT` | the receipt is over `MAX_RECEIPT_BYTES`, its base64 is not canonical standard base64 (whitespace, base64url and omitted or extra padding all count, as at Apple), or it is not a well-formed CMS blob |
 | `DEVICE_HASH_MISMATCH` | the receipt is not bound to the device GUID supplied |
-| `STALE_PAYLOAD` | the payload was signed longer ago than `max_signed_age_seconds` |
 | `INTERNAL_ERROR` | the receipt's chain and signature verified, but its attribute set does not parse (the parser's error is the raised error's `cause`). Not the client's fault: alert and retry or escalate, do not deny |
 
 **Order of the receipt checks.** CMS parse → the creation date alone
@@ -330,23 +344,23 @@ APRV = ApplePurchaseReceiptVerifier
 VERIFIER = APRV::JwsVerifier.new(
   trusted_roots: APRV.apple_jws_roots,
   bundle_id: "com.example.app",
-  accepted_environments: [APRV::Environment::PRODUCTION, APRV::Environment::SANDBOX],
-  max_signed_age_seconds: 300 # the freshness window
+  accepted_environments: [APRV::Environment::PRODUCTION, APRV::Environment::SANDBOX]
 )
 
 def redeem_transaction(user_id, jws)
   begin
     payload = VERIFIER.verify_transaction(jws) # step 2
   rescue APRV::VerificationError => e
-    # step 4: ask the client for a fresh jwsRepresentation, or fetch one from
-    # the App Store Server API and verify that instead
-    return :refresh if e.reason == APRV::Reason::STALE_PAYLOAD
-
     logger.warn("purchase rejected: #{e.reason}")
     return :denied
   end
 
   return :denied if payload.revocation_date # step 3
+
+  # step 4, your call: past the window, ask the client for a fresh
+  # jwsRepresentation, or fetch one from the App Store Server API and verify
+  # that instead
+  return :refresh if (Time.now.to_f * 1000) - payload.signed_date.to_i > 300_000
 
   transaction_id = payload.transaction_id # step 5
   return :denied if Grants.exists?(transaction_id)
@@ -377,7 +391,7 @@ def redeem_receipt(user_id, receipt_data, product_id)
   return :denied if purchase.nil? || purchase.cancellation_date # step 3
   return :denied if purchase.expires_date && purchase.expires_date <= now
 
-  # step 4: no max_signed_age_seconds here, so compare the creation date. Past
+  # step 4: the same caller-side check, on the creation date. Past
   # the window, ask the client to refresh its receipt, or call the App Store
   # Server API by transaction_id and verify the JWS it returns.
   return :refresh if receipt.creation_date.nil? || now - receipt.creation_date > 300
@@ -397,25 +411,24 @@ payload signed with a since-rotated certificate keeps verifying. The instant is
 the payload's `signedDate`, else its `receiptCreationDate`, else the receipt's
 creation-date attribute, and failing all of those, the **system** clock.
 
-`clock:` is available on `JwsVerifier` and `VerifyReceiptEndpoint` and is read
-in exactly two places:
+`clock:` is available on `VerifyReceiptEndpoint` only, and is read in exactly
+one place: the endpoint's `request_date` / `_ms` / `_pst` triple, once per
+call, and not at all when the call passes `now:`.
 
-1. the `STALE_PAYLOAD` comparison;
-2. the endpoint's `request_date` / `_ms` / `_pst` triple, once per call, and
-   not at all when the call passes `now:`.
-
-It never reaches a certificate-validity decision. Injecting a clock to test
-staleness, or to work around skew, must not let you authenticate an expired
-chain — and cannot. That is also why `ReceiptVerifier` has no `clock:` at all.
+It never reaches a certificate-validity decision. Injecting a clock to pin
+`request_date`, or to work around skew, must not let you authenticate an
+expired chain, and cannot. That is also why `JwsVerifier` and
+`ReceiptVerifier` have no `clock:` at all, and no payload is rejected for its
+age: how old a payload may be is your decision.
 
 Anything that responds to `#call` and returns a `Time` works:
 
 ```ruby
-APRV::JwsVerifier.new(..., max_signed_age_seconds: 300, clock: -> { Time.now.utc })
+APRV::VerifyReceiptEndpoint.new(..., clock: -> { Time.now.utc })
 ```
 
 Do not reach for `Timecop` or `ActiveSupport::Testing::TimeHelpers` to test
-this library's behaviour: hand the verifier a clock instead.
+this library's behaviour: hand the endpoint a clock instead.
 
 Receipt dates are RFC 3339 with a mandatory timezone designator — a naive date
 would be read as the server's local time, and the same receipt would then
@@ -426,8 +439,8 @@ further digits are dropped, which is the finest precision any port in this
 family represents.
 
 JWS signing dates (`signedDate`, `receiptCreationDate`) are read as sent, JSON
-number and all — a fractional one drives the chain instant and the staleness
-rule exactly like an integer. The payload readers still model Apple's wire
+number and all: a fractional one drives the chain instant exactly like an
+integer. The payload readers still model Apple's wire
 contract, where those claims are integer epoch milliseconds: a whole number
 spelled `1.0` reads as `1`, and `verify_transaction` / `verify_app_transaction`
 refuse a modelled claim of the wrong JSON type (a string, a fractional number,

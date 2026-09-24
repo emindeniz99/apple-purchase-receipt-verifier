@@ -7,10 +7,10 @@ using Xunit;
 namespace ApplePurchaseReceiptVerifier.Tests;
 
 /// <summary>
-/// What the payload's stated signing time is allowed to do. It drives two
-/// separate rules — the certificate-validity instant (step 9) and the
-/// staleness rule (step 11) — so a claim the reader cannot represent must be
-/// a rejection, never a silent "the payload states no signing time".
+/// What the payload's stated signing time is allowed to do. It drives the
+/// certificate-validity instant (step 9), so a claim the reader cannot
+/// represent must be a rejection, never a silent "the payload states no
+/// signing time".
 /// </summary>
 public class SigningTimeTests
 {
@@ -35,31 +35,13 @@ public class SigningTimeTests
             "{\"bundleId\":\"com.example.app\",\"environment\":\"Sandbox\",\"signedDate\":"
             + signedDateLiteral + "}");
 
-    private static JwsVerifier Verifier(Pki pki, TimeSpan? maxAge = null, IClock? clock = null) =>
-        new(new[] { TestPki.Public(pki.Root) }, "com.example.app",
-            new[] { AppleEnvironment.Sandbox }, null, maxAge, clock);
+    private static JwsVerifier Verifier(Pki pki) =>
+        new(new[] { TestPki.Public(pki.Root) }, "com.example.app", new[] { AppleEnvironment.Sandbox });
 
     /// <summary>
     /// A non-integral <c>signedDate</c> is still a stated signing time. Java
     /// (<c>canConvertToLong</c>), Node (<c>typeof === 'number'</c>) and Python
-    /// (<c>isinstance(int, float)</c>) all take it, so the staleness rule must
-    /// run. Reading it as "absent" would skip the rule instead of failing it.
-    /// </summary>
-    [Fact]
-    public void AFractionalSignedDateStillDrivesTheStalenessRule()
-    {
-        Pki pki = Mint();
-        string jws = Jws(pki, "1722945600000.5");
-
-        using JwsVerifier verifier = Verifier(
-            pki, TimeSpan.FromSeconds(60), new FixedClock(SignedAt.AddSeconds(61)));
-        Assert.Equal(
-            VerificationReason.StalePayload,
-            Assert.Throws<VerificationException>(() => verifier.VerifyTransaction(jws)).Reason);
-    }
-
-    /// <summary>
-    /// The other half of the same defect: a fractional claim must also move the
+    /// (<c>isinstance(int, float)</c>) all take it, so it must move the
     /// certificate-validity instant. This leaf expired in 2025, so judging it
     /// at the system clock rejects a payload the reference ports accept.
     /// Asserted through VerifyRaw: the typed read refuses a fractional
@@ -145,42 +127,41 @@ public class SigningTimeTests
 
     /// <summary>
     /// A fractional <c>receiptCreationDate</c> is a stated signing time too, so
-    /// the fallback to <c>receiptCreationDate</c> must see it.
+    /// the fallback to <c>receiptCreationDate</c> must see it: this leaf
+    /// expired in 2025, so judging it at the system clock would reject it.
     /// </summary>
     [Fact]
-    public void AFractionalReceiptCreationDateDrivesTheStalenessRule()
+    public void AFractionalReceiptCreationDateDrivesTheCertificateValidityInstant()
     {
-        Pki pki = Mint();
+        Pki pki = Mint(
+            new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero));
         string jws = TestPki.SignJws(
             pki.Leaf,
             new[] { pki.Leaf, pki.Intermediate, pki.Root },
             "{\"bundleId\":\"com.example.app\",\"receiptType\":\"Sandbox\","
             + "\"receiptCreationDate\":1722945600000.5}");
 
-        using JwsVerifier verifier = Verifier(
-            pki, TimeSpan.FromSeconds(60), new FixedClock(SignedAt.AddSeconds(61)));
-        Assert.Equal(
-            VerificationReason.StalePayload,
-            Assert.Throws<VerificationException>(() => verifier.VerifyAppTransaction(jws)).Reason);
+        using JwsVerifier verifier = Verifier(pki);
+        Assert.Equal("com.example.app", verifier.VerifyRaw(jws)["bundleId"]);
     }
 
     /// <summary>
     /// The genuine "no signing time" case is unchanged: a payload carrying
     /// neither claim, and one whose claim is not a number at all, falls back to
-    /// the system clock and has no age to be stale by. Through VerifyRaw, since
-    /// the typed read refuses a string <c>signedDate</c> after this rule ran.
+    /// the system clock. Through VerifyRaw, since the typed read refuses a
+    /// string <c>signedDate</c> after this rule ran.
     /// </summary>
     [Theory]
     [InlineData("{\"bundleId\":\"com.example.app\",\"environment\":\"Sandbox\"}")]
     [InlineData("{\"bundleId\":\"com.example.app\",\"environment\":\"Sandbox\",\"signedDate\":\"2024\"}")]
     [InlineData("{\"bundleId\":\"com.example.app\",\"environment\":\"Sandbox\",\"signedDate\":null}")]
-    public void APayloadWithNoNumericSigningTimeUsesTheSystemClockAndIsNeverStale(string payload)
+    public void APayloadWithNoNumericSigningTimeUsesTheSystemClock(string payload)
     {
         Pki pki = Mint();
         string jws = TestPki.SignJws(pki.Leaf, new[] { pki.Leaf, pki.Intermediate, pki.Root }, payload);
 
-        using JwsVerifier verifier = Verifier(
-            pki, TimeSpan.FromSeconds(1), new FixedClock(SignedAt.AddYears(50)));
+        using JwsVerifier verifier = Verifier(pki);
         Assert.Equal("com.example.app", verifier.VerifyRaw(jws)["bundleId"]);
     }
 

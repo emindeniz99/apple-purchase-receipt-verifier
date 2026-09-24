@@ -208,8 +208,8 @@ public final class HostileJwsFixtures {
         // refusing every number that is not a bare integer passes that vector
         // and fails this one. JSON draws no line between 1722945600000 and
         // 1722945600000.0, and reading only the integer spelling fails OPEN —
-        // the date reads as absent, certificate validity falls back to the
-        // current time and the staleness rule stops applying at all.
+        // the date reads as absent and certificate validity falls back to the
+        // current time.
         // BigDecimal rather than double so the literal is written out as it
         // is spelled here.
         Map<String, Object> decimalDate = new LinkedHashMap<String, Object>(transaction);

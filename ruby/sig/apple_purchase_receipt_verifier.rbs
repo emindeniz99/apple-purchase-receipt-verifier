@@ -26,7 +26,6 @@ module ApplePurchaseReceiptVerifier
     WRONG_APP_APPLE_ID: Symbol
     INVALID_RECEIPT_FORMAT: Symbol
     DEVICE_HASH_MISMATCH: Symbol
-    STALE_PAYLOAD: Symbol
     ALL: Array[Symbol]
     MALFORMED_REQUEST: Symbol
     INTERNAL_ERROR: Symbol
@@ -83,7 +82,6 @@ module ApplePurchaseReceiptVerifier
     def offer_type: () -> Integer?
     def revocation_reason: () -> Integer?
     def price: () -> Integer?
-    def active_at?: (Time now) -> bool
   end
 
   class AppTransactionPayload < Payload
@@ -106,8 +104,7 @@ module ApplePurchaseReceiptVerifier
 
     def initialize: (trusted_roots: roots, bundle_id: String,
                      accepted_environments: Array[String],
-                     ?app_apple_id: Integer?, ?max_signed_age_seconds: Numeric?,
-                     ?clock: clock?) -> void
+                     ?app_apple_id: Integer?) -> void
     def verify_transaction: (String jws) -> TransactionPayload
     def verify_app_transaction: (String jws) -> AppTransactionPayload
     def verify_raw: (String jws) -> claims

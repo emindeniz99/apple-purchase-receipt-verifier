@@ -170,10 +170,9 @@ against pinned roots.
    verifier = JwsVerifier(
        trustedRoots         = appleJwsRoots(),
        bundleId             = "com.example.app",
-       acceptedEnvironments = { Production, Sandbox },   // App Review runs
+       acceptedEnvironments = { Production, Sandbox })   // App Review runs
                                                          // production builds
                                                          // against Sandbox
-       maxSignedAge         = FRESHNESS_WINDOW)          // 5 minutes
    payload = verifier.verifyTransaction(jws)
    on failure:
        log(reason)                  // the reason table below says what next
@@ -183,13 +182,11 @@ against pinned roots.
    if payload.revocationDate is set:
        deny                         // refunded or revoked as of signing time
 
-4. FRESH, OR ASK APPLE
-   // a payload inside FRESHNESS_WINDOW reached step 3, so it is a live
-   // snapshot and can be granted with no network call at all
-   on STALE_PAYLOAD from step 2:
-       // step 2 returned no payload, so the id for this call comes from the
-       // client's own request, never from the payload that failed to verify
-       signed  = appStoreServerApi.getTransactionInfo(request.transactionId)
+4. FRESH ENOUGH? YOUR CALL
+   // the library does not judge age; where a window fits this endpoint,
+   // compare it against the payload's own signing time
+   if now - payload.signedDate > FRESHNESS_WINDOW:     // e.g. 5 minutes
+       signed  = appStoreServerApi.getTransactionInfo(payload.transactionId)
        payload = verifier.verifyTransaction(signed)   // same verifier
        back to step 3 with the re-signed payload
 
@@ -237,8 +234,8 @@ against pinned roots.
        signed  = appStoreServerApi.getTransactionInfo(purchase.transactionId)
        payload = jwsVerifier.verifyTransaction(signed)
        decide from the re-signed payload instead
-   // ReceiptVerifier has no maxSignedAge option: on this path the window is
-   // yours to compare against the receipt's own creation date
+   // the same caller-side check as branch A, against the receipt's own
+   // creation date
 
 5. REPLAY GUARD
    if store.grantExists(purchase.transactionId):
@@ -269,9 +266,13 @@ every time the app fetches it, and a refunded transaction carries
 `revocationDate` (JWS) or `cancellation_date` (receipt) from then on. So a
 payload signed seconds ago, with neither field set, is Apple's current answer
 about that purchase, and step 3 is the whole check. Five minutes is a
-reasonable default for the window. On the JWS path `maxSignedAge` enforces it
-and an older payload fails step 2 as `STALE_PAYLOAD`; on the receipt path
-there is no such option, so compare the receipt's creation date yourself.
+reasonable default for the window where one fits, but the library enforces
+none on either path: compare `signedDate` (JWS) or the receipt's creation date
+yourself. The right limit depends on the endpoint. Apple retries a server
+notification for days, and a device may present an old but genuine payload,
+so an age limit is a business decision rather than a verification step.
+Apple's own App Store Server Libraries make the same choice: they read
+`signedDate` only as the instant the chain is judged at.
 
 **Step 4 is the only place either branch talks to Apple, and it is optional.**
 Get Transaction Info by `transactionId`, or the subscription status endpoint,
@@ -287,10 +288,9 @@ beside it, since that is what ties renewals to one purchase.
 
 ### What to do per reason
 
-Four classes, and the class is what decides whether a rejection is worth an
+Three classes, and the class is what decides whether a rejection is worth an
 alert. Every reason except `INTERNAL_ERROR` denies the payload in front of
-you, and only `STALE_PAYLOAD` says the next attempt could succeed.
-`INTERNAL_ERROR` is not a verdict on the client at all.
+you. `INTERNAL_ERROR` is not a verdict on the client at all.
 
 | Reason | Class | Response |
 |---|---|---|
@@ -304,7 +304,6 @@ you, and only `STALE_PAYLOAD` says the next attempt could succeed.
 | `INVALID_CERTIFICATE_PURPOSE` | possible fraud | Deny and alert. A certificate chaining to an Apple root without the marker OID its position requires: a developer's own certificate signing a forged payload looks exactly like this. |
 | `WRONG_BUNDLE_ID` | possible fraud | Deny and alert. A genuine Apple-signed payload for another app. |
 | `WRONG_APP_APPLE_ID` | possible fraud | Deny and alert. A Production `AppTransaction` naming a different app Apple id. |
-| `STALE_PAYLOAD` | retry later | Not a rejection of the purchase. Take step 4: ask the client for a fresh payload, or fetch one from the App Store Server API. |
 | `INTERNAL_ERROR` | not the client's | Do not deny the user. Alert, then retry or escalate. The receipt authenticated (trusted chain, valid signature) but this library cannot read what Apple signed, or the library failed unexpectedly; either way the purchase may well be genuine. `21009` at the endpoint. |
 
 The vocabulary is closed and identical in all nine ports, so this table is one
@@ -411,5 +410,8 @@ verifiers also accept caller-supplied anchors.
   maintained library does both paths server-side in any of our languages.
 - **Signature validity ≠ entitlement**: replay protection (transaction-id
   bookkeeping) and refund/status tracking are deliberately out of scope —
-  see INTENT.md. `isActiveAt`/`isActive` helpers + the optional
-  max-signed-age policy cover subscription expiry from the signed claims.
+  see INTENT.md. Whether a payload entitles a user is the caller's rule too,
+  read off `revocationDate` and `expiresDate`; a billing grace period (in
+  the renewal info), `isUpgraded` and later refunds need App Store Server
+  Notifications V2 or the App Store Server API. How old a signed payload may
+  be is likewise the caller's decision, made on its `signedDate`.

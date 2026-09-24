@@ -125,8 +125,8 @@ public final class JwsSegmentFixtures {
         // The genuine header again, so this is a verdict about the payload.
         // The claims a port reads by name are simply absent from an array,
         // and reading them as absent would move certificate validity onto
-        // the current-time fallback and silence the staleness rule with it —
-        // the same fail-open the out-of-range signedDate vector guards.
+        // the current-time fallback, the same fail-open the out-of-range
+        // signedDate vector guards.
         write(out, "jws-payload-json-array.jws", header + "." + segment("[1,2,3]") + "." + signature);
     }
 

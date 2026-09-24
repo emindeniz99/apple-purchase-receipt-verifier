@@ -25,32 +25,16 @@ defmodule AppleReceiptExample.Native do
   def version, do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
-  `aprv_verifier_new_jws`, `aprv_verifier_new_jws_with_roots` when `roots` is
-  a non-empty list of DER certificates, or
-  `aprv_verifier_new_jws_with_roots_and_clock` when `clock_unix_millis` is an
-  integer rather than `nil`.
+  `aprv_verifier_new_jws`, or `aprv_verifier_new_jws_with_roots` when `roots`
+  is a non-empty list of DER certificates.
 
-  `nil` is the ABI's NULL clock pointer: the system clock, which is what the
-  other two constructors read. Pinning an instant is for conformance vectors
-  and tests.
+  There is no clock argument because the ABI has none here: no payload is
+  rejected for its age.
   """
-  @spec jws_verifier_new(
-          binary(),
-          non_neg_integer(),
-          non_neg_integer(),
-          non_neg_integer(),
-          [binary()],
-          integer() | nil
-        ) :: {:ok, reference()} | {:error, :invalid_argument}
-  def jws_verifier_new(
-        _bundle_id,
-        _environments,
-        _app_apple_id,
-        _max_signed_age_secs,
-        _roots,
-        _clock_unix_millis
-      ),
-      do: :erlang.nif_error(:nif_not_loaded)
+  @spec jws_verifier_new(binary(), non_neg_integer(), non_neg_integer(), [binary()]) ::
+          {:ok, reference()} | {:error, :invalid_argument}
+  def jws_verifier_new(_bundle_id, _environments, _app_apple_id, _roots),
+    do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
   `aprv_verifier_new_receipt`, or the `_with_roots` variant.

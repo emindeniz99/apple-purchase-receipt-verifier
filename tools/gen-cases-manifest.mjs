@@ -40,7 +40,6 @@
  *   bundleId            verifier bundle id
  *   envs                the accepted-environment BITMASK, already computed
  *   appAppleId          0 when unset
- *   maxSignedAgeSecs    0 when unset
  *   deviceGuidHex       absent when the case pins no device GUID
  *   endpointEnv         1 (Production) or 2 (Sandbox), endpoint cases
  *   clockUnixMillis     the pinned `clock`, already parsed to epoch
@@ -57,9 +56,8 @@
  *                       these as not reachable, never as passed.
  *
  * NOTHING IS DROPPED for want of an ABI seam any more: `clockUnixMillis`
- * feeds aprv_verifier_new_jws_with_roots_and_clock and
- * aprv_endpoint_new_with_roots_and_clock, which take the instant itself
- * rather than a callback. No case is marked `unsupported`; the key stays
+ * feeds aprv_endpoint_new_with_roots_and_clock, which takes the instant
+ * itself rather than a callback. Only endpoint cases pin a clock. No case is marked `unsupported`; the key stays
  * documented because the harnesses still fail loudly on one, so a future
  * cause would be a finding rather than a silently smaller run.
  *
@@ -273,7 +271,6 @@ function main() {
     }
     parts.push(`envs=${mask}`);
     parts.push(`appAppleId=${config.appAppleId ?? 0}`);
-    parts.push(`maxSignedAgeSecs=${config.maxSignedAgeSeconds ?? 0}`);
     if (config.deviceGuidHex) parts.push(`deviceGuidHex=${config.deviceGuidHex}`);
 
     if (kase.operation === 'verifyReceiptEndpoint') {

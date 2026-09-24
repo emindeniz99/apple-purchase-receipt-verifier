@@ -8,7 +8,7 @@ import binascii
 import json
 import re
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from typing import Any, ClassVar
 
 from cryptography import x509
@@ -182,22 +182,9 @@ class JwsVerifier:
     :param accepted_environments: e.g. ``["Production", "Sandbox"]`` —
         include Sandbox on endpoints App Review can hit (PLAN.md D3)
     :param app_apple_id: required to accept Production AppTransactions
-    :param max_signed_age_millis: reject payloads signed longer ago than
-        this (PLAN.md D5)
-    :param clock: source of "now" for the max-signed-age rule, as a
-        zero-argument callable returning epoch seconds. Optional; omitted,
-        the system clock is used and behaviour is unchanged.
 
-        A zero-argument callable is Python's idiomatic injectable time
-        source, and ``time.time`` is itself exactly one — so the default is
-        the stdlib function and an injected clock is any drop-in for it
-        (``lambda: 1735689600.0``). Epoch seconds rather than a ``datetime``
-        because the staleness arithmetic is in epoch milliseconds and the
-        code already called ``time.time()``, so nothing is converted at the
-        seam; a caller holding a ``datetime`` passes ``moment.timestamp``.
-        The clock drives ONLY checks that genuinely depend on the current
-        time. Certificate validity is not one: it is judged at the payload
-        ``signedDate`` (PLAN.md §2.1 step 4) and never moves with the clock.
+    No payload is rejected for its age: how old a signed payload may be is
+    the caller's decision, made on its ``signedDate`` (PLAN.md D5).
     """
 
     #: Ceiling on the compact JWS this verifier will look at, in characters,
@@ -218,8 +205,6 @@ class JwsVerifier:
         bundle_id: str,
         accepted_environments: Iterable[str],
         app_apple_id: int | None = None,
-        max_signed_age_millis: int | None = None,
-        clock: Callable[[], float] | None = None,
     ):
         roots = list(trusted_roots)
         if not roots:
@@ -235,8 +220,6 @@ class JwsVerifier:
         self._bundle_id = bundle_id
         self._accepted_environments = environments
         self._app_apple_id = app_apple_id
-        self._max_signed_age_millis = max_signed_age_millis
-        self._clock = time.time if clock is None else clock
 
     def verify_transaction(self, jws: str) -> dict[str, Any]:
         """Verifies a signed transaction and checks bundle id + environment."""
@@ -356,9 +339,7 @@ class JwsVerifier:
             signed_at = payload.get("receiptCreationDate")
         if not isinstance(signed_at, (int, float)):
             signed_at = None
-        # Deliberately the system clock, not self._clock: an injected clock
-        # must not be able to move a certificate-validity verdict. This
-        # fallback only fires for a payload carrying neither signedDate nor
+        # The system clock. This fallback only fires for a payload carrying neither signedDate nor
         # receiptCreationDate, where PLAN.md's "else current time" leaves the
         # window anchored to real time.
         try:
@@ -392,16 +373,6 @@ class JwsVerifier:
             public_key.verify(encode_dss_signature(r, s), signing_input, ec.ECDSA(hashes.SHA256()))
         except InvalidSignature as e:
             raise VerificationError(Reason.INVALID_SIGNATURE, "ES256 signature check failed") from e
-
-        if (
-            self._max_signed_age_millis is not None
-            and signed_at is not None
-            and self._clock() * 1000 - signed_at > self._max_signed_age_millis
-        ):
-            raise VerificationError(
-                Reason.STALE_PAYLOAD,
-                f"payload signed at {signed_at} exceeds max age {self._max_signed_age_millis}ms",
-            )
         return payload
 
     def _require_bundle_id(self, actual: Any) -> None:
@@ -416,16 +387,3 @@ class JwsVerifier:
                 Reason.WRONG_ENVIRONMENT, f"payload environment {claim} not in accepted set"
             )
         return claim
-
-
-def is_transaction_active_at(payload: dict[str, Any], now_millis: int) -> bool:
-    """Entitlement helper for a verified transaction payload: not revoked,
-    and (for subscriptions) not expired at ``now_millis``. Point-in-time on
-    the signed claims only — later refunds or renewals are invisible."""
-    revocation = payload.get("revocationDate")
-    if isinstance(revocation, (int, float)) and now_millis >= revocation:
-        return False
-    expires = payload.get("expiresDate")
-    if isinstance(expires, (int, float)):
-        return now_millis < expires
-    return True

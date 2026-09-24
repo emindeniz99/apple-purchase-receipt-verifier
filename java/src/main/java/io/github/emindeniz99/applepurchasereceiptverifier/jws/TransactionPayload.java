@@ -3,8 +3,6 @@ package io.github.emindeniz99.applepurchasereceiptverifier.jws;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import java.util.Date;
-import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -94,32 +92,6 @@ public final class TransactionPayload {
         this.transactionReason = transactionReason;
         this.type = type;
         this.webOrderLineItemId = webOrderLineItemId;
-    }
-
-    /**
-     * Entitlement helper: {@code true} if this transaction grants access at
-     * {@code now} — i.e. not revoked, and (for subscriptions) not expired.
-     * This is a point-in-time check on the signed claims only; a later refund
-     * or renewal is invisible to it; track status by transaction id
-     * server-side.
-     *
-     * @param now the instant to judge at; required, because there is no
-     *            defensible default. Reading it as "now" would make a
-     *            time-dependent answer depend on the system clock silently,
-     *            and reading it as the epoch would answer "active" for every
-     *            revoked transaction.
-     * @throws NullPointerException if {@code now} is null
-     */
-    public boolean isActiveAt(Date now) {
-        Objects.requireNonNull(now, "now must not be null: isActiveAt judges the claims at an instant you choose");
-        long t = now.getTime();
-        if (revocationDate != null && t >= revocationDate) {
-            return false;
-        }
-        if (expiresDate != null) {
-            return t < expiresDate;
-        }
-        return true;
     }
 
     public @Nullable String appAccountToken() {

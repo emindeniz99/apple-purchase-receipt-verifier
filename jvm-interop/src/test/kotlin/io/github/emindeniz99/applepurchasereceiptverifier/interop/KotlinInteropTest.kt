@@ -66,7 +66,7 @@ class KotlinInteropTest {
     @Test
     fun `overload selection stands in for named or default arguments -- Kotlin cannot use either against a Java API`() {
         // JwsVerifier has no builder; a Kotlin caller reaches for named
-        // arguments here (5-arg ctor, naming just appAppleId/maxSignedAge)
+        // arguments here (4-arg ctor, naming just appAppleId)
         // or default arguments (call the 2-arg ctor and skip the trailing
         // params). Only the second works, and NOT because of anything
         // fixable in java/pom.xml: Kotlin categorically refuses named-
@@ -181,7 +181,6 @@ class KotlinInteropTest {
             Reason.WRONG_APP_APPLE_ID -> "wrong app id"
             Reason.INVALID_RECEIPT_FORMAT -> "bad receipt"
             Reason.DEVICE_HASH_MISMATCH -> "device mismatch"
-            Reason.STALE_PAYLOAD -> "stale"
             Reason.MALFORMED_REQUEST -> "malformed request"
             Reason.INTERNAL_ERROR -> "internal error"
             Reason.REQUEST_TOO_LARGE -> "request too large"

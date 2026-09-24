@@ -57,8 +57,6 @@ namespace ApplePurchaseReceiptVerifier.Jws
         private readonly string _bundleId;
         private readonly HashSet<AppleEnvironment> _acceptedEnvironments;
         private readonly long? _appAppleId;
-        private readonly long? _maxSignedAgeMillis;
-        private readonly IClock _clock;
         private bool _disposed;
 
         /// <summary>Builds a verifier.</summary>
@@ -75,16 +73,10 @@ namespace ApplePurchaseReceiptVerifier.Jws
         /// The app's Apple id. Required to accept a Production
         /// <c>AppTransaction</c>; unused otherwise.
         /// </param>
-        /// <param name="maxSignedAge">
-        /// When set, a payload signed longer ago than this is rejected as
-        /// <see cref="VerificationReason.StalePayload"/> (PLAN.md D5). This is
-        /// the only check the clock drives.
-        /// </param>
-        /// <param name="clock">
-        /// Source of "now" for the staleness rule; defaults to
-        /// <see cref="SystemClock"/>. It never reaches a certificate-validity
-        /// judgement — see <see cref="IClock"/>.
-        /// </param>
+        /// <remarks>
+        /// No payload is rejected for its age: how old a signed payload may be
+        /// is the caller's decision, made on its <c>signedDate</c> (PLAN.md D5).
+        /// </remarks>
         /// <exception cref="ArgumentException">
         /// The roots are empty, the bundle id is null or empty, or the accepted
         /// set is empty. Misconfiguration is not a verification verdict, so it
@@ -94,9 +86,7 @@ namespace ApplePurchaseReceiptVerifier.Jws
             IEnumerable<X509Certificate2> trustedRoots,
             string bundleId,
             IEnumerable<AppleEnvironment> acceptedEnvironments,
-            long? appAppleId = null,
-            TimeSpan? maxSignedAge = null,
-            IClock? clock = null)
+            long? appAppleId = null)
         {
             if (string.IsNullOrEmpty(bundleId))
             {
@@ -120,8 +110,6 @@ namespace ApplePurchaseReceiptVerifier.Jws
             _bundleId = bundleId;
             _acceptedEnvironments = accepted;
             _appAppleId = appAppleId;
-            _maxSignedAgeMillis = maxSignedAge is TimeSpan age ? (long)age.TotalMilliseconds : (long?)null;
-            _clock = clock ?? SystemClock.Instance;
         }
 
         /// <summary>
@@ -287,9 +275,7 @@ namespace ApplePurchaseReceiptVerifier.Jws
             IReadOnlyDictionary<string, object?> payload = ParseJsonSegment(parts[1], "payload");
             double? signedAtMillis = SignedAtMillis(payload);
 
-            // Deliberately DateTimeOffset.UtcNow and not the injected clock:
-            // this is a certificate-validity instant, and an injected clock
-            // must never be able to move a certificate-validity verdict. The
+            // The system clock, for a certificate-validity instant. The
             // fallback only fires for a payload carrying neither signedDate nor
             // receiptCreationDate. This is the one place in the library that
             // reads the system clock directly.
@@ -299,17 +285,6 @@ namespace ApplePurchaseReceiptVerifier.Jws
             CertificateChain.ValidateJwsPair(leaf, intermediate, _anchors, at);
 
             VerifyEs256(leaf, parts[0] + "." + parts[1], DecodeBase64Url(parts[2], "signature"));
-
-            // A payload that states no signing time has no age to be stale by,
-            // so the rule does not apply to it — rather than measuring the
-            // clock against itself.
-            if (_maxSignedAgeMillis is long maxAge && signedAtMillis is double signedAt
-                && _clock.UtcNow.ToUnixTimeMilliseconds() - signedAt > maxAge)
-            {
-                throw new VerificationException(
-                    VerificationReason.StalePayload,
-                    "the payload is older than the configured max signed age");
-            }
 
             return payload;
         }
@@ -328,10 +303,8 @@ namespace ApplePurchaseReceiptVerifier.Jws
         /// <remarks>
         /// A stated instant no certificate can be valid at is a <em>failed</em>
         /// check, never a skipped one. Falling back to "now" here would move
-        /// the validity verdict to the system clock and, because the staleness
-        /// rule reads the same claim, disable that rule too — two checks
-        /// silently dropped on the one claim that drives both. So it is
-        /// rejected, and at the reason CONTRACT.md §2.1 step 9 owns, which is
+        /// the validity verdict to the system clock, a check silently dropped
+        /// on the claim that drives it. So it is rejected, and at the reason CONTRACT.md §2.1 step 9 owns, which is
         /// where Java (<c>new Date(long)</c> past the leaf's notAfter) and Node
         /// (an Invalid Date failing <c>validAt</c>'s NaN comparisons) also
         /// land.

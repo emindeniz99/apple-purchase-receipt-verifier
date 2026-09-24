@@ -29,8 +29,8 @@ Trusted input comes from the integrator, not the network: the three pinned
 Apple roots in [`certs/`](./certs) (PLAN.md D15; each port bundles its own
 copy and never reads it from disk at call time), or anchors the caller injects
 instead at their own risk (PLAN.md D12); the
-verifier config (expected `bundleId`, accepted-environment set, `appAppleId`,
-optional max signed age); and the host clock, used only as a fallback when the
+verifier config (expected `bundleId`, accepted-environment set, `appAppleId`);
+and the host clock, used only as a fallback when the
 payload carries no date of its own. Nothing trusted derives from anything
 attacker-controlled. The third certificate in `x5c` in particular is parsed
 but never trusted: only the intermediate being signed by a pinned anchor
@@ -164,7 +164,7 @@ including `endpoint/vpp-sandbox-receipt-on-production-answers-21007`,
 `endpoint/vpp-receipt-on-sandbox-answers-21008` and
 `endpoint/missing-receipt-type-on-production-answers-21007`.
 
-### 3.5 Time: validity at signing time, staleness as a separate policy
+### 3.5 Time: validity at signing time, freshness left to the caller
 
 Apple's signing certificates rotate, so a receipt signed under a since-expired
 certificate is still genuine. The validity window is checked at the payload's
@@ -173,11 +173,14 @@ when the input carries neither (PLAN.md §2.1 step 4, §2.2 step 2). For a
 receipt, a creation date that is empty, unreadable, stated twice, or sits
 beside a top-level entry the walk cannot read counts as carried by nothing:
 the chain is judged at the system clock and the date is refused later, by
-the full parse, if the signer turns out to be trusted. Separately,
-`JwsVerifier` takes an optional max signed age; a payload signed longer ago is
-`STALE_PAYLOAD` (PLAN.md D5). An injected clock drives that policy only, never
-chain authentication. Staleness bounds how old a genuinely signed payload may
-be. It is not replay protection.
+the full parse, if the signer turns out to be trusted. No verifier judges
+how old a genuinely signed payload may be: that limit depends on the
+endpoint (Apple retries a server notification for days, and a device may
+present an old but genuine payload), so the caller applies it to `signedDate`
+or the receipt creation date, as Apple's own App Store Server Libraries leave
+it to their callers (PLAN.md D5). The one injected clock left, on
+`VerifyReceiptEndpoint`, stamps `request_date` and never reaches chain
+authentication. A freshness limit would not be replay protection either.
 
 *Proof.* Signing-time validity, accepted then rejected:
 `transaction/accept-historical-payload-under-expired-chain`,
@@ -190,12 +193,12 @@ creation date judged at now: `receipt/accept-missing-creation-date`,
 `receipt/creation-date-twice-is-judged-at-now` and
 `receipt/reject-unreadable-entry-under-an-expired-chain`; the trusted test
 PKI they use is valid 2024-01-01 to 2050-01-01 and the expired one 2020-01-01
-to 2021-01-01, so every answer is fixed until 2050. Clock, both
-directions: `transaction/injected-clock-cannot-authenticate-an-expired-chain`,
-`endpoint/injected-clock-cannot-expire-a-valid-chain`. Staleness, boundary and
-dateless case: `transaction/accept-payload-at-exact-max-signed-age`,
-`transaction/reject-payload-one-second-past-max-signed-age`,
-`transaction/payload-without-a-signed-date-is-never-stale`.
+to 2021-01-01, so every answer is fixed until 2050. A dateless payload
+judged at now, both directions:
+`transaction/reject-dateless-payload-under-an-expired-chain`,
+`transaction/accept-payload-without-a-signed-date`. The endpoint clock, both
+directions: `endpoint/injected-clock-cannot-authenticate-an-expired-chain`,
+`endpoint/injected-clock-cannot-expire-a-valid-chain`.
 
 ### 3.6 Device binding, when the caller has the GUID
 
@@ -309,8 +312,13 @@ Not defended against here, by decision rather than omission.
   came from Apple, not that the presenter is entitled to it. Tracking
   transaction ids is the caller's job (PLAN.md D4, INTENT.md).
 - **Refund, revocation and subscription state.** These need Apple's App Store
-  Server API or Server Notifications V2; `isActiveAt` and the max-signed-age
-  policy cover only what the signed claims already say (PLAN.md D5).
+  Server API or Server Notifications V2. The library has no entitlement
+  helper: the signed claims say only what was true at signing, and a billing
+  grace period or `isUpgraded` is not in the transaction at all (PLAN.md
+  D5).
+- **Payload freshness.** No verifier rejects a payload for its age. How old a
+  genuine payload may be is the caller's decision, made on its `signedDate`
+  or the receipt creation date.
 - **Certificate revocation.** No OCSP, no CRL. Offline verification is the
   point, and Apple handles compromised signing certs by rotating them
   (PLAN.md §2.3).

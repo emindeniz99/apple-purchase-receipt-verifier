@@ -114,15 +114,12 @@ class ConformanceTest < Minitest::Test
   end
 
   def jws_verifier(config, clock)
+    require_no_clock(clock, "JwsVerifier")
     APRV::JwsVerifier.new(
       trusted_roots: trusted_roots(config["trustedRoots"]),
       bundle_id: config["bundleId"] || UNMATCHABLE_BUNDLE_ID,
       accepted_environments: config["acceptedEnvironments"] || UNMATCHABLE_ENVIRONMENTS,
-      app_apple_id: config["appAppleId"],
-      # cases.json states seconds and so does this port: the conversion that
-      # would be the one place a unit bug is invisible does not exist here.
-      max_signed_age_seconds: config["maxSignedAgeSeconds"],
-      clock: clock
+      app_apple_id: config["appAppleId"]
     )
   end
 

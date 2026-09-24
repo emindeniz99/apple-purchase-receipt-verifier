@@ -41,7 +41,7 @@ class ApiShapeTest < Minitest::Test
     schema = TestSupport.cases_schema
     expected = schema["$defs"]["reason"]["enum"]
     assert_equal expected.sort, APRV::Reason::ALL.map(&:to_s).sort
-    assert_equal 12, APRV::Reason::ALL.size
+    assert_equal 11, APRV::Reason::ALL.size
     APRV::Reason::ALL.each { |reason| assert_kind_of Symbol, reason }
   end
 
@@ -94,10 +94,6 @@ class ApiShapeTest < Minitest::Test
         APRV::JwsVerifier.new(trusted_roots: receipt_roots, bundle_id: "a", accepted_environments: ["Sandbox"],
                               app_apple_id: "1")
       },
-      lambda {
-        APRV::JwsVerifier.new(trusted_roots: receipt_roots, bundle_id: "a", accepted_environments: ["Sandbox"],
-                              max_signed_age_seconds: -1)
-      },
       -> { APRV::ReceiptVerifier.new(trusted_roots: [], bundle_id: "a") },
       -> { APRV::ReceiptVerifier.new(trusted_roots: receipt_roots, bundle_id: nil) },
       -> { APRV::VerifyReceiptEndpoint.new(trusted_roots: receipt_roots, environment: "Xcode") },
@@ -109,11 +105,11 @@ class ApiShapeTest < Minitest::Test
     end
   end
 
-  def test_the_unit_is_in_the_name_of_the_duration_option
+  # Freshness is the caller's decision (PLAN.md D5), so no option for it exists.
+  def test_the_jws_verifier_has_no_freshness_option
     parameters = APRV::JwsVerifier.instance_method(:initialize).parameters.map(&:last)
-    assert_includes parameters, :max_signed_age_seconds
-    refute_includes parameters, :max_signed_age
-    refute_includes parameters, :max_signed_age_millis
+    refute_includes parameters, :max_signed_age_seconds
+    refute_includes parameters, :clock
   end
 
   def test_verifier_instances_are_frozen

@@ -12,10 +12,8 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\JwsClaims;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\ParseException;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Reason;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier;
-use EminDeniz99\ApplePurchaseReceiptVerifier\SystemClock;
 use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationException;
 use InvalidArgumentException;
-use Psr\Clock\ClockInterface;
 use Throwable;
 
 /**
@@ -33,14 +31,13 @@ use Throwable;
  * $transaction = $verifier->verifyTransaction($jws);
  * ```
  *
- * ## What the clock can and cannot move
+ * ## Time
  *
- * The injected clock drives exactly one check: the max-signed-age
- * (`STALE_PAYLOAD`) rule. Certificate validity is judged at the payload's own
- * `signedDate` / `receiptCreationDate`, and where a payload carries neither,
- * at the SYSTEM clock — never at the injected one. A caller injecting a clock
- * to test staleness, or to work around skew, must not thereby be able to
- * accept an expired chain or expire a live one.
+ * This class takes no clock. Certificate validity is judged at the payload's
+ * own `signedDate` / `receiptCreationDate`, and where a payload carries
+ * neither, at the system clock. No payload is rejected for its age: how old a
+ * signed payload may be is the caller's decision, made on its `signedDate`
+ * (PLAN.md D5).
  */
 final class JwsVerifier
 {
@@ -71,8 +68,6 @@ final class JwsVerifier
     /** @var array<string, true> */
     private readonly array $acceptedEnvironments;
 
-    private readonly ClockInterface $clock;
-
     /**
      * @param list<string> $trustedRoots DER bytes or PEM text of the pinned
      *        anchors. In production: {@see \EminDeniz99\ApplePurchaseReceiptVerifier\AppleRootCerts::jwsRoots()}.
@@ -82,11 +77,6 @@ final class JwsVerifier
      *        reach: App Review runs production builds against sandbox
      *        (PLAN.md D3)
      * @param int|null $appAppleId required to accept a Production AppTransaction
-     * @param int|null $maxSignedAgeSeconds reject payloads signed longer ago
-     *        than this; null disables the rule (PLAN.md D5). The unit is in
-     *        the name on purpose — a bare `300` at a call site says nothing.
-     * @param ClockInterface|null $clock source of "now" for the staleness
-     *        rule only; null installs {@see SystemClock}
      *
      * @throws InvalidArgumentException on misconfiguration — which is a
      *         programming error, never a verdict about a payload
@@ -96,19 +86,21 @@ final class JwsVerifier
         private readonly string $bundleId,
         array $acceptedEnvironments,
         private readonly ?int $appAppleId = null,
-        private readonly ?int $maxSignedAgeSeconds = null,
-        ?ClockInterface $clock = null,
     ) {
+        // PHP passes surplus positional arguments through silently, so a
+        // caller still handing over the removed maxSignedAgeSeconds and clock
+        // would lose the freshness check without a word. Refuse it instead.
+        if (func_num_args() > 4) {
+            throw new InvalidArgumentException(
+                'maxSignedAgeSeconds and clock were removed: compare signedDate yourself where a freshness window fits',
+            );
+        }
         ReceiptVerifier::requireSixtyFourBit();
         $this->anchors = ChainValidator::normalizeRoots($trustedRoots);
         if ($bundleId === '') {
             throw new InvalidArgumentException('bundleId is required');
         }
         $this->acceptedEnvironments = self::normalizeEnvironments($acceptedEnvironments);
-        if ($maxSignedAgeSeconds !== null && $maxSignedAgeSeconds < 1) {
-            throw new InvalidArgumentException('maxSignedAgeSeconds must be positive when set');
-        }
-        $this->clock = $clock ?? new SystemClock();
     }
 
     /**
@@ -286,14 +278,12 @@ final class JwsVerifier
 
         // Chain validity is judged at signing time so payloads signed with
         // since-rotated certificates keep verifying. Where the payload states
-        // no date, the fallback reads the SYSTEM clock, not $this->clock.
+        // no date, the fallback reads the system clock.
         $signedAtMillis = JwsClaims::signedAtMillis($claims);
         $effectiveDate = $signedAtMillis ?? (int) (microtime(true) * 1000);
         ChainValidator::validatePair($leaf, $intermediate, $this->anchors, $effectiveDate);
 
         $this->verifyEs256($leaf, $headerB64 . '.' . $payloadB64, $signatureB64);
-
-        $this->requireFresh($signedAtMillis);
 
         return $claims;
     }
@@ -380,26 +370,6 @@ final class JwsVerifier
             throw new VerificationException(
                 Reason::WrongAppAppleId,
                 'Production AppTransaction does not name the configured app Apple id',
-            );
-        }
-    }
-
-    /**
-     * The one check that legitimately moves with wall-clock time, so the one
-     * the injected clock drives.
-     *
-     * @throws VerificationException
-     */
-    private function requireFresh(?int $signedAtMillis): void
-    {
-        if ($this->maxSignedAgeSeconds === null || $signedAtMillis === null) {
-            return;
-        }
-        $nowMillis = (int) $this->clock->now()->format('Uv');
-        if ($nowMillis - $signedAtMillis > $this->maxSignedAgeSeconds * 1000) {
-            throw new VerificationException(
-                Reason::StalePayload,
-                'payload was signed longer ago than the configured max signed age',
             );
         }
     }

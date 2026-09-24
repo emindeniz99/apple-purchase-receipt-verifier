@@ -233,38 +233,39 @@ is why each generator emits its own roots beside its inputs.
 
 ### The clock
 
-A case may carry a `clock`: one ISO-8601 UTC instant, the `now` the call is
-answered at. Every library takes an optional clock — `java.time.Clock`, a
+A `verifyReceiptEndpoint` case may carry a `clock`: one ISO-8601 UTC
+instant, the `now` the call is answered at. Every library's
+`VerifyReceiptEndpoint` takes an optional clock (`java.time.Clock`, a
 `() => Date` supplier, a callable returning epoch seconds, a
 `@Sendable () -> Date`, a `Clock` trait, a PSR-20 `ClockInterface`, an
-`IClock` — and each adapter hands the case's instant to the verifier it
-builds. No runner fakes time and no runner skips a case for want
-of a seam. A case without a `clock` gets no clock argument, so the library
-reads the system clock exactly as a caller who never sets one does.
+`IClock`), and each adapter hands the case's instant to the endpoint it
+builds. No runner fakes time and no runner skips a case for want of a seam.
+A case without a `clock` gets no clock argument, so the library reads the
+system clock exactly as a caller who never sets one does.
 
-Pin a clock where the answer genuinely moves with time: the max-signed-age
-(`STALE_PAYLOAD`) rule, and the `request_date` triple of
-`verifyReceiptEndpoint`. Certificate validity is not such a place — it is
-judged at the payload's `signedDate` or the receipt's creation date, and
-where the input states neither, at the system clock (PLAN.md 2.1 step 4, 2.2
-step 2). The expired-chain cases are deterministic and no injected clock may
-move their verdict.
+Pin a clock where the answer genuinely moves with time: the `request_date`
+triple of `verifyReceiptEndpoint`. Certificate validity is not such a place:
+it is judged at the payload's `signedDate` or the receipt's creation date,
+and where the input states neither, at the system clock (PLAN.md 2.1 step 4,
+2.2 step 2). The expired-chain cases are deterministic and no injected clock
+may move their verdict.
 
-Pin a clock, too, to prove an answer does *not* move with it. Four cases run
-an input carrying no date of its own — `receipt-no-creation-date`,
-`receipt-expired-no-creation-date`, `transaction-no-signed-date`,
-`transaction-expired-chain-no-signed-date` — under a clock planted inside an
-expired certificate's window, or far past a live one's, and must reach the
-verdict real time gives. That is where the "else current time" fallback is
-held to the system clock: a caller who injects a clock to test staleness, or
-to work around skew, must not thereby accept a chain that has expired.
+Pin a clock, too, to prove an answer does *not* move with it. Two endpoint
+cases run a receipt carrying no creation date (`receipt-no-creation-date`,
+`receipt-expired-no-creation-date`) under a clock planted inside an expired
+certificate's window, or far past a live one's, and must reach the verdict
+real time gives. That is where the "else current time" fallback is held to
+the system clock: a caller who injects a clock to pin `request_date`, or to
+work around skew, must not thereby accept a chain that has expired.
 
-`verifyReceipt` cases cannot pin one — the case shape in
-`cases.schema.json` has no `clock`, so the linter rejects it. No port gives
-`ReceiptVerifier` a clock parameter: no verdict on that path moves with the
-current time, and its one "now" is a certificate-validity instant an injected
-clock must not be able to shift. The clock option lives on the JWS verifier
-(max signed age) and on the endpoint (`request_date`), and nowhere else.
+No other operation can pin one: the case shapes in `cases.schema.json` for
+`verifyTransaction`, `verifyAppTransaction`, `verifyRaw`, `verifyReceipt`
+and `verifyReceiptBase64` have no `clock`, so the linter rejects it. No port
+gives `JwsVerifier` or `ReceiptVerifier` a clock parameter: no verdict on
+those paths moves with the current time, and their one "now" is a
+certificate-validity instant an injected clock must not be able to shift.
+How old a signed payload may be is the caller's decision, so no case pins
+one.
 
 ## Commits
 

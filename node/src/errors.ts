@@ -24,7 +24,6 @@ export const Reason = {
   WRONG_APP_APPLE_ID: 'WRONG_APP_APPLE_ID',
   INVALID_RECEIPT_FORMAT: 'INVALID_RECEIPT_FORMAT',
   DEVICE_HASH_MISMATCH: 'DEVICE_HASH_MISMATCH',
-  STALE_PAYLOAD: 'STALE_PAYLOAD',
   /**
    * The verifyReceipt request envelope is unusable: the body is not a JSON
    * object or nests deeper than 64, or `receipt-data` is missing, empty or

@@ -4,9 +4,9 @@ use core::fmt;
 
 /// Why a verification failed.
 ///
-/// The vocabulary is **closed** by the cross-port contract: the twelve
+/// The vocabulary is **closed** by the cross-port contract: the eleven
 /// reasons in [`Reason::all`] are the whole observability surface of the
-/// verifiers, and adding a thirteenth requires changing
+/// verifiers, and adding a twelfth requires changing
 /// `fixtures/cases.schema.json`, `PLAN.md` and every port in one change.
 ///
 /// Two more values, [`Reason::MalformedRequest`] and
@@ -46,8 +46,6 @@ pub enum Reason {
     /// `SHA1(guid ‖ opaqueValue ‖ bundleIdBytes)` does not equal
     /// attribute 5.
     DeviceHashMismatch,
-    /// The payload was signed longer ago than the configured maximum.
-    StalePayload,
     /// The `verifyReceipt` request envelope is unusable: the body is not a
     /// JSON object or nests deeper than 64, or `receipt-data` is missing,
     /// empty or not a string.
@@ -84,7 +82,6 @@ impl Reason {
             Reason::WrongAppAppleId => "WRONG_APP_APPLE_ID",
             Reason::InvalidReceiptFormat => "INVALID_RECEIPT_FORMAT",
             Reason::DeviceHashMismatch => "DEVICE_HASH_MISMATCH",
-            Reason::StalePayload => "STALE_PAYLOAD",
             Reason::MalformedRequest => "MALFORMED_REQUEST",
             Reason::InternalError => "INTERNAL_ERROR",
             Reason::RequestTooLarge => "REQUEST_TOO_LARGE",
@@ -93,8 +90,8 @@ impl Reason {
 
     /// Every reason a verifier can return, in the order the contract lists
     /// them. [`Reason::InternalError`] is last because it joined the list
-    /// last, which keeps every earlier position (and the C ABI code derived
-    /// from it) where it was. The two endpoint-only reasons,
+    /// last. The C ABI pins its own codes, so removing a reason moves no
+    /// ABI value. The two endpoint-only reasons,
     /// [`Reason::MalformedRequest`] and [`Reason::RequestTooLarge`], are not
     /// in it.
     #[must_use]
@@ -110,7 +107,6 @@ impl Reason {
             Reason::WrongAppAppleId,
             Reason::InvalidReceiptFormat,
             Reason::DeviceHashMismatch,
-            Reason::StalePayload,
             Reason::InternalError,
         ]
     }

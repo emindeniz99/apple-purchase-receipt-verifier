@@ -29,16 +29,6 @@ public struct TransactionPayload: Codable, Sendable {
     public let quantity: Int?
     public let offerType: Int?
     public let revocationReason: Int?
-
-    /// Entitlement helper: not revoked, and (for subscriptions) not expired
-    /// at `date`. Point-in-time on the signed claims only — later refunds
-    /// or renewals are invisible (track status via transaction id).
-    public func isActive(at date: Date) -> Bool {
-        let millis = Int64(date.timeIntervalSince1970 * 1000)
-        if let revocationDate, millis >= revocationDate { return false }
-        if let expiresDate { return millis < expiresDate }
-        return true
-    }
 }
 
 /// Decoded `AppTransaction` payload; environment lives in ``receiptType``.
@@ -166,8 +156,6 @@ public struct JwsVerifier: Sendable {
     private let bundleId: String
     private let acceptedEnvironments: Set<AppleEnvironment>
     private let appAppleId: Int64?
-    private let maxSignedAgeMillis: Int64?
-    private let clock: @Sendable () -> Date
 
     /// - Parameters:
     ///   - trustedRoots: pinned DER roots (production: ``appleJwsRoots()``)
@@ -175,22 +163,13 @@ public struct JwsVerifier: Sendable {
     ///   - acceptedEnvironments: include `.sandbox` on endpoints App Review
     ///     can hit (PLAN.md D3)
     ///   - appAppleId: required to accept Production AppTransactions
-    ///   - maxSignedAgeMillis: reject payloads signed longer ago (PLAN.md D5)
-    ///   - clock: the source of "now" for the checks that genuinely depend on
-    ///     wall-clock time — today the max-signed-age rule alone. Omitted, the
-    ///     system clock is read, exactly as before this parameter existed.
-    ///     The type is a `@Sendable () -> Date` rather than a `Clock`: Swift's
-    ///     `Clock` protocol (`ContinuousClock`, `SuspendingClock`) measures
-    ///     elapsed time from an arbitrary origin and cannot name a wall-clock
-    ///     instant like 2025-01-01, which is exactly what pinning "now"
-    ///     requires. A closure returning `Date` is the idiomatic injectable
-    ///     wall-clock source on Apple platforms, and `@Sendable` keeps this
-    ///     struct `Sendable`.
+    ///
+    /// No payload is rejected for its age: how old a signed payload may be is
+    /// the caller's decision, made on its `signedDate` (PLAN.md D5).
     public init(
         trustedRoots: [Data], bundleId: String,
         acceptedEnvironments: Set<AppleEnvironment>,
-        appAppleId: Int64? = nil, maxSignedAgeMillis: Int64? = nil,
-        clock: (@Sendable () -> Date)? = nil
+        appAppleId: Int64? = nil
     ) throws {
         guard !trustedRoots.isEmpty else {
             throw VerificationError(.invalidCertificate, "trustedRoots must not be empty")
@@ -202,8 +181,6 @@ public struct JwsVerifier: Sendable {
         self.bundleId = bundleId
         self.acceptedEnvironments = acceptedEnvironments
         self.appAppleId = appAppleId
-        self.maxSignedAgeMillis = maxSignedAgeMillis
-        self.clock = clock ?? { Date() }
     }
 
     /// Verifies a signed transaction and checks bundle id + environment.
@@ -320,8 +297,8 @@ public struct JwsVerifier: Sendable {
 
         // RFC 7515 7.1 makes the payload a JSON object, and reading a payload
         // that is not one as "no claims" fails OPEN: every claim then reads as
-        // absent, certificate validity falls back to the current time, and the
-        // staleness rule stops applying at all. An empty segment and a JSON
+        // absent and certificate validity falls back to the current time. An
+        // empty segment and a JSON
         // array are both that payload
         // (transaction/reject-empty-payload-segment,
         // transaction/reject-payload-that-is-a-json-array).
@@ -334,11 +311,9 @@ public struct JwsVerifier: Sendable {
         let signedAtMillis =
             (claims["signedDate"] as? Double)
             ?? (claims["receiptCreationDate"] as? Double)
-        // Deliberately NOT the injected clock: chain validity is judged at the
-        // payload's signing date (PLAN.md 2.1 step 4), and the fallback for a
-        // payload that carries no date stands in for that missing signing
-        // date. Routing the clock here would let a caller move a
-        // certificate-validity verdict, which the seam must never do.
+        // Chain validity is judged at the payload's signing date (PLAN.md 2.1
+        // step 4), and the system clock stands in for a payload that carries
+        // no date.
         let validationTime = signedAtMillis.map { Date(timeIntervalSince1970: $0 / 1000) } ?? Date()
         // The claim is attacker-supplied JSON and is read before the signature
         // check, so a large enough number would trap inside the policy rather
@@ -371,14 +346,6 @@ public struct JwsVerifier: Sendable {
         let signingInput = Data("\(segments[0]).\(segments[1])".utf8)
         guard publicKey.isValidSignature(signature, for: signingInput) else {
             throw VerificationError(.invalidSignature, "ES256 signature check failed")
-        }
-
-        if let maxSignedAgeMillis, let signedAtMillis,
-            clock().timeIntervalSince1970 * 1000 - signedAtMillis > Double(maxSignedAgeMillis)
-        {
-            throw VerificationError(
-                .stalePayload,
-                "payload signed at \(Int64(signedAtMillis)) exceeds max age \(maxSignedAgeMillis)ms")
         }
         return payloadData
     }

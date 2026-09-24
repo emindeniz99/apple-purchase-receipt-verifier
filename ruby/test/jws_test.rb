@@ -239,19 +239,6 @@ class JwsTest < Minitest::Test
     assert_equal 1_896_168_600_000, payload.expires_date
   end
 
-  def test_active_at_reads_expiry_and_revocation
-    jws = TestPki.sign_jws(@pki, TestPki.default_claims("expiresDate" => 1_896_168_600_000))
-    payload = verifier.verify_transaction(jws)
-    assert payload.active_at?(Time.utc(2025, 1, 1))
-    refute payload.active_at?(Time.utc(2031, 1, 1))
-
-    revoked = verifier.verify_transaction(
-      TestPki.sign_jws(@pki, TestPki.default_claims("revocationDate" => 1_722_945_600_000))
-    )
-    refute revoked.active_at?(Time.utc(2025, 1, 1))
-    assert revoked.active_at?(Time.utc(2024, 1, 1))
-  end
-
   def test_claims_escape_hatch_exposes_unmodelled_claims
     jws = TestPki.sign_jws(@pki, TestPki.default_claims("somethingAppleAddsLater" => "x"))
     payload = verifier.verify_transaction(jws)

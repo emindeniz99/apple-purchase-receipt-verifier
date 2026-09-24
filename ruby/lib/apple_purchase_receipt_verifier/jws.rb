@@ -42,15 +42,11 @@ module ApplePurchaseReceiptVerifier
     #   Sandbox on endpoints App Review can reach (PLAN.md D3).
     # @param app_apple_id [Integer, nil] required to accept Production
     #   AppTransactions
-    # @param max_signed_age_seconds [Numeric, nil] reject payloads signed
-    #   longer ago than this. The unit is in the name on purpose: a bare
-    #   `300` at a call site has to say what it means.
-    # @param clock [#call, nil] source of "now" for the staleness rule only.
-    #   Certificate validity is judged at the payload's own signing date, and
-    #   its fallback reads the system clock — an injected clock must never be
-    #   able to authenticate an expired chain.
+    #
+    # No payload is rejected for its age: how old a signed payload may be is
+    # the caller's decision, made on its `signed_date` (PLAN.md D5).
     def initialize(trusted_roots:, bundle_id:, accepted_environments:,
-                   app_apple_id: nil, max_signed_age_seconds: nil, clock: nil)
+                   app_apple_id: nil)
       @roots = Chain.normalize_roots(trusted_roots)
 
       unless bundle_id.is_a?(String) && !bundle_id.empty?
@@ -68,18 +64,9 @@ module ApplePurchaseReceiptVerifier
         raise ArgumentError, "app_apple_id must be an Integer or nil"
       end
 
-      if !max_signed_age_seconds.nil? &&
-         (!max_signed_age_seconds.is_a?(Numeric) || max_signed_age_seconds.negative?)
-        raise ArgumentError, "max_signed_age_seconds must be a non-negative Numeric or nil"
-      end
-
-      raise ArgumentError, "clock must respond to #call" if !clock.nil? && !clock.respond_to?(:call)
-
       @bundle_id = bundle_id.dup.freeze
       @accepted_environments = accepted_environments.dup.freeze
       @app_apple_id = app_apple_id
-      @max_signed_age_seconds = max_signed_age_seconds
-      @clock = clock
       freeze
     end
 
@@ -173,15 +160,12 @@ module ApplePurchaseReceiptVerifier
 
       # Chain validity is judged at signing time, so payloads Apple signed with
       # a since-rotated certificate keep verifying. When the payload states no
-      # date, the fallback is the SYSTEM clock and never the injected one: a
-      # caller injecting a clock to test staleness, or to paper over skew, must
-      # not thereby be able to authenticate an expired chain.
+      # date, the fallback is the system clock.
       signed_at_millis = signed_at_millis_of(claims) #: (Integer | Float)?
       instant = signed_at_millis.nil? ? Time.now.utc : Time.at(signed_at_millis / 1000.0).utc
       Chain.validate_pair(leaf, intermediate, @roots, instant)
 
       verify_es256(leaf, "#{header_b64}.#{payload_b64}", signature_b64)
-      require_fresh(signed_at_millis)
 
       claims
     end
@@ -342,9 +326,7 @@ module ApplePurchaseReceiptVerifier
     # A JSON number is not necessarily an integer, and every other port takes a
     # fractional one: node tests `typeof === 'number'`, java `canConvertToLong`,
     # python `isinstance(..., (int, float))`, swift `as? Double`. Treating it as
-    # absent would judge the chain at "now" rather than at the stated instant
-    # AND skip the staleness rule (PLAN.md §2.1 step 11) entirely — the wrong
-    # instant plus a check silently not run.
+    # absent would judge the chain at "now" rather than at the stated instant.
     #
     # A non-finite number gets that same treatment for the same reason and in
     # the other direction: Ruby's JSON parser turns `1e400` into Infinity, and
@@ -386,24 +368,6 @@ module ApplePurchaseReceiptVerifier
 
       raise VerificationError.new(Reason::WRONG_APP_APPLE_ID,
                                   "payload app Apple id does not match the configured one")
-    end
-
-    # The one verdict in this library that legitimately moves with wall-clock
-    # time, and therefore the one the injected clock drives.
-    def require_fresh(signed_at_millis)
-      return if @max_signed_age_seconds.nil? || signed_at_millis.nil?
-
-      now = @clock.nil? ? Time.now : @clock.call # steep:ignore NoMethod
-      unless now.is_a?(Time)
-        raise VerificationError.new(Reason::STALE_PAYLOAD,
-                                    "clock did not return a Time")
-      end
-
-      age_seconds = ((now.to_r * 1000).to_i - signed_at_millis) / 1000.0 # steep:ignore
-      return if age_seconds <= @max_signed_age_seconds
-
-      raise VerificationError.new(Reason::STALE_PAYLOAD,
-                                  "payload is older than the configured max signed age")
     end
   end
 end

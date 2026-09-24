@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Jws;
 
-use DateTimeInterface;
-
 /**
  * The decoded `JWSTransactionDecodedPayload` claims this library models.
  *
@@ -51,26 +49,5 @@ final class TransactionPayload
         public readonly ?int $revocationReason,
         public readonly array $claims,
     ) {
-    }
-
-    /**
-     * Entitlement helper: not revoked, and (for subscriptions) not expired at
-     * `$now`.
-     *
-     * Point-in-time, over the signed claims only. A refund or a renewal that
-     * happened after this payload was signed is invisible to it — that needs
-     * Apple's server API (INTENT.md).
-     */
-    public function isActiveAt(DateTimeInterface $now): bool
-    {
-        $millis = (int) $now->format('Uv');
-        if ($this->revocationDate !== null && $millis >= $this->revocationDate) {
-            return false;
-        }
-        if ($this->expiresDate !== null) {
-            return $millis < $this->expiresDate;
-        }
-
-        return true;
     }
 }

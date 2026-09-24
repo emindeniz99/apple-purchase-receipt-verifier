@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
@@ -12,9 +11,6 @@ import io.github.emindeniz99.applepurchasereceiptverifier.jws.AppTransactionPayl
 import io.github.emindeniz99.applepurchasereceiptverifier.jws.JwsVerifier;
 import io.github.emindeniz99.applepurchasereceiptverifier.jws.TransactionPayload;
 import java.nio.charset.StandardCharsets;
-import java.time.Clock;
-import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
@@ -25,7 +21,6 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.function.Executable;
 
 class JwsVerifierTest {
 
@@ -79,7 +74,6 @@ class JwsVerifierTest {
         assertEquals("2000000000000001", payload.transactionId());
         assertEquals("Sandbox", payload.environment());
         assertEquals(Integer.valueOf(1), payload.quantity());
-        assertTrue(payload.isActiveAt(new Date()));
     }
 
     @Test
@@ -210,19 +204,16 @@ class JwsVerifierTest {
         assertEquals(Reason.INVALID_CHAIN, e.reason());
     }
 
+    /** Freshness is the caller's decision (PLAN.md D5): an old payload still verifies. */
     @Test
-    void rejectsStalePayloadWhenMaxAgeConfigured() throws Exception {
+    void neverRejectsAPayloadForItsAge() throws Exception {
         Map<String, Object> claims = transactionClaims("Sandbox");
-        claims.put("signedDate", System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(10));
+        long signedAt = System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(10);
+        claims.put("signedDate", signedAt);
         String jws = pki.signJws(claims);
-        JwsVerifier strict = new JwsVerifier(
-                Collections.singleton(pki.root),
-                BUNDLE,
-                EnumSet.of(Environment.SANDBOX),
-                null,
-                TimeUnit.MINUTES.toMillis(1));
-        VerificationException e = assertThrows(VerificationException.class, () -> strict.verifyTransaction(jws));
-        assertEquals(Reason.STALE_PAYLOAD, e.reason());
+        JwsVerifier verifier =
+                new JwsVerifier(Collections.singleton(pki.root), BUNDLE, EnumSet.of(Environment.SANDBOX));
+        assertEquals(Long.valueOf(signedAt), verifier.verifyTransaction(jws).signedDate());
     }
 
     @Test
@@ -231,30 +222,6 @@ class JwsVerifierTest {
                 VerificationException.class,
                 () -> verifier(pki, Environment.SANDBOX).verifyTransaction("not-a-jws"));
         assertEquals(Reason.INVALID_JWS_FORMAT, e.reason());
-    }
-
-    @Test
-    void expiredSubscriptionIsNotActive() throws Exception {
-        Map<String, Object> claims = transactionClaims("Sandbox");
-        claims.put("type", "Auto-Renewable Subscription");
-        claims.put("expiresDate", System.currentTimeMillis() - 1000);
-        String jws = pki.signJws(claims);
-        TransactionPayload payload = verifier(pki, Environment.SANDBOX).verifyTransaction(jws);
-        assertFalse(payload.isActiveAt(new Date()));
-    }
-
-    /**
-     * There is no defensible default instant for the entitlement question, so
-     * the argument is required and says so. It used to be dereferenced
-     * unchecked, which answered the caller with a bare NullPointerException
-     * carrying no hint that the argument was the problem.
-     */
-    @Test
-    void isActiveAtRefusesANullInstantWithAMessageThatNamesTheArgument() throws Exception {
-        TransactionPayload payload =
-                verifier(pki, Environment.SANDBOX).verifyTransaction(pki.signJws(transactionClaims("Sandbox")));
-        NullPointerException thrown = assertThrows(NullPointerException.class, () -> payload.isActiveAt(null));
-        assertTrue(String.valueOf(thrown.getMessage()).contains("now must not be null"), thrown.getMessage());
     }
 
     @Test
@@ -274,7 +241,7 @@ class JwsVerifierTest {
                 System.currentTimeMillis());
         String jws = pki.signJws(claims);
         JwsVerifier v = new JwsVerifier(
-                Collections.singleton(pki.root), BUNDLE, EnumSet.of(Environment.PRODUCTION), 123456789L, null);
+                Collections.singleton(pki.root), BUNDLE, EnumSet.of(Environment.PRODUCTION), 123456789L);
         AppTransactionPayload payload = v.verifyAppTransaction(jws);
         assertEquals(Long.valueOf(123456789L), payload.appAppleId());
         assertEquals("1.2.3", payload.applicationVersion());
@@ -293,7 +260,7 @@ class JwsVerifierTest {
                 System.currentTimeMillis());
         String jws = pki.signJws(claims);
         JwsVerifier v = new JwsVerifier(
-                Collections.singleton(pki.root), BUNDLE, EnumSet.of(Environment.PRODUCTION), 123456789L, null);
+                Collections.singleton(pki.root), BUNDLE, EnumSet.of(Environment.PRODUCTION), 123456789L);
         VerificationException e = assertThrows(VerificationException.class, () -> v.verifyAppTransaction(jws));
         assertEquals(Reason.WRONG_APP_APPLE_ID, e.reason());
     }
@@ -331,48 +298,15 @@ class JwsVerifierTest {
                 IllegalArgumentException.class, () -> new JwsVerifier(empty, BUNDLE, EnumSet.of(Environment.SANDBOX)));
     }
 
-    // ------------------------------------------------------------ clock seam
-
-    /** A verifier built without a clock: "now" is the real system clock. */
-    @Test
-    void omittedClockUsesTheSystemClock() throws Exception {
-        Map<String, Object> claims = transactionClaims("Sandbox");
-        String fresh = pki.signJws(claims);
-        claims.put("signedDate", System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(10));
-        String old = pki.signJws(claims);
-        JwsVerifier strict = strict(null);
-        assertEquals(BUNDLE, strict.verifyTransaction(fresh).bundleId());
-        VerificationException e = assertThrows(VerificationException.class, () -> strict.verifyTransaction(old));
-        assertEquals(Reason.STALE_PAYLOAD, e.reason());
-    }
-
-    /**
-     * The staleness verdict follows the injected clock, not the wall clock:
-     * one payload, one max age, three answers chosen by "now" alone.
-     */
-    @Test
-    void injectedClockDecidesStaleness() throws Exception {
-        Map<String, Object> claims = transactionClaims("Sandbox");
-        long signedAt = ((Number) claims.get("signedDate")).longValue();
-        String jws = pki.signJws(claims);
-        assertEquals(BUNDLE, strict(null).verifyTransaction(jws).bundleId());
-        assertEquals(
-                BUNDLE,
-                strict(at(signedAt + TimeUnit.SECONDS.toMillis(30)))
-                        .verifyTransaction(jws)
-                        .bundleId());
-        JwsVerifier late = strict(at(signedAt + TimeUnit.HOURS.toMillis(1)));
-        VerificationException e = assertThrows(VerificationException.class, () -> late.verifyTransaction(jws));
-        assertEquals(Reason.STALE_PAYLOAD, e.reason());
-    }
+    // ------------------------------------------------------------------ time
 
     /**
      * Certificate validity is judged at the payload's signedDate (PLAN.md
-     * §2.1 step 4), so no injected "now" — decades before or after the
-     * certificate window — can move a chain verdict.
+     * §2.1 step 4): a payload signed inside the window of a chain that has
+     * since expired verifies, and one signed after it expired does not.
      */
     @Test
-    void injectedClockDoesNotMoveCertificateValidityVerdicts() throws Exception {
+    void certificateValidityIsJudgedAtTheSignedDate() throws Exception {
         long now = System.currentTimeMillis();
         Date notBefore = new Date(now - 730L * 86_400_000L);
         Date notAfter = new Date(now - 365L * 86_400_000L);
@@ -381,39 +315,23 @@ class JwsVerifierTest {
         historical.put("signedDate", now - 547L * 86_400_000L);
         String insideWindow = expired.signJws(historical);
         String outsideWindow = expired.signJws(transactionClaims("Sandbox"));
-        // No max age: staleness must not confound the chain verdict.
-        for (Clock clock : Arrays.<Clock>asList(
-                null,
-                at(now - 3650L * 86_400_000L),
-                at(notBefore.getTime() + 86_400_000L),
-                at(now + 3650L * 86_400_000L))) {
-            JwsVerifier verifier = new JwsVerifier(
-                    Collections.singleton(expired.root), BUNDLE, EnumSet.of(Environment.SANDBOX), null, null, clock);
-            assertEquals(
-                    BUNDLE,
-                    verifier.verifyTransaction(insideWindow).bundleId(),
-                    "historical payload with clock " + clock);
-            VerificationException e = assertThrows(
-                    VerificationException.class,
-                    () -> verifier.verifyTransaction(outsideWindow),
-                    "fresh payload with clock " + clock);
-            assertEquals(Reason.INVALID_CHAIN, e.reason());
-        }
+        JwsVerifier verifier =
+                new JwsVerifier(Collections.singleton(expired.root), BUNDLE, EnumSet.of(Environment.SANDBOX));
+        assertEquals(BUNDLE, verifier.verifyTransaction(insideWindow).bundleId());
+        VerificationException e =
+                assertThrows(VerificationException.class, () -> verifier.verifyTransaction(outsideWindow));
+        assertEquals(Reason.INVALID_CHAIN, e.reason());
     }
 
     /**
-     * The other half of the rule above, and the half that used to be wrong:
-     * a payload carrying NEITHER {@code signedDate} NOR
+     * A payload carrying NEITHER {@code signedDate} NOR
      * {@code receiptCreationDate} falls back to PLAN.md §2.1 step 4's "else
-     * current time" — and that "current time" is the system clock, never the
-     * injected one. Java used to route this fallback through the injected
-     * clock while node, python and swift did not, which made an injected
-     * clock able to decide a certificate-validity verdict: a caller pinning a
-     * clock to test staleness, or to paper over skew, could thereby accept a
-     * chain that is expired in real time. It cannot any more.
+     * current time", which is the system clock: an expired chain fails and
+     * a chain valid right now passes. verifyRaw so no claim check can mask
+     * the chain verdict.
      */
     @Test
-    void injectedClockDoesNotMoveCertificateValidityForADatelessPayload() throws Exception {
+    void aDatelessPayloadIsJudgedAtTheSystemClock() throws Exception {
         long now = System.currentTimeMillis();
         Date notBefore = new Date(now - 730L * 86_400_000L);
         Date notAfter = new Date(now - 365L * 86_400_000L);
@@ -423,114 +341,12 @@ class JwsVerifierTest {
         assertFalse(dateless.containsKey("receiptCreationDate"));
         String expiredJws = expired.signJws(dateless);
         String currentJws = pki.signJws(dateless);
-        // Clocks planted squarely inside the expired window, and decades away
-        // from it: the verdict is the same every time, because none of them is
-        // consulted. verifyRaw so no claim check can mask the chain verdict.
-        for (Clock clock : Arrays.<Clock>asList(
-                null,
-                at(notBefore.getTime() + 86_400_000L),
-                at(now - 3650L * 86_400_000L),
-                at(now + 3650L * 86_400_000L))) {
-            JwsVerifier verifier = new JwsVerifier(
-                    Collections.singleton(expired.root), BUNDLE, EnumSet.of(Environment.SANDBOX), null, null, clock);
-            VerificationException e = assertThrows(
-                    VerificationException.class,
-                    () -> verifier.verifyRaw(expiredJws),
-                    "dateless payload with clock " + clock);
-            assertEquals(Reason.INVALID_CHAIN, e.reason(), "clock " + clock);
-            // And it cannot fail a chain that is valid right now either.
-            JwsVerifier current = new JwsVerifier(
-                    Collections.singleton(pki.root), BUNDLE, EnumSet.of(Environment.SANDBOX), null, null, clock);
-            assertEquals(BUNDLE, current.verifyRaw(currentJws).get("bundleId"), "dateless payload with clock " + clock);
-        }
-    }
-
-    /**
-     * A payload that states no signing time has no age, so the max-signed-age
-     * rule does not apply to it — rather than being measured against the clock
-     * itself, which would make the answer depend on which clock. node and
-     * python skip it the same way.
-     */
-    @Test
-    void aPayloadWithoutASigningDateIsNeverStale() throws Exception {
-        Map<String, Object> dateless = transactionClaims("Sandbox");
-        dateless.remove("signedDate");
-        String jws = pki.signJws(dateless);
-        assertEquals(BUNDLE, strict(null).verifyRaw(jws).get("bundleId"));
-        assertEquals(
-                BUNDLE,
-                strict(at(System.currentTimeMillis() + 3650L * 86_400_000L))
-                        .verifyRaw(jws)
-                        .get("bundleId"));
-        assertEquals(
-                BUNDLE,
-                strict(at(System.currentTimeMillis() - 3650L * 86_400_000L))
-                        .verifyRaw(jws)
-                        .get("bundleId"));
-    }
-
-    /**
-     * A JWS header is a JSON object (RFC 7515 §4), so a header segment that
-     * decodes to nothing, to whitespace, or to a scalar or an array is a
-     * malformed JWS. The header side has always answered that way — every
-     * shape below misses {@code alg} and stops there — and this pins it, so
-     * the guard the payload side needed cannot be narrowed to the payload.
-     */
-    @Test
-    void rejectsEmptyOrNonObjectHeaderSegment() throws Exception {
-        String payloadJson = MAPPER.writeValueAsString(transactionClaims("Sandbox"));
-        String signature = pki.signJws(transactionClaims("Sandbox")).split("\\.")[2];
-        for (String jws : Arrays.asList(
-                "..",
-                ".payload.sig",
-                "..sig",
-                "." + TestPki.b64url(payloadJson.getBytes(StandardCharsets.UTF_8)) + "." + signature,
-                TestPki.b64url("   ".getBytes(StandardCharsets.UTF_8)) + ".payload.sig",
-                TestPki.b64url("123".getBytes(StandardCharsets.UTF_8)) + ".payload.sig",
-                TestPki.b64url("[]".getBytes(StandardCharsets.UTF_8)) + ".payload.sig",
-                TestPki.b64url("null".getBytes(StandardCharsets.UTF_8)) + ".payload.sig",
-                TestPki.b64url("\"alg\"".getBytes(StandardCharsets.UTF_8)) + ".payload.sig")) {
-            VerificationException e = assertThrows(
-                    VerificationException.class,
-                    () -> verifier(pki, Environment.SANDBOX).verifyTransaction(jws),
-                    "header segment of " + jws);
-            assertEquals(Reason.INVALID_JWS_FORMAT, e.reason(), "header segment of " + jws);
-        }
-    }
-
-    /**
-     * The payload segment is where the same rule was missing, and only a
-     * genuinely signed JWS reaches it — the header, the chain and the
-     * signature all have to pass first. A segment decoding to nothing, to
-     * whitespace or to the literal {@code null} made Jackson's
-     * {@code readTree} answer a node carrying no value, which
-     * {@code treeToValue} turned into a {@code null} model: both
-     * {@code verifyTransaction} and {@code verifyAppTransaction} then threw a
-     * NullPointerException from their own bundle-id check, and
-     * {@code verifyRaw} returned a null map, deferring the same crash to the
-     * caller. A scalar or array segment was reported correctly by the two
-     * typed methods but leaked an {@link IllegalArgumentException} out of
-     * {@code verifyRaw}'s conversion. All of it is
-     * {@link Reason#INVALID_JWS_FORMAT} now. {@code header..sig} is here as
-     * the shape a caller writes by hand; it stops at the header.
-     */
-    @Test
-    void rejectsEmptyOrNonObjectPayloadSegment() throws Exception {
-        for (String payloadJson : Arrays.asList("", "   ", "123", "[]", "null", "\"bundleId\"")) {
-            String jws = pki.signJwsWithHeader(headerJson(), payloadJson);
-            for (Executable call : Arrays.<Executable>asList(
-                    () -> verifier(pki, Environment.SANDBOX).verifyTransaction(jws),
-                    () -> verifier(pki, Environment.SANDBOX).verifyAppTransaction(jws),
-                    () -> verifier(pki, Environment.SANDBOX).verifyRaw(jws))) {
-                VerificationException e =
-                        assertThrows(VerificationException.class, call, "payload segment " + payloadJson);
-                assertEquals(Reason.INVALID_JWS_FORMAT, e.reason(), "payload segment " + payloadJson);
-            }
-        }
-        VerificationException e = assertThrows(
-                VerificationException.class,
-                () -> verifier(pki, Environment.SANDBOX).verifyTransaction("header..sig"));
-        assertEquals(Reason.INVALID_JWS_FORMAT, e.reason());
+        JwsVerifier verifier =
+                new JwsVerifier(Collections.singleton(expired.root), BUNDLE, EnumSet.of(Environment.SANDBOX));
+        VerificationException e = assertThrows(VerificationException.class, () -> verifier.verifyRaw(expiredJws));
+        assertEquals(Reason.INVALID_CHAIN, e.reason());
+        JwsVerifier current = new JwsVerifier(Collections.singleton(pki.root), BUNDLE, EnumSet.of(Environment.SANDBOX));
+        assertEquals(BUNDLE, current.verifyRaw(currentJws).get("bundleId"));
     }
 
     private static String headerJson() throws Exception {
@@ -538,20 +354,5 @@ class JwsVerifierTest {
         header.put("alg", "ES256");
         header.put("x5c", pki.x5c());
         return MAPPER.writeValueAsString(header);
-    }
-
-    /** One-minute max age, optionally with a pinned clock. */
-    private static JwsVerifier strict(Clock clock) {
-        return new JwsVerifier(
-                Collections.singleton(pki.root),
-                BUNDLE,
-                EnumSet.of(Environment.SANDBOX),
-                null,
-                TimeUnit.MINUTES.toMillis(1),
-                clock);
-    }
-
-    private static Clock at(long epochMillis) {
-        return Clock.fixed(Instant.ofEpochMilli(epochMillis), ZoneOffset.UTC);
     }
 }

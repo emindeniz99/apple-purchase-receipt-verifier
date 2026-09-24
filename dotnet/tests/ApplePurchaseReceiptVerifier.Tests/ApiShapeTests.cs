@@ -17,7 +17,7 @@ namespace ApplePurchaseReceiptVerifier.Tests;
 public class ApiShapeTests
 {
     /// <summary>
-    /// The twelve canonical tokens, read out of
+    /// The eleven canonical tokens, read out of
     /// <c>fixtures/cases.schema.json</c> rather than retyped — so a drifted
     /// spelling fails here instead of in another port's CI.
     /// </summary>
@@ -44,9 +44,9 @@ public class ApiShapeTests
     private static readonly string[] ResultOnlyCodes = { "MALFORMED_REQUEST", "REQUEST_TOO_LARGE" };
 
     [Fact]
-    public void ReasonHasTheTwelveVerifierMembersAndTheTwoResultOnlyOnes()
+    public void ReasonHasTheElevenVerifierMembersAndTheTwoResultOnlyOnes()
     {
-        Assert.Equal(14, Enum.GetValues<VerificationReason>().Length);
+        Assert.Equal(13, Enum.GetValues<VerificationReason>().Length);
     }
 
     [Fact]
@@ -251,15 +251,6 @@ public class ApiShapeTests
     public void ReceiptAttributeDatesAreDateTimeOffsets(Type type, string property)
     {
         Assert.Equal(typeof(DateTimeOffset?), type.GetProperty(property)!.PropertyType);
-    }
-
-    [Fact]
-    public void EntitlementHelperLivesOnThePayload()
-    {
-        MethodInfo? method = typeof(TransactionPayload).GetMethod(
-            "IsActiveAt", new[] { typeof(DateTimeOffset) });
-        Assert.NotNull(method);
-        Assert.Equal(typeof(bool), method!.ReturnType);
     }
 
     private static IEnumerable<Type> SurfaceTypes(Type type)

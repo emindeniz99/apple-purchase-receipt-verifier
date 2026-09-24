@@ -124,11 +124,10 @@ final class Harness {
 
         // Both environments accepted and an appAppleId supplied, so that no
         // claim check short-circuits the cryptography the target exists to
-        // reach. maxSignedAge stays null for the same reason: the fixtures are
-        // signed in 2024 and a staleness rule would reject them all.
+        // reach.
         Set<Environment> environments = EnumSet.allOf(Environment.class);
-        JWS_VERIFIER = new JwsVerifier(JWS_ANCHORS, BUNDLE_ID, environments, APP_APPLE_ID, null);
-        APPLE_JWS_VERIFIER = new JwsVerifier(APPLE_JWS_ANCHORS, BUNDLE_ID, environments, APP_APPLE_ID, null);
+        JWS_VERIFIER = new JwsVerifier(JWS_ANCHORS, BUNDLE_ID, environments, APP_APPLE_ID);
+        APPLE_JWS_VERIFIER = new JwsVerifier(APPLE_JWS_ANCHORS, BUNDLE_ID, environments, APP_APPLE_ID);
 
         // The generated receipts carry receiptType "ProductionSandbox", so a
         // SANDBOX endpoint answers them 0 and builds the whole response body,

@@ -290,16 +290,6 @@ func TestClaimChecksRunInTheDocumentedOrder(t *testing.T) {
 		_, err := verifier.VerifyTransaction(pki.sign(t, claims))
 		requireReason(t, err, applereceipt.ReasonWrongBundleID)
 	})
-	t.Run("staleness is checked before the bundle id", func(t *testing.T) {
-		claims := transactionClaims()
-		claims["bundleId"] = "com.other.app"
-		claims["signedDate"] = time.Now().Add(-time.Hour).UnixMilli()
-		verifier := jwsVerifierFor(t, roots, func(o *applereceipt.JWSVerifierOptions) {
-			o.MaxSignedAge = time.Minute
-		})
-		_, err := verifier.VerifyTransaction(pki.sign(t, claims))
-		requireReason(t, err, applereceipt.ReasonStalePayload)
-	})
 	t.Run("an unknown environment is rejected", func(t *testing.T) {
 		claims := transactionClaims()
 		claims["environment"] = "Martian"
@@ -413,9 +403,6 @@ func TestEverySpellingOfADateClaimIsRead(t *testing.T) {
 		if payload.ExpiresDate == nil || *payload.ExpiresDate != signedAt {
 			t.Fatalf("expiresDate spelled %s read as %v", spelling, payload.ExpiresDate)
 		}
-		if payload.IsActiveAt(time.UnixMilli(signedAt + 1)) {
-			t.Fatalf("expiresDate spelled %s left the subscription entitled", spelling)
-		}
 	}
 }
 
@@ -467,43 +454,9 @@ func TestModelledClaimOfTheWrongTypeIsAnInternalError(t *testing.T) {
 	}
 }
 
-func TestStalenessBoundaries(t *testing.T) {
-	pki := newJWSPKI(t)
-	// Inside the synthesized chain's validity window, so the only thing
-	// moving in this test is the staleness rule.
-	signedAt := time.Now().UTC().Truncate(time.Second)
-	claims := transactionClaims()
-	claims["signedDate"] = signedAt.UnixMilli()
-	jws := pki.sign(t, claims)
-
-	at := func(offset time.Duration) *applereceipt.JWSVerifier {
-		return jwsVerifierFor(t, []*x509.Certificate{pki.root.cert}, func(o *applereceipt.JWSVerifierOptions) {
-			o.MaxSignedAge = time.Minute
-			o.Now = func() time.Time { return signedAt.Add(offset) }
-		})
-	}
-	if _, err := at(time.Minute).VerifyTransaction(jws); err != nil {
-		t.Fatalf("exactly at the maximum age must be accepted: %v", err)
-	}
-	_, err := at(time.Minute + time.Second).VerifyTransaction(jws)
-	requireReason(t, err, applereceipt.ReasonStalePayload)
-	if _, err := at(-time.Hour).VerifyTransaction(jws); err != nil {
-		t.Fatalf("a payload signed after the clock is not stale: %v", err)
-	}
-	// MaxSignedAge unset disables the rule entirely.
-	never := jwsVerifierFor(t, []*x509.Certificate{pki.root.cert}, func(o *applereceipt.JWSVerifierOptions) {
-		o.Now = func() time.Time { return signedAt.Add(100 * 365 * 24 * time.Hour) }
-	})
-	if _, err := never.VerifyTransaction(jws); err != nil {
-		t.Fatalf("MaxSignedAge zero disables the staleness rule: %v", err)
-	}
-}
-
-// The injected clock must not be able to move a certificate-validity
-// verdict, in either direction. This is the security property behind
-// "ReceiptVerifier takes no clock" and behind the JWS fallback reading
-// the system clock.
-func TestInjectedClockCannotMoveCertificateValidity(t *testing.T) {
+// A payload stating no date of its own is judged at the system clock, so
+// a chain that has since expired is INVALID_CHAIN.
+func TestDatelessPayloadIsJudgedAtTheSystemClock(t *testing.T) {
 	past := time.Now().Add(-10 * 365 * 24 * time.Hour)
 	root := issueCert(t, certSpec{
 		commonName: "Expired Root", isCA: true,
@@ -518,16 +471,12 @@ func TestInjectedClockCannotMoveCertificateValidity(t *testing.T) {
 		notBefore: past, notAfter: past.Add(24 * time.Hour),
 	}, intermediate)
 
-	// No signedDate, so the validity instant falls back — and the
-	// fallback must be the system clock, not this deliberately helpful
-	// injected one.
+	// No signedDate, so the validity instant falls back to the system
+	// clock, where this chain has expired.
 	claims := map[string]any{"bundleId": "com.example.app", "environment": "Sandbox"}
 	jws := signJWS(t, leaf, [][]byte{leaf.der, intermediate.der, root.der}, claims)
 
-	verifier := jwsVerifierFor(t, []*x509.Certificate{root.cert}, func(o *applereceipt.JWSVerifierOptions) {
-		o.Now = func() time.Time { return past.Add(time.Hour) }
-	})
-	_, err := verifier.VerifyTransaction(jws)
+	_, err := jwsVerifierFor(t, []*x509.Certificate{root.cert}, nil).VerifyTransaction(jws)
 	requireReason(t, err, applereceipt.ReasonInvalidChain)
 }
 
@@ -551,44 +500,6 @@ func TestHistoricalPayloadUnderAnExpiredChainStillVerifies(t *testing.T) {
 
 	if _, err := jwsVerifierFor(t, []*x509.Certificate{root.cert}, nil).VerifyTransaction(jws); err != nil {
 		t.Fatalf("a payload signed while the chain was valid must still verify: %v", err)
-	}
-}
-
-func TestIsActiveAt(t *testing.T) {
-	now := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
-	ms := func(at time.Time) *int64 { v := at.UnixMilli(); return &v }
-
-	tests := []struct {
-		name    string
-		payload applereceipt.TransactionPayload
-		want    bool
-	}{
-		{"no dates at all", applereceipt.TransactionPayload{}, true},
-		{"not yet expired", applereceipt.TransactionPayload{ExpiresDate: ms(now.Add(time.Hour))}, true},
-		{"expired", applereceipt.TransactionPayload{ExpiresDate: ms(now.Add(-time.Hour))}, false},
-		{"expiring exactly now", applereceipt.TransactionPayload{ExpiresDate: ms(now)}, false},
-		{"revoked", applereceipt.TransactionPayload{RevocationDate: ms(now.Add(-time.Hour))}, false},
-		{"revoked exactly now", applereceipt.TransactionPayload{RevocationDate: ms(now)}, false},
-		{"revocation in the future", applereceipt.TransactionPayload{RevocationDate: ms(now.Add(time.Hour))}, true},
-		{
-			"revoked beats an unexpired subscription",
-			applereceipt.TransactionPayload{
-				RevocationDate: ms(now.Add(-time.Hour)), ExpiresDate: ms(now.Add(time.Hour)),
-			},
-			false,
-		},
-	}
-	for _, test := range tests {
-		test := test
-		t.Run(test.name, func(t *testing.T) {
-			if got := test.payload.IsActiveAt(now); got != test.want {
-				t.Fatalf("got %v, want %v", got, test.want)
-			}
-		})
-	}
-	var nilPayload *applereceipt.TransactionPayload
-	if nilPayload.IsActiveAt(now) {
-		t.Fatal("a nil payload is not active")
 	}
 }
 
@@ -645,11 +556,6 @@ func TestConstructorRejectsMisconfiguration(t *testing.T) {
 		{"unknown environment in the accept set", applereceipt.JWSVerifierOptions{
 			TrustedRoots: roots, BundleID: "x",
 			AcceptedEnvironments: []applereceipt.Environment{"Martian"},
-		}},
-		{"negative max signed age", applereceipt.JWSVerifierOptions{
-			TrustedRoots: roots, BundleID: "x",
-			AcceptedEnvironments: []applereceipt.Environment{applereceipt.EnvironmentSandbox},
-			MaxSignedAge:         -time.Second,
 		}},
 	}
 	for _, test := range tests {

@@ -25,7 +25,8 @@
 //! the one thing a fixed clock actually is — a single instant, as
 //! milliseconds since the Unix epoch — and builds a [`FixedClock`] from it.
 //! A null clock pointer means the system clock, which is what every existing
-//! constructor already does.
+//! constructor already does. Only the endpoint takes one: the JWS and receipt
+//! verifiers have no clock, and no payload is rejected for its age.
 //!
 //! # Panics never cross the boundary
 //!
@@ -48,7 +49,7 @@ use apple_purchase_receipt_verifier::{
 };
 use std::ffi::{c_char, CStr, CString};
 use std::sync::{Arc, OnceLock};
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
 // --- status codes --------------------------------------------------------
 
@@ -66,7 +67,8 @@ use std::time::{Duration, SystemTime};
 /// never reused for a different meaning and an existing value never changes.
 /// A new verification reason is a deliberate, all-nine-ports change of the
 /// cross-port contract and takes the next number: `INTERNAL_ERROR` joined
-/// as 12, and a thirteenth would be 13.
+/// as 12, and the next would be 13. `11` was `STALE_PAYLOAD`, removed with
+/// the max-signed-age policy; it stays retired and is never reused.
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AprvReason {
@@ -93,8 +95,6 @@ pub enum AprvReason {
     InvalidReceiptFormat = 9,
     /// `SHA1(guid || opaqueValue || bundleIdBytes)` does not match.
     DeviceHashMismatch = 10,
-    /// The payload was signed longer ago than the configured maximum.
-    StalePayload = 11,
     /// Not the caller's fault: a trusted signer signed receipt or JWS content
     /// the library cannot read (found only after the chain and the signature
     /// passed). Alert and retry or escalate; do not deny the user on it.
@@ -201,37 +201,36 @@ fn guard_ptr<T, F: FnOnce() -> *mut T>(body: F) -> *mut T {
 
 // --- small conversions ---------------------------------------------------
 
-/// The canonical reason tokens, in the order `Reason` declares them. The
-/// index of a token here is its ABI code minus one, and
-/// `reason_codes_mirror_the_library` asserts that against `Reason::all()`.
-const REASON_TOKENS: [&str; 12] = [
-    "INVALID_JWS_FORMAT",
-    "INVALID_CERTIFICATE",
-    "INVALID_CERTIFICATE_PURPOSE",
-    "INVALID_CHAIN",
-    "INVALID_SIGNATURE",
-    "WRONG_BUNDLE_ID",
-    "WRONG_ENVIRONMENT",
-    "WRONG_APP_APPLE_ID",
-    "INVALID_RECEIPT_FORMAT",
-    "DEVICE_HASH_MISMATCH",
-    "STALE_PAYLOAD",
-    "INTERNAL_ERROR",
+/// Each ABI reason code beside its canonical token, in the order `Reason`
+/// declares them. The codes are pinned here rather than derived from a
+/// position, so a reason leaving the library (11, `STALE_PAYLOAD`) retires
+/// its number instead of shifting every later one.
+/// `reason_codes_mirror_the_library` asserts this against `Reason::all()`.
+const REASON_CODES: [(i32, &str); 11] = [
+    (1, "INVALID_JWS_FORMAT"),
+    (2, "INVALID_CERTIFICATE"),
+    (3, "INVALID_CERTIFICATE_PURPOSE"),
+    (4, "INVALID_CHAIN"),
+    (5, "INVALID_SIGNATURE"),
+    (6, "WRONG_BUNDLE_ID"),
+    (7, "WRONG_ENVIRONMENT"),
+    (8, "WRONG_APP_APPLE_ID"),
+    (9, "INVALID_RECEIPT_FORMAT"),
+    (10, "DEVICE_HASH_MISMATCH"),
+    (12, "INTERNAL_ERROR"),
 ];
 
 /// The ABI code for a library reason.
 ///
-/// Derived from position in `Reason::all()` rather than written out as a
-/// `match`, because `Reason` is `#[non_exhaustive]`: a match would need a
-/// wildcard arm, and a wildcard arm is exactly how a newly added
-/// reason would silently become an existing code.
+/// Looked up by token rather than written out as a `match`, because `Reason`
+/// is `#[non_exhaustive]`: a match would need a wildcard arm, and a wildcard
+/// arm is exactly how a newly added reason would silently become an existing
+/// code.
 fn reason_code(reason: Reason) -> i32 {
-    match Reason::all().iter().position(|known| *known == reason) {
-        Some(index) if index < REASON_TOKENS.len() => {
-            i32::try_from(index).unwrap_or(0).saturating_add(1)
-        }
-        _ => AprvReason::UnknownReason as i32,
-    }
+    REASON_CODES
+        .iter()
+        .find(|(_, token)| *token == reason.as_str())
+        .map_or(AprvReason::UnknownReason as i32, |(code, _)| *code)
 }
 
 /// The `SCREAMING_SNAKE` token for a status code, for the error JSON.
@@ -243,12 +242,10 @@ fn status_token(status: i32) -> &'static str {
         102 => "INVALID_ARGUMENT",
         103 => "PANIC",
         104 => "UNKNOWN_REASON",
-        other => usize::try_from(other)
-            .ok()
-            .and_then(|index| index.checked_sub(1))
-            .and_then(|index| REASON_TOKENS.get(index))
-            .copied()
-            .unwrap_or("UNKNOWN_REASON"),
+        other => REASON_CODES
+            .iter()
+            .find(|(code, _)| *code == other)
+            .map_or("UNKNOWN_REASON", |(_, token)| *token),
     }
 }
 
@@ -556,7 +553,9 @@ pub extern "C" fn aprv_version() -> *const c_char {
 /// * `accepted_environments` — a non-zero OR of [`AprvEnvironment`] bits.
 /// * `app_apple_id` — `0` means "not configured"; required to accept a
 ///   Production `AppTransaction`.
-/// * `max_signed_age_secs` — `0` means "no staleness rule".
+///
+/// No payload is rejected for its age: how old a signed payload may be is
+/// the caller's decision, made on the `signedDate` in the returned JSON.
 ///
 /// Returns `NULL` if any argument is rejected. The handle is owned by the
 /// caller and must be released with [`aprv_verifier_free_jws`].
@@ -568,18 +567,15 @@ pub unsafe extern "C" fn aprv_verifier_new_jws(
     bundle_id: *const c_char,
     accepted_environments: u32,
     app_apple_id: u64,
-    max_signed_age_secs: u64,
 ) -> *mut AprvJwsVerifier {
     guard_ptr(|| {
         new_jws(
             bundle_id,
             accepted_environments,
             app_apple_id,
-            max_signed_age_secs,
             std::ptr::null(),
             std::ptr::null(),
             0,
-            std::ptr::null(),
         )
     })
 }
@@ -599,7 +595,6 @@ pub unsafe extern "C" fn aprv_verifier_new_jws_with_roots(
     bundle_id: *const c_char,
     accepted_environments: u32,
     app_apple_id: u64,
-    max_signed_age_secs: u64,
     ders: *const *const u8,
     lens: *const usize,
     count: usize,
@@ -609,79 +604,23 @@ pub unsafe extern "C" fn aprv_verifier_new_jws_with_roots(
             bundle_id,
             accepted_environments,
             app_apple_id,
-            max_signed_age_secs,
             ders,
             lens,
             count,
-            std::ptr::null(),
         )
     })
 }
 
-/// [`aprv_verifier_new_jws_with_roots`] with the verification clock pinned.
-///
-/// `fixed_clock_unix_millis` points at one instant, in milliseconds since
-/// the Unix epoch, that every `now` this verifier reads answers. `NULL` — the
-/// behaviour of every other constructor — reads the system clock instead.
-/// The pointer is borrowed for the duration of the call; the instant is
-/// copied into the handle.
-///
-/// **This is for conformance vectors and tests.** Production code has no
-/// reason to pin a verifier to a fixed instant, and one pinned in the past
-/// makes the `max_signed_age_secs` rule stop rejecting anything.
-///
-/// One constructor rather than a `_with_clock` variant of each of the two
-/// above, because those two already collapse: passing `NULL`, `NULL`, `0`
-/// for the anchors selects the bundled Apple roots, so this signature is the
-/// superset and the ABI does not grow a symbol per combination.
-///
-/// The clock reaches exactly what it reaches in the Rust library: the
-/// `max_signed_age_secs` comparison, and nothing else. **Certificate
-/// validity is never judged at it** — a payload that states no date of its
-/// own is checked against the system clock regardless — so pinning a clock
-/// can neither accept an expired chain nor expire a live one.
-///
-/// # Safety
-/// As [`aprv_verifier_new_jws_with_roots`], plus `fixed_clock_unix_millis`
-/// being `NULL` or a pointer to one readable, aligned `int64_t`.
-#[no_mangle]
-pub unsafe extern "C" fn aprv_verifier_new_jws_with_roots_and_clock(
-    bundle_id: *const c_char,
-    accepted_environments: u32,
-    app_apple_id: u64,
-    max_signed_age_secs: u64,
-    ders: *const *const u8,
-    lens: *const usize,
-    count: usize,
-    fixed_clock_unix_millis: *const i64,
-) -> *mut AprvJwsVerifier {
-    guard_ptr(|| {
-        new_jws(
-            bundle_id,
-            accepted_environments,
-            app_apple_id,
-            max_signed_age_secs,
-            ders,
-            lens,
-            count,
-            fixed_clock_unix_millis,
-        )
-    })
-}
-
-// One argument per ABI argument, deliberately: this is the body the three
+// One argument per ABI argument, deliberately: this is the body the two
 // exported JWS constructors share, and grouping them into a struct here
 // would put a second shape between the header and the builder.
-#[allow(clippy::too_many_arguments)]
 unsafe fn new_jws(
     bundle_id: *const c_char,
     accepted_environments: u32,
     app_apple_id: u64,
-    max_signed_age_secs: u64,
     ders: *const *const u8,
     lens: *const usize,
     count: usize,
-    fixed_clock_unix_millis: *const i64,
 ) -> *mut AprvJwsVerifier {
     let (Ok(bundle_id), Ok(environments), Ok(anchors)) = (
         borrow_str(bundle_id),
@@ -696,12 +635,6 @@ unsafe fn new_jws(
         .accepted_environments(environments);
     if app_apple_id != 0 {
         builder = builder.app_apple_id(app_apple_id);
-    }
-    if max_signed_age_secs != 0 {
-        builder = builder.max_signed_age(Duration::from_secs(max_signed_age_secs));
-    }
-    if let Some(clock) = fixed_clock_of(fixed_clock_unix_millis) {
-        builder = builder.clock(clock);
     }
     match builder.build() {
         Ok(inner) => Box::into_raw(Box::new(AprvJwsVerifier { inner })),
@@ -1182,7 +1115,7 @@ mod tests {
     /// bundled Apple roots, so nothing in this module reads a file.
     fn jws_verifier() -> *mut AprvJwsVerifier {
         let bundle = CString::new("com.example.app").unwrap();
-        unsafe { aprv_verifier_new_jws(bundle.as_ptr(), 1 | 2, 0, 0) }
+        unsafe { aprv_verifier_new_jws(bundle.as_ptr(), 1 | 2, 0) }
     }
 
     fn take_json(result: AprvResult) -> String {
@@ -1204,32 +1137,33 @@ mod tests {
 
     // --- the reason contract ---------------------------------------------
 
-    /// The ABI numbers ARE the library's declaration order. This is the test
-    /// that fails if a new `Reason` is ever added without the header's
-    /// enum growing a name to match — the append-only promise made
+    /// The ABI table follows the library's declaration order. This is the
+    /// test that fails if a new `Reason` is ever added without the header's
+    /// enum growing a name to match: the append-only promise made
     /// mechanical rather than written down.
     #[test]
     fn reason_codes_mirror_the_library() {
         assert_eq!(
             Reason::all().len(),
-            REASON_TOKENS.len(),
+            REASON_CODES.len(),
             "the library has {} reasons, the ABI enumerates {}",
             Reason::all().len(),
-            REASON_TOKENS.len()
+            REASON_CODES.len()
         );
-        for (index, reason) in Reason::all().iter().enumerate() {
-            let code = i32::try_from(index).unwrap() + 1;
-            assert_eq!(reason_code(*reason), code, "code for {reason}");
-            assert_eq!(REASON_TOKENS[index], reason.as_str(), "token for {reason}");
+        for (reason, (code, token)) in Reason::all().iter().zip(REASON_CODES.iter()) {
+            assert_eq!(reason_code(*reason), *code, "code for {reason}");
+            assert_eq!(*token, reason.as_str(), "token for {reason}");
             assert_eq!(
-                status_token(code),
+                status_token(*code),
                 reason.as_str(),
                 "status_token for {code}"
             );
         }
         assert_eq!(AprvReason::InvalidJwsFormat as i32, 1);
-        assert_eq!(AprvReason::StalePayload as i32, 11);
+        assert_eq!(AprvReason::DeviceHashMismatch as i32, 10);
         assert_eq!(AprvReason::InternalError as i32, 12);
+        // 11 was STALE_PAYLOAD: retired, and never reused for another reason.
+        assert_eq!(status_token(11), "UNKNOWN_REASON");
     }
 
     #[test]
@@ -1290,7 +1224,7 @@ mod tests {
             );
         }
         assert_eq!(
-            exports, 21,
+            exports, 20,
             "the ABI exports {exports} symbols; update this count deliberately, \
              it is the check that a new export was not added unguarded"
         );
@@ -1300,7 +1234,7 @@ mod tests {
 
     #[test]
     fn null_bundle_id_yields_no_handle() {
-        let verifier = unsafe { aprv_verifier_new_jws(std::ptr::null(), 1, 0, 0) };
+        let verifier = unsafe { aprv_verifier_new_jws(std::ptr::null(), 1, 0) };
         assert!(verifier.is_null());
         assert!(unsafe { aprv_verifier_new_receipt(std::ptr::null()) }.is_null());
     }
@@ -1308,16 +1242,16 @@ mod tests {
     #[test]
     fn an_empty_bundle_id_is_a_configuration_failure() {
         let empty = CString::new("").unwrap();
-        assert!(unsafe { aprv_verifier_new_jws(empty.as_ptr(), 1, 0, 0) }.is_null());
+        assert!(unsafe { aprv_verifier_new_jws(empty.as_ptr(), 1, 0) }.is_null());
         assert!(unsafe { aprv_verifier_new_receipt(empty.as_ptr()) }.is_null());
     }
 
     #[test]
     fn an_empty_or_unknown_environment_mask_is_refused() {
         let bundle = CString::new("com.example.app").unwrap();
-        assert!(unsafe { aprv_verifier_new_jws(bundle.as_ptr(), 0, 0, 0) }.is_null());
-        assert!(unsafe { aprv_verifier_new_jws(bundle.as_ptr(), 0b1_0000, 0, 0) }.is_null());
-        assert!(unsafe { aprv_verifier_new_jws(bundle.as_ptr(), 1 | 0b1_0000, 0, 0) }.is_null());
+        assert!(unsafe { aprv_verifier_new_jws(bundle.as_ptr(), 0, 0) }.is_null());
+        assert!(unsafe { aprv_verifier_new_jws(bundle.as_ptr(), 0b1_0000, 0) }.is_null());
+        assert!(unsafe { aprv_verifier_new_jws(bundle.as_ptr(), 1 | 0b1_0000, 0) }.is_null());
     }
 
     #[test]
@@ -1336,15 +1270,7 @@ mod tests {
         let ders = [junk.as_ptr()];
         let lens = [junk.len()];
         let verifier = unsafe {
-            aprv_verifier_new_jws_with_roots(
-                bundle.as_ptr(),
-                1,
-                0,
-                0,
-                ders.as_ptr(),
-                lens.as_ptr(),
-                1,
-            )
+            aprv_verifier_new_jws_with_roots(bundle.as_ptr(), 1, 0, ders.as_ptr(), lens.as_ptr(), 1)
         };
         assert!(verifier.is_null());
     }
@@ -1494,178 +1420,71 @@ mod tests {
         }
     }
 
-    /// The staleness seam without a clock, which is the shape every existing
-    /// constructor has. A one-second maximum against a fixture signed in
-    /// 2024 is stale on any real clock, so the rule is proven wired against
-    /// system time — and the same call with no maximum must succeed, or the
-    /// test would pass for the wrong reason.
+    /// No payload is rejected for its age: `transaction` was signed in 2024
+    /// and verifies on any real clock, its `signedDate` in the JSON for the
+    /// caller to judge.
     #[test]
-    fn max_signed_age_rejects_an_old_payload_and_zero_means_no_rule() {
+    fn a_payload_is_never_rejected_for_its_age() {
         let root = std::fs::read(fixture("generated/jws-root.der")).unwrap();
         let jws = std::fs::read_to_string(fixture("generated/transaction.jws")).unwrap();
         let jws = CString::new(jws.trim()).unwrap();
         let bundle = CString::new("com.example.app").unwrap();
         let ders = [root.as_ptr()];
         let lens = [root.len()];
-
-        for (max_age, expected) in [
-            (0_u64, AprvReason::Ok as i32),
-            (1_u64, AprvReason::StalePayload as i32),
-        ] {
-            let verifier = unsafe {
-                aprv_verifier_new_jws_with_roots(
-                    bundle.as_ptr(),
-                    AprvEnvironment::Sandbox as u32,
-                    0,
-                    max_age,
-                    ders.as_ptr(),
-                    lens.as_ptr(),
-                    1,
-                )
-            };
-            assert!(!verifier.is_null(), "max_signed_age_secs={max_age}");
-            let mut out = empty_result();
-            let status = unsafe { aprv_verify_transaction(verifier, jws.as_ptr(), &raw mut out) };
-            assert_eq!(status, expected, "max_signed_age_secs={max_age}");
-            let json = take_json(out);
-            if expected == AprvReason::Ok as i32 {
-                assert!(
-                    json.contains("\"productId\":\"com.example.app.pro\""),
-                    "{json}"
-                );
-            } else {
-                assert!(json.contains("STALE_PAYLOAD"), "{json}");
-            }
-            unsafe { aprv_verifier_free_jws(verifier) };
-        }
-    }
-
-    // --- the pinned clock -------------------------------------------------
-
-    /// The seam the twelve clock-pinning conformance cases need. `transaction`
-    /// carries `signedDate` 2024-08-06T12:00:00Z, so under a 60-second
-    /// maximum the verdict flips between a clock 60 seconds after it and one
-    /// 61 seconds after it — the same boundary
-    /// `transaction/accept-payload-at-exact-max-signed-age` and
-    /// `transaction/reject-payload-one-second-past-max-signed-age` pin, here
-    /// without the harness in the way.
-    #[test]
-    fn a_pinned_clock_decides_the_staleness_verdict() {
-        const SIGNED_DATE_MS: i64 = 1_722_945_600_000;
-        let root = std::fs::read(fixture("generated/jws-root.der")).unwrap();
-        let jws = std::fs::read_to_string(fixture("generated/transaction.jws")).unwrap();
-        let jws = CString::new(jws.trim()).unwrap();
-        let bundle = CString::new("com.example.app").unwrap();
-        let ders = [root.as_ptr()];
-        let lens = [root.len()];
-
-        for (offset_ms, expected) in [
-            (60_000_i64, AprvReason::Ok as i32),
-            (61_000_i64, AprvReason::StalePayload as i32),
-            // A payload signed after the clock is not stale: age runs from
-            // the signing time to now, and the difference has a sign.
-            (-3_600_000_i64, AprvReason::Ok as i32),
-        ] {
-            let now = SIGNED_DATE_MS + offset_ms;
-            let verifier = unsafe {
-                aprv_verifier_new_jws_with_roots_and_clock(
-                    bundle.as_ptr(),
-                    AprvEnvironment::Sandbox as u32,
-                    0,
-                    60,
-                    ders.as_ptr(),
-                    lens.as_ptr(),
-                    1,
-                    &raw const now,
-                )
-            };
-            assert!(!verifier.is_null(), "clock={now}");
-            let mut out = empty_result();
-            let status = unsafe { aprv_verify_transaction(verifier, jws.as_ptr(), &raw mut out) };
-            assert_eq!(status, expected, "clock={now}");
-            let json = take_json(out);
-            if expected == AprvReason::Ok as i32 {
-                assert!(json.contains("\"signedDate\":1722945600000"), "{json}");
-            } else {
-                assert!(json.contains("STALE_PAYLOAD"), "{json}");
-            }
-            unsafe { aprv_verifier_free_jws(verifier) };
-        }
-    }
-
-    /// A null clock pointer is the documented "no clock given": system time,
-    /// and the bundled Apple roots when the anchor arguments are null too —
-    /// so the widest constructor with everything optional left out answers
-    /// exactly what `aprv_verifier_new_jws` answers.
-    #[test]
-    fn a_null_clock_pointer_is_system_time() {
-        let jws = std::fs::read_to_string(fixture("generated/transaction.jws")).unwrap();
-        let jws = CString::new(jws.trim()).unwrap();
-        let bundle = CString::new("com.example.app").unwrap();
         let verifier = unsafe {
-            aprv_verifier_new_jws_with_roots_and_clock(
+            aprv_verifier_new_jws_with_roots(
                 bundle.as_ptr(),
                 AprvEnvironment::Sandbox as u32,
                 0,
-                0,
-                std::ptr::null(),
-                std::ptr::null(),
-                0,
-                std::ptr::null(),
+                ders.as_ptr(),
+                lens.as_ptr(),
+                1,
             )
         };
         assert!(!verifier.is_null());
         let mut out = empty_result();
         let status = unsafe { aprv_verify_transaction(verifier, jws.as_ptr(), &raw mut out) };
-        // The bundled Apple roots, exactly as aprv_verifier_new_jws would.
+        assert_eq!(status, AprvReason::Ok as i32);
+        assert!(take_json(out).contains("\"signedDate\":1722945600000"));
+        unsafe { aprv_verifier_free_jws(verifier) };
+    }
+
+    /// `NULL`, `NULL`, `0` for the anchors selects the bundled Apple roots,
+    /// so the widest JWS constructor with everything optional left out
+    /// answers exactly what `aprv_verifier_new_jws` answers.
+    #[test]
+    fn null_anchors_select_the_bundled_roots() {
+        let jws = std::fs::read_to_string(fixture("generated/transaction.jws")).unwrap();
+        let jws = CString::new(jws.trim()).unwrap();
+        let bundle = CString::new("com.example.app").unwrap();
+        let verifier = unsafe {
+            aprv_verifier_new_jws_with_roots(
+                bundle.as_ptr(),
+                AprvEnvironment::Sandbox as u32,
+                0,
+                std::ptr::null(),
+                std::ptr::null(),
+                0,
+            )
+        };
+        assert!(!verifier.is_null());
+        let mut out = empty_result();
+        let status = unsafe { aprv_verify_transaction(verifier, jws.as_ptr(), &raw mut out) };
         assert_eq!(status, AprvReason::InvalidChain as i32);
         assert!(take_json(out).contains("INVALID_CHAIN"));
         unsafe { aprv_verifier_free_jws(verifier) };
     }
 
+    // --- the pinned clock -------------------------------------------------
+
     /// The clock is not a way past argument checking: a rejected
     /// configuration is still a null handle, with or without one.
     #[test]
-    fn the_clock_constructors_refuse_the_same_arguments_as_the_others() {
+    fn the_clock_constructor_refuses_the_same_arguments_as_the_others() {
         let now = 0_i64;
-        let bundle = CString::new("com.example.app").unwrap();
-        let empty = CString::new("").unwrap();
         let null_ders: *const *const u8 = std::ptr::null();
         let null_lens: *const usize = std::ptr::null();
         unsafe {
-            assert!(aprv_verifier_new_jws_with_roots_and_clock(
-                std::ptr::null(),
-                1,
-                0,
-                0,
-                null_ders,
-                null_lens,
-                0,
-                &raw const now
-            )
-            .is_null());
-            assert!(aprv_verifier_new_jws_with_roots_and_clock(
-                empty.as_ptr(),
-                1,
-                0,
-                0,
-                null_ders,
-                null_lens,
-                0,
-                &raw const now
-            )
-            .is_null());
-            assert!(aprv_verifier_new_jws_with_roots_and_clock(
-                bundle.as_ptr(),
-                0,
-                0,
-                0,
-                null_ders,
-                null_lens,
-                0,
-                &raw const now
-            )
-            .is_null());
             // An endpoint takes exactly Production or Sandbox, clock or not.
             assert!(aprv_endpoint_new_with_roots_and_clock(
                 0,

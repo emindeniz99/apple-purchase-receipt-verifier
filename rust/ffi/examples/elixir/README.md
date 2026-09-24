@@ -18,12 +18,12 @@ of this library is a shim in C, `c_src/aprv_nif.c`, written against the
 committed header in `../../include`. It converts Erlang terms to the
 arguments the ABI takes and back, and holds no verification logic.
 
-The shim is 9 NIFs over the ABI's 21 exports. An empty roots list means the
+The shim is 9 NIFs over the ABI's exports. An empty roots list means the
 bundled Apple roots, so one NIF covers both `aprv_verifier_new_jws` and
 `aprv_verifier_new_jws_with_roots`; an empty device GUID means no device hash
 check, so one NIF covers each receipt call and its `_with_device_guid`
 variant; a `nil` clock means the system clock, so one NIF covers the
-`_and_clock` constructors too. Every export is still reached, because a clock
+endpoint's `_and_clock` constructor too. Every export is still reached, because a clock
 reaches the `_and_clock` call only when a caller pins one.
 
 ## Build and run
@@ -90,13 +90,13 @@ example's dependency count at zero without a hand-written reader.
 
 ### The clock
 
-`jws_verifier/3` and `endpoint/2` take a `:clock_unix_millis` option, which
-becomes the ABI's `fixed_clock_unix_millis` pointer; leaving it out passes
-`nil`, the NULL that means the system clock. It exists for the conformance
-vectors that pin one, and it moves the `STALE_PAYLOAD` rule and the
-endpoint's `request_date` only. `receipt_verifier/2` has no such option
-because the ABI has none: an injected clock must never be able to accept an
-expired chain.
+`endpoint/2` takes a `:clock_unix_millis` option, which becomes the ABI's
+`fixed_clock_unix_millis` pointer; leaving it out passes `nil`, the NULL that
+means the system clock. It exists for the conformance vectors that pin one,
+and it moves the endpoint's `request_date` only. `jws_verifier/3` and
+`receipt_verifier/2` have no such option because the ABI has none: an
+injected clock must never be able to accept an expired chain, and no payload
+is rejected for its age.
 
 ## The conformance run
 
@@ -113,7 +113,7 @@ apple-purchase-receipt-verifier <version> — C ABI conformance over NIFs
 `<N>` is the number of cases in `cases.json`, `<C>` the ones among them that
 pin a clock, and `<F>` the expected fields this harness checks.
 
-Nothing is skipped: the cases that pin a clock are built through the
-`_and_clock` constructors. A case the manifest marks unsupported fails the
+Nothing is skipped: the endpoint cases that pin a clock are built through
+the `_and_clock` constructor. A case the manifest marks unsupported fails the
 run rather than shrinking it. The counts match `examples/cpp/conformance.cpp`
 exactly, because both read the same manifest.

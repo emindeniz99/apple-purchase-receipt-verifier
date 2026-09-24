@@ -24,12 +24,13 @@
  * verify through the same handle concurrently; freeing one while a call is
  * in flight is not allowed.
  *
- * THE CLOCK: the constructors ending in _and_clock take one instant, in
+ * THE CLOCK: aprv_endpoint_new_with_roots_and_clock takes one instant, in
  * milliseconds since the Unix epoch, instead of a callback the library would
  * call back into. A NULL clock pointer means the system clock, which is what
  * every other constructor uses. Pinning one is for conformance vectors and
- * tests; it moves the max-signed-age rule and the endpoint's request_date,
- * and it never moves a certificate-validity verdict.
+ * tests; it moves the endpoint's request_date, and it never moves a
+ * certificate-validity verdict. No verifier rejects a payload for its age:
+ * how old a signed payload may be is the caller's decision.
  *
  * ERRORS: a NULL pointer, a non-UTF-8 string or a rejected configuration is
  * reported in the 100+ band of AprvReason and means nothing about the input
@@ -83,7 +84,8 @@ typedef uint32_t AprvEnvironment;
 // never reused for a different meaning and an existing value never changes.
 // A new verification reason is a deliberate, all-nine-ports change of the
 // cross-port contract and takes the next number: `INTERNAL_ERROR` joined
-// as 12, and a thirteenth would be 13.
+// as 12, and the next would be 13. `11` was `STALE_PAYLOAD`, removed with
+// the max-signed-age policy; it stays retired and is never reused.
 enum AprvReason
 #ifdef __cplusplus
   : int32_t
@@ -111,8 +113,6 @@ enum AprvReason
   APRV_REASON_INVALID_RECEIPT_FORMAT = 9,
   // `SHA1(guid || opaqueValue || bundleIdBytes)` does not match.
   APRV_REASON_DEVICE_HASH_MISMATCH = 10,
-  // The payload was signed longer ago than the configured maximum.
-  APRV_REASON_STALE_PAYLOAD = 11,
   // Not the caller's fault: a trusted signer signed receipt or JWS content
   // the library cannot read (found only after the chain and the signature
   // passed). Alert and retry or escalate; do not deny the user on it.
@@ -192,7 +192,9 @@ const char *aprv_version(void);
 // * `accepted_environments` — a non-zero OR of [`AprvEnvironment`] bits.
 // * `app_apple_id` — `0` means "not configured"; required to accept a
 //   Production `AppTransaction`.
-// * `max_signed_age_secs` — `0` means "no staleness rule".
+//
+// No payload is rejected for its age: how old a signed payload may be is
+// the caller's decision, made on the `signedDate` in the returned JSON.
 //
 // Returns `NULL` if any argument is rejected. The handle is owned by the
 // caller and must be released with [`aprv_verifier_free_jws`].
@@ -201,8 +203,7 @@ const char *aprv_version(void);
 // `bundle_id` must be `NULL` or a NUL-terminated UTF-8 string.
 AprvJwsVerifier *aprv_verifier_new_jws(const char *bundle_id,
                                        uint32_t accepted_environments,
-                                       uint64_t app_apple_id,
-                                       uint64_t max_signed_age_secs);
+                                       uint64_t app_apple_id);
 
 // [`aprv_verifier_new_jws`] with caller-supplied DER trust anchors.
 //
@@ -217,45 +218,9 @@ AprvJwsVerifier *aprv_verifier_new_jws(const char *bundle_id,
 AprvJwsVerifier *aprv_verifier_new_jws_with_roots(const char *bundle_id,
                                                   uint32_t accepted_environments,
                                                   uint64_t app_apple_id,
-                                                  uint64_t max_signed_age_secs,
                                                   const uint8_t *const *ders,
                                                   const size_t *lens,
                                                   size_t count);
-
-// [`aprv_verifier_new_jws_with_roots`] with the verification clock pinned.
-//
-// `fixed_clock_unix_millis` points at one instant, in milliseconds since
-// the Unix epoch, that every `now` this verifier reads answers. `NULL` — the
-// behaviour of every other constructor — reads the system clock instead.
-// The pointer is borrowed for the duration of the call; the instant is
-// copied into the handle.
-//
-// **This is for conformance vectors and tests.** Production code has no
-// reason to pin a verifier to a fixed instant, and one pinned in the past
-// makes the `max_signed_age_secs` rule stop rejecting anything.
-//
-// One constructor rather than a `_with_clock` variant of each of the two
-// above, because those two already collapse: passing `NULL`, `NULL`, `0`
-// for the anchors selects the bundled Apple roots, so this signature is the
-// superset and the ABI does not grow a symbol per combination.
-//
-// The clock reaches exactly what it reaches in the Rust library: the
-// `max_signed_age_secs` comparison, and nothing else. **Certificate
-// validity is never judged at it** — a payload that states no date of its
-// own is checked against the system clock regardless — so pinning a clock
-// can neither accept an expired chain nor expire a live one.
-//
-// # Safety
-// As [`aprv_verifier_new_jws_with_roots`], plus `fixed_clock_unix_millis`
-// being `NULL` or a pointer to one readable, aligned `int64_t`.
-AprvJwsVerifier *aprv_verifier_new_jws_with_roots_and_clock(const char *bundle_id,
-                                                            uint32_t accepted_environments,
-                                                            uint64_t app_apple_id,
-                                                            uint64_t max_signed_age_secs,
-                                                            const uint8_t *const *ders,
-                                                            const size_t *lens,
-                                                            size_t count,
-                                                            const int64_t *fixed_clock_unix_millis);
 
 // Releases a handle from `aprv_verifier_new_jws*`. `NULL` is a no-op.
 // Calling it twice on the same handle, or while another thread is inside a

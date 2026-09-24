@@ -8,9 +8,9 @@ import (
 
 // Reason is the machine-readable cause of a verification failure.
 //
-// The twelve constants below are the complete vocabulary a verifier
+// The eleven constants below are the complete vocabulary a verifier
 // returns. It is closed by the cross-port contract
-// (fixtures/cases.schema.json); a thirteenth reason is a change to every
+// (fixtures/cases.schema.json); a twelfth reason is a change to every
 // implementation in one go, not a Go-local addition. A
 // [VerifyReceiptResult] can also report ReasonMalformedRequest and
 // ReasonRequestTooLarge, which every port's endpoint result shares.
@@ -30,7 +30,6 @@ const (
 	ReasonWrongAppAppleID           = apperr.ReasonWrongAppAppleID
 	ReasonInvalidReceiptFormat      = apperr.ReasonInvalidReceiptFormat
 	ReasonDeviceHashMismatch        = apperr.ReasonDeviceHashMismatch
-	ReasonStalePayload              = apperr.ReasonStalePayload
 	// ReasonInternalError is not the client's fault. A verifier returns it
 	// when a trusted signer signed receipt content or a modelled JWS claim
 	// this library cannot read, found only after the chain and the
@@ -75,7 +74,7 @@ func AllReasons() []Reason { return append([]Reason(nil), apperr.AllReasons...) 
 //		}
 //	}
 //
-// errors.Is(err, applereceipt.ReasonStalePayload) also works, as sugar;
+// errors.Is(err, applereceipt.ReasonInvalidChain) also works, as sugar;
 // errors.As is canonical because it also carries Detail and the cause.
 //
 // Detail is safe to log: it never contains receipt bytes, claim values or

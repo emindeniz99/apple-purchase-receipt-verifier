@@ -10,8 +10,9 @@ using Xunit;
 namespace ApplePurchaseReceiptVerifier.Tests;
 
 /// <summary>
-/// What the injected clock drives, and — more importantly — what it must never
-/// be able to reach.
+/// What the injected clock drives (the endpoint's request_date), and what it
+/// must never be able to reach. The JWS and receipt verifiers take no clock,
+/// and no payload is rejected for its age (PLAN.md D5).
 /// </summary>
 public class ClockTests
 {
@@ -21,75 +22,48 @@ public class ClockTests
     private static IReadOnlyList<X509Certificate2> JwsRoots() =>
         new[] { X509CertificateLoader.LoadCertificate(Fixtures.Bytes("jws-root")) };
 
-    private static JwsVerifier Verifier(TimeSpan? maxAge, IClock? clock) =>
-        new(JwsRoots(), "com.example.app", new[] { AppleEnvironment.Sandbox }, null, maxAge, clock);
-
+    /// <summary>Freshness is the caller's decision: a 2024 payload still verifies.</summary>
     [Fact]
-    public void APayloadExactlyAtTheMaxSignedAgeIsAccepted()
+    public void APayloadIsNeverRejectedForItsAge()
     {
-        using JwsVerifier verifier = Verifier(
-            TimeSpan.FromSeconds(60), new FixedClock(SignedAt.AddSeconds(60)));
-        Assert.Equal("com.example.app", verifier.VerifyTransaction(Fixtures.Text("transaction")).BundleId);
-    }
-
-    [Fact]
-    public void APayloadOneSecondPastTheMaxSignedAgeIsRejected()
-    {
-        using JwsVerifier verifier = Verifier(
-            TimeSpan.FromSeconds(60), new FixedClock(SignedAt.AddSeconds(61)));
+        using JwsVerifier verifier = new(JwsRoots(), "com.example.app", new[] { AppleEnvironment.Sandbox });
         Assert.Equal(
-            VerificationReason.StalePayload,
-            Assert.Throws<VerificationException>(
-                () => verifier.VerifyTransaction(Fixtures.Text("transaction"))).Reason);
+            SignedAt.ToUnixTimeMilliseconds(),
+            verifier.VerifyTransaction(Fixtures.Text("transaction")).SignedDate);
     }
 
-    /// <summary>A payload signed in the future has a negative age, not a stale one.</summary>
     [Fact]
-    public void APayloadSignedAfterTheClockIsNotStale()
+    public void TheJwsVerifierTakesNoClock()
     {
-        using JwsVerifier verifier = Verifier(
-            TimeSpan.FromSeconds(60), new FixedClock(SignedAt.AddHours(-5)));
-        Assert.Equal("com.example.app", verifier.VerifyTransaction(Fixtures.Text("transaction")).BundleId);
+        foreach (System.Reflection.ConstructorInfo constructor in typeof(JwsVerifier).GetConstructors())
+        {
+            Assert.DoesNotContain(constructor.GetParameters(), p => p.ParameterType == typeof(IClock));
+            Assert.DoesNotContain(constructor.GetParameters(), p => p.ParameterType == typeof(TimeSpan?));
+        }
     }
 
-    /// <summary>A payload stating no signing time has no age to be stale by.</summary>
+    /// <summary>
+    /// A payload stating no signing time is judged at the system clock, where
+    /// this chain (valid until 2050) is live.
+    /// </summary>
     [Fact]
-    public void APayloadWithoutASignedDateIsNeverStale()
+    public void APayloadWithoutASignedDateVerifies()
     {
         using JwsVerifier verifier = new(
             new[] { X509CertificateLoader.LoadCertificate(Fixtures.Bytes("divergence-jws-root")) },
             "com.example.app",
-            new[] { AppleEnvironment.Sandbox },
-            null,
-            TimeSpan.FromSeconds(60),
-            new FixedClock(new DateTimeOffset(2099, 1, 1, 0, 0, 0, TimeSpan.Zero)));
+            new[] { AppleEnvironment.Sandbox });
         Assert.Null(verifier.VerifyTransaction(Fixtures.Text("transaction-no-signed-date")).SignedDate);
     }
 
-    /// <summary>
-    /// The rule the whole clock design exists for: an injected clock cannot
-    /// move a certificate-validity verdict in either direction.
-    /// </summary>
     [Fact]
-    public void AnInjectedClockCannotExpireAValidChain()
+    public void APayloadSignedAfterItsChainExpiredIsRejected()
     {
-        using JwsVerifier verifier = Verifier(
-            null, new FixedClock(new DateTimeOffset(2099, 1, 1, 0, 0, 0, TimeSpan.Zero)));
-        Assert.Equal("com.example.app", verifier.VerifyTransaction(Fixtures.Text("transaction")).BundleId);
-    }
-
-    [Fact]
-    public void AnInjectedClockCannotAuthenticateAnExpiredChain()
-    {
-        // expired-cert-fresh is signed after its chain expired. A clock planted
-        // inside the expired window must not rescue it.
+        // expired-cert-fresh is signed after its chain expired.
         using JwsVerifier verifier = new(
             new[] { X509CertificateLoader.LoadCertificate(Fixtures.Bytes("jws-expired-root")) },
             "com.example.app",
-            new[] { AppleEnvironment.Sandbox },
-            null,
-            null,
-            new FixedClock(new DateTimeOffset(2020, 6, 1, 0, 0, 0, TimeSpan.Zero)));
+            new[] { AppleEnvironment.Sandbox });
         Assert.Equal(
             VerificationReason.InvalidChain,
             Assert.Throws<VerificationException>(

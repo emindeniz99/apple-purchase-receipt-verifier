@@ -50,15 +50,14 @@ Building from source is the only supported path today; see `ROADMAP.md`.
 
 ## The surface
 
-Twenty-one symbols. Three opaque handles, eight verification calls, one result
+Twenty symbols. Three opaque handles, eight verification calls, one result
 struct, one free function.
 
 ```c
 const char *aprv_version(void);
 
-AprvJwsVerifier     *aprv_verifier_new_jws(bundle_id, environments, app_apple_id, max_age_secs);
+AprvJwsVerifier     *aprv_verifier_new_jws(bundle_id, environments, app_apple_id);
 AprvJwsVerifier     *aprv_verifier_new_jws_with_roots(..., ders, lens, count);
-AprvJwsVerifier     *aprv_verifier_new_jws_with_roots_and_clock(..., ders, lens, count, clock);
 void                 aprv_verifier_free_jws(AprvJwsVerifier *);
 
 AprvReceiptVerifier *aprv_verifier_new_receipt(bundle_id);
@@ -116,7 +115,7 @@ does, check the body's length in bytes before the call: over 3,145,728 is
 
 ### The clock
 
-The two `_and_clock` constructors take `const int64_t *fixed_clock_unix_millis`:
+`aprv_endpoint_new_with_roots_and_clock` takes `const int64_t *fixed_clock_unix_millis`:
 one instant, in milliseconds since the Unix epoch. `NULL` — which is what
 every other constructor passes — reads the system clock. A pointer rather
 than a sentinel value because every `int64_t` names a real instant, `0`
@@ -129,21 +128,23 @@ of that wrong is a crash rather than a rejected argument. This surface is
 deliberately callback-free.
 
 **Pinning a clock is for conformance vectors and tests.** Production code has
-no reason to freeze a verifier's "now", and one frozen in the past stops
-`max_signed_age_secs` rejecting anything.
+no reason to freeze the endpoint's "now".
 
-The clock reaches what it reaches in every other port: the `STALE_PAYLOAD`
-comparison, and the `request_date` / `_ms` / `_pst` triple the endpoint
-stamps on its response. **Certificate validity is never judged at it.** A
-payload or receipt that states no date of its own is checked against the
-system clock regardless, so an injected clock can neither authenticate an
-expired chain nor expire a live one — which is why `AprvReceiptVerifier` has
-no clock constructor at all.
+The clock reaches what it reaches in every other port: the `request_date` /
+`_ms` / `_pst` triple the endpoint stamps on its response. **Certificate
+validity is never judged at it.** A receipt that states no date of its own is
+checked against the system clock regardless, so an injected clock can neither
+authenticate an expired chain nor expire a live one, which is why
+`AprvJwsVerifier` and `AprvReceiptVerifier` have no clock constructor at all.
+No verifier rejects a payload for its age either: how old a signed payload
+may be is the caller's decision, made on the `signedDate` in the JSON. In C,
+with the epoch-millisecond claim already read out of that JSON:
+`bool too_old = now_millis - signed_date > 300000;`.
 
-One constructor per handle rather than a `_with_clock` variant of each: the
-`_and_clock` signature is the superset, because `NULL`, `NULL`, `0` for the
-anchors already selects the bundled Apple roots. The ABI does not grow a
-symbol per combination of options.
+One clock constructor rather than a `_with_clock` variant of each endpoint
+constructor: the `_and_clock` signature is the superset, because `NULL`,
+`NULL`, `0` for the anchors already selects the bundled Apple roots. The ABI
+does not grow a symbol per combination of options.
 
 ### Why JSON is the interchange
 
@@ -172,10 +173,12 @@ the point.
 
 * **`1`–`12`** is a verdict about the input: the canonical `Reason`
   vocabulary every port of this library shares, in the order that vocabulary
-  declares it. These numbers never change and are never reused. `12` is
+  declares it. These numbers never change and are never reused: `11` was
+  `APRV_REASON_STALE_PAYLOAD`, removed with the max-signed-age policy, and
+  stays retired. `12` is
   `APRV_REASON_INTERNAL_ERROR`: the chain and signature verified but the
   signed receipt or JWS content cannot be read, which is not the caller's fault, so
-  alert and retry or escalate rather than deny. Adding a thirteenth is a
+  alert and retry or escalate rather than deny. Adding a new reason is a
   deliberate change to `fixtures/cases.schema.json`, `PLAN.md` and all nine
   ports at once, and it would be `13`.
 * **`100`+** is a mistake in the call itself — a null pointer, a non-UTF-8
@@ -257,8 +260,8 @@ and hands over plain files.
 field paths the C++ harness cannot reach — `receipt.bundle_id`,
 `inAppPurchases[productId=…].expiresDate`, `unknownAttributes[9999][0]`.
 
-Both harnesses run every case in `cases.json` and skip none. The cases that
-pin a clock go through the `_and_clock` constructors described above. Nothing is skipped and
+Both harnesses run every case in `cases.json` and skip none. The endpoint
+cases that pin a clock go through the `_and_clock` constructor described above. Nothing is skipped and
 nothing is assumed: a case the manifest ever marks unsupported fails the run
 rather than shrinking it quietly, and both harnesses print how many pinned a
 clock alongside the pass count.

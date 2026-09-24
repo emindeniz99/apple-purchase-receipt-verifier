@@ -24,7 +24,7 @@ use Throwable;
  * This class takes **no clock**. Its only notion of "now" is the fallback
  * instant a receipt without a creation date has its certificate chain judged
  * at, and that reads the system clock directly and deliberately: a caller
- * injecting a clock — to test staleness, or to work around skew — must not
+ * injecting a clock (to pin request_date, or to work around skew) must not
  * thereby be able to accept an expired chain, or to expire a live one.
  *
  * ```php

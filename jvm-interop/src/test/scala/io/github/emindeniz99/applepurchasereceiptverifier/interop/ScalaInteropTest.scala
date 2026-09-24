@@ -95,7 +95,6 @@ class ScalaInteropTest:
       case Reason.WRONG_APP_APPLE_ID           => "wrong app id"
       case Reason.INVALID_RECEIPT_FORMAT       => "bad receipt"
       case Reason.DEVICE_HASH_MISMATCH         => "device mismatch"
-      case Reason.STALE_PAYLOAD                => "stale"
       case Reason.MALFORMED_REQUEST            => "malformed request"
       case Reason.INTERNAL_ERROR               => "internal error"
       case Reason.REQUEST_TOO_LARGE            => "request too large"
