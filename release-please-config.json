@@ -42,6 +42,10 @@
         {
           "type": "generic",
           "path": "java-bench/pom.xml"
+        },
+        {
+          "type": "generic",
+          "path": "java/README.md"
         }
       ]
     }
