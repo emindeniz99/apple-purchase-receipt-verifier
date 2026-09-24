@@ -130,6 +130,20 @@ old but genuine payload), so apply one yourself where it fits:
 The `maxSignedAgeMillis` option is gone, and passing it throws a `TypeError`
 rather than being ignored.
 
+**Entitlement is your rule too.** There is no "is active" helper, as in
+Apple's own libraries; read the signed fields:
+
+```js
+const entitled =
+  payload.revocationDate == null && (payload.expiresDate == null || payload.expiresDate > Date.now());
+```
+
+That is only what the payload said when it was signed. A billing grace
+period (it lives in the renewal info), an upgrade (`isUpgraded`) and a refund
+after signing are yours to handle; App Store Server Notifications V2 or the
+App Store Server API give the live status. The `isTransactionActiveAt`
+helper is gone.
+
 A StoreKit 2 signed transaction:
 
 ```js

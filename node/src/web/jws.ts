@@ -18,7 +18,6 @@ import { normalizeRoots, validatePair, type RootInput } from './chain.js';
 import { verifyEs256 } from './crypto.js';
 import { OID_EC_PUBLIC_KEY, requireBuildablePublicKey } from './jwk.js';
 
-export { isTransactionActiveAt } from '../jws-claims.js';
 export type { AppTransactionPayload, Claims, Clock, TransactionPayload } from '../jws-claims.js';
 
 import type { AppTransactionPayload, Claims, TransactionPayload } from '../jws-claims.js';

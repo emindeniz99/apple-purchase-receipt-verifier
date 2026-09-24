@@ -149,22 +149,6 @@ export function readAppTransactionPayload(payload: Claims): AppTransactionPayloa
   return payload as AppTransactionPayload;
 }
 
-/**
- * Entitlement helper for a verified transaction: not revoked, and (for
- * subscriptions) not expired at `now`. Point-in-time on the signed claims
- * only — later refunds or renewals are invisible to it.
- */
-export function isTransactionActiveAt(payload: TransactionPayload, now: Date): boolean {
-  const t = now.getTime();
-  if (typeof payload.revocationDate === 'number' && t >= payload.revocationDate) {
-    return false;
-  }
-  if (typeof payload.expiresDate === 'number') {
-    return t < payload.expiresDate;
-  }
-  return true;
-}
-
 /** The three segments plus the x5c chain, after the ES256/x5c shape checks. */
 export interface JwsSegments {
   headerB64: string;
@@ -266,9 +250,9 @@ export function signedAtMillisOf(payload: Claims): number | null {
 
 /**
  * Injectable source of "now". A supplier rather than a fixed timestamp so a
- * long-lived verifier keeps advancing; `Date` rather than a number because
- * it is Node's point-in-time type and is what {@link isTransactionActiveAt}
- * already takes. Omitted (or null), the system clock is used.
+ * long-lived endpoint keeps advancing; `Date` rather than a number because
+ * it is Node's point-in-time type. Omitted (or null), the system clock is
+ * used.
  */
 export type Clock = () => Date;
 

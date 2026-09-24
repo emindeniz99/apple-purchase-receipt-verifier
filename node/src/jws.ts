@@ -21,7 +21,6 @@ import {
 import { MAX_JWS_BYTES } from './limits.js';
 import { x5cBase64Decode } from './bytes.js';
 
-export { isTransactionActiveAt } from './jws-claims.js';
 export type { AppTransactionPayload, Claims, Clock, TransactionPayload } from './jws-claims.js';
 
 import type { AppTransactionPayload, Claims, TransactionPayload } from './jws-claims.js';

@@ -13,7 +13,6 @@
  */
 export {
   JwsVerifier,
-  isTransactionActiveAt,
   type JwsVerifierOptions,
   type TransactionPayload,
   type AppTransactionPayload,
