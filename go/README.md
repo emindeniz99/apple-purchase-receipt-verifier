@@ -221,7 +221,7 @@ including the majority that never touch this endpoint.
 ## Errors
 
 Every failed verification returns a `*VerificationError` carrying one of
-twelve `Reason` values, and nothing else — no logging, no metrics, no
+eleven `Reason` values, and nothing else — no logging, no metrics, no
 callbacks. The `Detail` string is safe to log: it never contains receipt
 bytes, claim values or key material.
 

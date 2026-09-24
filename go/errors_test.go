@@ -9,7 +9,7 @@ import (
 	applereceipt "github.com/emindeniz99/apple-purchase-receipt-verifier/go"
 )
 
-// The twelve reason tokens are normative: they are what fixtures/
+// The eleven reason tokens are normative: they are what fixtures/
 // cases.schema.json pins and what every port reports. A typo in one is
 // otherwise invisible, so the table is written out by hand here rather
 // than derived from the constants.

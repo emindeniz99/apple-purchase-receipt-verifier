@@ -282,7 +282,7 @@ func TestSchemaVersionIsTheOneThisAdapterUnderstands(t *testing.T) {
 	}
 }
 
-// Every reason a vector expects must be one of the twelve exported
+// Every reason a vector expects must be one of the eleven exported
 // constants, so a typo in the file surfaces here rather than as a
 // mysterious mismatch inside one case.
 func TestEveryExpectedReasonIsInTheVocabulary(t *testing.T) {

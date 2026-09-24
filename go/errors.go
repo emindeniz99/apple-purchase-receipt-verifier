@@ -8,9 +8,9 @@ import (
 
 // Reason is the machine-readable cause of a verification failure.
 //
-// The twelve constants below are the complete vocabulary a verifier
+// The eleven constants below are the complete vocabulary a verifier
 // returns. It is closed by the cross-port contract
-// (fixtures/cases.schema.json); a thirteenth reason is a change to every
+// (fixtures/cases.schema.json); a twelfth reason is a change to every
 // implementation in one go, not a Go-local addition. A
 // [VerifyReceiptResult] can also report ReasonMalformedRequest and
 // ReasonRequestTooLarge, which every port's endpoint result shares.
