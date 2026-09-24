@@ -435,6 +435,7 @@ public class Conformance : IClassFixture<Conformance.Coverage>
 
     private static JwsVerifier Jws(OrderedMap config, IClock? clock)
     {
+        RequireNoClock(clock, "JwsVerifier");
         List<AppleEnvironment> environments = new();
         if (config.TryGetValue("acceptedEnvironments", out object? accepted) && accepted is List<object?> list)
         {
@@ -452,17 +453,12 @@ public class Conformance : IClassFixture<Conformance.Coverage>
         }
 
         long? appAppleId = config.TryGetValue("appAppleId", out object? id) ? (long?)id : null;
-        TimeSpan? maxSignedAge = config.TryGetValue("maxSignedAgeSeconds", out object? seconds)
-            ? TimeSpan.FromSeconds((long)seconds!)
-            : null;
 
         return new JwsVerifier(
             Roots(config),
             config.TryGetValue("bundleId", out object? bundleId) ? (string)bundleId! : UnmatchableBundleId,
             environments,
-            appAppleId,
-            maxSignedAge,
-            clock);
+            appAppleId);
     }
 
     private static IReadOnlyList<X509Certificate2> Roots(OrderedMap config)

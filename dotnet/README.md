@@ -42,8 +42,7 @@ var verifier = new JwsVerifier(
     trustedRoots: AppleRootCertificates.JwsRoots(),
     bundleId: "com.example.app",
     acceptedEnvironments: new[] { AppleEnvironment.Production, AppleEnvironment.Sandbox },
-    appAppleId: 1234567890,
-    maxSignedAge: TimeSpan.FromMinutes(5));
+    appAppleId: 1234567890);
 
 try
 {
@@ -239,7 +238,6 @@ One exception type, `VerificationException`. Switch on `.Reason`; report
 | `WrongAppAppleId` | `WRONG_APP_APPLE_ID` | a Production `AppTransaction` names a different app Apple id, or none is configured |
 | `InvalidReceiptFormat` | `INVALID_RECEIPT_FORMAT` | not parseable CMS, trailing bytes, no payload (a detached CMS), no `SignerInfo`, or an unsupported digest |
 | `DeviceHashMismatch` | `DEVICE_HASH_MISMATCH` | the SHA-1 device binding failed, or the attributes it needs are absent |
-| `StalePayload` | `STALE_PAYLOAD` | the payload is older than `maxSignedAge` |
 | `InternalError` | `INTERNAL_ERROR` | the receipt's chain and signature verified, but its payload does not parse (`InnerException` is the parser's error); a verified JWS payload carries a claim `TransactionPayload` / `AppTransactionPayload` models with the wrong JSON type (a string that is not a string, an integer that is not a whole number in the property's range); or the host cannot run the device-hash check (SHA-1 unavailable). Not the client's fault: alert and retry or escalate, do not deny |
 
 **Order of the receipt checks.** CMS parse → the creation date alone
@@ -252,7 +250,7 @@ the attacker's own key is never run before it is trusted. A payload that
 fails the full parse was signed by a trusted signer, so it is
 `InternalError`, not `InvalidReceiptFormat`.
 
-The vocabulary is closed. Adding a thirteenth reason is a change to every port
+The vocabulary is closed. Adding a twelfth reason is a change to every port
 and to the shared schema in one pull request. `VerificationReason` also
 carries `MalformedRequest` (`MALFORMED_REQUEST`) and `RequestTooLarge`
 (`REQUEST_TOO_LARGE`), but only as
@@ -286,8 +284,7 @@ public sealed class Redeem
     private readonly JwsVerifier verifier = new(
         trustedRoots: AppleRootCertificates.JwsRoots(),
         bundleId: "com.example.app",
-        acceptedEnvironments: new[] { AppleEnvironment.Production, AppleEnvironment.Sandbox },
-        maxSignedAge: TimeSpan.FromMinutes(5));       // the freshness window
+        acceptedEnvironments: new[] { AppleEnvironment.Production, AppleEnvironment.Sandbox });
 
     public string RedeemTransaction(string userId, string jws)
     {
@@ -296,12 +293,6 @@ public sealed class Redeem
         {
             payload = verifier.VerifyTransaction(jws);                  // step 2
         }
-        catch (VerificationException e) when (e.Reason == VerificationReason.StalePayload)
-        {
-            // step 4: ask the client for a fresh jwsRepresentation, or fetch
-            // one from the App Store Server API and verify that instead
-            return "refresh";
-        }
         catch (VerificationException e)
         {
             Log.Warning("purchase rejected: {Reason}", e.ReasonCode);
@@ -309,6 +300,12 @@ public sealed class Redeem
         }
 
         if (payload.RevocationDate is not null) return "denied";        // step 3
+
+        // step 4, your call: past the window, ask the client for a fresh
+        // jwsRepresentation, or fetch one from the App Store Server API and
+        // verify that instead
+        long nowMillis = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        if (nowMillis - (payload.SignedDate ?? 0) > 5 * 60 * 1000) return "refresh";
 
         string id = payload.TransactionId!;                             // step 5
         if (Grants.Exists(id)) return "denied";
@@ -348,7 +345,7 @@ public sealed class RedeemReceipt
             if (purchase.CancellationDate is not null) return "denied"; // step 3
             if (purchase.ExpiresDate is { } expires && expires <= now) return "denied";
 
-            // step 4: no maxSignedAge here, so compare the creation date. Past
+            // step 4: the same caller-side check, on the creation date. Past
             // the window, ask the client to refresh its receipt, or call the
             // App Store Server API by TransactionId and verify the JWS back.
             if (receipt.CreationDate is not { } created || now - created > Window)
@@ -391,8 +388,7 @@ public sealed class RedeemReceipt
   Every chain function takes that instant as a required parameter; there is no
   overload that defaults to "now". A payload stating a signing time no instant
   can represent is an `INVALID_CHAIN`, not a payload that states none: falling
-  back to "now" there would move the validity verdict *and* skip the staleness
-  rule.
+  back to "now" there would move the validity verdict.
 - **Reject rather than repair.** An attribute type outside the 32-bit signed
   range, an integer wider than 64 bits, a date without a timezone designator, a
   value with trailing data, trailing bytes after the CMS blob or after the
@@ -444,24 +440,28 @@ public sealed class RedeemReceipt
 
 ## Time
 
-There is one clock seam, `IClock`, and it is read in exactly two places:
-
-1. the `STALE_PAYLOAD` comparison in `JwsVerifier`;
-2. the `request_date` triple in `VerifyReceiptEndpoint`.
+There is one clock seam, `IClock`, and it is read in exactly one place: the
+`request_date` triple in `VerifyReceiptEndpoint`.
 
 It never reaches a certificate-validity judgement. Where an input states no
 signing time of its own, the validity instant falls back to the **system**
-clock — so a caller injecting a clock, to pin a test or to work around skew,
+clock, so a caller injecting a clock, to pin a test or to work around skew,
 cannot thereby accept a chain that is expired in real time. That is why
-`ReceiptVerifier` takes no clock at all: it would have no legitimate consumer,
-and an option with no consumer is an invitation to wire it into the one place
-it must not reach.
+`JwsVerifier` and `ReceiptVerifier` take no clock at all: they would have no
+legitimate consumer, and an option with no consumer is an invitation to wire
+it into the one place it must not reach.
 
 ```csharp
-var verifier = new JwsVerifier(roots, bundleId, environments,
-    maxSignedAge: TimeSpan.FromMinutes(5),
-    clock: new FixedClock(DateTimeOffset.Parse("2025-01-01T00:00:00Z")));
+var endpoint = new VerifyReceiptEndpoint(roots, AppleEnvironment.Sandbox,
+    new FixedClock(DateTimeOffset.Parse("2025-01-01T00:00:00Z")));
 ```
+
+**Freshness is your call.** No payload is rejected for its age, as in Apple's
+own App Store Server Libraries: `signedDate` only decides the instant the
+chain is judged at. The right limit depends on the endpoint (Apple retries a
+server notification for days, and a device may present an old but genuine
+payload), so apply one yourself where it fits:
+`bool tooOld = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - (transaction.SignedDate ?? 0) > 300_000;`
 
 ## Lifetime
 

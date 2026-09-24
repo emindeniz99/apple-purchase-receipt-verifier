@@ -121,9 +121,9 @@ public class FloorTests
     [Fact]
     public void TheReasonVocabularyIsIntactOnTheFloorAsset()
     {
-        // Twelve verifier reasons plus the two only a VerifyReceiptResult carries.
-        Assert.Equal(14, Enum.GetValues(typeof(VerificationReason)).Length);
-        Assert.Equal("STALE_PAYLOAD", VerificationReasonCodes.ToCode(VerificationReason.StalePayload));
+        // Eleven verifier reasons plus the two only a VerifyReceiptResult carries.
+        Assert.Equal(13, Enum.GetValues(typeof(VerificationReason)).Length);
+        Assert.Equal("DEVICE_HASH_MISMATCH", VerificationReasonCodes.ToCode(VerificationReason.DeviceHashMismatch));
         Assert.Equal("INTERNAL_ERROR", VerificationReasonCodes.ToCode(VerificationReason.InternalError));
     }
 
