@@ -124,6 +124,16 @@ returned map itself.
 Include `Environment.SANDBOX` in `acceptedEnvironments` on any endpoint App
 Review can reach: App Review runs production builds against sandbox.
 
+Accepting SANDBOX has a cost. TestFlight builds, including ones installed
+from a public link, buy in sandbox too, and a sandbox purchase is free. So
+record the environment with every grant (`payload.environment()`, or
+`receipt.receiptType()` for a legacy receipt) and scope sandbox grants: give
+them a short lifetime, keep them off production accounts, or limit them to
+App Review's test accounts. The samples under [Integrating](#integrating-from-verified-payload-to-entitlement)
+pass the environment to the grant for this reason. A sandbox purchase that
+reaches a production entitlement unscoped is a free subscription for anyone
+with the TestFlight link.
+
 `JwsVerifier` has two constructors, the second the first plus the optional
 trailing `appAppleId`; passing `null` for it has the same effect as omitting
 it.
@@ -188,6 +198,11 @@ server does not always have the client's device GUID — the raw bytes of
 `identifierForVendor` on iOS, iPadOS, tvOS and watchOS, including an iOS
 app running on an Apple silicon Mac, or the primary network interface's
 MAC address from `copy_mac_address` on macOS and Mac Catalyst.
+
+`ReceiptVerifier` accepts a receipt from every environment: it takes no
+environment and never raises `WRONG_ENVIRONMENT`. Read
+`receipt.receiptType()` yourself. Only `Production` and `ProductionVPP` are
+production; `ProductionSandbox` is a sandbox or TestFlight purchase.
 
 Attribute types the library does not model are exposed verbatim on
 `AppReceipt.unknownAttributes()` / `InAppPurchase.unknownAttributes()`,
@@ -262,6 +277,11 @@ String json = result.status() == VerifyReceiptEndpoint.STATUS_SANDBOX_RECEIPT_ON
 
 A sandbox receipt never renders as a production 0, whichever endpoint
 verified it. 21007 and 21008 bodies carry the status alone, as Apple's do.
+
+Re-rendering a 21007 as sandbox is what keeps App Review working, and it is
+also what gives every TestFlight tester's free purchase a status 0. Record
+`result.receipt().receiptType()` with the grant and scope sandbox grants, as
+[The three JWS entry points](#the-three-jws-entry-points) describes.
 
 **Failure reasons.** `failureReason()` is a `VerificationException.Reason`:
 
@@ -361,11 +381,12 @@ about the deployment, not about any payload, so it is not a `Reason` either.
 
 The backend flow these calls sit inside is written out once in the
 [project README](../README.md#integrating-from-verified-payload-to-entitlement):
-verify offline, deny on any failure, check the refund field, refresh a payload
-past the freshness window, guard against replay on the transaction id, then
-grant. That section also carries the policy table saying what each reason
-means and which ones are worth an alert. Here are its two branches in this
-port's API.
+verify offline, deny on any failure, check the refund and expiry fields,
+refresh a payload past the freshness window, guard against replay on the
+transaction id, then grant with the environment recorded. That section also
+carries the policy table saying what each reason means and which ones are
+worth an alert. Here are its two branches in this port's API. `Grants` and
+`Entitlements` stand for your own storage and entitlement code.
 
 A StoreKit 2 signed transaction:
 
@@ -376,96 +397,187 @@ import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
 import io.github.emindeniz99.applepurchasereceiptverifier.jws.JwsVerifier;
 import io.github.emindeniz99.applepurchasereceiptverifier.jws.TransactionPayload;
 import java.util.EnumSet;
+import java.util.logging.Logger;
 
 public class Redeem {
+    private static final Logger LOG = Logger.getLogger(Redeem.class.getName());
+    private static final long FRESHNESS_MILLIS = 300_000L;
+
+    public interface Grants {
+        /**
+         * Records userId as the owner of transactionId unless a grant for it
+         * (or, for a subscription, for originalTransactionId) already exists.
+         * Returns the existing owner, or null when this call recorded it.
+         */
+        String recordIfAbsent(String transactionId, String originalTransactionId, String userId,
+                Environment environment);
+    }
+
+    public interface Entitlements {
+        /** Idempotent per transactionId. expiresAtMillis is null for a purchase that does not expire. */
+        void grant(String userId, String transactionId, String productId, Long expiresAtMillis,
+                Environment environment);
+    }
+
+    // SANDBOX is App Review, and also every TestFlight build: see "The three JWS entry points".
     private final JwsVerifier verifier = new JwsVerifier(
             AppleRootCerts.jwsRoots(),
             "com.example.app",
-            EnumSet.of(Environment.PRODUCTION, Environment.SANDBOX),
-            null);         // appAppleId: only AppTransactions need it
+            EnumSet.of(Environment.PRODUCTION, Environment.SANDBOX));
+    private final Grants grants;
+    private final Entitlements entitlements;
+
+    public Redeem(Grants grants, Entitlements entitlements) {
+        this.grants = grants;
+        this.entitlements = entitlements;
+    }
 
     public String redeemTransaction(String userId, String jws) {
         TransactionPayload payload;
         try {
-            payload = verifier.verifyTransaction(jws);              // step 2
+            payload = verifier.verifyTransaction(jws);                  // step 2
         } catch (VerificationException e) {
-            log.warn("purchase rejected: {}", e.reason());
+            LOG.warning("purchase rejected: " + e.reason());
             return "denied";
         }
+        long now = System.currentTimeMillis();
+        // Accepted by the verifier, so PRODUCTION or SANDBOX; recorded with the grant.
+        Environment environment = Environment.fromValue(payload.environment());
 
-        if (payload.revocationDate() != null) {                     // step 3
-            return "denied";
+        if (payload.revocationDate() != null) {                         // step 3
+            return "denied";                                            // refunded or revoked
+        }
+        Long expires = payload.expiresDate();
+        if (expires != null && expires <= now) {
+            return "denied";                                            // the term had ended
         }
 
         // step 4, your call: past the window, ask the client for a fresh
         // jwsRepresentation, or fetch one from the App Store Server API and
         // verify that instead
         Long signed = payload.signedDate();
-        if (signed == null || System.currentTimeMillis() - signed > 300_000L) {
+        if (signed == null || now - signed > FRESHNESS_MILLIS) {
             return "refresh";
         }
 
-        String id = payload.transactionId();                        // step 5
-        if (grants.exists(id)) {
-            return "denied";
+        String id = payload.transactionId();                            // step 5
+        String owner = grants.recordIfAbsent(id, payload.originalTransactionId(), userId, environment);
+        if (owner != null && !owner.equals(userId)) {
+            return "denied";                                            // replayed by another user
         }
-        grants.record(id, payload.originalTransactionId(), userId);
 
-        grant(userId, payload.productId());
+        entitlements.grant(userId, id, payload.productId(), expires, environment);   // step 6
         return "granted";
     }
 }
 ```
 
 The legacy PKCS#7 app receipt is the same policy on the other input, the one
-StoreKit 1 apps and older SDKs still send:
+StoreKit 1 apps and older SDKs still send. A receipt is not one purchase: it
+lists every purchase the app has not finished consuming, and for a
+subscription every renewal, in no guaranteed order, with the expired and
+refunded ones still present. So the sample picks rather than stopping at the
+first matching entry: it skips entries with a `cancellationDate`, takes the
+renewal with the latest `expiresDate`, and grants only if that is still in
+the future. Entries without an `expiresDate` (consumables, non-consumables)
+are granted one by one, by transaction id.
 
 ```java
 import io.github.emindeniz99.applepurchasereceiptverifier.AppleRootCerts;
+import io.github.emindeniz99.applepurchasereceiptverifier.Environment;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.AppReceipt;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.InAppPurchase;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifier;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.logging.Logger;
 
 public class RedeemReceipt {
+    private static final Logger LOG = Logger.getLogger(RedeemReceipt.class.getName());
     private static final Duration WINDOW = Duration.ofMinutes(5);
+
+    public interface Grants {
+        /** As in Redeem: the existing owner, or null when this call recorded userId. */
+        String recordIfAbsent(String transactionId, String originalTransactionId, String userId,
+                Environment environment);
+    }
+
+    public interface Entitlements {
+        /** Idempotent per transactionId. expiresAt is null for a purchase that does not expire. */
+        void grant(String userId, String transactionId, String productId, Instant expiresAt,
+                Environment environment);
+    }
 
     private final ReceiptVerifier receipts =
             new ReceiptVerifier(AppleRootCerts.receiptRoots(), "com.example.app");
+    private final Grants grants;
+    private final Entitlements entitlements;
 
-    public String redeemReceipt(String userId, String receiptData, String productId)
-            throws VerificationException {
-        AppReceipt receipt = receipts.verify(receiptData);              // step 2
-        Instant now = Instant.now();
+    public RedeemReceipt(Grants grants, Entitlements entitlements) {
+        this.grants = grants;
+        this.entitlements = entitlements;
+    }
 
-        for (InAppPurchase purchase : receipt.inAppPurchases()) {
-            if (!productId.equals(purchase.productId())) {
-                continue;
-            }
-            if (purchase.cancellationDate() != null) {                  // step 3
-                return "denied";
-            }
-            if (purchase.expiresDate() != null && !purchase.expiresDate().isAfter(now)) {
-                return "denied";
-            }
-            // step 4: the same caller-side check, on the creation date. Past
-            // the window, ask the client to refresh its receipt, or call the
-            // App Store Server API by transactionId and verify the JWS back.
-            if (receipt.creationDate() == null
-                    || Duration.between(receipt.creationDate(), now).compareTo(WINDOW) > 0) {
-                return "refresh";
-            }
-            if (grants.exists(purchase.transactionId())) {              // step 5
-                return "denied";
-            }
-            grants.record(purchase.transactionId(), purchase.originalTransactionId(), userId);
-
-            grant(userId, purchase.productId());
-            return "granted";
+    public String redeemReceipt(String userId, String receiptData, String productId) {
+        AppReceipt receipt;
+        try {
+            receipt = receipts.verify(receiptData);                     // step 2
+        } catch (VerificationException e) {
+            LOG.warning("receipt rejected: " + e.reason());
+            return "denied";
         }
-        return "denied";
+        Instant now = Instant.now();
+        // ReceiptVerifier accepts every environment. ProductionSandbox is
+        // App Review or TestFlight; record it and scope the grant.
+        String type = receipt.receiptType();
+        Environment environment = "Production".equals(type) || "ProductionVPP".equals(type)
+                ? Environment.PRODUCTION
+                : Environment.SANDBOX;
+
+        InAppPurchase latest = null;                  // auto-renewable: latest term
+        List<InAppPurchase> oneTime = new ArrayList<InAppPurchase>();
+        for (InAppPurchase purchase : receipt.inAppPurchases()) {       // step 3
+            if (!productId.equals(purchase.productId()) || purchase.cancellationDate() != null) {
+                continue;                             // another product, or refunded as of signing
+            }
+            if (purchase.expiresDate() == null) {
+                oneTime.add(purchase);                // consumable or non-consumable
+            } else if (latest == null || purchase.expiresDate().isAfter(latest.expiresDate())) {
+                latest = purchase;
+            }
+        }
+        if (latest != null && !latest.expiresDate().isAfter(now)) {
+            return "denied";                          // the latest term had ended when Apple signed
+        }
+        if (latest == null && oneTime.isEmpty()) {
+            return "denied";
+        }
+
+        // step 4: the same caller-side check, on the creation date. Past the
+        // window, ask the client to refresh its receipt, or call the App
+        // Store Server API by transactionId and verify the JWS back.
+        if (receipt.creationDate() == null
+                || Duration.between(receipt.creationDate(), now).compareTo(WINDOW) > 0) {
+            return "refresh";
+        }
+
+        List<InAppPurchase> toGrant = latest != null ? Collections.singletonList(latest) : oneTime;
+        boolean granted = false;
+        for (InAppPurchase purchase : toGrant) {                        // step 5
+            String owner = grants.recordIfAbsent(
+                    purchase.transactionId(), purchase.originalTransactionId(), userId, environment);
+            if (owner != null && !owner.equals(userId)) {
+                continue;                             // replayed by another user
+            }
+            entitlements.grant(userId, purchase.transactionId(), productId,  // step 6
+                    purchase.expiresDate(), environment);
+            granted = true;
+        }
+        return granted ? "granted" : "denied";
     }
 }
 ```
@@ -588,6 +700,14 @@ against the payload's `environment` (or `receiptType`, for an
 `AppTransaction`) claim; a value outside it is `WRONG_ENVIRONMENT`.
 `VerifyReceiptEndpoint`'s single `Environment` drives the 21007/21008 status
 routing the same way the other ports do.
+
+`ReceiptVerifier` has no environment setting: it accepts a receipt of every
+`receipt_type` and never raises `WRONG_ENVIRONMENT`. Read
+`receipt.receiptType()` and decide, as the
+[`RedeemReceipt`](#integrating-from-verified-payload-to-entitlement) sample
+does. Whether you accept sandbox at all, and how you scope it (TestFlight
+buys in sandbox for free), is the same decision on both paths; see
+[The three JWS entry points](#the-three-jws-entry-points).
 
 **Freshness is your call.** No payload is rejected for its age, as in Apple's
 own App Store Server Libraries: `signedDate` only decides the instant the
