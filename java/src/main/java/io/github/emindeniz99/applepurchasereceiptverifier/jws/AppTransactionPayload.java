@@ -13,6 +13,9 @@ import org.jspecify.annotations.Nullable;
  * <p>Immutable, and safe to publish to other threads, for the reason given on
  * {@link TransactionPayload}: the claims arrive through the constructor rather
  * than being written into the object after it exists.
+ *
+ * <p>Not designed for serialization: to cache or store it, copy the fields
+ * you need into your own type.</p>
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public final class AppTransactionPayload {

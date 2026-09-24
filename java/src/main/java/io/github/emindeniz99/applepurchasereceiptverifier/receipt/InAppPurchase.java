@@ -10,6 +10,9 @@ import org.jspecify.annotations.Nullable;
  * One in-app purchase from a legacy app receipt (attribute 17). Field set
  * per Apple's "Validating receipts on the device" attribute table;
  * {@code null} means the attribute was absent from the receipt.
+ *
+ * <p>Not designed for serialization: to cache or store it, copy the fields
+ * you need into your own type.</p>
  */
 public final class InAppPurchase {
 
