@@ -37,6 +37,7 @@ import org.bouncycastle.asn1.cms.ContentInfo;
 import org.bouncycastle.asn1.cms.SignedData;
 import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
 import org.bouncycastle.asn1.oiw.OIWObjectIdentifiers;
+import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
@@ -589,6 +590,24 @@ public final class ReceiptVerifier {
                 throw new VerificationException(
                         Reason.INVALID_RECEIPT_FORMAT,
                         "unsupported receipt digest algorithm " + SafeText.quote(digestOid));
+            }
+            // BouncyCastle takes the hash for the signature from the
+            // signatureAlgorithm field, not from digestAlgorithm, so that
+            // field is restricted too: plain RSA, or RSA with the same digest.
+            String signatureOid = signer.getEncryptionAlgOID();
+            boolean sha1 = OIWObjectIdentifiers.idSHA1.getId().equals(digestOid);
+            if (!PKCSObjectIdentifiers.rsaEncryption.getId().equals(signatureOid)
+                    && !(sha1
+                            && PKCSObjectIdentifiers.sha1WithRSAEncryption
+                                    .getId()
+                                    .equals(signatureOid))
+                    && !(!sha1
+                            && PKCSObjectIdentifiers.sha256WithRSAEncryption
+                                    .getId()
+                                    .equals(signatureOid))) {
+                throw new VerificationException(
+                        Reason.INVALID_RECEIPT_FORMAT,
+                        "unsupported receipt signature algorithm " + SafeText.quote(signatureOid));
             }
             boolean valid = signer.verify(signerVerifier(signerCert));
             if (!valid) {
