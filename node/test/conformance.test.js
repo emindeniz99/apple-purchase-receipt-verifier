@@ -171,20 +171,18 @@ const UNMATCHABLE_BUNDLE_ID = 'conformance.unset.bundle.id';
 const UNMATCHABLE_ENVIRONMENTS = ['LocalTesting'];
 
 function jwsVerifier(config, clock) {
+  requireNoClock(clock, 'JwsVerifier');
   return new JwsVerifier({
     trustedRoots: trustedRoots(config.trustedRoots),
     bundleId: config.bundleId ?? UNMATCHABLE_BUNDLE_ID,
     acceptedEnvironments: config.acceptedEnvironments ?? UNMATCHABLE_ENVIRONMENTS,
     appAppleId: config.appAppleId ?? null,
-    maxSignedAgeMillis:
-      config.maxSignedAgeSeconds === undefined ? null : config.maxSignedAgeSeconds * 1000,
-    clock,
   });
 }
 
 // Each operation takes the case's clock (null when it pins none) and hands
-// it to the library's `clock` option. An operation whose API has no clock
-// seam rejects a case that pins one instead of silently running on the
+// it to the library's `clock` option. Only the endpoint has one; an
+// operation whose API has no clock seam rejects a case that pins one instead of silently running on the
 // system clock. `fixture` is the input's registry entry (codec included),
 // needed only by the two operations whose wire form depends on it; `spec` is
 // the case's `input`, which only the endpoint reads (for `requestBody`).
