@@ -447,6 +447,24 @@ or JWS through. Kept here so they are not lost with the review reports.
 - **Small code hygiene:** `catch (Exception e)` where the types are known;
   a `@Nullable ASN1Set` dereferenced without a guard (safe today because the
   count is checked first); a redundant `unmodifiableMap` wrap in the models.
+- **Owner decision (2026-09-24): all nine ports reach Java's quality.** No
+  port is frozen or reduced to security fixes only.
+- **More evidence for omitting a zero `web_order_line_item_id`:** a genuine
+  production consumable receipt from April 2024, answered by Apple's
+  verifyReceipt at the time, also omitted the field while this library
+  writes "0". The same receipt still verifies on 0.6.0, although its
+  signing certificate expired in October 2024, because the chain is judged
+  at the receipt's creation date.
+- **README additions:**
+  - For a 21009 on a consumable, reconcile with the App Store Server API's
+    Get Transaction Info by transaction id: Get Transaction History does
+    not return consumables the app has finished.
+  - The App Store Server API is rate-limited per hour, unlike
+    verifyReceipt; this library has no limit because it makes no call.
+  - Why this library exists: Apple's App Store Server Library extracts
+    transaction ids from a receipt but does not validate it, so servers
+    that still accept receipts from iOS versions before StoreKit 2 need a
+    local validator.
 - **Size caps stay fixed at Apple's 3 MiB** (owner decision, 2026-09-24):
   a configurable lower cap was proposed and declined.
 
