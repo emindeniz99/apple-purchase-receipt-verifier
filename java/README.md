@@ -384,7 +384,7 @@ also what gives every TestFlight tester's free purchase a status 0. Record
 |---|---|---|
 | `REQUEST_TOO_LARGE` | 21002 | the raw body is over `MAX_REQUEST_BYTES` (3,145,728 UTF-8 bytes); Apple answers HTTP 413 here, see [Resource bounds](#resource-bounds) |
 | `MALFORMED_REQUEST` | 21002 | the body is not JSON, not a JSON object or nests deeper than 64, or `receipt-data` is missing, empty or not a string |
-| `INVALID_RECEIPT_FORMAT` | 21002 | `receipt-data` is not base64, is over `MAX_RECEIPT_BYTES`, its CMS envelope does not parse, it does not embed its signer's certificate, or it names a digest or signature algorithm Apple does not use for receipts |
+| `INVALID_RECEIPT_FORMAT` | 21002 | `receipt-data` is not base64, is over `MAX_RECEIPT_BYTES`, its CMS envelope does not parse, or it does not embed its signer's certificate |
 | `INVALID_CHAIN`, `INVALID_SIGNATURE`, other certificate reasons | 21003 | the receipt did not authenticate |
 | `INTERNAL_ERROR` | 21009 | not the client's fault: the receipt authenticated but its signed content cannot be read (`failureCause()` is the parser's exception), the runtime lacks an algorithm the check needs, or an unexpected runtime exception (`failureCause()` holds it). Deterministic: the same bytes give the same answer again. Do not retry; see [`INTERNAL_ERROR` is deterministic](#internal_error-is-deterministic) |
 
@@ -585,7 +585,7 @@ Size limits on the way in:
 | 0 | none | Grant, after your own bundle-id check and entitlement rules |
 | 21007 | none (the receipt verified) | A sandbox receipt on a production endpoint. For App Review, render it for sandbox from the same result (`result.toJson(Environment.SANDBOX)`); do not verify again. Record the grant as sandbox |
 | 21008 | none (the receipt verified) | A production receipt on a sandbox endpoint. Render it for `PRODUCTION` from the same result, or deny |
-| 21002 | `MALFORMED_REQUEST`, `REQUEST_TOO_LARGE`, `INVALID_RECEIPT_FORMAT` | Deny. No alert on single cases: usually a client or transport defect. A crafted receipt with no signer certificate or an unlisted algorithm also lands here, so watch the rate as you do for 21003. `REQUEST_TOO_LARGE` maps to HTTP 413 |
+| 21002 | `MALFORMED_REQUEST`, `REQUEST_TOO_LARGE`, `INVALID_RECEIPT_FORMAT` | Deny. No alert on single cases: usually a client or transport defect. A crafted receipt with no signer certificate also lands here, so watch the rate as you do for 21003. `REQUEST_TOO_LARGE` maps to HTTP 413 |
 | 21003 | `INVALID_CHAIN`, `INVALID_SIGNATURE`, `INVALID_CERTIFICATE`, `INVALID_CERTIFICATE_PURPOSE` | Deny. Alert on the rate, not on each one: a steady trickle is normal, a spike is someone probing |
 | 21009 | `INTERNAL_ERROR` | Page. The library could not read what Apple signed, or failed inside; see [below](#internal_error-is-deterministic) |
 
@@ -733,11 +733,11 @@ offline. (`ReceiptVerifier` never raises it; see
 | `INVALID_CERTIFICATE` | an `x5c` entry does not decode to a parseable certificate. The base64 goes through `Base64.getDecoder()` behind a length check, because RFC 7515 §4.1.6 makes an entry standard base64: a character outside that alphabet (a stray `!`, a space or line break, a base64url `-` or `_`) or omitted or extra `=` padding is refused, not skipped, so such an entry gets this verdict before any certificate is parsed. Also raised when the receipt's signer certificate does not decode, or its key or signature cannot be read |
 | `INVALID_CERTIFICATE_PURPOSE` | the leaf or intermediate lacks its Apple marker OID, or the receipt signer lacks its own |
 | `INVALID_CHAIN` | the path does not reach a pinned anchor, a certificate was not valid at the signing instant, or a receipt embeds more than ten certificates or a chain longer than six |
-| `INVALID_SIGNATURE` | the ES256 or CMS signature check failed, or the signer key is not RSA |
+| `INVALID_SIGNATURE` | the ES256 or CMS signature check failed |
 | `WRONG_BUNDLE_ID` | the verified payload or receipt names another bundle |
 | `WRONG_ENVIRONMENT` | `JwsVerifier` only: the payload's environment is outside the accepted set. `ReceiptVerifier` accepts every environment and never raises it |
 | `WRONG_APP_APPLE_ID` | a Production `AppTransaction` does not name the configured app Apple id |
-| `INVALID_RECEIPT_FORMAT` | the PKCS#7/CMS blob does not parse, has trailing bytes, has no signer info, does not embed its signer's certificate, names a digest or signature algorithm outside SHA-1/SHA-256 with RSA, embeds a certificate other than the signer that cannot be read (the certificate bag is not signed, so that is a defect of the receipt), or the receipt is over `MAX_RECEIPT_BYTES` |
+| `INVALID_RECEIPT_FORMAT` | the PKCS#7/CMS blob does not parse, has trailing bytes, has no signer info, does not embed its signer's certificate, embeds a certificate other than the signer that cannot be read (the certificate bag is not signed, so that is a defect of the receipt), or the receipt is over `MAX_RECEIPT_BYTES` |
 | `DEVICE_HASH_MISMATCH` | the device hash does not match attribute 5, or the receipt lacks the attributes the check needs |
 | `INTERNAL_ERROR` | the chain and signature verified, but what was signed cannot be read: a receipt payload that does not parse, or a JWS claim whose type does not match this library's model (`verifyTransaction`, `verifyAppTransaction`); `getCause()` is the parser's exception. Also raised when the runtime lacks an algorithm the check needs. Not the client's fault, and deterministic: do not retry, see [`INTERNAL_ERROR` is deterministic](#internal_error-is-deterministic) |
 
