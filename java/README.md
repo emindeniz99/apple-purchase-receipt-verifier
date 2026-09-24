@@ -331,7 +331,7 @@ also what gives every TestFlight tester's free purchase a status 0. Record
 | `MALFORMED_REQUEST` | 21002 | the body is not JSON, not a JSON object or nests deeper than 64, or `receipt-data` is missing, empty or not a string |
 | `INVALID_RECEIPT_FORMAT` | 21002 | `receipt-data` is not base64, is over `MAX_RECEIPT_BYTES`, or its CMS envelope does not parse |
 | `INVALID_CHAIN`, `INVALID_SIGNATURE`, other certificate reasons | 21003 | the receipt did not authenticate |
-| `INTERNAL_ERROR` | 21009 | not the client's fault: the receipt authenticated but its signed content cannot be read (`failureCause()` is the parser's exception), or an unexpected runtime exception (`failureCause()` holds it). Alert and retry or escalate; do not deny the user |
+| `INTERNAL_ERROR` | 21009 | not the client's fault: the receipt authenticated but its signed content cannot be read (`failureCause()` is the parser's exception), the runtime lacks an algorithm the check needs, or an unexpected runtime exception (`failureCause()` holds it). Deterministic: the same bytes give the same answer again. Do not retry; see [`INTERNAL_ERROR` is deterministic](#internal_error-is-deterministic) |
 
 **`request_date`.** Every method has an overload taking an `Instant`, which
 becomes `request_date` in place of the endpoint's clock; without one the
@@ -572,22 +572,39 @@ metrics, no callbacks. The message is `Reason + ": " + detail`; match on
 `reason()`, never parse it.
 
 ```java
+interface Outcomes {                        // your code
+    void deny(VerificationException.Reason reason);
+    void denyAndAlert(VerificationException.Reason reason);
+    void escalate(VerificationException e);  // log getCause() with the library version, page
+}
+
+TransactionPayload transaction;
 try {
-    TransactionPayload transaction = verifier.verifyTransaction(jws);
+    transaction = verifier.verifyTransaction(jws);
 } catch (VerificationException e) {
     switch (e.reason()) {
-        case WRONG_ENVIRONMENT:
-            retryAgainstSandbox();
-            break;
         case INVALID_CHAIN:
         case INVALID_SIGNATURE:
-            alertSecurity();
+        case INVALID_CERTIFICATE_PURPOSE:
+        case WRONG_BUNDLE_ID:
+        case WRONG_APP_APPLE_ID:
+            outcomes.denyAndAlert(e.reason());
             break;
-        default:
-            reject(e.reason());
+        case INTERNAL_ERROR:
+            outcomes.escalate(e);            // deterministic: do not retry
+            break;
+        default:                             // WRONG_ENVIRONMENT included: deny, never retry elsewhere
+            outcomes.deny(e.reason());
     }
+    return;
 }
 ```
+
+`WRONG_ENVIRONMENT` from a `JwsVerifier` means the payload's environment is
+outside the set you configured, which is a policy decision already made:
+deny it. There is no other environment to retry in, since the verifier is
+offline. (`ReceiptVerifier` never raises it; see
+[Environment routing and freshness](#environment-routing-and-freshness).)
 
 | `Reason` | Raised when |
 |---|---|
@@ -597,11 +614,11 @@ try {
 | `INVALID_CHAIN` | the path does not reach a pinned anchor, a certificate was not valid at the signing instant, or a receipt embeds more than ten certificates or a chain longer than six |
 | `INVALID_SIGNATURE` | the ES256 or CMS signature check failed, or the signer key is not RSA |
 | `WRONG_BUNDLE_ID` | the verified payload or receipt names another bundle |
-| `WRONG_ENVIRONMENT` | the environment is outside the accepted set |
+| `WRONG_ENVIRONMENT` | `JwsVerifier` only: the payload's environment is outside the accepted set. `ReceiptVerifier` accepts every environment and never raises it |
 | `WRONG_APP_APPLE_ID` | a Production `AppTransaction` does not name the configured app Apple id |
 | `INVALID_RECEIPT_FORMAT` | the PKCS#7/CMS blob does not parse, has trailing bytes, has no signer info, embeds a certificate other than the signer that cannot be read (the certificate bag is not signed, so that is a defect of the receipt), or the receipt is over `MAX_RECEIPT_BYTES` |
 | `DEVICE_HASH_MISMATCH` | the device hash does not match attribute 5, or the receipt lacks the attributes the check needs |
-| `INTERNAL_ERROR` | the receipt's chain and signature verified, but its payload does not parse; `getCause()` is the parser's exception. Not the client's fault: alert and retry or escalate, do not deny |
+| `INTERNAL_ERROR` | the chain and signature verified, but what was signed cannot be read: a receipt payload that does not parse, or a JWS claim whose type does not match this library's model (`verifyTransaction`, `verifyAppTransaction`); `getCause()` is the parser's exception. Also raised when the runtime lacks an algorithm the check needs. Not the client's fault, and deterministic: do not retry, see [`INTERNAL_ERROR` is deterministic](#internal_error-is-deterministic) |
 
 **Order of the receipt checks.** CMS parse → the creation date alone
 (attribute 12; nothing else in the payload is decoded yet) → chain at that
@@ -618,8 +635,9 @@ would be a change to the shared vector file and to every port at once.
 `Reason` also carries `MALFORMED_REQUEST` and `REQUEST_TOO_LARGE`, but only
 as [`VerifyReceiptResult.failureReason()`](#the-verifyreceipt-compatible-endpoint)
 values: no `VerificationException` is ever thrown with either, so a `switch`
-over a caught exception's `reason()` never sees them. `INTERNAL_ERROR` keeps
-the position it had when it was endpoint-only, so no ordinal moved.
+over a caught exception's `reason()` never sees them. Store a reason by
+`name()`, never by `ordinal()`: 0.6 removed `STALE_PAYLOAD` and added three
+values, so an ordinal stored under 0.5 names a different reason now.
 
 **Misconfiguration is a different failure mode.** Empty or null trust
 anchors, a null bundle id, an empty accepted-environment set, and an
