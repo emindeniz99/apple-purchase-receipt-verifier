@@ -277,15 +277,19 @@ class ConformanceCasesTest {
                 : inputSpec.get("fixture").asText();
         byte[] input = fixtureBytes(fixtures, fixtureId);
         String operation = kase.get("operation").asText();
-        Clock clock = clock(kase);
+        // Only the endpoint has a clock seam; a pinned clock anywhere else
+        // would be silently ignored, so it fails the case instead.
+        if (kase.has("clock") && !"verifyReceiptEndpoint".equals(operation)) {
+            throw new IllegalStateException(operation + " has no clock seam, but the case pins one");
+        }
         if ("verifyTransaction".equals(operation)) {
-            return MAPPER.convertValue(jwsVerifier(roots, config, clock).verifyTransaction(text(input)), MAP);
+            return MAPPER.convertValue(jwsVerifier(roots, config).verifyTransaction(text(input)), MAP);
         }
         if ("verifyAppTransaction".equals(operation)) {
-            return MAPPER.convertValue(jwsVerifier(roots, config, clock).verifyAppTransaction(text(input)), MAP);
+            return MAPPER.convertValue(jwsVerifier(roots, config).verifyAppTransaction(text(input)), MAP);
         }
         if ("verifyRaw".equals(operation)) {
-            return jwsVerifier(roots, config, clock).verifyRaw(text(input));
+            return jwsVerifier(roots, config).verifyRaw(text(input));
         }
         if ("verifyReceipt".equals(operation)) {
             // No clock: receipt verification has no verdict that moves with
@@ -316,7 +320,7 @@ class ConformanceCasesTest {
                 throw new IllegalStateException(
                         "unknown environment " + config.get("environment").asText());
             }
-            VerifyReceiptEndpoint endpoint = new VerifyReceiptEndpoint(roots, environment, clock);
+            VerifyReceiptEndpoint endpoint = new VerifyReceiptEndpoint(roots, environment, clock(kase));
             if (inputSpec.has("requestBody")) {
                 // The whole raw body, through the entry point that parses it.
                 return endpoint.verifyReceiptResult(text(input));
@@ -343,10 +347,7 @@ class ConformanceCasesTest {
         return Clock.fixed(Instant.parse(kase.get("clock").get("now").asText()), ZoneOffset.UTC);
     }
 
-    private static JwsVerifier jwsVerifier(Set<X509Certificate> roots, JsonNode config, Clock clock) {
-        if (clock != null) {
-            throw new IllegalStateException("JwsVerifier has no clock seam, but the case pins one");
-        }
+    private static JwsVerifier jwsVerifier(Set<X509Certificate> roots, JsonNode config) {
         // verifyRaw enforces no claim, so its cases need not pin a bundle id or
         // an accept set — but the constructor demands both. Neutral stand-ins
         // (a bundle id no payload can carry, every environment) keep that
