@@ -1,5 +1,6 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
+import io.github.emindeniz99.applepurchasereceiptverifier.internal.BouncyCastle;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.MessageDigest;
@@ -122,8 +123,8 @@ public final class AppleRootCerts {
             if (in == null) {
                 throw new IllegalStateException("bundled certificate missing: " + name);
             }
-            certificate =
-                    (X509Certificate) CertificateFactory.getInstance("X.509").generateCertificate(in);
+            certificate = (X509Certificate) CertificateFactory.getInstance("X.509", BouncyCastle.PROVIDER)
+                    .generateCertificate(in);
         } catch (CertificateException e) {
             throw new IllegalStateException("bundled certificate unparseable: " + name, e);
         } catch (IOException e) {
@@ -149,7 +150,7 @@ public final class AppleRootCerts {
     private static String sha256Hex(byte[] bytes) {
         byte[] digest;
         try {
-            digest = MessageDigest.getInstance("SHA-256").digest(bytes);
+            digest = MessageDigest.getInstance("SHA-256", BouncyCastle.PROVIDER).digest(bytes);
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 unavailable, so the pinned roots cannot be checked", e);
         }

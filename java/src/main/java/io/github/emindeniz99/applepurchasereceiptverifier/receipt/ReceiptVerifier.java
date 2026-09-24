@@ -68,18 +68,15 @@ import org.jspecify.annotations.Nullable;
  * device-hash binding: null skips that check, exactly as the shorter overload
  * does.</p>
  *
- * <p><strong>Security providers.</strong> The CMS signature and its digest
- * are checked with a private BouncyCastle instance that is never registered.
- * Everything else resolves through the JVM's provider list: certificate
- * decoding ({@code CertificateFactory}, through
- * {@link JcaX509CertificateConverter}), the {@code PKIX}
- * {@code CertPathBuilder} and its {@code Collection} {@code CertStore}, and
- * the SHA-1 of the device-hash check. A host that inserts BouncyCastle at
- * position 1 therefore gets BouncyCastle's X.509 parser and path builder for
- * those steps instead of the JDK's. This library's tests run against the
- * JDK's providers, so under that host an unusual certificate may get a
- * different verdict.
- * This class reads the provider order and never changes it.</p>
+ * <p><strong>Security providers.</strong> Every cryptographic step uses a
+ * private BouncyCastle instance that is never registered: certificate
+ * decoding, the {@code PKIX} {@code CertPathBuilder} and its
+ * {@code Collection} {@code CertStore}, the CMS signature and its digest, and
+ * the SHA-1 of the device-hash check. The JVM's provider list and its
+ * {@code java.security} policy, {@code jdk.certpath.disabledAlgorithms}
+ * included, do not reach any of them, so they cannot change a verdict. The
+ * trade-off: an administrator cannot restrict this class through that
+ * policy either.</p>
  */
 public final class ReceiptVerifier {
 
@@ -370,37 +367,55 @@ public final class ReceiptVerifier {
                             + MAXIMUM_EMBEDDED_CERTIFICATES);
         }
         EmbeddedCertificates certificates = decodeEmbeddedAndFindSigner(certificateSet, signer);
-        JcaX509CertificateConverter converter = new JcaX509CertificateConverter();
+        JcaX509CertificateConverter converter = new JcaX509CertificateConverter().setProvider(BouncyCastle.PROVIDER);
         X509Certificate signerCert;
         try {
-            // The JCA decodes the whole X.509 template, including every
-            // extension VALUE, where BouncyCastle keeps extensions as encoded
-            // bytes, so this is where an extnValue that stops decoding is
-            // found, and it is a defect of the certificate rather than of the
-            // path it sits on.
+            // The JCA certificate object decodes the basicConstraints and
+            // keyUsage VALUES, which the holder keeps as encoded bytes, so
+            // this is where such a value that stops decoding is found, and it
+            // is a defect of the certificate rather than of the path it sits
+            // on.
             signerCert = converter.getCertificate(certificates.signer);
             // Result unused: decoding the key here makes a key on an
             // unimplemented curve fail now, as INVALID_CERTIFICATE, instead
             // of later inside the path builder or the signature check under
             // another verdict.
             signerCert.getPublicKey();
+            // Result unused, for the same reason: BouncyCastle reads the
+            // signature BIT STRING lazily and throws unchecked if it is not
+            // whole octets.
+            signerCert.getSignature();
         } catch (GeneralSecurityException | RuntimeException e) {
             throw new VerificationException(
                     Reason.INVALID_CERTIFICATE, "receipt signer certificate is not a valid certificate", e);
         }
+        List<X509Certificate> embedded = new ArrayList<X509Certificate>();
         try {
-            List<X509Certificate> embedded = new ArrayList<X509Certificate>();
             for (X509CertificateHolder holder : certificates.all) {
-                embedded.add(converter.getCertificate(holder));
+                X509Certificate certificate = converter.getCertificate(holder);
+                // Same reason as the signer's: BouncyCastle decodes a key
+                // lazily and raises an unchecked exception from inside the
+                // path builder when it cannot, so every candidate is decoded
+                // here, where the failure is a certificate verdict.
+                certificate.getPublicKey();
+                certificate.getSignature();
+                embedded.add(certificate);
             }
+        } catch (GeneralSecurityException | RuntimeException e) {
+            throw new VerificationException(
+                    Reason.INVALID_CERTIFICATE, "an embedded certificate is not a valid certificate", e);
+        }
+        try {
             X509CertSelector target = new X509CertSelector();
             target.setCertificate(signerCert);
             PKIXBuilderParameters params = new PKIXBuilderParameters(trustAnchors, target);
-            params.addCertStore(CertStore.getInstance("Collection", new CollectionCertStoreParameters(embedded)));
+            params.addCertStore(CertStore.getInstance(
+                    "Collection", new CollectionCertStoreParameters(embedded), BouncyCastle.PROVIDER));
             params.setRevocationEnabled(false);
             params.setDate(at);
             params.setMaxPathLength(MAX_PATH_LENGTH - 1);
-            CertPathBuilderResult result = CertPathBuilder.getInstance("PKIX").build(params);
+            CertPathBuilderResult result =
+                    CertPathBuilder.getInstance("PKIX", BouncyCastle.PROVIDER).build(params);
             // getCertPath() excludes the trust anchor, so this counts the
             // certificates from the leaf up to the anchor.
             if (result.getCertPath().getCertificates().size() > MAX_PATH_LENGTH) {
@@ -413,11 +428,17 @@ public final class ReceiptVerifier {
                     "signer chain does not validate to a pinned Apple root: " + e.getMessage(),
                     e);
         } catch (NoSuchAlgorithmException | InvalidAlgorithmParameterException e) {
-            // A missing PKIX or Collection implementation, or parameters built
-            // from the pinned anchors: the runtime's failure, never the receipt's.
+            // Not raised by the pinned BouncyCastle PKIX and Collection
+            // implementations for parameters built from the pinned anchors.
+            // Should it happen, it is the library's failure, never the receipt's.
             throw new VerificationException(Reason.INTERNAL_ERROR, "chain validation is not available", e);
         } catch (GeneralSecurityException e) {
             throw new VerificationException(Reason.INVALID_CHAIN, "embedded certificate could not be used", e);
+        } catch (RuntimeException e) {
+            // As in JwsVerifier.validateChain: unchecked exceptions BouncyCastle
+            // raises from inside the builder for malformed, unverified
+            // certificate content are the chain's failure.
+            throw new VerificationException(Reason.INVALID_CHAIN, "chain validation failed: " + e, e);
         }
     }
 
@@ -599,7 +620,7 @@ public final class ReceiptVerifier {
                     Reason.DEVICE_HASH_MISMATCH, "receipt lacks the attributes needed for the device-hash check");
         }
         try {
-            MessageDigest sha1 = MessageDigest.getInstance("SHA-1");
+            MessageDigest sha1 = MessageDigest.getInstance("SHA-1", BouncyCastle.PROVIDER);
             sha1.update(deviceGuid);
             sha1.update(receipt.opaqueValue());
             sha1.update(receipt.bundleIdBytes());

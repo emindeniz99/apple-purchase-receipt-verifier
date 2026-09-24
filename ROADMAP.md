@@ -91,15 +91,13 @@ Delete a line in the commit that ships it.
 - **Apple's step 4, the app-version match (type 3), is a caller
   responsibility** in every port: the server cannot know which binary is
   running. RECEIPT-FIELDS.md states it; the accessor exists.
-- **The SHA-1 legacy chain under a hardened `java.security`** is now a
-  documented caveat with two CI guards (#86, #90): `java-hardened-policy`
-  proves exactly one conformance case fails when SHA-1 is disabled for
-  certpath, and `java-distroless` proves the whole suite passes inside
-  gcr.io/distroless java17-debian12 and java17/21/25-debian13 (`:nonroot`,
-  digest-pinned) on their own JVM and java.security. Finding for the
-  deployment: `java17-debian12` is deprecated (last rebuilt 2026-02-20,
-  Debian OpenJDK, not Temurin); distroless now builds only debian13 from
-  Temurin debs. Move to `java17-debian13` or `java21-debian13`.
+- **The distroless `java17-debian12` image is deprecated** (last rebuilt
+  2026-02-20, Debian OpenJDK, not Temurin); distroless now builds only
+  debian13 from Temurin debs. `java-distroless` runs the whole suite inside
+  java17-debian12 and java17/21/25-debian13 (`:nonroot`, digest-pinned), on
+  their own JVM and java.security and again under a SHA-1-free
+  `jdk.certpath.disabledAlgorithms`. Move deployments to `java17-debian13`
+  or `java21-debian13`.
 - **README.md's registry table still says the five newer ports are not
   installable.** The Go module is on `proxy.golang.org` as of `go/v0.4.0`,
   so its row and the sentence naming "a public repository for the Go module
@@ -290,9 +288,9 @@ Still worth filing as issues:
   parser we would maintain. Three more options each give up a guarantee
   java/README.md makes, so none is queued:
   - Checking the chain with a direct signature check instead of PKIX. PKIX
-    costs about 90 µs per receipt, and keeping it is what makes
-    `jdk.certpath.disabledAlgorithms` and the host's security policy apply;
-    `java-hardened-policy` and `TrustStoreIsolationTest` depend on it.
+    costs about 90 µs per receipt, and keeping it means chain building,
+    validity windows and CA constraints come from BouncyCastle's maintained
+    PKIX code rather than ours; `TrustStoreIsolationTest` depends on it.
   - Hashing the CMS content with the JDK's provider instead of the pinned
     BouncyCastle one: about 90 µs saved on the legacy receipt (SHA-1 over
     75 KB), but the digest would come from whichever JCA provider the JVM

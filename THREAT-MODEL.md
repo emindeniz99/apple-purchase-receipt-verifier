@@ -63,8 +63,8 @@ requiring rejection anyway: `go/systemtrust_test.go`,
 `python/tests/test_trust_isolation.py`,
 `swift/Tests/ApplePurchaseReceiptVerifierTests/TrustStoreIsolationTests.swift`,
 `rust/tests/trust_pinning.rs`, `php/tests/PinnedAnchorsTest.php`,
-`ruby/test/hostile_input_test.rb`. *Gap:* Node and Java have no such test yet
-(ROADMAP.md "Next").
+`ruby/test/hostile_input_test.rb`, `node/test/trust-store-isolation.test.js`,
+`java/src/test/.../TrustStoreIsolationTest.java`.
 
 ### 3.2 Marker OIDs stop the wrong-purpose certificate
 
@@ -358,6 +358,16 @@ Not defended against here, by decision rather than omission.
 - **`jackson-databind` in Java** carries a CVE history a consumer's scanner
   will surface. The payloads are small and flat and the dependency is
   maintained, but the noise is real (PLAN.md D16).
+- **Java does not follow the host's security policy.** It parses
+  certificates, builds and validates chains, and checks signatures and
+  digests with its own pinned BouncyCastle instance, never through the JVM's
+  provider list, so `jdk.certpath.disabledAlgorithms` and the rest of
+  `java.security` do not apply to it. That is deliberate: a policy that
+  disables SHA-1 outright, as RHEL and Fedora crypto policies do, made the
+  JDK's PKIX code refuse every genuine legacy receipt. The cost is that an
+  administrator cannot restrict this library through that policy; what it
+  accepts is set by the library and the caller's roots (java/README.md, "One
+  platform caveat worth knowing").
 - **The C ABI reintroduces `unsafe`, and moves memory discipline to the
   caller.** The library target is `#![forbid(unsafe_code)]`; `rust/ffi` cannot
   be, because a C boundary is raw pointers. Two consequences are the caller's
@@ -372,9 +382,6 @@ Not defended against here, by decision rather than omission.
   a bug there cannot change a verdict, only how a verdict is delivered.
 - **RustCrypto is used at a pinned MSRV**, so a security fix released above
   that floor needs the floor raised first.
-- **No trust-store isolation test in Node or Java** (§3.1), and **fuzz
-  coverage is uneven**: rust, node, dotnet and go have coverage-guided targets,
-  the rest are being brought up one CI job each (ROADMAP.md items 1 and 2).
 - **SHA-1 is accepted for legacy receipts**, and the device-hash binding is
   SHA-1, because Apple signs them that way. Neither can be chosen differently
   and still verify genuine receipts.

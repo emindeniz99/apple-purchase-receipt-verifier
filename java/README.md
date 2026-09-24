@@ -524,30 +524,38 @@ none of which a signature can express.
 
 ### One platform caveat worth knowing
 
-The genuine legacy Apple receipt chain is SHA-1 end to end: the leaf and the
-WWDR intermediate are both `sha1WithRSAEncryption`. `ReceiptVerifier` builds
-that chain with the JDK's own PKIX `CertPathBuilder`, which obeys
-`jdk.certpath.disabledAlgorithms` in `java.security`. Stock OpenJDK qualifies
-its SHA-1 entry (`SHA1 jdkCA & usage TLSServer`, or similar) so the pinned
-Apple root is unaffected and the suite passes unchanged. A JVM whose policy
-disables SHA-1 outright, which is what RHEL and Fedora system crypto policies
-and many hardened enterprise `java.security` files do, fails every genuine
-legacy receipt with `INVALID_CHAIN: signer chain does not validate to a
-pinned Apple root: unable to find valid certification path to requested
-target`. Measured on Temurin 21 with
-`jdk.certpath.disabledAlgorithms=MD2, MD5, SHA1, RSA keySize < 1024`: every
-conformance case passes except `receipt/verify-genuine-legacy-sha1-chain`,
-and the `java-hardened-policy` CI job asserts exactly that on every push.
+The Java port verifies chains and signatures with its own pinned
+BouncyCastle, so `jdk.certpath.disabledAlgorithms` and the JVM provider list
+do not affect it. Every cryptographic lookup names a private
+`BouncyCastleProvider` instance that is never registered with `Security`:
+certificate parsing, chain building and validation (`PKIX`), the CMS and
+ES256 signature checks, and every digest, the device-hash SHA-1 included.
+The host's provider order, its `java.security` file and the JVM version do
+not change a verdict.
 
-The library will not silently route around the policy: chain building stays
-on the JDK provider, so the platform's rule is the rule. The escape hatch is
-the platform's own, a `java.security` override that leaves SHA-1 out of
-`jdk.certpath.disabledAlgorithms` (`-Djava.security.properties=<file>` for
-one JVM, `update-crypto-policies --set LEGACY` on RHEL). Newer receipts
-(SHA-256 chains) and every StoreKit 2 JWS are unaffected. Run
-`ConformanceCasesTest` on the JDK image that will serve production before
-relying on legacy receipts there; the discriminating case is already in the
-suite. Ruby, PHP and Go carry the same caveat for their runtimes.
+Why: the genuine legacy Apple receipt chain is SHA-1 end to end (the leaf and
+the WWDR intermediate are both `sha1WithRSAEncryption`). The JDK's own PKIX
+code obeys `jdk.certpath.disabledAlgorithms`, and RHEL and Fedora system
+crypto policies and many hardened enterprise `java.security` files disable
+SHA-1 there outright. Built with the JDK's PKIX code, every genuine legacy
+receipt failed on such a host as `INVALID_CHAIN`, as if it were forged.
+BouncyCastle's PKIX code does not read that property.
+
+The trade-off is deliberate: an administrator cannot restrict this library
+through `java.security` either. What it accepts is fixed by the library and
+the roots the caller passes, and it is the same on every JVM.
+
+The `java-hardened-policy` and `java-distroless` CI jobs run the full
+conformance suite under this policy and require every case to pass,
+`receipt/verify-genuine-legacy-sha1-chain` included:
+
+```
+jdk.certpath.disabledAlgorithms=MD2, MD5, SHA1, RSA keySize < 1024
+```
+
+`HostPolicyTest` checks the same in a child JVM on every build, after showing
+that the JDK's own PKIX code refuses the chain under that policy. Ruby, PHP
+and Go still depend on their runtime's policy for this chain.
 
 ## Environment routing and staleness
 
@@ -699,9 +707,11 @@ matching receipt and JWS under the bundled Apple anchors (and that this
 machine's real `cacerts`, handed to the library as its whole anchor set,
 refuses a genuine Apple receipt the bundled roots accept); **structurally**,
 by scanning every file under `src/main/java` for any spelling that could
-reach a trust store, a socket, or a subprocess; and **positively**, by
-installing a JCA provider that shadows the JDK's PKIX path builder and
-validator and capturing the exact anchor set that reaches it.
+reach a trust store, a socket, or a subprocess, and for any JCA lookup that
+does not name the library's own BouncyCastle instance; and **positively**, by
+installing a JCA provider ahead of all others that shadows every engine the
+verifiers use, and showing it is never asked for one while the verdict
+follows the caller's roots alone.
 
 Beyond conformance and trust isolation, the suite covers hostile and
 malformed input (`HostileJwsFixtures`, `HostileReceiptInputTest`), the
