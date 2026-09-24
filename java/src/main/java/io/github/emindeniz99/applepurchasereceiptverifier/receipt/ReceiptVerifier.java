@@ -215,7 +215,7 @@ public final class ReceiptVerifier {
     }
 
     /**
-     * Chain + signature verification WITHOUT the bundle-id claim check — the
+     * Chain + signature verification WITHOUT the bundle-id claim check: the
      * primitive under both {@link #verify} and {@link VerifyReceiptEndpoint}
      * (which, like Apple's endpoint, accepts any bundle).
      *
@@ -225,10 +225,48 @@ public final class ReceiptVerifier {
      * checked. The other ports expose the same primitive under the same
      * name.</p>
      *
-     * <p>The receipt it returns has been proved Apple-signed, but NO claim in
-     * it has been checked: the bundle id in particular is whatever the receipt
+     * <p>What it checks, in order: the DER is at most
+     * {@link #MAX_RECEIPT_BYTES}, parses completely with no trailing bytes,
+     * and is a CMS SignedData with an encapsulated payload and a SignerInfo;
+     * the receipt embeds at most ten certificates, every one of them decodes,
+     * and the certificate the SignerInfo names is among them; a path from
+     * that signer through the embedded certificates reaches one of
+     * {@code trustedRoots} at the receipt's creation date (the current time
+     * when the receipt states none), with no revocation check; the signer
+     * carries Apple's receipt-signing marker OID; the signer key is RSA, the
+     * digest is SHA-1 or SHA-256, and the CMS signature verifies. Only then
+     * is the payload parsed.</p>
+     *
+     * <p>What it does NOT check: the bundle id, the environment
+     * ({@code receipt_type}), the device-hash binding (attribute 5), and
+     * anything about the purchases inside, such as expiry or cancellation.
+     * The receipt it returns has been proved Apple-signed, but no claim in it
+     * has been checked: the bundle id in particular is whatever the receipt
      * says. A caller unlocking products must compare it itself, or use
-     * {@link #verify(byte[])}.</p>
+     * {@link #verify(byte[])} or {@link #verify(byte[], byte[])}.</p>
+     *
+     * @param receiptDer   the DER-encoded PKCS#7 receipt; null is reported
+     *                     as {@link Reason#INVALID_RECEIPT_FORMAT}
+     * @param trustedRoots pinned root CAs (production:
+     *                     {@code AppleRootCerts.receiptRoots()})
+     * @return the parsed receipt
+     * @throws VerificationException with {@link Reason#INVALID_RECEIPT_FORMAT}
+     *         for input that is not a usable receipt (including an
+     *         unreadable embedded certificate that is not the signer, a
+     *         signer that is not embedded, and an unsupported digest),
+     *         {@link Reason#INVALID_CERTIFICATE} for a signer certificate
+     *         that does not decode, {@link Reason#INVALID_CHAIN} when no
+     *         valid path reaches a trusted root or the receipt carries too
+     *         many certificates, {@link Reason#INVALID_CERTIFICATE_PURPOSE}
+     *         for a signer without the marker OID,
+     *         {@link Reason#INVALID_SIGNATURE} for a non-RSA signer key or a
+     *         signature that does not verify, and
+     *         {@link Reason#INTERNAL_ERROR} when signed content cannot be
+     *         read or the runtime lacks an algorithm the check needs. Never
+     *         {@link Reason#WRONG_BUNDLE_ID} or
+     *         {@link Reason#DEVICE_HASH_MISMATCH}.
+     * @throws IllegalArgumentException if {@code trustedRoots} is null or
+     *                                  empty
      */
     public static AppReceipt verifyReceiptCore(byte @Nullable [] receiptDer, Set<X509Certificate> trustedRoots)
             throws VerificationException {
