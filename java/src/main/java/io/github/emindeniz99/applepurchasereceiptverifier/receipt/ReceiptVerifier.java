@@ -374,50 +374,13 @@ public final class ReceiptVerifier {
                             + MAXIMUM_EMBEDDED_CERTIFICATES);
         }
         EmbeddedCertificates certificates = decodeEmbeddedAndFindSigner(certificateSet, signer);
-        JcaX509CertificateConverter converter = new JcaX509CertificateConverter().setProvider(BouncyCastle.PROVIDER);
-        X509Certificate signerCert;
-        try {
-            // The JCA certificate object decodes the basicConstraints and
-            // keyUsage VALUES, which the holder keeps as encoded bytes, so
-            // this is where such a value that stops decoding is found, and it
-            // is a defect of the certificate rather than of the path it sits
-            // on.
-            signerCert = converter.getCertificate(certificates.signer);
-            // Result unused: decoding the key here makes a key on an
-            // unimplemented curve fail now, as INVALID_CERTIFICATE, instead
-            // of later inside the path builder or the signature check under
-            // another verdict.
-            signerCert.getPublicKey();
-            // Result unused, for the same reason: BouncyCastle reads the
-            // signature BIT STRING lazily and throws unchecked if it is not
-            // whole octets.
-            signerCert.getSignature();
-        } catch (GeneralSecurityException | RuntimeException e) {
-            throw new VerificationException(
-                    Reason.INVALID_CERTIFICATE, "receipt signer certificate is not a valid certificate", e);
-        }
-        List<X509Certificate> embedded = new ArrayList<X509Certificate>();
-        try {
-            for (X509CertificateHolder holder : certificates.all) {
-                X509Certificate certificate = converter.getCertificate(holder);
-                // Same reason as the signer's: BouncyCastle decodes a key
-                // lazily and raises an unchecked exception from inside the
-                // path builder when it cannot, so every candidate is decoded
-                // here, where the failure is a certificate verdict.
-                certificate.getPublicKey();
-                certificate.getSignature();
-                embedded.add(certificate);
-            }
-        } catch (GeneralSecurityException | RuntimeException e) {
-            throw new VerificationException(
-                    Reason.INVALID_CERTIFICATE, "an embedded certificate is not a valid certificate", e);
-        }
+        X509Certificate signerCert = certificates.signer;
         try {
             X509CertSelector target = new X509CertSelector();
             target.setCertificate(signerCert);
             PKIXBuilderParameters params = new PKIXBuilderParameters(trustAnchors, target);
             params.addCertStore(CertStore.getInstance(
-                    "Collection", new CollectionCertStoreParameters(embedded), BouncyCastle.PROVIDER));
+                    "Collection", new CollectionCertStoreParameters(certificates.all), BouncyCastle.PROVIDER));
             params.setRevocationEnabled(false);
             params.setDate(at);
             params.setMaxPathLength(MAX_PATH_LENGTH - 1);
@@ -451,78 +414,91 @@ public final class ReceiptVerifier {
 
     /** Every embedded certificate, decoded, and the one the SignerInfo names. */
     private static final class EmbeddedCertificates {
-        final List<X509CertificateHolder> all;
-        final X509CertificateHolder signer;
+        final List<X509Certificate> all;
+        final X509Certificate signer;
 
-        EmbeddedCertificates(List<X509CertificateHolder> all, X509CertificateHolder signer) {
+        EmbeddedCertificates(List<X509Certificate> all, X509Certificate signer) {
             this.all = all;
             this.signer = signer;
         }
     }
 
     /**
-     * Decodes every embedded certificate and finds the one the SignerInfo
-     * names, or throws the verdict for the bag.
+     * Decodes every embedded certificate completely and finds the one the
+     * SignerInfo names, or throws the verdict for the bag.
+     *
+     * <p>This is the only place a receipt certificate is decoded, so a
+     * defect gets one verdict whichever layer finds it: the X.509 structure,
+     * a basicConstraints or keyUsage value (which only the JCA object
+     * decodes), a key on an unimplemented curve, or a signature BIT STRING
+     * that is not whole octets (both of which BouncyCastle reads lazily, and
+     * would otherwise throw from inside the path builder). The signer is
+     * then INVALID_CERTIFICATE, as an unreadable x5c entry is on the JWS
+     * path; any other entry is INVALID_RECEIPT_FORMAT, because the bag is
+     * unsigned and bytes that cannot be read there are a defect of the
+     * receipt, not of a certificate. A broken signer outranks a broken
+     * stranger.</p>
      *
      * <p>This walk over the raw set, and {@link #namesTheSigner}, exist so
-     * that a signer certificate no decoder accepts is reported as
-     * INVALID_CERTIFICATE (as an unreadable x5c entry is on the JWS path),
-     * while an unreadable certificate the receipt merely carries is
-     * INVALID_RECEIPT_FORMAT. {@code cms.getCertificates()} decodes every
-     * entry eagerly and throws on the first bad one without saying which, so
-     * it cannot tell the two apart. The four broken-signer-certificate
-     * conformance cases (version 11, one extension carried twice, an
-     * unimplemented curve, a corrupt extension) pin INVALID_CERTIFICATE; do
-     * not replace this walk with {@code cms.getCertificates()}.</p>
+     * that the two can be told apart for an entry no decoder accepts.
+     * {@code cms.getCertificates()} decodes every entry eagerly and throws on
+     * the first bad one without saying which. The four
+     * broken-signer-certificate conformance cases (version 11, one extension
+     * carried twice, an unimplemented curve, a corrupt extension) pin
+     * INVALID_CERTIFICATE; do not replace this walk with
+     * {@code cms.getCertificates()}.</p>
      */
     private static EmbeddedCertificates decodeEmbeddedAndFindSigner(
             @Nullable ASN1Set certificateSet, SignerInformation signer) throws VerificationException {
-        List<X509CertificateHolder> holders = new ArrayList<X509CertificateHolder>();
+        JcaX509CertificateConverter converter = new JcaX509CertificateConverter().setProvider(BouncyCastle.PROVIDER);
+        List<X509Certificate> certificates = new ArrayList<X509Certificate>();
         int embeddedCount = certificateSet == null ? 0 : certificateSet.size();
+        @Nullable X509Certificate signerCert = null;
         @Nullable Exception unreadable = null;
-        boolean unreadableSigner = false;
+        @Nullable Exception unreadableSigner = null;
         for (int i = 0; i < embeddedCount; i++) {
             byte @Nullable [] raw = null;
+            @Nullable X509CertificateHolder holder = null;
             try {
                 raw = certificateSet.getObjectAt(i).toASN1Primitive().getEncoded("DER");
-                holders.add(new X509CertificateHolder(raw));
+                holder = new X509CertificateHolder(raw);
+                X509Certificate certificate = converter.getCertificate(holder);
+                // Results unused: reading them here is what makes a lazily
+                // decoded key or signature fail in this loop.
+                certificate.getPublicKey();
+                certificate.getSignature();
+                certificates.add(certificate);
+                if (signerCert == null && signer.getSID().match(holder)) {
+                    signerCert = certificate;
+                }
             } catch (Exception e) {
                 if (unreadable == null) {
                     unreadable = e;
                 }
-                // Read the identity from the entry itself; see namesTheSigner.
-                if (raw != null && namesTheSigner(raw, signer.getSID())) {
-                    unreadableSigner = true;
+                // An entry the holder refused has its identity read from the
+                // raw DER; see namesTheSigner.
+                boolean isSigner = holder != null
+                        ? signer.getSID().match(holder)
+                        : raw != null && namesTheSigner(raw, signer.getSID());
+                if (unreadableSigner == null && isSigner) {
+                    unreadableSigner = e;
                 }
             }
         }
-        @Nullable X509CertificateHolder signerHolder = null;
-        for (X509CertificateHolder holder : holders) {
-            if (signer.getSID().match(holder)) {
-                signerHolder = holder;
-                break;
-            }
-        }
-        if (signerHolder == null) {
-            if (unreadableSigner) {
-                throw new VerificationException(
-                        Reason.INVALID_CERTIFICATE,
-                        "receipt signer certificate is not a valid certificate",
-                        unreadable);
-            }
-            if (unreadable != null) {
-                throw new VerificationException(
-                        Reason.INVALID_RECEIPT_FORMAT,
-                        "an embedded certificate is not a valid certificate",
-                        unreadable);
-            }
-            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "signer certificate not embedded");
+        if (unreadableSigner != null) {
+            throw new VerificationException(
+                    Reason.INVALID_CERTIFICATE,
+                    "receipt signer certificate is not a valid certificate",
+                    unreadableSigner);
         }
         if (unreadable != null) {
             throw new VerificationException(
                     Reason.INVALID_RECEIPT_FORMAT, "an embedded certificate is not a valid certificate", unreadable);
         }
-        return new EmbeddedCertificates(holders, signerHolder);
+        if (signerCert == null) {
+            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "signer certificate not embedded");
+        }
+        return new EmbeddedCertificates(certificates, signerCert);
     }
 
     /**

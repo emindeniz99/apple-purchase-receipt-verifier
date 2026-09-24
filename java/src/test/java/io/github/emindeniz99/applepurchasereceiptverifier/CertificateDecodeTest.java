@@ -39,16 +39,20 @@ import org.junit.jupiter.api.Test;
  * STRING only when something first asks for them, and reports a value it
  * cannot use with an unchecked exception from wherever that is, often inside
  * the path builder or validator. Both verifiers read both right after parsing
- * every certificate, so such a certificate is INVALID_CERTIFICATE, the verdict
- * the shared suite pins for the same keys on a signer
- * ({@code receipt/reject-signer-on-an-unimplemented-curve}) and on a JWS
- * intermediate ({@code transaction/reject-x5c-unimplemented-curve}), and never
- * an exception outside {@link VerificationException}. The JWS case below is
- * the input java-fuzz found on this branch.</p>
+ * every certificate, so such a certificate gets the verdict for an unreadable
+ * certificate in its position, and never an exception outside
+ * {@link VerificationException}. On the JWS path that is INVALID_CERTIFICATE,
+ * as the shared suite pins for {@code transaction/reject-x5c-unimplemented-curve};
+ * the JWS case below is the input java-fuzz found. On the receipt path it is
+ * INVALID_CERTIFICATE for the signer
+ * ({@code receipt/reject-signer-on-an-unimplemented-curve}) and
+ * INVALID_RECEIPT_FORMAT for any other entry, exactly as for an entry whose
+ * X.509 structure does not parse: the bag is unsigned, so what cannot be read
+ * there is a defect of the receipt.</p>
  *
- * <p>The receipt cases add the certificate to the CMS certificate bag, which
- * the signature does not cover, so the receipt is genuine in every other way;
- * the test first shows it verifies untouched.</p>
+ * <p>The receipt cases add a certificate that is not the signer to the CMS
+ * certificate bag, which the signature does not cover, so the receipt is
+ * genuine in every other way; the test first shows it verifies untouched.</p>
  */
 class CertificateDecodeTest {
 
@@ -83,7 +87,7 @@ class CertificateDecodeTest {
     }
 
     @Test
-    void aNonSignerCertificateWithAnUnreadableKeyIsInvalidCertificate() throws Exception {
+    void aNonSignerCertificateWithAnUnreadableKeyIsInvalidReceiptFormat() throws Exception {
         byte[] genuine = Files.readAllBytes(GENERATED.resolve("receipt.der"));
         X509Certificate receiptRoot = root("receipt-root.der");
         assertNotNull(ReceiptVerifier.verifyReceiptCore(genuine, Collections.singleton(receiptRoot)));
@@ -96,11 +100,11 @@ class CertificateDecodeTest {
         VerificationException e = assertThrows(
                 VerificationException.class,
                 () -> ReceiptVerifier.verifyReceiptCore(tampered, Collections.singleton(receiptRoot)));
-        assertEquals(Reason.INVALID_CERTIFICATE, e.reason(), e.getMessage());
+        assertEquals(Reason.INVALID_RECEIPT_FORMAT, e.reason(), e.getMessage());
     }
 
     @Test
-    void aNonSignerCertificateWithAnUnalignedSignatureIsInvalidCertificate() throws Exception {
+    void aNonSignerCertificateWithAnUnalignedSignatureIsInvalidReceiptFormat() throws Exception {
         byte[] genuine = Files.readAllBytes(GENERATED.resolve("receipt.der"));
         X509Certificate receiptRoot = root("receipt-root.der");
         byte[] tampered = receiptWithExtraCertificates(
@@ -110,7 +114,7 @@ class CertificateDecodeTest {
         VerificationException e = assertThrows(
                 VerificationException.class,
                 () -> ReceiptVerifier.verifyReceiptCore(tampered, Collections.singleton(receiptRoot)));
-        assertEquals(Reason.INVALID_CERTIFICATE, e.reason(), e.getMessage());
+        assertEquals(Reason.INVALID_RECEIPT_FORMAT, e.reason(), e.getMessage());
     }
 
     @Test
