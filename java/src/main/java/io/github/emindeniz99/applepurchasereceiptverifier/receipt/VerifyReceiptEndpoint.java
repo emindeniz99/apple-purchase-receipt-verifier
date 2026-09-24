@@ -280,7 +280,9 @@ public final class VerifyReceiptEndpoint {
                 Throwable cause = e.getCause();
                 return VerifyReceiptResult.internalError(environment, cause != null ? cause : e, at);
             }
-            return VerifyReceiptResult.failed(environment, e.reason(), at);
+            // Kept so on-call can tell, say, an expired certificate from a
+            // missing anchor. It never reaches the JSON response.
+            return VerifyReceiptResult.failed(environment, e.reason(), e, at);
         } catch (RuntimeException e) {
             return VerifyReceiptResult.internalError(environment, e, at);
         }

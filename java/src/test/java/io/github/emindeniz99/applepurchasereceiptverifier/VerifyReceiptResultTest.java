@@ -73,10 +73,13 @@ class VerifyReceiptResultTest {
                 (result.receipt() == null) != (result.failureReason() == null),
                 label + ": exactly one of receipt and failureReason must be set");
         assertEquals(result.receipt() != null, result.isVerified(), label + ": isVerified must match receipt()");
-        assertEquals(
-                result.failureReason() == Reason.INTERNAL_ERROR,
-                result.failureCause() != null,
-                label + ": failureCause is set exactly for INTERNAL_ERROR");
+        Reason reason = result.failureReason();
+        if (reason == null || reason == Reason.MALFORMED_REQUEST || reason == Reason.REQUEST_TOO_LARGE) {
+            assertNull(result.failureCause(), label + ": nothing failed inside verification");
+        }
+        if (reason == Reason.INTERNAL_ERROR) {
+            assertNotNull(result.failureCause(), label + ": INTERNAL_ERROR keeps what is behind it");
+        }
         assertEquals(Integer.valueOf(result.status()), result.toResponse().get("status"), label);
         assertNotNull(result.requestDate(), label);
     }
@@ -329,6 +332,42 @@ class VerifyReceiptResultTest {
             assertEquals(Reason.INVALID_RECEIPT_FORMAT, ((VerificationException) cause).reason());
             assertEquals("{\"status\":21009}", result.toJson());
         }
+    }
+
+    /**
+     * Every reason but INTERNAL_ERROR answers the same 21002 or 21003, so the
+     * status alone cannot tell on-call an expired certificate from a missing
+     * anchor or a forged signature. The VerificationException that decided
+     * the verdict is kept as the failure cause for that, and must never leak
+     * into the response Apple's clients parse.
+     */
+    @Test
+    void aVerificationFailureKeepsItsExceptionAsTheCause() throws Exception {
+        Map<String, VerifyReceiptResult> results = new LinkedHashMap<String, VerifyReceiptResult>();
+        results.put("foreign chain", endpoint(Environment.SANDBOX).verifyReceiptData(base64("receipt-foreign.der")));
+        results.put(
+                "tampered payload",
+                endpoint(Environment.SANDBOX, "gaps-receipt-root.der")
+                        .verifyReceiptData(base64("receipt-tampered-payload.der")));
+        results.put("not a receipt", endpoint(Environment.SANDBOX).verifyReceiptData("AQIDBA=="));
+        results.put(
+                "tampered via raw JSON",
+                endpoint(Environment.PRODUCTION, "gaps-receipt-root.der")
+                        .verifyReceiptResult("{\"receipt-data\":\"" + base64("receipt-tampered-payload.der") + "\"}"));
+        for (Map.Entry<String, VerifyReceiptResult> entry : results.entrySet()) {
+            VerifyReceiptResult result = entry.getValue();
+            String label = entry.getKey();
+            Throwable cause = result.failureCause();
+            assertTrue(cause instanceof VerificationException, label + ": " + cause);
+            assertEquals(result.failureReason(), ((VerificationException) cause).reason(), label);
+            assertTrue(cause.getMessage().startsWith(result.failureReason() + ": "), label);
+            // The detail stays in the log: the wire body is the bare status.
+            assertEquals("{\"status\":" + result.status() + "}", result.toJson(), label);
+            assertInvariant(result, label);
+        }
+        assertEquals(Reason.INVALID_CHAIN, results.get("foreign chain").failureReason());
+        assertEquals(Reason.INVALID_SIGNATURE, results.get("tampered payload").failureReason());
+        assertEquals(Reason.INVALID_RECEIPT_FORMAT, results.get("not a receipt").failureReason());
     }
 
     private static final IllegalStateException BOOM = new IllegalStateException("broken request map");
