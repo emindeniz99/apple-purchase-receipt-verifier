@@ -253,7 +253,7 @@
       "path": "public-receipts/README.md",
       "role": "support",
       "codec": "raw",
-      "contentSha256": "9273982d7dc02de2053a67e4ee7067cb79ef185d92a1efb2cbe70da8abbd22ec"
+      "contentSha256": "fa728923d23a0fa9ab4332a1bad5003031bf45b2ce3b505427ff881673c7545f"
     },
     "public-receipts-license": {
       "path": "public-receipts/LICENSE-upstream",

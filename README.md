@@ -172,15 +172,20 @@ against pinned roots.
        bundleId             = "com.example.app",
        acceptedEnvironments = { Production, Sandbox })   // App Review runs
                                                          // production builds
-                                                         // against Sandbox
+                                                         // against Sandbox,
+                                                         // and so does every
+                                                         // TestFlight build
    payload = verifier.verifyTransaction(jws)
    on failure:
        log(reason)                  // the reason table below says what next
        deny                         // nothing partial is returned
+   environment = payload.environment // record it with the grant (step 6)
 
-3. REVOKED?
+3. REVOKED OR EXPIRED?
    if payload.revocationDate is set:
        deny                         // refunded or revoked as of signing time
+   if payload.expiresDate is set and not in the future:
+       deny                         // the subscription term had ended
 
 4. FRESH ENOUGH? YOUR CALL
    // the library does not judge age; where a window fits this endpoint,
@@ -191,14 +196,17 @@ against pinned roots.
        back to step 3 with the re-signed payload
 
 5. REPLAY GUARD
-   if store.grantExists(payload.transactionId):
+   owner = store.recordGrantIfAbsent(payload.transactionId,
+                                     payload.originalTransactionId,  // subscriptions
+                                     userId, environment)
+   if owner is another user:
        deny                         // this purchase already unlocked something
-   store.recordGrant(payload.transactionId,
-                     payload.originalTransactionId,   // subscriptions
-                     userId)
+   // the same user again is a retry: answer as before, grant nothing twice
 
 6. GRANT
-   grant(userId, payload.productId)
+   grant(userId, payload.productId, payload.expiresDate, environment)
+   // scope Sandbox grants: TestFlight purchases, public links included,
+   // are free
 ```
 
 ### Branch B: legacy PKCS#7 app receipt
@@ -218,13 +226,23 @@ against pinned roots.
    // Or hand the request body straight to VerifyReceiptEndpoint and read
    // `status`: 0, 21002, 21003, 21007, 21008, 21009. Like Apple's endpoint
    // it does not check the bundle id, so compare receipt.bundle_id yourself.
+   environment = Production if receipt.receiptType is Production or
+                 ProductionVPP, else Sandbox   // the verifier accepts every
+                                               // receipt type: record it
 
 3. REFUNDED OR EXPIRED?
-   purchase = receipt.inAppPurchases matching the product you are unlocking
-   if purchase.cancellationDate is set:
-       deny                         // refunded or cancelled as of signing time
-   if purchase.expiresDate is set and in the past:
-       deny                         // the subscription term had already ended
+   // a receipt lists every renewal of a subscription, expired and refunded
+   // ones included, in no guaranteed order: select, do not take the first
+   entries = receipt.inAppPurchases for the product you are unlocking,
+             without the ones whose cancellationDate is set
+   if any entry has an expiresDate:           // auto-renewable subscription
+       purchase = the entry with the latest expiresDate
+       if purchase.expiresDate is not in the future:
+           deny                     // the latest term had ended when signed
+   else:                                      // consumable, non-consumable
+       each remaining entry is one purchase, granted by its transactionId
+   if nothing is left:
+       deny
 
 4. FRESH, OR REFRESH
    // a receipt is a snapshot of the same kind: Apple re-signs it whenever the
@@ -238,14 +256,14 @@ against pinned roots.
    // creation date
 
 5. REPLAY GUARD
-   if store.grantExists(purchase.transactionId):
+   owner = store.recordGrantIfAbsent(purchase.transactionId,
+                                     purchase.originalTransactionId,
+                                     userId, environment)
+   if owner is another user:
        deny
-   store.recordGrant(purchase.transactionId,
-                     purchase.originalTransactionId,
-                     userId)
 
 6. GRANT
-   grant(userId, purchase.productId)
+   grant(userId, purchase.productId, purchase.expiresDate, environment)
 ```
 
 ### Both branches
@@ -256,10 +274,23 @@ branch:
 
 ```text
 POST /apple/notifications { signedPayload }
-    claims = jwsVerifier.verifyRaw(signedPayload)   // enforces no claim:
-                                                    // check bundleId yourself
-    on REFUND or REVOKE: revoke(userId, transactionId)
+    n = jwsVerifier.verifyRaw(signedPayload)     // enforces no claim
+    if n.notificationUUID was handled before:
+        answer 200                               // Apple retries for days
+    data = n.data                                // absent on summary types
+    check data.bundleId, data.environment, and data.appAppleId in
+        Production: they live under data, not at the top level
+    tx = jwsVerifier.verifyTransaction(data.signedTransactionInfo)
+    renewal = jwsVerifier.verifyRaw(data.signedRenewalInfo)   // if present
+    on REFUND or REVOKE: revoke(tx.transactionId)
+    record n.notificationUUID, answer 200
 ```
+
+The nested `signedTransactionInfo` and `signedRenewalInfo` are JWS of their
+own and need their own verification. No freshness window applies here:
+Apple retries an unanswered notification for days.
+[java/README.md](java/README.md#app-store-server-notifications-v2) has a
+complete handler.
 
 **Why a fresh payload needs no network call.** Apple re-signs a transaction
 every time the app fetches it, and a refunded transaction carries
@@ -298,13 +329,13 @@ you. `INTERNAL_ERROR` is not a verdict on the client at all.
 | `INVALID_RECEIPT_FORMAT` | client bug | Deny. Malformed, truncated, not base64, or over the size bound: the CMS envelope itself is defective. `21002` at the endpoint. |
 | `INVALID_CERTIFICATE` | client bug | Deny. An `x5c` entry or a receipt signer is not a parseable certificate, which mangled transport also produces. |
 | `DEVICE_HASH_MISMATCH` | client bug | Deny. The receipt is bound to a different device than the GUID supplied, or the GUID was passed as hex rather than raw bytes. |
-| `WRONG_ENVIRONMENT` | client bug | Deny, and check the accept set: an endpoint App Review can reach must include Sandbox. At the endpoint this is `21007` / `21008` instead. |
+| `WRONG_ENVIRONMENT` | client bug | Deny, never retry elsewhere, and check the accept set: an endpoint App Review can reach must include Sandbox. Including it admits TestFlight purchases too, which are free, so record the environment with each grant and scope or expire Sandbox grants. Raised by the JWS verifier only: the receipt verifier accepts every environment, so read `receiptType` yourself. At the endpoint this is `21007` / `21008` instead. |
 | `INVALID_CHAIN` | possible fraud | Deny and alert. The path does not reach a pinned Apple root, or was not valid when the payload was signed. `21003` at the endpoint. |
 | `INVALID_SIGNATURE` | possible fraud | Deny and alert. The bytes were altered after Apple signed them. |
 | `INVALID_CERTIFICATE_PURPOSE` | possible fraud | Deny and alert. A certificate chaining to an Apple root without the marker OID its position requires: a developer's own certificate signing a forged payload looks exactly like this. |
 | `WRONG_BUNDLE_ID` | possible fraud | Deny and alert. A genuine Apple-signed payload for another app. |
 | `WRONG_APP_APPLE_ID` | possible fraud | Deny and alert. A Production `AppTransaction` naming a different app Apple id. |
-| `INTERNAL_ERROR` | not the client's | Do not deny the user. Alert, then retry or escalate. The receipt authenticated (trusted chain, valid signature) but this library cannot read what Apple signed, or the library failed unexpectedly; either way the purchase may well be genuine. `21009` at the endpoint. |
+| `INTERNAL_ERROR` | not the client's | The chain and signature verified but this library cannot read what Apple signed: a receipt payload that does not parse, or a JWS claim whose type does not match the library's model. It also covers a runtime missing an algorithm and an unexpected failure inside the endpoint. Deterministic: the same bytes fail the same way, so do not retry the library. Log the cause with the library version, alert, and settle the purchase through the App Store Server API by transaction id; grant provisionally only if the business accepts that. `21009` at the endpoint. |
 
 The vocabulary is closed and identical in all nine ports, so this table is one
 policy across every backend language. What signatures still cannot tell you,
