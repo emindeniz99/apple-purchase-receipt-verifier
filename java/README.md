@@ -141,6 +141,10 @@ In Gradle with the Spring dependency-management plugin, the same property is
 `ext['jackson-bom.version'] = '2.22.2'`. Check what actually resolved with
 `mvn dependency:tree -Dincludes=com.fasterxml.jackson.core`.
 
+On Spring Boot 4, `jackson-bom.version` names the Jackson 3 BOM. Jackson 2 is
+managed by `jackson-2-bom.version` (2.21.x in Boot 4.0 and 4.1, above the
+floor), so there is nothing to override; if you do, override that one.
+
 ## The three JWS entry points
 
 ```java
@@ -380,7 +384,7 @@ also what gives every TestFlight tester's free purchase a status 0. Record
 |---|---|---|
 | `REQUEST_TOO_LARGE` | 21002 | the raw body is over `MAX_REQUEST_BYTES` (3,145,728 UTF-8 bytes); Apple answers HTTP 413 here, see [Resource bounds](#resource-bounds) |
 | `MALFORMED_REQUEST` | 21002 | the body is not JSON, not a JSON object or nests deeper than 64, or `receipt-data` is missing, empty or not a string |
-| `INVALID_RECEIPT_FORMAT` | 21002 | `receipt-data` is not base64, is over `MAX_RECEIPT_BYTES`, or its CMS envelope does not parse |
+| `INVALID_RECEIPT_FORMAT` | 21002 | `receipt-data` is not base64, is over `MAX_RECEIPT_BYTES`, its CMS envelope does not parse, it does not embed its signer's certificate, or it names a digest or signature algorithm Apple does not use for receipts |
 | `INVALID_CHAIN`, `INVALID_SIGNATURE`, other certificate reasons | 21003 | the receipt did not authenticate |
 | `INTERNAL_ERROR` | 21009 | not the client's fault: the receipt authenticated but its signed content cannot be read (`failureCause()` is the parser's exception), the runtime lacks an algorithm the check needs, or an unexpected runtime exception (`failureCause()` holds it). Deterministic: the same bytes give the same answer again. Do not retry; see [`INTERNAL_ERROR` is deterministic](#internal_error-is-deterministic) |
 
@@ -505,10 +509,17 @@ Differences to plan for:
 
 ## Serving it from Spring
 
-Bind the body as a `String`, not a `Map`. The `String` overload measures the
-body against `MAX_REQUEST_BYTES` before parsing and parses it with the
-library's own nesting guard; a `Map` has already been parsed by the
-framework's mapper, with neither.
+Hand the library the raw request body as a `String`, not a `Map`. The `String`
+overload measures the body against `MAX_REQUEST_BYTES` before parsing and
+parses it with the library's own nesting guard; a `Map` has already been
+parsed by the framework's mapper, with neither.
+
+Read that body from the servlet input stream yourself rather than with
+`@RequestBody String`. Many StoreKit 1 clients post their JSON with
+`Content-Type: application/x-www-form-urlencoded`, because Apple's old sample
+code set no content type, and for such a POST Spring MVC rebuilds a
+`@RequestBody` from the parsed form parameters instead of passing the bytes
+through. The JSON never arrives intact and a genuine receipt answers 21002.
 
 ```java
 import io.github.emindeniz99.applepurchasereceiptverifier.AppleRootCerts;
@@ -516,10 +527,12 @@ import io.github.emindeniz99.applepurchasereceiptverifier.Environment;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.VerifyReceiptEndpoint;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.VerifyReceiptResult;
+import jakarta.servlet.http.HttpServletRequest;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -528,10 +541,13 @@ public class VerifyReceiptController {
     private final VerifyReceiptEndpoint endpoint =
             new VerifyReceiptEndpoint(AppleRootCerts.receiptRoots(), Environment.PRODUCTION);
 
-    // consumes = "*/*": clients of Apple's endpoint send any content type.
-    @PostMapping(path = "/verifyReceipt", consumes = "*/*")
-    public ResponseEntity<String> verify(@RequestBody String body) {
-        VerifyReceiptResult result = endpoint.verifyReceiptResult(body);
+    // No consumes filter: clients of Apple's endpoint send any content type.
+    @PostMapping("/verifyReceipt")
+    public ResponseEntity<String> verify(HttpServletRequest request) throws IOException {
+        // One byte over the cap is enough for the library to answer
+        // REQUEST_TOO_LARGE, and it bounds what this request can hold in memory.
+        byte[] raw = request.getInputStream().readNBytes(VerifyReceiptEndpoint.MAX_REQUEST_BYTES + 1);
+        VerifyReceiptResult result = endpoint.verifyReceiptResult(new String(raw, StandardCharsets.UTF_8));
         // Apple answers HTTP 413 above 3 MiB; the body is its 21002 either way.
         int httpStatus = result.failureReason() == Reason.REQUEST_TOO_LARGE ? 413 : 200;
         return ResponseEntity.status(httpStatus)
@@ -551,11 +567,12 @@ Size limits on the way in:
   `spring.codec.max-in-memory-size`, 256 KB by default. Receipts with a long
   purchase history are larger (the 187-purchase fixture is about 105 KB of
   base64, and a receipt can reach 3 MiB), so set it to `3MB`.
-- **Spring MVC on Tomcat** has no cap on a `@RequestBody String`: Tomcat's
-  `maxPostSize` (`server.tomcat.max-http-form-post-size`) applies to form
-  bodies only. The library refuses anything over 3 MiB, but only after the
-  container has read all of it into memory, so put the cap in front, at the
-  proxy or load balancer.
+- **Spring MVC**: the controller above reads at most 3 MiB plus one byte, so
+  a larger body costs no more memory than that. Nothing may read the form
+  parameters before it: a filter that calls `getParameter` on this POST
+  (Spring Security's CSRF check looking for `_csrf`, or a
+  `HiddenHttpMethodFilter`) consumes the body first. Exclude the path from
+  CSRF, as for any API endpoint.
 - **The proxy** must allow at least 3 MiB: nginx `client_max_body_size 3m;`
   is exactly Apple's limit.
 
@@ -568,7 +585,7 @@ Size limits on the way in:
 | 0 | none | Grant, after your own bundle-id check and entitlement rules |
 | 21007 | none (the receipt verified) | A sandbox receipt on a production endpoint. For App Review, render it for sandbox from the same result (`result.toJson(Environment.SANDBOX)`); do not verify again. Record the grant as sandbox |
 | 21008 | none (the receipt verified) | A production receipt on a sandbox endpoint. Render it for `PRODUCTION` from the same result, or deny |
-| 21002 | `MALFORMED_REQUEST`, `REQUEST_TOO_LARGE`, `INVALID_RECEIPT_FORMAT` | Deny. No alert: this is a client or transport defect. `REQUEST_TOO_LARGE` maps to HTTP 413 |
+| 21002 | `MALFORMED_REQUEST`, `REQUEST_TOO_LARGE`, `INVALID_RECEIPT_FORMAT` | Deny. No alert on single cases: usually a client or transport defect. A crafted receipt with no signer certificate or an unlisted algorithm also lands here, so watch the rate as you do for 21003. `REQUEST_TOO_LARGE` maps to HTTP 413 |
 | 21003 | `INVALID_CHAIN`, `INVALID_SIGNATURE`, `INVALID_CERTIFICATE`, `INVALID_CERTIFICATE_PURPOSE` | Deny. Alert on the rate, not on each one: a steady trickle is normal, a spike is someone probing |
 | 21009 | `INTERNAL_ERROR` | Page. The library could not read what Apple signed, or failed inside; see [below](#internal_error-is-deterministic) |
 
@@ -720,7 +737,7 @@ offline. (`ReceiptVerifier` never raises it; see
 | `WRONG_BUNDLE_ID` | the verified payload or receipt names another bundle |
 | `WRONG_ENVIRONMENT` | `JwsVerifier` only: the payload's environment is outside the accepted set. `ReceiptVerifier` accepts every environment and never raises it |
 | `WRONG_APP_APPLE_ID` | a Production `AppTransaction` does not name the configured app Apple id |
-| `INVALID_RECEIPT_FORMAT` | the PKCS#7/CMS blob does not parse, has trailing bytes, has no signer info, embeds a certificate other than the signer that cannot be read (the certificate bag is not signed, so that is a defect of the receipt), or the receipt is over `MAX_RECEIPT_BYTES` |
+| `INVALID_RECEIPT_FORMAT` | the PKCS#7/CMS blob does not parse, has trailing bytes, has no signer info, does not embed its signer's certificate, names a digest or signature algorithm outside SHA-1/SHA-256 with RSA, embeds a certificate other than the signer that cannot be read (the certificate bag is not signed, so that is a defect of the receipt), or the receipt is over `MAX_RECEIPT_BYTES` |
 | `DEVICE_HASH_MISMATCH` | the device hash does not match attribute 5, or the receipt lacks the attributes the check needs |
 | `INTERNAL_ERROR` | the chain and signature verified, but what was signed cannot be read: a receipt payload that does not parse, or a JWS claim whose type does not match this library's model (`verifyTransaction`, `verifyAppTransaction`); `getCause()` is the parser's exception. Also raised when the runtime lacks an algorithm the check needs. Not the client's fault, and deterministic: do not retry, see [`INTERNAL_ERROR` is deterministic](#internal_error-is-deterministic) |
 
