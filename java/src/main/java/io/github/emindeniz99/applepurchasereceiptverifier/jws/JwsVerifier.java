@@ -193,8 +193,33 @@ public final class JwsVerifier {
         return mapper.convertValue(node, new TypeReference<Map<String, @Nullable Object>>() {});
     }
 
-    /** Cryptographic verification: format → certs → OIDs → chain → signature. */
+    /**
+     * {@link #verifySignatureUnguarded}, with any unchecked exception it lets
+     * out reported as {@link Reason#INVALID_JWS_FORMAT}, as
+     * {@code ReceiptVerifier.verifyCore} does for receipts.
+     *
+     * <p>The steps that are known to throw unchecked (the x5c decode, the
+     * chain check) already map it themselves; this catches the ones nobody
+     * has found yet, from Jackson or BouncyCastle, so they cannot escape the
+     * declared {@link VerificationException} contract. INVALID_JWS_FORMAT
+     * rather than INTERNAL_ERROR on purpose: everything in here runs on
+     * input no signature has vouched for, and answering an unknown error
+     * with INTERNAL_ERROR ("not the client's fault, retry or escalate")
+     * would let anyone raise that alert at will. The claims are mapped to
+     * their model only after this returns, once the signature has passed.</p>
+     */
     private JsonNode verifySignature(@Nullable String jws) throws VerificationException {
+        try {
+            return verifySignatureUnguarded(jws);
+        } catch (VerificationException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            throw new VerificationException(Reason.INVALID_JWS_FORMAT, "unexpected " + e, e);
+        }
+    }
+
+    /** Cryptographic verification: format → certs → OIDs → chain → signature. */
+    private JsonNode verifySignatureUnguarded(@Nullable String jws) throws VerificationException {
         if (jws == null) {
             throw new VerificationException(Reason.INVALID_JWS_FORMAT, "jws is null");
         }
@@ -338,7 +363,7 @@ public final class JwsVerifier {
                 chain.add(certificate);
             }
         } catch (CertificateException | RuntimeException e) {
-            throw new VerificationException(Reason.INVALID_CERTIFICATE, "x5c entry is not a valid certificate", e);
+            throw new VerificationException(Reason.INVALID_CERTIFICATE, "x5c[" + chain.size() + "] does not decode", e);
         }
         return chain;
     }
@@ -408,13 +433,13 @@ public final class JwsVerifier {
             // Raised for the pinned anchors or the path type, never for a certificate.
             throw new VerificationException(Reason.INTERNAL_ERROR, "chain validation rejected its parameters", e);
         } catch (GeneralSecurityException e) {
-            throw new VerificationException(Reason.INVALID_CHAIN, "chain validation failed", e);
+            throw new VerificationException(Reason.INVALID_CHAIN, "path validator refused the path", e);
         } catch (RuntimeException e) {
             // BouncyCastle reports some malformed certificate content with
             // unchecked exceptions from inside the validator. Everything here
             // is attacker-controlled and unverified, so it is the chain's
             // failure, and it must not escape as anything but a verdict.
-            throw new VerificationException(Reason.INVALID_CHAIN, "chain validation failed: " + e, e);
+            throw new VerificationException(Reason.INVALID_CHAIN, "path validator raised " + e, e);
         }
     }
 
@@ -448,10 +473,12 @@ public final class JwsVerifier {
             verifier.initVerify(leaf.getPublicKey());
             verifier.update(signingInput.getBytes(StandardCharsets.US_ASCII));
             if (!verifier.verify(signature)) {
-                throw new VerificationException(Reason.INVALID_SIGNATURE, "ES256 signature check failed");
+                throw new VerificationException(
+                        Reason.INVALID_SIGNATURE, "ES256 signature does not match the leaf key");
             }
         } catch (GeneralSecurityException e) {
-            throw new VerificationException(Reason.INVALID_SIGNATURE, "ES256 signature check errored", e);
+            throw new VerificationException(
+                    Reason.INVALID_SIGNATURE, "ES256 verifier refused the leaf key or the signature", e);
         }
     }
 

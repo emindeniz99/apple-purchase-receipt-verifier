@@ -269,7 +269,7 @@ class TrustStoreIsolationTest {
             try {
                 body.run();
             } catch (VerificationException e) {
-                require(e.reason() == Reason.INVALID_CHAIN, what + " was refused as " + e.reason() + ": " + e);
+                require(e.reason() == Reason.INVALID_CHAIN, what + " was refused as " + e.getMessage());
                 return;
             } catch (Exception e) {
                 throw new IllegalStateException(what + " raised " + e, e);
