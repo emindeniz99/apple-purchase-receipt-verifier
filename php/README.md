@@ -591,13 +591,15 @@ only because the input is bounded before it is allocated.
   a 32-bit `int` cannot hold — `json_decode` would return floats and every date
   comparison would silently drift. The constructors refuse a 32-bit build with
   a `\RuntimeException` rather than drifting.
-- **SHA-1 and distribution crypto policy.** Genuine legacy receipts are signed
-  SHA-1/RSA. A PHP built against a policy-restricted OpenSSL — RHEL 9's
-  SHA-1-disabled crypto policy, or a FIPS build — may refuse that signature and
-  report `INVALID_SIGNATURE` on a perfectly genuine receipt. This is OpenSSL's
-  behaviour, not the library's, and PHP shares the exposure with the Python and
-  Ruby ports. It has **not** been reproduced on such a container; if you deploy
-  on one, verify a legacy receipt before you rely on it.
+- **Known issue: genuine legacy receipts fail on RHEL 9.** The legacy Apple
+  receipt chain and its CMS signature are SHA-1, and RHEL 9's DEFAULT crypto
+  policy (also Alma and Rocky) makes the system OpenSSL refuse SHA-1
+  signatures. `ext-openssl` uses that OpenSSL, so a genuine legacy receipt is
+  `INVALID_CHAIN`. Observed on AlmaLinux 9.8 on 2026-09-24. Newer receipts
+  (SHA-256 chains) and every JWS are unaffected; FIPS mode is untested. Until
+  the fix ships, run `update-crypto-policies --set DEFAULT:SHA1` on that host.
+  The planned fix checks SHA-1 signatures on Apple's pinned legacy chain only,
+  through phpseclib, and adds an AlmaLinux 9 CI job (ROADMAP.md).
 - **`ext-openssl` is not literally universal.** It is bundled everywhere in
   practice, but a hardened build without it exists. The `"ext-openssl": "*"`
   requirement turns that into a Composer error rather than a runtime fatal.

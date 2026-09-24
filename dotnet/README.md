@@ -371,6 +371,22 @@ public sealed class RedeemReceipt
 }
 ```
 
+## Known issue: legacy receipts on RHEL 9
+
+The legacy Apple receipt chain and its CMS signature are SHA-1. On Linux,
+`System.Security.Cryptography` uses the system OpenSSL, and RHEL 9's DEFAULT
+crypto policy (also Alma and Rocky) makes that OpenSSL refuse SHA-1
+signatures, so a genuine legacy receipt is `InvalidChain` there however .NET
+was installed. Observed on AlmaLinux 9.8 with the distro .NET 8 on
+2026-09-24. Windows and macOS use the OS crypto and are not affected by this
+policy. Newer receipts (SHA-256 chains) and every JWS are unaffected; FIPS
+mode is untested.
+
+Until the fix ships, run `update-crypto-policies --set DEFAULT:SHA1` on that
+host. The planned fix checks SHA-1 signatures on Apple's pinned legacy chain
+through BouncyCastle, as the Java port does, and adds an AlmaLinux 9 CI job
+(ROADMAP.md).
+
 ## Security posture
 
 - **Pinned anchors only.** `X509Chain` is never constructed anywhere in this

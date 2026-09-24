@@ -299,6 +299,22 @@ return Response(result.to_json(), status=http_status, media_type="application/js
 A framework that caps request bodies itself has to allow at least 3 MiB, or
 it refuses bodies Apple would answer.
 
+## Known issue: legacy receipts on RHEL 9
+
+The legacy Apple receipt chain and its CMS signature are SHA-1. The
+`cryptography` wheel from PyPI bundles its own OpenSSL and is not affected.
+The distro package (`python3-cryptography` on RHEL 9, Alma or Rocky) uses the
+system OpenSSL, which the DEFAULT crypto policy stops from verifying SHA-1
+signatures, so with it a genuine legacy receipt is `INVALID_CHAIN`. Observed
+on AlmaLinux 9.8 on 2026-09-24. Newer receipts (SHA-256 chains) and every JWS
+are unaffected; FIPS mode is untested.
+
+Until the fix ships, install `cryptography` from PyPI, or run
+`update-crypto-policies --set DEFAULT:SHA1` on that host. The planned fix
+checks SHA-1 signatures on Apple's pinned legacy chain with `cryptography`'s
+`recover_data_from_signature` and an exact byte comparison, and adds an
+AlmaLinux 9 CI job (ROADMAP.md).
+
 ## Why offline
 
 Signature verification cannot fail because a vendor endpoint is down, so a

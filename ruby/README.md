@@ -483,14 +483,19 @@ an object) with `INTERNAL_ERROR` once the chain and signature have passed.
 
 ### One platform caveat worth knowing
 
-The genuine legacy Apple receipt chain is SHA-1 end to end. A distribution that
-disables SHA-1 signatures at the OpenSSL policy layer — RHEL 9 and Fedora with
-`rh-allow-sha1-signatures = no`, or a FIPS build — will therefore fail genuine
-legacy receipts with `INVALID_CHAIN` or `INVALID_SIGNATURE`. The library will
-not silently downgrade around it. The escape hatch is the platform's own:
-`update-crypto-policies --set LEGACY`. Newer receipts (SHA-256 chains) are
-unaffected. Python and PHP share this exposure; the ports that hand-roll their
-own RSA verification do not.
+**Known issue: genuine legacy receipts fail on RHEL 9.** The legacy Apple
+receipt chain and its CMS signature are SHA-1, and RHEL 9's DEFAULT crypto
+policy (also Alma, Rocky, and Fedora with `rh-allow-sha1-signatures = no`)
+makes the system OpenSSL refuse SHA-1 signatures. This port uses the system
+OpenSSL, so every genuine legacy receipt there is `INVALID_CHAIN`. Observed on
+AlmaLinux 9.8 on 2026-09-24. Newer receipts (SHA-256 chains) and every JWS are
+unaffected. FIPS mode is untested.
+
+Until the fix ships, allow SHA-1 signatures on that host with
+`update-crypto-policies --set DEFAULT:SHA1`. The planned fix checks SHA-1
+signatures on Apple's pinned legacy chain only, with OpenSSL's RSA
+`verify_recover` and an exact byte comparison, and adds an AlmaLinux 9 CI job
+(ROADMAP.md).
 
 ## Trust anchors
 
