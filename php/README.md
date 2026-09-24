@@ -82,8 +82,6 @@ new JwsVerifier(
     string $bundleId,
     array $acceptedEnvironments,      // Environment[]
     ?int $appAppleId = null,
-    ?int $maxSignedAgeSeconds = null,
-    ?Psr\Clock\ClockInterface $clock = null,
 );
 ```
 
@@ -104,6 +102,15 @@ single-environment hard fail rejects purchases during review.
 entitlement question — not revoked, and for a subscription not expired. It
 reads the signed claims only, so a refund that happened after signing is
 invisible to it.
+
+**Freshness is your call.** No payload is rejected for its age, as in Apple's
+own App Store Server Libraries: `signedDate` only decides the instant the
+chain is judged at. The right limit depends on the endpoint (Apple retries a
+server notification for days, and a device may present an old but genuine
+payload), so apply one yourself where it fits:
+`$tooOld = (int) (microtime(true) * 1000) - ($payload->signedDate ?? 0) > 300_000;`.
+The `maxSignedAgeSeconds` and `$clock` arguments are gone, and passing them
+positionally throws `InvalidArgumentException` rather than being ignored.
 
 **Dates in a JWS payload are epoch milliseconds, exactly as Apple ships them**
 (`signedDate`, `purchaseDate`, `expiresDate`, `revocationDate`, …). That is
@@ -266,13 +273,12 @@ try {
 } catch (VerificationException $e) {
     return match ($e->reason) {
         Reason::WrongBundleId, Reason::WrongEnvironment => $this->reject($e->reason->value),
-        Reason::StalePayload                            => $this->askClientToRefresh(),
         default                                         => $this->flagAsForged($e->reason->value),
     };
 }
 ```
 
-Twelve reasons, and the vocabulary is closed — a thirteenth would be a change to
+Eleven reasons, and the vocabulary is closed: a twelfth would be a change to
 every port of this library in one go. `$e->reason->value` is the canonical
 `SCREAMING_SNAKE` token, byte-identical to the other ports', so a log line and
 a metrics label read the same in every language.
@@ -289,7 +295,6 @@ a metrics label read the same in every language.
 | `Reason::WrongAppAppleId` | `WRONG_APP_APPLE_ID` | a Production AppTransaction does not name the configured app Apple id |
 | `Reason::InvalidReceiptFormat` | `INVALID_RECEIPT_FORMAT` | the receipt is not a parseable CMS SignedData |
 | `Reason::DeviceHashMismatch` | `DEVICE_HASH_MISMATCH` | the device binding does not hold |
-| `Reason::StalePayload` | `STALE_PAYLOAD` | signed longer ago than `maxSignedAgeSeconds` |
 | `Reason::InternalError` | `INTERNAL_ERROR` | the receipt's chain and signature verified, but its attribute set does not parse (`getPrevious()` is the parser's error); or a verified JWS carries a modelled claim of the wrong JSON type (`verifyTransaction` / `verifyAppTransaction` only). Not the client's fault: alert and retry or escalate, do not deny |
 
 **Order of the receipt checks.** CMS parse → the creation date alone
@@ -335,14 +340,12 @@ A StoreKit 2 signed transaction:
 use EminDeniz99\ApplePurchaseReceiptVerifier\AppleRootCerts;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Jws\JwsVerifier;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Reason;
 use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationException;
 
 $verifier = new JwsVerifier(
     AppleRootCerts::jwsRoots(),
     'com.example.app',
     [Environment::Production, Environment::Sandbox],
-    maxSignedAgeSeconds: 300,                     // the freshness window
 );
 
 function redeemTransaction(JwsVerifier $verifier, string $userId, string $jws): string
@@ -350,17 +353,19 @@ function redeemTransaction(JwsVerifier $verifier, string $userId, string $jws): 
     try {
         $payload = $verifier->verifyTransaction($jws);            // step 2
     } catch (VerificationException $e) {
-        if ($e->reason === Reason::StalePayload) {
-            // step 4: ask the client for a fresh jwsRepresentation, or fetch
-            // one from the App Store Server API and verify that instead
-            return 'refresh';
-        }
         error_log('purchase rejected: ' . $e->reason->value);
         return 'denied';
     }
 
     if ($payload->revocationDate !== null) {                       // step 3
         return 'denied';
+    }
+
+    // step 4, your call: past the window, ask the client for a fresh
+    // jwsRepresentation, or fetch one from the App Store Server API and
+    // verify that instead
+    if ((int) (microtime(true) * 1000) - ($payload->signedDate ?? 0) > 300_000) {
+        return 'refresh';
     }
 
     $id = $payload->transactionId;                                 // step 5
@@ -404,7 +409,7 @@ function redeemReceipt(ReceiptVerifier $receipts, string $userId, string $data, 
         return 'denied';
     }
 
-    // step 4: no maxSignedAgeSeconds here, so compare the creation date. Past
+    // step 4: the same caller-side check, on the creation date. Past
     // the window, ask the client to refresh its receipt, or call the App Store
     // Server API by transactionId and verify the JWS it returns.
     if ($receipt->creationDate === null
@@ -424,23 +429,20 @@ function redeemReceipt(ReceiptVerifier $receipts, string $userId, string $data, 
 
 ## What the clock can move
 
-`JwsVerifier` and `VerifyReceiptEndpoint` take an optional PSR-20
-`ClockInterface`; omitted, `SystemClock` is installed. It drives exactly two
-things:
-
-1. the `STALE_PAYLOAD` comparison in `JwsVerifier`;
-2. the `request_date` / `_ms` / `_pst` triple in `VerifyReceiptEndpoint`,
-   read once per call and only when no explicit `$now` is passed.
+`VerifyReceiptEndpoint` takes an optional PSR-20 `ClockInterface`; omitted,
+`SystemClock` is installed. It drives exactly one thing: the `request_date` /
+`_ms` / `_pst` triple, read once per call and only when no explicit `$now` is
+passed.
 
 **Certificate validity is never judged by an injected clock.** It is judged at
 the payload's own `signedDate` / `receiptCreationDate`, or at the receipt's
 attribute-12 creation date — and where the input states neither, at the system
-clock, read directly. A caller injecting a clock to test staleness, or to work
-around skew, must not thereby be able to accept an expired chain or expire a
-live one.
+clock, read directly. A caller injecting a clock to pin `request_date`, or to
+work around skew, must not thereby be able to accept an expired chain or
+expire a live one.
 
-That is also why **`ReceiptVerifier` has no clock parameter at all**: it would
-have no consumer, and an option with no consumer is an invitation to wire it
+That is also why **`JwsVerifier` and `ReceiptVerifier` have no clock parameter
+at all**: it would have no consumer, and an option with no consumer is an invitation to wire it
 into the one place it must never reach.
 
 `SystemClock` is public API, and any PSR-20 implementation drops in —

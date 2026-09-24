@@ -14,7 +14,7 @@ namespace EminDeniz99\ApplePurchaseReceiptVerifier;
  * Read it with `$e->reason` and switch on the case; `$e->reason->value` is the
  * canonical `SCREAMING_SNAKE` token.
  *
- * Adding a thirteenth case is a cross-port change, not a PHP one.
+ * Adding a twelfth case is a cross-port change, not a PHP one.
  *
  * Two more cases, {@see Reason::MalformedRequest} and
  * {@see Reason::RequestTooLarge}, exist only as
@@ -53,9 +53,6 @@ enum Reason: string
 
     /** SHA1(guid ‖ opaqueValue ‖ bundleIdBytes) does not equal receipt attribute 5. */
     case DeviceHashMismatch = 'DEVICE_HASH_MISMATCH';
-
-    /** The payload was signed longer ago than the configured max signed age. */
-    case StalePayload = 'STALE_PAYLOAD';
 
     /**
      * Not the client's fault. Status 21009. Thrown when a trusted signer

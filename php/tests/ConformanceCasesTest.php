@@ -323,6 +323,11 @@ final class ConformanceCasesTest extends TestCase
     /** @param array<string, mixed> $config */
     private function jwsVerifier(array $config, ?ClockInterface $clock): JwsVerifier
     {
+        // JwsVerifier takes no clock in any port: no verdict on that path
+        // moves with the current time.
+        if ($clock !== null) {
+            throw new RuntimeException('harness error: JwsVerifier has no clock seam, but the case pins one');
+        }
         $environments = isset($config['acceptedEnvironments'])
             ? array_map(
                 static fn (mixed $name): Environment => Environment::from(
@@ -338,12 +343,6 @@ final class ConformanceCasesTest extends TestCase
             isset($config['bundleId']) ? Shape::asString($config['bundleId'], 'bundleId') : self::UNMATCHABLE_BUNDLE_ID,
             array_values($environments),
             isset($config['appAppleId']) ? Shape::asInt($config['appAppleId'], 'appAppleId') : null,
-            // The port's option is already in seconds, so the conversion the
-            // millisecond ports do here is a no-op rather than a hidden one.
-            isset($config['maxSignedAgeSeconds'])
-                ? Shape::asInt($config['maxSignedAgeSeconds'], 'maxSignedAgeSeconds')
-                : null,
-            $clock,
         );
     }
 

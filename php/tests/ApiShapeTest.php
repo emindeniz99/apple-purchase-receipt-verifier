@@ -36,9 +36,9 @@ use ReflectionClass;
 final class ApiShapeTest extends TestCase
 {
     /**
-     * The twelve reasons, read out of `fixtures/cases.schema.json` rather
+     * The eleven reasons, read out of `fixtures/cases.schema.json` rather
      * than restated here. The schema is the source of truth for the
-     * vocabulary, so a typo in a case name — or a thirteenth reason added
+     * vocabulary, so a typo in a case name — or a twelfth reason added
      * without a cross-port change — fails here.
      *
      * The enum also carries the two reasons every port's VerifyReceiptResult
@@ -63,7 +63,7 @@ final class ApiShapeTest extends TestCase
         sort($expected);
         sort($actual);
 
-        self::assertCount(12, $schema['$defs']['reason']['enum']);
+        self::assertCount(11, $schema['$defs']['reason']['enum']);
         self::assertSame(['MALFORMED_REQUEST', 'REQUEST_TOO_LARGE'], $resultOnly);
         self::assertSame($expected, $actual, 'the Reason vocabulary drifted from the schema');
     }
@@ -148,12 +148,6 @@ final class ApiShapeTest extends TestCase
         yield 'jws: a non-Environment in the accept set' => [
             /** @phpstan-ignore-next-line deliberate misuse */
             static fn () => new JwsVerifier([$root()], 'com.example.app', ['Sandbox']),
-        ];
-        yield 'jws: a zero max signed age' => [
-            static fn () => new JwsVerifier([$root()], 'com.example.app', [Environment::Sandbox], null, 0),
-        ];
-        yield 'jws: a negative max signed age' => [
-            static fn () => new JwsVerifier([$root()], 'com.example.app', [Environment::Sandbox], null, -1),
         ];
         yield 'receipt: empty roots' => [static fn () => new ReceiptVerifier([], 'com.example.app')];
         yield 'receipt: empty bundle id' => [static fn () => new ReceiptVerifier([$root()], '')];

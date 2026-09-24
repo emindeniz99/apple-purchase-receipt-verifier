@@ -12,7 +12,7 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationException;
 /**
  * The JWS parts of verification that are not cryptography: segment shape,
  * header requirements, claim typing, and the bundle-id / environment /
- * app-Apple-id / staleness checks.
+ * app-Apple-id checks.
  *
  * @internal
  */
@@ -104,10 +104,10 @@ final class JwsClaims
      * floats where `1722945600000` is an int — and degrades an integer beyond
      * `PHP_INT_MAX` to a float too. Reading only `is_int()` conflated those two
      * very different things and treated both as ABSENT, which fails OPEN on
-     * three separate rules: the `maxSignedAge` replay window stops being
-     * enforced, the certificate-validity instant slides to the system clock
-     * (PLAN.md §2.1 step 4 reserves that for a payload stating no date at
-     * all), and `isActiveAt()` reads a float `expiresDate` as "no expiry".
+     * two separate rules: the certificate-validity instant slides to the
+     * system clock (PLAN.md §2.1 step 4 reserves that for a payload stating no
+     * date at all), and `isActiveAt()` reads a float `expiresDate` as "no
+     * expiry".
      * All four shipped ports read the value — Node `typeof === 'number'`,
      * Java `canConvertToLong()`, Python `isinstance(x, (int, float))`, Swift
      * `as? Double`.
