@@ -381,6 +381,10 @@ public final class ReceiptVerifier {
             // of later inside the path builder or the signature check under
             // another verdict.
             signerCert.getPublicKey();
+            // Result unused, for the same reason: BouncyCastle reads the
+            // signature BIT STRING lazily and throws unchecked if it is not
+            // whole octets.
+            signerCert.getSignature();
         } catch (GeneralSecurityException | RuntimeException e) {
             throw new VerificationException(
                     Reason.INVALID_CERTIFICATE, "receipt signer certificate is not a valid certificate", e);
@@ -394,6 +398,7 @@ public final class ReceiptVerifier {
                 // path builder when it cannot, so every candidate is decoded
                 // here, where the failure is a certificate verdict.
                 certificate.getPublicKey();
+                certificate.getSignature();
                 embedded.add(certificate);
             }
         } catch (GeneralSecurityException | RuntimeException e) {
@@ -429,6 +434,11 @@ public final class ReceiptVerifier {
             throw new VerificationException(Reason.INTERNAL_ERROR, "chain validation is not available", e);
         } catch (GeneralSecurityException e) {
             throw new VerificationException(Reason.INVALID_CHAIN, "embedded certificate could not be used", e);
+        } catch (RuntimeException e) {
+            // As in JwsVerifier.validateChain: unchecked exceptions BouncyCastle
+            // raises from inside the builder for malformed, unverified
+            // certificate content are the chain's failure.
+            throw new VerificationException(Reason.INVALID_CHAIN, "chain validation failed: " + e, e);
         }
     }
 

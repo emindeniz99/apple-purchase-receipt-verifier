@@ -328,10 +328,13 @@ public final class JwsVerifier {
             for (JsonNode certNode : x5c) {
                 byte[] der = decodeX5cEntry(certNode.asText());
                 X509Certificate certificate = (X509Certificate) cf.generateCertificate(new ByteArrayInputStream(der));
-                // Result unused: BouncyCastle decodes the key lazily, so a key
-                // on an unimplemented curve would otherwise fail later, inside
-                // the path validator, as an unchecked exception.
+                // Results unused: BouncyCastle decodes the key and the
+                // signature BIT STRING lazily, so a key on an unimplemented
+                // curve or a signature that is not whole octets would
+                // otherwise fail later, inside the path validator, as an
+                // unchecked exception.
                 certificate.getPublicKey();
+                certificate.getSignature();
                 chain.add(certificate);
             }
         } catch (CertificateException | RuntimeException e) {
@@ -406,6 +409,12 @@ public final class JwsVerifier {
             throw new VerificationException(Reason.INTERNAL_ERROR, "chain validation rejected its parameters", e);
         } catch (GeneralSecurityException e) {
             throw new VerificationException(Reason.INVALID_CHAIN, "chain validation failed", e);
+        } catch (RuntimeException e) {
+            // BouncyCastle reports some malformed certificate content with
+            // unchecked exceptions from inside the validator. Everything here
+            // is attacker-controlled and unverified, so it is the chain's
+            // failure, and it must not escape as anything but a verdict.
+            throw new VerificationException(Reason.INVALID_CHAIN, "chain validation failed: " + e, e);
         }
     }
 
