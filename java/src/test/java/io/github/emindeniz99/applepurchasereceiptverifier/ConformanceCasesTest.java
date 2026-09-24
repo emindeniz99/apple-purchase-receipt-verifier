@@ -141,8 +141,7 @@ class ConformanceCasesTest {
             result = invoke(fixtures, kase);
         } catch (VerificationException e) {
             if (!expectError) {
-                throw new AssertionError(
-                        id + ": expected success but failed with " + e.reason() + ": " + e.getMessage(), e);
+                throw new AssertionError(id + ": expected success but failed with " + e.getMessage(), e);
             }
             assertEquals(Reason.valueOf(expected.get("reason").asText()), e.reason(), id + ": " + e.getMessage());
             return;
