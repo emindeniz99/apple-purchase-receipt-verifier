@@ -234,6 +234,27 @@ String json2 = endpoint.verifyReceiptJson(rawRequestBody);  // same as verifyRec
 VerifyReceiptResult bare = endpoint.verifyReceiptData(base64Receipt);   // receipt-data alone, no envelope
 ```
 
+### Differences from Apple's verifyReceipt (read before migrating)
+
+In one line: for one-time purchases (consumables, non-consumables) this is a
+complete replacement; for auto-renewable subscriptions it gives only the
+state as of the moment Apple signed the receipt.
+
+| Apple's endpoint | This endpoint | What to do instead |
+|---|---|---|
+| `latest_receipt_info`, `latest_receipt`: renewals after the receipt was signed | Never produced | App Store Server API Get Transaction History (by any transaction id of the customer) or Get All Subscription Statuses, and Server Notifications V2 (`DID_RENEW`, `EXPIRED`, `DID_FAIL_TO_RENEW`) |
+| `pending_renewal_info` (`auto_renew_status`, `expiration_intent`, grace period) | Never produced | Get All Subscription Statuses, or `signedRenewalInfo` in a notification, verified with `verifyRaw` (see [Server Notifications V2](#app-store-server-notifications-v2)) |
+| A refund after signing | Not visible: a receipt signed before the refund verifies forever, and `cancellation_date` is set only if the refund predates the signature | Server Notifications V2 `REFUND` and `REVOKE`, or Get Transaction History; revoke by transaction id |
+| `password` (shared secret), `exclude-old-transactions` | Accepted and never read; 21004 is never returned | Nothing to verify locally. The App Store Server API authenticates with an In-App Purchase API key (a signed JWT), not the shared secret |
+| Rejections: Apple answered 21002 for every rejection measured (2026-09-22, see [COMPARISON.md](../COMPARISON.md#status-codes)) | 21002 for input that never becomes a receipt, 21003 for a receipt that fails to authenticate | Update alerting: 21003 is new to you, and its rate is the fraud signal. See [Operations](#operations) |
+| 21005, 21100 to 21199, `is_retryable` | Never produced: there is no remote server to be unavailable | Remove retry logic keyed on them. 21009 is not retryable either (see `INTERNAL_ERROR` below) |
+| `in_app_ownership_type`, `cancellation_reason`, `promotional_offer_id` | Not produced: no receipt carries `in_app_ownership_type`, and Apple documents no ASN.1 type for the other two | The App Store Server API's signed transaction: `inAppOwnershipType()`, `revocationReason()`, `offerIdentifier()` on `TransactionPayload`. Attribute 1721, the community-reported promotional offer id, is reachable raw via `InAppPurchase.unknownAttributes()` if a receipt carries it |
+| No bundle-id check | No bundle-id check | Compare `result.receipt().bundleId()` yourself, or use `ReceiptVerifier` |
+| Key order | Matches Apple's for the leading `receipt` keys, not everywhere (Apple puts `original_application_version` just before `in_app`) | Parse the JSON; never compare response bodies as strings |
+
+[COMPARISON.md](../COMPARISON.md) is the field-by-field account behind this
+table.
+
 No endpoint method throws: the Apple status code is a field of the body, for
 every input, including one that is not JSON (`{"status":21002}`). The
 statuses it can produce are `STATUS_OK` (`0`), `STATUS_MALFORMED` (`21002`),
