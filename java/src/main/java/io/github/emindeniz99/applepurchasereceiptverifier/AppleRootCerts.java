@@ -58,6 +58,11 @@ public final class AppleRootCerts {
      * The roots are loaded and checked once; each call returns a new
      * mutable set of the same certificates.
      *
+     * <p>This currently returns the same Apple roots as
+     * {@link #receiptRoots()}. The two names are kept separate so that
+     * callers are already on the right one if Apple ever issues separate
+     * roots for JWS and for receipts.</p>
+     *
      * @throws IllegalStateException if the bundled roots are missing, do not
      *                               parse, or do not match their pinned
      *                               fingerprints
@@ -71,6 +76,11 @@ public final class AppleRootCerts {
      * Production chains currently end at the Apple Inc. Root CA.
      * The roots are loaded and checked once; each call returns a new
      * mutable set of the same certificates.
+     *
+     * <p>This currently returns the same Apple roots as {@link #jwsRoots()}.
+     * The two names are kept separate so that callers are already on the
+     * right one if Apple ever issues separate roots for receipts and for
+     * JWS.</p>
      *
      * @throws IllegalStateException if the bundled roots are missing, do not
      *                               parse, or do not match their pinned
