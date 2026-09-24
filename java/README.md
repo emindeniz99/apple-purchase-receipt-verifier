@@ -16,8 +16,12 @@ root certificates.
 
 ```java
 import io.github.emindeniz99.applepurchasereceiptverifier.AppleRootCerts;
+import io.github.emindeniz99.applepurchasereceiptverifier.Environment;
 import io.github.emindeniz99.applepurchasereceiptverifier.jws.JwsVerifier;
+import io.github.emindeniz99.applepurchasereceiptverifier.jws.TransactionPayload;
+import io.github.emindeniz99.applepurchasereceiptverifier.receipt.AppReceipt;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifier;
+import java.util.EnumSet;
 
 // Legacy PKCS#7 app receipt
 ReceiptVerifier receipts = new ReceiptVerifier(AppleRootCerts.receiptRoots(), "com.example.app");
@@ -223,6 +227,31 @@ server does not always have the client's device GUID — the raw bytes of
 app running on an Apple silicon Mac, or the primary network interface's
 MAC address from `copy_mac_address` on macOS and Mac Catalyst.
 
+`identifierForVendor` usually reaches a server as its UUID string. The GUID
+is its 16 raw bytes, most significant first, not the string's UTF-8 and not
+hex:
+
+```java
+import java.nio.ByteBuffer;
+import java.util.UUID;
+
+UUID idfv = UUID.fromString(identifierForVendor);   // "E621E1F8-C36C-495A-93FC-0C247A3E6E5F"
+byte[] deviceGuid = ByteBuffer.allocate(16)
+        .putLong(idfv.getMostSignificantBits())
+        .putLong(idfv.getLeastSignificantBits())
+        .array();
+AppReceipt receipt = verifier.verify(receiptBase64, deviceGuid);
+```
+
+`VerifyReceiptEndpoint` takes no GUID, as Apple's endpoint took none, so it
+cannot check the device hash. A caller that needs the binding calls
+`ReceiptVerifier.verify(receiptBase64, deviceGuid)` instead.
+
+The app version (attribute 3, `appVersion()`) is decoded and never
+compared: Apple's on-device step 4 has no server-side equivalent the
+library could enforce, so comparing it is your policy if you want one. See
+[RECEIPT-FIELDS.md](../RECEIPT-FIELDS.md#step-4-stated-plainly).
+
 `ReceiptVerifier` accepts a receipt from every environment: it takes no
 environment and never raises `WRONG_ENVIRONMENT`. Read
 `receipt.receiptType()` yourself. Only `Production` and `ProductionVPP` are
@@ -318,7 +347,8 @@ own type each time:
 | failed verification | its own status | its own status |
 
 ```java
-VerifyReceiptResult result = production.verifyReceiptResult(requestBody);
+// endpoint: new VerifyReceiptEndpoint(AppleRootCerts.receiptRoots(), Environment.PRODUCTION)
+VerifyReceiptResult result = endpoint.verifyReceiptResult(requestBody);
 String json = result.status() == VerifyReceiptEndpoint.STATUS_SANDBOX_RECEIPT_ON_PRODUCTION
         ? result.toJson(Environment.SANDBOX)
         : result.toJson();
