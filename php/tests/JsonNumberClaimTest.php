@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Tests;
 
-use DateTimeImmutable;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Jws\JwsVerifier;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Reason;
@@ -29,8 +28,7 @@ use PHPUnit\Framework\TestCase;
  * - `signedDate` as a float moved the certificate-validity instant from the payload's stated
  *   signing time to the system clock, which PLAN.md §2.1 step 4 reserves for a
  *   payload that states NO date;
- * - `expiresDate` as a float made `isActiveAt()` answer "no expiry", i.e.
- *   entitled forever.
+ * - `expiresDate` as a float read as "no expiry", i.e. entitled forever.
  *
  * All four shipped ports read the value: Node `typeof === 'number'`, Java
  * `canConvertToLong()`, Python `isinstance(x, (int, float))`, Swift
@@ -138,9 +136,9 @@ final class JsonNumberClaimTest extends TestCase
     }
 
     /**
-     * `isActiveAt()` fails OPEN on a missing `expiresDate` — correctly, since a
-     * non-subscription has none. So a float `expiresDate` reading as absent
-     * turned an expired subscription into a permanent entitlement.
+     * An entitlement check fails OPEN on a missing `expiresDate`, correctly,
+     * since a non-subscription has none. So a float `expiresDate` reading as
+     * absent turned an expired subscription into a permanent entitlement.
      */
     public function testAFloatExpiresDateStillExpiresTheSubscription(): void
     {
@@ -150,12 +148,7 @@ final class JsonNumberClaimTest extends TestCase
         $payload = (new JwsVerifier([MintedPki::get()->rootDer], 'com.example.app', [Environment::Sandbox]))
             ->verifyTransaction($jws);
 
-        self::assertSame(self::SIGNED_AT, $payload->expiresDate);
-        self::assertTrue($payload->isActiveAt(new DateTimeImmutable('2024-08-06T11:00:00Z')));
-        self::assertFalse(
-            $payload->isActiveAt(new DateTimeImmutable('2025-01-01T00:00:00Z')),
-            'a float expiresDate left the subscription entitled forever',
-        );
+        self::assertSame(self::SIGNED_AT, $payload->expiresDate, 'a float expiresDate read as absent');
     }
 
     /**

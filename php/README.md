@@ -98,10 +98,19 @@ Include `Environment::Sandbox` in the accept set on any endpoint App Review
 can reach: App Review runs production builds against sandbox, so a
 single-environment hard fail rejects purchases during review.
 
-`TransactionPayload::isActiveAt(DateTimeInterface $now): bool` answers the
-entitlement question — not revoked, and for a subscription not expired. It
-reads the signed claims only, so a refund that happened after signing is
-invisible to it.
+**Entitlement is your rule.** There is no "is active" helper, as in Apple's
+own libraries; read the signed fields:
+
+```php
+$nowMillis = (int) (microtime(true) * 1000);
+$entitled = $payload->revocationDate === null
+    && ($payload->expiresDate === null || $payload->expiresDate > $nowMillis);
+```
+
+That is only what the payload said when it was signed. A billing grace
+period (it lives in the renewal info), an upgrade (`isUpgraded`) and a refund
+after signing are yours to handle; App Store Server Notifications V2 or the
+App Store Server API give the live status. `isActiveAt()` is gone.
 
 **Freshness is your call.** No payload is rejected for its age, as in Apple's
 own App Store Server Libraries: `signedDate` only decides the instant the

@@ -106,8 +106,7 @@ final class JwsClaims
      * very different things and treated both as ABSENT, which fails OPEN on
      * two separate rules: the certificate-validity instant slides to the
      * system clock (PLAN.md §2.1 step 4 reserves that for a payload stating no
-     * date at all), and `isActiveAt()` reads a float `expiresDate` as "no
-     * expiry".
+     * date at all), and a caller reads a float `expiresDate` as "no expiry".
      * All four shipped ports read the value — Node `typeof === 'number'`,
      * Java `canConvertToLong()`, Python `isinstance(x, (int, float))`, Swift
      * `as? Double`.

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Tests;
 
-use DateTimeImmutable;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Jws\JwsVerifier;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Reason;
@@ -357,31 +356,6 @@ final class JwsVerifierTest extends TestCase
         } catch (VerificationException $e) {
             self::assertSame(Reason::InvalidChain, $e->reason);
         }
-    }
-
-    public function testIsActiveAtReadsTheSignedClaims(): void
-    {
-        $pki = MintedPki::get();
-        $verifier = $this->verifier();
-        $at = new DateTimeImmutable('2025-01-01T00:00:00Z');
-
-        $noExpiry = $verifier->verifyTransaction($pki->jws(MintedPki::transactionClaims()));
-        self::assertTrue($noExpiry->isActiveAt($at), 'a non-subscription is active');
-
-        $expired = $verifier->verifyTransaction($pki->jws(
-            MintedPki::transactionClaims() + ['expiresDate' => 1722945600000],
-        ));
-        self::assertFalse($expired->isActiveAt($at));
-
-        $live = $verifier->verifyTransaction($pki->jws(
-            MintedPki::transactionClaims() + ['expiresDate' => 4102444800000],
-        ));
-        self::assertTrue($live->isActiveAt($at));
-
-        $revoked = $verifier->verifyTransaction($pki->jws(
-            MintedPki::transactionClaims() + ['expiresDate' => 4102444800000, 'revocationDate' => 1722945600000],
-        ));
-        self::assertFalse($revoked->isActiveAt($at), 'revocation wins over an unexpired subscription');
     }
 
     /** No per-call mutation: one instance answers identically forever. */
