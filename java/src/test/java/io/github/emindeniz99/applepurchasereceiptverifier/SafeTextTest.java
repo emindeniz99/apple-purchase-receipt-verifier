@@ -69,6 +69,26 @@ class SafeTextTest {
         assertTrue(quoted.contains("WARN forged log line"), quoted);
     }
 
+    @Test
+    void unicodeLineBreaksCannotReachALogLineAsThemselves() {
+        // NEL and the other C1 controls, and the Unicode line and paragraph
+        // separators: log viewers and the regex \R break on each.
+        String rendered = SafeText.detail("CN=a\u0085WARN forged INFO forged \u009b[2J");
+        assertEquals(1, rendered.split("\\R", -1).length, rendered);
+        for (char c : new char[] {'\u0085', ' ', ' ', '\u009b'}) {
+            assertFalse(rendered.indexOf(c) >= 0, "U+" + Integer.toHexString(c) + " survived: " + rendered);
+        }
+        assertTrue(rendered.contains("WARN forged"), rendered);
+    }
+
+    @Test
+    void detailIsCutAt256CharactersAndStatesItsOriginalLength() {
+        assertEquals(repeat('B', 256), SafeText.detail(repeat('B', 256)));
+        String cut = SafeText.detail(repeat('B', 257));
+        assertTrue(cut.startsWith(repeat('B', 256) + "..."), cut);
+        assertTrue(cut.contains("257 characters"), cut);
+    }
+
     /**
      * The end-to-end form of both rules, at the site the finding was raised
      * on: {@code alg} is attacker-controlled, is read before any signature
