@@ -108,6 +108,68 @@ Delete a line in the commit that ships it.
   not — before OIDC for crates.io and NuGet, and after a failed OIDC for
   RubyGems, whose pending publisher is meant to create the gem — and the
   `smoke` job runs on the registries that did publish.)
+- **Legacy receipts fail on RHEL 9 in five ports (known issue, owner
+  decision 2026-09-24: fix after 0.6.0).** RHEL 9's DEFAULT crypto policy
+  makes the system OpenSSL refuse SHA-1 signatures. Apple's legacy chain
+  (leaf and WWDR intermediate) and the legacy CMS signature are SHA-1, so a
+  genuine legacy receipt is `INVALID_CHAIN`, the same verdict as a forgery.
+  Modern (g5) receipts and every JWS are unaffected. Observed in an
+  AlmaLinux 9.8 container (OpenSSL 3.5.5, `update-crypto-policies` DEFAULT),
+  after checking that the container really refused SHA-1:
+
+  | Port | On RHEL 9 DEFAULT |
+  |---|---|
+  | Ruby, PHP | always fails: both use the system OpenSSL |
+  | .NET | always fails on Linux: `System.Security.Cryptography` loads the system libssl |
+  | Python | fails only with the distro `cryptography` package; the PyPI wheel bundles its own OpenSSL and passes |
+  | Node | fails only with RHEL's `nodejs` package (`node_shared_openssl`); nodejs.org, nvm and Docker builds bundle OpenSSL and pass |
+  | Rust, Go, Swift, Java | pass: pure-language crypto, their own BoringSSL copy, or Java's private BouncyCastle (#152) |
+
+  PHP ran only the legacy and g5 receipts, not its full suite; Swift was not
+  run on RHEL (inferred from its code and binary); FIPS mode is untested.
+  Workaround until the fix: `update-crypto-policies --set DEFAULT:SHA1`.
+
+  The fix (owner decision: a library where one fits). RHEL blocks "verify a
+  SHA-1 signature" but not the raw RSA public-key operation, and plain SHA-1
+  hashing still works. So for `sha1WithRSAEncryption` only, on Apple's
+  pinned chain and the receipt's CMS signature, recover the signed block
+  with the RSA public key and compare it in constant time with the exact
+  expected bytes `3021300906052b0e03021a05000414 || SHA1(data)`. Build the
+  expected bytes and compare; never parse what was recovered, which is how
+  the lax-parsing signature forgeries (Bleichenbacher 2006) happen.
+  SHA-256 and stronger stay on the normal verify path. Per port:
+  .NET moves to BouncyCastle (as Java did, #152); PHP uses phpseclib;
+  Python uses `cryptography`'s `recover_data_from_signature`; Ruby uses
+  OpenSSL's `verify_recover`; Node uses `crypto.publicDecrypt` (the web
+  build has no raw RSA in WebCrypto, so it needs a `BigInt` modPow or a
+  documented limitation). This deliberately goes around a policy the host
+  administrator set, for Apple's pinned legacy chain only, which is the
+  same trade Java made.
+
+  Add one CI job that runs every port's conformance suite, all nine, in an
+  `almalinux:9` container (pulled from quay.io; Docker Hub rate-limits) with
+  the DEFAULT policy. It is the only check that catches this coming back,
+  and it gives Swift its first real run on RHEL.
+- **The other eight ports have not had the Java review's error-mapping
+  pass.** Java (#153) now maps an unexpected error before the signature is
+  verified to the format reason (21002 for a receipt, `INVALID_JWS_FORMAT`
+  for a JWS), never to `INTERNAL_ERROR`: before the signature passes,
+  everything is attacker input, and 21009 means "not the client's fault".
+  Check each port for the same rule on both paths. The certificate-verdict
+  rule (unreadable signer `INVALID_CERTIFICATE`, any other unreadable
+  certificate `INVALID_RECEIPT_FORMAT`) is already held by the shared suite.
+- **Map Apple's own tests to ours, one by one.** Apple's Java library has
+  30 verification tests; `fixtures/apple-official` already imports its test
+  data. A name-level match on 2026-09-24 found the missing ones all belong
+  to features we do not have: notification and renewal checks (5), OCSP and
+  its cache (6), and Xcode payloads accepted without verification (3; we
+  reject them on purpose). Map every test, add any we miss for a feature we
+  have, and file the rest under the matching item below. Then add a monthly
+  workflow that opens an issue when Apple's libraries release with test
+  names we have not mapped yet.
+- **Vendor-readability review of the other eight ports**, as done for Java,
+  and a last read of the Java port as a whole now that #152 to #154 changed
+  it.
 
 - **No branch protection in practice.** main reports protected, yet an
   admin push lands directly, so either the pull-request requirement or
@@ -268,8 +330,12 @@ Still worth filing as issues:
 - **Dev-mode environments**: Apple's `SignedDataVerifier` deliberately
   skips signature verification for XCODE / LOCAL_TESTING payloads (they
   aren't Apple-signed). Our verifiers hard-fail them on chain validation.
-  If local-testing support is ever needed, add an explicit, loudly-gated
-  insecure dev mode — never reachable from production config.
+  If local-testing support is ever needed, prefer verifying over skipping:
+  Xcode can export the public certificate of the key that signs StoreKit
+  testing payloads (Editor, Save Public Certificate), so an opt-in Xcode
+  mode could pin that certificate and check the signature for real, with
+  the Apple marker-OID check relaxed in that mode only. Never reachable
+  from production config. Low priority: sandbox testing already works.
 - **C ABI phase 2: prebuilt binaries, an owner decision.** Phase 1 shipped:
   `rust/ffi/` is a `cdylib`/`staticlib` with a generated header, three test
   layers and a three-OS CI leg, and it is buildable from source only. Phase 2
@@ -310,8 +376,39 @@ Still worth filing as issues:
   ourselves instead of through `SignedCms`, cache the anchors' keys, or
   cache embedded certificates' keys by their exact DER. Each changes what
   the port trusts between calls, so the owner decides first.
-- Optional OCSP revocation checking (opt-in "online mode", like the official
-  library) for consumers who accept Apple calls.
-- Notification-envelope convenience (typed `verifyNotification` that also
-  verifies nested `signedTransactionInfo` / `signedRenewalInfo`) — today
-  `verifyRaw` covers notifications with caller-side claim checks.
+- **Revocation, still offline.** Apple's library can ask Apple's OCSP
+  responder about the leaf and intermediate (`enableOnlineChecks`), caching
+  the answer for 15 minutes and returning `RETRYABLE_VERIFICATION_FAILURE`
+  when the network fails. We never check revocation, so a leaked Apple
+  signing key would be accepted until a release blocks it. The offline
+  shape worth building: a helper that downloads Apple's CRL, checks its
+  signature against the pinned root, and hands it to the verifier, which
+  stays offline; the caller refreshes it on a schedule. Optional OCSP (an
+  opt-in "online mode") stays a later choice for consumers who accept Apple
+  calls.
+- **Updating the pinned roots at run time: open for discussion.** Today the
+  root fingerprints live in the code and change only through a reviewed
+  release. Downloading roots over TLS from apple.com proves the bytes came
+  from a server holding an apple.com certificate, so trust would then also
+  rest on every certificate authority that can issue one, and on any
+  TLS-inspecting proxy with its own CA. A middle path: a release ships the
+  fingerprints of roots Apple has announced, and the helper accepts a
+  downloaded root only if it matches one of them. The owner leans towards
+  allowing downloads; decide before building the CRL helper above.
+- **Typed renewal-info and notification APIs** (StoreKit 2 JWS only; legacy
+  receipts have neither). Apple's library has `verifyAndDecodeRenewalInfo`
+  and `verifyAndDecodeNotification`, which check bundle id, app Apple id
+  and environment for the caller; ours offer only `verifyRaw`, which leaves
+  those checks to the caller and is easy to get wrong. Add typed methods in
+  all nine ports, the notification one also verifying the nested
+  `signedTransactionInfo` and `signedRenewalInfo`, with conformance cases.
+- **A verified-chain cache, measured first.** Apple's library caches a
+  verified chain for 15 minutes, but only with online checks on, because
+  only then is the validation date always "now". Offline, the date is each
+  payload's own, so a safe cache keys on the exact DER of the leaf and
+  intermediate, keeps the verified public key, and on a hit still checks
+  every certificate's validity window against that payload's date
+  (signatures, OIDs and the anchor do not depend on the date). Bounded,
+  for example 32 entries. Java would save about 90 µs a receipt; the Rust
+  and .NET entries above name the same trade. A bug here accepts a
+  forgery, so it needs a THREAT-MODEL decision and a measured need first.

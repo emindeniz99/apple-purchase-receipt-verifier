@@ -155,6 +155,13 @@ and 13% above the 160,145 and 304,378 the first run recorded, so the two
 machines are close enough to compare, not identical. The other columns were
 not re-measured.
 
+The Java column predates #152, which moved certificate parsing and the
+chain check from the JDK to the pinned BouncyCastle provider. A local
+microbenchmark put that at about 90 µs more per receipt (g5 `core` about
+445 µs instead of 356, legacy `core` about 3% slower), because the JDK
+caches Apple's certificates and BouncyCastle does not. The column will be
+re-measured after 0.6.0.
+
 | benchmark | fixture | Java | Go | Rust | Node | Python | Ruby | PHP | .NET | Swift |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | `decodeBase64` | g5 | 2.4 | 6.9 | 3.3 | 16.3 | 17.9 | 6.6 | 0.4 | 6.0 | n/a |
