@@ -358,6 +358,60 @@ elsewhere in this file.
   - JWS `crit` header handling (RFC 7515), and an explanation of why x5c
     entries skip the canonical re-encode check the other segments get.
 
+## Decided for 0.7 (owner, 2026-09-24, after 0.6.0 shipped)
+
+Decisions taken after the 0.6.0 release, from a user's integration
+feedback and a local check against Apple. All are for 0.7; nothing here
+is a security issue.
+
+- **Omit `web_order_line_item_id` when attribute 1711 is 0, in all nine
+  ports.** This reverses the 2026-09-21 choice above. Apple's
+  verifyReceipt omitted the field for every consumable checked (seven
+  entries, production and sandbox), and Apple's response reference gives
+  no presence rule for it, as for `expires_date`, which is also absent for
+  consumables. Nonzero values (subscriptions) are still written. Update
+  the shared vectors, COMPARISON.md and the README shadow-mode list.
+- **Expose the receipt's own environment.** Add
+  `VerifyReceiptResult.receiptEnvironment()` (PRODUCTION, SANDBOX, or null
+  when not verified), `Environment.fromReceiptType(String)` and a render
+  for the receipt's own environment, so callers stop copying the private
+  Production/ProductionVPP rule. `Environment.fromValue("ProductionSandbox")`
+  returns null today because it maps JWS values; document that. Java
+  first, then the other ports.
+- **`status()` as an enum** (with the numeric code on it for the JSON),
+  as part of the 0.7 API work. The library produces every status itself,
+  so a closed set is safe.
+- **A version constant** (`Version.CURRENT`), since the `INTERNAL_ERROR`
+  guidance says to log the library version.
+- **Startup guidance:** a README note to construct the verifier and the
+  endpoint at startup, because a static field turns a deployment defect
+  into `NoClassDefFoundError` on every request.
+- **Remove the unreachable `catch (GeneralSecurityException)`** in
+  `ReceiptVerifier.validateChain` that javac reports.
+- **Depend on `jackson-core` only.** Drop `jackson-databind` and
+  `jackson-annotations`: read with the streaming parser already in use and
+  write the response with a small writer. Jackson 3 reuses the Jackson 2
+  annotations package, so the databind dependency clashes with Spring
+  Boot 4 users; `jackson-core` 2 and Jackson 3's core live in different
+  packages. The dependency drops from about 2.3 MB to 580 KB. Shading only
+  `jackson-core` stays an option if an old pinned version still clashes.
+- **A `-testing` artifact with a fake PKI** (`FakeAppleReceipts`) that
+  signs receipts with chosen attributes, plus the matching root set, so
+  users test their own logic through the real verification path instead
+  of committing real receipts. It must never ship in the main jar.
+- **Smarter CI.** Run each port's jobs only when its files, `fixtures/`
+  or `.github/` change; skip tests for Markdown-only changes, except
+  under `fixtures/`, whose README digest is pinned in `cases.json`; move
+  fuzzing to `main` and a nightly run; scan CodeQL per changed language;
+  and gate branch protection on one aggregate "CI OK" job so skipped jobs
+  do not block a PR. A release commit touches every port, so it still
+  runs everything.
+
+Measured the same day, for capacity planning (0.6.0, genuine receipts,
+a 4-core container): about 1,270 verifications per second on one core,
+about 4,840 on four, no wrong answer in 1,000,000 calls at 4 and at 8
+threads.
+
 ## Working notes for agents (2026-09-21)
 
 Things that cost a round trip once and should not cost another.
