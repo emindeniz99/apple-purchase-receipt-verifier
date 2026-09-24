@@ -25,8 +25,9 @@
 //!   judged at the payload's `signedDate` / `receiptCreationDate`, or at the
 //!   receipt's attribute-12 creation date, and where the input states no
 //!   date the fallback reads the system clock. The injected [`Clock`] moves
-//!   exactly two things: the `STALE_PAYLOAD` rule and the endpoint's
-//!   `request_date`.
+//!   exactly one thing: the endpoint's `request_date`.
+//! - **Judge a payload by its age.** How old a signed payload may be is the
+//!   caller's decision, made on its `signedDate` (`PLAN.md` D5).
 //! - **Return anything partial.** A failure returns a [`VerificationError`]
 //!   and nothing else; a success returns only data that passed every check.
 //! - **Log, meter or call back.** [`Reason`] is the whole observability
@@ -55,7 +56,7 @@
 //! # Errors
 //!
 //! Every verification entry point returns [`VerificationError`], whose
-//! [`reason`](VerificationError::reason) is one of twelve [`Reason`] values.
+//! [`reason`](VerificationError::reason) is one of eleven [`Reason`] values.
 //! Match on the value; never parse the message.
 //!
 //! Configuration mistakes are a different type, [`ConfigError`], because

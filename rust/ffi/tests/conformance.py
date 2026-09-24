@@ -22,9 +22,9 @@ the C++ harness are covered rather than lost.
 Every case in the file runs, this harness and the C++ one alike, except the
 `decodeBase64` groups: they call a port's base64 decoders directly, and the
 ABI exposes no decoder, only whole verifications. Those are counted and
-printed as not reachable, never as passed. The twelve that pin a clock go
-through the `_and_clock` constructors, which take the instant as epoch
-milliseconds rather than a callback. Any other case this adapter cannot run
+printed as not reachable, never as passed. The endpoint cases that pin a
+clock go through `aprv_endpoint_new_with_roots_and_clock`, which takes the
+instant as epoch milliseconds rather than a callback. Any other case this adapter cannot run
 raises rather than being counted as a skip, and after the run every case id
 in the file must have run or be one of those counted groups.
 
@@ -51,21 +51,21 @@ from pathlib import Path
 # --- status codes, mirroring include/apple_purchase_receipt_verifier.h -----
 
 OK = 0
-REASONS = [
-    "INVALID_JWS_FORMAT",
-    "INVALID_CERTIFICATE",
-    "INVALID_CERTIFICATE_PURPOSE",
-    "INVALID_CHAIN",
-    "INVALID_SIGNATURE",
-    "WRONG_BUNDLE_ID",
-    "WRONG_ENVIRONMENT",
-    "WRONG_APP_APPLE_ID",
-    "INVALID_RECEIPT_FORMAT",
-    "DEVICE_HASH_MISMATCH",
-    "STALE_PAYLOAD",
-    "INTERNAL_ERROR",
-]
-REASON_CODES = {token: index + 1 for index, token in enumerate(REASONS)}
+# The ABI's reason codes, pinned as the header declares them. 11 was
+# STALE_PAYLOAD: retired, so INTERNAL_ERROR stays 12.
+REASON_CODES = {
+    "INVALID_JWS_FORMAT": 1,
+    "INVALID_CERTIFICATE": 2,
+    "INVALID_CERTIFICATE_PURPOSE": 3,
+    "INVALID_CHAIN": 4,
+    "INVALID_SIGNATURE": 5,
+    "WRONG_BUNDLE_ID": 6,
+    "WRONG_ENVIRONMENT": 7,
+    "WRONG_APP_APPLE_ID": 8,
+    "INVALID_RECEIPT_FORMAT": 9,
+    "DEVICE_HASH_MISMATCH": 10,
+    "INTERNAL_ERROR": 12,
+}
 
 ENVIRONMENT_BITS = {"Production": 1, "Sandbox": 2, "Xcode": 4, "LocalTesting": 8}
 
@@ -113,30 +113,17 @@ def load_library(directory: Path) -> ctypes.CDLL:
         ctypes.c_char_p,
         ctypes.c_uint32,
         ctypes.c_uint64,
-        ctypes.c_uint64,
     ]
     lib.aprv_verifier_new_jws.restype = ctypes.c_void_p
     lib.aprv_verifier_new_jws_with_roots.argtypes = [
         ctypes.c_char_p,
         ctypes.c_uint32,
         ctypes.c_uint64,
-        ctypes.c_uint64,
         u8pp,
         sizep,
         ctypes.c_size_t,
     ]
     lib.aprv_verifier_new_jws_with_roots.restype = ctypes.c_void_p
-    lib.aprv_verifier_new_jws_with_roots_and_clock.argtypes = [
-        ctypes.c_char_p,
-        ctypes.c_uint32,
-        ctypes.c_uint64,
-        ctypes.c_uint64,
-        u8pp,
-        sizep,
-        ctypes.c_size_t,
-        ctypes.POINTER(ctypes.c_int64),
-    ]
-    lib.aprv_verifier_new_jws_with_roots_and_clock.restype = ctypes.c_void_p
     lib.aprv_verifier_free_jws.argtypes = [ctypes.c_void_p]
     lib.aprv_verifier_free_jws.restype = None
 
@@ -387,7 +374,6 @@ def run_case(lib, directory: Path, registry: dict, case: dict):
         mask |= ENVIRONMENT_BITS[name]
     mask = mask or UNMATCHABLE_ENVIRONMENTS
     app_apple_id = config.get("appAppleId") or 0
-    max_age = config.get("maxSignedAgeSeconds") or 0
     guid = bytes.fromhex(config["deviceGuidHex"]) if config.get("deviceGuidHex") else b""
     # NULL is "no clock given", which is the system clock — the behaviour of
     # every constructor that predates the clock argument.
@@ -399,14 +385,12 @@ def run_case(lib, directory: Path, registry: dict, case: dict):
 
     if operation in ("verifyTransaction", "verifyAppTransaction", "verifyRaw"):
         if clock is not None:
-            handle = lib.aprv_verifier_new_jws_with_roots_and_clock(
-                bundle_id, mask, app_apple_id, max_age, ders, lens, count, clock
-            )
-        elif anchors is None:
-            handle = lib.aprv_verifier_new_jws(bundle_id, mask, app_apple_id, max_age)
+            raise SystemExit(f'{case["id"]}: the JWS verifier has no clock seam, but the case pins one')
+        if anchors is None:
+            handle = lib.aprv_verifier_new_jws(bundle_id, mask, app_apple_id)
         else:
             handle = lib.aprv_verifier_new_jws_with_roots(
-                bundle_id, mask, app_apple_id, max_age, ders, lens, count
+                bundle_id, mask, app_apple_id, ders, lens, count
             )
         if not handle:
             raise SystemExit(f'{case["id"]}: aprv_verifier_new_jws refused the configuration')
@@ -553,8 +537,8 @@ def main() -> int:
     unchecked_reasons = 0
     checked_fields = 0
     for case in file["cases"]:
-        # Nothing is skipped: a case that pins a clock is built through the
-        # _and_clock constructor, and one this adapter cannot run raises out
+        # Nothing is skipped: an endpoint case that pins a clock is built
+        # through the _and_clock constructor, and one this adapter cannot run raises out
         # of run_case rather than being counted away.
         if case["operation"] == "decodeBase64":
             # The ABI has no base64 decoder to call, and a decoded string

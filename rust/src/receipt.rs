@@ -127,7 +127,7 @@ pub(crate) fn verify_receipt_core_unchecked(
     // it only moves the chain instant to "now" and never rejects by itself.
     //
     // "Now" is the SYSTEM clock, never an injected one: a caller injecting a
-    // clock — to test staleness, or to work around skew — must not thereby
+    // clock (to pin request_date, or to work around skew) must not thereby
     // accept an expired chain. That is why the receipt path takes no clock
     // option at all.
     let at_millis = read_creation_date(&cms.content)

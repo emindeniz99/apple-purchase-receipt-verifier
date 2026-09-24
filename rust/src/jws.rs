@@ -8,7 +8,7 @@
 
 use crate::base64::{decode_base64url_strict, decode_receipt_base64};
 use crate::chain::validate_pair;
-use crate::clock::{default_clock, unix_millis, Clock};
+use crate::clock::unix_millis;
 use crate::crypto::{curve_field_size, verify_es256};
 use crate::environment::Environment;
 use crate::error::{ConfigError, Reason, Result, VerificationError};
@@ -18,7 +18,7 @@ use crate::x509::{Certificate, OID_EC_PUBLIC_KEY};
 use serde_json::{Map, Value};
 use std::collections::BTreeSet;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
 /// Apple marker OID: a leaf certificate used for App Store signing.
 pub const LEAF_OID: &str = "1.2.840.113635.100.6.11.1";
@@ -295,8 +295,6 @@ pub struct JwsVerifierBuilder {
     bundle_id: Option<String>,
     accepted_environments: BTreeSet<Environment>,
     app_apple_id: Option<u64>,
-    max_signed_age: Option<Duration>,
-    clock: Option<Arc<dyn Clock>>,
 }
 
 impl JwsVerifierBuilder {
@@ -336,22 +334,6 @@ impl JwsVerifierBuilder {
         self
     }
 
-    /// Reject payloads signed longer ago than this (`PLAN.md` D5).
-    #[must_use]
-    pub fn max_signed_age(mut self, max_signed_age: Duration) -> Self {
-        self.max_signed_age = Some(max_signed_age);
-        self
-    }
-
-    /// The source of "now" for the staleness rule — and for nothing else.
-    ///
-    /// Certificate validity is never judged at this clock.
-    #[must_use]
-    pub fn clock(mut self, clock: Arc<dyn Clock>) -> Self {
-        self.clock = Some(clock);
-        self
-    }
-
     /// Builds the verifier.
     ///
     /// # Errors
@@ -373,14 +355,15 @@ impl JwsVerifierBuilder {
             bundle_id,
             accepted_environments: self.accepted_environments,
             app_apple_id: self.app_apple_id,
-            max_signed_age: self.max_signed_age,
-            clock: self.clock.unwrap_or_else(default_clock),
         })
     }
 }
 
 /// Verifies Apple-signed JWS payloads, entirely offline, against pinned
 /// trust anchors.
+///
+/// No payload is rejected for its age: how old a signed payload may be is
+/// the caller's decision, made on its `signedDate` (`PLAN.md` D5).
 ///
 /// ```no_run
 /// use apple_purchase_receipt_verifier::{apple_jws_roots, Environment, JwsVerifier};
@@ -400,8 +383,6 @@ pub struct JwsVerifier {
     bundle_id: String,
     accepted_environments: BTreeSet<Environment>,
     app_apple_id: Option<u64>,
-    max_signed_age: Option<Duration>,
-    clock: Arc<dyn Clock>,
 }
 
 struct Segments<'a> {
@@ -456,8 +437,8 @@ impl JwsVerifier {
     /// check bundle id, environment and app Apple id itself.
     ///
     /// # Errors
-    /// A [`VerificationError`] for a format, certificate, chain, signature
-    /// or staleness failure. Never a claim failure.
+    /// A [`VerificationError`] for a format, certificate, chain or
+    /// signature failure. Never a claim failure.
     pub fn verify_raw(&self, jws: &str) -> Result<Claims> {
         self.verify_signature(jws)
     }
@@ -488,8 +469,8 @@ impl JwsVerifier {
         let payload = parse_json_segment(segments.payload_b64, "payload")?;
         // Chain validity is judged at the payload's signing date, so a
         // payload signed with a since-rotated certificate keeps verifying.
-        // Where the payload states no date, the fallback reads the SYSTEM
-        // clock — never `self.clock`, which a caller controls.
+        // Where the payload states no date, the fallback reads the system
+        // clock.
         let signed_at_millis = signed_at_millis_of(&payload)?;
         let effective = signed_at_millis.unwrap_or_else(|| unix_millis(SystemTime::now()));
         validate_pair(&leaf, &intermediate, &self.anchors, effective)?;
@@ -532,7 +513,6 @@ impl JwsVerifier {
             ));
         }
 
-        self.require_fresh(signed_at_millis)?;
         Ok(payload)
     }
 
@@ -578,23 +558,6 @@ impl JwsVerifier {
             Reason::WrongAppAppleId,
             "production payload does not name the configured app Apple id",
         ))
-    }
-
-    /// The one check that legitimately moves with wall-clock time, and so
-    /// the one the injected clock drives.
-    fn require_fresh(&self, signed_at_millis: Option<i64>) -> Result<()> {
-        let (Some(max_age), Some(signed_at)) = (self.max_signed_age, signed_at_millis) else {
-            return Ok(());
-        };
-        let now = unix_millis(self.clock.now());
-        let max_millis = i64::try_from(max_age.as_millis()).unwrap_or(i64::MAX);
-        if now.saturating_sub(signed_at) > max_millis {
-            return Err(VerificationError::new(
-                Reason::StalePayload,
-                "payload was signed longer ago than the configured maximum",
-            ));
-        }
-        Ok(())
     }
 }
 

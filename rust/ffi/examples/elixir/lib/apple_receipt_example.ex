@@ -38,7 +38,6 @@ defmodule AppleReceiptExample do
     8 => :wrong_app_apple_id,
     9 => :invalid_receipt_format,
     10 => :device_hash_mismatch,
-    11 => :stale_payload,
     12 => :internal_error,
     100 => :null_pointer,
     101 => :invalid_utf8,
@@ -60,15 +59,12 @@ defmodule AppleReceiptExample do
   `environments` is a list of `:production`, `:sandbox`, `:xcode` or
   `:local_testing`, or the bitmask itself for a caller that already has one.
   Options are `:app_apple_id` (required to accept a Production
-  `AppTransaction`), `:max_signed_age_secs`, `:roots`, a list of DER
-  certificates that replaces the three bundled Apple roots, and
-  `:clock_unix_millis`.
+  `AppTransaction`) and `:roots`, a list of DER certificates that replaces
+  the three bundled Apple roots.
 
-  `:clock_unix_millis` pins the instant the `:max_signed_age_secs` rule is
-  measured against, and is for conformance vectors and tests; leave it out
-  and the verifier reads the system clock. It cannot move a certificate
-  verdict: a payload stating no date of its own is still judged at system
-  time.
+  No payload is rejected for its age: how old a signed payload may be is the
+  caller's decision, made on the `signedDate` in the verified JSON. A payload
+  stating no date of its own is judged at system time.
   """
   @spec jws_verifier(binary(), [atom()] | non_neg_integer(), keyword()) ::
           {:ok, verifier()} | {:error, :invalid_argument}
@@ -77,9 +73,7 @@ defmodule AppleReceiptExample do
       bundle_id,
       mask(environments),
       Keyword.get(options, :app_apple_id, 0),
-      Keyword.get(options, :max_signed_age_secs, 0),
-      Keyword.get(options, :roots, []),
-      Keyword.get(options, :clock_unix_millis)
+      Keyword.get(options, :roots, [])
     )
   end
 

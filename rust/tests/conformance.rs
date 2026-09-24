@@ -24,7 +24,6 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 // --- the vector file ----------------------------------------------------
 
@@ -106,8 +105,6 @@ struct Config {
     accepted_environments: Option<Vec<String>>,
     #[serde(default)]
     app_apple_id: Option<u64>,
-    #[serde(default)]
-    max_signed_age_seconds: Option<u64>,
     #[serde(default)]
     device_guid_hex: Option<String>,
     #[serde(default)]
@@ -374,12 +371,10 @@ fn jws_verifier(
     if let Some(app_apple_id) = config.app_apple_id {
         builder = builder.app_apple_id(app_apple_id);
     }
-    // The unit conversion happens here and nowhere else in the port.
-    if let Some(seconds) = config.max_signed_age_seconds {
-        builder = builder.max_signed_age(Duration::from_secs(seconds));
-    }
-    if let Some(clock) = clock {
-        builder = builder.clock(Arc::new(clock));
+    if clock.is_some() {
+        return Err(Failed::from(
+            "harness error: JwsVerifier has no clock seam, but the case pins one",
+        ));
     }
     builder
         .build()

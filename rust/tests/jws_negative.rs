@@ -8,11 +8,9 @@
 mod common;
 
 use apple_purchase_receipt_verifier::{
-    base64, x509::Certificate, Environment, FixedClock, JwsVerifier, Reason, VerificationError,
+    base64, x509::Certificate, Environment, JwsVerifier, Reason, VerificationError,
 };
 use serde_json::{json, Value};
-use std::sync::Arc;
-use std::time::Duration;
 
 fn verifier() -> JwsVerifier {
     JwsVerifier::builder()
@@ -355,75 +353,38 @@ fn marker_oids_are_checked_before_the_chain() {
 }
 
 #[test]
-fn the_staleness_boundary_is_inclusive() {
-    let signed_at = 1_722_945_600_000i64;
-    let build = |now: i64| {
-        JwsVerifier::builder()
-            .trusted_roots([common::jws_root()])
-            .bundle_id("com.example.app")
-            .accepted_environments([Environment::Sandbox])
-            .max_signed_age(Duration::from_secs(60))
-            .clock(Arc::new(FixedClock::from_unix_millis(now)))
-            .build()
-            .unwrap()
-    };
-    let jws = common::transaction_jws();
-    // Exactly at the limit passes; one millisecond past does not.
-    assert!(build(signed_at + 60_000).verify_transaction(&jws).is_ok());
-    assert_eq!(
-        build(signed_at + 60_001)
-            .verify_transaction(&jws)
-            .unwrap_err()
-            .reason(),
-        Reason::StalePayload
-    );
-    // A clock behind the signing date is never stale.
-    assert!(build(signed_at - 86_400_000)
-        .verify_transaction(&jws)
-        .is_ok());
-}
-
-#[test]
-fn without_max_signed_age_no_payload_is_ever_stale() {
+fn a_payload_is_never_rejected_for_its_age() {
+    // Freshness is the caller's decision (PLAN.md D5): a payload signed in
+    // 2024 still verifies, and its signedDate is there for the caller.
     let verifier = JwsVerifier::builder()
         .trusted_roots([common::jws_root()])
         .bundle_id("com.example.app")
         .accepted_environments([Environment::Sandbox])
-        .clock(Arc::new(FixedClock::from_unix_millis(4_070_908_800_000)))
         .build()
         .unwrap();
-    assert!(verifier
+    let payload = verifier
         .verify_transaction(&common::transaction_jws())
-        .is_ok());
+        .unwrap();
+    assert_eq!(payload.signed_date, Some(1_722_945_600_000));
 }
 
 #[test]
-fn an_injected_clock_cannot_move_a_chain_verdict() {
+fn the_chain_is_judged_at_the_signing_date() {
     // The historical payload's chain is expired today and was valid when it
-    // was signed. Neither a clock inside the window nor one far outside it
-    // may change either verdict — the chain instant comes from the payload.
-    let build = |now: i64| {
-        JwsVerifier::builder()
-            .trusted_roots([common::anchor("generated/jws-expired-root.der")])
-            .bundle_id("com.example.app")
-            .accepted_environments([Environment::Sandbox])
-            .clock(Arc::new(FixedClock::from_unix_millis(now)))
-            .build()
-            .unwrap()
-    };
+    // was signed; the fresh one was signed after it expired.
+    let verifier = JwsVerifier::builder()
+        .trusted_roots([common::anchor("generated/jws-expired-root.der")])
+        .bundle_id("com.example.app")
+        .accepted_environments([Environment::Sandbox])
+        .build()
+        .unwrap();
     let historical = common::read_text_fixture("generated/expired-cert-historical.jws");
     let fresh = common::read_text_fixture("generated/expired-cert-fresh.jws");
-    for now in [0i64, 1_590_969_600_000, 4_070_908_800_000] {
-        assert!(
-            build(now).verify_transaction(&historical).is_ok(),
-            "historical at {now}"
-        );
-        assert_eq!(
-            build(now).verify_transaction(&fresh).unwrap_err().reason(),
-            Reason::InvalidChain,
-            "fresh at {now}"
-        );
-    }
+    assert!(verifier.verify_transaction(&historical).is_ok());
+    assert_eq!(
+        verifier.verify_transaction(&fresh).unwrap_err().reason(),
+        Reason::InvalidChain
+    );
 }
 
 #[test]
@@ -521,25 +482,6 @@ fn verify_raw_enforces_no_claim_but_still_enforces_the_signature() {
         ))
         .unwrap_err();
     assert_eq!(error.reason(), Reason::InvalidSignature);
-}
-
-#[test]
-fn verify_raw_still_enforces_staleness() {
-    let verifier = JwsVerifier::builder()
-        .trusted_roots([common::jws_root()])
-        .bundle_id("conformance.unset.bundle.id")
-        .accepted_environments([Environment::LocalTesting])
-        .max_signed_age(Duration::from_secs(60))
-        .clock(Arc::new(FixedClock::from_unix_millis(1_735_689_600_000)))
-        .build()
-        .unwrap();
-    assert_eq!(
-        verifier
-            .verify_raw(&common::transaction_jws())
-            .unwrap_err()
-            .reason(),
-        Reason::StalePayload
-    );
 }
 
 // --- one signed payload, one accepted wire form -------------------------

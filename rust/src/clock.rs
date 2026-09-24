@@ -1,17 +1,16 @@
 //! The injectable source of "now".
 //!
-//! The clock is read in exactly two places in this crate, and nowhere else:
-//!
-//! 1. the `STALE_PAYLOAD` comparison in [`JwsVerifier`](crate::JwsVerifier);
-//! 2. the `request_date` / `_ms` / `_pst` triple in
-//!    [`VerifyReceiptEndpoint`](crate::VerifyReceiptEndpoint).
+//! The clock is read in exactly one place in this crate, and nowhere else:
+//! the `request_date` / `_ms` / `_pst` triple in
+//! [`VerifyReceiptEndpoint`](crate::VerifyReceiptEndpoint).
 //!
 //! **Certificate validity is never judged at an injected clock.** When a
 //! payload or receipt states no date of its own, the fallback instant for
 //! the chain-validity check reads [`SystemTime::now`] directly. A caller
-//! injecting a clock — to test staleness, or to work around skew — must not
+//! injecting a clock (to pin `request_date`, or to work around skew) must not
 //! thereby be able to accept an expired chain or expire a live one.
-//! [`ReceiptVerifier`](crate::ReceiptVerifier) therefore takes no clock at
+//! [`JwsVerifier`](crate::JwsVerifier) and
+//! [`ReceiptVerifier`](crate::ReceiptVerifier) therefore take no clock at
 //! all.
 
 use core::fmt;

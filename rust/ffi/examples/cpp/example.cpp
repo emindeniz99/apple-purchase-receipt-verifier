@@ -44,7 +44,7 @@ int main(int argc, char **argv) {
   const uint8_t *ders[] = {reinterpret_cast<const uint8_t *>(root.data())};
   const size_t lens[] = {root.size()};
   AprvJwsVerifier *jws_verifier = aprv_verifier_new_jws_with_roots(
-      "com.example.app", APRV_ENVIRONMENT_SANDBOX, 0, 0, ders, lens, 1);
+      "com.example.app", APRV_ENVIRONMENT_SANDBOX, 0, ders, lens, 1);
   AprvResult transaction = {0, nullptr};
   aprv_verify_transaction(jws_verifier, jws.c_str(), &transaction);
   failures += show("transaction", transaction);

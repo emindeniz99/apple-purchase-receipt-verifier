@@ -525,5 +525,5 @@ fn the_endpoint_only_reasons_stay_outside_the_verifier_vocabulary() {
         assert_eq!(Reason::from_str(token).unwrap(), reason);
     }
     assert!(Reason::all().contains(&Reason::InternalError));
-    assert_eq!(Reason::all().len(), 12);
+    assert_eq!(Reason::all().len(), 11);
 }

@@ -17,9 +17,8 @@ defmodule ConformanceTest do
   call a port's base64 decoders directly, the ABI exposes none, and the
   manifest marks them `abiUnreachable`, so they are counted and never passed.
   After the run, every case id in the manifest must have run or been counted.
-  The cases that pin a clock go through
-  `aprv_verifier_new_jws_with_roots_and_clock` and
-  `aprv_endpoint_new_with_roots_and_clock`, which take the instant itself
+  The endpoint cases that pin a clock go through
+  `aprv_endpoint_new_with_roots_and_clock`, which takes the instant itself
   rather than a callback; the generator has already parsed it to epoch
   milliseconds. A case the manifest marks unsupported fails the run rather
   than being counted away.
@@ -43,7 +42,6 @@ defmodule ConformanceTest do
     "WRONG_APP_APPLE_ID" => :wrong_app_apple_id,
     "INVALID_RECEIPT_FORMAT" => :invalid_receipt_format,
     "DEVICE_HASH_MISMATCH" => :device_hash_mismatch,
-    "STALE_PAYLOAD" => :stale_payload,
     "INTERNAL_ERROR" => :internal_error
   }
 
@@ -165,7 +163,8 @@ defmodule ConformanceTest do
     clock = clock_millis(kase)
 
     case get(kase, "op") do
-      operation when operation in ~w(verifyTransaction verifyAppTransaction verifyRaw) ->
+      operation
+      when operation in ~w(verifyTransaction verifyAppTransaction verifyRaw) and clock == nil ->
         with {:ok, verifier} <-
                open(
                  Aprv.jws_verifier(
@@ -173,9 +172,7 @@ defmodule ConformanceTest do
                    # already computed by the generator, so passed as the mask
                    integer(kase, "envs"),
                    app_apple_id: integer(kase, "appAppleId"),
-                   max_signed_age_secs: integer(kase, "maxSignedAgeSecs"),
-                   roots: roots,
-                   clock_unix_millis: clock
+                   roots: roots
                  ),
                  "aprv_verifier_new_jws refused the configuration"
                ) do
@@ -223,11 +220,12 @@ defmodule ConformanceTest do
           end
         end
 
-      operation when operation in ~w(verifyReceipt verifyReceiptBase64) ->
-        # The receipt verifier takes no clock in any port: an injected one
-        # must never be able to accept an expired chain. A case pinning one
-        # here would be a change to the vectors, so it fails.
-        {:error, "the receipt verifier has no clock seam, but the case pins one"}
+      operation
+      when operation in ~w(verifyReceipt verifyReceiptBase64 verifyTransaction verifyAppTransaction verifyRaw) ->
+        # The receipt and JWS verifiers take no clock in any port: an
+        # injected one must never be able to accept an expired chain. A case
+        # pinning one here would be a change to the vectors, so it fails.
+        {:error, "#{operation} has no clock seam, but the case pins one"}
 
       operation ->
         {:error, "no adapter for operation #{operation}"}
