@@ -137,9 +137,20 @@ step with the other eight. Receipt *attribute* dates are the opposite case
 and are exposed as `Instant`.
 
 Every claim, modelled or not, is reachable through `verifyRaw`.
-`TransactionPayload.isActiveAt(Date now)` answers the entitlement question
-from the signed claims alone: not revoked, and for a subscription not
-expired. A refund or a renewal after signing is invisible to it.
+
+**Entitlement is your rule.** There is no "is active" helper, as in Apple's
+own libraries; read the signed fields:
+
+```java
+long now = System.currentTimeMillis();
+boolean entitled = payload.revocationDate() == null
+        && (payload.expiresDate() == null || payload.expiresDate() > now);
+```
+
+That is only what the payload said when it was signed. A billing grace
+period (it lives in the renewal info), an upgrade (`isUpgraded`) and a refund
+after signing are yours to handle; App Store Server Notifications V2 or the
+App Store Server API give the live status. `isActiveAt(Date)` is gone.
 
 ## Legacy PKCS#7 app receipts
 
@@ -345,8 +356,6 @@ not be catchable as a verification verdict.
 `IllegalStateException` when a bundled root is missing or does not match its
 pinned SHA-256 (see [Trust anchors](#trust-anchors)). That is a statement
 about the deployment, not about any payload, so it is not a `Reason` either.
-`TransactionPayload.isActiveAt(null)` throws `NullPointerException` for the
-same kind of reason: it is a call that was never made correctly.
 
 ## Integrating: from verified payload to entitlement
 

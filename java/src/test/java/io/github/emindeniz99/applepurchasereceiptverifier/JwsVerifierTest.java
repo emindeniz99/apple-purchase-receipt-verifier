@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
@@ -75,7 +74,6 @@ class JwsVerifierTest {
         assertEquals("2000000000000001", payload.transactionId());
         assertEquals("Sandbox", payload.environment());
         assertEquals(Integer.valueOf(1), payload.quantity());
-        assertTrue(payload.isActiveAt(new Date()));
     }
 
     @Test
@@ -224,30 +222,6 @@ class JwsVerifierTest {
                 VerificationException.class,
                 () -> verifier(pki, Environment.SANDBOX).verifyTransaction("not-a-jws"));
         assertEquals(Reason.INVALID_JWS_FORMAT, e.reason());
-    }
-
-    @Test
-    void expiredSubscriptionIsNotActive() throws Exception {
-        Map<String, Object> claims = transactionClaims("Sandbox");
-        claims.put("type", "Auto-Renewable Subscription");
-        claims.put("expiresDate", System.currentTimeMillis() - 1000);
-        String jws = pki.signJws(claims);
-        TransactionPayload payload = verifier(pki, Environment.SANDBOX).verifyTransaction(jws);
-        assertFalse(payload.isActiveAt(new Date()));
-    }
-
-    /**
-     * There is no defensible default instant for the entitlement question, so
-     * the argument is required and says so. It used to be dereferenced
-     * unchecked, which answered the caller with a bare NullPointerException
-     * carrying no hint that the argument was the problem.
-     */
-    @Test
-    void isActiveAtRefusesANullInstantWithAMessageThatNamesTheArgument() throws Exception {
-        TransactionPayload payload =
-                verifier(pki, Environment.SANDBOX).verifyTransaction(pki.signJws(transactionClaims("Sandbox")));
-        NullPointerException thrown = assertThrows(NullPointerException.class, () -> payload.isActiveAt(null));
-        assertTrue(String.valueOf(thrown.getMessage()).contains("now must not be null"), thrown.getMessage());
     }
 
     @Test
