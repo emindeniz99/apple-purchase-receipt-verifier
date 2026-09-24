@@ -53,6 +53,7 @@ public final class InAppPurchase {
         this.unknownAttributes = Collections.unmodifiableMap(unknownAttributes);
     }
 
+    /** Number of units purchased (attribute 1701). */
     public @Nullable Long quantity() {
         return quantity;
     }
@@ -69,10 +70,12 @@ public final class InAppPurchase {
         return originalTransactionId;
     }
 
+    /** Purchase date (attribute 1704), an {@link Instant}, not epoch milliseconds. */
     public @Nullable Instant purchaseDate() {
         return purchaseDate;
     }
 
+    /** Purchase date of the original transaction (attribute 1706), an {@link Instant}. */
     public @Nullable Instant originalPurchaseDate() {
         return originalPurchaseDate;
     }

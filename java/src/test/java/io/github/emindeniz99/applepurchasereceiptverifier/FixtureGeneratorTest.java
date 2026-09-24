@@ -7,7 +7,6 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.LinkedHashMap;
@@ -28,7 +27,7 @@ import org.junit.jupiter.api.Test;
  */
 class FixtureGeneratorTest {
 
-    private static final Path OUT = Paths.get("..", "fixtures", "generated");
+    private static final Path OUT = TestFixtures.generated();
     private static final String BUNDLE = "com.example.app";
 
     // Fixed epoch instants so fixtures don't depend on generation time.

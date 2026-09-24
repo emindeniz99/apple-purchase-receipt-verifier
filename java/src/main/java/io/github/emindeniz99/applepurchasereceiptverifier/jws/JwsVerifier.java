@@ -46,7 +46,12 @@ import org.jspecify.annotations.Nullable;
  * of Apple's official app-store-server-library in offline mode: no OCSP, so a
  * revoked certificate is not detected, in exchange for no network call.</p>
  *
- * <p>Thread-safe once constructed.</p>
+ * <p>No payload is rejected for its age: how old a signed payload may be is
+ * the caller's decision, made on its {@code signedDate}.</p>
+ *
+ * <p>Thread-safe once constructed. Instances share the private BouncyCastle
+ * provider and the mapper that reads the typed claims; both are safe to use
+ * from many threads.</p>
  *
  * <p>The {@code jws} argument of all three entry points is {@code @Nullable}
  * on purpose: a null input is a verdict about the input, so it is reported as
@@ -77,8 +82,7 @@ public final class JwsVerifier {
      *
      * <p>Real Apple JWS payloads, Apple's own mock notification data
      * included, are under 2.5 KB, so 256 KiB is a hundredfold headroom over
-     * anything Apple has ever signed. The same constant in every port. A
-     * compact JWS is base64url and dots, so its characters and its bytes are
+     * anything Apple has ever signed. A compact JWS is base64url and dots, so its characters and its bytes are
      * the same count for any input that could verify.
      */
     public static final int MAX_JWS_BYTES = 262144;
@@ -103,8 +107,7 @@ public final class JwsVerifier {
     }
 
     /**
-     * No payload is rejected for its age: how old a signed payload may be is
-     * the caller's decision, made on its {@code signedDate} (PLAN.md D5).
+     * As the three-argument constructor, adding the app Apple id.
      *
      * @param appAppleId the app's Apple id; required to accept PRODUCTION
      *                   AppTransactions, unused otherwise
@@ -165,7 +168,14 @@ public final class JwsVerifier {
      */
     public Map<String, @Nullable Object> verifyRaw(@Nullable String jws) throws VerificationException {
         JsonNode node = verifySignature(jws);
-        return mapper.convertValue(node, new TypeReference<Map<String, @Nullable Object>>() {});
+        // The signature has passed, so a failure here is the library's, not
+        // the input's: INTERNAL_ERROR, as StrictClaims reports for the typed
+        // models.
+        try {
+            return mapper.convertValue(node, new TypeReference<Map<String, @Nullable Object>>() {});
+        } catch (RuntimeException e) {
+            throw new VerificationException(Reason.INTERNAL_ERROR, "signed payload could not be read", e);
+        }
     }
 
     /**
@@ -179,7 +189,7 @@ public final class JwsVerifier {
      * declared {@link VerificationException} contract. INVALID_JWS_FORMAT
      * rather than INTERNAL_ERROR on purpose: everything in here runs on
      * input no signature has vouched for, and answering an unknown error
-     * with INTERNAL_ERROR ("not the client's fault, retry or escalate")
+     * with INTERNAL_ERROR ("not the client's fault, alert and reconcile")
      * would let anyone raise that alert at will. The claims are mapped to
      * their model only after this returns, once the signature has passed.</p>
      */
@@ -189,7 +199,8 @@ public final class JwsVerifier {
         } catch (VerificationException e) {
             throw e;
         } catch (RuntimeException e) {
-            throw new VerificationException(Reason.INVALID_JWS_FORMAT, "unexpected " + e, e);
+            throw new VerificationException(
+                    Reason.INVALID_JWS_FORMAT, "unexpected " + e.getClass().getName(), e);
         }
     }
 
@@ -293,8 +304,7 @@ public final class JwsVerifier {
      * The MIME decoder would silently skip any illegal character instead. The
      * basic decoder accepts omitted padding and decodes {@code ""}, so the
      * length is held to a non-zero multiple of four first, as receipt-data
-     * is. Package-private so the conformance suite can run the shared base64
-     * spellings against it directly.
+     * is. Package-private so tests can call it directly.
      */
     static byte[] decodeX5cEntry(String text) throws VerificationException {
         if (text.isEmpty() || text.length() % 4 != 0) {
@@ -388,7 +398,7 @@ public final class JwsVerifier {
         } catch (CertPathValidatorException e) {
             throw new VerificationException(
                     Reason.INVALID_CHAIN,
-                    "certificate chain does not validate to a pinned Apple root: " + e.getMessage(),
+                    "certificate chain does not validate to a pinned Apple root: " + SafeText.detail(e.getMessage()),
                     e);
         } catch (InvalidAlgorithmParameterException e) {
             // Raised for the pinned anchors or the path type, never for a certificate.
@@ -400,7 +410,10 @@ public final class JwsVerifier {
             // unchecked exceptions from inside the validator. Everything here
             // is attacker-controlled and unverified, so it is the chain's
             // failure, and it must not escape as anything but a verdict.
-            throw new VerificationException(Reason.INVALID_CHAIN, "path validator raised " + e, e);
+            throw new VerificationException(
+                    Reason.INVALID_CHAIN,
+                    "path validator raised " + e.getClass().getName(),
+                    e);
         }
     }
 

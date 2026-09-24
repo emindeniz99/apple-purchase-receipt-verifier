@@ -88,7 +88,7 @@ public final class VerificationOrderFixtures {
     private VerificationOrderFixtures() {}
 
     public static void main(String[] args) throws Exception {
-        Path out = Paths.get(args.length > 0 ? args[0] : "../fixtures/generated");
+        Path out = args.length > 0 ? Paths.get(args[0]) : TestFixtures.generated();
         Files.createDirectories(out);
 
         TestPki trusted = TestPki.receipt(new Date(CHAIN_NOT_BEFORE), new Date(CHAIN_NOT_AFTER));

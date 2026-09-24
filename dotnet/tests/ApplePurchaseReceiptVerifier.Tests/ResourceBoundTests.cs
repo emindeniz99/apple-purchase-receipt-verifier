@@ -59,6 +59,9 @@ public class ResourceBoundTests
         Assert.True(flood.Length <= ReceiptVerifier.MaxReceiptBytes, $"the flood is {flood.Length} bytes, over the cap");
 
         using ReceiptVerifier verifier = new(Roots(), "com.example.app");
+        // One untimed call first: the bound is on the pre-scan, not on JIT
+        // compilation of the first call, which a busy CI runner stretches.
+        Assert.Throws<VerificationException>(() => verifier.Verify(flood));
         Stopwatch stopwatch = Stopwatch.StartNew();
         VerificationException error = Assert.Throws<VerificationException>(() => verifier.Verify(flood));
         stopwatch.Stop();

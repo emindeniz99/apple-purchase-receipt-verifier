@@ -86,14 +86,17 @@ public final class AppTransactionPayload {
         return originalApplicationVersion;
     }
 
+    /** When the user first acquired the app, in epoch milliseconds. */
     public @Nullable Long originalPurchaseDate() {
         return originalPurchaseDate;
     }
 
+    /** When the user pre-ordered the app, in epoch milliseconds. */
     public @Nullable Long preorderDate() {
         return preorderDate;
     }
 
+    /** When the App Store signed this AppTransaction, in epoch milliseconds. */
     public @Nullable Long receiptCreationDate() {
         return receiptCreationDate;
     }

@@ -46,7 +46,7 @@ public final class ReceiptBase64CapFixture {
     private ReceiptBase64CapFixture() {}
 
     public static void main(String[] args) throws Exception {
-        Path fixtures = Paths.get(args.length > 0 ? args[0] : "../fixtures");
+        Path fixtures = args.length > 0 ? Paths.get(args[0]) : TestFixtures.root();
         TestPki pki = TestPki.receipt(new Date(CHAIN_NOT_BEFORE), new Date(CHAIN_NOT_AFTER));
         byte[] der = LargeReceiptFixture.exactSize(pki, "receipt-b64-at-cap", STRING_CAP / 4 * 3);
         byte[] text = Base64.getEncoder().encode(der);

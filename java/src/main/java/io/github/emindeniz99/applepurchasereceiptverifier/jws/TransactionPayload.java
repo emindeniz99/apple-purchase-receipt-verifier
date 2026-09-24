@@ -102,6 +102,7 @@ public final class TransactionPayload {
         return bundleId;
     }
 
+    /** ISO 4217 code of the currency {@link #price()} is in. */
     public @Nullable String currency() {
         return currency;
     }
@@ -110,6 +111,7 @@ public final class TransactionPayload {
         return environment;
     }
 
+    /** Subscription expiry, in epoch milliseconds. */
     public @Nullable Long expiresDate() {
         return expiresDate;
     }
@@ -126,6 +128,7 @@ public final class TransactionPayload {
         return offerType;
     }
 
+    /** Purchase date of the original transaction, in epoch milliseconds. */
     public @Nullable Long originalPurchaseDate() {
         return originalPurchaseDate;
     }
@@ -134,6 +137,7 @@ public final class TransactionPayload {
         return originalTransactionId;
     }
 
+    /** Price in milliunits of {@link #currency()}: 1990 means 1.99. */
     public @Nullable Long price() {
         return price;
     }
@@ -142,14 +146,17 @@ public final class TransactionPayload {
         return productId;
     }
 
+    /** Purchase date, in epoch milliseconds. */
     public @Nullable Long purchaseDate() {
         return purchaseDate;
     }
 
+    /** Number of units purchased. */
     public @Nullable Integer quantity() {
         return quantity;
     }
 
+    /** When the App Store refunded or revoked the transaction, in epoch milliseconds. */
     public @Nullable Long revocationDate() {
         return revocationDate;
     }
@@ -158,6 +165,7 @@ public final class TransactionPayload {
         return revocationReason;
     }
 
+    /** When the App Store signed this payload, in epoch milliseconds. */
     public @Nullable Long signedDate() {
         return signedDate;
     }

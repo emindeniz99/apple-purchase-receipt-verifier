@@ -68,9 +68,61 @@ Settings: `Mode.AverageTime`, µs/op, 5 warmup and 5 measurement iterations of
 1 s each, 2 forks (10 samples per score), one thread, JMH's default (compiler)
 blackholes. Error is JMH's 99.9% confidence interval.
 
-## Baseline
+## Baseline, 2026-09-24
 
-Recorded 2026-09-22 at `87e1dea` (library 0.5.1).
+Recorded 2026-09-24 on branch `fix/java-prerelease-polish` at `ddda8c0`
+(library version string 0.5.1, the 0.6.0 candidate), built as above.
+
+- JMH 1.37, default (compiler) blackholes
+- JDK: OpenJDK 21.0.10 (Ubuntu build 21.0.10+7-Ubuntu-124.04), 64-Bit
+  Server VM, default flags
+- CPU: Intel(R) Xeon(R) Processor @ 2.10GHz, `nproc` 4, 15 GiB RAM; a
+  shared cloud VM, nothing else CPU-heavy running
+- µs/op: the settings in the pom (5 warmup and 5 measurement iterations of
+  1 s, 2 forks, 10 samples per score); the run took 6 min 36 s
+- bytes/op: `gc.alloc.rate.norm` from a second, shorter run,
+  `-prof gc -f 1 -wi 3 -i 3`; allocation is stable across iterations, its
+  timings (3 samples) are not and are left out
+
+| benchmark | fixture | µs/op | bytes/op |
+|---|---|---:|---:|
+| `decodeBase64` | g5 | 2.4 ± 0.1 | 13,264 |
+| `decodeBase64` | legacy | 29.2 ± 2.7 | 184,608 |
+| `core` | g5 | 593.5 ± 33.2 | 426,790 |
+| `core` | legacy | 3,517.5 ± 180.6 | 4,613,084 |
+| `verifierBase64` | g5 | 594.7 ± 25.7 | 439,469 |
+| `verifierBase64` | legacy | 3,666.5 ± 247.6 | 4,789,916 |
+| `endpointMap` | g5 | 612.2 ± 61.5 | 453,373 |
+| `endpointMap` | legacy | 4,040.8 ± 282.4 | 5,599,422 |
+| `endpointJson` | g5 | 647.2 ± 56.2 | 480,217 |
+| `endpointJson` | legacy | 4,488.1 ± 245.8 | 6,446,106 |
+| `endpointWrongEnv` | g5 | 600.1 ± 44.6 | 439,658 |
+| `endpointWrongEnv` | legacy | 3,598.0 ± 182.7 | 4,790,158 |
+| `resultOnly` | g5 | 627.8 ± 30.0 | 439,448 |
+| `resultOnly` | legacy | 3,717.0 ± 150.1 | 4,797,485 |
+| `retryViaResult` | g5 | 624.7 ± 87.3 | 455,877 |
+| `retryViaResult` | legacy | 4,515.9 ± 202.3 | 6,203,549 |
+| `rejectTamperedSignature` | g5 | 604.3 ± 61.3 | 368,886 |
+| `rejectTamperedSignature` | legacy | 1,111.2 ± 57.2 | 799,014 |
+
+Against the 2026-09-22 baseline below, the endpoint on the legacy receipt
+is faster (`endpointJson` 7,652.6 to 4,488.1 µs); the base64 changes in
+the sections at the end account for much of it (`decodeBase64` legacy is
+now 29.2 µs). `core` on g5 reads higher (506.6 then, 593.5 now) on a
+different, slower-clocked host, so compare ratios within one run rather
+than absolute numbers across the two.
+
+Rejecting a tampered signature no longer costs as much as accepting for
+legacy: 1,111.2 against 3,517.5 µs for `core`, and 0.8 MB against 4.6 MB
+allocated. `ReceiptVerifier.verifyCoreUnguarded` now checks the chain and
+the CMS signature before parsing the payload beyond its creation date, so
+a receipt that fails the signature skips the 187-purchase parse. The
+"Derived numbers" section below describes the older order.
+
+## Baseline, 2026-09-22
+
+Recorded 2026-09-22 at `87e1dea` (library 0.5.1). The derived numbers,
+decode breakdown and caveats that follow refer to this run.
 
 - JMH 1.37 (the current release on Maven Central)
 - JDK: Eclipse Temurin 21.0.12.1+1, OpenJDK 64-Bit Server VM, default flags

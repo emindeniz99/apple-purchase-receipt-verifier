@@ -122,7 +122,7 @@ class AppleRootCertsTest {
         // Real X.509 certificates from the generated test PKI, so the planted
         // files parse cleanly and the fingerprint check is the only thing that
         // can refuse them. Bytes that merely failed to parse would prove less.
-        Path fixtures = Paths.get("..", "fixtures", "generated");
+        Path fixtures = TestFixtures.generated();
         Files.copy(fixtures.resolve("receipt-root.der"), certs.resolve("AppleIncRootCertificate.cer"));
         Files.copy(fixtures.resolve("jws-root.der"), certs.resolve("AppleRootCA-G2.cer"));
         Files.copy(fixtures.resolve("receipt-root.der"), certs.resolve("AppleRootCA-G3.cer"));

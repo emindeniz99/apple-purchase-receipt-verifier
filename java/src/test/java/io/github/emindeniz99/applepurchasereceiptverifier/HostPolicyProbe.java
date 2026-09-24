@@ -7,7 +7,6 @@ import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.security.cert.CertPathBuilder;
 import java.security.cert.CertStore;
 import java.security.cert.CertificateFactory;
@@ -47,7 +46,7 @@ public final class HostPolicyProbe {
     static final String CURRENT = "current receipt verifies";
     static final String JWS = "jws verifies";
 
-    private static final Path FIXTURES = Paths.get("..", "fixtures");
+    private static final Path FIXTURES = TestFixtures.root();
 
     private HostPolicyProbe() {}
 

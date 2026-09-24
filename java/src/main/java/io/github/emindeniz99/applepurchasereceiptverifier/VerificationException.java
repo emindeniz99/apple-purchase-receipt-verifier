@@ -9,6 +9,11 @@ public class VerificationException extends Exception {
 
     private static final long serialVersionUID = 1L;
 
+    /**
+     * Why verification failed. Ordinals are not stable across 0.x releases:
+     * switch on the constant or persist its {@link #name()}, never its
+     * {@link #ordinal()}.
+     */
     public enum Reason {
         /** Not a parseable compact JWS, wrong alg, or malformed x5c header. */
         INVALID_JWS_FORMAT,
@@ -47,10 +52,13 @@ public class VerificationException extends Exception {
          * cannot read (found only after the chain and the signature passed;
          * the parser's exception is the {@link #getCause() cause}), when the
          * runtime lacks an algorithm the check needs, and reported by the
-         * endpoint for an unexpected runtime exception inside it. Alert and
-         * retry or escalate; do not deny the user on it, and do not grant
-         * access on it either. It keeps the position
-         * it had when it was endpoint-only, so no ordinal moved.
+         * endpoint for an unexpected runtime exception inside it.
+         *
+         * <p>Deterministic for the same input and library version, so do
+         * not hot-retry it. Do not deny the user on it, and do not grant
+         * access on it either: alert, log the failure cause together with
+         * the library version, and reconcile the purchase through the App
+         * Store Server API by transaction id.</p>
          */
         INTERNAL_ERROR,
         /**

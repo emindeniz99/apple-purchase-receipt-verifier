@@ -65,6 +65,10 @@ public final class VerifyReceiptResult {
         return new VerifyReceiptResult(environment, null, reason, null, requestDate);
     }
 
+    static VerifyReceiptResult failed(Environment environment, Reason reason, Throwable cause, Instant requestDate) {
+        return new VerifyReceiptResult(environment, null, reason, cause, requestDate);
+    }
+
     static VerifyReceiptResult internalError(Environment environment, Throwable cause, Instant requestDate) {
         return new VerifyReceiptResult(environment, null, Reason.INTERNAL_ERROR, cause, requestDate);
     }
@@ -104,9 +108,23 @@ public final class VerifyReceiptResult {
     }
 
     /**
-     * What is behind {@link Reason#INTERNAL_ERROR}: the unexpected exception
-     * the endpoint caught, or the parser's exception for signed receipt
-     * content that could not be read. Null for every other outcome.
+     * The exception behind a failure, for logging only; it never reaches
+     * {@link #toResponse()} or {@link #toJson()}.
+     *
+     * <ul>
+     *   <li>{@link Reason#INTERNAL_ERROR}: the unexpected exception the
+     *       endpoint caught, or, for signed receipt content that could not
+     *       be read, the parser's exception.</li>
+     *   <li>Any other failure found while verifying the receipt: the {@link
+     *       io.github.emindeniz99.applepurchasereceiptverifier.VerificationException}
+     *       itself, whose reason equals {@link #failureReason()} and whose
+     *       message and cause say which check failed (an expired
+     *       certificate, a missing anchor, a bad signature).</li>
+     *   <li>Null when the receipt verified, and for failures the endpoint
+     *       decides from the request alone: {@link Reason#MALFORMED_REQUEST},
+     *       {@link Reason#REQUEST_TOO_LARGE}, and a {@code receipt-data}
+     *       string over {@link ReceiptVerifier#MAX_RECEIPT_BYTES}.</li>
+     * </ul>
      */
     public @Nullable Throwable failureCause() {
         return failureCause;
@@ -119,7 +137,11 @@ public final class VerifyReceiptResult {
 
     /**
      * The response the endpoint's own environment answers, as a new map on
-     * each call. Same keys, order and types as Apple's endpoint.
+     * each call. Keys and value types follow Apple's endpoint for the fields
+     * this library can produce: fields that live only in Apple's server-side
+     * database, and {@code in_app_ownership_type}, are never present. Key
+     * order is deterministic but not part of the contract, and differs from
+     * Apple's in places ({@code original_application_version}, for one).
      */
     public Map<String, Object> toResponse() {
         return toResponse(environment);

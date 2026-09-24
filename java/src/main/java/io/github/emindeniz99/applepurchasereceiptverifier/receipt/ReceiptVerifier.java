@@ -95,7 +95,7 @@ public final class ReceiptVerifier {
     /**
      * The longest path the builder will walk, anchor excluded: at most this
      * many certificates starting at the leaf before a pinned anchor must be
-     * reached, the same bound in every port. Genuine receipt chains
+     * reached. Genuine receipt chains
      * are two certificates below the root, so six leaves room for a longer
      * Apple chain while bounding what a hostile embedded set can cost.
      *
@@ -129,8 +129,8 @@ public final class ReceiptVerifier {
      * {@link VerificationException}.
      *
      * <p>3 MiB, in bytes: Apple's verifyReceipt refuses a request body over
-     * 3,145,728 bytes, so no receipt it would accept is larger. The same
-     * fixed constant in every port. The string is measured
+     * 3,145,728 bytes, so no receipt it would accept is larger. The string
+     * is measured
      * in characters: any character above U+007F is invalid base64, which the
      * decoder rejects with the same reason, so for every string that could
      * decode, characters and UTF-8 bytes are the same count.
@@ -221,8 +221,7 @@ public final class ReceiptVerifier {
      * <p>Public, and static rather than an instance method, so that a caller
      * emulating Apple's endpoint gets the primitive itself instead of having
      * to build a {@link ReceiptVerifier} around a bundle id it does not want
-     * checked. The other ports expose the same primitive under the same
-     * name.</p>
+     * checked.</p>
      *
      * <p>What it checks, in order: the DER is at most
      * {@link #MAX_RECEIPT_BYTES}, parses completely with no trailing bytes,
@@ -294,11 +293,12 @@ public final class ReceiptVerifier {
             // INVALID_RECEIPT_FORMAT (21002), not INTERNAL_ERROR (21009), on
             // purpose. Everything that can throw here runs before the CMS
             // signature is verified, so it is attacker input; answering an
-            // unknown error with 21009 ("not the client's fault, retry or
-            // escalate") would let anyone trigger that alert at will. Signed
+            // unknown error with 21009 ("not the client's fault, alert and
+            // reconcile") would let anyone trigger that alert at will. Signed
             // content that cannot be read is INTERNAL_ERROR, and is caught
             // in parseSignedPayload, not here.
-            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "unexpected " + e, e);
+            throw new VerificationException(
+                    Reason.INVALID_RECEIPT_FORMAT, "unexpected " + e.getClass().getName(), e);
         }
     }
 
@@ -432,7 +432,7 @@ public final class ReceiptVerifier {
         } catch (CertPathBuilderException e) {
             throw new VerificationException(
                     Reason.INVALID_CHAIN,
-                    "signer chain does not validate to a pinned Apple root: " + e.getMessage(),
+                    "signer chain does not validate to a pinned Apple root: " + SafeText.detail(e.getMessage()),
                     e);
         } catch (NoSuchAlgorithmException | InvalidAlgorithmParameterException e) {
             // Not raised by the pinned BouncyCastle PKIX and Collection
@@ -445,7 +445,8 @@ public final class ReceiptVerifier {
             // As in JwsVerifier.validateChain: unchecked exceptions BouncyCastle
             // raises from inside the builder for malformed, unverified
             // certificate content are the chain's failure.
-            throw new VerificationException(Reason.INVALID_CHAIN, "path builder raised " + e, e);
+            throw new VerificationException(
+                    Reason.INVALID_CHAIN, "path builder raised " + e.getClass().getName(), e);
         }
     }
 
@@ -479,11 +480,10 @@ public final class ReceiptVerifier {
      * <p>This walk over the raw set, and {@link #namesTheSigner}, exist so
      * that the two can be told apart for an entry no decoder accepts.
      * {@code cms.getCertificates()} decodes every entry eagerly and throws on
-     * the first bad one without saying which. The four
-     * broken-signer-certificate conformance cases (version 11, one extension
-     * carried twice, an unimplemented curve, a corrupt extension) pin
-     * INVALID_CERTIFICATE; do not replace this walk with
-     * {@code cms.getCertificates()}.</p>
+     * the first bad one without saying which, so a broken signer (version
+     * 11, an extension carried twice, an unimplemented curve, a corrupt
+     * extension) could not be told from a broken stranger. Do not replace
+     * this walk with {@code cms.getCertificates()}.</p>
      */
     private static EmbeddedCertificates decodeEmbeddedAndFindSigner(
             @Nullable ASN1Set certificateSet, SignerInformation signer) throws VerificationException {
@@ -541,8 +541,7 @@ public final class ReceiptVerifier {
      * {@code sid} names, read as generic ASN.1 because the entries asked
      * about are the ones {@link X509CertificateHolder} refused. Inferring it
      * from the entries that did decode would blame the wrong entry whenever
-     * the receipt names a certificate it does not carry. All ports resolve
-     * the signer off the raw DER, so they agree which entry a defect is in.
+     * the receipt names a certificate it does not carry.
      *
      * <p>{@code TBSCertificate ::= SEQUENCE { [0] version DEFAULT v1,
      * serialNumber INTEGER, signature AlgorithmIdentifier, issuer Name,
@@ -583,7 +582,7 @@ public final class ReceiptVerifier {
         }
         try {
             // Restrict to the digests Apple actually uses for receipts
-            // (SHA-1 / SHA-256), the same set in every port.
+            // (SHA-1 / SHA-256).
             String digestOid = signer.getDigestAlgOID();
             if (!OIWObjectIdentifiers.idSHA1.getId().equals(digestOid)
                     && !NISTObjectIdentifiers.id_sha256.getId().equals(digestOid)) {

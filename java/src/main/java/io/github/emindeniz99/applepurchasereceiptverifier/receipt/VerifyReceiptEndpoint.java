@@ -28,11 +28,25 @@ import org.jspecify.annotations.Nullable;
  * compares {@code receipt.bundle_id}, exactly as with the real endpoint.</p>
  *
  * <p>Thread-safe once constructed: every instance field is final, the anchor
- * set is copied at construction and never handed out, every method keeps its
- * per-call state in locals, and the one object they share is a configured
- * Jackson {@link ObjectMapper}, which Jackson documents as safe to use from
- * many threads. One instance can serve every request of a process (a
- * singleton bean, for example) rather than one per request.</p>
+ * set is copied at construction and never handed out, and every method keeps
+ * its per-call state in locals. What instances share is class-level and safe
+ * to use from many threads: a configured Jackson {@link ObjectMapper}, which
+ * Jackson documents as thread-safe; the private BouncyCastle provider, whose
+ * services hand out a new engine per call; and {@link ReceiptVerifier}'s
+ * CMS signer-verifier builder, which builds a new verifier per receipt
+ * without writing any state. One instance can serve every request of a
+ * process (a singleton bean, for example) rather than one per request.</p>
+ *
+ * <p><strong>Failures are results.</strong> No method of an instance throws
+ * an {@link Exception} for any input: every failure is reported through the
+ * result's status and {@link VerifyReceiptResult#failureReason()}. An
+ * {@link Error} is not caught and can escape, such as an
+ * {@link OutOfMemoryError} or a {@link LinkageError} from a BouncyCastle or
+ * Jackson version clash on the classpath. The constructors, and
+ * {@link VerifyReceiptResult#toResponse(Environment)} and
+ * {@link VerifyReceiptResult#toJson(Environment)}, throw
+ * {@link IllegalArgumentException} for an environment other than
+ * {@link Environment#PRODUCTION} or {@link Environment#SANDBOX}.</p>
  */
 public final class VerifyReceiptEndpoint {
 
@@ -58,8 +72,8 @@ public final class VerifyReceiptEndpoint {
      * is measured without being encoded, so a Java {@code String} of any
      * size costs no copy to refuse.
      *
-     * <p>A fixed constant, the same in every port. "No method ever throws"
-     * is a promise about exceptions, and heap exhaustion is not one: JSON
+     * <p>"No method throws" is a promise about exceptions, and heap
+     * exhaustion is not one: JSON
      * parsing allocates a multiple of the body, so the bound is what keeps
      * the promise on hostile input.</p>
      */
@@ -109,10 +123,11 @@ public final class VerifyReceiptEndpoint {
     }
 
     /**
-     * Handles one verifyReceipt request body. Never throws — like the real
-     * endpoint, failures are reported through the result's status and
-     * {@link VerifyReceiptResult#failureReason()}. {@code request_date} is
-     * the endpoint's clock at the time of the call.
+     * Handles one verifyReceipt request body. Throws no exception: like the
+     * real endpoint, failures are reported through the result's status and
+     * {@link VerifyReceiptResult#failureReason()} (an {@link Error} can still
+     * escape; see the class Javadoc). {@code request_date} is the endpoint's
+     * clock at the time of the call.
      */
     public VerifyReceiptResult verifyReceiptResult(@Nullable Map<String, ? extends @Nullable Object> requestBody) {
         return verifyReceiptResult(requestBody, null);
@@ -142,7 +157,8 @@ public final class VerifyReceiptEndpoint {
 
     /**
      * Handles one verifyReceipt request body in its raw wire form, the JSON
-     * text an HTTP framework hands over. Never throws.
+     * text an HTTP framework hands over. Throws no exception (see the class
+     * Javadoc).
      *
      * <p>A body over {@link #MAX_REQUEST_BYTES} UTF-8 bytes fails with
      * {@link Reason#REQUEST_TOO_LARGE}, status 21002, where Apple answers
@@ -178,7 +194,7 @@ public final class VerifyReceiptEndpoint {
             parsed = readJson(requestJson);
         } catch (IOException | RuntimeException e) {
             // What the JSON parser throws unchecked is still a body it could
-            // not read, and it has always answered 21002.
+            // not read: 21002.
             return VerifyReceiptResult.failed(environment, Reason.MALFORMED_REQUEST, at);
         }
         if (!(parsed instanceof Map)) {
@@ -191,7 +207,8 @@ public final class VerifyReceiptEndpoint {
 
     /**
      * Verifies a bare base64 receipt, the value a request body would carry as
-     * {@code receipt-data}, with no envelope around it. Never throws; a
+     * {@code receipt-data}, with no envelope around it. Throws no exception
+     * (see the class Javadoc); a
      * {@code null} or empty string fails with
      * {@link Reason#MALFORMED_REQUEST}, as a missing {@code receipt-data}
      * does.
@@ -219,7 +236,8 @@ public final class VerifyReceiptEndpoint {
      * part of the JSON contract.</p>
      *
      * @param requestJson raw JSON request body
-     * @return raw JSON response body; never throws
+     * @return raw JSON response body; no exception is thrown (see the class
+     *         Javadoc)
      */
     public String verifyReceiptJson(@Nullable String requestJson) {
         return verifyReceiptResult(requestJson).toJson();
@@ -234,8 +252,8 @@ public final class VerifyReceiptEndpoint {
      * string value longer than a chunk goes through its slow
      * character-at-a-time path. {@code receipt-data} is such a value for any
      * receipt with more than a handful of purchases (105,000 characters for
-     * the 187-purchase legacy fixture), and reading it that way took longer
-     * than decoding it. Over a char array Jackson builds the same parser
+     * a legacy receipt with 187 purchases), and reading it that way took
+     * longer than decoding it. Over a char array Jackson builds the same parser
      * class it uses for a short String, with the same constraints and
      * features; the only difference is that the buffer is not recycled.</p>
      */
@@ -280,9 +298,23 @@ public final class VerifyReceiptEndpoint {
                 Throwable cause = e.getCause();
                 return VerifyReceiptResult.internalError(environment, cause != null ? cause : e, at);
             }
-            return VerifyReceiptResult.failed(environment, e.reason(), at);
+            // Kept so on-call can tell, say, an expired certificate from a
+            // missing anchor. It never reaches the JSON response. Only the
+            // sanitised message travels: the cause chain can quote raw
+            // certificate text, which a logged stack trace would print.
+            return VerifyReceiptResult.failed(environment, e.reason(), withoutCause(e), at);
         } catch (RuntimeException e) {
             return VerifyReceiptResult.internalError(environment, e, at);
         }
+    }
+
+    /** {@code e} with the same reason, message and stack trace, and no cause. */
+    private static VerificationException withoutCause(VerificationException e) {
+        String prefix = e.reason() + ": ";
+        String message = String.valueOf(e.getMessage());
+        VerificationException copy = new VerificationException(
+                e.reason(), message.startsWith(prefix) ? message.substring(prefix.length()) : message);
+        copy.setStackTrace(e.getStackTrace());
+        return copy;
     }
 }

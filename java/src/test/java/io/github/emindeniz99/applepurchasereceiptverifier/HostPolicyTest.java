@@ -60,6 +60,7 @@ class HostPolicyTest {
         List<String> command = new ArrayList<String>();
         command.add(Paths.get(System.getProperty("java.home"), "bin", "java").toString());
         command.add("-Djava.security.properties=" + policy.toAbsolutePath());
+        command.add("-D" + TestFixtures.PROPERTY + "=" + TestFixtures.root().toAbsolutePath());
         command.add("-cp");
         command.add(System.getProperty("java.class.path"));
         command.add(HostPolicyProbe.class.getName());

@@ -7,8 +7,8 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Decodes the base64 text a client sends as {@code receipt-data} by the rule
- * Apple's verifyReceipt applies (measured 2026-09-23, see
- * {@code docs/evidence/2026-09-23-verifyreceipt-base64.md}): non-empty,
+ * Apple's verifyReceipt applies (measured against Apple's endpoint on
+ * 2026-09-23): non-empty,
  * standard alphabet ({@code [A-Za-z0-9+/]}), exactly the canonical {@code =}
  * padding for the data length, and nothing else. Whitespace anywhere,
  * base64url, omitted or extra padding and anything after the padding are

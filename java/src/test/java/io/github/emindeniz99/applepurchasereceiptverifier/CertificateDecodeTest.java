@@ -14,7 +14,6 @@ import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
@@ -56,7 +55,7 @@ import org.junit.jupiter.api.Test;
  */
 class CertificateDecodeTest {
 
-    private static final Path GENERATED = Paths.get("..", "fixtures", "generated");
+    private static final Path GENERATED = TestFixtures.generated();
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private static X509Certificate root(String name) throws Exception {

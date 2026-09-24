@@ -313,8 +313,8 @@ final class ReceiptPayload {
             try {
                 ASN1Sequence seq = ASN1Sequence.getInstance(element);
                 // Fields beyond type, version and value are tolerated on
-                // purpose, as in the node and swift ports, so a field Apple
-                // appends later does not break parsing.
+                // purpose, so a field Apple appends later does not break
+                // parsing.
                 if (seq.size() < 3) {
                     throw new VerificationException(
                             Reason.INVALID_RECEIPT_FORMAT,
@@ -325,7 +325,7 @@ final class ReceiptPayload {
                 byte[] value = ASN1OctetString.getInstance(seq.getObjectAt(2)).getOctets();
                 // A type wider than a 32-bit signed integer is rejected rather
                 // than renamed: renaming invents an attribute the receipt never
-                // carried. All ports fail closed here.
+                // carried.
                 if (type > Integer.MAX_VALUE) {
                     throw new VerificationException(
                             Reason.INVALID_RECEIPT_FORMAT, "receipt attribute type out of range: " + type);
@@ -350,7 +350,7 @@ final class ReceiptPayload {
 
     /**
      * A UTF8String or an IA5String, the two string types Apple's receipts
-     * use and the only two any port accepts. Any other
+     * use. Any other
      * {@link ASN1String} (a BIT STRING or UniversalString included) is
      * refused rather than rendered through {@code getString()}.
      */
