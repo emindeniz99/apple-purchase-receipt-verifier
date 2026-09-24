@@ -214,7 +214,7 @@ public final class JwsVerifier {
         } catch (VerificationException e) {
             throw e;
         } catch (RuntimeException e) {
-            throw new VerificationException(Reason.INVALID_JWS_FORMAT, "malformed jws: " + e, e);
+            throw new VerificationException(Reason.INVALID_JWS_FORMAT, "unexpected " + e, e);
         }
     }
 
@@ -363,7 +363,7 @@ public final class JwsVerifier {
                 chain.add(certificate);
             }
         } catch (CertificateException | RuntimeException e) {
-            throw new VerificationException(Reason.INVALID_CERTIFICATE, "x5c entry is not a valid certificate", e);
+            throw new VerificationException(Reason.INVALID_CERTIFICATE, "x5c[" + chain.size() + "] does not decode", e);
         }
         return chain;
     }
@@ -433,13 +433,13 @@ public final class JwsVerifier {
             // Raised for the pinned anchors or the path type, never for a certificate.
             throw new VerificationException(Reason.INTERNAL_ERROR, "chain validation rejected its parameters", e);
         } catch (GeneralSecurityException e) {
-            throw new VerificationException(Reason.INVALID_CHAIN, "chain validation failed", e);
+            throw new VerificationException(Reason.INVALID_CHAIN, "path validator refused the path", e);
         } catch (RuntimeException e) {
             // BouncyCastle reports some malformed certificate content with
             // unchecked exceptions from inside the validator. Everything here
             // is attacker-controlled and unverified, so it is the chain's
             // failure, and it must not escape as anything but a verdict.
-            throw new VerificationException(Reason.INVALID_CHAIN, "chain validation failed: " + e, e);
+            throw new VerificationException(Reason.INVALID_CHAIN, "path validator raised " + e, e);
         }
     }
 
@@ -473,10 +473,12 @@ public final class JwsVerifier {
             verifier.initVerify(leaf.getPublicKey());
             verifier.update(signingInput.getBytes(StandardCharsets.US_ASCII));
             if (!verifier.verify(signature)) {
-                throw new VerificationException(Reason.INVALID_SIGNATURE, "ES256 signature check failed");
+                throw new VerificationException(
+                        Reason.INVALID_SIGNATURE, "ES256 signature does not match the leaf key");
             }
         } catch (GeneralSecurityException e) {
-            throw new VerificationException(Reason.INVALID_SIGNATURE, "ES256 signature check errored", e);
+            throw new VerificationException(
+                    Reason.INVALID_SIGNATURE, "ES256 verifier refused the leaf key or the signature", e);
         }
     }
 

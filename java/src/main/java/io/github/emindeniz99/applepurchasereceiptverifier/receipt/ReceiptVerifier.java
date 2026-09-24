@@ -261,7 +261,7 @@ public final class ReceiptVerifier {
             // escalate") would let anyone trigger that alert at will. Signed
             // content that cannot be read is INTERNAL_ERROR, and is caught
             // in parseSignedPayload, not here.
-            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "malformed receipt: " + e, e);
+            throw new VerificationException(Reason.INVALID_RECEIPT_FORMAT, "unexpected " + e, e);
         }
     }
 
@@ -408,7 +408,7 @@ public final class ReceiptVerifier {
             // As in JwsVerifier.validateChain: unchecked exceptions BouncyCastle
             // raises from inside the builder for malformed, unverified
             // certificate content are the chain's failure.
-            throw new VerificationException(Reason.INVALID_CHAIN, "chain validation failed: " + e, e);
+            throw new VerificationException(Reason.INVALID_CHAIN, "path builder raised " + e, e);
         }
     }
 
@@ -487,9 +487,7 @@ public final class ReceiptVerifier {
         }
         if (unreadableSigner != null) {
             throw new VerificationException(
-                    Reason.INVALID_CERTIFICATE,
-                    "receipt signer certificate is not a valid certificate",
-                    unreadableSigner);
+                    Reason.INVALID_CERTIFICATE, "receipt signer certificate does not decode", unreadableSigner);
         }
         if (unreadable != null) {
             throw new VerificationException(
@@ -558,12 +556,14 @@ public final class ReceiptVerifier {
             }
             boolean valid = signer.verify(signerVerifier(signerCert));
             if (!valid) {
-                throw new VerificationException(Reason.INVALID_SIGNATURE, "CMS signature check failed");
+                throw new VerificationException(
+                        Reason.INVALID_SIGNATURE, "CMS signature does not match the signer certificate's key");
             }
         } catch (CMSException e) {
-            throw new VerificationException(Reason.INVALID_SIGNATURE, "CMS signature check failed", e);
+            throw new VerificationException(Reason.INVALID_SIGNATURE, "CMS verifier refused the signer info", e);
         } catch (OperatorCreationException e) {
-            throw new VerificationException(Reason.INVALID_SIGNATURE, "CMS signature check errored", e);
+            throw new VerificationException(
+                    Reason.INVALID_SIGNATURE, "no CMS verifier for the signer certificate's key", e);
         }
     }
 
