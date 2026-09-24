@@ -49,7 +49,7 @@ conflicts](#dependencies-and-conflicts)) or an `OutOfMemoryError` escapes as
 itself.
 
 The version is `0.x` on Maven Central, so the API may still change between
-minor versions.
+minor versions; [Stability](#stability) says which parts are fixed.
 
 ## Dependencies and conflicts
 
@@ -183,7 +183,8 @@ boolean entitled = payload.revocationDate() == null
 That is only what the payload said when it was signed. A billing grace
 period (it lives in the renewal info), an upgrade (`isUpgraded`) and a refund
 after signing are yours to handle; App Store Server Notifications V2 or the
-App Store Server API give the live status. `isActiveAt(Date)` is gone.
+App Store Server API give the live status. `isActiveAt(Date)` is gone (see
+[Upgrading from 0.5](#upgrading-from-05)).
 
 ## Legacy PKCS#7 app receipts
 
@@ -1325,6 +1326,67 @@ official test fixtures, and are required to agree byte for byte. See the
 [project README](../README.md) for the full picture and
 [COMPARISON.md](../COMPARISON.md) for how it differs from Apple's official
 libraries.
+
+## Upgrading from 0.5
+
+0.6 removes API. What to change:
+
+- **`VerificationException.Reason.STALE_PAYLOAD` is gone.** No payload is
+  rejected for its age any more; apply your own window on `signedDate`
+  (see [Environment routing and freshness](#environment-routing-and-freshness)).
+- **`JwsVerifier`'s five- and six-argument constructors are gone**, the ones
+  taking `maxSignedAge` and a `Clock`. Use
+  `new JwsVerifier(roots, bundleId, acceptedEnvironments, appAppleId)`, or
+  the three-argument form without `appAppleId`.
+- **`TransactionPayload.isActiveAt(Date)` is gone.** Its exact equivalent:
+
+  ```java
+  long t = now.getTime();
+  boolean active = (payload.revocationDate() == null || t < payload.revocationDate())
+          && (payload.expiresDate() == null || t < payload.expiresDate());
+  ```
+
+  The check under [Entitlement is your rule](#the-three-jws-entry-points)
+  is stricter: it treats any `revocationDate` as not entitled.
+- **`VerifyReceiptEndpoint(Set, boolean production)` and its `Clock`
+  variant are gone.** Pass `Environment.PRODUCTION` or
+  `Environment.SANDBOX`.
+- **`VerifyReceiptEndpoint.verifyReceipt(Map)` is gone.** Use
+  `verifyReceiptResult(Map).toResponse()`, or keep the `VerifyReceiptResult`
+  for its `failureReason()` and the re-render without a second verification.
+  `verifyReceiptJson(String)` is unchanged.
+- **`Reason` has three new values**, `MALFORMED_REQUEST`, `INTERNAL_ERROR`
+  and `REQUEST_TOO_LARGE`, and the ordinals moved: a `switch` needs a
+  `default`, and reasons you store must be stored by name.
+- **`INTERNAL_ERROR` is now thrown** by `verifyTransaction`,
+  `verifyAppTransaction` and the receipt verifiers, where Apple signed
+  something this library cannot read. Handle it apart from the deny reasons
+  (see [`INTERNAL_ERROR` is deterministic](#internal_error-is-deterministic)).
+- **The size bounds are Apple's now.** `MAX_REQUEST_BYTES` went from 1 MiB
+  to 3 MiB and `MAX_RECEIPT_BYTES` from 2 MiB to 3 MiB, so raise any HTTP
+  limit you set to match the old values.
+- **All cryptography runs on the library's private BouncyCastle provider.**
+  `jdk.certpath.disabledAlgorithms` and the JVM provider list no longer
+  affect a verdict (see [One platform caveat worth knowing](#one-platform-caveat-worth-knowing)).
+
+## Stability
+
+The version is `0.x`, and 0.6 shows the Java API can still change between
+minor versions. What is held fixed, and by what:
+
+- **The endpoint's wire output.** Statuses, fields, value types and date
+  formatting are pinned by the endpoint cases in
+  [`fixtures/cases.json`](../fixtures/cases.json), which every port must
+  pass. Key order is not part of that contract.
+- **The `Reason` set.** It is closed by the cross-port contract: adding or
+  removing a reason is a change to the shared vector file and to all nine
+  ports at once, and is called out as a breaking change.
+- **The size bounds and the date claim types** (`Long` epoch milliseconds
+  on the JWS models), both fixed across ports.
+
+What may change in a minor version: constructors and method names (as this
+release shows), exception message text (match on `reason()`, never parse
+the message), everything in the `internal` package, and performance.
 
 ## Licence
 
