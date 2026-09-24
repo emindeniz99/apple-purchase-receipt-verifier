@@ -34,8 +34,6 @@ public class VerificationException extends Exception {
         INVALID_RECEIPT_FORMAT,
         /** SHA-1 device-hash binding check failed. */
         DEVICE_HASH_MISMATCH,
-        /** Payload is older than the verifier's configured max signed age. */
-        STALE_PAYLOAD,
         /**
          * The verifyReceipt request envelope is unusable: the body is not a
          * JSON object or nests deeper than 64, or {@code receipt-data} is

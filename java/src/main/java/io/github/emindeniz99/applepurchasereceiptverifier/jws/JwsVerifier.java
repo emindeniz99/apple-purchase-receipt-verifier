@@ -25,7 +25,6 @@ import java.security.cert.CertificateFactory;
 import java.security.cert.PKIXParameters;
 import java.security.cert.TrustAnchor;
 import java.security.cert.X509Certificate;
-import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
@@ -88,8 +87,6 @@ public final class JwsVerifier {
     private final String bundleId;
     private final Set<Environment> acceptedEnvironments;
     private final @Nullable Long appAppleId;
-    private final @Nullable Long maxSignedAgeMillis;
-    private final Clock clock;
     private final ObjectMapper mapper;
 
     /**
@@ -102,41 +99,21 @@ public final class JwsVerifier {
      *                             the production app
      */
     public JwsVerifier(Set<X509Certificate> trustedRoots, String bundleId, Set<Environment> acceptedEnvironments) {
-        this(trustedRoots, bundleId, acceptedEnvironments, null, null, null);
+        this(trustedRoots, bundleId, acceptedEnvironments, null);
     }
 
     /**
-     * @param appAppleId   the app's Apple id; required to accept PRODUCTION
-     *                     AppTransactions, unused otherwise
-     * @param maxSignedAge if non-null, payloads whose signing time is older
-     *                     than this many milliseconds are rejected as
-     *                     {@link Reason#STALE_PAYLOAD}; {@code null} applies
-     *                     no age limit
+     * No payload is rejected for its age: how old a signed payload may be is
+     * the caller's decision, made on its {@code signedDate} (PLAN.md D5).
+     *
+     * @param appAppleId the app's Apple id; required to accept PRODUCTION
+     *                   AppTransactions, unused otherwise
      */
     public JwsVerifier(
             Set<X509Certificate> trustedRoots,
             String bundleId,
             Set<Environment> acceptedEnvironments,
-            @Nullable Long appAppleId,
-            @Nullable Long maxSignedAge) {
-        this(trustedRoots, bundleId, acceptedEnvironments, appAppleId, maxSignedAge, null);
-    }
-
-    /**
-     * @param clock source of "now" for the {@code maxSignedAge} staleness
-     *              rule and nothing else; {@code null} (the default of every
-     *              other constructor) means {@link Clock#systemUTC()}.
-     *              Certificate validity is never judged by it (it uses the
-     *              payload's signing date, or the system clock when there is
-     *              none), so an injected clock cannot move a chain verdict.
-     */
-    public JwsVerifier(
-            Set<X509Certificate> trustedRoots,
-            String bundleId,
-            Set<Environment> acceptedEnvironments,
-            @Nullable Long appAppleId,
-            @Nullable Long maxSignedAge,
-            @Nullable Clock clock) {
+            @Nullable Long appAppleId) {
         Set<TrustAnchor> anchors = AppleTrust.anchors(trustedRoots);
         if (bundleId == null) {
             throw new IllegalArgumentException("bundleId must not be null");
@@ -148,8 +125,6 @@ public final class JwsVerifier {
         this.bundleId = bundleId;
         this.acceptedEnvironments = EnumSet.copyOf(acceptedEnvironments);
         this.appAppleId = appAppleId;
-        this.maxSignedAgeMillis = maxSignedAge;
-        this.clock = clock == null ? Clock.systemUTC() : clock;
         // A segment cannot outgrow the whole JWS, so both length bounds are
         // MAX_JWS_BYTES: consistent with the entry-point bound rather than a
         // second opinion about it.
@@ -238,25 +213,11 @@ public final class JwsVerifier {
 
         JsonNode payload = parseJson(parts[1], "payload");
         Long signedAtMillis = signedAtMillis(payload);
-        // The system clock, not this.clock: this is a certificate-validity
-        // instant, which an injected clock must never move. It is only used
-        // when the payload states no signing time.
+        // The system clock, only when the payload states no signing time.
         validateChain(leaf, intermediate, signedAtMillis != null ? new Date(signedAtMillis.longValue()) : new Date());
 
         byte[] signature = decodeBase64Url(parts[2], "signature");
         verifyEs256(leaf, parts[0] + "." + parts[1], signature);
-
-        // A payload that states no signing time has no age to be stale by, so
-        // the rule does not apply to it — rather than measuring the clock
-        // against itself.
-        if (maxSignedAgeMillis != null && signedAtMillis != null) {
-            long signedAt = signedAtMillis.longValue();
-            if (clock.millis() - signedAt > maxSignedAgeMillis) {
-                throw new VerificationException(
-                        Reason.STALE_PAYLOAD,
-                        "payload signed at " + signedAt + " exceeds max age " + maxSignedAgeMillis + "ms");
-            }
-        }
         return payload;
     }
 

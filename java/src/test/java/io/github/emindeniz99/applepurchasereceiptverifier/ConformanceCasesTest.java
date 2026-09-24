@@ -62,11 +62,11 @@ import org.junit.jupiter.api.TestFactory;
  * failure names the vector that broke.</p>
  *
  * <p>A case carrying a {@code clock} is run with that instant injected, so a
- * verdict that moves with wall-clock time is deterministic. Only two surfaces
- * take one: the JWS verifier (the max-signed-age staleness rule) and the
- * endpoint (request_date stamping). The receipt verifier takes none — its only
- * "now" is a certificate-validity instant, which no injected clock may move —
- * so a receipt case cannot pin a clock and none does. A case without one gets
+ * verdict that moves with wall-clock time is deterministic. Only one surface
+ * takes one: the endpoint (request_date stamping). The JWS and receipt
+ * verifiers take none (their only "now" is a certificate-validity instant,
+ * which no injected clock may move), so their cases cannot pin a clock and
+ * none does. A case without one gets
  * the library default, the system clock.</p>
  *
  * <p>Every fixture the adapter loads is checked against the
@@ -345,6 +345,9 @@ class ConformanceCasesTest {
     }
 
     private static JwsVerifier jwsVerifier(Set<X509Certificate> roots, JsonNode config, Clock clock) {
+        if (clock != null) {
+            throw new IllegalStateException("JwsVerifier has no clock seam, but the case pins one");
+        }
         // verifyRaw enforces no claim, so its cases need not pin a bundle id or
         // an accept set — but the constructor demands both. Neutral stand-ins
         // (a bundle id no payload can carry, every environment) keep that
@@ -365,11 +368,7 @@ class ConformanceCasesTest {
         if (config.has("appAppleId")) {
             appAppleId = Long.valueOf(config.get("appAppleId").asLong());
         }
-        Long maxSignedAge = null;
-        if (config.has("maxSignedAgeSeconds")) {
-            maxSignedAge = Long.valueOf(config.get("maxSignedAgeSeconds").asLong() * 1000L);
-        }
-        return new JwsVerifier(roots, bundleId, environments, appAppleId, maxSignedAge, clock);
+        return new JwsVerifier(roots, bundleId, environments, appAppleId);
     }
 
     // ---------------------------------------------------------------- fixtures
