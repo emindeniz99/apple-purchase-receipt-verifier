@@ -275,6 +275,38 @@ Delete a line in the commit that ships it.
   used" (an owner action in the Security tab) and re-check when a Fastly
   release drops `weval` or `weval` drops `decompress`.
 
+## Java 0.7 (from the 2026-09-24 reviews)
+
+Found by the pre-0.6.0 vendor, readability and production reviews of the
+Java port and deferred by the owner. None lets a forged receipt or JWS
+through.
+
+- **The other eight ports: check the unauthenticated-key cost.** Java
+  decoded every embedded key before the chain was checked, and
+  BouncyCastle's primality test on a 16384-bit RSA modulus made one small
+  receipt cost about 14 seconds of CPU. Java now decodes a key only after a
+  pinned root vouches for its certificate. Measure each port with the same
+  input and port the fix where it applies.
+- **Hide the `internal` package.** It is public because Java 8 has no
+  modules, so any code on the classpath can reach the shared BouncyCastle
+  provider. A multi-release jar with a `module-info` would close it.
+- **Typed `verifyNotification` and `verifyRenewalInfo`.** Today they go
+  through `verifyRaw`, and the caller must check `bundleId`, `environment`
+  and `appAppleId` by hand.
+- **A concurrency stress test for the shared `JcaSignerInfoVerifierBuilder`**,
+  whose thread safety rests on BouncyCastle internals checked at 1.86.
+- **Shorter Javadoc.** Several comments are essays, for example the 22
+  lines on `MAX_PATH_LENGTH`.
+- **Test code a vendor can read:** remove the references to other ports
+  and to `tools/lint-cases.mjs`, replace the hand-written tokenizer in
+  `TrustStoreIsolationTest` with ArchUnit rules and split the file, turn
+  `ConformanceCasesTest` into a `@ParameterizedTest` without reflection,
+  and put tests in the package of the class they test.
+- **Smaller items:** ES256 accepts high-s signatures (malleable, not a
+  forgery); `deviceGuid` length is not validated; two strict base64
+  decoders; the three-argument `JwsVerifier` rejects every PRODUCTION
+  payload, which its Javadoc should say louder.
+
 ## Working notes for agents (2026-09-21)
 
 Things that cost a round trip once and should not cost another.
