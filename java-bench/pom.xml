@@ -35,7 +35,7 @@
          call what a Java 8 consumer can call. They run on any newer JVM. -->
     <maven.compiler.release>8</maven.compiler.release>
 
-    <library.version>0.5.1</library.version> <!-- x-release-please-version -->
+    <library.version>0.6.0</library.version> <!-- x-release-please-version -->
     <jmh.version>1.37</jmh.version>
   </properties>
 

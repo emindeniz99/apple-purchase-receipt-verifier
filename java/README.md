@@ -10,7 +10,7 @@ root certificates.
 <dependency>
   <groupId>io.github.emindeniz99</groupId>
   <artifactId>apple-purchase-receipt-verifier</artifactId>
-  <version>0.5.1</version> <!-- x-release-please-version -->
+  <version>0.6.0</version> <!-- x-release-please-version -->
 </dependency>
 ```
 

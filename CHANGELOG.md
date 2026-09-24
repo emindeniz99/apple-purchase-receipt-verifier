@@ -1,5 +1,186 @@
 # Changelog
 
+## [0.6.0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.5.1...v0.6.0) (2026-09-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* **java:** TransactionPayload.isActiveAt(Date) is removed. Read revocationDate() and expiresDate() yourself, and handle grace periods, upgrades and refunds from renewal info or Apple's server APIs.
+* **swift:** TransactionPayload.isActive(at:) is removed. Read revocationDate and expiresDate yourself, and handle grace periods, upgrades and refunds from renewal info or Apple's server APIs.
+* **rust:** TransactionPayload::is_active_at is removed. Read revocation_date and expires_date yourself, and handle grace periods, upgrades and refunds from renewal info or Apple's server APIs. The C ABI never exposed it and is unchanged.
+* **dotnet:** TransactionPayload.IsActiveAt is removed. Read RevocationDate and ExpiresDate yourself, and handle grace periods, upgrades and refunds from renewal info or Apple's server APIs.
+* **php:** TransactionPayload::isActiveAt() is removed. Read revocationDate and expiresDate yourself, and handle grace periods, upgrades and refunds from renewal info or Apple's server APIs.
+* **ruby:** TransactionPayload#active_at? is removed. Read revocation_date and expires_date yourself, and handle grace periods, upgrades and refunds from renewal info or Apple's server APIs.
+* **python:** is_transaction_active_at is removed. Read revocationDate and expiresDate yourself, and handle grace periods, upgrades and refunds from renewal info or Apple's server APIs.
+* **node:** isTransactionActiveAt is removed from both entry points. Read revocationDate and expiresDate yourself, and handle grace periods, upgrades and refunds from renewal info or Apple's server APIs.
+* **go:** (*TransactionPayload).IsActiveAt is removed. Read RevocationDate and ExpiresDate yourself, and handle grace periods, upgrades and refunds from renewal info or Apple's server APIs.
+* **java:** the five- and six-argument JwsVerifier constructors (maxSignedAge, clock) are replaced by one four-argument constructor taking appAppleId, and Reason.STALE_PAYLOAD no longer exists. Check signedDate() yourself where a freshness window fits.
+* **swift:** JwsVerifier.init no longer takes maxSignedAgeMillis or clock, and VerificationError.Reason.stalePayload no longer exists. Check signedDate yourself where a freshness window fits.
+* **rust:** JwsVerifierBuilder::max_signed_age and JwsVerifierBuilder::clock are removed, and Reason::StalePayload no longer exists. In the C ABI, aprv_verifier_new_jws and aprv_verifier_new_jws_with_roots no longer take max_signed_age_secs, aprv_verifier_new_jws_with_roots_and_clock is removed and APRV_REASON_STALE_PAYLOAD (11) is retired. Check signed_date yourself where a freshness window fits.
+* **dotnet:** the JwsVerifier constructor no longer takes maxSignedAge or clock, and VerificationReason.StalePayload no longer exists. Check SignedDate yourself where a freshness window fits.
+* **php:** JwsVerifier no longer takes maxSignedAgeSeconds or clock (passing them throws InvalidArgumentException), and Reason::StalePayload no longer exists. Check signedDate yourself where a freshness window fits.
+* **ruby:** JwsVerifier.new no longer accepts max_signed_age_seconds: or clock: (both now raise ArgumentError), and Reason::STALE_PAYLOAD no longer exists. Check signed_date yourself where a freshness window fits.
+* **python:** JwsVerifier no longer accepts max_signed_age_millis or clock, and Reason.STALE_PAYLOAD no longer exists. Check the payload's signedDate yourself where a freshness window fits.
+* **node:** JwsVerifierOptions.maxSignedAgeMillis and JwsVerifierOptions.clock are removed (maxSignedAgeMillis now throws a TypeError), and Reason.STALE_PAYLOAD no longer exists. Check payload.signedDate yourself where a freshness window fits.
+* **go:** JWSVerifierOptions.MaxSignedAge and JWSVerifierOptions.Now are removed, and ReasonStalePayload is no longer part of the vocabulary. Check payload.SignedDate yourself where a freshness window fits.
+* **repo:** fixtures/cases.json drops maxSignedAgeSeconds, the STALE_PAYLOAD reason and clocks on verifyTransaction, verifyAppTransaction and verifyRaw cases; the C ABI manifest drops the maxSignedAgeSecs key. Runners must stop passing these.
+* **java:** on a JVM that disables SHA-1 for certpath, new ReceiptVerifier(...) and new VerifyReceiptEndpoint(...) now throw IllegalStateException instead of answering INVALID_CHAIN for legacy receipts. Allow SHA-1 in java.security, or pass EnumSet.of(SignatureAlgorithm.SHA256_WITH_RSA) to accept current receipts only.
+* **rust:** TransactionPayload::from_claims and AppTransactionPayload::from_claims return Result<Self>. Callers add ? or handle the INTERNAL_ERROR.
+* **repo:** INTERNAL_ERROR is now a verifier reason. Receipts whose chain and signature verify but whose payload does not parse (bad attribute shape, an attribute type above 2^31-1, an unreadable date or value, a malformed in-app purchase, zero-length content, a bound hit in the payload) move from INVALID_RECEIPT_FORMAT / 21002 to INTERNAL_ERROR / 21009. Payload defects under an untrusted or expired chain now report the chain reason, and spliced payloads under a valid chain report INVALID_SIGNATURE. Changed vectors: receipt/reject-attribute-type-above-int32-max, receipt/reject-attribute-type-that-truncates-to-a-modelled-type and receipt/reject-empty-encapsulated-content (now INTERNAL_ERROR), and endpoint/attribute-type-above-int32-max-answers-21002, renamed ...-answers-21009 (21002 to 21009). Integrators must not deny a user on INTERNAL_ERROR; alert, then retry or escalate.
+* **repo:** receipt-data, at the ReceiptVerifier string entry points and at the verifyReceipt endpoint, must be canonical standard base64. Whitespace anywhere (a trailing newline, line breaks at 64 or 76 columns, surrounding spaces), the base64url alphabet and omitted padding were accepted before and now return INVALID_RECEIPT_FORMAT, 21002 at the endpoint, as Apple does. A client that sends base64EncodedString() with no options is unaffected. An x5c entry with omitted or extra '=' padding is now INVALID_CERTIFICATE.
+* **rust:** MAX_REQUEST_BYTES is 3145728 (was 1048576) and MAX_RECEIPT_BYTES is 3145728 (was 2097152), both in UTF-8 bytes. A body over the request cap fails with Reason::RequestTooLarge instead of Reason::MalformedRequest. Reason is #[non_exhaustive], so matches keep compiling; a caller that wants Apple's HTTP status should map RequestTooLarge to 413.
+* **swift:** VerifyReceiptEndpoint.maxRequestBytes is 3145728 (was 1048576) and ReceiptVerifier.maxReceiptBytes is 3145728 (was 2097152). A body over the cap fails with requestTooLarge rather than malformedRequest, and VerificationError.Reason gains that case, so an exhaustive switch over it must add one; map it to HTTP 413 to answer as Apple does.
+* **dotnet:** VerifyReceiptEndpoint.MaxRequestBytes is 3145728 (was 1048576) and ReceiptVerifier.MaxReceiptBytes is 3145728 (was 2097152), both counted in UTF-8 bytes instead of characters. A body over the cap fails with VerificationReason.RequestTooLarge rather than MalformedRequest. VerificationReason gains that member, so a switch over it that throws on unknown values must add a case; map it to HTTP 413 to answer as Apple does.
+* **php:** VerifyReceiptEndpoint::MAX_REQUEST_BYTES is 3145728 (was 1048576). ReceiptVerifier::DEFAULT_MAX_RECEIPT_BYTES (2097152) is replaced by the fixed ReceiptVerifier::MAX_RECEIPT_BYTES (3145728), and the $maxReceiptBytes parameter of the ReceiptVerifier constructor and of verifyReceiptCore() is removed; $nodeBudget moves up to its place. Drop that argument: a leftover positional size value would now be read as the node budget, so pass nodeBudget by name if you set it. A body over the cap fails with Reason::RequestTooLarge instead of MalformedRequest, and a match over failureReason() without a default arm needs that case.
+* **ruby:** VerifyReceiptEndpoint::MAX_REQUEST_BYTES is 3145728 (was 1048576) and ReceiptVerifier::MAX_RECEIPT_BYTES is 3145728 (was 2097152), both in UTF-8 bytes; the receipt string was counted in characters. A body over the cap fails with REQUEST_TOO_LARGE instead of MALFORMED_REQUEST, so a case over failure_reason needs a branch.
+* **go:** MaxRequestBytes is 3145728 (was 1048576) and the receipt cap is 3145728 (was 2097152), both in UTF-8 bytes. DefaultMaxReceiptBytes is renamed to the constant MaxReceiptBytes, and the MaxReceiptBytes field is removed from ReceiptVerifierOptions and VerifyReceiptEndpointOptions; the cap is no longer configurable. A body over the cap fails with ReasonRequestTooLarge instead of ReasonMalformedRequest.
+* **node:** VerifyReceiptEndpoint.MAX_REQUEST_BYTES is 3145728 (was 1048576) and ReceiptVerifier.MAX_RECEIPT_BYTES is 3145728 (was 2097152), both in UTF-8 bytes. A body over the cap fails with REQUEST_TOO_LARGE instead of MALFORMED_REQUEST, and Reason gains that member, so an exhaustive switch over Reason must handle it.
+* **python:** VerifyReceiptEndpoint.MAX_REQUEST_BYTES is 3145728 (was 1048576) and ReceiptVerifier.MAX_RECEIPT_BYTES is 3145728 (was 2097152), both in UTF-8 bytes instead of code points. A body over the cap fails with Reason.REQUEST_TOO_LARGE instead of MALFORMED_REQUEST.
+* **java:** VerifyReceiptEndpoint.MAX_REQUEST_BYTES is 3145728 (was 1048576) and ReceiptVerifier.MAX_RECEIPT_BYTES is 3145728 (was 2097152), both counted in UTF-8 bytes instead of characters. A body over the cap now fails with Reason.REQUEST_TOO_LARGE rather than MALFORMED_REQUEST, and Reason gains that constant, so an exhaustive Kotlin when or Scala match over Reason must add a branch.
+* **php:** VerifyReceiptEndpoint::verifyReceipt(mixed $body): array is removed. Replace $endpoint->verifyReceipt($body) with $endpoint->verifyReceiptResult($body)->toResponse(). A string argument to verifyReceiptResult is parsed as the raw JSON body; the removed method answered 21002 for any string. Reason has two new cases, so an exhaustive match over Reason::cases() needs arms for MalformedRequest and InternalError.
+* **dotnet:** VerifyReceiptEndpoint.VerifyReceipt(body) is removed. Replace endpoint.VerifyReceipt(body) with endpoint.VerifyReceiptResult(body).ToResponse(); a literal null argument now needs a cast to IReadOnlyDictionary<string, object?>? to pick the overload. VerificationReason gains MalformedRequest and InternalError, so an exhaustive switch over it needs two more cases. The port had no boolean production option, so nothing else is removed.
+* **ruby:** VerifyReceiptEndpoint#verify_receipt is removed. Replace endpoint.verify_receipt(body) with endpoint.verify_receipt_result(body).to_response, which returns the same Hash. verify_receipt_json is unchanged.
+* **swift:** VerifyReceiptEndpoint.verifyReceipt(_:) is removed; replace await endpoint.verifyReceipt(body) with await endpoint.verifyReceiptResult(body).response(). The deprecated init(trustedRoots:production:clock:) is removed; pass environment: .production for true and .sandbox for false. VerificationError.Reason gains two cases, so an exhaustive switch over it needs .malformedRequest and .internalError or a default.
+* **go:** VerifyReceiptEndpoint.VerifyReceipt returns *VerifyReceiptResult instead of VerifyReceiptResponse. Replace endpoint.VerifyReceipt(request) with endpoint.VerifyReceipt(request).Response() to keep the old value. VerifyReceiptJSON is unchanged.
+* **rust:** VerifyReceiptEndpoint::verify_receipt is removed. Replace endpoint.verify_receipt(&request) with endpoint.verify_receipt_result(&request).to_response(), which returns the same VerifyReceiptResponse. Code that matches on Reason exhaustively inside the crate's own match needs no change (Reason is non_exhaustive), but a _ arm now also covers the two new values.
+* **node:** VerifyReceiptEndpoint.verifyReceipt(body) is removed; replace endpoint.verifyReceipt(body) with endpoint.verifyReceiptResult(body).toResponse(). A string passed to verifyReceiptResult is parsed as the raw JSON request body. The Reason union gains MALFORMED_REQUEST and INTERNAL_ERROR, so an exhaustive switch over Reason needs two more cases.
+* **python:** VerifyReceiptEndpoint.verify_receipt(request_body) is removed. Replace endpoint.verify_receipt(body) with endpoint.verify_receipt_result(body).to_response(). The port had no boolean production option, so nothing else is removed.
+* **java:** VerifyReceiptEndpoint.verifyReceipt(Map) is removed; replace endpoint.verifyReceipt(body) with endpoint.verifyReceiptResult(body).toResponse(). The constructors VerifyReceiptEndpoint(Set, boolean) and (Set, boolean, Clock) are removed; replace true with Environment.PRODUCTION and false with Environment.SANDBOX. verifyReceiptResult(null) is ambiguous between the Map and String overloads; cast the null.
+
+### Features
+
+* **dotnet:** match Apple's 3 MiB request limit, counted in UTF-8 bytes ([a5ed3b3](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/a5ed3b34a8d7259e8c5f95d61b7b3a7221b30712))
+* **dotnet:** remove the isActiveAt entitlement helper ([2f43792](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/2f43792916c2e94ea4e176d659b8d71809b7e047))
+* **dotnet:** remove the maxSignedAge freshness policy ([f2c9235](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/f2c92359daf5bc0ca9f88cfe057c18a0dcb5dfe8))
+* **dotnet:** return a VerifyReceiptResult from the verifyReceipt API ([3eae043](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/3eae0438354cdfa0405a456806c2e94528a62164))
+* **go:** match Apple's 3 MiB request limit, counted in UTF-8 bytes ([8fb3610](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/8fb361009fee35a0d45c980cf8ff0fa0a0306801))
+* **go:** remove the isActiveAt entitlement helper ([4feeccc](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/4feecccdc00231a822b4bc8b8e7e33126162ba69))
+* **go:** remove the MaxSignedAge freshness policy ([2a1587a](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/2a1587a7d46ad08184b7332e0e4cfb02aec296d9))
+* **go:** return a verification result from the verifyReceipt endpoint ([b12f2df](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b12f2df57956843ebd42564d84a17321fe9d8677))
+* **java:** accept any receipt signer algorithm under the pinned chain ([2ba48bc](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/2ba48bc3e1b835d45a79a6298e31bfdcc2eac1f4))
+* **java:** add isVerified to VerifyReceiptResult ([b413fb3](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b413fb3d74a00970e329a9f89b20e32c2b5f191f))
+* **java:** check chain signature algorithms against the JVM at startup ([c5d2246](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/c5d224606838260b2dec84eedc9d81a1a63df662))
+* **java:** match Apple's 3 MiB request limit, counted in UTF-8 bytes ([cc0a8e6](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/cc0a8e6010b20f275345b369e26d5ce37b3365a9))
+* **java:** remove the isActiveAt entitlement helper ([e26f509](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/e26f5092e6ee3180ba78d41bff720e6d0f327dbb))
+* **java:** remove the maxSignedAge freshness policy ([8ac4a5b](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/8ac4a5b8ce3164134a47e888ee40a875ee327357))
+* **java:** return a verification result from the verifyReceipt endpoint ([bc66fd4](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/bc66fd41d3f08efa5db86bdfb68a3ce6ef4e1606))
+* **node:** match Apple's 3 MiB request limit, counted in UTF-8 bytes ([972c6ed](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/972c6ed70b601cecc6ec05bc30dd5c8816808f8d))
+* **node:** remove the isActiveAt entitlement helper ([7cc7ee4](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/7cc7ee40cb1f31c422bf5a91de9ec465eb945202))
+* **node:** remove the maxSignedAgeMillis freshness policy ([0422c83](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/0422c832d2e6a4314ba77f211cb2b9b1a22a2dd3))
+* **node:** return a verification result from the verifyReceipt endpoint ([04dbea0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/04dbea060aa3fddcb3342941b142248c0aa4d34f))
+* **php:** match Apple's 3 MiB request limit and drop the cap option ([746f282](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/746f28296a67ed0adbc4b90bb53327d161618c91))
+* **php:** remove the isActiveAt entitlement helper ([321e34b](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/321e34be96fbdfc0fe9e29ea2d77a1be3b4d5379))
+* **php:** remove the maxSignedAgeSeconds freshness policy ([8e135c4](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/8e135c482cac348feeccbbc0547400615a7b7c21))
+* **php:** return a verification result from the verifyReceipt endpoint ([7d5fd92](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/7d5fd920ddbaba0ad151fc2905682e54f0b9bfec))
+* **python:** match Apple's 3 MiB request limit in UTF-8 bytes ([0249019](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/0249019bc77245eaa43b93d9e5734bf659694e2f))
+* **python:** remove the isActiveAt entitlement helper ([232946d](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/232946d16d3ec36b4f142b8a1c212cbbaaac6052))
+* **python:** remove the max_signed_age_millis freshness policy ([465938f](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/465938f3767c83fa5c1ecc9075e2daad31250b19))
+* **python:** return a verification result from the verifyReceipt endpoint ([a426f0f](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/a426f0f3ad2a0568733f011f9ebb9073bbebdf35))
+* **repo:** check receipt chain first, unreadable payload is 21009 ([95af97c](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/95af97c3d8ca51e3e4e84852aaed0847aa3b7726))
+* **repo:** drop the max-signed-age policy from the shared contract ([9e60711](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/9e607114dbf8b6d8458720593c6687724a6b2990))
+* **ruby:** match Apple's 3 MiB request limit, counted in UTF-8 bytes ([ec42a24](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/ec42a24e67bd42854717ff776d93ca8f6dce6302))
+* **ruby:** remove the isActiveAt entitlement helper ([00eaa12](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/00eaa1216fc00b61e8fbc65404cf9e8a6eb29c20))
+* **ruby:** remove the max_signed_age_seconds freshness policy ([68fc5d7](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/68fc5d76aeb4d650a9878e4580b0cc02e3d0c154))
+* **ruby:** return a verification result from the verifyReceipt endpoint ([daddf56](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/daddf56a5ac8cc73aadcf9d7a107862e6451920d))
+* **rust:** match Apple's 3 MiB request limit, counted in UTF-8 bytes ([21df15a](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/21df15a249e762cee8dc8c2e396e57b6a05ff288))
+* **rust:** remove the isActiveAt entitlement helper ([d3de677](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/d3de677020112b1f88b0422a3214029391e69b45))
+* **rust:** remove the max_signed_age freshness policy ([1d085d2](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/1d085d22b2b060bb35a9e569daa19404eaa289dd))
+* **rust:** return a verification result from the verifyReceipt endpoint ([c1feb15](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/c1feb1583732feb9ef4c8401d55f7b103d7762d9))
+* **swift:** match Apple's 3 MiB request limit, counted in UTF-8 bytes ([5eab2bb](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/5eab2bb5c9228a4e45ac75102f4f7069588c6029))
+* **swift:** remove the isActiveAt entitlement helper ([7aaaba3](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/7aaaba35a59084b3ff51d8f9175a7ebf0481cbd4))
+* **swift:** remove the maxSignedAgeMillis freshness policy ([6a98457](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/6a984578173f79ba9e30e95bdc707c2336ad65ab))
+* **swift:** return a verification result from the verifyReceipt endpoint ([15957b7](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/15957b75829e5cb0071bcd3f3fd7eaca276b28c0))
+
+
+### Bug Fixes
+
+* **dotnet:** answer INTERNAL_ERROR for a signed claim of the wrong type ([5515263](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/551526337a5f8c742ebcbba3199242285e6bb8be))
+* **dotnet:** answer INTERNAL_ERROR when SHA-1 is unavailable ([54ca75e](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/54ca75e1524b7e2a08d2d988981e32c847005a74))
+* **dotnet:** cap receipt, request and JWS size before decoding ([6df8549](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/6df8549c912c3197ec7a21c807616df4624ba5cb))
+* **go:** answer INTERNAL_ERROR for a signed claim of the wrong type ([002fc8f](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/002fc8f324a24783ba32a3a14cfccd8cf48cb518))
+* **go:** answer INTERNAL_ERROR when SHA-1 is unavailable ([73329e3](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/73329e3c049fdfd20c86f0db7bd10ba802b3d023))
+* **go:** cap receipt, request and JWS size before decoding ([bce2c0b](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/bce2c0b120a5640800a87c95f18843194d674b5f))
+* **java:** accept only UTF8String and IA5String receipt strings ([83b09d4](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/83b09d463e61233120d62487abd1623758a4082f))
+* **java:** allowlist the receipt signature algorithm, not only the digest ([db68e13](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/db68e13b02dfd51ce4eb6f052681bb282ca6b4b9))
+* **java:** answer INTERNAL_ERROR for a signed claim of the wrong type ([514e27a](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/514e27ab09ee7673ba07c344c264afd5e19d6535))
+* **java:** answer INTERNAL_ERROR when the runtime lacks an algorithm ([498447b](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/498447b22ffe5e33016120f12628ce8cf7970a4a))
+* **java:** contain unchecked errors before the JWS signature passes ([bcdd3cd](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/bcdd3cda84232b873e5ee9c74cc15ced0b78349f))
+* **java:** decode certificate keys only after a pinned root vouches ([bd52b42](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/bd52b42599574b06b12bc05de0fc6c1688427378))
+* **java:** decode certificate signatures early and guard the chain check ([ccdc172](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/ccdc17214a92404e258c60a799955421c7d4752d))
+* **java:** decode x5c entries as strict standard base64 ([a852b10](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/a852b1056358d8d817a937b4bd958abfa0af8830))
+* **java:** give an unreadable receipt certificate one verdict ([a2bac88](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/a2bac886ad65211c08f6b4b232888db6f375712f))
+* **java:** keep the raw cause chain out of failureCause ([6150da0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/6150da041a26f7cd063236e107c0f7cda6bb4165))
+* **java:** keep the verification exception as the endpoint failure cause ([7e96cca](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/7e96cca211284d8c2922c76339b4825562044f87))
+* **java:** map verifyRaw claim conversion failures to INTERNAL_ERROR ([2334793](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/233479360c42c2ad43ed14476feeeb4f6b6c6f37))
+* **java:** replace C1 controls and Unicode line separators in messages ([9972f25](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/9972f25bde29e351d7f788a55868607681eb03ed))
+* **java:** report an unreadable bundled root as IllegalStateException ([099f164](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/099f164c2beb823ee1eb0ff964e37231e9304d31))
+* **java:** run all cryptography on the pinned BouncyCastle provider ([dae21b2](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/dae21b29c441722a71153ca9cf064ca16c016758))
+* **java:** sanitize third-party exception text in verification messages ([e3785f9](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/e3785f9d0e1dac27b1e21892c05911a8a410d0e8))
+* **node:** answer INTERNAL_ERROR for a signed claim of the wrong type ([6f851e3](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/6f851e3c66550bd8dafb6c3b9638c381e10c55b6))
+* **node:** answer INTERNAL_ERROR when the runtime lacks a digest ([37406ff](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/37406ffbeef7d2d1555c1703dc078cee059ae475))
+* **node:** cap receipt, request and JWS size before decoding ([3ab44fe](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/3ab44fea102c5eb811d627fb5183f4be7d1ffd0d))
+* **node:** format Pacific-time dates without Intl time-zone data ([60cde45](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/60cde45b131c917b7d314063a08bda933e7ea53c))
+* **php:** answer INTERNAL_ERROR for a signed claim of the wrong type ([fbc4265](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/fbc426533b8ef8b0270303ff5b4264635295f2bf))
+* **php:** give PHP 8.1 the memory its packed arrays need at the body cap ([4fa8c1c](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/4fa8c1c6c4a15afbc1a7ea6acf92b11ea9c99acf))
+* **php:** raise the DER byte budget so a 3 MiB receipt is parsed ([25d31f5](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/25d31f52e955f815530bd11e04d554b6915e782e))
+* **python:** answer INTERNAL_ERROR for a signed claim of the wrong type ([14f1081](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/14f1081c18c8c017c637eb25095d99897138cad5))
+* **python:** answer INTERNAL_ERROR when the runtime lacks a digest ([2c5d9be](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/2c5d9be83e4c18d2369b0dbc5b77cf17d32d0480))
+* **python:** cap JWS size and depth before decoding ([992b8d6](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/992b8d6bc83d7266bc51e5230a3132a1f4d923a5))
+* **python:** cap receipt and request size before decoding ([04bfc8d](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/04bfc8d65801a1642c3fc79688b382d40e98d182))
+* **repo:** accept receipt base64 exactly as Apple's verifyReceipt does ([5ce3d14](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/5ce3d14b7e00370dd903d44876c4f281fdd22df3))
+* **repo:** record the new digest of the public receipts README ([d5270ff](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/d5270ff1c220521e6b6ae882b8eb6ad40d7cdcd5))
+* **repo:** reject x5c entries with non-base64 characters in every port ([3d85379](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/3d85379b616f739e2d52abb0602676f484228ecc))
+* **ruby:** answer INTERNAL_ERROR for a signed claim of the wrong type ([fe1c71c](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/fe1c71c6571d191cb6287df805226012f1533cff))
+* **ruby:** answer INTERNAL_ERROR when the runtime lacks a digest ([07df631](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/07df631248c3bbacfd263d230c88c2102df84a45))
+* **ruby:** cap receipt, request and JWS size before decoding ([d0b1821](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/d0b182164337694a425d4f1f783ed0736211031b))
+* **rust:** answer INTERNAL_ERROR for a signed claim of the wrong type ([ed1e661](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/ed1e6613bb6ac798ea652c3e050d9ca62f597dcd))
+* **rust:** cap receipt, request and JWS size before decoding ([f9f4823](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/f9f4823aa39c08af192f27c597c96b7d48123cf2))
+* **swift:** answer INTERNAL_ERROR for a signed claim of the wrong type ([403680c](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/403680c5c85214a3437b9a51f4d91907029d9b8d))
+* **swift:** avoid miscompiled throw path in receipt signer lookup ([85add14](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/85add14878c84ac58b279dd927d0ed07a034e26c))
+* **swift:** cap receipt, request and JWS size before decoding ([f04c5d7](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/f04c5d7ba26f714fcdb3d0d1ebfe61c84ad25a5b))
+* **swift:** keep a leading byte-order mark in a parsed request body ([92ccbc7](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/92ccbc7787b53da7b836d9b508a8e5b1ad2cc999))
+
+
+### Performance
+
+* **dotnet:** decode clean base64 receipts on a strict fast path ([c972c8b](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/c972c8b4bbdc7feb973cd9b740041964340ff9a7))
+* **dotnet:** stop re-decoding certificates on every receipt ([40b44a8](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/40b44a8064922382cabc47d706317cd826612dad))
+* **go:** decode clean base64 receipts on a strict fast path ([8045090](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/8045090e375942fd9c6bcea9e0183b5594fb6366))
+* **java:** build the endpoint's trust anchors once ([9d1197a](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/9d1197a496e199bde7b203d1e2df9290b907a63c))
+* **java:** convert the receipt signer certificate to JCA once ([7cec594](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/7cec59405c7c28d8646cddc54cffcedd1f66967c))
+* **java:** decode clean base64 receipts on the JDK fast path ([f082220](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/f0822209986d432526781972961323eee278d5bf))
+* **java:** load and pin the bundled Apple roots once ([fed3998](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/fed3998b0a815a3556f9dffe83acc1ae5ad3e96f))
+* **java:** parse each receipt once, without a lock per byte ([bb4513e](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/bb4513e4f44a670e810cf175bdf383eea6489145))
+* **java:** read large endpoint request bodies from one buffer ([8c25c32](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/8c25c32511238afc7625d8ea5055fa8e2af765a8))
+* **java:** read plain-DER receipt attribute sets without BouncyCastle ([7359c71](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/7359c71352ad8cbf84ff989c165085afe1670778))
+* **java:** read receipt dates without the ISO_INSTANT parser ([26dd257](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/26dd2577ddd3b63902ba28adbfbcdd11d6a19f8d))
+* **java:** read short receipt strings and integers without a parser ([5f0d797](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/5f0d7976a7ecd2c3d523c366242cdff836f198be))
+* **java:** render response dates without DateTimeFormatter ([c8de9b4](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/c8de9b4c204b2031deb43c8279a0f2cbee893d31))
+* **java:** stop rebuilding CMS algorithm tables for every receipt ([17bc8f1](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/17bc8f102963c151eb5fd6e133a18c43ac714edd))
+* **node:** decode clean base64 receipts on a strict fast path ([917ce8e](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/917ce8e6c56a6dce375440f1638997d4b000b710))
+* **php:** decode clean base64 receipts on a strict fast path ([60b6dd5](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/60b6dd525a093aabc9b922babfcc5c7885fe680b))
+* **python:** decode clean base64 receipts on a strict fast path ([3a557e8](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/3a557e8c5f0ae9fe63b79ded202694546bb83100))
+* **ruby:** decode clean base64 receipts on a strict fast path ([4d60df9](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/4d60df9ae849164bd8919952f3228e40ac74a43a))
+* **rust:** decode clean base64 receipts on a strict fast path ([1c38361](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/1c3836154e434a577df57b8be0bca1b1820cc949))
+* **rust:** restore rsa u64_digit so RSA verify uses 64-bit limbs ([9da47c1](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/9da47c168ecdf922edb49088414aacfda6a042fe))
+* **swift:** decode clean base64 receipts on a strict fast path ([2afcd25](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/2afcd2555b90dda39efd98737d9768ede2df6569))
+* **swift:** parse canonical receipt dates with ISO8601FormatStyle ([b574901](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b574901d3b7d4c6df2aa96b1330a2147fd0d7449))
+* **swift:** render response dates with shared VerbatimFormatStyles ([cf2340f](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/cf2340f1444bf1febe33dd7d1f0a005d7f9800e6))
+* **swift:** stop building a date formatter for every receipt date ([ca518cd](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/ca518cddf517383279aa29019d4392fadb79be85))
+* **swift:** write the verifyReceipt answer with JSONEncoder ([6526c84](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/6526c84cd3d6d9c28951b57a0c5fd75d7f667346))
+* **swift:** write the verifyReceipt answer without JSONSerialization ([cec80fd](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/cec80fdc48cb9e738fe001025f6d0cb47cb5cbb2))
+
+
+### Build & Dependencies
+
+* **dotnet:** restore the lockfiles a local SDK rewrote ([68883c6](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/68883c6cac23c4e50f5cbe18f218c52c305fd163))
+
+
+### Reverts
+
+* **java:** drop the hand-written receipt parsers, keep BouncyCastle ([8d7c870](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/8d7c8703000f5cf7a9ce99a94606063b9a8b3bbc))
+* **swift:** drop the hand-written date parser and JSON writer ([3fcaa0c](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/3fcaa0cc87a600b3c3e9f7e5ad2335c07cb7ce29))
+
 ## [0.5.1](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.5.0...v0.5.1) (2026-09-22)
 
 
