@@ -93,8 +93,9 @@ Delete a line in the commit that ships it.
   running. RECEIPT-FIELDS.md states it; the accessor exists.
 - **The SHA-1 legacy chain under a hardened `java.security`** is now a
   documented caveat with two CI guards (#86, #90): `java-hardened-policy`
-  proves exactly one conformance case fails when SHA-1 is disabled for
-  certpath, and `java-distroless` proves the whole suite passes inside
+  proves that with SHA-1 disabled for certpath the default constructor
+  refuses to start and names the fix, and that a verifier without SHA-1
+  still verifies current receipts, and `java-distroless` proves the whole suite passes inside
   gcr.io/distroless java17-debian12 and java17/21/25-debian13 (`:nonroot`,
   digest-pinned) on their own JVM and java.security. Finding for the
   deployment: `java17-debian12` is deprecated (last rebuilt 2026-02-20,
