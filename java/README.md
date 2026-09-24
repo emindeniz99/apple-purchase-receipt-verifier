@@ -520,6 +520,24 @@ argument, never through the JDK's own `cacerts` or a `TrustManagerFactory`
 default. `TrustStoreIsolationTest` (below) is what proves that, rather than
 only documenting it.
 
+**Root expiry and rotation.** The bundled roots expire on these dates, read
+from the certificate files in [`certs/`](../certs):
+
+| Root | Expires (UTC) | Anchors today |
+|---|---|---|
+| Apple Inc. Root CA | 2035-02-09 | legacy receipts |
+| Apple Root CA - G2 | 2039-04-30 | neither path today |
+| Apple Root CA - G3 | 2039-04-30 | JWS |
+
+Certificate validity is judged at the payload's signing instant, not at
+verification time, so a payload signed before a root expires keeps
+verifying after it. A payload signed after Apple moves to a new root needs
+that root in the anchor set, and the anchors are bundled and pinned, so a
+new Apple root means a library upgrade (or passing your own anchor set to
+the constructors). The repository's weekly `apple-root-watch` workflow
+compares the pinned roots with Apple's PKI page and fails when Apple changes
+a root or publishes a new one, which is the signal for that release.
+
 **Certificate revocation is not checked**: no OCSP, no CRL
 (`setRevocationEnabled(false)` on both PKIX parameter objects). Offline
 verification is the point, and Apple handles a compromised signing
