@@ -165,7 +165,14 @@ public final class JwsVerifier {
      */
     public Map<String, @Nullable Object> verifyRaw(@Nullable String jws) throws VerificationException {
         JsonNode node = verifySignature(jws);
-        return mapper.convertValue(node, new TypeReference<Map<String, @Nullable Object>>() {});
+        // The signature has passed, so a failure here is the library's, not
+        // the input's: INTERNAL_ERROR, as StrictClaims reports for the typed
+        // models.
+        try {
+            return mapper.convertValue(node, new TypeReference<Map<String, @Nullable Object>>() {});
+        } catch (RuntimeException e) {
+            throw new VerificationException(Reason.INTERNAL_ERROR, "signed payload could not be read", e);
+        }
     }
 
     /**
