@@ -60,19 +60,6 @@ type JWSVerifierOptions struct {
 	// AppAppleID is required to accept a Production AppTransaction, and
 	// ignored otherwise.
 	AppAppleID *int64
-
-	// MaxSignedAge rejects payloads signed longer ago than this
-	// (PLAN.md D5). Zero disables the check.
-	MaxSignedAge time.Duration
-
-	// Now is the source of wall-clock time. nil means time.Now.
-	//
-	// It drives exactly one verdict: the MaxSignedAge staleness rule.
-	// Certificate validity is judged at the payload's signing date, and
-	// where the payload carries no date, at the system clock — never at
-	// Now. A caller injecting a clock to test staleness, or to work
-	// around skew, must not thereby be able to accept an expired chain.
-	Now func() time.Time
 }
 
 // JWSVerifier verifies Apple-signed JWS payloads — StoreKit 2
@@ -87,8 +74,6 @@ type JWSVerifier struct {
 	bundleID             string
 	acceptedEnvironments map[Environment]bool
 	appAppleID           *int64
-	maxSignedAge         time.Duration
-	now                  func() time.Time
 }
 
 // NewJWSVerifier validates the options and returns a verifier.
@@ -119,20 +104,11 @@ func NewJWSVerifier(opts JWSVerifierOptions) (*JWSVerifier, error) {
 		}
 		accepted[env] = true
 	}
-	if opts.MaxSignedAge < 0 {
-		return nil, errors.New("applereceipt: MaxSignedAge must not be negative")
-	}
-	now := opts.Now
-	if now == nil {
-		now = time.Now
-	}
 	return &JWSVerifier{
 		roots:                append([]*x509.Certificate(nil), opts.TrustedRoots...),
 		bundleID:             opts.BundleID,
 		acceptedEnvironments: accepted,
 		appAppleID:           opts.AppAppleID,
-		maxSignedAge:         opts.MaxSignedAge,
-		now:                  now,
 	}, nil
 }
 
@@ -197,7 +173,7 @@ func (v *JWSVerifier) VerifyRaw(jws string) (claims Claims, err error) {
 }
 
 // verifySignature runs steps 1-11 of PLAN.md §2.1: shape, header,
-// certificates, marker OIDs, payload, chain, signature, staleness. The
+// certificates, marker OIDs, payload, chain, signature. The
 // order is normative — a case that pins an early reason must not get a
 // later one.
 func (v *JWSVerifier) verifySignature(jws string) (Claims, error) {
@@ -267,9 +243,7 @@ func (v *JWSVerifier) verifySignature(jws string) (Claims, error) {
 	if err != nil {
 		return nil, err
 	}
-	// The fallback reads the system clock directly, never v.now: an
-	// injected clock must not be able to move a certificate-validity
-	// verdict (see JWSVerifierOptions.Now).
+	// A payload stating no date of its own is judged at the system clock.
 	effective := time.Now()
 	if signedAt != nil {
 		effective = time.UnixMilli(*signedAt)
@@ -279,9 +253,6 @@ func (v *JWSVerifier) verifySignature(jws string) (Claims, error) {
 	}
 
 	if err := verifyES256(leaf, headerB64+"."+payloadB64, signatureB64); err != nil {
-		return nil, err
-	}
-	if err := v.requireFresh(signedAt); err != nil {
 		return nil, err
 	}
 	return payload, nil
@@ -397,23 +368,6 @@ func (v *JWSVerifier) requireAppAppleID(environment Environment, actual *int64) 
 	if v.appAppleID == nil || actual == nil || *v.appAppleID != *actual {
 		return newError(ReasonWrongAppAppleID,
 			"production payload does not carry the configured app Apple id")
-	}
-	return nil
-}
-
-// requireFresh is the one verdict that legitimately moves with wall-clock
-// time, and therefore the only one the injected clock drives.
-//
-// A payload carrying no date of its own is never stale: there is nothing
-// to measure the age of, and falling back to "now" would make it always
-// fresh or always stale depending on which way the fallback pointed.
-func (v *JWSVerifier) requireFresh(signedAt *int64) error {
-	if v.maxSignedAge == 0 || signedAt == nil {
-		return nil
-	}
-	age := v.now().Sub(time.UnixMilli(*signedAt))
-	if age > v.maxSignedAge {
-		return newError(ReasonStalePayload, "payload is older than the configured maximum age")
 	}
 	return nil
 }

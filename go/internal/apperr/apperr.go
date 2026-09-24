@@ -27,7 +27,6 @@ const (
 	ReasonWrongAppAppleID           Reason = "WRONG_APP_APPLE_ID"
 	ReasonInvalidReceiptFormat      Reason = "INVALID_RECEIPT_FORMAT"
 	ReasonDeviceHashMismatch        Reason = "DEVICE_HASH_MISMATCH"
-	ReasonStalePayload              Reason = "STALE_PAYLOAD"
 	ReasonInternalError             Reason = "INTERNAL_ERROR"
 )
 
@@ -51,7 +50,6 @@ var AllReasons = []Reason{
 	ReasonWrongAppAppleID,
 	ReasonInvalidReceiptFormat,
 	ReasonDeviceHashMismatch,
-	ReasonStalePayload,
 	ReasonInternalError,
 }
 

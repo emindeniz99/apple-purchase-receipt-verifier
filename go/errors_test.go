@@ -25,7 +25,6 @@ func TestReasonTokensAreTheCanonicalVocabulary(t *testing.T) {
 		"WRONG_APP_APPLE_ID",
 		"INVALID_RECEIPT_FORMAT",
 		"DEVICE_HASH_MISMATCH",
-		"STALE_PAYLOAD",
 		"INTERNAL_ERROR",
 	}
 	got := applereceipt.AllReasons()
@@ -52,7 +51,6 @@ func TestReasonTokensAreTheCanonicalVocabulary(t *testing.T) {
 		applereceipt.ReasonWrongAppAppleID:           "WRONG_APP_APPLE_ID",
 		applereceipt.ReasonInvalidReceiptFormat:      "INVALID_RECEIPT_FORMAT",
 		applereceipt.ReasonDeviceHashMismatch:        "DEVICE_HASH_MISMATCH",
-		applereceipt.ReasonStalePayload:              "STALE_PAYLOAD",
 		applereceipt.ReasonInternalError:             "INTERNAL_ERROR",
 	}
 	for reason, token := range pairs {

@@ -68,7 +68,6 @@ type caseConfig struct {
 	BundleID             *string                    `json:"bundleId"`
 	AcceptedEnvironments []applereceipt.Environment `json:"acceptedEnvironments"`
 	AppAppleID           *int64                     `json:"appAppleId"`
-	MaxSignedAgeSeconds  *int64                     `json:"maxSignedAgeSeconds"`
 	DeviceGUIDHex        *string                    `json:"deviceGuidHex"`
 	Environment          applereceipt.Environment   `json:"environment"`
 }
@@ -341,6 +340,9 @@ func trustedRootsFor(t *testing.T, spec trustedRootsSpec) []*x509.Certificate {
 
 func jwsVerifier(t *testing.T, config caseConfig, clock func() time.Time) *applereceipt.JWSVerifier {
 	t.Helper()
+	if clock != nil {
+		t.Fatalf("harness error: JWSVerifier has no clock seam, but the case pins one")
+	}
 	bundleID := unmatchableBundleID
 	if config.BundleID != nil {
 		bundleID = *config.BundleID
@@ -349,19 +351,11 @@ func jwsVerifier(t *testing.T, config caseConfig, clock func() time.Time) *apple
 	if len(config.AcceptedEnvironments) > 0 {
 		environments = config.AcceptedEnvironments
 	}
-	var maxSignedAge time.Duration
-	if config.MaxSignedAgeSeconds != nil {
-		// The one unit conversion in the whole adapter, and it lives here
-		// rather than in any case.
-		maxSignedAge = time.Duration(*config.MaxSignedAgeSeconds) * time.Second
-	}
 	verifier, err := applereceipt.NewJWSVerifier(applereceipt.JWSVerifierOptions{
 		TrustedRoots:         trustedRootsFor(t, config.TrustedRoots),
 		BundleID:             bundleID,
 		AcceptedEnvironments: environments,
 		AppAppleID:           config.AppAppleID,
-		MaxSignedAge:         maxSignedAge,
-		Now:                  clock,
 	})
 	if err != nil {
 		t.Fatalf("harness error: building a JWSVerifier: %v", err)

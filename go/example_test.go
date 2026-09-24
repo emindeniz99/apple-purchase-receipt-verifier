@@ -22,8 +22,6 @@ func ExampleJWSVerifier_VerifyTransaction() {
 			applereceipt.EnvironmentProduction,
 			applereceipt.EnvironmentSandbox,
 		},
-		// Reject anything Apple signed more than five minutes ago.
-		MaxSignedAge: 5 * time.Minute,
 	})
 	if err != nil {
 		panic(err) // a configuration mistake, not a verification verdict
