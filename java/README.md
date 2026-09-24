@@ -95,12 +95,31 @@ defaults, because a JWS header is parsed before any signature check
 (see [Resource bounds](#resource-bounds)). `StreamReadConstraints` arrived in
 Jackson 2.15 and `maxDocumentLength` in 2.16, so on an older Jackson 2 the
 verifier fails at construction rather than running with guards it believes it
-set.
+set. Below 2.15 the class `StreamReadConstraints` is missing, and on 2.15 the
+method `maxDocumentLength` is, so the failure is a `LinkageError`
+(`NoClassDefFoundError` or `NoSuchMethodError`): `JwsVerifier`'s constructor
+throws it, and `VerifyReceiptEndpoint` fails to initialize as a class.
 
 Spring Boot 4.0.x pins Jackson 2 at 2.21.x through its BOM, which is above
 that floor, and Jackson 3 (`tools.jackson`) sits alongside Jackson 2 under a
 different package root, so an application on both is not a conflict. Verified
 with a Spring Boot 4.0.8 application in `samples/spring-boot-smoke`.
+
+**Spring Boot 2.7 and 3.0 to 3.2 manage Jackson below the floor** (2.13 to
+2.15), and their BOM wins over this library's declared version. Set the
+`jackson-bom.version` property to a Jackson 2 release of 2.16 or later (this
+library is built and tested against 2.22.2), then run your own tests, since
+the override moves Jackson for the whole application:
+
+```xml
+<properties>
+  <jackson-bom.version>2.22.2</jackson-bom.version>
+</properties>
+```
+
+In Gradle with the Spring dependency-management plugin, the same property is
+`ext['jackson-bom.version'] = '2.22.2'`. Check what actually resolved with
+`mvn dependency:tree -Dincludes=com.fasterxml.jackson.core`.
 
 ## The three JWS entry points
 
@@ -329,6 +348,221 @@ field-by-field fidelity account.
 
 `verifyReceiptResult(null)` does not compile, because both the `Map` and the
 `String` overload match; cast the `null` to the one you mean.
+
+## Migrating from verifyReceipt
+
+### Checklist
+
+- **Bundle id.** Neither Apple's endpoint nor this one checks it. If your
+  code never compared `receipt.bundle_id`, add the check now:
+  `result.receipt().bundleId()`, or use `ReceiptVerifier`, which checks it.
+- **Subscription state.** Anything you read from `latest_receipt_info` or
+  `pending_renewal_info` needs a new source: App Store Server Notifications
+  V2 for changes as they happen, the App Store Server API (Get All
+  Subscription Statuses, Get Transaction History) for the current state. See
+  the [differences table](#differences-from-apples-verifyreceipt-read-before-migrating).
+- **Alert mapping.** 21003 appears where Apple sent 21002; 21005 and 21100
+  to 21199 disappear; 21009 means a library or runtime problem. The
+  [status table](#what-each-status-means-for-you) says what each one
+  should trigger.
+- **Body size at every layer.** Apple accepts a body of up to 3 MiB
+  (3,145,728 bytes). Every layer in front of the endpoint must accept that
+  much or it refuses receipts Apple would have answered: the load balancer,
+  the reverse proxy (nginx's `client_max_body_size` defaults to 1 MB), the
+  servlet container and the framework (Spring WebFlux's in-memory codec
+  limit defaults to 256 KB). See [Serving it from Spring](#serving-it-from-spring).
+- **21007 handling.** The old "call production, retry sandbox on 21007"
+  still works but verifies the receipt twice. Render the result for sandbox
+  instead, with `result.toJson(Environment.SANDBOX)`, and record that the
+  grant came from sandbox.
+- **Device GUID.** If you checked the device hash, the endpoint cannot:
+  call `ReceiptVerifier.verify(receiptBase64, deviceGuid)` (see
+  [Legacy PKCS#7 app receipts](#legacy-pkcs7-app-receipts)).
+- **Shared secret.** Nothing reads it any more. Keep it only for as long as
+  you still call Apple.
+
+### Shadow mode
+
+Run both for a while before switching, off the request path so the user
+never waits for the second call:
+
+1. Capture `Instant at = Instant.now()`, send the body to Apple as today,
+   and call `endpoint.verifyReceiptResult(body, at)` with the same body on
+   an endpoint of the same environment (`PRODUCTION` beside
+   `buy.itunes.apple.com`).
+2. Compare `status`. Expected differences: Apple's 21002 where this
+   endpoint answers 21003 (an authentication failure), and 21005 or 211xx
+   from Apple, which this endpoint never produces.
+3. When both answer 0, compare the two `receipt` objects as parsed JSON,
+   not as strings, because key order differs. First remove `request_date`,
+   `request_date_ms` and `request_date_pst` from both, and remove the fields
+   only Apple produces (`in_app_ownership_type` in every `in_app` entry, and
+   any other field the differences table lists). Match `in_app` entries by
+   `transaction_id`; their order is not guaranteed.
+4. Ignore `latest_receipt_info`, `latest_receipt` and
+   `pending_renewal_info` at the top level: they are gone for good. Before
+   switching, confirm nothing downstream reads them.
+5. Count mismatches by field and log the transaction ids involved, not the
+   receipt. Switch when only the expected differences remain.
+
+## Serving it from Spring
+
+Bind the body as a `String`, not a `Map`. The `String` overload measures the
+body against `MAX_REQUEST_BYTES` before parsing and parses it with the
+library's own nesting guard; a `Map` has already been parsed by the
+framework's mapper, with neither.
+
+```java
+import io.github.emindeniz99.applepurchasereceiptverifier.AppleRootCerts;
+import io.github.emindeniz99.applepurchasereceiptverifier.Environment;
+import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
+import io.github.emindeniz99.applepurchasereceiptverifier.receipt.VerifyReceiptEndpoint;
+import io.github.emindeniz99.applepurchasereceiptverifier.receipt.VerifyReceiptResult;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+public class VerifyReceiptController {
+    // One instance for every request: it is immutable and thread-safe.
+    private final VerifyReceiptEndpoint endpoint =
+            new VerifyReceiptEndpoint(AppleRootCerts.receiptRoots(), Environment.PRODUCTION);
+
+    // consumes = "*/*": clients of Apple's endpoint send any content type.
+    @PostMapping(path = "/verifyReceipt", consumes = "*/*")
+    public ResponseEntity<String> verify(@RequestBody String body) {
+        VerifyReceiptResult result = endpoint.verifyReceiptResult(body);
+        // Apple answers HTTP 413 above 3 MiB; the body is its 21002 either way.
+        int httpStatus = result.failureReason() == Reason.REQUEST_TOO_LARGE ? 413 : 200;
+        return ResponseEntity.status(httpStatus)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(result.toJson());
+    }
+}
+```
+
+This is Apple's endpoint and nothing more. The code that grants entitlements
+still checks `bundle_id`, reads `receipt_type` and applies the rules under
+[Integrating](#integrating-from-verified-payload-to-entitlement).
+
+Size limits on the way in:
+
+- **Spring WebFlux** buffers a `@RequestBody String` under
+  `spring.codec.max-in-memory-size`, 256 KB by default. Receipts with a long
+  purchase history are larger (the 187-purchase fixture is about 105 KB of
+  base64, and a receipt can reach 3 MiB), so set it to `3MB`.
+- **Spring MVC on Tomcat** has no cap on a `@RequestBody String`: Tomcat's
+  `maxPostSize` (`server.tomcat.max-http-form-post-size`) applies to form
+  bodies only. The library refuses anything over 3 MiB, but only after the
+  container has read all of it into memory, so put the cap in front, at the
+  proxy or load balancer.
+- **The proxy** must allow at least 3 MiB: nginx `client_max_body_size 3m;`
+  is exactly Apple's limit.
+
+## Operations
+
+### What each status means for you
+
+| status | `failureReason()` | Action |
+|---|---|---|
+| 0 | none | Grant, after your own bundle-id check and entitlement rules |
+| 21007 | none (the receipt verified) | A sandbox receipt on a production endpoint. For App Review, render it for sandbox from the same result (`result.toJson(Environment.SANDBOX)`); do not verify again. Record the grant as sandbox |
+| 21008 | none (the receipt verified) | A production receipt on a sandbox endpoint. Render it for `PRODUCTION` from the same result, or deny |
+| 21002 | `MALFORMED_REQUEST`, `REQUEST_TOO_LARGE`, `INVALID_RECEIPT_FORMAT` | Deny. No alert: this is a client or transport defect. `REQUEST_TOO_LARGE` maps to HTTP 413 |
+| 21003 | `INVALID_CHAIN`, `INVALID_SIGNATURE`, `INVALID_CERTIFICATE`, `INVALID_CERTIFICATE_PURPOSE` | Deny. Alert on the rate, not on each one: a steady trickle is normal, a spike is someone probing |
+| 21009 | `INTERNAL_ERROR` | Page. The library could not read what Apple signed, or failed inside; see [below](#internal_error-is-deterministic) |
+
+For the JWS path, the per-reason table in the
+[project README](../README.md#what-to-do-per-reason) is the same policy.
+
+### `INTERNAL_ERROR` is deterministic
+
+`INTERNAL_ERROR` comes from a typed-claim mismatch in a JWS the signature
+check accepted (Apple signed a claim with a type this library's model does
+not expect), from receipt content that authenticated but does not parse,
+from a runtime lacking an algorithm the check needs, or from an unexpected
+exception inside the endpoint. For a given library version and runtime,
+the same bytes give the same answer every time, so retrying the library
+achieves nothing.
+
+- Do not hot-retry.
+- Log `failureCause()` (endpoint) or `getCause()` (a caught
+  `VerificationException`) with the library version, and alert.
+- Settle the purchase through the App Store Server API by transaction id.
+  For a JWS, `verifyRaw` on the same string still returns the claims,
+  because it applies no typed model, so `transactionId` is readable there;
+  for a receipt, use a transaction id you already hold for the account or
+  ask the client for one.
+- Grant provisionally only if the business accepts that risk. Denying
+  outright is wrong too: Apple signed these bytes.
+
+### What to log
+
+Per call: `status()`, `failureReason()`, the receipt's `receipt_type` and
+`bundle_id`, the transaction ids you granted, and the library version. For
+21009 also `failureCause()`. Never log the full receipt or JWS: it carries
+the user's purchase history and can be replayed.
+
+### Metrics
+
+The library has no logging, metrics or callbacks, on purpose; count in your
+own code. A counter tagged with `failureReason()` (`OK` when it is null) and
+the status covers the alerts above:
+
+```java
+String reason = result.failureReason() == null ? "OK" : result.failureReason().name();
+// e.g. Micrometer: registry.counter("receipt.verify", "reason", reason, "status", String.valueOf(result.status())).increment();
+```
+
+### Idempotency
+
+Key grants on `transaction_id`, not on the receipt bytes: a legacy receipt
+is BER, so one signed receipt has several byte spellings. Store
+`original_transaction_id` beside it for subscriptions. A retry by the same
+user for a transaction already granted to them should answer "granted"
+again without granting twice; the same transaction presented by another
+user is a replay and is denied. The samples under
+[Integrating](#integrating-from-verified-payload-to-entitlement) do this.
+
+### Capacity
+
+Measured on a 4 vCPU cloud VM with JDK 21, one call at a time:
+
+| Call | Time per call | Allocated per call |
+|---|---:|---:|
+| `JwsVerifier.verifyTransaction` | about 850 to 890 µs | about 620 KB |
+| Receipt verification, g5 fixture (2 purchases) | about 685 µs | about 427 KB |
+| Receipt verification, legacy fixture (187 purchases) | about 3.9 ms | about 4.7 MB |
+| A receipt near the 3 MiB limit | | 60 to 75 MB |
+
+[`java-bench/README.md`](../java-bench/README.md) has the JMH baseline
+behind the receipt numbers, per step, and how to re-run it; plan with the
+higher of its figures and these.
+
+CPU is rarely the limit: five million verifications a day is under 60 a
+second on average, a small fraction of one core. Memory is. Every
+concurrent call can hold tens of megabytes when the receipt is large, and
+Tomcat's default of 200 request threads times 75 MB is 15 GB. Limit the body
+size at the HTTP layer and limit how many verifications run at once (a
+`Semaphore` around the call, or a bounded executor), sized so that the
+limit times 75 MB fits in the heap.
+
+### Health check
+
+Construct the verifiers at startup, not on first request, so a broken
+classpath or tampered trust anchors (`IllegalStateException` from
+`AppleRootCerts`, a `LinkageError` from a Jackson clash) stop the deploy
+instead of the first purchase.
+
+The jar ships no receipt to test with. Keep one genuine sandbox receipt of
+your own app (from a sandbox or TestFlight purchase with a test account),
+and verify it at startup and periodically through the same endpoint
+instance: on a `PRODUCTION` endpoint it must answer 21007 with your bundle
+id in `result.receipt().bundleId()`. It keeps verifying after its
+certificates expire, because validity is judged at the receipt's creation
+date. Beyond that, alert on spikes in the per-reason counters above.
 
 ## The error vocabulary
 
@@ -939,14 +1173,9 @@ one.
 **Answering 413 like Apple.** `REQUEST_TOO_LARGE` exists so an HTTP layer can
 send the status Apple sends. The body is Apple's 21002 either way:
 
-```java
-VerifyReceiptResult result = endpoint.verifyReceiptResult(rawRequestBody);
-int httpStatus = result.failureReason() == Reason.REQUEST_TOO_LARGE ? 413 : 200;
-return ResponseEntity.status(httpStatus).body(result.toJson());
-```
-
-A framework that caps request bodies itself has to allow at least 3 MiB, or
-it refuses bodies Apple would answer.
+[Serving it from Spring](#serving-it-from-spring) has a complete controller
+that does this. A framework that caps request bodies itself has to allow at
+least 3 MiB, or it refuses bodies Apple would answer.
 
 **JSON reader limits.** Both mappers state `StreamReadConstraints` explicitly:
 nesting depth 64, and string and document lengths matching the bounds above.
