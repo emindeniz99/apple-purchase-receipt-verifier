@@ -180,8 +180,7 @@ public class JwsTests
     /// <summary>
     /// A modelled claim the typed payload cannot hold is INTERNAL_ERROR, not a
     /// silently absent property: a <c>null</c> <see cref="TransactionPayload.RevocationDate"/>
-    /// would make <see cref="TransactionPayload.IsActiveAt"/> grant a revoked
-    /// purchase. The shared vectors cover the type mismatches; these are the
+    /// would make a caller's entitlement check grant a revoked purchase. The shared vectors cover the type mismatches; these are the
     /// fixed-width and boolean edges they do not.
     /// </summary>
     [Theory]
@@ -208,37 +207,6 @@ public class JwsTests
         Assert.Null(payload.ProductId);
         Assert.Equal(true, payload.ClaimsMap["unmodelled"]);
     }
-
-    // --- the entitlement helper ---------------------------------------------
-
-    [Fact]
-    public void IsActiveAtReadsRevocationBeforeExpiry()
-    {
-        TransactionPayload payload = Payload(
-            "{\"expiresDate\":2000,\"revocationDate\":1000}");
-        Assert.True(payload.IsActiveAt(FromMillis(999)));
-        Assert.False(payload.IsActiveAt(FromMillis(1000)));
-        Assert.False(payload.IsActiveAt(FromMillis(1500)));
-    }
-
-    [Fact]
-    public void IsActiveAtTreatsAnAbsentExpiryAsPerpetual()
-    {
-        TransactionPayload payload = Payload("{\"productId\":\"x\"}");
-        Assert.True(payload.IsActiveAt(FromMillis(0)));
-        Assert.True(payload.IsActiveAt(DateTimeOffset.UtcNow.AddYears(50)));
-    }
-
-    [Fact]
-    public void IsActiveAtIsExclusiveAtTheExpiryInstant()
-    {
-        TransactionPayload payload = Payload("{\"expiresDate\":2000}");
-        Assert.True(payload.IsActiveAt(FromMillis(1999)));
-        Assert.False(payload.IsActiveAt(FromMillis(2000)));
-    }
-
-    private static DateTimeOffset FromMillis(long millis) =>
-        DateTimeOffset.FromUnixTimeMilliseconds(millis);
 
     private static TransactionPayload Payload(string json)
     {

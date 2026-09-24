@@ -119,25 +119,5 @@ namespace ApplePurchaseReceiptVerifier.Jws
 
         /// <summary>The <c>webOrderLineItemId</c> claim.</summary>
         public string? WebOrderLineItemId { get; }
-
-        /// <summary>
-        /// Entitlement helper: whether this transaction grants access at
-        /// <paramref name="now"/> — not revoked, and (for subscriptions) not
-        /// expired.
-        /// </summary>
-        /// <remarks>
-        /// A point-in-time check on the signed claims only. A later refund or
-        /// renewal is invisible to it: track transaction ids server-side.
-        /// </remarks>
-        public bool IsActiveAt(DateTimeOffset now)
-        {
-            long instant = now.ToUnixTimeMilliseconds();
-            if (RevocationDate is long revoked && instant >= revoked)
-            {
-                return false;
-            }
-
-            return ExpiresDate is not long expires || instant < expires;
-        }
     }
 }

@@ -253,15 +253,6 @@ public class ApiShapeTests
         Assert.Equal(typeof(DateTimeOffset?), type.GetProperty(property)!.PropertyType);
     }
 
-    [Fact]
-    public void EntitlementHelperLivesOnThePayload()
-    {
-        MethodInfo? method = typeof(TransactionPayload).GetMethod(
-            "IsActiveAt", new[] { typeof(DateTimeOffset) });
-        Assert.NotNull(method);
-        Assert.Equal(typeof(bool), method!.ReturnType);
-    }
-
     private static IEnumerable<Type> SurfaceTypes(Type type)
     {
         foreach (PropertyInfo property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static))

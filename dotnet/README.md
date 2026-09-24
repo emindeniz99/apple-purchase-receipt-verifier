@@ -47,7 +47,12 @@ var verifier = new JwsVerifier(
 try
 {
     TransactionPayload transaction = verifier.VerifyTransaction(jws);
-    if (transaction.IsActiveAt(DateTimeOffset.UtcNow))
+    // Entitlement is your rule, read off the signed fields. A billing grace
+    // period (it lives in the renewal info), an upgrade (isUpgraded) and a
+    // refund after signing are yours to handle; App Store Server
+    // Notifications V2 or the App Store Server API give the live status.
+    long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+    if (transaction.RevocationDate is null && (transaction.ExpiresDate is null || transaction.ExpiresDate > now))
     {
         Grant(transaction.ProductId!, transaction.TransactionId!);
     }
