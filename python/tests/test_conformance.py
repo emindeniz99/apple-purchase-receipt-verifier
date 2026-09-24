@@ -114,14 +114,14 @@ UNMATCHABLE_ENVIRONMENTS = ["LocalTesting"]
 
 
 def jws_verifier(config, clock):
-    max_age = config.get("maxSignedAgeSeconds")
+    # JwsVerifier takes no clock: no verdict on that path moves with the
+    # current time, so the schema lets no JWS case pin one.
+    assert clock is None, "harness error: a JWS case pins a clock"
     return JwsVerifier(
         trusted_roots=trusted_roots(config["trustedRoots"]),
         bundle_id=config.get("bundleId", UNMATCHABLE_BUNDLE_ID),
         accepted_environments=config.get("acceptedEnvironments", UNMATCHABLE_ENVIRONMENTS),
         app_apple_id=config.get("appAppleId"),
-        max_signed_age_millis=None if max_age is None else max_age * 1000,
-        clock=clock,
     )
 
 

@@ -13,7 +13,6 @@ class Reason:
     WRONG_APP_APPLE_ID = "WRONG_APP_APPLE_ID"
     INVALID_RECEIPT_FORMAT = "INVALID_RECEIPT_FORMAT"
     DEVICE_HASH_MISMATCH = "DEVICE_HASH_MISMATCH"
-    STALE_PAYLOAD = "STALE_PAYLOAD"
     #: Not the client's fault, status 21009 at the endpoint. Raised when a
     #: trusted signer signed receipt content this library cannot read (found
     #: only after the chain and the signature passed; the parser's exception
