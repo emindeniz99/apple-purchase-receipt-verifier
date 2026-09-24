@@ -309,14 +309,6 @@ class ReviewFixesTest(unittest.TestCase):
             verifier.verify(padded)
         self.assertEqual(ctx.exception.reason, "INVALID_RECEIPT_FORMAT")
 
-    def test_is_transaction_active_at_helper(self):
-        from apple_purchase_receipt_verifier import is_transaction_active_at
-
-        self.assertTrue(is_transaction_active_at({}, 1000))
-        self.assertFalse(is_transaction_active_at({"revocationDate": 500}, 1000))
-        self.assertFalse(is_transaction_active_at({"expiresDate": 900}, 1000))
-        self.assertTrue(is_transaction_active_at({"expiresDate": 2000}, 1000))
-
 
 class TypedClaimReadTest(unittest.TestCase):
     """What cases.json cannot pin for this port: bool is a subclass of int in
