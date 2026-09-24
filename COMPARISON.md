@@ -57,7 +57,7 @@ to them from both sides.
 | 21005 | Apple's receipt server is unavailable | ❌ never produced — there is no server to be unavailable; this is a *benefit* |
 | 21006 | valid but subscription expired (iOS 6 style only) | ❌ never produced (legacy iOS 6 transaction receipts unsupported) |
 | 21007 / 21008 | sandbox↔production routing | ✅ reproduced locally from the receipt's `receipt_type` attribute — the classic "try production, retry sandbox on 21007" dance still works unchanged. Fails closed: only `Production`/`ProductionVPP` count as production; sandbox variants and a missing attribute are treated as sandbox. `Xcode` is in that fail-closed set for completeness only — an Xcode-generated receipt is not Apple-signed, so it stops at 21003 before routing is reached |
-| 21009 / 21010 | internal error / account not found | 21009 (`INTERNAL_ERROR`) when the receipt authenticates (trusted chain, valid signature) but its signed content cannot be read, and on unexpected internal errors: neither is the client's fault, so alert and retry or escalate rather than deny. 21010 never (no account database) |
+| 21009 / 21010 | internal error / account not found | 21009 (`INTERNAL_ERROR`) when the receipt authenticates (trusted chain, valid signature) but its signed content cannot be read, when the runtime lacks an algorithm the check needs, and on unexpected internal errors. Not the client's fault, and deterministic: the same receipt gives 21009 again, so retrying does not help. Log the cause with the library version, alert, and settle the purchase through the App Store Server API by transaction id. 21010 never (no account database) |
 | 21100–21199 (+ `is_retryable`) | Apple internal data access error; `is_retryable` says whether retrying may help | ❌ never produced, and we never emit an `is_retryable` field either — these codes report the state of Apple's own datastore, and there is no remote call here to retry |
 
 A tampered receipt shows 21002 and 21003 diverging in practice. Altering one
@@ -107,24 +107,41 @@ those responses carry no `environment` at all.
 
 ### Not produced — receipt attributes Apple documents in the response but that are absent, undocumented, or unavailable locally
 
-`preorder_date`, promotional offer ids introduced after the receipt format
-froze, and `in_app_ownership_type` — family-sharing state that no receipt,
-sandbox or production, carries, so it cannot be derived locally.
+- `in_app_ownership_type`: family-sharing state that no receipt, sandbox or
+  production, carries, so it cannot be derived locally.
+- `cancellation_reason`: Apple documents no ASN.1 attribute for it. The
+  refund reason is `revocationReason` on the signed transaction the App
+  Store Server API returns.
+- `promotional_offer_id`: Apple documents no ASN.1 attribute for it either.
+  TPInAppReceipt names in-app attribute 1721 as the promotional offer
+  identifier; no fixture here carries it (see
+  [RECEIPT-FIELDS.md](./RECEIPT-FIELDS.md)). Where a port exposes unmodelled
+  attributes (Java: `InAppPurchase.unknownAttributes()`), a receipt that does
+  carry 1721 has its raw value there.
+- `preorder_date`, and other offer fields introduced after the receipt
+  format froze.
 
 Measured against a genuine production receipt (not committed) and Apple's
 own `verifyReceipt` answer for it, 2026-09-21: the endpoint now matches
 Apple on 30 of the 31 fields Apple returned for that receipt, the lone gap
-being `in_app_ownership_type`. Key order inside `receipt` matches Apple's
-except that Apple places `original_application_version` immediately before
-`in_app`, which is not part of the JSON contract.
+being `in_app_ownership_type`.
+
+**Key order is not part of the contract.** Inside `receipt` it matches
+Apple's for the leading keys (`receipt_type`, `adam_id`, `app_item_id`,
+`bundle_id`, `application_version`, `download_id`,
+`version_external_identifier`), but Apple places
+`original_application_version` immediately before `in_app`, and this
+endpoint does not. The endpoint's output is deterministic (equal inputs
+give equal bytes), but compare responses as parsed JSON, never as strings.
+`fixtures/cases.json` pins field values and types, not order.
 
 ### Impossible locally — Apple server-side database state
 
 | Field | Why it cannot exist locally |
 |---|---|
-| `latest_receipt` / `latest_receipt_info` | Apple returns the *latest* subscription transactions, including renewals that happened **after** this receipt was signed. Only Apple's database knows them. Replacement: App Store Server API `Get Transaction History` by transaction id, or Server Notifications V2. |
-| `pending_renewal_info` (`auto_renew_status`, `expiration_intent`, …) | Renewal *intent* is live account state, never part of the signed receipt. Same replacements. |
-| refund/revocation after signing | A receipt signed before a refund verifies forever — by design of signatures. Track transaction ids server-side (INTENT.md). |
+| `latest_receipt` / `latest_receipt_info` | Apple returns the *latest* subscription transactions, including renewals that happened **after** this receipt was signed. Only Apple's database knows them. Replacement: App Store Server API `Get Transaction History` by transaction id or `Get All Subscription Statuses`, or Server Notifications V2. |
+| `pending_renewal_info` (`auto_renew_status`, `expiration_intent`, …) | Renewal *intent* is live account state, never part of the signed receipt. Replacement: `Get All Subscription Statuses`, or the `signedRenewalInfo` in a Server Notifications V2 payload. |
+| refund/revocation after signing | A receipt signed before a refund verifies forever, by design of signatures. Replacement: Server Notifications V2 `REFUND` and `REVOKE`; track transaction ids server-side (INTENT.md). |
 
 **Bottom line**: for one-time purchases (consumables, non-consumables) the
 local endpoint is a faithful, complete replacement. For auto-renewable
