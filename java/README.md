@@ -42,7 +42,11 @@ unchecked, because neither is a verdict about a payload: misconfiguration
 (`IllegalArgumentException` from a constructor, see [The error
 vocabulary](#the-error-vocabulary)) and bundled trust anchors that do not
 match their pinned fingerprints (`IllegalStateException` from
-`AppleRootCerts`, see [Trust anchors](#trust-anchors)).
+`AppleRootCerts`, see [Trust anchors](#trust-anchors)). An `Error` is not
+covered by any of this: a `LinkageError` from a BouncyCastle or Jackson
+version clash on the classpath (see [Dependencies and
+conflicts](#dependencies-and-conflicts)) or an `OutOfMemoryError` escapes as
+itself.
 
 The version is `0.x` on Maven Central, so the API may still change between
 minor versions.
@@ -274,8 +278,12 @@ state as of the moment Apple signed the receipt.
 [COMPARISON.md](../COMPARISON.md) is the field-by-field account behind this
 table.
 
-No endpoint method throws: the Apple status code is a field of the body, for
-every input, including one that is not JSON (`{"status":21002}`). The
+No endpoint method throws a `RuntimeException` or a checked exception: the
+Apple status code is a field of the body, for every input, including one
+that is not JSON (`{"status":21002}`). An `Error` still escapes as itself:
+an `OutOfMemoryError`, or a `LinkageError` from a BouncyCastle or Jackson
+clash on the classpath, such as `bcprov-jdk15on` beside `bcprov-jdk18on`
+(see [Dependencies and conflicts](#dependencies-and-conflicts)). The
 statuses it can produce are `STATUS_OK` (`0`), `STATUS_MALFORMED` (`21002`),
 `STATUS_NOT_AUTHENTICATED` (`21003`), `STATUS_SANDBOX_RECEIPT_ON_PRODUCTION`
 (`21007`), `STATUS_PRODUCTION_RECEIPT_ON_SANDBOX` (`21008`) and
@@ -1208,9 +1216,22 @@ pinning an older Jackson 2 removes without a word. Hence the 2.16 floor under
 once constructed and are meant to be shared: build one of each at startup and
 hand it to every request, as a singleton Spring bean or its equivalent. Each
 holds only final fields, copies the anchor set at construction and never
-hands that copy out, keeps its per-call state in locals, and shares nothing
-else beyond a configured Jackson `ObjectMapper`, which Jackson documents as
-safe to use from many threads once it is configured.
+hands that copy out, and keeps its per-call state in locals.
+
+What they do share is read-only once class initialization has finished:
+
+- configured Jackson `ObjectMapper`s (one per `JwsVerifier`, and static ones
+  behind the endpoint and the typed claim reader), which Jackson documents
+  as safe to use from many threads once configured;
+- the one private `BouncyCastleProvider` instance every cryptographic lookup
+  names, and the root set `AppleRootCerts` loads once;
+- one static `JcaSignerInfoVerifierBuilder` in `ReceiptVerifier`, reused for
+  every receipt's CMS signature check. Sharing it relies on BouncyCastle
+  internals (its `build` writes no state), which were checked for 1.86, the
+  version the pom declares, and a comment in the source asks for the check
+  to be repeated on every BouncyCastle upgrade. If you override the BouncyCastle version, through a BOM or
+  `dependencyManagement`, that check is yours: read `build` in the version
+  you resolve, or run a concurrent load against it like `ConcurrencyTest`.
 
 The objects they return are immutable too. `TransactionPayload` and
 `AppTransactionPayload` take their claims through a constructor rather than
