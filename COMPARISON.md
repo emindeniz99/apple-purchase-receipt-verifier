@@ -107,24 +107,41 @@ those responses carry no `environment` at all.
 
 ### Not produced — receipt attributes Apple documents in the response but that are absent, undocumented, or unavailable locally
 
-`preorder_date`, promotional offer ids introduced after the receipt format
-froze, and `in_app_ownership_type` — family-sharing state that no receipt,
-sandbox or production, carries, so it cannot be derived locally.
+- `in_app_ownership_type`: family-sharing state that no receipt, sandbox or
+  production, carries, so it cannot be derived locally.
+- `cancellation_reason`: Apple documents no ASN.1 attribute for it. The
+  refund reason is `revocationReason` on the signed transaction the App
+  Store Server API returns.
+- `promotional_offer_id`: Apple documents no ASN.1 attribute for it either.
+  TPInAppReceipt names in-app attribute 1721 as the promotional offer
+  identifier; no fixture here carries it (see
+  [RECEIPT-FIELDS.md](./RECEIPT-FIELDS.md)). Where a port exposes unmodelled
+  attributes (Java: `InAppPurchase.unknownAttributes()`), a receipt that does
+  carry 1721 has its raw value there.
+- `preorder_date`, and other offer fields introduced after the receipt
+  format froze.
 
 Measured against a genuine production receipt (not committed) and Apple's
 own `verifyReceipt` answer for it, 2026-09-21: the endpoint now matches
 Apple on 30 of the 31 fields Apple returned for that receipt, the lone gap
-being `in_app_ownership_type`. Key order inside `receipt` matches Apple's
-except that Apple places `original_application_version` immediately before
-`in_app`, which is not part of the JSON contract.
+being `in_app_ownership_type`.
+
+**Key order is not part of the contract.** Inside `receipt` it matches
+Apple's for the leading keys (`receipt_type`, `adam_id`, `app_item_id`,
+`bundle_id`, `application_version`, `download_id`,
+`version_external_identifier`), but Apple places
+`original_application_version` immediately before `in_app`, and this
+endpoint does not. The endpoint's output is deterministic (equal inputs
+give equal bytes), but compare responses as parsed JSON, never as strings.
+`fixtures/cases.json` pins field values and types, not order.
 
 ### Impossible locally — Apple server-side database state
 
 | Field | Why it cannot exist locally |
 |---|---|
-| `latest_receipt` / `latest_receipt_info` | Apple returns the *latest* subscription transactions, including renewals that happened **after** this receipt was signed. Only Apple's database knows them. Replacement: App Store Server API `Get Transaction History` by transaction id, or Server Notifications V2. |
-| `pending_renewal_info` (`auto_renew_status`, `expiration_intent`, …) | Renewal *intent* is live account state, never part of the signed receipt. Same replacements. |
-| refund/revocation after signing | A receipt signed before a refund verifies forever — by design of signatures. Track transaction ids server-side (INTENT.md). |
+| `latest_receipt` / `latest_receipt_info` | Apple returns the *latest* subscription transactions, including renewals that happened **after** this receipt was signed. Only Apple's database knows them. Replacement: App Store Server API `Get Transaction History` by transaction id or `Get All Subscription Statuses`, or Server Notifications V2. |
+| `pending_renewal_info` (`auto_renew_status`, `expiration_intent`, …) | Renewal *intent* is live account state, never part of the signed receipt. Replacement: `Get All Subscription Statuses`, or the `signedRenewalInfo` in a Server Notifications V2 payload. |
+| refund/revocation after signing | A receipt signed before a refund verifies forever, by design of signatures. Replacement: Server Notifications V2 `REFUND` and `REVOKE`; track transaction ids server-side (INTENT.md). |
 
 **Bottom line**: for one-time purchases (consumables, non-consumables) the
 local endpoint is a faithful, complete replacement. For auto-renewable
