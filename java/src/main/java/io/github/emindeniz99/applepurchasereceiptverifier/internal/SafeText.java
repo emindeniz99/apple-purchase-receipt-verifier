@@ -63,11 +63,19 @@ public final class SafeText {
         StringBuilder out = new StringBuilder(head.length() + 32);
         for (int i = 0; i < head.length(); i++) {
             char c = head.charAt(i);
-            out.append(c < 0x20 || c == 0x7F ? PLACEHOLDER : c);
+            out.append(breaksALine(c) ? PLACEHOLDER : c);
         }
         if (value.length() > maxLength) {
             out.append("... (").append(value.length()).append(" characters)");
         }
         return out.toString();
+    }
+
+    /**
+     * C0 and C1 controls, DEL, and the Unicode line and paragraph separators:
+     * everything a log viewer or {@code String.lines()} may treat as a break.
+     */
+    private static boolean breaksALine(char c) {
+        return c < 0x20 || (c >= 0x7F && c <= 0x9F) || c == ' ' || c == ' ';
     }
 }
