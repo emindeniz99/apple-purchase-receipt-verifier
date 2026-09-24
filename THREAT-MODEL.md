@@ -312,8 +312,10 @@ Not defended against here, by decision rather than omission.
   came from Apple, not that the presenter is entitled to it. Tracking
   transaction ids is the caller's job (PLAN.md D4, INTENT.md).
 - **Refund, revocation and subscription state.** These need Apple's App Store
-  Server API or Server Notifications V2; `isActiveAt` covers only what the
-  signed claims already say (PLAN.md D5).
+  Server API or Server Notifications V2. The library has no entitlement
+  helper: the signed claims say only what was true at signing, and a billing
+  grace period or `isUpgraded` is not in the transaction at all (PLAN.md
+  D5).
 - **Payload freshness.** No verifier rejects a payload for its age. How old a
   genuine payload may be is the caller's decision, made on its `signedDate`
   or the receipt creation date.

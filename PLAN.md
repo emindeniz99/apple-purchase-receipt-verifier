@@ -35,7 +35,11 @@ recorded here.
   requiring it would force client changes. Replay defense = server-side
   transaction-id bookkeeping (owner confirmed the server can keep them).
 - **D5 — Subscriptions supported**: payloads expose `expiresDate` /
-  `revocationDate` with an `isActiveAt(now)` helper. How old a signed
+  `revocationDate`; whether they entitle a user is the caller's rule. The
+  `isActiveAt(now)` helper was removed (2026-09-24): Apple's libraries have
+  none, and it could not see a billing grace period (renewal info) or
+  `isUpgraded`, so it could answer "expired" while Apple still grants
+  access, or "active" for an upgraded-away subscription. How old a signed
   payload may be is the caller's decision, made on `signedDate` or the
   receipt creation date: the optional max-signed-age policy the JWS
   verifier used to take was removed (2026-09-24), because Apple's own App
@@ -357,7 +361,7 @@ Root CA), optional device GUID.
 Environment = { PRODUCTION, SANDBOX, XCODE, LOCAL_TESTING }
 
 JwsVerifier(trustedRoots, bundleId, acceptedEnvironments, appAppleId?)
-  .verifyTransaction(jws)      -> TransactionPayload   (decoded fields + isActiveAt helper)
+  .verifyTransaction(jws)      -> TransactionPayload   (decoded fields)
   .verifyAppTransaction(jws)   -> AppTransactionPayload
   .verifyRaw(jws)              -> claims map — signature/chain only, caller checks
                                   claims (covers renewal-info / notification JWS)

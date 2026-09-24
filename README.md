@@ -410,6 +410,8 @@ verifiers also accept caller-supplied anchors.
   maintained library does both paths server-side in any of our languages.
 - **Signature validity ≠ entitlement**: replay protection (transaction-id
   bookkeeping) and refund/status tracking are deliberately out of scope —
-  see INTENT.md. `isActiveAt`/`isActive` helpers cover subscription expiry
-  from the signed claims; how old a signed payload may be is the caller's
-  decision, made on its `signedDate`.
+  see INTENT.md. Whether a payload entitles a user is the caller's rule too,
+  read off `revocationDate` and `expiresDate`; a billing grace period (in
+  the renewal info), `isUpgraded` and later refunds need App Store Server
+  Notifications V2 or the App Store Server API. How old a signed payload may
+  be is likewise the caller's decision, made on its `signedDate`.
