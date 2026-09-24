@@ -10,9 +10,19 @@ root certificates.
 <dependency>
   <groupId>io.github.emindeniz99</groupId>
   <artifactId>apple-purchase-receipt-verifier</artifactId>
-  <version>0.3.0</version> <!-- check the Maven Central badge in the project README for the current one -->
+  <version>0.5.1</version> <!-- x-release-please-version -->
 </dependency>
 ```
+
+Versions before 0.4.0 must not be used: their trust anchors can be replaced
+from the classpath (see [Trust anchors](#trust-anchors)). Coming from 0.5,
+read [Upgrading from 0.5](#upgrading-from-05) first.
+
+Replacing a `verifyReceipt` call? Read these in order:
+[Differences from Apple's verifyReceipt](#differences-from-apples-verifyreceipt-read-before-migrating),
+[Migrating from verifyReceipt](#migrating-from-verifyreceipt),
+[Serving it from Spring](#serving-it-from-spring) and
+[Operations](#operations).
 
 ```java
 import io.github.emindeniz99.applepurchasereceiptverifier.AppleRootCerts;
@@ -1075,6 +1085,10 @@ Trust reaches this library through exactly the `trustedRoots` constructor
 argument, never through the JDK's own `cacerts` or a `TrustManagerFactory`
 default. `TrustStoreIsolationTest` (below) is what proves that, rather than
 only documenting it.
+
+That classpath replacement is the defect fixed in 0.4.0 (commit `54f72eb`,
+"pin the bundled Apple roots by fingerprint"), which is why versions before
+0.4.0 must not be used.
 
 **Root expiry and rotation.** The bundled roots expire on these dates, read
 from the certificate files in [`certs/`](../certs):
