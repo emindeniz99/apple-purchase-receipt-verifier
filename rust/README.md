@@ -117,8 +117,18 @@ ports disagree about what the same payload says. Only *receipt attribute*
 dates become `SystemTime`.
 
 Every claim, modelled or not, is on `payload.claims`.
-`payload.is_active_at(now)` answers the entitlement question from the signed
-claims alone — a refund or a renewal after signing is invisible to it.
+**Entitlement is your rule.** There is no "is active" helper, as in Apple's
+own libraries; read the signed fields:
+
+```rust
+let entitled = payload.revocation_date.is_none()
+    && payload.expires_date.map_or(true, |expires| expires > now_millis);
+```
+
+That is only what the payload said when it was signed. A billing grace
+period (it lives in the renewal info), an upgrade (`isUpgraded`) and a refund
+after signing are yours to handle; App Store Server Notifications V2 or the
+App Store Server API give the live status. `is_active_at` is gone.
 
 ### `ReceiptVerifier` — legacy PKCS#7 app receipts
 

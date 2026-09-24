@@ -621,30 +621,31 @@ fn with_signed_date(raw_number: &str) -> String {
 }
 
 /// `expiresDate` and `revocationDate` go through the same helper, and the
-/// failure there is an entitlement decision: a `None` expiry means "never
-/// expires" and a `None` revocation means "not revoked", so a float-spelled
-/// claim used to report a refunded or lapsed transaction as still active.
+/// failure there feeds an entitlement decision: a caller reads a `None`
+/// expiry as "never expires" and a `None` revocation as "not revoked", so a
+/// float-spelled claim used to make a refunded or lapsed transaction look
+/// active.
 #[test]
-fn is_active_at_reads_float_spelled_dates() {
+fn float_spelled_dates_are_read() {
     use apple_purchase_receipt_verifier::TransactionPayload;
-    use std::time::{Duration, UNIX_EPOCH};
 
-    let now = UNIX_EPOCH + Duration::from_millis(1_700_000_000_000);
     for spelling in ["1690000000000", "1.69e12", "1690000000000.0"] {
         let payload: TransactionPayload = payload_from(&format!("{{\"expiresDate\":{spelling}}}"));
-        assert!(
-            !payload.is_active_at(now),
-            "an expiry spelled {spelling} must expire"
+        assert_eq!(
+            payload.expires_date,
+            Some(1_690_000_000_000),
+            "an expiry spelled {spelling}"
         );
         let payload: TransactionPayload =
             payload_from(&format!("{{\"revocationDate\":{spelling}}}"));
-        assert!(
-            !payload.is_active_at(now),
-            "a revocation spelled {spelling} must revoke"
+        assert_eq!(
+            payload.revocation_date,
+            Some(1_690_000_000_000),
+            "a revocation spelled {spelling}"
         );
     }
-    // The claim genuinely absent still means "never expires".
-    assert!(payload_from("{}").is_active_at(now));
+    // The claim genuinely absent stays absent.
+    assert_eq!(payload_from("{}").expires_date, None);
 }
 
 /// The modelled view of a claim set — the same construction the verifier

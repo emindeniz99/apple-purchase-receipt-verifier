@@ -76,9 +76,9 @@ fn typed_int_claim(claims: &Claims, key: &str) -> Result<Option<i64>> {
 /// `typeof === 'number'`, Python `isinstance(x, (int, float))`, Swift
 /// `as? Double`. Rust reading them as absent made two things go wrong in the
 /// open direction: the certificate-validity instant fell back to the system
-/// clock instead of the stated signing time, and
-/// [`TransactionPayload::is_active_at`] reported a revoked or expired
-/// transaction as still entitling.
+/// clock instead of the stated signing time, and a revoked or expired
+/// transaction read as having no `revocation_date` or `expires_date`, which
+/// a caller's entitlement check takes as still entitling.
 ///
 /// A number outside `i64` stays `None`, which is what Java's
 /// `canConvertToLong()` also answers, rather than being clamped to a
@@ -205,26 +205,6 @@ impl TransactionPayload {
             revocation_reason: typed_int_claim(&claims, "revocationReason")?,
             claims,
         })
-    }
-
-    /// Whether this transaction still entitles the user at `now`: not
-    /// revoked, and — for a subscription — not expired.
-    ///
-    /// Point-in-time on the *signed claims only*. A refund or a renewal that
-    /// happened after this payload was signed is invisible to it; callers
-    /// that need current state must ask Apple's server API.
-    #[must_use]
-    pub fn is_active_at(&self, now: SystemTime) -> bool {
-        let now_millis = unix_millis(now);
-        if let Some(revoked) = self.revocation_date {
-            if now_millis >= revoked {
-                return false;
-            }
-        }
-        match self.expires_date {
-            Some(expires) => now_millis < expires,
-            None => true,
-        }
     }
 }
 

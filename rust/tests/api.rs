@@ -392,34 +392,6 @@ fn returned_byte_fields_are_copies_not_views_into_the_input() {
 }
 
 #[test]
-fn is_active_at_reads_only_the_signed_claims() {
-    use apple_purchase_receipt_verifier::datetime::system_time_from_millis;
-    let verifier = JwsVerifier::builder()
-        .trusted_roots([common::jws_root()])
-        .bundle_id("com.example.app")
-        .accepted_environments([Environment::Sandbox])
-        .build()
-        .unwrap();
-    let mut payload = verifier
-        .verify_transaction(&common::transaction_jws())
-        .unwrap();
-    // No expiry and no revocation: always active.
-    assert!(payload.is_active_at(system_time_from_millis(0)));
-    assert!(payload.is_active_at(system_time_from_millis(4_070_908_800_000)));
-
-    payload.expires_date = Some(2_000);
-    assert!(payload.is_active_at(system_time_from_millis(1_999)));
-    assert!(!payload.is_active_at(system_time_from_millis(2_000)));
-
-    payload.revocation_date = Some(1_000);
-    assert!(payload.is_active_at(system_time_from_millis(999)));
-    assert!(
-        !payload.is_active_at(system_time_from_millis(1_000)),
-        "revocation wins"
-    );
-}
-
-#[test]
 fn a_typed_payload_agrees_with_its_own_claim_escape_hatch() {
     let verifier = JwsVerifier::builder()
         .trusted_roots([common::jws_root()])
