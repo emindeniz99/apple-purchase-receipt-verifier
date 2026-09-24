@@ -310,14 +310,14 @@ try {
 | `Reason` | Raised when |
 |---|---|
 | `INVALID_JWS_FORMAT` | not three dot-separated segments, a segment that is not a base64url-encoded JSON *object*, `alg != ES256`, an `x5c` that is not exactly three entries, or a JWS over `MAX_JWS_BYTES` or nested past the reader limit |
-| `INVALID_CERTIFICATE` | an `x5c` entry does not decode to a parseable certificate. The base64 goes through `Base64.getDecoder()` behind a length check, because RFC 7515 §4.1.6 makes an entry standard base64: a character outside that alphabet (a stray `!`, a space or line break, a base64url `-` or `_`) or omitted or extra `=` padding is refused, not skipped, so such an entry gets this verdict before any certificate is parsed |
+| `INVALID_CERTIFICATE` | an `x5c` entry does not decode to a parseable certificate. The base64 goes through `Base64.getDecoder()` behind a length check, because RFC 7515 §4.1.6 makes an entry standard base64: a character outside that alphabet (a stray `!`, a space or line break, a base64url `-` or `_`) or omitted or extra `=` padding is refused, not skipped, so such an entry gets this verdict before any certificate is parsed. Also raised when the receipt's signer certificate does not decode, or its key or signature cannot be read |
 | `INVALID_CERTIFICATE_PURPOSE` | the leaf or intermediate lacks its Apple marker OID, or the receipt signer lacks its own |
 | `INVALID_CHAIN` | the path does not reach a pinned anchor, a certificate was not valid at the signing instant, or a receipt embeds more than ten certificates or a chain longer than six |
 | `INVALID_SIGNATURE` | the ES256 or CMS signature check failed, or the signer key is not RSA |
 | `WRONG_BUNDLE_ID` | the verified payload or receipt names another bundle |
 | `WRONG_ENVIRONMENT` | the environment is outside the accepted set |
 | `WRONG_APP_APPLE_ID` | a Production `AppTransaction` does not name the configured app Apple id |
-| `INVALID_RECEIPT_FORMAT` | the PKCS#7/CMS blob does not parse, has trailing bytes, has no signer info, or the receipt is over `MAX_RECEIPT_BYTES` |
+| `INVALID_RECEIPT_FORMAT` | the PKCS#7/CMS blob does not parse, has trailing bytes, has no signer info, embeds a certificate other than the signer that cannot be read (the certificate bag is not signed, so that is a defect of the receipt), or the receipt is over `MAX_RECEIPT_BYTES` |
 | `DEVICE_HASH_MISMATCH` | the device hash does not match attribute 5, or the receipt lacks the attributes the check needs |
 | `STALE_PAYLOAD` | the payload was signed longer ago than `maxSignedAge` |
 | `INTERNAL_ERROR` | the receipt's chain and signature verified, but its payload does not parse; `getCause()` is the parser's exception. Not the client's fault: alert and retry or escalate, do not deny |
