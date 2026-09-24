@@ -321,6 +321,18 @@
       "codec": "utf8",
       "contentSha256": "53090b903cdcd661a100ebfd41617103352ede6b3bcf91a34346ccdcc925c6d8"
     },
+    "xcode-signed-app-transaction": {
+      "path": "apple-official/xcode/xcode-signed-app-transaction",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "8805114dab81c7aa132cbd9a579337c04438b1a8e5f0c5afece04157fb0af5af"
+    },
+    "xcode-signed-renewal-info": {
+      "path": "apple-official/xcode/xcode-signed-renewal-info",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "3db823f7d6376ff1fbac239026240e3414b670d18341ed21372e4d2237353805"
+    },
     "xcode-app-receipt-empty": {
       "path": "apple-official/xcode/xcode-app-receipt-empty",
       "role": "input",
@@ -1473,6 +1485,35 @@
         "jws",
         "raw",
         "positive",
+        "apple-official"
+      ]
+    },
+    {
+      "id": "raw/reject-xcode-signed-renewal-info",
+      "description": "An Xcode/StoreKit-Test signed renewal info carries a single self-signed certificate in x5c. verifyRaw binds no claims, so only the x5c shape can object, and it does before any chain work.",
+      "operation": "verifyRaw",
+      "input": {
+        "fixture": "xcode-signed-renewal-info"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "apple-test-ca"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_JWS_FORMAT"
+      },
+      "fault": "x5c-holds-one-certificate-not-three",
+      "tags": [
+        "jws",
+        "raw",
+        "negative",
+        "format",
+        "pinning",
         "apple-official"
       ]
     },
@@ -6445,6 +6486,39 @@
         "negative",
         "claims",
         "generated"
+      ]
+    },
+    {
+      "id": "app-transaction/reject-xcode-signed-app-transaction",
+      "description": "An Xcode/StoreKit-Test signed AppTransaction carries a single self-signed certificate in x5c; requiring exactly three certificates rejects it before any chain work, as for the Xcode-signed transaction.",
+      "operation": "verifyAppTransaction",
+      "input": {
+        "fixture": "xcode-signed-app-transaction"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "apple-test-ca"
+          ]
+        },
+        "bundleId": "com.example.naturelab.backyardbirds.example",
+        "acceptedEnvironments": [
+          "Sandbox"
+        ]
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_JWS_FORMAT"
+      },
+      "fault": "x5c-holds-one-certificate-not-three",
+      "tags": [
+        "jws",
+        "app-transaction",
+        "negative",
+        "format",
+        "pinning",
+        "apple-official"
       ]
     },
     {
