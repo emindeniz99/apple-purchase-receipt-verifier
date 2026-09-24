@@ -360,6 +360,9 @@ class VerifyReceiptResultTest {
             assertTrue(cause instanceof VerificationException, label + ": " + cause);
             assertEquals(result.failureReason(), ((VerificationException) cause).reason(), label);
             assertTrue(cause.getMessage().startsWith(result.failureReason() + ": "), label);
+            // Only the sanitised message: a raw cause could quote certificate
+            // text, and a logged stack trace would print it.
+            assertEquals(null, cause.getCause(), label);
             // The detail stays in the log: the wire body is the bare status.
             assertEquals("{\"status\":" + result.status() + "}", result.toJson(), label);
             assertInvariant(result, label);

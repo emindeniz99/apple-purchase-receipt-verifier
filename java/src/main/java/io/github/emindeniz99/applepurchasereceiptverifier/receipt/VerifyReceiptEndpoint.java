@@ -299,10 +299,22 @@ public final class VerifyReceiptEndpoint {
                 return VerifyReceiptResult.internalError(environment, cause != null ? cause : e, at);
             }
             // Kept so on-call can tell, say, an expired certificate from a
-            // missing anchor. It never reaches the JSON response.
-            return VerifyReceiptResult.failed(environment, e.reason(), e, at);
+            // missing anchor. It never reaches the JSON response. Only the
+            // sanitised message travels: the cause chain can quote raw
+            // certificate text, which a logged stack trace would print.
+            return VerifyReceiptResult.failed(environment, e.reason(), withoutCause(e), at);
         } catch (RuntimeException e) {
             return VerifyReceiptResult.internalError(environment, e, at);
         }
+    }
+
+    /** {@code e} with the same reason, message and stack trace, and no cause. */
+    private static VerificationException withoutCause(VerificationException e) {
+        String prefix = e.reason() + ": ";
+        String message = String.valueOf(e.getMessage());
+        VerificationException copy = new VerificationException(
+                e.reason(), message.startsWith(prefix) ? message.substring(prefix.length()) : message);
+        copy.setStackTrace(e.getStackTrace());
+        return copy;
     }
 }
