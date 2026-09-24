@@ -528,26 +528,53 @@ The genuine legacy Apple receipt chain is SHA-1 end to end: the leaf and the
 WWDR intermediate are both `sha1WithRSAEncryption`. `ReceiptVerifier` builds
 that chain with the JDK's own PKIX `CertPathBuilder`, which obeys
 `jdk.certpath.disabledAlgorithms` in `java.security`. Stock OpenJDK qualifies
-its SHA-1 entry (`SHA1 jdkCA & usage TLSServer`, or similar) so the pinned
-Apple root is unaffected and the suite passes unchanged. A JVM whose policy
-disables SHA-1 outright, which is what RHEL and Fedora system crypto policies
-and many hardened enterprise `java.security` files do, fails every genuine
-legacy receipt with `INVALID_CHAIN: signer chain does not validate to a
-pinned Apple root: unable to find valid certification path to requested
-target`. Measured on Temurin 21 with
-`jdk.certpath.disabledAlgorithms=MD2, MD5, SHA1, RSA keySize < 1024`: every
-conformance case passes except `receipt/verify-genuine-legacy-sha1-chain`,
-and the `java-hardened-policy` CI job asserts exactly that on every push.
+its SHA-1 entry (`SHA1 jdkCA & usage TLSServer`, or similar), so the pinned
+Apple root is unaffected. A JVM whose policy disables SHA-1 outright, which
+is what RHEL and Fedora system crypto policies and many hardened enterprise
+`java.security` files do, cannot validate that chain.
 
-The library will not silently route around the policy: chain building stays
-on the JDK provider, so the platform's rule is the rule. The escape hatch is
-the platform's own, a `java.security` override that leaves SHA-1 out of
-`jdk.certpath.disabledAlgorithms` (`-Djava.security.properties=<file>` for
-one JVM, `update-crypto-policies --set LEGACY` on RHEL). Newer receipts
-(SHA-256 chains) and every StoreKit 2 JWS are unaffected. Run
-`ConformanceCasesTest` on the JDK image that will serve production before
-relying on legacy receipts there; the discriminating case is already in the
-suite. Ruby, PHP and Go carry the same caveat for their runtimes.
+Every verifier therefore checks its chain signature algorithms when it is
+constructed. `ReceiptVerifier.DEFAULT_CHAIN_ALGORITHMS` is `SHA1_WITH_RSA`
+and `SHA256_WITH_RSA`; `JwsVerifier.DEFAULT_CHAIN_ALGORITHMS` is
+`SHA256_WITH_ECDSA` and `SHA384_WITH_ECDSA`. The constructor signs a
+throwaway two-certificate chain with each one, using the key type and size
+Apple uses, and validates it with the same PKIX code. If the JVM refuses one,
+the constructor throws `IllegalStateException` naming the algorithm, the
+property, and what leaving it out costs:
+
+```
+SHA1withRSA is in this verifier's chain algorithms, but this JVM cannot
+validate a certificate signed with it (...). Apple signs legacy receipts with
+it. Take it out of jdk.certpath.disabledAlgorithms (java.security), or pass a
+set without SHA1_WITH_RSA; legacy receipts then fail with INVALID_CHAIN.
+```
+
+The check runs once per algorithm per process. So a policy that disables an
+algorithm Apple signs with stops the service at startup, instead of turning
+every affected receipt into `INVALID_CHAIN` as if it were forged.
+
+There are two ways out, and both are the operator's choice:
+
+- Allow the algorithm: a `java.security` override that leaves SHA-1 out of
+  `jdk.certpath.disabledAlgorithms` (`-Djava.security.properties=<file>` for
+  one JVM, `update-crypto-policies --set LEGACY` on RHEL).
+- Accept fewer algorithms: pass a smaller set to the constructor. Any chain
+  signed with an algorithm outside the set is `INVALID_CHAIN`, genuine or
+  not. Without `SHA1_WITH_RSA` every legacy receipt is `INVALID_CHAIN` and
+  current (SHA-256) receipts still verify:
+
+```java
+new ReceiptVerifier(AppleRootCerts.receiptRoots(), bundleId,
+        EnumSet.of(SignatureAlgorithm.SHA256_WITH_RSA));
+```
+
+`VerifyReceiptEndpoint` and `JwsVerifier` take the same set as their last
+constructor argument, and `ReceiptVerifier.verifyReceiptCore` has an
+overload for it; having no constructor, it runs the check on its first call
+and throws the same `IllegalStateException` from every call if it fails.
+The `java-hardened-policy` CI job and `ChainAlgorithmsTest` run this under
+`jdk.certpath.disabledAlgorithms=MD2, MD5, SHA1, RSA keySize < 1024` on every
+push. Ruby, PHP and Go carry the same caveat for their runtimes.
 
 ## Environment routing and staleness
 

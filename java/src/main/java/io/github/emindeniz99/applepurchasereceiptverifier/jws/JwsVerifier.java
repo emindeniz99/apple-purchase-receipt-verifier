@@ -4,11 +4,13 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.emindeniz99.applepurchasereceiptverifier.Environment;
+import io.github.emindeniz99.applepurchasereceiptverifier.SignatureAlgorithm;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
 import io.github.emindeniz99.applepurchasereceiptverifier.internal.AppleTrust;
 import io.github.emindeniz99.applepurchasereceiptverifier.internal.BouncyCastle;
 import io.github.emindeniz99.applepurchasereceiptverifier.internal.BoundedJson;
+import io.github.emindeniz99.applepurchasereceiptverifier.internal.ChainAlgorithms;
 import io.github.emindeniz99.applepurchasereceiptverifier.internal.SafeText;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -29,6 +31,7 @@ import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.Date;
 import java.util.EnumSet;
 import java.util.List;
@@ -85,7 +88,16 @@ public final class JwsVerifier {
      */
     public static final int MAX_JWS_BYTES = 262144;
 
+    /**
+     * The certificate signature algorithms Apple signs JWS chains with:
+     * ECDSA P-384 with SHA-384 on the WWDR intermediate, P-256 with SHA-256
+     * on the signing leaf.
+     */
+    public static final Set<SignatureAlgorithm> DEFAULT_CHAIN_ALGORITHMS = Collections.unmodifiableSet(
+            EnumSet.of(SignatureAlgorithm.SHA256_WITH_ECDSA, SignatureAlgorithm.SHA384_WITH_ECDSA));
+
     private final Set<TrustAnchor> trustAnchors;
+    private final Set<SignatureAlgorithm> chainAlgorithms;
     private final String bundleId;
     private final Set<Environment> acceptedEnvironments;
     private final @Nullable Long appAppleId;
@@ -138,6 +150,28 @@ public final class JwsVerifier {
             @Nullable Long appAppleId,
             @Nullable Long maxSignedAge,
             @Nullable Clock clock) {
+        this(trustedRoots, bundleId, acceptedEnvironments, appAppleId, maxSignedAge, clock, DEFAULT_CHAIN_ALGORITHMS);
+    }
+
+    /**
+     * @param chainAlgorithms the certificate signature algorithms to accept
+     *                        on the x5c chain; a chain using another one is
+     *                        {@link Reason#INVALID_CHAIN}, genuine or not, so
+     *                        leaving out either default makes every Apple JWS
+     *                        {@code INVALID_CHAIN}. The constructor checks
+     *                        that this JVM can validate a chain signed with
+     *                        each one (once per algorithm per process).
+     * @throws IllegalStateException if this JVM cannot validate a chain
+     *                               signed with one of {@code chainAlgorithms}
+     */
+    public JwsVerifier(
+            Set<X509Certificate> trustedRoots,
+            String bundleId,
+            Set<Environment> acceptedEnvironments,
+            @Nullable Long appAppleId,
+            @Nullable Long maxSignedAge,
+            @Nullable Clock clock,
+            Set<SignatureAlgorithm> chainAlgorithms) {
         Set<TrustAnchor> anchors = AppleTrust.anchors(trustedRoots);
         if (bundleId == null) {
             throw new IllegalArgumentException("bundleId must not be null");
@@ -146,6 +180,7 @@ public final class JwsVerifier {
             throw new IllegalArgumentException("acceptedEnvironments must not be empty");
         }
         this.trustAnchors = anchors;
+        this.chainAlgorithms = ChainAlgorithms.require(chainAlgorithms);
         this.bundleId = bundleId;
         this.acceptedEnvironments = EnumSet.copyOf(acceptedEnvironments);
         this.appAppleId = appAppleId;
@@ -380,6 +415,13 @@ public final class JwsVerifier {
 
     private void validateChain(X509Certificate leaf, X509Certificate intermediate, Date at)
             throws VerificationException {
+        String rejected = ChainAlgorithms.firstRejected(Arrays.asList(leaf, intermediate), chainAlgorithms);
+        if (rejected != null) {
+            throw new VerificationException(
+                    Reason.INVALID_CHAIN,
+                    "x5c certificate signed with " + SafeText.quote(rejected)
+                            + ", which this verifier's chain algorithms leave out");
+        }
         CertPathValidator validator;
         try {
             validator = CertPathValidator.getInstance("PKIX");

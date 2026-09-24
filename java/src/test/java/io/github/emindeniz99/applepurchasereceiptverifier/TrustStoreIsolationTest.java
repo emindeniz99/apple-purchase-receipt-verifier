@@ -491,11 +491,13 @@ class TrustStoreIsolationTest {
                 revocationDisabled++;
             }
         }
-        // One per verified path: the receipt path builder and the JWS path
-        // validator. A third would be a new trust seam nobody reviewed.
-        assertEquals(2, constructions, "the number of PKIX parameter objects this library builds changed");
+        // One per verified path, the receipt path builder and the JWS path
+        // validator, plus ChainAlgorithms' check of the JVM's algorithm
+        // policy, which anchors a chain it mints itself and trusts nothing
+        // with the result. A fourth would be a new trust seam nobody reviewed.
+        assertEquals(3, constructions, "the number of PKIX parameter objects this library builds changed");
         assertTrue(declarations >= 2, "no trustAnchors declaration was found, so the type check above scanned nothing");
-        assertEquals(2, revocationDisabled, "a PKIX parameter object no longer disables revocation checking");
+        assertEquals(3, revocationDisabled, "a PKIX parameter object no longer disables revocation checking");
     }
 
     // ------------------------------------------------------------------
