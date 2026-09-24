@@ -1,5 +1,6 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -80,5 +81,41 @@ class PublicReceiptsTest {
                 Integer.parseInt(reported.group(1)) > largestGenuine,
                 "bound of " + reported.group(1) + " does not clear the largest genuine chain, " + "which embeds "
                         + largestGenuine + " certificates");
+    }
+
+    /**
+     * Genuine Apple receipts carry no CMS signed attributes, unlike every
+     * receipt the test PKI builds, so the RSA check here runs over the
+     * content itself. One byte of the bundle id changed inside a genuine
+     * receipt must fail that check, with the chain and the creation date
+     * left exactly as Apple signed them.
+     */
+    @Test
+    void aGenuineReceiptWithOneContentByteChangedIsAnInvalidSignature() throws Exception {
+        byte[] genuine = Base64.getMimeDecoder().decode(receipt("receipt-sandbox-g5"));
+        ReceiptVerifier verifier = new ReceiptVerifier(AppleRootCerts.receiptRoots(), "dev.bonzer.weeka.app");
+        verifier.verify(genuine);
+
+        byte[] bundleId = "dev.bonzer.weeka.app".getBytes(StandardCharsets.UTF_8);
+        int at = indexOf(genuine, bundleId);
+        assertTrue(at > 0, "bundle id not found in the receipt");
+        final byte[] tampered = genuine.clone();
+        tampered[at + bundleId.length - 1] ^= 0x01;
+
+        VerificationException e = assertThrows(VerificationException.class, () -> verifier.verify(tampered));
+        assertEquals(VerificationException.Reason.INVALID_SIGNATURE, e.reason(), e.getMessage());
+    }
+
+    private static int indexOf(byte[] haystack, byte[] needle) {
+        outer:
+        for (int i = 0; i + needle.length <= haystack.length; i++) {
+            for (int j = 0; j < needle.length; j++) {
+                if (haystack[i + j] != needle[j]) {
+                    continue outer;
+                }
+            }
+            return i;
+        }
+        return -1;
     }
 }

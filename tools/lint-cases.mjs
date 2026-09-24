@@ -26,7 +26,8 @@
  * unregistered files. That tier is vendored verbatim from Apple's
  * app-store-server-library-java and carries material this project draws no
  * expectation from (the testInvalid* certificates, mock_signed_data/legacyTransaction,
- * three further xcode/* artifacts). Only the apple-official files that cases.json
+ * and xcode/xcode-app-receipt-with-transaction, whose bytes are registered already as
+ * public-receipts/receipt-xcode-with-purchases.b64). Only the apple-official files that cases.json
  * actually uses are registered; the rest stay unregistered on purpose, and adding a
  * new one there will not be flagged here. Every file under generated/ and
  * public-receipts/ IS required to be registered, because those two tiers exist

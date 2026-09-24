@@ -9,6 +9,7 @@ import io.github.emindeniz99.applepurchasereceiptverifier.receipt.AppReceipt;
 import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifier;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.security.Signature;
 import java.security.cert.X509Certificate;
 import java.security.spec.ECGenParameterSpec;
 import java.time.Instant;
@@ -20,11 +21,17 @@ import java.util.Date;
 import java.util.List;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1EncodableVector;
+import org.bouncycastle.asn1.ASN1Encoding;
 import org.bouncycastle.asn1.ASN1Set;
+import org.bouncycastle.asn1.DERNull;
+import org.bouncycastle.asn1.DEROctetString;
 import org.bouncycastle.asn1.DLSet;
 import org.bouncycastle.asn1.cms.CMSObjectIdentifiers;
 import org.bouncycastle.asn1.cms.ContentInfo;
 import org.bouncycastle.asn1.cms.SignedData;
+import org.bouncycastle.asn1.cms.SignerInfo;
+import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
+import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cms.CMSSignedData;
 import org.junit.jupiter.api.BeforeAll;
@@ -95,6 +102,62 @@ class ReceiptSignerInfoTest {
                 assertThrows(VerificationException.class, () -> verifier().verify(receipt));
         assertEquals(Reason.INVALID_RECEIPT_FORMAT, e.reason(), e.getMessage());
         assertTrue(e.getMessage().contains("unsupported receipt digest algorithm"), e.getMessage());
+    }
+
+    /**
+     * BouncyCastle hashes for the signature by the signatureAlgorithm field,
+     * not by digestAlgorithm. A SignerInfo that names SHA-1 as its digest but
+     * md5WithRSAEncryption as its signature, with a valid MD5 signature over
+     * its signed attributes, verified before that field was restricted too.
+     */
+    @Test
+    void aSignatureAlgorithmOutsideTheAllowlistIsAnInvalidReceiptFormat() throws Exception {
+        KeyPair signerKey = rsaKeyPair();
+        X509Certificate signer = signerUnderTheIntermediate(signerKey);
+        SignedData signedData = signedData(signAs(signerKey, "SHA1withRSA", signer));
+        SignerInfo original = SignerInfo.getInstance(signedData.getSignerInfos().getObjectAt(0));
+        Signature md5 = Signature.getInstance("MD5withRSA");
+        md5.initSign(signerKey.getPrivate());
+        md5.update(original.getAuthenticatedAttributes().getEncoded(ASN1Encoding.DER));
+        SignerInfo downgraded = new SignerInfo(
+                original.getSID(),
+                original.getDigestAlgorithm(),
+                original.getAuthenticatedAttributes(),
+                new AlgorithmIdentifier(PKCSObjectIdentifiers.md5WithRSAEncryption, DERNull.INSTANCE),
+                new DEROctetString(md5.sign()),
+                original.getUnauthenticatedAttributes());
+        byte[] receipt = withSignerInfos(signedData, new DLSet(downgraded));
+
+        VerificationException e =
+                assertThrows(VerificationException.class, () -> verifier().verify(receipt));
+        assertEquals(Reason.INVALID_RECEIPT_FORMAT, e.reason(), e.getMessage());
+        assertTrue(e.getMessage().contains("unsupported receipt signature algorithm"), e.getMessage());
+    }
+
+    /**
+     * No SignerInfo at all. A check written as "every signer verifies" is
+     * vacuously true over an empty set, which would skip the chain and the
+     * signature entirely.
+     */
+    @Test
+    void aReceiptWithNoSignerInfoIsAnInvalidReceiptFormat() throws Exception {
+        KeyPair signerKey = rsaKeyPair();
+        X509Certificate signer = signerUnderTheIntermediate(signerKey);
+        byte[] receipt = withSignerInfos(signedData(signAs(signerKey, "SHA256withRSA", signer)), new DLSet());
+
+        VerificationException e =
+                assertThrows(VerificationException.class, () -> verifier().verify(receipt));
+        assertEquals(Reason.INVALID_RECEIPT_FORMAT, e.reason(), e.getMessage());
+    }
+
+    private static byte[] withSignerInfos(SignedData original, ASN1Set signerInfos) throws Exception {
+        SignedData replaced = new SignedData(
+                original.getDigestAlgorithms(),
+                original.getEncapContentInfo(),
+                original.getCertificates(),
+                (ASN1Set) null,
+                signerInfos);
+        return new ContentInfo(CMSObjectIdentifiers.signedData, replaced).getEncoded();
     }
 
     /** Control for the two tests above: the same construction with an allowed digest and key verifies. */
