@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"math"
-	"time"
 )
 
 // Claims are the decoded JWS payload claims, exactly as Apple sent them.
@@ -80,26 +79,6 @@ type AppTransactionPayload struct {
 	PreorderDate         *int64 `json:"preorderDate,omitempty"`
 
 	VersionExternalIdentifier *int64 `json:"versionExternalIdentifier,omitempty"`
-}
-
-// IsActiveAt reports whether the transaction grants entitlement at now:
-// not revoked, and — for a subscription — not yet expired.
-//
-// This reads the signed claims and nothing else. A refund or a renewal
-// that happened after the payload was signed is invisible to it; Apple's
-// server API is the only source for those (INTENT.md).
-func (p *TransactionPayload) IsActiveAt(now time.Time) bool {
-	if p == nil {
-		return false
-	}
-	ms := now.UnixMilli()
-	if p.RevocationDate != nil && ms >= *p.RevocationDate {
-		return false
-	}
-	if p.ExpiresDate != nil {
-		return ms < *p.ExpiresDate
-	}
-	return true
 }
 
 // --- claim reading -------------------------------------------------------
@@ -202,7 +181,7 @@ const (
 // swift `as? Double`. Reading only the integer spelling made a claim's
 // meaning depend on how it was written, and every consequence was in the
 // accept direction: an expiresDate spelled with a decimal point read as
-// absent, and IsActiveAt treats an absent expiry as no expiry.
+// absent, and a caller treats an absent expiry as no expiry.
 //
 // So a literal Int64 refuses falls back to the float, which is exactly what
 // those ports hold, and is accepted when it is finite and inside the int64

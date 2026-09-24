@@ -217,9 +217,6 @@ func TestPublicAPIShape(t *testing.T) {
 		_ func(applereceipt.Environment) ([]byte, error)                             = result.JSONFor
 	)
 
-	payload := &applereceipt.TransactionPayload{}
-	var _ func(time.Time) bool = payload.IsActiveAt
-
 	// The status codes this port can produce, and only these.
 	for _, status := range []int{
 		applereceipt.StatusOK,

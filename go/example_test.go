@@ -31,7 +31,11 @@ func ExampleJWSVerifier_VerifyTransaction() {
 	if err != nil {
 		return // reject the purchase; see Example_errorHandling
 	}
-	if payload.IsActiveAt(time.Now()) {
+	// Entitlement is your rule, read off the signed fields. A grace period,
+	// an upgrade or a refund after signing needs renewal info, App Store
+	// Server Notifications or the App Store Server API.
+	expired := payload.ExpiresDate != nil && *payload.ExpiresDate <= time.Now().UnixMilli()
+	if payload.RevocationDate == nil && !expired {
 		grantEntitlement(payload.ProductID)
 	}
 }
@@ -137,20 +141,6 @@ func Example_customTrustAnchors() {
 	// Apple Root CA
 	// Apple Root CA - G2
 	// Apple Root CA - G3
-}
-
-func ExampleTransactionPayload_IsActiveAt() {
-	expires := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC).UnixMilli()
-	payload := &applereceipt.TransactionPayload{
-		ProductID:   "com.example.app.subscription",
-		ExpiresDate: &expires,
-	}
-	fmt.Println(payload.IsActiveAt(time.Date(2029, 1, 1, 0, 0, 0, 0, time.UTC)))
-	fmt.Println(payload.IsActiveAt(time.Date(2031, 1, 1, 0, 0, 0, 0, time.UTC)))
-
-	// Output:
-	// true
-	// false
 }
 
 // Stand-ins so the examples above read like calling code rather than like

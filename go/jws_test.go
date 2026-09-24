@@ -403,9 +403,6 @@ func TestEverySpellingOfADateClaimIsRead(t *testing.T) {
 		if payload.ExpiresDate == nil || *payload.ExpiresDate != signedAt {
 			t.Fatalf("expiresDate spelled %s read as %v", spelling, payload.ExpiresDate)
 		}
-		if payload.IsActiveAt(time.UnixMilli(signedAt + 1)) {
-			t.Fatalf("expiresDate spelled %s left the subscription entitled", spelling)
-		}
 	}
 }
 
@@ -503,44 +500,6 @@ func TestHistoricalPayloadUnderAnExpiredChainStillVerifies(t *testing.T) {
 
 	if _, err := jwsVerifierFor(t, []*x509.Certificate{root.cert}, nil).VerifyTransaction(jws); err != nil {
 		t.Fatalf("a payload signed while the chain was valid must still verify: %v", err)
-	}
-}
-
-func TestIsActiveAt(t *testing.T) {
-	now := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
-	ms := func(at time.Time) *int64 { v := at.UnixMilli(); return &v }
-
-	tests := []struct {
-		name    string
-		payload applereceipt.TransactionPayload
-		want    bool
-	}{
-		{"no dates at all", applereceipt.TransactionPayload{}, true},
-		{"not yet expired", applereceipt.TransactionPayload{ExpiresDate: ms(now.Add(time.Hour))}, true},
-		{"expired", applereceipt.TransactionPayload{ExpiresDate: ms(now.Add(-time.Hour))}, false},
-		{"expiring exactly now", applereceipt.TransactionPayload{ExpiresDate: ms(now)}, false},
-		{"revoked", applereceipt.TransactionPayload{RevocationDate: ms(now.Add(-time.Hour))}, false},
-		{"revoked exactly now", applereceipt.TransactionPayload{RevocationDate: ms(now)}, false},
-		{"revocation in the future", applereceipt.TransactionPayload{RevocationDate: ms(now.Add(time.Hour))}, true},
-		{
-			"revoked beats an unexpired subscription",
-			applereceipt.TransactionPayload{
-				RevocationDate: ms(now.Add(-time.Hour)), ExpiresDate: ms(now.Add(time.Hour)),
-			},
-			false,
-		},
-	}
-	for _, test := range tests {
-		test := test
-		t.Run(test.name, func(t *testing.T) {
-			if got := test.payload.IsActiveAt(now); got != test.want {
-				t.Fatalf("got %v, want %v", got, test.want)
-			}
-		})
-	}
-	var nilPayload *applereceipt.TransactionPayload
-	if nilPayload.IsActiveAt(now) {
-		t.Fatal("a nil payload is not active")
 	}
 }
 

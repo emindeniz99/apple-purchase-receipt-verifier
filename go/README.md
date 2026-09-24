@@ -99,8 +99,18 @@ them.** That is contractual across all ports: converting to `time.Time` loses
 the raw claim and invites a timezone bug. Only legacy receipt attributes
 (`AppReceipt`, `InAppPurchase`) use `time.Time`.
 
-`(*TransactionPayload).IsActiveAt(t)` answers the entitlement question from
-the signed claims: not revoked, and not expired if it is a subscription.
+**Entitlement is your rule.** The library has no "is active" helper, as in
+Apple's own App Store Server Libraries. Read the signed fields yourself:
+
+```go
+expired := payload.ExpiresDate != nil && *payload.ExpiresDate <= time.Now().UnixMilli()
+entitled := payload.RevocationDate == nil && !expired
+```
+
+That is only what the payload said when it was signed. A billing grace
+period (it lives in the renewal info), an upgrade (`isUpgraded`) and a refund
+after signing are yours to handle; App Store Server Notifications V2 or the
+App Store Server API give the live status.
 
 ## The verifyReceipt-compatible endpoint
 
