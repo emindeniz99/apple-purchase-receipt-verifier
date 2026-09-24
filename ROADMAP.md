@@ -307,6 +307,57 @@ through.
   decoders; the three-argument `JwsVerifier` rejects every PRODUCTION
   payload, which its Javadoc should say louder.
 
+## After 0.6.0 (open items from the 2026-09-24 session)
+
+Agreed with the owner during the 0.6.0 run-up and not yet written down
+elsewhere in this file.
+
+- **Java API redesign in 0.7.** Breaking changes are fine before 1.0;
+  collect the API complaints above into one release.
+- **Shared-suite security cases for legacy receipts**, to match what the
+  JWS side already pins: a twin of an Apple certificate, a genuine receipt
+  with one content byte changed, a receipt with no signer, a signature by
+  a stranger's key, chain length and certificate count caps, BER-encoded
+  content, deep nesting, detached content, several SignerInfos, and an
+  intermediate without Apple's marker OID.
+- **Refuse a receipt with more than one SignerInfo.** Java checks only
+  the first one today, and a test pins that behaviour until this lands.
+- **Align the other eight ports with Java on the receipt signer
+  algorithm.** Java accepts any algorithm under the pinned chain since
+  0.6.0; the others still allow only RSA with SHA-1 or SHA-256.
+- **`failureCause` for `INTERNAL_ERROR` (21009)** should carry the inner
+  parser exception, so an operator can see why Apple-signed content did
+  not parse.
+- **Trailing JSON tokens** after the request object are accepted. Measure
+  what Apple's endpoint does with them, then match it.
+- **README wording in node, swift and php** still suggests retrying on
+  `INTERNAL_ERROR`, which is deterministic; say "alert and escalate"
+  instead, as the Java README does.
+- **From the final blind Java reviews (2026-09-24), for the 0.7 API work:**
+  - `ReceiptVerifier` accepts sandbox and TestFlight receipts, and the
+    caller must check `receiptType()`. Both reviewers' top money risk:
+    take an accepted-environments set, as `JwsVerifier` does.
+  - `VerifyReceiptResult.isVerified()` is true for 21007 and 21008, so a
+    caller granting on it would grant a sandbox receipt in production.
+    Add an `isAccepted()` meaning `status() == 0`.
+  - An optional expected bundle id on `VerifyReceiptEndpoint`.
+  - `TransactionPayload` lacks newer claims (`revocationType`,
+    `revocationPercentage`, `appTransactionId`, `offerDiscountType`,
+    `offerPeriod`, `storefrontId`, `isUpgraded`), and `StrictClaims` has no
+    strict boolean reader.
+  - The top-down chain walk exists twice, in `ReceiptVerifier` and
+    `JwsVerifier`; share one implementation, and catch the same exception
+    types in both.
+  - Build the CMS signer verifier per call instead of sharing it, if the
+    benchmark allows.
+  - Pin deep ASN.1 nesting with a test. Checked by hand on 2026-09-24:
+    500,000 levels of indefinite-length and 20,000 of definite-length
+    nesting both return `INVALID_RECEIPT_FORMAT` with no stack overflow.
+  - Comment reflow damage and dated facts ("measured on", "checked in
+    BouncyCastle 1.86") that will go stale.
+  - JWS `crit` header handling (RFC 7515), and an explanation of why x5c
+    entries skip the canonical re-encode check the other segments get.
+
 ## Working notes for agents (2026-09-21)
 
 Things that cost a round trip once and should not cost another.
