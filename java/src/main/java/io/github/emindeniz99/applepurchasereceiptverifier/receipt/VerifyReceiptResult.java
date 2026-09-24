@@ -137,7 +137,11 @@ public final class VerifyReceiptResult {
 
     /**
      * The response the endpoint's own environment answers, as a new map on
-     * each call. Same keys, order and types as Apple's endpoint.
+     * each call. Keys and value types follow Apple's endpoint for the fields
+     * this library can produce: fields that live only in Apple's server-side
+     * database, and {@code in_app_ownership_type}, are never present. Key
+     * order is deterministic but not part of the contract, and differs from
+     * Apple's in places ({@code original_application_version}, for one).
      */
     public Map<String, Object> toResponse() {
         return toResponse(environment);

@@ -28,11 +28,25 @@ import org.jspecify.annotations.Nullable;
  * compares {@code receipt.bundle_id}, exactly as with the real endpoint.</p>
  *
  * <p>Thread-safe once constructed: every instance field is final, the anchor
- * set is copied at construction and never handed out, every method keeps its
- * per-call state in locals, and the one object they share is a configured
- * Jackson {@link ObjectMapper}, which Jackson documents as safe to use from
- * many threads. One instance can serve every request of a process (a
- * singleton bean, for example) rather than one per request.</p>
+ * set is copied at construction and never handed out, and every method keeps
+ * its per-call state in locals. What instances share is class-level and safe
+ * to use from many threads: a configured Jackson {@link ObjectMapper}, which
+ * Jackson documents as thread-safe; the private BouncyCastle provider, whose
+ * services hand out a new engine per call; and {@link ReceiptVerifier}'s
+ * CMS signer-verifier builder, which builds a new verifier per receipt
+ * without writing any state. One instance can serve every request of a
+ * process (a singleton bean, for example) rather than one per request.</p>
+ *
+ * <p><strong>Failures are results.</strong> No method of an instance throws
+ * an {@link Exception} for any input: every failure is reported through the
+ * result's status and {@link VerifyReceiptResult#failureReason()}. An
+ * {@link Error} is not caught and can escape, such as an
+ * {@link OutOfMemoryError} or a {@link LinkageError} from a BouncyCastle or
+ * Jackson version clash on the classpath. The constructors, and
+ * {@link VerifyReceiptResult#toResponse(Environment)} and
+ * {@link VerifyReceiptResult#toJson(Environment)}, throw
+ * {@link IllegalArgumentException} for an environment other than
+ * {@link Environment#PRODUCTION} or {@link Environment#SANDBOX}.</p>
  */
 public final class VerifyReceiptEndpoint {
 
@@ -109,10 +123,11 @@ public final class VerifyReceiptEndpoint {
     }
 
     /**
-     * Handles one verifyReceipt request body. Never throws — like the real
-     * endpoint, failures are reported through the result's status and
-     * {@link VerifyReceiptResult#failureReason()}. {@code request_date} is
-     * the endpoint's clock at the time of the call.
+     * Handles one verifyReceipt request body. Throws no exception: like the
+     * real endpoint, failures are reported through the result's status and
+     * {@link VerifyReceiptResult#failureReason()} (an {@link Error} can still
+     * escape; see the class Javadoc). {@code request_date} is the endpoint's
+     * clock at the time of the call.
      */
     public VerifyReceiptResult verifyReceiptResult(@Nullable Map<String, ? extends @Nullable Object> requestBody) {
         return verifyReceiptResult(requestBody, null);
@@ -142,7 +157,8 @@ public final class VerifyReceiptEndpoint {
 
     /**
      * Handles one verifyReceipt request body in its raw wire form, the JSON
-     * text an HTTP framework hands over. Never throws.
+     * text an HTTP framework hands over. Throws no exception (see the class
+     * Javadoc).
      *
      * <p>A body over {@link #MAX_REQUEST_BYTES} UTF-8 bytes fails with
      * {@link Reason#REQUEST_TOO_LARGE}, status 21002, where Apple answers
@@ -191,7 +207,8 @@ public final class VerifyReceiptEndpoint {
 
     /**
      * Verifies a bare base64 receipt, the value a request body would carry as
-     * {@code receipt-data}, with no envelope around it. Never throws; a
+     * {@code receipt-data}, with no envelope around it. Throws no exception
+     * (see the class Javadoc); a
      * {@code null} or empty string fails with
      * {@link Reason#MALFORMED_REQUEST}, as a missing {@code receipt-data}
      * does.
@@ -219,7 +236,8 @@ public final class VerifyReceiptEndpoint {
      * part of the JSON contract.</p>
      *
      * @param requestJson raw JSON request body
-     * @return raw JSON response body; never throws
+     * @return raw JSON response body; no exception is thrown (see the class
+     *         Javadoc)
      */
     public String verifyReceiptJson(@Nullable String requestJson) {
         return verifyReceiptResult(requestJson).toJson();

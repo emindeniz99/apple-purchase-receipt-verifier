@@ -46,7 +46,12 @@ import org.jspecify.annotations.Nullable;
  * of Apple's official app-store-server-library in offline mode: no OCSP, so a
  * revoked certificate is not detected, in exchange for no network call.</p>
  *
- * <p>Thread-safe once constructed.</p>
+ * <p>No payload is rejected for its age: how old a signed payload may be is
+ * the caller's decision, made on its {@code signedDate}.</p>
+ *
+ * <p>Thread-safe once constructed. Instances share the private BouncyCastle
+ * provider and the mapper that reads the typed claims; both are safe to use
+ * from many threads.</p>
  *
  * <p>The {@code jws} argument of all three entry points is {@code @Nullable}
  * on purpose: a null input is a verdict about the input, so it is reported as
@@ -103,8 +108,7 @@ public final class JwsVerifier {
     }
 
     /**
-     * No payload is rejected for its age: how old a signed payload may be is
-     * the caller's decision, made on its {@code signedDate} (PLAN.md D5).
+     * As the three-argument constructor, adding the app Apple id.
      *
      * @param appAppleId the app's Apple id; required to accept PRODUCTION
      *                   AppTransactions, unused otherwise
@@ -186,7 +190,7 @@ public final class JwsVerifier {
      * declared {@link VerificationException} contract. INVALID_JWS_FORMAT
      * rather than INTERNAL_ERROR on purpose: everything in here runs on
      * input no signature has vouched for, and answering an unknown error
-     * with INTERNAL_ERROR ("not the client's fault, retry or escalate")
+     * with INTERNAL_ERROR ("not the client's fault, alert and reconcile")
      * would let anyone raise that alert at will. The claims are mapped to
      * their model only after this returns, once the signature has passed.</p>
      */
