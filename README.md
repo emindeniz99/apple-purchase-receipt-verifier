@@ -335,7 +335,7 @@ you. `INTERNAL_ERROR` is not a verdict on the client at all.
 | `INVALID_CERTIFICATE_PURPOSE` | possible fraud | Deny and alert. A certificate chaining to an Apple root without the marker OID its position requires: a developer's own certificate signing a forged payload looks exactly like this. |
 | `WRONG_BUNDLE_ID` | possible fraud | Deny and alert. A genuine Apple-signed payload for another app. |
 | `WRONG_APP_APPLE_ID` | possible fraud | Deny and alert. A Production `AppTransaction` naming a different app Apple id. |
-| `INTERNAL_ERROR` | not the client's | Do not deny the user. Alert, then retry or escalate. The receipt authenticated (trusted chain, valid signature) but this library cannot read what Apple signed, or the library failed unexpectedly; either way the purchase may well be genuine. `21009` at the endpoint. |
+| `INTERNAL_ERROR` | not the client's | The chain and signature verified but this library cannot read what Apple signed: a receipt payload that does not parse, or a JWS claim whose type does not match the library's model. It also covers a runtime missing an algorithm and an unexpected failure inside the endpoint. Deterministic: the same bytes fail the same way, so do not retry the library. Log the cause with the library version, alert, and settle the purchase through the App Store Server API by transaction id; grant provisionally only if the business accepts that. `21009` at the endpoint. |
 
 The vocabulary is closed and identical in all nine ports, so this table is one
 policy across every backend language. What signatures still cannot tell you,
