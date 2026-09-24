@@ -582,6 +582,138 @@ public class RedeemReceipt {
 }
 ```
 
+For a subscription group, run the selection over every product in the group
+and keep the latest term. A non-renewing subscription carries no
+`expiresDate`, so it lands with the one-time purchases and its term is yours
+to compute from `purchaseDate()`.
+
+## App Store Server Notifications V2
+
+Refunds, revocations, renewals and expiries after the grant arrive as App
+Store Server Notifications V2. The notification is a JWS with no dedicated
+model, so it goes through `verifyRaw`, which checks the chain and the
+signature and no claim at all. The app identity (`bundleId`, `appAppleId`,
+`environment`) is not at the top level: it sits under `data`, beside the
+nested `signedTransactionInfo` and `signedRenewalInfo`, which are JWS in
+their own right and need their own verification.
+
+Apple retries a notification it did not get a 200 for, for days, so the
+same `notificationUUID` arrives more than once: dedupe on it, and do not
+apply a five-minute freshness window here. Numbers in a `verifyRaw` map are
+`Integer` or `Long` depending on their size, so read them as
+`((Number) value).longValue()`.
+
+```java
+import io.github.emindeniz99.applepurchasereceiptverifier.AppleRootCerts;
+import io.github.emindeniz99.applepurchasereceiptverifier.Environment;
+import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
+import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
+import io.github.emindeniz99.applepurchasereceiptverifier.jws.JwsVerifier;
+import io.github.emindeniz99.applepurchasereceiptverifier.jws.TransactionPayload;
+import java.util.EnumSet;
+import java.util.Map;
+import java.util.logging.Logger;
+
+public class Notifications {
+    private static final Logger LOG = Logger.getLogger(Notifications.class.getName());
+    private static final String BUNDLE_ID = "com.example.app";
+    private static final long APP_APPLE_ID = 1_234_567_890L;
+
+    public interface Seen {
+        boolean contains(String notificationUuid);
+        void add(String notificationUuid);
+    }
+
+    public interface Entitlements {
+        /** REFUND, REVOKE: take the purchase back. */
+        void revoke(TransactionPayload transaction, Environment environment);
+
+        /** Everything else with a transaction: DID_RENEW, EXPIRED, DID_CHANGE_RENEWAL_STATUS, ... */
+        void update(String notificationType, TransactionPayload transaction,
+                Long gracePeriodExpiresDate, Environment environment);
+    }
+
+    private final JwsVerifier verifier = new JwsVerifier(
+            AppleRootCerts.jwsRoots(), BUNDLE_ID, EnumSet.of(Environment.PRODUCTION, Environment.SANDBOX));
+    private final Seen seen;
+    private final Entitlements entitlements;
+
+    public Notifications(Seen seen, Entitlements entitlements) {
+        this.seen = seen;
+        this.entitlements = entitlements;
+    }
+
+    /** signedPayload from the POST body {"signedPayload": "..."}; returns the HTTP status for Apple. */
+    public int handle(String signedPayload) {
+        try {
+            Map<String, Object> notification = verifier.verifyRaw(signedPayload);
+            Object uuid = notification.get("notificationUUID");
+            if (!(uuid instanceof String)) {
+                return 400;
+            }
+            if (seen.contains((String) uuid)) {
+                return 200;                           // a retry of one already handled
+            }
+            Object data = notification.get("data");
+            if (!(data instanceof Map)) {
+                seen.add((String) uuid);              // a summary notification: no app data to act on
+                return 200;
+            }
+            Map<?, ?> d = (Map<?, ?>) data;
+
+            // verifyRaw checked no claim: check the app identity here.
+            if (!BUNDLE_ID.equals(d.get("bundleId"))) {
+                return 400;
+            }
+            Object env = d.get("environment");
+            Environment environment = env instanceof String ? Environment.fromValue((String) env) : null;
+            if (environment != Environment.PRODUCTION && environment != Environment.SANDBOX) {
+                return 400;
+            }
+            Object appAppleId = d.get("appAppleId");   // absent in sandbox
+            if (environment == Environment.PRODUCTION
+                    && !(appAppleId instanceof Number && ((Number) appAppleId).longValue() == APP_APPLE_ID)) {
+                return 400;
+            }
+
+            // The nested JWS are verified on their own. verifyTransaction checks
+            // bundle id and environment; renewal info goes through verifyRaw.
+            Object signedTransaction = d.get("signedTransactionInfo");
+            if (signedTransaction instanceof String) {
+                TransactionPayload transaction = verifier.verifyTransaction((String) signedTransaction);
+                String type = String.valueOf(notification.get("notificationType"));
+                if ("REFUND".equals(type) || "REVOKE".equals(type)) {
+                    entitlements.revoke(transaction, environment);
+                } else {
+                    Long graceUntil = null;
+                    Object signedRenewal = d.get("signedRenewalInfo");
+                    if (signedRenewal instanceof String) {
+                        Map<String, Object> renewal = verifier.verifyRaw((String) signedRenewal);
+                        if (!environment.value().equals(renewal.get("environment"))) {
+                            return 400;
+                        }
+                        Object grace = renewal.get("gracePeriodExpiresDate");
+                        graceUntil = grace == null ? null : ((Number) grace).longValue();
+                    }
+                    entitlements.update(type, transaction, graceUntil, environment);
+                }
+            }
+            seen.add((String) uuid);                  // only after the work is done
+            return 200;
+        } catch (VerificationException e) {
+            LOG.warning("notification rejected: " + e.reason());
+            // INTERNAL_ERROR is not Apple's fault or an attack: answer 500 and page,
+            // and Apple's retries give you days to ship a fix.
+            return e.reason() == Reason.INTERNAL_ERROR ? 500 : 400;
+        }
+    }
+}
+```
+
+Two deliveries of one notification can race past `seen.contains`, so
+`revoke` and `update` must be idempotent themselves; `seen` only saves the
+repeated work.
+
 ## Kotlin and null-safety
 
 Every public package carries JSpecify's `@NullMarked`, so each type in the
