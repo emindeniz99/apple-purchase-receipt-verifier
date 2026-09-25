@@ -1,0 +1,8 @@
+[package]
+name = "aprv-surface"
+version = "0.0.0"
+edition = "2021"
+publish = false
+# NOTE: no uniffi, no wasm-bindgen, no serde. Only the core.
+[dependencies]
+aprv = { package = "apple-purchase-receipt-verifier", path = "../../../../../rust" }

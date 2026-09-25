@@ -1,0 +1,14 @@
+[package]
+name = "aprv-uniffi-remote"
+version = "0.0.0"
+edition = "2021"
+publish = false
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "aprv_uniffi_remote"
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+[dependencies]
+surface = { package = "aprv-surface", path = "../surface" }
+uniffi = { version = "=0.32.2", features = ["cli"] }

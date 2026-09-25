@@ -37,10 +37,10 @@ alone is about a week.
 | Step | Work | Verify |
 |---|---|---|
 | 1.1 | Drop the `std` features on `rsa`/`p256`/`p384` (R11). | `cargo test` green, plus a new CI check that `cargo tree -i getrandom --target wasm32-unknown-unknown` finds nothing |
-| 1.2 | Add the `system_now()` seam with the `js-clock` feature (R10). | `transaction/accept-payload-without-a-signed-date` passes on wasm32-unknown-unknown |
+| 1.2 | Add the `system_now()` seam and the wasm-only `platform::install_clock` hook (R10, SURFACE.md §4.1). | `transaction/accept-payload-without-a-signed-date` passes on wasm32-unknown-unknown |
 | 1.3 | New CI job `rust-wasm`: run the conformance suite on `wasm32-unknown-unknown` (Node runner) and `wasm32-wasip1` (wasmtime). | All 186 cases, both targets |
 | 1.4 | Make `rust/` a Cargo workspace (core, ffi, bindings). | `cargo test --workspace --locked` |
-| 1.5 | Create `aprv-surface`: binding-shaped types plus the JSON view moved out of `rust/ffi`. | The C ABI's C++ and ctypes conformance pass unchanged |
+| 1.5 | Create `aprv-surface` (generator-free, SURFACE.md) and `aprv-wire` (the JSON view moved out of `rust/ffi`). Add `tools/check-layering.mjs`, the C ABI lints and `CAPABILITIES.toml` (SURFACE.md §7). | The C ABI's C++ and ctypes conformance pass unchanged; the layering check passes and fails on a planted `uniffi` dependency in the core |
 | 1.6 | Close the C ABI gaps from PORTS.md: `verified` flag, re-render, `REQUEST_TOO_LARGE`, base64 decode entry point, fuzz target. | The C ABI runs the `decodeBase64` groups; its PORTS.md row is all ✅ |
 | 1.7 | Profile receipt and JWS on native and wasm. Record the results in BENCHMARKS.md, including a JWS row, which exists in no port today. | The numbers are committed with their method |
 | 1.8 | **Differential campaign:** replay every port's fuzz corpus (Rust, Jazzer, atheris, go-fuzz, Jazzer.js, libFuzzer Swift, ruzzy, SharpFuzz, PHP) through the Rust core and the port. Compare `reason`. | Zero open divergences. Each one found becomes a case. |
@@ -143,7 +143,7 @@ existing Go types decide it.
 
 | Step | Work | Verify |
 |---|---|---|
-| 6.1 | `aprv-wasi`: `alloc`/`dealloc`, one export per operation, JSON in and out, built on the `aprv-surface` JSON view. | Its Rust tests plus a wasmtime run of the conformance cases |
+| 6.1 | `aprv-wasi`: `alloc`/`dealloc`, one export per operation, JSON in and out, built on `aprv-wire`. | Its Rust tests plus a wasmtime run of the conformance cases |
 | 6.2 | Go wrapper: `//go:embed aprv.wasm`, compile once, `sync.Pool` of instances, a discarded instance after a trap, JSON decode into today's Go types. | `go test -race`, 186/186 |
 | 6.3 | Commit `aprv.wasm`. A `go-wasm-reproducible` job rebuilds it and compares the SHA-256. | Hash match |
 | 6.4 | Keep `go-platforms` (macOS, Windows). Add a `CGO_ENABLED=0` build and a `FROM scratch` smoke. | Green |

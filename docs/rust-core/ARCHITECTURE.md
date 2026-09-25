@@ -18,7 +18,7 @@ option.
                                │ plain Rust API
 ┌──────────────────────────────▼───────────────────────────────────────┐
 │ rust/bindings/surface/  crate aprv-surface  (unpublished)            │
-│   binding-shaped records and errors, conversions, the JSON view.     │
+│   binding-neutral records and errors, checked conversions.           │
 │   #![forbid(unsafe_code)]. Mechanical review.                        │
 └─────┬───────────────────┬──────────────────┬──────────────────┬──────┘
       │                   │                  │                  │
@@ -48,7 +48,8 @@ rust/bindings/uniffi/          aprv-uniffi: #[uniffi::export] over aprv-surface
 rust/bindings/uniffi/uniffi.toml   per-language names, packages, disable_java_cleaner
 rust/bindings/wasm/            aprv-wasm: #[wasm_bindgen] over aprv-surface
 rust/bindings/wasi/            aprv-wasi: exports for wazero (only if R6 = wazero)
-rust/ffi/                      existing C ABI, rebased on aprv-surface's JSON view
+rust/bindings/wire/            aprv-wire: the JSON view (C ABI, wasi), see SURFACE.md §4.2
+rust/ffi/                      existing C ABI, rebased on aprv-surface + aprv-wire
 rust/ffi/swig/                 apple_purchase_receipt_verifier.i and examples
 rust/fuzz/                     unchanged, plus targets for the JSON view
 java/  node/  python/  swift/  go/   package builds, façades, binding tests
@@ -69,12 +70,13 @@ Why a separate `aprv-surface` crate:
   structs, epoch milliseconds or a timestamp instead of `Option<SystemTime>`
   in JSON. Writing it once in `aprv-surface` stops four adapters from
   converting four slightly different ways.
-- The UniFFI derives go on the surface types behind
-  `#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]`. The core
-  carries no binding annotation at all, which is the brief's rule.
+- Neither the core nor the surface carries a binding annotation. The UniFFI
+  adapter annotates the surface types from outside with `#[uniffi::remote]`
+  (spike passed). The full contract, and why the surface also holds no
+  serializer, is [SURFACE.md](./SURFACE.md).
 - The C ABI's cross-port JSON view (today in `rust/ffi/src/lib.rs:391-534`)
-  moves here as a serde model. The C ABI, the wasi adapter and the npm
-  façade then share one serializer.
+  moves to a separate `aprv-wire` crate, shared by the C ABI and the wasi
+  adapter (SURFACE.md §4.2).
 
 ## 3. The cross-language API
 
@@ -161,13 +163,16 @@ The core reads the clock only in the chain-validity fallback (`jws.rs:455`,
 `receipt.rs:134`) and for the endpoint's `request_date`.
 
 On `wasm32-unknown-unknown` the standard library's `SystemTime::now()`
-panics, and the spikes measured that trap. The fix stays inside the core:
+panics, and the spikes measured that trap. The fix keeps the core free of
+any JavaScript dependency (SURFACE.md §4.1):
 
 - The core gets one crate-private `fn system_now() -> SystemTime`.
 - It uses `std::time::SystemTime::now()` on every target except
   `all(target_arch = "wasm32", target_os = "unknown")`.
-- On that target it uses `js_sys::Date::now()`, behind an optional `js-clock`
-  feature. The wasm adapter enables the feature.
+- On that target alone the core exposes `platform::install_clock(fn() ->
+  SystemTime)`. The wasm adapter installs `Date.now()` once at init. Until
+  it does, a verification that needs "now" fails with `InternalError`
+  instead of trapping. The hook does not exist on native targets.
 - Callers still cannot move the validity instant. The host's clock replaces
   the OS clock, which is the same trust level as `SystemTime::now()`.
 - Cloudflare Workers and Akamai freeze `Date.now()` at the last I/O or at

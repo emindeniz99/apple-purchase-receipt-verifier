@@ -33,6 +33,8 @@ the next release.
    a recommendation.
 5. [MIGRATION.md](./MIGRATION.md): phases 1-7 with gates, CI and release
    changes, acceptance tests, risks.
+6. [SURFACE.md](./SURFACE.md): the binding-neutral contract between the
+   core and every adapter, with its enforcement.
 
 ## What the spikes settled
 

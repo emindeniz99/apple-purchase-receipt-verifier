@@ -110,7 +110,7 @@ when the floor reaches 22.
 |---|---|---|
 | A. Annotate core types with `uniffi`, `wasm_bindgen`, ... | Least code | Couples the reviewed core to every generator. The core API drifts toward the lowest common denominator. The brief forbids it. |
 | B. Each adapter defines its own mirror types | No shared crate | Four adapters convert dates, bytes and ids four ways, and that is exactly the drift we are removing. |
-| **C. One `aprv-surface` crate with binding-shaped types and `cfg_attr` derives** | One model, one JSON view. The core stays clean. | One more crate to review (mechanical). |
+| **C. One `aprv-surface` crate, generator-free; adapters annotate it from outside (`#[uniffi::remote]`)** | One model. Neither core nor surface names a generator, so any adapter can be swapped. | Adapters restate field lists (compile-checked). |
 
 Recommendation: **C.** Details in [ARCHITECTURE.md §2-3](./ARCHITECTURE.md).
 
@@ -272,7 +272,8 @@ A later demand for Ruby, PHP or .NET gets a binding over the C ABI
 
 | Option | Verdict |
 |---|---|
-| **A. Core-internal `system_now()` with `js_sys::Date::now()` on that target, behind a `js-clock` feature** | Chosen. Callers still cannot inject the validity instant (THREAT-MODEL §3.5). One `cfg` in the core. |
+| A. Core-internal `system_now()` with `js_sys::Date::now()` behind a `js-clock` feature | First choice, replaced 2026-09-25: it puts a wasm-bindgen crate in the core's graph. |
+| **A2. A `platform::install_clock` hook that exists only on `wasm32-unknown-unknown`; the wasm adapter installs `Date.now()`** | **Chosen** (SURFACE.md §4.1). No JS dependency in the core, and callers still cannot move the validity instant (THREAT-MODEL §3.5). |
 | B. `web-time` crate | The same idea through a dependency last released 2024-03-01. No gain. |
 | C. Take `now` as a parameter on the verifiers | Breaks §3.5: a caller could accept an expired chain. |
 | D. Leave it | Traps (spike). |
