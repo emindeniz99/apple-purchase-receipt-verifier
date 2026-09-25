@@ -131,68 +131,48 @@ differ from run to run, so compare ports within one run, not across runs.
 
 ## Results
 
-**Local, shared 4 vCPU cloud VM, noisy, not a baseline.** Measured 2026-09-22
-on the library at `bc32534` (0.5.1), one port at a time, nothing else
-running. CPU: Intel(R) Xeon(R) Processor @ 2.10GHz, 4 vCPUs (KVM guest),
-15 GiB RAM.
+**Local, shared 4 vCPU cloud VM, noisy, not a baseline.** All nine ports
+measured on 2026-09-25 at `v0.6.0` (`b934caa`), one port at a time, nothing
+else running, with the commands `benchmark.yml` runs. CPU: Intel(R) Xeon(R)
+Processor @ 2.10GHz, 4 vCPUs (KVM guest), 15 GiB RAM. Every number below
+comes from this one run; the earlier table, measured on 0.5.1 and partly on
+other machines, is gone.
 
-Tool versions: OpenJDK 21.0.10 (Ubuntu build) with JMH 1.37; Go 1.24.7;
-rustc 1.94.1; Node 22.22.2; CPython 3.11.15; Ruby 3.3.6 and PHP 8.4.19, both
-on OpenSSL 3.0.13; .NET 10.0.11 (SDK 10.0.400);
-Swift 6.3.3.
+Tool versions: OpenJDK 21.0.10 (Ubuntu build) with JMH 1.37; Go 1.24.7
+(the workflow asks for 1.27); rustc 1.94.1; Node 22.22.2; CPython 3.11.15
+(the workflow asks for 3.13); Ruby 3.3.6 and PHP 8.4.19, both on OpenSSL
+3.0.13; .NET 10.0.11 (SDK 10.0.400); Swift 6.3.3.
 
 Values are µs/op: the JMH mean for Java, the median of five runs for Go,
-and the median of ten samples for the rest. The .NET column was re-measured the same
-day on the same machine and library, after its benchmark moved from
-BenchmarkDotNet to the shared Stopwatch loop.
-
-The Swift column was re-measured on 2026-09-23, after its date and JSON
-changes, on a different 4 vCPU KVM guest (Intel(R) Xeon(R) Processor @
-2.80GHz, 15 GiB RAM), all ten rows in one run. On that machine, run back to
-back with it, the library before those changes (`5d5d74a`) measured
-182,511 µs for legacy `core` and 343,070 µs for legacy `endpointJson`, 14%
-and 13% above the 160,145 and 304,378 the first run recorded, so the two
-machines are close enough to compare, not identical. The other columns were
-not re-measured.
-
-The Java column predates #152, which moved certificate parsing and the
-chain check from the JDK to the pinned BouncyCastle provider. A local
-microbenchmark put that at about 90 µs more per receipt (g5 `core` about
-445 µs instead of 356, legacy `core` about 3% slower), because the JDK
-caches Apple's certificates and BouncyCastle does not. The column will be
-re-measured after 0.6.0.
+and the median of ten samples for the rest.
 
 | benchmark | fixture | Java | Go | Rust | Node | Python | Ruby | PHP | .NET | Swift |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| `decodeBase64` | g5 | 2.4 | 6.9 | 3.3 | 16.3 | 17.9 | 6.6 | 0.4 | 6.0 | n/a |
-| `core` | g5 | 356 | 207 | 1,159 | 519 | 589 | 2,108 | 3,882 | 3,018 | 598 |
-| `verifierBase64` | g5 | 345 | 205 | 1,130 | 581 | 682 | 1,865 | 3,470 | 2,620 | 525 |
-| `endpointJson` | g5 | 366 | 338 | 1,219 | 674 | 914 | 2,264 | 3,842 | 3,030 | 780 |
-| `retryViaResult` | g5 | 375 | 248 | 1,202 | 668 | 784 | 2,151 | 3,527 | 2,639 | 786 |
-| `rejectTamperedSignature` | g5 | 380 | 201 | 1,191 | 563 | 612 | 2,053 | 3,410 | 2,812 | 614 |
-| `decodeBase64` | legacy | 27.3 | 96.3 | 47.4 | 192 | 235 | 80.1 | 5.0 | 76.2 | n/a |
-| `core` | legacy | 3,063 | 2,519 | 2,274 | 4,051 | 9,176 | 17,193 | 24,777 | 3,319 | 8,150 |
-| `verifierBase64` | legacy | 3,134 | 2,481 | 2,153 | 4,176 | 9,028 | 16,237 | 24,255 | 3,223 | 8,255 |
-| `endpointJson` | legacy | 4,401 | 5,758 | 3,969 | 8,170 | 13,659 | 24,503 | 26,855 | 4,929 | 19,273 |
-| `retryViaResult` | legacy | 4,061 | 4,655 | 4,103 | 6,187 | 12,421 | 22,131 | 24,997 | 4,800 | 18,660 |
-| `rejectTamperedSignature` | legacy | 3,152 | 2,381 | 2,438 | 3,386 | 9,106 | 14,852 | 23,731 | 3,747 | 8,122 |
+| `decodeBase64` | g5 | 2.3 | 19.5 | 3.4 | 14.2 | 31.9 | 15.5 | 3.3 | 15.5 | n/a |
+| `core` | g5 | 780 | 210 | 567 | 535 | 644 | 1,935 | 3,407 | 2,589 | 627 |
+| `verifierBase64` | g5 | 784 | 251 | 567 | 573 | 687 | 2,031 | 3,299 | 2,161 | 549 |
+| `endpointJson` | g5 | 849 | 384 | 630 | 712 | 877 | 1,952 | 3,510 | 1,871 | 763 |
+| `retryViaResult` | g5 | 830 | 284 | 603 | 670 | 803 | 1,959 | 3,492 | 1,839 | 732 |
+| `rejectTamperedSignature` | g5 | 749 | 169 | 562 | 466 | 496 | 1,667 | 2,992 | 2,251 | 485 |
+| `decodeBase64` | legacy | 27.7 | 256 | 45.0 | 186 | 433 | 168 | 44.3 | 216 | n/a |
+| `core` | legacy | 3,742 | 2,338 | 1,651 | 4,001 | 9,234 | 16,616 | 24,419 | 3,153 | 8,204 |
+| `verifierBase64` | legacy | 3,729 | 2,701 | 1,740 | 4,449 | 9,559 | 16,889 | 24,477 | 3,029 | 8,465 |
+| `endpointJson` | legacy | 4,661 | 5,939 | 3,419 | 7,737 | 13,615 | 21,240 | 27,477 | 4,403 | 17,583 |
+| `retryViaResult` | legacy | 4,638 | 5,054 | 3,373 | 7,441 | 13,824 | 21,483 | 26,616 | 4,105 | 17,147 |
+| `rejectTamperedSignature` | legacy | 1,269 | 339 | 668 | 661 | 1,084 | 2,273 | 3,663 | 2,369 | 796 |
 
-Read the ratios inside one column before the absolute values. PHP and the
-earlier BenchmarkDotNet run of .NET each ran twice, and the same benchmark
-moved by up to 12% between those runs.
-A few gaps are larger than that. Swift used to take about 50 times as long
-as Java on the legacy receipt and about 8 times as long on g5. Each date cost
-a new `ISO8601DateFormatter` to parse and two `DateFormatter`s to render, and
-`JSONSerialization` with `.sortedKeys` wrote the answer; on Linux that was
-nearly all of the time. Foundation's `Date.ISO8601FormatStyle`,
-`Date.VerbatimFormatStyle` and `JSONEncoder` now do that work, giving the
-same bytes. Swift now takes about 2.7 times as long as Java on legacy `core`
-and 4.4 times on legacy `endpointJson`.
-PHP and Ruby take about 25 ms
-and 17 ms for legacy \`core\`. Rust is the one port whose g5 \`core\` costs half
-its legacy \`core\`. The table predates the fix for that: `rsa` was built
-without its `u64_digit` feature, so the three RSA-2048 verifies every receipt
-needs ran on 32-bit limbs at about 370 µs each. With the feature back, g5
-`core` went from 1,187 to about 740 µs, measured on a different machine (Xeon
-at 2.80 GHz), and RSA is still about 90% of it. See the Rust entries in
-`ROADMAP.md` for the next steps.
+Read the ratios inside one column before the absolute values. This machine
+is noisy: a second JMH run of Java `core` the same morning gave 819 µs for
+g5 with an error of ±372, and the library just before #161 (`918a0eb`) gave
+713 ±594 back to back with it, so #161's key-decoding change is within the
+noise. The Java column is about twice the 356 µs the 0.5.1 table showed on
+the same kind of VM. The move to the pinned BouncyCastle provider (#152)
+accounts for about 90 µs of that; the rest is not explained by any change
+measured here, and the column should be re-measured on a quieter machine
+before anyone reads a trend into it. Rust's g5 `core` fell from 1,159 to
+567 µs now that `rsa` is built with its `u64_digit` feature again.
+
+`rejectTamperedSignature` on the legacy receipt is now far cheaper than
+`core` in every port, because the signature is checked before the payload
+is parsed. PHP and Ruby
+remain the slowest, at about 24 ms and 17 ms for legacy `core`.
