@@ -82,7 +82,7 @@ Recommendation: **C.** Details in [ARCHITECTURE.md §2-3](./ARCHITECTURE.md).
 
 ## R4. npm on Node: accept the wasm cost, or add a native addon
 
-**Status: owner call.**
+**Status: accepted by the owner on 2026-09-25: option C.**
 
 Measured on one machine (µs per verification):
 
@@ -136,7 +136,12 @@ change.
 
 ## R6. Go
 
-**Status: owner call.** The module is live (`go/v0.4.0` to `v0.6.0`).
+**Status: accepted by the owner on 2026-09-25: option A, plus an on-demand fast path.**
+The default stays pure Go on wazero. If a user needs native speed, an
+opt-in `-tags aprv_native` build links the C ABI library from the GitHub
+Release through cgo. Nothing gets committed for it, and it gets built only
+when someone asks. Context: the module has been public since 2026-09-06, so
+few users are affected by the change. The module is live (`go/v0.4.0` to `v0.6.0`).
 Today's Go port is stdlib-only, cgo-free and the fastest port (207 µs per
 receipt in BENCHMARKS.md).
 
@@ -156,7 +161,10 @@ route, option C becomes the natural home for that role instead.
 
 ## R7. Swift on Linux
 
-**Status: owner call.** Today the Swift package supports macOS 13 and
+**Status: accepted by the owner on 2026-09-25: option A, Swift 6.2 for
+every platform.** Only Linux needs 6.2 (SE-0482); Apple's XCFramework works
+from Swift 5.3. If a Swift 6.1 macOS user needs support, a second manifest
+(`Package@swift-6.1.swift`, Apple-only XCFramework) can keep 6.1 there. Today the Swift package supports macOS 13 and
 Linux, with Swift 6.1 as the floor, and CI runs 6.1/6.2/6.3 Linux
 containers plus macOS. A backend verifier makes Linux the likely
 deployment target.
@@ -175,7 +183,7 @@ the first Phase 2 task for Swift, because the SE-0482 audit of Rust's
 
 ## R8. What independent checking survives the migration
 
-**Status: owner call.** This is the monoculture trade-off from R1.
+**Status: accepted by the owner on 2026-09-25: option B.** This is the monoculture trade-off from R1.
 
 | Option | What catches a Rust bug | Cost |
 |---|---|---|

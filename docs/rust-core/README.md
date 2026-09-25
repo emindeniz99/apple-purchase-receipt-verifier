@@ -1,7 +1,8 @@
 # One Rust core: the migration plan
 
-Status on 2026-09-25: **proposal.** Phase 0 (inventory and spikes) is
-done. Phase 1 starts after the owner settles the four owner calls below.
+Status on 2026-09-25: **accepted plan.** Phase 0 (inventory and spikes) is
+done. The owner settled all four owner calls on 2026-09-25 (table below).
+Phase 1 is next.
 
 ## The idea
 
@@ -44,14 +45,14 @@ the next release.
 - **Python via UniFFI** gives typed exceptions, default arguments and
   docstrings from Rust doc comments.
 
-## Owner calls
+## Owner calls (all settled)
 
 | # | Question | Recommendation |
 |---|---|---|
-| R4 | npm on Node runs about 5.3x slower on wasm than today's `node:crypto` build (3.5x against `/web`). Accept it, or add a napi-rs native addon? | Ship wasm. Add napi-rs only if, after the crypto work, the gap stays above 2x or a user reports throughput trouble. |
-| R6 | Go: wazero (cgo-free, about 30x slower), cgo (native speed, loses `CGO_ENABLED=0`), keep the Go port, or retire it? | wazero |
-| R7 | Swift on Linux needs Swift 6.2 (SE-0482) for a prebuilt Rust library. Raise the floor or drop Linux? | Raise the floor to 6.2 |
-| R8 | After the migration, keep an independent implementation to catch Rust bugs? | Keep the Java port as an unpublished test-only oracle until 1.0 |
+| R4 (**accepted**) | npm on Node runs about 5.3x slower on wasm than today's `node:crypto` build (3.5x against `/web`). Accept it, or add a napi-rs native addon? | Ship wasm. Add napi-rs only if, after the crypto work, the gap stays above 2x or a user reports throughput trouble. |
+| R6 (**accepted**, plus an opt-in cgo fast path on demand) | Go: wazero (cgo-free, about 30x slower), cgo (native speed, loses `CGO_ENABLED=0`), keep the Go port, or retire it? | wazero |
+| R7 (**accepted**: 6.2 everywhere) | Swift on Linux needs Swift 6.2 (SE-0482) for a prebuilt Rust library. Raise the floor or drop Linux? | Raise the floor to 6.2 |
+| R8 (**accepted**) | After the migration, keep an independent implementation to catch Rust bugs? | Keep the Java port as an unpublished test-only oracle until 1.0 |
 
 Everything else in DECISIONS.md is either the owner's brief (R1, R2, R9) or
 a technical recommendation that proceeds unless the owner objects.
