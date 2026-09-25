@@ -332,7 +332,7 @@ wasm build, which is the same file on every platform.
 | Package | Targets | Count |
 |---|---|---:|
 | C ABI archives (GitHub Releases) | every target the rule admits | 26 |
-| JVM jar | the C ABI targets JNA can load, musl only where Temurin ships an Alpine JDK | 18 |
+| JVM jar | the C ABI targets JNA can load; musl x86_64 and aarch64, plus the Alpine OpenJDK musl targets that pass the QEMU gate (open item 2) | 18 to 22 |
 | Python wheels | the C ABI targets PyPI accepts a wheel tag for; other platforms build the sdist with a Rust toolchain | 18 |
 | Swift | Apple XCFramework, Linux x86_64 and aarch64 (R7), Windows x86_64 and aarch64 | 4 + Apple |
 | npm, Go | wasm | 1 |
