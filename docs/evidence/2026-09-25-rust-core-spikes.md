@@ -294,6 +294,33 @@ the sidecar costs about 310 µs over in-process (1.5x), mostly moving
 7.5 KB in and 2 KB out as JSON. 8-thread throughput with the
 `HttpURLConnection` client was 941 requests/s on 4 vCPUs.
 
+### Sidecar throughput, re-measured (2026-09-25)
+
+941 requests/s is far below what 4 vCPUs can verify, so the server was
+measured again with a lean client: `sidecar/loadtest/`, Rust, one
+keep-alive connection per thread, each request in one write with
+`TCP_NODELAY`, response checked for `"status":0`. 4,000 calls per thread
+after 200 warm-up calls, receipt `receipt-sandbox-g5`, release builds,
+client and server on the same 4 vCPUs (Intel Xeon 2.1 GHz).
+
+| Threads or connections | In-process core (verifications/s) | Sidecar over HTTP (requests/s) |
+|---:|---:|---:|
+| 1 | 1,890 | 1,117 |
+| 2 | 3,502 | 2,042 |
+| 4 | 6,444 | 3,296 |
+| 8 | 6,956 | 4,123 |
+| 16 | | 5,004 |
+
+- The core scales linearly to 4 cores: about 1,600 to 1,900 per core.
+- The server reaches 78% of the in-process ceiling at 16 connections, with
+  the load generator taking CPU from the same 4 vCPUs.
+- One HTTP call adds about 365 µs over in-process at one connection
+  (895 against 529 µs): loopback, HTTP parsing, the `spawn_blocking`
+  hand-off and copying 7.5 KB in and 2 KB out.
+- The 941 figure measured the Java `HttpURLConnection` client (Nagle stall
+  plus its own CPU on the shared cores), not the server. The Java
+  one-write client's throughput was not measured.
+
 ## Enterprise deployment shapes (2026-09-25)
 
 Both Java finalists, packaged as ordinary library jars with the native
@@ -336,3 +363,36 @@ identical:
 The leak matches JNA issue #1521 (Cleaner thread holds the webapp
 classloader after undeploy). No library-side fix exists; the mitigation
 is installing the jars in the container's shared library directory.
+
+## JVM native platforms against RocksDB and JNA (2026-09-25)
+
+Native libraries inside `rocksdbjni` 10.10.1 (latest on Maven Central,
+83.6 MB jar) and `jna` 5.19.1, against the R12 list:
+
+| Platform | RocksDB | JNA | R12 |
+|---|:-:|:-:|:-:|
+| linux x86_64 glibc / musl | ✅ / ✅ | ✅ | ✅ / ✅ |
+| linux aarch64 glibc / musl | ✅ / ✅ | ✅ | ✅ / ✅ |
+| linux ppc64le glibc / musl | ✅ / ✅ | ✅ | tier 2 / ❌ |
+| linux s390x glibc / musl | ✅ / ✅ | ✅ | tier 2 / ❌ |
+| linux riscv64 glibc / musl | ✅ / ✅ | ✅ | tier 2 / ❌ |
+| linux x86 (32-bit) glibc / musl | ✅ / ✅ | ✅ | tier 2 / ❌ |
+| linux armv7 | ❌ | ✅ | tier 2 |
+| macOS arm64 / x86_64 | ✅ / ✅ | ✅ | ✅ / ✅ |
+| Windows x86_64 | ✅ | ✅ | ✅ |
+| Windows arm64 | ❌ | ✅ | ✅ |
+| Windows x86 | ❌ | ✅ | tier 2 |
+| FreeBSD x86_64 | ❌ | ✅ | tier 2 |
+| linux loongarch64 | ❌ | ✅ | ❌ |
+
+JNA also ships AIX, Solaris, OpenBSD, DragonFly BSD, linux-ppc, armel and
+mips64el. JNA's list is the outer bound for the UniFFI build: a native
+library without a JNA dispatcher for that platform cannot load.
+
+Rust side (rustup 1.94.1 target list): `powerpc64le-unknown-linux-musl`,
+`riscv64gc-unknown-linux-musl`, `i686-unknown-linux-musl` and
+`loongarch64-unknown-linux-gnu` have a prebuilt standard library.
+`s390x-unknown-linux-musl` does not (tier 3): it needs nightly and
+`-Z build-std`, which the release build's pinned stable toolchain rules
+out.
+
