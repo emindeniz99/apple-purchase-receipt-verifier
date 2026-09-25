@@ -293,3 +293,30 @@ request. A client that sends each request in one write removes that, so
 the sidecar costs about 310 µs over in-process (1.5x), mostly moving
 7.5 KB in and 2 KB out as JSON. 8-thread throughput with the
 `HttpURLConnection` client was 941 requests/s on 4 vCPUs.
+
+## Enterprise deployment shapes (2026-09-25)
+
+Both Java finalists, packaged as ordinary library jars with the native
+library inside.
+
+| Scenario | UniFFI (JNA) | jni-rs, loader extracts to a unique temp name | jni-rs, fixed temp name |
+|---|---|---|---|
+| Tomcat 10.1.60 / JDK 21, deploy + 3 hot redeploys | Works; **leaks per redeploy**: 2 more mapped native copies (`~/.cache/JNA/temp/jna*.tmp`) and 1 thread each; Tomcat logs `started a thread named [JNA Cleaner] but has failed to stop it` and a SEVERE ThreadLocal `com.sun.jna.Structure$2`; `findleaks` lists the old app 3 times | Works, no leak: mapped copies fall back to 1 after GC; `findleaks`: "No memory leaks found" | **Fails from redeploy 1**: `UnsatisfiedLinkError ... already loaded in another classloader`, then `NoClassDefFoundError` for good |
+| Tomcat 10.1, two WARs + 3 redeploys each | Works, leaks (16 mapped copies, 6 old apps held) | Works, no leak | Fails on the second WAR's first request |
+| Tomcat 9.0.122 / Temurin 8, deploy + 3 redeploys | Works, same leak | Works, no leak | Fails |
+| Spring Boot 3.5.16 fat jar (`java -jar`, nested `BOOT-INF/lib`) | Works, no configuration | Works, no configuration | not run |
+| Alpine (musl) chroot, apk `openjdk17-jre` | Works: JNA's bundled `libjnidispatch` loads on musl | Works | — |
+| GraalVM native-image (Oracle GraalVM for JDK 21) | Works with the tracing agent's config, no hand edits | Works, same | — |
+
+- Putting the jars in Tomcat's shared `lib/` instead of `WEB-INF/lib`
+  makes both pass; UniFFI still pins the first webapp's classloader once,
+  through the JNA Cleaner thread.
+- A musl `cdylib` needs `RUSTFLAGS="-C target-feature=-crt-static"` plus a
+  static unwinder: rustc links `-lgcc_s`, which musl lacks. Rust's own
+  `self-contained/libunwind.a`, offered to the linker as `libgcc_s.a`,
+  resolved it on stable; `-C link-self-contained=+unwind` needs nightly.
+- The Alpine and native-image runs used synthetic inputs (bad root bytes,
+  malformed base64), because this session's permission policy blocked
+  copying the fixtures into the chroot. They prove loading, calls and
+  error mapping; verifying a genuine receipt on those two platforms is
+  left to CI.

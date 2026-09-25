@@ -96,6 +96,12 @@ Swift and Python, jni-rs with no runtime jars and about 12% less time per
 receipt, at the price of 472 hand-written Java lines and two `unsafe`
 blocks.
 
+Enterprise shapes (evidence, "Enterprise deployment shapes") separate the
+two: both work in Spring Boot fat jars, on Alpine and in native-image, but
+under Tomcat hot redeploy UniFFI leaks a JNA Cleaner thread and two native
+copies per redeploy, while jni-rs with a unique-name loader leaks nothing.
+The Java choice is open again (owner call pending).
+
 Decision: keep UniFFI on the Java 8 floor, without a façade to start (R13). Revisit JNI
 if users object to the `kotlin-stdlib`/`jna` dependencies. Revisit FFM
 when the floor reaches 22.
