@@ -448,3 +448,53 @@ Constraints the spike surfaced:
   behaviour.
 - The server binds to `127.0.0.1` (or a Unix socket on Java 16+) and exits
   when its parent's stdin closes.
+
+---
+
+## R18. The Java binding: UniFFI plus a thin Java façade
+
+**Status: accepted by the owner on 2026-09-25.** Supersedes R13 ("no
+façade to start").
+
+The Java package keeps UniFFI's generated Kotlin as its engine and puts a
+small hand-written Java layer in front of it: pure delegation, no parsing,
+no policy, no caps.
+
+**What `uniffi.toml` fixes without a façade** (spike, UniFFI 0.32.2,
+`bindings.kotlin`): `package_name`, `generate_immutable_records = true`
+(fields become `val`, no setters), `disable_java_cleaner = true` (no
+`java.lang.ref.Cleaner` reference, so it compiles against Java 8 APIs),
+and a `rename` table for types and record fields (`VerifyError` became
+`VerificationException`; `AppReceipt.creation_date_ms` became
+`createdAtMillis`). `custom_types` can map a surface `i64` to
+`java.time.Instant` (not yet tried).
+
+**What only the façade fixes:**
+- default arguments for Java (`new ReceiptVerifier(bundleId)` without a
+  `null`), since UniFFI emits no `@JvmOverloads`;
+- today's import paths (`.jws.JwsVerifier`, `.receipt.ReceiptVerifier`),
+  since UniFFI puts one crate in one package;
+- a clean autocomplete: no `UniffiWithHandle`, `NoHandle`,
+  `callWithHandle$...` or `Companion`;
+- Javadoc in Java types (`byte[]`, `void`, `throws`) from `javac`/`javadoc`;
+- `VerificationException.reason()` as today, instead of a nested
+  `VerificationException.Verification`.
+
+**Why the façade makes the engine replaceable:** Java users depend only on
+the façade. The engine behind it can move from UniFFI over JNA to
+UniFFI's JNI backend (unreleased on 2026-09-25) or to jni-rs without any
+user-visible change. The JNI backend would remove JNA and with it the
+known cost below.
+
+**Known cost, accepted:** under Tomcat or another app server with hot
+redeploy, JNA leaks a Cleaner thread and two native copies per redeploy
+(evidence: "Enterprise deployment shapes", JNA 5.17.0 and 5.19.1; JNA
+issue #1521; JNA offers no public API to stop the thread). The Java README
+documents the mitigation: install the jars in the container's shared
+`lib/`. Spring Boot, plain `java -jar`, containers and native-image are
+unaffected.
+
+**Rejected here:** jni-rs + hand-written Java (no dependencies and no
+redeploy leak, but 472 lines of Java plus 2 `unsafe` to maintain, and a
+second binding system beside UniFFI). It stays the fallback engine if the
+redeploy leak becomes a real user problem before the JNI backend ships.
