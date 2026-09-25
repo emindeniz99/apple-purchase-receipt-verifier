@@ -333,7 +333,7 @@ wasm build, which is the same file on every platform.
 |---|---|---:|
 | C ABI archives (GitHub Releases) | every target the rule admits | 26 |
 | JVM jar | the C ABI targets JNA can load; musl x86_64 and aarch64, plus the Alpine OpenJDK musl targets that pass the QEMU gate (open item 2) | 18 to 22 |
-| Python wheels | the C ABI targets PyPI accepts a wheel tag for; other platforms build the sdist with a Rust toolchain | 18 |
+| Python wheels | the C ABI targets PyPI accepts a wheel tag for; other platforms build the sdist with a Rust toolchain | 19 |
 | Swift | Apple XCFramework, Linux x86_64 and aarch64 (R7), Windows x86_64 and aarch64 | 4 + Apple |
 | npm, Go | wasm | 1 |
 
@@ -355,7 +355,7 @@ ABI archive, J = JVM jar, P = Python wheel, S = Swift.
 | 10 | Linux x86 (32-bit, i686) | old PCs and 2008 to 2010 Atom netbooks on a 32-bit OS, some industrial PCs | low | C J P |
 | 11 | Linux ppc64le | IBM Power servers (RHEL, SLES) at banks and insurers, SAP HANA on Power | niche, enterprise | C J P |
 | 12 | Linux s390x | IBM Z and LinuxONE mainframes at banks, airlines, governments | niche, enterprise | C J P |
-| 13 | Linux ARMv6 hard-float | Raspberry Pi Zero, Zero W and 1 on 32-bit Raspberry Pi OS | niche, hobby | C J |
+| 13 | Linux ARMv6 hard-float | Raspberry Pi Zero, Zero W and 1 on 32-bit Raspberry Pi OS | niche, hobby | C J P |
 | 14 | Linux ARMv7 hard-float | Raspberry Pi 2 to 5 on a 32-bit OS, BeagleBone, IoT gateways | low, hobby and IoT | C P |
 | 15 | Linux riscv64 | VisionFive 2, Milk-V and other boards, first RISC-V servers | niche, emerging | C J P |
 | 16 | Linux loongarch64 | Loongson 3A5000 and 3A6000 PCs and servers, mostly Chinese government and enterprise (UOS, Kylin) | niche outside China | C J |
@@ -386,17 +386,17 @@ and aarch64; macOS aarch64, x86-64; Windows x86-64, x86, aarch64; FreeBSD
 x86-64, aarch64; Solaris x86-64. At about 0.6 MB each the natives add
 about 11 MB to the jar (sqlite-jdbc is about 14 MB, rocksdbjni 84 MB).
 
-**Python wheels (18).** manylinux x86_64, aarch64, armv7l, i686, ppc64le,
-s390x, riscv64; musllinux x86_64, aarch64, armv7l, i686, ppc64le,
-riscv64; Windows amd64, win32, arm64; macOS arm64, x86_64.
+**Python wheels (19).** manylinux x86_64, aarch64, armv7l, i686, ppc64le,
+s390x, riscv64; `linux_armv6l`; musllinux x86_64, aarch64, armv7l, i686,
+ppc64le, riscv64; Windows amd64, win32, arm64; macOS arm64, x86_64.
 pydantic-core, the largest Rust-on-PyPI package, ships 15 of these.
 
-**Why the jar and the wheels differ.** Both hold 18, but not the same 18.
+**Why the jar and the wheels differ.**
 - Jar only: loongarch64, FreeBSD x86_64 and aarch64, Solaris x86_64 glibc
   builds. PyPI refuses wheels for these platforms (its upload check,
   `warehouse/utils/wheel.py`, accepts only Windows, macOS, iOS, Android,
   manylinux, musllinux, `linux_armv6l` and `linux_armv7l`), so `pip` builds
-  the sdist there with a Rust toolchain. Also ARMv6 (below).
+  the sdist there with a Rust toolchain.
 - Wheels only: musl i686, ARMv7, ppc64le and riscv64. Temurin ships no
   Alpine JDK for them, and JNA's dispatcher is one glibc build per CPU,
   tested on musl only for x86_64 and aarch64. Alpine's own OpenJDK
@@ -404,7 +404,7 @@ pydantic-core, the largest Rust-on-PyPI package, ships 15 of these.
   loongarch64 (11 to 25), s390x and x86 (11 only), none for ARM.
 - ARMv6 and ARMv7: JNA has one `linux-arm` slot, so the jar's ARMv6 build
   serves every 32-bit Pi. The wheels carry ARMv7 as `manylinux armv7l`;
-  PyPI also accepts `linux_armv6l`, which no wheel uses yet (open below).
+  PyPI also accepts `linux_armv6l`, and the wheels add it (item 1 below).
 
 **Fallbacks where nothing is prebuilt.** Python: when no wheel matches,
 `pip` downloads the sdist and builds it on the spot, which works only if
@@ -434,9 +434,10 @@ A Java user on a platform outside the jar can still point
 `uniffi.component.<namespace>.libraryOverride` at a library they built,
 wherever JNA runs.
 
-**Open:**
-1. Add a `linux_armv6l` wheel (Raspberry Pi Zero and 1), built from the
-   jar's ARMv6 library? 19 wheels.
+**Additions after the first list:**
+1. Accepted by the owner on 2026-09-25: a `linux_armv6l` wheel
+   (Raspberry Pi Zero and 1), built from the jar's ARMv6 library. 19
+   wheels.
 2. Accepted by the owner on 2026-09-25: the jar adds musl ppc64le,
    riscv64 and loongarch64 (and i686, where Alpine ships Java 11 only).
    Each stays only if a QEMU job running Alpine's own OpenJDK loads the
