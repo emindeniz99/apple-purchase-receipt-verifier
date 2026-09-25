@@ -701,6 +701,16 @@ size at the HTTP layer and limit how many verifications run at once (a
 `Semaphore` around the call, or a bounded executor), sized so that the
 limit times 75 MB fits in the heap.
 
+The figures above are for a warm JVM. A fresh one is much slower at
+first. Measured on 0.6.0 with a genuine production receipt, three fresh
+JVMs: loading `AppleRootCerts` took about 290 ms, the first verification
+200 to 260 ms, the tenth about 5 ms, and calls reached about 1 ms only after
+roughly a thousand. At 10 requests a second that is minutes of slower
+answers after every deploy. To avoid it, construct the endpoint at startup
+and verify a known receipt a couple of thousand times before the instance
+takes traffic. Warm throughput on 0.6.0 is about 1,270 verifications a
+second on one core and about 4,840 on four.
+
 ### Health check
 
 Construct the verifiers at startup, not on first request, so a broken
