@@ -1,0 +1,16 @@
+import aprv, resource
+b64 = "".join(open("../../../../fixtures/public-receipts/receipt-sandbox-g5.b64").read().split())
+v = aprv.aprv_verifier_new_receipt("dev.bonzer.weeka.app")
+bad = aprv.aprv_verifier_new_receipt("com.other.app")
+print("ok:", aprv.verify_receipt_base64(v, b64)[:50])
+try: aprv.verify_receipt_base64(bad, b64)
+except ValueError as e: print("error ok:", e)
+def rss(): return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+for _ in range(200): aprv.verify_receipt_base64(v, b64)
+start = rss()
+for _ in range(3000): aprv.verify_receipt_base64(v, b64)
+print("fixed .i: max RSS grew", rss() - start, "KB over 3000 calls")
+r = aprv.AprvResult()
+start = rss()
+for _ in range(3000): aprv.aprv_verify_receipt_base64(v, b64, r)
+print("raw SWIG call: max RSS grew", rss() - start, "KB over 3000 calls")

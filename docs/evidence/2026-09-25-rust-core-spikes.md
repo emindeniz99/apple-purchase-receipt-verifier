@@ -24,9 +24,9 @@ None of them is built by CI.
 | 11 | Does the verifyReceipt endpoint survive the binding, result object included? | **Yes, on Temurin 8.** `jvm/EndpointDemo.java` drives `VerifyReceiptEndpoint` and `VerifyReceiptResult` as UniFFI objects. The genuine g5 sandbox receipt sent to a Production endpoint answers `{"status":21007}` with `verified=true` and a typed receipt. `toJsonIn(SANDBOX)` re-renders the same result as `{"environment":"Sandbox","receipt":{...}}` without a second verification. A Sandbox endpoint answers 0. A body of `not json` answers 21002 / `MALFORMED_REQUEST` with no exception. |
 | 12 | How do objects, records and maps behave across the boundary? | `jvm/ObjectsDemo.java` on Temurin 8. `VerifyReceiptResult` stays a handle to the Rust object: verification runs once, and each later `toJson()`/`toJsonIn()` is one FFI call rendering the stored result (about 99 µs, no re-verification). `receipt()` copies the nested record (`AppReceipt` with its `List<InAppPurchase>`) into plain Java objects. Kotlin generates `var` fields, so Java can edit its copy, and the Rust result stays unchanged (`toJsonIn` output byte-identical after the edit). `generate_immutable_records = true` would make the copies read-only. A Rust `HashMap` arrives as a read-only `java.util.Map` (`kotlin.collections.builders.MapBuilder`); `put` throws `UnsupportedOperationException`. |
 | 13 | Can one endpoint be a long-lived shared field, and must results be closed? | `jvm/SharedDemo.java` on Temurin 8, 4 vCPUs: one `static final VerifyReceiptEndpoint`, never closed, served 16 threads × 200 calls. All 3,200 answered 21007, at 2,099 verifications/s. None of the 3,200 results was closed. After GC the heap held 19 MB and the process RSS was 147 MB, so the Cleaner freed them. |
-| 14 | Does Swift on Linux link the Rust core as a prebuilt library? | **Yes, with Swift 6.2.4 and 6.4.** `swift/` is a SwiftPM package whose `binaryTarget` points at an SE-0482 artifact bundle (`staticLibrary`, `x86_64-unknown-linux-gnu`) holding the UniFFI static library plus the generated header and module map. `swift build -c release` needed no `unsafeFlags` and no Rust toolchain, and printed no dependency-audit warning. The smoke verified the g5 receipt, caught `VerifyError.Verification(wrongBundleId, ...)`, and ran the endpoint with `toJsonIn(environment: .sandbox)`. The unstripped static library is 50 MB; the release build must strip it before it goes into a download. |
+| 14 | Does Swift on Linux link the Rust core as a prebuilt library? | **Yes, with Swift 6.2.4 and 6.4.** `swift/` is a SwiftPM package whose `binaryTarget` points at an SE-0482 artifact bundle (`staticLibrary`, `x86_64-unknown-linux-gnu`) holding the UniFFI static library plus the generated header and module map. `swift build -c release` needed no `unsafeFlags` and no Rust toolchain, and printed no dependency-audit warning. The smoke verified the g5 receipt, caught `VerifyError.Verification(wrongBundleId, ...)`, and ran the endpoint with `toJsonIn(environment: .sandbox)`. The unstripped static library is 50 MB, 44 MB after `strip --strip-debug`, 11 MB gzipped. Consumers do not ship that: the linker pulls in only what is used, and the stripped Swift executable with the Rust core inside is 1.4 MB. The JVM/Python shared library is 1.3 MB stripped, 0.6 MB gzipped. |
 | 15 | Does the existing C ABI pass its own suites? | **Yes.** `cargo test` 25/25; C++17 conformance 153 passed, 0 failed; Python ctypes conformance 272 expected fields. 33 `decodeBase64` groups stay unreachable until the ABI gets a decoder (MIGRATION 1.6). |
-| 16 | Is SWIG a good way to hand the C ABI to other languages? | **It works but is a poor default.** A six-line `swig/aprv.i` over the cbindgen header produced 5,199 lines of C and a Python module that verified the g5 receipt. Out of the box it leaks every result: SWIG copies the Rust-owned `char*` into a Python string and drops the pointer that `aprv_string_free` needs. A correct SWIG binding needs custom typemaps. Every mainstream language already has a C FFI (ctypes, JNA/FFM, P/Invoke, cgo, the Ruby `ffi` gem, PHP FFI) that calls the ABI with explicit frees and no generated C. |
+| 16 | Is SWIG a good way to hand the C ABI to other languages? | **Yes, once the `.i` states ownership.** First attempt: A six-line `swig/aprv.i` over the cbindgen header produced 5,199 lines of C and a Python module that verified the g5 receipt. Out of the box it leaks every result: SWIG copies the Rust-owned `char*` into a Python string and drops the pointer that `aprv_string_free` needs. Second attempt, `swig/aprv.i` as committed: a `newfree` typemap that returns every string through `aprv_string_free`, plus one `%inline` helper that hides the `AprvResult` out-parameter and raises a Python exception on failure. Measured by `swig/leak.py` over 3,000 calls: the fixed interface grew max RSS by 0 KB, the raw call by 6,016 KB (about 2 KB per call). |
 | 17 | Does UniFFI's built-in Ruby backend work? | **Yes**, through the `ffi` gem on Ruby 3.3.6: receipt, typed error class `AprvUniffi::VerifyError::Verification`, endpoint and `to_json_in`. Weaker than the other three: the reason arrives as an integer (`reason=5`), and Ruby gets no default arguments. |
 | 18 | What does it cost? | See the timing table. Native Rust roughly matches the current ports. Wasm costs about 5.3 times the current `node:crypto` build (3.5 times `/web`). wazero costs about 30 times the current Go port. |
 
@@ -169,3 +169,32 @@ stars. They measure use, which is the better signal anyway.
 | gobley-uniffi-bindgen (Kotlin Multiplatform) | crates.io, last 90 days | 9,051 | 0.3.7, last release 2025-10-08 |
 | uniffi-bindgen-react-native | npm, last month | 1,659,584 | 0.31.0-5 |
 | uniffi-bindgen-cs, -go, -cpp (NordSecurity), uniffi-dart | not on crates.io | installed from git | |
+
+## GitHub stars on 2026-09-25
+
+Read through a GitHub repository search (stars, archived flag) and each
+repository's release feed (latest release). None is archived.
+
+| Repository | Stars | Latest release |
+|---|---:|---|
+| PyO3/pyo3 | 16,175 | v0.29.2, 2026-08-05 |
+| wasm-bindgen/wasm-bindgen | 9,158 | 0.2.129, 2026-09-25 |
+| napi-rs/napi-rs | 7,946 | napi-v3.13.0, 2026-09-22 |
+| wazero/wazero (moved from tetratelabs) | 6,387 | v1.12.0, 2026-05-29 |
+| swig/swig | 6,326 | v4.5.1, 2026-09-04 |
+| PyO3/maturin | 5,815 | v1.15.0, 2026-08-24 |
+| mozilla/uniffi-rs | 4,987 | v0.32.2, 2026-09-23 |
+| mozilla/cbindgen | 2,954 | 0.29.4, 2026-06-10 |
+| jni-rs/jni-rs | 1,602 | v0.22.4, 2026-03-16 |
+| dylibso/chicory | 1,136 | 1.7.5, 2026-03-24 |
+| jhugman/uniffi-bindgen-react-native | 550 | v0.31.0-5, 2026-08-21 (targets uniffi 0.31) |
+| gobley/gobley | 431 | 0.3.7, 2025-10-08 |
+| NordSecurity/uniffi-bindgen-cs | 186 | v0.11.0+v0.31.0, 2026-06-23 |
+| NordSecurity/uniffi-bindgen-go | 130 | v0.7.1+v0.31.0, 2026-04-16 |
+| Uniffi-Dart/uniffi-dart | 43 | v0.2.1+v0.31.2, 2026-06-26 |
+| NordSecurity/uniffi-bindgen-cpp | 38 | v0.9.0+v0.29.4, 2026-08-18 |
+| IronCoreLabs/uniffi-bindgen-java | 27 | 0.5.2, 2026-09-24 |
+
+Every third-party UniFFI generator trails UniFFI itself by one or more minor
+versions (0.29 to 0.31 against 0.32). A package built on one of them has
+to pin UniFFI to that generator's version.

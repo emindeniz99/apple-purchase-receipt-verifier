@@ -358,8 +358,9 @@ where that wall fails.
   explicit `aprv_string_free` calls: the existing Python ctypes and C++
   examples, plus C# P/Invoke and Ruby `ffi`. They are documented as
   "possible through the C ABI", never as supported packages. A SWIG `.i`
-  may ship as an extra only with typemaps that free the returned strings:
-  the spike's plain SWIG module leaked every result.
+  ships as well, with the ownership typemaps from the spike
+  (`newfree` → `aprv_string_free`): without them SWIG leaks every result,
+  and with them the spike measured no growth over 3,000 calls.
 
 ### 6.7 crates.io (Rust)
 
