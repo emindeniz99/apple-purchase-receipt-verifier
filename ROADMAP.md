@@ -412,6 +412,62 @@ a 4-core container): about 1,270 verifications per second on one core,
 about 4,840 on four, no wrong answer in 1,000,000 calls at 4 and at 8
 threads.
 
+## Smaller Java review findings, not yet scheduled (2026-09-24)
+
+From the six pre- and post-0.6.0 Java reviews; none lets a forged receipt
+or JWS through. Kept here so they are not lost with the review reports.
+
+- **Log safety:** `SafeText` neutralises C0/C1 and U+2028/U+2029 but not
+  the bidi controls U+202A to U+202E and U+2066 to U+2069, so a claim can
+  visually reorder a log line; truncation can also split a surrogate pair.
+- **JVM-dependent date parsing:** `ReceiptPayload` uses `Instant.parse`,
+  whose `ISO_INSTANT` accepts offsets such as `+01:00` from JDK 12 on, but not on
+  JDK 8, so one receipt date can parse differently per runtime. Add a
+  conformance vector with a non-`Z` offset.
+- **THREAT-MODEL.md corrections:** lines 75-76 say marker OIDs are checked
+  after the chain, which holds for receipts but not for JWS; the fuzzing
+  paragraph omits `java/fuzz` (five Jazzer targets); and "the host cannot
+  change a verdict" is overstated, because BouncyCastle still reads JVM-wide
+  `org.bouncycastle.*` properties (`rsa.max_size`, `rsa.max_mr_tests`,
+  `x509.max_cert_path_build_nodes`).
+- **The README Spring controller is untested:** `samples/spring-boot-smoke`
+  has no `spring-boot-starter-web`, so the raw-body read, the form content
+  type and the 413 mapping never run. Add a MockMvc test.
+- **Performance leftovers:** the receipt payload is parsed twice; each chain
+  signature is verified twice (top-down walk, then PKIX); JCA factories are
+  looked up per call.
+- **API polish for 0.7:** `MAX_JWS_BYTES` counts characters, so rename it;
+  models lack `equals`/`hashCode` and a redacted `toString`;
+  `isTrialPeriod()`/`isInIntroOfferPeriod()` return `Long` instead of
+  `Boolean`; `VerificationException` could be final with a closed `Reason`
+  set; `AppleRootCerts.jwsRoots()` and `receiptRoots()` are identical; the
+  reason is baked into `getMessage()` and stripped again by string surgery
+  in two places; the receipt path does not check the WWDR intermediate's
+  marker OID as the JWS path does.
+- **Small code hygiene:** `catch (Exception e)` where the types are known;
+  a `@Nullable ASN1Set` dereferenced without a guard (safe today because the
+  count is checked first); a redundant `unmodifiableMap` wrap in the models.
+- **Owner decision (2026-09-24): all nine ports reach Java's quality.** No
+  port is frozen or reduced to security fixes only.
+- **More evidence for omitting a zero `web_order_line_item_id`:** a genuine
+  production consumable receipt from April 2024, answered by Apple's
+  verifyReceipt at the time, also omitted the field while this library
+  writes "0". The same receipt still verifies on 0.6.0, although its
+  signing certificate expired in October 2024, because the chain is judged
+  at the receipt's creation date.
+- **README additions:**
+  - For a 21009 on a consumable, reconcile with the App Store Server API's
+    Get Transaction Info by transaction id: Get Transaction History does
+    not return consumables the app has finished.
+  - The App Store Server API is rate-limited per hour, unlike
+    verifyReceipt; this library has no limit because it makes no call.
+  - Why this library exists: Apple's App Store Server Library extracts
+    transaction ids from a receipt but does not validate it, so servers
+    that still accept receipts from iOS versions before StoreKit 2 need a
+    local validator.
+- **Size caps stay fixed at Apple's 3 MiB** (owner decision, 2026-09-24):
+  a configurable lower cap was proposed and declined.
+
 ## Working notes for agents (2026-09-21)
 
 Things that cost a round trip once and should not cost another.
