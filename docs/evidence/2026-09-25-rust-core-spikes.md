@@ -396,3 +396,32 @@ Rust side (rustup 1.94.1 target list): `powerpc64le-unknown-linux-musl`,
 `-Z build-std`, which the release build's pinned stable toolchain rules
 out.
 
+### Which platforms have Java users: Temurin as the proxy (2026-09-25)
+
+Maven Central download counts carry no platform, so there is no direct
+usage data. The next best signal is where Eclipse Temurin, the most used
+free OpenJDK build, ships a JDK (`api.adoptium.net/v3/assets/latest`):
+
+| Platform | JDK 8 | JDK 17 | JDK 21 | JDK 25 |
+|---|:-:|:-:|:-:|:-:|
+| linux x64, linux aarch64 | ✅ | ✅ | ✅ | ✅ |
+| Alpine (musl) x64 | ✅ | ✅ | ✅ | ✅ |
+| Alpine (musl) aarch64 | | | ✅ | ✅ |
+| Alpine (musl) ppc64le, s390x, riscv64, x86 | | | | |
+| linux ppc64le | ✅ | ✅ | ✅ | ✅ |
+| linux s390x, linux riscv64 | | ✅ | ✅ | ✅ |
+| linux arm (armv7) | ✅ | ✅ | | |
+| linux x86 (32-bit) | | | | |
+| macOS x64 | ✅ | ✅ | ✅ | ✅ |
+| macOS aarch64 | | ✅ | ✅ | ✅ |
+| Windows x64 | ✅ | ✅ | ✅ | ✅ |
+| Windows x86 (32-bit) | ✅ | ✅ | | |
+| Windows aarch64 | | | ✅ | |
+| AIX ppc64 | ✅ | ✅ | ✅ | ✅ |
+| Solaris sparcv9, x64 | ✅ | | | |
+| FreeBSD | | | | |
+
+Temurin ships musl only for x64 and aarch64. The four extra musl builds
+RocksDB carries have no Temurin JDK to run on. AIX has Temurin on every
+line, but Rust's `powerpc64-ibm-aix` is tier 3 (nightly only).
+

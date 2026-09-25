@@ -74,8 +74,9 @@ it.
 **Gate G2:** as in the table, plus a post-publish smoke from real PyPI on
 3.10.
 
-Release: 0.8.0, the first Rust-core release (R19), marked breaking in the CHANGELOG because `cryptography`
-and `asn1crypto` are gone and dates or ids may change shape.
+Release: none on its own; ships in 0.8.0 with every other package
+(R19). The CHANGELOG marks it breaking because `cryptography` and
+`asn1crypto` are gone and dates or ids may change shape.
 
 ## Phase 3: Java through UniFFI Kotlin
 
@@ -95,8 +96,7 @@ decide it.
 **Gate G3:** as in the table, plus a post-publish smoke from real Maven
 Central, compiled and run on Temurin 8.
 
-Release: 0.9.0, planned inside one calendar month with spare Central
-budget.
+Release: none on its own; ships in 0.8.0 (R19).
 
 ## Phase 4: npm through wasm-bindgen
 
@@ -116,7 +116,7 @@ runtime matrix decide it.
 **Gate G4:** as in the table, plus a post-publish smoke from real npm on
 Node 20 and in workerd.
 
-Release: 0.10.0.
+Release: none on its own; ships in 0.8.0 (R19).
 
 ## Phase 5: Swift
 
@@ -135,7 +135,7 @@ measured it yet.
 **Gate G5:** as in the table, plus a post-publish smoke with `swift run
 Smoke` from the real tag.
 
-Release: 0.11.0.
+Release: none on its own; ships in 0.8.0 (R19).
 
 ## Phase 6: Go (assumes R6 = wazero)
 
@@ -154,7 +154,7 @@ existing Go types decide it.
 **Gate G6:** as in the table, plus a post-publish smoke with `go get` from
 the proxy.
 
-Release: 0.12.0.
+Release: none on its own; ships in 0.8.0 (R19).
 
 ## Phase 7: remove what is left, rewrite the rules
 

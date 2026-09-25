@@ -405,7 +405,8 @@ conformance run before merging.
 5. **Go** last: needs R6, and it is the port most likely to become the
    R8 oracle instead.
 
-Each step is its own release. See [MIGRATION.md](./MIGRATION.md).
+The phases run in this order, but all of them ship together in 0.8.0
+(R19). See [MIGRATION.md](./MIGRATION.md).
 
 ---
 
@@ -528,9 +529,20 @@ redeploy leak becomes a real user problem before the JNI backend ships.
   part of the migration.
 - Phase 1 changes only the Rust crate and the C ABI, neither of which is
   on a registry, so it cuts no release (CLAUDE.md release budget).
-- The first package that moves to the Rust core (Python, R15) ships as
-  0.8.0. Each later phase takes the next minor.
+- Every package moves to the Rust core in one release, 0.8.0 (owner,
+  2026-09-25). The phases (R15) still run one after another with their
+  gates, but none of them cuts a release of its own. One release also
+  spends one Maven Central slot instead of five.
+- Where the phases land before 0.8.0 is open (see below).
 - Everything stays 0.x. 1.0 is a separate decision after the migration.
 - The first crates.io publish waits until something needs it: a user
   asking for the crate, or a binding that has to depend on it from a
   registry. Until then Rust users take a git dependency.
+
+**Open: where the phases land.** release-please opens a release PR for
+whatever reaches `main`. If the phases merge into `main` one by one, an
+urgent 0.7.x fix during the migration would ship half-migrated packages.
+Recommendation: a long-lived `rust-core` integration branch. Each phase
+merges there, `main` keeps taking 0.7.x fixes and is merged into
+`rust-core` after each one, and `rust-core` merges into `main` once, when
+every gate has passed. That merge produces 0.8.0.
