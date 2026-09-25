@@ -391,6 +391,21 @@ s390x, riscv64; musllinux x86_64, aarch64, armv7l, i686, ppc64le,
 riscv64; Windows amd64, win32, arm64; macOS arm64, x86_64.
 pydantic-core, the largest Rust-on-PyPI package, ships 15 of these.
 
+**Why the jar and the wheels differ.** Both hold 18, but not the same 18.
+- Jar only: loongarch64, FreeBSD x86_64 and aarch64, Solaris x86_64 glibc
+  builds. PyPI refuses wheels for these platforms (its upload check,
+  `warehouse/utils/wheel.py`, accepts only Windows, macOS, iOS, Android,
+  manylinux, musllinux, `linux_armv6l` and `linux_armv7l`), so `pip` builds
+  the sdist there with a Rust toolchain. Also ARMv6 (below).
+- Wheels only: musl i686, ARMv7, ppc64le and riscv64. Temurin ships no
+  Alpine JDK for them, and JNA's dispatcher is one glibc build per CPU,
+  tested on musl only for x86_64 and aarch64. Alpine's own OpenJDK
+  packages do exist for ppc64le (11 to 25), riscv64 (21, 25),
+  loongarch64 (11 to 25), s390x and x86 (11 only), none for ARM.
+- ARMv6 and ARMv7: JNA has one `linux-arm` slot, so the jar's ARMv6 build
+  serves every 32-bit Pi. The wheels carry ARMv7 as `manylinux armv7l`;
+  PyPI also accepts `linux_armv6l`, which no wheel uses yet (open below).
+
 **Out, and why.** The user-facing support page lists these too, so
 nobody has to guess.
 
@@ -410,6 +425,13 @@ nobody has to guess.
 A Java user on a platform outside the jar can still point
 `uniffi.component.<namespace>.libraryOverride` at a library they built,
 wherever JNA runs.
+
+**Open:**
+1. Add a `linux_armv6l` wheel (Raspberry Pi Zero and 1), built from the
+   jar's ARMv6 library? 19 wheels.
+2. Add musl ppc64le, riscv64 and loongarch64 (and i686 for Java 11) to
+   the jar, kept only if a QEMU job with Alpine's own OpenJDK loads the
+   library through JNA? 21 or 22 natives.
 
 **How each target is tested.** GitHub runners for linux x86_64 and
 aarch64, macOS, Windows x86_64 and aarch64 (x86 under WOW64). QEMU user
