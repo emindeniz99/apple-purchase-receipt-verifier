@@ -332,17 +332,17 @@ wasm build, which is the same file on every platform.
 
 | Package | Targets | Count |
 |---|---|---:|
-| C ABI archives (GitHub Releases) | every target the rule admits | 27 |
+| C ABI archives (GitHub Releases) | every target the rule admits | 26 |
 | JVM jar | the C ABI targets JNA can load, musl only where Temurin ships an Alpine JDK | 18 |
 | Python wheels | the C ABI targets PyPI accepts a wheel tag for; other platforms build the sdist with a Rust toolchain | 18 |
 | Swift | Apple XCFramework, Linux x86_64 and aarch64 (R7); Windows open | 2 + Apple |
 | npm, Go | wasm | 1 |
 
-**C ABI archives (27).**
+**C ABI archives (26).**
 - Linux glibc (9): x86_64, aarch64, i686, arm (ARMv6 hard-float: Raspberry
   Pi Zero and 1), armv7 (hard-float: 32-bit OS on Pi 2 to 5), loongarch64,
   powerpc64le, riscv64, s390x.
-- Linux musl, Alpine's architectures (9): x86_64, aarch64, i686 (Alpine
+- Linux musl, Alpine's architectures (8): x86_64, aarch64, i686 (Alpine
   x86), arm (Alpine armhf), armv7, loongarch64, powerpc64le, riscv64.
   Alpine s390x is out (below).
 - macOS (2): aarch64, x86_64.
