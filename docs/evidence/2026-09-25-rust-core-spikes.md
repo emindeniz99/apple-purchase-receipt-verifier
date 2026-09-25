@@ -320,3 +320,19 @@ library inside.
   copying the fixtures into the chroot. They prove loading, calls and
   error mapping; verifying a genuine receipt on those two platforms is
   left to CI.
+
+### JNA 5.19.1 does not change the redeploy leak (2026-09-25)
+
+Rerun of the Tomcat 10.1 / JDK 21 "deploy + 3 hot redeploys" case with
+JNA 5.19.1, the latest release on Maven Central, everything else
+identical:
+
+| Setup | Result |
+|---|---|
+| UniFFI jar, JNA and kotlin-stdlib in `WEB-INF/lib` | Same leak as 5.17.0: mapped `jna*.tmp` copies 2→4→6→8, threads 18→21, three "[JNA Cleaner] ... failed to stop" warnings, one SEVERE `com.sun.jna.Structure$2` ThreadLocal, `findleaks` lists the old app three times |
+| The same jars in Tomcat's shared `lib/` | No growth: 2 mapped copies and 18 threads throughout; one fixed "JNA Cleaner" warning |
+| A cleanup call from `ServletContextListener.contextDestroyed` | Not possible: `javap` shows `Native.dispose()` is private and `com.sun.jna.internal.Cleaner` has no stop method in either version; the only public `dispose` is per `NativeLibrary` instance, which UniFFI's generated code does not expose |
+
+The leak matches JNA issue #1521 (Cleaner thread holds the webapp
+classloader after undeploy). No library-side fix exists; the mitigation
+is installing the jars in the container's shared library directory.
