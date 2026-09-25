@@ -432,15 +432,16 @@ receipt's own environment, `jackson-core` only, the test signer and
 - **Receipt environment, refined:** keep `toJson()` rendering the
   endpoint's environment. It is what Apple's production URL answers for a
   sandbox receipt (21007), so changing it would break callers that mirror
-  Apple. Add a separate render for the receipt's own environment. The
-  feedback asks for `Environment.forReceiptType(String)`; the decision
-  above says `fromReceiptType`. Pick one name for all nine ports.
-- **Optional expected bundle id on the endpoint.** A nullable constructor
-  argument, as `ReceiptVerifier` and `JwsVerifier` already have; null keeps
-  today's behavior, since Apple's verifyReceipt checks no bundle id. This
-  reverses the docs-only decision for the endpoint: a real integration had
-  to write the check itself after `isVerified()`. Open question: which
-  status the endpoint answers for a wrong bundle id, since Apple has none.
+  Apple. Add a separate render for the receipt's own environment, using
+  `Environment.fromReceiptType(String)` as decided above.
+- **Bundle id stays out of the endpoint (owner).** The feedback asks for
+  an expected bundle id on the endpoint constructor. Declined: the
+  endpoint mirrors Apple's verifyReceipt, which checks no bundle id, and
+  the caller checks it after `isVerified()`. To discuss in 0.7: a small
+  helper on the result, for example
+  `result.matchesBundleId(expected)`, so the check is one obvious call
+  instead of reading `receipt().bundleId()` by hand. The endpoint's
+  answer stays Apple's either way.
 - **Test signer fields:** the `-testing` artifact must be able to set
   bundle id, product id, transaction id, purchase date, cancellation date
   and expiration date. This is enough to replace committed real receipts
