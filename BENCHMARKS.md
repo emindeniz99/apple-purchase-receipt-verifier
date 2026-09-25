@@ -161,15 +161,30 @@ and the median of ten samples for the rest.
 | `retryViaResult` | legacy | 4,638 | 5,054 | 3,373 | 7,441 | 13,824 | 21,483 | 26,616 | 4,105 | 17,147 |
 | `rejectTamperedSignature` | legacy | 1,269 | 339 | 668 | 661 | 1,084 | 2,273 | 3,663 | 2,369 | 796 |
 
-Read the ratios inside one column before the absolute values. This machine
-is noisy: a second JMH run of Java `core` the same morning gave 819 µs for
-g5 with an error of ±372, and the library just before #161 (`918a0eb`) gave
-713 ±594 back to back with it, so #161's key-decoding change is within the
-noise. The Java column is about twice the 356 µs the 0.5.1 table showed on
-the same kind of VM. The move to the pinned BouncyCastle provider (#152)
-accounts for about 90 µs of that; the rest is not explained by any change
-measured here, and the column should be re-measured on a quieter machine
-before anyone reads a trend into it. Rust's g5 `core` fell from 1,159 to
+Read the ratios inside one column before the absolute values. The Java
+column is about twice the 356 µs the 0.5.1 table showed, and that is a real
+regression, not noise. Measured on 2026-09-25 on this machine with a
+`core`-only JMH harness built against each release, alternating the two
+versions three times: g5 `core` was 345 µs on 0.5.1 and 755 µs on 0.6.0
+(errors under ±31), legacy `core` 3,020 against 3,590. A bisect over the 17
+Java merges between them puts the cost on two changes: #152 took g5 `core`
+from 306 to 627 µs, and #161 from 585 to 755. Genuine production receipts
+(1 to 4 purchases, G5 chain) show the same step, about 330 to 720 µs.
+
+The cause is certificate handling, not the receipt parser. Up to 0.5.1 the
+chain went through the JDK's `CertificateFactory`, which caches a parsed
+certificate by its encoding, and the JDK certificate caches the result of
+its last signature check. Apple signs with a handful of certificates, so
+after the first call the chain cost almost nothing. BouncyCastle, pinned
+since #152, caches neither: every call parses the chain and verifies each
+RSA signature (about 55 µs each here), and since #161 each chain signature
+is verified twice, once by the top-down walk and once by the PKIX builder.
+BouncyCastle's RSA modulus checks are not the cause: turning them off with
+`org.bouncycastle.rsa.max_mr_tests=0` changed nothing. The fix is planned
+for 0.7 (ROADMAP.md). Capacity is unaffected for realistic loads: about
+1,270 verifications per second on one core.
+
+Rust's g5 `core` fell from 1,159 to
 567 µs now that `rsa` is built with its `u64_digit` feature again.
 
 `rejectTamperedSignature` on the legacy receipt is now far cheaper than
