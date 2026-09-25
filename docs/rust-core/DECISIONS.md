@@ -406,6 +406,14 @@ pydantic-core, the largest Rust-on-PyPI package, ships 15 of these.
   serves every 32-bit Pi. The wheels carry ARMv7 as `manylinux armv7l`;
   PyPI also accepts `linux_armv6l`, which no wheel uses yet (open below).
 
+**Fallbacks where nothing is prebuilt.** Python: when no wheel matches,
+`pip` downloads the sdist and builds it on the spot, which works only if
+a Rust toolchain is installed and can take long on small boards. Java:
+Maven has no build step at install time, so the only fallback is the
+`libraryOverride` property pointed at a library the user built or took
+from GitHub Releases. The jar therefore has to carry every platform it
+claims; the wheels can lean on the sdist for platforms PyPI refuses.
+
 **Out, and why.** The user-facing support page lists these too, so
 nobody has to guess.
 
@@ -429,9 +437,11 @@ wherever JNA runs.
 **Open:**
 1. Add a `linux_armv6l` wheel (Raspberry Pi Zero and 1), built from the
    jar's ARMv6 library? 19 wheels.
-2. Add musl ppc64le, riscv64 and loongarch64 (and i686 for Java 11) to
-   the jar, kept only if a QEMU job with Alpine's own OpenJDK loads the
-   library through JNA? 21 or 22 natives.
+2. Accepted by the owner on 2026-09-25: the jar adds musl ppc64le,
+   riscv64 and loongarch64 (and i686, where Alpine ships Java 11 only).
+   Each stays only if a QEMU job running Alpine's own OpenJDK loads the
+   library through JNA and verifies the g5 receipt; one that fails is
+   dropped and listed under "Out" with the reason. Up to 22 natives.
 
 **How each target is tested.** GitHub runners for linux x86_64 and
 aarch64, macOS, Windows x86_64 and aarch64 (x86 under WOW64). QEMU user
