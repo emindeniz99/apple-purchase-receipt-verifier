@@ -1,0 +1,20 @@
+[package]
+name = "aprv-uniffi"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "aprv_uniffi"
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+
+[dependencies]
+aprv = { package = "apple-purchase-receipt-verifier", path = "../../../../rust", default-features = true }
+uniffi = { version = "=0.32.2", features = ["cli"] }
+
+[profile.release]
+panic = "unwind"

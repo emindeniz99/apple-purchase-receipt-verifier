@@ -1,0 +1,30 @@
+--- a/rust/Cargo.toml	2026-09-25 11:11:51.703683512 +0000
++++ b/rust/Cargo.toml	2026-09-25 11:17:45.889089060 +0000
+@@ -38,9 +38,9 @@
+ # 32-bit limbs and each RSA-2048 verify, three per receipt, costs about 1.7x
+ # as much. A unit test in `src/crypto.rs` fails if the feature goes missing.
+ [dependencies]
+-rsa = { version = "0.9.10", default-features = false, features = ["std", "u64_digit"] }
+-p256 = { version = "0.13.2", default-features = false, features = ["ecdsa", "arithmetic", "std"] }
+-p384 = { version = "0.13.1", default-features = false, features = ["ecdsa", "arithmetic", "std"] }
++rsa = { version = "0.9.10", default-features = false, features = ["u64_digit"] }
++p256 = { version = "0.13.2", default-features = false, features = ["ecdsa", "arithmetic"] }
++p384 = { version = "0.13.1", default-features = false, features = ["ecdsa", "arithmetic"] }
+ sha1 = { version = "0.10.7", default-features = false, features = ["oid"] }
+ sha2 = { version = "0.10.9", default-features = false, features = ["oid"] }
+ digest = "0.10.7"
+@@ -59,29 +59,3 @@
+ # verifyReceipt endpoint. Declaring the requirement here rather than
+ # #[cfg]-ing the cases away keeps a `--no-default-features` run honest: the
+ # suite is not silently reduced, it is visibly not built.
+-[[test]]
+-name = "conformance"
+-harness = false
+-required-features = ["endpoint"]
+-
+-[[test]]
+-name = "endpoint"
+-required-features = ["endpoint"]
+-
+-[[test]]
+-name = "public_receipts"
