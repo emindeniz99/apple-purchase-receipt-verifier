@@ -301,6 +301,19 @@ A later demand for Ruby, PHP or .NET gets a binding over the C ABI
 | Windows x86_64 | ✅ | ✅ | n/a | ✅ | |
 | Windows arm64 | ✅ | ✅ | n/a | ✅ | |
 
+- **Tier 2 targets (added 2026-09-25).** Today's pure-Java jar runs on any
+  JVM, including IBM Power and Z, where the eight targets above would stop
+  working. JNA, sqlite-jdbc and zstd-jni ship 18 to 28 platforms in one
+  jar (evidence row 20). The JVM jar and the C ABI archives add, as tier 2:
+  `linux-ppc64le`, `linux-s390x`, `linux-riscv64`, `linux-arm` (armv7),
+  `linux-x86`, `win32-x86` and `freebsd-x86-64`. Cross-compiled, smoke-tested
+  under QEMU where a runner doesn't exist, about 0.6 MB each in the jar. A
+  platform without a bundled library gets a clear error that names the
+  missing target and the `uniffi.component.<namespace>.libraryOverride`
+  property for a library the user built.
+- One fat jar, selected at runtime, like JNA and sqlite-jdbc: no classifier
+  for users to choose. Python wheels, the SwiftPM artifact bundle and npm
+  (wasm) select automatically already.
 - Build on native runners where GitHub provides them (ubuntu, ubuntu-arm,
   macos, windows, windows-arm). Use `cargo-zigbuild` only for musl and old
   glibc.
