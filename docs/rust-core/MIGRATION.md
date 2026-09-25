@@ -120,8 +120,8 @@ Release: none on its own; ships in 0.8.0 (R19).
 
 ## Phase 5: Swift
 
-Estimate: 1 to 3 weeks. The SE-0482 Linux audit decides it; nobody has
-measured it yet.
+Estimate: 1 to 3 weeks. The Linux spike already passed on Swift 6.2.4
+and 6.4 (evidence row 14); Windows (5.6) is the unmeasured part.
 
 | Step | Work | Verify |
 |---|---|---|
