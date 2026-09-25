@@ -1,7 +1,7 @@
 # One Rust core: the migration plan
 
 Status on 2026-09-25: **accepted plan.** Phase 0 (inventory and spikes) is
-done. The owner settled all four owner calls on 2026-09-25 (table below).
+done. The owner settled every owner call on 2026-09-25 (table below).
 Implementation waits: the owner wants every open question settled before
 Phase 1 starts (2026-09-25).
 
@@ -29,7 +29,7 @@ the next release.
    and timings against today's packages.
 3. [ARCHITECTURE.md](./ARCHITECTURE.md): the target design: crates, API,
    time, panics, packaging per registry, invariants.
-4. [DECISIONS.md](./DECISIONS.md): R1-R15, each with options, evidence and
+4. [DECISIONS.md](./DECISIONS.md): R1-R18, each with options, evidence and
    a recommendation.
 5. [MIGRATION.md](./MIGRATION.md): phases 1-7 with gates, CI and release
    changes, acceptance tests, risks.

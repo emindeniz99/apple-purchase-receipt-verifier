@@ -100,11 +100,10 @@ Enterprise shapes (evidence, "Enterprise deployment shapes") separate the
 two: both work in Spring Boot fat jars, on Alpine and in native-image, but
 under Tomcat hot redeploy UniFFI leaks a JNA Cleaner thread and two native
 copies per redeploy, while jni-rs with a unique-name loader leaks nothing.
-The Java choice is open again (owner call pending).
 
-Decision: keep UniFFI on the Java 8 floor, without a façade to start (R13). Revisit JNI
-if users object to the `kotlin-stdlib`/`jna` dependencies. Revisit FFM
-when the floor reaches 22.
+Decision: UniFFI on the Java 8 floor with a thin Java façade (R18). jni-rs
+stays the fallback engine behind the same façade. Revisit FFM when the
+floor reaches 22.
 
 ---
 
@@ -344,8 +343,9 @@ A later demand for Ruby, PHP or .NET gets a binding over the C ABI
 
 ## R13. How much of today's API survives
 
-**Status: accepted by the owner on 2026-09-25: no Java façade to start.**
-Java uses the UniFFI-generated API directly: `null` for "use Apple's roots",
+**Status: superseded by R18 on 2026-09-25** (Java gets a thin façade).
+Kept for the record: accepted earlier the same day as "no Java façade to
+start". Java uses the UniFFI-generated API directly: `null` for "use Apple's roots",
 the generated package for imports (a breaking change the CHANGELOG lists),
 and KDoc/Dokka for docs. Add the façade before 1.0 only if Java users
 object. npm keeps its thin TypeScript layer, because Wasm trap recovery
