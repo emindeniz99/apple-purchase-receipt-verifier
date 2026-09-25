@@ -45,7 +45,6 @@ alone is about a week.
 | 1.7 | Profile receipt and JWS on native and wasm. Record the results in BENCHMARKS.md, including a JWS row, which exists in no port today. | The numbers are committed with their method |
 | 1.8 | **Differential campaign:** replay every port's fuzz corpus (Rust, Jazzer, atheris, go-fuzz, Jazzer.js, libFuzzer Swift, ruzzy, SharpFuzz, PHP) through the Rust core and the port. Compare `reason`. | Zero open divergences. Each one found becomes a case. |
 | 1.9 | **Owner review of the core**, module by module. The checklist maps each THREAT-MODEL §3 mitigation to its code and test. The log lives in `docs/rust-core/REVIEW-LOG.md`. | Every module signed off |
-| 1.10 | First crates.io publish (BOOTSTRAP.md steps). | `cargo add apple-purchase-receipt-verifier` works; post-publish smoke `crates` leg green |
 
 **Gate G1:**
 - conformance green on native and both wasm targets;
@@ -53,8 +52,10 @@ alone is about a week.
 - the review log is complete;
 - `getrandom` is absent from the wasm build.
 
-Release: 0.7.0, which carries the C ABI fixes and the crates.io debut.
-Nothing changes for the five live packages (Maven, npm, PyPI, SwiftPM, Go).
+Release: none. Phase 1 touches only the Rust crate and the C ABI, and
+neither is on a registry (the crates.io debut waits, R19). Nothing changes
+for the five live packages (Maven, npm, PyPI, SwiftPM, Go). The owner's
+0.7.0 fix from `main` is not part of the migration.
 
 ## Phase 2: UniFFI binding and the Python package
 
@@ -73,7 +74,7 @@ it.
 **Gate G2:** as in the table, plus a post-publish smoke from real PyPI on
 3.10.
 
-Release: 0.8.0, marked breaking in the CHANGELOG because `cryptography`
+Release: 0.8.0, the first Rust-core release (R19), marked breaking in the CHANGELOG because `cryptography`
 and `asn1crypto` are gone and dates or ids may change shape.
 
 ## Phase 3: Java through UniFFI Kotlin

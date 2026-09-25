@@ -155,8 +155,9 @@ security code gets added either way.
 
 ## R5. JS runtimes that cannot run WebAssembly
 
-**Status: recommended** (the brief: "platform compatibility must never
-force duplicated security logic").
+**Status: accepted by the owner on 2026-09-25: drop both claims** (the
+brief: "platform compatibility must never force duplicated security
+logic").
 
 - **Fastly Compute JS:** StarlingMonkey builds SpiderMonkey without a JIT,
   and the JS reference lists no `WebAssembly` object. Today CI tests
@@ -169,7 +170,8 @@ second implementation, rejected by R1), or drop both claims.
 
 Recommendation: **drop both claims** in the npm README and SUPPORT-MATRIX,
 and delete the `node-runtimes-fastly` job. Fastly users who write Rust can
-depend on the crates.io crate from a Fastly Rust service; the core builds
+depend on the Rust crate from a Fastly Rust service (a git dependency
+until the crate is on crates.io, see R19); the core builds
 for `wasm32-wasip1` (spike). Record it in the CHANGELOG as a breaking
 change.
 
@@ -241,7 +243,8 @@ differential-fuzzing data. Only the oracle lives under `java/oracle/`
 
 ## R9. Unpublished ports: Ruby, PHP, .NET
 
-**Status: owner-stated** (brief §22: "unpublished → remove").
+**Status: owner-stated** (brief §22: "unpublished → remove"). The owner
+accepted the recommendation below on 2026-09-25.
 
 None has ever reached its registry (404 on RubyGems, Packagist and NuGet).
 
@@ -391,7 +394,7 @@ conformance run before merging.
 
 ## R15. Order of migration
 
-**Status: recommended.**
+**Status: accepted by the owner on 2026-09-25.**
 
 1. **Python** first: smallest package, lowest risk, maturin is mature, and
    it proves the release pipeline for native wheels.
@@ -449,6 +452,17 @@ Constraints the spike surfaced:
 - The server binds to `127.0.0.1` (or a Unix socket on Java 16+) and exits
   when its parent's stdin closes.
 
+**Image registries (owner, 2026-09-25):** GitHub Container Registry and
+Docker Hub. GHCR publishes from `release.yml` with the workflow token.
+Docker Hub needs a stored access token and a namespace, so it gets a
+BOOTSTRAP.md entry and publishes only after the owner creates both.
+
+**Throughput, re-measured 2026-09-25** (evidence: "Sidecar throughput"):
+the 941 requests/s above came from the Java `HttpURLConnection` client,
+not from the server. With a lean keep-alive client, the same server on
+the same 4 vCPUs answers 5,004 requests/s at 16 connections; the core
+itself peaks at 6,444 verifications/s in-process on 4 threads.
+
 ---
 
 ## R18. The Java binding: UniFFI plus a thin Java façade
@@ -486,6 +500,11 @@ UniFFI's JNI backend (unreleased on 2026-09-25) or to jni-rs without any
 user-visible change. The JNI backend would remove JNA and with it the
 known cost below.
 
+**API compatibility:** breaking changes are allowed before 1.0 (owner,
+2026-09-25). The façade does not have to reproduce today's class names or
+import paths; it picks the best Java shape, and the CHANGELOG lists every
+break.
+
 **Known cost, accepted:** under Tomcat or another app server with hot
 redeploy, JNA leaks a Cleaner thread and two native copies per redeploy
 (evidence: "Enterprise deployment shapes", JNA 5.17.0 and 5.19.1; JNA
@@ -498,3 +517,20 @@ unaffected.
 redeploy leak, but 472 lines of Java plus 2 `unsafe` to maintain, and a
 second binding system beside UniFFI). It stays the fallback engine if the
 redeploy leak becomes a real user problem before the JNI backend ships.
+
+---
+
+## R19. Versions and the crates.io debut
+
+**Status: accepted by the owner on 2026-09-25.**
+
+- The owner ships a fix as 0.7.0 from `main` first. That release is not
+  part of the migration.
+- Phase 1 changes only the Rust crate and the C ABI, neither of which is
+  on a registry, so it cuts no release (CLAUDE.md release budget).
+- The first package that moves to the Rust core (Python, R15) ships as
+  0.8.0. Each later phase takes the next minor.
+- Everything stays 0.x. 1.0 is a separate decision after the migration.
+- The first crates.io publish waits until something needs it: a user
+  asking for the crate, or a binding that has to depend on it from a
+  registry. Until then Rust users take a git dependency.
