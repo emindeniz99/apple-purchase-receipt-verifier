@@ -1,0 +1,25 @@
+hazard 0: attach twice on one OS thread, detach once, keep calling
+    attach again returned the same IsolateThread
+    child killed by signal 6 (Aborted)
+hazard 1: handle_free twice on one handle
+    second handle_free returned
+    child exited 0
+hazard 2: call with a handle after handle_free
+    returned -1 
+    child exited 0
+hazard 3: call with a made-up handle value
+    returned -1 
+    child exited 0
+hazard 4: string_free twice on one result
+    child killed by signal 6 (Aborted)
+hazard 5: string_free on a stack pointer
+    child killed by signal 6 (Aborted)
+hazard 6: call after runtime_free with the stale thread
+    child killed by signal 11 (Segmentation fault)
+hazard 7: call from an unattached OS thread with another thread's IsolateThread
+    child killed by signal 6 (Aborted)
+hazard 8: call with a NULL IsolateThread
+    child exited 2
+hazard 9: input length larger than the buffer
+    returned 9
+    child exited 0

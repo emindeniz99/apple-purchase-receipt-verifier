@@ -1,0 +1,396 @@
+{
+  "comment": "Fixed, non-BouncyCastle metadata, copied from the tracing agent's output (config/traced). Payload models: Jackson reads the @JsonCreator constructors and the bridge reads fields. sun.security.*: the bridge's custom-root path (JDK X.509 factory), as ConformanceCasesTest uses. Resources: the three pinned Apple roots, loaded by computed name, so the image cannot find them on its own. java.security.*Spi and RSA key interfaces: type-only lookups BouncyCastle makes.",
+  "reflection": [
+    {
+      "type": "com.fasterxml.jackson.databind.deser.Deserializers[]"
+    },
+    {
+      "type": "com.fasterxml.jackson.databind.ext.Java7SupportImpl",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "io.github.emindeniz99.applepurchasereceiptverifier.jws.AppTransactionPayload",
+      "fields": [
+        {
+          "name": "appAppleId"
+        },
+        {
+          "name": "appTransactionId"
+        },
+        {
+          "name": "applicationVersion"
+        },
+        {
+          "name": "bundleId"
+        },
+        {
+          "name": "deviceVerification"
+        },
+        {
+          "name": "deviceVerificationNonce"
+        },
+        {
+          "name": "originalApplicationVersion"
+        },
+        {
+          "name": "originalPurchaseDate"
+        },
+        {
+          "name": "preorderDate"
+        },
+        {
+          "name": "receiptCreationDate"
+        },
+        {
+          "name": "receiptType"
+        },
+        {
+          "name": "versionExternalIdentifier"
+        }
+      ],
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "java.lang.Long",
+            "java.lang.String",
+            "java.lang.String",
+            "java.lang.String",
+            "java.lang.String",
+            "java.lang.String",
+            "java.lang.String",
+            "java.lang.Long",
+            "java.lang.Long",
+            "java.lang.Long",
+            "java.lang.String",
+            "java.lang.Long"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "io.github.emindeniz99.applepurchasereceiptverifier.jws.TransactionPayload",
+      "fields": [
+        {
+          "name": "appAccountToken"
+        },
+        {
+          "name": "bundleId"
+        },
+        {
+          "name": "currency"
+        },
+        {
+          "name": "environment"
+        },
+        {
+          "name": "expiresDate"
+        },
+        {
+          "name": "inAppOwnershipType"
+        },
+        {
+          "name": "offerIdentifier"
+        },
+        {
+          "name": "offerType"
+        },
+        {
+          "name": "originalPurchaseDate"
+        },
+        {
+          "name": "originalTransactionId"
+        },
+        {
+          "name": "price"
+        },
+        {
+          "name": "productId"
+        },
+        {
+          "name": "purchaseDate"
+        },
+        {
+          "name": "quantity"
+        },
+        {
+          "name": "revocationDate"
+        },
+        {
+          "name": "revocationReason"
+        },
+        {
+          "name": "signedDate"
+        },
+        {
+          "name": "storefront"
+        },
+        {
+          "name": "subscriptionGroupIdentifier"
+        },
+        {
+          "name": "transactionId"
+        },
+        {
+          "name": "transactionReason"
+        },
+        {
+          "name": "type"
+        },
+        {
+          "name": "webOrderLineItemId"
+        }
+      ],
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "java.lang.String",
+            "java.lang.String",
+            "java.lang.String",
+            "java.lang.String",
+            "java.lang.Long",
+            "java.lang.String",
+            "java.lang.String",
+            "java.lang.Integer",
+            "java.lang.Long",
+            "java.lang.String",
+            "java.lang.Long",
+            "java.lang.String",
+            "java.lang.Long",
+            "java.lang.Integer",
+            "java.lang.Long",
+            "java.lang.Integer",
+            "java.lang.Long",
+            "java.lang.String",
+            "java.lang.String",
+            "java.lang.String",
+            "java.lang.String",
+            "java.lang.String",
+            "java.lang.String"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "java.lang.Boolean",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "getBoolean",
+          "parameterTypes": [
+            "java.lang.String"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "java.lang.Class",
+      "methods": [
+        {
+          "name": "isRecord",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "java.security.AlgorithmParametersSpi"
+    },
+    {
+      "type": "java.security.MessageDigestSpi"
+    },
+    {
+      "type": "java.security.interfaces.RSAPrivateKey"
+    },
+    {
+      "type": "java.security.interfaces.RSAPublicKey"
+    },
+    {
+      "type": "sun.security.provider.NativePRNG",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "java.security.SecureRandomParameters"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "sun.security.provider.SHA",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "sun.security.provider.SHA2$SHA256",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "sun.security.provider.X509Factory",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "sun.security.rsa.RSAKeyFactory$Legacy",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "sun.security.rsa.RSASignature$SHA256withRSA",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "sun.security.x509.AuthorityInfoAccessExtension",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "java.lang.Boolean",
+            "java.lang.Object"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "sun.security.x509.AuthorityKeyIdentifierExtension",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "java.lang.Boolean",
+            "java.lang.Object"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "sun.security.x509.BasicConstraintsExtension",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "java.lang.Boolean",
+            "java.lang.Object"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "sun.security.x509.CRLDistributionPointsExtension",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "java.lang.Boolean",
+            "java.lang.Object"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "sun.security.x509.CertificatePoliciesExtension",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "java.lang.Boolean",
+            "java.lang.Object"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "sun.security.x509.ExtendedKeyUsageExtension",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "java.lang.Boolean",
+            "java.lang.Object"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "sun.security.x509.KeyUsageExtension",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "java.lang.Boolean",
+            "java.lang.Object"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "sun.security.x509.SubjectKeyIdentifierExtension",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "java.lang.Boolean",
+            "java.lang.Object"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "sun.text.resources.cldr.FormatData"
+    },
+    {
+      "type": "sun.text.resources.cldr.FormatData_en"
+    },
+    {
+      "type": "sun.text.resources.cldr.FormatData_en_US"
+    },
+    {
+      "type": "sun.util.resources.cldr.CalendarData"
+    }
+  ],
+  "resources": [
+    {
+      "glob": "META-INF/services/java.time.zone.ZoneRulesProvider"
+    },
+    {
+      "glob": "io/github/emindeniz99/applepurchasereceiptverifier/certs/AppleIncRootCertificate.cer"
+    },
+    {
+      "glob": "io/github/emindeniz99/applepurchasereceiptverifier/certs/AppleRootCA-G2.cer"
+    },
+    {
+      "glob": "io/github/emindeniz99/applepurchasereceiptverifier/certs/AppleRootCA-G3.cer"
+    },
+    {
+      "module": "java.base",
+      "glob": "jdk/internal/icu/impl/data/icudt76b/nfkc.nrm"
+    }
+  ]
+}

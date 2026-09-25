@@ -1,0 +1,19 @@
+# Web Image (native-image --tool:svm-wasm), Oracle GraalVM 25.4.4.1.1, binaryen version_124 (wasm-as on PATH)
+# source: web/src/aprvj/web/WebMain.java (Bridge calls from main; inputs as arguments)
+# build: 1m 57s wall, peak RSS 3.83 GB (3,827,640 kB), same config/minimal metadata
+# artifacts: wasm-main.js 110,547 B; wasm-main.js.wasm 22,627,824 B (21.58 MiB), 8,259,595 B gzip -9;
+#            wasm-main.js.wat 695.48 MiB debug text (build_info, deleted)
+## Node v22.22.2, --experimental-wasm-exnref
+constructors ms 191.76
+self_check 0 (three receipt root SHA-256s as in the .so; bouncyCastle v1.86; vm Substrate VM)
+receipt 0, jws 0, endpoint 0 (status 0), wrong bundle 6
+receipt mean us 3795.4 over 200
+jws mean us 3055.7 over 200
+process wall time for all of the above: 2.41 s
+## Bun 1.3.11
+constructors ms 184.96; receipt 0, jws 0, endpoint 0, wrong bundle 6
+receipt mean us 5205.5 over 100
+jws mean us 4282.5 over 100
+## Deno 2.9.7
+fails before main: "TypeError: Cannot read properties of undefined (reading 'href')" at
+runtime.getCurrentFile = () => features.location.data.location.href (generated launcher, line 800)

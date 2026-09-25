@@ -1,0 +1,71 @@
+========================================================================================================================
+GraalVM Native Image: Generating 'libaprvj_pgo.so' (shared library)...
+========================================================================================================================
+For detailed information and explanations on the build output, visit:
+https://github.com/oracle/graal/blob/master/docs/reference-manual/native-image/BuildOutput.md
+------------------------------------------------------------------------------------------------------------------------
+[1/8] Initializing...                                                                                   (8.5s @ 0.24GiB)
+ Builder configuration:
+ - Java version: 25.0.4.1.1+1-LTS, vendor version: Oracle GraalVM 25.4.4.1.1+1.1
+ - Graal compiler: optimization level: 3, target machine: compatibility, PGO: user-provided
+ - C compiler: gcc (linux, x86_64, 13.3.0)
+ - Assertions: disabled, system assertions: disabled
+ Image configuration:
+ - Garbage collector: Serial GC (max heap size: 80% of RAM)
+ - Assertions: disabled (class-specific config may apply), system assertions: disabled
+------------------------------------------------------------------------------------------------------------------------
+Build resources:
+ - 11.36GiB of memory (85% of system memory because in container)
+ - 4 thread(s) (100.0% of 4 available processor(s), determined at start)
+[2/8] Performing analysis...  [*****]                                                                  (43.4s @ 1.12GiB)
+    9,007 types,  14,196 fields, and  49,306 methods found reachable
+      956 types,      84 fields, and   1,488 methods registered for reflection
+       61 types,      62 fields, and      55 methods registered for JNI access
+    1,103 resource accesses registered with 229.36KiB total size
+        5 native libraries: dl, m, pthread, rt, z
+[3/8] Building universe...                                                                              (4.2s @ 1.23GiB)
+[4/8] Parsing methods...      [**]                                                                      (4.3s @ 1.32GiB)
+[5/8] Inlining methods...     [***]                                                                     (1.9s @ 1.42GiB)
+[6/8] Compiling methods...    [*******]                                                                (48.5s @ 1.08GiB)
+[7/8] Laying out methods...   [**]                                                                      (4.1s @ 1.29GiB)
+[8/8] Creating image...       [**]                                                                      (3.9s @ 1.48GiB)
+  10.89MiB (37.51%) for code area:    31,731 compilation units
+  14.88MiB (51.21%) for image heap:  239,065 objects and 12 resources
+   3.28MiB (11.28%) for other data
+  29.05MiB in total image size, 26.44MiB in total file size
+------------------------------------------------------------------------------------------------------------------------
+Top 10 origins of code area:                                Top 10 object types in image heap:
+   1.08MiB o.g.n.runtime/com.oracle.svm.core.code              3.37MiB byte[] for code metadata
+ 616.70KiB java.base/java.util                                 2.96MiB byte[] for string data
+ 379.14KiB org.bouncycastle.math.ec.custom.sec                 1.63MiB java.base/java.lang.String
+ 289.20KiB java.base/java.lang                                 1.12MiB java.base/java.lang.Class
+ 280.80KiB org.bouncycastle.asn1                             985.14KiB o.g.n.runtime/c.o.s.core.hub.DynamicHubCompanion
+ 225.26KiB org.bouncycastle.jce.provider                     905.70KiB byte[] for general heap data
+ 206.54KiB java.base/java.text                               444.63KiB heap alignment
+ 200.11KiB java.base/java.util.concurrent                    401.66KiB byte[] for reflection metadata
+ 197.43KiB com.fasterxml.jackson.databind.deser.std          283.48KiB java.base/java.util.HashMap$Node
+ 187.83KiB java.base/com.sun.crypto.provider                 275.88KiB java.base/java.lang.Object[]
+   7.29MiB for 402 more packages                               2.57MiB for 1730 more object types
+                            Use '--emit build-report' to create a report with more details.
+------------------------------------------------------------------------------------------------------------------------
+Security report:
+ - Binary includes Java deserialization.
+ - CycloneDX SBOM with 13 component(s) is embedded in binary (869B). 4 type(s) could not be associated to a component.
+ - Advanced obfuscation not enabled; enable with '-H:AdvancedObfuscation=""' (experimental support).
+------------------------------------------------------------------------------------------------------------------------
+Recommendations:
+ G1GC: Use the G1 GC ('--gc=G1') for improved latency and throughput.
+ FUTR: Use '--future-defaults=all' to prepare for future releases.
+ HEAP: Set max heap for improved and more predictable memory usage.
+ QBM:  Use the quick build mode ('-Ob') to speed up builds during development.
+------------------------------------------------------------------------------------------------------------------------
+                      12.1s (9.9% of total time) in 1140 GCs | Peak RSS: 2.21GiB | CPU load: 3.55
+------------------------------------------------------------------------------------------------------------------------
+Build artifacts:
+ $SCRATCH/out/libaprvj_pgo/graal_isolate.h (c_header, 6.42KiB)
+ $SCRATCH/out/libaprvj_pgo/graal_isolate_dynamic.h (c_header, 6.53KiB)
+ $SCRATCH/out/libaprvj_pgo/libaprvj_pgo.h (c_header, 2.48KiB)
+ $SCRATCH/out/libaprvj_pgo/libaprvj_pgo.so (shared_library, 26.44MiB)
+ $SCRATCH/out/libaprvj_pgo/libaprvj_pgo_dynamic.h (c_header, 2.71KiB)
+========================================================================================================================
+Finished generating 'libaprvj_pgo' in 2m 1s.

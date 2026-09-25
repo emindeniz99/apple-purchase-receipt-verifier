@@ -1,0 +1,11 @@
+cycle 1: runtime_new 1.54 ms, first call (self_check: provider init + 3 roots) 25.49 ms, runtime_free 0.69 ms (rc 0), rss 15116 kB
+cycle 2: runtime_new 0.73 ms, first call (self_check: provider init + 3 roots) 23.76 ms, runtime_free 0.65 ms (rc 0), rss 15124 kB
+cycle 3: runtime_new 0.71 ms, first call (self_check: provider init + 3 roots) 21.84 ms, runtime_free 0.62 ms (rc 0), rss 15124 kB
+cycle 4: runtime_new 0.61 ms, first call (self_check: provider init + 3 roots) 20.90 ms, runtime_free 0.56 ms (rc 0), rss 15128 kB
+cycle 5: runtime_new 0.59 ms, first call (self_check: provider init + 3 roots) 20.93 ms, runtime_free 0.61 ms (rc 0), rss 15128 kB
+cycle 100: runtime_new 0.65 ms, first call (self_check: provider init + 3 roots) 20.72 ms, runtime_free 0.79 ms (rc 0), rss 15132 kB
+cycle 200: runtime_new 0.62 ms, first call (self_check: provider init + 3 roots) 20.27 ms, runtime_free 0.67 ms (rc 0), rss 15132 kB
+cycle 300: runtime_new 0.68 ms, first call (self_check: provider init + 3 roots) 21.17 ms, runtime_free 0.73 ms (rc 0), rss 15132 kB
+cycle 400: runtime_new 0.70 ms, first call (self_check: provider init + 3 roots) 25.06 ms, runtime_free 0.78 ms (rc 0), rss 15132 kB
+cycle 500: runtime_new 0.81 ms, first call (self_check: provider init + 3 roots) 21.71 ms, runtime_free 0.68 ms (rc 0), rss 15132 kB
+process exec to exit (h-ni startup 1), 5 runs: 30, 29, 28, 28, 29 ms
