@@ -354,9 +354,12 @@ where that wall fails.
   provenance attestations.
 - cbindgen stays at its narrow job: it writes the header from the explicit
   `extern "C"` declarations. rustc and cargo produce the libraries.
-- `rust/ffi/swig/apple_purchase_receipt_verifier.i` with Java, Python and
-  C# examples, documented as "possible through the C ABI", never as
-  supported packages.
+- Examples for unpackaged languages use each language's own C FFI with
+  explicit `aprv_string_free` calls: the existing Python ctypes and C++
+  examples, plus C# P/Invoke and Ruby `ffi`. They are documented as
+  "possible through the C ABI", never as supported packages. A SWIG `.i`
+  may ship as an extra only with typemaps that free the returned strings:
+  the spike's plain SWIG module leaked every result.
 
 ### 6.7 crates.io (Rust)
 

@@ -24,7 +24,11 @@ None of them is built by CI.
 | 11 | Does the verifyReceipt endpoint survive the binding, result object included? | **Yes, on Temurin 8.** `jvm/EndpointDemo.java` drives `VerifyReceiptEndpoint` and `VerifyReceiptResult` as UniFFI objects. The genuine g5 sandbox receipt sent to a Production endpoint answers `{"status":21007}` with `verified=true` and a typed receipt. `toJsonIn(SANDBOX)` re-renders the same result as `{"environment":"Sandbox","receipt":{...}}` without a second verification. A Sandbox endpoint answers 0. A body of `not json` answers 21002 / `MALFORMED_REQUEST` with no exception. |
 | 12 | How do objects, records and maps behave across the boundary? | `jvm/ObjectsDemo.java` on Temurin 8. `VerifyReceiptResult` stays a handle to the Rust object: verification runs once, and each later `toJson()`/`toJsonIn()` is one FFI call rendering the stored result (about 99 µs, no re-verification). `receipt()` copies the nested record (`AppReceipt` with its `List<InAppPurchase>`) into plain Java objects. Kotlin generates `var` fields, so Java can edit its copy, and the Rust result stays unchanged (`toJsonIn` output byte-identical after the edit). `generate_immutable_records = true` would make the copies read-only. A Rust `HashMap` arrives as a read-only `java.util.Map` (`kotlin.collections.builders.MapBuilder`); `put` throws `UnsupportedOperationException`. |
 | 13 | Can one endpoint be a long-lived shared field, and must results be closed? | `jvm/SharedDemo.java` on Temurin 8, 4 vCPUs: one `static final VerifyReceiptEndpoint`, never closed, served 16 threads × 200 calls. All 3,200 answered 21007, at 2,099 verifications/s. None of the 3,200 results was closed. After GC the heap held 19 MB and the process RSS was 147 MB, so the Cleaner freed them. |
-| 14 | What does it cost? | See the timing table. Native Rust roughly matches the current ports. Wasm costs about 5.3 times the current `node:crypto` build (3.5 times `/web`). wazero costs about 30 times the current Go port. |
+| 14 | Does Swift on Linux link the Rust core as a prebuilt library? | **Yes, with Swift 6.2.4 and 6.4.** `swift/` is a SwiftPM package whose `binaryTarget` points at an SE-0482 artifact bundle (`staticLibrary`, `x86_64-unknown-linux-gnu`) holding the UniFFI static library plus the generated header and module map. `swift build -c release` needed no `unsafeFlags` and no Rust toolchain, and printed no dependency-audit warning. The smoke verified the g5 receipt, caught `VerifyError.Verification(wrongBundleId, ...)`, and ran the endpoint with `toJsonIn(environment: .sandbox)`. The unstripped static library is 50 MB; the release build must strip it before it goes into a download. |
+| 15 | Does the existing C ABI pass its own suites? | **Yes.** `cargo test` 25/25; C++17 conformance 153 passed, 0 failed; Python ctypes conformance 272 expected fields. 33 `decodeBase64` groups stay unreachable until the ABI gets a decoder (MIGRATION 1.6). |
+| 16 | Is SWIG a good way to hand the C ABI to other languages? | **It works but is a poor default.** A six-line `swig/aprv.i` over the cbindgen header produced 5,199 lines of C and a Python module that verified the g5 receipt. Out of the box it leaks every result: SWIG copies the Rust-owned `char*` into a Python string and drops the pointer that `aprv_string_free` needs. A correct SWIG binding needs custom typemaps. Every mainstream language already has a C FFI (ctypes, JNA/FFM, P/Invoke, cgo, the Ruby `ffi` gem, PHP FFI) that calls the ABI with explicit frees and no generated C. |
+| 17 | Does UniFFI's built-in Ruby backend work? | **Yes**, through the `ffi` gem on Ruby 3.3.6: receipt, typed error class `AprvUniffi::VerifyError::Verification`, endpoint and `to_json_in`. Weaker than the other three: the reason arrives as an integer (`reason=5`), and Ruby gets no default arguments. |
+| 18 | What does it cost? | See the timing table. Native Rust roughly matches the current ports. Wasm costs about 5.3 times the current `node:crypto` build (3.5 times `/web`). wazero costs about 30 times the current Go port. |
 
 ## Timings
 
@@ -54,6 +58,8 @@ warm-up first.
 | Rust core as wasm, Bun, `opt-level="z"` | 2,960 | not run |
 | Rust core as wasm, Deno, `opt-level="z"` | 2,933 | not run |
 | Rust core as `wasm32-wasip1` in wazero (Go 1.25 toolchain) | 6,740 | not run |
+| Current pure-Swift port (swift-crypto, swift-certificates), Swift 6.4 release build | 718 | not run |
+| Rust core via UniFFI Swift, Swift 6.4 / 6.2.4 release build | 713 / 687 | not run |
 | Rust core as `wasm32-wasip1` in Chicory 1.7.5, runtime compiler, JDK 21 | 18,546 | not run |
 | Rust core as `wasm32-wasip1` in Chicory 1.7.5, interpreter, JDK 21 | 974,602 | not run |
 
@@ -145,3 +151,21 @@ change the plan:
 - JNA picks native libraries by `linux-<arch>` with no glibc/musl split.
 - 1Password's Go SDK ships its Rust core as wasm on wazero, a precedent for
   the Go option measured here.
+
+## Usage of the binding tools on 2026-09-25
+
+GitHub's API refused this container, so registry downloads stand in for
+stars. They measure use, which is the better signal anyway.
+
+| Tool | Registry | Downloads | Latest |
+|---|---|---:|---|
+| uniffi | crates.io, last 90 days | 4,307,544 | 0.32.2 |
+| wasm-bindgen | crates.io, last 90 days | 135,956,563 | 0.2.129 |
+| cbindgen | crates.io, last 90 days | 15,559,300 | 0.29.4 |
+| jni | crates.io, last 90 days | 59,688,058 | 0.22.4 |
+| pyo3 | crates.io, last 90 days | 60,961,888 | 0.29.2 |
+| napi (napi-rs) | crates.io, last 90 days | 14,276,099 | 3.13.0 |
+| uniffi-bindgen-java (IronCore) | crates.io, last 90 days | 77,073 | 0.5.2 |
+| gobley-uniffi-bindgen (Kotlin Multiplatform) | crates.io, last 90 days | 9,051 | 0.3.7, last release 2025-10-08 |
+| uniffi-bindgen-react-native | npm, last month | 1,659,584 | 0.31.0-5 |
+| uniffi-bindgen-cs, -go, -cpp (NordSecurity), uniffi-dart | not on crates.io | installed from git | |

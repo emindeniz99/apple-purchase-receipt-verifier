@@ -273,7 +273,7 @@ branch.
 | Wasm speed on Node (about 5.3x) disappoints users | medium | medium | R4 trigger, publish numbers, R11 work |
 | Go through wazero is 30x slower than today's Go port | high (measured) | medium | R6 alternatives; R8 option C keeps the Go port |
 | JNA fails on Alpine (its own `jnidispatch`) | unknown | high for Alpine users | Phase 3.6 leg. Fallback: document `gcompat`, or add a musl-specific loader in the façade. |
-| SE-0482 rejects Rust's staticlib dependencies on Linux | unknown | high for Swift on Linux | Phase 5.1 spike before any Swift work; R7 option B as fallback |
+| SE-0482 rejects Rust's staticlib dependencies on Linux | **resolved**: the spike linked and ran on Swift 6.2.4 and 6.4 | — | Keep a Linux consumer build in CI; strip the 50 MB static library before release |
 | A wasm trap leaves an instance corrupted | low (lint wall) | medium | Trap recovery and a forced-trap test (ARCHITECTURE §5) |
 | Monoculture: one Rust bug hits every language | low-medium | high | R8, fuzzing, owner review log, differential campaign |
 | UniFFI is pre-1.0 and breaks between minors (0.32 changed byte buffers) | high | low-medium | Pin; upgrade in a dedicated PR with full conformance |

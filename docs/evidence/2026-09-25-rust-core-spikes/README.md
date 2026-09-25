@@ -13,6 +13,9 @@ directory outside the repository.
 | `jvm/` | Can a Java 8 program use the generated Kotlin, endpoint and `toJsonIn` included? How does it compare with the Maven 0.6.0 jar? |
 | `wasm/` | Does a wasm-bindgen adapter run on Node, Bun, Deno and Cloudflare workerd, and at what cost? |
 | `jni/` | What would a hand-written JNI binding (pure Java API, no Kotlin, no JNA) look like and cost? |
+| `swift/` | Can SwiftPM on Linux link the Rust core from an SE-0482 artifact bundle? (Yes, 6.2.4 and 6.4.) |
+| `swig/` | What does SWIG over the C ABI give? (It works; results leak without typemaps.) |
+| `ruby/` | Does UniFFI's built-in Ruby backend work? (Yes, with weaker enums.) |
 | `chicory/` | Could the JVM run the wasm build instead of native libraries? (No: 28x slower, Java 11+.) |
 | `wasi-go/` | Can Go run the core through wazero without cgo? |
 | `core-no-std-features.diff` | The one core change the wasm builds needed (the `[[test]]` hunks only trimmed the scratch copy and are not part of the change). |

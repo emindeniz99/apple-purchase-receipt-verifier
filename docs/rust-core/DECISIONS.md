@@ -46,7 +46,7 @@ independent checking survives.
 | JavaScript | **wasm-bindgen** 0.2.129 | The standard Rust-to-JS tool, now at github.com/wasm-bindgen. Targets `nodejs`, `web`, `deno`, `bundler`, `experimental-nodejs-module`, `module`. |
 | C and everything else | explicit `extern "C"` + **cbindgen** | Already exists, 20 symbols, tested on three OSes. |
 | Go | wazero (R6) | cgo-free. 1Password's Go SDK runs its Rust core the same way. |
-| Optional examples | **SWIG** `.i` over the C ABI | A mature generator for users of languages we do not package. Not supported packages. |
+| Examples for other languages | each language's own C FFI (ctypes, JNA/FFM, P/Invoke, cgo, Ruby `ffi`, PHP FFI) over the C ABI; SWIG `.i` only as an extra | The spike showed SWIG works but leaks every result string without custom typemaps (evidence row 16). Native FFI examples free explicitly and need no generated C. |
 
 Rejected, with the trigger that would reopen each:
 
@@ -201,9 +201,10 @@ deployment target.
 | B. Apple platforms only (XCFramework) | The mainstream UniFFI Swift shape (matrix-rust-sdk) | Drops Linux, the likely server platform. |
 | C. Build Rust from source during `swift build` | No binary artifacts | SwiftPM has no build step. It would need a plugin, a Rust toolchain on every consumer, and unsafe flags that version-resolved packages forbid. |
 
-Recommendation: **A.** A Linux Swift spike (the container had no Swift) is
-the first Phase 2 task for Swift, because the SE-0482 audit of Rust's
-`libgcc_s`/unwind symbols is unconfirmed.
+Recommendation: **A.** The Linux spike has since run (evidence row 14): an
+SE-0482 artifact bundle with the UniFFI static library built and ran on
+Swift 6.2.4 and 6.4 with no `unsafeFlags` and no audit warning, at
+687-713 µs per receipt against 718 µs for today's pure-Swift port.
 
 ---
 
@@ -237,6 +238,21 @@ Recommendation:
 
 A later demand for Ruby, PHP or .NET gets a binding over the C ABI
 (Magnus, ext-php-rs or P/Invoke), not a port.
+
+### R9 addendum: more languages from the same Rust definitions (2026-09-25)
+
+- **Ruby:** UniFFI's built-in backend worked in the spike (evidence row
+  17). Shipping it means a native gem per platform plus CI legs. The gem
+  was never published, so no user is waiting: add it when someone asks.
+- **Kotlin:** comes with the JVM package; the Maven artifact is Kotlin
+  underneath.
+- **React Native, Flutter, Kotlin Multiplatform:** out of scope. These are
+  app frameworks, and INTENT.md puts on-device validation out of scope: an
+  attacker controls the device, so the check belongs on a backend.
+- **C#, Go (cgo), C++, Dart through third-party UniFFI generators:**
+  community-maintained, installed from git, not on crates.io. Use one only
+  after checking its activity and running the full conformance suite
+  through it.
 
 ---
 
