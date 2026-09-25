@@ -198,10 +198,10 @@ where that wall fails.
 - Coordinates stay `io.github.emindeniz99:apple-purchase-receipt-verifier`.
   Today's classes sit in three packages: the root, `.jws` and `.receipt`.
   UniFFI's `package_name` puts every generated class in one package, so the
-  generated code goes to `...applepurchasereceiptverifier.internal`. The Java
-  façade (option B in the spike notes) keeps today's classes and import paths
-  (`.jws.JwsVerifier`, `.receipt.ReceiptVerifier`, ...). Without the façade,
-  the import paths break, and R13 would have to list that.
+  generated code goes to `...applepurchasereceiptverifier.internal`. The owner chose
+  no Java façade to start (R13), so the migration release moves the import
+  paths into that one package and the CHANGELOG lists the break. A façade
+  that restores `.jws` and `.receipt` stays possible before 1.0.
 - Contents: the compiled generated Kotlin (`jvmTarget = 1.8`), a small Java
   façade if the PoC needs one, and natives at JNA's resource paths:
   `linux-x86-64`, `linux-aarch64`, `darwin-x86-64`, `darwin-aarch64`,

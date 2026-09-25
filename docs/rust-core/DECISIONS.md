@@ -86,7 +86,7 @@ use `java.lang.ref.Cleaner` without `disable_java_cleaner`, and allow a
 `module-info`. The binding technology stays the same. Only a 22 floor
 unlocks JNA-free and JNI-free bindings.
 
-Decision: keep UniFFI plus the Java façade on the Java 8 floor. Revisit JNI
+Decision: keep UniFFI on the Java 8 floor, without a façade to start (R13). Revisit JNI
 if users object to the `kotlin-stdlib`/`jna` dependencies. Revisit FFM
 when the floor reaches 22.
 
@@ -314,7 +314,12 @@ A later demand for Ruby, PHP or .NET gets a binding over the C ABI
 
 ## R13. How much of today's API survives
 
-**Status: recommended** (pre-1.0, so breaking changes are allowed).
+**Status: accepted by the owner on 2026-09-25: no Java façade to start.**
+Java uses the UniFFI-generated API directly: `null` for "use Apple's roots",
+the generated package for imports (a breaking change the CHANGELOG lists),
+and KDoc/Dokka for docs. Add the façade before 1.0 only if Java users
+object. npm keeps its thin TypeScript layer, because Wasm trap recovery
+(ARCHITECTURE §5) and the sync/async split need it. Original analysis:
 
 - Keep the class names (`JwsVerifier`, `ReceiptVerifier`,
   `VerifyReceiptEndpoint`, `VerifyReceiptResult`), the `Reason` tokens,
