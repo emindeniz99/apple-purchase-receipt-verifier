@@ -441,8 +441,13 @@ Latest release of each, read from the registry:
 | jna 5.19.1 (Maven) | C | 27, see the RocksDB table above |
 | esbuild 0.28.2 (npm) | Go | 25 incl. AIX, OpenBSD, NetBSD, SunOS, loong64, mips64el (Go's own target list, not Rust's) |
 
-Every platform in these lists that stable Rust can build is in R12's C
-ABI list. Stable Rust (rustup 1.94.1) has a prebuilt standard library for
-the server targets listed in R12 and none for AIX, OpenBSD, DragonFly
-BSD, FreeBSD aarch64, mips64el or s390x musl.
+Stable Rust 1.98.1 (the latest on 2026-09-25, read from
+`static.rust-lang.org/dist/channel-rust-stable.toml`) has a prebuilt
+standard library for every server target in R12, and none for AIX,
+OpenBSD, DragonFly BSD, mips64el or s390x musl. Against 1.94.1 it adds
+`aarch64-unknown-freebsd` and `powerpc64-unknown-linux-musl`.
+
+Other facts R12 relies on: FreeBSD 15.0's release notes retire i386,
+armv6 and 32-bit powerpc; Alpine's latest-stable releases cover x86_64,
+x86, aarch64, armhf, armv7, loongarch64, ppc64le, riscv64 and s390x.
 

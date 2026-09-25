@@ -309,86 +309,99 @@ A later demand for Ruby, PHP or .NET gets a binding over the C ABI
 
 ## R12. Native artifacts: targets and trust
 
-**Status: direction accepted by the owner on 2026-09-25:** ship every
-target that stable Rust can build, Raspberry Pi and 32-bit Windows
-included, unless a target does real harm. Two points are still open
-(end of this section). Evidence: "Which platforms other native libraries
-ship" and the Temurin table in the spike notes.
+**Status: accepted by the owner on 2026-09-25**, except Swift on Windows
+(open, end of this section). Evidence: "Which platforms other native
+libraries ship" and the Temurin table in the spike notes.
 
-**The rule.** A target is in if stable Rust ships a prebuilt standard
-library for it (tier 1, or tier 2 with std) and CI can at least run the
-C ABI smoke test on it: a real runner, QEMU user mode, or a VM. Targets
-that need nightly (`-Z build-std`) are out, because release builds pin a
-stable toolchain.
+**The rule.** A target is in when all three hold:
+1. stable Rust ships a prebuilt standard library for it (checked against
+   Rust 1.98.1, the latest stable on 2026-09-25); release builds pin a
+   stable toolchain, so anything that needs nightly (`-Z build-std`) is out;
+2. CI can run at least the C ABI smoke test on it: a real runner, QEMU
+   user mode, or a VM. The repository's rule is that every claim is
+   tested;
+3. someone still runs it: a supported OS ships for it, or a popular
+   library with native code ships a build for it. Old laptops count: a
+   2010 netbook with a 32-bit Atom and a 32-bit OS is covered by i686.
 
-**Out, nightly only (Rust tier 3):** AIX, OpenBSD, DragonFly BSD,
-FreeBSD aarch64, linux mips64el, linux s390x musl. **Out, no Rust target
-at all:** 32-bit Solaris (sparc, x86).
+musl builds follow Alpine, the only common musl distribution: one for
+each Alpine architecture that stable Rust can build.
 
 **Per package.** Only three packages carry natives. npm and Go run the
 wasm build, which is the same file on every platform.
 
 | Package | Targets | Count |
 |---|---|---:|
-| C ABI archives (GitHub Releases) | every target the rule admits, below | 39 |
-| JVM jar | JNA's platforms that the rule admits, plus musl x86_64 and aarch64 | 21 |
-| Python wheels | platform tags PyPI accepts that the rule admits; other platforms build the sdist with a Rust toolchain | 18 |
-| Swift | Apple XCFramework, Linux x86_64 and aarch64 (R7) | 2 + Apple |
+| C ABI archives (GitHub Releases) | every target the rule admits | 27 |
+| JVM jar | the C ABI targets JNA can load, musl only where Temurin ships an Alpine JDK | 18 |
+| Python wheels | the C ABI targets PyPI accepts a wheel tag for; other platforms build the sdist with a Rust toolchain | 18 |
+| Swift | Apple XCFramework, Linux x86_64 and aarch64 (R7); Windows open | 2 + Apple |
 | npm, Go | wasm | 1 |
 
-**JVM jar (21).** JNA's dispatcher decides where the jar can work at all,
-so the jar carries JNA's list, not Rust's: linux x86-64, aarch64, x86
-(i686), arm (built as ARMv6 hard-float, so one file covers every 32-bit
-Raspberry Pi from the Zero up), armel (built as ARMv5TE, Debian's armel
-baseline), ppc, ppc64le, s390x, riscv64 and
-loongarch64; musl x86-64 and aarch64 (the only musl JDKs Temurin ships);
-macOS aarch64 and x86-64; Windows x86-64, x86 and aarch64; FreeBSD x86-64
-and x86; Solaris x86-64 and sparcv9. At about 0.6 MB each the natives
-add about 13 MB to the jar (sqlite-jdbc is about 14 MB, rocksdbjni
-84 MB). JNA platforms left out: AIX, OpenBSD, DragonFly BSD, FreeBSD
-aarch64, linux mips64el (nightly only), 32-bit Solaris (no Rust target).
+**C ABI archives (27).**
+- Linux glibc (9): x86_64, aarch64, i686, arm (ARMv6 hard-float: Raspberry
+  Pi Zero and 1), armv7 (hard-float: 32-bit OS on Pi 2 to 5), loongarch64,
+  powerpc64le, riscv64, s390x.
+- Linux musl, Alpine's architectures (9): x86_64, aarch64, i686 (Alpine
+  x86), arm (Alpine armhf), armv7, loongarch64, powerpc64le, riscv64.
+  Alpine s390x is out (below).
+- macOS (2): aarch64, x86_64.
+- Windows, MSVC (3): x86_64, i686, aarch64.
+- FreeBSD (2): x86_64, aarch64 (stable since Rust 1.98).
+- illumos (1): x86_64 (OmniOS, SmartOS).
+- Solaris (1): x86_64 (Oracle Solaris 11.4).
+
+**JVM jar (18).** JNA's dispatcher decides where the jar can work at all:
+linux x86-64, aarch64, x86, arm (the ARMv6 build, so one file covers every
+32-bit Raspberry Pi), ppc64le, s390x, riscv64, loongarch64; musl x86-64
+and aarch64; macOS aarch64, x86-64; Windows x86-64, x86, aarch64; FreeBSD
+x86-64, aarch64; Solaris x86-64. At about 0.6 MB each the natives add
+about 11 MB to the jar (sqlite-jdbc is about 14 MB, rocksdbjni 84 MB).
 
 **Python wheels (18).** manylinux x86_64, aarch64, armv7l, i686, ppc64le,
 s390x, riscv64; musllinux x86_64, aarch64, armv7l, i686, ppc64le,
 riscv64; Windows amd64, win32, arm64; macOS arm64, x86_64.
 pydantic-core, the largest Rust-on-PyPI package, ships 15 of these.
 
-**C ABI archives (39).** Linux glibc: x86_64, aarch64, i586, i686, arm
-(ARMv6 soft and hard float), armv5te, armv7 (soft and hard float),
-loongarch64, powerpc, powerpc64, powerpc64le, riscv64, s390x, sparc64.
-Linux musl: x86_64, aarch64, i586, i686, arm (soft and hard float),
-armv5te, armv7 (soft and hard float), loongarch64, powerpc64le,
-riscv64. macOS aarch64 and x86_64. Windows (MSVC) x86_64, i686 and
-aarch64. FreeBSD x86_64 and i686. NetBSD x86_64. illumos x86_64. Solaris
-x86_64 and sparcv9. Variants of an OS and CPU pair that the rule admits
-but that add nothing for a C caller (Windows GNU and gnullvm, arm64ec,
-riscv64a23) are left out.
+**Out, and why.** The user-facing support page lists these too, so
+nobody has to guess.
+
+| Platform | Why it is out |
+|---|---|
+| AIX, OpenBSD, DragonFly BSD, Linux mips64el, Alpine s390x | Rust needs nightly for them (tier 3) |
+| 32-bit Solaris (SPARC, x86) | no Rust target |
+| Solaris SPARC 64-bit | CI cannot run it, so the claim could not be tested (owner, 2026-09-25) |
+| i586 | CPUs without SSE2: the Pentium, Pentium II and III, or embedded Vortex86 and Geode chips. Every x86 PC since about 2003 has SSE2 and uses the i686 build. |
+| ARMv5TE, soft-float ARMv6 and ARMv7 (Debian armel) | ARM9 boards and old NAS boxes. No Temurin JDK, no PyPI wheel tag, no popular Rust library ships it. Every Raspberry Pi uses hard-float. |
+| 32-bit PowerPC | the last PowerPC Mac shipped in 2005; FreeBSD 15 retired the platform |
+| 64-bit big-endian PowerPC Linux (glibc and musl) | IBM Power moved Linux to little-endian (ppc64le, which is in) |
+| SPARC Linux | Debian Ports only, no supported distribution |
+| FreeBSD 32-bit x86 | FreeBSD 15.0 retired i386 |
+| NetBSD | no popular Rust library ships a NetBSD build |
+
+A Java user on a platform outside the jar can still point
+`uniffi.component.<namespace>.libraryOverride` at a library they built,
+wherever JNA runs.
 
 **How each target is tested.** GitHub runners for linux x86_64 and
 aarch64, macOS, Windows x86_64 and aarch64 (x86 under WOW64). QEMU user
 mode for every other Linux target, glibc and musl. `vmactions` VMs for
-FreeBSD (32-bit through lib32), NetBSD, illumos (OmniOS) and Solaris
-x86_64. The JVM smoke test runs where a JDK exists for that target
-(Temurin: x86-64, aarch64, arm, ppc64le, s390x, riscv64, Windows x86);
-elsewhere only the C ABI smoke test runs.
+FreeBSD, illumos (OmniOS) and Solaris x86_64. The JVM smoke test runs
+where a JDK exists for that target (Temurin: x86-64, aarch64, arm,
+ppc64le, s390x, riscv64, Windows x86); elsewhere only the C ABI smoke
+test runs.
 
-**What it costs:**
-- about 40 native builds per release instead of 8 (the jar and the
-  wheels reuse them), run in parallel and without caches (publish jobs
-  never cache);
-- tier 2 targets are built but not tested by the Rust project, so a Rust
-  upgrade can break one; our CI catches that before a release;
-- a jar about 13 MB larger;
-- Solaris sparcv9 has no emulator or VM that CI can run, so it would ship
-  built but untested, which CLAUDE.md's "floors are tested claims" rule
-  forbids unless the owner accepts it (open question below).
+**What it costs:** about 30 native builds per release instead of 8 (the
+jar and the wheels reuse them), run in parallel and without caches
+(publish jobs never cache). Rust builds its tier 2 targets but does not
+test them, so a Rust upgrade can break one; our CI catches that before a
+release.
 
 **Unchanged from the first version of this record:**
 - One fat jar, selected at runtime, like JNA and sqlite-jdbc: no
   classifier for users to choose. A platform without a bundled library
   gets a clear error that names the missing target and the
-  `uniffi.component.<namespace>.libraryOverride` property, which also
-  lets a Java user point at a C ABI archive from GitHub Releases.
+  `libraryOverride` property.
 - Build on native runners where GitHub provides them; `cargo-zigbuild` or
   `cross` for the rest.
 - Every artifact gets a SHA-256 and `actions/attest-build-provenance`.
@@ -396,12 +409,12 @@ elsewhere only the C ABI smoke test runs.
 - Release builds pin the toolchain (`rust-toolchain.toml`) and remap
   paths, so a second build can reproduce the hash.
 
-**Open:**
-1. Solaris sparcv9: ship it built but untested, or leave it out?
-2. The C ABI list includes targets with no known backend user (i586,
-   armv5te, soft-float ARM, powerpc 32-bit, sparc64 linux, NetBSD). Keep
-   all 39 per the rule, or keep only the pairs some other popular library
-   ships?
+**Open: Swift on Windows.** Today's Swift package never claimed Windows
+(CI tests Linux and macOS). SE-0482, the proposal R7 relies on, covers
+Windows `.lib` static libraries by design, and the C ABI builds a
+Windows `.lib` anyway. Adding Windows x86_64 and aarch64 to the Swift
+package would cost one CI leg; whether SwiftPM on Windows actually links
+the artifact bundle is unproven, and this Linux container cannot test it.
 
 ---
 

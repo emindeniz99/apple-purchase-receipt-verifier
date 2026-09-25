@@ -85,7 +85,7 @@ decide it.
 
 | Step | Work | Verify |
 |---|---|---|
-| 3.1 | The Maven build compiles the generated Kotlin (`jvmTarget 1.8`, `-Xjdk-release=1.8`, `disable_java_cleaner`), then packs natives from the R12 matrix into the JNA resource paths. | The jar lists all 21 R12 JVM native paths; `javap` shows major 52 |
+| 3.1 | The Maven build compiles the generated Kotlin (`jvmTarget 1.8`, `-Xjdk-release=1.8`, `disable_java_cleaner`), then packs natives from the R12 matrix into the JNA resource paths. | The jar lists all 18 R12 JVM native paths; `javap` shows major 52 |
 | 3.2 | Java façade only where R13 allows. | Façade diff reviewed for zero logic; the one-implementation grep passes |
 | 3.3 | Port the JUnit suites (conformance, trust isolation, hostile, caps). | 186/186 |
 | 3.4 | Keep every JVM leg: `java-runtime-8` on real Temurin 8, JDK 11-26, distroless ×4, Spring Boot 4.0/4.1, `jvm-interop` (Kotlin, Scala). | All green |
