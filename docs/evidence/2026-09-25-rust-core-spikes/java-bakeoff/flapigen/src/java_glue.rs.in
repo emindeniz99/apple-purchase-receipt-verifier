@@ -1,0 +1,299 @@
+// flapigen interface: Java classes in package bakeoff.flapigen.
+use aprv::{AppReceipt, Environment, InAppPurchase, JwsVerifier, ReceiptVerifier,
+           TransactionPayload, VerifyReceiptEndpoint, VerifyReceiptResult};
+use crate::jni_c_header::*;
+use crate::{Reason, VerifyError};
+
+// ---- typemaps flapigen has no built-in rule for ---------------------------
+
+// Result<T, VerifyError> -> throws VerificationException / ConfigurationException.
+// (The Java method still says `throws Exception`: flapigen hardcodes that for any Result.)
+fn throw_verify_error(env: *mut JNIEnv, err: VerifyError) {
+    match err {
+        VerifyError::Config(detail) => {
+            let cls = swig_jni_find_class!(APRV_CONFIG_EX, "bakeoff/flapigen/ConfigurationException");
+            jni_throw(env, cls, &detail);
+        }
+        VerifyError::Verification(reason, detail) => {
+            let cls = swig_jni_find_class!(APRV_VERIFY_EX, "bakeoff/flapigen/VerificationException");
+            let ctor = swig_jni_get_method_id!(APRV_VERIFY_EX_CTOR, APRV_VERIFY_EX, "<init>", "(ILjava/lang/String;)V");
+            let jdetail = from_std_str_jstring(&detail, env);
+            unsafe {
+                let ex = (**env).NewObject.unwrap()(env, cls, ctor, reason.as_jint(), jdetail);
+                (**env).Throw.unwrap()(env, ex);
+            }
+        }
+    }
+}
+
+foreign_typemap!(
+    ($p:r_type) <T> Result<T, VerifyError> => swig_i_type!(T) {
+        $out = match $p {
+            Ok(x) => {
+                swig_from_rust_to_i_type!(T, x, ret)
+                ret
+            }
+            Err(err) => {
+                throw_verify_error(env, err);
+                return <swig_i_type!(T)>::jni_invalid_value();
+            }
+        };
+    };
+    ($p:f_type, unique_prefix="/*Result<swig_subst_type!(T), VerifyError>*/") => "/*Result<swig_subst_type!(T), VerifyError>*/swig_f_type!(T)"
+        "swig_foreign_from_i_type!(T, $p)";
+);
+
+// Option<Vec<i8>> -> java.util.Optional<byte[]> (mirrors flapigen's Option<String> rule).
+type JOptBytes = jbyteArray;
+foreign_typemap!(
+    ($p:r_type) Option<Vec<i8>> => JOptBytes {
+        $out = match $p {
+            Some(v) => JavaByteArray::from_slice_to_raw(&v, env),
+            None => ::std::ptr::null_mut(),
+        };
+    };
+    ($p:f_type) => "java.util.Optional<byte[]>" "$out = java.util.Optional.ofNullable($p);";
+);
+foreign_typemap!(
+    (r_type) JOptBytes;
+    (f_type, unique_prefix = "/*optbytes*/") "/*optbytes*/byte []";
+);
+
+// java.util.Set<Environment> -> int[] of enum values -> Vec<Environment>.
+type JEnvSet = jintArray;
+foreign_typemap!(
+    ($p:r_type) Vec<Environment> <= JEnvSet {
+        $out = JavaIntArray::new(env, $p).to_slice().iter()
+            .map(|&v| <Environment as SwigForeignCLikeEnum>::from_jint(v)).collect();
+    };
+    ($p:f_type, unique_prefix = "/*envset*/") <= "/*envset*/java.util.Set<Environment>" r#"
+        $out = new int[$p.size()];
+        int $pI = 0;
+        for (Environment e : $p) { $out[$pI++] = e.getValue(); }
+"#;
+);
+foreign_typemap!(
+    (r_type) JEnvSet;
+    (f_type, unique_prefix = "/*envset*/") "/*envset*/int []";
+);
+
+// nullable java.util.List<byte[]> -> one length-prefixed byte[] -> Option<Vec<Vec<u8>>>.
+type JRoots = jbyteArray;
+foreign_typemap!(
+    ($p:r_type) Option<Vec<Vec<u8>>> <= JRoots {
+        $out = if $p.is_null() {
+            None
+        } else {
+            Some(crate::unpack_roots(JavaByteArray::new(env, $p).to_slice()))
+        };
+    };
+    ($p:f_type, unique_prefix = "/*roots*/") <= "/*roots*/java.util.List<byte[]>" r#"
+        $out = null;
+        if ($p != null) {
+            int $pN = 0;
+            for (byte[] b : $p) { $pN += 4 + b.length; }
+            $out = new byte[$pN];
+            int $pO = 0;
+            for (byte[] b : $p) {
+                int l = b.length;
+                $out[$pO++] = (byte) (l >>> 24); $out[$pO++] = (byte) (l >>> 16);
+                $out[$pO++] = (byte) (l >>> 8);  $out[$pO++] = (byte) l;
+                System.arraycopy(b, 0, $out, $pO, l);
+                $pO += l;
+            }
+        }
+"#;
+);
+foreign_typemap!(
+    (r_type) JRoots;
+    (f_type, unique_prefix = "/*roots*/") "/*roots*/byte []";
+);
+
+// ---- enums ----------------------------------------------------------------
+
+foreign_enum!(
+    /// An App Store environment.
+    enum Environment {
+        PRODUCTION = Environment::Production,
+        SANDBOX = Environment::Sandbox,
+        XCODE = Environment::Xcode,
+        LOCAL_TESTING = Environment::LocalTesting,
+    }
+);
+
+foreign_enum!(
+    /// Why verification failed. Same tokens as every port.
+    enum Reason {
+        INVALID_JWS_FORMAT = Reason::InvalidJwsFormat,
+        INVALID_CERTIFICATE = Reason::InvalidCertificate,
+        INVALID_CERTIFICATE_PURPOSE = Reason::InvalidCertificatePurpose,
+        INVALID_CHAIN = Reason::InvalidChain,
+        INVALID_SIGNATURE = Reason::InvalidSignature,
+        WRONG_BUNDLE_ID = Reason::WrongBundleId,
+        WRONG_ENVIRONMENT = Reason::WrongEnvironment,
+        WRONG_APP_APPLE_ID = Reason::WrongAppAppleId,
+        INVALID_RECEIPT_FORMAT = Reason::InvalidReceiptFormat,
+        DEVICE_HASH_MISMATCH = Reason::DeviceHashMismatch,
+        MALFORMED_REQUEST = Reason::MalformedRequest,
+        INTERNAL_ERROR = Reason::InternalError,
+        REQUEST_TOO_LARGE = Reason::RequestTooLarge,
+    }
+);
+
+// ---- value classes (native-backed; getters cross JNI) ----------------------
+
+foreign_class!(
+    /// One in-app purchase from a verified receipt.
+    #[derive(Clone)]
+    class InAppPurchase {
+        self_type InAppPurchase;
+        private constructor = empty;
+        /// Product id, if present.
+        fn productId(&self) -> Option<String> { this.product_id.clone() }
+        /// Transaction id, if present.
+        fn transactionId(&self) -> Option<String> { this.transaction_id.clone() }
+        /// Original transaction id, if present.
+        fn originalTransactionId(&self) -> Option<String> { this.original_transaction_id.clone() }
+        /// Quantity, if present.
+        fn quantity(&self) -> Option<i64> { this.quantity }
+        /// Purchase date (epoch ms), if present.
+        fn purchaseDateMs(&self) -> Option<i64> { crate::ms(this.purchase_date) }
+        /// Expiry date (epoch ms), if present.
+        fn expiresDateMs(&self) -> Option<i64> { crate::ms(this.expires_date) }
+    }
+);
+
+foreign_class!(
+    /// A verified legacy app receipt.
+    class AppReceipt {
+        self_type AppReceipt;
+        private constructor = empty;
+        /// Receipt type, if present.
+        fn receiptType(&self) -> Option<String> { this.receipt_type.clone() }
+        /// Bundle id, if present.
+        fn bundleId(&self) -> Option<String> { this.bundle_id.clone() }
+        /// App version, if present.
+        fn appVersion(&self) -> Option<String> { this.app_version.clone() }
+        /// Original app version, if present.
+        fn originalAppVersion(&self) -> Option<String> { this.original_app_version.clone() }
+        /// Opaque value bytes, if present.
+        fn opaqueValue(&self) -> Option<Vec<i8>> { crate::bytes_out(&this.opaque_value) }
+        /// SHA-1 hash bytes, if present.
+        fn sha1Hash(&self) -> Option<Vec<i8>> { crate::bytes_out(&this.sha1_hash) }
+        /// Creation date (epoch ms), if present.
+        fn creationDateMs(&self) -> Option<i64> { crate::ms(this.creation_date) }
+        /// The in-app purchases.
+        fn inAppPurchases(&self) -> Vec<InAppPurchase> { this.in_app_purchases.clone() }
+    }
+);
+
+foreign_class!(
+    /// A verified StoreKit 2 transaction.
+    class TransactionPayload {
+        self_type TransactionPayload;
+        private constructor = empty;
+        /// Bundle id claim, if present.
+        fn bundleId(&self) -> Option<String> { this.bundle_id.clone() }
+        /// Environment claim, if present.
+        fn environment(&self) -> Option<String> { this.environment.clone() }
+        /// Product id claim, if present.
+        fn productId(&self) -> Option<String> { this.product_id.clone() }
+        /// Transaction id claim, if present.
+        fn transactionId(&self) -> Option<String> { this.transaction_id.clone() }
+        /// signedDate claim (epoch ms), if present.
+        fn signedDate(&self) -> Option<i64> { this.signed_date }
+        /// purchaseDate claim (epoch ms), if present.
+        fn purchaseDate(&self) -> Option<i64> { this.purchase_date }
+        /// Every claim, as JSON text.
+        fn claimsJson(&self) -> String { aprv::serde_json::to_string(&this.claims).unwrap_or_default() }
+    }
+);
+
+// ---- verifiers -------------------------------------------------------------
+
+foreign_class!(
+    /// Verifies legacy PKCS#7 app receipts against pinned roots. Thread-safe.
+    #[derive(AutoCloseable)]
+    class ReceiptVerifier {
+        self_type ReceiptVerifier;
+        foreign_code "    static { System.loadLibrary(\"aprv_flapigen\"); }\n";
+        /// Verifier for `bundleId` trusting Apple's pinned roots.
+        constructor new(bundleId: &str) -> Result<ReceiptVerifier, VerifyError> {
+            crate::receipt_verifier(bundleId, None)
+        }
+        /// Verifier trusting the given DER roots (null = Apple's roots).
+        constructor withRoots(bundleId: &str, roots: Option<Vec<Vec<u8>>>) -> Result<ReceiptVerifier, VerifyError> {
+            crate::receipt_verifier(bundleId, roots)
+        }
+        /// Verifies DER receipt bytes.
+        fn verify(&self, der: &[i8]) -> Result<AppReceipt, VerifyError> {
+            this.verify(&crate::bytes_in(der)).map_err(Into::into)
+        }
+        /// Verifies a base64 receipt, as apps upload it.
+        fn verifyBase64(&self, b64: &str) -> Result<AppReceipt, VerifyError> {
+            this.verify_base64(b64).map_err(Into::into)
+        }
+    }
+);
+
+foreign_class!(
+    /// Verifies StoreKit 2 JWS against pinned roots. Thread-safe.
+    #[derive(AutoCloseable)]
+    class JwsVerifier {
+        self_type JwsVerifier;
+        foreign_code "    static { System.loadLibrary(\"aprv_flapigen\"); }\n";
+        /// appAppleId and roots may be null (roots null = Apple's roots).
+        constructor new(bundleId: &str, envs: Vec<Environment>, appAppleId: Option<i64>,
+                        roots: Option<Vec<Vec<u8>>>) -> Result<JwsVerifier, VerifyError> {
+            crate::jws_verifier(bundleId, envs, appAppleId, roots)
+        }
+        /// Verifies a signed transaction.
+        fn verifyTransaction(&self, jws: &str) -> Result<TransactionPayload, VerifyError> {
+            this.verify_transaction(jws).map_err(Into::into)
+        }
+    }
+);
+
+foreign_class!(
+    /// Local drop-in for Apple's deprecated verifyReceipt endpoint. Thread-safe.
+    #[derive(AutoCloseable)]
+    class VerifyReceiptEndpoint {
+        self_type VerifyReceiptEndpoint;
+        foreign_code "    static { System.loadLibrary(\"aprv_flapigen\"); }\n";
+        /// Endpoint emulating `environment`, trusting Apple's pinned roots.
+        constructor new(environment: Environment) -> Result<VerifyReceiptEndpoint, VerifyError> {
+            crate::endpoint(environment)
+        }
+        /// Raw JSON request body in, raw JSON response body out. Never throws.
+        fn verifyReceiptJson(&self, body: &str) -> String {
+            this.verify_receipt_json(body)
+        }
+        /// Verifies one JSON request body and returns the result object.
+        fn verifyReceiptResult(&self, body: &str) -> VerifyReceiptResult {
+            this.verify_receipt_result_from_json(body)
+        }
+    }
+);
+
+foreign_class!(
+    /// Outcome of one verifyReceipt request; keeps the Rust result so toJsonIn re-renders without re-verifying.
+    #[derive(AutoCloseable)]
+    class VerifyReceiptResult {
+        self_type VerifyReceiptResult;
+        private constructor = empty;
+        /// Apple's status: 0, 21002, 21003, 21007, 21008 or 21009.
+        fn status(&self) -> i64 { this.status() }
+        /// True when the receipt verified, whichever environment it belongs to.
+        fn verified(&self) -> bool { this.verified() }
+        /// The verified receipt, or empty.
+        fn receipt(&self) -> Option<AppReceipt> { this.receipt().cloned() }
+        /// Why verification failed, or empty.
+        fn failureReason(&self) -> Option<Reason> { this.failure_reason().map(Reason::from_core) }
+        /// The response body Apple would send.
+        fn toJson(&self) -> String { this.to_json() }
+        /// The response body as `environment`'s endpoint would send it (no re-verification).
+        fn toJsonIn(&self, environment: Environment) -> Result<String, VerifyError> {
+            this.to_json_in(environment).map_err(Into::into)
+        }
+    }
+);

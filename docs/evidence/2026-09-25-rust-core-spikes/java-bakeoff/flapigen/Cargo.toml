@@ -1,0 +1,21 @@
+[package]
+name = "aprv-flapigen"
+version = "0.0.0"
+edition = "2021"
+publish = false
+build = "build.rs"
+
+[lib]
+name = "aprv_flapigen"
+crate-type = ["cdylib"]
+
+[dependencies]
+aprv = { package = "apple-purchase-receipt-verifier", path = "$REPO/rust" }
+log = "0.4"
+
+[build-dependencies]
+flapigen = "=0.11.2"
+bindgen = { version = "0.72.1", default-features = false, features = ["runtime"] }
+
+[profile.release]
+strip = true

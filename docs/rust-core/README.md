@@ -2,7 +2,8 @@
 
 Status on 2026-09-25: **accepted plan.** Phase 0 (inventory and spikes) is
 done. The owner settled all four owner calls on 2026-09-25 (table below).
-Phase 1 is next.
+Implementation waits: the owner wants every open question settled before
+Phase 1 starts (2026-09-25).
 
 ## The idea
 

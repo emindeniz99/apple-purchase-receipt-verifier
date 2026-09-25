@@ -201,3 +201,43 @@ repository's release feed (latest release). None is archived.
 Every third-party UniFFI generator trails UniFFI itself by one or more minor
 versions (0.29 to 0.31 against 0.32). A package built on one of them has
 to pin UniFFI to that generator's version.
+
+## Java binding bake-off (2026-09-25)
+
+Five ways to put the Rust core behind a Java API, built to one spec
+([java-bakeoff/SPEC.md](./2026-09-25-rust-core-spikes/java-bakeoff/SPEC.md)):
+the same classes, 20 checks (genuine and generated receipts, typed errors,
+JWS, endpoint with `toJsonIn`, malformed body, bad root, 8 threads × 100
+calls). Every entry passed every check on Temurin 8, 17 and 21.
+
+Timing: µs per call, mean of three rounds of 10,000 after 10,000 warm-up
+calls, run one approach at a time with nothing else on the machine. This
+session's machine ran faster than the earlier JVM rows, so compare within
+this table.
+
+| Approach | JDK 8 receipt / JWS | JDK 17 receipt / JWS | JDK 21 receipt / JWS |
+|---|---|---|---|
+| Maven 0.6.0 (Bouncy Castle), today | 708 / 1,157 | 660 / 1,118 | 678 / 1,077 |
+| UniFFI (generated Kotlin) | 604 / 972 | 611 / 922 | 629 / 964 |
+| jni-rs + hand-written Java | 552 / 862 | 540 / 877 | 530 / 853 |
+| flapigen | 593 / 892 | 603 / 877 | 583 / 873 |
+| SWIG over the C ABI + Java JSON layer | 641 / 882 | 617 / 883 | 659 / 893 |
+| Diplomat (generated Kotlin) | 641 / 863 | 649 / 900 | 654 / 891 |
+
+| | UniFFI | jni-rs | flapigen | SWIG | Diplomat |
+|---|---|---|---|---|---|
+| Hand-written Rust (lines) | 263 | 314 | 126 + 299 interface | 0 (existing C ABI) | 424 |
+| Hand-written Java (lines, library only) | 0 | 472 | 30 | 1,077 incl. a 200-line JSON parser | 0 |
+| `unsafe` in hand-written code | 0 | 2 | 1 (plus 271 generated) | 0 (the C ABI's own) | 0 |
+| Rust panic reaches Java as | exception | exception | **JVM abort** (no `catch_unwind`) | exception | not tested |
+| Checked, typed exception | yes | yes | no: `throws Exception` everywhere | yes | no: errors are returned values |
+| Lifetime | `AutoCloseable` + Cleaner | `AutoCloseable`, leaks if not closed | `finalize()` | `AutoCloseable` | `finalize()` only |
+| `toJsonIn` without re-verifying | yes | yes | yes | **no**: the C ABI has no result handle | yes |
+| Runtime jars | jna + kotlin-stdlib (3.8 MB) | none | none | none | jna + kotlin-stdlib |
+| Native library, stripped | 1.30 MB | 1.14 MB | 0.91 MB | 0.89 MB (two files) | 0.86 MB |
+| Same definitions serve Swift and Python | yes | no | no | through SWIG, JSON only | no production Swift |
+| Build notes | none | jni 0.22 API churn | needs libclang; typemaps "experimental" | 35 lines of hand JNI in C | fails on Rust 1.94.1 (upstream MSRV bug), needs 1.95; config booleans must be strings |
+
+All five bindings beat today's jar. The gap between them (about 10-15%)
+comes mostly from how each builds result objects: jni-rs sends one packed
+`byte[]`, UniFFI serializes every record field, including the claims JSON.

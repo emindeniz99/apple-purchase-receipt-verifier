@@ -1,0 +1,6 @@
+lib-name = "diplomat"
+
+[kotlin]
+domain = "bakeoff"
+dylib-name = "aprv_diplomat"
+use_finalizers_not_cleaners = "true"

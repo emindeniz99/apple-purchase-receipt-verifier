@@ -86,6 +86,16 @@ use `java.lang.ref.Cleaner` without `disable_java_cleaner`, and allow a
 `module-info`. The binding technology stays the same. Only a 22 floor
 unlocks JNA-free and JNI-free bindings.
 
+A five-way bake-off at one spec (evidence, "Java binding bake-off")
+measured UniFFI, jni-rs, flapigen, SWIG and Diplomat. flapigen aborts the
+JVM on a Rust panic and throws bare `Exception`; Diplomat returns errors
+instead of throwing and has no `AutoCloseable`; SWIG needs a Java JSON
+parser and re-verifies for `toJsonIn`. UniFFI and jni-rs are the two
+viable choices: UniFFI with no hand-written Java and one definition for
+Swift and Python, jni-rs with no runtime jars and about 12% less time per
+receipt, at the price of 472 hand-written Java lines and two `unsafe`
+blocks.
+
 Decision: keep UniFFI on the Java 8 floor, without a façade to start (R13). Revisit JNI
 if users object to the `kotlin-stdlib`/`jna` dependencies. Revisit FFM
 when the floor reaches 22.
