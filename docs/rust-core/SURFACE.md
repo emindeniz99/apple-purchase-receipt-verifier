@@ -1,6 +1,6 @@
 # aprv-surface: the binding-neutral contract
 
-Status: **proposal, 2026-09-25.** It refines ARCHITECTURE.md §2-§4 and
+Status: **accepted by the owner on 2026-09-25.** It refines ARCHITECTURE.md §2-§4 and
 DECISIONS.md R3 and R10. The owner raised the rule it rests on:
 
 > The binding generator must never become the architecture.

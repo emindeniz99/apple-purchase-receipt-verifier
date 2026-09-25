@@ -57,6 +57,8 @@ the next release.
 | R6 (**accepted**, plus an opt-in cgo fast path on demand) | Go: wazero (cgo-free, about 30x slower), cgo (native speed, loses `CGO_ENABLED=0`), keep the Go port, or retire it? | wazero |
 | R7 (**accepted**: 6.2 everywhere) | Swift on Linux needs Swift 6.2 (SE-0482) for a prebuilt Rust library. Raise the floor or drop Linux? | Raise the floor to 6.2 |
 | R13 (**accepted**) | Hide UniFFI's Java rough edges behind a hand-written Java façade? | No façade to start; add one before 1.0 only if Java users object |
+| R16 (**accepted**) | Keep the surface free of any binding generator? | Yes: SURFACE.md |
+| R17 (**accepted**) | A local verifyReceipt server? | Yes, as a product and as a Java library mode |
 | R8 (**accepted**) | After the migration, keep an independent implementation to catch Rust bugs? | Keep the Java port as an unpublished test-only oracle until 1.0 |
 
 Everything else in DECISIONS.md is either the owner's brief (R1, R2, R9) or

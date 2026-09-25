@@ -397,3 +397,48 @@ conformance run before merging.
    R8 oracle instead.
 
 Each step is its own release. See [MIGRATION.md](./MIGRATION.md).
+
+---
+
+## R16. aprv-surface is generator-neutral
+
+**Status: accepted by the owner on 2026-09-25.**
+
+The contract, the field-by-field mapping and the enforcement are in
+[SURFACE.md](./SURFACE.md). Neither the core nor the surface depends on a
+binding generator; UniFFI annotates the surface from its adapter crate
+with `#[uniffi::remote]` (spike passed). This replaces R3's option C as
+first written (derives behind a `uniffi` feature on the surface).
+
+---
+
+## R17. The sidecar: a verifyReceipt server, and a mode of the Java library
+
+**Status: accepted by the owner on 2026-09-25: both.**
+
+Evidence: "Sidecar" in the spike notes. A 1.5 MB static binary answers
+`POST /verifyReceipt` with exactly the core's `verify_receipt_json`; with
+a one-write client it costs 961 µs per receipt against 648 µs in-process.
+
+1. **A product of its own:** `aprv-server`, a binary and a Docker image
+   that stand in for Apple's retired `verifyReceipt` endpoint, offline.
+   Any language switches by changing a URL. It is one more adapter over
+   the surface and adds no verification logic.
+2. **A mode of the Java library:** besides the in-process binding, the Java
+   package can start the bundled server as a child process and talk to it
+   over HTTP. That mode puts no native code in the JVM, which sidesteps
+   classloader, native-image, JNA and Kotlin concerns at the price of a
+   child process and about 310 µs per call.
+
+Constraints the spike surfaced:
+- The Java client must send each request in one write with `TCP_NODELAY`;
+  `HttpURLConnection` costs about 1.5 ms extra per POST (Nagle plus
+  delayed ACK).
+- `/tmp` mounted `noexec` blocks the extracted binary; the launcher takes
+  an exec-allowed directory setting, and the docs recommend a separate
+  container where that is available.
+- Executing from memory (`memfd_create` + `fexecve`) is rejected: pure Java
+  cannot do it, and security tools treat fileless execution as malware
+  behaviour.
+- The server binds to `127.0.0.1` (or a Unix socket on Java 16+) and exits
+  when its parent's stdin closes.
