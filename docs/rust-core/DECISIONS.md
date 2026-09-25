@@ -309,8 +309,7 @@ A later demand for Ruby, PHP or .NET gets a binding over the C ABI
 
 ## R12. Native artifacts: targets and trust
 
-**Status: accepted by the owner on 2026-09-25**, except Swift on Windows
-(open, end of this section). Evidence: "Which platforms other native
+**Status: accepted by the owner on 2026-09-25.** Evidence: "Which platforms other native
 libraries ship" and the Temurin table in the spike notes.
 
 **The rule.** A target is in when all three hold:
@@ -335,8 +334,37 @@ wasm build, which is the same file on every platform.
 | C ABI archives (GitHub Releases) | every target the rule admits | 26 |
 | JVM jar | the C ABI targets JNA can load, musl only where Temurin ships an Alpine JDK | 18 |
 | Python wheels | the C ABI targets PyPI accepts a wheel tag for; other platforms build the sdist with a Rust toolchain | 18 |
-| Swift | Apple XCFramework, Linux x86_64 and aarch64 (R7); Windows open | 2 + Apple |
+| Swift | Apple XCFramework, Linux x86_64 and aarch64 (R7), Windows x86_64 and aarch64 | 4 + Apple |
 | npm, Go | wasm | 1 |
+
+**Who runs each target.** No registry reports downloads by platform, so
+"use" below is the known deployments, not a measurement. Packages: C = C
+ABI archive, J = JVM jar, P = Python wheel, S = Swift.
+
+| # | Target | Who runs it | Use | In |
+|---:|---|---|---|---|
+| 1 | Linux x86_64 (glibc) | most servers and cloud VMs, Linux desktops, CI runners | very high | C J P S |
+| 2 | Linux aarch64 (glibc) | AWS Graviton, Google Axion, Azure Cobalt, Ampere servers; Docker on Apple silicon Macs; 64-bit Raspberry Pi OS | high, growing | C J P S |
+| 3 | Linux x86_64 musl | Alpine container images (`eclipse-temurin:*-alpine`, `python:*-alpine`) | high in containers | C J P |
+| 4 | Linux aarch64 musl | Alpine containers on Graviton and Apple silicon | medium | C J P |
+| 5 | macOS aarch64 | every Mac since 2020; developer laptops, Mac mini CI hosts | very high for development | C J P S |
+| 6 | macOS x86_64 | Intel Macs; macOS 26 is the last release for them | medium, falling | C J P S |
+| 7 | Windows x86_64 | Windows PCs and Windows Server | very high | C J P S |
+| 8 | Windows aarch64 | Snapdragon X laptops, Surface Pro, Azure Cobalt VMs | low, growing | C J P S |
+| 9 | Windows x86 (32-bit) | 32-bit JVMs and Pythons still installed on 64-bit Windows by legacy enterprise apps; Windows 11 itself is 64-bit only | low | C J P |
+| 10 | Linux x86 (32-bit, i686) | old PCs and 2008 to 2010 Atom netbooks on a 32-bit OS, some industrial PCs | low | C J P |
+| 11 | Linux ppc64le | IBM Power servers (RHEL, SLES) at banks and insurers, SAP HANA on Power | niche, enterprise | C J P |
+| 12 | Linux s390x | IBM Z and LinuxONE mainframes at banks, airlines, governments | niche, enterprise | C J P |
+| 13 | Linux ARMv6 hard-float | Raspberry Pi Zero, Zero W and 1 on 32-bit Raspberry Pi OS | niche, hobby | C J |
+| 14 | Linux ARMv7 hard-float | Raspberry Pi 2 to 5 on a 32-bit OS, BeagleBone, IoT gateways | low, hobby and IoT | C P |
+| 15 | Linux riscv64 | VisionFive 2, Milk-V and other boards, first RISC-V servers | niche, emerging | C J P |
+| 16 | Linux loongarch64 | Loongson 3A5000 and 3A6000 PCs and servers, mostly Chinese government and enterprise (UOS, Kylin) | niche outside China | C J |
+| 17 | FreeBSD x86_64 | FreeBSD servers (Netflix's CDN appliances), pfSense and OPNsense firewalls | low for Java and Python backends | C J |
+| 18 | FreeBSD aarch64 | FreeBSD on Graviton, Ampere, Raspberry Pi 4 | niche | C J |
+| 19 | illumos x86_64 | OmniOS, SmartOS (Triton clouds), Oxide Computer's racks | niche | C |
+| 20 | Solaris x86_64 | Oracle Solaris 11.4 on x86 servers, still under Oracle support | niche, legacy enterprise | C J |
+| 21 to 26 | Linux musl i686, ARMv6, ARMv7, loongarch64, ppc64le, riscv64 | Alpine on those architectures: routers, Raspberry Pi, boards, Alpine containers on Power | niche | C, and P for i686, ARMv7, ppc64le, riscv64 |
+| | wasm (npm, Go) | Node, Bun, Deno, Cloudflare Workers, browsers; every platform Go builds for | very high | npm, Go |
 
 **C ABI archives (26).**
 - Linux glibc (9): x86_64, aarch64, i686, arm (ARMv6 hard-float: Raspberry
@@ -409,12 +437,15 @@ release.
 - Release builds pin the toolchain (`rust-toolchain.toml`) and remap
   paths, so a second build can reproduce the hash.
 
-**Open: Swift on Windows.** Today's Swift package never claimed Windows
-(CI tests Linux and macOS). SE-0482, the proposal R7 relies on, covers
-Windows `.lib` static libraries by design, and the C ABI builds a
-Windows `.lib` anyway. Adding Windows x86_64 and aarch64 to the Swift
-package would cost one CI leg; whether SwiftPM on Windows actually links
-the artifact bundle is unproven, and this Linux container cannot test it.
+**Swift on Windows (accepted by the owner on 2026-09-25).** Today's
+Swift package never claimed Windows (CI tests Linux and macOS). swift.org
+ships official Windows toolchains for x86_64 and arm64 for every release
+from 6.1 on (swift.org/install/windows, read 2026-09-25). SE-0482, the
+proposal R7 relies on, covers Windows `.lib` static libraries by design,
+and the C ABI builds a Windows `.lib` anyway. The Swift package adds
+Windows x86_64 and aarch64, and keeps the claim only if the Phase 5 CI
+leg (MIGRATION 5.6) proves SwiftPM on Windows links the bundle. This
+Linux container could not test it.
 
 ---
 

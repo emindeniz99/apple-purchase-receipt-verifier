@@ -130,7 +130,8 @@ measured it yet.
 | 5.3 | Commit the generated Swift. `Package.swift` gets a `binaryTarget(url:checksum:)`. Floor: tools 6.2. | Regenerate-and-diff gate |
 | 5.4 | `release-please.yml` builds the bundle on the release PR branch and commits the checksum. `release.yml` uploads the identical file. | A dry-run release on a fork resolves the checksum |
 | 5.5 | Port `ConformanceCasesTests` and the trust and concurrency tests. Keep `async` only where the façade needs it (the Rust calls are sync). | 186/186 on Linux 6.2/6.3 and macOS |
-| 5.6 | Delete the hand-written Swift verifier. | The one-implementation grep finds no `X509`, `_CryptoExtras` or `SwiftASN1` imports |
+| 5.6 | **Windows (R12):** a `swift-windows` CI leg on `windows-latest` and `windows-11-arm` with Swift 6.2 from swift.org consumes the artifact bundle's Windows `.lib` slices and runs the conformance suite. | 186/186 on both. If SwiftPM on Windows cannot link the bundle, Windows leaves the Swift package's claims and R12 records why. |
+| 5.7 | Delete the hand-written Swift verifier. | The one-implementation grep finds no `X509`, `_CryptoExtras` or `SwiftASN1` imports |
 
 **Gate G5:** as in the table, plus a post-publish smoke with `swift run
 Smoke` from the real tag.
