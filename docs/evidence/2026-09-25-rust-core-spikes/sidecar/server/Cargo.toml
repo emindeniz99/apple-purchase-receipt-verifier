@@ -1,0 +1,19 @@
+[package]
+name = "aprv-sidecar"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "aprv-sidecar"
+path = "src/main.rs"
+
+[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "signal", "io-std", "io-util", "macros"] }
+aprv = { package = "apple-purchase-receipt-verifier", path = "$REPO/rust" }
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
+codegen-units = 1

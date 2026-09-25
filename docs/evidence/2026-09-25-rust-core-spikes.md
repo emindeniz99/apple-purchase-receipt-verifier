@@ -260,3 +260,36 @@ published Java 8 for s390x (the API answers 404 for HotSpot and OpenJ9);
 Java 8 on IBM Z comes from IBM's own JDK, which this container could not
 download, so the s390x row ran on 17. Emulated timings (7.9-10 ms per
 receipt) say nothing about real hardware.
+
+## Sidecar: the Rust core as a local verifyReceipt server (2026-09-25)
+
+`sidecar/server` is a 145-line axum binary: `POST /verifyReceipt` answers
+with exactly the core's `verify_receipt_json`, verification runs on
+`spawn_blocking`, the port comes from the OS and is printed on stdout, and
+the process exits on SIGTERM or when its stdin closes (so it dies with
+the JVM that started it). `sidecar/java` extracts it from the classpath,
+starts it and calls it, with no dependencies on Java 8.
+
+- **Checks, Temurin 8 and JDK 21:** a Production sidecar answers 21007 for
+  the genuine sandbox receipt, a Sandbox one answers 0 with the receipt,
+  `not json` answers 21002. All pass.
+- **Binary:** 1.43 MB glibc, 1.54 MB static musl (`ldd`: statically
+  linked). Resident memory about 2 MB. Cold start to healthy: 43 ms.
+- **`/tmp` mounted `noexec`:** starting the extracted binary fails with
+  `error: 13 (Permission denied)`; pointing `-Daprv.sidecar.dir` at an
+  exec-allowed directory fixes it.
+- **Latency, JDK 21, Sandbox path (status 0 with the receipt JSON):**
+
+| Path | µs per call |
+|---|---:|
+| In-process, UniFFI `verifyReceiptJson` (same body, same output) | 648 |
+| Sidecar, `HttpURLConnection` client | 2,314 to 2,604 |
+| Sidecar, one-write keep-alive socket client with `TCP_NODELAY` (`RawSocketClient.java`, Java 8) | **961** |
+| Sidecar transport alone: `GET /health` / tiny `POST` with the one-write client | 53 / 77 |
+
+`HttpURLConnection` writes a POST's headers and body separately; Nagle's
+algorithm and delayed ACKs then hold the body back about 1.5 ms per
+request. A client that sends each request in one write removes that, so
+the sidecar costs about 310 µs over in-process (1.5x), mostly moving
+7.5 KB in and 2 KB out as JSON. 8-thread throughput with the
+`HttpURLConnection` client was 941 requests/s on 4 vCPUs.
