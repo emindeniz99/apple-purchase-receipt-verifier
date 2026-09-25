@@ -40,9 +40,11 @@ warm-up first.
 | npm 0.6.0, default build (`node:crypto`), Node 22 | 683 | 732 |
 | npm 0.6.0, `/web` build (WebCrypto), Node 22 | 1,001 | 1,134 |
 | PyPI 0.6.0 (`cryptography` + `asn1crypto`), CPython 3.11 | 669 | 484 |
-| Maven 0.6.0 (Bouncy Castle), JDK 21 | 880 | 1,294 |
+| Maven 0.6.0 (Bouncy Castle), JDK 21, 10k warm-up, mean of 3 × 10k | 781 | 1,253 |
+| Maven 0.6.0 (Bouncy Castle), Temurin 8, same method | 821 | 1,373 |
 | Rust core via UniFFI, Python | 742 | 1,053 |
-| Rust core via UniFFI Kotlin, JDK 21 | 668 | 1,010 |
+| Rust core via UniFFI Kotlin, JDK 21, 10k warm-up, mean of 3 × 10k | 701 | 1,096 |
+| Rust core via UniFFI Kotlin, Temurin 8, same method | 701 | 1,125 |
 | Rust core via UniFFI Kotlin, Temurin 8 | 877 (short run) | not run |
 | Rust core as wasm, Node 22, `opt-level=3` | 3,626 | 3,900 |
 | Rust core as wasm, Bun, `opt-level="z"` | 2,960 | not run |
@@ -56,7 +58,13 @@ receipt on a different machine.
 
 Reading the table:
 
-- **JVM:** the Rust core beats today's Maven artifact on both paths.
+- **JVM:** the Rust core beats today's Maven artifact on both paths: by
+  10% (receipt) and 13% (JWS) on JDK 21, and by 15% and 18% on Java 8.
+  Those JVM rows use 10,000 warm-up calls and three rounds of 10,000
+  (`jvm/Bench10kMaven.java`, `jvm/Bench10kUniffi.java`). The first
+  measurement (500 to 2,000 warm-up calls, 880 against 668 µs) overstated
+  the gap, because Bouncy Castle gains most from a longer JIT warm-up.
+  The rounds varied by under 5%.
 - **Python:** it matches on receipts. JWS takes twice as long, because
   `cryptography` runs ECDSA in OpenSSL.
 - **JWS in Rust is the slow spot everywhere.** RustCrypto's pure-Rust

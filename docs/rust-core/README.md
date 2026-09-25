@@ -37,7 +37,8 @@ the next release.
 
 - **Java 8 works** on the generated Kotlin, with one rule: no unsigned
   integers in the API. On JDK 21 the Rust core beats today's Maven jar
-  (668 against 880 µs per receipt).
+  (701 against 781 µs per receipt, 1,096 against 1,253 µs per JWS, after
+  10,000 warm-up calls).
 - **The core builds for wasm** once three `std` features go, and the clock
   gets a seam. It then runs on Node, Bun, Deno and Cloudflare workerd
   (static `.wasm` import).
