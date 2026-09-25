@@ -309,38 +309,99 @@ A later demand for Ruby, PHP or .NET gets a binding over the C ABI
 
 ## R12. Native artifacts: targets and trust
 
-**Status: recommended.**
+**Status: direction accepted by the owner on 2026-09-25:** ship every
+target that stable Rust can build, Raspberry Pi and 32-bit Windows
+included, unless a target does real harm. Two points are still open
+(end of this section). Evidence: "Which platforms other native libraries
+ship" and the Temurin table in the spike notes.
 
-| Target | JVM | Python | Swift | C ABI | npm / Go |
-|---|:-:|:-:|:-:|:-:|:-:|
-| linux x86_64 glibc | ✅ | ✅ manylinux_2_17 | ✅ | ✅ | wasm, no native |
-| linux aarch64 glibc | ✅ | ✅ | ✅ | ✅ | |
-| linux x86_64/aarch64 musl | ✅ (override, see ARCHITECTURE §6.1) | ✅ musllinux_1_2 | ❌ | ✅ | |
-| macOS arm64 / x86_64 | ✅ | ✅ | ✅ XCFramework | ✅ | |
-| Windows x86_64 | ✅ | ✅ | n/a | ✅ | |
-| Windows arm64 | ✅ | ✅ | n/a | ✅ | |
+**The rule.** A target is in if stable Rust ships a prebuilt standard
+library for it (tier 1, or tier 2 with std) and CI can at least run the
+C ABI smoke test on it: a real runner, QEMU user mode, or a VM. Targets
+that need nightly (`-Z build-std`) are out, because release builds pin a
+stable toolchain.
 
-- **Tier 2 targets (added 2026-09-25).** Today's pure-Java jar runs on any
-  JVM, including IBM Power and Z, where the eight targets above would stop
-  working. JNA, sqlite-jdbc and zstd-jni ship 18 to 28 platforms in one
-  jar (evidence row 20). The JVM jar and the C ABI archives add, as tier 2:
-  `linux-ppc64le`, `linux-s390x`, `linux-riscv64`, `linux-arm` (armv7),
-  `linux-x86`, `win32-x86` and `freebsd-x86-64`. Cross-compiled, smoke-tested
-  under QEMU where a runner doesn't exist, about 0.6 MB each in the jar. A
-  platform without a bundled library gets a clear error that names the
-  missing target and the `uniffi.component.<namespace>.libraryOverride`
-  property for a library the user built.
-- One fat jar, selected at runtime, like JNA and sqlite-jdbc: no classifier
-  for users to choose. Python wheels, the SwiftPM artifact bundle and npm
-  (wasm) select automatically already.
-- Build on native runners where GitHub provides them (ubuntu, ubuntu-arm,
-  macos, windows, windows-arm). Use `cargo-zigbuild` only for musl and old
-  glibc.
-- Every artifact gets a SHA-256 and `actions/attest-build-provenance`. The
-  repository has no attestation step today. Publish jobs keep the no-cache
-  rule.
-- Release builds pin the toolchain (`rust-toolchain.toml`) and remap paths,
-  so a second build can reproduce the hash.
+**Out, nightly only (Rust tier 3):** AIX, OpenBSD, DragonFly BSD,
+FreeBSD aarch64, linux mips64el, linux s390x musl. **Out, no Rust target
+at all:** 32-bit Solaris (sparc, x86).
+
+**Per package.** Only three packages carry natives. npm and Go run the
+wasm build, which is the same file on every platform.
+
+| Package | Targets | Count |
+|---|---|---:|
+| C ABI archives (GitHub Releases) | every target the rule admits, below | 39 |
+| JVM jar | JNA's platforms that the rule admits, plus musl x86_64 and aarch64 | 21 |
+| Python wheels | platform tags PyPI accepts that the rule admits; other platforms build the sdist with a Rust toolchain | 18 |
+| Swift | Apple XCFramework, Linux x86_64 and aarch64 (R7) | 2 + Apple |
+| npm, Go | wasm | 1 |
+
+**JVM jar (21).** JNA's dispatcher decides where the jar can work at all,
+so the jar carries JNA's list, not Rust's: linux x86-64, aarch64, x86
+(i686), arm (built as ARMv6 hard-float, so one file covers every 32-bit
+Raspberry Pi from the Zero up), armel (built as ARMv5TE, Debian's armel
+baseline), ppc, ppc64le, s390x, riscv64 and
+loongarch64; musl x86-64 and aarch64 (the only musl JDKs Temurin ships);
+macOS aarch64 and x86-64; Windows x86-64, x86 and aarch64; FreeBSD x86-64
+and x86; Solaris x86-64 and sparcv9. At about 0.6 MB each the natives
+add about 13 MB to the jar (sqlite-jdbc is about 14 MB, rocksdbjni
+84 MB). JNA platforms left out: AIX, OpenBSD, DragonFly BSD, FreeBSD
+aarch64, linux mips64el (nightly only), 32-bit Solaris (no Rust target).
+
+**Python wheels (18).** manylinux x86_64, aarch64, armv7l, i686, ppc64le,
+s390x, riscv64; musllinux x86_64, aarch64, armv7l, i686, ppc64le,
+riscv64; Windows amd64, win32, arm64; macOS arm64, x86_64.
+pydantic-core, the largest Rust-on-PyPI package, ships 15 of these.
+
+**C ABI archives (39).** Linux glibc: x86_64, aarch64, i586, i686, arm
+(ARMv6 soft and hard float), armv5te, armv7 (soft and hard float),
+loongarch64, powerpc, powerpc64, powerpc64le, riscv64, s390x, sparc64.
+Linux musl: x86_64, aarch64, i586, i686, arm (soft and hard float),
+armv5te, armv7 (soft and hard float), loongarch64, powerpc64le,
+riscv64. macOS aarch64 and x86_64. Windows (MSVC) x86_64, i686 and
+aarch64. FreeBSD x86_64 and i686. NetBSD x86_64. illumos x86_64. Solaris
+x86_64 and sparcv9. Variants of an OS and CPU pair that the rule admits
+but that add nothing for a C caller (Windows GNU and gnullvm, arm64ec,
+riscv64a23) are left out.
+
+**How each target is tested.** GitHub runners for linux x86_64 and
+aarch64, macOS, Windows x86_64 and aarch64 (x86 under WOW64). QEMU user
+mode for every other Linux target, glibc and musl. `vmactions` VMs for
+FreeBSD (32-bit through lib32), NetBSD, illumos (OmniOS) and Solaris
+x86_64. The JVM smoke test runs where a JDK exists for that target
+(Temurin: x86-64, aarch64, arm, ppc64le, s390x, riscv64, Windows x86);
+elsewhere only the C ABI smoke test runs.
+
+**What it costs:**
+- about 40 native builds per release instead of 8 (the jar and the
+  wheels reuse them), run in parallel and without caches (publish jobs
+  never cache);
+- tier 2 targets are built but not tested by the Rust project, so a Rust
+  upgrade can break one; our CI catches that before a release;
+- a jar about 13 MB larger;
+- Solaris sparcv9 has no emulator or VM that CI can run, so it would ship
+  built but untested, which CLAUDE.md's "floors are tested claims" rule
+  forbids unless the owner accepts it (open question below).
+
+**Unchanged from the first version of this record:**
+- One fat jar, selected at runtime, like JNA and sqlite-jdbc: no
+  classifier for users to choose. A platform without a bundled library
+  gets a clear error that names the missing target and the
+  `uniffi.component.<namespace>.libraryOverride` property, which also
+  lets a Java user point at a C ABI archive from GitHub Releases.
+- Build on native runners where GitHub provides them; `cargo-zigbuild` or
+  `cross` for the rest.
+- Every artifact gets a SHA-256 and `actions/attest-build-provenance`.
+  The repository has no attestation step today.
+- Release builds pin the toolchain (`rust-toolchain.toml`) and remap
+  paths, so a second build can reproduce the hash.
+
+**Open:**
+1. Solaris sparcv9: ship it built but untested, or leave it out?
+2. The C ABI list includes targets with no known backend user (i586,
+   armv5te, soft-float ARM, powerpc 32-bit, sparc64 linux, NetBSD). Keep
+   all 39 per the rule, or keep only the pairs some other popular library
+   ships?
 
 ---
 
@@ -533,16 +594,16 @@ redeploy leak becomes a real user problem before the JNI backend ships.
   2026-09-25). The phases (R15) still run one after another with their
   gates, but none of them cuts a release of its own. One release also
   spends one Maven Central slot instead of five.
-- Where the phases land before 0.8.0 is open (see below).
+- The phases land on a `rust-core` integration branch (below).
 - Everything stays 0.x. 1.0 is a separate decision after the migration.
 - The first crates.io publish waits until something needs it: a user
   asking for the crate, or a binding that has to depend on it from a
   registry. Until then Rust users take a git dependency.
 
-**Open: where the phases land.** release-please opens a release PR for
+**Where the phases land (accepted by the owner on 2026-09-25).** release-please opens a release PR for
 whatever reaches `main`. If the phases merge into `main` one by one, an
 urgent 0.7.x fix during the migration would ship half-migrated packages.
-Recommendation: a long-lived `rust-core` integration branch. Each phase
+Decision: a long-lived `rust-core` integration branch. Each phase
 merges there, `main` keeps taking 0.7.x fixes and is merged into
 `rust-core` after each one, and `rust-core` merges into `main` once, when
 every gate has passed. That merge produces 0.8.0.

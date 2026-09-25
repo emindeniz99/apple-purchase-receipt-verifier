@@ -425,3 +425,24 @@ Temurin ships musl only for x64 and aarch64. The four extra musl builds
 RocksDB carries have no Temurin JDK to run on. AIX has Temurin on every
 line, but Rust's `powerpc64-ibm-aix` is tier 3 (nightly only).
 
+### Which platforms other native libraries ship (2026-09-25)
+
+Latest release of each, read from the registry:
+
+| Library | Language | Platforms |
+|---|---|---|
+| pydantic-core 2.49.0 (PyPI) | Rust | manylinux x86_64, aarch64, armv7l, i686, ppc64le, s390x, riscv64; musllinux x86_64, aarch64, armv7l; win32, win_amd64, win_arm64; macOS x86_64, arm64 (15) |
+| cryptography 50.0.1 (PyPI) | Rust | manylinux x86_64, aarch64, armv7l, ppc64le; musllinux x86_64, aarch64; win_amd64; macOS arm64 |
+| orjson 3.12.0 (PyPI) | Rust | manylinux x86_64, aarch64, armv7l, i686; musllinux x86_64, aarch64; win32, win_amd64, win_arm64; macOS |
+| @swc/core 1.16.2 (npm) | Rust | linux x64, arm64 (glibc and musl), arm-gnueabihf, ppc64, s390x; darwin x64, arm64; win32 x64, ia32, arm64 (12) |
+| @biomejs/biome 2.5.14 (npm) | Rust | linux x64, arm64 (glibc and musl); darwin x64, arm64; win32 x64, arm64 (8) |
+| sqlite-jdbc 3.53.4.0 (Maven) | C | Linux x86_64, x86, aarch64, arm, armv6, armv7, ppc64, riscv64; Linux musl x86_64, x86, aarch64; Mac x86_64, aarch64; Windows x86_64, x86, aarch64, armv7; FreeBSD x86_64, x86, aarch64 (20) |
+| rocksdbjni 10.10.1 (Maven) | C++ | 15, see the RocksDB table above |
+| jna 5.19.1 (Maven) | C | 27, see the RocksDB table above |
+| esbuild 0.28.2 (npm) | Go | 25 incl. AIX, OpenBSD, NetBSD, SunOS, loong64, mips64el (Go's own target list, not Rust's) |
+
+Every platform in these lists that stable Rust can build is in R12's C
+ABI list. Stable Rust (rustup 1.94.1) has a prebuilt standard library for
+the server targets listed in R12 and none for AIX, OpenBSD, DragonFly
+BSD, FreeBSD aarch64, mips64el or s390x musl.
+

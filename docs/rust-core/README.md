@@ -61,6 +61,7 @@ the next release.
 | R17 (**accepted**) | A local verifyReceipt server? | Yes, as a product and as a Java library mode |
 | R5, R9, R15 (**accepted**) | Drop Fastly/Akamai; delete Ruby/PHP/.NET after Phase 1; Python first | As recommended |
 | R19 (**accepted**) | Versions? | Every package moves to the Rust core in one 0.8.0 release, stays 0.x; crates.io waits until needed |
+| R12 (**direction accepted**, two points open) | Which native targets? | Every target stable Rust builds: 39 C ABI archives, 21 in the jar, 18 wheels |
 | R8 (**accepted**) | After the migration, keep an independent implementation to catch Rust bugs? | Keep the Java port as an unpublished test-only oracle until 1.0 |
 
 Everything else in DECISIONS.md is either the owner's brief (R1, R2, R9) or
