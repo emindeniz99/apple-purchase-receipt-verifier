@@ -12,6 +12,7 @@ directory outside the repository.
 | `uniffi/` | Does a UniFFI adapter over the unchanged core give usable Python, and what Kotlin and Swift does it generate? |
 | `jvm/` | Can a Java 8 program use the generated Kotlin, endpoint and `toJsonIn` included? How does it compare with the Maven 0.6.0 jar? |
 | `wasm/` | Does a wasm-bindgen adapter run on Node, Bun, Deno and Cloudflare workerd, and at what cost? |
+| `jni/` | What would a hand-written JNI binding (pure Java API, no Kotlin, no JNA) look like and cost? |
 | `chicory/` | Could the JVM run the wasm build instead of native libraries? (No: 28x slower, Java 11+.) |
 | `wasi-go/` | Can Go run the core through wazero without cgo? |
 | `core-no-std-features.diff` | The one core change the wasm builds needed (the `[[test]]` hunks only trimmed the scratch copy and are not part of the change). |

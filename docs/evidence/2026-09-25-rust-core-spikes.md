@@ -45,6 +45,10 @@ warm-up first.
 | Rust core via UniFFI, Python | 742 | 1,053 |
 | Rust core via UniFFI Kotlin, JDK 21, 10k warm-up, mean of 3 × 10k | 701 | 1,096 |
 | Rust core via UniFFI Kotlin, Temurin 8, same method | 701 | 1,125 |
+| Maven 0.6.0 (Bouncy Castle), Temurin 17.0.20.1, same method | 762 | 1,261 |
+| Rust core via UniFFI Kotlin, Temurin 17, same method | 707 | 1,081 |
+| Rust core via hand-written JNI (`jni` 0.21), Temurin 17, same method | 626 | not built |
+| Rust core via hand-written JNI, Temurin 8 / JDK 21 | 643 / 638 | not built |
 | Rust core via UniFFI Kotlin, Temurin 8 | 877 (short run) | not run |
 | Rust core as wasm, Node 22, `opt-level=3` | 3,626 | 3,900 |
 | Rust core as wasm, Bun, `opt-level="z"` | 2,960 | not run |
@@ -65,6 +69,10 @@ Reading the table:
   measurement (500 to 2,000 warm-up calls, 880 against 668 µs) overstated
   the gap, because Bouncy Castle gains most from a longer JIT warm-up.
   The rounds varied by under 5%.
+- **JNI against UniFFI:** the hand-written JNI spike (`jni/`) is about 11%
+  faster per receipt, but it returns only the bundle id string while the
+  UniFFI call serializes the whole `AppReceipt` with its purchases. Part of
+  the gap is that extra work, not the calling mechanism.
 - **Python:** it matches on receipts. JWS takes twice as long, because
   `cryptography` runs ECDSA in OpenSSL.
 - **JWS in Rust is the slow spot everywhere.** RustCrypto's pure-Rust
