@@ -241,3 +241,22 @@ this table.
 All five bindings beat today's jar. The gap between them (about 10-15%)
 comes mostly from how each builds result objects: jni-rs sends one packed
 `byte[]`, UniFFI serializes every record field, including the claims JSON.
+
+## IBM Power and IBM Z (2026-09-25)
+
+Both finalists (UniFFI, jni-rs) cross-compiled with `cargo build --target
+powerpc64le-unknown-linux-gnu` / `s390x-unknown-linux-gnu` and the Ubuntu
+cross linkers, with no source or Cargo.toml change, and ran their full
+check programs on real Temurin JVMs under QEMU user-mode emulation:
+
+| Architecture | JVM | UniFFI (`spike.Smoke`) | jni-rs (`bakeoff.jni.Demo`) |
+|---|---|---|---|
+| ppc64le (IBM Power, little-endian) | Temurin 1.8.0_504 | ALL OK | ALL PASS |
+| s390x (IBM Z, big-endian) | Temurin 17.0.20.1 | ALL OK | ALL PASS, 800/800 threaded |
+
+JNA resolved `linux-ppc64le/` and `linux-s390x/` resources with no extra
+property. The JIT ran under QEMU without `-Xint`. Adoptium has never
+published Java 8 for s390x (the API answers 404 for HotSpot and OpenJ9);
+Java 8 on IBM Z comes from IBM's own JDK, which this container could not
+download, so the s390x row ran on 17. Emulated timings (7.9-10 ms per
+receipt) say nothing about real hardware.
