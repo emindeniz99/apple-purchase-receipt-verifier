@@ -115,6 +115,13 @@ that's a bug, not a feature.
 their LICENSE-upstream files). Never add a production receipt — a real
 receipt carries a real user's purchase history. This rule has bitten before.
 
+The owner sometimes hands an agent production receipts to check that the
+verifier still reads what Apple sends. Keep them in a scratch folder outside
+the repository, and report only verdicts and unknown attribute type numbers.
+They never go into the repo, its history, CI, an issue or a PR, and neither
+does any output carrying their values. A new attribute type becomes a test
+built from a generated receipt of the same shape.
+
 ## Spikes and evidence
 
 Every experiment's code goes into the repo, even code that answered "no".
