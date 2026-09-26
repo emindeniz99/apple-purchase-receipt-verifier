@@ -29,7 +29,7 @@ the next release.
    and timings against today's packages.
 3. [ARCHITECTURE.md](./ARCHITECTURE.md): the target design: crates, API,
    time, panics, packaging per registry, invariants.
-4. [DECISIONS.md](./DECISIONS.md): R1-R19, each with options, evidence and
+4. [DECISIONS.md](./DECISIONS.md): R1-R20, each with options, evidence and
    a recommendation.
 5. [MIGRATION.md](./MIGRATION.md): phases 1-7 with gates, CI and release
    changes, acceptance tests, risks.
@@ -62,6 +62,7 @@ the next release.
 | R5, R9, R15 (**accepted**) | Drop Fastly/Akamai; delete Ruby/PHP/.NET after Phase 1; Python first | As recommended |
 | R19 (**accepted**) | Versions? | Every package moves to the Rust core in one 0.8.0 release, stays 0.x; crates.io waits until needed |
 | R12 (**accepted**, incl. Swift on Windows) | Which native targets? | Every target stable Rust builds that someone still runs: 26 C ABI archives, 18 to 22 in the jar, 19 wheels |
+| R20 (**accepted**) | Signature algorithm policy? | Accept any algorithm the pinned chain vouches for (Java's rule); four known Java/Rust divergences fixed on `main`, rechecked at the end |
 | R8 (**accepted**) | After the migration, keep an independent implementation to catch Rust bugs? | Keep the Java port as an unpublished test-only oracle until 1.0 |
 
 Everything else in DECISIONS.md is either the owner's brief (R1, R2, R9) or

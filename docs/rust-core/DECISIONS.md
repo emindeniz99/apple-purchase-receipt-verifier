@@ -684,3 +684,44 @@ Decision: a long-lived `rust-core` integration branch. Each phase
 merges there, `main` keeps taking 0.7.x fixes and is merged into
 `rust-core` after each one, and `rust-core` merges into `main` once, when
 every gate has passed. That merge produces 0.8.0.
+
+---
+
+## R20. Signature algorithm policy, and the known Java/Rust divergences
+
+**Status: accepted by the owner on 2026-09-26.**
+
+The Native Image spike (evidence: `2026-09-25-java-native-image.md` §7)
+ran one corpus through the JVM Java verifier and the Rust core and found
+divergences that the shared fixtures never caught. Every port claims to
+be one product, so each is a bug on one side.
+
+**Policy (owner, option a):** accept any signer and chain signature
+algorithm that the pinned Apple chain vouches for. That is Java's
+behavior since `2ba48bc` (2026-09-24), which changed Java alone and so
+broke the one-product rule. The other ports follow Java, and the Rust
+core must carry this policy before it becomes the only implementation.
+The fix PR spells out the exact algorithm set it accepts; the owner
+confirms it there, including whether MD5 or other broken digests stay
+refused (receipts from before 2017 need SHA-1).
+
+**Known divergences, fixed on `main` separately from this migration**
+(owner, 2026-09-26: another agent fixes them, one PR each):
+
+| # | Input | Java | Rust | Direction |
+|---:|---|---|---|---|
+| 1 | Signer or chain algorithm outside RSA SHA-1/SHA-256 and EC P-256/P-384 (14 of 22 algorithm inputs) | accepts | rejects (9, 5, 4 or 2) | Rust and the other ports follow Java (policy above) |
+| 2 | Unused embedded certificate whose `tbsCertificate.signature` OID disagrees with its outer `signatureAlgorithm` | accepts | 9 | decided in its fix PR |
+| 3 | `verifyReceipt` body with bytes after the JSON object | status 0 (Jackson ignores trailing tokens) | 21002 | decided in its fix PR |
+| 4 | Non-UTF-8 JWS, base64 receipt or endpoint body at the C ABI | answers | 101 `INVALID_UTF8` | decided in its fix PR |
+| 5 | Comment at `rust/src/jws.rs:632-634` claims U+FFFD always makes the JSON invalid | | wrong | fix the comment |
+
+Twenty more rows reject on both sides with a different reason; they are
+listed in the spike's `results/java-vs-rust-hostile-explained.txt` and
+need a case each where the reason is part of the contract.
+
+**How the plan checks them:** the spike's differential harness (the same
+request corpus through the JVM Java verifier and the Rust C ABI) becomes
+part of MIGRATION step 1.8 and of the final acceptance tests. The row
+numbers above are the checklist: the migration is not done while any of
+them diverges.

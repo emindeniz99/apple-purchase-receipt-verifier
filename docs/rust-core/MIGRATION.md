@@ -43,7 +43,7 @@ alone is about a week.
 | 1.5 | Create `aprv-surface` (generator-free, SURFACE.md) and `aprv-wire` (the JSON view moved out of `rust/ffi`). Add `tools/check-layering.mjs`, the C ABI lints and `CAPABILITIES.toml` (SURFACE.md §7). | The C ABI's C++ and ctypes conformance pass unchanged; the layering check passes and fails on a planted `uniffi` dependency in the core |
 | 1.6 | Close the C ABI gaps from PORTS.md: `verified` flag, re-render, `REQUEST_TOO_LARGE`, base64 decode entry point, fuzz target. | The C ABI runs the `decodeBase64` groups; its PORTS.md row is all ✅ |
 | 1.7 | Profile receipt and JWS on native and wasm. Record the results in BENCHMARKS.md, including a JWS row, which exists in no port today. | The numbers are committed with their method |
-| 1.8 | **Differential campaign:** replay every port's fuzz corpus (Rust, Jazzer, atheris, go-fuzz, Jazzer.js, libFuzzer Swift, ruzzy, SharpFuzz, PHP) through the Rust core and the port. Compare `reason`. | Zero open divergences. Each one found becomes a case. |
+| 1.8 | **Differential campaign:** replay every port's fuzz corpus (Rust, Jazzer, atheris, go-fuzz, Jazzer.js, libFuzzer Swift, ruzzy, SharpFuzz, PHP) through the Rust core and the port. Compare `reason`. Include the Native Image spike's corpora (811 hostile inputs, 22 signature algorithm inputs) and its JVM-versus-C-ABI harness. | Zero open divergences, R20's table first. Each one found becomes a case. |
 | 1.9 | **Owner review of the core**, module by module. The checklist maps each THREAT-MODEL §3 mitigation to its code and test. The log lives in `docs/rust-core/REVIEW-LOG.md`. | Every module signed off |
 
 **Gate G1:**
@@ -262,7 +262,10 @@ branch.
    The Release archive verifies against its attestation.
 10. Differential: the Phase 1 campaign and each phase's old-against-new run
     closed with zero open divergences. If R8 = B, the oracle job runs
-    nightly.
+    nightly. On the final tree, the Native Image spike's harness runs the
+    same corpus (cases, 811 hostile inputs, 22 algorithm inputs) through
+    the JVM Java oracle and the Rust core, and every row of R20's table
+    answers the same on both.
 11. Docs: Rust doc comments show up in KDoc, Swift, Python `help()` and
     `.d.ts` (spot-checked in CI by grepping the generated output).
 12. Every native and wasm artifact in a release has a SHA-256 and a
