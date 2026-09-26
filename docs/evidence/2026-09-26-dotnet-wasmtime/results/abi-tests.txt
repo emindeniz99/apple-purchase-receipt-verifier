@@ -1,0 +1,38 @@
+PASS aprv_abi_version() == 1
+PASS aprv_call(1, VERIFY_RECEIPT, genuine g5) verifies: bundleId dev.bonzer.weeka.app
+PASS aprv_call(1, VERIFY_SIGNED_DATA (test anchors), shared-sandbox JWS) verifies; payloadJson is the exact signed JSON and parses to payload: payloadJson 329 chars
+PASS aprv_call(0, garbage op, invalid ptr, absurd len) fails hard: trap (TrapException Unreachable); fresh instance verifies g5: True
+PASS aprv_call(2, garbage op, invalid ptr, absurd len) fails hard: trap (TrapException Unreachable); fresh instance verifies g5: True
+PASS bridge reports a version mismatch as an ABI error, never verified=false: AbiMismatchException: APRV Wasm ABI mismatch: module=1, caller=2
+PASS a version mismatch runs nothing (no host import called): import calls during the call: 0
+PASS unknown operation 0 fails hard: trap (TrapException Unreachable); fresh instance verifies g5: True
+PASS unknown operation 5 fails hard: trap (TrapException Unreachable); fresh instance verifies g5: True
+PASS unknown operation 99 fails hard: trap (TrapException Unreachable); fresh instance verifies g5: True
+PASS unknown operation 255 fails hard: trap (TrapException Unreachable); fresh instance verifies g5: True
+PASS unknown operation 256 fails hard: trap (TrapException Unreachable); fresh instance verifies g5: True
+PASS unknown operation 261 fails hard: trap (TrapException Unreachable); fresh instance verifies g5: True
+PASS unknown operation -1 fails hard: trap (TrapException Unreachable); fresh instance verifies g5: True
+PASS null input pointer with a length fails hard: trap (TrapException Unreachable); fresh instance verifies g5: True
+PASS input beyond linear memory fails hard: trap (TrapException Unreachable); fresh instance verifies g5: True
+PASS input range that overflows u32 fails hard: trap (TrapException Unreachable); fresh instance verifies g5: True
+PASS empty input is a verification failure value: {"message":"receipt-data is not valid base64","reason":"INVALID_RECEIPT_FORMAT","verified":false}
+PASS absurd aprv_alloc lengths return 0, and the instance keeps working: 0,0,True
+PASS invalid handle: aprv_result_ptr(0) fails hard: trap (TrapException Unreachable); fresh instance verifies g5: True
+PASS invalid handle: aprv_result_len(12345) fails hard: trap (TrapException Unreachable); fresh instance verifies g5: True
+PASS invalid handle: aprv_result_free(0) fails hard: trap (TrapException Unreachable); fresh instance verifies g5: True
+PASS invalid handle: aprv_result_free(never issued) fails hard: trap (TrapException Unreachable); fresh instance verifies g5: True
+PASS double free fails hard: trap (TrapException Unreachable); fresh instance verifies g5: True
+PASS use after free (result_ptr) fails hard: trap (TrapException Unreachable); fresh instance verifies g5: True
+PASS use after free (result_len) fails hard: trap (TrapException Unreachable); fresh instance verifies g5: True
+PASS freed handles are reused and live ones stay valid: 1,2,3,2
+PASS garbage receipt -> verified=false value: {"message":"receipt-data is not valid base64","reason":"INVALID_RECEIPT_FORMAT","verified":false}
+PASS non-UTF-8 JWS -> verified=false INVALID_JWS_FORMAT: {"message":"jws is not valid UTF-8","reason":"INVALID_JWS_FORMAT","verified":false}
+PASS malformed endpoint request JSON -> Apple status 21002 value: {"status":21002}
+PASS malformed result JSON is a host decode error (internal failure), not a verdict: JsonReaderException: 'tru' is an invalid JSON literal
+PASS a result is a host-owned copy (unchanged after later calls reuse guest memory)
+PASS no growth of linear memory over 2,000 more calls: 2097152,2097152
+PASS facade: a version mismatch throws AbiMismatchException: APRV Wasm ABI mismatch: module=1, caller=2
+PASS facade: an unknown operation throws WasmTrapException (internal failure): error while executing at wasm backtrace:
+PASS facade: after a trap the next call runs on a fresh instance and verifies: traps 1
+PASS facade: a verification failure is a value: {"message":"receipt-data is not valid base64","reason":"INVALID_RECEIPT_FORMAT","verified":false}
+summary: 37 passed, 0 failed

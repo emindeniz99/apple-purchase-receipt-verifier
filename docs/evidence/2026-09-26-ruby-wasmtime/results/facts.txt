@@ -1,0 +1,19 @@
+# fetched 2026-09-26T23:04:33Z
+RubyGems wasmtime: latest 48.0.1, total downloads 492419, licenses ['Apache-2.0'], source https://github.com/BytecodeAlliance/wasmtime-rb
+gems of 48.0.1:
+  ruby                 ruby >= 3.1.0         2026-09-03
+  x86_64-linux         ruby >= 3.3, < 4.1.dev 2026-09-03
+  x86_64-linux-musl    ruby >= 3.3, < 4.1.dev 2026-09-03
+  x86_64-darwin        ruby >= 3.3, < 4.1.dev 2026-09-03
+  x64-mingw-ucrt       ruby >= 3.3, < 4.1.dev 2026-09-03
+  arm64-darwin         ruby >= 3.3, < 4.1.dev 2026-09-03
+  aarch64-mingw-ucrt   ruby >= 3.4, < 4.1.dev 2026-09-03
+  aarch64-linux        ruby >= 3.3, < 4.1.dev 2026-09-03
+  aarch64-linux-musl   ruby >= 3.3, < 4.1.dev 2026-09-03
+last 12 source-gem releases: 48.0.1 (2026-09-03), 47.0.3 (2026-08-07), 46.0.0 (2026-06-29), 45.0.0 (2026-05-27), 44.0.0 (2026-04-27), 43.0.1 (2026-04-10), 43.0.0 (2026-03-26), 42.0.1 (2026-03-03), 41.0.1 (2026-01-29), 41.0.0 (2026-01-26), 39.0.1 (2025-12-05), 38.0.4 (2025-11-14)
+git: 147 commits by 11 authors in the 12 months to 2026-09-26; latest:
+  2026-09-03 build a reusable workflow for using a native gem matrix
+  2026-09-03 exclude arm-linux-musl from build-native-gems as cranelift doesnt support 32-bit archs
+  2026-09-03 v48.0.1
+GVL released (nogvl) at: ext/src/ruby_api/component.rs:64 ext/src/ruby_api/component.rs:79 ext/src/ruby_api/engine.rs:181 ext/src/ruby_api/engine.rs:202 ext/src/ruby_api/func.rs:239 ext/src/ruby_api/module.rs:48 ext/src/ruby_api/module.rs:63 
+native gem matrix exclusion (commit message): exclude arm-linux-musl from build-native-gems as cranelift doesnt support 32-bit archs

@@ -1,0 +1,45 @@
+# fetched 2026-09-26T23:32:37Z
+PyPI wasmtime: latest 49.0.0, requires_python >=3.9, license Apache-2.0 WITH LLVM-exception, source https://github.com/bytecodealliance/wasmtime-py
+last 12 releases: 38.0.0 (2025-10-20), 39.0.0 (2025-11-20), 40.0.0 (2025-12-22), 41.0.0 (2026-01-20), 42.0.0 (2026-02-24), 43.0.0 (2026-03-31), 44.0.0 (2026-04-20), 45.0.0 (2026-05-26), 46.0.1 (2026-06-29), 47.0.1 (2026-07-20), 48.0.0 (2026-08-20), 49.0.0 (2026-09-21)
+files of 49.0.0:
+  wasmtime-49.0.0-py3-none-android_26_arm64_v8a.whl  8981381 bytes  2026-09-21
+  wasmtime-49.0.0-py3-none-android_26_x86_64.whl  9928209 bytes  2026-09-21
+  wasmtime-49.0.0-py3-none-any.whl  8262567 bytes  2026-09-21
+  wasmtime-49.0.0-py3-none-macosx_10_13_x86_64.whl  9460810 bytes  2026-09-21
+  wasmtime-49.0.0-py3-none-macosx_11_0_arm64.whl  8438112 bytes  2026-09-21
+  wasmtime-49.0.0-py3-none-manylinux1_x86_64.whl  9919038 bytes  2026-09-21
+  wasmtime-49.0.0-py3-none-manylinux2014_aarch64.whl  8853040 bytes  2026-09-21
+  wasmtime-49.0.0-py3-none-musllinux_1_2_aarch64.whl  8911214 bytes  2026-09-21
+  wasmtime-49.0.0-py3-none-musllinux_1_2_x86_64.whl  9948354 bytes  2026-09-21
+  wasmtime-49.0.0-py3-none-win_amd64.whl  8262572 bytes  2026-09-21
+  wasmtime-49.0.0-py3-none-win_arm64.whl  7157718 bytes  2026-09-21
+  wasmtime-49.0.0.tar.gz  129562 bytes  2026-09-21
+git: 37 commits by 9 authors in the 12 months to 2026-09-26; latest:
+  2026-09-24 Make `Slab` safe to use from multiple threads (#344)
+  2026-09-21 Bump to 49.0.0 (#343)
+  2026-08-20 Bump to 48.0.0 (#341)
+py3-none-any wheel, native files: wasmtime/win32-x86_64/_wasmtime.dll 
+sdist: native files: 0; build backend downloads the C API: https://github.com/bytecodealliance/wasmtime/releases/download/
+loader (wasmtime/_ffi.py of 49.0.0): raise RuntimeError("wasmtime only works on 64-bit platforms right now") raise RuntimeError("unsupported platform `{}` for wasmtime".format(sys_platform)) raise RuntimeError("unsupported architecture for wasmtime: {}".format(machine)) 
+manylinux1_x86_64 wheel: highest glibc symbol version its library needs: GLIBC_2.28
+manylinux2014_aarch64 wheel: highest glibc symbol version its library needs: GLIBC_2.18
+pip's choice on platforms with no wasmtime wheel (pip download --platform ... --only-binary=:all:):
+  manylinux2014_ppc64le -> wasmtime-49.0.0-py3-none-any.whl
+  manylinux2014_s390x -> wasmtime-49.0.0-py3-none-any.whl
+  manylinux2014_i686 -> wasmtime-49.0.0-py3-none-any.whl
+  manylinux2014_armv7l -> wasmtime-49.0.0-py3-none-any.whl
+  linux_armv6l -> wasmtime-49.0.0-py3-none-any.whl
+  win32 -> wasmtime-49.0.0-py3-none-any.whl
+  musllinux_1_2_riscv64 -> wasmtime-49.0.0-py3-none-any.whl
+Wasmtime's own C API release assets for v49.0.0, .tar.xz (HTTP status of the download URL; Windows ships .zip):
+  x86_64-linux: 200
+  aarch64-linux: 200
+  x86_64-musl: 200
+  aarch64-musl: 200
+  s390x-linux: 200
+  riscv64gc-linux: 200
+  i686-linux: 200
+  armv7-linux: 200
+  powerpc64le-linux: 404
+  x86_64-macos: 200
+  aarch64-macos: 200

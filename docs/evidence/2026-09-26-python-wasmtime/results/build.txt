@@ -1,0 +1,6 @@
+built: aprv_wasm_spike-0.0.0-py3-none-any.whl 978842 bytes
+built: aprv_wasm_spike-0.0.0.tar.gz 974227 bytes
+wheel contents: aprv_wasm/__init__.py aprv_wasm/aprv.wasm aprv_wasm_spike-0.0.0.dist-info/METADATA aprv_wasm_spike-0.0.0.dist-info/WHEEL aprv_wasm_spike-0.0.0.dist-info/top_level.txt aprv_wasm_spike-0.0.0.dist-info/RECORD 
+wheel consumer: {"python": "3.12.3", "wasmtime": "49.0.0", "facade_from": "site-packages", "verified": true, "bundleId": "dev.bonzer.weeka.app"}
+sdist consumer: {"python": "3.10.20", "wasmtime": "49.0.0", "facade_from": "site-packages", "verified": true, "bundleId": "dev.bonzer.weeka.app"}
+installed (wheel consumer): aprv-wasm-spike==0.0.0 pip==24.0 wasmtime==49.0.0 

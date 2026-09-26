@@ -1,0 +1,4 @@
+tool: 6 s wall (restore + build, net10.0 and net8.0)
+    0 Warning(s)
+Wasmtime native files restored: runtimes/linux-arm64/native/libwasmtime.so runtimes/linux-x64/native/libwasmtime.so runtimes/osx-arm64/native/libwasmtime.dylib runtimes/osx-x64/native/libwasmtime.dylib runtimes/win-arm64/native/wasmtime.dll runtimes/win-x64/native/wasmtime.dll 
+Wasmtime lib folders: net10.0 net8.0 netstandard2.0 netstandard2.1 

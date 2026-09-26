@@ -1,0 +1,7 @@
+# 4 cores; load average 0.79 1.18 1.39
+{"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","op":1,"dotnet":"10.0.12","threads":1,"warm_each":300,"n_each":600,"seconds":0.94,"total_per_s":635.2,"not_verified":0}
+{"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","op":1,"dotnet":"10.0.12","threads":2,"warm_each":300,"n_each":600,"seconds":0.88,"total_per_s":1359.2,"not_verified":0}
+{"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","op":1,"dotnet":"10.0.12","threads":4,"warm_each":300,"n_each":600,"seconds":0.97,"total_per_s":2474.6,"not_verified":0}
+{"id":"transaction/verify-shared-sandbox","op":258,"dotnet":"10.0.12","threads":1,"warm_each":150,"n_each":300,"seconds":1.32,"total_per_s":226.5,"not_verified":0}
+{"id":"transaction/verify-shared-sandbox","op":258,"dotnet":"10.0.12","threads":2,"warm_each":150,"n_each":300,"seconds":1.68,"total_per_s":357.3,"not_verified":0}
+{"id":"transaction/verify-shared-sandbox","op":258,"dotnet":"10.0.12","threads":4,"warm_each":150,"n_each":300,"seconds":1.79,"total_per_s":668.6,"not_verified":0}

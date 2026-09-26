@@ -1,0 +1,23 @@
+<!--
+  Spike only (2026-09-26). The facade library: C# plus aprv.wasm as an
+  embedded resource (pass -p:AprvWasmFile=<path>; scripts/build.sh does).
+  All native code comes from the Wasmtime package on nuget.org.
+  netstandard2.0 matches the Wasmtime package's lowest target; net8.0 is
+  what the tests run on besides net10.0.
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.0;net8.0</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <PackageId>Aprv.Wasm.Spike</PackageId>
+    <Version>0.0.0-spike</Version>
+    <Description>Spike: apple-purchase-receipt-verifier's aprv.wasm on wasmtime-dotnet (ABI v1)</Description>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Wasmtime" Version="48.0.2" />
+    <PackageReference Include="System.Text.Json" Version="8.0.5" Condition="'$(TargetFramework)' == 'netstandard2.0'" />
+    <EmbeddedResource Include="$(AprvWasmFile)" LogicalName="aprv.wasm" />
+  </ItemGroup>
+</Project>

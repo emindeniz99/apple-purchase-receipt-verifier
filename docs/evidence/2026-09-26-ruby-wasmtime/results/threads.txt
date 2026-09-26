@@ -1,0 +1,7 @@
+# ruby 3.3.6, wasmtime 48.0.1, 4 cores, load average 0.62 0.51 0.97
+{"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","op":1,"threads":1,"warm_each":300,"n_each":600,"seconds":0.84,"total_per_s":715.9,"not_verified":0}
+{"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","op":1,"threads":2,"warm_each":300,"n_each":600,"seconds":0.92,"total_per_s":1298.4,"not_verified":0}
+{"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","op":1,"threads":4,"warm_each":300,"n_each":600,"seconds":1.02,"total_per_s":2358.4,"not_verified":0}
+{"id":"transaction/verify-shared-sandbox","op":258,"threads":1,"warm_each":150,"n_each":300,"seconds":1.29,"total_per_s":232.0,"not_verified":0}
+{"id":"transaction/verify-shared-sandbox","op":258,"threads":2,"warm_each":150,"n_each":300,"seconds":1.46,"total_per_s":409.6,"not_verified":0}
+{"id":"transaction/verify-shared-sandbox","op":258,"threads":4,"warm_each":150,"n_each":300,"seconds":1.61,"total_per_s":745.6,"not_verified":0}

@@ -1,0 +1,2 @@
+{"mode": "per-store", "wasmtime": "49.0.0", "threads": 4, "seconds": 10.0, "switch_interval_s": 1e-06, "rounds": 190, "aliased": 2, "exceptions": 118533, "last_exception": "TypeError: list indices must be integers or slices, not tuple"}
+{"mode": "facade", "wasmtime": "49.0.0", "threads": 4, "seconds": 10.0, "switch_interval_s": 1e-06, "rounds": 4419, "aliased": 0, "exceptions": 0, "last_exception": ""}

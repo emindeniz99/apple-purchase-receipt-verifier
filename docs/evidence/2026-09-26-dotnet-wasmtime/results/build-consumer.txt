@@ -1,0 +1,4 @@
+packed: Aprv.Wasm.Spike.0.0.0-spike.nupkg 1985780 bytes
+consumer: 3 s wall (restore from an empty package folder + build)
+consumer restored: aprv.wasm.spike wasmtime 
+consumer run: {"verified":true,"bundleId":"dev.bonzer.weeka.app","runtime":".NET 10.0.12"}
