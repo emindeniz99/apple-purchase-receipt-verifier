@@ -1,0 +1,52 @@
+# probe/ (der 0.8.2 from_ber, rasn 0.28.15 ber::decode, bcder 0.7.7 Mode::Ber) over scripts/ber.sh's payloads.
+# Per crate: attribute count and FNV-1a of the (type, value) list in encoding order, or its error. A BER
+# spelling re-encodes the nested values too, so its digest differs from the DER original's; crates agree
+# with each other on one file when they read the same attributes.
+receipt | der: 11 attrs 67c2b40bafdcc289 | rasn: 11 attrs 67c2b40bafdcc289 | bcder: 11 attrs 67c2b40bafdcc289
+receipt-double-wrapped | der: 11 attrs 67c2b40bafdcc289 | rasn: 11 attrs 67c2b40bafdcc289 | bcder: 11 attrs 67c2b40bafdcc289
+receipt-ids | der: 14 attrs 0c5f7460432ab0b1 | rasn: 14 attrs 0c5f7460432ab0b1 | bcder: 14 attrs 0c5f7460432ab0b1
+receipt-sandbox-g5 | der: 23 attrs 46099011c3e1d586 | rasn: 23 attrs 46099011c3e1d586 | bcder: 23 attrs 46099011c3e1d586
+receipt-sandbox-legacy | der: 208 attrs 89de82e916f9b14a | rasn: 208 attrs 89de82e916f9b14a | bcder: 208 attrs 89de82e916f9b14a
+receipt-xcode-with-purchases | der: 10 attrs fc1a86ee41f13a23 | rasn: 10 attrs fc1a86ee41f13a23 | bcder: 10 attrs fc1a86ee41f13a23
+xcode-app-receipt-empty | der: 9 attrs 1e39b93971a325ca | rasn: 9 attrs 1e39b93971a325ca | bcder: 9 attrs 1e39b93971a325ca
+xcode-app-receipt-with-transaction | der: 10 attrs fc1a86ee41f13a23 | rasn: 10 attrs fc1a86ee41f13a23 | bcder: 10 attrs fc1a86ee41f13a23
+receipt-double-wrapped.chunked | der: ERR unexpected ASN.1 DER tag: expected SET, got OCTET STRING | rasn: 11 attrs d6784ab24993d270 | bcder: 11 attrs d6784ab24993d270
+receipt-double-wrapped.indef | der: 11 attrs 732aaafb0b1772c3 | rasn: 11 attrs 732aaafb0b1772c3 | bcder: 11 attrs 732aaafb0b1772c3
+receipt-double-wrapped.indef-chunked | der: 11 attrs 4bb6573a76c78ddb | rasn: 11 attrs 4bb6573a76c78ddb | bcder: 11 attrs 4bb6573a76c78ddb
+receipt-double-wrapped.longlen | der: ERR incorrect length for OCTET STRING at DER byte 5 | rasn: 11 attrs 19010f91cb98d435 | bcder: 11 attrs 19010f91cb98d435
+receipt-double-wrapped.utf8-chunked | der: 11 attrs 369e97cede7a3dde | rasn: 11 attrs 369e97cede7a3dde | bcder: 11 attrs 369e97cede7a3dde
+receipt-ids.chunked | der: ERR ASN.1 OCTET STRING not canonically encoded as DER at DER byte 14 | rasn: 14 attrs 82e0582f5742d186 | bcder: 14 attrs 82e0582f5742d186
+receipt-ids.indef | der: 14 attrs 01650cb052f11531 | rasn: 14 attrs 01650cb052f11531 | bcder: 14 attrs 01650cb052f11531
+receipt-ids.indef-chunked | der: 14 attrs 6105ac35ab1f1771 | rasn: 14 attrs 6105ac35ab1f1771 | bcder: 14 attrs 6105ac35ab1f1771
+receipt-ids.longlen | der: ERR incorrect length for SET at DER byte 5 | rasn: 14 attrs 66e259341c8d5633 | bcder: 14 attrs 66e259341c8d5633
+receipt-ids.utf8-chunked | der: 14 attrs d72a24e4c7141485 | rasn: 14 attrs d72a24e4c7141485 | bcder: 14 attrs d72a24e4c7141485
+receipt-sandbox-g5.chunked | der: ERR ASN.1 OCTET STRING not canonically encoded as DER at DER byte 13 | rasn: 23 attrs 163b4640ab78fb0e | bcder: 23 attrs 163b4640ab78fb0e
+receipt-sandbox-g5.indef | der: 23 attrs 9c44dab7e513670e | rasn: 23 attrs 9c44dab7e513670e | bcder: 23 attrs 9c44dab7e513670e
+receipt-sandbox-g5.indef-chunked | der: 23 attrs 9ec9db479001d58a | rasn: 23 attrs 9ec9db479001d58a | bcder: 23 attrs 9ec9db479001d58a
+receipt-sandbox-g5.longlen | der: ERR incorrect length for SET at DER byte 5 | rasn: 23 attrs fa7066c940dbcd5c | bcder: 23 attrs fa7066c940dbcd5c
+receipt-sandbox-g5.utf8-chunked | der: 23 attrs 95f4a88710c4b172 | rasn: 23 attrs 95f4a88710c4b172 | bcder: 23 attrs 95f4a88710c4b172
+receipt-sandbox-legacy.chunked | der: ERR ASN.1 OCTET STRING not canonically encoded as DER at DER byte 14 | rasn: 208 attrs 1d6cfce1256f03f8 | bcder: 208 attrs 1d6cfce1256f03f8
+receipt-sandbox-legacy.indef | der: 208 attrs 6950d9619ca24f3b | rasn: 208 attrs 6950d9619ca24f3b | bcder: 208 attrs 6950d9619ca24f3b
+receipt-sandbox-legacy.indef-chunked | der: 208 attrs 5a8de751c2648aff | rasn: 208 attrs 5a8de751c2648aff | bcder: 208 attrs 5a8de751c2648aff
+receipt-sandbox-legacy.longlen | der: ERR incorrect length for SET at DER byte 6 | rasn: 208 attrs fd0f775285c62c40 | bcder: 208 attrs fd0f775285c62c40
+receipt-sandbox-legacy.utf8-chunked | der: 208 attrs 99715082ad016405 | rasn: 208 attrs 99715082ad016405 | bcder: 208 attrs 99715082ad016405
+receipt-xcode-with-purchases.chunked | der: ERR ASN.1 OCTET STRING not canonically encoded as DER at DER byte 13 | rasn: 10 attrs fec7ecb599c4eba4 | bcder: 10 attrs fec7ecb599c4eba4
+receipt-xcode-with-purchases.indef | der: 10 attrs dbf7b78546390236 | rasn: 10 attrs dbf7b78546390236 | bcder: 10 attrs dbf7b78546390236
+receipt-xcode-with-purchases.indef-chunked | der: 10 attrs f3176184032a18ea | rasn: 10 attrs f3176184032a18ea | bcder: 10 attrs f3176184032a18ea
+receipt-xcode-with-purchases.longlen | der: ERR incorrect length for SET at DER byte 5 | rasn: 10 attrs 8e2d860f9a6619b6 | bcder: 10 attrs 8e2d860f9a6619b6
+receipt-xcode-with-purchases.utf8-chunked | der: 10 attrs 07ed7c4d3e7be695 | rasn: 10 attrs 07ed7c4d3e7be695 | bcder: 10 attrs 07ed7c4d3e7be695
+receipt.chunked | der: ERR ASN.1 OCTET STRING not canonically encoded as DER at DER byte 14 | rasn: 11 attrs d6784ab24993d270 | bcder: 11 attrs d6784ab24993d270
+receipt.indef | der: 11 attrs 732aaafb0b1772c3 | rasn: 11 attrs 732aaafb0b1772c3 | bcder: 11 attrs 732aaafb0b1772c3
+receipt.indef-chunked | der: 11 attrs 4bb6573a76c78ddb | rasn: 11 attrs 4bb6573a76c78ddb | bcder: 11 attrs 4bb6573a76c78ddb
+receipt.longlen | der: ERR incorrect length for SET at DER byte 5 | rasn: 11 attrs 19010f91cb98d435 | bcder: 11 attrs 19010f91cb98d435
+receipt.utf8-chunked | der: 11 attrs 369e97cede7a3dde | rasn: 11 attrs 369e97cede7a3dde | bcder: 11 attrs 369e97cede7a3dde
+xcode-app-receipt-empty.chunked | der: ERR ASN.1 OCTET STRING not canonically encoded as DER at DER byte 13 | rasn: 9 attrs 1e39b93971a325ca | bcder: 9 attrs 1e39b93971a325ca
+xcode-app-receipt-empty.indef | der: 9 attrs 1e39b93971a325ca | rasn: 9 attrs 1e39b93971a325ca | bcder: 9 attrs 1e39b93971a325ca
+xcode-app-receipt-empty.indef-chunked | der: 9 attrs 1e39b93971a325ca | rasn: 9 attrs 1e39b93971a325ca | bcder: 9 attrs 1e39b93971a325ca
+xcode-app-receipt-empty.longlen | der: ERR incorrect length for SET at DER byte 5 | rasn: 9 attrs 343b5872855edbd4 | bcder: 9 attrs 343b5872855edbd4
+xcode-app-receipt-empty.utf8-chunked | der: 9 attrs 5699b49ca568dc70 | rasn: 9 attrs 5699b49ca568dc70 | bcder: 9 attrs 5699b49ca568dc70
+xcode-app-receipt-with-transaction.chunked | der: ERR ASN.1 OCTET STRING not canonically encoded as DER at DER byte 13 | rasn: 10 attrs fec7ecb599c4eba4 | bcder: 10 attrs fec7ecb599c4eba4
+xcode-app-receipt-with-transaction.indef | der: 10 attrs dbf7b78546390236 | rasn: 10 attrs dbf7b78546390236 | bcder: 10 attrs dbf7b78546390236
+xcode-app-receipt-with-transaction.indef-chunked | der: 10 attrs f3176184032a18ea | rasn: 10 attrs f3176184032a18ea | bcder: 10 attrs f3176184032a18ea
+xcode-app-receipt-with-transaction.longlen | der: ERR incorrect length for SET at DER byte 5 | rasn: 10 attrs 8e2d860f9a6619b6 | bcder: 10 attrs 8e2d860f9a6619b6
+xcode-app-receipt-with-transaction.utf8-chunked | der: 10 attrs 07ed7c4d3e7be695 | rasn: 10 attrs 07ed7c4d3e7be695 | bcder: 10 attrs 07ed7c4d3e7be695

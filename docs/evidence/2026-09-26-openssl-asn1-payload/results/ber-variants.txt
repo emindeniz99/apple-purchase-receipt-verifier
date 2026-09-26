@@ -1,0 +1,55 @@
+# payload spelling | bytes | base (asn1.rs) | new == base | any == base | base == base on the DER original
+receipt | 646 | OK | yes | yes | yes
+receipt-double-wrapped | 650 | OK | yes | yes | yes
+receipt-ids | 719 | OK | yes | yes | yes
+receipt-sandbox-g5 | 1344 | OK | yes | yes | yes
+receipt-sandbox-legacy | 74884 | OK | yes | yes | yes
+receipt-xcode-with-purchases | 374 | OK | yes | yes | yes
+xcode-app-receipt-empty | 225 | OK | yes | yes | yes
+xcode-app-receipt-with-transaction | 374 | OK | yes | yes | yes
+receipt-double-wrapped.chunked | 763 | OK | yes | yes | yes
+receipt-double-wrapped.indef | 702 | OK | yes | yes | yes
+receipt-double-wrapped.indef-chunked | 866 | OK | yes | yes | yes
+receipt-double-wrapped.longlen | 905 | OK | yes | yes | no
+receipt-double-wrapped.utf8-chunked | 718 | ERR InvalidReceiptFormat | NO | NO | no
+receipt-ids.chunked | 848 | OK | yes | yes | yes
+receipt-ids.indef | 781 | OK | yes | yes | yes
+receipt-ids.indef-chunked | 969 | OK | yes | yes | yes
+receipt-ids.longlen | 1024 | OK | yes | yes | no
+receipt-ids.utf8-chunked | 788 | ERR InvalidReceiptFormat | NO | NO | no
+receipt-sandbox-g5.chunked | 1600 | OK | yes | yes | yes
+receipt-sandbox-g5.indef | 1466 | OK | yes | yes | yes
+receipt-sandbox-g5.indef-chunked | 1848 | OK | yes | yes | yes
+receipt-sandbox-g5.longlen | 1961 | OK | yes | yes | no
+receipt-sandbox-g5.utf8-chunked | 1416 | ERR InvalidReceiptFormat | NO | NO | no
+receipt-sandbox-legacy.chunked | 90302 | OK | yes | yes | yes
+receipt-sandbox-legacy.indef | 82031 | OK | yes | yes | yes
+receipt-sandbox-legacy.indef-chunked | 104971 | OK | yes | yes | yes
+receipt-sandbox-legacy.longlen | 111926 | OK | yes | yes | no
+receipt-sandbox-legacy.utf8-chunked | 79400 | ERR InvalidReceiptFormat | NO | NO | no
+receipt-xcode-with-purchases.chunked | 438 | OK | yes | yes | yes
+receipt-xcode-with-purchases.indef | 406 | OK | yes | yes | yes
+receipt-xcode-with-purchases.indef-chunked | 501 | OK | yes | yes | yes
+receipt-xcode-with-purchases.longlen | 528 | OK | yes | yes | no
+receipt-xcode-with-purchases.utf8-chunked | 402 | ERR InvalidReceiptFormat | NO | NO | no
+receipt.chunked | 751 | OK | yes | yes | yes
+receipt.indef | 698 | OK | yes | yes | yes
+receipt.indef-chunked | 854 | OK | yes | yes | yes
+receipt.longlen | 900 | OK | yes | yes | no
+receipt.utf8-chunked | 714 | ERR InvalidReceiptFormat | NO | NO | no
+xcode-app-receipt-empty.chunked | 262 | OK | yes | yes | yes
+xcode-app-receipt-empty.indef | 244 | OK | yes | yes | yes
+xcode-app-receipt-empty.indef-chunked | 298 | OK | yes | yes | yes
+xcode-app-receipt-empty.longlen | 313 | OK | yes | yes | no
+xcode-app-receipt-empty.utf8-chunked | 241 | ERR InvalidReceiptFormat | NO | NO | no
+xcode-app-receipt-with-transaction.chunked | 438 | OK | yes | yes | yes
+xcode-app-receipt-with-transaction.indef | 406 | OK | yes | yes | yes
+xcode-app-receipt-with-transaction.indef-chunked | 501 | OK | yes | yes | yes
+xcode-app-receipt-with-transaction.longlen | 528 | OK | yes | yes | no
+xcode-app-receipt-with-transaction.utf8-chunked | 402 | ERR InvalidReceiptFormat | NO | NO | no
+# der: 8 payloads, new identical on 8, any identical on 8
+# chunked: 8 payloads, new identical on 8, any identical on 8
+# indef: 8 payloads, new identical on 8, any identical on 8
+# indef-chunked: 8 payloads, new identical on 8, any identical on 8
+# longlen: 8 payloads, new identical on 8, any identical on 8
+# utf8-chunked: 8 payloads, new identical on 0, any identical on 0

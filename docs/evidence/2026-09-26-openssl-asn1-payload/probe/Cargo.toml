@@ -1,0 +1,13 @@
+# Spike only (round 4, task 5): can three mature Rust ASN.1 crates read the
+# receipt payload grammar, in the BER spellings scripts/ber.sh produces?
+# Built in a scratch copy with rustc 1.98.1; nothing here is proposed code.
+[package]
+name = "aprv-asn1-crate-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+der = { version = "=0.8.2", features = ["alloc", "derive", "ber"] }
+rasn = "=0.28.15"
+bcder = "=0.7.7"

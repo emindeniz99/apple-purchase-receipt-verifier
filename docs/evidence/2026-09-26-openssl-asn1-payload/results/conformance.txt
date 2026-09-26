@@ -1,0 +1,18 @@
+## base
+apple-purchase-receipt-verifier 0.6.0 — C ABI conformance over ctypes
+153 passed, 0 failed, 0 skipped (3 pin a clock, and every one of them ran)
+272 expected fields checked, nested paths included
+8 endpoint failureReason expectations not checked: the ABI answers Apple's response JSON, which carries no reason
+33 decodeBase64 groups not reachable: the ABI exposes no base64 decoder
+## new
+apple-purchase-receipt-verifier 0.6.0 — C ABI conformance over ctypes
+153 passed, 0 failed, 0 skipped (3 pin a clock, and every one of them ran)
+272 expected fields checked, nested paths included
+8 endpoint failureReason expectations not checked: the ABI answers Apple's response JSON, which carries no reason
+33 decodeBase64 groups not reachable: the ABI exposes no base64 decoder
+## any
+apple-purchase-receipt-verifier 0.6.0 — C ABI conformance over ctypes
+153 passed, 0 failed, 0 skipped (3 pin a clock, and every one of them ran)
+272 expected fields checked, nested paths included
+8 endpoint failureReason expectations not checked: the ABI answers Apple's response JSON, which carries no reason
+33 decodeBase64 groups not reachable: the ABI exposes no base64 decoder

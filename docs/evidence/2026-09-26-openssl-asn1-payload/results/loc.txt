@@ -1,0 +1,50 @@
+# before: repository, pure Rust: file | lines | code | unsafe keywords | code lines in unsafe | C code lines
+src/asn1.rs | 375 | 265 | 0 | 0 | -
+src/x509.rs | 486 | 374 | 0 | 0 | -
+src/cms.rs | 224 | 148 | 0 | 0 | -
+src/crypto.rs | 298 | 198 | 0 | 0 | -
+src/chain.rs | 133 | 82 | 0 | 0 | -
+src/receipt_payload.rs | 533 | 253 | 0 | 0 | -
+src/receipt.rs | 474 | 287 | 0 | 0 | -
+src/jws.rs | 697 | 433 | 0 | 0 | -
+src/roots.rs | 113 | 60 | 0 | 0 | -
+TOTAL before: repository, pure Rust | 3333 | 2100 | 0 | 0 | 0
+# after: no-asn1 tree, templates (a): file | lines | code | unsafe keywords | code lines in unsafe | C code lines
+src/lib.rs | 1131 | 832 | 62 | 290 | -
+src/cms_path.rs | 354 | 266 | 19 | 100 | -
+src/payload.rs | 220 | 133 | 6 | 6 | -
+src/payload_templates.rs | 59 | 36 | 6 | 6 | -
+src/payload.c | 39 | - | - | - | 14
+src/substrate.rs | 237 | 180 | 0 | 0 | -
+src/receipt_payload.rs | 494 | 205 | 0 | 0 | -
+src/receipt.rs | 275 | 145 | 0 | 0 | -
+src/jws.rs | 576 | 350 | 0 | 0 | -
+src/roots.rs | 117 | 60 | 0 | 0 | -
+TOTAL after: no-asn1 tree, templates (a) | 3502 | 2207 | 93 | 402 | 14
+# after: no-asn1 tree, payload-any (b): file | lines | code | unsafe keywords | code lines in unsafe | C code lines
+src/lib.rs | 1131 | 832 | 62 | 290 | -
+src/cms_path.rs | 354 | 266 | 19 | 100 | -
+src/payload.rs | 220 | 133 | 6 | 6 | -
+src/payload_any.rs | 81 | 56 | 5 | 5 | -
+src/substrate.rs | 237 | 180 | 0 | 0 | -
+src/receipt_payload.rs | 494 | 205 | 0 | 0 | -
+src/receipt.rs | 275 | 145 | 0 | 0 | -
+src/jws.rs | 576 | 350 | 0 | 0 | -
+src/roots.rs | 117 | 60 | 0 | 0 | -
+TOTAL after: no-asn1 tree, payload-any (b) | 3485 | 2227 | 92 | 401 | 0
+# payload only, before: file | lines | code | unsafe keywords | code lines in unsafe | C code lines
+src/asn1.rs | 375 | 265 | 0 | 0 | -
+src/receipt_payload.rs | 533 | 253 | 0 | 0 | -
+TOTAL payload only, before | 908 | 518 | 0 | 0 | 0
+# payload only, after (a): file | lines | code | unsafe keywords | code lines in unsafe | C code lines
+src/payload.rs | 220 | 133 | 6 | 6 | -
+src/payload_templates.rs | 59 | 36 | 6 | 6 | -
+src/payload.c | 39 | - | - | - | 14
+src/receipt_payload.rs | 494 | 205 | 0 | 0 | -
+TOTAL payload only, after (a) | 812 | 374 | 12 | 12 | 14
+# payload only, after (b): file | lines | code | unsafe keywords | code lines in unsafe | C code lines
+src/payload.rs | 220 | 133 | 6 | 6 | -
+src/payload_any.rs | 81 | 56 | 5 | 5 | -
+src/receipt_payload.rs | 494 | 205 | 0 | 0 | -
+TOTAL payload only, after (b) | 795 | 394 | 11 | 11 | 0
+# for scale, not ours: OpenSSL 4.0.2 crypto/asn1/*.c, 15964 lines in 65 files (the template decoder tasn_dec.c: 1270)

@@ -1,0 +1,16 @@
+# payload | bytes | reader | peak RSS KiB | seconds | verdict
+tiny | 14 | spike_payload-base | 34160 | 0.00 | OK AppReceipt { unknown_attributes: {999 / date None
+tiny | 14 | spike_payload-new | 34160 | 0.00 | OK AppReceipt { unknown_attributes: {999 / date None
+tiny | 14 | spike_payload-any | 34160 | 0.00 | OK AppReceipt { unknown_attributes: {999 / date None
+flat-max | 3145721 | spike_payload-base | 34160 | 0.02 | ERR InvalidReceiptFormat / date None
+flat-max | 3145721 | spike_payload-new | 93788 | 0.36 | OK AppReceipt { unknown_attributes: {999 / date None
+flat-max | 3145721 | spike_payload-any | 54916 | 0.39 | OK AppReceipt { unknown_attributes: {999 / date None
+flat-node-cap | 299993 | spike_payload-base | 34160 | 0.02 | OK AppReceipt { unknown_attributes: {999 / date None
+flat-node-cap | 299993 | spike_payload-new | 34160 | 0.04 | OK AppReceipt { unknown_attributes: {999 / date None
+flat-node-cap | 299993 | spike_payload-any | 34160 | 0.04 | OK AppReceipt { unknown_attributes: {999 / date None
+in-app-max | 3145718 | spike_payload-base | 34160 | 0.02 | ERR InvalidReceiptFormat / date None
+in-app-max | 3145718 | spike_payload-new | 95580 | 0.23 | OK AppReceipt { unknown_attributes: {},  / date None
+in-app-max | 3145718 | spike_payload-any | 56776 | 0.23 | OK AppReceipt { unknown_attributes: {},  / date None
+deep-version | 3145725 | spike_payload-base | 34160 | 0.00 | ERR InvalidReceiptFormat / date None
+deep-version | 3145725 | spike_payload-new | 34160 | 0.02 | OK AppReceipt { unknown_attributes: {999 / date None
+deep-version | 3145725 | spike_payload-any | 34160 | 0.03 | OK AppReceipt { unknown_attributes: {999 / date None

@@ -1,0 +1,69 @@
+base native cases vs ossl402cms: 153 same, 0 differ, 0 trapped
+base native hostile vs ossl402cms: 811 same, 0 differ, 0 trapped
+base native algorithms vs ossl402cms: 22 same, 0 differ, 0 trapped
+base native substrate vs ossl402cms: 193 same, 0 differ, 0 trapped
+base native fuzz vs ossl402cms: 5000 same, 0 differ, 0 trapped
+new native cases vs base: 153 same, 0 differ, 0 trapped
+new native hostile vs base: 811 same, 0 differ, 0 trapped
+new native algorithms vs base: 22 same, 0 differ, 0 trapped
+new native substrate vs base: 193 same, 0 differ, 0 trapped
+new native fuzz vs base: 4999 same, 1 differ, 0 trapped
+any native cases vs base: 153 same, 0 differ, 0 trapped
+any native hostile vs base: 811 same, 0 differ, 0 trapped
+any native algorithms vs base: 22 same, 0 differ, 0 trapped
+any native substrate vs base: 193 same, 0 differ, 0 trapped
+any native fuzz vs base: 4999 same, 1 differ, 0 trapped
+new-c node/trap cases vs base: 153 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":463},"traps":0,"rows":153}
+new-c node/trap hostile vs base: 811 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.clock_now_ms":214,"aprv.random_get":1},"traps":0,"rows":811}
+new-c node/trap algorithms vs base: 22 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":68},"traps":0,"rows":22}
+new-c node/trap substrate vs base: 193 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":527},"traps":0,"rows":193}
+new-c bun/trap cases vs base: 153 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":463},"traps":0,"rows":153}
+new-c bun/trap hostile vs base: 811 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.clock_now_ms":214,"aprv.random_get":1},"traps":0,"rows":811}
+new-c bun/trap algorithms vs base: 22 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":68},"traps":0,"rows":22}
+new-c bun/trap substrate vs base: 193 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":527},"traps":0,"rows":193}
+new-c deno/trap cases vs base: 153 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":463},"traps":0,"rows":153}
+new-c deno/trap hostile vs base: 811 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.clock_now_ms":214,"aprv.random_get":1},"traps":0,"rows":811}
+new-c deno/trap algorithms vs base: 22 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":68},"traps":0,"rows":22}
+new-c deno/trap substrate vs base: 193 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":527},"traps":0,"rows":193}
+new-c wazero cases vs base: 153 same, 0 differ, 0 trapped | {"calls":{"aprv.clock_now_ms":463,"aprv.random_get":1},"host":"wazero","wasi":false}
+new-c wazero hostile vs base: 811 same, 0 differ, 0 trapped | {"calls":{"aprv.clock_now_ms":214,"aprv.random_get":1},"host":"wazero","wasi":false}
+new-c wazero algorithms vs base: 22 same, 0 differ, 0 trapped | {"calls":{"aprv.clock_now_ms":68,"aprv.random_get":1},"host":"wazero","wasi":false}
+new-c wazero substrate vs base: 193 same, 0 differ, 0 trapped | {"calls":{"aprv.clock_now_ms":527,"aprv.random_get":1},"host":"wazero","wasi":false}
+new-c wasmtime cases vs base: 153 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": false, "calls": {"aprv.random_get": 1, "aprv.clock_now_ms": 463}, "traps": 0, "rows": 153}
+new-c wasmtime hostile vs base: 811 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": false, "calls": {"aprv.clock_now_ms": 214, "aprv.random_get": 1}, "traps": 0, "rows": 811}
+new-c wasmtime algorithms vs base: 22 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": false, "calls": {"aprv.random_get": 1, "aprv.clock_now_ms": 68}, "traps": 0, "rows": 22}
+new-c wasmtime substrate vs base: 193 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": false, "calls": {"aprv.random_get": 1, "aprv.clock_now_ms": 527}, "traps": 0, "rows": 193}
+new-c workerd/core/trap cases vs base: 153 same, 0 differ, 0 trapped
+new-c workerd/core/trap hostile vs base: 811 same, 0 differ, 0 trapped
+new-c workerd/core/trap algorithms vs base: 22 same, 0 differ, 0 trapped
+new-c workerd/core/trap substrate vs base: 193 same, 0 differ, 0 trapped
+new-c workerd imports+calls: {"imports":[{"module":"aprv","name":"clock_now_ms","kind":"function"},{"module":"aprv","name":"random_get","kind":"function"}],"calls":{"aprv.random_get":1,"aprv.clock_now_ms":1257}}
+new-c chromium report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.7390.37 Safari/537.36","calls":{"aprv.random_get":1,"aprv.clock_now_ms":1257}}
+new-c chromium cases vs base: 153 same, 0 differ, 0 trapped
+new-c chromium hostile vs base: 811 same, 0 differ, 0 trapped
+new-c chromium algorithms vs base: 22 same, 0 differ, 0 trapped
+new-c chromium substrate vs base: 193 same, 0 differ, 0 trapped
+new-c firefox report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64; rv:156.0) Gecko/20100101 Firefox/156.0","calls":{"aprv.random_get":1,"aprv.clock_now_ms":1257}}
+new-c firefox cases vs base: 153 same, 0 differ, 0 trapped
+new-c firefox hostile vs base: 811 same, 0 differ, 0 trapped
+new-c firefox algorithms vs base: 22 same, 0 differ, 0 trapped
+new-c firefox substrate vs base: 193 same, 0 differ, 0 trapped
+new-c webkit report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15","calls":{"aprv.random_get":1,"aprv.clock_now_ms":1257}}
+new-c webkit cases vs base: 153 same, 0 differ, 0 trapped
+new-c webkit hostile vs base: 811 same, 0 differ, 0 trapped
+new-c webkit algorithms vs base: 22 same, 0 differ, 0 trapped
+new-c webkit substrate vs base: 193 same, 0 differ, 0 trapped
+any-c node/trap cases vs base: 153 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":463},"traps":0,"rows":153}
+any-c node/trap hostile vs base: 811 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.clock_now_ms":214,"aprv.random_get":1},"traps":0,"rows":811}
+any-c node/trap algorithms vs base: 22 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":68},"traps":0,"rows":22}
+any-c node/trap substrate vs base: 193 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":527},"traps":0,"rows":193}
+any-c workerd/core/trap cases vs base: 153 same, 0 differ, 0 trapped
+any-c workerd/core/trap hostile vs base: 811 same, 0 differ, 0 trapped
+any-c workerd/core/trap algorithms vs base: 22 same, 0 differ, 0 trapped
+any-c workerd/core/trap substrate vs base: 193 same, 0 differ, 0 trapped
+any-c workerd imports+calls: {"imports":[{"module":"aprv","name":"clock_now_ms","kind":"function"},{"module":"aprv","name":"random_get","kind":"function"}],"calls":{"aprv.random_get":1,"aprv.clock_now_ms":1257}}
+any-c chromium report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.7390.37 Safari/537.36","calls":{"aprv.random_get":1,"aprv.clock_now_ms":1257}}
+any-c chromium cases vs base: 153 same, 0 differ, 0 trapped
+any-c chromium hostile vs base: 811 same, 0 differ, 0 trapped
+any-c chromium algorithms vs base: 22 same, 0 differ, 0 trapped
+any-c chromium substrate vs base: 193 same, 0 differ, 0 trapped
