@@ -1,0 +1,105 @@
+kind            agree  cand=java  cand=rust   cand-own        abi
+endpoint           94          0          2          0         42
+jws               153          2          4          0         68
+receipt           408          8          6          3         21
+total             655         10         12          3        131
+cand-own  hostile/receipt-der/g5-m1-127707244
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: Certification path could not be validate
+    rust: 4 certificate not valid at signing time
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  hostile/receipt-der/g5-m1-233102848
+    java: 2 INVALID_CERTIFICATE: receipt signer certificate does not decode
+    rust: 2 receipt signer certificate is not a valid certificate
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  hostile/receipt-der/gen-m1-280546414
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 2 receipt signer certificate is not a valid certificate
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 20)
+cand=java hostile/jws/m0-575934545
+    java: 4 INVALID_CHAIN: leaf certificate is not signed by the intermediate
+    rust: 2 x5c entry is not a valid certificate
+    cand: 4 leaf certificate is not signed by the intermediate
+cand=java hostile/jws/m0-867798168
+    java: 2 INVALID_CERTIFICATE: x5c[0] does not decode
+    rust: 4 leaf not issued by intermediate
+    cand: 2 x5c[0] does not decode
+cand=java hostile/receipt-der/g5-m0-1026916606
+    java: 5 INVALID_SIGNATURE: CMS signature does not match the signer certificate's key
+    rust: 9 malformed CMS structure: unsupported digest algorithm
+    cand: 5 CMS signature check failed
+cand=java hostile/receipt-der/g5-m1-1001982007
+    java: 9 INVALID_RECEIPT_FORMAT: an embedded certificate is not a valid certificate
+    rust: 4 chain does not reach a pinned root
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java hostile/receipt-der/g5-m1-108278412
+    java: 9 INVALID_RECEIPT_FORMAT: unexpected java.lang.IllegalArgumentException
+    rust: 4 certificate not valid at signing time
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java hostile/receipt-der/g5-m1-119436138
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: No issuer certificate for certificate in
+    rust: 2 receipt signer certificate is not a valid certificate
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 20)
+cand=java hostile/receipt-der/g5-m1-648951490
+    java: 5 INVALID_SIGNATURE: CMS signature does not match the signer certificate's key
+    rust: 9 signer certificate not embedded
+    cand: 5 CMS signature check failed
+cand=java hostile/receipt-der/g5-m1-990678718
+    java: 9 INVALID_RECEIPT_FORMAT: an embedded certificate is not a valid certificate
+    rust: 4 chain does not reach a pinned root
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java hostile/receipt-der/gen-m0-379652758
+    java: 5 INVALID_SIGNATURE: CMS verifier refused the signer info
+    rust: 9 malformed CMS structure: signedAttrs without a contentType attribute
+    cand: 5 signed attributes break RFC 5652 section 5.3
+cand=java hostile/receipt-der/gen-m0-776246130
+    java: 0 
+    rust: 9 embedded certificate is malformed: signatureAlgorithm disagrees with tbsCertificate.signature
+    cand: 0 
+cand=rust hostile/endpoint/m3-184626924
+    java: status 0
+    rust: status 21002
+    cand: status 21002
+cand=rust hostile/endpoint/trailing-garbage
+    java: status 0
+    rust: status 21002
+    cand: status 21002
+cand=rust hostile/jws/m0-534728031
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[0] does not decode
+cand=rust hostile/jws/m0-672945841
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[0] does not decode
+cand=rust hostile/jws/m0-718123265
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[1] does not decode
+cand=rust hostile/jws/m1-160010987
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[2] does not decode
+cand=rust hostile/receipt-der/g5-m0-701123523
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 certificate not valid at signing time
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 7)
+cand=rust hostile/receipt-der/g5-m1-236749769
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 chain does not reach a pinned root
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 20)
+cand=rust hostile/receipt-der/g5-m1-324520034
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 certificate not valid at signing time
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 7)
+cand=rust hostile/receipt-der/g5-m1-853597831
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 certificate not valid at signing time
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 7)
+cand=rust hostile/receipt-der/gen-m1-619385370
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: Certification path could not be validate
+    rust: 9 malformed CMS structure: not a CMS SignedData
+    cand: 9 not a PKCS#7 signedData: NotSignedData
+cand=rust hostile/receipt-der/gen-m1-933684943
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 certificate not valid at signing time
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 20)

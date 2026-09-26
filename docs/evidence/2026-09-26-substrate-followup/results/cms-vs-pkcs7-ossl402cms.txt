@@ -1,0 +1,11 @@
+# cases: ossl402cms vs ossl402
+153 same, 0 differ, 0 trapped
+# substrate: ossl402cms vs ossl402
+  differ substrate/cms/signer-identified-by-ski 9 0
+192 same, 1 differ, 0 trapped
+# hostile: ossl402cms vs ossl402
+811 same, 0 differ, 0 trapped
+# algorithms: ossl402cms vs ossl402
+  differ algorithms/receipt/rsa-pss-sha256 5 0
+  differ algorithms/receipt/ed25519 5 0
+20 same, 2 differ, 0 trapped

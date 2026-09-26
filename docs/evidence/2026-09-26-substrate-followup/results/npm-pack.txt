@@ -1,0 +1,55 @@
+aprv-spike-component-openssl-0.0.0.tgz 1034252 B, 22 files, sha256 e8057fad1ca4ce91
+    236337 package/aprv.js
+    324 package/browser.js
+    2321 package/facade.js
+    365 package/node.js
+    685 package/workerd.js
+    688 package/package.json
+    2076 package/wasi-p2-min.mjs
+    1323 package/interfaces/aprv-verifier-types.d.ts
+    1250 package/interfaces/aprv-verifier-verifier.d.ts
+    2797 package/aprv.d.ts
+    883 package/index.d.ts
+    164 package/interfaces/wasi-cli-stderr.d.ts
+    123 package/interfaces/wasi-clocks-monotonic-clock.d.ts
+    161 package/interfaces/wasi-clocks-wall-clock.d.ts
+    159 package/interfaces/wasi-io-error.d.ts
+    509 package/interfaces/wasi-io-streams.d.ts
+    109 package/interfaces/wasi-random-random.d.ts
+    10361 package/THIRD-PARTY-NOTICES.txt
+    2957692 package/aprv.core.wasm
+    4738 package/aprv.core2.wasm
+    603 package/aprv.core3.wasm
+    310 package/aprv.core4.wasm
+aprv-spike-core-openssl-0.0.0.tgz 987857 B, 9 files, sha256 45afe8bc63313d20
+    4696 package/abi.js
+    421 package/browser.js
+    1066 package/instantiate.js
+    450 package/node.js
+    398 package/workerd.js
+    633 package/package.json
+    883 package/index.d.ts
+    10361 package/THIRD-PARTY-NOTICES.txt
+    2933868 package/aprv.wasm
+aprv-spike-emscripten-libressl-0.0.0.tgz 480507 B, 10 files, sha256 718ba9dcf591726f
+    4696 package/abi.js
+    388 package/browser.js
+    562 package/node.js
+    647 package/workerd.js
+    632 package/package.json
+    78886 package/aprv-em-node.mjs
+    76340 package/aprv-em-web.mjs
+    883 package/index.d.ts
+    11838 package/THIRD-PARTY-NOTICES.txt
+    967791 package/aprv-em.wasm
+aprv-spike-emscripten-openssl-0.0.0.tgz 902280 B, 10 files, sha256 47cfbacf3b0e3574
+    4696 package/abi.js
+    388 package/browser.js
+    562 package/node.js
+    647 package/workerd.js
+    630 package/package.json
+    13882 package/aprv-em-node.mjs
+    12857 package/aprv-em-web.mjs
+    883 package/index.d.ts
+    15520 package/THIRD-PARTY-NOTICES.txt
+    2161403 package/aprv-em.wasm

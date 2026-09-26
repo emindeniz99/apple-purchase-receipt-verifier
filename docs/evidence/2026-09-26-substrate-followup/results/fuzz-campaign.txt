@@ -1,0 +1,19 @@
+# Coverage-guided campaigns (scripts/fuzz.sh), 2026-09-26, 2026-09-26T11:11:18Z to 2026-09-26T11:56:19Z, four in parallel, one core each.
+# cargo-fuzz 0.13.2, libfuzzer-sys 0.4.13, rustc 1.100.0-nightly 2026-09-25, -Zsanitizer=address; C library by clang 18 with -fsanitize=address,fuzzer-no-link.
+# ossl = OpenSSL 4.0.2 no-asm; awslc = AWS-LC 1.73.0 via aws-lc-sys 0.41.0 (assembly uninstrumented). Targets: rust/fuzz verify-receipt, verify-transaction (repository, unchanged) over the substrate core.
+# -max_len=65536 -timeout=10 -rss_limit_mb=2048, ASAN_OPTIONS=detect_leaks=1. 'cov' is libFuzzer's covered-counter count over every instrumented module (Rust and C).
+# target: seconds execs exec/s | final cov ft corpus | peak_rss_mb | seed files | findings
+awslc-verify-receipt: 2701 s, 3,734,008 execs, 1382 exec/s | start cov 3213 -> final cov 3577, ft 11302, corpus 1092 units (6549Kb) | peak rss 573 MB | seeds 3834 | findings 0 [] | artifacts []
+awslc-verify-transaction: 2701 s, 18,456,111 execs, 6833 exec/s | start cov 3222 -> final cov 3828, ft 10861, corpus 1494 units (1744Kb) | peak rss 553 MB | seeds 2061 | findings 0 [] | artifacts []
+ossl-verify-receipt: 2701 s, 2,650,534 execs, 981 exec/s | start cov 6527 -> final cov 7090, ft 21078, corpus 1137 units (6996Kb) | peak rss 614 MB | seeds 3834 | findings 0 [] | artifacts []
+ossl-verify-transaction: 2701 s, 4,142,588 execs, 1533 exec/s | start cov 7536 -> final cov 8079, ft 21200, corpus 1440 units (2373Kb) | peak rss 550 MB | seeds 2061 | findings 0 [] | artifacts []
+# libFuzzer stat lines per campaign (stat::new_units_added, stat::slowest_unit_time_sec):
+awslc-verify-receipt: stat::new_units_added: 3510
+awslc-verify-receipt: stat::slowest_unit_time_sec: 0
+awslc-verify-transaction: stat::new_units_added: 11769
+awslc-verify-transaction: stat::slowest_unit_time_sec: 0
+ossl-verify-receipt: stat::new_units_added: 3241
+ossl-verify-receipt: stat::slowest_unit_time_sec: 0
+ossl-verify-transaction: stat::new_units_added: 5560
+ossl-verify-transaction: stat::slowest_unit_time_sec: 0
+# artifact directories (crash-, leak-, timeout-, oom-, slow-unit-): all four empty

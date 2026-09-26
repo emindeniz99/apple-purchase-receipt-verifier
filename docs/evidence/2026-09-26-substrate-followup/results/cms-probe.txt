@@ -1,0 +1,33 @@
+# c/cms-probe.c on the 'algorithms' corpus receipts (generated from test keys), CMS_SignerInfo_verify only (signature over signedAttrs), 2026-09-26
+openssl-4.0.2 chain-rsa-pss | signatureAlgorithm: 1.2.840.113549.1.1.11 CMS_SignerInfo_verify: 1 
+openssl-4.0.2 chain-rsa-sha384 | signatureAlgorithm: 1.2.840.113549.1.1.11 CMS_SignerInfo_verify: 1 
+openssl-4.0.2 chain-rsa-sha512 | signatureAlgorithm: 1.2.840.113549.1.1.11 CMS_SignerInfo_verify: 1 
+openssl-4.0.2 ec-p256-sha256 | signatureAlgorithm: 1.2.840.10045.4.3.2 CMS_SignerInfo_verify: 1 
+openssl-4.0.2 ec-p384-sha384 | signatureAlgorithm: 1.2.840.10045.4.3.3 CMS_SignerInfo_verify: 1 
+openssl-4.0.2 ec-p521-sha512 | signatureAlgorithm: 1.2.840.10045.4.3.4 CMS_SignerInfo_verify: 1 
+openssl-4.0.2 ed25519 | signatureAlgorithm: 1.3.101.112 CMS_SignerInfo_verify: 1 
+openssl-4.0.2 rsa-md5 | signatureAlgorithm: 1.2.840.113549.1.1.1 CMS_SignerInfo_verify: 1 
+openssl-4.0.2 rsa-pss-sha256 | signatureAlgorithm: 1.2.840.113549.1.1.10 CMS_SignerInfo_verify: 1 
+openssl-4.0.2 rsa-ripemd160 | signatureAlgorithm: 1.2.840.113549.1.1.1 CMS_SignerInfo_verify: 1 
+openssl-4.0.2 rsa-sha1 | signatureAlgorithm: 1.2.840.113549.1.1.1 CMS_SignerInfo_verify: 1 
+openssl-4.0.2 rsa-sha224 | signatureAlgorithm: 1.2.840.113549.1.1.14 CMS_SignerInfo_verify: 1 
+openssl-4.0.2 rsa-sha256 | signatureAlgorithm: 1.2.840.113549.1.1.11 CMS_SignerInfo_verify: 1 
+openssl-4.0.2 rsa-sha3-256 | signatureAlgorithm: 2.16.840.1.101.3.4.3.14 CMS_SignerInfo_verify: 1 
+openssl-4.0.2 rsa-sha384 | signatureAlgorithm: 1.2.840.113549.1.1.12 CMS_SignerInfo_verify: 1 
+openssl-4.0.2 rsa-sha512 | signatureAlgorithm: 1.2.840.113549.1.1.13 CMS_SignerInfo_verify: 1 
+libressl-4.3.2 chain-rsa-pss | signatureAlgorithm: 1.2.840.113549.1.1.11 CMS_SignerInfo_verify: 1 
+libressl-4.3.2 chain-rsa-sha384 | signatureAlgorithm: 1.2.840.113549.1.1.11 CMS_SignerInfo_verify: 1 
+libressl-4.3.2 chain-rsa-sha512 | signatureAlgorithm: 1.2.840.113549.1.1.11 CMS_SignerInfo_verify: 1 
+libressl-4.3.2 ec-p256-sha256 | signatureAlgorithm: 1.2.840.10045.4.3.2 CMS_SignerInfo_verify: 0 error:2EFFF09E:CMS routines:CRYPTO_internal:verification failure:$SCRATCH/src/libressl-4.3.2/crypto/cms/cms_sd.c:850: 
+libressl-4.3.2 ec-p384-sha384 | signatureAlgorithm: 1.2.840.10045.4.3.3 CMS_SignerInfo_verify: 0 error:2EFFF09E:CMS routines:CRYPTO_internal:verification failure:$SCRATCH/src/libressl-4.3.2/crypto/cms/cms_sd.c:850: 
+libressl-4.3.2 ec-p521-sha512 | signatureAlgorithm: 1.2.840.10045.4.3.4 CMS_SignerInfo_verify: 0 error:2EFFF09E:CMS routines:CRYPTO_internal:verification failure:$SCRATCH/src/libressl-4.3.2/crypto/cms/cms_sd.c:850: 
+libressl-4.3.2 ed25519 | signatureAlgorithm: 1.3.101.112 CMS_SignerInfo_verify: 1 
+libressl-4.3.2 rsa-md5 | signatureAlgorithm: 1.2.840.113549.1.1.1 CMS_SignerInfo_verify: 1 
+libressl-4.3.2 rsa-pss-sha256 | signatureAlgorithm: 1.2.840.113549.1.1.10 CMS_SignerInfo_verify: 1 
+libressl-4.3.2 rsa-ripemd160 | signatureAlgorithm: 1.2.840.113549.1.1.1 CMS_SignerInfo_verify: 1 
+libressl-4.3.2 rsa-sha1 | signatureAlgorithm: 1.2.840.113549.1.1.1 CMS_SignerInfo_verify: 1 
+libressl-4.3.2 rsa-sha224 | signatureAlgorithm: 1.2.840.113549.1.1.14 CMS_SignerInfo_verify: 1 
+libressl-4.3.2 rsa-sha256 | signatureAlgorithm: 1.2.840.113549.1.1.11 CMS_SignerInfo_verify: 1 
+libressl-4.3.2 rsa-sha3-256 | signatureAlgorithm: 2.16.840.1.101.3.4.3.14 CMS_SignerInfo_verify: 1 
+libressl-4.3.2 rsa-sha384 | signatureAlgorithm: 1.2.840.113549.1.1.12 CMS_SignerInfo_verify: 1 
+libressl-4.3.2 rsa-sha512 | signatureAlgorithm: 1.2.840.113549.1.1.13 CMS_SignerInfo_verify: 1 

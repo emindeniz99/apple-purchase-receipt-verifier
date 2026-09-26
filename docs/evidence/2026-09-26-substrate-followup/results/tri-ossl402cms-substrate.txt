@@ -1,0 +1,108 @@
+kind            agree  cand=java  cand=rust   cand-own        abi
+jws                35          6          0          0          0
+receipt           132         15          2          3          0
+total             167         21          2          3          0
+cand-own  substrate/cms/crls-garbage
+    java: 0 
+    rust: 0 
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  substrate/cms/unsigned-attribute-nesting-100000
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 9 malformed CMS structure: maximum ASN.1 nesting depth exceeded
+    cand: 0 
+cand-own  substrate/cms/unsigned-attribute-nesting-2000
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 9 malformed CMS structure: maximum ASN.1 nesting depth exceeded
+    cand: 0 
+cand=java substrate/cms/attributes-indefinite-length
+    java: 0 
+    rust: 5 CMS signature check failed
+    cand: 0 
+cand=java substrate/cms/contenttype-is-signeddata
+    java: 5 INVALID_SIGNATURE: CMS verifier refused the signer info
+    rust: 0 
+    cand: 5 signed attributes break RFC 5652 section 5.3
+cand=java substrate/cms/contenttype-missing
+    java: 5 INVALID_SIGNATURE: CMS verifier refused the signer info
+    rust: 9 malformed CMS structure: signedAttrs without a contentType attribute
+    cand: 5 signed attributes break RFC 5652 section 5.3
+cand=java substrate/cms/duplicate-contenttype
+    java: 5 INVALID_SIGNATURE: CMS verifier refused the signer info
+    rust: 0 
+    cand: 5 signed attributes break RFC 5652 section 5.3
+cand=java substrate/cms/duplicate-messagedigest
+    java: 5 INVALID_SIGNATURE: CMS verifier refused the signer info
+    rust: 0 
+    cand: 5 signed attributes break RFC 5652 section 5.3
+cand=java substrate/cms/signer-identified-by-ski
+    java: 0 
+    rust: 9 malformed CMS structure: malformed CMS structure
+    cand: 0 
+cand=java substrate/pkix/jws/intermediate-unknown-critical-extension
+    java: 4 INVALID_CHAIN: certificate chain does not validate to a pinned Apple root: Certificate has unsupported critica
+    rust: 0 
+    cand: 4 certificate chain does not validate to a pinned root (X509_V_ERR 34)
+cand=java substrate/pkix/jws/name-case-differs
+    java: 0 
+    rust: 4 leaf not issued by intermediate
+    cand: 0 
+cand=java substrate/pkix/jws/name-extra-whitespace
+    java: 0 
+    rust: 4 leaf not issued by intermediate
+    cand: 0 
+cand=java substrate/pkix/jws/name-printable-vs-utf8
+    java: 0 
+    rust: 4 leaf not issued by intermediate
+    cand: 0 
+cand=java substrate/pkix/jws/name-trailing-space
+    java: 0 
+    rust: 4 leaf not issued by intermediate
+    cand: 0 
+cand=java substrate/pkix/jws/signer-unknown-critical-extension
+    java: 4 INVALID_CHAIN: certificate chain does not validate to a pinned Apple root: Certificate has unsupported critica
+    rust: 0 
+    cand: 4 certificate chain does not validate to a pinned root (X509_V_ERR 34)
+cand=java substrate/pkix/receipt/chain-md5
+    java: 0 
+    rust: 4 chain does not reach a pinned root
+    cand: 0 
+cand=java substrate/pkix/receipt/impostor-intermediate-first
+    java: 0 
+    rust: 4 chain does not reach a pinned root
+    cand: 0 
+cand=java substrate/pkix/receipt/intermediate-unknown-critical-extension
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: Certification path could not be validate
+    rust: 0 
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 34)
+cand=java substrate/pkix/receipt/name-case-differs
+    java: 0 
+    rust: 4 chain does not reach a pinned root
+    cand: 0 
+cand=java substrate/pkix/receipt/name-extra-whitespace
+    java: 0 
+    rust: 4 chain does not reach a pinned root
+    cand: 0 
+cand=java substrate/pkix/receipt/name-printable-vs-utf8
+    java: 0 
+    rust: 4 chain does not reach a pinned root
+    cand: 0 
+cand=java substrate/pkix/receipt/name-trailing-space
+    java: 0 
+    rust: 4 chain does not reach a pinned root
+    cand: 0 
+cand=java substrate/pkix/receipt/signer-marker-critical
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: Certification path could not be validate
+    rust: 0 
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 34)
+cand=java substrate/pkix/receipt/signer-unknown-critical-extension
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: Certification path could not be validate
+    rust: 0 
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 34)
+cand=rust substrate/cms/attributes-unsorted-signed-as-sent
+    java: 5 INVALID_SIGNATURE: CMS signature does not match the signer certificate's key
+    rust: 0 
+    cand: 0 
+cand=rust substrate/cms/attributes-unsorted-signed-sorted
+    java: 0 
+    rust: 5 CMS signature check failed
+    cand: 5 CMS signature check failed

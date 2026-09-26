@@ -1,0 +1,10 @@
+# Three-way tallies ($SPIKE/py/tri.py): agree cand=java cand=rust cand-own abi, per corpus. Java-equal = agree + cand=java, out of the 1,048 rows the C ABI can express (131 hostile rows are abi). 2026-09-26.
+variant          path                       cases              substrate          hostile              algorithms       java-equal/1048
+ossl402          PKCS7                      153 0 0 0 0        167 20 3 3 0       655 10 12 3 131    8 12 1 1 0         1025
+ossl402cms       CMS                        153 0 0 0 0        167 21 2 3 0       655 10 12 3 131    8 14 0 0 0         1028
+ossl402cmspre    CMS+prescan                153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0         1030
+libressl432      PKCS7                      153 0 0 0 0        166 20 3 4 0       655 16 7 2 131     8 12 1 1 0         1030
+libressl432cms   CMS                        153 0 0 0 0        166 21 2 4 0       655 16 7 2 131     8 11 1 2 0         1030
+awslc            PKCS7-AWS-LC-1.73.0        152 0 0 1 0        166 19 4 4 0       655 16 7 2 131     8 11 1 2 0         1027
+awslc045         PKCS7-AWS-LC-5.7.0         152 0 0 1 0        166 19 4 4 0       655 16 7 2 131     8 11 1 2 0         1027
+ossl410b1        PKCS7-OpenSSL-4.1.0-beta1  153 0 0 0 0        167 20 3 3 0       655 10 12 3 131    8 12 1 1 0         1025

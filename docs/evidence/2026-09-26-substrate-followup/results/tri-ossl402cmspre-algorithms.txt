@@ -1,0 +1,60 @@
+kind            agree  cand=java  cand=rust   cand-own        abi
+jws                 4          2          0          0          0
+receipt             4         12          0          0          0
+total               8         14          0          0          0
+cand=java algorithms/jws/chain-ec-p521-sha512
+    java: 0 
+    rust: 2 x5c entry uses an unimplemented elliptic curve
+    cand: 0 
+cand=java algorithms/jws/chain-rsa-pss
+    java: 0 
+    rust: 4 leaf not issued by intermediate
+    cand: 0 
+cand=java algorithms/receipt/chain-rsa-pss
+    java: 0 
+    rust: 4 chain does not reach a pinned root
+    cand: 0 
+cand=java algorithms/receipt/ec-p256-sha256
+    java: 0 
+    rust: 5 receipt signer key is not RSA
+    cand: 0 
+cand=java algorithms/receipt/ec-p384-sha384
+    java: 0 
+    rust: 9 malformed CMS structure: unsupported digest algorithm
+    cand: 0 
+cand=java algorithms/receipt/ec-p521-sha512
+    java: 0 
+    rust: 9 malformed CMS structure: unsupported digest algorithm
+    cand: 0 
+cand=java algorithms/receipt/ed25519
+    java: 0 
+    rust: 9 malformed CMS structure: unsupported digest algorithm
+    cand: 0 
+cand=java algorithms/receipt/rsa-md5
+    java: 0 
+    rust: 9 malformed CMS structure: unsupported digest algorithm
+    cand: 0 
+cand=java algorithms/receipt/rsa-pss-sha256
+    java: 0 
+    rust: 5 CMS signature check failed
+    cand: 0 
+cand=java algorithms/receipt/rsa-ripemd160
+    java: 0 
+    rust: 9 malformed CMS structure: unsupported digest algorithm
+    cand: 0 
+cand=java algorithms/receipt/rsa-sha224
+    java: 0 
+    rust: 9 malformed CMS structure: unsupported digest algorithm
+    cand: 0 
+cand=java algorithms/receipt/rsa-sha3-256
+    java: 0 
+    rust: 9 malformed CMS structure: unsupported digest algorithm
+    cand: 0 
+cand=java algorithms/receipt/rsa-sha384
+    java: 0 
+    rust: 9 malformed CMS structure: unsupported digest algorithm
+    cand: 0 
+cand=java algorithms/receipt/rsa-sha512
+    java: 0 
+    rust: 9 malformed CMS structure: unsupported digest algorithm
+    cand: 0 

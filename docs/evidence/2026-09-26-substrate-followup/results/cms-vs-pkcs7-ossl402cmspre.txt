@@ -1,0 +1,10 @@
+# cases: ossl402cmspre vs ossl402cms
+153 same, 0 differ, 0 trapped
+# substrate: ossl402cmspre vs ossl402cms
+  differ substrate/cms/unsigned-attribute-nesting-2000 0 9
+  differ substrate/cms/unsigned-attribute-nesting-100000 0 9
+191 same, 2 differ, 0 trapped
+# hostile: ossl402cmspre vs ossl402cms
+811 same, 0 differ, 0 trapped
+# algorithms: ossl402cmspre vs ossl402cms
+22 same, 0 differ, 0 trapped
