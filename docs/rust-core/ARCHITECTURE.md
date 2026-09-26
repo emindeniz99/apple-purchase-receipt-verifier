@@ -1,38 +1,47 @@
 # Target architecture: one Rust verifier, thin bindings
 
-Status: **proposal**, waiting on the owner decisions listed in
-[DECISIONS.md](./DECISIONS.md). Where a section depends on an open
-decision, it names the decision (R-number) and describes the recommended
-option.
+Status: **target design of the accepted plan.** The decisions it rests on
+are in [DECISIONS.md](./DECISIONS.md); R21 (2026-09-26) put the core on
+OpenSSL 4 and replaced wasm-bindgen with one plain wasm module.
 
 ## 1. The shape
 
 ```text
                  SECURITY REVIEW BOUNDARY (deep human review)
 ┌──────────────────────────────────────────────────────────────────────┐
-│ rust/  crate apple-purchase-receipt-verifier  (crates.io)            │
-│   ASN.1/DER, X.509, CMS, JWS, chain policy, pinned roots, caps,      │
-│   base64 rules, JSON depth, Apple semantics, Reason vocabulary,      │
-│   verifyReceipt endpoint.  #![forbid(unsafe_code)], no panics.       │
+│ rust/  crate apple-purchase-receipt-verifier  (the policy)           │
+│   Apple's rules: pinned roots, chain policy and historical time,     │
+│   JWS, receipt attributes, caps, base64 rules, JSON depth, Reason    │
+│   vocabulary, verifyReceipt endpoint.                                │
+│   #![forbid(unsafe_code)], no panics. No ASN.1, CMS or X.509 parser. │
+│        │ safe Rust calls                                             │
+│ ┌──────▼───────────────────────────────────────────────────────────┐ │
+│ │ rust/openssl/  crate aprv-openssl  (the adapter)                 │ │
+│ │   FFI to OpenSSL's CMS, X.509, EVP and ASN.1 template APIs;      │ │
+│ │   payload.c (14 lines of ASN1_SEQUENCE/ASN1_ITEM declarations);  │ │
+│ │   the wasm clock import. The only unsafe below the bindings.     │ │
+│ └──────┬───────────────────────────────────────────────────────────┘ │
+│        │ static link                                                 │
+│   OpenSSL 4.0.2, upstream C in the trusted base                      │
 └──────────────────────────────┬───────────────────────────────────────┘
                                │ plain Rust API
 ┌──────────────────────────────▼───────────────────────────────────────┐
 │ rust/bindings/surface/  crate aprv-surface  (unpublished)            │
 │   binding-neutral records and errors, checked conversions.           │
 │   #![forbid(unsafe_code)]. Mechanical review.                        │
-└─────┬───────────────────┬──────────────────┬──────────────────┬──────┘
-      │                   │                  │                  │
-┌─────▼─────┐     ┌───────▼──────┐    ┌──────▼──────┐    ┌──────▼──────┐
-│ uniffi/   │     │ wasm/        │    │ wasi/       │    │ rust/ffi/   │
-│ UniFFI    │     │ wasm-bindgen │    │ ptr+len ABI │    │ C ABI       │
-│ cdylib +  │     │ wasm32-      │    │ wasm32-     │    │ cdylib +    │
-│ staticlib │     │ unknown-     │    │ wasip1      │    │ staticlib + │
-│           │     │ unknown      │    │ (R6)        │    │ cbindgen .h │
-└──┬──┬──┬──┘     └──────┬───────┘    └──────┬──────┘    └──────┬──────┘
-   │  │  │               │                   │                  │
- Kotlin Swift Python   JS glue            Go via wazero      C, C++, SWIG,
-   │                     │                                    Elixir NIF,
- Java (JVM)         one npm package                          anything else
+└─────┬─────────────────────────────┬──────────────────────────┬───────┘
+      │                             │                          │
+┌─────▼─────┐              ┌────────▼────────┐          ┌──────▼──────┐
+│ uniffi/   │              │ wasm/           │          │ rust/ffi/   │
+│ UniFFI    │              │ aprv.wasm: the  │◄─────────┤ C ABI       │
+│ cdylib +  │              │ C ABI built for │          │ cdylib +    │
+│ staticlib │              │ wasm32-wasip1,  │          │ staticlib + │
+│           │              │ imports 2 funcs │          │ cbindgen .h │
+└──┬──┬──┬──┘              └──────┬──────┬───┘          └──────┬──────┘
+   │  │  │                        │      │                     │
+ Kotlin Swift Python      JS façade    Go via wazero      C, C++, SWIG,
+   │                          │                           Elixir NIF,
+ Java (JVM)           one npm package                     anything else
 ```
 
 A fix in `rust/` reaches every package on the next release. No package
@@ -41,19 +50,32 @@ carries a parser, a signature check or a trust decision of its own.
 ## 2. Crates and folders
 
 ```text
-rust/                          core crate, unchanged name, published to crates.io
-rust/Cargo.toml                gains [workspace] members = ["ffi", "bindings/*"]
+rust/                          core crate (the policy), unchanged name, published to crates.io
+rust/Cargo.toml                gains [workspace] members = ["openssl", "ffi", "bindings/*"]
+rust/openssl/                  aprv-openssl: the OpenSSL adapter, the one unsafe crate below the bindings
+rust/openssl/payload.c         the receipt payload grammar as OpenSSL ASN.1 templates (14 lines)
 rust/bindings/surface/         aprv-surface: the cross-language API model
 rust/bindings/uniffi/          aprv-uniffi: #[uniffi::export] over aprv-surface
 rust/bindings/uniffi/uniffi.toml   per-language names, packages, disable_java_cleaner
-rust/bindings/wasm/            aprv-wasm: #[wasm_bindgen] over aprv-surface
-rust/bindings/wasi/            aprv-wasi: exports for wazero (only if R6 = wazero)
-rust/bindings/wire/            aprv-wire: the JSON view (C ABI, wasi), see SURFACE.md §4.2
+rust/bindings/wasm/            aprv-wasm: the C ABI as aprv.wasm (wasm32-wasip1), plus alloc/dealloc exports
+rust/bindings/wasm/wasi-none.c link-time WASI definitions: the module imports only aprv.clock_now_ms, aprv.random_get
+rust/bindings/wire/            aprv-wire: the JSON view (C ABI, aprv.wasm), see SURFACE.md §4.2
 rust/ffi/                      existing C ABI, rebased on aprv-surface + aprv-wire
 rust/ffi/swig/                 apple_purchase_receipt_verifier.i and examples
-rust/fuzz/                     unchanged, plus targets for the JSON view
-java/  node/  python/  swift/  go/   package builds, façades, binding tests
+rust/fuzz/                     verify-receipt, verify-transaction, plus targets for the JSON view
+node/                          aprv.wasm's JS façade (about 100 lines) and index.d.ts, hand-written
+java/  python/  swift/  go/    package builds, façades, binding tests
 ```
+
+Gone from `rust/src/` (R21): `asn1.rs`, `x509.rs`, `cms.rs`, `chain.rs` and
+`crypto.rs`, with the public modules of the same names and
+`TrustAnchor::certificate()`. `rust/fuzz` loses `parse-der`,
+`parse-certificate` and `parse-cms`, which fuzzed those modules.
+
+The core depends on `aprv-openssl`. A crates.io publish of the core (R19)
+therefore publishes the adapter crate first. The file names above are the
+plan's; the evidence calls the adapter `security-openssl` and the C file
+`c/wasi-none.c`.
 
 One Cargo workspace replaces today's two independent lockfiles (`rust/` and
 `rust/ffi/`), so every adapter builds against the same resolved core.
@@ -75,8 +97,12 @@ Why a separate `aprv-surface` crate:
   (spike passed). The full contract, and why the surface also holds no
   serializer, is [SURFACE.md](./SURFACE.md).
 - The C ABI's cross-port JSON view (today in `rust/ffi/src/lib.rs:391-534`)
-  moves to a separate `aprv-wire` crate, shared by the C ABI and the wasi
-  adapter (SURFACE.md §4.2).
+  moves to a separate `aprv-wire` crate, shared by the C ABI and
+  `aprv.wasm`, which is the C ABI built for wasm (SURFACE.md §4.2).
+
+Why a separate adapter crate: the core keeps `#![forbid(unsafe_code)]`,
+and every line that crosses into C sits in one crate a reviewer can read
+end to end. The core calls it through safe functions only.
 
 ## 3. The cross-language API
 
@@ -162,17 +188,27 @@ that per package (section 8).
 The core reads the clock only in the chain-validity fallback (`jws.rs:455`,
 `receipt.rs:134`) and for the endpoint's `request_date`.
 
-On `wasm32-unknown-unknown` the standard library's `SystemTime::now()`
-panics, and the spikes measured that trap. The fix keeps the core free of
-any JavaScript dependency (SURFACE.md §4.1):
+On wasm the core needs a clock it can reach without WASI. The spikes
+measured what happens without one: on `wasm32-unknown-unknown` the standard
+library's `SystemTime::now()` panics, and the 58 corpus rows that trapped
+there were exactly the rows that read the clock
+([wasm bake-off §4](../evidence/2026-09-26-wasm-architecture-bakeoff.md)).
+The fix keeps the core free of any JavaScript or WASI dependency (R10,
+SURFACE.md §4.1):
 
-- The core gets one crate-private `fn system_now() -> SystemTime`.
-- It uses `std::time::SystemTime::now()` on every target except
-  `all(target_arch = "wasm32", target_os = "unknown")`.
-- On that target alone the core exposes `platform::install_clock(fn() ->
-  SystemTime)`. The wasm adapter installs `Date.now()` once at init. Until
-  it does, a verification that needs "now" fails with `InternalError`
-  instead of trapping. The hook does not exist on native targets.
+- The core gets one crate-private `fn system_now() -> SystemTime`. The
+  three fallbacks (`receipt.rs:134`, `jws.rs:455`, `endpoint.rs:525`) and
+  `SystemClock::now` all go through it.
+- It uses `std::time::SystemTime::now()` on every native target.
+- In `aprv.wasm` it reads the import `aprv.clock_now_ms`, epoch
+  milliseconds from the host: `Date.now()` in the JS façade, the wall
+  clock in Go. The adapter crate declares the import and hands the core a
+  safe function, so the core keeps `#![forbid(unsafe_code)]`.
+- A host answer that is not a finite instant after 1970 maps to 1970,
+  where no Apple chain is valid, so the failure is closed (the evidence
+  shim's rule, wasm bake-off §4).
+- OpenSSL's own `time()` calls, from its DRBG, resolve to the same import
+  through the link-time C file. No WASI clock import remains.
 - Callers still cannot move the validity instant. The host's clock replaces
   the OS clock, which is the same trust level as `SystemTime::now()`.
 - Cloudflare Workers and Akamai freeze `Date.now()` at the last I/O or at
@@ -185,12 +221,24 @@ any JavaScript dependency (SURFACE.md §4.1):
 |---|---|---|
 | UniFFI (Kotlin, Swift, Python) | UniFFI's scaffolding catches the unwind and raises its internal error type | Build with `panic = "unwind"` (the default). A binding test forces an `INTERNAL_ERROR` path and asserts a language exception, not a crash. |
 | C ABI | `guard`/`guard_ptr` wrap every export in `catch_unwind` (existing) | Keep. The source-scanning test that enforces it stays. |
-| wasm-bindgen | `panic = "abort"`: the instance **traps**, and its memory may be left inconsistent | The JS façade catches `WebAssembly.RuntimeError`, drops the instance, instantiates a fresh one on the next call, and throws `VerificationError(INTERNAL_ERROR)`. CI replays the hostile corpora through the wasm build and fails on any trap. |
-| wasi (Go) | wazero returns an error from the call and the module is unusable | Same pattern in Go: the pool discards the instance and the call returns `INTERNAL_ERROR`. |
+| `aprv.wasm` in JS (npm) | `panic = "abort"`: the instance **traps**, and its memory may be left inconsistent | The JS façade catches `WebAssembly.RuntimeError`, drops the instance, instantiates a fresh one on the next call, and throws `VerificationError(INTERNAL_ERROR)`. |
+| `aprv.wasm` in Go (wazero) | wazero returns an error from the call and the module is unusable | Same pattern in Go: the pool discards the instance and the call returns `INTERNAL_ERROR`. |
 
 The endpoint's "never fails" promise rests on `catch_unwind` at
 `endpoint.rs:510`, which does nothing under `panic = "abort"`. On wasm the
 façade provides that promise instead.
+
+**Trap policy of `aprv.wasm`.** The link-time C file answers every WASI
+function wasi-libc would import. In the shipped build, every one of them
+other than the clock and random bytes **traps** instead of returning an
+error, so an unexpected call to a file, directory, environment, argument
+or exit function stops the verification rather than taking a code path
+nobody measured. On the evidence corpus no run called any of them (wasm
+bake-off §5). CI runs the full corpus on every change through a host whose
+import object also traps on anything unexpected, and fails on any trap or
+any row that differs from native. A failing `aprv.random_get` fails
+closed: OpenSSL then refuses ECDSA verification, with 0 new acceptances
+over 1,179 rows (wasm bake-off §10).
 
 The core's lint wall (`unwrap`, `expect`, indexing, `panic` all denied)
 remains the first line of defence. Every row above only covers the case
@@ -213,8 +261,11 @@ where that wall fails.
   `win32-x86-64`, `win32-aarch64`.
 - Runtime dependencies change from Bouncy Castle and Jackson (about
   11.8 MB) to `kotlin-stdlib` (Java 8 bytecode) and `jna` 5.x (Java 8
-  bytecode). The jar grows by the natives: about 1.2 MB per target before
-  stripping and compression.
+  bytecode). The jar grows by the natives. With OpenSSL linked (R21) the
+  one library measured so far, Linux x86_64 with vendored OpenSSL, is
+  6,336,528 B raw and 1,966,051 B stripped and gzipped
+  ([OpenSSL CMS everywhere §2](../evidence/2026-09-26-openssl-cms-everywhere.md));
+  the pure-Rust estimate was about 1.2 MB per target.
 - `uniffi.toml` sets `disable_java_cleaner = true`, so the generated code
   compiles against JDK 8 APIs.
 - Docs: Maven Central requires `-sources.jar` and `-javadoc.jar`. The sources
@@ -278,13 +329,29 @@ where that wall fails.
      to the Release.
 - Symbol hygiene: a consumer that links two Rust static libraries can
   collide on Rust's non-FFI globals (swift-tokenizers hit this). The build
-  localizes every non-`uniffi_`/`ffi_` symbol, and a CI check lists the
-  exported symbols.
+  localizes every non-`uniffi_`/`ffi_` symbol, OpenSSL's included, and a
+  CI check lists the exported symbols. A static archive that kept
+  OpenSSL's symbols global could collide with a consumer's own OpenSSL
+  (unmeasured).
 
 ### 6.4 npm (JavaScript, TypeScript)
 
 - There is one package, `apple-purchase-receipt-verifier`, still with zero
-  runtime `dependencies`. The generated glue and the `.wasm` ship inside it.
+  runtime `dependencies`. It carries `aprv.wasm` (R21), a hand-written JS
+  façade of about 100 lines and a hand-written `index.d.ts`. No
+  wasm-bindgen, no Emscripten glue, no jco output: the wasm bake-off's
+  Route C package had this shape and passed on Node, Bun, Deno,
+  Chromium, Firefox, WebKitGTK, a `node --permission` run and `wrangler dev
+  --local` ([wasm bake-off §14](../evidence/2026-09-26-wasm-architecture-bakeoff.md),
+  [OpenSSL CMS everywhere §2](../evidence/2026-09-26-openssl-cms-everywhere.md)).
+- What the façade does, and nothing more: instantiate the module with an
+  import object that holds exactly `aprv.clock_now_ms` (`Date.now()`) and
+  `aprv.random_get` (`crypto.getRandomValues` in 65,536-byte chunks, never
+  `Math.random`); call `_initialize` before `aprv_init`; copy bytes in
+  through `aprv_alloc`/`aprv_dealloc`; call the C ABI exports; decode the
+  JSON out. It decodes strings with `TextDecoder` and `ignoreBOM: true`,
+  because the default strips a UTF-8 BOM and changes what the core sees
+  (wasm bake-off §8).
 - `exports` conditions choose how the wasm gets loaded, because the
   runtimes differ:
 
@@ -296,7 +363,7 @@ where that wall fails.
     "edge-light": "./dist/static/index.js",  // Vercel Edge: same rule
     "deno":       "./dist/web/index.js",
     "browser":    "./dist/web/index.js",
-    "node":       "./dist/node/index.js",    // reads the .wasm from disk, initSync
+    "node":       "./dist/node/index.js",    // reads the .wasm from disk, compiles it synchronously
     "default":    "./dist/web/index.js"
   },
   "./web": "./dist/web/index.js"             // kept: 0.x users import it today
@@ -307,37 +374,46 @@ where that wall fails.
   `receipt.ts:284`, `verify-receipt-endpoint.ts:101`), and `/web` is
   **async** (`web/jws.ts:58`, `web/receipt.ts:173`). Both contracts stay:
   - `.` stays synchronous on every runtime. A wasm call is synchronous once
-    the module is loaded. Node and workerd load it synchronously
-    (`initSync`); browsers and Deno load it with top-level `await` at
-    import, so the calls after the import are synchronous. Deno users of
-    `.` today keep sync calls.
+    the module is loaded. Node compiles it synchronously and workerd
+    imports it as a module; browsers and Deno load it with top-level
+    `await` at import, so the calls after the import are synchronous. Deno
+    users of `.` today keep sync calls.
   - `./web` keeps returning Promises. It is a thin async wrapper over the
     same module, so no 0.x caller of `/web` changes a line.
-- The TypeScript façade keeps the rest of today's API: the options objects,
-  the `Reason` const, `VerificationError extends Error` with `.reason`,
-  `Date` for receipt dates, and `bigint` ids. It also owns trap recovery
+- The façade keeps the rest of today's API: the options objects, the
+  `Reason` const, `VerificationError extends Error` with `.reason`, `Date`
+  for receipt dates, and `bigint` ids. It also owns trap recovery
   (section 5).
 - Runtimes kept and tested: Node 20/22/24/26, Bun, Deno, workerd (three
-  compatibility dates), Vercel Edge via `@edge-runtime/vm`, and a browser
-  (new, cheap once the code is wasm).
+  compatibility dates), Vercel Edge via `@edge-runtime/vm`, and Chromium,
+  Firefox and WebKit (new). Safari itself is expected, not tested: the
+  evidence ran WebKitGTK.
 - Runtimes dropped: Fastly Compute JS and Akamai EdgeWorkers. Neither can
   run WebAssembly (R5).
-- Size: the wasm is 374 KB raw and 133 KB gzip before `wasm-opt`. CI sets a
-  budget at the measured value plus 10% once the real build exists.
-- Performance: see R4. The wasm build costs about 5.3 times the current
-  `node:crypto` build per verification, and 3.4 to 3.6 times the `/web`
-  build.
+- Size: `aprv.wasm` over OpenSSL with the template payload reader is
+  2,973,532 B raw and 975,767 B stripped and gzipped
+  ([ASN.1 payload note §3](../evidence/2026-09-26-openssl-asn1-payload.md));
+  the spike tarball of the same shape was 1,001,740 B. `wasm-opt -Oz` saved
+  20 to 27% raw in the wasm bake-off and kept parity on Node. CI sets a budget at the
+  measured value plus 10% once the real build exists.
+- Memory: a hostile 3 MiB receipt of tiny attributes peaks at 145 MiB in
+  Node against 67 MiB for a tiny one (payload note §3). Phase 4 measures it
+  in workerd, whose isolate limit is 128 MB (R21).
+- Performance: see R4. Informational: the OpenSSL module took 1,395 µs per
+  receipt and 4,550 µs per JWS in Node 22 (wasm bake-off §13).
 
-### 6.5 Go (R6, recommended: wazero)
+### 6.5 Go (R6: wazero)
 
 - The module path and package `applereceipt` stay. The public Go API stays
   as it is: the options structs, `Reason`, `errors.Is`, and
   `VerifyReceiptResult`.
-- Inside, the module embeds `aprv.wasm` (a `wasm32-wasip1` build of
-  `aprv-wasi`, about 470 KB) with `//go:embed` and runs it with wazero.
-  JSON crosses the boundary and decodes into the existing Go types. The Go
-  module is published from a git tag, so the `.wasm` is committed. CI
-  rebuilds it with the pinned toolchain and fails when the hash differs.
+- Inside, the module embeds the same `aprv.wasm` as npm (about 3 MB raw,
+  R21) with `//go:embed` and runs it with wazero. Go supplies the two
+  imports: `aprv.clock_now_ms` from the wall clock and `aprv.random_get`
+  from `crypto/rand`. JSON crosses the boundary and decodes into the
+  existing Go types. The Go module is published from a git tag, so the
+  `.wasm` is committed. CI rebuilds it with the pinned toolchain (wasi-sdk,
+  OpenSSL) and fails when the hash differs.
 - Concurrency: a wasm instance is single-threaded. The package compiles
   the module once (`sync.Once`) and keeps a `sync.Pool` of instances.
 - Floor: wazero v1.9.x declares Go 1.22 and v1.12 declares Go 1.25. The
@@ -355,8 +431,14 @@ where that wall fails.
   - a base64 decode entry point for the `decodeBase64` cases;
   - its own fuzz target.
 - Prebuilt archives go on each GitHub Release, one per target: `.so`,
-  `.dylib`, `.dll` + `.lib`, `.a`, the header, `SHA256SUMS`, and build
-  provenance attestations.
+  `.dylib`, `.dll` + `.lib`, `.a`, the header, `SHA256SUMS`, build
+  provenance attestations, and OpenSSL's license and NOTICE text (R12).
+- OpenSSL 4.0.2 is linked statically into every library, so a consumer
+  needs no OpenSSL of its own. The evidence's Linux x86_64 library needed
+  only libgcc_s, libc and ld-linux, and exported only its 20 `aprv_*`
+  symbols ([substrate bake-off §9](../evidence/2026-09-26-security-substrate-bakeoff.md)).
+  Builds set `OPENSSL_CONFIG_DIR` to a path that does not exist, and the
+  adapter never loads a config file or a default trust path (R21).
 - cbindgen stays at its narrow job: it writes the header from the explicit
   `extern "C"` declarations. rustc and cargo produce the libraries.
 - Examples for unpackaged languages use each language's own C FFI with
@@ -369,16 +451,21 @@ where that wall fails.
 
 ### 6.7 crates.io (Rust)
 
-The core crate gets its first publish before any binding ships (BOOTSTRAP.md
-already has the steps). Rust users then get the reviewed implementation
-directly, with the same version as every package.
+The core crate gets its first publish when something needs it (R19;
+BOOTSTRAP.md already has the steps). Rust users then get the reviewed
+implementation directly, with the same version as every package. The
+adapter crate `aprv-openssl` publishes first, because the core depends on
+it. Until `openssl-sys` accepts `openssl-src` 400.x, a crates.io user gets
+OpenSSL 3.x from the vendored feature or the system's OpenSSL, since our
+`[patch.crates-io]` applies only inside this workspace (R21 open item 3).
 
 ## 7. Documentation
 
 - Rust doc comments on `aprv-surface` are the API reference. UniFFI copies
   them into KDoc, Swift doc comments and Python docstrings; the Python spike
-  showed the docstring arriving. wasm-bindgen copies them into the `.d.ts`
-  as JSDoc.
+  showed the docstring arriving. The npm `index.d.ts` is hand-written
+  (R21), so its JSDoc is written by hand from the same text and reviewed
+  with the façade.
 - Each package README keeps install, a quick start, runtime notes and links
   to THREAT-MODEL.md. The long per-language manuals shrink to the parts
   that are about that ecosystem: native access, musl, JNA, workerd imports.
@@ -388,10 +475,16 @@ directly, with the same version as every package.
 | Invariant | Enforced by |
 |---|---|
 | One implementation | A CI job greps the package folders for crypto and ASN.1 imports (`java.security.Signature`, `node:crypto`, `crypto.subtle`, `cryptography`, `Security`, `crypto/x509`, `CertificateFactory`, ...) and fails on any hit outside tests. |
+| No hand-written ASN.1, CMS or X.509 (R21) | `tools/check-layering.mjs` fails if `rust/src` gains a module named `asn1`, `x509`, `cms`, `chain` or `crypto`, if the core's graph gains an ASN.1, X.509 or signature crate (`der`, `rasn`, `bcder`, `asn1-rs`, `x509-*`, `cms`, `rsa`, `p256`, `p384`, ...), or if the adapter calls `ASN1_get_object`, which is hand TLV walking. The payload grammar lives only in `payload.c`'s templates. |
+| The adapter is the only `unsafe` crate below the bindings | `#![forbid(unsafe_code)]` in the core and the surface, checked by the layering script (SURFACE.md §7.1). The boundary crates (`rust/ffi`, `aprv-wasm`) keep the `unsafe` their ABIs need and hold no security logic. Every `unsafe` block carries a `// SAFETY:` comment (Clippy `undocumented_unsafe_blocks`). |
+| `aprv.wasm` imports exactly two functions | CI lists the module's imports (`wasm-tools`) and fails on anything other than `aprv.clock_now_ms` and `aprv.random_get`. |
+| `aprv.wasm` takes no unmeasured path | Every change runs the full corpus through a host that traps on any unexpected import call, with the shipped module's own WASI stubs trapping too (section 5); any trap or any row that differs from native fails the job. |
+| No ambient OpenSSL state | `OPENSSL_CONFIG_DIR` points at a path that does not exist; the adapter uses `OPENSSL_INIT_NO_LOAD_CONFIG` and no default trust paths. An isolation test plants a root in `SSL_CERT_FILE` and `SSL_CERT_DIR` and a hostile `OPENSSL_CONF`, and asserts they are ignored and never opened ([substrate bake-off §7](../evidence/2026-09-26-security-substrate-bakeoff.md)). |
 | Pinned roots only | Root `certs/` stays canonical (`apple-root-watch.yml` diffs it against apple.com). `rust/certs` is the one copy, compiled in with `include_bytes!`; `check-cert-copies.mjs` checks that single copy. No binding ships or reads roots of its own. Trust-isolation tests run per binding. |
-| No panic crosses a boundary | UniFFI scaffolding, C ABI `catch_unwind`, and wasm trap recovery (section 5), each with a forced-failure test. |
+| No panic crosses a boundary | UniFFI scaffolding, C ABI `catch_unwind`, and wasm trap recovery in the JS façade and the Go pool (section 5), each with a forced-failure test. |
 | Caps in one place | The core owns `MAX_RECEIPT_BYTES`, `MAX_JWS_BYTES`, `MAX_REQUEST_BYTES`, the JSON depth and the certificate caps. The bindings add none. |
-| Generated code is reproducible | Pinned uniffi, wasm-bindgen and cbindgen versions. Committed outputs (Swift sources, the C header, Go `aprv.wasm`) are regenerated in CI with `git diff --exit-code`. |
+| Generated code is reproducible | Pinned uniffi and cbindgen versions, and a pinned wasi-sdk and OpenSSL tarball, each checked by SHA-256. Committed outputs (Swift sources, the C header, Go `aprv.wasm`) are regenerated in CI with `git diff --exit-code`. |
 | Same verdicts everywhere | Every package runs all 186 `fixtures/cases.json` cases through its binding. |
 | Artifacts are what CI built | Publish jobs never cache. Every native and wasm artifact gets a SHA-256 and a build-provenance attestation. Post-publish smoke installs from the real registry. |
+| Licenses ship with the code | Every package that carries OpenSSL, natively or in `aprv.wasm`, ships OpenSSL's license and NOTICE text; `aprv.wasm` also ships wasi-libc's and Rust std's (R12). A package-content check in release fails when one is missing. |
 | Floors are tested | Java 8 on Temurin 8, Node 20, Python 3.10, Swift 6.2 (Linux) and the Go floor all keep their CI legs, now against the binding. |

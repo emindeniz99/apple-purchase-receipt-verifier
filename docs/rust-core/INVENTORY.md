@@ -139,10 +139,10 @@ changes.
 |---|---|---|
 | PLAN.md D2 | Floors: Java 8, Node 20, Python 3.10, Swift 6 | Keeps all of them except Swift on Linux (6.2, see R7). |
 | PLAN.md D7 | Full type safety (strict TypeScript, `py.typed`); Node still zero runtime dependencies | Keeps it: the wasm glue ships inside the package. |
-| PLAN.md D8 | Minimal dependencies, hand-rolled parsers | The Rust parsers become the only parsers. |
-| PLAN.md D16 | Hand-written readers per port, per-ecosystem crypto; the Node web build must run WebCrypto-only on workerd and Fastly | **Superseded.** Rust crypto everywhere. The Fastly clause fails (R5). |
+| PLAN.md D8 | Minimal dependencies, hand-rolled parsers | Reversed by R21 (2026-09-26): OpenSSL's parsers, under the Rust policy, become the only parsers, and the hand-rolled Rust ones are deleted. |
+| PLAN.md D16 | Hand-written readers per port, per-ecosystem crypto; the Node web build must run WebCrypto-only on workerd and Fastly | **Superseded.** One Rust policy over OpenSSL everywhere (R21). The Fastly clause fails (R5). |
 | CLAUDE.md "Behavior changes" | Nine implementations are one product | Becomes one implementation, many bindings. |
 | CLAUDE.md certs copies | `go/`, `ruby/`, `rust/`, `php/` copy `certs/`; Node, Ruby, PHP and .NET inline the roots | Root `certs/` stays canonical, and `rust/certs` is the only copy. |
 | ROADMAP "C ABI phase 2" | Prebuilt binaries undecided | Becomes mandatory: every binding ships prebuilt natives. |
 | ROADMAP RHEL 9 SHA-1 | Per-port raw-RSA fix planned for Ruby, PHP, .NET, Python, Node | Moot: the Rust core does not read the host crypto policy. |
-| THREAT-MODEL §5 | asn1crypto unmaintained; Java ignores host policy; C ABI `unsafe` | The first closes. The second becomes true for every package. The third stays confined to `rust/ffi` and grows to the new `rust/bindings/wasi`; the UniFFI and wasm-bindgen adapters contain no hand-written `unsafe` (the generators' scaffolding does). |
+| THREAT-MODEL §5 | asn1crypto unmaintained; Java ignores host policy; C ABI `unsafe` | The first closes. The second becomes true for every package. The third grows: `unsafe` lives in the OpenSSL adapter (R21), `rust/ffi` and the `aprv.wasm` exports; the UniFFI adapter contains no hand-written `unsafe` (its scaffolding does). OpenSSL joins the trusted base. |
