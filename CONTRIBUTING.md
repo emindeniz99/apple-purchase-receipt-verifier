@@ -267,6 +267,13 @@ certificate-validity instant an injected clock must not be able to shift.
 How old a signed payload may be is the caller's decision, so no case pins
 one.
 
+## Spikes and evidence
+
+Every experiment's code goes into the repo, even code that answered "no":
+a note at `docs/evidence/<date>-<name>.md` and its sources in
+`docs/evidence/<date>-<name>/`, committed together. See
+[docs/evidence/README.md](docs/evidence/README.md) for the layout.
+
 ## Commits
 
 Conventional Commits with a **mandatory scope**:

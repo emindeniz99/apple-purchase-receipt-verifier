@@ -114,3 +114,13 @@ that's a bug, not a feature.
 `fixtures/` sandbox receipts are developers' own test data (documented in
 their LICENSE-upstream files). Never add a production receipt — a real
 receipt carries a real user's purchase history. This rule has bitten before.
+
+## Spikes and evidence
+
+Every experiment's code goes into the repo, even code that answered "no".
+A spike that measures something ends with a note at
+`docs/evidence/<date>-<name>.md` and its sources in
+`docs/evidence/<date>-<name>/`, committed together. Code left on a scratch
+disk is lost when the session ends, and a result nobody can rerun is a
+claim, not evidence. Layout and what stays out (binaries, local paths,
+secrets, production receipts) are in `docs/evidence/README.md`.
