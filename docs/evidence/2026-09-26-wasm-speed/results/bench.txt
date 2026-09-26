@@ -1,0 +1,49 @@
+# Summary of results/bench-raw.txt (py/summary.py): median of the runs' mean latency in microseconds,
+# (number of runs), [change against the rebuilt baseline "base"]. Node: 3 runs of 1,000 timed calls;
+# Endive: 1 run of 500 timed calls after 1,000 warm-up. Run-to-run noise on this 4-core VM is about
+# +-10% (see the three Node runs per candidate in bench-raw.txt), so changes inside that band are noise.
+## node
+candidate                    receipt (g5)       JWS (shared-sandbox)
+base                            1,434 (3)                  4,535 (3)
+nistp                     1,333 (3) [-7%]           2,945 (3) [-35%]
+o2                        1,423 (3) [-1%]            4,405 (3) [-3%]
+nopic                     1,455 (3) [+1%]            4,462 (3) [-2%]
+rust2                     1,479 (3) [+3%]            4,448 (3) [-2%]
+base-wo2                  1,421 (3) [-1%]            4,391 (3) [-3%]
+base-wo3                 1,290 (3) [-10%]            4,141 (3) [-9%]
+## endive jdk21 memory=default
+candidate                    receipt (g5)       JWS (shared-sandbox)
+base                            8,765 (1)                 26,734 (1)
+nistp                     9,195 (1) [+5%]         68,689 (1) [+157%]
+o2                        9,353 (1) [+7%]           28,435 (1) [+6%]
+nopic                     9,213 (1) [+5%]          29,307 (1) [+10%]
+rust2                     9,273 (1) [+6%]          29,710 (1) [+11%]
+base-wo2                 9,777 (1) [+12%]          29,335 (1) [+10%]
+base-wo3                 9,670 (1) [+10%]           28,609 (1) [+7%]
+## endive jdk21 memory=bytearray
+candidate                    receipt (g5)       JWS (shared-sandbox)
+base                            6,160 (1)                 20,300 (1)
+nistp                     5,954 (1) [-3%]         65,146 (1) [+221%]
+o2                        5,745 (1) [-7%]           19,567 (1) [-4%]
+nopic                     6,422 (1) [+4%]           19,631 (1) [-3%]
+rust2                     6,335 (1) [+3%]           20,057 (1) [-1%]
+base-wo2                  6,317 (1) [+3%]           20,821 (1) [+3%]
+base-wo3                  6,336 (1) [+3%]           18,872 (1) [-7%]
+## endive jdk25 memory=default
+candidate                    receipt (g5)       JWS (shared-sandbox)
+base                            9,504 (1)                 28,384 (1)
+nistp                    10,066 (1) [+6%]         69,149 (1) [+144%]
+o2                        9,487 (1) [-0%]           27,835 (1) [-2%]
+nopic                     9,714 (1) [+2%]           29,648 (1) [+4%]
+rust2                     8,930 (1) [-6%]           28,527 (1) [+1%]
+base-wo2                  8,750 (1) [-8%]           26,826 (1) [-5%]
+base-wo3                  9,641 (1) [+1%]           27,846 (1) [-2%]
+## endive jdk25 memory=bytearray
+candidate                    receipt (g5)       JWS (shared-sandbox)
+base                            5,514 (1)                 19,422 (1)
+nistp                    6,176 (1) [+12%]         65,282 (1) [+236%]
+o2                       6,137 (1) [+11%]           19,467 (1) [+0%]
+nopic                    6,041 (1) [+10%]           19,410 (1) [-0%]
+rust2                    6,620 (1) [+20%]           19,955 (1) [+3%]
+base-wo2                  5,628 (1) [+2%]          17,018 (1) [-12%]
+base-wo3                  5,246 (1) [-5%]           18,936 (1) [-3%]

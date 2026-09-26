@@ -1,0 +1,58 @@
+## OpenSSL 4.0.2 INSTALL.md: enable-ec_nistp_64_gcc_128 and no-pic
+### enable-ec_nistp_64_gcc_128
+
+Enable support for optimised implementations of some commonly used NIST
+elliptic curves.
+
+This option is only supported on platforms:
+
+ - with little-endian storage of non-byte types
+ - that tolerate misaligned memory references
+ - where the compiler:
+   - supports the non-standard type `__uint128_t`
+   - defines the built-in macro `__SIZEOF_INT128__`
+
+### no-pic
+
+Don't build with support for Position Independent Code.
+
+## crypto/ec/ec_curve.c: the curves whose EC_METHOD the option switches (lines naming the nistp methods)
+2546:        EC_GFp_nistp224_method,
+2556:        ossl_ec_GFp_nistp384_method,
+2566:        EC_GFp_nistp521_method,
+2581:        EC_GFp_nistp256_method,
+2638:    { NID_secp224r1, &_EC_NIST_PRIME_224.h, EC_GFp_nistp224_method,
+2651:        ossl_ec_GFp_nistp384_method,
+2660:        EC_GFp_nistp521_method,
+2684:        EC_GFp_nistp256_method,
+## Configurations/10-main.conf, linux-generic32: the release CFLAGS the baseline uses
+2:        inherit_from     => [ "BASE_unix" ],
+5:        CFLAGS           => picker(default => "-Wall",
+7:                                   release => "-O3",
+11:                                   release => "-O3"),
+## wasi-sdk 34 clang, wasm32-wasip1: __SIZEOF_INT128__ = 16; little-endian, unaligned loads allowed by the wasm spec
+a 64x64->128 multiply compiles to:       1 call 0 (a compiler-rt helper call, not one instruction)
+## Debian openssl 4.0.2-1, debian/rules (sources.debian.org)
+44-ifneq ($(filter amd64 arm64 ppc64el riscv64,$(DEB_HOST_ARCH_CPU)),)
+45:	CONFARGS += enable-ec_nistp_64_gcc_128
+46-endif
+## Fedora rawhide openssl.spec (src.fedoraproject.org), architectures that set it
+132-fi
+133-%endif
+134-%ifarch x86_64
+135:sslflags=enable-ec_nistp_64_gcc_128
+--
+156-%endif
+157-%ifarch aarch64
+158-sslarch=linux-aarch64
+159:sslflags=enable-ec_nistp_64_gcc_128
+--
+166-%endif
+167-%ifarch ppc64le
+168-sslarch="linux-ppc64le"
+169:sslflags=enable-ec_nistp_64_gcc_128
+--
+175-sslarch="linux64-mips64 -mips64r2"
+176-%endif
+177-%ifarch mips64el
+178:sslflags=enable-ec_nistp_64_gcc_128
