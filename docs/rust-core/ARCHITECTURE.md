@@ -211,7 +211,7 @@ SURFACE.md §4.1):
   through the link-time C file. No WASI clock import remains.
 - Callers still cannot move the validity instant. The host's clock replaces
   the OS clock, which is the same trust level as `SystemTime::now()`.
-- Cloudflare Workers and Akamai freeze `Date.now()` at the last I/O or at
+- Cloudflare Workers freezes `Date.now()` at the last I/O or at
   request start. For a certificate-validity fallback that is harmless:
   seconds of drift against a validity window measured in years.
 
@@ -251,14 +251,12 @@ where that wall fails.
 - Coordinates stay `io.github.emindeniz99:apple-purchase-receipt-verifier`.
   Today's classes sit in three packages: the root, `.jws` and `.receipt`.
   UniFFI's `package_name` puts every generated class in one package, so the
-  generated code goes to `...applepurchasereceiptverifier.internal`. The owner chose
-  no Java façade to start (R13), so the migration release moves the import
-  paths into that one package and the CHANGELOG lists the break. A façade
-  that restores `.jws` and `.receipt` stays possible before 1.0.
-- Contents: the compiled generated Kotlin (`jvmTarget = 1.8`), a small Java
-  façade if the PoC needs one, and natives at JNA's resource paths:
-  `linux-x86-64`, `linux-aarch64`, `darwin-x86-64`, `darwin-aarch64`,
-  `win32-x86-64`, `win32-aarch64`.
+  generated code goes to `...applepurchasereceiptverifier.internal`. The
+  thin hand-written Java façade (R18) keeps today's `.jws` and `.receipt`
+  import paths in front of it.
+- Contents: the compiled generated Kotlin (`jvmTarget = 1.8`), the Java
+  façade (R18), and natives at JNA's resource paths for the 18 to 22 JVM
+  targets R12 lists.
 - Runtime dependencies change from Bouncy Castle and Jackson (about
   11.8 MB) to `kotlin-stdlib` (Java 8 bytecode) and `jna` 5.x (Java 8
   bytecode). The jar grows by the natives. With OpenSSL linked (R21) the

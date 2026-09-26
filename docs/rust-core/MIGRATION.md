@@ -98,7 +98,7 @@ decide it.
 | Step | Work | Verify |
 |---|---|---|
 | 3.1 | The Maven build compiles the generated Kotlin (`jvmTarget 1.8`, `-Xjdk-release=1.8`, `disable_java_cleaner`), then packs natives from the R12 matrix into the JNA resource paths. | The jar lists all 18 R12 JVM native paths; `javap` shows major 52 |
-| 3.2 | Java façade only where R13 allows. | Façade diff reviewed for zero logic; the one-implementation grep passes |
+| 3.2 | The thin hand-written Java façade (R18): today's import paths and types over the generated engine. | Façade diff reviewed for zero logic; the one-implementation grep passes |
 | 3.3 | Port the JUnit suites (conformance, trust isolation, hostile, caps). | 186/186 |
 | 3.4 | Keep every JVM leg: `java-runtime-8` on real Temurin 8, JDK 11-26, distroless ×4, Spring Boot 4.0/4.1, `jvm-interop` (Kotlin, Scala). | All green |
 | 3.5 | Native-access legs on JDK 25/26: default (one warning, documented), `--enable-native-access=ALL-UNNAMED` (silent), `--illegal-native-access=deny` (documented failure). | Output asserted |
@@ -336,5 +336,5 @@ branch.
 | UniFFI is pre-1.0 and breaks between minors (0.32 changed byte buffers) | high | low-medium | Pin; upgrade in a dedicated PR with full conformance |
 | Prebuilt binaries widen the supply-chain surface | certain | medium | No-cache release builds, attestations, reproducible Go wasm, SHA256SUMS, pinned OpenSSL and wasi-sdk hashes |
 | Reproducible Rust builds across runners are harder than expected, now with C inside | medium | low | Pin the toolchain, wasi-sdk and OpenSSL, remap paths; worst case, build the Go wasm once in release and diff only in PR CI |
-| Maven Central budget during the phased releases | low | medium | One release per phase, at most two phases a month |
+| Maven Central budget during the migration | low | medium | One release for the whole migration, 0.8.0 (R19) |
 | Owner review becomes the bottleneck | high | schedule only | Phase 1 is the critical path by design. Later phases touch no security code. |

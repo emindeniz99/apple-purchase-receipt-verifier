@@ -374,8 +374,9 @@ libraries ship" and the Temurin table in the spike notes.
 musl builds follow Alpine, the only common musl distribution: one for
 each Alpine architecture that stable Rust can build.
 
-**Per package.** Only three packages carry natives. npm and Go run the
-wasm build, which is the same file on every platform.
+**Per package.** Three packages carry natives (Maven, PyPI, SwiftPM),
+besides the C ABI archives on GitHub Releases. npm and Go run the wasm
+build, which is the same file on every platform.
 
 | Package | Targets | Count |
 |---|---|---:|
