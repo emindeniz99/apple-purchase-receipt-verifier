@@ -112,6 +112,7 @@ runtime matrix decide it.
 | 4.5 | Drop Fastly and Akamai (R5): the job, README rows and SUPPORT-MATRIX rows. | CHANGELOG breaking note |
 | 4.6 | Publish the Node numbers. Apply R4's trigger. | BENCHMARKS.md updated |
 | 4.7 | Delete `node/src` verifier code. Keep the conformance and runtime smokes. | The one-implementation grep finds no `node:crypto` or `crypto.subtle` |
+| 4.8 | Once the migration is on main, report Bun's WASI `random_get` bug upstream (Bun 1.3.11 returns the wrong value and overwrites module memory). Recheck on the current Bun first. Repro: [bun-random-get.mjs](../evidence/2026-09-26-security-substrate-bakeoff/wasm/bun-random-get.mjs). | Issue link recorded here, or "fixed in Bun x.y" |
 
 **Gate G4:** as in the table, plus a post-publish smoke from real npm on
 Node 20 and in workerd.
