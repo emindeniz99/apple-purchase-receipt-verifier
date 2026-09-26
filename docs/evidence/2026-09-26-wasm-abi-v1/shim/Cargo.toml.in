@@ -1,0 +1,27 @@
+# Spike only (2026-09-26, ABI v1). The wasm module of the "Wasm-first"
+# direction: ONE generic call (aprv_call) over four policy-free operations.
+# It links the core (the round-4 no-asn1 template tree, OpenSSL 4.0.2, CMS)
+# directly, not rust/ffi, so the module exports only the ABI v1 functions.
+# scripts/build.sh copies this file to the scratch tree as Cargo.toml and
+# replaces @TREE@ with the patched scratch copy of rust/.
+[package]
+name = "aprv-wasm-abi"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+aprv = { package = "apple-purchase-receipt-verifier", path = "@TREE@/rust", features = ["endpoint"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "allow", check-cfg = ['cfg(aprv_host_clock)'] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
