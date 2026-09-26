@@ -340,7 +340,9 @@ elsewhere in this file.
   - `VerifyReceiptResult.isVerified()` is true for 21007 and 21008, so a
     caller granting on it would grant a sandbox receipt in production.
     Add an `isAccepted()` meaning `status() == 0`.
-  - An optional expected bundle id on `VerifyReceiptEndpoint`.
+  - ~~An optional expected bundle id on `VerifyReceiptEndpoint`.~~
+    Declined by the owner on 2026-09-25: the endpoint stays Apple's. See
+    "Second integration feedback" below for the result helper instead.
   - `TransactionPayload` lacks newer claims (`revocationType`,
     `revocationPercentage`, `appTransactionId`, `offerDiscountType`,
     `offerPeriod`, `storefrontId`, `isUpgraded`), and `StrictClaims` has no
