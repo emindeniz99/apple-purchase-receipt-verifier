@@ -47,6 +47,7 @@ Placeholders:
 | `py/jfr_top.py` | JFR samples aggregated by innermost frame and by compiled Wasm function |
 | `py/method_sizes.py` | Generated method sizes against the JVM's 64 KiB and 8,000-byte (JIT) limits |
 | `results/endive-facts.txt` | Task: what Endive is (coordinates, versions, POMs, documentation quotes) |
+| `scripts/facts-addendum.sh`, `results/facts-addendum.txt` | Added after the spike for R12 and R18: Endive's own description and Java floor, the byte order in its two memory classes (big-endian JVMs), and which platforms ship a Java 8 and a Java 11+ today (Temurin, Azul Zulu 8, Alpine `openjdk8`) |
 | `results/parity.txt` | Every corpus run: JDK 11, 17, 21 and 25, and 25 with `ByteArrayMemory` |
 | `results/java-tallies.txt` | Java tallies per run |
 | `results/jar-inspection.txt` | What the jar holds and what the consumer resolves |

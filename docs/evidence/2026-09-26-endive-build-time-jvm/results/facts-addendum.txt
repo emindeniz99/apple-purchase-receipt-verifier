@@ -1,0 +1,17 @@
+# scripts/facts-addendum.sh, run 2026-09-26
+# endive.run/llms-full.txt
+> Endive is a JVM native WebAssembly runtime with zero native dependencies, hosted by the Bytecode Alliance.
+Endive requires **Java 11** or later. SIMD support requires Java 21+.
+# ByteOrder in the memory classes of runtime-1.1.0.jar
+ByteBufferMemory:       2 ByteOrder.LITTLE_ENDIAN 
+ByteArrayMemory:       5 ByteOrder.LITTLE_ENDIAN 
+# Temurin (api.adoptium.net), os/arch per feature release
+Temurin 8: [('aix', 'ppc64'), ('alpine-linux', 'x64'), ('linux', 'aarch64'), ('linux', 'arm'), ('linux', 'ppc64le'), ('linux', 'x64'), ('mac', 'x64'), ('solaris', 'sparcv9'), ('solaris', 'x64'), ('windows', 'x32'), ('windows', 'x64')]
+Temurin 11: [('aix', 'ppc64'), ('alpine-linux', 'x64'), ('linux', 'aarch64'), ('linux', 'arm'), ('linux', 'ppc64le'), ('linux', 's390x'), ('linux', 'x64'), ('mac', 'aarch64'), ('mac', 'x64'), ('windows', 'x32'), ('windows', 'x64')]
+Temurin 17: [('aix', 'ppc64'), ('alpine-linux', 'x64'), ('linux', 'aarch64'), ('linux', 'arm'), ('linux', 'ppc64le'), ('linux', 'riscv64'), ('linux', 's390x'), ('linux', 'x64'), ('mac', 'aarch64'), ('mac', 'x64'), ('windows', 'x32'), ('windows', 'x64')]
+Temurin 21: [('aix', 'ppc64'), ('alpine-linux', 'aarch64'), ('alpine-linux', 'x64'), ('linux', 'aarch64'), ('linux', 'ppc64le'), ('linux', 'riscv64'), ('linux', 's390x'), ('linux', 'x64'), ('mac', 'aarch64'), ('mac', 'x64'), ('windows', 'aarch64'), ('windows', 'x64')]
+Temurin 25: [('aix', 'ppc64'), ('alpine-linux', 'aarch64'), ('alpine-linux', 'x64'), ('linux', 'aarch64'), ('linux', 'ppc64le'), ('linux', 'riscv64'), ('linux', 's390x'), ('linux', 'x64'), ('mac', 'aarch64'), ('mac', 'x64'), ('windows', 'x64')]
+# Azul Zulu 8 (api.azul.com), os/arch from package names
+[('linux', 'aarch32hf'), ('linux', 'aarch32sf'), ('linux', 'aarch64'), ('linux', 'amd64'), ('linux', 'arm64'), ('linux', 'i686'), ('linux', 'ppc32hf'), ('linux', 'ppc32spe'), ('linux', 'ppc64'), ('linux', 'x64'), ('linux_musl', 'aarch64'), ('linux_musl', 'x64'), ('macosx', 'aarch64'), ('macosx', 'x64'), ('solaris', 'sparcv9'), ('solaris', 'x64'), ('win', 'i686'), ('win', 'x64')]
+# Alpine openjdk8 package, edge
+['aarch64', 'armhf', 'armv7', 'loongarch64', 'ppc64le', 's390x', 'x86', 'x86_64']
