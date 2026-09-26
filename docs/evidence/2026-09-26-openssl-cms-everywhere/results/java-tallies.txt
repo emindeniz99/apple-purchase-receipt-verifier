@@ -1,0 +1,38 @@
+# $SPIKE/py/tri.py, 2026-09-26. Columns per corpus: agree cand=java cand=rust cand-own abi. Java rows: JDK 25.0.4.1 + BC 1.86 (reused).
+# java-equal = agree + cand=java over the 1,048 rows the C ABI can express. 'same' = identical to cms-native's tallies.
+run                                cases              substrate          hostile              algorithms       java-equal  vs-native
+cms-native                         153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-vendored                       153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-c-bun-trap                     153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-c-chromium                     153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-c-deno-trap                    153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-c-firefox                      153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-c-node-trap                    153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-c-wasmtime                     153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-c-wazero                       153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-c-webkit                       153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-c-workerd                      153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-comp-bun-jco-p2min             153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-comp-chromium                  153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-comp-deno-jco-p2min            153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-comp-firefox                   153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-comp-node-jco-p2min            153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-comp-wasmtime-component        153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-comp-webkit                    153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-comp-workerd                   153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-em-bun-emscripten              153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-em-chromium                    153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-em-deno-emscripten             153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-em-firefox                     153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-em-node-emscripten             153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-em-web-workerd                 153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-em-webkit                      153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-w1-bun-trap                    153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-w1-chromium                    153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-w1-deno-trap                   153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-w1-firefox                     153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-w1-node-trap                   153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-w1-wasmtime                    153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-w1-wazero                      153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-w1-webkit                      153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same
+cms-w1-workerd                     153 0 0 0 0        169 21 2 1 0       655 10 12 3 131    8 14 0 0 0          1030        same

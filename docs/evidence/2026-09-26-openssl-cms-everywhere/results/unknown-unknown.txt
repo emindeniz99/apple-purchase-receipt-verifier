@@ -1,0 +1,33 @@
+# rustc 1.98.1 (48a229cea 2026-09-01), target wasm32-unknown-unknown, CMS shim (substrate-cms + substrate-prescan), 2026-09-26
+# per crate: 'could not compile' lines
+error: could not compile `openssl-sys` (lib) due to 20 previous errors
+# distinct error messages (count, message), across all crates
+     14 error[E0432]: unresolved import `libc::size_t`
+      4 error[E0432]: unresolved imports `libc::size_t`, `X`
+      1 error[E0432]: unresolved import `libc::time_t`
+      1 error[E0432]: unresolved import `libc::FILE`
+# every error location (all E0432)
+ --> $CARGO_HOME/registry/src/<index>/openssl-sys-0.9.117/src/evp.rs:2:5
+ --> $CARGO_HOME/registry/src/<index>/openssl-sys-0.9.117/src/handwritten/aes.rs:2:5
+ --> $CARGO_HOME/registry/src/<index>/openssl-sys-0.9.117/src/handwritten/asn1.rs:2:5
+ --> $CARGO_HOME/registry/src/<index>/openssl-sys-0.9.117/src/handwritten/bio.rs:2:5
+ --> $CARGO_HOME/registry/src/<index>/openssl-sys-0.9.117/src/handwritten/cmac.rs:1:5
+ --> $CARGO_HOME/registry/src/<index>/openssl-sys-0.9.117/src/handwritten/crypto.rs:2:5
+ --> $CARGO_HOME/registry/src/<index>/openssl-sys-0.9.117/src/handwritten/decoder.rs:2:12
+ --> $CARGO_HOME/registry/src/<index>/openssl-sys-0.9.117/src/handwritten/ec.rs:2:5
+ --> $CARGO_HOME/registry/src/<index>/openssl-sys-0.9.117/src/handwritten/encoder.rs:2:12
+ --> $CARGO_HOME/registry/src/<index>/openssl-sys-0.9.117/src/handwritten/evp.rs:2:5
+ --> $CARGO_HOME/registry/src/<index>/openssl-sys-0.9.117/src/handwritten/hmac.rs:1:5
+ --> $CARGO_HOME/registry/src/<index>/openssl-sys-0.9.117/src/handwritten/kdf.rs:2:5
+ --> $CARGO_HOME/registry/src/<index>/openssl-sys-0.9.117/src/handwritten/object.rs:1:5
+ --> $CARGO_HOME/registry/src/<index>/openssl-sys-0.9.117/src/handwritten/params.rs:2:5
+ --> $CARGO_HOME/registry/src/<index>/openssl-sys-0.9.117/src/handwritten/sha.rs:2:5
+ --> $CARGO_HOME/registry/src/<index>/openssl-sys-0.9.117/src/handwritten/ssl.rs:2:12
+ --> $CARGO_HOME/registry/src/<index>/openssl-sys-0.9.117/src/handwritten/tls1.rs:2:5
+ --> $CARGO_HOME/registry/src/<index>/openssl-sys-0.9.117/src/handwritten/types.rs:1:5
+ --> $CARGO_HOME/registry/src/<index>/openssl-sys-0.9.117/src/handwritten/x509_vfy.rs:2:12
+ --> $CARGO_HOME/registry/src/<index>/openssl-sys-0.9.117/src/sha.rs:2:5
+# why: libc 0.2.189 src/lib.rs picks a platform module by cfg (windows, fuchsia, ..., unix at line 250, wasi at line 290, ...);
+# wasm32-unknown-unknown (target_os = "unknown", no target_env) matches none of them, so libc exports only its target-independent
+# items: no size_t, time_t or FILE (the 20 errors name exactly these). openssl-sys's bindings import those names from libc (e.g. src/evp.rs:2 `use libc::size_t`), hence
+# E0432 in 20 modules. The C side is not the issue: the build script found OpenSSL 4.0.2's headers (OPENSSL_DIR) and compiled with wasi-sdk's clang.

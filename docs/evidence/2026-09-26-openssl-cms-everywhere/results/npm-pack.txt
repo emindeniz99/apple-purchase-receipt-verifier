@@ -1,0 +1,20 @@
+aprv-spike-core-openssl-cms-0.0.0.tgz 1001740 B, 9 files, sha256 282d6d8f117e2acb
+    4696 package/abi.js
+    421 package/browser.js
+    1066 package/instantiate.js
+    450 package/node.js
+    398 package/workerd.js
+    622 package/package.json
+    883 package/index.d.ts
+    10337 package/THIRD-PARTY-NOTICES.txt
+    3000116 package/aprv.wasm
+aprv-spike-wasip1-openssl-cms-0.0.0.tgz 1004352 B, 9 files, sha256 5c622c14f7b9df85
+    4696 package/abi.js
+    421 package/browser.js
+    2550 package/instantiate.js
+    450 package/node.js
+    398 package/workerd.js
+    626 package/package.json
+    883 package/index.d.ts
+    10337 package/THIRD-PARTY-NOTICES.txt
+    3006245 package/aprv.wasm

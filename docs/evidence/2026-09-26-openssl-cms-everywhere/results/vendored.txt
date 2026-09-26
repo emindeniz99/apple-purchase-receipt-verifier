@@ -1,0 +1,15 @@
+# Task 1 (scripts/vendored.sh), 2026-09-26, rustc 1.98.1
+change: a copy of openssl-sys 0.9.117 with ONE manifest line changed, wired in with [patch.crates-io]:
+  79c79
+  < version = "300.2.0"
+  ---
+  > version = "400.0.1"
+  ([build-dependencies.openssl-src], features = ["legacy"], optional = true: unchanged)
+source code changes: none (openssl-sys build/find_vendored.rs uses openssl_src::Build::new/openssl_dir/build/lib_dir/include_dir; openssl-src 400.0.1 keeps that API)
+build: openssl-src v400.0.1+4.0.2 compiled OpenSSL inside the build script; openssl-sys output: Configuring OpenSSL version 4.0.2, cargo:version_number=40000020, cargo:vendored=1
+Configure line (openssl-src defaults):
+  "perl" "./Configure" "--prefix=$SCRATCH/target-cms-vendored/release/build/openssl-sys-cddbee0ee14879d5/out/openssl-build/install" "--openssldir=/usr/local/ssl" "no-shared" "no-module" "no-tests" "no-comp" "no-zlib" "no-zlib-dynamic" "--libdir=lib" "no-ssl3" "no-md2" "no-rc5" "no-weak-ssl-ciphers" "no-camellia" "no-idea" "no-seed" "linux-x86_64" "-O2" "-ffunction-sections" "-fdata-sections" "-fPIC" "-m64" "-w"
+note: openssl-src sets --openssldir=/usr/local/ssl unless OPENSSL_CONFIG_DIR is set, and does not pass no-autoload-config; the adapter's OPENSSL_init_crypto(OPENSSL_INIT_NO_LOAD_CONFIG) still keeps any config file unread (substrate bake-off isolation test, TESTED there for the openssl-src 3.6 build).
+artifact: native .so 6336528 B (OPENSSL_DIR build: 8619992 B)
+corpus: see results/parity.txt 'cms-vendored' (1,179/1,179 same as cms-native)
+wasm: openssl-src 400.0.1 maps only 'wasm32-wasi', 'wasm32-unknown-emscripten', 'wasm32-unknown-unknown' (src/lib.rs target table), not 'wasm32-wasip1'; the wasm routes keep the OPENSSL_DIR builds (not tried vendored).
