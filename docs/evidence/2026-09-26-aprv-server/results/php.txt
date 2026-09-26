@@ -1,0 +1,11 @@
+# PHP 8.4.19, curl 8.5.0
+cli: verifyReceipt(g5) PASS verified
+cli: verifySignedData(shared-sandbox JWS) PASS result value (not anchored by Apple roots)
+cli: verifyReceiptEndpoint(sandbox) PASS status 0
+cli: g5 11.63 ms per call (50 calls)
+cli: corpus slice 200 rows (public ops, cases then hostile): 200 identical to Node, 0 different; 9.56 ms per row
+http: verifyReceipt(g5) PASS verified
+http: verifySignedData(shared-sandbox JWS) PASS result value (not anchored by Apple roots)
+http: verifyReceiptEndpoint(sandbox) PASS status 0
+http: g5 3.56 ms per call (300 calls)
+http: corpus slice 200 rows (public ops, cases then hostile): 200 identical to Node, 0 different; 2.40 ms per row

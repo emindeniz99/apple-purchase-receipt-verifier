@@ -1,0 +1,22 @@
+# 2026-09-26 rerun with the final source: Pulley on x86_64 (aprv-spike, pulley feature, APRV_TARGET=pulley64), in-process, 1 thread; load before: 2.78 2.07 1.70
+{"op":1,"lifecycle":"pool","threads":1,"calls":40,"per_s":31.8,"p50_us":31271,"p99_us":40558,"load_ms":867.9,"source":"embedded .wasm, compiled at start"}
+{"op":258,"lifecycle":"pool","threads":1,"calls":20,"per_s":7.5,"p50_us":138916,"p99_us":148302,"load_ms":854.2,"source":"embedded .wasm, compiled at start"}
+{"op":1,"lifecycle":"fresh","threads":1,"calls":40,"per_s":18.5,"p50_us":48925,"p99_us":93507,"load_ms":824.6,"source":"embedded .wasm, compiled at start"}
+{"op":258,"lifecycle":"fresh","threads":1,"calls":20,"per_s":5.6,"p50_us":175746,"p99_us":242597,"load_ms":796.4,"source":"embedded .wasm, compiled at start"}
+# Pulley on x86_64 with 4 threads, fresh lifecycle
+{"op":1,"lifecycle":"fresh","threads":4,"calls":80,"per_s":64.4,"p50_us":58923,"p99_us":92795,"load_ms":840.0,"source":"embedded .wasm, compiled at start"}
+{"op":258,"lifecycle":"fresh","threads":4,"calls":40,"per_s":21.4,"p50_us":177215,"p99_us":232277,"load_ms":845.9,"source":"embedded .wasm, compiled at start"}
+# pulley64 .cwasm: 6399792 bytes, gzip -9 2409608, sha256 060a5fe2527ff56dca384ddbb329e4a8215d86629b6190410aec02d931b6d05e
+
+# ppc64le under qemu-user: from the ppc64le.sh run one source revision earlier (before the StoreLimits cap and the config() split; neither touches the Pulley path):
+# ELF 64-bit LSB pie executable, 64-bit PowerPC or cisco 7500; 9103776 bytes; qemu-ppc64le version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1.18)
+compiler (cranelift): false
+embedded module: true
+pinned cwasm sha256: 060a5fe2527ff56dca384ddbb329e4a8215d86629b6190410aec02d931b6d05e
+canonical wasm sha256: b14e14b2c3b8a38953c6ac03d941e42647321fdb86cfb0e3629c006687b636b3
+arch: powerpc64 os: linux
+module: embedded .cwasm, deserialized (38.5 ms)
+## aprv: listening on 127.0.0.1:34027; lifecycle fresh x1; embedded .cwasm, deserialized; load 38.7 ms, instances 14.8 ms, to ready 89.8 ms
+ok
+{"path":"/v1/receipt/verify","conns":1,"requests":22,"wall_s":10.03,"req_per_s":2.2,"p50_us":451030,"p90_us":496555,"p99_us":508281,"server_cpu_s":NaN,"per_server_cpu_s":NaN,"server_rss_peak_kb":0}
+{"path":"/spike/call/258","conns":1,"requests":10,"wall_s":11.07,"req_per_s":0.9,"p50_us":1114241,"p90_us":1163238,"p99_us":1163238,"server_cpu_s":NaN,"per_server_cpu_s":NaN,"server_rss_peak_kb":0}

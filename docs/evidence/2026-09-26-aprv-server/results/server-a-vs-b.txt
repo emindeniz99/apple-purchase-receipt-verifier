@@ -1,0 +1,14 @@
+# 2026-09-26 x86_64, 4 vCPUs; load before: 1.95 1.48 1.48
+aprv-full: runs 5; start to listening 899.7 ms; first verification 5.0 ms (then 4.28 ms warm); RSS idle 115.6 MiB, after 1 call 115.9 MiB, after 21 calls 115.9 MiB, peak 120.8 MiB
+aprv-min: runs 5; start to listening 9.8 ms; first verification 5.1 ms (then 4.29 ms warm); RSS idle 20.7 MiB, after 1 call 21.1 MiB, after 21 calls 21.2 MiB, peak 21.8 MiB
+aprv-min-side: runs 5; start to listening 21.5 ms; first verification 5.7 ms (then 4.68 ms warm); RSS idle 12.7 MiB, after 1 call 13.0 MiB, after 21 calls 13.0 MiB, peak 20.2 MiB
+## variant A (aprv-spike, lifecycle fresh): aprv: listening on 127.0.0.1:37785; lifecycle fresh x4; embedded .wasm, compiled at start; load 882.5 ms, instances 0.4 ms, to ready 883.3 ms
+receipt A {"path":"/v1/receipt/verify","conns":1,"requests":2066,"wall_s":8.02,"req_per_s":257.6,"p50_us":3703,"p90_us":4777,"p99_us":6263,"server_cpu_s":7.87,"per_server_cpu_s":262.5,"server_rss_peak_kb":120488}
+jws     A {"path":"/spike/call/258","conns":1,"requests":1068,"wall_s":8.02,"req_per_s":133.2,"p50_us":7106,"p90_us":9801,"p99_us":12628,"server_cpu_s":7.87,"per_server_cpu_s":135.7,"server_rss_peak_kb":120604}
+receipt A {"path":"/v1/receipt/verify","conns":4,"requests":5470,"wall_s":8.05,"req_per_s":679.3,"p50_us":5349,"p90_us":8411,"p99_us":12198,"server_cpu_s":23.49,"per_server_cpu_s":232.9,"server_rss_peak_kb":124588}
+jws     A {"path":"/spike/call/258","conns":4,"requests":3289,"wall_s":8.05,"req_per_s":408.4,"p50_us":8982,"p90_us":13565,"p99_us":18882,"server_cpu_s":25.17,"per_server_cpu_s":130.7,"server_rss_peak_kb":124932}
+## variant B (aprv-min-spike, lifecycle fresh): aprv: listening on 127.0.0.1:45317; lifecycle fresh x4; embedded .cwasm, deserialized; load 7.7 ms, instances 0.5 ms, to ready 8.5 ms
+receipt B {"path":"/v1/receipt/verify","conns":1,"requests":2205,"wall_s":8.02,"req_per_s":275.0,"p50_us":3607,"p90_us":3982,"p99_us":5473,"server_cpu_s":7.91,"per_server_cpu_s":278.8,"server_rss_peak_kb":22712}
+jws     B {"path":"/spike/call/258","conns":1,"requests":1118,"wall_s":8.03,"req_per_s":139.3,"p50_us":7002,"p90_us":8947,"p99_us":11627,"server_cpu_s":7.90,"per_server_cpu_s":141.5,"server_rss_peak_kb":22808}
+receipt B {"path":"/v1/receipt/verify","conns":4,"requests":5606,"wall_s":8.05,"req_per_s":696.7,"p50_us":5058,"p90_us":8270,"p99_us":11969,"server_cpu_s":23.39,"per_server_cpu_s":239.7,"server_rss_peak_kb":26792}
+jws     B {"path":"/spike/call/258","conns":4,"requests":3213,"wall_s":8.07,"req_per_s":397.9,"p50_us":9335,"p90_us":13930,"p99_us":19070,"server_cpu_s":25.62,"per_server_cpu_s":125.4,"server_rss_peak_kb":27160}

@@ -1,0 +1,17 @@
+# 2026-09-26 x86_64, 4 vCPUs (Intel(R) Xeon(R) Processor @ 2.10GHz); load before: 1.24 1.17 1.40
+## lifecycle pool: aprv: listening on 127.0.0.1:39295; lifecycle pool x4; embedded .wasm, compiled at start; load 853.8 ms, instances 0.4 ms, to ready 854.8 ms
+   idle RSS kB: 120528
+receipt pool {"path":"/v1/receipt/verify","conns":1,"requests":4603,"wall_s":8.02,"req_per_s":574.2,"p50_us":1665,"p90_us":2058,"p99_us":2840,"server_cpu_s":7.63,"per_server_cpu_s":603.3,"server_rss_peak_kb":121796}
+jws     pool {"path":"/spike/call/258","conns":1,"requests":1572,"wall_s":8.02,"req_per_s":195.9,"p50_us":4852,"p90_us":6686,"p99_us":8672,"server_cpu_s":7.81,"per_server_cpu_s":201.3,"server_rss_peak_kb":121876}
+receipt pool {"path":"/v1/receipt/verify","conns":2,"requests":8395,"wall_s":8.02,"req_per_s":1046.6,"p50_us":1791,"p90_us":2508,"p99_us":3520,"server_cpu_s":14.71,"per_server_cpu_s":570.7,"server_rss_peak_kb":123140}
+jws     pool {"path":"/spike/call/258","conns":2,"requests":3053,"wall_s":8.02,"req_per_s":380.7,"p50_us":5010,"p90_us":6751,"p99_us":8882,"server_cpu_s":15.31,"per_server_cpu_s":199.4,"server_rss_peak_kb":123212}
+receipt pool {"path":"/v1/receipt/verify","conns":4,"requests":12944,"wall_s":8.03,"req_per_s":1612.0,"p50_us":2133,"p90_us":3762,"p99_us":5639,"server_cpu_s":21.57,"per_server_cpu_s":600.1,"server_rss_peak_kb":125512}
+jws     pool {"path":"/spike/call/258","conns":4,"requests":4894,"wall_s":8.06,"req_per_s":607.5,"p50_us":5918,"p90_us":9479,"p99_us":12911,"server_cpu_s":24.26,"per_server_cpu_s":201.7,"server_rss_peak_kb":125624}
+## lifecycle fresh: aprv: listening on 127.0.0.1:36353; lifecycle fresh x4; embedded .wasm, compiled at start; load 888.6 ms, instances 0.5 ms, to ready 889.4 ms
+   idle RSS kB: 118488
+receipt fresh {"path":"/v1/receipt/verify","conns":1,"requests":2021,"wall_s":8.02,"req_per_s":252.1,"p50_us":3725,"p90_us":5277,"p99_us":6378,"server_cpu_s":7.82,"per_server_cpu_s":258.4,"server_rss_peak_kb":119792}
+jws     fresh {"path":"/spike/call/258","conns":1,"requests":1124,"wall_s":8.02,"req_per_s":140.2,"p50_us":7025,"p90_us":7513,"p99_us":12298,"server_cpu_s":7.91,"per_server_cpu_s":142.1,"server_rss_peak_kb":119896}
+receipt fresh {"path":"/v1/receipt/verify","conns":2,"requests":3881,"wall_s":8.02,"req_per_s":484.1,"p50_us":3951,"p90_us":5140,"p99_us":7407,"server_cpu_s":15.66,"per_server_cpu_s":247.8,"server_rss_peak_kb":121100}
+jws     fresh {"path":"/spike/call/258","conns":2,"requests":2169,"wall_s":8.02,"req_per_s":270.5,"p50_us":7209,"p90_us":8805,"p99_us":12454,"server_cpu_s":15.76,"per_server_cpu_s":137.6,"server_rss_peak_kb":121208}
+receipt fresh {"path":"/v1/receipt/verify","conns":4,"requests":5719,"wall_s":8.05,"req_per_s":710.7,"p50_us":4906,"p90_us":8092,"p99_us":11762,"server_cpu_s":23.59,"per_server_cpu_s":242.4,"server_rss_peak_kb":123924}
+jws     fresh {"path":"/spike/call/258","conns":4,"requests":3376,"wall_s":8.05,"req_per_s":419.2,"p50_us":8725,"p90_us":13091,"p99_us":17834,"server_cpu_s":25.62,"per_server_cpu_s":131.8,"server_rss_peak_kb":124272}

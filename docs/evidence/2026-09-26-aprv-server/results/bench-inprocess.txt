@@ -1,0 +1,10 @@
+# 2026-09-26 x86_64, 4 vCPUs; load before: 1.10 1.47 1.53
+{"op":1,"lifecycle":"pool","threads":1,"calls":300,"per_s":793.4,"p50_us":1225,"p99_us":1710,"load_ms":825.4,"source":"embedded .wasm, compiled at start"}
+{"op":1,"lifecycle":"fresh","threads":1,"calls":300,"per_s":358.9,"p50_us":2812,"p99_us":3159,"load_ms":800.6,"source":"embedded .wasm, compiled at start"}
+{"op":1,"lifecycle":"fresh-pooling","threads":1,"calls":300,"per_s":289.0,"p50_us":3282,"p99_us":5283,"load_ms":759.9,"source":"embedded .wasm, compiled at start"}
+{"op":258,"lifecycle":"pool","threads":1,"calls":200,"per_s":189.3,"p50_us":4396,"p99_us":9050,"load_ms":900.2,"source":"embedded .wasm, compiled at start"}
+{"op":258,"lifecycle":"fresh","threads":1,"calls":200,"per_s":150.9,"p50_us":6587,"p99_us":7537,"load_ms":813.1,"source":"embedded .wasm, compiled at start"}
+{"op":1,"lifecycle":"pool","threads":2,"calls":600,"per_s":1447.6,"p50_us":1317,"p99_us":1853,"load_ms":859.0,"source":"embedded .wasm, compiled at start"}
+{"op":1,"lifecycle":"fresh","threads":2,"calls":600,"per_s":595.0,"p50_us":3197,"p99_us":5025,"load_ms":795.7,"source":"embedded .wasm, compiled at start"}
+{"op":1,"lifecycle":"pool","threads":4,"calls":1200,"per_s":2773.1,"p50_us":1335,"p99_us":1861,"load_ms":847.9,"source":"embedded .wasm, compiled at start"}
+{"op":1,"lifecycle":"fresh","threads":4,"calls":1200,"per_s":932.2,"p50_us":3829,"p99_us":8169,"load_ms":781.8,"source":"embedded .wasm, compiled at start"}

@@ -1,0 +1,16 @@
+# 2026-09-26 x86_64, 4 vCPUs; load before: 0.85 1.09 1.38
+# file | raw | stripped | gzip -9 of stripped | xz -9 of stripped   (bytes)
+aprv-full | 16912600 | 14455192 | 5065681 | 3597656
+aprv-min | 10793512 | 10315096 | 3582068 | 2726552
+aprv-min-side | 2343904 | 1865512 | 843498 | 659664
+aprv-cli | 9816664 | 9553216 | 3236062 | 2458828
+aprv-abi1.cwasm (side file, shipped as built) | 8449864 | - | 2738871 | 2072024
+aprv-abi1.wasm (canonical) | 2952613 | - | 968850 | 749224
+# ldd aprv-min:
+linux-vdso.so.1
+libgcc_s.so.1
+libm.so.6
+libc.so.6
+/lib64/ld-linux-x86-64.so.2
+# sha256: wasm b14e14b2c3b8a38953c6ac03d941e42647321fdb86cfb0e3629c006687b636b3, cwasm 31ca2603abcac8e266e5b55f6fe8fb35ff9ae0e917e5f88ccd725603e6147b28
+# cwasm: ELF 64-bit LSB relocatable, x86-64, version 1, not stripped

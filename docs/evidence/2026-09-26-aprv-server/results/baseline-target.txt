@@ -1,0 +1,6 @@
+# 2026-09-26 x86_64, 4 vCPUs; load before: 0.85 1.54 1.55
+wrote aprv-abi1.x86_64-baseline.cwasm: 8458112 bytes, sha256 d14a8819e751f2414cd3af4ad18c9ef162f0217049a79aee8a7ab7316e13b562
+host-feature precompile: 8449864 bytes, sha256 31ca2603abcac8e266e5b55f6fe8fb35ff9ae0e917e5f88ccd725603e6147b28
+module: embedded .cwasm, deserialized (8.1 ms)
+receipt B-baseline {"path":"/v1/receipt/verify","conns":1,"requests":2068,"wall_s":8.02,"req_per_s":257.8,"p50_us":3757,"p90_us":4584,"p99_us":5922,"server_cpu_s":7.79,"per_server_cpu_s":265.5,"server_rss_peak_kb":22800}
+jws     B-baseline {"path":"/spike/call/258","conns":1,"requests":1114,"wall_s":8.02,"req_per_s":138.9,"p50_us":7098,"p90_us":8280,"p99_us":11175,"server_cpu_s":7.88,"per_server_cpu_s":141.4,"server_rss_peak_kb":22896}
