@@ -1,0 +1,14 @@
+# Bytecode size per generated method of AprvModuleMachineFuncGroup_0 (every compiled wasm function lives there)
+methods: 16959
+above 8000 bytes: 6
+above 32000 bytes: 0
+above 65535 bytes: 0
+## largest
+14274 _RNvCsl9m94s0AQmK_35apple_purchase_receipt_verifier_ffi8jws_call_195
+10543 printf_core_8437
+10093 _RINvXNtNtCs17VaDaMLmGO_10serde_json5value3serNtB5_5ValueNtNtCsXulD6fI3tt_10serde_core3ser9Serialize
+9996 ossl_sm3_block_data_order_5341
+8974 aprv_verify_receipt_endpoint_json_224
+8385 ge_double_scalarmult_vartime_1798
+7990 blake2b_compress_5029
+7469 _RINvXNtNtCs17VaDaMLmGO_10serde_json5value2deNtB5_5ValueNtNtCsXulD6fI3tt_10serde_core2de11Deserializ

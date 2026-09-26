@@ -1,0 +1,21 @@
+# 2026-09-26 x86_64, 4 cores. One thread, one instance. warm=1000 then n=500 timed calls of the same row.
+# init_ms: first AprvWasm (class loading + instantiation + _initialize + aprv_init); first_call_ms: first verification (includes JIT warm-up).
+jdk17 memory=default {"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","code":0,"java":"17.0.20.1","init_ms":348.72,"first_call_ms":244.27,"warm":1000,"n":500,"mean_us":9065.52,"median_us":9049.6,"p99_us":16313.44,"per_s":110,"memory_bytes":2097152}
+jdk17 memory=default {"id":"transaction/verify-shared-sandbox","code":0,"java":"17.0.20.1","init_ms":311.6,"first_call_ms":340.89,"warm":1000,"n":500,"mean_us":28596.06,"median_us":27744.71,"p99_us":46139.51,"per_s":35,"memory_bytes":2162688}
+jdk17 memory=bytearray {"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","code":0,"java":"17.0.20.1","init_ms":321.11,"first_call_ms":166.62,"warm":1000,"n":500,"mean_us":6968.11,"median_us":6852.98,"p99_us":12435.49,"per_s":144,"memory_bytes":2097152}
+jdk17 memory=bytearray {"id":"transaction/verify-shared-sandbox","code":0,"java":"17.0.20.1","init_ms":342.95,"first_call_ms":324.05,"warm":1000,"n":500,"mean_us":23338.45,"median_us":22483.36,"p99_us":37134.07,"per_s":43,"memory_bytes":2162688}
+jdk21 memory=default {"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","code":0,"java":"21.0.10","init_ms":339.84,"first_call_ms":186.74,"warm":1000,"n":500,"mean_us":9521.41,"median_us":9057.77,"p99_us":15781.88,"per_s":105,"memory_bytes":2097152}
+jdk21 memory=default {"id":"transaction/verify-shared-sandbox","code":0,"java":"21.0.10","init_ms":376.38,"first_call_ms":330.8,"warm":1000,"n":500,"mean_us":27878.21,"median_us":27712.24,"p99_us":49390.7,"per_s":36,"memory_bytes":2162688}
+jdk21 memory=bytearray {"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","code":0,"java":"21.0.10","init_ms":282.11,"first_call_ms":194.11,"warm":1000,"n":500,"mean_us":6523.11,"median_us":6080.41,"p99_us":9800.65,"per_s":153,"memory_bytes":2097152}
+jdk21 memory=bytearray {"id":"transaction/verify-shared-sandbox","code":0,"java":"21.0.10","init_ms":398.87,"first_call_ms":335.31,"warm":1000,"n":500,"mean_us":21962.71,"median_us":20522.86,"p99_us":31969.27,"per_s":46,"memory_bytes":2162688}
+jdk25 memory=default {"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","code":0,"java":"25.0.4.1","init_ms":364.13,"first_call_ms":182.27,"warm":1000,"n":500,"mean_us":8706.0,"median_us":8542.22,"p99_us":14645.86,"per_s":115,"memory_bytes":2097152}
+jdk25 memory=default {"id":"transaction/verify-shared-sandbox","code":0,"java":"25.0.4.1","init_ms":340.11,"first_call_ms":305.53,"warm":1000,"n":500,"mean_us":29379.29,"median_us":28081.28,"p99_us":48586.32,"per_s":34,"memory_bytes":2162688}
+jdk25 memory=bytearray {"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","code":0,"java":"25.0.4.1","init_ms":334.79,"first_call_ms":163.42,"warm":1000,"n":500,"mean_us":5862.41,"median_us":5687.37,"p99_us":9787.81,"per_s":171,"memory_bytes":2097152}
+jdk25 memory=bytearray {"id":"transaction/verify-shared-sandbox","code":0,"java":"25.0.4.1","init_ms":331.37,"first_call_ms":360.97,"warm":1000,"n":500,"mean_us":19933.97,"median_us":19212.97,"p99_us":31397.6,"per_s":50,"memory_bytes":2162688}
+# Node v22.22.2, the bake-off's js/run.mjs --host trap --bench (1000 calls after min(200, n) warm-up) on the same new-c.wasm
+node {"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","code":0,"n":1000,"init_ms":11.89,"first_call_ms":20.59,"mean_us":1264.8,"memory_after_init":1769472,"memory_bytes":2097152}
+node {"id":"transaction/verify-shared-sandbox","code":0,"n":1000,"init_ms":11.32,"first_call_ms":43.21,"mean_us":4264.9,"memory_after_init":1769472,"memory_bytes":2162688}
+# instance creation (AprvWasm.create: instantiate + _initialize + aprv_init), 10 in a row in one JVM; the first also loads the classes and parses .meta
+jdk17 {"java":"17.0.20.1","create_ms":[377.6,3.11,2.57,2.54,3.64,3.19,3.14,5.52,1.82,1.97],"total_ms":406.49}
+jdk21 {"java":"21.0.10","create_ms":[376.51,4.0,3.91,3.46,3.15,3.13,3.07,2.98,2.97,25.61],"total_ms":429.61}
+jdk25 {"java":"25.0.4.1","create_ms":[344.48,3.27,2.92,2.92,2.26,1.78,1.76,4.13,2.19,2.76],"total_ms":369.62}

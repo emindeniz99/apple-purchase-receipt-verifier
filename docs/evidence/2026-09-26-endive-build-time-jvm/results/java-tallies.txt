@@ -1,0 +1,9 @@
+# $SPIKE/py/tri.py, 2026-09-26. Columns per corpus: agree cand=java cand=rust cand-own abi. Java rows: JDK 25.0.4.1 + BC 1.86 (reused).
+# java-equal = agree + cand=java over the 1,048 rows the C ABI can express. 'same' = identical to round 4's base tallies.
+run                      cases              substrate          hostile              algorithms       java-equal  vs-base
+round-4 base (native)    153 0 0 0 0        167 21 2 3 0       655 10 12 3 131    8 14 0 0 0          1028        same
+endive jdk11             153 0 0 0 0        167 21 2 3 0       655 10 12 3 131    8 14 0 0 0          1028        same
+endive jdk17             153 0 0 0 0        167 21 2 3 0       655 10 12 3 131    8 14 0 0 0          1028        same
+endive jdk21             153 0 0 0 0        167 21 2 3 0       655 10 12 3 131    8 14 0 0 0          1028        same
+endive jdk25             153 0 0 0 0        167 21 2 3 0       655 10 12 3 131    8 14 0 0 0          1028        same
+endive jdk25-bytearray   153 0 0 0 0        167 21 2 3 0       655 10 12 3 131    8 14 0 0 0          1028        same

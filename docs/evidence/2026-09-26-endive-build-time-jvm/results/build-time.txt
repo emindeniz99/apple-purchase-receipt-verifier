@@ -1,0 +1,4 @@
+run 1: mvn validate 1322 ms, mvn generate-sources (endive:compile) 4156 ms, difference 2834 ms
+run 2: mvn validate 1118 ms, mvn generate-sources (endive:compile) 4670 ms, difference 3551 ms
+run 3: mvn validate 1249 ms, mvn generate-sources (endive:compile) 4230 ms, difference 2981 ms
+generated: 30 classes, 5716 KiB

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Spike only (2026-09-26). A clean consumer: it knows nothing about Rust,
+  OpenSSL, wasm or the Endive compiler plugin. It depends on the generated
+  library the ordinary way, from a Maven repository.
+
+  scripts/build.sh publishes the library to a file-based repository
+  ($SCRATCH/endive/remote-repo, standing in for Maven Central or a company
+  repository) and builds this project with its own empty local repository,
+  so everything it resolves is recorded (results/consumer-repo.txt).
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>spike.consumer</groupId>
+  <artifactId>aprv-endive-consumer</artifactId>
+  <version>0.0.0-spike</version>
+  <packaging>jar</packaging>
+
+  <properties>
+    <maven.compiler.release>11</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <spike.repo.url>MISSING-pass-Dspike.repo.url</spike.repo.url>
+  </properties>
+
+  <repositories>
+    <repository>
+      <id>spike-repo</id>
+      <url>${spike.repo.url}</url>
+    </repository>
+  </repositories>
+
+  <dependencies>
+    <!-- The one dependency. -->
+    <dependency>
+      <groupId>spike.aprv</groupId>
+      <artifactId>aprv-endive</artifactId>
+      <version>0.0.0-spike</version>
+    </dependency>
+    <!-- The throwaway out-of-bounds module for the trap test, built the same way. -->
+    <dependency>
+      <groupId>spike.aprv</groupId>
+      <artifactId>trap-probe</artifactId>
+      <version>0.0.0-spike</version>
+    </dependency>
+  </dependencies>
+</project>

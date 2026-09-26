@@ -1,0 +1,37 @@
+# 2026-09-26. Maven Central, group run.endive (the fork of com.dylibso.chicory)
+## artifacts in the group
+annotations/ annotations-processor/ bom/ build-time-compiler/ build-time-compiler-cli-experimental/ cli-experimental/ codegen/ compiler/ dircache-experimental/ endive/ endive-compiler-maven-plugin/ log/ redline-api-experimental/ redline-bridge-experimental/ redline-build-time-compiler-experimental/ redline-compiler-experimental/ redline-parent-experimental/ redline-runner-experimental/ redline-runner-jffi-experimental/ runtime/ simd/ wabt/ wasi/ wasm/ wasm-tools/ 
+runtime: 1.1.0 20260903182541 (release, lastUpdated)
+wasm: 1.1.0 20260903182543 (release, lastUpdated)
+endive-compiler-maven-plugin: 1.1.0 20260903182540 (release, lastUpdated)
+build-time-compiler: 1.1.0 20260903182526 (release, lastUpdated)
+compiler: 1.1.0 20260903182539 (release, lastUpdated)
+wasi: 1.1.0 20260903182544 (release, lastUpdated)
+redline-runner-experimental: 1.1.0 20260903182543 (release, lastUpdated)
+## last com.dylibso.chicory release: 1.7.5 20260324180209 
+## endive/1.1.0/endive-1.1.0.pom: non-test dependencies, licence, compiler release
+dependencies: none
+licence: Apache-2.0
+maven.compiler.release: 11
+## runtime/1.1.0/runtime-1.1.0.pom: non-test dependencies, licence, compiler release
+dependencies: run.endive:wasm
+## wasm/1.1.0/wasm-1.1.0.pom: non-test dependencies, licence, compiler release
+dependencies: none
+## endive-compiler-maven-plugin/1.1.0/endive-compiler-maven-plugin-1.1.0.pom: non-test dependencies, licence, compiler release
+dependencies: run.endive:build-time-compiler, run.endive:compiler, run.endive:redline-build-time-compiler-experimental, org.apache.maven:maven-core:provided, org.apache.maven:maven-model:provided, org.apache.maven:maven-plugin-api:provided, org.apache.maven.plugin-tools:maven-plugin-annotations:provided
+## endive.run/llms-full.txt (104085 bytes, sha256 2f9aa56935efa593): quoted lines
+10:Endive requires **Java 11** or later. SIMD support requires Java 21+.
+62:`Instance` and `Store` are not thread-safe. Create separate instances per thread, or synchronize access externally. Memory operations (used by the Wasm threads proposal) are thread-safe.
+153:Endive requires **Java 11** or later.
+449:- The current `Store` is a mutable object, not meant to be shared (it is not thread-safe).
+483:The compiler translates Wasm to JVM bytecode without post-compilation verification. When compiling untrusted modules, prefer the interpreter for higher assurance, or run compiled code in an isolated classloader. See [Security Model](/docs/security/overview
+635:The compiler translates Wasm to JVM bytecode without post-compilation verification. Only compile Wasm modules you trust. See [Security Model](/docs/security/overview).
+649:- fewer runtime dependencies: ASM is only needed at build time
+658:Since interpreted functions have worse performance, we want to make sure you are aware this is happening so the build time compiler will FAIL if it finds any functions that are too large.  The build tool will produce a message that contains text like:
+676:  <methodPrefixer>run.endive.compiler.NameSectionMethodPrefixer</methodPrefixer>
+773:    interpreterFallback (Default: FAIL)
+781:      it to run.endive.compiler.NameSectionMethodPrefixer to name them after
+1644:- `ByteArrayMemory`: An optimized memory implementation, recommended for recent OpenJDK systems
+2048:Bytecode is always generated alongside the native code and takes over wherever native code is not
+2277:It's an ugly hack, but it keeps the user mostly safe. We [extended it](https://github.com/dylibso/chicory/pull/1178) to cover all affected code paths and added a CI test using a large Wasm module to catch regressions. The workaround only activates on Java
+2358:The fix is surgical: a `_safe_for_fold_compare` flag. When `do_split_if()` modifies an uncommon trap, it marks it as unsafe for if-folding. The fold_compares optimization checks this flag before proceeding. 369 additions (mostly tests), 3 deletions. The f

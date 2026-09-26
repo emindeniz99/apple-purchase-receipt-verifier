@@ -1,0 +1,78 @@
+# Native-code check, 2026-09-26. Consumer classpath: aprv-endive-0.0.0-spike.jar runtime-1.1.0.jar wasm-1.1.0.jar trap-probe-0.0.0-spike.jar 
+## native libraries inside any jar on the consumer classpath (.so .dll .dylib .jnilib)
+aprv-endive-0.0.0-spike.jar: 0
+runtime-1.1.0.jar: 0
+wasm-1.1.0.jar: 0
+trap-probe-0.0.0-spike.jar: 0
+## calls into native loading or foreign-function APIs, in any class on the consumer classpath (javap -c -p, counted)
+classes disassembled: 229
+java/lang/System.load: 0
+java/lang/System.loadLibrary: 0
+java/lang/Runtime.load: 0
+java/lang/foreign: 0
+jdk/internal/foreign: 0
+com/sun/jna: 0
+com/kenai/jffi: 0
+jnr/ffi: 0
+sun/misc/Unsafe: 0
+jdk/internal/misc/Unsafe: 0
+ native : 0
+## native methods declared (javap -p, 'native' modifier)
+0
+## JDK 17: shared objects mapped into the process (/proc/self/maps), baseline (no instance) vs after verifying all of cases.jsonl
+baseline: classes.jsa ld-linux-x86-64.so.2 libc.so.6 libdl.so.2 libjava.so libjimage.so libjli.so libjsvml.so libjvm.so libm.so.6 libnet.so libnio.so libpthread.so.0 librt.so.1 
+added by verification: libzip.so 
+## JDK 17: classes loaded during a verification run (-verbose:class), by origin
+    790 CDS archive (the JDK itself)
+    196 java.base
+     88 wasm-1.1.0.jar
+     53 __JVM_LookupDefineClass__
+     35 runtime-1.1.0.jar
+     21 run.endive.wasm.Validator
+     17 aprv-endive-0.0.0-spike.jar
+      9 run.endive.runtime.Instance
+      9 run.endive.runtime.ByteBufferMemory
+      7 run.endive.runtime.MemCopyWorkaround
+      5 spike.aprv.endive.AprvWasm
+      4 run.endive.wasm.Parser
+run.endive classes loaded: 178; InterpreterMachine loaded: 0; run.endive.compiler.* loaded: 0; jdk.internal.foreign/java.lang.foreign loaded: 0
+java.lang.foreign / jdk.internal.foreign classes, verification run: 
+the same, a JVM that creates no instance (Main maps): 
+## JDK 21: shared objects mapped into the process (/proc/self/maps), baseline (no instance) vs after verifying all of cases.jsonl
+baseline: classes.jsa ld-linux-x86-64.so.2 libc.so.6 libgcc_s.so.1 libjava.so libjimage.so libjli.so libjsvml.so libjvm.so libm.so.6 libnet.so libnio.so libstdc++.so.6.0.33 libz.so.1.3 
+added by verification: libzip.so 
+## JDK 21: classes loaded during a verification run (-verbose:class), by origin
+    837 CDS archive (the JDK itself)
+    172 java.base
+     88 wasm-1.1.0.jar
+     80 __JVM_LookupDefineClass__
+     33 runtime-1.1.0.jar
+     21 run.endive.wasm.Validator
+     17 aprv-endive-0.0.0-spike.jar
+      9 run.endive.runtime.Instance
+      9 run.endive.runtime.ByteBufferMemory
+      5 spike.aprv.endive.AprvWasm
+      4 run.endive.wasm.Parser
+      3 java.util.stream.Collectors
+run.endive classes loaded: 169; InterpreterMachine loaded: 0; run.endive.compiler.* loaded: 0; jdk.internal.foreign/java.lang.foreign loaded: 6
+java.lang.foreign / jdk.internal.foreign classes, verification run: jdk.internal.foreign.abi.NativeEntryPoint jdk.internal.foreign.abi.ABIDescriptor jdk.internal.foreign.abi.VMStorage jdk.internal.foreign.abi.UpcallLinker$CallRegs java.lang.foreign.MemorySegment$Scope jdk.internal.foreign.MemorySessionImpl 
+the same, a JVM that creates no instance (Main maps): jdk.internal.foreign.abi.NativeEntryPoint jdk.internal.foreign.abi.ABIDescriptor jdk.internal.foreign.abi.VMStorage jdk.internal.foreign.abi.UpcallLinker$CallRegs 
+## JDK 25: shared objects mapped into the process (/proc/self/maps), baseline (no instance) vs after verifying all of cases.jsonl
+baseline: classes.jsa ld-linux-x86-64.so.2 libc.so.6 libdl.so.2 libjava.so libjimage.so libjli.so libjvm.so libm.so.6 libnet.so libnio.so libpthread.so.0 librt.so.1 libsimdsort.so 
+added by verification: libzip.so 
+## JDK 25: classes loaded during a verification run (-verbose:class), by origin
+    965 CDS archive (the JDK itself)
+    127 java.base
+     88 wasm-1.1.0.jar
+     33 runtime-1.1.0.jar
+     21 run.endive.wasm.Validator
+     18 __JVM_LookupDefineClass__
+     17 aprv-endive-0.0.0-spike.jar
+      9 run.endive.runtime.Instance
+      9 run.endive.runtime.ByteBufferMemory
+      5 spike.aprv.endive.AprvWasm
+      4 run.endive.wasm.Parser
+      3 java.util.stream.Collectors
+run.endive classes loaded: 169; InterpreterMachine loaded: 0; run.endive.compiler.* loaded: 0; jdk.internal.foreign/java.lang.foreign loaded: 7
+java.lang.foreign / jdk.internal.foreign classes, verification run: jdk.internal.foreign.abi.NativeEntryPoint jdk.internal.foreign.abi.ABIDescriptor jdk.internal.foreign.abi.VMStorage jdk.internal.foreign.abi.UpcallLinker$CallRegs java.lang.foreign.MemorySegment java.lang.foreign.MemorySegment$Scope jdk.internal.foreign.MemorySessionImpl 
+the same, a JVM that creates no instance (Main maps): jdk.internal.foreign.abi.NativeEntryPoint jdk.internal.foreign.abi.ABIDescriptor jdk.internal.foreign.abi.VMStorage jdk.internal.foreign.abi.UpcallLinker$CallRegs 
