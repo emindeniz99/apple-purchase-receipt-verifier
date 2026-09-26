@@ -42,11 +42,14 @@ independent checking survives.
 ## R2. Binding toolset
 
 **Status: owner-stated, confirmed by the spikes.** The JavaScript row
-changed on 2026-09-26 with R21: wasm-bindgen is dropped.
+changed on 2026-09-26 with R21: wasm-bindgen is dropped. The Java rows
+changed the same day with R18's two artifacts: Endive for Java 11+,
+UniFFI for Java 8.
 
 | Use | Tool | Why |
 |---|---|---|
-| Kotlin/JVM, Swift, Python | **UniFFI** 0.32 (Mozilla) | Built for one Rust core with many foreign bindings. Firefox ships it. First-party Kotlin, Swift and Python. Java 8 works (spike). Doc comments propagate. |
+| Java 8 artifact (Kotlin over JNA), Swift, Python | **UniFFI** 0.32 (Mozilla) | Built for one Rust core with many foreign bindings. Firefox ships it. First-party Kotlin, Swift and Python. Java 8 works (spike). Doc comments propagate. |
+| Java 11+ (the main Maven artifact) | **`aprv.wasm` compiled to JVM bytecode at build time by Endive** (`run.endive:endive-compiler-maven-plugin`, runtime `run.endive:runtime` + `run.endive:wasm`, Apache-2.0; 1.1.0 in the evidence), behind the same Java façade as the Java 8 artifact (R18) | No native code in the JVM. Same answers as native on 1,179 of 1,179 corpus rows and 5,000 of 5,000 mutants on JDK 11, 17, 21 and 25 ([Endive build-time JVM §1, §5](../evidence/2026-09-26-endive-build-time-jvm.md)). |
 | JavaScript | **one plain wasm module**, `aprv.wasm`, with a hand-written JS façade (about 100 lines) and a hand-written `index.d.ts` | The core now links OpenSSL (R21). `wasm32-unknown-unknown`, the target wasm-bindgen needs, cannot build `openssl-sys`, so `aprv.wasm` is a `wasm32-wasip1` build that imports two functions (R21, [wasm bake-off §6](../evidence/2026-09-26-wasm-architecture-bakeoff.md)). Go runs the same file. |
 | C and everything else | explicit `extern "C"` + **cbindgen** | Already exists, 20 symbols, tested on three OSes. |
 | Go | wazero (R6) | cgo-free. 1Password's Go SDK runs its Rust core the same way. |
@@ -62,8 +65,8 @@ Rejected, with the trigger that would reopen each:
 | Emscripten | It works: 1,179 of 1,179 rows on 7 hosts for OpenSSL. It needs legacy exceptions, starts with about 18 MB of linear memory, ships 12.8 to 78.9 KB of generated glue, and workerd needs a second web-only glue ([wasm bake-off §7](../evidence/2026-09-26-wasm-architecture-bakeoff.md)). | A host runs Emscripten output and not a plain wasm2 core module. |
 | Component Model with jco, for npm | It works on 8 hosts, and adds 202,031 to 236,337 B of generated glue (`aprv.js`) to do what the 100-line façade does ([wasm bake-off §8, §20](../evidence/2026-09-26-wasm-architecture-bakeoff.md)). The WIT file stays in the evidence as a future option for native Component Model hosts such as Wasmtime. | A package targets a native Component Model host. |
 | uniffi-bindgen-java (IronCore) | FFM API, needs Java 22+, "currently unstable". | The Java floor rises to 22. |
-| Chicory (pure-Java wasm) | Java 11 floor. Measured 18.5 ms per receipt with its compiler (975 ms interpreted), against 0.70 ms for UniFFI on the same JDK. | The Java floor rises to 11 and a 28x slowdown becomes acceptable. |
-| Wasm everywhere (one `.wasm` run by Chicory, wasmtime-py, WasmKit, wazero) | One artifact instead of a native matrix, but: JVM 28x slower and Java 11+; wasmtime-py is itself a native wheel, so Python gains nothing; Swift has only interpreters. Wasm stays where no native option exists (JS) or where native breaks the deployment model (Go, R6). | A JVM or Python wasm runtime reaches near-native speed without native code of its own. |
+| Chicory (pure-Java wasm), runtime compiler or interpreter | Java 11 floor. Measured 18.5 ms per receipt with its compiler (975 ms interpreted), against 0.70 ms for UniFFI on the same JDK. | **Reopened 2026-09-26 in a different form:** Endive, the Bytecode Alliance fork of Chicory, compiles `aprv.wasm` at build time and carries the Java 11+ artifact (R18). The runtime compiler and the interpreter stay unused. |
+| Wasm everywhere (one `.wasm` run by Chicory, wasmtime-py, WasmKit, wazero) | One artifact instead of a native matrix, but: JVM 28x slower and Java 11+ (the JVM part changed on 2026-09-26: Java 11+ runs `aprv.wasm` through Endive, R18); wasmtime-py is itself a native wheel, so Python gains nothing; Swift has only interpreters. Wasm stays where no native option exists (JS) or where native breaks the deployment model (Go, R6). | A JVM or Python wasm runtime reaches near-native speed without native code of its own. |
 | GraalWasm | JDK 21 floor. Needs JVMCI for speed. | Never, for a library. |
 | safer-ffi | Still alpha. Overlaps cbindgen, and our ABI is small. | The C ABI grows callbacks, foreign-owned buffers or many object types. |
 | Diplomat (ICU4X) | No production Swift backend for our needs, and no Java 8. | It gains both. |
@@ -111,6 +114,11 @@ copies per redeploy, while jni-rs with a unique-name loader leaks nothing.
 Decision: UniFFI on the Java 8 floor with a thin Java façade (R18). jni-rs
 stays the fallback engine behind the same façade. Revisit FFM when the
 floor reaches 22.
+
+Amended by the owner on 2026-09-26: the main Java artifact moves to Java
+11+ and runs `aprv.wasm` as JVM bytecode through Endive; UniFFI stays the
+engine of a separate Java 8 artifact. R18's "Two Java artifacts" has the
+details.
 
 ---
 
@@ -264,8 +272,9 @@ R1.
 Decision: **B until 1.0**, then decide again with a year of differential
 data. The harness downloads the 0.7.x jar from Maven Central, pinned by
 version and checksum. No copy of the Java verifier's source stays in the
-repository for this. The Java package itself still becomes the UniFFI
-binding (R18). Java/Bouncy Castle is a reference, not the target: R20 says
+repository for this. The Java packages themselves become bindings: the
+main artifact runs `aprv.wasm` through Endive, the `-java8` artifact runs
+UniFFI (R18). Java/Bouncy Castle is a reference, not the target: R20 says
 what a difference means.
 
 The first form of this record (2026-09-25) kept today's Java code under
@@ -295,8 +304,9 @@ A later demand for Ruby, PHP or .NET gets a binding over the C ABI
 - **Ruby:** UniFFI's built-in backend worked in the spike (evidence row
   17). Shipping it means a native gem per platform plus CI legs. The gem
   was never published, so no user is waiting: add it when someone asks.
-- **Kotlin:** comes with the JVM package; the Maven artifact is Kotlin
-  underneath.
+- **Kotlin:** Kotlin code calls the Java façade of either Java artifact.
+  Since 2026-09-26 only the `-java8` artifact is Kotlin underneath; the
+  main artifact is Endive bytecode (R18).
 - **React Native, Flutter, Kotlin Multiplatform:** out of scope. These are
   app frameworks, and INTENT.md puts on-device validation out of scope: an
   attacker controls the device, so the check belongs on a backend.
@@ -325,7 +335,7 @@ the missing clock, and with a clock seam the same module answered all
 | B. `web-time` crate | The same idea through a dependency last released 2024-03-01. No gain. |
 | C. Take `now` as a parameter on the verifiers | Breaks §3.5: a caller could accept an expired chain. |
 | D. Leave it | Traps (spike). |
-| **E. On wasm, `system_now()` reads the `aprv.clock_now_ms` import** | **Chosen** (SURFACE.md §4.1). The host supplies it: `Date.now()` in the JS façade, the wall clock in Go. Callers still cannot move the validity instant (THREAT-MODEL §3.5): the host's clock replaces the OS clock, the same trust level as `SystemTime::now()`. OpenSSL's own `time()` calls resolve to the same import through the link-time C file (wasm bake-off §4). |
+| **E. On wasm, `system_now()` reads the `aprv.clock_now_ms` import** | **Chosen** (SURFACE.md §4.1). The host supplies it: `Date.now()` in the JS façade, the wall clock in Go, `System.currentTimeMillis()` in the Java 11+ façade (R18). Callers still cannot move the validity instant (THREAT-MODEL §3.5): the host's clock replaces the OS clock, the same trust level as `SystemTime::now()`. OpenSSL's own `time()` calls resolve to the same import through the link-time C file (wasm bake-off §4). |
 
 ---
 
@@ -356,7 +366,10 @@ history:
 ## R12. Native artifacts: targets and trust
 
 **Status: accepted by the owner on 2026-09-25.** Evidence: "Which platforms other native
-libraries ship" and the Temurin table in the spike notes.
+libraries ship" and the Temurin table in the spike notes. The JVM rows
+were revised by the owner on 2026-09-26 with R18's two artifacts: the Java
+8 jar carries 9 natives, the other Java 8 platforms get a library on
+GitHub Releases, and the main Java artifact (Java 11+) carries none.
 
 **The rule.** A target is in when all three hold:
 1. stable Rust ships a prebuilt standard library for it (checked against
@@ -372,21 +385,27 @@ libraries ship" and the Temurin table in the spike notes.
 musl builds follow Alpine, the only common musl distribution: one for
 each Alpine architecture that stable Rust can build.
 
-**Per package.** Three packages carry natives (Maven, PyPI, SwiftPM),
-besides the C ABI archives on GitHub Releases. npm and Go run the wasm
-build, which is the same file on every platform.
+**Per package.** Three packages carry natives (the Java 8 Maven
+artifact, PyPI, SwiftPM), besides the C ABI archives and the Java 8
+libraries on GitHub Releases. npm, Go and the main Java artifact run the
+wasm build, the same file on every platform; the Java artifact ships it
+compiled to JVM bytecode (R18).
 
 | Package | Targets | Count |
 |---|---|---:|
 | C ABI archives (GitHub Releases) | every target the rule admits | 26 |
-| JVM jar | the C ABI targets JNA can load; musl x86_64 and aarch64, plus the Alpine OpenJDK musl targets that pass the QEMU gate (open item 2) | 18 to 22 |
+| Java 11+, main Maven artifact | none: `aprv.wasm` compiled to JVM bytecode by Endive (R18) | 0 |
+| Java 8 artifact (`-java8`) jar | Linux x86-64, aarch64, ppc64le, s390x (glibc); Linux musl x86-64, aarch64; macOS x86-64, aarch64; Windows x86-64 | 9 |
+| Java 8 libraries (GitHub Releases) | every other JVM target below that has a Java 8 | up to 10 |
 | Python wheels | the C ABI targets PyPI accepts a wheel tag for; other platforms build the sdist with a Rust toolchain | 19 |
 | Swift | Apple XCFramework, Linux x86_64 and aarch64 (R7), Windows x86_64 and aarch64 | 4 + Apple |
 | npm, Go | wasm | 1 |
 
 **Who runs each target.** No registry reports downloads by platform, so
 "use" below is the known deployments, not a measurement. Packages: C = C
-ABI archive, J = JVM jar, P = Python wheel, S = Swift.
+ABI archive, J = native in the Java 8 jar, j = Java 8 library on GitHub
+Releases, P = Python wheel, S = Swift. The main Java artifact runs on any
+Java 11+ JVM and needs no column.
 
 | # | Target | Who runs it | Use | In |
 |---:|---|---|---|---|
@@ -397,21 +416,21 @@ ABI archive, J = JVM jar, P = Python wheel, S = Swift.
 | 5 | macOS aarch64 | every Mac since 2020; developer laptops, Mac mini CI hosts | very high for development | C J P S |
 | 6 | macOS x86_64 | Intel Macs; macOS 26 is the last release for them | medium, falling | C J P S |
 | 7 | Windows x86_64 | Windows PCs and Windows Server | very high | C J P S |
-| 8 | Windows aarch64 | Snapdragon X laptops, Surface Pro, Azure Cobalt VMs | low, growing | C J P S |
-| 9 | Windows x86 (32-bit) | 32-bit JVMs and Pythons still installed on 64-bit Windows by legacy enterprise apps; Windows 11 itself is 64-bit only | low | C J P |
-| 10 | Linux x86 (32-bit, i686) | old PCs and 2008 to 2010 Atom netbooks on a 32-bit OS, some industrial PCs | low | C J P |
+| 8 | Windows aarch64 | Snapdragon X laptops, Surface Pro, Azure Cobalt VMs | low, growing | C P S (no Java 8 exists) |
+| 9 | Windows x86 (32-bit) | 32-bit JVMs and Pythons still installed on 64-bit Windows by legacy enterprise apps; Windows 11 itself is 64-bit only | low | C j P |
+| 10 | Linux x86 (32-bit, i686) | old PCs and 2008 to 2010 Atom netbooks on a 32-bit OS, some industrial PCs | low | C j P |
 | 11 | Linux ppc64le | IBM Power servers (RHEL, SLES) at banks and insurers, SAP HANA on Power | niche, enterprise | C J P |
 | 12 | Linux s390x | IBM Z and LinuxONE mainframes at banks, airlines, governments | niche, enterprise | C J P |
-| 13 | Linux ARMv6 hard-float | Raspberry Pi Zero, Zero W and 1 on 32-bit Raspberry Pi OS | niche, hobby | C J P |
+| 13 | Linux ARMv6 hard-float | Raspberry Pi Zero, Zero W and 1 on 32-bit Raspberry Pi OS | niche, hobby | C j P |
 | 14 | Linux ARMv7 hard-float | Raspberry Pi 2 to 5 on a 32-bit OS, BeagleBone, IoT gateways | low, hobby and IoT | C P |
-| 15 | Linux riscv64 | VisionFive 2, Milk-V and other boards, first RISC-V servers | niche, emerging | C J P |
-| 16 | Linux loongarch64 | Loongson 3A5000 and 3A6000 PCs and servers, mostly Chinese government and enterprise (UOS, Kylin) | niche outside China | C J |
-| 17 | FreeBSD x86_64 | FreeBSD servers (Netflix's CDN appliances), pfSense and OPNsense firewalls | low for Java and Python backends | C J |
-| 18 | FreeBSD aarch64 | FreeBSD on Graviton, Ampere, Raspberry Pi 4 | niche | C J |
+| 15 | Linux riscv64 | VisionFive 2, Milk-V and other boards, first RISC-V servers | niche, emerging | C P (no Java 8 exists) |
+| 16 | Linux loongarch64 | Loongson 3A5000 and 3A6000 PCs and servers, mostly Chinese government and enterprise (UOS, Kylin) | niche outside China | C j |
+| 17 | FreeBSD x86_64 | FreeBSD servers (Netflix's CDN appliances), pfSense and OPNsense firewalls | low for Java and Python backends | C j |
+| 18 | FreeBSD aarch64 | FreeBSD on Graviton, Ampere, Raspberry Pi 4 | niche | C j |
 | 19 | illumos x86_64 | OmniOS, SmartOS (Triton clouds), Oxide Computer's racks | niche | C |
-| 20 | Solaris x86_64 | Oracle Solaris 11.4 on x86 servers, still under Oracle support | niche, legacy enterprise | C J |
-| 21 to 26 | Linux musl i686, ARMv6, ARMv7, loongarch64, ppc64le, riscv64 | Alpine on those architectures: routers, Raspberry Pi, boards, Alpine containers on Power | niche | C, and P for i686, ARMv7, ppc64le, riscv64 |
-| | wasm (npm, Go) | Node, Bun, Deno, Cloudflare Workers, browsers; every platform Go builds for | very high | npm, Go |
+| 20 | Solaris x86_64 | Oracle Solaris 11.4 on x86 servers, still under Oracle support | niche, legacy enterprise | C j |
+| 21 to 26 | Linux musl i686, ARMv6, ARMv7, loongarch64, ppc64le, riscv64 | Alpine on those architectures: routers, Raspberry Pi, boards, Alpine containers on Power | niche | C; P for i686, ARMv7, ppc64le, riscv64; j for i686, ppc64le, loongarch64 |
+| | wasm (npm, Go, Java 11+ as bytecode) | Node, Bun, Deno, Cloudflare Workers, browsers; every platform Go builds for; every Java 11+ JVM | very high | npm, Go, main Java artifact |
 
 **C ABI archives (26).**
 - Linux glibc (9): x86_64, aarch64, i686, arm (ARMv6 hard-float: Raspberry
@@ -426,46 +445,87 @@ ABI archive, J = JVM jar, P = Python wheel, S = Swift.
 - illumos (1): x86_64 (OmniOS, SmartOS).
 - Solaris (1): x86_64 (Oracle Solaris 11.4).
 
-**JVM jar (18).** JNA's dispatcher decides where the jar can work at all:
-linux x86-64, aarch64, x86, arm (the ARMv6 build, so one file covers every
-32-bit Raspberry Pi), ppc64le, s390x, riscv64, loongarch64; musl x86-64
-and aarch64; macOS aarch64, x86-64; Windows x86-64, x86, aarch64; FreeBSD
-x86-64, aarch64; Solaris x86-64. At about 0.6 MB each the pure-Rust
-natives added about 11 MB to the jar (sqlite-jdbc is about 14 MB,
-rocksdbjni 84 MB). With OpenSSL linked (R21) the one library measured so
-far, Linux x86_64 with vendored OpenSSL 4.0.2, is 6,336,528 B raw and
-1,966,051 B stripped and gzipped
-([OpenSSL CMS everywhere §2](../evidence/2026-09-26-openssl-cms-everywhere.md)),
-so the jar grows by more. Maven Central caps a release at 80 MB
-(CLAUDE.md).
+**Java 8 jar (9), owner, 2026-09-26.** Linux x86-64, aarch64, ppc64le
+and s390x (glibc); Linux musl x86-64 and aarch64; macOS x86-64 and
+aarch64; Windows x86-64. The owner's rule: "drop only what is dead or has
+no users"; rare platforms go to the GitHub download rather than the jar.
+With OpenSSL linked (R21) the one library measured so far, Linux x86_64
+with vendored OpenSSL 4.0.2, is 6,336,528 B raw and 1,966,051 B stripped
+and gzipped
+([OpenSSL CMS everywhere §2](../evidence/2026-09-26-openssl-cms-everywhere.md)).
+At about 2 MB each, the nine add about 18 MB to every release.
+
+Until 2026-09-26 this list had 18 natives, up to 22 with item 2 below:
+JNA's dispatcher set the outer bound (linux x86-64, aarch64, x86, arm,
+ppc64le, s390x, riscv64, loongarch64; musl x86-64 and aarch64; macOS
+aarch64, x86-64; Windows x86-64, x86, aarch64; FreeBSD x86-64, aarch64;
+Solaris x86-64).
+
+**Maven Central's limits are monthly.** Sonatype's limits page evaluates
+file count, release size and release count "against usage during the
+current calendar month", with free thresholds of 1,167 files, 78 MB and 7
+releases in its 90th-percentile row
+([publishing limits](https://central.sonatype.org/publish/maven-central-publishing-limits/),
+read 2026-09-26). With about 18 MB of natives per release, about 4
+releases fit in one month. Files on GitHub Releases do not count against
+Central.
+
+**Java 8 on other platforms: GitHub Release assets (owner, 2026-09-26).**
+Each release uploads, beside the C ABI archives, the UniFFI-built JVM
+library for every other JVM target that has a Java 8: Linux x86 (i686),
+ARMv6 (serves every 32-bit Pi) and loongarch64; musl i686, ppc64le and
+loongarch64; Windows x86; FreeBSD x86-64 and aarch64; Solaris x86-64. It
+is a different file from the C ABI archive: the generated Kotlin calls
+UniFFI's scaffolding, which the C ABI library does not export. A Java 8
+user on one of these platforms points the `libraryOverride` property
+(below) at the downloaded file. Windows arm64 and riscv64 (glibc and musl)
+get no Java 8 library: Temurin 8 and Azul Zulu 8 both lack them (checked
+2026-09-26 against api.adoptium.net and api.azul.com). Java 11+ users
+there take the main artifact.
+
+Java 8 availability, checked 2026-09-26 ([facts addendum](../evidence/2026-09-26-endive-build-time-jvm/results/facts-addendum.txt)):
+
+| Source | Platforms |
+|---|---|
+| Temurin 8 | linux x64, aarch64, arm, ppc64le; alpine x64; mac x64; windows x64, x32; solaris x64, sparcv9; aix ppc64 |
+| Azul Zulu 8, in addition | musl x64 and aarch64, macOS aarch64, linux i686, 32-bit ARM |
+| Alpine's `openjdk8` package | x86_64, x86, aarch64, armhf, armv7, ppc64le, s390x, loongarch64 |
+
+Java 8 on glibc s390x comes from IBM's own JDK (spike notes, "IBM Power
+and IBM Z").
 
 **Python wheels (19).** manylinux x86_64, aarch64, armv7l, i686, ppc64le,
 s390x, riscv64; `linux_armv6l`; musllinux x86_64, aarch64, armv7l, i686,
 ppc64le, riscv64; Windows amd64, win32, arm64; macOS arm64, x86_64.
 pydantic-core, the largest Rust-on-PyPI package, ships 15 of these.
 
-**Why the jar and the wheels differ.**
-- Jar only: loongarch64, FreeBSD x86_64 and aarch64, Solaris x86_64 glibc
-  builds. PyPI refuses wheels for these platforms (its upload check,
+**Why the Java 8 libraries and the wheels differ.**
+- Java 8 only (GitHub assets): loongarch64, FreeBSD x86_64 and aarch64,
+  Solaris x86_64 glibc builds. PyPI refuses wheels for these platforms (its upload check,
   `warehouse/utils/wheel.py`, accepts only Windows, macOS, iOS, Android,
   manylinux, musllinux, `linux_armv6l` and `linux_armv7l`), so `pip` builds
   the sdist there with a Rust toolchain.
-- Wheels only: musl i686, ARMv7, ppc64le and riscv64. Temurin ships no
-  Alpine JDK for them, and JNA's dispatcher is one glibc build per CPU,
-  tested on musl only for x86_64 and aarch64. Alpine's own OpenJDK
-  packages do exist for ppc64le (11 to 25), riscv64 (21, 25),
-  loongarch64 (11 to 25), s390x and x86 (11 only), none for ARM.
-- ARMv6 and ARMv7: JNA has one `linux-arm` slot, so the jar's ARMv6 build
+- Wheels only: Windows aarch64 and riscv64 (glibc and musl), where no
+  Java 8 exists (above), and musl ARMv7. JNA's dispatcher is one glibc
+  build per CPU, tested on musl only for x86_64 and aarch64.
+- History: the 2026-09-25 form of this bullet said Alpine's own OpenJDK
+  packages exist for ppc64le (11 to 25), riscv64 (21, 25), loongarch64
+  (11 to 25), s390x and x86 (11 only), none for ARM. The 2026-09-26 check
+  found Alpine's `openjdk8` on armhf, armv7, x86 and s390x as well (table
+  above).
+- ARMv6 and ARMv7: JNA has one `linux-arm` slot, so the ARMv6 JVM library
   serves every 32-bit Pi. The wheels carry ARMv7 as `manylinux armv7l`;
   PyPI also accepts `linux_armv6l`, and the wheels add it (item 1 below).
 
 **Fallbacks where nothing is prebuilt.** Python: when no wheel matches,
 `pip` downloads the sdist and builds it on the spot, which works only if
-a Rust toolchain is installed and can take long on small boards. Java:
+a Rust toolchain is installed and can take long on small boards. Java 8:
 Maven has no build step at install time, so the only fallback is the
 `libraryOverride` property pointed at a library the user built or took
-from GitHub Releases. The jar therefore has to carry every platform it
-claims; the wheels can lean on the sdist for platforms PyPI refuses.
+from GitHub Releases, where every release puts one for each Java 8
+platform outside the jar (above). Java 11+: the main artifact carries no
+natives and needs no fallback. The wheels lean on the sdist for platforms
+PyPI refuses.
 
 **Out, and why.** The user-facing support page lists these too, so
 nobody has to guess.
@@ -483,30 +543,37 @@ nobody has to guess.
 | FreeBSD 32-bit x86 | FreeBSD 15.0 retired i386 |
 | NetBSD | no popular Rust library ships a NetBSD build |
 
-A Java user on a platform outside the jar can still point
+A Java 8 user on a platform with no prebuilt library can still point
 `uniffi.component.<namespace>.libraryOverride` at a library they built,
-wherever JNA runs.
+wherever JNA runs. Java 11+ users take the main artifact and need no
+library (R18).
 
 **Additions after the first list:**
 1. Accepted by the owner on 2026-09-25: a `linux_armv6l` wheel
-   (Raspberry Pi Zero and 1), built from the jar's ARMv6 library. 19
-   wheels.
+   (Raspberry Pi Zero and 1), built from the ARMv6 UniFFI library (a
+   GitHub Release asset since 2026-09-26). 19 wheels.
 2. Accepted by the owner on 2026-09-25: the jar adds musl ppc64le,
    riscv64 and loongarch64 (and i686, where Alpine ships Java 11 only).
    Each stays only if a QEMU job running Alpine's own OpenJDK loads the
    library through JNA and verifies the g5 receipt; one that fails is
    dropped and listed under "Out" with the reason. Up to 22 natives.
+   Superseded for the jar on 2026-09-26: the jar keeps 9 natives. Musl
+   i686, ppc64le and loongarch64 become Java 8 GitHub Release assets and
+   keep this QEMU check as their test (rule 2), now with Alpine's
+   `openjdk8`; musl riscv64 gets none, since no Java 8 runs there.
 
 **How each target is tested.** GitHub runners for linux x86_64 and
 aarch64, macOS, Windows x86_64 and aarch64 (x86 under WOW64). QEMU user
 mode for every other Linux target, glibc and musl. `vmactions` VMs for
-FreeBSD, illumos (OmniOS) and Solaris x86_64. The JVM smoke test runs
-where a JDK exists for that target (Temurin: x86-64, aarch64, arm,
-ppc64le, s390x, riscv64, Windows x86); elsewhere only the C ABI smoke
-test runs.
+FreeBSD, illumos (OmniOS) and Solaris x86_64. The Java 8 jar runs the
+corpus through JNA on its 9 platforms where runners exist, and each Java
+8 GitHub asset gets a JVM smoke test where a Java 8 runs for that target;
+elsewhere only the C ABI smoke test runs. The main Java artifact runs the
+full corpus on GitHub's Linux x64 and arm64, macOS arm64, Windows x64 and
+arm64 runners, and on s390x under QEMU before each release (R18).
 
 **What it costs:** about 30 native builds per release instead of 8 (the
-jar and the wheels reuse them), run in parallel and without caches
+Java 8 libraries and the wheels reuse them), run in parallel and without caches
 (publish jobs never cache). Rust builds its tier 2 targets but does not
 test them, so a Rust upgrade can break one; our CI catches that before a
 release. Since R21 each build also compiles OpenSSL for its target, which
@@ -532,9 +599,10 @@ None is copyleft. The library itself stays MIT.
 
 **Unchanged from the first version of this record:**
 - One fat jar, selected at runtime, like JNA and sqlite-jdbc: no
-  classifier for users to choose. A platform without a bundled library
-  gets a clear error that names the missing target and the
-  `libraryOverride` property.
+  classifier for users to choose. Since 2026-09-26 this is the `-java8`
+  jar. A platform without a bundled library gets a clear error that names
+  the missing target, the `libraryOverride` property and the GitHub
+  Release asset.
 - Build on native runners where GitHub provides them; `cargo-zigbuild` or
   `cross` for the rest.
 - Every artifact gets a SHA-256 and `actions/attest-build-provenance`.
@@ -595,12 +663,13 @@ Keeping the shapes close lets the five published ports' test suites (about
 | Swift sources + FFI modulemap | **yes** | SwiftPM builds from git and has no build step. |
 | Go `aprv.wasm` | **yes** | The Go module is the git tree at a tag. npm ships the same module (R21). |
 | Kotlin, Python glue | no | Built inside each package build from pinned tools, from a clean checkout. |
+| Endive's generated classes (Java 11+ artifact, R18) | no | The Maven build compiles them from the release's own `aprv.wasm` with the pinned Endive plugin. |
 | npm JS façade and `index.d.ts` | yes, as source | Hand-written since R21; nothing generates them. |
 
 Every generator and toolchain version is pinned in one place. The UniFFI
-and cbindgen Dependabot groups, and bumps of the OpenSSL crates
-(`openssl`, `openssl-sys`, `openssl-src`), must pass the full
-cross-package conformance run before merging.
+and cbindgen Dependabot groups, bumps of the OpenSSL crates (`openssl`,
+`openssl-sys`, `openssl-src`), and bumps of Endive (`run.endive`, R18)
+must pass the full cross-package conformance run before merging.
 
 ---
 
@@ -682,11 +751,14 @@ itself peaks at 6,444 verifications/s in-process on 4 threads.
 ## R18. The Java binding: UniFFI plus a thin Java façade
 
 **Status: accepted by the owner on 2026-09-25.** Supersedes R13 ("no
-façade to start").
+façade to start"). Amended by the owner on 2026-09-26: two Java artifacts
+share the façade, one on Endive and one on UniFFI ("Two Java artifacts"
+below).
 
-The Java package keeps UniFFI's generated Kotlin as its engine and puts a
-small hand-written Java layer in front of it: pure delegation, no parsing,
-no policy, no caps.
+The Java package keeps UniFFI's generated Kotlin as its engine (since
+2026-09-26, the engine of the `-java8` artifact) and puts a small
+hand-written Java layer in front of it: pure delegation, no parsing, no
+policy, no caps.
 
 **What `uniffi.toml` fixes without a façade** (spike, UniFFI 0.32.2,
 `bindings.kotlin`): `package_name`, `generate_immutable_records = true`
@@ -719,8 +791,8 @@ known cost below.
 import paths; it picks the best Java shape, and the CHANGELOG lists every
 break.
 
-**Known cost, accepted:** under Tomcat or another app server with hot
-redeploy, JNA leaks a Cleaner thread and two native copies per redeploy
+**Known cost, accepted** (the `-java8` artifact only, since 2026-09-26):
+under Tomcat or another app server with hot redeploy, JNA leaks a Cleaner thread and two native copies per redeploy
 (evidence: "Enterprise deployment shapes", JNA 5.17.0 and 5.19.1; JNA
 issue #1521; JNA offers no public API to stop the thread). The Java README
 documents the mitigation: install the jars in the container's shared
@@ -731,6 +803,88 @@ unaffected.
 redeploy leak, but 472 lines of Java plus 2 `unsafe` to maintain, and a
 second binding system beside UniFFI). It stays the fallback engine if the
 redeploy leak becomes a real user problem before the JNI backend ships.
+
+### Two Java artifacts (2026-09-26)
+
+**Status: accepted by the owner on 2026-09-26.** Evidence:
+[Endive build-time JVM](../evidence/2026-09-26-endive-build-time-jvm.md)
+(§ numbers below refer to it).
+
+The owner's reason for the Endive artifact, as stated when asking for the
+spike: keep native code from crashing the JVM ("to get rid of the java
+crash from UniFFI"). Endive's speed is accepted as measured (owner, Q36:
+enough).
+
+Two artifacts publish the same public API, the thin hand-written Java
+façade above. Each has its own POM, dependency graph, Java baseline,
+sources and tests. A consumer depends on exactly one.
+
+| | `io.github.emindeniz99:apple-purchase-receipt-verifier` (main, default) | `io.github.emindeniz99:apple-purchase-receipt-verifier-java8` |
+|---|---|---|
+| Engine | `aprv.wasm` compiled to JVM bytecode at build time by Endive (`run.endive:endive-compiler-maven-plugin`, 1.1.0 in the evidence) | UniFFI Kotlin over JNA with a native library (the engine above) |
+| Java floor | 11. "Endive requires Java 11 or later"; JDK 8 refuses the class files (§2, §10 row 1) | 8, on Temurin 8 in CI (`java-runtime-8`) |
+| Native code | None: no `.so`, `.dll` or `.dylib` in any jar, and no native-loading call in 229 classes (§6). One jar for every platform. | 9 natives in the jar (R12). Other Java 8 platforms load a GitHub Release asset through `libraryOverride`. |
+| Runtime dependencies | `run.endive:runtime` and `run.endive:wasm`, Apache-2.0: 0.17 and 0.21 MB (§3) | `kotlin-stdlib` and `jna`, about 3.7 MB (R2 addendum) |
+| Size | 1,762,214 B for the spike's library jar (§4) | about 2 MB per native, about 18 MB for the nine (R12) |
+| Speed, one thread | Receipt 5.9 to 9.5 ms, 105 to 171 per second; JWS 20 to 29 ms, 34 to 50 per second; JDK 17, 21 and 25 on Linux x86-64 (§9). The first instance takes 335 to 380 ms, each later one 2 to 4 ms. | Not measured over OpenSSL. The pure-Rust core took 701 µs per receipt and 1,096 µs per JWS on JDK 21 ([spikes of 2026-09-25](../evidence/2026-09-25-rust-core-spikes.md), timings). |
+| Threads | An instance is not thread-safe. The façade keeps a pool with one instance per worker and never shares one; a shared instance livelocked in the spike (§8). | One object serves many threads (spikes, row 13: one endpoint, 16 threads). |
+| A fault in the engine | A trap reaches Java as an exception and the JVM survives (§7). The façade discards the instance and answers `INTERNAL_ERROR`. | A Rust panic becomes a Java exception (ARCHITECTURE §5). A memory fault in the native library takes the JVM down. |
+| App-server redeploy | No native library, so no JNA Cleaner leak | JNA leaks a Cleaner thread per redeploy (known cost above) |
+
+**What stays from R18 for both.** The façade rules above (default
+arguments, import paths, a clean autocomplete, Javadoc in Java types,
+`VerificationException.reason()`), pure delegation with no parsing,
+policy or caps, and breaking changes allowed before 1.0. `uniffi.toml`
+and the JNA redeploy cost concern the `-java8` artifact only. The main
+façade drives the C ABI inside `aprv.wasm` and reads its JSON view
+(SURFACE.md §4.2), where the `-java8` façade reads UniFFI records; both
+map onto one Java API.
+
+**One deployment.** One multi-module Maven reactor builds both artifacts,
+and one Central deployment publishes them, always at the same version.
+Whether Central counts that deployment as one release event or two is not
+confirmed: Sonatype's Usage Center page defines Release Count only as
+"total number of release events recorded"
+([Usage Center](https://central.sonatype.org/publish/publish-portal-usage-center/)).
+
+**Classpath guard.** The two artifacts expose the same classes, so they
+must not share a classpath. Each ships a marker resource. At startup the
+façade looks for both markers and, finding both, fails fast with a clear
+message. The Gradle module metadata declares a capability conflict
+between the two, and the README says to depend on exactly one.
+
+**CI for the main artifact (owner, Q41 a).** Every change runs the full
+corpus (the 1,179 rows plus the 5,000 mutants) through the built Endive
+jar. Its output must be byte-identical to the native build's, or the build
+fails. The job runs on GitHub's Linux x64 and arm64, macOS arm64, Windows
+x64 and Windows arm64 runners, plus s390x under QEMU (big-endian) before
+each release. The facts behind that matrix:
+
+- Endive's docs call it "a JVM native WebAssembly runtime with zero native
+  dependencies" and give no platform list for the build-time mode. Only
+  the experimental Redline native mode lists targets (six), and this plan
+  does not use Redline.
+- Both Endive memory classes use `ByteOrder.LITTLE_ENDIAN` explicitly
+  (checked 2026-09-26 by disassembling `runtime` 1.1.0, [facts addendum](../evidence/2026-09-26-endive-build-time-jvm/results/facts-addendum.txt)), so big-endian
+  JVMs should answer correctly. That stays untested until the QEMU leg
+  runs.
+- The spike tested Linux x86-64 only (§4).
+- "The compiler translates Wasm to JVM bytecode without post-compilation
+  verification" (§10). This corpus run is the guard against a miscompile.
+
+**CI for the `-java8` artifact.** It keeps the `java-runtime-8` job on
+Temurin 8 and runs the corpus through JNA on its 9 platforms wherever a
+runner exists.
+
+**Open items.**
+1. **Release Count.** Check Central's Usage Center after the first
+   release that carries both artifacts, or ask central-support@sonatype.com
+   before it.
+2. **Memory class.** The default `ByteBufferMemory` ran 1.2 to 1.5 times
+   slower than `ByteArrayMemory`, and a library has to pick one (§10,
+   row 3).
+3. **Big-endian and every platform other than Linux x86-64** stay
+   untested until the CI legs above run.
 
 ---
 
@@ -745,7 +899,9 @@ redeploy leak becomes a real user problem before the JNI backend ships.
 - Every package moves to the Rust core in one release, 0.8.0 (owner,
   2026-09-25). The phases (R15) still run one after another with their
   gates, but none of them cuts a release of its own. One release also
-  spends one Maven Central slot instead of five.
+  spends one Maven Central slot instead of five. Since 2026-09-26 that
+  release deploys two Java artifacts together; whether Central counts it
+  as one release event or two is an open item of R18.
 - The phases land on a `rust-core` integration branch (below).
 - Everything stays 0.x. 1.0 is a separate decision after the migration.
 - The first crates.io publish waits until something needs it: a user
@@ -945,10 +1101,21 @@ free". Unknown receipt attribute types keep appearing in
 | `payload.c` | 14 lines of `ASN1_SEQUENCE`/`ASN1_ITEM` declarations, no logic | C |
 | The wasm link-time C file | Defines the WASI functions inside `aprv.wasm`, so the module imports only `aprv.clock_now_ms` and `aprv.random_get` (`wasi-none.c` in the evidence, 74 code lines) | C |
 | The npm JS façade | Loads `aprv.wasm`, passes bytes in and JSON out, supplies the two imports; about 100 lines plus `index.d.ts` | none |
+| The Java 11+ façade (R18) | Instantiates the Endive-compiled module, supplies the two imports, moves bytes in and JSON out, keeps the instance pool (the spike's `AprvWasm`: 160 lines with comments, [Endive build-time JVM §3](../evidence/2026-09-26-endive-build-time-jvm.md)) | none |
 
 The whole security path goes from 2,100 code lines with 0 `unsafe` and 0
 C to 2,207 lines with 402 inside `unsafe` and 14 lines of C (payload note
 §6). OpenSSL 4.0.2 joins the trusted base.
+
+**`unsafe` goals for Phase 1 (owner, Q40 a, 2026-09-26):**
+1. Use rust-openssl's safe wrappers wherever they exist (`X509`,
+   `X509Store`, EVP and so on) instead of raw `openssl-sys` calls.
+2. Put each remaining raw call in one small, safe function with a
+   `// SAFETY:` comment, reviewed once.
+3. Best effort: contribute the missing CMS SignerInfo wrappers upstream to
+   rust-openssl, so that this `unsafe` lives in the widely reviewed crate.
+
+MIGRATION steps 1.1 and 1.9 carry them.
 
 ### Numbers that matter
 
@@ -1006,8 +1173,9 @@ C to 2,207 lines with 402 inside `unsafe` and 14 lines of C (payload note
   instead of returning an error.
 - **Randomness on wasm:** OpenSSL draws random bytes only for EC blinding
   inside ECDSA verification. The host fills `aprv.random_get` from
-  `crypto.getRandomValues` in JS (never `Math.random`) and from
-  `crypto/rand` in Go. A failing RNG makes OpenSSL refuse ECDSA
+  `crypto.getRandomValues` in JS (never `Math.random`), from
+  `crypto/rand` in Go, and from `SecureRandom` in the Java 11+ façade
+  (R18). A failing RNG makes OpenSSL refuse ECDSA
   verification: 0 new acceptances over 1,179 rows (wasm bake-off §10).
 
 ### Open items

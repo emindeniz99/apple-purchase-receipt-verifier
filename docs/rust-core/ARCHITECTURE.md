@@ -2,7 +2,8 @@
 
 Status: **target design of the accepted plan.** The decisions it rests on
 are in [DECISIONS.md](./DECISIONS.md); R21 (2026-09-26) put the core on
-OpenSSL 4 and replaced wasm-bindgen with one plain wasm module.
+OpenSSL 4 and replaced wasm-bindgen with one plain wasm module; R18's
+addendum (2026-09-26) split Java into two artifacts.
 
 ## 1. The shape
 
@@ -39,9 +40,9 @@ OpenSSL 4 and replaced wasm-bindgen with one plain wasm module.
 │           │              │ imports 2 funcs │          │ cbindgen .h │
 └──┬──┬──┬──┘              └──────┬──────┬───┘          └──────┬──────┘
    │  │  │                        │      │                     │
- Kotlin Swift Python      JS façade    Go via wazero      C, C++, SWIG,
-   │                          │                           Elixir NIF,
- Java (JVM)           one npm package                     anything else
+ Kotlin Swift Python      JS façade    Go via wazero;     C, C++, SWIG,
+   │                          │        Java 11+ as JVM    Elixir NIF,
+ Java 8 (-java8)      one npm package  bytecode (Endive)  anything else
 ```
 
 A fix in `rust/` reaches every package on the next release. No package
@@ -64,7 +65,8 @@ rust/ffi/                      existing C ABI, rebased on aprv-surface + aprv-wi
 rust/ffi/swig/                 apple_purchase_receipt_verifier.i and examples
 rust/fuzz/                     verify-receipt, verify-transaction, plus targets for the JSON view
 node/                          aprv.wasm's JS façade (about 100 lines) and index.d.ts, hand-written
-java/  python/  swift/  go/    package builds, façades, binding tests
+java/                          one Maven reactor, two modules: Endive (Java 11+) and -java8 (UniFFI)
+python/  swift/  go/           package builds, façades, binding tests
 ```
 
 Gone from `rust/src/` (R21): `asn1.rs`, `x509.rs`, `cms.rs`, `chain.rs` and
@@ -158,8 +160,9 @@ Rules that came out of the spikes:
    (THREAT-MODEL §3.5).
 4. **Receipt dates:** UniFFI's timestamp type renders as `java.time.Instant`,
    Swift `Date` and Python `datetime`, which is what the Java, Swift and
-   Python ports return today. The JSON view and wasm carry ISO-8601 strings,
-   and the npm façade turns them into `Date`. **JWS dates stay epoch-ms
+   Python ports return today. The JSON view and wasm carry ISO-8601 strings;
+   the npm façade turns them into `Date`, the Java 11+ façade into
+   `Instant`. **JWS dates stay epoch-ms
    integers** in every language: that contract is in `jws.rs:104-111`.
 5. **Unknown attributes** become `List<UnknownAttribute(type: Long, values:
    List<byte[]>)>`. The type is `i64` because a type above 2^31-1 is a
@@ -202,7 +205,8 @@ SURFACE.md §4.1):
 - It uses `std::time::SystemTime::now()` on every native target.
 - In `aprv.wasm` it reads the import `aprv.clock_now_ms`, epoch
   milliseconds from the host: `Date.now()` in the JS façade, the wall
-  clock in Go. The adapter crate declares the import and hands the core a
+  clock in Go, `System.currentTimeMillis()` in the Java 11+ façade. The
+  adapter crate declares the import and hands the core a
   safe function, so the core keeps `#![forbid(unsafe_code)]`.
 - A host answer that is not a finite instant after 1970 maps to 1970,
   where no Apple chain is valid, so the failure is closed (the evidence
@@ -223,6 +227,7 @@ SURFACE.md §4.1):
 | C ABI | `guard`/`guard_ptr` wrap every export in `catch_unwind` (existing) | Keep. The source-scanning test that enforces it stays. |
 | `aprv.wasm` in JS (npm) | `panic = "abort"`: the instance **traps**, and its memory may be left inconsistent | The JS façade catches `WebAssembly.RuntimeError`, drops the instance, instantiates a fresh one on the next call, and throws `VerificationError(INTERNAL_ERROR)`. |
 | `aprv.wasm` in Go (wazero) | wazero returns an error from the call and the module is unusable | Same pattern in Go: the pool discards the instance and the call returns `INTERNAL_ERROR`. |
+| `aprv.wasm` as JVM bytecode (Endive, Java 11+) | The trap reaches Java as a `WasmRuntimeException`, `TrapException` or `WasmEngineException`; the JVM survives ([Endive build-time JVM §7](../evidence/2026-09-26-endive-build-time-jvm.md)) | The Java pool discards the instance, creates a new one on the next call (2 to 4 ms), and throws `VerificationException` with `INTERNAL_ERROR`. |
 
 The endpoint's "never fails" promise rests on `catch_unwind` at
 `endpoint.rs:510`, which does nothing under `panic = "abort"`. On wasm the
@@ -248,46 +253,80 @@ where that wall fails.
 
 ### 6.1 Maven Central (Java, Kotlin)
 
-- Coordinates stay `io.github.emindeniz99:apple-purchase-receipt-verifier`.
-  Today's classes sit in three packages: the root, `.jws` and `.receipt`.
-  UniFFI's `package_name` puts every generated class in one package, so the
-  generated code goes to `...applepurchasereceiptverifier.internal`. The
-  thin hand-written Java façade (R18) keeps today's `.jws` and `.receipt`
-  import paths in front of it.
-- Contents: the compiled generated Kotlin (`jvmTarget = 1.8`), the Java
-  façade (R18), and natives at JNA's resource paths for the 18 to 22 JVM
-  targets R12 lists.
-- Runtime dependencies change from Bouncy Castle and Jackson (about
-  11.8 MB) to `kotlin-stdlib` (Java 8 bytecode) and `jna` 5.x (Java 8
-  bytecode). The jar grows by the natives. With OpenSSL linked (R21) the
-  one library measured so far, Linux x86_64 with vendored OpenSSL, is
-  6,336,528 B raw and 1,966,051 B stripped and gzipped
-  ([OpenSSL CMS everywhere §2](../evidence/2026-09-26-openssl-cms-everywhere.md));
-  the pure-Rust estimate was about 1.2 MB per target.
-- `uniffi.toml` sets `disable_java_cleaner = true`, so the generated code
-  compiles against JDK 8 APIs.
-- Docs: Maven Central requires `-sources.jar` and `-javadoc.jar`. The sources
-  jar carries the generated Kotlin with its KDoc, which IntelliJ shows on
-  hover in Java code. Dokka (`dokka:javadoc`) builds the javadoc jar from
-  the same KDoc; the spike showed the Rust text arriving, but under Kotlin
-  type names (`ByteArray`, `Unit`). If Java readers need `byte[]` and
-  `throws` in the pages, the Java façade (compiled by `javac`, documented
-  by the standard `javadoc` tool) becomes the documented surface, and the
-  generated classes move to an internal package. Phase 3 decides by looking
-  at both outputs.
+Two artifacts publish one public API, the thin hand-written Java façade
+(R18, "Two Java artifacts"). Each has its own POM, dependency graph, Java
+baseline, sources and tests, and a consumer depends on exactly one.
+"Endive note" below means
+[Endive build-time JVM](../evidence/2026-09-26-endive-build-time-jvm.md).
+
+| | `io.github.emindeniz99:apple-purchase-receipt-verifier` (main, default) | `io.github.emindeniz99:apple-purchase-receipt-verifier-java8` |
+|---|---|---|
+| Java floor | 11 | 8 |
+| Engine | `aprv.wasm` compiled to JVM bytecode at build time by `run.endive:endive-compiler-maven-plugin` | UniFFI's generated Kotlin (`jvmTarget = 1.8`) over JNA |
+| Contents | the façade, Endive's generated classes and a stripped `.meta` module that keeps the data segments and no function bodies (Endive note §4) | the façade, the compiled Kotlin, and natives at JNA's resource paths for 9 platforms (R12) |
+| Runtime dependencies | `run.endive:runtime` and `run.endive:wasm` (0.17 and 0.21 MB, Apache-2.0) | `kotlin-stdlib` and `jna` 5.x, both Java 8 bytecode |
+| Natives | none; one jar for every platform | 9 in the jar; the other Java 8 platforms get a library on GitHub Releases (R12) |
+
+- **Coordinates and packages.** The main artifact keeps today's
+  coordinates; the Java 8 one adds `-java8`. Today's classes sit in three
+  packages: the root, `.jws` and `.receipt`. Both façades keep those
+  import paths. Each engine's generated code goes to
+  `...applepurchasereceiptverifier.internal`: UniFFI's `package_name` in
+  `-java8`, the Endive plugin's target package in the main artifact.
+- **Sizes.** Runtime dependencies change from Bouncy Castle and Jackson
+  (about 11.8 MB) to the two Endive jars for the main artifact and to
+  `kotlin-stdlib` plus `jna` for `-java8`. The spike's Endive library jar
+  was 1,762,214 B (Endive note §4). Each `-java8` native adds about 2 MB: the one
+  measured, Linux x86_64 with vendored OpenSSL, is 6,336,528 B raw and
+  1,966,051 B stripped and gzipped
+  ([OpenSSL CMS everywhere §2](../evidence/2026-09-26-openssl-cms-everywhere.md)),
+  so the nine add about 18 MB to a release. Maven Central counts size
+  against a monthly total (R12).
+- **The main artifact's engine.** The façade loads the compiled module
+  once and keeps a pool of instances. A call borrows one instance for
+  itself and returns it; no instance ever serves two threads at once,
+  because an instance is not thread-safe and a shared one livelocked in
+  the spike (Endive note §8). A trap discards the instance (section 5). The first
+  instance takes 335 to 380 ms, each later one 2 to 4 ms (Endive note §9). The façade
+  supplies exactly the module's two imports: `aprv.clock_now_ms` from
+  `System.currentTimeMillis()` and `aprv.random_get` from `SecureRandom`,
+  with the range checked before it writes guest memory (Endive note §5). It calls the
+  C ABI exports inside the instance and decodes their JSON view
+  (`aprv-wire`, SURFACE.md §4.2) into the façade's Java types.
+- **The `-java8` engine.** `uniffi.toml` sets `disable_java_cleaner =
+  true`, so the generated code compiles against JDK 8 APIs.
+- **Classpath guard.** The two artifacts expose the same classes. Each
+  ships a marker resource; at startup the façade fails fast with a clear
+  message when it finds both. The Gradle module metadata declares a
+  capability conflict between them, so Gradle refuses the pair, and the
+  README says to depend on exactly one.
+- **One deployment.** One multi-module Maven reactor builds both
+  artifacts and publishes them in one Central deployment, always at the
+  same version. Whether Central counts that as one release event or two
+  is open (R18).
+- **Docs.** Maven Central requires `-sources.jar` and `-javadoc.jar` for
+  each artifact. The main artifact has no generated Kotlin, so its
+  documented surface is the Java façade, compiled by `javac` and
+  documented by the standard `javadoc` tool. For `-java8`, the sources jar
+  could carry the generated Kotlin with its KDoc, and Dokka
+  (`dokka:javadoc`) builds pages from the same KDoc; the spike showed the
+  Rust text arriving, but under Kotlin type names (`ByteArray`, `Unit`).
+  Phase 3 decides by looking at both outputs.
 - Doc comments on the surface are written language-neutrally: "the trusted
   roots", never `trusted_roots`, because every generator copies the text
   verbatim.
-- Native access: JDK 24+ warns once per process until the application adds
-  `--enable-native-access=ALL-UNNAMED`, or `Enable-Native-Access:
-  ALL-UNNAMED` in an executable jar's manifest. The README says so on its
-  first screen.
-- musl (Alpine): JNA resolves `linux-<arch>` with no libc split. The jar
-  carries glibc builds there, plus musl builds under `linux-musl-<arch>`.
-  The façade selects the musl build by setting
+- **Native access (`-java8` only).** JDK 24+ warns once per process until
+  the application adds `--enable-native-access=ALL-UNNAMED`, or
+  `Enable-Native-Access: ALL-UNNAMED` in an executable jar's manifest. The
+  README says so on its first screen. The main artifact loads no native
+  code, so the warning never appears there (Endive note §6).
+- **musl (Alpine), `-java8` only.** JNA resolves `linux-<arch>` with no
+  libc split. The jar carries glibc builds there, plus musl builds under
+  `linux-musl-<arch>`. The façade selects the musl build by setting
   `uniffi.component.<namespace>.libraryOverride` when it detects musl. A CI
   leg on an Alpine image proves it, including JNA's own `jnidispatch`
-  (unconfirmed today, see MIGRATION.md risks).
+  (unconfirmed today, see MIGRATION.md risks). The main artifact carries
+  nothing libc-specific.
 
 ### 6.2 PyPI (Python)
 
@@ -466,7 +505,8 @@ OpenSSL 3.x from the vendored feature or the system's OpenSSL, since our
   with the façade.
 - Each package README keeps install, a quick start, runtime notes and links
   to THREAT-MODEL.md. The long per-language manuals shrink to the parts
-  that are about that ecosystem: native access, musl, JNA, workerd imports.
+  that are about that ecosystem: native access, musl, JNA, workerd
+  imports, and for Java which of the two artifacts to pick.
 
 ## 8. Invariants and how CI holds them
 
@@ -479,10 +519,12 @@ OpenSSL 3.x from the vendored feature or the system's OpenSSL, since our
 | `aprv.wasm` takes no unmeasured path | Every change runs the full corpus through a host that traps on any unexpected import call, with the shipped module's own WASI stubs trapping too (section 5); any trap or any row that differs from native fails the job. |
 | No ambient OpenSSL state | `OPENSSL_CONFIG_DIR` points at a path that does not exist; the adapter uses `OPENSSL_INIT_NO_LOAD_CONFIG` and no default trust paths. An isolation test plants a root in `SSL_CERT_FILE` and `SSL_CERT_DIR` and a hostile `OPENSSL_CONF`, and asserts they are ignored and never opened ([substrate bake-off §7](../evidence/2026-09-26-security-substrate-bakeoff.md)). |
 | Pinned roots only | Root `certs/` stays canonical (`apple-root-watch.yml` diffs it against apple.com). `rust/certs` is the one copy, compiled in with `include_bytes!`; `check-cert-copies.mjs` checks that single copy. No binding ships or reads roots of its own. Trust-isolation tests run per binding. |
-| No panic crosses a boundary | UniFFI scaffolding, C ABI `catch_unwind`, and wasm trap recovery in the JS façade and the Go pool (section 5), each with a forced-failure test. |
+| No panic crosses a boundary | UniFFI scaffolding, C ABI `catch_unwind`, and wasm trap recovery in the JS façade, the Go pool and the Java 11+ pool (section 5), each with a forced-failure test. |
+| The Endive jar answers as native does (R18) | Every change runs the full corpus (1,179 rows plus 5,000 mutants) through the built Java 11+ jar on GitHub's Linux x64 and arm64, macOS arm64, Windows x64 and arm64 runners; s390x under QEMU (big-endian) runs before each release. Any row that is not byte-identical to the native build fails the build. Endive does no post-compilation verification, so this run is the guard against a miscompile. |
+| One Java artifact per classpath (R18) | Each artifact ships a marker resource and the façade fails fast at startup when it finds both. The Gradle module metadata declares a capability conflict between them. A test puts both jars on one classpath and asserts the failure. |
 | Caps in one place | The core owns `MAX_RECEIPT_BYTES`, `MAX_JWS_BYTES`, `MAX_REQUEST_BYTES`, the JSON depth and the certificate caps. The bindings add none. |
 | Generated code is reproducible | Pinned uniffi and cbindgen versions, and a pinned wasi-sdk and OpenSSL tarball, each checked by SHA-256. Committed outputs (Swift sources, the C header, Go `aprv.wasm`) are regenerated in CI with `git diff --exit-code`. |
 | Same verdicts everywhere | Every package runs all 186 `fixtures/cases.json` cases through its binding. |
 | Artifacts are what CI built | Publish jobs never cache. Every native and wasm artifact gets a SHA-256 and a build-provenance attestation. Post-publish smoke installs from the real registry. |
 | Licenses ship with the code | Every package that carries OpenSSL, natively or in `aprv.wasm`, ships OpenSSL's license and NOTICE text; `aprv.wasm` also ships wasi-libc's and Rust std's (R12). A package-content check in release fails when one is missing. |
-| Floors are tested | Java 8 on Temurin 8, Node 20, Python 3.10, Swift 6.2 (Linux) and the Go floor all keep their CI legs, now against the binding. |
+| Floors are tested | Java 8 on Temurin 8 (the `-java8` artifact), Java 11 (the main artifact), Node 20, Python 3.10, Swift 6.2 (Linux) and the Go floor all keep their CI legs, now against the binding. |

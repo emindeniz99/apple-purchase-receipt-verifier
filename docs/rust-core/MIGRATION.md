@@ -13,7 +13,9 @@ Rules for every phase:
   in R20; one that changes an Apple-signed input's verdict, or accepts
   something unsigned, is a bug (R20).
 - **One phase, one or more PRs, one release at most.** Maven Central allows
-  7 releases a month, and every tag spends one. Keep 2 in reserve.
+  7 releases a month, and every tag spends one. Keep 2 in reserve. File
+  count and size are monthly totals too (about 1,167 files and 78 MB,
+  R12), and the Java 8 natives take about 18 MB per release.
 - Estimates are ranges. The deciding factor is named next to each.
 - Version numbers below show the sequence. release-please picks the real
   ones from the commits.
@@ -41,7 +43,7 @@ R12).
 
 | Step | Work | Verify |
 |---|---|---|
-| 1.1 | **OpenSSL substrate (R21).** Add the `aprv-openssl` adapter crate, the only `unsafe` crate below the bindings: the CMS path (`CMS_SignerInfo_cert_cmp`, `CMS_SignerInfo_verify`, `CMS_SignerInfo_verify_content`), `X509_verify_cert` over the pinned roots only with the historical-time verify callback, EVP for JWS, and the payload through `payload.c`'s ASN.1 templates and `ASN1_item_d2i`. Move receipts, JWS and the device hash onto it. Delete `rust/src/cms.rs`, `x509.rs`, `chain.rs`, `crypto.rs` and `asn1.rs`, the public modules of the same names, `TrustAnchor::certificate()`, and the `rsa`, `p256`, `p384`, `sha1`, `sha2` and `digest` dependencies; `roots.rs` keeps the DER after `d2i_X509`. Rewrite `tests/common` and the five test files that use the deleted modules (`tests/asn1.rs`, `hostile.rs`, `receipt_negative.rs`, `trust_pinning.rs`, `jws_negative.rs`; [ASN.1 payload note §1](../evidence/2026-09-26-openssl-asn1-payload.md)). | `cargo test` green; nothing named `asn1` left in `rust/src`; `cases.json` passes through the C ABI; the evidence's 1,179-row corpus answers as the payload note's template build did |
+| 1.1 | **OpenSSL substrate (R21).** Add the `aprv-openssl` adapter crate, the only `unsafe` crate below the bindings: the CMS path (`CMS_SignerInfo_cert_cmp`, `CMS_SignerInfo_verify`, `CMS_SignerInfo_verify_content`), `X509_verify_cert` over the pinned roots only with the historical-time verify callback, EVP for JWS, and the payload through `payload.c`'s ASN.1 templates and `ASN1_item_d2i`. Move receipts, JWS and the device hash onto it. Delete `rust/src/cms.rs`, `x509.rs`, `chain.rs`, `crypto.rs` and `asn1.rs`, the public modules of the same names, `TrustAnchor::certificate()`, and the `rsa`, `p256`, `p384`, `sha1`, `sha2` and `digest` dependencies; `roots.rs` keeps the DER after `d2i_X509`. Rewrite `tests/common` and the five test files that use the deleted modules (`tests/asn1.rs`, `hostile.rs`, `receipt_negative.rs`, `trust_pinning.rs`, `jws_negative.rs`; [ASN.1 payload note §1](../evidence/2026-09-26-openssl-asn1-payload.md)). **`unsafe` goals (owner, Q40 a; R21):** rust-openssl's safe wrappers wherever they exist (`X509`, `X509Store`, EVP and so on) instead of raw `openssl-sys` calls; each remaining raw call in one small, safe function with a `// SAFETY:` comment; best effort, the missing CMS SignerInfo wrappers contributed upstream to rust-openssl. | `cargo test` green; nothing named `asn1` left in `rust/src`; `cases.json` passes through the C ABI; the evidence's 1,179-row corpus answers as the payload note's template build did; every raw `openssl-sys` call sits in a small safe function with a `// SAFETY:` comment, and none has a safe rust-openssl wrapper |
 | 1.1a | **Native OpenSSL build.** OpenSSL 4.0.2 through `openssl-src` 400.x with a one-line `[patch.crates-io]` of `openssl-sys`'s manifest until upstream accepts 400.x, or `OPENSSL_DIR`. Set `OPENSSL_CONFIG_DIR` to a path that does not exist. | The vendored and `OPENSSL_DIR` builds give identical rows (as in [OpenSSL CMS everywhere §1](../evidence/2026-09-26-openssl-cms-everywhere.md)); the isolation test finds no config or trust file opened |
 | 1.2 | Add the `system_now()` seam; on wasm it reads the `aprv.clock_now_ms` import, declared in the adapter (R10, SURFACE.md §4.1). | `transaction/accept-payload-without-a-signed-date` passes in `aprv.wasm`; the 58 clock-reading rows of the wasm bake-off do not trap |
 | 1.3 | New CI job `rust-wasm`: build `aprv.wasm` (the C ABI for `wasm32-wasip1`, wasi-sdk's libc, OpenSSL 4.0.2 compiled by wasi-sdk, the link-time C file whose WASI stubs trap), then run the full conformance suite and corpus on every change through a host that traps on any unexpected import. | All cases; no trap; the module's imports are exactly `aprv.clock_now_ms` and `aprv.random_get` |
@@ -50,7 +52,7 @@ R12).
 | 1.6 | Close the C ABI gaps from PORTS.md: `verified` flag, re-render, `REQUEST_TOO_LARGE`, base64 decode entry point, fuzz target. | The C ABI runs the `decodeBase64` groups; its PORTS.md row is all ✅ |
 | 1.7 | Profile receipt and JWS on native and in `aprv.wasm`. Record the results in BENCHMARKS.md, including a JWS row, which exists in no port today. Speed is informational (R21). | The numbers are committed with their method |
 | 1.8 | **Differential campaign:** replay every port's fuzz corpus (Rust, Jazzer, atheris, go-fuzz, Jazzer.js, libFuzzer Swift, ruzzy, SharpFuzz, PHP) through the Rust core and the port. Compare `reason`. Include the Native Image spike's corpora (811 hostile inputs, 22 signature algorithm inputs) and its JVM-versus-C-ABI harness, pointed at the published 0.7.x jar from Maven Central, pinned by version and checksum (R8). | Every divergence is in R20's recorded list with its reason. None changes an Apple-signed input's verdict or accepts something unsigned; one that does is a bug and gets fixed. Each one found becomes a case where the answer is part of the contract. |
-| 1.9 | **Owner review of the core**, module by module, the adapter's `unsafe` and the two C files included. The checklist maps each THREAT-MODEL §3 mitigation to its code and test. The log lives in `docs/rust-core/REVIEW-LOG.md`. | Every module signed off |
+| 1.9 | **Owner review of the core**, module by module, the adapter's `unsafe` and the two C files included. The checklist maps each THREAT-MODEL §3 mitigation to its code and test. The adapter's review checks R21's `unsafe` goals: each raw call reviewed once in its small safe function, and every upstream CMS SignerInfo contribution to rust-openssl linked (or noted as not sent). The log lives in `docs/rust-core/REVIEW-LOG.md`. | Every module signed off |
 | 1.10 | **Test inventory.** List every behavior test that exists in only one port's suite (Java, Node, Python, Swift, Go, Ruby, PHP, .NET), deduplicated against `fixtures/cases.json` and each other. Tests about a binding's own API shape, concurrency or packaging stay with the binding and are marked so. | The inventory is committed; every entry names its target case or says "stays with the binding" |
 | 1.11 | **Fuzzing.** Drop `parse-der`, `parse-certificate` and `parse-cms` with the modules they fuzzed; keep `verify-receipt` and `verify-transaction`. Add a scheduled CI fuzz job over an OpenSSL build instrumented with ASan and libFuzzer coverage, so the fuzzer reaches into OpenSSL too. The evidence ran 4 × 45 min and 2 × 45 min campaigns this way and found nothing ([follow-up §4.2](../evidence/2026-09-26-substrate-followup.md), [OpenSSL CMS everywhere §4](../evidence/2026-09-26-openssl-cms-everywhere.md)). | The job runs on schedule; a finding opens an issue with the reproducer (test keys only) |
 | 1.12 | **Each R12 target with OpenSSL** (open item the owner deferred, R12). Build OpenSSL and the C ABI for every target and run at least the smoke test there; this can land here or in CI before 0.8.0. | Every target green, or dropped under R12's "Out" with the reason |
@@ -90,23 +92,39 @@ Release: none on its own; ships in 0.8.0 with every other package
 (R19). The CHANGELOG marks it breaking because `cryptography` and
 `asn1crypto` are gone and dates or ids may change shape.
 
-## Phase 3: Java through UniFFI Kotlin
+## Phase 3: Java, two artifacts
 
-Estimate: 1 to 2 weeks. The Alpine/JNA question and the façade size
-decide it.
+Two artifacts with one public API (R18, "Two Java artifacts"): the main
+`apple-purchase-receipt-verifier` (Java 11+, `aprv.wasm` compiled to JVM
+bytecode by Endive) and `apple-purchase-receipt-verifier-java8` (UniFFI
+Kotlin over JNA).
+
+Estimate: 1 to 2 weeks for one artifact, set on 2026-09-25. The Endive
+artifact and its CI matrix come on top and have no estimate yet. The
+Alpine/JNA question, the façade size and the Endive CI matrix decide it.
 
 | Step | Work | Verify |
 |---|---|---|
-| 3.1 | The Maven build compiles the generated Kotlin (`jvmTarget 1.8`, `-Xjdk-release=1.8`, `disable_java_cleaner`), then packs natives from the R12 matrix into the JNA resource paths. | The jar lists all 18 R12 JVM native paths; `javap` shows major 52 |
-| 3.2 | The thin hand-written Java façade (R18): today's import paths and types over the generated engine. | Façade diff reviewed for zero logic; the one-implementation grep passes |
-| 3.3 | Port the JUnit suites (conformance, trust isolation, hostile, caps). | 186/186 |
-| 3.4 | Keep every JVM leg: `java-runtime-8` on real Temurin 8, JDK 11-26, distroless ×4, Spring Boot 4.0/4.1, `jvm-interop` (Kotlin, Scala). | All green |
-| 3.5 | Native-access legs on JDK 25/26: default (one warning, documented), `--enable-native-access=ALL-UNNAMED` (silent), `--illegal-native-access=deny` (documented failure). | Output asserted |
-| 3.6 | Alpine leg (musl) with the library override. | Genuine receipt verifies on `eclipse-temurin:21-alpine` |
-| 3.7 | Move Java's port-only behavior tests into `fixtures/cases.json` (step 1.10's list), then delete the hand-written Java verifier. No copy of its source stays (R8): the differential job runs the Native Image spike's harness against the published 0.7.x jar, downloaded from Maven Central and pinned by version and checksum. | Every 1.10 entry for Java is a case or marked "stays with the binding"; the differential job runs nightly; the one-implementation grep passes |
+| 3.1 | **One reactor.** `java/` becomes a multi-module Maven reactor: a parent POM that holds the one version, and the two modules, each with its own dependencies, Java baseline, sources and tests. | Both modules build from the parent; both POMs carry the same version; `javap` shows major 55 in the main jar and 52 in `-java8` |
+| 3.2 | **Endive engine (main artifact).** The module takes `aprv.wasm` from step 1.3 (the same file npm and Go ship) and runs `run.endive:endive-compiler-maven-plugin` on it at a pinned version, with `interpreterFallback` FAIL. Runtime dependencies: `run.endive:runtime` and `run.endive:wasm` only. | No `.so`, `.dll`, `.dylib` or `.jnilib` in any jar on the consumer classpath and no native-loading call in its classes (the evidence's `inspect.sh native` check); a clean consumer resolves exactly the jar, `runtime` and `wasm` ([Endive build-time JVM §3, §6](../evidence/2026-09-26-endive-build-time-jvm.md)) |
+| 3.3 | **Façade and pool (main artifact).** The thin Java façade (R18) over the C ABI exports inside the instance: it supplies `aprv.clock_now_ms` (`System.currentTimeMillis()`) and `aprv.random_get` (`SecureRandom`, range checked), decodes the JSON view into the façade's types, and keeps a pool with one instance per worker. A trap discards the instance and answers `INTERNAL_ERROR` (ARCHITECTURE §5, §6.1). Needs the C ABI's re-render from step 1.6 for `toJsonIn`. | Façade diff reviewed for zero logic; a forced-trap test recovers and the next call succeeds; N threads over the corpus give the single-threaded rows; no public API hands out a shared instance |
+| 3.4 | **Endive corpus CI (owner, Q41 a).** The full corpus (1,179 rows plus 5,000 mutants) through the built jar on every change, on GitHub's Linux x64 and arm64, macOS arm64, Windows x64 and Windows arm64 runners. s390x under QEMU (big-endian) runs before each release. | Every row byte-identical to the native build on every leg, or the build fails |
+| 3.5 | **UniFFI engine (`-java8`).** The module compiles the generated Kotlin (`jvmTarget 1.8`, `-Xjdk-release=1.8`, `disable_java_cleaner`), then packs the 9 natives of R12 into JNA's resource paths: Linux x86-64, aarch64, ppc64le, s390x (glibc); musl x86-64, aarch64; macOS x86-64, aarch64; Windows x86-64. | The jar lists exactly those 9 native paths; `javap` shows major 52 |
+| 3.6 | **Java 8 GitHub assets.** Every release uploads the UniFFI-built JVM library for the other Java 8 platforms of R12 (a different file from the C ABI archive). The README tells a Java 8 user there to point `libraryOverride` at it; the missing-library error names the asset. | The Release lists each asset with its SHA-256 and attestation; a JVM smoke test loads each one where a Java 8 runs for its target (R12) |
+| 3.7 | **Façade (`-java8`).** The same thin Java façade API (R18) over the generated engine. | Façade diff reviewed for zero logic; the public-API dumps of the two artifacts diff clean against each other; the one-implementation grep passes |
+| 3.8 | **Classpath guard.** A marker resource in each artifact, a startup check in each façade, and a capability conflict in the Gradle module metadata. The README says to depend on exactly one. | A test with both jars on one classpath fails fast with the guard's message; a Gradle build that requests both fails at resolution |
+| 3.9 | Port the JUnit suites (conformance, trust isolation, hostile, caps) to both artifacts. | 186/186 in each |
+| 3.10 | Keep every JVM leg: `java-runtime-8` on real Temurin 8 for `-java8`; JDK 11-26, distroless ×4, Spring Boot 4.0/4.1 and `jvm-interop` (Kotlin, Scala) for both artifacts where the JDK meets the artifact's floor. | All green |
+| 3.11 | **`-java8` corpus through JNA** on its 9 platforms wherever a runner exists (R18). | Every row the same as native |
+| 3.12 | Native-access legs on JDK 25/26 for `-java8`: default (one warning, documented), `--enable-native-access=ALL-UNNAMED` (silent), `--illegal-native-access=deny` (documented failure). The main artifact on the same JDKs prints no warning. | Output asserted |
+| 3.13 | Alpine leg (musl) for `-java8` with the library override. | Genuine receipt verifies on `eclipse-temurin:21-alpine` |
+| 3.14 | **One deployment.** `publish-maven` deploys both modules from the reactor in one Central deployment (release workflow below). | A dry run of the reactor stages both artifacts, with sources and javadoc jars, at one version |
+| 3.15 | Move Java's port-only behavior tests into `fixtures/cases.json` (step 1.10's list), then delete the hand-written Java verifier. No copy of its source stays (R8): the differential job runs the Native Image spike's harness against the published 0.7.x jar, downloaded from Maven Central and pinned by version and checksum. | Every 1.10 entry for Java is a case or marked "stays with the binding"; the differential job runs nightly; the one-implementation grep passes |
+| 3.16 | **Release Count (R18 open item).** Ask central-support@sonatype.com before 0.8.0 whether one deployment of two artifacts counts as one release event, or read the Usage Center after the first release that carries both. | The answer is recorded in CLAUDE.md's release budget |
 
 **Gate G3:** as in the table, plus a post-publish smoke from real Maven
-Central, compiled and run on Temurin 8.
+Central: the main artifact compiled and run on Temurin 11, and `-java8`
+compiled and run on Temurin 8.
 
 Release: none on its own; ships in 0.8.0 (R19).
 
@@ -195,8 +213,8 @@ Estimate: 3 to 5 days.
 4. Rewrite CONTRIBUTING.md (how to change behaviour now), PORTS.md (it
    becomes a binding-capability table), SUPPORT-MATRIX.md, THREAT-MODEL.md
    (the new boundaries: OpenSSL in the trusted base, the adapter's
-   `unsafe`, UniFFI, `aprv.wasm` and its two imports, JNA, native
-   artifacts) and
+   `unsafe`, UniFFI, `aprv.wasm` and its two imports, Endive's compiled
+   bytecode, JNA, native artifacts) and
    PLAN.md (D17 onward from DECISIONS.md, D16 marked superseded).
 5. Turn on the final gate: a CI job that fails if any published package
    source imports a crypto, X.509 or ASN.1 API.
@@ -214,9 +232,13 @@ ship.
 | `rust-wasm` (new) | Builds `aprv.wasm` (`wasm32-wasip1`, wasi-sdk, OpenSSL 4.0.2) and runs the full corpus on every change through a host that traps on any unexpected import; any trap or any row that differs from native fails. Checks the import list is exactly `aprv.clock_now_ms` and `aprv.random_get`. |
 | `java-reference` (new, nightly) | The Native Image spike's harness: the corpus through the published 0.7.x jar (pinned version and checksum) and the Rust core. New differences go to R20 (R8). |
 | `bindings-generate` (new) | Pinned uniffi and cbindgen. Regenerate Swift, the header and Go's `aprv.wasm`, then diff. Public-API dumps diff. |
-| `native-artifacts` (new, test build) | The R12 matrix, each target building OpenSSL too (step 1.12). Build and smoke-load on each runner. Test jobs may cache. |
+| `native-artifacts` (new, test build) | The R12 matrix, each target building OpenSSL too (step 1.12), plus the UniFFI JVM libraries for the Java 8 jar and the Java 8 GitHub assets. Build and smoke-load on each runner. Test jobs may cache. |
 | `one-implementation` (new) | Grep gate from ARCHITECTURE §8. |
-| `python`, `java*`, `node*`, `swift*`, `go*` | Same matrices, now testing the binding. Add Alpine legs (Java, Python) and a browser leg (npm). |
+| `python`, `java*`, `node*`, `swift*`, `go*` | Same matrices, now testing the binding. Add Alpine legs (Java 8 artifact, Python) and a browser leg (npm). The Java jobs cover both artifacts, each on the JDKs its floor allows; `java-runtime-8` stays for `-java8`. |
+| `java-endive-corpus` (new) | Builds the Java 11+ jar from `aprv.wasm` and runs the full corpus (1,179 rows plus 5,000 mutants) through it on every change, on Linux x64 and arm64, macOS arm64, Windows x64 and arm64. Any row not byte-identical to native fails (R18, step 3.4). |
+| `java-endive-s390x` (new, before each release) | The same corpus run on s390x under QEMU, the big-endian check. A failure blocks the release. |
+| `java8-corpus` (new) | The corpus through JNA with the `-java8` jar on each of its 9 platforms that has a runner (step 3.11). |
+| `java-classpath-guard` (new) | Both jars on one classpath must fail fast; a Gradle build requesting both must fail at resolution (step 3.8). |
 | `node-runtimes-fastly` | Removed (R5) |
 | `java-hardened-policy` | Kept as proof: the verdict no longer depends on host policy |
 | `ruby*`, `php*`, `dotnet*`, `elixir-ffi` | Ruby, PHP and .NET go in Phase 7. `elixir-ffi` stays as a C ABI example. |
@@ -246,12 +268,17 @@ under `node/` triggers only npm.
   checks fail when one is missing.
 - Per publish job:
   - `publish-pypi` uploads the maturin wheels plus the sdist;
-  - `publish-maven` assembles the jar from those natives;
+  - `publish-maven` builds the Java reactor and deploys both artifacts in
+    one Central deployment at one version: the main jar compiles the
+    `aprv.wasm` from `build-wasm` with the pinned Endive plugin, and the
+    `-java8` jar packs the 9 natives from `build-natives` (R18);
   - `publish-npm` packs `aprv.wasm` from `build-wasm` with the hand-written
     façade (no native targets);
   - `publish-crates` publishes the core;
   - a new `release-assets` job with `contents: write` uploads the Swift
-    bundle and the C ABI archives to the GitHub Release.
+    bundle, the C ABI archives and the Java 8 JVM libraries for the
+    platforms outside the `-java8` jar (R12) to the GitHub Release.
+- The `java-endive-s390x` QEMU run passes before each release (R18).
 - `release-please.yml` gains two steps on the release branch, next to the
   existing lockfile refresh:
   - build the Swift bundle and write its checksum into `Package.swift`;
@@ -281,9 +308,12 @@ branch.
    `rust/bindings/wasm`, each listed in THREAT-MODEL.
 3. Every published package passes 186/186 `fixtures/cases.json` cases
    through its binding.
-4. Java: a Temurin 8 program compiles against the published jar and
-   verifies the g5 receipt, and JDK 11 to 26 pass. Native-access behaviour
-   is asserted and documented.
+4. Java: a Temurin 11 program compiles against the published main
+   artifact and a Temurin 8 program against the published `-java8`
+   artifact, and both verify the g5 receipt; JDK 11 to 26 pass for both.
+   The Endive corpus run is byte-identical to native on every leg of step
+   3.4, s390x included. Both jars on one classpath fail fast. Native-access
+   behaviour of `-java8` is asserted and documented.
 5. Python: a wheel from real PyPI verifies the g5 receipt on 3.10 in a
    clean venv, on glibc, musl, macOS and Windows.
 6. npm: one package from real npm verifies the g5 receipt on Node 20, Bun,
@@ -329,12 +359,17 @@ branch.
 | A hostile 3 MiB receipt costs about +58 MiB over today's reader, which refused it (R21) | certain (measured) | low natively, unknown in workerd (128 MB isolate) | Bounded by the 3 MiB input cap; step 4.9 measures workerd |
 | A wasi-sdk release renames the wasi-libc symbol the link-time C file defines | low | low | The link fails loudly with undefined imports, and the import check catches it (wasm bake-off §6) |
 | Apple adds a receipt attribute | certain over time | low | It lands in `unknownAttributes`; the private-receipt drift check (step 1.13) reports new type numbers |
-| JNA fails on Alpine (its own `jnidispatch`) | unknown | high for Alpine users | Phase 3.6 leg. Fallback: document `gcompat`, or add a musl-specific loader in the façade. |
+| JNA fails on Alpine (its own `jnidispatch`) | unknown | high for Alpine users of `-java8` | Step 3.13 leg. Fallback: document `gcompat`, or add a musl-specific loader in the façade. Java 11+ users on Alpine take the main artifact, which loads no native code. |
+| Endive is young: 1.1.0 was released on 2026-09-03, and it is a fresh fork of Chicory (Endive 1.0 came out on 2026-06-26) | unknown | high: its compiler does no post-compilation verification, so a miscompile would give wrong answers ([Endive note §2, §10](../evidence/2026-09-26-endive-build-time-jvm.md)) | The pinned Endive version, bumped only with full conformance (R14), and the byte-identical corpus run on every change and on s390x before each release (step 3.4) |
+| Endive on JDK 11 and 17 runs with its workaround for a C2 miscompilation | low (parity on JDK 11 and 17 was clean) | high if the workaround misses a path | Step 3.10 runs the main artifact on JDK 11 to 26, so the workaround's JDK lines stay under test (Endive note §10, row 5) |
+| Endive speed: receipts 5.9 to 9.5 ms and JWS 20 to 29 ms per call on one core (Endive note §9) | measured | informational | The owner accepted the numbers (Q36). No napi-rs-style trigger applies; speed is informational. |
+| A shared Endive instance livelocks silently (Endive note §8) | certain if shared | high | The façade's pool never shares an instance; the concurrency test of step 3.3 |
 | SE-0482 rejects Rust's staticlib dependencies on Linux | **resolved**: the spike linked and ran on Swift 6.2.4 and 6.4 | — | Keep a Linux consumer build in CI; strip the 50 MB static library before release |
 | A wasm trap leaves an instance corrupted | low (lint wall) | medium | Trap recovery and a forced-trap test (ARCHITECTURE §5) |
 | Monoculture: one Rust or OpenSSL bug hits every language | low-medium | high | R8 (the 0.7.x jar as reference), fuzzing into OpenSSL, owner review log, differential campaign |
 | UniFFI is pre-1.0 and breaks between minors (0.32 changed byte buffers) | high | low-medium | Pin; upgrade in a dedicated PR with full conformance |
 | Prebuilt binaries widen the supply-chain surface | certain | medium | No-cache release builds, attestations, reproducible Go wasm, SHA256SUMS, pinned OpenSSL and wasi-sdk hashes |
 | Reproducible Rust builds across runners are harder than expected, now with C inside | medium | low | Pin the toolchain, wasi-sdk and OpenSSL, remap paths; worst case, build the Go wasm once in release and diff only in PR CI |
-| Maven Central budget during the migration | low | medium | One release for the whole migration, 0.8.0 (R19) |
+| Maven Central budget during the migration | low | medium | One release for the whole migration, 0.8.0 (R19). It deploys two Java artifacts; whether that counts as one release event or two is open (step 3.16) |
+| Maven Central's monthly size budget: about 78 MB and 1,167 files a month, with about 18 MB of Java 8 natives per release, so about 4 releases fit a month (R12) | medium | medium: an emergency fix late in a busy month could hit the size limit before the release count | Rare platforms ship as GitHub Release assets, which Central does not count; check the Usage Center before each release, as CLAUDE.md's release budget says |
 | Owner review becomes the bottleneck | high | schedule only | Phase 1 is the critical path by design. Later phases touch no security code. |

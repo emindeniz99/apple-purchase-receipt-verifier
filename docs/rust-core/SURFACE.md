@@ -137,8 +137,8 @@ gone: `openssl-sys` cannot build for `wasm32-unknown-unknown`, and
   and every adapter would inherit one adapter's naming choices.
 - **Proposed state:** a small `aprv-wire` crate converts surface values to
   JSON. The C ABI uses it, and so does `aprv.wasm`, which is the C ABI
-  built for wasm; npm and Go both decode its JSON. UniFFI and jni-rs never
-  see it.
+  built for wasm; npm, Go and the Java 11+ artifact (R18) decode its JSON.
+  UniFFI and jni-rs never see it.
 - **Why it is better:** one serializer, and it is never mistaken for the
   contract.
 - **Migration:** code moves out of `rust/ffi` unchanged in behaviour;
@@ -276,7 +276,8 @@ cargo-deny adds a second, independent guard on rule 1: the core's
 
 | Package | Today's adapter | Can become, without touching core or surface |
 |---|---|---|
-| JVM | UniFFI Kotlin (JNA) | jni-rs + plain Java; UniFFI's JNI backend once released; Diplomat; FFM when the floor reaches 22 |
+| JVM, Java 11+ (main artifact, R18) | `aprv.wasm` compiled to JVM bytecode by Endive, with a hand-written Java façade | any engine of the Java 8 row behind the same façade; FFM when the floor reaches 22 |
+| JVM, Java 8 (`-java8` artifact, R18) | UniFFI Kotlin (JNA) | jni-rs + plain Java; UniFFI's JNI backend once released; Diplomat |
 | Python | UniFFI | PyO3 |
 | JS | `aprv.wasm` + hand-written JS façade (R21) | a Component Model build through jco (the WIT experiment in the wasm bake-off), or wasm-bindgen if the core ever stops linking C |
 | Swift | UniFFI | swift-bridge, or a C-ABI module |
