@@ -79,7 +79,9 @@ human-facing version; where they overlap, they agree.
   from this repository at all until the manifest-layout question there is
   settled.
 - Maven Central's Usage Center caps `io.github.emindeniz99` at **7 releases
-  per calendar month** (also 80 MB/release, 1,000 files). Every
+  per calendar month** (size and file count are monthly totals too: about
+  80 MB and about 1,000 files per calendar month, per
+  https://central.sonatype.org/publish/maven-central-publishing-limits/). Every
   release-please PR merge spends one — `release.yml` publishes to Central on
   every tag, no dry-run.
 - Merge a release PR only for a consumer-visible change: a fix, a feature, a
