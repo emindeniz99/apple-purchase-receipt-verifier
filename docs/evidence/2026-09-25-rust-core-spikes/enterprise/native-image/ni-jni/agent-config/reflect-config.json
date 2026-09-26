@@ -1,0 +1,11 @@
+[
+{
+  "name":"bakeoff.jni.ConfigurationException"
+},
+{
+  "name":"bakeoff.jni.VerificationException"
+},
+{
+  "name":"java.lang.Throwable"
+}
+]

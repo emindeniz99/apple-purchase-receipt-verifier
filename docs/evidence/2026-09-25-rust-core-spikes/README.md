@@ -18,6 +18,12 @@ directory outside the repository.
 | `ruby/` | Does UniFFI's built-in Ruby backend work? (Yes, with weaker enums.) |
 | `chicory/` | Could the JVM run the wasm build instead of native libraries? (No: 28x slower, Java 11+.) |
 | `wasi-go/` | Can Go run the core through wazero without cgo? |
+| `neutral-surface/` | Can adapters annotate a generator-free surface crate from outside (`#[uniffi::remote]`)? (SURFACE.md) |
+| `java-bakeoff/` | Java binding bake-off: UniFFI, jni-rs, flapigen, SWIG and Diplomat against one spec (`SPEC.md`). |
+| `sidecar/` | Does a local verifyReceipt HTTP server work as a product and as a Java library mode? `server/` is the server, `java/` the Java launcher and clients, `java-http-client/` the `HttpURLConnection` versus one-write client comparison, `loadtest/` the Rust load generator for the throughput table. |
+| `enterprise/` | Do the Java finalists survive real deployment shapes? `tomcat/` (Tomcat 9 and 10 hot redeploy, JNA 5.17.0), `tomcat-jna-5.19.1/` (the same rerun on the latest JNA), `spring-boot/` (fat jars), `native-image/` (GraalVM smoke programs and the tracing agent's config). `runs/` holds the output each table row was read from. |
+| `stats/` | The scripts behind the download counts, GitHub stars, platform lists and MSRV rows, plus `reg.out` and a JNA platform dump. `pycur.py` times today's PyPI package. |
+| `javadoc-screenshot/` | The Playwright script that rendered the Javadoc hover screenshot. |
 | `core-no-std-features.diff` | The one core change the wasm builds needed (the `[[test]]` hunks only trimmed the scratch copy and are not part of the change). |
 
 ## Reproduce
@@ -44,3 +50,8 @@ npx workerd@1.20260903.1 test wasm/workerd/config.capnp
 # 4. Go: build wasi-go for wasm32-wasip1, copy aprv_wasi.wasm next to main.go
 go mod init spike && go get github.com/tetratelabs/wazero && CGO_ENABLED=0 go run .
 ```
+
+Not kept here, on purpose: toolchains (JDKs, Swift, GraalVM, Tomcat),
+build outputs, generated bindings (each tool regenerates them from the
+sources above) and a copy of the core (the diff above is the only
+change it carried).

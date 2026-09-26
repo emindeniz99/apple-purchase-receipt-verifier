@@ -1,0 +1,33 @@
+== initial
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@4bff64c2 threads=17
+  mapped=1 [$SCRATCH/enterprise1/runs/jni-10-shared-fixed/temp/libaprv_jni-spike.so]
+app2: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app2 cl@6736fa8d threads=17
+  mapped=1 [$SCRATCH/enterprise1/runs/jni-10-shared-fixed/temp/libaprv_jni-spike.so]
+== redeploy 1
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@2726a998 threads=17
+  mapped=1 [$SCRATCH/enterprise1/runs/jni-10-shared-fixed/temp/libaprv_jni-spike.so]
+app2: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app2 cl@209e48f1 threads=17
+  mapped=1 [$SCRATCH/enterprise1/runs/jni-10-shared-fixed/temp/libaprv_jni-spike.so]
+== redeploy 2
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@28fda12e threads=17
+  mapped=1 [$SCRATCH/enterprise1/runs/jni-10-shared-fixed/temp/libaprv_jni-spike.so]
+app2: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app2 cl@1e5fa1d5 threads=17
+  mapped=1 [$SCRATCH/enterprise1/runs/jni-10-shared-fixed/temp/libaprv_jni-spike.so]
+== redeploy 3
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@325eaca8 threads=17
+  mapped=1 [$SCRATCH/enterprise1/runs/jni-10-shared-fixed/temp/libaprv_jni-spike.so]
+app2: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app2 cl@1e44053a threads=17
+  mapped=1 [$SCRATCH/enterprise1/runs/jni-10-shared-fixed/temp/libaprv_jni-spike.so]
+== findleaks: OK - No memory leaks found
+== after findleaks(GC) app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@325eaca8 threads=17
+  mapped=1 [$SCRATCH/enterprise1/runs/jni-10-shared-fixed/temp/libaprv_jni-spike.so]
+== log warnings/errors:

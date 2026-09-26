@@ -1,0 +1,25 @@
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::               (v3.5.16)
+
+2026-09-25T18:22:07.936Z  INFO 6539 --- [           main] spikeboot.App                            : Starting App v0 using Java 21.0.10 with PID 6539 ($SCRATCH/enterprise1/boot-uniffi/target/app.jar started by root in /home/user)
+2026-09-25T18:22:07.938Z  INFO 6539 --- [           main] spikeboot.App                            : No active profile set, falling back to 1 default profile: "default"
+2026-09-25T18:22:08.837Z  INFO 6539 --- [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 8090 (http)
+2026-09-25T18:22:08.855Z  INFO 6539 --- [           main] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-09-25T18:22:08.855Z  INFO 6539 --- [           main] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.55]
+2026-09-25T18:22:08.884Z  INFO 6539 --- [           main] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
+2026-09-25T18:22:08.885Z  INFO 6539 --- [           main] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 897 ms
+2026-09-25T18:22:09.288Z  INFO 6539 --- [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 8090 (http) with context path '/'
+2026-09-25T18:22:09.306Z  INFO 6539 --- [           main] spikeboot.App                            : Started App in 1.792 seconds (process running for 2.231)
+RUNNER bundleId=dev.bonzer.weeka.app loader=org.springframework.boot.loader.launch.LaunchedClassLoader
+2026-09-25T18:22:10.152Z  INFO 6539 --- [nio-8090-exec-1] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-09-25T18:22:10.152Z  INFO 6539 --- [nio-8090-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+2026-09-25T18:22:10.153Z  INFO 6539 --- [nio-8090-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 1 ms
+2026-09-25T18:22:10.220Z  INFO 6539 --- [ionShutdownHook] o.s.b.w.e.tomcat.GracefulShutdown        : Commencing graceful shutdown. Waiting for active requests to complete
+2026-09-25T18:22:10.230Z  INFO 6539 --- [tomcat-shutdown] o.s.b.w.e.tomcat.GracefulShutdown        : Graceful shutdown complete

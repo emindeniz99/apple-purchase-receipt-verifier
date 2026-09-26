@@ -1,0 +1,28 @@
+== initial
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@2bea5ab4 threads=18
+  mapped=4 [/root/.cache/JNA/temp/jna2015910356323318350.tmp, /root/.cache/JNA/temp/jna5037259723670899275.tmp, $SCRATCH/enterprise1/runs/uniffi-9/webapps/app1/WEB-INF/lib/aprv-uniffi.jar, $SCRATCH/enterprise1/runs/uniffi-9/webapps/app1/WEB-INF/lib/jna-5.17.0.jar]
+== redeploy 1
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@3bb69b55 threads=19
+  mapped=6 [/root/.cache/JNA/temp/jna2015910356323318350.tmp, /root/.cache/JNA/temp/jna2440940536402527075.tmp, /root/.cache/JNA/temp/jna5037259723670899275.tmp, /root/.cache/JNA/temp/jna7158944404094077818.tmp, $SCRATCH/enterprise1/runs/uniffi-9/webapps/app1/WEB-INF/lib/aprv-uniffi.jar, $SCRATCH/enterprise1/runs/uniffi-9/webapps/app1/WEB-INF/lib/jna-5.17.0.jar]
+== redeploy 2
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@7800ca67 threads=20
+  mapped=8 [/root/.cache/JNA/temp/jna2015910356323318350.tmp, /root/.cache/JNA/temp/jna2440940536402527075.tmp, /root/.cache/JNA/temp/jna5037259723670899275.tmp, /root/.cache/JNA/temp/jna7158944404094077818.tmp, /root/.cache/JNA/temp/jna7819540082712491909.tmp, /root/.cache/JNA/temp/jna7892634616925628216.tmp, $SCRATCH/enterprise1/runs/uniffi-9/webapps/app1/WEB-INF/lib/aprv-uniffi.jar, $SCRATCH/enterprise1/runs/uniffi-9/webapps/app1/WEB-INF/lib/jna-5.17.0.jar]
+== redeploy 3
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@67486b08 threads=21
+  mapped=10 [/root/.cache/JNA/temp/jna2015910356323318350.tmp, /root/.cache/JNA/temp/jna2440940536402527075.tmp, /root/.cache/JNA/temp/jna2723760145224287345.tmp, /root/.cache/JNA/temp/jna5037259723670899275.tmp, /root/.cache/JNA/temp/jna5752096044488400414.tmp, /root/.cache/JNA/temp/jna7158944404094077818.tmp, /root/.cache/JNA/temp/jna7819540082712491909.tmp, /root/.cache/JNA/temp/jna7892634616925628216.tmp, $SCRATCH/enterprise1/runs/uniffi-9/webapps/app1/WEB-INF/lib/aprv-uniffi.jar, $SCRATCH/enterprise1/runs/uniffi-9/webapps/app1/WEB-INF/lib/jna-5.17.0.jar]
+== findleaks: OK - Found potential memory leaks in the following applications:
+/app1
+/app1
+/app1
+== after findleaks(GC) app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@67486b08 threads=21
+  mapped=10 [/root/.cache/JNA/temp/jna2015910356323318350.tmp, /root/.cache/JNA/temp/jna2440940536402527075.tmp, /root/.cache/JNA/temp/jna2723760145224287345.tmp, /root/.cache/JNA/temp/jna5037259723670899275.tmp, /root/.cache/JNA/temp/jna5752096044488400414.tmp, /root/.cache/JNA/temp/jna7158944404094077818.tmp, /root/.cache/JNA/temp/jna7819540082712491909.tmp, /root/.cache/JNA/temp/jna7892634616925628216.tmp, $SCRATCH/enterprise1/runs/uniffi-9/webapps/app1/WEB-INF/lib/aprv-uniffi.jar, $SCRATCH/enterprise1/runs/uniffi-9/webapps/app1/WEB-INF/lib/jna-5.17.0.jar]
+== log warnings/errors:
+      1 25-Sep-2026 18:22:58.894 WARNING [Catalina-utility-2] org.apache.catalina.loader.WebappClassLoaderBase.clearReferencesThreads The web application [app1] appears to have started a thread named [JNA Cleaner] but has failed to stop it. This is very likely to create a memory leak. Stack trace of thread:
+      1 25-Sep-2026 18:22:48.735 WARNING [Catalina-utility-1] org.apache.catalina.loader.WebappClassLoaderBase.clearReferencesThreads The web application [app1] appears to have started a thread named [JNA Cleaner] but has failed to stop it. This is very likely to create a memory leak. Stack trace of thread:
+      1 25-Sep-2026 18:22:38.557 SEVERE [Catalina-utility-1] org.apache.catalina.loader.WebappClassLoaderBase.checkThreadLocalMapForLeaks The web application [app1] created a ThreadLocal with key of type [com.sun.jna.Structure$2] (value [com.sun.jna.Structure$2@753b72ba]) and a value of type [com.sun.jna.Structure.StructureSet] (value [[]]) but failed to remove it when the web application was stopped. Thr
+      1 25-Sep-2026 18:22:38.555 WARNING [Catalina-utility-1] org.apache.catalina.loader.WebappClassLoaderBase.clearReferencesThreads The web application [app1] appears to have started a thread named [JNA Cleaner] but has failed to stop it. This is very likely to create a memory leak. Stack trace of thread:

@@ -1,0 +1,25 @@
+== initial
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@52e7a6b2 threads=18
+  mapped=2 [/root/.cache/JNA/temp/jna11034992845647754391.tmp, /root/.cache/JNA/temp/jna7700866685371475452.tmp]
+== redeploy 1
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@4eddb92e threads=19
+  mapped=4 [/root/.cache/JNA/temp/jna11034992845647754391.tmp, /root/.cache/JNA/temp/jna3043618613841706563.tmp, /root/.cache/JNA/temp/jna4829551317680419746.tmp, /root/.cache/JNA/temp/jna7700866685371475452.tmp]
+== redeploy 2
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@3bc4e843 threads=20
+  mapped=6 [/root/.cache/JNA/temp/jna11034992845647754391.tmp, /root/.cache/JNA/temp/jna15962122142323550613.tmp, /root/.cache/JNA/temp/jna3043618613841706563.tmp, /root/.cache/JNA/temp/jna4829551317680419746.tmp, /root/.cache/JNA/temp/jna5531820452936603655.tmp, /root/.cache/JNA/temp/jna7700866685371475452.tmp]
+== redeploy 3
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@5ce4f69d threads=21
+  mapped=8 [/root/.cache/JNA/temp/jna10788462612001548115.tmp, /root/.cache/JNA/temp/jna11034992845647754391.tmp, /root/.cache/JNA/temp/jna15962122142323550613.tmp, /root/.cache/JNA/temp/jna3043618613841706563.tmp, /root/.cache/JNA/temp/jna4829551317680419746.tmp, /root/.cache/JNA/temp/jna5531820452936603655.tmp, /root/.cache/JNA/temp/jna7700866685371475452.tmp, /root/.cache/JNA/temp/jna9609535029522358364.tmp]
+== findleaks: OK - Found potential memory leaks in the following applications:
+/app1
+/app1
+/app1
+== log warnings/errors:
+      1 25-Sep-2026 18:16:44.892 WARNING [Catalina-utility-1] org.apache.catalina.loader.WebappClassLoaderBase.clearReferencesThreads The web application [app1] appears to have started a thread named [JNA Cleaner] but has failed to stop it. This is very likely to create a memory leak. Stack trace of thread:
+      1 25-Sep-2026 18:16:34.595 WARNING [Catalina-utility-1] org.apache.catalina.loader.WebappClassLoaderBase.clearReferencesThreads The web application [app1] appears to have started a thread named [JNA Cleaner] but has failed to stop it. This is very likely to create a memory leak. Stack trace of thread:
+      1 25-Sep-2026 18:16:24.408 SEVERE [Catalina-utility-1] org.apache.catalina.loader.WebappClassLoaderBase.checkThreadLocalMapForLeaks The web application [app1] created a ThreadLocal with key of type [com.sun.jna.Structure$2] (value [com.sun.jna.Structure$2@4a8511dc]) and a value of type [com.sun.jna.Structure.StructureSet] (value [[]]) but failed to remove it when the web application was stopped. Thr
+      1 25-Sep-2026 18:16:24.406 WARNING [Catalina-utility-1] org.apache.catalina.loader.WebappClassLoaderBase.clearReferencesThreads The web application [app1] appears to have started a thread named [JNA Cleaner] but has failed to stop it. This is very likely to create a memory leak. Stack trace of thread:

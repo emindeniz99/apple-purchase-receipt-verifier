@@ -1,0 +1,23 @@
+== initial
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@4f704591 threads=18
+  mapped=2 [/root/.cache/JNA/temp/jna14841962536574638291.tmp, /root/.cache/JNA/temp/jna2134489754758464715.tmp]
+== redeploy 1
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@517e60e6 threads=18
+  mapped=2 [/root/.cache/JNA/temp/jna14841962536574638291.tmp, /root/.cache/JNA/temp/jna2134489754758464715.tmp]
+== redeploy 2
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@7aa3fd5c threads=18
+  mapped=2 [/root/.cache/JNA/temp/jna14841962536574638291.tmp, /root/.cache/JNA/temp/jna2134489754758464715.tmp]
+== redeploy 3
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@4dc6fbb0 threads=18
+  mapped=2 [/root/.cache/JNA/temp/jna14841962536574638291.tmp, /root/.cache/JNA/temp/jna2134489754758464715.tmp]
+== findleaks: OK - Found potential memory leaks in the following applications:
+/app1
+== after findleaks(GC) app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@4dc6fbb0 threads=18
+  mapped=2 [/root/.cache/JNA/temp/jna14841962536574638291.tmp, /root/.cache/JNA/temp/jna2134489754758464715.tmp]
+== log warnings/errors:
+      1 25-Sep-2026 18:18:39.891 WARNING [Catalina-utility-1] org.apache.catalina.loader.WebappClassLoaderBase.clearReferencesThreads The web application [app1] appears to have started a thread named [JNA Cleaner] but has failed to stop it. This is very likely to create a memory leak. Stack trace of thread:

@@ -1,0 +1,18 @@
+== initial
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@6d7fc27 threads=17
+  mapped=1 [$SCRATCH/enterprise1/runs/jni-10-unique/temp/libaprv_jni-18009708190626878217.so]
+== redeploy 1
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@7d431c14 threads=17
+  mapped=2 [$SCRATCH/enterprise1/runs/jni-10-unique/temp/libaprv_jni-18009708190626878217.so, $SCRATCH/enterprise1/runs/jni-10-unique/temp/libaprv_jni-3582817283897034888.so]
+== redeploy 2
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@15123626 threads=17
+  mapped=3 [$SCRATCH/enterprise1/runs/jni-10-unique/temp/libaprv_jni-14637706101446658465.so, $SCRATCH/enterprise1/runs/jni-10-unique/temp/libaprv_jni-18009708190626878217.so, $SCRATCH/enterprise1/runs/jni-10-unique/temp/libaprv_jni-3582817283897034888.so]
+== redeploy 3
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@5b9c3e6b threads=17
+  mapped=4 [$SCRATCH/enterprise1/runs/jni-10-unique/temp/libaprv_jni-14637706101446658465.so, $SCRATCH/enterprise1/runs/jni-10-unique/temp/libaprv_jni-18009708190626878217.so, $SCRATCH/enterprise1/runs/jni-10-unique/temp/libaprv_jni-3582817283897034888.so, $SCRATCH/enterprise1/runs/jni-10-unique/temp/libaprv_jni-3939380405524648860.so]
+== findleaks: OK - No memory leaks found
+== log warnings/errors:

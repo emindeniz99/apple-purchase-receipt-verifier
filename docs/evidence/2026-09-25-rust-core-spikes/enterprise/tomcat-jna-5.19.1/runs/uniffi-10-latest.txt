@@ -1,0 +1,28 @@
+== initial
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@68f1b17f threads=18
+  mapped=2 [/root/.cache/JNA/temp/jna10757714049831254903.tmp, /root/.cache/JNA/temp/jna4753261359347241279.tmp]
+== redeploy 1
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@edeb218 threads=19
+  mapped=4 [/root/.cache/JNA/temp/jna10075298686279145635.tmp, /root/.cache/JNA/temp/jna10757714049831254903.tmp, /root/.cache/JNA/temp/jna4753261359347241279.tmp, /root/.cache/JNA/temp/jna7846648806436596498.tmp]
+== redeploy 2
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@2640c529 threads=20
+  mapped=6 [/root/.cache/JNA/temp/jna10075298686279145635.tmp, /root/.cache/JNA/temp/jna10757714049831254903.tmp, /root/.cache/JNA/temp/jna12951463254781342169.tmp, /root/.cache/JNA/temp/jna4753261359347241279.tmp, /root/.cache/JNA/temp/jna7846648806436596498.tmp, /root/.cache/JNA/temp/jna7861268189639261341.tmp]
+== redeploy 3
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@7ee1fe2b threads=21
+  mapped=8 [/root/.cache/JNA/temp/jna10075298686279145635.tmp, /root/.cache/JNA/temp/jna10757714049831254903.tmp, /root/.cache/JNA/temp/jna12951463254781342169.tmp, /root/.cache/JNA/temp/jna3339165837547830237.tmp, /root/.cache/JNA/temp/jna4753261359347241279.tmp, /root/.cache/JNA/temp/jna7846648806436596498.tmp, /root/.cache/JNA/temp/jna7861268189639261341.tmp, /root/.cache/JNA/temp/jna9510987803356027529.tmp]
+== findleaks: OK - Found potential memory leaks in the following applications:
+/app1
+/app1
+/app1
+== after findleaks(GC) app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@7ee1fe2b threads=21
+  mapped=8 [/root/.cache/JNA/temp/jna10075298686279145635.tmp, /root/.cache/JNA/temp/jna10757714049831254903.tmp, /root/.cache/JNA/temp/jna12951463254781342169.tmp, /root/.cache/JNA/temp/jna3339165837547830237.tmp, /root/.cache/JNA/temp/jna4753261359347241279.tmp, /root/.cache/JNA/temp/jna7846648806436596498.tmp, /root/.cache/JNA/temp/jna7861268189639261341.tmp, /root/.cache/JNA/temp/jna9510987803356027529.tmp]
+== log warnings/errors:
+      1 25-Sep-2026 18:55:48.955 WARNING [Catalina-utility-1] org.apache.catalina.loader.WebappClassLoaderBase.clearReferencesThreads The web application [app1] appears to have started a thread named [JNA Cleaner] but has failed to stop it. This is very likely to create a memory leak. Stack trace of thread:
+      1 25-Sep-2026 18:55:38.658 WARNING [Catalina-utility-2] org.apache.catalina.loader.WebappClassLoaderBase.clearReferencesThreads The web application [app1] appears to have started a thread named [JNA Cleaner] but has failed to stop it. This is very likely to create a memory leak. Stack trace of thread:
+      1 25-Sep-2026 18:55:28.289 SEVERE [Catalina-utility-1] org.apache.catalina.loader.WebappClassLoaderBase.checkThreadLocalMapForLeaks The web application [app1] created a ThreadLocal with key of type [com.sun.jna.Structure$2] (value [com.sun.jna.Structure$2@40fcc90b]) and a value of type [com.sun.jna.Structure.StructureSet] (value [[]]) but failed to remove it when the web application was stopped. Thr
+      1 25-Sep-2026 18:55:28.287 WARNING [Catalina-utility-1] org.apache.catalina.loader.WebappClassLoaderBase.clearReferencesThreads The web application [app1] appears to have started a thread named [JNA Cleaner] but has failed to stop it. This is very likely to create a memory leak. Stack trace of thread:

@@ -1,0 +1,33 @@
+== initial
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@6c5945a7 threads=17
+  mapped=1 [$SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-16760327541173066006.so]
+app2: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app2 cl@16aa8654 threads=17
+  mapped=2 [$SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-14250075164709658659.so, $SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-16760327541173066006.so]
+== redeploy 1
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@185b770f threads=17
+  mapped=3 [$SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-14250075164709658659.so, $SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-15086649175726060438.so, $SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-16760327541173066006.so]
+app2: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app2 cl@24b450e8 threads=17
+  mapped=4 [$SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-14250075164709658659.so, $SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-15086649175726060438.so, $SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-16141850424658322423.so, $SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-16760327541173066006.so]
+== redeploy 2
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@2924f990 threads=17
+  mapped=5 [$SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-12069869676668747496.so, $SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-14250075164709658659.so, $SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-15086649175726060438.so, $SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-16141850424658322423.so, $SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-16760327541173066006.so]
+app2: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app2 cl@284def3d threads=17
+  mapped=6 [$SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-12069869676668747496.so, $SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-14113396015831412967.so, $SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-14250075164709658659.so, $SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-15086649175726060438.so, $SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-16141850424658322423.so, $SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-16760327541173066006.so]
+== redeploy 3
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@49b4bd01 threads=17
+  mapped=7 [$SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-12069869676668747496.so, $SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-14113396015831412967.so, $SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-14250075164709658659.so, $SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-15086649175726060438.so, $SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-16141850424658322423.so, $SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-16760327541173066006.so, $SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-3725838936894261597.so]
+app2: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app2 cl@babbe63 threads=17
+  mapped=8 [$SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-10045473095724529334.so, $SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-12069869676668747496.so, $SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-14113396015831412967.so, $SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-14250075164709658659.so, $SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-15086649175726060438.so, $SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-16141850424658322423.so, $SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-16760327541173066006.so, $SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-3725838936894261597.so]
+== findleaks: OK - No memory leaks found
+== after findleaks(GC) app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@49b4bd01 threads=17
+  mapped=2 [$SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-10045473095724529334.so, $SCRATCH/enterprise1/runs/jni-10-two-unique/temp/libaprv_jni-3725838936894261597.so]
+== log warnings/errors:
