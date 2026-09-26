@@ -122,7 +122,7 @@ runtime matrix decide it.
 | 4.3 | Conformance through the package on Node 20/22/24/26. Runtime smokes: Bun, Deno, workerd ×3, `@edge-runtime/vm`, and headless Chromium, Firefox and WebKit (new). | 186/186 on Node; the genuine receipt and JWS on every runtime |
 | 4.4 | Forced-trap test: an adapter-only debug export panics, the façade recovers, and the next call succeeds. A second test, on a debug build, calls one of the stubbed WASI functions and checks that it traps and that the façade recovers. | Tests green |
 | 4.5 | Drop Fastly and Akamai (R5): the job, README rows and SUPPORT-MATRIX rows. | CHANGELOG breaking note |
-| 4.6 | Publish the Node numbers. Apply R4 (its trigger is an open owner question). | BENCHMARKS.md updated |
+| 4.6 | Publish the Node numbers. Apply R4: napi-rs only on a user's throughput report. | BENCHMARKS.md updated |
 | 4.7 | Move Node's port-only behavior tests into `fixtures/cases.json` (step 1.10's list), then delete `node/src` verifier code. Keep the conformance and runtime smokes. | Every 1.10 entry for Node is a case or marked "stays with the binding"; the one-implementation grep finds no `node:crypto` or `crypto.subtle` |
 | 4.8 | Once the migration is on main, report Bun's WASI `random_get` bug upstream (Bun 1.3.11 returns the wrong value and overwrites module memory). Recheck on the current Bun first. Repro: [bun-random-get.mjs](../evidence/2026-09-26-security-substrate-bakeoff/wasm/bun-random-get.mjs). | Issue link recorded here, or "fixed in Bun x.y" |
 | 4.9 | **Memory in workerd** (R21, owner Q32). Run the hostile 3 MiB receipt of tiny attributes through the package in workerd, whose isolate limit is 128 MB. The evidence measured 145 MiB peak in Route C on Node against 67 MiB for a tiny receipt ([ASN.1 payload note §3](../evidence/2026-09-26-openssl-asn1-payload.md)). | The peak and the outcome are recorded in BENCHMARKS.md; if the isolate fails, the failure is closed (an error, never an acceptance) and the owner decides what follows |
@@ -320,7 +320,7 @@ branch.
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| Wasm speed on Node (about 2x `node:crypto` per receipt, about 6x per JWS; R4) disappoints users | medium | medium | Publish the numbers; R4's trigger (an open owner question) |
+| Wasm speed on Node (about 2x `node:crypto` per receipt, about 6x per JWS; R4) disappoints users | medium | medium | Publish the numbers; R4: napi-rs if a user reports throughput trouble |
 | Go through wazero is about 12x slower per receipt than today's Go port (2,495 against 207 µs, different runs) | high (measured) | medium | R6 alternatives: the opt-in cgo fast path |
 | An OpenSSL vulnerability affects the verification path | certain over time: OpenSSL publishes security advisories | high | The OpenSSL version and tarball hash are pinned in one place and watched (`openssl-src` bumps, OpenSSL advisories, RustSec for rust-openssl). A release picks up a fix by bumping the pin: every native target and `aprv.wasm` rebuild with no cache, and the conformance run and corpus must pass. That bump is a security bump of a shipped dependency, which CLAUDE.md's release budget counts as release-worthy; the budget keeps 2 Maven Central releases in reserve for it. |
 | OpenSSL does not build or pass on some R12 targets | unknown: only Linux x86_64 built so far | medium | Step 1.12 before 0.8.0; a failing target leaves R12's list with the reason |

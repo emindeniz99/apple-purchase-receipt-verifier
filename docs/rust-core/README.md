@@ -71,7 +71,7 @@ the next release.
 | # | Question | Recommendation |
 |---|---|---|
 | R21 (**accepted** 2026-09-26) | Security substrate? | OpenSSL 4 through rust-openssl, with the CMS API and our own chain policy. `asn1.rs`, `x509.rs`, `cms.rs`, `chain.rs` and `crypto.rs` are deleted; the payload is read with OpenSSL's ASN.1 templates. npm and Go share one `aprv.wasm`. |
-| R4 (**accepted**) | npm on Node: the OpenSSL wasm module took 1,395 µs per receipt and 4,550 µs per JWS against 683 and 732 µs for today's `node:crypto` build (informational). Accept it, or add a napi-rs native addon? | Ship the plain wasm module. The napi-rs trigger (above 2x, or a user reports throughput trouble) is met for JWS from the start; whether it still stands is open. |
+| R4 (**accepted**) | npm on Node: the OpenSSL wasm module took 1,395 µs per receipt and 4,550 µs per JWS against 683 and 732 µs for today's `node:crypto` build (informational). Accept it, or add a napi-rs native addon? | Ship the plain wasm module. Add napi-rs only if a user reports throughput trouble; the 2x speed trigger was dropped on 2026-09-26. |
 | R6 (**accepted**, plus an opt-in cgo fast path on demand) | Go: wazero (cgo-free; the OpenSSL module took 2,495 µs per receipt against 207 µs for today's Go port), cgo (native speed, loses `CGO_ENABLED=0`), keep the Go port, or retire it? | wazero, running the same `aprv.wasm` as npm |
 | R7 (**accepted**: 6.2 everywhere) | Swift on Linux needs Swift 6.2 (SE-0482) for a prebuilt Rust library. Raise the floor or drop Linux? | Raise the floor to 6.2 |
 | R18 (**accepted**, supersedes R13) | Java binding? | UniFFI engine + thin hand-written Java façade; app servers install the jars in shared `lib/` |

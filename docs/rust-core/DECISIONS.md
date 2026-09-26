@@ -156,15 +156,13 @@ arrives.
 | B. wasm for edge and browsers, napi-rs native addon for Node | Native, close to today | A second binding tool, 6-8 platform packages (`@…/linux-x64-gnu` and so on) as optionalDependencies, a larger release matrix, and a native-module story for serverless bundlers. |
 | C. A from day one, B written in as a trigger | A until the trigger fires | Only the trigger to agree on now. |
 
-Recommendation: **C.** Ship wasm and publish the numbers in
-BENCHMARKS.md. Add napi-rs only if wasm on Node is **more than 2x** the
-0.6.0 `node:crypto` build on either path, or a user reports throughput
-trouble. napi-rs would call the same core, so no security code gets added
-either way.
-
-**Open (2026-09-26):** on the Route C numbers the JWS path is above the
-2x trigger from the start. The trigger was agreed when the pure-Rust core
-was the plan; whether it still stands is the owner's call.
+Decision: **C, with the trigger narrowed (owner, 2026-09-26).** Ship
+wasm and publish the numbers in BENCHMARKS.md. The 2x speed trigger
+agreed on 2026-09-25 is dropped: on the Route C numbers the JWS path
+would have met it from the start, and the owner stated that speed does
+not matter. Add napi-rs only if a user reports throughput trouble.
+napi-rs would call the same core, so no security code gets added either
+way.
 
 ---
 
