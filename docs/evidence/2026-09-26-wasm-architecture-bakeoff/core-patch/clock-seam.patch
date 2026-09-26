@@ -1,0 +1,95 @@
+diff -ru a/src/clock.rs b/src/clock.rs
+--- a/src/clock.rs	2026-09-26 08:45:43.583218085 +0000
++++ b/src/clock.rs	2026-09-26 08:45:43.605550081 +0000
+@@ -29,7 +29,42 @@
+ 
+ impl Clock for SystemClock {
+     fn now(&self) -> SystemTime {
+-        SystemTime::now()
++        system_now()
++    }
++}
++
++/// Spike (wasm bake-off): the one place the crate reads the host's wall
++/// clock. Native targets read `SystemTime::now()` as before. On
++/// `wasm32-unknown-unknown` (where `SystemTime::now()` traps) and on any
++/// wasm build compiled with `--cfg aprv_host_clock`, it reads the clock an
++/// adapter installed through [`platform::install_clock`] (SURFACE.md 4.1).
++/// Without an installed clock it panics, which is exactly today's trap.
++#[cfg(not(all(target_arch = "wasm32", any(target_os = "unknown", aprv_host_clock))))]
++pub(crate) fn system_now() -> SystemTime {
++    SystemTime::now()
++}
++
++#[cfg(all(target_arch = "wasm32", any(target_os = "unknown", aprv_host_clock)))]
++pub(crate) fn system_now() -> SystemTime {
++    match platform::CLOCK.get() {
++        Some(now) => now(),
++        None => panic!("no host clock installed"),
++    }
++}
++
++/// Spike: the wasm-only hook of SURFACE.md 4.1. It does not exist on
++/// native targets, so a native caller cannot move the validity instant.
++#[cfg(all(target_arch = "wasm32", any(target_os = "unknown", aprv_host_clock)))]
++pub mod platform {
++    use std::sync::OnceLock;
++    use std::time::SystemTime;
++
++    pub(crate) static CLOCK: OnceLock<fn() -> SystemTime> = OnceLock::new();
++
++    /// Installs the host's wall clock once. Only the wasm adapter calls it.
++    /// A second call is refused (`Err(())`), so the clock cannot be moved later.
++    pub fn install_clock(now: fn() -> SystemTime) -> Result<(), ()> {
++        CLOCK.set(now).map_err(|_| ())
+     }
+ }
+ 
+diff -ru a/src/endpoint.rs b/src/endpoint.rs
+--- a/src/endpoint.rs	2026-09-26 08:45:43.583317193 +0000
++++ b/src/endpoint.rs	2026-09-26 08:45:43.606180072 +0000
+@@ -522,7 +522,7 @@
+         VerifyReceiptResult {
+             environment: self.environment,
+             outcome,
+-            request_date: at.unwrap_or_else(SystemTime::now),
++            request_date: at.unwrap_or_else(crate::clock::system_now),
+         }
+     }
+ 
+diff -ru a/src/jws.rs b/src/jws.rs
+--- a/src/jws.rs	2026-09-26 08:45:43.583284896 +0000
++++ b/src/jws.rs	2026-09-26 08:45:43.606019131 +0000
+@@ -452,7 +452,7 @@
+         // Where the payload states no date, the fallback reads the system
+         // clock.
+         let signed_at_millis = signed_at_millis_of(&payload)?;
+-        let effective = signed_at_millis.unwrap_or_else(|| unix_millis(SystemTime::now()));
++        let effective = signed_at_millis.unwrap_or_else(|| unix_millis(crate::clock::system_now()));
+         validate_pair(&leaf, &intermediate, &self.anchors, effective)?;
+ 
+         if leaf.public_key_algorithm_oid() != OID_EC_PUBLIC_KEY {
+diff -ru a/src/lib.rs b/src/lib.rs
+--- a/src/lib.rs	2026-09-26 08:45:43.583244121 +0000
++++ b/src/lib.rs	2026-09-26 08:45:43.605681521 +0000
+@@ -102,6 +102,8 @@
+ mod endpoint;
+ 
+ pub use clock::{Clock, FixedClock, SystemClock};
++#[cfg(all(target_arch = "wasm32", any(target_os = "unknown", aprv_host_clock)))]
++pub use clock::platform;
+ pub use environment::Environment;
+ pub use error::{ConfigError, CoreError, Reason, UnknownReason, VerificationError};
+ pub use json_depth::MAX_JSON_NESTING_DEPTH;
+diff -ru a/src/receipt.rs b/src/receipt.rs
+--- a/src/receipt.rs	2026-09-26 08:45:43.583262632 +0000
++++ b/src/receipt.rs	2026-09-26 08:45:43.605846514 +0000
+@@ -131,7 +131,7 @@
+     // accept an expired chain. That is why the receipt path takes no clock
+     // option at all.
+     let at_millis = read_creation_date(&cms.content)
+-        .map_or_else(|| unix_millis_of(SystemTime::now()), unix_millis_of);
++        .map_or_else(|| unix_millis_of(crate::clock::system_now()), unix_millis_of);
+ 
+     // The embedded certificates are attacker-supplied and are walked into a
+     // path below, so a receipt carrying more of them than a chain can hold

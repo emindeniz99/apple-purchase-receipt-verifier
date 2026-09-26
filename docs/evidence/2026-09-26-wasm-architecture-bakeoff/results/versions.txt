@@ -1,0 +1,26 @@
+# Exact versions, 2026-09-26
+rustc: rustc 1.94.1 (e408947bf 2026-03-25)
+cargo: cargo 1.94.1 (29ea6fb6a 2026-03-24)
+rustc nightly (P3 only, RUSTUP_HOME=$SCRATCH/rustup): rustc 1.100.0-nightly (5ceaf6608 2026-09-25)
+Rust targets: wasm32-unknown-unknown, wasm32-wasip1, wasm32-wasip2, wasm32-unknown-emscripten (stable); wasm32-wasip3 (nightly)
+clang (host): Ubuntu clang version 18.1.3 (1ubuntu1)
+wasi-sdk: 34.0 (clang version 23.1.0-wasi-sdk (https://github.com/llvm/llvm-project 895aa2c896ada719451be2e3673c83da8ddf1141)); tarball sha256 b761e3a0721dbae9c09a0059e5fdb2bf917d1b4a8a7b430fb3b5aafb0984b2c4
+Emscripten: emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 6.0.10-git (d6c521a7f05449857c76bd99e396895583cf2083) from emscripten-releases-builds linux/666337b525e673e769121856d175f6f52b8ead64/wasm-binaries.tar.xz sha256 a51dd2829bdf725d268974728e032533b106ea01cb482a62288ec12627a7abbe; its clang: clang version 24.0.0git (https:/github.com/llvm/llvm-project a06d9165905ce89b5ffef2bbb84c886d60a9b8bf)
+AWS-LC: 1.73.0 in aws-lc-sys 0.41.0 (crates.io)
+OpenSSL: 4.0.2, sha256 736b467530f916737b7031310ccb21d8218c6229e61e8e160cd1d3458cd543a8
+LibreSSL: 4.3.2, sha256 edf01aee24c65d69e6a9efcb9d44bcda682ff9d4f3bbbd95e794e1dfa90847b5
+rust-openssl: openssl 0.10.81, openssl-sys 0.9.117
+wit-bindgen: 0.62.0 (crate); wit-bindgen-cli 0.62.0
+wasm-tools: wasm-tools 1.259.0 (7fc33f279 2026-09-10) sha256(tar) 3e9b374b4c7715b771b69bf0d65a337990ed4546ec5e97e01c0ff587dfc52160
+wasmtime: wasmtime 49.0.1 (46c23a87d 2026-09-24) (CLI, sha256(tar.xz) c71f7e0d30a92e418f0d17db7c6d8f6664c1ad764340a1278678f4209deab534); wasmtime-py 49.0.0 (PyPI)
+WASI p1->p2 reactor adapter: wasmtime v49.0.1 release asset wasi_snapshot_preview1.reactor.wasm sha256 efb5f04f1cc9860ff1505b193545f8eed375993d34199e247723e15958fe682d
+binaryen (wasm-opt): wasm-opt version 132 (version_132) sha256(tar) 195ddc94f9bc89f45abdabb0b9eea86023d727ba90eac8b35b80f2544fc30572
+wabt: 1.0.37 sha256(tar) cfc675dc9b663d9adc8c75d982c1ba29f661448a2e026a67e71fe3f76a3e09f3
+jco: @bytecodealliance/jco 1.35.0; @bytecodealliance/preview2-shim 0.26.0 (npm)
+workerd: npm workerd 1.20260926.1 (workerd 2026-09-26); wrangler 4.141.0
+Node: v22.22.2; Bun: 1.3.11; Deno: deno 2.9.7 (stable, release, x86_64-unknown-linux-gnu)
+Go: go version go1.24.7 linux/amd64 + GOTOOLCHAIN go1.25 for wazero v1.12.0
+Chromium: Chromium 141.0.7390.37  via Playwright 1.56.1 (preinstalled)
+Firefox: 156.0.1 (ftp.mozilla.org release tarball, sha256 7405c0487fa3e517c1e20e5aec0ed14014185dad6357d99a59b53f65acb10ed6, matches Mozilla's SHA256SUMS)
+WebKitGTK: libwebkit2gtk-4.1-0 2.52.6-0ubuntu0.24.04.1 MiniBrowser (apt webkit2gtk-driver), under Xvfb
+Java oracle: JDK 25.0.4.1 + Bouncy Castle 1.86 rows reused from the previous bake-off (not rerun)

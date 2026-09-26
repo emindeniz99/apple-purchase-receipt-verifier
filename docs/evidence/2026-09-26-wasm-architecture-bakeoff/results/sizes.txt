@@ -1,0 +1,27 @@
+# 2026-09-26. wasm-tools 1.259.0, binaryen 132, gzip -9. JS = bytes the host loads besides the wasm.
+rust-uu                raw    621862 | strip    621632 | strip+gz   198992 | Oz+strip / gz 521708 / 181078 | JS   11901 B, gz   4543 B | sha256 57161912afc01507
+rust-w1                raw    614663 | strip    614309 | strip+gz   201980 | Oz+strip / gz 522238 / 183944 | JS   11901 B, gz   4543 B | sha256 642ab3a4d1310d83
+rust-c                 raw    605476 | strip    605122 | strip+gz   199182 | Oz+strip / gz 515415 / 181582 | JS   11901 B, gz   4543 B | sha256 daeb502056a6c68e
+awslc-w1               raw   1414231 | strip   1413877 | strip+gz   556474 | Oz+strip / gz 1137646 / 507892 | JS   11901 B, gz   4543 B | sha256 344487ab90cb6be5
+awslc-c                raw   1406386 | strip   1406032 | strip+gz   555409 | Oz+strip / gz 1132119 / 505948 | JS   11901 B, gz   4543 B | sha256 f5d7eaf1c7764a3f
+ossl-w1                raw   2941778 | strip   2941424 | strip+gz   973223 | Oz+strip / gz 2138940 / 856760 | JS   11901 B, gz   4543 B | sha256 668057bc750ebeaa
+ossl-c                 raw   2933868 | strip   2933514 | strip+gz   971415 | Oz+strip / gz 2131844 / 853886 | JS   11901 B, gz   4543 B | sha256 f1629ee6275ed995
+awslc-em               raw   1117625 | strip   1117625 | strip+gz   517525 | Oz+strip / gz n/a | JS   20439 B, gz   7265 B | sha256 243f771fed8f2781
+ossl-em                raw   2161403 | strip   2161403 | strip+gz   880207 | Oz+strip / gz n/a | JS   20488 B, gz   7256 B | sha256 5abf1625df711348
+libressl-em            raw    967791 | strip    967791 | strip+gz   426765 | Oz+strip / gz n/a | JS   86517 B, gz  25044 B | sha256 b00e27f91bd21c6f
+awslc-em-web           raw   1117625 | strip   1117625 | strip+gz   517525 | Oz+strip / gz n/a | JS   19414 B, gz   6945 B | sha256 243f771fed8f2781
+ossl-em-web            raw   2161403 | strip   2161403 | strip+gz   880207 | Oz+strip / gz n/a | JS   20488 B, gz   7256 B | sha256 5abf1625df711348
+libressl-em-web        raw    967791 | strip    967791 | strip+gz   426765 | Oz+strip / gz n/a | JS   83971 B, gz  24382 B | sha256 b00e27f91bd21c6f
+awslc-comp.component   raw   1431359 | strip   1428332 | strip+gz   560756 | Oz+strip / gz n/a | JS       0 B, gz      0 B | sha256 6c43727a78773ea6
+ossl-comp.component    raw   2974268 | strip   2969735 | strip+gz   980533 | Oz+strip / gz n/a | JS       0 B, gz      0 B | sha256 5484650d551ddf3c
+awslc-min-jco(core)    raw   1422760 | strip   1422360 | strip+gz   558789 | Oz+strip / gz 1142956 / 508455 | JS  207248 B, gz  34016 B | sha256 6db886346e4afee8
+  +aprv.core2.wasm     raw       224
+  +aprv.core3.wasm     raw       210
+ossl-wasi-jco(core)    raw   2957692 | strip   2957292 | strip+gz   975874 | Oz+strip / gz 2147448 / 858873 | JS  243630 B, gz  40249 B | sha256 d9cc2d4f9c26e642
+  +aprv.core2.wasm     raw      4738
+  +aprv.core3.wasm     raw       603
+  +aprv.core4.wasm     raw       310
+rust                   native C ABI .so raw 1068768, sha256 5ba629a91972a929
+ossl402                native C ABI .so raw 8428112, sha256 6a1c6d487d5e6e20
+libressl432            native C ABI .so raw 2644272, sha256 5d2bf767e0d0d637
+awslc                  native C ABI .so raw 3049104, sha256 bd0809383d6df7b7

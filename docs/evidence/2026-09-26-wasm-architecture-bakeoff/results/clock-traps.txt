@@ -1,0 +1,10 @@
+rows: 1179
+trapped without the seam: 58
+rows that read the host clock with the seam: 58 (60 reads)
+trapped but never read the clock: []
+read the clock but did not trap: []
+  endpoint (no pinned clock): 28 rows, 1 clock read(s) each
+  endpoint (no pinned clock): 2 rows, 2 clock read(s) each
+  endpoint (pinned clock): 2 rows, 1 clock read(s) each
+  jws: 3 rows, 1 clock read(s) each
+  receipt: 23 rows, 1 clock read(s) each

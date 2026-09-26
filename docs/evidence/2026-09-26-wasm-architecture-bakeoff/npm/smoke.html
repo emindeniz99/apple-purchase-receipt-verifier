@@ -1,0 +1,18 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>aprv package smoke</title>
+<script type="module">
+// Loads the INSTALLED package straight from node_modules (no bundler):
+// the "browser" entry of each prototype.
+import { smoke } from './smoke.mjs';
+import { vectors } from './vectors.mjs';
+const name = new URLSearchParams(location.search).get('pkg');
+let report;
+try {
+  const t0 = performance.now();
+  const pkg = await import(`./node_modules/${name}/browser.js`);
+  const importMs = performance.now() - t0;
+  report = { pkg: name, userAgent: navigator.userAgent, importMs: Math.round(importMs * 10) / 10, ...smoke(pkg, vectors) };
+} catch (e) { report = { pkg: name, ok: false, error: String(e && e.stack || e) }; }
+await fetch('/done', { method: 'POST', body: JSON.stringify(report) });
+</script>

@@ -1,0 +1,37 @@
+# Spike only (wasm architecture bake-off). The previous bake-off's shim
+# (../2026-09-26-security-substrate-bakeoff/wasm/shim) plus one export,
+# aprv_init, that installs the host clock where the core's clock seam
+# (core-patch/clock-seam.patch) asks for one. It links the UNCHANGED C ABI
+# (rust/ffi) into a wasm module; no verification logic lives here.
+# scripts/build-core.sh copies this file to the scratch tree as Cargo.toml
+# and replaces @TREE@ with the patched scratch copy of rust/.
+[package]
+name = "aprv-wasm-shim"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+# cdylib for wasm32-wasip1 / wasm32-unknown-unknown; staticlib for
+# wasm32-unknown-emscripten, which emcc links (scripts/link-emscripten.sh).
+crate-type = ["cdylib", "staticlib"]
+path = "src/lib.rs"
+
+[dependencies]
+apple-purchase-receipt-verifier-ffi = { path = "@TREE@/rust/ffi" }
+# Named only so `--features aprv/<feature>` can pick the substrate.
+aprv = { package = "apple-purchase-receipt-verifier", path = "@TREE@/rust" }
+
+[features]
+# Off only for CLOCK_SEAM=0 builds (the core without clock-seam.patch).
+default = ["clock-seam"]
+clock-seam = []
+
+[lints.rust]
+unexpected_cfgs = { level = "allow", check-cfg = ['cfg(aprv_host_clock)'] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
