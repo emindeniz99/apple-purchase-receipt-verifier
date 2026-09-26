@@ -892,9 +892,15 @@ runner exists.
 1. **Release Count.** Check Central's Usage Center after the first
    release that carries both artifacts, or ask central-support@sonatype.com
    before it.
-2. **Memory class.** The default `ByteBufferMemory` ran 1.2 to 1.5 times
-   slower than `ByteArrayMemory`, and a library has to pick one (§10,
-   row 3).
+2. **Memory class: settled.** The façade builds each instance with
+   `ByteArrayMemory`, which Endive's docs recommend for recent OpenJDK
+   systems. It was 24 to 42% faster than the default `ByteBufferMemory`
+   with byte-identical output, and one instance per thread scaled to 3.0
+   to 3.1 times one thread on 4 cores: 152 JWS and 464 receipts per
+   second on JDK 21 ([wasm speed](../evidence/2026-09-26-wasm-speed.md)).
+   OpenSSL's `enable-ec_nistp_64_gcc_128` is not used: it sped up Node
+   but made the JWS path about 3 times slower in Endive, and one module
+   serves every host.
 3. **Big-endian and every platform other than Linux x86-64** stay
    untested until the CI legs above run.
 
