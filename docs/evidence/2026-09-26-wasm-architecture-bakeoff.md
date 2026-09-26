@@ -313,7 +313,7 @@ drives `emcc` as a program link and fails with "undefined symbol: main"
 | Library build | aws-lc-sys through cmake-rs. Emscripten's toolchain file sets processor `x86`; AWS-LC then adds `-msse2` and emcc refuses it. Fix: a one-line `emcmake` wrapper adding `-DEMSCRIPTEN_SYSTEM_PROCESSOR=wasm32`. No source patch. | `Configure linux-generic32 no-asm no-threads no-sock ... --with-rand-seed=getrandom -DNO_SYSLOG`, 1m03s. No source patch (`rand_unix.c` already has a `__EMSCRIPTEN__` getentropy branch, DOCUMENTED). | Its documented `emcmake cmake` path; 496/496 steps, no option beyond the native build's. |
 | Link | as above | as above | fails with `-sFILESYSTEM=0`: libcrypto's socket BIOs pull in `$SOCKFS`. Needs `-sFILESYSTEM=1`. |
 | `.wasm` raw / gzip | 1,117,625 / 517,525 B | 2,161,403 / 880,207 B | 967,791 / 426,765 B |
-| Generated JS glue | 12,808 B (web-only 11,783) | 12,857 B (web-only 12,857) | 78,886 B (web-only 76,340): MEMFS, SOCKFS, WebSocket code |
+| Generated JS glue | 12,808 B (web-only 11,783) | 13,882 B (web-only 12,857; corrected in [the follow-up](2026-09-26-substrate-followup.md)) | 78,886 B (web-only 76,340): MEMFS, SOCKFS, WebSocket code |
 | JS functions imported | 10 | 22 | 27, including `socket`, `connect`, `sendto` |
 | Called on the corpus | `environ_*` (libc init), clock, heap growth | the same plus `random_get` once and `emscripten_date_now` (DRBG `time()`) | the same as AWS-LC; the socket and file imports are never called |
 | Filesystem emulation | no | no | yes (dormant) |
@@ -544,7 +544,7 @@ and `results/bench.jsonl`, 1,000 calls, one thread, a shared 4-vCPU VM.
 | `awslc-c` | 1,406,386 | 555,409 (Oz 505,948) | package facade 5,762 | 1,116 | 2,574 | 5.3 | 1.4 MB |
 | `ossl-c` | 2,933,868 | 971,415 (Oz 853,886) | same | 1,395 | 4,550 | 12.0 | 2.1 MB |
 | `awslc-em` | 1,117,625 | 517,525 | glue 12,808 | 1,115 | 2,464 | 8.6 | 18.2 MB |
-| `ossl-em` | 2,161,403 | 880,207 | glue 12,857 | 1,240 | 4,384 | 15.7 | 18.5 MB |
+| `ossl-em` | 2,161,403 | 880,207 | glue 13,882 (corrected, see the follow-up) | 1,240 | 4,384 | 15.7 | 18.5 MB |
 | `libressl-em` | 967,791 | 426,765 | glue 78,886 | 1,159 | 2,467 | 13.4 | 18.2 MB |
 | `awslc-comp` (jco) | 1,422,760 core | 558,789 | `aprv.js` 202,031 | 1,238 | 2,772 | 10.5 | n/a |
 | `ossl-comp` (jco) | 2,957,692 core | 975,874 | `aprv.js` 236,337 | 1,413 | 4,711 | 20.0 | n/a |
