@@ -1,0 +1,8 @@
+variant               raw   stripped       gzip  needed                       exported
+rust              1068760     877568     408286  libc.so.6 ld-linux-x86-64.so.2 libgcc_s.so.1  20 (non-aprv: 0)
+ossl402           8428112    7328168    2733498  libgcc_s.so.1 libc.so.6 ld-linux-x86-64.so.2  20 (non-aprv: 0)
+ossl402pre        8425880    7326184    2732801  libgcc_s.so.1 libc.so.6 ld-linux-x86-64.so.2  20 (non-aprv: 0)
+ossl402a1         8454480    7351752    2745900  libgcc_s.so.1 libc.so.6 ld-linux-x86-64.so.2  20 (non-aprv: 0)
+libressl432       2645256    2250320     969580  libgcc_s.so.1 libc.so.6 ld-linux-x86-64.so.2  20 (non-aprv: 0)
+awslc             3049096    2707984    1301167  libgcc_s.so.1 libc.so.6 ld-linux-x86-64.so.2  20 (non-aprv: 0)
+ossl36v           6423864    5611904    2006604  libgcc_s.so.1 libc.so.6 ld-linux-x86-64.so.2  20 (non-aprv: 0)

@@ -1,0 +1,8 @@
+# isolation corpus (py/gen_isolation.py) in wasm under Node 22.22.2 node:wasi, no preopens, empty guest env;
+# host env carried SSL_CERT_FILE, SSL_CERT_DIR and OPENSSL_CONF pointing at the planted files. Expected: 4 4 0 0.
+rust-wasip1: codes 4 4 0 0 | wasi calls {}
+  imports: environ_get environ_sizes_get clock_time_get fd_write proc_exit
+ossl402-w-wasip1: codes 4 4 0 0 | wasi calls {"random_get":1,"clock_time_get":20}
+  imports: environ_get environ_sizes_get clock_time_get fd_close fd_fdstat_get fd_fdstat_set_flags fd_filestat_get fd_prestat_get fd_prestat_dir_name fd_read fd_readdir fd_seek fd_write path_filestat_get path_open proc_exit random_get
+awslc-w-wasip1: codes 4 4 0 0 | wasi calls {}
+  imports: environ_get environ_sizes_get clock_time_get fd_close fd_prestat_get fd_prestat_dir_name fd_seek fd_write proc_exit random_get

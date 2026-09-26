@@ -1,0 +1,11 @@
+# py/mutate.py seedpool(cases+substrate) 5000 20260926: 3245 receipt, 1755 JWS mutants; Java oracle JDK 25.0.4.1 + BC 1.86
+# totals from tri-<variant>-fuzz.txt: agree cand=java cand=rust cand-own abi
+ossl402 total 4565 85 129 46 175
+ossl402pre total 4569 85 129 42 175
+libressl432 total 4566 117 97 45 175
+awslc total 4564 117 97 47 175
+# cand-own rows where the library accepts (0) and Java and Rust reject (9); every such row is a mutated unsigned attribute (outside the signature)
+ossl402 accepts: 3 ['fuzz/4378/substrate/flood/unsigned-attribute-values-10000', 'fuzz/605/substrate/cms/unsigned-attribute-nesting-2000', 'fuzz/985/substrate/flood/unsigned-attribute-values-10000'] | rejects what Java and Rust accept: 1 ['fuzz/3934/substrate/flood/digestalgorithms-1000']
+ossl402pre accepts: 0 [] | rejects what Java and Rust accept: 1 ['fuzz/3934/substrate/flood/digestalgorithms-1000']
+libressl432 accepts: 2 ['fuzz/4378/substrate/flood/unsigned-attribute-values-10000', 'fuzz/605/substrate/cms/unsigned-attribute-nesting-2000'] | rejects what Java and Rust accept: 1 ['fuzz/3934/substrate/flood/digestalgorithms-1000']
+awslc accepts: 2 ['fuzz/4378/substrate/flood/unsigned-attribute-values-10000', 'fuzz/605/substrate/cms/unsigned-attribute-nesting-2000'] | rejects what Java and Rust accept: 1 ['fuzz/3934/substrate/flood/digestalgorithms-1000']

@@ -1,0 +1,41 @@
+ossl402-wasip1 node cases: vs native ossl402: 153 same, 0 differ, 0 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 153 0 0 0 0
+ossl402-wasip1 node hostile: vs native ossl402: 811 same, 0 differ, 0 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 655 10 12 3 131
+ossl402-wasip1 node algorithms: vs native ossl402: 22 same, 0 differ, 0 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 8 12 1 1 0
+ossl402-wasip1 node substrate: vs native ossl402: 193 same, 0 differ, 0 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 167 20 3 3 0
+ossl402-wasip1 wazero cases: vs native ossl402: 153 same, 0 differ, 0 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 153 0 0 0 0
+ossl402-wasip1 wazero hostile: vs native ossl402: 811 same, 0 differ, 0 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 655 10 12 3 131
+ossl402-wasip1 wazero algorithms: vs native ossl402: 22 same, 0 differ, 0 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 8 12 1 1 0
+ossl402-wasip1 wazero substrate: vs native ossl402: 193 same, 0 differ, 0 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 167 20 3 3 0
+rust-wasip1 node cases: vs native rust: 153 same, 0 differ, 0 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 153 0 0 0 0
+rust-wasip1 node hostile: vs native rust: 811 same, 0 differ, 0 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 657 0 23 0 131
+rust-wasip1 node algorithms: vs native rust: 22 same, 0 differ, 0 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 8 0 14 0 0
+rust-wasip1 node substrate: vs native rust: 193 same, 0 differ, 0 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 170 0 23 0 0
+rust-wasip1 wazero cases: vs native rust: 153 same, 0 differ, 0 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 153 0 0 0 0
+rust-wasip1 wazero hostile: vs native rust: 811 same, 0 differ, 0 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 657 0 23 0 131
+rust-wasip1 wazero algorithms: vs native rust: 22 same, 0 differ, 0 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 8 0 14 0 0
+rust-wasip1 wazero substrate: vs native rust: 193 same, 0 differ, 0 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 170 0 23 0 0
+rust-uu node cases: vs native rust: 108 same, 0 differ, 45 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 108 0 0 45 0
+rust-uu node hostile: vs native rust: 798 same, 0 differ, 13 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 646 0 21 13 131
+rust-uu node algorithms: vs native rust: 22 same, 0 differ, 0 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 8 0 14 0 0
+rust-uu node substrate: vs native rust: 193 same, 0 differ, 0 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 170 0 23 0 0
+rust-uu wazero cases: vs native rust: 108 same, 0 differ, 45 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 108 0 0 45 0
+rust-uu wazero hostile: vs native rust: 798 same, 0 differ, 13 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 646 0 21 13 131
+rust-uu wazero algorithms: vs native rust: 22 same, 0 differ, 0 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 8 0 14 0 0
+rust-uu wazero substrate: vs native rust: 193 same, 0 differ, 0 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 170 0 23 0 0
+awslc-wasip1 node cases: vs native awslc: 153 same, 0 differ, 0 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 152 0 0 1 0
+awslc-wasip1 node hostile: vs native awslc: 811 same, 0 differ, 0 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 655 16 7 2 131
+awslc-wasip1 node algorithms: vs native awslc: 22 same, 0 differ, 0 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 8 11 1 2 0
+awslc-wasip1 node substrate: vs native awslc: 193 same, 0 differ, 0 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 166 19 4 4 0
+awslc-wasip1 wazero cases: vs native awslc: 153 same, 0 differ, 0 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 152 0 0 1 0
+awslc-wasip1 wazero hostile: vs native awslc: 811 same, 0 differ, 0 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 655 16 7 2 131
+awslc-wasip1 wazero algorithms: vs native awslc: 22 same, 0 differ, 0 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 8 11 1 2 0
+awslc-wasip1 wazero substrate: vs native awslc: 193 same, 0 differ, 0 trapped | vs java/rust (agree cand=java cand=rust cand-own abi): 166 19 4 4 0
+rust-wasip1 bun-1.3.11 fix_random_get=0 vs native rust: cases: 153 same, 0 differ, 0 trapped; hostile: 811 same, 0 differ, 0 trapped; algorithms: 22 same, 0 differ, 0 trapped; substrate: 193 same, 0 differ, 0 trapped;
+ossl402-w-wasip1 bun-1.3.11 fix_random_get=0 vs native ossl402: cases: 124 same, 0 differ, 29 trapped; hostile: 794 same, 0 differ, 17 trapped; algorithms: 13 same, 0 differ, 9 trapped; substrate: 153 same, 0 differ, 40 trapped;
+awslc-w-wasip1 bun-1.3.11 fix_random_get=0 vs native awslc: cases: 153 same, 0 differ, 0 trapped; hostile: 811 same, 0 differ, 0 trapped; algorithms: 22 same, 0 differ, 0 trapped; substrate: 193 same, 0 differ, 0 trapped;
+rust-wasip1 bun-1.3.11 fix_random_get=1 vs native rust: cases: 153 same, 0 differ, 0 trapped; hostile: 811 same, 0 differ, 0 trapped; algorithms: 22 same, 0 differ, 0 trapped; substrate: 193 same, 0 differ, 0 trapped;
+ossl402-w-wasip1 bun-1.3.11 fix_random_get=1 vs native ossl402: cases: 153 same, 0 differ, 0 trapped; hostile: 811 same, 0 differ, 0 trapped; algorithms: 22 same, 0 differ, 0 trapped; substrate: 193 same, 0 differ, 0 trapped;
+awslc-w-wasip1 bun-1.3.11 fix_random_get=1 vs native awslc: cases: 153 same, 0 differ, 0 trapped; hostile: 811 same, 0 differ, 0 trapped; algorithms: 22 same, 0 differ, 0 trapped; substrate: 193 same, 0 differ, 0 trapped;
+rust-wasip1 deno-2.9.7 vs native rust: cases: 153 same, 0 differ, 0 trapped; hostile: 811 same, 0 differ, 0 trapped; algorithms: 22 same, 0 differ, 0 trapped; substrate: 193 same, 0 differ, 0 trapped;
+ossl402-w-wasip1 deno-2.9.7 vs native ossl402: cases: 153 same, 0 differ, 0 trapped; hostile: 811 same, 0 differ, 0 trapped; algorithms: 22 same, 0 differ, 0 trapped; substrate: 193 same, 0 differ, 0 trapped;
+awslc-w-wasip1 deno-2.9.7 vs native awslc: cases: 153 same, 0 differ, 0 trapped; hostile: 811 same, 0 differ, 0 trapped; algorithms: 22 same, 0 differ, 0 trapped; substrate: 193 same, 0 differ, 0 trapped;

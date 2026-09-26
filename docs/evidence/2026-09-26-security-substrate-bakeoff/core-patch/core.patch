@@ -1,0 +1,118 @@
+diff -ru a/Cargo.toml b/Cargo.toml
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -22,6 +22,13 @@
+ [features]
+ default = ["endpoint"]
+ endpoint = []
++# Spike only (security substrate bake-off).
++substrate = ["dep:aprv-security-openssl"]
++substrate-prescan = ["substrate"]
++substrate-a1 = ["substrate", "aprv-security-openssl/a1"]
++substrate-vendored = ["substrate", "aprv-security-openssl/vendored"]
++substrate-aws-lc = ["substrate", "aprv-security-openssl/aws-lc"]
++substrate-negative-control = ["substrate", "aprv-security-openssl/negative-control"]
+ 
+ # Nine crates, all of them primitives. Every byte of attacker-supplied
+ # ASN.1 — certificates, CMS, receipt payloads, keys, signatures — is parsed
+@@ -47,6 +54,7 @@
+ subtle = "2.6"
+ serde_json = "1"
+ base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
++aprv-security-openssl = { path = "@SPIKE@/security-openssl", optional = true }
+ 
+ [dev-dependencies]
+ libtest-mimic = "0.8.2"
+diff -ru a/src/jws.rs b/src/jws.rs
+--- a/src/jws.rs
++++ b/src/jws.rs
+@@ -365,11 +365,11 @@
+     app_apple_id: Option<u64>,
+ }
+ 
+-struct Segments<'a> {
+-    header_b64: &'a str,
+-    payload_b64: &'a str,
+-    signature_b64: &'a str,
+-    x5c: Vec<String>,
++pub(crate) struct Segments<'a> {
++    pub(crate) header_b64: &'a str,
++    pub(crate) payload_b64: &'a str,
++    pub(crate) signature_b64: &'a str,
++    pub(crate) x5c: Vec<String>,
+ }
+ 
+ impl JwsVerifier {
+@@ -424,6 +424,14 @@
+     }
+ 
+     fn verify_signature(&self, jws: &str) -> Result<Claims> {
++        #[cfg(feature = "substrate")]
++        return crate::substrate::verify_jws(jws, &self.anchors);
++        #[cfg(not(feature = "substrate"))]
++        self.verify_signature_rust(jws)
++    }
++
++    #[cfg_attr(feature = "substrate", allow(dead_code))]
++    fn verify_signature_rust(&self, jws: &str) -> Result<Claims> {
+         let segments = split_jws(jws)?;
+         let leaf = parse_x5c_certificate(segments.x5c.first())?;
+         let intermediate = parse_x5c_certificate(segments.x5c.get(1))?;
+@@ -550,7 +558,7 @@
+ /// current-time anchor in the caller, which hands an attacker the instant the
+ /// certificate windows are judged at. An instant no calendar can express is
+ /// inside no window, so it is a chain failure.
+-fn signed_at_millis_of(claims: &Claims) -> Result<Option<i64>> {
++pub(crate) fn signed_at_millis_of(claims: &Claims) -> Result<Option<i64>> {
+     for key in ["signedDate", "receiptCreationDate"] {
+         let Some(value) = claims.get(key) else {
+             continue;
+@@ -577,11 +585,11 @@
+ /// compact JWS is ASCII, where that is the same count as characters.
+ pub const MAX_JWS_BYTES: usize = 256 * 1024;
+ 
+-fn invalid_jws(detail: impl Into<String>) -> VerificationError {
++pub(crate) fn invalid_jws(detail: impl Into<String>) -> VerificationError {
+     VerificationError::new(Reason::InvalidJwsFormat, detail)
+ }
+ 
+-fn split_jws(jws: &str) -> Result<Segments<'_>> {
++pub(crate) fn split_jws(jws: &str) -> Result<Segments<'_>> {
+     // Before any split or decode: every step below allocates in proportion
+     // to the input, and none of it is behind the signature.
+     if jws.len() > MAX_JWS_BYTES {
+@@ -626,7 +634,7 @@
+     })
+ }
+ 
+-fn parse_json_segment(segment: &str, what: &str) -> Result<Claims> {
++pub(crate) fn parse_json_segment(segment: &str, what: &str) -> Result<Claims> {
+     let error = || invalid_jws(format!("{what} is not valid base64url JSON"));
+     let bytes = decode_base64url_strict(segment).ok_or_else(error)?;
+     // `from_utf8_lossy` rather than a UTF-8 error: a replacement character
+diff -ru a/src/lib.rs b/src/lib.rs
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -96,6 +96,8 @@
+ mod receipt;
+ mod receipt_payload;
+ mod roots;
++#[cfg(feature = "substrate")]
++mod substrate;
+ pub mod x509;
+ 
+ #[cfg(feature = "endpoint")]
+diff -ru a/src/receipt.rs b/src/receipt.rs
+--- a/src/receipt.rs
++++ b/src/receipt.rs
+@@ -118,6 +118,10 @@
+             "receipt exceeds the maximum accepted size of {MAX_RECEIPT_BYTES} bytes"
+         )));
+     }
++    #[cfg(feature = "substrate")]
++    if true {
++        return crate::substrate::verify_receipt(der, trusted_roots);
++    }
+     let cms = parse_cms(der).map_err(|err| malformed(format!("malformed CMS structure: {err}")))?;
+ 
+     // Only the creation date is read before trust is established, because

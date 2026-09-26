@@ -1,0 +1,1028 @@
+kind            agree  cand=java  cand=rust   cand-own        abi
+jws              1435         39         95         11        175
+receipt          3134         46         34         31          0
+total            4569         85        129         42        175
+cand-own  fuzz/1113/transaction/verify-shared-sandbox
+    java: 4 INVALID_CHAIN: leaf certificate is not signed by the intermediate
+    rust: 4 leaf not issued by intermediate
+    cand: 2 x5c[0] does not decode
+cand-own  fuzz/1250/substrate/cms/crls-garbage
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: Certification path could not be validate
+    rust: 4 chain does not reach a pinned root
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  fuzz/1317/transaction/reject-environment-outside-accept-set
+    java: 2 INVALID_CERTIFICATE: x5c[2] does not decode
+    rust: 2 x5c entry is not a valid certificate
+    cand: 5 ES256 signature check failed
+cand-own  fuzz/1429/substrate/cms/crls-garbage
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: Certification path could not be validate
+    rust: 4 certificate not valid at signing time
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  fuzz/1460/substrate/cms/crls-garbage
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: Certification path could not be validate
+    rust: 4 chain does not reach a pinned root
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  fuzz/1573/substrate/pkix/jws/signer-unknown-critical-extension
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 5 ES256 signature check failed
+    cand: 4 certificate chain does not validate to a pinned root (X509_V_ERR 34)
+cand-own  fuzz/1578/receipt/reject-signer-on-an-unimplemented-curve
+    java: 2 INVALID_CERTIFICATE: receipt signer certificate does not decode
+    rust: 2 receipt signer certificate is not a valid certificate
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  fuzz/1833/substrate/cms/unsigned-attributes
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: Certification path could not be validate
+    rust: 4 chain does not reach a pinned root
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  fuzz/2007/receipt/ids-are-decoded
+    java: 2 INVALID_CERTIFICATE: receipt signer certificate does not decode
+    rust: 2 receipt signer certificate is not a valid certificate
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  fuzz/2042/receipt/reject-signer-on-an-unimplemented-curve
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: No issuer certificate for certificate in
+    rust: 2 receipt signer certificate uses an unimplemented elliptic curve
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  fuzz/2145/substrate/time/jws/nb-minus-1ms
+    java: 2 INVALID_CERTIFICATE: x5c[0] does not decode
+    rust: 2 x5c entry is not a valid certificate
+    cand: 4 leaf certificate is not signed by the intermediate
+cand-own  fuzz/2268/substrate/pkix/jws/intermediate-no-basic-constraints
+    java: 4 INVALID_CHAIN: certificate chain does not validate to a pinned Apple root: Intermediate certificate lacks Basi
+    rust: 4 intermediate is not a CA
+    cand: 2 x5c[2] does not decode
+cand-own  fuzz/23/substrate/cms/attributes-indefinite-length
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: Certification path could not be validate
+    rust: 4 chain does not reach a pinned root
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  fuzz/2303/substrate/pkix/receipt/chain-through-impostor-root
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: No issuer certificate for certificate in
+    rust: 4 chain does not reach a pinned root
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  fuzz/2388/substrate/parse/generated/unchanged
+    java: 4 INVALID_CHAIN: receipt embeds 13 certificates, more than the maximum of 10
+    rust: 4 receipt embeds more than 10 certificates
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  fuzz/2398/substrate/time/receipt/nb-plus-1ms
+    java: 2 INVALID_CERTIFICATE: receipt signer certificate does not decode
+    rust: 4 chain does not reach a pinned root
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  fuzz/2463/transaction/verify-shared-sandbox
+    java: 4 INVALID_CHAIN: intermediate certificate is not signed by a pinned Apple root
+    rust: 4 leaf not issued by intermediate
+    cand: 2 x5c[1] does not decode
+cand-own  fuzz/2577/substrate/pkix/receipt/signer-no-basic-constraints
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: No issuer certificate for certificate in
+    rust: 4 chain does not reach a pinned root
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  fuzz/2765/substrate/pkix/receipt/name-case-differs
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: No issuer certificate for certificate in
+    rust: 4 chain does not reach a pinned root
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  fuzz/2874/substrate/time/receipt/anchor-not-yet-valid-at-signing
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: Certification path could not be validate
+    rust: 4 chain does not reach a pinned root
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  fuzz/2881/substrate/cms/digestalgorithms-sha1-only
+    java: 2 INVALID_CERTIFICATE: receipt signer certificate does not decode
+    rust: 2 receipt signer certificate is not a valid certificate
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  fuzz/3021/transaction/reject-x5c-leaf-with-junk-character
+    java: 4 INVALID_CHAIN: leaf certificate is not signed by the intermediate
+    rust: 4 certificate not valid at signing time
+    cand: 2 x5c[0] does not decode
+cand-own  fuzz/3187/substrate/pkix/jws/signer-aki-mismatch
+    java: 5 INVALID_SIGNATURE: ES256 signature does not match the leaf key
+    rust: 5 ES256 signature check failed
+    cand: 2 x5c[2] does not decode
+cand-own  fuzz/319/substrate/flood/certificates-11
+    java: 4 INVALID_CHAIN: receipt embeds 11 certificates, more than the maximum of 10
+    rust: 4 receipt embeds more than 10 certificates
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  fuzz/3200/substrate/cms/content-constructed-octets
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: No issuer certificate for certificate in
+    rust: 4 chain does not reach a pinned root
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  fuzz/3298/substrate/cms/crls-garbage
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: Certification path could not be validate
+    rust: 4 certificate not valid at signing time
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  fuzz/3457/substrate/time/receipt/intermediate-na-exact
+    java: 4 INVALID_CHAIN: receipt embeds 11 certificates, more than the maximum of 10
+    rust: 4 receipt embeds more than 10 certificates
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  fuzz/3571/substrate/pkix/receipt/chain-sha1
+    java: 4 INVALID_CHAIN: receipt embeds 11 certificates, more than the maximum of 10
+    rust: 4 receipt embeds more than 10 certificates
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  fuzz/3724/substrate/cms/crls-garbage
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: Certification path could not be validate
+    rust: 4 certificate not valid at signing time
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  fuzz/3783/substrate/pkix/receipt/signer-marker-critical
+    java: 4 INVALID_CHAIN: receipt embeds 13 certificates, more than the maximum of 10
+    rust: 4 receipt embeds more than 10 certificates
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  fuzz/3848/substrate/time/jws/na
+    java: 4 INVALID_CHAIN: intermediate certificate is not signed by a pinned Apple root
+    rust: 4 leaf not issued by intermediate
+    cand: 2 x5c[1] does not decode
+cand-own  fuzz/3934/substrate/flood/digestalgorithms-1000
+    java: 0 
+    rust: 0 
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  fuzz/3948/substrate/cms/crls-garbage
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: Certification path could not be validate
+    rust: 4 chain does not reach a pinned root
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  fuzz/4031/substrate/pkix/receipt/signer-no-basic-constraints
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: No issuer certificate for certificate in
+    rust: 4 chain does not reach a pinned root
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  fuzz/4112/substrate/pkix/receipt/serial-21-octets
+    java: 4 INVALID_CHAIN: receipt embeds 13 certificates, more than the maximum of 10
+    rust: 4 receipt embeds more than 10 certificates
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  fuzz/414/substrate/time/jws/anchor-expired-at-signing
+    java: 4 INVALID_CHAIN: leaf certificate is not signed by the intermediate
+    rust: 4 leaf not issued by intermediate
+    cand: 2 x5c[0] does not decode
+cand-own  fuzz/4426/substrate/pkix/receipt/intermediate-unknown-critical-extension
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: No issuer certificate for certificate in
+    rust: 4 chain does not reach a pinned root
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  fuzz/4810/receipt/reject-unreadable-creation-date-under-a-foreign-chain
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: No issuer certificate for certificate in
+    rust: 4 chain does not reach a pinned root
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  fuzz/702/receipt/reject-leaf-presented-as-intermediate
+    java: 4 INVALID_CHAIN: receipt embeds 13 certificates, more than the maximum of 10
+    rust: 4 receipt embeds more than 10 certificates
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  fuzz/87/substrate/pkix/jws/name-trailing-space
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 4 leaf not issued by intermediate
+    cand: 5 ES256 signature check failed
+cand-own  fuzz/959/substrate/time/receipt/anchor-expired-at-signing
+    java: 4 INVALID_CHAIN: receipt embeds 12 certificates, more than the maximum of 10
+    rust: 4 receipt embeds more than 10 certificates
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand-own  fuzz/981/substrate/cms/crls-garbage
+    java: 5 INVALID_SIGNATURE: CMS verifier refused the signer info
+    rust: 5 messageDigest attribute does not match content
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java fuzz/1085/receipt/expose-unknown-attributes
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: No issuer certificate for certificate in
+    rust: 9 embedded certificate is malformed: signatureAlgorithm disagrees with tbsCertificate.signature
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 20)
+cand=java fuzz/1100/substrate/cms/contenttype-is-signeddata
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 chain does not reach a pinned root
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java fuzz/1150/substrate/pkix/receipt/name-printable-vs-utf8
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 chain does not reach a pinned root
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java fuzz/1278/substrate/time/receipt/intermediate-na-exact
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: Certification path could not be validate
+    rust: 2 receipt signer certificate is not a valid certificate
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 20)
+cand=java fuzz/1293/substrate/pkix/receipt/intermediate-unknown-critical-extension
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: Certification path could not be validate
+    rust: 5 messageDigest attribute does not match content
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 34)
+cand=java fuzz/1360/substrate/pkix/jws/name-trailing-space
+    java: 5 INVALID_SIGNATURE: ES256 signature does not match the leaf key
+    rust: 4 leaf not issued by intermediate
+    cand: 5 ES256 signature check failed
+cand=java fuzz/1399/substrate/time/jws/gentime-na
+    java: 2 INVALID_CERTIFICATE: x5c[1] does not decode
+    rust: 3 intermediate certificate lacks Apple marker OID 1.2.840.113635.100.6.2.1
+    cand: 2 x5c[1] does not decode
+cand=java fuzz/144/substrate/pkix/jws/name-printable-vs-utf8
+    java: 5 INVALID_SIGNATURE: ES256 signature does not match the leaf key
+    rust: 4 leaf not issued by intermediate
+    cand: 5 ES256 signature check failed
+cand=java fuzz/1442/substrate/pkix/receipt/name-printable-vs-utf8
+    java: 5 INVALID_SIGNATURE: CMS verifier refused the signer info
+    rust: 4 chain does not reach a pinned root
+    cand: 5 CMS signature check failed
+cand=java fuzz/145/substrate/pkix/receipt/intermediate-no-basic-constraints
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 2 receipt signer certificate is not a valid certificate
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java fuzz/1516/substrate/pkix/jws/intermediate-unknown-critical-extension
+    java: 4 INVALID_CHAIN: certificate chain does not validate to a pinned Apple root: Certificate has unsupported critica
+    rust: 5 ES256 signature must be 64 bytes, got 69
+    cand: 4 certificate chain does not validate to a pinned root (X509_V_ERR 34)
+cand=java fuzz/1522/substrate/pkix/receipt/signer-unknown-critical-extension
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 chain does not reach a pinned root
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java fuzz/1546/transaction/accept-null-and-unmodelled-claims
+    java: 4 INVALID_CHAIN: intermediate certificate is not signed by a pinned Apple root
+    rust: 2 x5c entry is not a valid certificate
+    cand: 4 intermediate certificate is not signed by a pinned root
+cand=java fuzz/1635/substrate/pkix/receipt/intermediate-unknown-critical-extension
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: Certification path could not be validate
+    rust: 9 malformed CMS structure: signedAttrs without a messageDigest attribute
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 34)
+cand=java fuzz/1646/substrate/flood/digestalgorithms-1000
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 0 
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java fuzz/1695/substrate/cms/duplicate-contenttype
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: Certification path could not be validate
+    rust: 2 receipt signer certificate is not a valid certificate
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 20)
+cand=java fuzz/1728/transaction/reject-signature-segment-padding
+    java: 2 INVALID_CERTIFICATE: x5c[2] does not decode
+    rust: 1 signature segment is not canonical base64url
+    cand: 2 x5c[2] does not decode
+cand=java fuzz/1879/substrate/pkix/jws/name-printable-vs-utf8
+    java: 5 INVALID_SIGNATURE: ES256 signature must be 64 bytes, got 80
+    rust: 4 leaf not issued by intermediate
+    cand: 5 ES256 signature must be 64 bytes, got 80
+cand=java fuzz/198/substrate/pkix/jws/name-trailing-space
+    java: 2 INVALID_CERTIFICATE: x5c[0] does not decode
+    rust: 3 leaf certificate lacks Apple marker OID 1.2.840.113635.100.6.11.1
+    cand: 2 x5c[0] does not decode
+cand=java fuzz/1984/substrate/pkix/jws/name-trailing-space
+    java: 5 INVALID_SIGNATURE: ES256 signature does not match the leaf key
+    rust: 2 x5c entry is not a valid certificate
+    cand: 5 ES256 signature check failed
+cand=java fuzz/2016/receipt/reject-empty-cms-signature
+    java: 5 INVALID_SIGNATURE: CMS verifier refused the signer info
+    rust: 9 malformed CMS structure: signedAttrs without a messageDigest attribute
+    cand: 5 signed attributes break RFC 5652 section 5.3
+cand=java fuzz/2089/substrate/flood/certificates-10
+    java: 0 
+    rust: 9 embedded certificate is malformed: signatureAlgorithm disagrees with tbsCertificate.signature
+    cand: 0 
+cand=java fuzz/2119/substrate/pkix/jws/name-trailing-space
+    java: 5 INVALID_SIGNATURE: ES256 signature must be 64 bytes, got 69
+    rust: 4 leaf not issued by intermediate
+    cand: 5 ES256 signature must be 64 bytes, got 69
+cand=java fuzz/2124/substrate/cms/crls-empty
+    java: 5 INVALID_SIGNATURE: CMS verifier refused the signer info
+    rust: 9 malformed CMS structure: signedAttrs without a messageDigest attribute
+    cand: 5 signed attributes break RFC 5652 section 5.3
+cand=java fuzz/2206/substrate/cms/attributes-indefinite-length
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 2 receipt signer certificate is not a valid certificate
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java fuzz/2295/substrate/pkix/jws/name-trailing-space
+    java: 5 INVALID_SIGNATURE: ES256 signature must be 64 bytes, got 63
+    rust: 4 leaf not issued by intermediate
+    cand: 5 ES256 signature must be 64 bytes, got 63
+cand=java fuzz/2313/substrate/pkix/jws/intermediate-unknown-critical-extension
+    java: 4 INVALID_CHAIN: certificate chain does not validate to a pinned Apple root: Certificate has unsupported critica
+    rust: 5 ES256 signature check failed
+    cand: 4 certificate chain does not validate to a pinned root (X509_V_ERR 34)
+cand=java fuzz/2354/substrate/parse/generated/der-baseline
+    java: 5 INVALID_SIGNATURE: CMS verifier refused the signer info
+    rust: 0 
+    cand: 5 signed attributes break RFC 5652 section 5.3
+cand=java fuzz/2393/substrate/pkix/jws/signer-keyusage-certsign-only
+    java: 3 INVALID_CERTIFICATE_PURPOSE: leaf certificate lacks Apple marker OID 1.2.840.113635.100.6.11.1
+    rust: 2 x5c entry is not a valid certificate
+    cand: 3 leaf certificate lacks Apple marker OID 1.2.840.113635.100.6.11.1
+cand=java fuzz/2410/substrate/pkix/jws/name-extra-whitespace
+    java: 5 INVALID_SIGNATURE: ES256 signature must be 64 bytes, got 63
+    rust: 4 leaf not issued by intermediate
+    cand: 5 ES256 signature must be 64 bytes, got 63
+cand=java fuzz/2431/substrate/pkix/receipt/signer-eku-serverauth
+    java: 9 INVALID_RECEIPT_FORMAT: an embedded certificate is not a valid certificate
+    rust: 4 chain does not reach a pinned root
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java fuzz/2501/substrate/time/receipt/anchor-expired-at-signing
+    java: 9 INVALID_RECEIPT_FORMAT: not a PKCS#7/CMS blob
+    rust: 4 certificate not valid at signing time
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java fuzz/2515/receipt/accept-double-wrapped-payload
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 receipt embeds more than 10 certificates
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java fuzz/2516/substrate/pkix/jws/intermediate-unknown-critical-extension
+    java: 4 INVALID_CHAIN: certificate chain does not validate to a pinned Apple root: Certificate has unsupported critica
+    rust: 5 ES256 signature must be 64 bytes, got 71
+    cand: 4 certificate chain does not validate to a pinned root (X509_V_ERR 34)
+cand=java fuzz/2585/transaction/reject-signature-segment-noncanonical
+    java: 2 INVALID_CERTIFICATE: x5c[1] does not decode
+    rust: 4 intermediate not issued by a pinned root
+    cand: 2 x5c[1] does not decode
+cand=java fuzz/2681/substrate/pkix/receipt/name-trailing-space
+    java: 9 INVALID_RECEIPT_FORMAT: not a PKCS#7/CMS blob
+    rust: 4 chain does not reach a pinned root
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java fuzz/2753/substrate/pkix/jws/name-extra-whitespace
+    java: 5 INVALID_SIGNATURE: ES256 signature does not match the leaf key
+    rust: 4 leaf not issued by intermediate
+    cand: 5 ES256 signature check failed
+cand=java fuzz/282/substrate/pkix/receipt/intermediates-6
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 chain does not reach a pinned root
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java fuzz/2873/receipt/reject-empty-cms-signature
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 chain does not reach a pinned root
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java fuzz/2910/substrate/cms/first-signerinfo-bad-second-good
+    java: 5 INVALID_SIGNATURE: CMS verifier refused the signer info
+    rust: 9 malformed CMS structure: signedAttrs without a contentType attribute
+    cand: 5 signed attributes break RFC 5652 section 5.3
+cand=java fuzz/2923/substrate/pkix/jws/name-extra-whitespace
+    java: 5 INVALID_SIGNATURE: ES256 signature must be 64 bytes, got 102
+    rust: 4 leaf not issued by intermediate
+    cand: 5 ES256 signature must be 64 bytes, got 102
+cand=java fuzz/2939/substrate/pkix/jws/name-extra-whitespace
+    java: 5 INVALID_SIGNATURE: ES256 signature does not match the leaf key
+    rust: 4 leaf not issued by intermediate
+    cand: 5 ES256 signature check failed
+cand=java fuzz/2940/substrate/pkix/jws/signer-unknown-critical-extension
+    java: 4 INVALID_CHAIN: certificate chain does not validate to a pinned Apple root: Certificate has unsupported critica
+    rust: 5 ES256 signature must be 64 bytes, got 55
+    cand: 4 certificate chain does not validate to a pinned root (X509_V_ERR 34)
+cand=java fuzz/2986/substrate/time/jws/nb
+    java: 2 INVALID_CERTIFICATE: x5c[2] does not decode
+    rust: 5 ES256 signature check failed
+    cand: 2 x5c[2] does not decode
+cand=java fuzz/2997/substrate/pkix/jws/name-case-differs
+    java: 5 INVALID_SIGNATURE: ES256 signature must be 64 bytes, got 25
+    rust: 4 leaf not issued by intermediate
+    cand: 5 ES256 signature must be 64 bytes, got 25
+cand=java fuzz/3024/transaction/reject-signature-segment-trailing-junk
+    java: 4 INVALID_CHAIN: leaf certificate is not signed by the intermediate
+    rust: 2 x5c entry is not a valid certificate
+    cand: 4 leaf certificate is not signed by the intermediate
+cand=java fuzz/3079/substrate/pkix/receipt/intermediate-version-1
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 intermediate is not a CA
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java fuzz/3161/substrate/pkix/receipt/signer-unknown-critical-extension
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: Certification path could not be validate
+    rust: 5 messageDigest attribute does not match content
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 34)
+cand=java fuzz/3208/substrate/pkix/jws/name-case-differs
+    java: 5 INVALID_SIGNATURE: ES256 signature does not match the leaf key
+    rust: 4 leaf not issued by intermediate
+    cand: 5 ES256 signature check failed
+cand=java fuzz/3295/substrate/pkix/receipt/signer-aki-mismatch
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 chain does not reach a pinned root
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java fuzz/3381/substrate/cms/second-signerinfo-bad-signature
+    java: 9 INVALID_RECEIPT_FORMAT: unexpected java.lang.IllegalArgumentException
+    rust: 4 chain does not reach a pinned root
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java fuzz/3421/substrate/time/receipt/na-plus-1ms
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: No issuer certificate for certificate in
+    rust: 9 embedded certificate is malformed: signatureAlgorithm disagrees with tbsCertificate.signature
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 20)
+cand=java fuzz/3455/substrate/pkix/jws/name-extra-whitespace
+    java: 5 INVALID_SIGNATURE: ES256 signature must be 64 bytes, got 13
+    rust: 4 leaf not issued by intermediate
+    cand: 5 ES256 signature must be 64 bytes, got 13
+cand=java fuzz/3486/substrate/time/jws/intermediate-na-exact
+    java: 2 INVALID_CERTIFICATE: x5c[0] does not decode
+    rust: 3 leaf certificate lacks Apple marker OID 1.2.840.113635.100.6.11.1
+    cand: 2 x5c[0] does not decode
+cand=java fuzz/3487/substrate/time/jws/pre-1970-nb-minus-1ms
+    java: 1 INVALID_JWS_FORMAT: payload is not valid base64url
+    rust: 2 x5c entry is not a valid certificate
+    cand: 1 payload is not valid base64url JSON
+cand=java fuzz/370/substrate/pkix/jws/name-case-differs
+    java: 5 INVALID_SIGNATURE: ES256 signature does not match the leaf key
+    rust: 4 leaf not issued by intermediate
+    cand: 5 ES256 signature check failed
+cand=java fuzz/3807/substrate/pkix/jws/signer-is-ca
+    java: 4 INVALID_CHAIN: intermediate certificate is not signed by a pinned Apple root
+    rust: 2 x5c entry is not a valid certificate
+    cand: 4 intermediate certificate is not signed by a pinned root
+cand=java fuzz/3839/substrate/time/jws/pre-1970-minus-1ms
+    java: 2 INVALID_CERTIFICATE: x5c[0] does not decode
+    rust: 4 leaf not issued by intermediate
+    cand: 2 x5c[0] does not decode
+cand=java fuzz/3911/substrate/pkix/receipt/name-case-differs
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 chain does not reach a pinned root
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java fuzz/3924/substrate/pkix/receipt/signer-keyusage-certsign-only
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 intermediate is not a CA
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java fuzz/3968/transaction/reject-x5c-leaf-with-line-breaks
+    java: 2 INVALID_CERTIFICATE: x5c[0] does not decode
+    rust: 4 certificate not valid at signing time
+    cand: 2 x5c[0] does not decode
+cand=java fuzz/4030/substrate/time/receipt/na
+    java: 5 INVALID_SIGNATURE: CMS verifier refused the signer info
+    rust: 9 malformed CMS structure: signedAttrs without a contentType attribute
+    cand: 5 signed attributes break RFC 5652 section 5.3
+cand=java fuzz/4065/substrate/pkix/receipt/intermediate-keyusage-without-certsign
+    java: 9 INVALID_RECEIPT_FORMAT: an embedded certificate is not a valid certificate
+    rust: 4 chain does not reach a pinned root
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java fuzz/412/substrate/time/receipt/anchor-expired-at-signing
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 5 CMS signature check failed
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java fuzz/4291/substrate/cms/first-signerinfo-bad-second-good
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 chain does not reach a pinned root
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java fuzz/4310/substrate/pkix/receipt/anchor-not-ca
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 2 receipt signer certificate is not a valid certificate
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java fuzz/4315/receipt/reject-signer-on-an-unimplemented-curve
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 2 receipt signer certificate uses an unimplemented elliptic curve
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java fuzz/4330/substrate/time/jws/na-plus-1ms
+    java: 4 INVALID_CHAIN: intermediate certificate is not signed by a pinned Apple root
+    rust: 2 x5c entry is not a valid certificate
+    cand: 4 intermediate certificate is not signed by a pinned root
+cand=java fuzz/4387/substrate/time/receipt/nb-plus-1ms
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: No issuer certificate for certificate in
+    rust: 2 receipt signer certificate is not a valid certificate
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 20)
+cand=java fuzz/4388/substrate/cms/contenttype-missing
+    java: 5 INVALID_SIGNATURE: CMS verifier refused the signer info
+    rust: 9 malformed CMS structure: signedAttrs without a contentType attribute
+    cand: 5 signed attributes break RFC 5652 section 5.3
+cand=java fuzz/4392/substrate/pkix/jws/signer-unknown-critical-extension
+    java: 4 INVALID_CHAIN: certificate chain does not validate to a pinned Apple root: Certificate has unsupported critica
+    rust: 5 ES256 signature check failed
+    cand: 4 certificate chain does not validate to a pinned root (X509_V_ERR 34)
+cand=java fuzz/4525/substrate/pkix/jws/signer-unknown-critical-extension
+    java: 4 INVALID_CHAIN: certificate chain does not validate to a pinned Apple root: Certificate has unsupported critica
+    rust: 5 ES256 signature check failed
+    cand: 4 certificate chain does not validate to a pinned root (X509_V_ERR 34)
+cand=java fuzz/4724/receipt/reject-wrong-bundle-id
+    java: 9 INVALID_RECEIPT_FORMAT: unexpected java.lang.IllegalArgumentException
+    rust: 4 chain does not reach a pinned root
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java fuzz/473/receipt/ids-are-decoded
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 chain does not reach a pinned root
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java fuzz/4737/transaction/reject-fresh-payload-under-expired-chain
+    java: 2 INVALID_CERTIFICATE: x5c[0] does not decode
+    rust: 1 payload is not valid base64url JSON
+    cand: 2 x5c[0] does not decode
+cand=java fuzz/4786/substrate/pkix/jws/name-case-differs
+    java: 5 INVALID_SIGNATURE: ES256 signature must be 64 bytes, got 63
+    rust: 4 leaf not issued by intermediate
+    cand: 5 ES256 signature must be 64 bytes, got 63
+cand=java fuzz/4952/substrate/pkix/jws/name-extra-whitespace
+    java: 5 INVALID_SIGNATURE: ES256 signature must be 64 bytes, got 33
+    rust: 4 leaf not issued by intermediate
+    cand: 5 ES256 signature must be 64 bytes, got 33
+cand=java fuzz/563/substrate/pkix/jws/signer-unknown-critical-extension
+    java: 4 INVALID_CHAIN: certificate chain does not validate to a pinned Apple root: Certificate has unsupported critica
+    rust: 5 ES256 signature check failed
+    cand: 4 certificate chain does not validate to a pinned root (X509_V_ERR 34)
+cand=java fuzz/764/substrate/cms/digestalgorithms-empty
+    java: 5 INVALID_SIGNATURE: CMS verifier refused the signer info
+    rust: 0 
+    cand: 5 signed attributes break RFC 5652 section 5.3
+cand=java fuzz/785/substrate/pkix/receipt/intermediate-version-1
+    java: 9 INVALID_RECEIPT_FORMAT: unexpected java.lang.IllegalArgumentException
+    rust: 4 intermediate is not a CA
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java fuzz/796/substrate/cms/messagedigest-two-values
+    java: 9 INVALID_RECEIPT_FORMAT: not a PKCS#7/CMS blob
+    rust: 4 certificate not valid at signing time
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java fuzz/848/substrate/cms/crls-garbage
+    java: 9 INVALID_RECEIPT_FORMAT: unexpected java.lang.IllegalArgumentException
+    rust: 0 
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=java fuzz/881/substrate/cms/first-signerinfo-bad-second-good
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: No issuer certificate for certificate in
+    rust: 9 embedded certificate is malformed: signatureAlgorithm disagrees with tbsCertificate.signature
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 20)
+cand=java fuzz/895/substrate/pkix/jws/name-case-differs
+    java: 5 INVALID_SIGNATURE: ES256 signature must be 64 bytes, got 113
+    rust: 4 leaf not issued by intermediate
+    cand: 5 ES256 signature must be 64 bytes, got 113
+cand=java fuzz/968/substrate/pkix/receipt/signer-eku-serverauth
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: Certification path could not be validate
+    rust: 2 receipt signer certificate is not a valid certificate
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 7)
+cand=rust fuzz/1013/transaction/reject-environment-outside-accept-set
+    java: 4 INVALID_CHAIN: leaf certificate is not signed by the intermediate
+    rust: 2 x5c entry uses an unimplemented elliptic curve
+    cand: 2 x5c[0] does not decode
+cand=rust fuzz/1039/substrate/time/jws/nb-minus-1ms
+    java: 4 INVALID_CHAIN: certificate chain does not validate to a pinned Apple root: Could not validate certificate: cer
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[2] does not decode
+cand=rust fuzz/1058/transaction/reject-x5c-duplicate-extension
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[0] does not decode
+cand=rust fuzz/1123/substrate/time/jws/intermediate-expired-at-signing
+    java: 2 INVALID_CERTIFICATE: x5c[1] does not decode
+    rust: 4 certificate not valid at signing time
+    cand: 4 intermediate certificate is not signed by a pinned root
+cand=rust fuzz/1132/substrate/pkix/jws/name-case-differs
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[0] does not decode
+cand=rust fuzz/12/substrate/pkix/jws/signer-aki-mismatch
+    java: 3 INVALID_CERTIFICATE_PURPOSE: intermediate certificate lacks Apple marker OID 1.2.840.113635.100.6.2.1
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[1] does not decode
+cand=rust fuzz/1218/substrate/time/jws/na-plus-999ms
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[0] does not decode
+cand=rust fuzz/1274/substrate/time/jws/gentime-na-minus-1ms
+    java: 5 INVALID_SIGNATURE: ES256 signature does not match the leaf key
+    rust: 1 payload is not valid base64url JSON
+    cand: 1 payload is not valid base64url JSON
+cand=rust fuzz/1370/substrate/pkix/jws/name-extra-whitespace
+    java: 2 INVALID_CERTIFICATE: x5c[0] does not decode
+    rust: 4 certificate not valid at signing time
+    cand: 4 leaf certificate is not signed by the intermediate
+cand=rust fuzz/1385/transaction/reject-x5c-leaf-with-junk-character
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[0] does not decode
+cand=rust fuzz/1392/substrate/time/jws/na-plus-1ms
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[0] does not decode
+cand=rust fuzz/140/receipt/reject-signer-on-an-unimplemented-curve
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 2 receipt signer certificate is not a valid certificate
+    cand: 2 receipt signer certificate does not decode
+cand=rust fuzz/1412/transaction/accept-payload-without-a-signed-date
+    java: 2 INVALID_CERTIFICATE: x5c[0] does not decode
+    rust: 4 certificate not valid at signing time
+    cand: 4 leaf certificate is not signed by the intermediate
+cand=rust fuzz/1434/transaction/reject-environment-outside-accept-set
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 5 ES256 signature check failed
+    cand: 5 ES256 signature check failed
+cand=rust fuzz/1435/substrate/cms/messagedigest-wrong
+    java: 5 INVALID_SIGNATURE: CMS verifier refused the signer info
+    rust: 9 malformed CMS structure: unsupported digest algorithm
+    cand: 9 unsupported SignerInfo digest algorithm
+cand=rust fuzz/1469/substrate/pkix/jws/intermediate-pathlen-0
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 5 ES256 signature check failed
+    cand: 5 ES256 signature check failed
+cand=rust fuzz/1475/transaction/reject-signature-segment-trailing-junk
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[0] does not decode
+cand=rust fuzz/149/substrate/cms/digest-params-absent
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 certificate not valid at signing time
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 20)
+cand=rust fuzz/1494/transaction/reject-apple-official-wrong-bundle-id
+    java: 4 INVALID_CHAIN: intermediate certificate is not signed by a pinned Apple root
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[1] does not decode
+cand=rust fuzz/1589/transaction/reject-signed-date-out-of-range
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 4 payload signing date 1e+300 is not a valid instant
+    cand: 4 payload signing date 1e+300 is not a valid instant
+cand=rust fuzz/1619/receipt/creation-date-twice-is-judged-at-now
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 certificate not valid at signing time
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 10)
+cand=rust fuzz/1700/substrate/time/jws/anchor-expired-at-signing
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 4 certificate not valid at signing time
+    cand: 4 certificate chain does not validate to a pinned root (X509_V_ERR 10)
+cand=rust fuzz/1725/substrate/pkix/jws/intermediate-no-basic-constraints
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 4 certificate not valid at signing time
+    cand: 4 certificate chain does not validate to a pinned root (X509_V_ERR 79)
+cand=rust fuzz/1762/substrate/pkix/jws/signer-aki-mismatch
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 5 ES256 signature check failed
+    cand: 5 ES256 signature check failed
+cand=rust fuzz/1785/substrate/pkix/jws/anchor-not-ca
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[1] does not decode
+cand=rust fuzz/1873/substrate/pkix/jws/signer-eku-serverauth
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 5 ES256 signature check failed
+    cand: 5 ES256 signature check failed
+cand=rust fuzz/1935/substrate/time/jws/nb-plus-1ms
+    java: 4 INVALID_CHAIN: intermediate certificate is not signed by a pinned Apple root
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[1] does not decode
+cand=rust fuzz/1969/transaction/reject-intermediate-without-wwdr-marker-oid
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[1] does not decode
+cand=rust fuzz/1972/substrate/cms/digestalgorithms-sha256-sha512
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: Certification path could not be validate
+    rust: 5 messageDigest attribute does not match content
+    cand: 5 CMS signature check failed
+cand=rust fuzz/2098/substrate/time/jws/anchor-expired-at-signing
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[0] does not decode
+cand=rust fuzz/2129/transaction/reject-signed-date-out-of-range
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 4 payload signing date 1e+300 is not a valid instant
+    cand: 4 payload signing date 1e+300 is not a valid instant
+cand=rust fuzz/2259/substrate/pkix/jws/root-pathlen-0
+    java: 2 INVALID_CERTIFICATE: x5c[1] does not decode
+    rust: 4 certificate not valid at signing time
+    cand: 4 intermediate certificate is not signed by a pinned root
+cand=rust fuzz/2262/substrate/pkix/receipt/name-extra-whitespace
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 certificate not valid at signing time
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 20)
+cand=rust fuzz/2457/substrate/pkix/receipt/issuer-loop
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: No issuer certificate for certificate in
+    rust: 9 malformed CMS structure: not a CMS SignedData
+    cand: 9 not a PKCS#7 signedData: NotSignedData
+cand=rust fuzz/2477/substrate/pkix/jws/intermediate-no-basic-constraints
+    java: 4 INVALID_CHAIN: intermediate certificate is not signed by a pinned Apple root
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[1] does not decode
+cand=rust fuzz/2486/substrate/time/jws/mid
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 5 ES256 signature check failed
+    cand: 5 ES256 signature check failed
+cand=rust fuzz/2534/substrate/time/jws/na-plus-999ms
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[0] does not decode
+cand=rust fuzz/2540/transaction/reject-wrong-bundle-id
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 5 ES256 signature check failed
+    cand: 5 ES256 signature check failed
+cand=rust fuzz/2646/substrate/time/jws/pre-1970-minus-1ms
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 5 ES256 signature check failed
+    cand: 5 ES256 signature check failed
+cand=rust fuzz/2673/substrate/time/jws/intermediate-na-exact
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 5 ES256 signature check failed
+    cand: 5 ES256 signature check failed
+cand=rust fuzz/2728/transaction/reject-environment-outside-accept-set
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 5 ES256 signature check failed
+    cand: 5 ES256 signature check failed
+cand=rust fuzz/2775/substrate/time/jws/mid
+    java: 5 INVALID_SIGNATURE: ES256 signature does not match the leaf key
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[2] does not decode
+cand=rust fuzz/2797/substrate/time/jws/anchor-not-yet-valid-at-signing
+    java: 5 INVALID_SIGNATURE: ES256 signature does not match the leaf key
+    rust: 1 payload is not valid base64url JSON
+    cand: 1 payload is not valid base64url JSON
+cand=rust fuzz/2830/substrate/cms/digestalgorithms-sha1-only
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 certificate not valid at signing time
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 7)
+cand=rust fuzz/2868/transaction/reject-tampered-payload
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[2] does not decode
+cand=rust fuzz/2899/substrate/cms/signer-identified-by-ski
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: Certification path could not be validate
+    rust: 9 malformed CMS structure: malformed CMS structure
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=rust fuzz/2953/transaction/accept-historical-payload-under-expired-chain
+    java: 4 INVALID_CHAIN: leaf certificate is not signed by the intermediate
+    rust: 2 x5c entry uses an unimplemented elliptic curve
+    cand: 2 x5c[0] does not decode
+cand=rust fuzz/2991/substrate/time/jws/intermediate-na-exact
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[1] does not decode
+cand=rust fuzz/3053/substrate/pkix/receipt/name-extra-whitespace
+    java: 5 INVALID_SIGNATURE: CMS verifier refused the signer info
+    rust: 9 malformed CMS structure: not a CMS SignedData
+    cand: 9 not a PKCS#7 signedData: NotSignedData
+cand=rust fuzz/3174/substrate/time/jws/anchor-not-yet-valid-at-signing
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[1] does not decode
+cand=rust fuzz/3274/transaction/reject-x5c-root-that-is-not-a-certificate
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[0] does not decode
+cand=rust fuzz/3332/substrate/pkix/jws/name-printable-vs-utf8
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[0] does not decode
+cand=rust fuzz/3357/substrate/pkix/receipt/signer-keyusage-certsign-only
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 5 CMS signature check failed
+    cand: 5 CMS signature check failed
+cand=rust fuzz/3413/substrate/pkix/jws/name-printable-vs-utf8
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 4 certificate not valid at signing time
+    cand: 4 certificate chain does not validate to a pinned root (X509_V_ERR 10)
+cand=rust fuzz/3422/substrate/time/receipt/anchor-expired-at-signing
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: No issuer certificate for certificate in
+    rust: 9 malformed CMS structure: not a CMS SignedData
+    cand: 9 not a PKCS#7 signedData: NotSignedData
+cand=rust fuzz/3450/substrate/time/jws/pre-1970-nb-plus-1ms
+    java: 2 INVALID_CERTIFICATE: x5c[1] does not decode
+    rust: 4 certificate not valid at signing time
+    cand: 4 intermediate certificate is not signed by a pinned root
+cand=rust fuzz/346/receipt/unreadable-creation-date-is-judged-at-now
+    java: 12 INTERNAL_ERROR: signed receipt content could not be read: unparseable receipt date: not-a-date
+    rust: 9 malformed CMS structure: not a CMS SignedData
+    cand: 9 not a PKCS#7 signedData: NotSignedData
+cand=rust fuzz/347/substrate/time/jws/gentime-na-plus-1ms
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 4 certificate not valid at signing time
+    cand: 4 certificate chain does not validate to a pinned root (X509_V_ERR 10)
+cand=rust fuzz/349/substrate/time/jws/intermediate-expired-at-signing
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 4 certificate not valid at signing time
+    cand: 4 certificate chain does not validate to a pinned root (X509_V_ERR 10)
+cand=rust fuzz/3554/transaction/accept-payload-without-a-signed-date
+    java: 2 INVALID_CERTIFICATE: x5c[1] does not decode
+    rust: 4 certificate not valid at signing time
+    cand: 4 intermediate certificate is not signed by a pinned root
+cand=rust fuzz/3555/substrate/time/jws/na-plus-1s
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[1] does not decode
+cand=rust fuzz/3584/transaction/reject-empty-payload-segment
+    java: 1 INVALID_JWS_FORMAT: payload is not a JSON object
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[0] does not decode
+cand=rust fuzz/3601/transaction/reject-x5c-leaf-that-is-not-a-certificate
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[0] does not decode
+cand=rust fuzz/3621/substrate/time/receipt/nb
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: No issuer certificate for certificate in
+    rust: 9 malformed CMS structure: unsupported digest algorithm
+    cand: 9 unsupported SignerInfo digest algorithm
+cand=rust fuzz/3641/substrate/time/jws/mid
+    java: 4 INVALID_CHAIN: leaf certificate is not signed by the intermediate
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[0] does not decode
+cand=rust fuzz/366/substrate/pkix/jws/intermediate-keyusage-without-certsign
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 4 certificate not valid at signing time
+    cand: 4 certificate chain does not validate to a pinned root (X509_V_ERR 79)
+cand=rust fuzz/3666/substrate/time/jws/na-plus-1s
+    java: 3 INVALID_CERTIFICATE_PURPOSE: leaf certificate lacks Apple marker OID 1.2.840.113635.100.6.11.1
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[0] does not decode
+cand=rust fuzz/376/substrate/pkix/receipt/intermediates-5
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 chain does not reach a pinned root
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 20)
+cand=rust fuzz/3787/substrate/time/jws/nb
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 4 certificate not valid at signing time
+    cand: 4 certificate chain does not validate to a pinned root (X509_V_ERR 10)
+cand=rust fuzz/3818/receipt/reject-signer-certificate-version-11
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 2 receipt signer certificate is not a valid certificate
+    cand: 2 receipt signer certificate does not decode
+cand=rust fuzz/3908/transaction/reject-x5c-unimplemented-curve
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 2 x5c entry uses an unimplemented elliptic curve
+    cand: 2 x5c[1] does not decode
+cand=rust fuzz/3930/substrate/pkix/jws/root-pathlen-0
+    java: 5 INVALID_SIGNATURE: ES256 signature does not match the leaf key
+    rust: 1 header is not valid base64url JSON
+    cand: 1 header is not valid base64url JSON
+cand=rust fuzz/3971/substrate/cms/content-constructed-octets-definite
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 certificate not valid at signing time
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 7)
+cand=rust fuzz/3978/transaction/reject-environment-outside-accept-set
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[0] does not decode
+cand=rust fuzz/3979/substrate/cms/signer-identified-by-ski
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: No issuer certificate for certificate in
+    rust: 9 malformed CMS structure: malformed CMS structure
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=rust fuzz/4009/substrate/time/jws/anchor-not-yet-valid-at-signing
+    java: 2 INVALID_CERTIFICATE: x5c[0] does not decode
+    rust: 4 certificate not valid at signing time
+    cand: 4 leaf certificate is not signed by the intermediate
+cand=rust fuzz/4043/substrate/time/jws/gentime-na-minus-1ms
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 5 ES256 signature check failed
+    cand: 5 ES256 signature check failed
+cand=rust fuzz/4074/substrate/pkix/jws/name-trailing-space
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[0] does not decode
+cand=rust fuzz/4187/substrate/cms/first-signerinfo-bad-second-good
+    java: 2 INVALID_CERTIFICATE: receipt signer certificate does not decode
+    rust: 9 embedded certificate is malformed: unexpected TBSCertificate layout
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=rust fuzz/4259/transaction/reject-x5c-leaf-without-padding
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[0] does not decode
+cand=rust fuzz/4261/transaction/reject-dateless-payload-under-an-expired-chain
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 4 certificate not valid at signing time
+    cand: 4 certificate chain does not validate to a pinned root (X509_V_ERR 10)
+cand=rust fuzz/4277/substrate/time/receipt/na-plus-1s
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 certificate not valid at signing time
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 7)
+cand=rust fuzz/4319/substrate/time/jws/na-plus-1s
+    java: 2 INVALID_CERTIFICATE: x5c[0] does not decode
+    rust: 4 certificate not valid at signing time
+    cand: 4 leaf certificate is not signed by the intermediate
+cand=rust fuzz/4418/transaction/reject-tampered-payload
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[2] does not decode
+cand=rust fuzz/4419/transaction/reject-signature-segment-padding
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[0] does not decode
+cand=rust fuzz/4466/substrate/cms/crls-empty
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 chain does not reach a pinned root
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 7)
+cand=rust fuzz/4470/substrate/time/jws/mid
+    java: 5 INVALID_SIGNATURE: ES256 signature does not match the leaf key
+    rust: 2 x5c entry uses an unimplemented elliptic curve
+    cand: 2 x5c[2] does not decode
+cand=rust fuzz/4484/transaction/reject-environment-outside-accept-set
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 5 ES256 signature check failed
+    cand: 5 ES256 signature check failed
+cand=rust fuzz/4533/substrate/time/jws/pre-1970-nb-plus-1ms
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 5 ES256 signature check failed
+    cand: 5 ES256 signature check failed
+cand=rust fuzz/4548/substrate/pkix/jws/signer-keyusage-certsign-only
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 5 ES256 signature check failed
+    cand: 5 ES256 signature check failed
+cand=rust fuzz/4589/substrate/cms/signature-alg-sha256withrsa-oid
+    java: 5 INVALID_SIGNATURE: CMS verifier refused the signer info
+    rust: 9 malformed CMS structure: unsupported digest algorithm
+    cand: 9 unsupported SignerInfo digest algorithm
+cand=rust fuzz/459/substrate/time/jws/intermediate-na-exact
+    java: 2 INVALID_CERTIFICATE: x5c[0] does not decode
+    rust: 4 certificate not valid at signing time
+    cand: 4 leaf certificate is not signed by the intermediate
+cand=rust fuzz/4607/substrate/time/receipt/na-plus-999ms
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 certificate not valid at signing time
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 7)
+cand=rust fuzz/4625/substrate/time/jws/intermediate-na-exact
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 5 ES256 signature check failed
+    cand: 5 ES256 signature check failed
+cand=rust fuzz/4672/substrate/pkix/jws/intermediate-pathlen-0
+    java: 2 INVALID_CERTIFICATE: x5c[0] does not decode
+    rust: 4 certificate not valid at signing time
+    cand: 4 leaf certificate is not signed by the intermediate
+cand=rust fuzz/4715/transaction/reject-signature-segment-trailing-junk
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[1] does not decode
+cand=rust fuzz/4773/substrate/pkix/receipt/intermediate-version-1
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 certificate not valid at signing time
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 20)
+cand=rust fuzz/4778/transaction/verify-apple-official-transaction-info
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[1] does not decode
+cand=rust fuzz/478/substrate/pkix/receipt/chain-through-impostor-root
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 certificate not valid at signing time
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 20)
+cand=rust fuzz/4800/substrate/time/jws/pre-1970-nb-minus-1ms
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 4 certificate not valid at signing time
+    cand: 4 certificate chain does not validate to a pinned root (X509_V_ERR 9)
+cand=rust fuzz/4819/receipt/unreadable-creation-date-is-judged-at-now
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 5 messageDigest attribute does not match content
+    cand: 5 CMS signature check failed
+cand=rust fuzz/4853/substrate/parse/generated/der-baseline
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 certificate not valid at signing time
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 20)
+cand=rust fuzz/4879/transaction/reject-signature-segment-trailing-junk
+    java: 4 INVALID_CHAIN: leaf certificate is not signed by the intermediate
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[0] does not decode
+cand=rust fuzz/4899/substrate/time/jws/nb-minus-1ms
+    java: 4 INVALID_CHAIN: intermediate certificate is not signed by a pinned Apple root
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[1] does not decode
+cand=rust fuzz/4910/transaction/accept-null-and-unmodelled-claims
+    java: 5 INVALID_SIGNATURE: ES256 signature does not match the leaf key
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[2] does not decode
+cand=rust fuzz/4934/receipt/reject-signer-on-an-unimplemented-curve
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: Certification path could not be validate
+    rust: 2 receipt signer certificate uses an unimplemented elliptic curve
+    cand: 2 receipt signer certificate does not decode
+cand=rust fuzz/4959/substrate/pkix/jws/signer-no-basic-constraints
+    java: 2 INVALID_CERTIFICATE: x5c[2] does not decode
+    rust: 5 ES256 signature check failed
+    cand: 5 ES256 signature check failed
+cand=rust fuzz/4968/substrate/cms/digestalgorithms-sha256-sha512
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 certificate not valid at signing time
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 7)
+cand=rust fuzz/4980/substrate/pkix/jws/intermediate-unknown-critical-extension
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[1] does not decode
+cand=rust fuzz/4983/substrate/time/receipt/na
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 certificate not valid at signing time
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 20)
+cand=rust fuzz/4987/substrate/time/jws/mid
+    java: 5 INVALID_SIGNATURE: ES256 signature does not match the leaf key
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[2] does not decode
+cand=rust fuzz/512/substrate/time/jws/pre-1970-minus-1ms
+    java: 2 INVALID_CERTIFICATE: x5c[1] does not decode
+    rust: 4 certificate not valid at signing time
+    cand: 4 intermediate certificate is not signed by a pinned root
+cand=rust fuzz/527/substrate/pkix/jws/intermediate-no-basic-constraints
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[1] does not decode
+cand=rust fuzz/576/transaction/internal-error-on-product-id-number
+    java: 4 INVALID_CHAIN: intermediate certificate is not signed by a pinned Apple root
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[1] does not decode
+cand=rust fuzz/600/substrate/cms/signer-identified-by-ski
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: No issuer certificate for certificate in
+    rust: 9 malformed CMS structure: malformed CMS structure
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=rust fuzz/61/substrate/time/jws/anchor-not-yet-valid-at-signing
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[1] does not decode
+cand=rust fuzz/698/transaction/reject-intermediate-without-wwdr-marker-oid
+    java: 3 INVALID_CERTIFICATE_PURPOSE: intermediate certificate lacks Apple marker OID 1.2.840.113635.100.6.2.1
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[0] does not decode
+cand=rust fuzz/718/transaction/accept-historical-payload-under-expired-chain
+    java: 2 INVALID_CERTIFICATE: x5c[1] does not decode
+    rust: 4 certificate not valid at signing time
+    cand: 4 intermediate certificate is not signed by a pinned root
+cand=rust fuzz/74/transaction/verify-shared-sandbox
+    java: 4 INVALID_CHAIN: leaf certificate is not signed by the intermediate
+    rust: 2 x5c entry uses an unimplemented elliptic curve
+    cand: 2 x5c[0] does not decode
+cand=rust fuzz/748/substrate/cms/signer-identified-by-ski
+    java: 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: No issuer certificate for certificate in
+    rust: 9 malformed CMS structure: malformed CMS structure
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=rust fuzz/78/transaction/verify-apple-official-transaction-info
+    java: 4 INVALID_CHAIN: leaf certificate is not signed by the intermediate
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[0] does not decode
+cand=rust fuzz/783/transaction/reject-x5c-unimplemented-curve
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 2 x5c entry uses an unimplemented elliptic curve
+    cand: 2 x5c[1] does not decode
+cand=rust fuzz/79/transaction/verify-shared-sandbox
+    java: 5 INVALID_SIGNATURE: ES256 signature does not match the leaf key
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[2] does not decode
+cand=rust fuzz/84/substrate/pkix/jws/signer-no-basic-constraints
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 5 ES256 signature check failed
+    cand: 5 ES256 signature check failed
+cand=rust fuzz/862/substrate/time/jws/nb-plus-1ms
+    java: 1 INVALID_JWS_FORMAT: header is not valid JSON
+    rust: 2 x5c entry is not a valid certificate
+    cand: 2 x5c[1] does not decode
+cand=rust fuzz/863/substrate/pkix/jws/intermediate-no-basic-constraints
+    java: 1 INVALID_JWS_FORMAT: payload is not valid JSON
+    rust: 4 intermediate is not a CA
+    cand: 4 certificate chain does not validate to a pinned root (X509_V_ERR 79)
+cand=rust fuzz/865/substrate/cms/signer-identified-by-ski
+    java: 5 INVALID_SIGNATURE: CMS verifier refused the signer info
+    rust: 9 malformed CMS structure: malformed CMS structure
+    cand: 9 not a PKCS#7 signedData: Malformed
+cand=rust fuzz/874/substrate/time/jws/na-plus-1ms
+    java: 4 INVALID_CHAIN: certificate chain does not validate to a pinned Apple root: Could not validate certificate: cer
+    rust: 1 payload is not valid base64url JSON
+    cand: 1 payload is not valid base64url JSON
+cand=rust fuzz/927/substrate/pkix/receipt/chain-through-impostor-root
+    java: 9 INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+    rust: 4 certificate not valid at signing time
+    cand: 4 signer chain does not validate to a pinned root (X509_V_ERR 20)

@@ -1,0 +1,5 @@
+# module target raw stripped(llvm-objcopy --strip-all) gzip-9(stripped) sha256(raw, first 16 hex)
+rust wasm32-wasip1 614635 576156 189000 fbab25a95891b7f4
+rust-uu wasm32-unknown-unknown 620669 586787 186728 72740c31e3ec9dd2
+ossl402-w wasm32-wasip1 2941749 2697807 901514 6da23a640c2b35ec
+awslc-w wasm32-wasip1 1414202 1323932 528746 c7c5cd39a9e40722

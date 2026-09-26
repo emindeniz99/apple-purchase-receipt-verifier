@@ -1,0 +1,4 @@
+receipt-sandbox-g5.b64: parsed, 3 certificates, 1 signer infos
+receipt-sandbox-legacy.b64: parsed, 3 certificates, 1 signer infos
+receipt-xcode-with-purchases.b64: ContentInfo error: indefinite length disallowed
+receipt.der: ContentInfo error: indefinite length disallowed

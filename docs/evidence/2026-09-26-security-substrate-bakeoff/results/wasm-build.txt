@@ -1,0 +1,41 @@
+# Wasm build attempts, exact first errors (logs in $SCRATCH/runw/build-*.log)
+
+## openssl-src 300.6.1 (vendored OpenSSL 3.6.3), wasm32-wasip1
+don't know how to configure OpenSSL for wasm32-wasip1
+(openssl-src maps only the old target name "wasm32-wasi"; openssl-src 400.0.1 is the same, and openssl-sys 0.9.117 accepts only openssl-src 300.x)
+
+## openssl-src 300.6.1, wasm32-unknown-unknown (no sysroot)
+include/internal/common.h:14:10: fatal error: 'stdlib.h' file not found
+include/internal/common.h:14:10: fatal error: 'stdlib.h' file not found
+
+## OpenSSL 4.0.2 built with wasi-sdk 34 (OPENSSL_DIR), wasm32-unknown-unknown: openssl-sys itself
+error[E0432]: unresolved import `libc::size_t`
+ --> $CARGO_REGISTRY/openssl-sys-0.9.117/src/./evp.rs:2:5
+  |
+error: could not compile `openssl-sys` (lib) due to 20 previous errors
+
+## AWS-LC (aws-lc-sys 0.41.0) with wasi-sdk, wasm32-unknown-unknown: the openssl crate
+error[E0432]: unresolved import `libc::c_int`
+   --> $CARGO_REGISTRY/openssl-0.10.81/src/lib.rs:137:5
+    |
+error: could not compile `openssl` (lib) due to 95 previous errors
+
+## LibreSSL 4.3.2 with wasi-sdk 34, wasm32-wasip1 (ninja -k 0: 39 of 482 objects fail)
+     15 crypto/./crypto_internal.h:25:10: fatal error: 'crypto_arch.h' file not found
+      6 crypto/bn/bn_internal.h:20:10: fatal error: 'bn_arch.h' file not found
+      3 crypto/../include/compat/netdb.h:7:15: fatal error: 'netdb.h' file not found
+      2 crypto/../include/compat/syslog.h:7:15: fatal error: 'syslog.h' file not found
+      1 tls/tls_config.c:743:19: error: call to undeclared function 'getuid'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+      1 tls/../include/compat/netdb.h:7:15: fatal error: 'netdb.h' file not found
+
+## AWS-LC wasm32-wasip1, errors met in order before the working flag set
+1. bindgen with host headers: 'bits/libc-header-start.h' file not found  -> BINDGEN_EXTRA_CLANG_ARGS_wasm32_wasip1
+2. CMake used host clang++ -> CMAKE_TOOLCHAIN_FILE_wasm32_wasip1=wasi-sdk-p1.cmake (and a clean build dir: CMake caches the first compiler)
+3. crypto/bio/bio_addr.c:113: no member named 'sun_path' in 'struct sockaddr_un' -> -DOPENSSL_NO_SOCK
+4. crypto/console/console.c:66: 'termios.h' file not found -> -DOPENSSL_NO_TTY
+5. ssl/bio_ssl.cc:17: redefinition of 'iovec' (libssl, forced on by openssl-sys's aws-lc feature) -> CXXFLAGS -D__wasilibc___struct_iovec_h -D__DEFINED_struct_iovec
+
+## OpenSSL 4.0.2 wasm32-wasip1 link, errors met before the working flag set
+1. without wasi-libc's emulation libraries: links, but the module imports env.getpid and env.munmap (TESTED); a WASI host has no "env" module, so instantiation fails (EXPECTED; wasm/run.mjs refuses such a module)
+2. command model (stable rustc default for a wasip1 cdylib): first export call traps, RuntimeError: unreachable at .Lregister_call_dtors <- __wasm_call_ctors <- aprv_alloc.command_export
+3. rustc's crt1-reactor.o after wasi-sdk's libc.a: env.__wasi_init_tp import, then duplicate symbol __init_tp when rustc's libc.a is added -> use wasi-sdk's crt1-reactor.o

@@ -1,0 +1,18 @@
+# valgrind 3.22.0 memcheck, one process per row (py/memcheck.py): --error-exitcode=99 --leak-check=full --errors-for-leak-kinds=definite
+# 'flagged' = memcheck reported an error or a definite leak; 'crashed' = any other non-zero exit
+rust cases.jsonl:1: 93 runs, 0 flagged, 0 crashed
+rust algorithms.jsonl:1: 22 runs, 0 flagged, 0 crashed
+rust substrate.jsonl:1: 193 runs, 0 flagged, 0 crashed
+rust hostile.jsonl:4: 151 runs, 0 flagged, 0 crashed
+ossl402 cases.jsonl:1: 93 runs, 0 flagged, 0 crashed
+ossl402 algorithms.jsonl:1: 22 runs, 0 flagged, 0 crashed
+ossl402 substrate.jsonl:1: 193 runs, 0 flagged, 0 crashed
+ossl402 hostile.jsonl:4: 151 runs, 0 flagged, 0 crashed
+libressl432 cases.jsonl:1: 93 runs, 0 flagged, 0 crashed
+libressl432 algorithms.jsonl:1: 22 runs, 0 flagged, 0 crashed
+libressl432 substrate.jsonl:1: 193 runs, 0 flagged, 0 crashed
+libressl432 hostile.jsonl:4: 151 runs, 0 flagged, 0 crashed
+awslc cases.jsonl:1: 93 runs, 0 flagged, 0 crashed
+awslc algorithms.jsonl:1: 22 runs, 0 flagged, 0 crashed
+awslc substrate.jsonl:1: 193 runs, 0 flagged, 0 crashed
+awslc hostile.jsonl:4: 151 runs, 0 flagged, 0 crashed

@@ -1,0 +1,9 @@
+kind            agree  cand=java  cand=rust   cand-own        abi
+endpoint           33          0          0          0          0
+jws                56          0          0          0          0
+receipt            63          0          0          1          0
+total             152          0          0          1          0
+cand-own  receipt/reject-signer-certificate-version-11
+    java: 2 INVALID_CERTIFICATE: receipt signer certificate does not decode
+    rust: 2 receipt signer certificate is not a valid certificate
+    cand: 9 not a PKCS#7 signedData: Malformed
