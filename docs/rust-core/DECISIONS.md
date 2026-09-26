@@ -831,7 +831,9 @@ The other 20:
   no signature covers and which OpenSSL does not parse
   ([substrate bake-off §6](../evidence/2026-09-26-security-substrate-bakeoff.md),
   [follow-up §3.4](../evidence/2026-09-26-substrate-followup.md)). The
-  prescan that aligned them left with `asn1.rs` (R21).
+  prescan that aligned them left with `asn1.rs` (R21). Not a bug (owner,
+  2026-09-26): the signature over the signed part is genuine, and nothing
+  the verifier returns or trusts comes from the unsigned attributes.
 
 The payload reader's differences from today's `asn1.rs` fall into nine
 classes, L1 to L5 and S1 to S4 (payload note §3). The CMS note checked
