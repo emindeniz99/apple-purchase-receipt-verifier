@@ -172,6 +172,18 @@ not matter. Add napi-rs only if a user reports throughput trouble.
 napi-rs would call the same core, so no security code gets added either
 way.
 
+**Performance guideline (owner, 2026-09-26), for every binding.** What
+matters is that throughput scales across cores and instances, not the
+speed of one thread. About 10 verifications per second per core is the
+floor, and 40 to 50 is comfortable. The floor is a guideline, not a gate:
+a binding that falls below it is discussed with the owner, not rejected.
+The reasoning the owner shared: all of the App Store takes on the order
+of hundreds of purchases per second (about $118B a year at a few dollars
+each), one company sees a small share of that, and servers add cores and
+instances. Verifications run above purchases (renewal notifications,
+refunds, receipt re-checks), and a large legacy receipt costs more than
+the g5 receipt the benchmarks use, so BENCHMARKS.md reports both.
+
 ---
 
 ## R5. JS runtimes that cannot run WebAssembly
@@ -813,7 +825,7 @@ redeploy leak becomes a real user problem before the JNI backend ships.
 The owner's reason for the Endive artifact, as stated when asking for the
 spike: keep native code from crashing the JVM ("to get rid of the java
 crash from UniFFI"). Endive's speed is accepted as measured (owner, Q36:
-enough).
+enough), under the performance guideline in R4.
 
 Two artifacts publish the same public API, the thin hand-written Java
 façade above. Each has its own POM, dependency graph, Java baseline,
