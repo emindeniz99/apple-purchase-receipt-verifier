@@ -701,9 +701,14 @@ algorithm that the pinned Apple chain vouches for. That is Java's
 behavior since `2ba48bc` (2026-09-24), which changed Java alone and so
 broke the one-product rule. The other ports follow Java, and the Rust
 core must carry this policy before it becomes the only implementation.
-The fix PR spells out the exact algorithm set it accepts; the owner
-confirms it there, including whether MD5 or other broken digests stay
-refused (receipts from before 2017 need SHA-1).
+The accepted set is exactly Java's (owner, 2026-09-26): no extra
+exclusions. Measured in the spike, the JVM Java verifier accepts all 22
+algorithm inputs, including receipt signers using MD5, RIPEMD-160,
+SHA-224, SHA3-256, RSA-PSS, P-521 and Ed25519, as long as the chain ends
+at a pinned Apple root. The owner accepted that MD5 is included: only a
+key under a pinned Apple root can produce the signature, so the risk is
+a collision attack against Apple's own signing, which the owner judged
+acceptable against keeping every port identical to Java.
 
 **Known divergences, fixed on `main` separately from this migration**
 (owner, 2026-09-26: another agent fixes them, one PR each):
