@@ -167,6 +167,15 @@ export function requireAttributeSetSyntax(signedAttrs: ASN1Node): void {
     ) {
       malformed('malformed signedAttrs: not an attribute set');
     }
+    // The readers decode every attribute's type, so a type whose OID does
+    // not decode (empty, or ending mid-arc) is refused here as MALFORMED
+    // rather than escaping from them later. Java's DER parser refuses the
+    // same bytes before it reaches the SignerInfo.
+    try {
+      oidString(parts[0]!.contents);
+    } catch {
+      malformed('malformed signedAttrs: attribute type is not a valid OBJECT IDENTIFIER');
+    }
   }
 }
 

@@ -299,7 +299,10 @@ function defineTargetTests(name, build, async_) {
       // Port-defined within a list: "ok" or the reason must be listed. A
       // crash would have thrown from callOperation already.
       const outcome = result.verified ? 'ok' : result.failure.reason;
-      assert.ok(kase.expected.oneOf.includes(outcome), `answered ${outcome}, want one of ${kase.expected.oneOf}`);
+      assert.ok(
+        kase.expected.oneOf.includes(outcome),
+        `answered ${outcome}, want one of ${kase.expected.oneOf}`,
+      );
       return;
     }
     if (kase.expected.status === 'error') {
