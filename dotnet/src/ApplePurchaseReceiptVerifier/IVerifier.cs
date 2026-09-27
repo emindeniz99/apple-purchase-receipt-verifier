@@ -39,12 +39,7 @@ namespace ApplePurchaseReceiptVerifier
         /// <summary>Creates a verifier from <paramref name="config"/>.</summary>
         public static IVerifier Create(Config config)
         {
-            if (config is null)
-            {
-                throw new System.ArgumentNullException(nameof(config));
-            }
-
-            return new Internal.VerifierImpl(config);
+            return new Internal.VerifierImpl(config ?? throw new System.ArgumentNullException(nameof(config)));
         }
     }
 }
