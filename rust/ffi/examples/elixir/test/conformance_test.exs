@@ -169,7 +169,7 @@ defmodule ConformanceTest do
 
   # `{:ok, {:ok, raw_json}}`, `{:ok, {:error, status, raw_json}}`, or
   # `{:error, why}` when the case could not be run at all. The raw text is
-  # kept because a toJson expectation compares bytes.
+  # kept for the failure messages.
   defp run_case(kase) do
     roots = Enum.map(all(kase, "root"), &File.read!/1)
 
@@ -265,9 +265,10 @@ defmodule ConformanceTest do
           :ok
 
         path ->
-          # The receipt document is exactly ReceiptPayload::to_json():
-          # compared byte for byte, as the vectors pin it.
-          if File.read!(path) == json, do: :ok, else: {:error, "toJson differs: got #{json}"}
+          # Same value, not same bytes; === keeps 1 and 1.0 apart.
+          if JSON.decode!(File.read!(path)) === payload,
+            do: :ok,
+            else: {:error, "toJson value differs: got #{json}"}
       end
 
     checks = Enum.map(all(kase, "length"), &check_length(payload, &1)) ++

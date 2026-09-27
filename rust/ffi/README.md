@@ -132,8 +132,8 @@ consumer in every language. One UTF-8 JSON document instead keeps the ABI at
 seven symbols and moves the schema question into a parser the caller already
 has.
 
-The receipt encoding is the canonical one every 0.7 port shares and the
-conformance vectors pin byte for byte: snake_case keys, dates as `*_ms` epoch
+The receipt encoding is the JSON value every 0.7 port shares and the
+conformance vectors pin (the value, not the bytes): snake_case keys, dates as `*_ms` epoch
 milliseconds, 64-bit ids as strings, bytes as standard base64,
 `unknown_attributes` keyed by the attribute number. JWS claims are passed
 through exactly as Apple signed them.
@@ -223,12 +223,14 @@ whole compiled-toolchain path, on all three operating systems in CI.
 `tools/gen-cases-manifest.mjs` flattens the vector file into a line-oriented
 manifest first, because a dependency-free C++17 program cannot parse JSON,
 base64-encode a fixture or check its SHA-256; the generator does all three
-and hands over plain files, including the exact `toJson` bytes a case pins.
+and hands over plain files. The C++ harness skips the `toJson` value
+comparison, which needs a JSON parser, and counts it; ctypes checks it.
 
 **Layer 3 is what "any FFI-capable language" means, tested.** ctypes reads
 `cases-0.7.json` itself and calls the same symbols, and it checks the nested
 pointers the C++ harness cannot reach: `/receipt/bundle_id`,
-`/in_app/[product_id=...]/expires_date_ms`, `/unknown_attributes/9999/0`.
+`/in_app/[product_id=...]/expires_date_ms`, `/unknown_attributes/9999/0`,
+and every `toJson` value.
 
 Both harnesses run every case in the file and skip none, except the
 `decodeBase64` groups: they call a port's base64 decoders directly, and the

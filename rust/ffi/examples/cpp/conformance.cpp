@@ -12,7 +12,7 @@
 // It carries no case-specific knowledge. The generator resolved fixture ids
 // to files, checked their digests, built each input string, parsed the
 // pinned clocks to epoch milliseconds and wrote out the endpoint request
-// bodies and the pinned toJson bytes, because a dependency-free C++ program
+// bodies, because a dependency-free C++ program
 // can do none of those. What is left here is the part that has to be C:
 // build a verifier from the roots and the clock, dispatch on the operation,
 // compare the status, and read a few top-level fields off the JSON the ABI
@@ -436,19 +436,10 @@ bool check_expectations(const Case &kase, const Outcome &outcome, std::string &e
     return false;
   }
 
-  if (kase.has("toJson")) {
-    std::vector<unsigned char> bytes;
-    if (!read_file(kase.get("toJson"), bytes)) {
-      error = "cannot read " + kase.get("toJson");
-      return false;
-    }
-    // The receipt document is exactly ReceiptPayload::to_json(): compared
-    // byte for byte, as the vectors pin it.
-    if (std::string(bytes.begin(), bytes.end()) != outcome.json) {
-      error = "toJson differs: got " + outcome.json;
-      return false;
-    }
-  }
+  // A toJson expectation pins a JSON value, not bytes, and comparing values
+  // needs a full parser this program deliberately lacks. It is skipped here
+  // and checked by rust/ffi/tests/conformance.py; the top-level fields below
+  // still are.
 
   for (const std::string &entry : kase.all("length")) {
     size_t separator = entry.find("~>");
@@ -553,6 +544,7 @@ int main(int argc, char **argv) {
   size_t pinned_clocks = 0;
   size_t skipped_fields = 0;
   size_t checked_fields = 0;
+  size_t skipped_to_json = 0;
   // Every id the manifest lists, which gen-cases-manifest.mjs writes one per
   // case in cases-0.7.json, and the ids that reached a verdict or were counted
   // as unreachable: the coverage self-check after the loop compares them.
@@ -584,6 +576,7 @@ int main(int argc, char **argv) {
     }
     skipped_fields += static_cast<size_t>(std::stoul(kase.get("skippedFields", "0")));
     checked_fields += kase.all("field").size() + kase.all("length").size();
+    if (kase.has("toJson")) skipped_to_json += 1;
     if (kase.has("clockUnixMillis")) pinned_clocks += 1;
 
     // Nothing is skipped. An `unsupported` marker would mean the generator
@@ -633,6 +626,9 @@ int main(int argc, char **argv) {
             << pinned_clocks << " pin a clock, and every one of them ran)\n";
   std::cout << checked_fields << " expected fields checked here, " << skipped_fields
             << " nested paths left to rust/ffi/tests/conformance.py\n";
+  std::cout << skipped_to_json
+            << " toJson values not compared here (no JSON parser), left to "
+               "rust/ffi/tests/conformance.py\n";
   std::cout << unreachable.size() << " decodeBase64 groups not reachable: the ABI exposes no base64 decoder\n";
   if (passed + failed + skipped == 0) {
     std::cerr << "the manifest held no cases\n";

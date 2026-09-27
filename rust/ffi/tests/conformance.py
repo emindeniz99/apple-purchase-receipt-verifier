@@ -301,8 +301,12 @@ def check(case: dict, status: int, text: str) -> str:
         return ""
     if status != OK:
         return f"expected success, got status {status}: {text}"
-    if "toJson" in expected and text != expected["toJson"]:
-        return f"toJson differs: got {text}"
+    # Same value, not same bytes. Re-encoding both sides with sorted keys
+    # ignores key order and escaping but, unlike ==, tells true from 1.
+    if "toJson" in expected and json.dumps(json.loads(text), sort_keys=True) != json.dumps(
+        json.loads(expected["toJson"]), sort_keys=True
+    ):
+        return f"toJson value differs: got {text}"
     document = json.loads(text)
     for pointer, wanted in (expected.get("fields") or {}).items():
         try:

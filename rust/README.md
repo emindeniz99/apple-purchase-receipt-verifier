@@ -39,9 +39,10 @@ fields it returns ([What to check after verification](#what-to-check-after-verif
 - **Rust 1.85.0**, declared as `rust-version` and proven by CI: the whole
   suite, conformance included, runs on a real 1.85.0 toolchain against
   `Cargo.lock`, which is committed and resolved for that floor. Edition 2021.
-- **Nine direct dependencies**, all of them primitives: `rsa`, `p256`,
-  `p384`, `sha1`, `md-5`, `sha2`, `digest` and `subtle` for the arithmetic,
-  and `base64` for `receipt-data` and `x5c` entries. Every byte of
+- **Ten direct dependencies**: `rsa`, `p256`, `p384`, `sha1`, `md-5`,
+  `sha2`, `digest` and `subtle` for the arithmetic, `base64` for
+  `receipt-data` and `x5c` entries, and `serde_json`, which only writes
+  `to_json()` and the endpoint response and never reads input. Every byte of
   attacker-supplied ASN.1 (certificates, CMS, receipt payloads, keys,
   signatures) and every byte of JSON (a JWS header and payload, the endpoint
   request body) is read by this crate's own bounded readers, so no
@@ -130,15 +131,15 @@ receipt.receipt_creation_date_ms;
 receipt.in_app[0].product_id;
 receipt.in_app[0].expires_date_ms;
 receipt.unknown_attributes;           // type -> raw values, in receipt order
-receipt.to_json();                    // the canonical JSON every port shares
+receipt.to_json();                    // JSON with the same value in every port
 ```
 
 Decoding follows the rules every port shares: the first occurrence of an
 attribute wins; every attribute that does not end up in a typed field (a
 later copy, or a value that does not decode, whose field is then `None`) is
 kept raw in `unknown_attributes`, the in-app ones in that purchase's own; an
-empty date string means "not set" and is not kept. `to_json()` writes keys
-in a fixed order with `JSON.stringify` escapes, byte-identical across ports.
+empty date string means "not set" and is not kept. `to_json()` writes
+JSON whose parsed value is the same in every port; the bytes may differ.
 
 ### `Failure` and `Reason`
 
@@ -376,7 +377,7 @@ caller checks those on the returned payload.
 | `WrongBundleId`, `WrongEnvironment`, `WrongAppAppleId`, `DeviceHashMismatch` | gone: the caller's checks |
 
 The `endpoint` feature is gone: the endpoint is always there, and
-`serde_json` is no longer a dependency.
+`serde_json` is an unconditional dependency that only writes JSON.
 
 ## Vendoring
 

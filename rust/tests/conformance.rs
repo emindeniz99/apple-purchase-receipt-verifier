@@ -686,14 +686,17 @@ fn run_case(dir: &Path, fixtures: &BTreeMap<String, Fixture>, case: &Case) -> Re
                     return Err(Failed::from(format!("{id}: expected ok but got {failure}")))
                 }
                 ("ok", Ok(json)) => {
+                    let actual = parse_json(id, &json)?;
+                    // Same value, not same bytes: whitespace, key order and
+                    // escaping are free (docs/design/0.7-api.md "Our JSON").
                     if let Some(want) = &expected.to_json {
-                        if *want != json {
+                        if parse_json(id, want)? != actual {
                             return Err(Failed::from(format!(
-                                "{id}: toJson\n  expected {want}\n  but got  {json}"
+                                "{id}: toJson value\n  expected {want}\n  but got  {json}"
                             )));
                         }
                     }
-                    parse_json(id, &json)?
+                    actual
                 }
                 (other, _) => {
                     return Err(Failed::from(format!(

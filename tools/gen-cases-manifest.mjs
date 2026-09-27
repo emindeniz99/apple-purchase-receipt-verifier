@@ -14,7 +14,7 @@
  *   <outdir>/cases.tsv                 one case per line
  *   <outdir>/inputs/<case>.txt         the exact string the case passes
  *   <outdir>/requests/<case>.json      the verifyReceipt request body
- *   <outdir>/tojson/<case>.json        the exact toJson() bytes a case pins
+ *   <outdir>/tojson/<case>.json        the toJson() value a case pins, as JSON
  *   <outdir>/fixtures/<id>.bin         the DECODED logical bytes of a fixture
  *
  * Every registered fixture is re-hashed against its contentSha256 before
@@ -47,7 +47,9 @@
  *   reason              the canonical token, error cases only
  *   field               one expected top-level field (repeated)
  *   length              one expected top-level array length (repeated)
- *   toJson              path to the exact bytes toJson() must return
+ *   toJson              path to JSON whose value toJson() must equal (the
+ *                       bytes may differ; a harness without a JSON parser
+ *                       skips it)
  *   maxMillis           a wall-clock budget for the call: the harness runs the
  *                       case once to warm up, then times a second run
  *   skippedFields       how many expected pointers this manifest DROPPED
