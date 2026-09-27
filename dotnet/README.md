@@ -373,6 +373,35 @@ base64url and omitted or extra padding are all refused, as at Apple. `x5c`
 entries are standard base64, JWS segments unpadded canonical base64url, so
 one signed payload has one accepted spelling.
 
+## Measured worst-case CPU
+
+Measured on 2026-09-27 with `bench --worst-case`, which times every shared
+case in `fixtures/cases.json` that carries a time budget: oversized
+untrusted keys, a cross-signed certificate mesh, and the encoding oddities
+inside certificates. .NET 10.0.11 (SDK 10.0.400), Release build of the
+`net8.0` library, one calling thread, on a shared 4-vCPU KVM guest (Intel
+Xeon Processor @ 2.10GHz); one second of warm-up, then ten samples of at
+least 100 ms each.
+
+| Call | Median | Slowest sample |
+|---|---:|---:|
+| Slowest hostile case: `receipt/verify-genuine-padded-with-oversized-strangers` (a valid receipt carrying oversized certificates it does not need) | 4.8 ms | 6.4 ms |
+| Next: `receipt/reject-untrusted-oversized-intermediates` | 3.0 ms | 3.9 ms |
+| Slowest hostile JWS: `signed-data/reject-untrusted-oversized-x5c` (a JWS near the 256 KiB cap) | 1.5 ms | 2.0 ms |
+| Every other budgeted case | under 1.3 ms | under 1.8 ms |
+| For scale: `VerifyReceipt` on the genuine 187-purchase legacy receipt | 2.7 ms | 3.0 ms |
+| For scale: `VerifyReceiptEndpoint` on the same receipt | 4.0 ms | 4.7 ms |
+
+The slowest hostile case costs about what the endpoint spends on the
+largest genuine receipt, and under twice what `VerifyReceipt` spends on it
+(a repeat run gave the same order: 4.6 ms against 2.7 ms and 4.4 ms). The
+cost of a call follows the size of the input, which the caps above bound,
+not the structure an attacker chooses. The machine was shared with other
+work, so treat these as an order of magnitude. Run
+`dotnet run -c Release --project dotnet/bench -- --worst-case` for the
+hostile cases on your own hardware, and the same command without
+`-- --worst-case` for the genuine receipts.
+
 ## The endpoint
 
 ```csharp
