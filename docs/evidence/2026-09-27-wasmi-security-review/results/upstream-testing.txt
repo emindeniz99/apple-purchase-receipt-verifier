@@ -1,0 +1,68 @@
+# read 2026-09-27T12:57:38Z from wasmi v2.0.0 (2970aa871cc1001b57b267ccecdcd1e42306199e)
+## fuzz targets (fuzz/Cargo.toml [[bin]] names) and differential oracles
+  name = "fuzz"
+  name = "translate"
+  name = "execute"
+  name = "differential"
+  oracle: exports.rs
+  oracle: mod.rs
+  oracle: wasmi.rs
+  oracle: wasmi_v1.rs
+  oracle: wasmtime.rs
+## fuzz module generator: imports allowed by wasm-smith config
+  config.rs:93:            max_imports: u.int_in_range(0..=MAX_ENTITIES)?,
+  config.rs:102:            max_memories: u.int_in_range(0..=MAX_DYN_ENTITIES)?,
+  config.rs:168:        self.inner.max_memories = cmp::min(self.inner.max_memories, 1);
+## execute target: how imports are resolved (empty Linker => any module with imports fails to instantiate and is skipped)
+  execute.rs:62:    let linker = Linker::new(&engine);
+  execute.rs:74:        // Translating an invalid Wasm module is undefined behavior.
+  execute.rs:87:    let Ok(instance) = linker.instantiate_and_start(&mut store, &module) else {
+  oracle/wasmi.rs:70:        let linker = Linker::new(&engine);
+  oracle/wasmi.rs:78:        let Ok(instance) = linker.instantiate_and_start(&mut store, &module) else {
+## fuzz compilation modes chosen per input
+  config.rs:45:            0b00 => CompilationMode::Lazy,
+  config.rs:46:            0b01 => CompilationMode::LazyTranslation,
+  config.rs:47:            _ => CompilationMode::Eager,
+## CI (.github/workflows/rust.yml): fuzz and miri jobs
+  rust.yml:364:        fuzz_target: ['translate', 'execute', 'differential']
+  rust.yml:406:          -max_total_time=180
+  rust.yml:434:        run: cargo miri nextest run --target x86_64-unknown-linux-gnu --lib --workspace --exclude wasmi_c_api_macros --locked
+  rust.yml:436:        run: cargo miri test --target x86_64-unknown-linux-gnu --doc --workspace --exclude wasmi_c_api_macros --locked
+  rust.yml:463:        run: cargo miri nextest run --target x86_64-unknown-linux-gnu buffered::spec_store --locked
+  miri.yml:5:    - cron: "30 3 * * *"
+  miri.yml:7:  miri:
+  miri.yml:14:            components: miri
+  miri.yml:31:          run: cargo +nightly miri nextest run --target x86_64-unknown-linux-gnu -p wasmi_wast buffered::spec_
+## spec testsuite harness (crates/wast/tests/mod.rs)
+  submodule pins: crates/wast/tests/spec@d76759e746f3564a03f6106ae19679742f2a1831 crates/wast/tests/wasmi@f3e07876308bf418499c87d3ed78ed1f9e725e67 
+  test files listed: 357
+  multi-memory       48 entries
+  memory64           25 entries
+  tail-call          5 entries
+  extended-const     3 entries
+  custom-page-sizes  4 entries
+  relaxed-simd       8 entries
+  wide-arithmetic    2 entries
+  simd_              65 entries
+  mod.rs:40:        .compilation_mode(CompilationMode::Eager)
+  mod.rs:608:/// The test is marked as `#[ignore]` because it is slow in unoptimized builds and only makes
+  mod.rs:622:#[ignore = "slow torture loop; run via the dedicated reduced-stack CI step"]
+  modes: blobs buffered fueled missing_features multi_memory custom_page_sizes memory64 
+## OSS-Fuzz
+  projects/wasmi/project.yaml: HTTP 200
+  projects/wasmi/build.sh: HTTP 200
+    main_repo: "https://github.com/wasmi-labs/wasmi"
+    sanitizers:
+      - address
+      - libfuzzer
+    # Copyright 2025 Google LLC
+    cargo $nightly fuzz build translate -O
+    cargo $nightly fuzz build execute -O
+    cargo $nightly fuzz build differential --all-features -O
+## Wasmtime's differential fuzzer and the wasmi version it pins (main branch)
+  crates/fuzzing/src/oracles/diff_wasmi.rs: HTTP 200
+  Cargo.lock: name = "wasmi"
+  Cargo.lock: version = "1.0.8"
+## published binaries (release.yml builds the CLI only; the C-API artifact crate is publish = false)
+  release.yml:1:name: Release - Build CLI Artifacts
+  c_api/artifact/Cargo.toml:15:publish = false

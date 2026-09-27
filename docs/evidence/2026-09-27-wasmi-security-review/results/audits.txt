@@ -1,0 +1,28 @@
+## resources/audit-2023-12-20.pdf: 3 pages, sha256 f96f2e8ee314399cf5f4ef48f3f1e028ac84606dde880d2e56e3a2fdaf3d5f93
+  "v1.3 – Dec 20 , 202 3"
+  "This review was performed via 2 main workstreams on version v0.31.0"
+  "No issues were uncovered during this dedicated audit workstream for the Wasmi Rust implementation."
+  "The audit team created two new differential fuzzing harnesses for this review."
+## resources/audit-2024-11-27.pdf: 129 pages, sha256 23bd0701fd732d987fdf7e6083d5d9025ccaffa267dda195de85b2c4b41807d1
+  "Delivered: November 27, 2024"
+  "The audit was conducted over the course of 8 calendar weeks (August 21, 2024, through October 16, 2024)"
+  "The version that is the target of the audit is tagged release v0.36.0 which has commit hash 02621ad7a7f769dc97524075a693cc96e2049cb5"
+  "Commits addressing the findings presented in this report (with versions 0.36.1-5 ) have also been analyzed to ensure the resolution of potential issues."
+  "There are 112 usages of the unsafe keyword in wasmi v0.36.0 that are in scope of the audit."
+  "At the time of writing, all crashes and output differences have been fixed both in Wasmi's main line as well as in a branch of v0."
+  [C1] CompiledFuncEntity can take more than u32::MAX entries | Severity: Low Recommended Action: Fix Code Addressed by client
+  [C2] Inconsistencies in RegisterAlloc Bounds | Severity: Low Recommended Action: Fix Code Not addressed by client
+  [C3] Underestimated Fuel Consumption of Table and Memory Instructions | Severity: Low Recommended Action: Fix Code Not addressed by client
+  [C4] Large inputs to raw pointer functions may cause undefined behaviour depending on target | Severity: High Recommended Action: Fix Code Not addressed by client
+  [CI1] Best Practices and Notable Particularities | Severity: Informative Addressed by client
+  [CI2] Results of cargo-audit | Severity: Informative Addressed by client
+  [CI3] visit_input_registers does not visit all registers of a RegisterSpan | Severity: Informative Recommended Action: Document Prominently Not addressed by client
+  [CI4] Missing copy in select translation | Severity: Informative Recommended Action: Fix Code Not addressed by client
+  [F1] Abort on realloc() due to faulty br_table optimization | Severity: High Addressed by client
+  [F2] Translator debug assertion fired due to ref.is_null constant propagation | Severity: Low Addressed by client
+  [F3] Segmentation fault due to visit_input_regs bug | Severity: Low Addressed by client
+  [F4] Output mismatch between Wasmi and Wasmtime #1 | Severity: Low Addressed by client
+  [F5] Output mismatch between Wasmi and Wasmtime #2 | Severity: High Addressed by client
+  [F6] Output mismatch between Wasmi and Wasmtime #3 | Severity: High Addressed by client
+  [F7] Executor hang on unreleased version due to copy_span bug | Severity: Low Addressed by client
+  [F8] Executor panic on unreleased version due to br_table_many bug | Severity: Low Addressed by client

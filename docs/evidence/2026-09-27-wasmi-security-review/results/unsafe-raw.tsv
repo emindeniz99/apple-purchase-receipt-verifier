@@ -1,0 +1,783 @@
+crate	path	line	kind	scope	source
+wasmi	wasmi/benches/benches.rs	202	block	test	unsafe { Module::new_unchecked(engine, bytes).unwrap() }
+wasmi	wasmi/src/engine/mod.rs	579	impl	src	unsafe impl Send for EngineStacks {}
+wasmi	wasmi/src/engine/mod.rs	593	impl	src	unsafe impl Sync for EngineStacks {}
+wasmi	wasmi/src/engine/resumable.rs	224	impl	src	unsafe impl Sync for ResumableCallCommon {}
+wasmi	wasmi/src/engine/code_map/mod.rs	190	block	src	let buckets = unsafe { slice::from_raw_parts(base, len_buckets) };
+wasmi	wasmi/src/engine/code_map/mod.rs	202	block	src	let bucket = unsafe { FuncsBucketRef::from_raw_parts(raw, len_bucket) };
+wasmi	wasmi/src/engine/code_map/mod.rs	275	block	src	unsafe { base.add(n).write(Some(raw)) };
+wasmi	wasmi/src/engine/code_map/mod.rs	292	block	src	unsafe { self.get_within(func, len_funcs) }
+wasmi	wasmi/src/engine/code_map/mod.rs	304	fn	src	pub unsafe fn get_within(&self, func: EngineFunc, len_funcs: usize) -> Option<&FuncEntry> {
+wasmi	wasmi/src/engine/code_map/mod.rs	313	block	src	let Some(raw) = (unsafe { *base.add(bucket) }) else {
+wasmi	wasmi/src/engine/code_map/mod.rs	314	block	src	unsafe { unreachable_unchecked!() } // bucket of a contained func is always published
+wasmi	wasmi/src/engine/code_map/mod.rs	317	block	src	unsafe { FuncsBucketRef::from_raw_parts(raw, Self::size_of_bucket_at(bucket)) };
+wasmi	wasmi/src/engine/code_map/mod.rs	364	block	src	let bucket = unsafe { FuncsBucket::from_raw_parts(raw_bucket, len) };
+wasmi	wasmi/src/engine/code_map/mod.rs	398	block	src	let funcs = unsafe { NonNull::new_unchecked(Box::into_raw(self.funcs) as *mut FuncEntry) };
+wasmi	wasmi/src/engine/code_map/mod.rs	408	fn	src	pub unsafe fn from_raw_parts(raw: RawFuncsBucket, len: usize) -> FuncsBucket {
+wasmi	wasmi/src/engine/code_map/mod.rs	411	block	src	funcs: unsafe { Box::from_raw(funcs) },
+wasmi	wasmi/src/engine/code_map/mod.rs	430	fn	src	pub unsafe fn from_raw_parts(raw: RawFuncsBucket, len: usize) -> FuncsBucketRef<'a> {
+wasmi	wasmi/src/engine/code_map/mod.rs	431	block	src	let funcs = unsafe { slice::from_raw_parts(raw.funcs.as_ptr(), len) };
+wasmi	wasmi/src/engine/code_map/mod.rs	494	fn	src	pub unsafe fn get<'a>(self) -> &'a FuncEntry {
+wasmi	wasmi/src/engine/code_map/mod.rs	496	block	src	unsafe { &*ptr::with_exposed_provenance::<FuncEntry>(self.0) }
+wasmi	wasmi/src/engine/code_map/mod.rs	506	block	src	unsafe { ManuallyDrop::drop(&mut data.uncompiled) }
+wasmi	wasmi/src/engine/code_map/mod.rs	510	block	src	unsafe { ManuallyDrop::drop(&mut data.compiled) }
+wasmi	wasmi/src/engine/code_map/mod.rs	519	block	src	let state = unsafe { self.data_mut() };
+wasmi	wasmi/src/engine/code_map/mod.rs	526	block	src	.field("state", unsafe { &state.compiled })
+wasmi	wasmi/src/engine/code_map/mod.rs	530	block	src	.field("state", unsafe { &state.uncompiled })
+wasmi	wasmi/src/engine/code_map/mod.rs	560	block	src	unsafe { self.set_compiled(compiled) }
+wasmi	wasmi/src/engine/code_map/mod.rs	571	block	src	unsafe { self.set_uncompiled(uncompiled) }
+wasmi	wasmi/src/engine/code_map/mod.rs	579	fn	src	unsafe fn set_compiled(&self, compiled: CompiledFuncEntry) {
+wasmi	wasmi/src/engine/code_map/mod.rs	580	block	src	let data = unsafe { self.data_mut() };
+wasmi	wasmi/src/engine/code_map/mod.rs	590	fn	src	unsafe fn set_uncompiled(&self, uncompiled: UncompiledFuncEntry) {
+wasmi	wasmi/src/engine/code_map/mod.rs	591	block	src	let data = unsafe { self.data_mut() };
+wasmi	wasmi/src/engine/code_map/mod.rs	601	fn	src	unsafe fn take_uncompiled(&self) -> UncompiledFuncEntry {
+wasmi	wasmi/src/engine/code_map/mod.rs	602	block	src	let data = unsafe { self.data_mut() };
+wasmi	wasmi/src/engine/code_map/mod.rs	603	block	src	let uncompiled = unsafe { ManuallyDrop::take(&mut data.uncompiled) };
+wasmi	wasmi/src/engine/code_map/mod.rs	614	fn	src	unsafe fn data_mut(&self) -> &mut FuncEntryData {
+wasmi	wasmi/src/engine/code_map/mod.rs	615	block	src	unsafe { &mut *self.data.get() }
+wasmi	wasmi/src/engine/code_map/mod.rs	632	block	src	return Ok(unsafe { self.assume_compiled() });
+wasmi	wasmi/src/engine/code_map/mod.rs	675	block	src	let mut uncompiled = unsafe { self.take_uncompiled() };
+wasmi	wasmi/src/engine/code_map/mod.rs	679	block	src	unsafe { self.set_compiled(compiled) };
+wasmi	wasmi/src/engine/code_map/mod.rs	685	block	src	unsafe { self.set_uncompiled(uncompiled) };
+wasmi	wasmi/src/engine/code_map/mod.rs	697	block	src	_ => unsafe { unreachable_unchecked!() },
+wasmi	wasmi/src/engine/code_map/mod.rs	700	block	src	Ok(unsafe { self.assume_compiled() })
+wasmi	wasmi/src/engine/code_map/mod.rs	715	fn	src	pub unsafe fn assume_compiled(&self) -> CompiledFuncRef<'_> {
+wasmi	wasmi/src/engine/code_map/mod.rs	716	block	src	let func = unsafe { &*self.data.get() };
+wasmi	wasmi/src/engine/code_map/mod.rs	717	block	src	let compiled = unsafe { &*func.compiled };
+wasmi	wasmi/src/engine/code_map/mod.rs	755	impl	src	unsafe impl Send for FuncEntry {}
+wasmi	wasmi/src/engine/code_map/mod.rs	756	impl	src	unsafe impl Sync for FuncEntry {}
+wasmi	wasmi/src/engine/code_map/mod.rs	757	impl	src	unsafe impl Send for Funcs {}
+wasmi	wasmi/src/engine/code_map/mod.rs	758	impl	src	unsafe impl Sync for Funcs {}
+wasmi	wasmi/src/engine/code_map/mod.rs	759	impl	src	unsafe impl Send for RawFuncsBucket {}
+wasmi	wasmi/src/engine/code_map/mod.rs	760	impl	src	unsafe impl Sync for RawFuncsBucket {}
+wasmi	wasmi/src/engine/code_map/mod.rs	927	block	src	Ok(unsafe { result.assume_init() })
+wasmi	wasmi/src/engine/executor/inout.rs	70	fn	src	pub unsafe fn new(
+wasmi	wasmi/src/engine/executor/inout.rs	96	fn	src	unsafe fn params(&self) -> &[Cell] {
+wasmi	wasmi/src/engine/executor/inout.rs	99	block	src	unsafe { slice::from_raw_parts(self.cells.as_ptr(), self.len_params) }
+wasmi	wasmi/src/engine/executor/inout.rs	114	fn	src	unsafe fn results_mut(&mut self) -> &mut [Cell] {
+wasmi	wasmi/src/engine/executor/inout.rs	117	block	src	unsafe { slice::from_raw_parts_mut(self.cells.as_ptr(), self.len_results) }
+wasmi	wasmi/src/engine/executor/inout.rs	129	block	src	let mut param_cells = unsafe { self.params() };
+wasmi	wasmi/src/engine/executor/inout.rs	142	block	src	let mut param_cells = unsafe { self.params() };
+wasmi	wasmi/src/engine/executor/inout.rs	159	block	src	let mut result_cells = unsafe { self.results_mut() };
+wasmi	wasmi/src/engine/executor/handler/args.rs	92	fn	src	pub unsafe fn decode_op<T: ir::Decode>(&mut self) -> T {
+wasmi	wasmi/src/engine/executor/handler/args.rs	94	block	src	let op = unsafe { self.decode::<T>() };
+wasmi	wasmi/src/engine/executor/handler/args.rs	101	fn	src	pub unsafe fn decode<T: ir::Decode>(&mut self) -> T {
+wasmi	wasmi/src/engine/executor/handler/args.rs	103	block	src	true => unsafe { self.ip.skip::<ir::OpCode>() },
+wasmi	wasmi/src/engine/executor/handler/args.rs	104	block	src	false => unsafe { self.ip.skip::<::core::primitive::usize>() },
+wasmi	wasmi/src/engine/executor/handler/args.rs	106	block	src	let (new_ip, op) = unsafe { ip.decode() };
+wasmi	wasmi/src/engine/executor/handler/args.rs	139	block	src	self.ip = unsafe { self.ip.offset(i32::from(offset) as isize) };
+wasmi	wasmi/src/engine/executor/handler/args.rs	161	block	src	unsafe { self.instance.load_entity_mut(store, addr) }
+wasmi	wasmi/src/engine/executor/handler/args.rs	177	block	src	unsafe { self.instance.load_entity_mut(store, addr) }
+wasmi	wasmi/src/engine/executor/handler/args.rs	193	block	src	unsafe { self.instance.load_entity_mut(store, addr) }
+wasmi	wasmi/src/engine/executor/handler/args.rs	209	block	src	unsafe { self.instance.load_entity_mut(store, addr) }
+wasmi	wasmi/src/engine/executor/handler/args.rs	225	block	src	unsafe { self.instance.load_entity_mut(store, addr) }
+wasmi	wasmi/src/engine/executor/handler/exec.rs	54	block	src	let crate::ir::decode::Trap { trap_code } = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	72	block	src	let crate::ir::decode::ConsumeFuel { fuel } = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	98	block	src	let crate::ir::decode::Branch { offset } = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	127	block	src	let crate::ir::decode::$camel_name { global, result } = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	168	block	src	let crate::ir::decode::$camel_name { global, value } = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	172	block	src	let global_ref = unsafe { value_ptr.as_mut() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	223	block	src	let crate::ir::decode::CallInternal { params, func } = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	226	block	src	let func = unsafe { FuncEntryPtr::from(usize::from(func)).get() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	245	block	src	let crate::ir::decode::CallImported { params, func } = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	273	block	src	} = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	302	block	src	let crate::ir::decode::ReturnCallInternal { params, func } = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	304	block	src	let func = unsafe { FuncEntryPtr::from(usize::from(func)).get() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	323	block	src	let crate::ir::decode::ReturnCallImported { params, func } = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	351	block	src	} = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	380	block	src	let crate::ir::decode::MemorySize { memory, result } = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	404	block	src	} = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	406	block	src	let memref = unsafe { instance.load_handle(memory) };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	420	block	src	let memory = unsafe { instance.load_entity_mut(store, memory) };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	434	block	src	Err(StoreError::Internal(error)) => unsafe {
+wasmi	wasmi/src/engine/executor/handler/exec.rs	465	block	src	} = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	482	block	src	let src_ptr = unsafe { instance.load_entity_ptr(src_memory) };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	483	block	src	let mut dst_ptr = unsafe { instance.load_entity_ptr(dst_memory) };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	493	block	src	let src_memory = unsafe { src_ptr.as_ref() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	494	block	src	let dst_memory = unsafe { dst_ptr.as_mut() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	522	block	src	let memory = unsafe { args.instance.load_entity_ptr(dst_memory).as_mut() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	553	block	src	} = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	564	block	src	let memory = unsafe { instance.load_entity_ptr(memory).as_mut() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	592	block	src	} = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	607	block	src	let memory = unsafe { instance.load_entity_ptr(memory).as_mut() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	608	block	src	let data = unsafe { instance.load_entity_ptr(data).as_ref() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	637	block	src	let crate::ir::decode::DataDrop { data } = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	656	block	src	let crate::ir::decode::TableSize { table, result } = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	681	block	src	} = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	682	block	src	let table_ref = unsafe { instance.load_handle(table) };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	688	block	src	let table = unsafe { instance.load_entity_mut(store, table) };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	700	block	src	Err(StoreError::Internal(error)) => unsafe {
+wasmi	wasmi/src/engine/executor/handler/exec.rs	731	block	src	} = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	735	block	src	let src_ptr = unsafe { instance.load_entity_ptr(src_table) };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	736	block	src	let mut dst_ptr = unsafe { instance.load_entity_ptr(dst_table) };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	742	block	src	let table = unsafe { dst_ptr.as_mut() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	749	block	src	let src_table = unsafe { src_ptr.as_ref() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	750	block	src	let dst_table = unsafe { dst_ptr.as_mut() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	788	block	src	} = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	793	block	src	let table = unsafe { instance.load_entity_ptr(table).as_mut() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	830	block	src	} = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	836	block	src	let table = unsafe { args.instance.load_entity_ptr(table).as_mut() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	837	block	src	let element = unsafe { args.instance.load_entity_ptr(elem).as_ref() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	868	block	src	let crate::ir::decode::ElemDrop { elem } = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	890	block	src	let crate::ir::decode::$op { table, result, index } = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	925	block	src	let crate::ir::decode::$op { table, index, value } = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	962	block	src	let crate::ir::decode::RefFunc { func, result } = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	963	block	src	let func = unsafe { instance.load_handle(func) };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	965	block	src	unsafe { unreachable_unchecked!("store mismatch with: {func:?}") }
+wasmi	wasmi/src/engine/executor/handler/exec.rs	990	block	src	let crate::ir::decode::$op { results, lhs_lo, lhs_hi, rhs_lo, rhs_hi } = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	1028	block	src	let crate::ir::decode::$op { results, lhs, rhs } = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	1065	block	src	args.set_ip(unsafe { args.ip.add(target_offset) });
+wasmi	wasmi/src/engine/executor/handler/exec.rs	1066	block	src	let (_, offset) = unsafe { args.ip.decode::<ir::BranchOffset>() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	1087	block	src	args.set_ip(unsafe { args.ip.add(target_offset) });
+wasmi	wasmi/src/engine/executor/handler/exec.rs	1089	block	src	unsafe { args.ip.decode::<ir::BranchTableTarget>() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	1116	block	src	let crate::ir::decode::$camel_case { len_targets, index, values } = unsafe { args.decode() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	1821	block	src	let $crate::ir::decode::$decode { offset, lhs, rhs } = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	2067	block	src	} = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	2202	block	src	} = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec.rs	2360	block	src	} = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/func.rs	168	block	src	let func_entry = unsafe { func_entry.get() };
+wasmi	wasmi/src/engine/executor/handler/state.rs	71	impl	src	unsafe impl Send for ExecContext {}
+wasmi	wasmi/src/engine/executor/handler/state.rs	75	impl	src	unsafe impl Sync for ExecContext {}
+wasmi	wasmi/src/engine/executor/handler/state.rs	321	block	src	unsafe { ThinPtr::with_exposed_provenance(addr) }
+wasmi	wasmi/src/engine/executor/handler/state.rs	331	impl	src	unsafe impl Send for Inst {}
+wasmi	wasmi/src/engine/executor/handler/state.rs	339	impl	src	unsafe impl Sync for Inst {}
+wasmi	wasmi/src/engine/executor/handler/state.rs	386	block	src	unsafe { slice::from_raw_parts_mut(mem0.0, mem0_len.0) }
+wasmi	wasmi/src/engine/executor/handler/state.rs	432	fn	src	pub unsafe fn decode<T: ir::Decode>(self) -> (Ip, T) {
+wasmi	wasmi/src/engine/executor/handler/state.rs	440	block	src	unsafe { ptr::copy_nonoverlapping(src, dst, len) };
+wasmi	wasmi/src/engine/executor/handler/state.rs	441	block	src	self.0 = unsafe { self.0.add(len) };
+wasmi	wasmi/src/engine/executor/handler/state.rs	449	block	src	Err(error) => unsafe {
+wasmi	wasmi/src/engine/executor/handler/state.rs	472	fn	src	pub unsafe fn skip<T: ir::Decode>(self) -> Ip {
+wasmi	wasmi/src/engine/executor/handler/state.rs	473	block	src	let (ip, _) = unsafe { self.decode::<T>() };
+wasmi	wasmi/src/engine/executor/handler/state.rs	491	fn	src	pub unsafe fn offset(self, delta: isize) -> Self {
+wasmi	wasmi/src/engine/executor/handler/state.rs	492	block	src	let value = unsafe { self.value.byte_offset(delta) };
+wasmi	wasmi/src/engine/executor/handler/state.rs	509	fn	src	pub unsafe fn add(self, delta: usize) -> Self {
+wasmi	wasmi/src/engine/executor/handler/state.rs	510	block	src	let value = unsafe { self.value.byte_add(delta) };
+wasmi	wasmi/src/engine/executor/handler/state.rs	543	impl	src	unsafe impl Send for Ip {}
+wasmi	wasmi/src/engine/executor/handler/state.rs	629	block	src	unsafe {
+wasmi	wasmi/src/engine/executor/handler/state.rs	641	block	src	let value = unsafe {
+wasmi	wasmi/src/engine/executor/handler/state.rs	672	block	src	let value = unsafe { self.value.cast::<u8>().add(delta).cast::<Cell>() };
+wasmi	wasmi/src/engine/executor/handler/state.rs	677	fn	src	pub unsafe fn get<T>(self, slot: Slot) -> T
+wasmi	wasmi/src/engine/executor/handler/state.rs	684	block	src	unsafe { unreachable_unchecked!() }
+wasmi	wasmi/src/engine/executor/handler/state.rs	690	fn	src	pub unsafe fn set<T>(self, slot: Slot, value: T)
+wasmi	wasmi/src/engine/executor/handler/state.rs	697	block	src	unsafe { unreachable_unchecked!() }
+wasmi	wasmi/src/engine/executor/handler/state.rs	1215	block	src	let value = unsafe { self.cells.as_mut_ptr().add(offset) };
+wasmi	wasmi/src/engine/executor/handler/state.rs	1245	block	src	unsafe { self.cells.set_len(new_len) };
+wasmi	wasmi/src/engine/executor/handler/state.rs	1281	block	src	unsafe { self.cells.set_len(cmp::max(new_len, len)) };
+wasmi	wasmi/src/engine/executor/handler/state.rs	1370	block	src	unsafe { unreachable_unchecked!("must fit slice after `grow_if_needed` operation") }
+wasmi	wasmi/src/engine/executor/handler/state.rs	1376	block	src	let inout_or_err = unsafe { InOutParams::new(cells, len_params, len_results) };
+wasmi	wasmi/src/engine/executor/handler/state.rs	1378	block	src	unsafe {
+wasmi	wasmi/src/engine/executor/handler/state.rs	1430	block	src	unsafe { unreachable_unchecked!() }
+wasmi	wasmi/src/engine/executor/handler/state.rs	1464	block	src	unsafe { unreachable_unchecked!("ValueStack::replace: out of bounds callee cells") }
+wasmi	wasmi/src/engine/executor/handler/state.rs	1468	block	src	unsafe { unreachable_unchecked!() }
+wasmi	wasmi/src/engine/executor/handler/state.rs	1658	block	src	unsafe { unreachable_unchecked!("call stack must not be empty") }
+wasmi	wasmi/src/engine/executor/handler/state.rs	1681	block	src	unsafe { unreachable_unchecked!("missing caller frame on the call stack") }
+wasmi	wasmi/src/engine/executor/handler/utils.rs	264	block	src	unsafe { sp.get::<T>(src) }
+wasmi	wasmi/src/engine/executor/handler/utils.rs	461	block	src	unsafe { sp.set::<T>(dst, src) };
+wasmi	wasmi/src/engine/executor/handler/utils.rs	556	block	src	let Some(addr) = (unsafe { inst.as_ptr().layout() }).memory_addr(0) else {
+wasmi	wasmi/src/engine/executor/handler/utils.rs	561	block	src	let Some(mem0) = (unsafe { inst.as_ptr().get_memory(addr) }) else {
+wasmi	wasmi/src/engine/executor/handler/utils.rs	562	block	src	unsafe { unreachable_unchecked!("missing memory at: {addr:?}") }
+wasmi	wasmi/src/engine/executor/handler/utils.rs	566	block	src	let mem0 = unsafe { mem0.as_ref() };
+wasmi	wasmi/src/engine/executor/handler/utils.rs	569	block	src	let mem0 = unsafe { &mut *mem0.as_ptr() }.data_mut();
+wasmi	wasmi/src/engine/executor/handler/utils.rs	611	fn	src	unsafe fn load_entry_ptr(self, addr: Addr) -> NonNull<Self::Entry>;
+wasmi	wasmi/src/engine/executor/handler/utils.rs	625	fn	src	unsafe fn load_entry_ptr(self, addr: ir::$addr) -> NonNull<Self::Entry> {
+wasmi	wasmi/src/engine/executor/handler/utils.rs	628	block	src	let Some(entry) = (unsafe { self.as_ptr().$getter(addr) }) else {
+wasmi	wasmi/src/engine/executor/handler/utils.rs	629	block	src	unsafe {
+wasmi	wasmi/src/engine/executor/handler/utils.rs	668	fn	src	unsafe fn load_entity_ptr(self, addr: Addr) -> NonNull<Self::Entity>;
+wasmi	wasmi/src/engine/executor/handler/utils.rs	680	fn	src	unsafe fn load_entity_mut(self, _store: &mut PrunedStore, addr: Addr) -> &mut Self::Entity;
+wasmi	wasmi/src/engine/executor/handler/utils.rs	694	fn	src	unsafe fn load_entity_ptr(self, addr: ir::$addr) -> NonNull<Self::Entity> {
+wasmi	wasmi/src/engine/executor/handler/utils.rs	698	block	src	unsafe { self.load_entry_ptr(addr).as_ref() }.entity()
+wasmi	wasmi/src/engine/executor/handler/utils.rs	702	fn	src	unsafe fn load_entity_mut(self, _store: &mut PrunedStore, addr: ir::$addr) -> &mut Self::Entity {
+wasmi	wasmi/src/engine/executor/handler/utils.rs	705	block	src	unsafe { self.load_entity_ptr(addr).as_mut() }
+wasmi	wasmi/src/engine/executor/handler/utils.rs	724	fn	src	unsafe fn load_entity_ptr(self, _addr: Table0) -> NonNull<Self::Entity> {
+wasmi	wasmi/src/engine/executor/handler/utils.rs	727	block	src	let Some(entity) = (unsafe { self.as_ptr().get_table0() }) else {
+wasmi	wasmi/src/engine/executor/handler/utils.rs	728	block	src	unsafe { unreachable_unchecked!("missing table entity for table 0") }
+wasmi	wasmi/src/engine/executor/handler/utils.rs	734	fn	src	unsafe fn load_entity_mut(self, _store: &mut PrunedStore, addr: Table0) -> &mut Self::Entity {
+wasmi	wasmi/src/engine/executor/handler/utils.rs	737	block	src	unsafe { self.load_entity_ptr(addr).as_mut() }
+wasmi	wasmi/src/engine/executor/handler/utils.rs	754	fn	src	unsafe fn load_handle(self, addr: Addr) -> Self::Handle;
+wasmi	wasmi/src/engine/executor/handler/utils.rs	768	fn	src	unsafe fn load_handle(self, addr: ir::$addr) -> Self::Handle {
+wasmi	wasmi/src/engine/executor/handler/utils.rs	770	block	src	let entry_ref = unsafe { self.load_entry_ptr(addr).as_ref() };
+wasmi	wasmi/src/engine/executor/handler/utils.rs	794	block	src	let entry_ref = unsafe { inst.load_entry_ptr(func).as_ref() };
+wasmi	wasmi/src/engine/executor/handler/utils.rs	820	block	src	let actual_fnty = unsafe { func_entity.as_ref() }.ty_dedup().repr_entity();
+wasmi	wasmi/src/engine/executor/handler/utils.rs	907	block	src	Err(StoreError::Internal(error)) => unsafe {
+wasmi	wasmi/src/engine/executor/handler/utils.rs	987	block	src	let func_entity = unsafe { func_entity.as_ref() };
+wasmi	wasmi/src/engine/executor/handler/utils.rs	1035	block	src	let func_entity = unsafe { func_entity.as_ref() };
+wasmi	wasmi/src/engine/executor/handler/dispatch/mod.rs	35	block	src	let (_, op_code) = unsafe { ip.decode::<crate::ir::OpCode>() };
+wasmi	wasmi/src/engine/executor/handler/dispatch/mod.rs	43	block	src	let (_, addr) = unsafe { ip.decode::<usize>() };
+wasmi	wasmi/src/engine/executor/handler/dispatch/mod.rs	44	block	src	unsafe { mem::transmute::<*const (), Handler>(ptr::with_exposed_provenance(addr)) }
+wasmi	wasmi/src/engine/executor/handler/dispatch/backend/loop.rs	74	block	src	unsafe { *HANDLERS.get_unchecked(usize::from(u16::from(code))) }
+wasmi	wasmi/src/engine/executor/handler/dispatch/backend/tail.rs	65	block	src	unsafe { *HANDLERS.get_unchecked(usize::from(u16::from(code))) }
+wasmi	wasmi/src/engine/executor/handler/exec/macros.rs	107	block	src	let $crate::ir::decode::$op { result, value } = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec/macros.rs	134	block	src	let $crate::ir::decode::$decode { result, lhs, rhs } = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec/macros.rs	167	block	src	} = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec/macros.rs	200	block	src	} = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec/macros.rs	234	block	src	} = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec/macros.rs	267	block	src	} = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec/simd.rs	39	block	src	} = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec/simd.rs	341	block	src	} = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec/simd.rs	402	block	src	} = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec/simd.rs	446	block	src	let $crate::ir::decode::$decode { result, $v0, $v1, $v2 } = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec/simd.rs	505	block	src	let $crate::ir::decode::$op { ptr, offset, value, memory, lane } = unsafe { args.decode_op() };
+wasmi	wasmi/src/engine/executor/handler/exec/simd.rs	540	block	src	let $crate::ir::decode::$op { ptr, offset, value, lane } = unsafe { args.decode_op() };
+wasmi	wasmi/src/func/caller.rs	40	block	src	let instance = unsafe { instance.as_ptr().as_ref() };
+wasmi	wasmi/src/func/mod.rs	208	block	src	unsafe { self.func_entry.get() }
+wasmi	wasmi/src/instance/cache.rs	40	impl	src	unsafe impl Send for AnyHandleAndEntity {}
+wasmi	wasmi/src/instance/cache.rs	48	impl	src	unsafe impl Sync for AnyHandleAndEntity {}
+wasmi	wasmi/src/instance/cache.rs	63	impl	src	unsafe impl Send for Table0Ptr {}
+wasmi	wasmi/src/instance/cache.rs	68	impl	src	unsafe impl Sync for Table0Ptr {}
+wasmi	wasmi/src/instance/cache.rs	104	fn	src	pub unsafe fn into_typed_ptr<T: HasHandleKind>(
+wasmi	wasmi/src/instance/cache.rs	108	block	src	unsafe { this.as_ref() }.handle.assert_kind::<T>();
+wasmi	wasmi/src/instance/cache.rs	121	fn	src	pub unsafe fn as_typed_ref<T: HasHandleKind>(&self) -> &HandleAndEntity<T> {
+wasmi	wasmi/src/instance/cache.rs	125	block	src	unsafe { &*ptr::from_ref(self).cast::<HandleAndEntity<T>>() }
+wasmi	wasmi/src/instance/cache.rs	135	fn	src	pub unsafe fn as_typed_mut<T: HasHandleKind>(&mut self) -> &mut HandleAndEntity<T> {
+wasmi	wasmi/src/instance/cache.rs	139	block	src	unsafe { &mut *ptr::from_mut(self).cast::<HandleAndEntity<T>>() }
+wasmi	wasmi/src/instance/cache.rs	184	block	src	unsafe { $cast(self.inner.handle) }
+wasmi	wasmi/src/instance/entity.rs	210	block	src	let Some(ptr) = NonNull::new(unsafe { alloc(alloc_layout) }) else {
+wasmi	wasmi/src/instance/entity.rs	218	block	src	unsafe {
+wasmi	wasmi/src/instance/entity.rs	232	block	src	let entity = unsafe { Box::from_raw(ptr) };
+wasmi	wasmi/src/instance/entity.rs	295	block	src	let entry = unsafe { entry.as_typed_mut::<$handle>() };
+wasmi	wasmi/src/instance/entity.rs	311	block	src	let entry = unsafe { entry.as_typed_ref::<Table>() };
+wasmi	wasmi/src/instance/entity.rs	321	block	src	Some(unsafe { entry.as_typed_ref::<Memory>() }.handle())
+wasmi	wasmi/src/instance/entity.rs	329	block	src	Some(unsafe { entry.as_typed_ref::<Table>() }.handle())
+wasmi	wasmi/src/instance/entity.rs	337	block	src	Some(unsafe { entry.as_typed_ref::<Global>() }.handle())
+wasmi	wasmi/src/instance/entity.rs	345	block	src	Some(unsafe { entry.as_typed_ref::<Func>() }.handle())
+wasmi	wasmi/src/instance/entity.rs	353	block	src	Some(unsafe { entry.as_typed_ref::<DataSegment>() }.handle())
+wasmi	wasmi/src/instance/entity.rs	361	block	src	Some(unsafe { entry.as_typed_ref::<ElementSegment>() }.handle())
+wasmi	wasmi/src/instance/entity.rs	416	fn	src	unsafe fn header<'a>(self) -> &'a InstanceEntityHeader {
+wasmi	wasmi/src/instance/entity.rs	418	block	src	unsafe { self.cast::<InstanceEntityHeader>().as_ref() }
+wasmi	wasmi/src/instance/entity.rs	433	fn	src	unsafe fn handles(self) -> NonNull<AnyHandleAndEntity> {
+wasmi	wasmi/src/instance/entity.rs	436	block	src	unsafe { self.cast::<u8>().byte_add(HANDLES_OFFSET).cast() }
+wasmi	wasmi/src/instance/entity.rs	445	fn	src	unsafe fn entry(self, addr: u32) -> Option<NonNull<AnyHandleAndEntity>> {
+wasmi	wasmi/src/instance/entity.rs	447	block	src	if addr >= unsafe { self.header() }.len_handles() {
+wasmi	wasmi/src/instance/entity.rs	451	block	src	Some(unsafe { self.handles().add(addr as usize) })
+wasmi	wasmi/src/instance/entity.rs	460	fn	src	pub unsafe fn layout<'a>(self) -> &'a InstanceLayout {
+wasmi	wasmi/src/instance/entity.rs	462	block	src	unsafe { self.header() }.layout()
+wasmi	wasmi/src/instance/entity.rs	466	fn	src	pub unsafe fn get_table0(self) -> Option<NonNull<CoreTable>> {
+wasmi	wasmi/src/instance/entity.rs	467	block	src	unsafe { self.header() }.table0.map(Table0Ptr::get)
+wasmi	wasmi/src/instance/entity.rs	482	fn	src	pub unsafe fn as_ref<'a>(self) -> &'a InstanceEntity {
+wasmi	wasmi/src/instance/entity.rs	486	block	src	let len_handles = unsafe {
+wasmi	wasmi/src/instance/entity.rs	494	block	src	unsafe { &*ptr }
+wasmi	wasmi/src/instance/entity.rs	502	fn	src	pub unsafe fn $get:ident(self, addr: $addr_ty:ty) -> Option<NonNull<HandleAndEntity<$handle:ty>>>;
+wasmi	wasmi/src/instance/entity.rs	515	fn	src	pub unsafe fn $get(self, addr: $addr_ty) -> Option<NonNull<HandleAndEntity<$handle>>> {
+wasmi	wasmi/src/instance/entity.rs	517	block	src	let entry = unsafe { self.entry(u32::from(addr)) }?;
+wasmi	wasmi/src/instance/entity.rs	519	block	src	let typed = unsafe { AnyHandleAndEntity::into_typed_ptr::<$handle>(entry) };
+wasmi	wasmi/src/instance/entity.rs	529	fn	src	pub unsafe fn get_memory(self, addr: MemoryAddr) -> Option<NonNull<HandleAndEntity<Memory>>>;
+wasmi	wasmi/src/instance/entity.rs	531	fn	src	pub unsafe fn get_global(self, addr: GlobalAddr) -> Option<NonNull<HandleAndEntity<Global>>>;
+wasmi	wasmi/src/instance/entity.rs	533	fn	src	pub unsafe fn get_table(self, addr: TableAddr) -> Option<NonNull<HandleAndEntity<Table>>>;
+wasmi	wasmi/src/instance/entity.rs	535	fn	src	pub unsafe fn get_func(self, addr: FuncAddr) -> Option<NonNull<HandleAndEntity<Func>>>;
+wasmi	wasmi/src/instance/entity.rs	537	fn	src	pub unsafe fn get_elem(self, addr: ElemAddr) -> Option<NonNull<HandleAndEntity<ElementSegment>>>;
+wasmi	wasmi/src/instance/entity.rs	539	fn	src	pub unsafe fn get_data(self, addr: DataAddr) -> Option<NonNull<HandleAndEntity<DataSegment>>>;
+wasmi	wasmi/src/instance/handle.rs	90	fn	src	pub unsafe fn $cast_ident:ident(self) -> $handle:ident;
+wasmi	wasmi/src/instance/handle.rs	101	fn	src	pub unsafe fn $cast_ident(self) -> $handle {
+wasmi	wasmi/src/instance/handle.rs	103	block	src	unsafe { ::core::mem::transmute::<RawAnyHandle, $handle>(self.raw) }
+wasmi	wasmi/src/instance/handle.rs	110	fn	src	pub unsafe fn cast_global(self) -> Global;
+wasmi	wasmi/src/instance/handle.rs	111	fn	src	pub unsafe fn cast_func(self) -> Func;
+wasmi	wasmi/src/instance/handle.rs	112	fn	src	pub unsafe fn cast_memory(self) -> Memory;
+wasmi	wasmi/src/instance/handle.rs	113	fn	src	pub unsafe fn cast_table(self) -> Table;
+wasmi	wasmi/src/instance/handle.rs	114	fn	src	pub unsafe fn cast_data(self) -> DataSegment;
+wasmi	wasmi/src/instance/handle.rs	115	fn	src	pub unsafe fn cast_elem(self) -> ElementSegment;
+wasmi	wasmi/src/instance/handle.rs	134	block	src	let raw = unsafe { ::core::mem::transmute::<$handle, RawAnyHandle>(handle) };
+wasmi	wasmi/src/instance/thin_ptr.rs	32	block	src	unsafe { Self::with_exposed_provenance(addr) }
+wasmi	wasmi/src/instance/thin_ptr.rs	43	fn	src	pub unsafe fn with_exposed_provenance(addr: usize) -> Self {
+wasmi	wasmi/src/instance/thin_ptr.rs	47	block	src	ptr: unsafe { NonNull::new_unchecked(ptr) },
+wasmi	wasmi/src/module/custom_section.rs	125	block	src	let name = unsafe { str::from_utf8_unchecked(name) };
+wasmi	wasmi/src/module/mod.rs	261	fn	src	pub unsafe fn new_unchecked(engine: &Engine, wasm: &[u8]) -> Result<Self, Error> {
+wasmi	wasmi/src/module/mod.rs	263	block	src	unsafe { parser.parse_buffered_unchecked(wasm) }
+wasmi	wasmi/src/module/parser/buffered.rs	21	block	src	unsafe { self.parse_buffered_impl(buffer) }
+wasmi	wasmi/src/module/parser/buffered.rs	36	fn	src	pub unsafe fn parse_buffered_unchecked(self, buffer: &[u8]) -> Result<Module, Error> {
+wasmi	wasmi/src/module/parser/buffered.rs	37	block	src	unsafe { self.parse_buffered_impl(buffer) }
+wasmi	wasmi/src/module/parser/buffered.rs	56	fn	src	unsafe fn parse_buffered_impl(mut self, mut buffer: &[u8]) -> Result<Module, Error> {
+wasmi	wasmi/src/store/pruned.rs	163	block	src	unsafe { mem::transmute::<&'a mut Store<T>, &'a mut PrunedStore>(store) }
+wasmi	wasmi/src/store/pruned.rs	264	block	src	unsafe { mem::transmute::<&mut PrunedStore, &mut Store<T>>(self) }
+wasmi	wasmi/src/store/typeid.rs	30	block	src	NonStaticAny::get_type_id(unsafe {
+wasmi_core	wasmi_core/src/simd.rs	214	block	src	Self(unsafe { ::core::mem::transmute::<V128, [$ty; $n]>(value) })
+wasmi_core	wasmi_core/src/simd.rs	222	block	src	unsafe { ::core::mem::transmute::<[$ty; $n], V128>(self.0) }
+wasmi_core	wasmi_core/src/memory/buffer.rs	38	impl	src	unsafe impl Send for ByteBuffer {}
+wasmi_core	wasmi_core/src/memory/buffer.rs	44	impl	src	unsafe impl Sync for ByteBuffer {}
+wasmi_core	wasmi_core/src/memory/buffer.rs	170	block	src	unsafe { slice::from_raw_parts(self.ptr, self.len) }
+wasmi_core	wasmi_core/src/memory/buffer.rs	179	block	src	unsafe { slice::from_raw_parts_mut(self.ptr, self.len) }
+wasmi_core	wasmi_core/src/memory/buffer.rs	201	block	src	let vec = unsafe { Vec::from_raw_parts(self.ptr, self.len, self.capacity) };
+wasmi_core	wasmi_core/src/memory/buffer.rs	238	block	test	let buf = unsafe { &mut *core::ptr::addr_of_mut!(BUF) };
+wasmi_core	wasmi_core/src/memory/buffer.rs	244	block	test	unsafe {
+wasmi_core	wasmi_core/src/memory/buffer.rs	260	block	test	let buf = unsafe { &mut *core::ptr::addr_of_mut!(BUF) };
+wasmi_core	wasmi_core/src/memory/buffer.rs	275	block	test	let buf = unsafe { &mut *core::ptr::addr_of_mut!(BUF) };
+wasmi_ir	wasmi_ir/src/opcode.rs	30	block	src	Some(unsafe { mem::transmute::<u16, Self>(code) })
+wasmi_ir	wasmi_ir/src/decode/mod.rs	243	block	src	let items = unsafe { &mut *array.as_mut_ptr() };
+wasmi_ir	wasmi_ir/src/decode/mod.rs	248	block	src	let array = unsafe { array.assume_init() };
+wasmi_collections	wasmi_collections/src/arena/component_vec.rs	16	impl	src	unsafe impl<Key, T> Send for ComponentVec<Key, T> where T: Send {}
+wasmi_collections	wasmi_collections/src/arena/component_vec.rs	19	impl	src	unsafe impl<Key, T> Sync for ComponentVec<Key, T> where T: Sync {}
+wasmi_collections	wasmi_collections/src/arena/mod.rs	42	impl	src	unsafe impl<Key, T> Send for Arena<Key, T> where T: Send {}
+wasmi_collections	wasmi_collections/src/arena/mod.rs	45	impl	src	unsafe impl<Key, T> Sync for Arena<Key, T> where T: Sync {}
+wasmi_collections	wasmi_collections/src/arena/stable_arena.rs	24	impl	src	unsafe impl<Key, T> Send for StableArena<Key, T> where T: Send {}
+wasmi_collections	wasmi_collections/src/arena/stable_arena.rs	27	impl	src	unsafe impl<Key, T> Sync for StableArena<Key, T> where T: Sync {}
+wasmi_collections	wasmi_collections/src/arena/stable_arena.rs	430	block	test	unsafe { *ptr.as_ptr() = 30 };
+wasmi_collections	wasmi_collections/src/arena/stable_vec.rs	44	impl	src	unsafe impl<T: Send> Send for StableVec<T> {}
+wasmi_collections	wasmi_collections/src/arena/stable_vec.rs	45	impl	src	unsafe impl<T: Sync> Sync for StableVec<T> {}
+wasmi_collections	wasmi_collections/src/arena/stable_vec.rs	95	block	src	unsafe { ptr.as_ptr().add(slot).write(value) };
+wasmi_collections	wasmi_collections/src/arena/stable_vec.rs	108	block	src	let ptr = unsafe { self.buckets[bucket_index].unwrap_unchecked() };
+wasmi_collections	wasmi_collections/src/arena/stable_vec.rs	109	block	src	Some(unsafe { &*ptr.as_ptr().add(slot) })
+wasmi_collections	wasmi_collections/src/arena/stable_vec.rs	120	block	src	let ptr = unsafe { self.buckets[bucket_index].unwrap_unchecked() };
+wasmi_collections	wasmi_collections/src/arena/stable_vec.rs	121	block	src	Some(unsafe { &mut *ptr.as_ptr().add(slot) })
+wasmi_collections	wasmi_collections/src/arena/stable_vec.rs	135	block	src	let ptr = unsafe { self.buckets[bucket_index].unwrap_unchecked() };
+wasmi_collections	wasmi_collections/src/arena/stable_vec.rs	136	block	src	Some(unsafe { NonNull::new_unchecked(ptr.as_ptr().add(slot)) })
+wasmi_collections	wasmi_collections/src/arena/stable_vec.rs	158	block	src	unsafe {
+wasmi_collections	wasmi_collections/src/arena/stable_vec.rs	192	block	src	unsafe { NonNull::new_unchecked(ptr) }
+wasmi_collections	wasmi_collections/src/arena/stable_vec.rs	229	block	src	unsafe {
+wasmi_collections	wasmi_collections/src/arena/stable_vec.rs	388	block	src	let item: *mut T = unsafe { self.vector.get_mut(index).unwrap_unchecked() };
+wasmi_collections	wasmi_collections/src/arena/stable_vec.rs	389	block	src	Some(unsafe { &mut *item })
+wasmi_collections	wasmi_collections/src/arena/stable_vec.rs	407	block	src	let item: *mut T = unsafe { self.vector.get_mut(self.back).unwrap_unchecked() };
+wasmi_collections	wasmi_collections/src/arena/stable_vec.rs	408	block	src	Some(unsafe { &mut *item })
+wasmi_collections	wasmi_collections/src/arena/stable_vec.rs	481	block	test	assert_eq!(unsafe { *ptr0 }, 0);
+wasmi_collections	wasmi_collections/src/arena/stable_vec.rs	482	block	test	assert_eq!(unsafe { *ptr31 }, 31);
+wasmi_collections	wasmi_collections/src/arena/stable_vec.rs	509	block	test	unsafe { *ptr.as_ptr() *= 2 };
+wasmi_collections	wasmi_collections/src/string_interner/detail.rs	172	block	src	unsafe { mem::transmute(value) }
+wasmparser	wasmparser/src/validator/names.rs	42	block	src	unsafe {
+wasmi_c_api_impl	wasmi_c_api_impl/src/config.rs	23	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/config.rs	36	attr	src	#[unsafe(no_mangle)]
+wasmi_c_api_impl	wasmi_c_api_impl/src/config.rs	46	attr	src	#[unsafe(no_mangle)]
+wasmi_c_api_impl	wasmi_c_api_impl/src/config.rs	56	attr	src	#[unsafe(no_mangle)]
+wasmi_c_api_impl	wasmi_c_api_impl/src/config.rs	66	attr	src	#[unsafe(no_mangle)]
+wasmi_c_api_impl	wasmi_c_api_impl/src/config.rs	79	attr	src	#[unsafe(no_mangle)]
+wasmi_c_api_impl	wasmi_c_api_impl/src/config.rs	89	attr	src	#[unsafe(no_mangle)]
+wasmi_c_api_impl	wasmi_c_api_impl/src/config.rs	99	attr	src	#[unsafe(no_mangle)]
+wasmi_c_api_impl	wasmi_c_api_impl/src/config.rs	109	attr	src	#[unsafe(no_mangle)]
+wasmi_c_api_impl	wasmi_c_api_impl/src/config.rs	117	attr	src	#[unsafe(no_mangle)]
+wasmi_c_api_impl	wasmi_c_api_impl/src/config.rs	125	attr	src	#[unsafe(no_mangle)]
+wasmi_c_api_impl	wasmi_c_api_impl/src/config.rs	144	attr	src	#[unsafe(no_mangle)]
+wasmi_c_api_impl	wasmi_c_api_impl/src/config.rs	160	attr	src	#[unsafe(no_mangle)]
+wasmi_c_api_impl	wasmi_c_api_impl/src/engine.rs	21	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/engine.rs	34	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/engine.rs	47	attr	src	#[unsafe(no_mangle)]
+wasmi_c_api_impl	wasmi_c_api_impl/src/error.rs	34	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/error.rs	40	block	src	let msg_bytes = unsafe { ffi::CStr::from_ptr(msg) };
+wasmi_c_api_impl	wasmi_c_api_impl/src/extern.rs	25	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/extern.rs	42	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/extern.rs	44	fn	src	pub unsafe extern "C" fn wasm_extern_type(e: &wasm_extern_t) -> Box<wasm_externtype_t> {
+wasmi_c_api_impl	wasmi_c_api_impl/src/extern.rs	46	block	src	e.which.ty(unsafe { e.store.context() }),
+wasmi_c_api_impl	wasmi_c_api_impl/src/extern.rs	53	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/extern.rs	62	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/extern.rs	71	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/extern.rs	80	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/extern.rs	89	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/extern.rs	98	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/extern.rs	107	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/extern.rs	116	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/foreign.rs	15	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/frame.rs	19	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/frame.rs	30	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/frame.rs	41	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/frame.rs	52	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/frame.rs	63	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/func.rs	43	block	src	Extern::Func(_) => Some(unsafe { &*(e as *const _ as *const _) }),
+wasmi_c_api_impl	wasmi_c_api_impl/src/func.rs	50	block	src	Extern::Func(_) => Some(unsafe { &mut *(e as *mut _ as *mut _) }),
+wasmi_c_api_impl	wasmi_c_api_impl/src/func.rs	59	block	src	_ => unsafe { hint::unreachable_unchecked() },
+wasmi_c_api_impl	wasmi_c_api_impl/src/func.rs	75	fn	src	unsafe fn create_function(
+wasmi_c_api_impl	wasmi_c_api_impl/src/func.rs	83	block	src	unsafe {
+wasmi_c_api_impl	wasmi_c_api_impl/src/func.rs	128	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/func.rs	130	fn	src	pub unsafe extern "C" fn wasm_func_new(
+wasmi_c_api_impl	wasmi_c_api_impl/src/func.rs	135	block	src	unsafe { create_function(store, ty, move |params, results| callback(params, results)) }
+wasmi_c_api_impl	wasmi_c_api_impl/src/func.rs	149	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/func.rs	151	fn	src	pub unsafe extern "C" fn wasm_func_new_with_env(
+wasmi_c_api_impl	wasmi_c_api_impl/src/func.rs	158	block	src	unsafe {
+wasmi_c_api_impl	wasmi_c_api_impl/src/func.rs	198	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/func.rs	200	fn	src	pub unsafe extern "C" fn wasm_func_call(
+wasmi_c_api_impl	wasmi_c_api_impl/src/func.rs	206	block	src	let results = unsafe { (*results).as_uninit_slice() };
+wasmi_c_api_impl	wasmi_c_api_impl/src/func.rs	207	block	src	let params = unsafe { (*params).as_slice() };
+wasmi_c_api_impl	wasmi_c_api_impl/src/func.rs	213	block	src	let ctx = unsafe { func.inner.store.context_mut() };
+wasmi_c_api_impl	wasmi_c_api_impl/src/func.rs	262	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/func.rs	264	fn	src	pub unsafe extern "C" fn wasm_func_type(f: &wasm_func_t) -> Box<wasm_functype_t> {
+wasmi_c_api_impl	wasmi_c_api_impl/src/func.rs	265	block	src	unsafe { Box::new(wasm_functype_t::new(f.func().ty(f.inner.store.context()))) }
+wasmi_c_api_impl	wasmi_c_api_impl/src/func.rs	278	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/func.rs	280	fn	src	pub unsafe extern "C" fn wasm_func_param_arity(f: &wasm_func_t) -> usize {
+wasmi_c_api_impl	wasmi_c_api_impl/src/func.rs	281	block	src	unsafe { f.func().ty(f.inner.store.context()).params().len() }
+wasmi_c_api_impl	wasmi_c_api_impl/src/func.rs	294	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/func.rs	296	fn	src	pub unsafe extern "C" fn wasm_func_result_arity(f: &wasm_func_t) -> usize {
+wasmi_c_api_impl	wasmi_c_api_impl/src/func.rs	297	block	src	unsafe { f.func().ty(f.inner.store.context()).results().len() }
+wasmi_c_api_impl	wasmi_c_api_impl/src/func.rs	301	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/func.rs	308	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/global.rs	20	block	src	Extern::Global(_) => Some(unsafe { &*(e as *const _ as *const _) }),
+wasmi_c_api_impl	wasmi_c_api_impl/src/global.rs	27	block	src	Extern::Global(_) => Some(unsafe { &mut *(e as *mut _ as *mut _) }),
+wasmi_c_api_impl	wasmi_c_api_impl/src/global.rs	36	block	src	_ => unsafe { hint::unreachable_unchecked() },
+wasmi_c_api_impl	wasmi_c_api_impl/src/global.rs	51	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/global.rs	53	fn	src	pub unsafe extern "C" fn wasm_global_new(
+wasmi_c_api_impl	wasmi_c_api_impl/src/global.rs	58	block	src	unsafe {
+wasmi_c_api_impl	wasmi_c_api_impl/src/global.rs	75	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/global.rs	82	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/global.rs	96	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/global.rs	98	fn	src	pub unsafe extern "C" fn wasm_global_type(g: &wasm_global_t) -> Box<wasm_globaltype_t> {
+wasmi_c_api_impl	wasmi_c_api_impl/src/global.rs	99	block	src	unsafe {
+wasmi_c_api_impl	wasmi_c_api_impl/src/global.rs	113	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/global.rs	115	fn	src	pub unsafe extern "C" fn wasm_global_get(g: &mut wasm_global_t, out: &mut MaybeUninit<wasm_val_t>) {
+wasmi_c_api_impl	wasmi_c_api_impl/src/global.rs	116	block	src	unsafe {
+wasmi_c_api_impl	wasmi_c_api_impl/src/global.rs	134	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/global.rs	136	fn	src	pub unsafe extern "C" fn wasm_global_set(g: &mut wasm_global_t, val: &wasm_val_t) {
+wasmi_c_api_impl	wasmi_c_api_impl/src/global.rs	137	block	src	unsafe {
+wasmi_c_api_impl	wasmi_c_api_impl/src/instance.rs	46	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/instance.rs	48	fn	src	pub unsafe extern "C" fn wasm_instance_new(
+wasmi_c_api_impl	wasmi_c_api_impl/src/instance.rs	54	block	src	unsafe {
+wasmi_c_api_impl	wasmi_c_api_impl/src/instance.rs	85	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/instance.rs	87	fn	src	pub unsafe extern "C" fn wasm_instance_exports(
+wasmi_c_api_impl	wasmi_c_api_impl/src/instance.rs	91	block	src	unsafe {
+wasmi_c_api_impl	wasmi_c_api_impl/src/memory.rs	23	block	src	Extern::Memory(_) => Some(unsafe { &*(e as *const _ as *const _) }),
+wasmi_c_api_impl	wasmi_c_api_impl/src/memory.rs	30	block	src	Extern::Memory(_) => Some(unsafe { &mut *(e as *mut _ as *mut _) }),
+wasmi_c_api_impl	wasmi_c_api_impl/src/memory.rs	39	block	src	_ => unsafe { hint::unreachable_unchecked() },
+wasmi_c_api_impl	wasmi_c_api_impl/src/memory.rs	52	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/memory.rs	54	fn	src	pub unsafe extern "C" fn wasm_memory_new(
+wasmi_c_api_impl	wasmi_c_api_impl/src/memory.rs	58	block	src	unsafe {
+wasmi_c_api_impl	wasmi_c_api_impl/src/memory.rs	70	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/memory.rs	77	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/memory.rs	91	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/memory.rs	93	fn	src	pub unsafe extern "C" fn wasm_memory_type(m: &wasm_memory_t) -> Box<wasm_memorytype_t> {
+wasmi_c_api_impl	wasmi_c_api_impl/src/memory.rs	94	block	src	unsafe {
+wasmi_c_api_impl	wasmi_c_api_impl/src/memory.rs	108	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/memory.rs	110	fn	src	pub unsafe extern "C" fn wasm_memory_data(m: &wasm_memory_t) -> *mut u8 {
+wasmi_c_api_impl	wasmi_c_api_impl/src/memory.rs	111	block	src	unsafe { m.memory().data_ptr(m.inner.store.context()) }
+wasmi_c_api_impl	wasmi_c_api_impl/src/memory.rs	122	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/memory.rs	124	fn	src	pub unsafe extern "C" fn wasm_memory_data_size(m: &wasm_memory_t) -> usize {
+wasmi_c_api_impl	wasmi_c_api_impl/src/memory.rs	125	block	src	unsafe { m.memory().data_size(m.inner.store.context()) }
+wasmi_c_api_impl	wasmi_c_api_impl/src/memory.rs	136	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/memory.rs	138	fn	src	pub unsafe extern "C" fn wasm_memory_size(m: &wasm_memory_t) -> wasm_memory_pages_t {
+wasmi_c_api_impl	wasmi_c_api_impl/src/memory.rs	139	block	src	unsafe {
+wasmi_c_api_impl	wasmi_c_api_impl/src/memory.rs	158	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/memory.rs	160	fn	src	pub unsafe extern "C" fn wasm_memory_grow(
+wasmi_c_api_impl	wasmi_c_api_impl/src/memory.rs	164	block	src	unsafe {
+wasmi_c_api_impl	wasmi_c_api_impl/src/module.rs	52	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/module.rs	54	fn	src	pub unsafe extern "C" fn wasm_module_new(
+wasmi_c_api_impl	wasmi_c_api_impl/src/module.rs	58	block	src	unsafe {
+wasmi_c_api_impl	wasmi_c_api_impl/src/module.rs	74	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/module.rs	76	fn	src	pub unsafe extern "C" fn wasm_module_validate(
+wasmi_c_api_impl	wasmi_c_api_impl/src/module.rs	80	block	src	unsafe { Module::validate(store.inner.context().engine(), binary.as_slice()).is_ok() }
+wasmi_c_api_impl	wasmi_c_api_impl/src/module.rs	102	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/module.rs	128	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/module.rs	140	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/module.rs	158	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/module.rs	160	fn	src	pub unsafe extern "C" fn wasm_module_obtain(
+wasmi_c_api_impl	wasmi_c_api_impl/src/module.rs	164	block	src	unsafe {
+wasmi_c_api_impl	wasmi_c_api_impl/src/module.rs	181	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/module.rs	201	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/module.rs	203	fn	src	pub unsafe extern "C" fn wasm_module_deserialize(
+wasmi_c_api_impl	wasmi_c_api_impl/src/ref.rs	49	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/ref.rs	60	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/ref.rs	73	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/ref.rs	84	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/ref.rs	97	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/ref.rs	112	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/ref.rs	123	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/ref.rs	134	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/ref.rs	147	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/ref.rs	160	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/ref.rs	171	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/ref.rs	182	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/ref.rs	193	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/ref.rs	204	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/ref.rs	217	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/ref.rs	230	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/ref.rs	241	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/ref.rs	252	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/ref.rs	263	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/ref.rs	274	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/ref.rs	285	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/ref.rs	296	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/ref.rs	307	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/store.rs	30	fn	src	pub unsafe fn context(&self) -> StoreContext<'_, ()> {
+wasmi_c_api_impl	wasmi_c_api_impl/src/store.rs	31	block	src	unsafe { (*self.inner.get()).as_context() }
+wasmi_c_api_impl	wasmi_c_api_impl/src/store.rs	41	fn	src	pub unsafe fn context_mut(&mut self) -> StoreContextMut<'_, ()> {
+wasmi_c_api_impl	wasmi_c_api_impl/src/store.rs	42	block	src	unsafe { (*self.inner.get()).as_context_mut() }
+wasmi_c_api_impl	wasmi_c_api_impl/src/store.rs	64	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/store.rs	100	attr	src	#[unsafe(no_mangle)]
+wasmi_c_api_impl	wasmi_c_api_impl/src/store.rs	123	attr	src	#[unsafe(no_mangle)]
+wasmi_c_api_impl	wasmi_c_api_impl/src/store.rs	131	attr	src	#[unsafe(no_mangle)]
+wasmi_c_api_impl	wasmi_c_api_impl/src/store.rs	139	attr	src	#[unsafe(no_mangle)]
+wasmi_c_api_impl	wasmi_c_api_impl/src/store.rs	154	attr	src	#[unsafe(no_mangle)]
+wasmi_c_api_impl	wasmi_c_api_impl/src/store.rs	171	attr	src	#[unsafe(no_mangle)]
+wasmi_c_api_impl	wasmi_c_api_impl/src/table.rs	23	block	src	Extern::Table(_) => Some(unsafe { &*(e as *const _ as *const _) }),
+wasmi_c_api_impl	wasmi_c_api_impl/src/table.rs	30	block	src	Extern::Table(_) => Some(unsafe { &mut *(e as *mut _ as *mut _) }),
+wasmi_c_api_impl	wasmi_c_api_impl/src/table.rs	39	block	src	_ => unsafe { hint::unreachable_unchecked() },
+wasmi_c_api_impl	wasmi_c_api_impl/src/table.rs	63	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/table.rs	65	fn	src	pub unsafe extern "C" fn wasm_table_new(
+wasmi_c_api_impl	wasmi_c_api_impl/src/table.rs	70	block	src	unsafe {
+wasmi_c_api_impl	wasmi_c_api_impl/src/table.rs	91	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/table.rs	93	fn	src	pub unsafe extern "C" fn wasm_table_type(t: &wasm_table_t) -> Box<wasm_tabletype_t> {
+wasmi_c_api_impl	wasmi_c_api_impl/src/table.rs	94	block	src	unsafe {
+wasmi_c_api_impl	wasmi_c_api_impl/src/table.rs	109	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/table.rs	111	fn	src	pub unsafe extern "C" fn wasm_table_get(
+wasmi_c_api_impl	wasmi_c_api_impl/src/table.rs	115	block	src	unsafe {
+wasmi_c_api_impl	wasmi_c_api_impl/src/table.rs	130	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/table.rs	132	fn	src	pub unsafe extern "C" fn wasm_table_set(
+wasmi_c_api_impl	wasmi_c_api_impl/src/table.rs	137	block	src	unsafe {
+wasmi_c_api_impl	wasmi_c_api_impl/src/table.rs	154	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/table.rs	156	fn	src	pub unsafe extern "C" fn wasm_table_size(t: &wasm_table_t) -> wasm_table_size_t {
+wasmi_c_api_impl	wasmi_c_api_impl/src/table.rs	157	block	src	unsafe {
+wasmi_c_api_impl	wasmi_c_api_impl/src/table.rs	174	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/table.rs	176	fn	src	pub unsafe extern "C" fn wasm_table_grow(
+wasmi_c_api_impl	wasmi_c_api_impl/src/table.rs	181	block	src	unsafe {
+wasmi_c_api_impl	wasmi_c_api_impl/src/table.rs	191	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/table.rs	198	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/trap.rs	44	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/trap.rs	65	attr	src	#[unsafe(no_mangle)]
+wasmi_c_api_impl	wasmi_c_api_impl/src/trap.rs	66	fn	src	pub unsafe extern "C" fn wasmi_trap_new(message: *const u8, len: usize) -> Box<wasm_trap_t> {
+wasmi_c_api_impl	wasmi_c_api_impl/src/trap.rs	67	block	src	unsafe {
+wasmi_c_api_impl	wasmi_c_api_impl/src/trap.rs	79	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/trap.rs	94	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/trap.rs	107	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/utils.rs	24	impl	src	unsafe impl Send for ForeignData {}
+wasmi_c_api_impl	wasmi_c_api_impl/src/utils.rs	25	impl	src	unsafe impl Sync for ForeignData {}
+wasmi_c_api_impl	wasmi_c_api_impl/src/utils.rs	40	fn	src	pub unsafe fn slice_from_raw_parts<'a, T>(ptr: *const T, len: usize) -> &'a [T] {
+wasmi_c_api_impl	wasmi_c_api_impl/src/utils.rs	41	block	src	unsafe {
+wasmi_c_api_impl	wasmi_c_api_impl/src/utils.rs	57	block	src	unsafe {
+wasmi_c_api_impl	wasmi_c_api_impl/src/val.rs	39	block	src	if into_valtype(self.kind).is_ref() && !unsafe { self.of.ref_ }.is_null() {
+wasmi_c_api_impl	wasmi_c_api_impl/src/val.rs	40	block	src	drop(unsafe { Box::from_raw(self.of.ref_) });
+wasmi_c_api_impl	wasmi_c_api_impl/src/val.rs	51	block	src	unsafe {
+wasmi_c_api_impl	wasmi_c_api_impl/src/val.rs	123	block	src	wasm_valkind_t::WASM_I32 => Val::from(unsafe { self.of.i32 }),
+wasmi_c_api_impl	wasmi_c_api_impl/src/val.rs	124	block	src	wasm_valkind_t::WASM_I64 => Val::from(unsafe { self.of.i64 }),
+wasmi_c_api_impl	wasmi_c_api_impl/src/val.rs	125	block	src	wasm_valkind_t::WASM_F32 => Val::from(F32::from(unsafe { self.of.f32 })),
+wasmi_c_api_impl	wasmi_c_api_impl/src/val.rs	126	block	src	wasm_valkind_t::WASM_F64 => Val::from(F64::from(unsafe { self.of.f64 })),
+wasmi_c_api_impl	wasmi_c_api_impl/src/val.rs	127	block	src	wasm_valkind_t::WASM_FUNCREF => match unsafe { self.of.ref_ }.is_null() {
+wasmi_c_api_impl	wasmi_c_api_impl/src/val.rs	129	block	src	false => Val::from((unsafe { &*self.of.ref_ }).inner),
+wasmi_c_api_impl	wasmi_c_api_impl/src/val.rs	143	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/val.rs	145	fn	src	pub unsafe extern "C" fn wasm_val_copy(out: &mut MaybeUninit<wasm_val_t>, source: &wasm_val_t) {
+wasmi_c_api_impl	wasmi_c_api_impl/src/val.rs	155	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/val.rs	157	fn	src	pub unsafe extern "C" fn wasm_val_delete(val: *mut wasm_val_t) {
+wasmi_c_api_impl	wasmi_c_api_impl/src/val.rs	158	block	src	unsafe {
+wasmi_c_api_impl	wasmi_c_api_impl/src/vec.rs	66	block	src	unsafe { slice::from_raw_parts(self.data, self.size) }
+wasmi_c_api_impl	wasmi_c_api_impl/src/vec.rs	79	block	src	unsafe { slice::from_raw_parts_mut(self.data as _, self.size) }
+wasmi_c_api_impl	wasmi_c_api_impl/src/vec.rs	93	block	src	let vec = unsafe {
+wasmi_c_api_impl	wasmi_c_api_impl/src/vec.rs	137	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/vec.rs	149	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/vec.rs	165	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/vec.rs	167	fn	src	pub unsafe extern "C" fn $new $(<$lt>)? (
+wasmi_c_api_impl	wasmi_c_api_impl/src/vec.rs	171	block	src	) { unsafe {
+wasmi_c_api_impl	wasmi_c_api_impl/src/vec.rs	181	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/vec.rs	191	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/export.rs	33	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/export.rs	45	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/export.rs	52	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/extern.rs	66	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/extern.rs	78	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/extern.rs	87	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/extern.rs	96	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/extern.rs	105	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/extern.rs	114	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/extern.rs	123	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/extern.rs	132	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/extern.rs	141	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/func.rs	32	block	src	CExternType::Func(_) => Some(unsafe { &*(e as *const _ as *const _) }),
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/func.rs	39	block	src	CExternType::Func(_) => Some(unsafe { &mut *(e as *mut _ as *mut _) }),
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/func.rs	47	block	src	_ => unsafe { core::hint::unreachable_unchecked() },
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/func.rs	79	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/func.rs	102	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/func.rs	111	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/func.rs	118	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/func.rs	125	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/global.rs	41	block	src	CExternType::Global(_) => Some(unsafe { &*(e as *const _ as *const _) }),
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/global.rs	48	block	src	CExternType::Global(_) => Some(unsafe { &mut *(e as *mut _ as *mut _) }),
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/global.rs	56	block	src	_ => unsafe { core::hint::unreachable_unchecked() },
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/global.rs	73	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/global.rs	88	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/global.rs	95	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/global.rs	105	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/global.rs	114	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/import.rs	37	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/import.rs	56	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/import.rs	63	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/import.rs	70	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/memory.rs	31	block	src	CExternType::Memory(_) => Some(unsafe { &*(e as *const _ as *const _) }),
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/memory.rs	38	block	src	CExternType::Memory(_) => Some(unsafe { &mut *(e as *mut _ as *mut _) }),
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/memory.rs	46	block	src	_ => unsafe { core::hint::unreachable_unchecked() },
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/memory.rs	69	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/memory.rs	77	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/memory.rs	84	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/memory.rs	93	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/table.rs	32	block	src	CExternType::Table(_) => Some(unsafe { &*(e as *const _ as *const _) }),
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/table.rs	39	block	src	CExternType::Table(_) => Some(unsafe { &mut *(e as *mut _ as *mut _) }),
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/table.rs	47	block	src	_ => unsafe { core::hint::unreachable_unchecked() },
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/table.rs	73	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/table.rs	87	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/table.rs	94	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/table.rs	101	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/table.rs	110	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/val.rs	48	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_impl	wasmi_c_api_impl/src/types/val.rs	57	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_macros	wasmi_c_api_macros/lib.rs	29	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_macros	wasmi_c_api_macros/lib.rs	52	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_macros	wasmi_c_api_macros/lib.rs	101	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_macros	wasmi_c_api_macros/lib.rs	110	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_macros	wasmi_c_api_macros/lib.rs	117	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_macros	wasmi_c_api_macros/lib.rs	126	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_macros	wasmi_c_api_macros/lib.rs	139	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_macros	wasmi_c_api_macros/lib.rs	148	attr	src	#[cfg_attr(not(feature = "prefix-symbols"), unsafe(no_mangle))]
+wasmi_c_api_macros	wasmi_c_api_macros/lib.rs	213	attr	src	#[unsafe(export_name = #prefixed_fn_name)]
+spin	spin/src/lazy.rs	60	impl	src	unsafe impl<T, F: Send> Sync for Lazy<T, F> where Once<T>: Sync {}
+spin	spin/src/mutex.rs	117	impl	src	unsafe impl<T: ?Sized + Send, R> Sync for Mutex<T, R> {}
+spin	spin/src/mutex.rs	118	impl	src	unsafe impl<T: ?Sized + Send, R> Send for Mutex<T, R> {}
+spin	spin/src/mutex.rs	211	fn	src	pub unsafe fn force_unlock(&self) {
+spin	spin/src/mutex.rs	318	impl	src	unsafe impl<R: RelaxStrategy> lock_api_crate::RawMutex for Mutex<(), R> {
+spin	spin/src/mutex.rs	333	fn	src	unsafe fn unlock(&self) {
+spin	spin/src/once.rs	58	impl	src	unsafe impl<T: Send + Sync, R> Sync for Once<T, R> {}
+spin	spin/src/once.rs	59	impl	src	unsafe impl<T: Send, R> Send for Once<T, R> {}
+spin	spin/src/once.rs	86	fn	src	unsafe fn new_unchecked(inner: u8) -> Self {
+spin	spin/src/once.rs	101	block	src	unsafe { Status::new_unchecked(self.0.load(ordering)) }
+spin	spin/src/once.rs	124	block	src	Ok(ok) => Ok(unsafe { Status::new_unchecked(ok) }),
+spin	spin/src/once.rs	125	block	src	Err(err) => Err(unsafe { Status::new_unchecked(err) }),
+spin	spin/src/once.rs	132	block	src	unsafe { &mut *((self.0.get_mut() as *mut u8).cast::<Status>()) }
+spin	spin/src/once.rs	241	block	src	return Ok(unsafe {
+spin	spin/src/once.rs	269	block	src	unsafe {
+spin	spin/src/once.rs	298	block	src	return unsafe { Ok(self.force_get()) };
+spin	spin/src/once.rs	338	block	src	Status::Complete => return Some(unsafe { self.force_get() }),
+spin	spin/src/once.rs	380	fn	src	unsafe fn force_get(&self) -> &T {
+spin	spin/src/once.rs	388	fn	src	unsafe fn force_get_mut(&mut self) -> &mut T {
+spin	spin/src/once.rs	396	fn	src	unsafe fn force_into_inner(self) -> T {
+spin	spin/src/once.rs	410	block	src	Status::Complete => Some(unsafe { self.force_get() }),
+spin	spin/src/once.rs	423	fn	src	pub unsafe fn get_unchecked(&self) -> &T {
+spin	spin/src/once.rs	438	block	src	Status::Complete => Some(unsafe { self.force_get_mut() }),
+spin	spin/src/once.rs	451	fn	src	pub unsafe fn get_mut_unchecked(&mut self) -> &mut T {
+spin	spin/src/once.rs	466	block	src	Status::Complete => Some(unsafe { self.force_into_inner() }),
+spin	spin/src/once.rs	478	fn	src	pub unsafe fn into_inner_unchecked(self) -> T {
+spin	spin/src/once.rs	508	block	src	unsafe {
+spin	spin/src/once.rs	575	block	test	unsafe {
+spin	spin/src/once.rs	586	block	test	unsafe {
+spin	spin/src/once.rs	691	block	test	unsafe {
+spin	spin/src/once.rs	747	block	test	unsafe {
+spin	spin/src/once.rs	756	block	test	assert!(unsafe { CALLED });
+spin	spin/src/once.rs	758	block	test	unsafe {
+spin	spin/src/once.rs	765	block	test	assert!(unsafe { !CALLED });
+spin	spin/src/rwlock.rs	111	impl	src	unsafe impl<T: ?Sized + Send, R> Send for RwLock<T, R> {}
+spin	spin/src/rwlock.rs	112	impl	src	unsafe impl<T: ?Sized + Send + Sync, R> Sync for RwLock<T, R> {}
+spin	spin/src/rwlock.rs	114	impl	src	unsafe impl<T: ?Sized + Send + Sync, R> Send for RwLockWriteGuard<'_, T, R> {}
+spin	spin/src/rwlock.rs	115	impl	src	unsafe impl<T: ?Sized + Send + Sync, R> Sync for RwLockWriteGuard<'_, T, R> {}
+spin	spin/src/rwlock.rs	117	impl	src	unsafe impl<T: ?Sized + Sync> Send for RwLockReadGuard<'_, T> {}
+spin	spin/src/rwlock.rs	118	impl	src	unsafe impl<T: ?Sized + Sync> Sync for RwLockReadGuard<'_, T> {}
+spin	spin/src/rwlock.rs	120	impl	src	unsafe impl<T: ?Sized + Send + Sync, R> Send for RwLockUpgradableGuard<'_, T, R> {}
+spin	spin/src/rwlock.rs	121	impl	src	unsafe impl<T: ?Sized + Send + Sync, R> Sync for RwLockUpgradableGuard<'_, T, R> {}
+spin	spin/src/rwlock.rs	310	block	src	data: unsafe { &*self.data.get() },
+spin	spin/src/rwlock.rs	347	fn	src	pub unsafe fn force_read_decrement(&self) {
+spin	spin/src/rwlock.rs	361	fn	src	pub unsafe fn force_write_unlock(&self) {
+spin	spin/src/rwlock.rs	381	block	src	data: unsafe { &mut *self.data.get() },
+spin	spin/src/rwlock.rs	419	block	src	data: unsafe { &*self.data.get() },
+spin	spin/src/rwlock.rs	443	block	src	unsafe { &mut *self.data.get() }
+spin	spin/src/rwlock.rs	486	block	src	unsafe { &*this.data }
+spin	spin/src/rwlock.rs	546	block	src	data: unsafe { &mut *inner.data.get() },
+spin	spin/src/rwlock.rs	594	block	src	data: unsafe { &*inner.data.get() },
+spin	spin/src/rwlock.rs	613	block	src	unsafe { &*this.data }
+spin	spin/src/rwlock.rs	654	block	src	data: unsafe { &*inner.data.get() },
+spin	spin/src/rwlock.rs	687	block	src	data: unsafe { &*inner.data.get() },
+spin	spin/src/rwlock.rs	707	block	src	unsafe { &mut *this.data }
+spin	spin/src/rwlock.rs	728	block	src	unsafe { &*self.data }
+spin	spin/src/rwlock.rs	737	block	src	unsafe { &*self.data }
+spin	spin/src/rwlock.rs	746	block	src	unsafe { &*self.data }
+spin	spin/src/rwlock.rs	753	block	src	unsafe { &mut *self.data }
+spin	spin/src/rwlock.rs	803	impl	src	unsafe impl<R: RelaxStrategy> lock_api_crate::RawRwLock for RwLock<(), R> {
+spin	spin/src/rwlock.rs	821	fn	src	unsafe fn unlock_exclusive(&self) {
+spin	spin/src/rwlock.rs	842	fn	src	unsafe fn unlock_shared(&self) {
+spin	spin/src/rwlock.rs	856	impl	src	unsafe impl<R: RelaxStrategy> lock_api_crate::RawRwLockUpgrade for RwLock<(), R> {
+spin	spin/src/rwlock.rs	872	fn	src	unsafe fn unlock_upgradable(&self) {
+spin	spin/src/rwlock.rs	881	fn	src	unsafe fn upgrade(&self) {
+spin	spin/src/rwlock.rs	891	fn	src	unsafe fn try_upgrade(&self) -> bool {
+spin	spin/src/rwlock.rs	905	impl	src	unsafe impl<R: RelaxStrategy> lock_api_crate::RawRwLockDowngrade for RwLock<(), R> {
+spin	spin/src/rwlock.rs	906	fn	src	unsafe fn downgrade(&self) {
+spin	spin/src/rwlock.rs	917	impl	src	unsafe impl lock_api::RawRwLockUpgradeDowngrade for RwLock<()> {
+spin	spin/src/rwlock.rs	918	fn	src	unsafe fn downgrade_upgradable(&self) {
+spin	spin/src/rwlock.rs	927	fn	src	unsafe fn downgrade_to_upgradable(&self) {
+spin	spin/src/rwlock.rs	1118	block	test	unsafe {
+spin	spin/src/rwlock.rs	1123	block	test	unsafe {
+spin	spin/src/rwlock.rs	1134	block	test	unsafe {
+spin	spin/src/mutex/fair.rs	107	impl	src	unsafe impl<T: ?Sized + Send, R> Sync for FairMutex<T, R> {}
+spin	spin/src/mutex/fair.rs	108	impl	src	unsafe impl<T: ?Sized + Send, R> Send for FairMutex<T, R> {}
+spin	spin/src/mutex/fair.rs	110	impl	src	unsafe impl<T: ?Sized + Sync> Sync for FairMutexGuard<'_, T> {}
+spin	spin/src/mutex/fair.rs	111	impl	src	unsafe impl<T: ?Sized + Send> Send for FairMutexGuard<'_, T> {}
+spin	spin/src/mutex/fair.rs	221	block	src	data: unsafe { &mut *self.data.get() },
+spin	spin/src/mutex/fair.rs	246	fn	src	pub unsafe fn force_unlock(&self) {
+spin	spin/src/mutex/fair.rs	280	block	src	data: unsafe { &mut *self.data.get() },
+spin	spin/src/mutex/fair.rs	347	block	src	unsafe { &mut *self.data.get() }
+spin	spin/src/mutex/fair.rs	400	block	src	unsafe { &mut *this.data }
+spin	spin/src/mutex/fair.rs	420	block	src	unsafe { &*self.data }
+spin	spin/src/mutex/fair.rs	427	block	src	unsafe { &mut *self.data }
+spin	spin/src/mutex/fair.rs	553	impl	src	unsafe impl<R: RelaxStrategy> lock_api_crate::RawMutex for FairMutex<(), R> {
+spin	spin/src/mutex/fair.rs	568	fn	src	unsafe fn unlock(&self) {
+spin	spin/src/mutex/fair.rs	607	block	test	unsafe {
+spin	spin/src/mutex/fair.rs	632	block	test	assert_eq!(unsafe { CNT }, J * K * 2);
+spin	spin/src/mutex/fair.rs	730	block	test	unsafe {
+spin	spin/src/mutex/spin.rs	87	impl	src	unsafe impl<T: ?Sized + Send, R> Sync for SpinMutex<T, R> {}
+spin	spin/src/mutex/spin.rs	88	impl	src	unsafe impl<T: ?Sized + Send, R> Send for SpinMutex<T, R> {}
+spin	spin/src/mutex/spin.rs	90	impl	src	unsafe impl<T: ?Sized + Sync> Sync for SpinMutexGuard<'_, T> {}
+spin	spin/src/mutex/spin.rs	91	impl	src	unsafe impl<T: ?Sized + Send> Send for SpinMutexGuard<'_, T> {}
+spin	spin/src/mutex/spin.rs	193	block	src	data: unsafe { &mut *self.data.get() },
+spin	spin/src/mutex/spin.rs	218	fn	src	pub unsafe fn force_unlock(&self) {
+spin	spin/src/mutex/spin.rs	247	block	src	data: unsafe { &mut *self.data.get() },
+spin	spin/src/mutex/spin.rs	271	block	src	unsafe { &mut *self.data.get() }
+spin	spin/src/mutex/spin.rs	316	block	src	unsafe { &mut *this.data }
+spin	spin/src/mutex/spin.rs	336	block	src	unsafe { &*self.data }
+spin	spin/src/mutex/spin.rs	343	block	src	unsafe { &mut *self.data }
+spin	spin/src/mutex/spin.rs	355	impl	src	unsafe impl<R: RelaxStrategy> lock_api_crate::RawMutex for SpinMutex<(), R> {
+spin	spin/src/mutex/spin.rs	370	fn	src	unsafe fn unlock(&self) {
+spin	spin/src/mutex/spin.rs	409	block	test	unsafe {
+spin	spin/src/mutex/spin.rs	435	block	test	assert_eq!(unsafe { CNT }, J * K * 2);
+spin	spin/src/mutex/spin.rs	538	block	test	unsafe {
+spin	spin/src/mutex/ticket.rs	89	impl	src	unsafe impl<T: ?Sized + Send, R> Sync for TicketMutex<T, R> {}
+spin	spin/src/mutex/ticket.rs	90	impl	src	unsafe impl<T: ?Sized + Send, R> Send for TicketMutex<T, R> {}
+spin	spin/src/mutex/ticket.rs	200	block	src	data: unsafe { &mut *self.data.get() },
+spin	spin/src/mutex/ticket.rs	226	fn	src	pub unsafe fn force_unlock(&self) {
+spin	spin/src/mutex/ticket.rs	263	block	src	data: unsafe { &mut *self.data.get() },
+spin	spin/src/mutex/ticket.rs	285	block	src	unsafe { &mut *self.data.get() }
+spin	spin/src/mutex/ticket.rs	318	block	src	unsafe { &mut *data }
+spin	spin/src/mutex/ticket.rs	355	impl	src	unsafe impl<R: RelaxStrategy> lock_api_crate::RawMutex for TicketMutex<(), R> {
+spin	spin/src/mutex/ticket.rs	370	fn	src	unsafe fn unlock(&self) {
+spin	spin/src/mutex/ticket.rs	409	block	test	unsafe {
+spin	spin/src/mutex/ticket.rs	434	block	test	assert_eq!(unsafe { CNT }, J * K * 2);
+libm	libm/src/math/mod.rs	5	block	src	unsafe { ::core::ptr::read_volatile(&$e) }
+libm	libm/src/math/mod.rs	12	block	src	unsafe { *$array.get_unchecked($index) }
+libm	libm/src/math/mod.rs	15	block	src	unsafe {
+libm	libm/src/math/mod.rs	20	block	src	unsafe {
+libm	libm/src/math/mod.rs	25	block	src	unsafe {
+libm	libm/src/math/mod.rs	30	block	src	unsafe {
+libm	libm/src/math/mod.rs	35	block	src	unsafe { *$array.get_unchecked_mut($index) == $rhs }
+libm	libm/src/math/mod.rs	75	block	src	unsafe { core::intrinsics::unchecked_div($a, $b) }
+libm	libm/src/math/arch/aarch64.rs	7	block	src	unsafe {
+libm	libm/src/math/arch/aarch64.rs	21	block	src	unsafe {
+libm	libm/src/math/arch/aarch64.rs	44	block	src	unsafe {
+libm	libm/src/math/arch/aarch64.rs	59	block	src	unsafe {
+libm	libm/src/math/arch/aarch64.rs	75	block	src	unsafe {
+libm	libm/src/math/arch/aarch64.rs	87	block	src	unsafe {
+libm	libm/src/math/arch/aarch64.rs	99	block	src	unsafe {
+libm	libm/src/math/arch/aarch64.rs	113	block	src	unsafe {
+libm	libm/src/math/arch/i586.rs	11	block	src	unsafe {
+libm	libm/src/math/arch/i586.rs	38	block	src	unsafe {
+libm	libm/src/math/arch/i586.rs	72	block	src	pub fn $fn_name(mut x: $float_ty) -> $float_ty { unsafe {
+libm	libm/src/math/arch/x86.rs	11	block	src	unsafe {
+libm	libm/src/math/arch/x86.rs	24	block	src	unsafe {
+libm	libm/src/math/arch/x86/detect.rs	62	block	src	unsafe {
+libm	libm/src/math/arch/x86/detect.rs	77	block	src	let CpuidResult { ecx, edx, .. } = unsafe { __cpuid(0x0000_0001_u32) };
+libm	libm/src/math/arch/x86/detect.rs	87	block	src	let CpuidResult { ebx, edx, .. } = unsafe { __cpuid(0x0000_0007_u32) };
+libm	libm/src/math/arch/x86/detect.rs	91	block	src	let CpuidResult { eax, .. } = unsafe { __cpuid_count(0x0000_0007_u32, 0x0000_0001_u32) };
+libm	libm/src/math/arch/x86/detect.rs	98	block	src	let extended_max_basic_leaf = unsafe { __cpuid(0x8000_0000_u32) }.eax;
+libm	libm/src/math/arch/x86/detect.rs	103	block	src	let CpuidResult { ecx, .. } = unsafe { __cpuid(0x8000_0001_u32) };
+libm	libm/src/math/arch/x86/detect.rs	148	block	src	let xcr0 = unsafe { _xgetbv(0) };
+libm	libm/src/math/arch/x86/fma.rs	24	block	src	call: |fn_ptr: Func| unsafe { fn_ptr(x, y, z) },
+libm	libm/src/math/arch/x86/fma.rs	42	block	src	call: |fn_ptr: Func| unsafe { fn_ptr(x, y, z) },
+libm	libm/src/math/arch/x86/fma.rs	49	fn	src	unsafe fn fma_with_fma(mut x: f64, y: f64, z: f64) -> f64 {
+libm	libm/src/math/arch/x86/fma.rs	54	block	src	unsafe {
+libm	libm/src/math/arch/x86/fma.rs	69	fn	src	unsafe fn fmaf_with_fma(mut x: f32, y: f32, z: f32) -> f32 {
+libm	libm/src/math/arch/x86/fma.rs	74	block	src	unsafe {
+libm	libm/src/math/arch/x86/fma.rs	89	fn	src	unsafe fn fma_with_fma4(mut x: f64, y: f64, z: f64) -> f64 {
+libm	libm/src/math/arch/x86/fma.rs	94	block	src	unsafe {
+libm	libm/src/math/arch/x86/fma.rs	109	fn	src	unsafe fn fmaf_with_fma4(mut x: f32, y: f32, z: f32) -> f32 {
+libm	libm/src/math/arch/x86/fma.rs	114	block	src	unsafe {
+libm	libm/src/math/support/feature_detect.rs	53	fn	src	type Func = unsafe fn($($arg: $ArgTy),*) -> $RetTy;
+libm	libm/src/math/support/feature_detect.rs	73	block	src	let fn_ptr: Func = unsafe { mem::transmute::<*mut (), Func>(raw) };
+libm	libm/src/math/support/feature_detect.rs	201	block	test	call: |fn_ptr: Func| unsafe { fn_ptr() },
+libm	libm/src/math/support/float_traits.rs	295	block	src	unsafe { core::intrinsics::$fma_intrinsic(self, y, z) }
+libm	libm/src/math/support/float_traits.rs	365	block	src	unsafe { mem::transmute::<u32, f32>(bits) }
+libm	libm/src/math/support/float_traits.rs	373	block	src	unsafe { mem::transmute::<f32, u32>(x) }
+libm	libm/src/math/support/float_traits.rs	380	block	src	unsafe { mem::transmute::<u64, f64>(bits) }
+libm	libm/src/math/support/float_traits.rs	388	block	src	unsafe { mem::transmute::<f64, u64>(x) }
+libm	libm/src/math/support/int_traits/narrowing_div.rs	16	fn	src	unsafe fn unchecked_narrowing_div_rem(self, n: Self::H) -> (Self::H, Self::H);
+libm	libm/src/math/support/int_traits/narrowing_div.rs	21	block	src	Some(unsafe { self.unchecked_narrowing_div_rem(n) })
+libm	libm/src/math/support/int_traits/narrowing_div.rs	33	fn	src	unsafe fn unchecked_narrowing_div_rem(self, n: Self::H) -> (Self::H, Self::H) {
+libm	libm/src/math/support/int_traits/narrowing_div.rs	35	block	src	unsafe { core::hint::unreachable_unchecked() }
+libm	libm/src/math/support/int_traits/narrowing_div.rs	49	fn	src	unsafe fn unchecked_narrowing_div_rem(self, n: Self::H) -> (Self::H, Self::H) {
+libm	libm/src/math/support/int_traits/narrowing_div.rs	51	block	src	unsafe { core::hint::unreachable_unchecked() }
+libm	libm/src/math/support/int_traits/narrowing_div.rs	64	block	src	let (q1, r) = unsafe { div_three_digits_by_two(a1, ah, b) };
+libm	libm/src/math/support/int_traits/narrowing_div.rs	66	block	src	let (q0, r) = unsafe { div_three_digits_by_two(a0, r, b) };
+libm	libm/src/math/support/int_traits/narrowing_div.rs	88	fn	src	unsafe fn div_three_digits_by_two<U>(a0: U, a: U::D, n: U::D) -> (U, U::D)
+libm	libm/src/math/support/int_traits/narrowing_div.rs	94	block	src	unsafe { core::hint::unreachable_unchecked() }
+bitflags	bitflags/src/external.rs	236	impl	src	unsafe impl $crate::__private::bytemuck::Pod for $InternalBitFlags where
+bitflags	bitflags/src/external.rs	243	impl	src	unsafe impl $crate::__private::bytemuck::Zeroable for $InternalBitFlags where

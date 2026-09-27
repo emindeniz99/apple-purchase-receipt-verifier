@@ -1,0 +1,10 @@
+size 2952613 bytes, sha256 b14e14b2c3b8a38953c6ac03d941e42647321fdb86cfb0e3629c006687b636b3
+imports: 2
+  func   aprv.clock_now_ms (type 25)
+  func   aprv.random_get (type 3)
+tables defined: 1
+  table (1, 4566, 4566)
+memories defined: 1
+  memory (flags, min pages, max pages) (0, 27, None)
+code section: 2007146 bytes
+memory imports: 0

@@ -1,0 +1,39 @@
+# queried 2026-09-27T12:57:06Z
+## OSV: POST https://api.osv.dev/v1/query {package:{name,ecosystem:crates.io}}
+  wasmi                2 advisories
+    GHSA-75jp-vq8x-h4cq ['CVE-2024-28123'] published 2024-03-07: Wasmi Out-of-bounds Write for host to Wasm calls with more than 128 Parameters
+      affected (introduced..fixed): 0.15.0..0.31.1
+    GHSA-g4v2-cjqp-rfmq ['CVE-2025-66627'] published 2025-12-08: Critical Use-After-Free in Wasmi's Linear Memory
+      affected (introduced..fixed): 0.41.0..0.41.2, 0.42.0..0.47.1, 0.50.0..0.51.3, 1.0.0..1.0.1
+  wasmi_core           0 advisories
+  wasmi_ir             0 advisories
+  wasmi_collections    0 advisories
+  wasmi_c_api_impl     0 advisories
+  wasmi_c_api_macros   0 advisories
+  wasmparser           0 advisories
+  spin                 4 advisories
+    GHSA-2qv5-7mw5-j3cg ['RUSTSEC-2023-0031'] published 2023-04-03: spin-rs initialisation failure in `Once::try_call_once` can lead to undefined behaviour for other initialisers
+      affected (introduced..fixed): 0.9.3..0.9.8
+    GHSA-hv7x-f3pv-gpwr ['CVE-2019-16137', 'RUSTSEC-2019-0013'] published 2021-08-25: Wrong memory orderings violates mutual exclusion in spin
+      affected (introduced..fixed): 0..0.5.2
+    RUSTSEC-2019-0013 ['CVE-2019-16137', 'GHSA-hv7x-f3pv-gpwr'] published 2019-08-27: Wrong memory orderings in RwLock potentially violates mutual exclusion
+      affected (introduced..fixed): 0.0.0-0..0.5.2
+    RUSTSEC-2023-0031 ['GHSA-2qv5-7mw5-j3cg'] published 2023-03-31: Initialisation failure in `Once::try_call_once` can lead to undefined behaviour for other initialisers
+      affected (introduced..fixed): 0.9.3..0.9.8
+  libm                 0 advisories
+  bitflags             0 advisories
+## RustSec advisory-db e2111519ba6d14a5da59a7b2e5c8083ae8a37c01 (2026-09-25T19:51:57+02:00)
+  wasmi                
+  wasmi_core           
+  wasmi_ir             
+  wasmi_collections    
+  wasmi_c_api_impl     
+  wasmi_c_api_macros   
+  wasmparser           
+  spin                 RUSTSEC-2019-0013.md RUSTSEC-2019-0031.md RUSTSEC-2023-0031.md 
+  libm                 
+  bitflags             
+  (empty = no RustSec advisory for that crate)
+  spin RUSTSEC-2019-0013: Wrong memory orderings in RwLock potentially violates mutual exclusion | patched [">= 0.5.2"]
+  spin RUSTSEC-2019-0031: spin is no longer actively maintained | patched []
+  spin RUSTSEC-2023-0031: Initialisation failure in `Once::try_call_once` can lead to undefined behaviour for other initialisers | patched [">= 0.9.8"]
