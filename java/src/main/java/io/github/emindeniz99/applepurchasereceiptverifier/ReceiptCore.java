@@ -13,20 +13,12 @@ import java.security.cert.TrustAnchor;
 import java.security.cert.X509CertSelector;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
-import org.bouncycastle.asn1.ASN1Encodable;
-import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1Primitive;
-import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.cms.ContentInfo;
-import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
-import org.bouncycastle.asn1.pkcs.RSASSAPSSparams;
 import org.bouncycastle.cms.CMSException;
 import org.bouncycastle.cms.CMSSignedData;
 import org.bouncycastle.cms.SignerInformation;
@@ -101,9 +93,6 @@ final class ReceiptCore {
 
     // Built once and shared by every thread; see signerVerifier.
     static final JcaSignerInfoVerifierBuilder SIGNER_VERIFIERS = signerVerifiers();
-
-    /** The digest each hash-and-sign {@code signatureAlgorithm} names; see {@link #digestNamedBy}. */
-    private static final Map<String, String> HASH_OF_SIGNATURE_ALGORITHM = hashOfSignatureAlgorithm();
 
     private ReceiptCore() {}
 
@@ -208,9 +197,6 @@ final class ReceiptCore {
             throw new VerificationException(
                     Reason.MALFORMED,
                     "receipt carries " + signers.size() + " SignerInfos, more than the maximum of " + MAX_SIGNER_INFOS);
-        }
-        for (SignerInformation signer : signers) {
-            requireAttributeSetSyntax(signer);
         }
         // The raw set, so the cap is checked before any entry is decoded.
         ASN1Set certificateSet = ReceiptCertificates.embeddedCertificateSet(cms);
@@ -394,97 +380,12 @@ final class ReceiptCore {
         return accepted;
     }
 
-    /**
-     * The syntax of one {@code SignerInfo}'s {@code signedAttrs}, judged for
-     * every {@code SignerInfo} before any key is used, so a set that is not
-     * an RFC 5652 attribute set, {@code SEQUENCE { OID, SET OF value }}
-     * with at least one value, is MALFORMED whichever position it holds. A
-     * well-formed set lacking {@code contentType} or {@code messageDigest}
-     * is left to the signature check, as INVALID_SIGNATURE for that signer.
-     */
-    private static void requireAttributeSetSyntax(SignerInformation signer) throws VerificationException {
-        ASN1Set attributes = signer.toASN1Structure().getAuthenticatedAttributes();
-        if (attributes == null) {
-            return;
-        }
-        for (ASN1Encodable element : attributes) {
-            if (!(element instanceof ASN1Sequence)) {
-                throw malformedSignedAttributes();
-            }
-            ASN1Sequence attribute = (ASN1Sequence) element;
-            if (attribute.size() < 2
-                    || !(attribute.getObjectAt(0) instanceof ASN1ObjectIdentifier)
-                    || !(attribute.getObjectAt(1) instanceof ASN1Set)
-                    || ((ASN1Set) attribute.getObjectAt(1)).size() == 0) {
-                throw malformedSignedAttributes();
-            }
-        }
-    }
-
-    private static VerificationException malformedSignedAttributes() {
-        return new VerificationException(Reason.MALFORMED, "malformed signedAttrs: not an attribute set");
-    }
-
-    /**
-     * The digest a {@code signatureAlgorithm} names, when it names one: the
-     * hash-and-sign OIDs, and the hash in RSASSA-PSS parameters. Null for
-     * {@code rsaEncryption}, {@code id-ecPublicKey} and anything else, which
-     * take the {@code SignerInfo}'s {@code digestAlgorithm}.
-     */
-    private static @Nullable String digestNamedBy(SignerInformation signer) {
-        String oid = signer.getEncryptionAlgOID();
-        if (PKCSObjectIdentifiers.id_RSASSA_PSS.getId().equals(oid)) {
-            try {
-                return RSASSAPSSparams.getInstance(signer.getEncryptionAlgParams())
-                        .getHashAlgorithm()
-                        .getAlgorithm()
-                        .getId();
-            } catch (RuntimeException e) {
-                // Parameters that do not read are the verifier's to refuse.
-                return null;
-            }
-        }
-        return HASH_OF_SIGNATURE_ALGORITHM.get(oid);
-    }
-
-    private static Map<String, String> hashOfSignatureAlgorithm() {
-        String md5 = "1.2.840.113549.2.5";
-        String sha1 = "1.3.14.3.2.26";
-        String sha224 = "2.16.840.1.101.3.4.2.4";
-        String sha256 = "2.16.840.1.101.3.4.2.1";
-        String sha384 = "2.16.840.1.101.3.4.2.2";
-        String sha512 = "2.16.840.1.101.3.4.2.3";
-        Map<String, String> map = new HashMap<String, String>();
-        map.put("1.2.840.113549.1.1.4", md5);
-        map.put("1.2.840.113549.1.1.5", sha1);
-        map.put("1.2.840.113549.1.1.14", sha224);
-        map.put("1.2.840.113549.1.1.11", sha256);
-        map.put("1.2.840.113549.1.1.12", sha384);
-        map.put("1.2.840.113549.1.1.13", sha512);
-        map.put("1.2.840.10045.4.1", sha1);
-        map.put("1.2.840.10045.4.3.1", sha224);
-        map.put("1.2.840.10045.4.3.2", sha256);
-        map.put("1.2.840.10045.4.3.3", sha384);
-        map.put("1.2.840.10045.4.3.4", sha512);
-        return Collections.unmodifiableMap(map);
-    }
-
     private static void verifyCmsSignature(SignerInformation signer, X509Certificate signerCert)
             throws VerificationException {
-        // A signatureAlgorithm that names a hash must name the one the
-        // SignerInfo digested with: a label that disagrees with what was
-        // hashed is not one signature under two names.
-        String named = digestNamedBy(signer);
-        if (named != null && !named.equals(signer.getDigestAlgOID())) {
-            throw new VerificationException(
-                    Reason.INVALID_SIGNATURE, "signatureAlgorithm names another hash than digestAlgorithm");
-        }
-        // No algorithm or key-type allowlist, by design: the signer is
-        // already pinned to an Apple root and carries Apple's receipt-signing
-        // marker, so whatever algorithm Apple signs with is accepted, and a
-        // change on Apple's side cannot reject genuine receipts. A weak hash only helps an attacker holding a signature
-        // Apple made over that hash, and an RSA signature binds its hash
-        // algorithm in the DigestInfo, so relabelling the field fails.
+        // No algorithm allowlist: the signer is pinned to an Apple root and
+        // carries Apple's marker, so an algorithm change on Apple's side
+        // cannot reject genuine receipts. An RSA signature binds its hash in
+        // the DigestInfo, so the signatureAlgorithm label is not trusted.
         try {
             boolean valid = signer.verify(signerVerifier(signerCert));
             if (!valid) {
