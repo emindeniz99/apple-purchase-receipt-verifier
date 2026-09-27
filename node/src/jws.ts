@@ -45,8 +45,8 @@ const INTERMEDIATE_OID = '1.2.840.113635.100.6.2.1';
 export { MAX_JWS_BYTES };
 
 /**
- * Names only the exception's class (docs/design/0.7-hardening-parity.md
- * change 6), never its message: an unexpected error here runs on input
+ * Names only the exception's class (docs/design/0.7-api.md, Result), never
+ * its message: an unexpected error here runs on input
  * nobody has vouched for, so its message may itself quote that input.
  */
 function describeError(e: unknown): string {
@@ -77,7 +77,7 @@ export function verifySignedData(
       throw cause;
     }
     // Contains any unexpected error before the signature has verified
-    // (docs/design/0.7-hardening-parity.md change 4): everything up to here
+    // (docs/design/0.7-api.md, Setup): everything up to here
     // runs on input nobody has vouched for, so it is MALFORMED, never
     // INTERNAL_ERROR, which would let anyone raise that alert at will.
     throw new VerificationError(

@@ -7,7 +7,7 @@
  *
  * Algorithm identification (which OID means which scheme) mirrors the Node
  * build's crypto.ts, so "any receipt signer algorithm"
- * (docs/design/0.7-hardening-parity.md change 3) means whatever
+ * (#160, docs/design/0.7-api.md) means whatever
  * `crypto.subtle` can verify — never a hard-coded allowlist (Q14). Every
  * digest and signature scheme the shared conformance cases require (SHA-1,
  * SHA-256, SHA-384, SHA-512, RSASSA-PKCS1-v1_5, RSASSA-PSS, ECDSA P-256)

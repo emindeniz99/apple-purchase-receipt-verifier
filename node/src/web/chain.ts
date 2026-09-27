@@ -7,7 +7,7 @@
  * A path is found top-down, from the pinned roots: a certificate's
  * signature is checked with the key of a certificate already vouched for,
  * never with the key of a certificate nobody has vouched for yet
- * (docs/design/0.7-hardening-parity.md change 1, #161). Only once a path
+ * (#161). Only once a path
  * reaches an anchor are the certificates on it checked for their validity
  * window.
  */

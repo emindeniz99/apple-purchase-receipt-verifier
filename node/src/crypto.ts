@@ -3,8 +3,7 @@
  * does every bit of RSA/ECDSA/RSA-PSS arithmetic and every digest — nothing
  * here hand-rolls a primitive. Algorithm identification (which OID means
  * which scheme) is this library's own, mirroring the Rust port's crypto.rs,
- * so "any receipt signer algorithm" (docs/design/0.7-hardening-parity.md
- * change 3) means whatever OpenSSL, through `node:crypto`, can verify —
+ * so "any receipt signer algorithm" (#160, docs/design/0.7-api.md) means whatever OpenSSL, through `node:crypto`, can verify —
  * never a hard-coded allowlist (Q14).
  */
 import { createPublicKey, verify as cryptoVerify, constants, type KeyObject } from 'node:crypto';
@@ -258,7 +257,7 @@ export function verifyCertificateSignature(
  * `signatureAlgorithm` that names a hash must name the digest the
  * `SignerInfo` hashed with, or the signature is `false`: a label that
  * disagrees with what was hashed is not one signature under two names
- * (docs/design/0.7-hardening-parity.md change 3 / Q15).
+ * (#160, docs/design/0.7-api.md).
  */
 export function verifySignerSignature(
   signerSpki: Uint8Array,
