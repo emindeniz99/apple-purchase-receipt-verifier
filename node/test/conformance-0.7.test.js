@@ -328,10 +328,12 @@ function defineTargetTests(name, build, async_) {
       `expected ok but failed: ${result.failure && result.failure.reason}`,
     );
     const json = kase.operation === 'verifyReceipt' ? result.payload.toJson() : result.payload.json;
-    if (kase.expected.toJson !== undefined) {
-      assert.equal(json, kase.expected.toJson, 'toJson exact bytes');
-    }
     const doc = parseWithBigInts(json);
+    if (kase.expected.toJson !== undefined) {
+      // Same value, not same bytes: whitespace, key order and escaping
+      // style are free (docs/design/0.7-api.md "Our JSON").
+      assert.deepStrictEqual(doc, parseWithBigInts(kase.expected.toJson), 'toJson value');
+    }
     if (kase.expected.fields) {
       checkFields(doc, kase.expected.fields);
     }

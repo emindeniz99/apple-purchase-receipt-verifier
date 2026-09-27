@@ -94,7 +94,7 @@ export interface ReceiptPayload {
   readonly originalApplicationVersion: string | null;
   readonly expirationDateMs: number | null;
   readonly unknownAttributes: RawAttributes;
-  /** The design's canonical JSON, byte for byte: docs/design/0.7-api.md "Our JSON". */
+  /** This payload as JSON, for logging and storage: docs/design/0.7-api.md "Our JSON". */
   toJson(): string;
 }
 
@@ -538,15 +538,10 @@ export function parseReceiptPayload(content: Uint8Array): ReceiptPayload {
   return buildReceiptPayload(fields, inApp, unknown);
 }
 
-// --- canonical JSON ------------------------------------------------------
+// --- JSON --------------------------------------------------------------
 //
-// `JSON.stringify` on a plain object already implements the design's
-// escaping rule exactly: short escapes for \" \\ \b \f \n \r \t, every
-// other C0 control as lowercase \u00xx, "/" and non-ASCII (U+2028/U+2029
-// included) written raw. String-keyed properties keep insertion order, and
-// integer-index-like keys ("13") are enumerated in ascending numeric order
-// automatically — exactly the two orderings the design requires — so no
-// hand-written encoder is needed.
+// `JSON.stringify` writes the design's value (docs/design/0.7-api.md
+// "Our JSON"); ports agree on the parsed value, not on the bytes.
 
 function base64(bytes: Uint8Array | null): string | null {
   return bytes === null ? null : base64Encode(bytes);

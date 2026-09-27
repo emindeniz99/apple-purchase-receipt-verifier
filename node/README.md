@@ -181,15 +181,15 @@ payload.receiptCreationDateMs;
 payload.inApp[0].productId;
 payload.inApp[0].expiresDateMs;
 payload.unknownAttributes;         // Map<number, Uint8Array[]> in receipt order
-payload.toJson();                  // the canonical JSON every port shares
+payload.toJson();                  // JSON with the same value in every port
 ```
 
 Decoding follows the rules every port shares: the first occurrence of an
 attribute wins; every attribute that does not end up in a typed field (a
 later copy, or a value that does not decode, whose field is then `null`) is
 kept raw in `unknownAttributes`, the in-app ones in that purchase's own; an
-empty date string means "not set" and is not kept raw. `toJson()` writes keys
-in a fixed order with `JSON.stringify` escapes, byte-identical across ports.
+empty date string means "not set" and is not kept raw. `toJson()` writes
+JSON whose parsed value is the same in every port; the bytes may differ.
 
 ### `Failure` and `Reason`
 
