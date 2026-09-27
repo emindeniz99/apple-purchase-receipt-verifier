@@ -286,6 +286,30 @@ is looser. Past 32, the envelope is `MALFORMED` and the signed content
 `UNREADABLE_PAYLOAD`. Genuine Apple receipts nest 9 levels deep in the
 envelope.
 
+## Measured worst-case CPU
+
+Measured on 2026-09-27 with `bench --worst-case`, which times every shared
+case in `fixtures/cases-0.7.json` that carries a time budget: oversized
+untrusted keys, a cross-signed certificate mesh, and the encoding oddities
+inside certificates. Swift 6.3.3, release build, one thread, on a shared
+4-vCPU KVM guest (Intel Xeon Processor @ 2.10GHz); one second of warm-up,
+then ten samples of at least 100 ms each.
+
+| Call | Median | Slowest sample |
+|---|---:|---:|
+| Slowest hostile case: `signed-data/reject-untrusted-oversized-x5c` (a JWS near the 256 KiB cap) | 2.5 ms | 2.5 ms |
+| Slowest hostile receipt: `receipt/verify-genuine-padded-with-oversized-strangers` | 0.64 ms | 0.76 ms |
+| Every other budgeted case | under 0.41 ms | under 0.55 ms |
+| For scale: `verifyReceipt` on the genuine 187-purchase legacy receipt | 7.2 ms | 8.1 ms |
+| For scale: `verifyReceiptEndpoint` on the same receipt | 13.4 ms | 14.3 ms |
+
+No hostile input in the shared suite costs more than an ordinary large
+receipt: the cost of a call follows the size of the input, which the caps
+above bound, not the structure an attacker chooses. The machine was shared
+with other work, so treat these as an order of magnitude. Run
+`swift run -c release --package-path swift/bench bench --worst-case` for
+numbers on your own hardware.
+
 ## Thread safety
 
 `Config`, `Verifier`, `ReceiptPayload`, `JsonPayload`, `VerificationResult`
