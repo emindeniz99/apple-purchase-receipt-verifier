@@ -19,14 +19,14 @@ module ApplePurchaseReceiptVerifier
     # escapes the library.
     class Error < StandardError; end
 
-    # Apple's deepest genuine structure is about 8 levels. 64 is the shared
-    # 0.7 bound (docs/design/0.7-api.md, Bounds): 64 constructed values are
-    # accepted and 65 refused in every port, counting the outermost value
+    # Apple's deepest genuine structure is about 9 levels. 32 is the shared
+    # 0.7 bound (docs/design/0.7-api.md, Bounds): 32 constructed values are
+    # accepted and 33 refused in every port, counting the outermost value
     # parsed on its own (the CMS envelope from its ContentInfo, the signed
     # content from its attribute SET) as 1. It leaves room for anything real
     # while keeping the recursive tree builder below far from Ruby's stack
     # limit.
-    MAX_DEPTH = 64
+    MAX_DEPTH = 32
 
     # A ceiling on how much work one blob can ask for. The 79 KB / 187-purchase
     # legacy receipt — the largest genuine input known to this project — scans

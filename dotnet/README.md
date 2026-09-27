@@ -360,7 +360,7 @@ sides.
   HTTP 413 there — check the body's length before the call to do the
   same).
 - **the compact JWS**: 262,144 UTF-8 bytes, `TooLarge`.
-- **JSON/ASN.1 nesting depth 64.** A deeper request body, JWS or CMS
+- **JSON nesting depth 64, ASN.1 nesting depth 32.** A deeper request body, JWS or CMS
   structure is `Malformed`.
 
 `receipt-data` is decoded exactly as Apple's `verifyReceipt` accepts it:

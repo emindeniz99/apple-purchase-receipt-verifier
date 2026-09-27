@@ -436,7 +436,7 @@ options.
   scan, not `json_decode()`'s own depth parameter, which bounds nesting only
   — in the request body, the JWS header and the JWS payload alike. Outside
   any of those is `Reason::Malformed`.
-- **ASN.1 nesting depth 64**, 20,000 nodes and 48 MiB of retained parser
+- **ASN.1 nesting depth 32**, 20,000 nodes and 48 MiB of retained parser
   state per parse: checked before any certificate is decoded. Outside any of
   those is `Reason::Malformed`.
 - **10 embedded certificates, 4 SignerInfos**, enforced before any

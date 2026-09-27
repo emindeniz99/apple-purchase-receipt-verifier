@@ -25,7 +25,7 @@ use std::borrow::Cow;
 /// Maximum ASN.1 nesting depth: at most this many constructed values
 /// nested inside one another, the outermost included, and a primitive value
 /// inside the innermost.
-pub const MAX_DEPTH: usize = 64;
+pub const MAX_DEPTH: usize = 32;
 
 /// Maximum number of decoded nodes in one parse.
 pub const MAX_NODES: usize = 100_000;

@@ -666,7 +666,7 @@ mod tests {
 
     #[test]
     fn signed_content_nested_past_the_asn1_bound_is_unreadable() {
-        // The bound is the reader's (64 constructed values); signed content
+        // The bound is the reader's (32 constructed values); signed content
         // that exceeds it cannot be read, which the verifier reports as
         // UNREADABLE_PAYLOAD, never MALFORMED.
         let mut nested: Vec<u8> = Vec::new();

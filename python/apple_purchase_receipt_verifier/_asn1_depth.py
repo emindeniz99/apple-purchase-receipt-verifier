@@ -14,7 +14,7 @@ and leaves the refusal to the parser that runs next.
 """
 
 #: At most this many constructed values inside one another.
-MAX_DEPTH = 64
+MAX_DEPTH = 32
 
 
 class _TooDeep(Exception):

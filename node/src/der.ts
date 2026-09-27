@@ -7,12 +7,12 @@
 
 import { bytesEqual, concatBytes } from './bytes.js';
 
-// 64 constructed values inside one another, the outermost counted as 1
-// (docs/design/0.7-api.md's Bounds table): 64 is accepted, 65 refused.
+// 32 constructed values inside one another, the outermost counted as 1
+// (docs/design/0.7-api.md's Bounds table): 32 is accepted, 33 refused.
 // Counted on each value parsed on its own (the CMS envelope from its
 // ContentInfo, the signed content from its attribute SET), never across the
 // two, since `parse` always starts a fresh walk at depth 0.
-const MAX_DEPTH = 64;
+const MAX_DEPTH = 32;
 
 export class ParseError extends Error {}
 

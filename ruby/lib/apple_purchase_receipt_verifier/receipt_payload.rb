@@ -350,7 +350,7 @@ module ApplePurchaseReceiptVerifier
       # per structural element and no recursion, since the grammar is
       # exactly two levels deep.
       def each_attribute(bytes, what)
-        # The ASN.1 nesting bound (64, docs/design/0.7-api.md, Bounds)
+        # The ASN.1 nesting bound (32, docs/design/0.7-api.md, Bounds)
         # applies to the signed content parsed on its own, same as the CMS
         # envelope; the fast offset-based walk below has no depth concept
         # of its own; a value that overruns it once, unattributably to

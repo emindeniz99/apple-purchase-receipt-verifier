@@ -516,7 +516,7 @@ anything is decoded; the others as the structure they bound is read:
 | JSON nesting depth, the outer object included | 64 | `MALFORMED` (JWS header, request body); a JWS payload is carried to the signature: `UNREADABLE_PAYLOAD` if it verifies |
 | JSON member name, characters | 50,000 | as nesting depth |
 | JSON number, characters | 1,000 | as nesting depth |
-| ASN.1 nesting, constructed values, the outermost included | 64 | `MALFORMED` (receipt envelope), `UNREADABLE_PAYLOAD` (signed receipt content), `INVALID_CERTIFICATE` (an `x5c` entry) |
+| ASN.1 nesting, constructed values, the outermost included | 32 | `MALFORMED` (receipt envelope), `UNREADABLE_PAYLOAD` (signed receipt content), `INVALID_CERTIFICATE` (an `x5c` entry) |
 | Certificates embedded in a receipt | 10 | `MALFORMED` |
 | Chain length, certificates below the anchor | 6 | `UNTRUSTED_CHAIN` |
 | SignerInfos in a receipt | 4 | `MALFORMED` |
@@ -703,7 +703,8 @@ BouncyCastle behaviours that are not API contracts:
   certificate; read `build` again after an upgrade.
 - BouncyCastle's own ASN.1 depth bound (`org.bouncycastle.asn1.max_cons_depth`)
   applies to indefinite lengths only, which is why `Asn1Depth` exists; if
-  that changes, the explicit check stays correct but becomes redundant.
+  that changes, the explicit check still stays, because its bound (32) is
+  stricter than BouncyCastle's default (64).
 - The signature BIT STRING of a certificate is decoded lazily, so the
   decoders read it once on purpose (`JwsCore.decodeChain`,
   `ReceiptCertificates.decodeEmbedded`).

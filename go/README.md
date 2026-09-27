@@ -315,7 +315,7 @@ it directly through a seam that records every key used.
 
 Everything this module parses is attacker-supplied, so the bounds are part
 of the design rather than a configuration. ASN.1 (`internal/der`): nesting
-depth 64 constructed values, a 100,000-node budget per parse, indefinite
+depth 32 constructed values, a 100,000-node budget per parse, indefinite
 (BER) lengths only on constructed values, trailing bytes refused. JSON:
 nesting depth 64, numbers of at most 1,000 digits, member names of at most
 50,000 characters, applied to the JWS header, the JWS payload and the

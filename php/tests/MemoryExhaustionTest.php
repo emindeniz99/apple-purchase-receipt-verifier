@@ -108,7 +108,7 @@ final class MemoryExhaustionTest extends TestCase
 
     /**
      * A JWS whose `x5c[0]` is a 4 MB payload behind 32 SEQUENCEs. Depth 32 is
-     * well under the declared maximum of 64, and the blob is ~33 nodes, so
+     * at the declared maximum of 32, and the blob is ~33 nodes, so
      * neither the depth ceiling nor the node budget sees anything wrong; the
      * receipt path's byte cap does not apply here at all. What does apply is
      * the 256 KiB JWS cap, checked before any of the base64 segments are
@@ -287,7 +287,7 @@ final class MemoryExhaustionTest extends TestCase
     public function testAnInputSizedExactlyAtEachCapIsStillAffordable(): void
     {
         $peak = self::assertVerdict('INVALID_CERTIFICATE', <<<'PHP'
-            $blob = nested(60, 120000);
+            $blob = nested(32, 120000);
             $jws = \EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Fixtures07::bytes('transaction');
             $parts = explode('.', $jws);
             $header = json_decode(base64_decode(strtr($parts[0], '-_', '+/')), true);

@@ -45,12 +45,12 @@ final class Der
     /**
      * Nesting depth ceiling: at most this many constructed values inside one
      * another, the outermost included. Also what keeps recursion off PHP's
-     * unguarded stack. 64 in every 0.7 port (docs/design/0.7-api.md,
+     * unguarded stack. 32 in every 0.7 port (docs/design/0.7-api.md,
      * "Bounds"); measured independently on the CMS envelope and on the
      * signed content's attribute SET, since {@see parse()} resets the count
      * for each top-level call.
      */
-    public const MAX_DEPTH = 64;
+    public const MAX_DEPTH = 32;
 
     /**
      * Default ceiling on the number of nodes one parse may produce.
@@ -113,8 +113,8 @@ final class Der
         $remaining = $nodeBudget;
         $bytes = $byteBudget;
         // The outermost value counts as depth 1 (docs/design/0.7-api.md,
-        // "Bounds": "the outermost one as 1"), so 64 nested values are
-        // accepted and a 65th is refused.
+        // "Bounds": "the outermost one as 1"), so 32 nested values are
+        // accepted and a 33rd is refused.
         [$node, $end] = self::readNode($buf, 0, 1, $remaining, $bytes);
         if ($end !== strlen($buf)) {
             throw new ParseException('trailing bytes after ASN.1 value (' . (strlen($buf) - $end) . ')');

@@ -313,7 +313,7 @@ limits are Apple's, fixed constants in every port of this library, not
 - **JSON nesting depth 64**: checked before any JSON is parsed, in the
   request body, the JWS header and the JWS payload alike. Deeper input is
   `Reason.MALFORMED`.
-- **ASN.1 nesting depth 64**: checked before any certificate is decoded.
+- **ASN.1 nesting depth 32**: checked before any certificate is decoded.
   Deeper input is `Reason.MALFORMED`.
 
 `fixtures/cases-0.7.json` holds every port to these same numbers, from both

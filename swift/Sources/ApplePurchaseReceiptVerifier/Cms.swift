@@ -9,12 +9,12 @@ import X509
 /// lengths — so the reader accepts both.
 ///
 /// Depth note: `SwiftASN1`'s own `BER`/`DER` parser refuses input nested
-/// past 50 constructed values (`ASN1.ParserNode._maximumNodeDepth`), which is
-/// stricter than the design's 64-level bound. A CMS envelope nested to
-/// exactly 64 (which the shared cases require this library to accept) is
-/// refused by the underlying parser before this file's own 64-check ever
-/// runs — a known library-level shortfall from the design's bound, reported
-/// rather than worked around by hand-writing a replacement ASN.1 reader.
+/// past about 49 constructed values as the design counts them
+/// (`ASN1.ParserNode._maximumNodeDepth`), which is looser than the design's
+/// 32-level bound. This library has no depth check of its own yet, so a CMS
+/// envelope or signed content nested 33 to 49 deep, which the shared cases
+/// require every port to refuse, is not refused here: a known shortfall
+/// from the design's bound.
 
 /// One `SignerInfo` of a receipt.
 struct CmsSignerInfo {
