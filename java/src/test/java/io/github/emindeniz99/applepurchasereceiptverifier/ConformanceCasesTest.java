@@ -133,15 +133,30 @@ class ConformanceCasesTest {
             check(id, expected, parse(id, response));
             return;
         }
-        VerificationResult<?> result;
+        final String argument;
+        final boolean receipt;
         if ("verifyReceipt".equals(operation)) {
-            result = verifier.verifyReceipt(receiptString(fixtures, input));
+            argument = receiptString(fixtures, input);
+            receipt = true;
         } else if ("verifySignedData".equals(operation)) {
-            result = verifier.verifySignedData(
-                    text(fixtureBytes(fixtures, input.get("fixture").asText())));
+            argument = text(fixtureBytes(fixtures, input.get("fixture").asText()));
+            receipt = false;
         } else {
             throw new IllegalStateException(id + ": harness error: unknown operation " + operation);
         }
+        // A maxMillis budget (the DoS cases): one warm-up call of the same
+        // case, then the timed call. An honest verify never parses the
+        // untrusted key and finishes in a few milliseconds; an implementation
+        // that decodes or verifies with the oversized key first spends seconds.
+        if (kase.has("maxMillis")) {
+            call(verifier, receipt, argument);
+            long start = System.nanoTime();
+            call(verifier, receipt, argument);
+            long millis = (System.nanoTime() - start) / 1_000_000;
+            long budget = kase.get("maxMillis").asLong();
+            assertTrue(millis <= budget, id + ": verify took " + millis + " ms, budget " + budget + " ms");
+        }
+        VerificationResult<?> result = call(verifier, receipt, argument);
         String status = expected.get("status").asText();
         if ("error".equals(status)) {
             Failure failure = result.failure();
@@ -167,6 +182,10 @@ class ConformanceCasesTest {
             json = ((JsonPayload) payload).json();
         }
         check(id, expected, parse(id, json));
+    }
+
+    private static VerificationResult<?> call(Verifier verifier, boolean receipt, String argument) {
+        return receipt ? verifier.verifyReceipt(argument) : verifier.verifySignedData(argument);
     }
 
     // ------------------------------------------------------------ inputs

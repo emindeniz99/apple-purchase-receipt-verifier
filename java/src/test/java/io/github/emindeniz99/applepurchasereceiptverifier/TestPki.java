@@ -542,7 +542,9 @@ final class TestPki {
         baseAttrs.add(
                 new org.bouncycastle.asn1.cms.Attribute(CMSAttributes.signingTime, new DERSet(new Time(signingTime))));
         CMSSignedDataGenerator gen = new CMSSignedDataGenerator();
-        ContentSigner cs = new JcaContentSignerBuilder(sigAlg).build(signingKey);
+        // The BouncyCastle provider so signer algorithms the JDK has no name
+        // for, such as RSASSA-PSS spelled SHA256withRSAandMGF1, resolve here.
+        ContentSigner cs = new JcaContentSignerBuilder(sigAlg).setProvider(BC).build(signingKey);
         gen.addSignerInfoGenerator(new JcaSignerInfoGeneratorBuilder(
                         new JcaDigestCalculatorProviderBuilder().setProvider(BC).build())
                 .setSignedAttributeGenerator(new DefaultSignedAttributeTableGenerator(new AttributeTable(baseAttrs)))
