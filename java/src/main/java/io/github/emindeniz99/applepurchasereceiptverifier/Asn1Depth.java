@@ -5,13 +5,15 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
  * builds anything from it.
  *
  * <p>BouncyCastle has its own bound ({@code org.bouncycastle.asn1.max_cons_depth},
- * 64 by default), but it counts differently: 65 nested values with an empty
- * innermost one still parse, as a test pins. It can also be raised by a
- * system property, and this library does not choose the BouncyCastle version
- * its caller resolves. So the bound is enforced here, on every encoding this
- * library parses before a signature has vouched for it, and counted as: at
- * most {@link #MAX_DEPTH} constructed values inside one another, the
- * outermost included, and a primitive value inside the innermost.</p>
+ * 64 by default). Ours is stricter: {@link #MAX_DEPTH} is 32, and
+ * BouncyCastle also counts differently, one level fewer, so 65 nested values
+ * with an empty innermost one would still parse there. Its bound can also be
+ * raised by a system property, and this library does not choose the
+ * BouncyCastle version its caller resolves. So the bound is enforced here,
+ * on every encoding this library parses before a signature has vouched for
+ * it, and counted as: at most {@link #MAX_DEPTH} constructed values inside
+ * one another, the outermost included, and a primitive value inside the
+ * innermost.</p>
  *
  * <p>The walk judges depth and nothing else. An encoding it cannot follow
  * (a truncated length, say) is not its verdict to give: it answers "not too
@@ -20,7 +22,7 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
 final class Asn1Depth {
 
     /** At most this many constructed values inside one another. */
-    static final int MAX_DEPTH = 64;
+    static final int MAX_DEPTH = 32;
 
     private Asn1Depth() {}
 

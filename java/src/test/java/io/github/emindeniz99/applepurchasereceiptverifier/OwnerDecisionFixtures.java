@@ -10,28 +10,18 @@ import java.util.List;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1Integer;
-import org.bouncycastle.asn1.ASN1ObjectIdentifier;
-import org.bouncycastle.asn1.ASN1Primitive;
-import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.DERIA5String;
-import org.bouncycastle.asn1.DEROctetString;
-import org.bouncycastle.asn1.DERSequence;
 import org.bouncycastle.asn1.DERSet;
 import org.bouncycastle.asn1.DERUTF8String;
-import org.bouncycastle.asn1.DLSet;
-import org.bouncycastle.asn1.cms.Attribute;
-import org.bouncycastle.asn1.cms.CMSObjectIdentifiers;
-import org.bouncycastle.asn1.cms.ContentInfo;
-import org.bouncycastle.asn1.cms.SignedData;
-import org.bouncycastle.asn1.cms.SignerInfo;
 
 /**
  * Writes the inputs of the shared cases for the owner decisions of
  * 2026-09-27 (chain before markers on the JWS path, validity before
- * signature, IA5String high bytes, the ASN.1 depth bound, malformed receipt
- * INTEGERs, the receipt date grammar, and the JSON name and number length
- * bounds) into the directory given as the first argument (default
+ * signature, IA5String high bytes, malformed receipt INTEGERs, the receipt
+ * date grammar, and the JSON name and number length bounds) into the
+ * directory given as the first argument (default
  * {@code fixtures/generated-0.7}). Every file is prefixed {@code owner-}.
+ * The ASN.1 depth bound's inputs come from {@link Asn1DepthFixtures}.
  *
  * <p>The synthetic chains are valid from 2024-01-01 to 2050-01-01 and every
  * receipt states the creation date 2024-08-06 unless a case says otherwise.
@@ -97,7 +87,6 @@ public final class OwnerDecisionFixtures {
 
         writeOrder(jws);
         writeDecodeRules(receipts);
-        writeDepth(receipts);
         writeJsonBounds(jws);
     }
 
@@ -199,65 +188,6 @@ public final class OwnerDecisionFixtures {
                                 TestPki.attribute(12, ia5("2020-01-01t00:00:00Z")))));
     }
 
-    // --- ASN.1 depth -------------------------------------------------------
-
-    private void writeDepth(TestPki pki) throws Exception {
-        // Signed content: payload SET (1) > attribute SEQUENCE (2) > a fourth
-        // attribute field nesting SEQUENCEs from depth 3 down.
-        write("owner-receipt-content-depth-64.der", sign(pki, deepPayload(62)));
-        write("owner-receipt-content-depth-65.der", sign(pki, deepPayload(63)));
-
-        // Envelope: ContentInfo (1) > [0] (2) > SignedData (3) > SignerInfos
-        // (4) > SignerInfo (5) > unsignedAttrs [1] (6) > Attribute (7) >
-        // attrValues SET (8) > SEQUENCEs from depth 9 down.
-        byte[] genuine = sign(pki, standardPayload());
-        write("owner-receipt-envelope-depth-64.der", withDeepUnsignedAttribute(genuine, 56));
-        write("owner-receipt-envelope-depth-65.der", withDeepUnsignedAttribute(genuine, 57));
-    }
-
-    private static byte[] deepPayload(int levels) throws Exception {
-        ASN1EncodableVector deepAttribute = new ASN1EncodableVector();
-        deepAttribute.add(new ASN1Integer(9000));
-        deepAttribute.add(new ASN1Integer(1));
-        deepAttribute.add(new DEROctetString(integer(1)));
-        deepAttribute.add(nest(levels));
-        return attributes(
-                TestPki.attribute(0, utf8("ProductionSandbox")),
-                TestPki.attribute(2, utf8(BUNDLE)),
-                TestPki.attribute(12, ia5(CREATION_DATE)),
-                new DERSequence(deepAttribute));
-    }
-
-    private static byte[] withDeepUnsignedAttribute(byte[] cms, int levels) throws Exception {
-        SignedData data = SignedData.getInstance(
-                ContentInfo.getInstance(ASN1Primitive.fromByteArray(cms)).getContent());
-        SignerInfo original = SignerInfo.getInstance(data.getSignerInfos().getObjectAt(0));
-        Attribute deep = new Attribute(new ASN1ObjectIdentifier("1.2.3.4.5"), new DERSet(nest(levels)));
-        SignerInfo withUnsigned = new SignerInfo(
-                original.getSID(),
-                original.getDigestAlgorithm(),
-                original.getAuthenticatedAttributes(),
-                original.getDigestEncryptionAlgorithm(),
-                original.getEncryptedDigest(),
-                new DERSet(deep));
-        SignedData replaced = new SignedData(
-                data.getDigestAlgorithms(),
-                data.getEncapContentInfo(),
-                data.getCertificates(),
-                (ASN1Set) null,
-                new DLSet(withUnsigned));
-        return new ContentInfo(CMSObjectIdentifiers.signedData, replaced).getEncoded();
-    }
-
-    /** {@code levels} SEQUENCEs, each holding the next; the innermost is empty. */
-    private static ASN1Encodable nest(int levels) {
-        ASN1Encodable inner = new DERSequence();
-        for (int i = 1; i < levels; i++) {
-            inner = new DERSequence(inner);
-        }
-        return inner;
-    }
-
     // --- JSON bounds -------------------------------------------------------
 
     private void writeJsonBounds(TestPki jws) throws Exception {
@@ -298,13 +228,6 @@ public final class OwnerDecisionFixtures {
             sb.append(c);
         }
         return sb.toString();
-    }
-
-    private static byte[] standardPayload() throws Exception {
-        return attributes(
-                TestPki.attribute(0, utf8("ProductionSandbox")),
-                TestPki.attribute(2, utf8(BUNDLE)),
-                TestPki.attribute(12, ia5(CREATION_DATE)));
     }
 
     private static byte[] sign(TestPki pki, byte[] payload) throws Exception {
