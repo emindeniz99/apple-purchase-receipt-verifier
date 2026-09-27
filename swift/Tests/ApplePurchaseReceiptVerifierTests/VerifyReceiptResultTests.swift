@@ -87,8 +87,12 @@ final class VerifyReceiptResultTests: XCTestCase {
             for name in try files.contentsOfDirectory(
                 atPath: TestFixtures.directory.appendingPathComponent(directory).path
             ).sorted() where name.hasSuffix(".txt") || name.hasSuffix(".b64") {
-                inputs.append((name, try String(
-                    contentsOf: TestFixtures.directory.appendingPathComponent("\(directory)/\(name)"), encoding: .utf8)))
+                inputs.append(
+                    (
+                        name,
+                        try String(
+                            contentsOf: TestFixtures.directory.appendingPathComponent("\(directory)/\(name)"), encoding: .utf8)
+                    ))
             }
         }
         // Every source must contribute, or a moved directory would make this

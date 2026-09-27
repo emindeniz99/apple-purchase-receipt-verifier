@@ -253,8 +253,7 @@ struct Authenticated {
     /// is a value type, so `===` is not available; the encoded bytes serve
     /// as the identity).
     private var checkedAgainstAnchor: [(certificate: Certificate, anchor: Certificate, verdict: Bool)] = []
-    private var checkedAgainstCertificate:
-        [(certificate: Certificate, issuer: Certificate, verdict: Bool)] = []
+    private var checkedAgainstCertificate: [(certificate: Certificate, issuer: Certificate, verdict: Bool)] = []
 
     mutating func recordAnchorCheck(_ certificate: Certificate, _ anchor: Certificate, _ verdict: Bool) {
         checkedAgainstAnchor.append((certificate, anchor, verdict))

@@ -107,8 +107,11 @@ final class VerifierTests: XCTestCase {
         let roots = Config.defaults().roots
         XCTAssertEqual(roots.count, 3)
         let fromCerts = try ["AppleIncRootCertificate.cer", "AppleRootCA-G2.cer", "AppleRootCA-G3.cer"].map {
-            try Certificate(derEncoded: [UInt8](Data(contentsOf: TestFixtures.directory
-                .deletingLastPathComponent().appendingPathComponent("certs").appendingPathComponent($0))))
+            try Certificate(
+                derEncoded: [UInt8](
+                    Data(
+                        contentsOf: TestFixtures.directory
+                            .deletingLastPathComponent().appendingPathComponent("certs").appendingPathComponent($0))))
         }
         XCTAssertEqual(Set(roots.map(\.subject.description)), Set(fromCerts.map(\.subject.description)))
         for root in fromCerts {

@@ -500,7 +500,8 @@ final class ConformanceCasesTests: XCTestCase {
             let scalars = Set(failure.message.unicodeScalars.map { $0.value })
             for codepoint in mustNotContain {
                 XCTAssertFalse(
-                    scalars.contains(UInt32(codepoint)), "\(id): message contains forbidden code point U+\(String(codepoint, radix: 16))")
+                    scalars.contains(UInt32(codepoint)),
+                    "\(id): message contains forbidden code point U+\(String(codepoint, radix: 16))")
             }
         }
     }
