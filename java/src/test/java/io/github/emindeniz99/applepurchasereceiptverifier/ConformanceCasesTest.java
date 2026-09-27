@@ -164,6 +164,16 @@ class ConformanceCasesTest {
                 fail(id + ": expected " + expected.get("reason").asText() + " but the operation verified");
             }
             assertEquals(expected.get("reason").asText(), failure.reason().name(), id + ": " + failure.message());
+            if (expected.has("messageMustNotContain")) {
+                String message = failure.message();
+                for (JsonNode codePoint : expected.get("messageMustNotContain")) {
+                    int cp = codePoint.asInt();
+                    assertTrue(
+                            message.indexOf(cp) < 0,
+                            id + ": the failure message contains U+" + String.format("%04X", cp) + ": "
+                                    + message.replaceAll("\\p{Cntrl}", "?"));
+                }
+            }
             return;
         }
         assertEquals("ok", status, id + ": harness error: unknown status");
@@ -376,7 +386,12 @@ class ConformanceCasesTest {
 
     private static JsonNode parse(String id, String json) {
         try {
-            return MAPPER.readTree(json);
+            // Strict: trailing content after the value fails, which a plain
+            // readTree would ignore, so a port that appended to its output
+            // cannot pass.
+            return MAPPER.reader()
+                    .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+                    .readTree(json);
         } catch (Exception e) {
             throw new AssertionError(id + ": the library returned JSON that does not parse: " + json, e);
         }

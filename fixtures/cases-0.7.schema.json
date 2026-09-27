@@ -190,7 +190,14 @@
       "required": ["status", "reason"],
       "properties": {
         "status": { "const": "error" },
-        "reason": { "$ref": "#/$defs/reason" }
+        "reason": { "$ref": "#/$defs/reason" },
+        "messageMustNotContain": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Code points the failure message must not contain, so it can go into a log line as is. The runner checks the message the port exposes (Failure.message() or its equivalent).",
+          "items": { "type": "integer", "minimum": 0, "maximum": 1114111 }
+        }
       }
     },
     "expectedReceiptOk": {

@@ -130,6 +130,10 @@ struct Expected {
     status: Option<String>,
     #[serde(default)]
     reason: Option<String>,
+    /// Code points the failure message must not contain, so it can go into
+    /// a log line as is.
+    #[serde(default)]
+    message_must_not_contain: Option<Vec<u32>>,
     #[serde(default)]
     fields: Option<Map<String, Value>>,
     #[serde(default)]
@@ -633,6 +637,17 @@ fn run_case(dir: &Path, fixtures: &BTreeMap<String, Fixture>, case: &Case) -> Re
                         return Err(Failed::from(format!(
                             "{id}: expected {want} but got {failure}"
                         )));
+                    }
+                    if let Some(forbidden) = &expected.message_must_not_contain {
+                        let message = failure.message();
+                        for &code_point in forbidden {
+                            if message.chars().any(|c| u32::from(c) == code_point) {
+                                return Err(Failed::from(format!(
+                                    "{id}: the failure message contains U+{code_point:04X}: {}",
+                                    message.escape_default()
+                                )));
+                            }
+                        }
                     }
                     return Ok(());
                 }
