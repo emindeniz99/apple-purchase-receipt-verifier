@@ -17,6 +17,7 @@ namespace ApplePurchaseReceiptVerifier
         private readonly byte[]? _bundleIdBytes;
         private readonly byte[]? _opaqueValue;
         private readonly byte[]? _sha1Hash;
+        private readonly IReadOnlyDictionary<int, IReadOnlyList<byte[]>> _unknownAttributes;
 
         /// <summary>
         /// Builds a payload by hand, for a caller's own tests. The byte arrays,
@@ -56,7 +57,7 @@ namespace ApplePurchaseReceiptVerifier
             OriginalPurchaseDateMs = originalPurchaseDateMs;
             OriginalApplicationVersion = originalApplicationVersion;
             ExpirationDateMs = expirationDateMs;
-            UnknownAttributes = ByteOps.CopyAttributes(unknownAttributes, nameof(unknownAttributes));
+            _unknownAttributes = ByteOps.CopyAttributes(unknownAttributes, nameof(unknownAttributes));
         }
 
         /// <summary>Attribute 0.</summary>
@@ -110,9 +111,10 @@ namespace ApplePurchaseReceiptVerifier
         /// type, in receipt order: an attribute type this library does not
         /// model, the second and later copies of a known attribute, and a
         /// known attribute whose value does not parse (whose typed field is
-        /// then <see langword="null"/>).
+        /// then <see langword="null"/>). A fresh copy per call.
         /// </summary>
-        public IReadOnlyDictionary<int, IReadOnlyList<byte[]>> UnknownAttributes { get; }
+        public IReadOnlyDictionary<int, IReadOnlyList<byte[]>> UnknownAttributes =>
+            ByteOps.CopyAttributes(_unknownAttributes, nameof(UnknownAttributes));
 
         /// <summary>
         /// This payload as JSON, for logging and storage: 64-bit ids as
@@ -144,7 +146,7 @@ namespace ApplePurchaseReceiptVerifier
             json.Set("original_purchase_date_ms", OriginalPurchaseDateMs);
             json.Set("original_application_version", OriginalApplicationVersion);
             json.Set("expiration_date_ms", ExpirationDateMs);
-            json.Set("unknown_attributes", UnknownAttributesJson(UnknownAttributes));
+            json.Set("unknown_attributes", UnknownAttributesJson(_unknownAttributes));
             return Json.Write(json);
         }
 
