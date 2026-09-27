@@ -91,7 +91,14 @@ final class ReceiptDecodeTest extends TestCase
         self::assertSame(Reason::UntrustedChain, $result->failure?->reason);
     }
 
-    public function testRejectsASignerWhoseKeyIsNotRsa(): void
+    /**
+     * Not a key-type allowlist: an ECDSA signer verifies in 0.7 (shared case
+     * receipt/verify-signer-ecdsa-p256). This pins the family check: a
+     * SignerInfo whose signatureAlgorithm says rsaEncryption must come from
+     * an RSA key, so an EC key under an RSA label is refused before
+     * openssl_verify() is asked to reconcile the two.
+     */
+    public function testRejectsAnRsaLabelledSignerWhoseKeyIsEc(): void
     {
         $pki = MintedPki::get();
         $receipt = TestPki::receipt(
