@@ -12,9 +12,20 @@
 //! Each benchmark warms up for one second, then takes ten samples of at
 //! least 100 ms each; the JSON on stdout carries the median, minimum and
 //! maximum microseconds per operation over those samples.
+//!
+//! ```text
+//! cargo run --release --locked --example bench -- --worst-case
+//! ```
+//!
+//! times, the same way, every shared case in `fixtures/cases.json` that
+//! carries a `maxMillis` budget: the hostile inputs (oversized untrusted
+//! keys, certificate meshes, encoding oddities inside certificates) the
+//! shared suite bounds in time. Each call is run once first and must give
+//! the answer the case expects. The README's worst-case CPU figure comes
+//! from this mode.
 
 use apple_purchase_receipt_verifier::__internal::{base64_encode, decode_receipt_data};
-use apple_purchase_receipt_verifier::{Config, Environment, Reason, Verifier};
+use apple_purchase_receipt_verifier::{Config, Environment, Reason, TrustAnchor, Verifier};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::hint::black_box;
@@ -47,6 +58,25 @@ const FIXTURES: [(&str, &str, usize, &str); 2] = [
 ];
 
 fn main() {
+    let worst = std::env::args().skip(1).any(|arg| arg == "--worst-case");
+    let results = if worst { worst_case() } else { cross_port() };
+    let report = json!({
+        "port": "rust",
+        "tool": format!("examples/bench.rs {} (std::time)", if worst { "worst-case" } else { "cross-port" }),
+        "settings": {
+            "warmup_s": WARMUP.as_secs_f64(),
+            "samples": SAMPLES,
+            "min_sample_s": MIN_SAMPLE.as_secs_f64(),
+        },
+        "results": results,
+    });
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&report).expect("serialize")
+    );
+}
+
+fn cross_port() -> Vec<Value> {
     // The roots are parsed once, here, and never per call.
     let verifier = Verifier::new(
         Config::builder()
@@ -111,20 +141,96 @@ fn main() {
             let _ = black_box(verifier.verify_receipt(black_box(&tampered)));
         });
     }
-    let report = json!({
-        "port": "rust",
-        "tool": "examples/bench.rs (std::time)",
-        "settings": {
-            "warmup_s": WARMUP.as_secs_f64(),
-            "samples": SAMPLES,
-            "min_sample_s": MIN_SAMPLE.as_secs_f64(),
-        },
-        "results": results,
-    });
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&report).expect("serialize")
-    );
+    results
+}
+
+/// Every shared case with a `maxMillis` budget, each checked against the
+/// answer it expects and then timed.
+fn worst_case() -> Vec<Value> {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../fixtures");
+    let file = parse(&std::fs::read_to_string(dir.join("cases.json")).expect("cases.json"));
+    let registry = &file["fixtures"];
+    let bytes = |id: &str| -> Vec<u8> {
+        let entry = &registry[id];
+        let raw = std::fs::read(dir.join(entry["path"].as_str().expect("path"))).expect("fixture");
+        match entry["codec"].as_str() {
+            Some("raw" | "text") => raw,
+            Some("utf8") => String::from_utf8_lossy(&raw).trim().as_bytes().to_vec(),
+            Some("base64") => {
+                let text: String = String::from_utf8_lossy(&raw).split_whitespace().collect();
+                decode_receipt_data(&text).expect("fixture base64")
+            }
+            other => panic!("fixture {id} has codec {other:?}"),
+        }
+    };
+    let mut results = Vec::new();
+    for case in file["cases"].as_array().expect("cases") {
+        if case.get("maxMillis").is_none() {
+            continue;
+        }
+        let id = case["id"].as_str().expect("id");
+        let trusted = &case["config"]["trustedRoots"];
+        let mut builder = Config::builder().clock(|| NOW_MILLIS);
+        if trusted["source"] == "fixtures" {
+            let roots = trusted["fixtures"]
+                .as_array()
+                .expect("root ids")
+                .iter()
+                .map(|root| {
+                    TrustAnchor::from_der(&bytes(root.as_str().expect("root id"))).expect("root")
+                });
+            builder = builder.roots(roots.collect::<Vec<_>>());
+        }
+        let verifier = Verifier::new(builder.build().expect("config"));
+        let fixture = case["input"]["fixture"].as_str().expect("fixture");
+        let input = bytes(fixture);
+        let operation = case["operation"].as_str().expect("operation");
+        let mut op: Box<dyn FnMut() -> Option<Reason>> = match operation {
+            "verifyReceipt" => {
+                let text = if registry[fixture]["codec"] == "text"
+                    || registry[fixture]["codec"] == "utf8"
+                {
+                    String::from_utf8(input).expect("UTF-8")
+                } else {
+                    base64_encode(&input)
+                };
+                Box::new(move || {
+                    verifier
+                        .verify_receipt(black_box(&text))
+                        .err()
+                        .map(|f| f.reason())
+                })
+            }
+            "verifySignedData" => {
+                let jws = String::from_utf8(input).expect("UTF-8");
+                Box::new(move || {
+                    verifier
+                        .verify_signed_data(black_box(&jws))
+                        .err()
+                        .map(|f| f.reason())
+                })
+            }
+            other => panic!("{id}: no adapter for operation {other}"),
+        };
+
+        // The answer the case expects, before anything is timed.
+        let outcome = op().map_or("ok", Reason::as_str);
+        let expected = &case["expected"];
+        if let Some(one_of) = expected["oneOf"].as_array() {
+            assert!(
+                one_of.iter().any(|o| o == outcome),
+                "{id} answered {outcome}"
+            );
+        } else if expected["status"] == "ok" {
+            assert_eq!(outcome, "ok", "{id}");
+        } else {
+            assert_eq!(Some(outcome), expected["reason"].as_str(), "{id}");
+        }
+        results.push(measure(operation, id, &mut || {
+            black_box(op());
+        }));
+    }
+    results
 }
 
 /// Warm up, size a sample to at least `MIN_SAMPLE`, then time `SAMPLES`
