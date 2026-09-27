@@ -17,7 +17,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
             try
             {
                 return VerificationResult<ReceiptPayload>.Ok(
-                    ReceiptVerifierCore.Verify(base64, _config.Roots, _config.Clock));
+                    ReceiptVerifierCore.Verify(base64, _config.Anchors, _config.Clock));
             }
             catch (VerificationException e)
             {
@@ -34,7 +34,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
             try
             {
                 return VerificationResult<JsonPayload>.Ok(
-                    JwsVerifierCore.Verify(jws, _config.Roots, _config.Clock));
+                    JwsVerifierCore.Verify(jws, _config.Anchors, _config.Clock));
             }
             catch (VerificationException e)
             {
@@ -53,7 +53,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
                 throw new ArgumentOutOfRangeException(nameof(environment));
             }
 
-            return EndpointCore.Verify(environment, requestJson, _config.Roots, _config.Clock);
+            return EndpointCore.Verify(environment, requestJson, _config.Anchors, _config.Clock);
         }
     }
 }
