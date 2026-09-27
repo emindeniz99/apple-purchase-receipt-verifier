@@ -3,7 +3,7 @@ import Foundation
 import XCTest
 @testable import ApplePurchaseReceiptVerifier
 
-// Runs fixtures/cases-0.7.json — the normative cross-language conformance
+// Runs fixtures/cases.json — the normative cross-language conformance
 // vectors for the 0.7 API — against this implementation. The adapter below
 // knows nothing about any individual case: it loads the file, resolves
 // fixture ids to bytes, builds a Verifier from the generic config, dispatches
@@ -26,7 +26,7 @@ private let fixturesDirectory = URL(fileURLWithPath: #filePath)
 
 // MARK: - the vector file
 
-/// Just enough of cases-0.7.json for `JSONDecoder` to read every
+/// Just enough of cases.json for `JSONDecoder` to read every
 /// `decodeBase64` case's texts.
 private struct TextsFile: Decodable {
     struct Case: Decodable {
@@ -51,11 +51,11 @@ private struct Vectors {
     let base64Texts: [String: [String]]
 
     init() throws {
-        let data = try Data(contentsOf: fixturesDirectory.appendingPathComponent("cases-0.7.json"))
+        let data = try Data(contentsOf: fixturesDirectory.appendingPathComponent("cases.json"))
         guard let file = try JSONSerialization.jsonObject(with: data) as? [String: Any],
             let fixtures = file["fixtures"] as? [String: [String: Any]],
             let cases = file["cases"] as? [[String: Any]]
-        else { throw HarnessError("fixtures/cases-0.7.json is not the expected JSON object") }
+        else { throw HarnessError("fixtures/cases.json is not the expected JSON object") }
         self.fixtures = fixtures
         self.cases = cases
         let exact = try JSONDecoder().decode(TextsFile.self, from: data)
@@ -78,14 +78,14 @@ private struct Vectors {
         let actual = Data(SHA256.hash(data: decoded)).map { String(format: "%02x", $0) }.joined()
         guard actual == expected.lowercased() else {
             throw HarnessError(
-                "fixture \"\(id)\" has content sha256 \(actual), but cases-0.7.json records \(expected)")
+                "fixture \"\(id)\" has content sha256 \(actual), but cases.json records \(expected)")
         }
         return decoded
     }
 
     func codec(of id: String) throws -> String {
         guard let codec = fixtures[id]?["codec"] as? String else {
-            throw HarnessError("cases-0.7.json registers no fixture \"\(id)\"")
+            throw HarnessError("cases.json registers no fixture \"\(id)\"")
         }
         return codec
     }
@@ -93,7 +93,7 @@ private struct Vectors {
     private func decode(_ id: String) throws -> [UInt8] {
         guard let entry = fixtures[id], let path = entry["path"] as? String,
             let codec = entry["codec"] as? String
-        else { throw HarnessError("cases-0.7.json registers no fixture \"\(id)\"") }
+        else { throw HarnessError("cases.json registers no fixture \"\(id)\"") }
         let raw = try Data(contentsOf: fixturesDirectory.appendingPathComponent(path))
         switch codec {
         case "raw":
@@ -304,13 +304,13 @@ final class ConformanceCasesTests: XCTestCase {
         let vectors = try Vectors()
         XCTAssertEqual(
             Set(vectors.cases.compactMap { $0["operation"] as? String }), Self.coveredOperations,
-            "cases-0.7.json carries an operation no test method runs")
+            "cases.json carries an operation no test method runs")
         print("conformance: \(vectors.cases.count) cases, \(vectors.fixtures.count) fixtures")
     }
 
     func testEveryRegisteredFixtureMatchesItsRecordedDigest() throws {
         let vectors = try Vectors()
-        XCTAssertFalse(vectors.fixtures.isEmpty, "cases-0.7.json registers no fixtures")
+        XCTAssertFalse(vectors.fixtures.isEmpty, "cases.json registers no fixtures")
         for id in vectors.fixtures.keys.sorted() {
             XCTAssertNoThrow(try vectors.bytes(of: id), "fixture \(id)")
         }
@@ -319,7 +319,7 @@ final class ConformanceCasesTests: XCTestCase {
     private func run(operation: String) throws {
         let vectors = try Vectors()
         let selected = vectors.cases.filter { ($0["operation"] as? String) == operation }
-        XCTAssertFalse(selected.isEmpty, "cases-0.7.json carries no \(operation) case")
+        XCTAssertFalse(selected.isEmpty, "cases.json carries no \(operation) case")
         var ran = Set<String>()
         for kase in selected {
             let id = kase["id"] as? String ?? "<case without an id>"

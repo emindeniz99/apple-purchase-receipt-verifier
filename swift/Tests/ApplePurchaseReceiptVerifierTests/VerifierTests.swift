@@ -55,7 +55,7 @@ func base64URL(_ bytes: [UInt8]) -> String {
         .replacingOccurrences(of: "=", with: "")
 }
 
-/// What the shared cases in fixtures/cases-0.7.json do not pin: reader
+/// What the shared cases in fixtures/cases.json do not pin: reader
 /// details a vector file cannot express, the bundled roots, and dependency
 /// regressions that need more than one call to show.
 final class VerifierTests: XCTestCase {

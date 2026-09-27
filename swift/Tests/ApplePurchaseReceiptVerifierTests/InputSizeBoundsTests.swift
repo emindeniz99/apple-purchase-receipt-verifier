@@ -6,7 +6,7 @@ import XCTest
 /// Base64 decoding and JSON parsing both allocate a multiple of their input
 /// before any signature is checked, so an attacker who can send bytes can
 /// make the verifier allocate in proportion to them. The shared cases in
-/// fixtures/cases-0.7.json pin each cap's boundary through the public
+/// fixtures/cases.json pin each cap's boundary through the public
 /// methods (`receipt-base64/accept-at-the-size-cap`,
 /// `endpoint/request-body-one-byte-over-the-size-cap-answers-21002`,
 /// `raw/reject-jws-one-byte-over-the-size-cap`, the nesting cases and the
