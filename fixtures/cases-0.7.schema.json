@@ -157,7 +157,7 @@
     "maxMillis": {
       "type": "integer",
       "minimum": 1,
-      "description": "A wall-clock budget in milliseconds for the verify call. The runner measures the call after one warm-up call of the same case and fails if it exceeds this. Set on the DoS cases and the anyOutcome cases; the file comment gives the shared figure."
+      "description": "A wall-clock budget in milliseconds for the verify call. The runner measures the call after one warm-up call of the same case and fails if it exceeds this. Set on the DoS cases and the oneOf cases; the file comment gives the shared figure."
     },
     "fault": {
       "type": "string",
@@ -200,13 +200,29 @@
         }
       }
     },
-    "expectedAnyOutcome": {
+    "expectedOneOf": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["anyOutcome"],
-      "description": "A tolerant case: the port may verify or fail with any reason except INTERNAL_ERROR, but no exception or panic may escape the call, and it must finish within maxMillis when the case sets one.",
+      "required": ["oneOf"],
+      "description": "A case whose outcome is port-defined within a list: the port's outcome, \"ok\" when the call verified (no field is checked) or else its reason, must be one of these. INTERNAL_ERROR is never listed, and no exception or panic may escape the call; it must finish within maxMillis when the case sets one.",
       "properties": {
-        "anyOutcome": { "const": true }
+        "oneOf": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "ok",
+              "MALFORMED",
+              "TOO_LARGE",
+              "INVALID_SIGNATURE",
+              "UNTRUSTED_CHAIN",
+              "INVALID_CERTIFICATE",
+              "INVALID_CERTIFICATE_PURPOSE",
+              "UNREADABLE_PAYLOAD"
+            ]
+          }
+        }
       }
     },
     "expectedReceiptOk": {
@@ -274,7 +290,7 @@
         "if": {
           "type": "object",
           "required": ["expected"],
-          "properties": { "expected": { "type": "object", "required": ["anyOutcome"] } }
+          "properties": { "expected": { "type": "object", "required": ["oneOf"] } }
         },
         "then": { "required": ["fault"] }
       }
@@ -301,7 +317,7 @@
               "oneOf": [
                 { "$ref": "#/$defs/expectedReceiptOk" },
                 { "$ref": "#/$defs/expectedError" },
-                { "$ref": "#/$defs/expectedAnyOutcome" }
+                { "$ref": "#/$defs/expectedOneOf" }
               ]
             },
             "fault": { "$ref": "#/$defs/fault" },
@@ -327,7 +343,7 @@
               "oneOf": [
                 { "$ref": "#/$defs/expectedSignedDataOk" },
                 { "$ref": "#/$defs/expectedError" },
-                { "$ref": "#/$defs/expectedAnyOutcome" }
+                { "$ref": "#/$defs/expectedOneOf" }
               ]
             },
             "fault": { "$ref": "#/$defs/fault" },
