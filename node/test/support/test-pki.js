@@ -1,7 +1,7 @@
 // A receipt PKI minted at test time, for tests whose subject is the payload
 // parser. The full payload parse runs only after the chain and the CMS
 // signature have passed, so a payload spliced into a genuine receipt stops
-// at INVALID_SIGNATURE (or at INVALID_CHAIN when the splice makes the
+// at INVALID_SIGNATURE (or at a chain failure when the splice makes the
 // creation date unusable) and never reaches the parser. Signing it here, under
 // a chain the test then trusts, is what lets such a test keep reaching it.
 //
