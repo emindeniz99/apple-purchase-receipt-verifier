@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# VerifyReceiptEndpoint#verify_receipt_json, the one entry point that takes a
+# Verifier#verify_receipt_endpoint, the one entry point that takes a
 # request body rather than a receipt: JSON parse, receipt-data extraction, the
 # receipt-base64 rule, then the DER path.
 #
