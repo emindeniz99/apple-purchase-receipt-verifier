@@ -139,7 +139,11 @@ pub fn decode_base64url_strict(text: &str) -> Option<Vec<u8>> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::cast_possible_truncation
+)]
 mod tests {
     //! The engines replaced two hand-written routines; these are those
     //! routines, kept as the oracle the engines must match byte for byte.
