@@ -242,6 +242,17 @@ class ReceiptVerificationTest {
     }
 
     @Test
+    void verifiesAGenuineSignerBehindACopyOfItsIdentity() throws Exception {
+        // The certificate bag is unsigned, so anyone relaying a receipt can put
+        // a certificate with the signer's issuer and serial on another key in
+        // front of the genuine leaf. Taking the first match would fail a
+        // receipt Apple did sign; each match is tried, and the twin's own key
+        // is never used because its chain fails first.
+        byte[] relayed = pki.signReceiptWithTwinAheadOfSigner(payload(BUNDLE, creationDate.toString()));
+        assertEquals(BUNDLE, verify(pki, relayed).bundleId());
+    }
+
+    @Test
     void rejectsReceiptEmbeddingMoreCertificatesThanTheLimit() throws Exception {
         // Genuine receipts embed one to three certificates, so eleven is a flood.
         // Everything else about this receipt is valid — unbounded it verifies —

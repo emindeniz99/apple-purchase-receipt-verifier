@@ -40,14 +40,18 @@ final class ReceiptCertificates {
         final List<UnreadableEntry> unreadable = new ArrayList<UnreadableEntry>();
 
         /**
-         * The certificate {@code signer} names, or the verdict for the bag.
+         * The certificates carrying the issuer and serial {@code signer}
+         * names, in bag order and never empty, or the verdict for the bag.
+         * The bag is unsigned, so more than one can match: a certificate
+         * with the signer's identity on another key can sit ahead of the
+         * genuine one, and the caller tries each.
          * The signer's own entry not decoding is INVALID_CERTIFICATE, as an
          * unreadable x5c entry is on the JWS path; any other entry not
          * decoding is MALFORMED, because the bag is unsigned and bytes that
          * cannot be read there are a defect of the receipt, not of a
          * certificate. A broken signer outranks a broken stranger.
          */
-        X509Certificate signer(SignerInformation signer) throws VerificationException {
+        List<X509Certificate> signers(SignerInformation signer) throws VerificationException {
             SignerId sid = signer.getSID();
             for (UnreadableEntry entry : unreadable) {
                 // An entry the holder refused has its identity read from the
@@ -66,12 +70,16 @@ final class ReceiptCertificates {
                         "an embedded certificate is not a valid certificate",
                         unreadable.get(0).error);
             }
+            List<X509Certificate> matches = new ArrayList<X509Certificate>();
             for (int i = 0; i < holders.size(); i++) {
                 if (sid.match(holders.get(i))) {
-                    return all.get(i);
+                    matches.add(all.get(i));
                 }
             }
-            throw new VerificationException(Reason.MALFORMED, "signer certificate not embedded");
+            if (matches.isEmpty()) {
+                throw new VerificationException(Reason.MALFORMED, "signer certificate not embedded");
+            }
+            return matches;
         }
     }
 
@@ -99,7 +107,7 @@ final class ReceiptCertificates {
      * path builder). Keys are decoded later, and only for certificates a
      * pinned root vouches for; see {@code ReceiptCore.authenticatedTopDown}. Which
      * verdict an entry that does not decode gets is decided per SignerInfo,
-     * in {@link EmbeddedCertificates#signer}.</p>
+     * in {@link EmbeddedCertificates#signers}.</p>
      *
      * <p>This walk over the raw set, and {@link #namesTheSigner}, exist so
      * that the two can be told apart for an entry no decoder accepts.

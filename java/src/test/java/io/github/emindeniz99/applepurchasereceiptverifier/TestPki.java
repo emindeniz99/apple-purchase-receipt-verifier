@@ -453,16 +453,32 @@ public final class TestPki {
      */
     byte[] signReceiptWithTwinCert(byte[] payload) throws Exception {
         KeyPair rogueKp = rsaKeyPair();
+        X509Certificate twin = twinOfLeaf(rogueKp);
+        return sign(payload, new Date(), rogueKp.getPrivate(), twin, Arrays.asList(twin, leaf, intermediate, root));
+    }
+
+    /**
+     * A genuine receipt, signed by the genuine leaf, whose unsigned
+     * certificate bag carries a twin of the leaf (same issuer, serial and
+     * subject, another key, self-signed) ahead of it. Anyone relaying a
+     * receipt can add one; a verifier that takes the first certificate
+     * naming the signer fails a receipt Apple did sign.
+     */
+    byte[] signReceiptWithTwinAheadOfSigner(byte[] payload) throws Exception {
+        X509Certificate twin = twinOfLeaf(rsaKeyPair());
+        return sign(payload, new Date(), leafKey, leaf, Arrays.asList(twin, leaf, intermediate, root));
+    }
+
+    /** A certificate with the leaf's issuer, serial and subject on {@code keys}, signed by {@code keys}. */
+    private X509Certificate twinOfLeaf(KeyPair keys) throws Exception {
         X509v3CertificateBuilder builder = new JcaX509v3CertificateBuilder(
                 leaf.getIssuerX500Principal(), leaf.getSerialNumber(),
                 leaf.getNotBefore(), leaf.getNotAfter(),
-                leaf.getSubjectX500Principal(), rogueKp.getPublic());
+                leaf.getSubjectX500Principal(), keys.getPublic());
         builder.addExtension(Extension.basicConstraints, true, new BasicConstraints(false));
         builder.addExtension(new ASN1ObjectIdentifier("1.2.840.113635.100.6.11.1"), false, DERNull.INSTANCE);
-        X509Certificate twin = new JcaX509CertificateConverter()
-                .getCertificate(
-                        builder.build(new JcaContentSignerBuilder("SHA256withRSA").build(rogueKp.getPrivate())));
-        return sign(payload, new Date(), rogueKp.getPrivate(), twin, Arrays.asList(twin, leaf, intermediate, root));
+        return new JcaX509CertificateConverter()
+                .getCertificate(builder.build(new JcaContentSignerBuilder("SHA256withRSA").build(keys.getPrivate())));
     }
 
     /**

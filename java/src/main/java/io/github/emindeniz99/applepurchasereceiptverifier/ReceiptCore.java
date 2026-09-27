@@ -245,21 +245,34 @@ final class ReceiptCore {
         VerificationException firstFailure = null;
         for (SignerInformation signer : signers) {
             try {
-                X509Certificate signerCert = certificates.signer(signer);
+                List<X509Certificate> signerCerts = certificates.signers(signer);
                 if (at == null) {
                     at = new Date(creationDate != null ? creationDate.longValue() : clock.millis());
                 }
                 if (authenticated == null) {
                     authenticated = authenticatedTopDown(certificates.all, trustAnchors);
                 }
-                List<? extends Certificate> path = validateChain(signerCert, authenticated, at, trustAnchors);
-                requireMarkers(signerCert, path);
-                // The chain is checked BEFORE the signature on purpose:
-                // checking the signature first would run the attacker's own
-                // key (their choice of RSA size and exponent) before anything
-                // about it is trusted.
-                verifyCmsSignature(signer, signerCert);
-                return payload;
+                // Each certificate carrying the signer's identity is tried the
+                // way the SignerInfos are: one passing is enough, and only when
+                // none does is the first one's failure the verdict.
+                VerificationException firstMatchFailure = null;
+                for (X509Certificate signerCert : signerCerts) {
+                    try {
+                        List<? extends Certificate> path = validateChain(signerCert, authenticated, at, trustAnchors);
+                        requireMarkers(signerCert, path);
+                        // The chain is checked BEFORE the signature on purpose:
+                        // checking the signature first would run the attacker's
+                        // own key (their choice of RSA size and exponent) before
+                        // anything about it is trusted.
+                        verifyCmsSignature(signer, signerCert);
+                        return payload;
+                    } catch (VerificationException e) {
+                        if (firstMatchFailure == null) {
+                            firstMatchFailure = e;
+                        }
+                    }
+                }
+                throw firstMatchFailure;
             } catch (VerificationException e) {
                 // Every SignerInfo signs the same content, so another one
                 // passing proves the same bytes; only when none does is the
