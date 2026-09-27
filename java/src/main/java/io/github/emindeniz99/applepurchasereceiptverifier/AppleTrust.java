@@ -99,21 +99,19 @@ final class AppleTrust {
      * when a certificate was outside its validity window at {@code at}
      * ({@link #outsideValidity}), else UNTRUSTED_CHAIN. {@code certificates}
      * and {@code chain} name the two in the message ("receipt", "signer
-     * chain").
+     * chain"). The validator's own message can quote names out of the
+     * certificates, so it stays in the cause and out of the message.
      */
     static VerificationException chainFailure(
             GeneralSecurityException failure, String certificates, String chain, Date at) {
         if (outsideValidity(failure)) {
             return new VerificationException(
                     Reason.INVALID_CERTIFICATE,
-                    certificates + " certificate is outside its validity window at " + at.getTime() + ": "
-                            + SafeText.detail(failure.getMessage()),
+                    certificates + " certificate is outside its validity window at " + at.getTime(),
                     failure);
         }
         return new VerificationException(
-                Reason.UNTRUSTED_CHAIN,
-                chain + " does not validate to a pinned Apple root: " + SafeText.detail(failure.getMessage()),
-                failure);
+                Reason.UNTRUSTED_CHAIN, chain + " does not validate to a pinned Apple root", failure);
     }
 
     /**

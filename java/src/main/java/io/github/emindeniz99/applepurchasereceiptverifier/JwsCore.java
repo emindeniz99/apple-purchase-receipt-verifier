@@ -132,7 +132,7 @@ final class JwsCore {
 
         Header header = Header.read(headerBytes);
         if (!"ES256".equals(header.alg)) {
-            throw new VerificationException(Reason.MALFORMED, "alg must be ES256, got " + SafeText.quote(header.alg));
+            throw new VerificationException(Reason.MALFORMED, "alg is not ES256");
         }
         if (header.x5c == null || header.x5c.size() != 3) {
             throw new VerificationException(Reason.MALFORMED, "x5c must contain exactly 3 certificates");

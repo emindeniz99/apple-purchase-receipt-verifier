@@ -113,7 +113,7 @@ class InputSizeBoundsTest {
         VerificationException thrown =
                 assertThrows(VerificationException.class, () -> verifyJws(headerJws(nestedJson(60))));
         assertEquals(Reason.MALFORMED, thrown.reason());
-        assertTrue(thrown.getMessage().contains("alg must be ES256"), thrown.getMessage());
+        assertTrue(thrown.getMessage().contains("alg is not ES256"), thrown.getMessage());
     }
 
     // ------------------------------------------------------------------
