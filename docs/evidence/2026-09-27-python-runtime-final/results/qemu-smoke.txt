@@ -1,0 +1,15 @@
+# qemu-smoke.sh, 2026-09-27: CORRECTNESS SMOKE ONLY under qemu-aarch64 version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1.18); timings are emulated, not ARM64 performance
+wasmi cfg: wasmi_has_tail_calls wasmi_opt_speed wasmi_use_tail_calls 
+host: ELF 64-bit LSB executable, ARM aarch64, stripped
+## 1. first
+{'engine': 'wasmi 2.0.0 v2-auto', 'mode': 'lazy-translation', 'verified': True}
+## 2. ABI tests + isolation
+PASS lines: 39
+summary: 37 passed, 0 failed
+isolation summary: 2 passed, 0 failed
+## 3. corpora
+    cases qemu-aarch64: 153 of 153 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    hostile qemu-aarch64: 811 of 811 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    algorithms qemu-aarch64: 22 of 22 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    substrate qemu-aarch64: 193 of 193 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    fuzz qemu-aarch64: 5000 of 5000 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)

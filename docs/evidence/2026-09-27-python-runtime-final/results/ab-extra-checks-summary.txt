@@ -1,0 +1,2 @@
+py-wasmi-rs-bounded        runs 5  g5/s median   58.9 (min 58.4, max 60.6)  JWS/s median  11.9 (min 11.7, max 12.5)  call #100 g5 15929 us, JWS 81306 us  peak RSS 22156 KB
+py-wasmi-rs-bounded-extra-checks runs 5  g5/s median   58.9 (min 57.4, max 60.0)  JWS/s median  11.7 (min 11.2, max 12.4)  call #100 g5 16351 us, JWS 80913 us  peak RSS 22192 KB

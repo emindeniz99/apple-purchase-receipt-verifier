@@ -1,0 +1,9 @@
+# build.sh, 2026-09-27; rustc 1.98.1 (48a229cea 2026-09-01); cargo 1.98.1 (797e8a9bc 2026-08-05)
+aprv-wasmi: clean build 43 s; libaprv_wasmi.so 2039960 bytes as built, 1569496 stripped, gzip -9 615879; exported functions: 10; NEEDED: [libc.so.6] [ld-linux-x86-64.so.2] [libgcc_s.so.1] 
+aprv-wasmi-extra-checks: clean build 44 s; libaprv_wasmi.so 2065520 bytes as built, 1590048 stripped, gzip -9 622974; exported functions: 10; NEEDED: [libc.so.6] [ld-linux-x86-64.so.2] [libgcc_s.so.1] 
+wasmi-c-api: clean build 45 s; libwasmi.so 2204776 bytes as built, 1686448 stripped, gzip -9 656341; exported functions: 303; NEEDED: [libgcc_s.so.1] [libc.so.6] [ld-linux-x86-64.so.2] 
+aprv-wasmi exports: aprv_buf_free aprv_import_counts aprv_inst_free aprv_inst_fuel_used aprv_inst_invoke aprv_inst_memory_size aprv_inst_new aprv_inst_raw aprv_rt_free aprv_rt_new 
+wasmi-c-api exports: 280 wasm_* and 23 wasmi_* functions
+wasmi-cdylib/src/lib.rs: 280 lines, 13 unsafe blocks, 10 extern "C" entry points
+wasmi-cdylib Cargo.lock: getrandom 0.3.4, spin 0.9.9, wasmi 2.0.0, wasmi_collections 2.0.0, wasmi_core 2.0.0, wasmi_ir 2.0.0, wasmparser 0.228.0
+wasmi-capi Cargo.lock: spin 0.9.9, wasmi 2.0.0, wasmi_c_api_impl 2.0.0, wasmi_c_api_macros 2.0.0, wasmi_collections 2.0.0, wasmi_core 2.0.0, wasmi_ir 2.0.0, wasmparser 0.228.0

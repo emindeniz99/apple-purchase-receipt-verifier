@@ -1,0 +1,3 @@
+{"id": "endpoint/verify-at-the-byte-floor", "input_bytes": 1380338, "fuel": 2442323875, "median_ms": 618.8, "fuel_per_s": 3947004013, "budget_5e9_margin": 2.05, "answer_head": "{\"environment\":\"Sandbox\",\"receipt\":{\"app"}
+{"id": "receipt/verify-at-the-byte-floor", "input_bytes": 1380318, "fuel": 1808590240, "median_ms": 524.4, "fuel_per_s": 3449062094, "budget_5e9_margin": 2.76, "answer_head": "{\"verified\":true,\"payload\":{\"appItemId\":"}
+{"id": "receipt/accept-der-at-the-size-cap", "input_bytes": 4195046, "fuel": 873326, "median_ms": 0.9, "fuel_per_s": 1008186001, "budget_5e9_margin": 5725.24, "answer_head": "{\"message\":\"receipt exceeds the maximum "}

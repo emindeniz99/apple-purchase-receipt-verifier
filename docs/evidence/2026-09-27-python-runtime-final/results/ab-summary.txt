@@ -1,0 +1,8 @@
+native-wasmi2-lazytr       runs 5  g5/s median   60.0 (min 57.3, max 63.4)  JWS/s median  11.9 (min 10.6, max 12.8)  call #100 g5 20114 us, JWS 78583 us  peak RSS 14640 KB
+py-wasmi-rs-lazytr         runs 5  g5/s median   60.9 (min 55.7, max 62.0)  JWS/s median  12.2 (min 11.8, max 12.7)  call #100 g5 15956 us, JWS 80308 us  peak RSS 22184 KB
+py-wasmi-rs-lazytr-fuel    runs 5  g5/s median   58.4 (min 57.5, max 60.6)  JWS/s median  11.7 (min 11.0, max 12.1)  call #100 g5 16388 us, JWS 81783 us  peak RSS 22124 KB
+py-wasmi-capi-lazytr       runs 5  g5/s median   61.4 (min 58.0, max 63.1)  JWS/s median  12.0 (min 11.6, max 12.4)  call #100 g5 15515 us, JWS 85561 us  peak RSS 23236 KB
+py-wasmi-rs-lazytr         vs native: g5 +1.5%, JWS +2.5%
+py-wasmi-rs-lazytr-fuel    vs native: g5 -2.7%, JWS -1.7%
+py-wasmi-capi-lazytr       vs native: g5 +2.3%, JWS +0.8%
+fuel metering on vs off (py-wasmi-rs): g5 -4.1%, JWS -4.1%

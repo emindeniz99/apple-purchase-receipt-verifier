@@ -1,0 +1,6 @@
+# disk, 2026-09-27
+before cleanup: / 4866 MB free
+scratch use (MB): r11 532 [target 1, cross 10, venv-zig 430, venv-pywasm 17, cargo-home 34, run 36]; rustup 2899
+removed: build outputs (target/, cross/, lib/xc/), run outputs (run/), downloaded crate sources, compiled hostile guests, the zigbuild wrapper cache, and the macOS, Windows and aarch64-glibc rustup targets
+kept for round 10 (static musl builds): rustup targets x86_64- and aarch64-unknown-linux-musl, venv-zig (ziglang, cargo-zigbuild); kept: lib/ (the two x86-64 libraries), venv-pywasm, in/ (g5 and JWS inputs); round 9's bin/ and wamr/ untouched
+after cleanup: / 5847 MB free; r11 483 MB; rustup 1968 MB
