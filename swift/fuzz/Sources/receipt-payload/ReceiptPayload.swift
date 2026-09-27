@@ -3,45 +3,44 @@ import Foundation
 import FuzzSupport
 
 // The receipt attribute-SET walk and the string, integer and date decoders
-// under it, on bytes the fuzzer chose.
+// under it, on bytes the fuzzer chose, called directly.
 //
-// They are reachable no other way: `parseAttributeSet`, `decodeString`,
-// `decodeInteger` and `decodeDate` are file-private inside
-// ReceiptVerifier.swift, so not even `@testable` reaches them, and the
-// `receipt-der` target only stumbles into them on an input it has already
-// grown into a valid CMS envelope. This target splices the input in as a
-// genuine receipt's payload instead, so every single execution reaches the
-// walk. See `PayloadSplice` for why that works and why a spliced receipt can
-// still never verify.
+// In 0.7 the full payload parse runs only after the chain and a signer
+// signature have verified, so no receipt the fuzzer can build reaches it
+// from outside; this target calls the parser through the `Readers` shim
+// instead, which is the only way every execution reaches the walk. The one
+// read that does run on unverified bytes, `readCreationDate`, is driven on
+// the same input.
 //
-// It is a target of its own rather than a fifth check inside `readers`
-// because it is thousands of times the cost: the payload parse is followed
-// by a certificate-bag walk, a chain build and an RSA verification, none of
-// which this target is about but none of which the public API can skip.
-// Sharing an execution with the base64 readers would drag those down to this
-// target's rate for nothing.
-
-private let splice = PayloadSplice(template: Fixtures.load("generated", "receipt.der"))
-private let verifier: ReceiptVerifier = {
-    guard
-        let verifier = try? ReceiptVerifier(
-            trustedRoots: [Fixtures.receiptRoot], bundleId: Fixtures.bundleId)
-    else {
-        fatalError("fuzz harness setup failed: the anchor set is not loadable")
-    }
-    return verifier
-}()
+// Invariants beyond "nothing traps":
+//
+//  1. a parse failure is the parser's own `PayloadError`, the error the
+//     verifier hands a caller as the `UNREADABLE_PAYLOAD` cause;
+//  2. the unverified creation-date read agrees with the full parse: when the
+//     set parses, `readCreationDate` returns exactly the typed
+//     `receiptCreationDateMs`. Both apply "the first attribute 12 wins", and
+//     a disagreement would judge the chain at an instant other than the date
+//     the caller is handed.
+//
+// It is a target of its own rather than a check inside `readers` because a
+// payload input is ASN.1, not text, and the corpora do not mix well.
 
 @_cdecl("LLVMFuzzerTestOneInput")
 public func fuzzReceiptPayload(_ start: UnsafePointer<UInt8>?, _ count: Int) -> CInt {
     guard let start else { return 0 }
-    let receipt = splice.receipt(payload: fuzzInput(start, count))
-    do {
-        _ = try blocking { try await verifier.verifyCore(receipt: receipt) }
-        // Not an error: the fuzzer can rediscover the template's own payload
-        // from the seeds, and that receipt is genuine.
-    } catch {
-        _ = requireTypedError(error, "the attribute-set walk")
+    let content = fuzzInput(start, count)
+    let creationDate = Readers.readCreationDate(content)
+    switch Readers.parseReceiptPayload(content) {
+    case .success(let payload):
+        if payload.receiptCreationDateMs != creationDate {
+            fail(
+                "the unverified creation-date read gave \(String(describing: creationDate)), "
+                    + "the full parse \(String(describing: payload.receiptCreationDateMs))")
+        }
+    case .failure(let error):
+        if !Readers.isPayloadError(error) {
+            fail("the payload parse failed with \(type(of: error)) instead of PayloadError: \(error)")
+        }
     }
     return 0
 }

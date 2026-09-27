@@ -1,13 +1,12 @@
 import Foundation
-import SwiftASN1
 
-// `@testable` rather than a plain import: `decodeReceiptBase64` and
-// `base64URLDecode` are internal, and they are two of the three hand-written
-// readers this port owns. Reaching them only through a verifier would mean
-// fuzzing them behind a chain build, which is thousands of times slower per
-// execution and hides which layer rejected an input. Everything internal is
-// touched here and re-exported as the `Readers` shims below, so exactly one
-// file in this package depends on `-enable-testing`.
+// `@testable` rather than a plain import: `decodeReceiptBase64`,
+// `decodeBase64URLStrict` and the receipt payload parser are internal, and
+// they are the readers this port writes by hand. Reaching them only through
+// a verifier would mean fuzzing them behind a chain build, which is
+// thousands of times slower per execution and hides which layer rejected an
+// input. Everything internal is touched here and re-exported as the shims
+// below, so exactly one file in this package depends on `-enable-testing`.
 @testable import ApplePurchaseReceiptVerifier
 
 // MARK: - Fixtures
@@ -28,7 +27,7 @@ public enum Fixtures {
         return url.appendingPathComponent("fixtures")
     }()
 
-    public static func load(_ components: String...) -> Data {
+    public static func load(_ components: String...) -> [UInt8] {
         let url = components.reduce(directory) { $0.appendingPathComponent($1) }
         guard let data = try? Data(contentsOf: url) else {
             // Not a finding: the harness could not start. Said plainly so it
@@ -37,60 +36,58 @@ public enum Fixtures {
                 "fuzz harness setup failed: no fixture at \(url.path) — "
                     + "set APRV_FIXTURES to the repository's fixtures/ directory")
         }
-        return data
+        return [UInt8](data)
     }
 
-    /// The generated PKI's receipt root: the anchor that lets the fixture
+    /// The 0.7 generated PKI's receipt root: the anchor that lets the fixture
     /// receipts past the chain check, so a fuzzer can explore what lies
-    /// beyond it instead of stopping at every chain build.
-    public static let receiptRoot = load("generated", "receipt-root.der")
+    /// beyond it instead of stopping at every chain build. The 0.6 receipts
+    /// under `generated/` lack the WWDR marker on their intermediate, which
+    /// 0.7 requires, so they stop at the marker check.
+    public static let receiptRoot = load("generated-0.7", "receipt-root.der")
     /// The generated PKI's JWS root — the *unrelated* anchor set for the
     /// receipt targets, and the trusted one for the JWS target.
     public static let jwsRoot = load("generated", "jws-root.der")
 
-    /// The bundle id and environment every generated fixture carries
-    /// (fixtures/generated/manifest.json).
-    public static let bundleId = "com.example.app"
-}
-
-// MARK: - Running an async entry point from libFuzzer
-
-/// libFuzzer calls `LLVMFuzzerTestOneInput` on its own thread and expects it
-/// to return; every verification entry point in this library is `async`
-/// because chain building is. Blocking that one thread on a semaphore is the
-/// bridge — the task runs on the cooperative pool's own threads, so nothing
-/// the fuzzer thread waits for is scheduled on the fuzzer thread.
-private final class Box<T>: @unchecked Sendable {
-    var result: Result<T, any Error>?
-}
-
-public func blocking<T: Sendable>(_ body: @escaping @Sendable () async throws -> T) throws -> T {
-    let box = Box<T>()
-    let done = DispatchSemaphore(value: 0)
-    Task.detached {
-        do {
-            box.result = .success(try await body())
-        } catch {
-            box.result = .failure(error)
+    /// A verifier over `roots` and the system clock, or a setup failure.
+    public static func verifier(roots: [[UInt8]], what: String) -> Verifier {
+        guard let config = try? Config.builder().roots(roots).build() else {
+            fatalError("fuzz harness setup failed: the \(what) anchor set is not loadable")
         }
-        done.signal()
+        return Verifier(config: config)
     }
-    done.wait()
-    return try box.result!.get()
+
+    /// Apple's three pinned roots, as DER, from the repository's `certs/`
+    /// (the directory next to `fixtures/`), which the library's bundled copy
+    /// is checked against.
+    public static let appleRoots: [[UInt8]] = {
+        let certs = directory.deletingLastPathComponent().appendingPathComponent("certs")
+        return ["AppleIncRootCertificate.cer", "AppleRootCA-G2.cer", "AppleRootCA-G3.cer"].map { name in
+            guard let data = try? Data(contentsOf: certs.appendingPathComponent(name)) else {
+                fatalError("fuzz harness setup failed: no Apple root at \(certs.path)/\(name)")
+            }
+            return [UInt8](data)
+        }
+    }()
 }
 
 // MARK: - Invariants
 
-/// Every failure this library reports must be its own typed error. Anything
-/// else — a Foundation error leaking out of a decoder, a `CocoaError` from a
-/// formatter — is a finding, because a caller that catches
-/// `VerificationError` would not catch it and the payload would be treated
-/// as something other than untrusted.
-public func requireTypedError(
-    _ error: any Error, _ what: String, file: StaticString = #filePath, line: UInt = #line
-) -> Never? {
-    if error is VerificationError { return nil }
-    fail("\(what) failed with \(type(of: error)) instead of VerificationError: \(error)")
+/// 0.7's verify methods never throw; what a fuzzer can still catch is the
+/// wrong verdict class. `INTERNAL_ERROR` means the library itself broke, and
+/// the design allows input to reach it only through a missing trust anchor,
+/// which no target here configures — so any input that produces it is a
+/// finding: an attacker who can send bytes could raise the internal-error
+/// alarm at will.
+public func requireNoInternalError<T>(
+    _ result: VerificationResult<T>, _ what: String
+) {
+    if result.failure?.reason == .internalError {
+        fail("\(what) answered INTERNAL_ERROR: \(result.failure!.message)")
+    }
+    if (result.payload == nil) == (result.failure == nil) {
+        fail("\(what) returned neither or both of a payload and a failure")
+    }
 }
 
 public func fail(_ message: String) -> Never {
@@ -103,98 +100,33 @@ public func fail(_ message: String) -> Never {
 
 // MARK: - The library's hand-written readers, re-exported
 
-/// The three readers this port writes by hand, exposed so the `readers`
-/// target can drive them directly rather than through a verifier.
+/// The readers this port writes by hand, exposed so the `readers` and
+/// `receipt-payload` targets can drive them directly rather than through a
+/// verifier.
 public enum Readers {
     /// The receipt base64 rule: canonical standard base64 and nothing else.
-    public static func decodeReceiptBase64(_ text: String) -> Data? {
+    public static func decodeReceiptBase64(_ text: String) -> [UInt8]? {
         ApplePurchaseReceiptVerifier.decodeReceiptBase64(text)
     }
 
     /// Strict unpadded canonical base64url — the compact-JWS segment rule.
-    public static func base64URLDecode(_ segment: String) -> Data? {
-        ApplePurchaseReceiptVerifier.base64URLDecode(segment)
+    public static func base64URLDecode(_ segment: String) -> [UInt8]? {
+        ApplePurchaseReceiptVerifier.decodeBase64URLStrict(segment)
     }
 
-    /// The GeneralizedTime-representable window a date must be inside before
-    /// it is allowed to reach a certificate policy.
-    public static func isRepresentableAsCertificateValidationTime(_ date: Date) -> Bool {
-        ApplePurchaseReceiptVerifier.isRepresentableAsCertificateValidationTime(date)
-    }
-}
-
-// MARK: - Receipt payload surgery
-
-/// Splices arbitrary bytes in as a genuine receipt's payload, so the
-/// attribute-SET walk and the string/integer/date decoders under it can be
-/// fuzzed on raw input.
-///
-/// They are reachable no other way: `parseAttributeSet`, `decodeString`,
-/// `decodeInteger` and `decodeDate` are file-private inside
-/// ReceiptVerifier.swift, so not even `@testable` reaches them. What makes
-/// the splice work is the order of `verifyCore`: the payload is parsed
-/// *before* the chain and signature checks, deliberately, because the chain
-/// is judged at the receipt's creation date. A spliced receipt can therefore
-/// never verify — the CMS messageDigest no longer matches — but everything
-/// the parser decides happens first, on bytes the fuzzer chose.
-///
-/// The fixtures are BER with indefinite lengths from the CMS SEQUENCE down
-/// to that OCTET STRING, so replacing the one primitive node needs no
-/// ancestor length fixups. This is the same property
-/// `PortDivergenceTests.ReceiptSurgery` relies on.
-public struct PayloadSplice: Sendable {
-    private let prefix: [UInt8]
-    private let suffix: [UInt8]
-
-    public init(template: Data) {
-        let bytes = [UInt8](template)
-        guard let node = try? Self.payloadNode(bytes) else {
-            fatalError("fuzz harness setup failed: the receipt template has no payload OCTET STRING")
-        }
-        let range = node.encodedBytes
-        self.prefix = Array(bytes[..<range.startIndex])
-        self.suffix = Array(bytes[range.endIndex...])
+    /// The full payload parse, as it runs after a signature has verified:
+    /// the payload, or the error that becomes `UNREADABLE_PAYLOAD`'s cause.
+    public static func parseReceiptPayload(_ content: [UInt8]) -> Result<ReceiptPayload, any Error> {
+        Result { try ApplePurchaseReceiptVerifier.parseReceiptPayload(content) }
     }
 
-    /// The template receipt with `payload` as its attribute set.
-    public func receipt(payload: [UInt8]) -> Data {
-        Data(prefix + Self.octetString(payload) + suffix)
-    }
+    /// Whether `error` is the payload parser's own error type, the one the
+    /// verifier hands a caller as the cause.
+    public static func isPayloadError(_ error: any Error) -> Bool { error is PayloadError }
 
-    /// contentInfo → [0] → SignedData → encapContentInfo → [0] → OCTET STRING.
-    private static func payloadNode(_ receipt: [UInt8]) throws -> ASN1Node {
-        let contentInfo = try children(BER.parse(receipt))
-        let signedData = try children(children(contentInfo[1])[0])
-        let encap = try children(signedData[2])
-        return try children(children(encap[1])[0])[0]
-    }
-
-    private static func children(_ node: ASN1Node) throws -> [ASN1Node] {
-        guard case .constructed(let nodes) = node.content else {
-            throw ASN1Error.invalidASN1Object(reason: "expected a constructed node")
-        }
-        return Array(nodes)
-    }
-
-    /// A definite-length DER OCTET STRING around `content`. Hand-rolled
-    /// rather than serialized: the length must be encoded for a payload of
-    /// any size the fuzzer produces, and that is the whole of it.
-    private static func octetString(_ content: [UInt8]) -> [UInt8] {
-        var out: [UInt8] = [0x04]
-        if content.count < 0x80 {
-            out.append(UInt8(content.count))
-        } else {
-            var length: [UInt8] = []
-            var remaining = content.count
-            while remaining > 0 {
-                length.insert(UInt8(remaining & 0xFF), at: 0)
-                remaining >>= 8
-            }
-            out.append(0x80 | UInt8(length.count))
-            out.append(contentsOf: length)
-        }
-        out.append(contentsOf: content)
-        return out
+    /// The unverified read of attribute 12 that picks the chain instant.
+    public static func readCreationDate(_ content: [UInt8]) -> Int64? {
+        ApplePurchaseReceiptVerifier.readCreationDate(content)
     }
 }
 
