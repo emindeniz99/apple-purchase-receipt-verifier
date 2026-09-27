@@ -278,15 +278,30 @@ every failure is a `VerificationResult`/`Failure` instead of a raised
 
 ## Measured worst-case CPU
 
-One call to `verify_receipt` on the larger of the two cross-port sandbox
-fixtures (187 in-app purchases) takes a median of about 18 ms and a worst
-observed sample of about 22 ms on the machine `bench/bench.py` ran on
-(warm, GC on, ten samples of at least 100 ms each, see the script for the
-exact method). `verify_receipt_endpoint` adds the JSON request/response
-rendering on top, at about 29 ms median for the same fixture. The smaller
-fixture (2 in-app purchases) and `verify_signed_data` are both well under a
-millisecond. Run `uv run --locked python bench/bench.py` for current numbers
-on your own hardware; `../BENCHMARKS.md` compares all nine ports.
+Measured on 2026-09-27 with `bench/bench.py --worst-case`, which times every
+shared case in `fixtures/cases.json` that carries a time budget: oversized
+untrusted keys, a cross-signed certificate mesh, and the encoding oddities
+inside certificates. CPython 3.11.15 with cryptography 50.0.1, one thread,
+on a shared 4-vCPU KVM guest (Intel Xeon Processor @ 2.10GHz); one second of
+warm-up, then ten samples of at least 100 ms each, garbage collector on.
+
+| Call | Median | Slowest sample |
+|---|---:|---:|
+| Slowest hostile case: `receipt/verify-genuine-padded-with-oversized-strangers` (a valid receipt carrying oversized certificates it does not need) | 2.3 ms | 3.2 ms |
+| Slowest hostile JWS: `signed-data/reject-untrusted-oversized-x5c` (a JWS near the 256 KiB cap) | 2.3 ms | 2.6 ms |
+| Next: `receipt/reject-untrusted-oversized-intermediates` | 1.5 ms | 1.7 ms |
+| Every other budgeted case | under 1.1 ms | under 1.4 ms |
+| For scale: `verify_receipt` on the genuine 187-purchase legacy receipt | 16 ms | 17 ms |
+| For scale: `verify_receipt_endpoint` on the same receipt | 24 ms | 28 ms |
+
+No hostile input in the shared suite costs more than an ordinary large
+receipt: the cost of a call follows the size of the input, which the caps
+below bound, not the structure an attacker chooses. The smaller cross-port
+fixture (2 in-app purchases) verifies in about 0.9 ms. The machine was
+shared with other work, so treat these as an order of magnitude. Run
+`uv run --locked python bench/bench.py --worst-case` for the hostile cases
+on your own hardware, and the same command without `--worst-case` for the
+genuine receipts; `../BENCHMARKS.md` compares all nine ports.
 
 ## Debugging a receipt by hand
 
