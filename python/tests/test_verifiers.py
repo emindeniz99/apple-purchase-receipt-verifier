@@ -317,5 +317,84 @@ class ClockTest(unittest.TestCase):
         self.assertEqual("2030-03-04 05:06:07 Etc/GMT", response["receipt"]["request_date"])
 
 
+class ClockReadTest(unittest.TestCase):
+    """The clock is read at most once per call, and a clock that fails is
+    the host's fault: INTERNAL_ERROR (21009 at the endpoint), never a
+    verdict about the input and never an exception out of a method that
+    promises not to raise (docs/design/0.7-api.md, "Setup")."""
+
+    def dateless(self) -> str:
+        return receipt_base64(fixture("generated-0.7", "receipt-no-creation-date.der"))
+
+    def dateless_verifier(self, clock: "Any") -> Verifier:
+        roots = [cert("generated-0.7", "divergence-receipt-root.der")]
+        return Verifier(Config.create(roots=roots, clock=clock))
+
+    def test_the_endpoint_reads_the_clock_once_for_a_dateless_receipt(self) -> None:
+        # A dateless receipt needs "now" twice: for the chain instant and for
+        # request_date. Both must be one reading, or the response can show a
+        # request_date the chain was not judged at.
+        reads: list[int] = []
+
+        def clock() -> int:
+            reads.append(1)
+            return 1735689600000 + len(reads) * 3_600_000  # 2025-01-01 plus an hour a read
+
+        verifier = self.dateless_verifier(clock)
+        body = json.dumps({"receipt-data": self.dateless()})
+        response = json.loads(verifier.verify_receipt_endpoint(Environment.SANDBOX, body))
+        self.assertEqual(0, response["status"])
+        self.assertEqual(1, len(reads))
+        self.assertEqual("1735693200000", response["receipt"]["request_date_ms"])
+
+        self.assertTrue(verifier.verify_receipt(self.dateless()).verified)
+        self.assertEqual(2, len(reads), "verify_receipt must read the clock exactly once")
+
+    def test_a_clock_that_raises_is_an_internal_error(self) -> None:
+        def clock() -> int:
+            raise RuntimeError("clock backend unavailable")
+
+        verifier = self.dateless_verifier(clock)
+        failure = failure_of(verifier.verify_receipt(self.dateless()))
+        self.assertEqual(Reason.INTERNAL_ERROR, failure.reason)
+        self.assertIsInstance(failure.cause, RuntimeError)
+
+        jws = jws_without_signed_date(text("generated", "transaction.jws"))
+        jws_failure = failure_of(
+            Verifier(
+                Config.create(roots=[cert("generated", "jws-root.der")], clock=clock)
+            ).verify_signed_data(jws)
+        )
+        self.assertEqual(Reason.INTERNAL_ERROR, jws_failure.reason)
+
+        for label, data in (
+            ("dateless", self.dateless()),
+            # A dated receipt needs the clock only for request_date.
+            ("dated", receipt_base64(fixture("generated-0.7", "receipt.der"))),
+        ):
+            with self.subTest(label):
+                roots = (
+                    [cert("generated-0.7", "divergence-receipt-root.der")]
+                    if label == "dateless"
+                    else [cert("generated-0.7", "receipt-root.der")]
+                )
+                endpoint = Verifier(Config.create(roots=roots, clock=clock))
+                body = json.dumps({"receipt-data": data})
+                self.assertEqual(
+                    '{"status":21009}', endpoint.verify_receipt_endpoint(Environment.SANDBOX, body)
+                )
+
+
+def jws_without_signed_date(compact: str) -> str:
+    """The given JWS with ``signedDate`` dropped from its payload, so the
+    chain is judged at the configured clock. The signature no longer
+    matches; the chain is checked first, so the clock is still read."""
+    header, payload, signature = compact.split(".")
+    claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+    claims.pop("signedDate", None)
+    undated = base64.urlsafe_b64encode(json.dumps(claims).encode()).rstrip(b"=").decode()
+    return f"{header}.{undated}.{signature}"
+
+
 if __name__ == "__main__":
     unittest.main()
