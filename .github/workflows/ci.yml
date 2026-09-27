@@ -79,7 +79,7 @@ jobs:
   # that: under that policy the full conformance suite passes. Surefire names
   # dynamic tests by index, so the discriminating case
   # receipt/verify-genuine-legacy-sha1-chain is not grepped by name here;
-  # ConformanceCasesTest's last test fails if any case in cases.json did not
+  # ConformanceCasesTest's last test fails if any case in cases-0.7.json did not
   # run, so 0 failures means it ran and passed (java-distroless asserts it by
   # name). HostPolicyProbe then shows the premise on the same JDK: under the
   # same policy the JDK's own PKIX refuses the chain the suite accepted.
@@ -102,7 +102,7 @@ jobs:
           printf 'jdk.certpath.disabledAlgorithms=MD2, MD5, SHA1, RSA keySize < 1024\n' > "$RUNNER_TEMP/hardened.properties"
           mvn -B test -Dtest=ConformanceCasesTest "-DargLine=-Djava.security.properties=$RUNNER_TEMP/hardened.properties" | tee "$RUNNER_TEMP/hardened.log"
           grep -E '^\[INFO\] Tests run: [0-9]+, Failures: 0, Errors: 0, Skipped: 0$' "$RUNNER_TEMP/hardened.log"
-          grep -F '"id": "receipt/verify-genuine-legacy-sha1-chain"' ../fixtures/cases.json
+          grep -F '"id": "receipt/verify-genuine-legacy-sha1-chain"' ../fixtures/cases-0.7.json
           mvn -B -q dependency:build-classpath -Dmdep.outputFile="$RUNNER_TEMP/cp.txt"
           java "-Djava.security.properties=$RUNNER_TEMP/hardened.properties" \
             -cp "target/test-classes:target/classes:$(cat "$RUNNER_TEMP/cp.txt")" \
@@ -199,6 +199,9 @@ jobs:
           # the platform and the Jupiter engine, and a second copy of them on
           # the classpath is a version conflict waiting to happen.
           mvn -B dependency:copy-dependencies -DincludeScope=runtime -DoutputDirectory=target/dep
+          # jackson-databind is test scope since 0.7 (main uses jackson-core
+          # alone), and the suite reads its JSON vectors through it.
+          mvn -B dependency:copy-dependencies -DincludeScope=test -DincludeGroupIds=com.fasterxml.jackson.core -DoutputDirectory=target/dep
           curl -fsSL --retry 3 -o target/junit-console.jar \
             "https://repo.maven.apache.org/maven2/org/junit/platform/junit-platform-console-standalone/${JUNIT_PLATFORM}/junit-platform-console-standalone-${JUNIT_PLATFORM}.jar"
           echo "${JUNIT_CONSOLE_SHA256}  target/junit-console.jar" | sha256sum -c -
