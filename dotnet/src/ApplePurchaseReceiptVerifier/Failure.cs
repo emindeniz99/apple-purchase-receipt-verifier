@@ -15,10 +15,12 @@ namespace ApplePurchaseReceiptVerifier
     /// </remarks>
     public sealed class Failure
     {
-        internal Failure(VerificationReason reason, string message, Exception? cause)
+        /// <summary>Builds a failure by hand, for callers mocking <see cref="IVerifier"/>.</summary>
+        /// <exception cref="ArgumentNullException"><paramref name="message"/> is <see langword="null"/>.</exception>
+        public Failure(VerificationReason reason, string message, Exception? cause)
         {
             Reason = reason;
-            Message = message;
+            Message = message ?? throw new ArgumentNullException(nameof(message));
             Cause = cause;
         }
 

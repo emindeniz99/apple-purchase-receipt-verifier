@@ -104,6 +104,67 @@ public class VerificationResultTests
         Assert.Null(header.Cause);
     }
 
+    /// <summary>
+    /// A caller's own tests can stand in for <see cref="IVerifier"/> with
+    /// results built by hand, and those results keep the same invariant as
+    /// the library's: exactly one of payload and failure.
+    /// </summary>
+    [Fact]
+    public void CallersCanMockTheVerifierWithHandBuiltResults()
+    {
+        JsonPayload payload = JsonPayload.Create("{}");
+        Failure failure = new(VerificationReason.UntrustedChain, "not ours", null);
+        IVerifier stub = new StubVerifier(
+            VerificationResult<ReceiptPayload>.Failed(failure),
+            VerificationResult<JsonPayload>.Of(payload));
+
+        VerificationResult<ReceiptPayload> receipt = stub.VerifyReceipt("ignored");
+        Assert.False(receipt.Verified);
+        Assert.Same(failure, receipt.Failure);
+        Assert.Equal(VerificationReason.UntrustedChain, receipt.Failure!.Reason);
+        Assert.Equal("not ours", receipt.Failure.Message);
+        Assert.Null(receipt.Failure.Cause);
+        AssertInvariant(receipt, "hand-built failure");
+
+        VerificationResult<JsonPayload> jws = stub.VerifySignedData("ignored");
+        Assert.True(jws.Verified);
+        Assert.Same(payload, jws.Payload);
+        AssertInvariant(jws, "hand-built success");
+
+        InvalidOperationException cause = new("parser said no");
+        Assert.Same(cause, new Failure(VerificationReason.UnreadablePayload, "unreadable", cause).Cause);
+    }
+
+    /// <summary>
+    /// A result with neither payload nor failure would break the invariant
+    /// every caller relies on, so the factories refuse <see langword="null"/>.
+    /// </summary>
+    [Fact]
+    public void TheFactoriesRefuseNull()
+    {
+        Assert.Throws<ArgumentNullException>(() => VerificationResult<JsonPayload>.Of(null!));
+        Assert.Throws<ArgumentNullException>(() => VerificationResult<JsonPayload>.Failed((Failure)null!));
+        Assert.Throws<ArgumentNullException>(() => new Failure(VerificationReason.Malformed, null!, null));
+    }
+
+    private sealed class StubVerifier : IVerifier
+    {
+        private readonly VerificationResult<ReceiptPayload> _receipt;
+        private readonly VerificationResult<JsonPayload> _jws;
+
+        public StubVerifier(VerificationResult<ReceiptPayload> receipt, VerificationResult<JsonPayload> jws)
+        {
+            _receipt = receipt;
+            _jws = jws;
+        }
+
+        public VerificationResult<ReceiptPayload> VerifyReceipt(string base64) => _receipt;
+
+        public VerificationResult<JsonPayload> VerifySignedData(string jws) => _jws;
+
+        public string VerifyReceiptEndpoint(AppleEnvironment environment, string requestJson) => "{\"status\":21002}";
+    }
+
     private static void AssertInvariant<T>(VerificationResult<T> result, string label)
         where T : class
     {

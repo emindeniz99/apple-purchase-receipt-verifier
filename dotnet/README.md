@@ -152,6 +152,10 @@ certificate text. Switch on `Failure.Reason`; never parse `Failure.Message`.
 `VerificationReasonCodes.ToCode` gives the SCREAMING_SNAKE token every port
 reports (e.g. `"UNTRUSTED_CHAIN"`) for logging or telemetry.
 
+To stand in for `IVerifier` in your own tests, build results by hand:
+`VerificationResult<ReceiptPayload>.Of(payload)`,
+`VerificationResult<ReceiptPayload>.Failed(new Failure(reason, message, cause))`.
+
 | `VerificationReason` | Raised when | Endpoint status |
 |---|---|---|
 | `Malformed` | the base64, ASN.1, CMS or JWS structure is broken, or a structural bound is exceeded | 21002 |
