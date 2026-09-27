@@ -54,11 +54,11 @@ lines rather than only where atheris installs.
 
 | target | what it reaches | invariant beyond "nothing crashes" |
 |---|---|---|
-| `receipt-der` | `verify_receipt_core`: the asn1crypto CMS walk, the payload parse, chain building, the RSA signature | an accepted receipt fails against an unrelated anchor set |
+| `receipt-der` | `receipt_der`, the DER primitive `Verifier.verify_receipt` wraps: the asn1crypto CMS walk, the payload parse, chain building, the signature | an accepted receipt fails against an unrelated anchor set |
 | `receipt-attributes` | `receipt.py`'s own DER reader: `_read_tlv`, the attribute SET walk, the string/integer/date decoders | failures are `VerificationError`, never `IndexError`/`UnicodeDecodeError` |
-| `receipt-base64` | `ReceiptVerifier.verify` on the string a client sends, through `decode_receipt_base64` | failures are `VerificationError` |
-| `jws` | the three `JwsVerifier` entry points: segments, JSON, `x5c`, chain, ES256 | a JWS `verify_raw` accepts under the fixture root fails under Apple's roots |
-| `endpoint-json` | `VerifyReceiptEndpoint.verify_receipt_json` on a request body | it never raises, and the answer is always JSON with a numeric `status` |
+| `receipt-base64` | `Verifier.verify_receipt` on the string a client sends | it never raises |
+| `jws` | `Verifier.verify_signed_data`: segments, JSON, `x5c`, chain, ES256 | it never raises, and a JWS accepted under the fixture root fails under Apple's roots |
+| `endpoint-json` | `Verifier.verify_receipt_endpoint` on a request body | it never raises, and the answer is always JSON with a numeric `status` |
 
 The anchor-set invariant is the one that lets a fuzzer find "accepts what it
 should not" rather than only crashes: without it, an input that verifies tells
