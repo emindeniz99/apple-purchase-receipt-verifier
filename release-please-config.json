@@ -50,6 +50,10 @@
         {
           "type": "generic",
           "path": "java/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/Version.java"
+        },
+        {
+          "type": "generic",
+          "path": "python/apple_purchase_receipt_verifier/version.py"
         }
       ]
     }
