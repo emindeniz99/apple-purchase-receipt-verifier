@@ -71,6 +71,10 @@ Four of the nine implementations are published today, all as
 **`apple-purchase-receipt-verifier`**, in lockstep versions cut from this
 repository's tags.
 
+The version is `0.x`. Until 1.0, a minor release may break the API: 0.7
+replaces the 0.6 classes with a new `Verifier` without a deprecation
+period. Read the CHANGELOG before you bump the minor version, and pin it.
+
 | Registry | Install | How you import it |
 |---|---|---|
 | [Maven Central](https://central.sonatype.com/artifact/io.github.emindeniz99/apple-purchase-receipt-verifier) | `io.github.emindeniz99:apple-purchase-receipt-verifier` | `import io.github.emindeniz99.applepurchasereceiptverifier.jws.JwsVerifier;` |
@@ -426,6 +430,23 @@ CA - G3 (JWS signed data), but Apple's own guidance is to trust every root on
 its PKI page rather than a specific one — see PLAN.md D15 for the sourced
 rationale. Each language bundles its own copy as packaged resources;
 verifiers also accept caller-supplied anchors.
+
+## Debugging a receipt by hand
+
+`openssl` opens a receipt without verifying it, which helps when a
+verification fails and you want to see what arrived:
+
+```bash
+base64 -d receipt.b64 > receipt.der
+openssl cms -cmsout -print -inform DER -in receipt.der          # envelope, signer, certificates
+openssl asn1parse -inform DER -in receipt.der                   # the raw ASN.1 tree
+openssl pkcs7 -inform DER -in receipt.der -print_certs -noout   # the certificate chain only
+```
+
+For a StoreKit 2 JWS, `cut -d. -f2 | base64 -d` prints the payload (add
+`=` padding if your `base64` complains). Keep production receipts and
+tokens off websites that decode them for you: they carry transaction ids
+and your bundle id.
 
 ## Notes / learnings
 

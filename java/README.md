@@ -303,6 +303,37 @@ String json2 = endpoint.verifyReceiptJson(rawRequestBody);  // same as verifyRec
 VerifyReceiptResult bare = endpoint.verifyReceiptData(base64Receipt);   // receipt-data alone, no envelope
 ```
 
+### Which method to call
+
+All of them verify once and never throw for a bad receipt. They differ in
+what they take and what they return:
+
+| Method | Input | Returns |
+|---|---|---|
+| `verifyReceiptData(String)` | the bare base64 receipt, as StoreKit hands it to the app | `VerifyReceiptResult` |
+| `verifyReceiptResult(String)` | the JSON request body, `{"receipt-data":"..."}` | `VerifyReceiptResult` |
+| `verifyReceiptResult(Map)` | the same body, already parsed | `VerifyReceiptResult` |
+| `verifyReceiptJson(String)` | the JSON request body | the JSON response body |
+
+If your app sends its own payload with the base64 receipt inside, call
+`verifyReceiptData`. Passing a bare base64 string to a method that expects
+the JSON body gets 21002.
+
+The JSON and the `Map` are rendered for the endpoint's environment, the way
+Apple's URL for that environment answers. A sandbox receipt on a
+`PRODUCTION` endpoint therefore renders as the 21007 body, with
+`receipt()` still filled on the result. To get the body Apple's sandbox URL
+would return, call `result.toJson(Environment.SANDBOX)`. 0.7 adds the
+receipt's own environment to the result (ROADMAP.md).
+
+Construct the endpoint once, at startup, not in a static field of your own
+class. If construction fails there (a missing or incompatible BouncyCastle
+jar, for example), the JVM turns the failure into
+`ExceptionInInitializerError` and every later request into
+`NoClassDefFoundError`, which `catch (RuntimeException)` does not catch.
+`AppleRootCerts` itself throws the same `IllegalStateException` on every
+call when the bundled roots cannot be loaded.
+
 ### Differences from Apple's verifyReceipt (read before migrating)
 
 In one line: for one-time purchases (consumables, non-consumables) this is a
@@ -669,6 +700,16 @@ Tomcat's default of 200 request threads times 75 MB is 15 GB. Limit the body
 size at the HTTP layer and limit how many verifications run at once (a
 `Semaphore` around the call, or a bounded executor), sized so that the
 limit times 75 MB fits in the heap.
+
+The figures above are for a warm JVM. A fresh one is much slower at
+first. Measured on 0.6.0 with a genuine production receipt, three fresh
+JVMs: loading `AppleRootCerts` took about 290 ms, the first verification
+200 to 260 ms, the tenth about 5 ms, and calls reached about 1 ms only after
+roughly a thousand. At 10 requests a second that is minutes of slower
+answers after every deploy. To avoid it, construct the endpoint at startup
+and verify a known receipt a couple of thousand times before the instance
+takes traffic. Warm throughput on 0.6.0 is about 1,270 verifications a
+second on one core and about 4,840 on four.
 
 ### Health check
 

@@ -126,6 +126,11 @@ own `verifyReceipt` answer for it, 2026-09-21: the endpoint now matches
 Apple on 30 of the 31 fields Apple returned for that receipt, the lone gap
 being `in_app_ownership_type`.
 
+One known difference in 0.6.0: for a purchase whose attribute 1711 is 0
+(every consumable checked, in production and sandbox), the endpoint writes
+`"web_order_line_item_id":"0"` where Apple omits the field. Compare that
+field only when it is nonzero. 0.7 omits it (ROADMAP.md).
+
 **Key order is not part of the contract.** Inside `receipt` it matches
 Apple's for the leading keys (`receipt_type`, `adam_id`, `app_item_id`,
 `bundle_id`, `application_version`, `download_id`,
