@@ -33,7 +33,18 @@ namespace ApplePurchaseReceiptVerifier
         internal static VerificationResult<T> Failed(VerificationReason reason, string message, Exception? cause) =>
             new VerificationResult<T>(null, new Failure(reason, message, cause));
 
+        /// <summary>
+        /// The public view of <paramref name="e"/>. Its inner exception is kept
+        /// only where it explains Apple-signed content that did not parse, or
+        /// the library's own failure; for any other reason it describes input
+        /// nobody vouched for, and a library message can quote that input.
+        /// </summary>
         internal static VerificationResult<T> Failed(VerificationException e) =>
-            Failed(e.Reason, e.Detail, e.InnerException);
+            Failed(
+                e.Reason,
+                e.Detail,
+                e.Reason is VerificationReason.UnreadablePayload or VerificationReason.InternalError
+                    ? e.InnerException
+                    : null);
     }
 }
