@@ -416,6 +416,12 @@ final class ReceiptDecoder {
      * use. Any other
      * {@link ASN1String} (a BIT STRING or UniversalString included) is
      * refused rather than rendered through {@code getString()}.
+     *
+     * <p>BouncyCastle reports bytes that are not UTF-8 with an unchecked
+     * exception, so it is caught here and becomes the same checked failure
+     * as any other undecodable value: the caller then keeps that one
+     * attribute raw, top level and in-app alike, instead of failing the
+     * whole payload.</p>
      */
     private static String decodeString(byte[] der) throws VerificationException {
         try {
@@ -427,6 +433,8 @@ final class ReceiptDecoder {
             return ((ASN1String) parsed).getString();
         } catch (IOException e) {
             throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "attribute value is not valid ASN.1", e);
+        } catch (RuntimeException e) {
+            throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "attribute value does not decode as a string", e);
         }
     }
 

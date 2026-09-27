@@ -83,12 +83,12 @@ final class JwsCore {
      * that is not a JSON object, an {@code alg} other than ES256, an
      * {@code x5c} that is not three strings. A payload that does not parse as
      * a JSON object is not reported here: it is carried past the chain and
-     * signature checks with {@code nowMillis} standing in for its signing
+     * signature checks with {@code clock} standing in for its signing
      * date, and fails as INVALID_SIGNATURE if the signature does not verify,
      * UNREADABLE_PAYLOAD if it does. Nothing unverified gets to decide which
      * of those two a caller sees.</p>
      */
-    static JsonPayload verify(@Nullable String jws, Set<TrustAnchor> trustAnchors, long nowMillis)
+    static JsonPayload verify(@Nullable String jws, Set<TrustAnchor> trustAnchors, CallClock clock)
             throws VerificationException {
         if (jws == null || jws.isEmpty()) {
             throw new VerificationException(Reason.MALFORMED, "jws is empty");
@@ -107,7 +107,7 @@ final class JwsCore {
         // answering an unknown error with INTERNAL_ERROR ("alert and
         // reconcile") would let anyone raise that alert at will.
         try {
-            return verifyUnguarded(jws, trustAnchors, nowMillis);
+            return verifyUnguarded(jws, trustAnchors, clock);
         } catch (VerificationException e) {
             throw e;
         } catch (RuntimeException e) {
@@ -117,7 +117,7 @@ final class JwsCore {
     }
 
     /** Structure, then certificates, OIDs, chain, signature, and last the payload verdict. */
-    private static JsonPayload verifyUnguarded(String jws, Set<TrustAnchor> trustAnchors, long nowMillis)
+    private static JsonPayload verifyUnguarded(String jws, Set<TrustAnchor> trustAnchors, CallClock clock)
             throws VerificationException {
         String[] parts = jws.split("\\.", -1);
         if (parts.length != 3) {
@@ -154,7 +154,7 @@ final class JwsCore {
         validateChain(
                 leaf,
                 intermediate,
-                new Date(payload.signedDate != null ? payload.signedDate.longValue() : nowMillis),
+                new Date(payload.signedDate != null ? payload.signedDate.longValue() : clock.millis()),
                 trustAnchors);
         verifyEs256(leaf, parts[0] + "." + parts[1], signature);
         if (payload.json == null) {
@@ -170,7 +170,9 @@ final class JwsCore {
      * What verification reads from the header: the last {@code alg} and
      * {@code x5c} members, as Jackson's tree model would keep them. The
      * header is outer structure, so anything that stops the read is
-     * MALFORMED.
+     * MALFORMED: bytes that are not strict UTF-8 (Jackson would otherwise
+     * guess UTF-16 or UTF-32 from them), a byte order mark (RFC 8259 section
+     * 8.1 forbids one), and anything but whitespace after the object.
      */
     static final class Header {
         /** The {@code alg} string; null when absent or not a string. */
@@ -183,7 +185,19 @@ final class JwsCore {
 
         static Header read(byte[] bytes) throws VerificationException {
             Header header = new Header();
-            try (JsonParser parser = JSON.createParser(bytes)) {
+            String text;
+            try {
+                text = StandardCharsets.UTF_8
+                        .newDecoder()
+                        .decode(ByteBuffer.wrap(bytes))
+                        .toString();
+            } catch (CharacterCodingException e) {
+                throw new VerificationException(Reason.MALFORMED, "header is not UTF-8", e);
+            }
+            if (text.startsWith("\uFEFF")) {
+                throw new VerificationException(Reason.MALFORMED, "header starts with a byte order mark");
+            }
+            try (JsonParser parser = JSON.createParser(text.toCharArray())) {
                 if (parser.nextToken() != JsonToken.START_OBJECT) {
                     throw new VerificationException(Reason.MALFORMED, "header is not a JSON object");
                 }
@@ -196,6 +210,9 @@ final class JwsCore {
                         header.x5c = value == JsonToken.START_ARRAY ? strings(parser) : null;
                     }
                     parser.skipChildren();
+                }
+                if (parser.nextToken() != null) {
+                    throw new VerificationException(Reason.MALFORMED, "content after the header object");
                 }
             } catch (IOException | RuntimeException e) {
                 throw new VerificationException(Reason.MALFORMED, "header is not valid JSON", e);
@@ -222,7 +239,8 @@ final class JwsCore {
 
     /**
      * What verification reads from the payload: the text, if it is a JSON
-     * object in UTF-8, and its top-level {@code signedDate}. Reading it never
+     * object in UTF-8 with nothing but whitespace after it and no byte order
+     * mark before it, and its top-level {@code signedDate}. Reading it never
      * fails verification by itself; a payload that does not parse is carried
      * to the signature check (see {@link #verify}).
      */
@@ -257,6 +275,10 @@ final class JwsCore {
                 payload.unreadable("not UTF-8", e);
                 return payload;
             }
+            if (text.startsWith("\uFEFF")) {
+                payload.unreadable("starts with a byte order mark", null);
+                return payload;
+            }
             Long signedDate = null;
             try (JsonParser parser = JSON.createParser(text.toCharArray())) {
                 if (parser.nextToken() != JsonToken.START_OBJECT) {
@@ -274,6 +296,10 @@ final class JwsCore {
                                 : null;
                     }
                     parser.skipChildren();
+                }
+                if (parser.nextToken() != null) {
+                    payload.unreadable("content after the object", null);
+                    return payload;
                 }
             } catch (IOException | RuntimeException e) {
                 // Unchecked too: whatever stops the parse, it is not reported

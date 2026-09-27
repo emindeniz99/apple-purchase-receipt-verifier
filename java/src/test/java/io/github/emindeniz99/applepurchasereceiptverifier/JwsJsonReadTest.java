@@ -1,8 +1,12 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.core.exc.StreamConstraintsException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
@@ -27,8 +31,14 @@ class JwsJsonReadTest {
     private static final long SEED = 0x0715_EEDL;
     private static final int CASES = 20_000;
 
-    /** The 0.6 read: databind over the same bounded factory. */
-    private static final ObjectMapper MAPPER = new ObjectMapper(BoundedJson.factory(JwsCore.MAX_JWS_BYTES));
+    /**
+     * The 0.6 read: databind over the same bounded factory, with the one
+     * rule 0.7 added: nothing but whitespace after the object. Without it
+     * {@code {"alg":"ES256"} x} is a header, and a payload with text after
+     * its object returns verified with that text in it.
+     */
+    private static final ObjectMapper MAPPER = new ObjectMapper(BoundedJson.factory(JwsCore.MAX_JWS_BYTES))
+            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     @Test
     void readsEveryHeaderAsTheDatabindTreeDid() {
@@ -69,6 +79,78 @@ class JwsJsonReadTest {
         }
         assertTrue(dated > 500, "only " + dated + " payloads carried a usable signedDate");
         assertTrue(outOfRange > 50, "only " + outOfRange + " payloads carried an out-of-range signedDate");
+    }
+
+    /**
+     * The header is read as strict UTF-8 before any JSON: Jackson on bytes
+     * would detect UTF-16 and UTF-32 and skip a byte order mark, giving one
+     * header several accepted encodings. RFC 7515 and RFC 8259 allow one.
+     */
+    @Test
+    void aHeaderIsStrictUtf8WithNoByteOrderMarkAndNothingAfterIt() throws Exception {
+        String header = "{\"alg\":\"ES256\"}";
+        assertEquals("ES256", JwsCore.Header.read(utf8(header + " \r\n\t")).alg);
+        byte[][] refused = {
+            header.getBytes(StandardCharsets.UTF_16LE),
+            header.getBytes(StandardCharsets.UTF_16BE),
+            concat(new byte[] {(byte) 0xEF, (byte) 0xBB, (byte) 0xBF}, utf8(header)),
+            concat(utf8(header), new byte[] {' ', (byte) 0xFF}),
+            utf8(header + " x"),
+            utf8(header + "{}"),
+        };
+        for (byte[] bytes : refused) {
+            VerificationException thrown =
+                    assertThrows(VerificationException.class, () -> JwsCore.Header.read(bytes));
+            assertEquals(Reason.MALFORMED, thrown.reason());
+        }
+    }
+
+    /** A payload with anything after its object is not the object: carried to the signature as unreadable. */
+    @Test
+    void aPayloadWithTextAfterItsObjectOrAByteOrderMarkIsUnreadable() throws Exception {
+        assertEquals(Long.valueOf(1), JwsCore.Payload.read(utf8("{\"signedDate\":1} \n")).signedDate);
+        for (byte[] bytes : new byte[][] {
+            utf8("{\"signedDate\":1} x"),
+            utf8("{\"signedDate\":1}{}"),
+            utf8("\uFEFF{\"signedDate\":1}"),
+        }) {
+            JwsCore.Payload payload = JwsCore.Payload.read(bytes);
+            assertNull(payload.json, new String(bytes, StandardCharsets.UTF_8));
+            assertNull(payload.signedDate);
+        }
+    }
+
+    /** The reader bounds are stated, not inherited from whichever Jackson the host resolved. */
+    @Test
+    void memberNamesAndNumbersAreBounded() throws Exception {
+        String longestName = repeat('n', BoundedJson.MAX_NAME_LENGTH);
+        String longestNumber = repeat('1', BoundedJson.MAX_NUMBER_LENGTH);
+        assertNull(JwsCore.Header.read(utf8("{\"" + longestName + "\":1}")).alg);
+        assertNull(JwsCore.Header.read(utf8("{\"n\":" + longestNumber + "}")).alg);
+        for (String header : new String[] {
+            "{\"" + longestName + "n\":1}", "{\"n\":" + longestNumber + "1}"
+        }) {
+            VerificationException thrown =
+                    assertThrows(VerificationException.class, () -> JwsCore.Header.read(utf8(header)));
+            assertTrue(thrown.getCause() instanceof StreamConstraintsException, String.valueOf(thrown.getCause()));
+        }
+    }
+
+    private static byte[] utf8(String text) {
+        return text.getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static byte[] concat(byte[] a, byte[] b) {
+        byte[] out = new byte[a.length + b.length];
+        System.arraycopy(a, 0, out, 0, a.length);
+        System.arraycopy(b, 0, out, a.length, b.length);
+        return out;
+    }
+
+    private static String repeat(char c, int count) {
+        char[] chars = new char[count];
+        java.util.Arrays.fill(chars, c);
+        return new String(chars);
     }
 
     /** Whether the payload's signedDate is a number no long holds, which both reads treat as absent. */

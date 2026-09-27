@@ -283,7 +283,7 @@ class VerifyReceiptEndpointTest {
     }
 
     @Test
-    void aClockThatThrowsAnswers21009() {
+    void aClockThatThrowsAnswers21009() throws Exception {
         Clock broken = new Clock() {
             @Override
             public java.time.ZoneId getZone() {
@@ -306,10 +306,21 @@ class VerifyReceiptEndpointTest {
             }
         };
         Verifier verifier = Checks.verifier(broken, SyntheticReceipts.root());
+        // request_date needs the clock.
         assertEquals("{\"status\":21009}", verifier.verifyReceiptEndpoint(Environment.SANDBOX, request()));
-        assertEquals(
-                Reason.INTERNAL_ERROR,
-                verifier.verifyReceipt(SyntheticReceipts.base64()).failure().reason());
+        // The clock is read only when a verdict needs it: input that fails
+        // its own checks never reaches it, and a receipt that states its
+        // creation date needs none.
+        assertEquals("{\"status\":21002}", verifier.verifyReceiptEndpoint(Environment.SANDBOX, "{}"));
+        assertEquals(Reason.MALFORMED, verifier.verifyReceipt("AAAA").failure().reason());
+        assertEquals(Reason.MALFORMED, verifier.verifySignedData(null).failure().reason());
+        assertTrue(verifier.verifyReceipt(SyntheticReceipts.base64()).verified());
+        // A receipt without one is judged at the clock, which is broken.
+        String dateless = Base64.getEncoder()
+                .encodeToString(SyntheticReceipts.pki().signReceipt(new byte[] {0x31, 0x00}));
+        Failure failure = verifier.verifyReceipt(dateless).failure();
+        assertEquals(Reason.INTERNAL_ERROR, failure.reason());
+        assertEquals("the configured clock failed", failure.message());
     }
 
     /**

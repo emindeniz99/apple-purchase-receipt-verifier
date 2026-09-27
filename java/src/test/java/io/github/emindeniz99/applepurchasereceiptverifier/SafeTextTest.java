@@ -144,6 +144,36 @@ class SafeTextTest {
         assertFalse(thrown.getMessage().contains("\r"), thrown.getMessage());
     }
 
+    /**
+     * A bidirectional override does not break the line, it reorders it: a
+     * right-to-left override in a claim makes the rest of the log line
+     * display reversed, so it can say something other than what was written.
+     */
+    @Test
+    void bidirectionalFormattingCharactersAreReplaced() {
+        char[] bidi = {
+            '\u061C', '\u200E', '\u200F', '\u202A', '\u202B', '\u202C', '\u202D', '\u202E', '\u2066',
+            '\u2067', '\u2068', '\u2069'
+        };
+        for (char c : bidi) {
+            assertEquals("ES256\uFFFDx", SafeText.quote("ES256" + c + "x"), Integer.toHexString(c));
+        }
+        // Their neighbours are ordinary text.
+        assertEquals("\u200D\u2065\u2070", SafeText.quote("\u200D\u2065\u2070"));
+    }
+
+    /** A cut through a surrogate pair would leave half a character at the end of the message. */
+    @Test
+    void truncationNeverSplitsASurrogatePair() {
+        String emoji = "\uD83D\uDE00";
+        String value = repeat('a', 63) + emoji + repeat('b', 10);
+        String quoted = SafeText.quote(value);
+        assertEquals(repeat('a', 63) + "... (" + value.length() + " characters)", quoted);
+        // A pair that fits whole is kept whole.
+        String fits = repeat('a', 62) + emoji + repeat('b', 10);
+        assertTrue(SafeText.quote(fits).startsWith(repeat('a', 62) + emoji + "..."), SafeText.quote(fits));
+    }
+
     private static Verifier verifier() throws Exception {
         byte[] der = Files.readAllBytes(FIXTURES.resolve("jws-root.der"));
         X509Certificate root = (X509Certificate)

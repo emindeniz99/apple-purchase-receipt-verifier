@@ -19,10 +19,21 @@ final class BoundedJson {
      */
     static final int MAX_NESTING_DEPTH = 64;
 
+    /**
+     * The longest member name, in characters. Jackson's own default, stated
+     * for the same reason as {@link #MAX_NESTING_DEPTH}; the Rust port holds
+     * the same bound.
+     */
+    static final int MAX_NAME_LENGTH = 50_000;
+
+    /** The longest number, in characters. Jackson's own default, stated likewise. */
+    static final int MAX_NUMBER_LENGTH = 1000;
+
     private BoundedJson() {}
 
     /**
-     * A factory whose reader enforces {@link #MAX_NESTING_DEPTH} and bounds
+     * A factory whose reader enforces {@link #MAX_NESTING_DEPTH},
+     * {@link #MAX_NAME_LENGTH} and {@link #MAX_NUMBER_LENGTH}, and bounds
      * every string and the whole document to {@code maxLength}, stated rather
      * than inherited from whatever Jackson the host resolved.
      * {@link StreamReadConstraints} needs Jackson 2.15 and
@@ -34,6 +45,8 @@ final class BoundedJson {
         return JsonFactory.builder()
                 .streamReadConstraints(StreamReadConstraints.builder()
                         .maxNestingDepth(MAX_NESTING_DEPTH)
+                        .maxNameLength(MAX_NAME_LENGTH)
+                        .maxNumberLength(MAX_NUMBER_LENGTH)
                         .maxStringLength(maxLength)
                         .maxDocumentLength(maxLength)
                         .build())

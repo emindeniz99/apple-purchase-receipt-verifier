@@ -12,8 +12,9 @@ import org.jspecify.annotations.Nullable;
  * caller writes them, and strings escaped as ECMAScript's
  * {@code JSON.stringify} escapes them: {@code "} and {@code \} as {@code \"}
  * and {@code \\}, the short escapes {@code \b \f \n \r \t}, every other
- * character below U+0020 as a lowercase <code>&#92;u00xx</code>, and nothing
- * else ({@code /} and non-ASCII, U+2028 and U+2029 included, written raw).
+ * character below U+0020 as a lowercase <code>&#92;u00xx</code>, a lone
+ * surrogate as a lowercase <code>&#92;udxxx</code>, and nothing else
+ * ({@code /} and non-ASCII, U+2028 and U+2029 included, written raw).
  * Unknown attribute keys are written in ascending numeric order.
  *
  * <p>Written by hand rather than through Jackson's generator so the escaping
@@ -124,6 +125,19 @@ final class CanonicalJson {
                 out.append("\\t");
             } else if (c < 0x20) {
                 out.append("\\u00").append(HEX[c >> 4]).append(HEX[c & 0xF]);
+            } else if (Character.isHighSurrogate(c)
+                    && i + 1 < value.length()
+                    && Character.isLowSurrogate(value.charAt(i + 1))) {
+                out.append(c).append(value.charAt(i + 1));
+                i += 1;
+            } else if (Character.isSurrogate(c)) {
+                // A lone surrogate is no character UTF-8 can carry, so
+                // JSON.stringify escapes it rather than writing it raw.
+                out.append("\\u")
+                        .append(HEX[c >> 12])
+                        .append(HEX[(c >> 8) & 0xF])
+                        .append(HEX[(c >> 4) & 0xF])
+                        .append(HEX[c & 0xF]);
             } else {
                 out.append(c);
             }

@@ -8,7 +8,8 @@ import org.jspecify.annotations.Nullable;
  * <p>Every {@link VerificationException} detail that quotes something out of
  * the input goes through here first. Truncation keeps a huge claim from
  * making every message and log line huge; replacing control characters keeps
- * a newline in a claim from forging the next log line.
+ * a newline in a claim from forging the next log line, and a bidirectional
+ * override from reordering the line it sits in.
  */
 final class SafeText {
 
@@ -54,11 +55,18 @@ final class SafeText {
         if (value == null) {
             return "null";
         }
-        String head = value.length() <= maxLength ? value : value.substring(0, maxLength);
-        StringBuilder out = new StringBuilder(head.length() + 32);
-        for (int i = 0; i < head.length(); i++) {
-            char c = head.charAt(i);
-            out.append(breaksALine(c) ? PLACEHOLDER : c);
+        int cut = Math.min(value.length(), maxLength);
+        // Never between the two halves of a surrogate pair, which would
+        // leave a lone surrogate at the end of the message.
+        if (cut < value.length()
+                && Character.isHighSurrogate(value.charAt(cut - 1))
+                && Character.isLowSurrogate(value.charAt(cut))) {
+            cut -= 1;
+        }
+        StringBuilder out = new StringBuilder(cut + 32);
+        for (int i = 0; i < cut; i++) {
+            char c = value.charAt(i);
+            out.append(unsafeInALogLine(c) ? PLACEHOLDER : c);
         }
         if (value.length() > maxLength) {
             out.append("... (").append(value.length()).append(" characters)");
@@ -69,8 +77,19 @@ final class SafeText {
     /**
      * C0 and C1 controls, DEL, and the Unicode line and paragraph separators:
      * everything a log viewer or {@code String.lines()} may treat as a break.
+     * And the bidirectional formatting characters (U+061C, U+200E, U+200F,
+     * U+202A to U+202E, U+2066 to U+2069), which can make a log line display
+     * in an order other than the one it was written in.
      */
-    private static boolean breaksALine(char c) {
-        return c < 0x20 || (c >= 0x7F && c <= 0x9F) || c == '\u2028' || c == '\u2029';
+    private static boolean unsafeInALogLine(char c) {
+        return c < 0x20
+                || (c >= 0x7F && c <= 0x9F)
+                || c == '\u2028'
+                || c == '\u2029'
+                || c == '\u061C'
+                || c == '\u200E'
+                || c == '\u200F'
+                || (c >= '\u202A' && c <= '\u202E')
+                || (c >= '\u2066' && c <= '\u2069');
     }
 }

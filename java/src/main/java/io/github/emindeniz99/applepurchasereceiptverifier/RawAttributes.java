@@ -3,7 +3,6 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,20 +40,19 @@ final class RawAttributes {
         return Collections.unmodifiableMap(attributes);
     }
 
-    /** Same types in the same order with the same octets: the order is part of what {@code toJson()} writes. */
+    /**
+     * Same types with the same octets, each type's values in the same order.
+     * The order of the types is not compared, as {@code toJson()} writes them
+     * sorted: two payloads are equal exactly when their JSON is.
+     */
     static boolean equal(Map<Integer, List<byte[]>> a, Map<Integer, List<byte[]>> b) {
         if (a.size() != b.size()) {
             return false;
         }
-        Iterator<Map.Entry<Integer, List<byte[]>>> others = b.entrySet().iterator();
         for (Map.Entry<Integer, List<byte[]>> entry : a.entrySet()) {
-            Map.Entry<Integer, List<byte[]>> other = others.next();
-            if (!entry.getKey().equals(other.getKey())) {
-                return false;
-            }
             List<byte[]> left = entry.getValue();
-            List<byte[]> right = other.getValue();
-            if (left.size() != right.size()) {
+            List<byte[]> right = b.get(entry.getKey());
+            if (right == null || left.size() != right.size()) {
                 return false;
             }
             for (int i = 0; i < left.size(); i++) {

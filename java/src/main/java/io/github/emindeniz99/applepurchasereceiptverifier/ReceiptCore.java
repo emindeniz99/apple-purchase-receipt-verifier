@@ -16,17 +16,23 @@ import java.security.cert.TrustAnchor;
 import java.security.cert.X509CertSelector;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1Integer;
+import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.ASN1TaggedObject;
 import org.bouncycastle.asn1.cms.ContentInfo;
 import org.bouncycastle.asn1.cms.SignedData;
+import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
+import org.bouncycastle.asn1.pkcs.RSASSAPSSparams;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
@@ -120,6 +126,9 @@ final class ReceiptCore {
     // Built once and shared by every thread; see signerVerifier.
     private static final JcaSignerInfoVerifierBuilder SIGNER_VERIFIERS = signerVerifiers();
 
+    /** The digest each hash-and-sign {@code signatureAlgorithm} names; see {@link #digestNamedBy}. */
+    private static final Map<String, String> HASH_OF_SIGNATURE_ALGORITHM = hashOfSignatureAlgorithm();
+
     private ReceiptCore() {}
 
     /**
@@ -132,8 +141,8 @@ final class ReceiptCore {
      * SignerInfos and at most {@link #MAXIMUM_EMBEDDED_CERTIFICATES}
      * certificates. Then, for each SignerInfo in turn until one passes: its
      * certificate is embedded and decodes, a path from it reaches one of
-     * {@code trustAnchors} at the receipt's creation date ({@code nowMillis}
-     * when the receipt states none) with no revocation check, it carries
+     * {@code trustAnchors} at the receipt's creation date ({@code clock},
+     * read only then, when the receipt states none) with no revocation check, it carries
      * Apple's receipt-signing marker OID and the intermediate that issued it
      * carries Apple's WWDR marker OID, and its CMS signature verifies. Only
      * then is the payload decoded.</p>
@@ -142,7 +151,7 @@ final class ReceiptCore {
      * reported, so a single-signer receipt fails exactly as it always
      * has.</p>
      */
-    static ReceiptPayload verify(@Nullable String base64, Set<TrustAnchor> trustAnchors, long nowMillis)
+    static ReceiptPayload verify(@Nullable String base64, Set<TrustAnchor> trustAnchors, CallClock clock)
             throws VerificationException {
         if (base64 == null || base64.isEmpty()) {
             throw new VerificationException(Reason.MALFORMED, "receipt is empty");
@@ -152,11 +161,11 @@ final class ReceiptCore {
         if (Utf8Length.exceeds(base64, MAX_RECEIPT_BYTES)) {
             throw tooLarge();
         }
-        return verifyDer(ReceiptBase64.decode(base64), trustAnchors, nowMillis);
+        return verifyDer(ReceiptBase64.decode(base64), trustAnchors, clock);
     }
 
     /** {@link #verify} after the base64 step. */
-    static ReceiptPayload verifyDer(byte[] receiptDer, Set<TrustAnchor> trustAnchors, long nowMillis)
+    static ReceiptPayload verifyDer(byte[] receiptDer, Set<TrustAnchor> trustAnchors, CallClock clock)
             throws VerificationException {
         // BouncyCastle's ASN.1 and CMS entry points report malformed input with
         // UNCHECKED exceptions, and which ones is neither documented nor stable
@@ -164,7 +173,7 @@ final class ReceiptCore {
         // by type: a list of types would miss the next one.
         byte[] payload;
         try {
-            payload = verifySignature(receiptDer, trustAnchors, nowMillis);
+            payload = verifySignature(receiptDer, trustAnchors, clock);
         } catch (VerificationException e) {
             throw e;
         } catch (RuntimeException e) {
@@ -186,7 +195,7 @@ final class ReceiptCore {
     }
 
     /** Every check up to and including a signature; returns the signed payload, not yet decoded. */
-    private static byte[] verifySignature(byte[] receiptDer, Set<TrustAnchor> trustAnchors, long nowMillis)
+    private static byte[] verifySignature(byte[] receiptDer, Set<TrustAnchor> trustAnchors, CallClock clock)
             throws VerificationException {
         ASN1Primitive parsed;
         try {
@@ -223,6 +232,9 @@ final class ReceiptCore {
                     "receipt carries " + signers.size() + " SignerInfos, more than the maximum of "
                             + MAXIMUM_SIGNER_INFOS);
         }
+        for (SignerInformation signer : signers) {
+            requireAttributeSetSyntax(signer);
+        }
         // Raw set, not cms.getCertificates(); see decodeEmbedded.
         ASN1Set certificateSet = embeddedCertificateSet(cms);
         int embeddedCount = certificateSet == null ? 0 : certificateSet.size();
@@ -243,7 +255,7 @@ final class ReceiptCore {
         // anyone yet, so it only moves the chain instant to the clock and
         // never rejects by itself.
         Long creationDate = ReceiptDecoder.readCreationDate(payload);
-        Date at = new Date(creationDate != null ? creationDate.longValue() : nowMillis);
+        Date at = null;
 
         EmbeddedCertificates certificates = decodeEmbedded(certificateSet);
         // Signer-independent, so walked once for all SignerInfos, and only
@@ -253,6 +265,9 @@ final class ReceiptCore {
         for (SignerInformation signer : signers) {
             try {
                 X509Certificate signerCert = certificates.signer(signer);
+                if (at == null) {
+                    at = new Date(creationDate != null ? creationDate.longValue() : clock.millis());
+                }
                 if (authenticated == null) {
                     authenticated = authenticatedTopDown(certificates.all, trustAnchors);
                 }
@@ -576,8 +591,91 @@ final class ReceiptCore {
         return SignedData.getInstance(cms.toASN1Structure().getContent()).getCertificates();
     }
 
+    /**
+     * The syntax of one {@code SignerInfo}'s {@code signedAttrs}, judged for
+     * every {@code SignerInfo} before any key is used, so a set that is not
+     * an RFC 5652 attribute set, {@code SEQUENCE { OID, SET OF value }}
+     * with at least one value, is MALFORMED whichever position it holds. A
+     * well-formed set lacking {@code contentType} or {@code messageDigest}
+     * is left to the signature check, as INVALID_SIGNATURE for that signer.
+     */
+    private static void requireAttributeSetSyntax(SignerInformation signer) throws VerificationException {
+        ASN1Set attributes = signer.toASN1Structure().getAuthenticatedAttributes();
+        if (attributes == null) {
+            return;
+        }
+        for (ASN1Encodable element : attributes) {
+            if (!(element instanceof ASN1Sequence)) {
+                throw malformedSignedAttributes();
+            }
+            ASN1Sequence attribute = (ASN1Sequence) element;
+            if (attribute.size() < 2
+                    || !(attribute.getObjectAt(0) instanceof ASN1ObjectIdentifier)
+                    || !(attribute.getObjectAt(1) instanceof ASN1Set)
+                    || ((ASN1Set) attribute.getObjectAt(1)).size() == 0) {
+                throw malformedSignedAttributes();
+            }
+        }
+    }
+
+    private static VerificationException malformedSignedAttributes() {
+        return new VerificationException(Reason.MALFORMED, "malformed signedAttrs: not an attribute set");
+    }
+
+    /**
+     * The digest a {@code signatureAlgorithm} names, when it names one: the
+     * hash-and-sign OIDs, and the hash in RSASSA-PSS parameters. Null for
+     * {@code rsaEncryption}, {@code id-ecPublicKey} and anything else, which
+     * take the {@code SignerInfo}'s {@code digestAlgorithm}.
+     */
+    private static @Nullable String digestNamedBy(SignerInformation signer) {
+        String oid = signer.getEncryptionAlgOID();
+        if (PKCSObjectIdentifiers.id_RSASSA_PSS.getId().equals(oid)) {
+            try {
+                return RSASSAPSSparams.getInstance(signer.getEncryptionAlgParams())
+                        .getHashAlgorithm()
+                        .getAlgorithm()
+                        .getId();
+            } catch (RuntimeException e) {
+                // Parameters that do not read are the verifier's to refuse.
+                return null;
+            }
+        }
+        return HASH_OF_SIGNATURE_ALGORITHM.get(oid);
+    }
+
+    private static Map<String, String> hashOfSignatureAlgorithm() {
+        String md5 = "1.2.840.113549.2.5";
+        String sha1 = "1.3.14.3.2.26";
+        String sha224 = "2.16.840.1.101.3.4.2.4";
+        String sha256 = "2.16.840.1.101.3.4.2.1";
+        String sha384 = "2.16.840.1.101.3.4.2.2";
+        String sha512 = "2.16.840.1.101.3.4.2.3";
+        Map<String, String> map = new HashMap<String, String>();
+        map.put("1.2.840.113549.1.1.4", md5);
+        map.put("1.2.840.113549.1.1.5", sha1);
+        map.put("1.2.840.113549.1.1.14", sha224);
+        map.put("1.2.840.113549.1.1.11", sha256);
+        map.put("1.2.840.113549.1.1.12", sha384);
+        map.put("1.2.840.113549.1.1.13", sha512);
+        map.put("1.2.840.10045.4.1", sha1);
+        map.put("1.2.840.10045.4.3.1", sha224);
+        map.put("1.2.840.10045.4.3.2", sha256);
+        map.put("1.2.840.10045.4.3.3", sha384);
+        map.put("1.2.840.10045.4.3.4", sha512);
+        return Collections.unmodifiableMap(map);
+    }
+
     private static void verifyCmsSignature(SignerInformation signer, X509Certificate signerCert)
             throws VerificationException {
+        // A signatureAlgorithm that names a hash must name the one the
+        // SignerInfo digested with: a label that disagrees with what was
+        // hashed is not one signature under two names.
+        String named = digestNamedBy(signer);
+        if (named != null && !named.equals(signer.getDigestAlgOID())) {
+            throw new VerificationException(
+                    Reason.INVALID_SIGNATURE, "signatureAlgorithm names another hash than digestAlgorithm");
+        }
         // No algorithm or key-type allowlist, by design: the signer is
         // already pinned to an Apple root and carries Apple's receipt-signing
         // marker, so whatever algorithm Apple signs with is accepted, and a

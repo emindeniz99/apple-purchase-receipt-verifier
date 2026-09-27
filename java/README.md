@@ -80,8 +80,9 @@ Verifier verifier = Verifier.create(config);
 ```
 
 `Config.defaults()` uses Apple's three bundled, pinned roots and
-`Clock.systemUTC()`. The clock is read once per call and used in exactly two
-places: the chain-validity instant when the receipt or JWS states no signing
+`Clock.systemUTC()`. The clock is read at most once per call, only when one
+of exactly two things needs it, after the input has passed every check that
+comes before: the chain-validity instant when the receipt or JWS states no signing
 date of its own, and `request_date` in the endpoint response. It never
 decides whether a certificate is expired when the input states a date; see
 [Trust anchors](#trust-anchors).
@@ -366,7 +367,7 @@ as in 0.6.
 
 `environment` picks which of Apple's two URLs this call imitates and drives
 the 21007/21008 routing below; `request_date` in the response comes from the
-`Config` clock, read once per call. `web_order_line_item_id` is omitted from
+`Config` clock, read at most once per call. `web_order_line_item_id` is omitted from
 an in-app purchase entry when attribute 1711 is `0`, as Apple omits it for
 consumables.
 
