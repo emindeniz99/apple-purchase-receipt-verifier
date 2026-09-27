@@ -260,7 +260,9 @@ class HostileInputTest < Minitest::Test
       receipt = verify_der(TestPki.sign_receipt(@pki, tlv.call(0x31, bundle + wide)))
     end
     assert_equal text, receipt.application_version
-    assert_operator milliseconds, :<, 250, "60k chunks took #{milliseconds.round(2)}ms"
+    # Linear, not fast: a quadratic concatenation takes seconds here. The
+    # macOS CI runner measured 259 ms once under a 250 ms budget.
+    assert_operator milliseconds, :<, 1000, "60k chunks took #{milliseconds.round(2)}ms"
   end
 
   # Definite-length DER length octets.
