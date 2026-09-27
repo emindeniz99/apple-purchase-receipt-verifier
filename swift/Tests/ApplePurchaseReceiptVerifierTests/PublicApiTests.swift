@@ -127,7 +127,7 @@ final class PublicApiTests: XCTestCase {
 
     /// Callers build payloads by hand to test their own logic, so every
     /// field is settable from outside and `toJson()` writes what was set.
-    func testPayloadsCanBeBuiltByHand() {
+    func testPayloadsCanBeBuiltByHand() throws {
         var purchase = InAppPurchase()
         purchase.quantity = 1
         purchase.productId = "p"
@@ -157,8 +157,7 @@ final class PublicApiTests: XCTestCase {
         receipt.originalApplicationVersion = "0"
         receipt.expirationDateMs = nil
         receipt.unknownAttributes = [13: [[0x03]]]
-        XCTAssertEqual(
-            receipt.toJson(),
+        let want =
             #"{"receipt_type":"ProductionSandbox","app_item_id":"5","bundle_id":"b","bundle_id_bytes":"DAFi","#
                 + #""application_version":"1","opaque_value":"AQ==","sha1_hash":"Ag==","receipt_creation_date_ms":6000,"#
                 + #""download_id":"7","version_external_identifier":"8","in_app":[{"quantity":1,"product_id":"p","#
@@ -166,7 +165,13 @@ final class PublicApiTests: XCTestCase {
                 + #""original_purchase_date_ms":2000,"expires_date_ms":3000,"web_order_line_item_id":"4","#
                 + #""cancellation_date_ms":null,"is_trial_period":false,"is_in_intro_offer_period":true,"#
                 + #""unknown_attributes":{"1720":["AQ=="]}}],"original_purchase_date_ms":9000,"#
-                + #""original_application_version":"0","expiration_date_ms":null,"unknown_attributes":{"13":["Aw=="]}}"#)
+                + #""original_application_version":"0","expiration_date_ms":null,"unknown_attributes":{"13":["Aw=="]}}"#
+        // The same value, not the same bytes (docs/design/0.7-api.md "Our JSON").
+        XCTAssertTrue(
+            sameJsonValue(
+                try JSONSerialization.jsonObject(with: Data(receipt.toJson().utf8)),
+                try JSONSerialization.jsonObject(with: Data(want.utf8))),
+            receipt.toJson())
         XCTAssertEqual(JsonPayload(json: "{}").json, "{}")
     }
 

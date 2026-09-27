@@ -96,7 +96,7 @@ final class InputSizeBoundsTests: XCTestCase {
         for padding in [brackets, #"\"\\"# + brackets] {
             let body = #"{"x":""# + padding + #"","receipt-data":""# + receipt + #""}"#
             let response = verifier.verifyReceiptEndpoint(environment: .sandbox, requestJson: body)
-            XCTAssertTrue(response.hasPrefix(#"{"status":0,"#), String(response.prefix(40)))
+            XCTAssertEqual(TestFixtures.status(response), 0, String(response.prefix(40)))
         }
     }
 }

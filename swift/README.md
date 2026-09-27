@@ -241,10 +241,12 @@ conformance vectors:
   typed field (an unmodelled type, a later copy of a known attribute, or a
   known attribute whose value does not parse) goes raw into
   `unknownAttributes`, keyed by attribute type.
-- `receipt.toJson()` renders the canonical JSON form used by the shared
-  conformance vectors: fixed key order, no whitespace, 64-bit ids as JSON
+- `receipt.toJson()` writes the payload with Foundation's
+  `JSONSerialization`: `null` for a missing field, 64-bit ids as JSON
   strings (a `downloadId` can run to 18 digits, above `2^53`), bytes as
-  padded standard base64.
+  padded standard base64. The shared conformance vectors compare its parsed
+  value, not its bytes, so key order and escaping are not part of the
+  contract.
 
 ## Trust anchors
 

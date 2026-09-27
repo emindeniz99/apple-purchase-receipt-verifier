@@ -81,18 +81,6 @@ private func daysSinceEpoch(year: Int, month: Int, day: Int) -> Int? {
     return era * 146097 + doe - 719468
 }
 
-/// Whether `date` is inside the range swift-certificates (and X.509's
-/// `GeneralizedTime`) can hold: 0001-01-01T00:00:00Z to
-/// 9999-12-31T23:59:59Z. A JWS `signedDate` or a receipt date is read from
-/// unverified input before any chain check, so a value outside this range —
-/// legal JSON, but no calendar date — must fail closed rather than reach a
-/// certificate-validity comparison with an instant no window can hold.
-func isRepresentableAsCertificateValidationTime(_ millis: Int64) -> Bool {
-    // 0001-01-01T00:00:00Z ... 9999-12-31T23:59:59Z, in epoch seconds.
-    let seconds = millis / 1000
-    return seconds >= -62_135_596_800 && seconds <= 253_402_300_799
-}
-
 // MARK: - Apple's endpoint date renderings
 //
 // `yyyy-MM-dd HH:mm:ss` plus a literal zone name, carried over from 0.6:

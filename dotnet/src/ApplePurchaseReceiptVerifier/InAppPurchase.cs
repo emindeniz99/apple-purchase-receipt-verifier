@@ -10,6 +10,8 @@ namespace ApplePurchaseReceiptVerifier
     /// </summary>
     public sealed class InAppPurchase
     {
+        private readonly IReadOnlyDictionary<int, IReadOnlyList<byte[]>> _unknownAttributes;
+
         /// <summary>
         /// Builds a purchase by hand, for a caller's own tests. The unknown
         /// attributes are copied, so changing what was passed in afterwards
@@ -42,7 +44,7 @@ namespace ApplePurchaseReceiptVerifier
             CancellationDateMs = cancellationDateMs;
             IsTrialPeriod = isTrialPeriod;
             IsInIntroOfferPeriod = isInIntroOfferPeriod;
-            UnknownAttributes = ByteOps.CopyAttributes(unknownAttributes, nameof(unknownAttributes));
+            _unknownAttributes = ByteOps.CopyAttributes(unknownAttributes, nameof(unknownAttributes));
         }
 
         /// <summary>Attribute 1701.</summary>
@@ -81,9 +83,10 @@ namespace ApplePurchaseReceiptVerifier
         /// <summary>
         /// Raw values of attribute types this library does not model, keyed by
         /// type, in receipt order. Same rules as
-        /// <see cref="ReceiptPayload.UnknownAttributes"/>.
+        /// <see cref="ReceiptPayload.UnknownAttributes"/>. A fresh copy per call.
         /// </summary>
-        public IReadOnlyDictionary<int, IReadOnlyList<byte[]>> UnknownAttributes { get; }
+        public IReadOnlyDictionary<int, IReadOnlyList<byte[]>> UnknownAttributes =>
+            ByteOps.CopyAttributes(_unknownAttributes, nameof(UnknownAttributes));
 
         internal OrderedMap ToJsonValue()
         {
@@ -99,7 +102,7 @@ namespace ApplePurchaseReceiptVerifier
             json.Set("cancellation_date_ms", CancellationDateMs);
             json.Set("is_trial_period", IsTrialPeriod);
             json.Set("is_in_intro_offer_period", IsInIntroOfferPeriod);
-            json.Set("unknown_attributes", ReceiptPayload.UnknownAttributesJson(UnknownAttributes));
+            json.Set("unknown_attributes", ReceiptPayload.UnknownAttributesJson(_unknownAttributes));
             return json;
         }
     }

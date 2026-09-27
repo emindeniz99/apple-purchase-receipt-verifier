@@ -396,63 +396,72 @@ private func decodeDate(_ der: [UInt8]) throws -> Int64? {
     return millis
 }
 
-// MARK: - canonical JSON
+// MARK: - our JSON
 
 extension ReceiptPayload {
-    /// The canonical JSON, fixed byte for byte: the keys below in this
-    /// order, no whitespace, `null` for a missing field, 64-bit ids as
-    /// strings, bytes as padded standard base64, `unknown_attributes` keys
-    /// in ascending numeric order, and strings escaped exactly as
-    /// ECMAScript `JSON.stringify` escapes them.
+    /// The payload as JSON, written by Foundation's `JSONSerialization`: the
+    /// keys docs/design/0.7-api.md "Our JSON" lists, `null` for a missing
+    /// field, 64-bit ids as strings, bytes as padded standard base64 and
+    /// `unknown_attributes` keyed by decimal type. Ports agree on its value,
+    /// not its bytes, so key order and escaping are Foundation's.
     public func toJson() -> String {
-        var out = ""
-        let json = JsonObjectWriter.open(into: { out += $0 })
-        json.string("receipt_type", receiptType)
-        json.id("app_item_id", appItemId)
-        json.string("bundle_id", bundleId)
-        json.bytes("bundle_id_bytes", bundleIdBytes)
-        json.string("application_version", applicationVersion)
-        json.bytes("opaque_value", opaqueValue)
-        json.bytes("sha1_hash", sha1Hash)
-        json.number("receipt_creation_date_ms", receiptCreationDateMs)
-        json.id("download_id", downloadId)
-        json.id("version_external_identifier", versionExternalIdentifier)
-        json.key("in_app")
-        json.raw("[")
-        for (index, purchase) in inApp.enumerated() {
-            if index > 0 { json.raw(",") }
-            purchase.writeJson(into: json)
-        }
-        json.raw("]")
-        json.number("original_purchase_date_ms", originalPurchaseDateMs)
-        json.string("original_application_version", originalApplicationVersion)
-        json.number("expiration_date_ms", expirationDateMs)
-        json.attributes("unknown_attributes", unknownAttributes)
-        json.close()
-        return out
+        jsonText([
+            "receipt_type": nullable(receiptType),
+            "app_item_id": nullable(appItemId.map(String.init)),
+            "bundle_id": nullable(bundleId),
+            "bundle_id_bytes": nullable(bundleIdBytes.map(standardBase64Encode)),
+            "application_version": nullable(applicationVersion),
+            "opaque_value": nullable(opaqueValue.map(standardBase64Encode)),
+            "sha1_hash": nullable(sha1Hash.map(standardBase64Encode)),
+            "receipt_creation_date_ms": nullable(receiptCreationDateMs),
+            "download_id": nullable(downloadId.map(String.init)),
+            "version_external_identifier": nullable(versionExternalIdentifier.map(String.init)),
+            "in_app": inApp.map(\.jsonObject),
+            "original_purchase_date_ms": nullable(originalPurchaseDateMs),
+            "original_application_version": nullable(originalApplicationVersion),
+            "expiration_date_ms": nullable(expirationDateMs),
+            "unknown_attributes": attributesObject(unknownAttributes),
+        ])
     }
 }
 
 extension InAppPurchase {
-    fileprivate func writeJson(into parent: JsonObjectWriter) {
-        var fragment = ""
-        let json = JsonObjectWriter.open(into: { fragment += $0 })
-        json.number("quantity", quantity)
-        json.string("product_id", productId)
-        json.string("transaction_id", transactionId)
-        json.number("purchase_date_ms", purchaseDateMs)
-        json.string("original_transaction_id", originalTransactionId)
-        json.number("original_purchase_date_ms", originalPurchaseDateMs)
-        json.number("expires_date_ms", expiresDateMs)
-        // Always present here, null included — the omit-when-zero rule is
-        // the endpoint's own (Apple's verifyReceipt), not this canonical
-        // form's.
-        json.id("web_order_line_item_id", webOrderLineItemId)
-        json.number("cancellation_date_ms", cancellationDateMs)
-        json.boolean("is_trial_period", isTrialPeriod)
-        json.boolean("is_in_intro_offer_period", isInIntroOfferPeriod)
-        json.attributes("unknown_attributes", unknownAttributes)
-        json.close()
-        parent.raw(fragment)
+    fileprivate var jsonObject: [String: Any] {
+        [
+            "quantity": nullable(quantity),
+            "product_id": nullable(productId),
+            "transaction_id": nullable(transactionId),
+            "purchase_date_ms": nullable(purchaseDateMs),
+            "original_transaction_id": nullable(originalTransactionId),
+            "original_purchase_date_ms": nullable(originalPurchaseDateMs),
+            "expires_date_ms": nullable(expiresDateMs),
+            // Always present here, null included — the omit-when-zero rule is
+            // the endpoint's own (Apple's verifyReceipt), not this form's.
+            "web_order_line_item_id": nullable(webOrderLineItemId.map(String.init)),
+            "cancellation_date_ms": nullable(cancellationDateMs),
+            "is_trial_period": nullable(isTrialPeriod),
+            "is_in_intro_offer_period": nullable(isInIntroOfferPeriod),
+            "unknown_attributes": attributesObject(unknownAttributes),
+        ]
     }
+}
+
+/// A missing field is `null`, not omitted.
+private func nullable<T>(_ value: T?) -> Any { value.map { $0 as Any } ?? NSNull() }
+
+/// Keyed by decimal type, each value list base64 strings in receipt order.
+private func attributesObject(_ attributes: [Int: [[UInt8]]]) -> [String: Any] {
+    Dictionary(uniqueKeysWithValues: attributes.map { (String($0.key), $0.value.map(standardBase64Encode)) })
+}
+
+/// `object` as compact UTF-8 JSON. Sorted keys make the text the same on
+/// every call for the same value; slashes stay unescaped, as the other ports
+/// write them. The values are only strings, integers, booleans, `NSNull`,
+/// arrays and objects, which `JSONSerialization` always accepts.
+func jsonText(_ object: [String: Any]) -> String {
+    guard
+        let data = try? JSONSerialization.data(
+            withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])
+    else { preconditionFailure("JSONSerialization refused a JSON object built from strings and integers") }
+    return String(decoding: data, as: UTF8.self)
 }

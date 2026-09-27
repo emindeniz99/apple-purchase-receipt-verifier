@@ -94,7 +94,7 @@ final readonly class ReceiptPayload
             'original_application_version' => $this->originalApplicationVersion,
             'expiration_date_ms' => $this->expirationDateMs,
             'unknown_attributes' => self::attributesJson($this->unknownAttributes),
-        ], JSON_THROW_ON_ERROR);
+        ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
     }
 
     /** @internal a 64-bit id as a decimal string, so JavaScript readers do not round it */

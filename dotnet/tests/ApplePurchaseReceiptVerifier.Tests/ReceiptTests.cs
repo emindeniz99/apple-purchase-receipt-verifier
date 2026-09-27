@@ -168,6 +168,36 @@ public class ReceiptTests
         Assert.True(((ICollection<byte[]>)payload.UnknownAttributes[9999]).IsReadOnly);
     }
 
+    /// <summary>
+    /// A read-only wrapper still hands out the byte arrays inside it, so every
+    /// getter that reaches bytes returns a fresh copy (as the Java port
+    /// does): a caller editing what it read, say to zero it after use, must
+    /// not change the verified payload, what it logs, or the next reader.
+    /// </summary>
+    [Fact]
+    public void EditingWhatAGetterReturnedDoesNotChangeTheNextRead()
+    {
+        Dictionary<int, IReadOnlyList<byte[]>> Attributes() => new() { [9999] = new List<byte[]> { new byte[] { 5, 6 } } };
+        InAppPurchase purchase = new(1, "p", "t", null, null, null, null, null, null, null, null, Attributes());
+        ReceiptPayload payload = new(
+            "Production", null, "a", new byte[] { 0x0c, 0x01, 0x61 }, null, new byte[] { 1, 2 }, new byte[] { 3, 4 },
+            null, null, null, new List<InAppPurchase> { purchase }, null, null, null, Attributes());
+        string before = payload.ToJson();
+
+        payload.BundleIdBytes![0] = 0xff;
+        payload.OpaqueValue![0] = 0xff;
+        payload.Sha1Hash![0] = 0xff;
+        payload.UnknownAttributes[9999][0][0] = 0xff;
+        payload.InApp[0].UnknownAttributes[9999][0][0] = 0xff;
+
+        Assert.Equal(new byte[] { 0x0c, 0x01, 0x61 }, payload.BundleIdBytes);
+        Assert.Equal(new byte[] { 1, 2 }, payload.OpaqueValue);
+        Assert.Equal(new byte[] { 3, 4 }, payload.Sha1Hash);
+        Assert.Equal(new byte[] { 5, 6 }, Assert.Single(payload.UnknownAttributes[9999]));
+        Assert.Equal(new byte[] { 5, 6 }, Assert.Single(payload.InApp[0].UnknownAttributes[9999]));
+        Assert.Equal(before, payload.ToJson());
+    }
+
     [Fact]
     public void AHandBuiltPayloadRefusesNullCollections()
     {

@@ -40,6 +40,12 @@ enum TestFixtures {
     static let receiptRoot = "generated-0.7/receipt-root.der"
     static let jws = "generated/transaction.jws"
     static let jwsRoot = "generated/jws-root.der"
+
+    /// The `status` of an endpoint response, read as a value: key order in
+    /// the response is free.
+    static func status(_ response: String) -> Int? {
+        (try? JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any])?["status"] as? Int
+    }
 }
 
 func base64URL(_ bytes: [UInt8]) -> String {
@@ -204,8 +210,9 @@ final class VerifyReceiptEndpointTests: XCTestCase {
         let verifier = try verifier()
         let base64 = try receiptBase64()
         XCTAssertEqual(
-            verifier.verifyReceiptEndpoint(environment: .sandbox, requestJson: #"{"receipt-data":"\#(base64)"}"#)
-                .hasPrefix(#"{"status":0,"#), true, "the control must verify")
+            TestFixtures.status(
+                verifier.verifyReceiptEndpoint(environment: .sandbox, requestJson: #"{"receipt-data":"\#(base64)"}"#)),
+            0, "the control must verify")
         for mark in ["\u{FEFF}", "\\ufeff", "\\uFEFF"] {
             XCTAssertEqual(
                 verifier.verifyReceiptEndpoint(

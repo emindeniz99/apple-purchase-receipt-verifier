@@ -86,94 +86,65 @@ private func receiptDataField(_ requestJson: String) throws -> String {
 }
 
 /// The status-0 response. Keys and value types follow Apple's endpoint; key
-/// order is deterministic but not part of the contract.
+/// order is not part of the contract.
 /// `in_app_ownership_type` and everything that lives only in Apple's
 /// server-side database are never present.
 private func renderEndpointResponse(environment: Environment, receipt: ReceiptPayload, requestDateMillis: Int64)
     -> String
 {
-    var out = ""
-    let response = JsonObjectWriter.open(into: { out += $0 })
-    response.number("status", Int64(AppleStatus.ok))
-    response.string("environment", environment.appleValue)
-    response.key("receipt")
-    var receiptFragment = ""
-    writeReceiptResponse(receipt: receipt, requestDateMillis: requestDateMillis, into: { receiptFragment += $0 })
-    response.raw(receiptFragment)
-    response.close()
-    return out
+    jsonText([
+        "status": AppleStatus.ok,
+        "environment": environment.appleValue,
+        "receipt": receiptResponse(receipt, requestDateMillis: requestDateMillis),
+    ])
 }
 
-private func writeReceiptResponse(
-    receipt: ReceiptPayload, requestDateMillis: Int64, into target: @escaping (String) -> Void
-) {
-    let json = JsonObjectWriter.open(into: target)
-    presentString(json, "receipt_type", receipt.receiptType)
+private func receiptResponse(_ receipt: ReceiptPayload, requestDateMillis: Int64) -> [String: Any] {
+    var json: [String: Any] = [:]
+    json["receipt_type"] = receipt.receiptType
     // Apple echoes attribute 1 under both names (its response reference
     // defines adam_id as "See app_item_id") and as JSON numbers, not as the
     // strings the in-app integers are rendered with.
-    presentNumber(json, "adam_id", receipt.appItemId)
-    presentNumber(json, "app_item_id", receipt.appItemId)
-    presentString(json, "bundle_id", receipt.bundleId)
-    presentString(json, "application_version", receipt.applicationVersion)
-    presentNumber(json, "download_id", receipt.downloadId)
-    presentNumber(json, "version_external_identifier", receipt.versionExternalIdentifier)
-    presentString(json, "original_application_version", receipt.originalApplicationVersion)
-    appleDates(json, "receipt_creation_date", receipt.receiptCreationDateMs)
-    appleDates(json, "request_date", requestDateMillis)
-    appleDates(json, "original_purchase_date", receipt.originalPurchaseDateMs)
-    appleDates(json, "expiration_date", receipt.expirationDateMs)
-    json.key("in_app")
-    json.raw("[")
-    for (index, purchase) in receipt.inApp.enumerated() {
-        if index > 0 { json.raw(",") }
-        var fragment = ""
-        writePurchaseResponse(purchase, into: { fragment += $0 })
-        json.raw(fragment)
-    }
-    json.raw("]")
-    json.close()
+    json["adam_id"] = receipt.appItemId
+    json["app_item_id"] = receipt.appItemId
+    json["bundle_id"] = receipt.bundleId
+    json["application_version"] = receipt.applicationVersion
+    json["download_id"] = receipt.downloadId
+    json["version_external_identifier"] = receipt.versionExternalIdentifier
+    json["original_application_version"] = receipt.originalApplicationVersion
+    appleDates(&json, "receipt_creation_date", receipt.receiptCreationDateMs)
+    appleDates(&json, "request_date", requestDateMillis)
+    appleDates(&json, "original_purchase_date", receipt.originalPurchaseDateMs)
+    appleDates(&json, "expiration_date", receipt.expirationDateMs)
+    json["in_app"] = receipt.inApp.map(purchaseResponse)
+    return json
 }
 
-private func writePurchaseResponse(_ purchase: InAppPurchase, into target: @escaping (String) -> Void) {
-    let json = JsonObjectWriter.open(into: target)
-    if let quantity = purchase.quantity {
-        json.string("quantity", String(quantity))
-    }
-    presentString(json, "product_id", purchase.productId)
-    presentString(json, "transaction_id", purchase.transactionId)
-    presentString(json, "original_transaction_id", purchase.originalTransactionId)
-    appleDates(json, "purchase_date", purchase.purchaseDateMs)
-    appleDates(json, "original_purchase_date", purchase.originalPurchaseDateMs)
-    appleDates(json, "expires_date", purchase.expiresDateMs)
-    appleDates(json, "cancellation_date", purchase.cancellationDateMs)
+private func purchaseResponse(_ purchase: InAppPurchase) -> [String: Any] {
+    var json: [String: Any] = [:]
+    json["quantity"] = purchase.quantity.map(String.init)
+    json["product_id"] = purchase.productId
+    json["transaction_id"] = purchase.transactionId
+    json["original_transaction_id"] = purchase.originalTransactionId
+    appleDates(&json, "purchase_date", purchase.purchaseDateMs)
+    appleDates(&json, "original_purchase_date", purchase.originalPurchaseDateMs)
+    appleDates(&json, "expires_date", purchase.expiresDateMs)
+    appleDates(&json, "cancellation_date", purchase.cancellationDateMs)
     // Apple omits the key when attribute 1711 is 0, as it is for
     // consumables.
     if let id = purchase.webOrderLineItemId, id != 0 {
-        json.string("web_order_line_item_id", String(id))
+        json["web_order_line_item_id"] = String(id)
     }
-    if let flag = purchase.isTrialPeriod {
-        json.string("is_trial_period", flag ? "true" : "false")
-    }
-    if let flag = purchase.isInIntroOfferPeriod {
-        json.string("is_in_intro_offer_period", flag ? "true" : "false")
-    }
-    json.close()
-}
-
-private func presentString(_ json: JsonObjectWriter, _ key: String, _ value: String?) {
-    if let value { json.string(key, value) }
-}
-
-private func presentNumber(_ json: JsonObjectWriter, _ key: String, _ value: Int64?) {
-    if let value { json.number(key, value) }
+    json["is_trial_period"] = purchase.isTrialPeriod.map { $0 ? "true" : "false" }
+    json["is_in_intro_offer_period"] = purchase.isInIntroOfferPeriod.map { $0 ? "true" : "false" }
+    return json
 }
 
 /// Apple's three renderings of every date: `x` in GMT, `x_ms` in epoch
 /// milliseconds (as a string), and `x_pst` in US Pacific time.
-private func appleDates(_ json: JsonObjectWriter, _ prefix: String, _ millis: Int64?) {
+private func appleDates(_ json: inout [String: Any], _ prefix: String, _ millis: Int64?) {
     guard let millis else { return }
-    json.string(prefix, formatEtcGMT(millis: millis))
-    json.string("\(prefix)_ms", String(millis))
-    json.string("\(prefix)_pst", formatPacific(millis: millis))
+    json[prefix] = formatEtcGMT(millis: millis)
+    json["\(prefix)_ms"] = String(millis)
+    json["\(prefix)_pst"] = formatPacific(millis: millis)
 }

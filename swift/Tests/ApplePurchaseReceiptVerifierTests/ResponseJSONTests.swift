@@ -3,17 +3,15 @@ import XCTest
 
 @testable import ApplePurchaseReceiptVerifier
 
-/// `toJson()` has to produce the same bytes in nine ports, so its strings are
-/// escaped exactly as ECMAScript `JSON.stringify` escapes them
-/// (docs/design/0.7-api.md, "Canonical form"). Two shared vectors pin that
-/// on fixed strings (`receipt/to-json-escapes`,
+/// `toJson()` must parse back to the value it was written from
+/// (docs/design/0.7-api.md "Our JSON"); its escaping is Foundation's. Two
+/// shared vectors pin that on fixed strings (`receipt/to-json-escapes`,
 /// `receipt/to-json-escapes-html-and-separators`). The strings in a receipt
-/// are signed but chosen by whoever built the app, so this runs the rule over
-/// generated strings drawn from all of ASCII plus the non-ASCII scalars a
-/// careless escaper gets wrong, in every string field, against an escaper
-/// written here from the rule's own words.
+/// are signed but chosen by whoever built the app, so this runs generated
+/// strings drawn from all of ASCII plus the non-ASCII scalars a careless
+/// escaper gets wrong through every string field and reads them back.
 final class ResponseJSONTests: XCTestCase {
-    func testToJsonEscapesEveryStringFieldExactlyAsJSONStringify() throws {
+    func testToJsonRoundTripsEveryStringField() throws {
         var random = SplitMix64(seed: 0x15_0E5C)
         let alphabet: [Unicode.Scalar] =
             (0...0x7F).map { Unicode.Scalar(UInt8($0)) }
@@ -39,21 +37,8 @@ final class ResponseJSONTests: XCTestCase {
             receipt.inApp = [purchase]
             let json = receipt.toJson()
 
-            let pairs: [(String, String)] = [
-                ("product_id", fields[0]), ("transaction_id", fields[1]), ("original_transaction_id", fields[2]),
-                ("receipt_type", fields[3]), ("bundle_id", fields[4]), ("application_version", fields[5]),
-                ("original_application_version", fields[6]),
-            ]
-            for (key, value) in pairs {
-                // Compared as UTF-8 bytes: String.contains compares by
-                // grapheme, which could match across an escaping difference.
-                XCTAssertNotNil(
-                    Data(json.utf8).range(of: Data(("\"\(key)\":" + Self.stringify(value)).utf8)),
-                    "\(key) = \(value.debugDescription) is not escaped as JSON.stringify would: \(json)")
-            }
-            // And it is still JSON a strict reader takes back to the same
-            // strings. JSONDecoder, not JSONSerialization: the latter drops a
-            // leading U+FEFF from a string value on both platforms.
+            // JSONDecoder, not JSONSerialization: the latter drops a leading
+            // U+FEFF from a string value on both platforms.
             let decoded = try JSONDecoder().decode(Shape.self, from: Data(json.utf8))
             XCTAssertEqual(
                 [
@@ -62,27 +47,6 @@ final class ResponseJSONTests: XCTestCase {
                     decoded.application_version, decoded.original_application_version,
                 ], fields)
         }
-    }
-
-    /// The rule, from its own words: `\"`, `\\`, `\b`, `\f`, `\n`, `\r`, `\t`
-    /// as short escapes, every other code point from U+0000 to U+001F as
-    /// `\u00xx` in lowercase hex, and everything else raw.
-    private static func stringify(_ value: String) -> String {
-        let short: [UInt32: String] = [
-            0x22: "\\\"", 0x5C: "\\\\", 0x08: "\\b", 0x0C: "\\f", 0x0A: "\\n", 0x0D: "\\r", 0x09: "\\t",
-        ]
-        let hex = Array("0123456789abcdef")
-        var out = "\""
-        for scalar in value.unicodeScalars {
-            if let escape = short[scalar.value] {
-                out += escape
-            } else if scalar.value < 0x20 {
-                out += "\\u00" + String(hex[Int(scalar.value >> 4)]) + String(hex[Int(scalar.value & 0xF)])
-            } else {
-                out.unicodeScalars.append(scalar)
-            }
-        }
-        return out + "\""
     }
 
     private struct Shape: Decodable {
