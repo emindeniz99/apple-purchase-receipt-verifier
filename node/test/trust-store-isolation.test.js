@@ -1,15 +1,17 @@
-// Trust reaches this library through exactly one door: the `trustedRoots`
-// option. Not through Node's bundled Mozilla CA store, not through
-// NODE_EXTRA_CA_CERTS, not through `tls.rootCertificates`, not through a
-// platform verifier, not through a CA bundle on disk.
+// Trust reaches this library through exactly one door: `Config.roots`, set
+// only by `createConfig({ roots })` or `defaultConfig()`. Not through Node's
+// bundled Mozilla CA store, not through NODE_EXTRA_CA_CERTS, not through
+// `tls.rootCertificates`, not through a platform verifier, not through a CA
+// bundle on disk.
 //
 // Node is a language where that is easy to lose by accident. `node:crypto`'s
-// X509Certificate has no trust store of its own — which is why this library
-// can hold the property at all — but one `import { createSecureContext } from
-// 'node:tls'`, or a dependency that reaches for `tls.rootCertificates` as a
-// "sensible default", and pinned trust silently becomes "trust anything a
-// public CA signed". And NODE_EXTRA_CA_CERTS makes that widening something a
-// host operator can do from outside the process, with no code change at all.
+// primitives this package actually uses (`createPublicKey`, `verify`) have no
+// trust store of their own — which is why this library can hold the property
+// at all — but one `import { createSecureContext } from 'node:tls'`, or a
+// dependency that reaches for `tls.rootCertificates` as a "sensible default",
+// and pinned trust silently becomes "trust anything a public CA signed". And
+// NODE_EXTRA_CA_CERTS makes that widening something a host operator can do
+// from outside the process, with no code change at all.
 //
 // So the rule is asserted the same three ways the Go, Python, Swift, Rust,
 // PHP and Ruby ports assert it:
@@ -20,8 +22,8 @@
 //     the planting took (a real TLS handshake against a server whose chain
 //     ends at a planted CA is accepted with no `ca` option, and
 //     `tls.getCACertificates('default')` lists the planted roots where that
-//     API exists), and only then asks the library, which still refuses.
-//     A child, because NODE_EXTRA_CA_CERTS is read once at startup.
+//     API exists), and only then asks the library, which still refuses. A
+//     child, because NODE_EXTRA_CA_CERTS is read once at startup.
 //   * structurally — no module under src/ imports or names anything that
 //     could reach a trust store or the network, and the web build imports
 //     nothing Node-specific at all.
@@ -43,12 +45,18 @@ import tls from 'node:tls';
 import * as node from '../dist/index.js';
 import * as web from '../dist/web/index.js';
 import { buildAndValidatePath, normalizeRoots, validatePair } from '../dist/chain.js';
-import { normalizeRoots as webNormalizeRoots } from '../dist/web/chain.js';
-
-const BUNDLE = 'com.example.app';
-const APPLE_RECEIPT_BUNDLE = 'dev.bonzer.weeka.app';
+import {
+  buildAndValidatePath as webBuildAndValidatePath,
+  normalizeRoots as webNormalizeRoots,
+  validatePair as webValidatePair,
+} from '../dist/web/chain.js';
+import { parseCertificate } from '../dist/x509.js';
 
 const read = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)));
+// The old, pre-0.7 receipt fixtures predate the intermediate-WWDR-marker
+// hardening check and fail INVALID_CERTIFICATE_PURPOSE under verifyReceipt;
+// the JWS fixtures are unaffected, so only the receipt ones move.
+const fixture07 = (name) => read(`fixtures/generated-0.7/${name}`);
 const fixture = (name) => read(`fixtures/generated/${name}`);
 const fixtureText = (name) => fixture(name).toString('ascii').trim();
 const publicReceipt = (name) =>
@@ -210,6 +218,11 @@ function ephemeralTlsPki() {
 // Written to a temp directory rather than kept under test/ because everything
 // under a `test/` directory is a test file to `node --test`, and this is a
 // program that must only ever run with the planted environment around it.
+//
+// verifyReceipt/verifySignedData never throw for input the caller does not
+// control (0.7 result objects, not exceptions) — only createConfig with an
+// empty roots array does, so "refused" here means a failure result, not a
+// catch.
 const CHILD_SOURCE = String.raw`
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -222,10 +235,12 @@ import tls from 'node:tls';
 const dist = process.env.APRV_DIST;
 const dir = process.env.APRV_DIR;
 const fixtures = process.env.APRV_FIXTURES;
+const fixtures07 = process.env.APRV_FIXTURES_07;
 const node = await import(dist + 'index.js');
 const web = await import(dist + 'web/index.js');
 
 const fixture = (n) => readFileSync(fixtures + n);
+const fixture07 = (n) => readFileSync(fixtures07 + n);
 const fixtureText = (n) => fixture(n).toString('ascii').trim();
 const file = (n) => readFileSync(dir + '/' + n, 'utf8');
 
@@ -248,23 +263,19 @@ const recordAsync = async (name, body) => {
 };
 
 const receiptRootPem = file('receipt-root.pem');
-const receiptRootDer = fixture('receipt-root.der');
+const receiptRootDer = fixture07('receipt-root.der');
 const jwsRootDer = fixture('jws-root.der');
-const receiptDer = fixture('receipt.der');
+const receiptB64 = fixture07('receipt.der').toString('base64');
 const transactionJws = fixtureText('transaction.jws');
 const norm = (s) => s.replace(/\s+/g, '');
 
-function invalidChain(run) {
-  return async () => {
-    try {
-      await run();
-    } catch (error) {
-      assert.equal(error.name, 'VerificationError', 'wrong error type: ' + error);
-      assert.equal(error.reason, 'INVALID_CHAIN', error.message);
-      return error.message;
-    }
+/** A failure result with the given reason, or throws describing why not. */
+function refused(result, reason) {
+  if (result.verified) {
     throw new Error('the material was ACCEPTED under anchors that did not certify it');
-  };
+  }
+  assert.equal(result.failure.reason, reason, result.failure.message);
+  return result.failure.message;
 }
 
 // --- the premise ---------------------------------------------------------
@@ -318,112 +329,73 @@ record('premise: the planted receipt root is in the default CA list', () => {
 // --- and the library still refuses ---------------------------------------
 
 record('node: the planted root works when PASSED as an anchor', () => {
-  const receipt = node.verifyReceiptCore(receiptDer, [receiptRootDer]);
-  assert.equal(receipt.bundleId, 'com.example.app');
-  return receipt.receiptType;
+  const verifier = node.createVerifier(node.createConfig({ roots: [receiptRootDer] }));
+  const result = verifier.verifyReceipt(receiptB64);
+  assert.equal(result.verified, true, result.failure && result.failure.message);
+  assert.equal(result.payload.bundleId, 'com.example.app');
+  return result.payload.receiptType;
 });
 
-await recordAsync(
-  'node: verifyReceiptCore refuses it under the bundled Apple roots',
-  invalidChain(() => node.verifyReceiptCore(receiptDer, node.appleReceiptRoots())),
+record('node: verifyReceipt refuses it under the bundled Apple roots', () =>
+  refused(node.createVerifier(node.defaultConfig()).verifyReceipt(receiptB64), 'UNTRUSTED_CHAIN'),
 );
-await recordAsync(
-  'node: ReceiptVerifier refuses it under the bundled Apple roots',
-  invalidChain(() =>
-    new node.ReceiptVerifier({
-      trustedRoots: node.appleReceiptRoots(),
-      bundleId: 'com.example.app',
-    }).verify(receiptDer),
+
+record("node: verifyReceipt refuses it under Node's own bundled CA store", () =>
+  refused(
+    node.createVerifier(node.createConfig({ roots: [...tls.rootCertificates] })).verifyReceipt(receiptB64),
+    'UNTRUSTED_CHAIN',
   ),
-);
-await recordAsync(
-  'node: verifyReceiptCore refuses it under Node’s own bundled CA store',
-  invalidChain(() => node.verifyReceiptCore(receiptDer, [...tls.rootCertificates])),
 );
 
 record('node: the planted JWS root works when PASSED as an anchor', () => {
-  const payload = new node.JwsVerifier({
-    trustedRoots: [jwsRootDer],
-    bundleId: 'com.example.app',
-    acceptedEnvironments: ['Sandbox'],
-  }).verifyTransaction(transactionJws);
+  const verifier = node.createVerifier(node.createConfig({ roots: [jwsRootDer] }));
+  const result = verifier.verifySignedData(transactionJws);
+  assert.equal(result.verified, true, result.failure && result.failure.message);
+  const payload = JSON.parse(result.payload.json);
   assert.equal(payload.bundleId, 'com.example.app');
   return payload.transactionId;
 });
 
-await recordAsync(
-  'node: JwsVerifier refuses it under the bundled Apple roots',
-  invalidChain(() =>
-    new node.JwsVerifier({
-      trustedRoots: node.appleJwsRoots(),
-      bundleId: 'com.example.app',
-      acceptedEnvironments: ['Sandbox'],
-    }).verifyTransaction(transactionJws),
-  ),
+record('node: verifySignedData refuses it under the bundled Apple roots', () =>
+  refused(node.createVerifier(node.defaultConfig()).verifySignedData(transactionJws), 'UNTRUSTED_CHAIN'),
 );
 
 // The web build runs in this same planted process. It cannot reach a trust
 // store even in principle — it has no node: imports — but it is the build a
 // WebCrypto-only runtime ships, so it is asserted rather than assumed.
 await recordAsync('web: the planted root works when PASSED as an anchor', async () => {
-  const receipt = await web.verifyReceiptCore(new Uint8Array(receiptDer), [
-    new Uint8Array(receiptRootDer),
-  ]);
-  assert.equal(receipt.bundleId, 'com.example.app');
-  return receipt.receiptType;
+  const verifier = web.createVerifier(await web.createConfig({ roots: [new Uint8Array(receiptRootDer)] }));
+  const result = await verifier.verifyReceipt(receiptB64);
+  assert.equal(result.verified, true, result.failure && result.failure.message);
+  assert.equal(result.payload.bundleId, 'com.example.app');
+  return result.payload.receiptType;
 });
-await recordAsync(
-  'web: verifyReceiptCore refuses it under the bundled Apple roots',
-  invalidChain(() =>
-    web.verifyReceiptCore(new Uint8Array(receiptDer), web.appleReceiptRoots()),
-  ),
-);
-await recordAsync(
-  'web: verifyReceiptCore refuses it under Node’s own bundled CA store',
-  invalidChain(() => web.verifyReceiptCore(new Uint8Array(receiptDer), [...tls.rootCertificates])),
-);
-await recordAsync(
-  'web: JwsVerifier refuses it under the bundled Apple roots',
-  invalidChain(() =>
-    new web.JwsVerifier({
-      trustedRoots: web.appleJwsRoots(),
-      bundleId: 'com.example.app',
-      acceptedEnvironments: ['Sandbox'],
-    }).verifyTransaction(transactionJws),
-  ),
-);
+
+await recordAsync('web: verifyReceipt refuses it under the bundled Apple roots', async () => {
+  const verifier = web.createVerifier(await web.defaultConfig());
+  return refused(await verifier.verifyReceipt(receiptB64), 'UNTRUSTED_CHAIN');
+});
+
+await recordAsync("web: verifyReceipt refuses it under Node's own bundled CA store", async () => {
+  const verifier = web.createVerifier(await web.createConfig({ roots: [...tls.rootCertificates] }));
+  return refused(await verifier.verifyReceipt(receiptB64), 'UNTRUSTED_CHAIN');
+});
+
+await recordAsync('web: verifySignedData refuses it under the bundled Apple roots', async () => {
+  const verifier = web.createVerifier(await web.defaultConfig());
+  return refused(await verifier.verifySignedData(transactionJws), 'UNTRUSTED_CHAIN');
+});
 
 // An empty anchor set is a configuration error, never a fallback. The failure
 // mode this rules out is "no anchors given, so use the system ones" — which,
 // in a process whose system anchors have just been shown to be live and
 // writable from outside, would be the whole property gone.
 await recordAsync('an empty anchor set is a configuration error, not a fallback', async () => {
-  const sync = [
-    () => node.verifyReceiptCore(receiptDer, []),
-    () => new node.ReceiptVerifier({ trustedRoots: [], bundleId: 'com.example.app' }),
-    () =>
-      new node.JwsVerifier({
-        trustedRoots: [],
-        bundleId: 'com.example.app',
-        acceptedEnvironments: ['Sandbox'],
-      }),
-    () => new node.VerifyReceiptEndpoint({ trustedRoots: [], environment: 'Sandbox' }),
-    () => new web.ReceiptVerifier({ trustedRoots: [], bundleId: 'com.example.app' }),
-    () =>
-      new web.JwsVerifier({
-        trustedRoots: [],
-        bundleId: 'com.example.app',
-        acceptedEnvironments: ['Sandbox'],
-      }),
-  ];
-  for (const call of sync) {
-    assert.throws(call, TypeError, 'an empty trustedRoots was not refused');
-  }
-  // The web build's verify functions are async, so their refusal is a
-  // rejection rather than a throw. It is still a TypeError and still
-  // immediate: no anchors, no verdict.
-  await assert.rejects(() => web.verifyReceiptCore(new Uint8Array(receiptDer), []), TypeError);
-  return sync.length + 1 + ' entry points refuse an empty anchor set';
+  assert.throws(() => node.createConfig({ roots: [] }), TypeError);
+  assert.throws(() => node.createVerifier({ roots: [], clock: () => Date.now() }), TypeError);
+  await assert.rejects(() => web.createConfig({ roots: [] }), TypeError);
+  assert.throws(() => web.createVerifier({ roots: [], clock: () => Date.now() }), TypeError);
+  return '4 entry points refuse an empty anchor set';
 });
 
 process.stdout.write(JSON.stringify(checks));
@@ -432,7 +404,7 @@ process.stdout.write(JSON.stringify(checks));
 test('a certificate authority this process genuinely trusts is still not an anchor', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'aprv-trust-'));
   const pki = ephemeralTlsPki();
-  const receiptRootPem = pem(fixture('receipt-root.der'));
+  const receiptRootPem = pem(fixture07('receipt-root.der'));
 
   // One bundle, three roots: the two fixture roots the library is asked
   // about, and the CA whose leaf the handshake premise uses.
@@ -453,6 +425,7 @@ test('a certificate authority this process genuinely trusts is still not an anch
       NODE_EXTRA_CA_CERTS: join(dir, 'planted-ca-bundle.pem'),
       APRV_DIST: new URL('../dist/', import.meta.url).href,
       APRV_FIXTURES: fileURLToPath(new URL('../../fixtures/generated/', import.meta.url)),
+      APRV_FIXTURES_07: fileURLToPath(new URL('../../fixtures/generated-0.7/', import.meta.url)),
       APRV_DIR: dir,
     },
   });
@@ -464,19 +437,18 @@ test('a certificate authority this process genuinely trusts is still not an anch
     checks.map((c) => c.name).toSorted(),
     [
       'an empty anchor set is a configuration error, not a fallback',
-      'node: JwsVerifier refuses it under the bundled Apple roots',
-      'node: ReceiptVerifier refuses it under the bundled Apple roots',
       'node: the planted JWS root works when PASSED as an anchor',
       'node: the planted root works when PASSED as an anchor',
-      'node: verifyReceiptCore refuses it under Node’s own bundled CA store',
-      'node: verifyReceiptCore refuses it under the bundled Apple roots',
+      "node: verifyReceipt refuses it under Node's own bundled CA store",
+      'node: verifyReceipt refuses it under the bundled Apple roots',
+      'node: verifySignedData refuses it under the bundled Apple roots',
       'premise: NODE_EXTRA_CA_CERTS names the planted bundle',
       'premise: a TLS handshake trusts a planted CA with no ca option',
       'premise: the planted receipt root is in the default CA list',
-      'web: JwsVerifier refuses it under the bundled Apple roots',
       'web: the planted root works when PASSED as an anchor',
-      'web: verifyReceiptCore refuses it under Node’s own bundled CA store',
-      'web: verifyReceiptCore refuses it under the bundled Apple roots',
+      "web: verifyReceipt refuses it under Node's own bundled CA store",
+      'web: verifyReceipt refuses it under the bundled Apple roots',
+      'web: verifySignedData refuses it under the bundled Apple roots',
     ],
     'the planted-trust child did not run the checks this test claims it runs',
   );
@@ -503,36 +475,32 @@ test("Node's own bundled CA store, handed in as trustedRoots, verifies no Apple 
 
   // The premise: genuinely Apple-signed material this library does accept,
   // so the refusal below is about the anchors and not about the receipt.
-  assert.equal(
-    new node.ReceiptVerifier({
-      trustedRoots: node.appleReceiptRoots(),
-      bundleId: APPLE_RECEIPT_BUNDLE,
-    }).verify(genuine).receiptType,
-    'ProductionSandbox',
-  );
+  const genuineResult = node.createVerifier(node.defaultConfig()).verifyReceipt(genuine);
+  assert.equal(genuineResult.verified, true, genuineResult.failure?.message);
+  assert.equal(genuineResult.payload.receiptType, 'ProductionSandbox');
 
   // And the conclusion: 140-odd certificate authorities that every TLS client
   // on this machine accepts, handed to the library as its entire anchor set,
   // verify nothing — because none of them issued anything here.
-  assert.throws(
-    () =>
-      new node.ReceiptVerifier({
-        trustedRoots: hostRoots,
-        bundleId: APPLE_RECEIPT_BUNDLE,
-      }).verify(genuine),
-    (error) => error.reason === 'INVALID_CHAIN',
-  );
+  const hostOnly = node
+    .createVerifier(node.createConfig({ roots: hostRoots }))
+    .verifyReceipt(genuine);
+  assert.equal(hostOnly.verified, false);
+  assert.equal(hostOnly.failure.reason, 'UNTRUSTED_CHAIN');
 
   // Nor does sitting next to Apple's roots in the caller's list buy a public
-  // CA anything on material it did not certify.
-  assert.throws(
-    () =>
-      node.verifyReceiptCore(fixture('receipt.der'), [...hostRoots, ...node.appleReceiptRoots()]),
-    (error) => error.reason === 'INVALID_CHAIN',
-  );
+  // CA anything on material it did not certify: a fixture receipt (signed
+  // under the fixture root, not Apple's) still fails with both present.
+  const fixtureReceipt = fixture07('receipt.der').toString('base64');
+  const appleRootsDer = node.defaultConfig().roots.map((r) => r.raw);
+  const mixed = node
+    .createVerifier(node.createConfig({ roots: [...hostRoots, ...appleRootsDer] }))
+    .verifyReceipt(fixtureReceipt);
+  assert.equal(mixed.verified, false);
+  assert.equal(mixed.failure.reason, 'UNTRUSTED_CHAIN');
 });
 
-test('no bundled Apple anchor came from a host trust store', () => {
+test('no bundled Apple anchor came from a host trust store', async () => {
   // If this package ever started folding ambient roots into its own set,
   // this is the first assertion that would change.
   const host = new Set(
@@ -544,37 +512,39 @@ test('no bundled Apple anchor came from a host trust store', () => {
       }
     }),
   );
-  for (const anchor of [...node.appleReceiptRoots(), ...node.appleJwsRoots()]) {
+  const nodeRoots = node.defaultConfig().roots;
+  const webRoots = (await web.defaultConfig()).roots;
+  for (const anchor of nodeRoots) {
     assert.ok(
-      !host.has(anchor.raw.toString('base64')),
-      `${anchor.subject} came from the host trust store`,
+      !host.has(Buffer.from(anchor.raw).toString('base64')),
+      'a bundled Apple root came from the host trust store',
     );
   }
   // And the DER the two builds bundle is the same DER, so neither can be
   // widened without the other.
   assert.deepEqual(
-    web.appleReceiptRoots().map((d) => Buffer.from(d).toString('base64')),
-    node.appleReceiptRoots().map((c) => c.raw.toString('base64')),
+    webRoots.map((r) => Buffer.from(r.raw).toString('base64')),
+    nodeRoots.map((r) => Buffer.from(r.raw).toString('base64')),
   );
 });
 
 test('an empty anchor set is a configuration error in every entry point', async () => {
   // There is no ambient anchor set to fall back to, and asking for one is
   // refused at the door rather than silently widened into "the system roots".
-  const der = fixture('receipt.der');
-  for (const call of [
-    () => node.verifyReceiptCore(der, []),
-    () => new node.ReceiptVerifier({ trustedRoots: [], bundleId: BUNDLE }),
-    () => new node.JwsVerifier({ trustedRoots: [], bundleId: BUNDLE, acceptedEnvironments: [] }),
-    () => new node.VerifyReceiptEndpoint({ trustedRoots: [], environment: 'Sandbox' }),
+  const syncDoors = [
+    () => node.createConfig({ roots: [] }),
+    () => node.createVerifier({ roots: [], clock: () => Date.now() }),
     () => normalizeRoots([]),
-    () => new web.ReceiptVerifier({ trustedRoots: [], bundleId: BUNDLE }),
-    () => new web.JwsVerifier({ trustedRoots: [], bundleId: BUNDLE, acceptedEnvironments: [] }),
-  ]) {
-    assert.throws(call, TypeError);
+    () => web.createVerifier({ roots: [], clock: () => Date.now() }),
+    () => webNormalizeRoots([]),
+  ];
+  for (const call of syncDoors) {
+    assert.throws(call, TypeError, 'an empty trustedRoots was not refused');
   }
-  // Async in the web build, so its refusal is a rejection, not a throw.
-  await assert.rejects(() => web.verifyReceiptCore(new Uint8Array(der), []), TypeError);
+  // createConfig in the web build is async (it checks the bundled roots'
+  // fingerprint through crypto.subtle), so its refusal is a rejection even
+  // when the throw that causes it is synchronous.
+  await assert.rejects(() => web.createConfig({ roots: [] }), TypeError);
 });
 
 // ---------------------------------------------------------------------------
@@ -585,23 +555,17 @@ test('an empty anchor set is a configuration error in every entry point', async 
  * Anchor lists that record themselves at the moment the chain builder reads
  * them.
  *
- * `normalizeRoots` maps the caller's array, and `Array.prototype.map` on a
- * subclass produces another instance of that subclass — so the array the
- * chain builder is handed is still one of these, and overriding the method by
- * which it reads its anchors records exactly what reached it. No module
- * mocking and no loader hook: only the array semantics the library already
- * uses.
+ * `chain.ts`/`web/chain.ts` read anchors straight from `Config.roots` (no
+ * `normalizeRoots` step in between when a `Config` is built by hand, as the
+ * tests below do), and `Array.prototype.some`/iteration on a subclass
+ * produces another instance of that subclass — so overriding the method by
+ * which an array is read records exactly what reached the chain builder. No
+ * module mocking and no loader hook: only the array semantics the library
+ * already uses.
  *
  * Two classes rather than one, and each overrides exactly the one method its
- * build uses, because that is what makes the recording evidence. The Node
- * build reads anchors with `anchors.some(...)`; the web build's `anyIssued`
- * reads them with `for...of`. A class that recorded both would also record a
- * spread — and an implementation that spread the caller's list before
- * appending an ambient trust store to it would then look innocent, because
- * the snapshot taken at the spread is still exactly the caller's list. That
- * is not hypothetical: it is what this spy did in its first form, and what a
- * `[...normalizeRoots(x), ...tls.getCACertificates('default')]` regression looks
- * like from in here.
+ * build uses: the Node build's `issuedByAnyAnchor` reads anchors with
+ * `anchors.some(...)`; the web build's reads them with `for...of`.
  */
 let consulted = [];
 
@@ -630,7 +594,7 @@ class SomeRecordingRoots extends Array {
   }
 }
 
-/** Records at iteration — how the web build's `anyIssued` reads its anchors. */
+/** Records at iteration — how the web build's chain.ts reads its anchors. */
 class IterationRecordingRoots extends Array {
   [Symbol.iterator]() {
     record(this);
@@ -673,61 +637,67 @@ test('the receipt path builder sees exactly the anchors the caller passed', asyn
   // Two anchors, the wrong one first: order, count and identity all have
   // something to lose. The receipt only chains to the second.
   const passed = [
-    new X509Certificate(fixture('jws-root.der')),
-    new X509Certificate(fixture('receipt-root.der')),
+    parseCertificate(fixture('jws-root.der')),
+    parseCertificate(fixture07('receipt-root.der')),
   ];
-  const seen = await anchorsSeenBy(() =>
-    new node.ReceiptVerifier({
-      trustedRoots: fill(SomeRecordingRoots, passed),
-      bundleId: BUNDLE,
-    }).verify(fixture('receipt.der')),
-  );
+  const receiptB64 = fixture07('receipt.der').toString('base64');
+  const seen = await anchorsSeenBy(() => {
+    const verifier = node.createVerifier({
+      roots: fill(SomeRecordingRoots, passed),
+      clock: () => Date.now(),
+    });
+    verifier.verifyReceipt(receiptB64);
+  });
   assertAnchorsAre(passed, seen, same);
 });
 
 test('the JWS path builder sees exactly the anchors the caller passed', async () => {
   const passed = [
-    new X509Certificate(fixture('receipt-root.der')),
-    new X509Certificate(fixture('jws-root.der')),
+    parseCertificate(fixture07('receipt-root.der')),
+    parseCertificate(fixture('jws-root.der')),
   ];
-  const seen = await anchorsSeenBy(() =>
-    new node.JwsVerifier({
-      trustedRoots: fill(SomeRecordingRoots, passed),
-      bundleId: BUNDLE,
-      acceptedEnvironments: ['Sandbox'],
-    }).verifyTransaction(fixtureText('transaction.jws')),
-  );
+  const seen = await anchorsSeenBy(() => {
+    const verifier = node.createVerifier({
+      roots: fill(SomeRecordingRoots, passed),
+      clock: () => Date.now(),
+    });
+    verifier.verifySignedData(fixtureText('transaction.jws'));
+  });
   assertAnchorsAre(passed, seen, same);
 });
 
 test('the web chain builder sees exactly the anchors the caller passed', async () => {
-  // The web build parses DER into its own certificate objects, so identity
-  // here is the anchor's bytes rather than the object. The claim is the same:
-  // nothing was added, dropped or reordered between caller and chain builder.
-  const passed = [fixture('jws-root.der'), fixture('receipt-root.der')].map(
-    (der) => new Uint8Array(der),
-  );
-  const seen = await anchorsSeenBy(() =>
-    new web.ReceiptVerifier({
-      trustedRoots: fill(IterationRecordingRoots, passed),
-      bundleId: BUNDLE,
-    }).verify(new Uint8Array(fixture('receipt.der'))),
-  );
+  const passed = [
+    parseCertificate(fixture('jws-root.der')),
+    parseCertificate(fixture07('receipt-root.der')),
+  ];
+  const receiptB64 = fixture07('receipt.der').toString('base64');
+  const seen = await anchorsSeenBy(async () => {
+    const verifier = web.createVerifier({
+      roots: fill(IterationRecordingRoots, passed),
+      clock: () => Date.now(),
+    });
+    await verifier.verifyReceipt(receiptB64);
+  });
   assertAnchorsAre(passed, seen, derOf);
 });
 
 test('normalizeRoots returns the caller list and nothing else, in both builds', () => {
-  // The one seam every verify path funnels through, asserted directly. The
-  // spies above watch what the chain builder READ; this watches what the
-  // library BUILT, so an ambient set appended after the caller's list is
-  // caught even by an implementation that never lets the spy see the result.
-  const passed = [fixture('jws-root.der'), fixture('receipt-root.der')];
-  const asCertificates = passed.map((der) => new X509Certificate(der));
+  // The one seam every hand-built Config funnels its `roots` through when a
+  // caller supplies DER/PEM rather than pre-parsed certificates. The spies
+  // above watch what the chain builder READ; this watches what normalizeRoots
+  // BUILT, so an ambient set appended after the caller's list would be caught
+  // here even if it never reached the chain builder's own read.
+  const passed = [fixture('jws-root.der'), fixture07('receipt-root.der')];
 
-  const normalized = normalizeRoots(asCertificates);
-  assert.equal(normalized.length, asCertificates.length, 'the Node anchor set changed size');
+  const normalized = normalizeRoots(passed);
+  assert.equal(normalized.length, passed.length, 'the Node anchor set changed size');
   for (const [index, anchor] of normalized.entries()) {
-    assert.equal(anchor, asCertificates[index], `anchor ${index} was substituted`);
+    assert.equal(
+      Buffer.from(anchor.raw).toString('hex'),
+      passed[index].toString('hex'),
+      `anchor ${index} was substituted`,
+    );
   }
 
   const normalizedWeb = webNormalizeRoots(passed.map((der) => new Uint8Array(der)));
@@ -737,37 +707,32 @@ test('normalizeRoots returns the caller list and nothing else, in both builds', 
     passed.map((der) => der.toString('base64')),
   );
 
-  // And the premise the two spies above rest on, asserted rather than
-  // assumed: normalizeRoots reaches its result with `Array.prototype.map` and
-  // nothing else, so the array the chain builder receives is still the
-  // caller's subclass and is still watched. An implementation that copied the
-  // mapped list into a fresh array — `[...map(...), ...somethingAmbient]` —
-  // would break this line, which is the one thing the spies alone cannot see.
+  // And the premise the spies above rest on, asserted rather than assumed:
+  // normalizeRoots reaches its result with `Array.prototype.map` and nothing
+  // else, so a caller's own array subclass survives the call. An
+  // implementation that copied the mapped list into a fresh array —
+  // `[...normalizeRoots(x), ...somethingAmbient]` — would break this line,
+  // which is the one thing the spies alone cannot see.
+  const derItems = passed.map((der) => new Uint8Array(der));
   assert.ok(
-    fill(SomeRecordingRoots, asCertificates) instanceof SomeRecordingRoots &&
-      normalizeRoots(fill(SomeRecordingRoots, asCertificates)) instanceof SomeRecordingRoots,
-    "the Node build no longer hands the chain builder the caller's own array",
+    normalizeRoots(fill(SomeRecordingRoots, derItems)) instanceof SomeRecordingRoots,
+    "the Node build's normalizeRoots no longer hands back the caller's own array subclass",
   );
   assert.ok(
-    webNormalizeRoots(
-      fill(
-        IterationRecordingRoots,
-        passed.map((der) => new Uint8Array(der)),
-      ),
-    ) instanceof IterationRecordingRoots,
-    "the web build no longer hands the chain builder the caller's own array",
+    webNormalizeRoots(fill(IterationRecordingRoots, derItems)) instanceof IterationRecordingRoots,
+    "the web build's normalizeRoots no longer hands back the caller's own array subclass",
   );
   consulted = [];
 });
 
 test('a PEM trust root is unwrapped in one pass, whatever the caller sends', () => {
-  // `trustedRoots` is caller data, and the web build accepts it as a PEM
-  // string. The unwrapping used to be a lazy `[\s\S]*?` between the two
-  // marker literals, which CodeQL flagged as a polynomial regular expression
-  // on uncontrolled data: a string that opens a block and never closes it
-  // makes that engine re-scan the tail from every candidate start. The
-  // rewrite is two indexOf calls, and these are the inputs that have to keep
-  // behaving exactly as they did.
+  // `trustedRoots` is caller data, and both builds accept it as a PEM string.
+  // The unwrapping used to be a lazy `[\s\S]*?` between the two marker
+  // literals, which CodeQL flagged as a polynomial regular expression on
+  // uncontrolled data: a string that opens a block and never closes it makes
+  // that engine re-scan the tail from every candidate start. pem.ts's
+  // `pemBody` is two `indexOf` calls, and these are the inputs that have to
+  // keep behaving exactly as they did.
   const der = fixture('receipt-root.der');
   const expected = der.toString('base64');
 
@@ -785,11 +750,9 @@ test('a PEM trust root is unwrapped in one pass, whatever the caller sends', () 
   // whitespace run costs V8 nothing (it finds the BEGIN literal once and
   // gives up). The quadratic case is an input where BEGIN matches over and
   // over with no END anywhere, so the lazy `[\s\S]*?` walks the whole
-  // remaining tail again from each one. Measured 2026-09-22 with the old
-  // regex: 4000 repeats 130ms, 8000 repeats 512ms, 16000 repeats 1.7s. The
-  // 40000 used below took 10.3s and blows the bound; the indexOf scan does
-  // the same string in 0.7ms, so the margin here is four orders of
-  // magnitude and the bound is not measuring runner speed.
+  // remaining tail again from each one. The indexOf scan does the same string
+  // in under a millisecond, so the bound below is loose by orders of
+  // magnitude and is not measuring runner speed.
   const SIZE = 400_000;
   const hostile = [
     `${PEM_BEGIN_LINE}\n${' '.repeat(SIZE)}`,
@@ -807,10 +770,6 @@ test('a PEM trust root is unwrapped in one pass, whatever the caller sends', () 
     );
   }
   const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
-  // Linear scanning does all five in single-digit milliseconds here; the
-  // quadratic spelling took minutes on the same inputs. The bound is loose on
-  // purpose -- it is asserting a complexity class, not a benchmark, and it
-  // has to hold on the slowest runner in the matrix.
   assert.ok(elapsedMs < 2000, `rejecting ${hostile.length} hostile roots took ${elapsedMs}ms`);
 
   // And the ordinary refusals the same code path owes callers.
@@ -820,18 +779,33 @@ test('a PEM trust root is unwrapped in one pass, whatever the caller sends', () 
 });
 
 test('the chain primitives take their anchors only from their argument', () => {
-  // The two functions every verify path funnels through. Called directly with
-  // an anchor set that certifies nothing, they refuse — there is no ambient
-  // set behind the argument for them to fall back on.
-  const stranger = new X509Certificate(fixture('jws-root.der'));
-  const signer = new X509Certificate(read('fixtures/generated/receipt-root.der'));
+  // The functions every verify path funnels through. Called directly with an
+  // anchor set that certifies nothing, they refuse — there is no ambient set
+  // behind the argument for them to fall back on.
+  const stranger = parseCertificate(fixture('jws-root.der'));
+  const signer = parseCertificate(fixture07('receipt-root.der'));
+  const atMs = Date.parse('2024-08-06T12:00:00Z');
   assert.throws(
-    () => buildAndValidatePath(signer, [signer], [stranger], new Date('2024-08-06T12:00:00Z')),
-    (error) => error.reason === 'INVALID_CHAIN',
+    () => buildAndValidatePath(signer, [signer], [stranger], atMs),
+    (error) => error.reason === 'UNTRUSTED_CHAIN',
   );
   assert.throws(
-    () => validatePair(signer, stranger, [stranger], new Date('2024-08-06T12:00:00Z')),
-    (error) => error.reason === 'INVALID_CHAIN',
+    () => validatePair(signer, stranger, [stranger], atMs),
+    (error) => error.reason === 'UNTRUSTED_CHAIN',
+  );
+});
+
+test('the web chain primitives take their anchors only from their argument', async () => {
+  const stranger = parseCertificate(fixture('jws-root.der'));
+  const signer = parseCertificate(fixture07('receipt-root.der'));
+  const atMs = Date.parse('2024-08-06T12:00:00Z');
+  await assert.rejects(
+    () => webBuildAndValidatePath(signer, [signer], [stranger], atMs),
+    (error) => error.reason === 'UNTRUSTED_CHAIN',
+  );
+  await assert.rejects(
+    () => webValidatePair(signer, stranger, [stranger], atMs),
+    (error) => error.reason === 'UNTRUSTED_CHAIN',
   );
 });
 
@@ -843,11 +817,11 @@ test('the chain primitives take their anchors only from their argument', () => {
 function sourceFiles(dir = SRC) {
   const out = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const path = join(dir, entry.name);
+    const entryPath = join(dir, entry.name);
     if (entry.isDirectory()) {
-      out.push(...sourceFiles(path));
+      out.push(...sourceFiles(entryPath));
     } else if (entry.name.endsWith('.ts')) {
-      out.push(path);
+      out.push(entryPath);
     }
   }
   return out.toSorted();
@@ -855,9 +829,8 @@ function sourceFiles(dir = SRC) {
 
 /**
  * A TypeScript source with comments removed, so the bans below land on code
- * and not on prose that legitimately names what the code avoids — `roots.ts`
- * cites Apple's `https://` CA page, and this file's own comments name every
- * forbidden token.
+ * and not on prose that legitimately names what the code avoids. This file's
+ * own comments name every forbidden token.
  *
  * String and template literals are tracked, so a `//` inside one is not a
  * comment. Regular-expression literals are not tracked, which is safe here
@@ -907,16 +880,16 @@ function stripComments(source) {
   return out;
 }
 
-const SOURCES = sourceFiles().map((path) => ({
-  path,
-  name: path.slice(SRC.length),
-  source: readFileSync(path, 'utf8'),
-  code: stripComments(readFileSync(path, 'utf8')),
+const SOURCES = sourceFiles().map((entryPath) => ({
+  path: entryPath,
+  name: entryPath.slice(SRC.length),
+  source: readFileSync(entryPath, 'utf8'),
+  code: stripComments(readFileSync(entryPath, 'utf8')),
 }));
 
 test('the source scan is looking at the right tree', () => {
   assert.ok(
-    SOURCES.length >= 15,
+    SOURCES.length >= 25,
     `the source scan found only ${SOURCES.length} files under ${SRC}`,
   );
   assert.ok(
@@ -933,55 +906,52 @@ const IMPORTS = SOURCES.flatMap((file) =>
   })),
 );
 
-test('the only non-relative import in the whole package is node:crypto', () => {
+test('the only non-relative imports in the whole package are node:crypto', () => {
   // An allowlist as well as a denylist: a denylist can only ban what we
   // thought of, and this catches the next `truststore`-shaped dependency
   // before it has a name. Zero runtime dependencies is a README claim, and
-  // this is where it is mechanised.
+  // this is where it is mechanised. config.ts and receipt.ts use it for
+  // createHash (fingerprint pinning, message digests); crypto.ts for the
+  // signature primitives.
   const foreign = IMPORTS.filter(({ specifier }) => !specifier.startsWith('.')).map(
     ({ file, specifier }) => `${file.name} -> ${specifier}`,
   );
   assert.deepEqual(foreign.toSorted(), [
-    'chain.ts -> node:crypto',
-    'jws.ts -> node:crypto',
+    'config.ts -> node:crypto',
+    'crypto.ts -> node:crypto',
     'receipt.ts -> node:crypto',
-    'roots.ts -> node:crypto',
   ]);
 });
 
 test('the node:crypto surface the package uses is exactly the reviewed one', () => {
-  // None of these four can reach a trust store, and that is the point of
-  // pinning the list. In particular:
+  // None of these four can reach a trust store:
   //
-  //   * `X509Certificate.prototype.verify(publicKey)` is a pure signature
-  //     check against the key it is handed — it is NOT `SecTrustEvaluate`,
-  //     it consults nothing, and it is how chain.ts checks each link. Its
-  //     sibling `checkIssued(issuer)` is a name/AKI comparison, equally
-  //     store-free. Both are allowed, and this assertion is what keeps them
-  //     the only certificate APIs in play.
-  //   * `crypto.verify(algorithm, data, key, signature)` likewise verifies
-  //     against a key the caller supplies.
+  //   * `createHash` computes a digest over bytes it is handed.
+  //   * `createPublicKey` builds a KeyObject from an SPKI this package
+  //     already parsed itself (x509.ts), never from a certificate the
+  //     platform resolved.
+  //   * `verify` checks a signature against the key and data it is handed.
+  //   * `constants` supplies the RSA-PSS padding/salt-length constants.
   //
-  // `createSecureContext`, `Certificate`, or anything from node:tls arriving
-  // here would fail this test before it could be used.
+  // `X509Certificate`, `createSecureContext`, or anything from node:tls
+  // arriving here would fail this test before it could be used. Type-only
+  // imports (erased at compile time, never reach dist/) are not counted.
   const imported = new Set();
   for (const { code } of SOURCES) {
     for (const match of code.matchAll(/import\s*\{([^}]*)\}\s*from\s*'node:crypto'/g)) {
       for (const part of match[1].split(',')) {
-        const name = part
-          .trim()
-          .split(/\s+as\s+/)[0]
-          .trim();
-        if (name.length > 0) {
-          imported.add(name);
+        const trimmed = part.trim();
+        if (trimmed.length === 0 || trimmed.startsWith('type ')) {
+          continue;
         }
+        imported.add(trimmed.split(/\s+as\s+/)[0].trim());
       }
     }
   }
   assert.deepEqual([...imported].toSorted(), [
-    'X509Certificate',
+    'constants',
     'createHash',
-    'timingSafeEqual',
+    'createPublicKey',
     'verify',
   ]);
 });
@@ -1016,7 +986,7 @@ test('the web build imports nothing Node-specific, at source as well as in dist'
   // the files under src/web/. A `node:crypto` import reaching any of them
   // fails here at review time rather than after a build.
   const reachable = reachableFrom('web/index.ts');
-  assert.ok(reachable.length >= 12, `only ${reachable.length} modules reachable from web/index.ts`);
+  assert.ok(reachable.length >= 20, `only ${reachable.length} modules reachable from web/index.ts`);
   for (const file of reachable) {
     for (const { specifier } of IMPORTS.filter((i) => i.file.name === file.name)) {
       assert.ok(
@@ -1027,34 +997,31 @@ test('the web build imports nothing Node-specific, at source as well as in dist'
     assert.doesNotMatch(file.code, /\bBuffer\b/, `${file.name} names Buffer`);
     assert.doesNotMatch(file.code, /\bprocess\b/, `${file.name} names process`);
   }
-  // And the four modules that do use node:crypto are exactly the ones the web
-  // build cannot see.
+  // And the Node-only modules (the ones importing node:crypto, plus the
+  // top-level orchestrators that only the Node build wires up) are exactly
+  // the ones the web build cannot see — it has its own web/ versions of each.
   const names = new Set(reachable.map((file) => file.name));
-  for (const nodeOnly of ['chain.ts', 'jws.ts', 'receipt.ts', 'roots.ts']) {
+  for (const nodeOnly of [
+    'chain.ts',
+    'config.ts',
+    'crypto.ts',
+    'jws.ts',
+    'receipt.ts',
+    'verifier.ts',
+  ]) {
     assert.ok(!names.has(nodeOnly), `${nodeOnly} is reachable from the web entry point`);
   }
 });
 
 test('no module names a trust store, a platform verifier or a network client', () => {
-  // Matched as whole identifiers, so a word inside another name is not a hit.
-  // Each of these is a real way a Node library ends up trusting something its
-  // caller never pinned.
-  const forbidden = [
-    // node: modules that reach a trust store, a peer, or a shell.
-    'tls',
-    'https',
-    'http',
-    'http2',
-    'net',
-    'dgram',
-    'dns',
-    'child_process',
-    'worker_threads',
-    'vm',
-    'fs',
-    'os',
-    'path',
-    'module',
+  // Matched as whole identifiers, so a word inside another name — or a
+  // chain-building `path` variable, which chain.ts and receipt.ts both use
+  // legitimately for a certificate path — is not a hit. Node built-in module
+  // names are matched only as quoted specifiers (below), not as bare words,
+  // for the same reason: "fs" and "path" are common identifiers that have
+  // nothing to do with the modules of the same name, and the import allowlist
+  // above already catches every static `from '<module>'`.
+  const forbiddenWords = [
     // the trust-store and TLS-context APIs themselves.
     'rootCertificates',
     'getCACertificates',
@@ -1078,9 +1045,31 @@ test('no module names a trust store, a platform verifier or a network client', (
     'globalThis',
     'eval',
   ];
-  const patterns = forbidden.map((token) => [token, new RegExp(`\\b${token}\\b`)]);
+  const wordPatterns = forbiddenWords.map((token) => [token, new RegExp(`\\b${token}\\b`)]);
+  // node: modules that reach a trust store, a peer, or a shell — matched only
+  // as an actual module specifier (quoted, optionally 'node:'-prefixed).
+  const forbiddenModules = [
+    'tls',
+    'https',
+    'http',
+    'http2',
+    'net',
+    'dgram',
+    'dns',
+    'child_process',
+    'worker_threads',
+    'vm',
+    'fs',
+    'os',
+    'path',
+    'module',
+  ];
+  const modulePatterns = forbiddenModules.map((name) => [
+    name,
+    new RegExp(`['"](?:node:)?${name}['"]`),
+  ]);
   for (const file of SOURCES) {
-    for (const [token, pattern] of patterns) {
+    for (const [token, pattern] of [...wordPatterns, ...modulePatterns]) {
       assert.doesNotMatch(
         file.code,
         pattern,
