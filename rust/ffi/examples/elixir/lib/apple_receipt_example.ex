@@ -62,7 +62,10 @@ defmodule AppleReceiptExample do
   """
   @spec verifier(keyword()) :: {:ok, verifier()} | {:error, :invalid_argument}
   def verifier(options \\ []) do
-    Native.verifier_new(Keyword.get(options, :roots, []), Keyword.get(options, :clock_unix_millis))
+    Native.verifier_new(
+      Keyword.get(options, :roots, []),
+      Keyword.get(options, :clock_unix_millis)
+    )
   end
 
   @doc """

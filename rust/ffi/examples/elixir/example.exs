@@ -33,7 +33,9 @@ end
 failures = show.("transaction", AppleReceiptExample.verify_signed_data(fixture_verifier, jws))
 
 {:ok, apple_verifier} = AppleReceiptExample.verifier()
-failures = failures + show.("receipt", AppleReceiptExample.verify_receipt(apple_verifier, receipt))
+
+failures =
+  failures + show.("receipt", AppleReceiptExample.verify_receipt(apple_verifier, receipt))
 
 # Nothing is released by hand: both verifiers are references, and the garbage
 # collector runs the destructor that calls aprv_verifier_free.

@@ -148,7 +148,6 @@ defmodule ConformanceTest do
 
   defp all(kase, key), do: for({^key, value} <- kase, do: value)
 
-
   # --- one case -----------------------------------------------------------
 
   defp run_and_check(kase) do
@@ -192,7 +191,11 @@ defmodule ConformanceTest do
         "verifyReceiptEndpoint" ->
           environment = String.to_integer(get(kase, "endpointEnv"))
 
-          case Native.verify_receipt_endpoint(verifier, environment, File.read!(get(kase, "request"))) do
+          case Native.verify_receipt_endpoint(
+                 verifier,
+                 environment,
+                 File.read!(get(kase, "request"))
+               ) do
             # The endpoint never reports a verdict through the return value:
             # the Apple status code is a field of the body it answers.
             {:ok, body} -> {:ok, {:ok, body}}
@@ -215,7 +218,9 @@ defmodule ConformanceTest do
   end
 
   defp open({:ok, handle}), do: {:ok, handle}
-  defp open({:error, :invalid_argument}), do: {:error, "aprv_verifier_new refused the configuration"}
+
+  defp open({:error, :invalid_argument}),
+    do: {:error, "aprv_verifier_new refused the configuration"}
 
   # --- expectations -------------------------------------------------------
 
@@ -284,8 +289,9 @@ defmodule ConformanceTest do
             else: {:error, "toJson value differs: got #{json}"}
       end
 
-    checks = Enum.map(all(kase, "length"), &check_length(payload, &1)) ++
-               Enum.map(all(kase, "field"), &check_field(payload, &1))
+    checks =
+      Enum.map(all(kase, "length"), &check_length(payload, &1)) ++
+        Enum.map(all(kase, "field"), &check_field(payload, &1))
 
     Enum.find([to_json | checks], :ok, &(&1 != :ok))
   end
