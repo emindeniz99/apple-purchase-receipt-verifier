@@ -14,7 +14,7 @@ module ApplePurchaseReceiptVerifier
   # under `NOVERIFY`, where it is never consulted. A test greps `lib/` for
   # `set_default_paths`, `add_path` and `add_file`.
   #
-  # **Top-down walk (docs/design/0.7-hardening-parity.md, change 1 / #161).**
+  # **Top-down walk (#161).**
   # {authenticated_top_down} walks DOWN from the pinned anchors: a certificate
   # is only ever asked to verify a signature with the key of an anchor, or of
   # a certificate an anchor has already vouched for, directly or transitively.
@@ -254,7 +254,7 @@ module ApplePurchaseReceiptVerifier
       # certificate whose key {issued_by?} used to check a signature while
       # `block` ran. The seam the hardening tests use to assert directly that
       # no verification ever used an untrusted key, rather than inferring it
-      # from timing alone (docs/design/0.7-hardening-parity.md).
+      # from timing alone.
       def keys_used_during
         previous = Thread.current[:aprv_chain_keys_used]
         Thread.current[:aprv_chain_keys_used] = []
@@ -331,8 +331,7 @@ module ApplePurchaseReceiptVerifier
         (raw.getbyte(byte_index) & (0x80 >> (index % 8))) != 0 # steep:ignore NoMethod
       rescue StandardError, Asn1::Error
         # Fail CLOSED: a keyUsage extension that is present but does not
-        # decode must not be read as "no restriction" (docs/design/
-        # 0.7-hardening-parity.md, reverse gaps). The 0.6 behaviour returned
+        # decode must not be read as "no restriction". The 0.6 behaviour returned
         # true here.
         false
       end

@@ -176,8 +176,8 @@ class ConformanceTest < Minitest::Test
   # Runs the case's operation, measuring the SECOND call (after one
   # warm-up) against `maxMillis` when the case carries one, and — on every
   # case tagged "dos" — asserting directly that no verification this call
-  # made used a key too large to be a genuine chain certificate (change 1,
-  # docs/design/0.7-hardening-parity.md): the timing budget alone is a
+  # made used a key too large to be a genuine chain certificate (the
+  # top-down walk, #161): the timing budget alone is a
   # coarse backstop, never the only proof.
   def measured(kase, &block)
     return yield unless kase["maxMillis"] || (kase["tags"] || []).include?("dos")
