@@ -3,10 +3,11 @@
 receipts on the device" procedure.
 
 Algorithm, in order: strict base64, the CMS envelope, the chain to a pinned
-root walked top-down (hardening parity #161), Apple's marker OIDs on both
-the leaf (receipt signing) and the WWDR intermediate, certificate validity
-at the receipt's creation date, and last the signature. Several SignerInfos
-are tried in turn; when none passes, the first one's failure is reported.
+root walked top-down (hardening parity #161), certificate validity at the
+receipt's creation date, Apple's marker OIDs on both the leaf (receipt
+signing) and the WWDR intermediate, and last the signature. Several
+SignerInfos are tried in turn; when none passes, the first one's failure is
+reported.
 
 CMS parsing uses ``asn1crypto`` (BER-capable: genuine Apple/Xcode receipts
 use indefinite lengths); the receipt payload itself is parsed with a small
@@ -186,16 +187,16 @@ def _verify_signature(
         try:
             signer_cert = _find_signer_cert(readable, unreadable, signer)
             path = build_path_top_down(signer_cert, [cert for _, cert in readable], roots)
-            _require_markers(path)
             for cert in path:
                 if not valid_at_ms(cert, at_ms):
                     raise VerificationError(
                         Reason.INVALID_CERTIFICATE,
                         "receipt certificate is not valid at the checked instant",
                     )
-            # The chain and validity are checked BEFORE the signature on
-            # purpose: checking the signature first would run the
-            # attacker's own key (their choice of RSA size and exponent)
+            _require_markers(path)
+            # The chain, validity and markers are checked BEFORE the
+            # signature on purpose: checking the signature first would run
+            # the attacker's own key (their choice of RSA size and exponent)
             # before anything about it is trusted.
             _verify_cms_signature(content, econtent_type, signer, signer_cert)
             return content

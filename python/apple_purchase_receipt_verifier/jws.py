@@ -5,10 +5,10 @@ transactions, Server Notifications V2) against pinned Apple roots
 
 Algorithm, in order: the compact JWS structure, ``alg`` equal to ``ES256``,
 the ``x5c`` chain to a pinned root walked top-down (hardening parity #161),
-Apple's marker OIDs on the leaf and the intermediate, certificate validity
-at the payload's ``signedDate`` (the clock when it is missing or not a
-representable instant), and last the signature. No payload is rejected for
-its age.
+certificate validity at the payload's ``signedDate`` (the clock when it is
+missing or not a representable instant), Apple's marker OIDs on the leaf and
+the intermediate, and last the signature. No payload is rejected for its
+age.
 """
 
 import base64
@@ -256,12 +256,13 @@ def _verify_unguarded(
     payload = _read_payload(payload_bytes)
 
     authenticate_pair_top_down(leaf, intermediate, roots)
-    _require_marker(leaf, LEAF_OID, "leaf")
-    _require_marker(intermediate, INTERMEDIATE_OID, "intermediate")
 
     at_ms = payload.signed_date_ms if payload.signed_date_ms is not None else clock()
     _require_valid(leaf, at_ms, "leaf")
     _require_valid(intermediate, at_ms, "intermediate")
+
+    _require_marker(leaf, LEAF_OID, "leaf")
+    _require_marker(intermediate, INTERMEDIATE_OID, "intermediate")
 
     signing_input = f"{parts[0]}.{parts[1]}".encode("ascii")
     _verify_es256(leaf, signing_input, signature_bytes)
