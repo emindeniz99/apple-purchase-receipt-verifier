@@ -212,7 +212,7 @@ final class ReceiptCore {
         for (SignerInformation signer : signers) {
             requireAttributeSetSyntax(signer);
         }
-        // Raw set, not cms.getCertificates(); see ReceiptCertificates.decodeEmbedded.
+        // The raw set, so the cap is checked before any entry is decoded.
         ASN1Set certificateSet = ReceiptCertificates.embeddedCertificateSet(cms);
         int embeddedCount = certificateSet == null ? 0 : certificateSet.size();
         // Bounded here, before a single embedded certificate is decoded or
@@ -234,48 +234,29 @@ final class ReceiptCore {
         Long creationDate = ReceiptDecoder.readCreationDate(payload);
         Date at = new Date(creationDate != null ? creationDate : now);
 
-        ReceiptCertificates.EmbeddedCertificates certificates = ReceiptCertificates.decodeEmbedded(certificateSet);
-        // Signer-independent, so walked once for all SignerInfos, and only
-        // once one of them has named an embedded certificate that decodes.
-        List<X509Certificate> authenticated = null;
-        VerificationException firstFailure = null;
+        ReceiptCertificates certificates = ReceiptCertificates.decode(certificateSet);
+        // Signer-independent, so walked once for every SignerInfo.
+        List<X509Certificate> authenticated = authenticatedTopDown(certificates.all, trustAnchors);
+        // Every SignerInfo signs the same content, so one passing is enough;
+        // when none does, the first one's failure is the verdict.
+        VerificationException first = null;
         for (SignerInformation signer : signers) {
             try {
-                List<X509Certificate> signerCerts = certificates.signers(signer);
-                if (authenticated == null) {
-                    authenticated = authenticatedTopDown(certificates.all, trustAnchors);
-                }
-                // Each certificate carrying the signer's identity is tried the
-                // way the SignerInfos are: one passing is enough, and only when
-                // none does is the first one's failure the verdict.
-                VerificationException firstMatchFailure = null;
-                for (X509Certificate signerCert : signerCerts) {
-                    try {
-                        List<? extends Certificate> path = validateChain(signerCert, authenticated, at, trustAnchors);
-                        requireMarkers(signerCert, path);
-                        // The chain is checked BEFORE the signature on purpose:
-                        // checking the signature first would run the attacker's
-                        // own key (their choice of RSA size and exponent) before
-                        // anything about it is trusted.
-                        verifyCmsSignature(signer, signerCert);
-                        return payload;
-                    } catch (VerificationException e) {
-                        if (firstMatchFailure == null) {
-                            firstMatchFailure = e;
-                        }
-                    }
-                }
-                throw firstMatchFailure;
+                X509Certificate signerCert = certificates.signer(signer);
+                List<? extends Certificate> path = validateChain(signerCert, authenticated, at, trustAnchors);
+                requireMarkers(signerCert, path);
+                // The chain before the signature: checking the signature
+                // first would run the attacker's own key before anything
+                // about it is trusted.
+                verifyCmsSignature(signer, signerCert);
+                return payload;
             } catch (VerificationException e) {
-                // Every SignerInfo signs the same content, so another one
-                // passing proves the same bytes; only when none does is the
-                // first one's failure the verdict.
-                if (firstFailure == null) {
-                    firstFailure = e;
+                if (first == null) {
+                    first = e;
                 }
             }
         }
-        throw firstFailure;
+        throw first;
     }
 
     /**
