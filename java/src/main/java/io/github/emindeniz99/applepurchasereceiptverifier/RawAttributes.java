@@ -12,13 +12,7 @@ final class RawAttributes {
 
     private RawAttributes() {}
 
-    /**
-     * An unmodifiable copy of {@code attributes} in its own iteration order,
-     * down to fresh arrays. The models copy on the way in and on the way out:
-     * the unmodifiable wrapper only stops the map being re-keyed, and a shared
-     * {@code byte[]} could otherwise be rewritten in place by one reader for
-     * every other.
-     */
+    /** An unmodifiable copy down to fresh arrays, since a shared {@code byte[]} can be rewritten in place. */
     static Map<Integer, List<byte[]>> copy(Map<Integer, List<byte[]>> attributes) {
         Map<Integer, List<byte[]>> copy = new LinkedHashMap<>(attributes.size());
         for (Map.Entry<Integer, List<byte[]>> entry : attributes.entrySet()) {

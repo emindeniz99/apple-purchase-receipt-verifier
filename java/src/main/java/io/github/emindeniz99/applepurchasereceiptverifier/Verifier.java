@@ -45,9 +45,9 @@ public interface Verifier {
      * <p>Checks, in order: the size cap, strict base64, the CMS envelope, the
      * chain from a SignerInfo's certificate to a pinned root with its
      * validity (at the receipt's creation date, the clock when it states
-     * none), Apple's marker OIDs on the signer and on the intermediate that issued it, and the CMS
-     * signature. A receipt with several SignerInfos verifies when at least
-     * one of them does.</p>
+     * none), Apple's marker OIDs on the signer and on the intermediate that
+     * issued it, and the CMS signature. A receipt with several SignerInfos
+     * verifies when at least one of them does.</p>
      */
     VerificationResult<ReceiptPayload> verifyReceipt(@Nullable String base64);
 

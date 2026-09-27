@@ -29,100 +29,39 @@ import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The receipt half of {@link Verifier#verifyReceipt}: a server-side port of
- * Apple's "Validating receipts on the device" procedure, completely offline,
- * against the pinned roots.
- *
- * <p>Stateless: every method is static and keeps its per-call state in
- * locals, and the only shared object, the CMS signer-verifier builder, is
- * only read after class initialization (see {@link #signerVerifier}).</p>
- *
- * <p><strong>Security providers.</strong> Every cryptographic step uses a
- * private BouncyCastle instance that is never registered: certificate
- * decoding, the {@code PKIX} {@code CertPathBuilder} and its
- * {@code Collection} {@code CertStore}, and the CMS signature and its digest.
- * The JVM's provider list and its {@code java.security} policy,
- * {@code jdk.certpath.disabledAlgorithms} included, do not reach any of them,
- * so they cannot change a verdict. The trade-off: an administrator cannot
- * restrict verification through that policy either.</p>
+ * The receipt half of {@link Verifier#verifyReceipt}, offline, against the
+ * pinned roots. Stateless; every cryptographic step uses
+ * {@link BouncyCastle#PROVIDER}.
  */
 final class ReceiptCore {
 
-    /**
-     * Ceiling on the certificates a receipt may embed. Genuine receipts carry
-     * one to three, so ten clears any chain Apple ships and still rejects a
-     * flood before a single certificate is decoded.
-     *
-     * <p>A cross-signed mesh (layers of certificates that each name several
-     * valid issuers) costs an unbounded backtracking path builder 2^layers.
-     * {@link #MAX_PATH_LENGTH} already cuts that off; this count bound does
-     * not rely on it.</p>
-     */
+    /** Genuine receipts embed one to three; checked before any is decoded. */
     static final int MAX_EMBEDDED_CERTIFICATES = 10;
 
-    /**
-     * Ceiling on the SignerInfos a receipt may carry. Genuine receipts carry
-     * one; four leaves room for a future dual-signed receipt while bounding
-     * the chain builds and signature checks one receipt can ask for, since
-     * every SignerInfo gets its own.
-     */
+    /** Genuine receipts carry one; each SignerInfo costs a chain build and a signature check. */
     static final int MAX_SIGNER_INFOS = 4;
 
     /**
-     * The most certificates below the anchor, leaf included. Genuine chains
-     * have two; six leaves room while bounding what a hostile set can cost.
-     * The top-down walk stops after this many rounds.
-     * {@link PKIXBuilderParameters#setMaxPathLength} counts intermediates, so
-     * it is set one lower, and exempts self-issued ones (RFC 5280 6.1.4), so
-     * the built path is measured afterwards too.
+     * Certificates below the anchor, leaf included. PKIX's own limit counts
+     * intermediates and skips self-issued ones, so the built path is measured
+     * again.
      */
     private static final int MAX_PATH_LENGTH = 6;
 
-    /**
-     * Ceiling on the base64 receipt, in UTF-8 bytes, checked before anything
-     * is decoded: 3 MiB, Apple's own limit on a verifyReceipt request body, so
-     * no receipt Apple would accept is larger.
-     *
-     * <p>Base64 decoding allocates about three quarters of the input again,
-     * the CMS parse allocates in proportion to the DER, and none of that is
-     * behind a signature check, so without the bound an input large enough to
-     * exhaust the heap would leave as an {@link OutOfMemoryError} rather than
-     * as a result.</p>
-     */
+    /** Apple's own limit on a verifyReceipt body, in UTF-8 bytes; checked before anything is decoded. */
     static final int MAX_RECEIPT_BYTES = 3145728;
 
-    // Built once and shared by every thread; see signerVerifier.
+    // Shared by every thread; see java/README.md, "What to re-check on a BouncyCastle upgrade".
     static final JcaSignerInfoVerifierBuilder SIGNER_VERIFIERS = signerVerifiers();
 
     private ReceiptCore() {}
 
-    /**
-     * Verifies a base64 receipt and decodes it.
-     *
-     * <p>What it checks, in order: the string is non-empty and at most
-     * {@link #MAX_RECEIPT_BYTES} UTF-8 bytes; it is strict base64; the DER
-     * parses completely with no trailing bytes and is a CMS SignedData with
-     * an encapsulated payload, one to {@link #MAX_SIGNER_INFOS}
-     * SignerInfos and at most {@link #MAX_EMBEDDED_CERTIFICATES}
-     * certificates. Then, for each SignerInfo in turn until one passes: its
-     * certificate is embedded and decodes, a path from it reaches one of
-     * {@code trustAnchors} at the receipt's creation date ({@code now}
-     * when the receipt states none) with no revocation check, it carries
-     * Apple's receipt-signing marker OID and the intermediate that issued it
-     * carries Apple's WWDR marker OID, and its CMS signature verifies. Only
-     * then is the payload decoded.</p>
-     *
-     * <p>When no SignerInfo passes, the first SignerInfo's failure is
-     * reported, so a single-signer receipt fails exactly as it always
-     * has.</p>
-     */
+    /** Verifies a base64 receipt and decodes it; the order of checks is docs/design/0.7-api.md's. */
     static ReceiptPayload verify(@Nullable String base64, Set<TrustAnchor> trustAnchors, long now)
             throws VerificationException {
         if (base64 == null || base64.isEmpty()) {
             throw new VerificationException(Reason.MALFORMED, "receipt is empty");
         }
-        // Before the decode, which would otherwise allocate the bytes it
-        // decodes to.
         if (Utf8Length.exceeds(base64, MAX_RECEIPT_BYTES)) {
             throw tooLarge();
         }
@@ -132,20 +71,13 @@ final class ReceiptCore {
     /** {@link #verify} after the base64 step. */
     static ReceiptPayload verifyDer(byte[] receiptDer, Set<TrustAnchor> trustAnchors, long now)
             throws VerificationException {
-        // BouncyCastle's ASN.1 and CMS entry points report malformed input with
-        // UNCHECKED exceptions, and which ones is neither documented nor stable
-        // across releases, so hostile input is contained by category instead of
-        // by type: a list of types would miss the next one.
         byte[] payload;
         try {
             payload = verifySignature(receiptDer, trustAnchors, now);
         } catch (RuntimeException e) {
-            // MALFORMED, not INTERNAL_ERROR, on purpose. Everything that can
-            // throw here runs before a signature has verified, so it is
-            // attacker input; answering an unknown error with INTERNAL_ERROR
-            // (21009, "alert and reconcile") would let anyone raise that
-            // alert at will. Signed content that cannot be read is
-            // UNREADABLE_PAYLOAD, and is decided in parseSignedPayload.
+            // BouncyCastle reports hostile input with undocumented unchecked
+            // exceptions. MALFORMED, not INTERNAL_ERROR: nothing here is
+            // signed yet, and anyone could otherwise raise the 21009 alarm.
             throw new VerificationException(
                     Reason.MALFORMED, "unexpected " + e.getClass().getName(), e);
         }
@@ -166,19 +98,14 @@ final class ReceiptCore {
         }
         ASN1Primitive parsed;
         try {
-            // Rejects trailing bytes after the CMS blob, so bytes appended to a
-            // signed receipt cannot ride along: BC's fromByteArray throws when
-            // parsing does not exhaust the input.
+            // Throws when the input is not used up, so appended bytes cannot ride along.
             parsed = ASN1Primitive.fromByteArray(receiptDer);
         } catch (IOException e) {
             throw new VerificationException(Reason.MALFORMED, "receipt has trailing or unparseable bytes", e);
         }
         CMSSignedData cms;
         try {
-            // The tree parsed above, not the bytes: new CMSSignedData(byte[])
-            // would parse the whole receipt a second time. A tree that is not
-            // a ContentInfo makes getInstance throw an unchecked exception,
-            // which verifyDer reports as MALFORMED.
+            // The tree, not the bytes, so the receipt is parsed once.
             cms = new CMSSignedData(ContentInfo.getInstance(parsed));
         } catch (CMSException e) {
             throw new VerificationException(Reason.MALFORMED, "not a PKCS#7/CMS blob", e);
@@ -200,9 +127,6 @@ final class ReceiptCore {
         // The raw set, so the cap is checked before any entry is decoded.
         ASN1Set certificateSet = ReceiptCertificates.embeddedCertificateSet(cms);
         int embeddedCount = certificateSet == null ? 0 : certificateSet.size();
-        // Bounded here, before a single embedded certificate is decoded or
-        // handed to the path builder, all of which an unverified receipt
-        // would otherwise get to pay for out of the caller's CPU.
         if (embeddedCount > MAX_EMBEDDED_CERTIFICATES) {
             throw new VerificationException(
                     Reason.MALFORMED,
@@ -210,12 +134,8 @@ final class ReceiptCore {
                             + MAX_EMBEDDED_CERTIFICATES);
         }
 
-        // Only the creation date is read before trust is established, because
-        // chain validity is anchored at signing time; nothing else in the
-        // payload is decoded until the chain and a signature have passed. A
-        // date that is missing, empty, unreadable or stated twice cannot blame
-        // anyone yet, so it only moves the chain instant to the clock and
-        // never rejects by itself.
+        // The one payload read before trust: a date that does not parse only
+        // moves the chain instant to the clock.
         Long creationDate = ReceiptDecoder.readCreationDate(payload);
         Date at = new Date(creationDate != null ? creationDate : now);
 
@@ -244,15 +164,7 @@ final class ReceiptCore {
         throw first;
     }
 
-    /**
-     * The full payload parse, run only after the chain and a signature have
-     * passed. A trusted signer signed these bytes, so anything that stops the
-     * parse (this library's grammar, a bound, an unexpected runtime exception)
-     * is the library's failure or a format Apple added, not the client's:
-     * UNREADABLE_PAYLOAD, with the parser's exception as its cause, never
-     * MALFORMED, which the endpoint answers as 21002 and an app server reads
-     * as "deny".
-     */
+    /** Apple signed these bytes, so whatever stops the parse is UNREADABLE_PAYLOAD, never MALFORMED. */
     private static ReceiptPayload parseSignedPayload(byte[] payload) throws VerificationException {
         try {
             return ReceiptDecoder.parse(payload);
@@ -265,13 +177,8 @@ final class ReceiptCore {
     }
 
     /**
-     * Apple's marker OIDs: receipt signing on the signer, and WWDR on the
-     * intermediate that issued it, the certificate after the signer in the
-     * built path. The chain check alone is not enough: developer certificates
-     * chain through the same WWDR intermediate to the same pinned root, and
-     * the intermediate check brings the receipt path level with the JWS path.
-     * A path with no intermediate at all, a signer issued straight by a root,
-     * has no WWDR certificate to carry the marker.
+     * Apple's marker OIDs on the signer and on the intermediate after it in
+     * the path: developer certificates chain to the same pinned roots.
      */
     private static void requireMarkers(X509Certificate signerCert, List<? extends Certificate> path)
             throws VerificationException {
@@ -295,15 +202,11 @@ final class ReceiptCore {
     private static List<? extends Certificate> validateChain(
             X509Certificate signerCert, List<X509Certificate> authenticated, Date at, Set<TrustAnchor> trustAnchors)
             throws VerificationException {
-        // A signer the top-down walk did not reach has no path to a pinned
-        // root, so it is refused here, before the path builder or anything
-        // else can decode its key (see AppleTrust).
+        // Refused before anything decodes its key (see AppleTrust).
         if (!authenticated.contains(signerCert)) {
             throw new VerificationException(
                     Reason.UNTRUSTED_CHAIN, "signer certificate is not issued under a pinned Apple root");
         }
-        // Issued under a pinned root, so decoding its key is safe now; a key
-        // no decoder accepts is a verdict about the certificate.
         try {
             signerCert.getPublicKey();
         } catch (RuntimeException e) {
@@ -322,8 +225,6 @@ final class ReceiptCore {
             // Per call: BouncyCastle's builder keeps state for the build it runs.
             CertPathBuilderResult result =
                     CertPathBuilder.getInstance("PKIX", BouncyCastle.PROVIDER).build(params);
-            // getCertPath() excludes the trust anchor, so this counts the
-            // certificates from the leaf up to the anchor.
             List<? extends Certificate> path = result.getCertPath().getCertificates();
             if (path.size() > MAX_PATH_LENGTH) {
                 throw new VerificationException(Reason.UNTRUSTED_CHAIN, "chain exceeds maximum length");
@@ -334,9 +235,7 @@ final class ReceiptCore {
         } catch (GeneralSecurityException e) {
             throw new VerificationException(Reason.UNTRUSTED_CHAIN, "embedded certificate could not be used", e);
         } catch (RuntimeException e) {
-            // As in JwsCore.validateChain: unchecked exceptions BouncyCastle
-            // raises from inside the builder for malformed, unverified
-            // certificate content are the chain's failure.
+            // BouncyCastle's unchecked exceptions for malformed certificate content.
             throw new VerificationException(
                     Reason.UNTRUSTED_CHAIN,
                     "path builder raised " + e.getClass().getName(),
@@ -345,17 +244,9 @@ final class ReceiptCore {
     }
 
     /**
-     * The embedded certificates whose signature verifies under a pinned root,
-     * or under a certificate already accepted this way, walking down from the
-     * roots. Only these reach the path builder.
-     *
-     * <p>A certificate's own public key is decoded only after its signature
-     * has verified. BouncyCastle validates an RSA key as it decodes it, with
-     * a primality test that costs seconds for a 16384-bit modulus, and the
-     * path builder verifies signatures with whatever keys it is given. Walking
-     * down from the roots means no key Apple did not sign is ever decoded or
-     * used, so a receipt padded with such certificates costs milliseconds,
-     * and the certificates are simply left out.</p>
+     * The embedded certificates a pinned root vouches for, directly or
+     * through one already accepted, walking down from the roots. Only these
+     * reach the path builder; see {@link AppleTrust}.
      */
     private static List<X509Certificate> authenticatedTopDown(
             List<X509Certificate> embedded, Set<TrustAnchor> trustAnchors) {
@@ -399,21 +290,7 @@ final class ReceiptCore {
         }
     }
 
-    /**
-     * The CMS signature verifier for {@code signerCert}, from one
-     * {@link JcaSignerInfoVerifierBuilder} kept for the life of the class.
-     * BouncyCastle's builder holds its algorithm-name and algorithm-finder
-     * tables (a few hundred entries) and builds only the per-certificate
-     * parts in {@code build}, so reusing it avoids rebuilding the tables for
-     * every receipt, which {@code JcaSimpleSignerInfoVerifierBuilder} does.
-     *
-     * <p>Sharing it across threads relies on BouncyCastle internals, checked
-     * in BouncyCastle 1.86: {@code build} writes no state, only reads fields
-     * set before class initialization finished (not declared final, but
-     * safely published by it), and makes a new content-verifier provider per
-     * certificate; the name generator, algorithm finder and digest provider
-     * it shares are only read. Re-check on every BouncyCastle upgrade.</p>
-     */
+    /** The CMS verifier for {@code signerCert}, from the shared builder so its tables are built once. */
     static SignerInformationVerifier signerVerifier(X509Certificate signerCert) throws OperatorCreationException {
         return SIGNER_VERIFIERS.build(signerCert);
     }

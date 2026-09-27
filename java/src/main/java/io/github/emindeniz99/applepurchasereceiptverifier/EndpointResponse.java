@@ -21,8 +21,7 @@ import org.jspecify.annotations.Nullable;
  */
 final class EndpointResponse {
 
-    // Locale.ROOT pinned so a JVM default locale can never reach the
-    // rendering.
+    // Locale.ROOT, so the JVM's default locale never reaches the rendering.
     private static final DateTimeFormatter FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withLocale(Locale.ROOT);
     private static final ZoneId PACIFIC = ZoneId.of("America/Los_Angeles");

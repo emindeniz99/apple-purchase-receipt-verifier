@@ -1,23 +1,10 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
 /**
- * The ASN.1 nesting bound, checked on the encoding before BouncyCastle
- * builds anything from it.
- *
- * <p>BouncyCastle has its own bound ({@code org.bouncycastle.asn1.max_cons_depth},
- * 64 by default). Ours is stricter: {@link #MAX_DEPTH} is 32, and
- * BouncyCastle also counts differently, one level fewer, so 65 nested values
- * with an empty innermost one would still parse there. Its bound can also be
- * raised by a system property, and this library does not choose the
- * BouncyCastle version its caller resolves. So the bound is enforced here,
- * on every encoding this library parses before a signature has vouched for
- * it, and counted as: at most {@link #MAX_DEPTH} constructed values inside
- * one another, the outermost included, and a primitive value inside the
- * innermost.</p>
- *
- * <p>The walk judges depth and nothing else. An encoding it cannot follow
- * (a truncated length, say) is not its verdict to give: it answers "not too
- * deep" and leaves the refusal to the parser that runs next.</p>
+ * The ASN.1 nesting bound, checked on the encoding before BouncyCastle parses
+ * it: BouncyCastle's own bound is looser, counts one level fewer and can be
+ * raised by a system property. An encoding the walk cannot follow is left to
+ * the parser that runs next.
  */
 final class Asn1Depth {
 

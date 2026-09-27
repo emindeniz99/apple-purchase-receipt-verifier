@@ -30,87 +30,39 @@ import java.util.Set;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The JWS half of {@link Verifier#verifySignedData}: verifies Apple-signed
- * compact JWS (StoreKit 2 {@code jwsRepresentation}, App Store Server
- * {@code signedTransactionInfo} and {@code signedRenewalInfo}, app
- * transactions, Server Notifications V2) completely offline, against pinned
- * Apple roots.
- *
- * <p>Algorithm: ES256 only, exactly 3 {@code x5c} certs, PKIX path
- * validation to the pinned roots at the payload's {@code signedDate} (the
- * clock when it states none), Apple marker OIDs on leaf and intermediate,
- * then the signature. Offline, like Apple's app-store-server-library with
- * online checks off: no OCSP, so a revoked certificate is not detected, in
- * exchange for no network call. No payload is rejected for its age.</p>
- *
- * <p>Stateless, so safe from many threads: the only shared objects are the
- * private BouncyCastle provider and a Jackson {@link JsonFactory}, both
- * documented thread-safe.</p>
- *
- * <p><strong>Security providers.</strong> Every cryptographic step uses a
- * private BouncyCastle instance that is never registered: the
- * {@code CertificateFactory} for the {@code x5c} certificates, the
- * {@code PKIX} {@code CertPathValidator}, and the ES256 signature check. The
- * JVM's provider list and its {@code java.security} policy,
- * {@code jdk.certpath.disabledAlgorithms} included, do not reach any of them,
- * so they cannot change a verdict.</p>
+ * The JWS half of {@link Verifier#verifySignedData}, offline, against the
+ * pinned roots: ES256, three {@code x5c} certificates, no revocation check.
+ * Stateless; every cryptographic step uses {@link BouncyCastle#PROVIDER}.
  */
 final class JwsCore {
 
-    /**
-     * Ceiling on the compact JWS, in UTF-8 bytes, checked before the input is
-     * split or any segment is decoded, because everything below allocates in
-     * proportion to it and none of it is behind a signature check.
-     *
-     * <p>Real Apple JWS payloads, Apple's own mock notification data
-     * included, are under 2.5 KB, so 256 KiB is a hundredfold headroom over
-     * anything Apple has ever signed.</p>
-     */
+    /** In UTF-8 bytes, checked before the split; Apple's JWS are under 2.5 KB. */
     static final int MAX_JWS_BYTES = 262144;
 
-    // A segment cannot outgrow the whole JWS, so both length bounds are
-    // MAX_JWS_BYTES: consistent with the entry-point bound rather than a
-    // second opinion about it.
     static final JsonFactory JSON = BoundedJson.factory(MAX_JWS_BYTES);
 
-    // Shared: BouncyCastle's PKIX validator keeps no per-call state (only
-    // final fields, checked in 1.86). Its CertificateFactory keeps stream
-    // state and a Signature is stateful by contract, so those stay per call.
+    // Shared: BouncyCastle's validator keeps no per-call state; see java/README.md.
     private static final CertPathValidator PKIX = pkixValidator();
 
     private JwsCore() {}
 
     /**
-     * Verifies {@code jws} and returns its payload.
-     *
-     * <p>A broken outer structure fails as MALFORMED before any cryptography:
-     * not three segments, a segment that is not canonical base64url, a header
-     * that is not a JSON object, an {@code alg} other than ES256, an
-     * {@code x5c} that is not three strings. A payload that does not parse as
-     * a JSON object is not reported here: it is carried past the chain and
-     * signature checks with {@code now} standing in for its signing
-     * date, and fails as INVALID_SIGNATURE if the signature does not verify,
-     * UNREADABLE_PAYLOAD if it does. Nothing unverified gets to decide which
-     * of those two a caller sees.</p>
+     * Verifies {@code jws} and returns its payload. A payload that is not a
+     * JSON object is judged only after the signature (docs/design/0.7-api.md,
+     * "Which failure a parse problem gets").
      */
     static JsonPayload verify(@Nullable String jws, Set<TrustAnchor> trustAnchors, long now)
             throws VerificationException {
         if (jws == null || jws.isEmpty()) {
             throw new VerificationException(Reason.MALFORMED, "jws is empty");
         }
-        // Before the split, so nothing downstream allocates in proportion to
-        // an input this verifier has already decided not to look at.
         if (Utf8Length.exceeds(jws, MAX_JWS_BYTES)) {
             throw new VerificationException(
                     Reason.TOO_LARGE, "jws exceeds the maximum accepted size of " + MAX_JWS_BYTES + " bytes");
         }
-        // The steps known to throw unchecked (the x5c decode, the chain
-        // check) map it themselves; this catches the ones nobody has found
-        // yet, from Jackson or BouncyCastle. MALFORMED rather than
-        // INTERNAL_ERROR on purpose: until the signature has verified,
-        // everything here runs on input nobody has vouched for, and
-        // answering an unknown error with INTERNAL_ERROR ("alert and
-        // reconcile") would let anyone raise that alert at will.
+        // MALFORMED, not INTERNAL_ERROR, for what Jackson or BouncyCastle
+        // throw unchecked: nothing is signed yet, and anyone could otherwise
+        // raise the 21009 alarm.
         try {
             return verifyUnguarded(jws, trustAnchors, now);
         } catch (RuntimeException e) {
@@ -137,7 +89,7 @@ final class JwsCore {
         if (header.x5c == null || header.x5c.size() != 3) {
             throw new VerificationException(Reason.MALFORMED, "x5c must contain exactly 3 certificates");
         }
-        // x5c[2] is decoded but unused: PKIX validates leaf + intermediate against the pinned anchors.
+        // x5c[2] is decoded but unused: the pinned anchor stands in for it.
         List<X509Certificate> chain = decodeChain(header.x5c);
         X509Certificate leaf = chain.get(0);
         X509Certificate intermediate = chain.get(1);
@@ -145,9 +97,7 @@ final class JwsCore {
         Long signedDate = signedDate(payloadBytes);
         authenticateTopDown(leaf, intermediate, trustAnchors);
         validateChain(leaf, intermediate, new Date(signedDate != null ? signedDate : now), trustAnchors);
-        // The marker OIDs after the chain, as on the receipt path: a foreign
-        // chain is UNTRUSTED_CHAIN whatever it carries. Still before the
-        // leaf's key checks the JWS signature.
+        // After the chain, so a foreign chain is UNTRUSTED_CHAIN whatever it carries.
         if (leaf.getExtensionValue(AppleTrust.SIGNING_LEAF_OID) == null) {
             throw new VerificationException(
                     Reason.INVALID_CERTIFICATE_PURPOSE,
@@ -164,12 +114,9 @@ final class JwsCore {
     }
 
     /**
-     * What verification reads from the header: the last {@code alg} and
-     * {@code x5c} members, as Jackson's tree model would keep them. The
-     * header is outer structure, so anything that stops the read is
-     * MALFORMED: bytes that are not strict UTF-8 (Jackson would otherwise
-     * guess UTF-16 or UTF-32 from them), a byte order mark (RFC 8259 section
-     * 8.1 forbids one), and anything but whitespace after the object.
+     * The header's last {@code alg} and {@code x5c} members. Outer structure,
+     * so anything that stops the read, content after the object included, is
+     * MALFORMED.
      */
     static final class Header {
         /** The {@code alg} string; null when absent or not a string. */
@@ -312,13 +259,8 @@ final class JwsCore {
     }
 
     /**
-     * Strict base64url (RFC 7515 §2): the JWS alphabet only, no padding, no
-     * whitespace, and the decoded bytes must re-encode to the same string.
-     * {@code java.util.Base64}'s URL decoder already rejects every character
-     * outside the URL alphabet (whitespace and the standard-base64 {@code +}
-     * and {@code /} included) and a length of 1 mod 4. It tolerates padding
-     * and a final character whose unused bits are non-zero, and the
-     * unpadded re-encode comparison rejects both.
+     * Strict base64url (RFC 7515 2). The re-encode comparison refuses the
+     * padding and the non-zero unused bits that the URL decoder tolerates.
      */
     private static byte[] decodeBase64Url(String value, String what) throws VerificationException {
         try {
@@ -345,11 +287,8 @@ final class JwsCore {
                             "x5c[" + chain.size() + "] nests ASN.1 deeper than " + Asn1Depth.MAX_DEPTH + " values");
                 }
                 X509Certificate certificate = (X509Certificate) cf.generateCertificate(new ByteArrayInputStream(der));
-                // Result unused: BouncyCastle decodes the signature BIT
-                // STRING lazily, so one that is not whole octets would
-                // otherwise fail later, inside the path validator, as an
-                // unchecked exception. The key is not read here: see
-                // authenticateTopDown.
+                // Forces BouncyCastle's lazy signature decode here, not inside
+                // the validator. The key is not read: see authenticateTopDown.
                 certificate.getSignature();
                 chain.add(certificate);
             }
@@ -359,16 +298,7 @@ final class JwsCore {
         return chain;
     }
 
-    /**
-     * Checks the two signatures from a pinned root down, decoding each
-     * certificate's key only after the certificate above it has signed it.
-     *
-     * <p>BouncyCastle validates an RSA key as it decodes it, with a primality
-     * test that costs seconds for a 16384-bit modulus, so decoding the keys
-     * of certificates nobody has vouched for would let a small JWS cost
-     * seconds of CPU. Here no key Apple did not sign is ever decoded, and
-     * {@link #validateChain} then works on keys already authenticated.</p>
-     */
+    /** Checks both signatures from a pinned root down, decoding a key only once it is vouched for; see {@link AppleTrust}. */
     private static void authenticateTopDown(
             X509Certificate leaf, X509Certificate intermediate, Set<TrustAnchor> trustAnchors)
             throws VerificationException {
@@ -413,10 +343,7 @@ final class JwsCore {
         } catch (GeneralSecurityException e) {
             throw new VerificationException(Reason.UNTRUSTED_CHAIN, "path validator refused the path", e);
         } catch (RuntimeException e) {
-            // BouncyCastle reports some malformed certificate content with
-            // unchecked exceptions from inside the validator. Everything here
-            // is attacker-controlled and unverified, so it is the chain's
-            // failure, and it must not escape as anything but a verdict.
+            // BouncyCastle's unchecked exceptions for malformed certificate content.
             throw new VerificationException(
                     Reason.UNTRUSTED_CHAIN,
                     "path validator raised " + e.getClass().getName(),
@@ -440,11 +367,8 @@ final class JwsCore {
         }
         try {
             Signature verifier = Signature.getInstance("SHA256withPLAIN-ECDSA", BouncyCastle.PROVIDER);
-            // JWS ES256 signatures are raw r || s (RFC 7515), which
-            // BouncyCastle's PLAIN-ECDSA takes as is. The JDK's own name for
-            // it, SHA256withECDSAinP1363Format, is Java 9+ and this library
-            // supports Java 8. An r or s not below the curve order throws
-            // here where the JDK returned false; both are INVALID_SIGNATURE.
+            // Raw r || s (RFC 7515), as PLAIN-ECDSA takes it; the JDK's
+            // P1363 name is Java 9+.
             verifier.initVerify(leaf.getPublicKey());
             verifier.update(signingInput.getBytes(StandardCharsets.US_ASCII));
             if (!verifier.verify(signature)) {

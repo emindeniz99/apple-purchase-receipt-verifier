@@ -700,13 +700,17 @@ BouncyCastle behaviours that are not API contracts:
   (`ReceiptCore.signerVerifier`). That is safe only because its `build`
   writes no state and makes a new content-verifier provider per
   certificate; read `build` again after an upgrade.
+- One PKIX `CertPathValidator` is shared too (`JwsCore.PKIX`): its SPI holds
+  only final fields. The `CertificateFactory` (it keeps stream state between
+  calls), the `CertPathBuilder` (it keeps per-build counters) and every
+  `Signature` stay per call.
 - BouncyCastle's own ASN.1 depth bound (`org.bouncycastle.asn1.max_cons_depth`)
   applies to indefinite lengths only, which is why `Asn1Depth` exists; if
   that changes, the explicit check still stays, because its bound (32) is
   stricter than BouncyCastle's default (64).
 - The signature BIT STRING of a certificate is decoded lazily, so the
   decoders read it once on purpose (`JwsCore.decodeChain`,
-  `ReceiptCertificates.decodeEmbedded`).
+  `ReceiptCertificates.decode`).
 - `IA5String` does not check that its bytes are seven-bit, so
   `ReceiptDecoder.decodeString` does.
 

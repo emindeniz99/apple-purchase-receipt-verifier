@@ -35,9 +35,7 @@ public final class Config {
     /**
      * Apple's three pinned roots and {@link Clock#systemUTC()}.
      *
-     * @throws IllegalStateException if the bundled roots are missing, do not
-     *                               parse, or do not match their pinned
-     *                               fingerprints
+     * @throws IllegalStateException if the bundled roots do not parse
      */
     public static Config defaults() {
         return builder().build();
