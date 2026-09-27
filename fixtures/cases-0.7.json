@@ -10428,8 +10428,8 @@
       ]
     },
     {
-      "id": "receipt/reject-intermediate-with-a-malformed-key-usage",
-      "description": "A receipt chain under the pinned root whose intermediate carries a critical keyUsage extension whose value does not decode (a BIT STRING claiming five content octets and carrying two). Everything else is genuine. An extension that does not decode makes the certificate unreadable, and an unreadable entry of the unsigned certificate bag that is not the signer is a defect of the receipt: MALFORMED (lead, 2026-09-27).",
+      "id": "receipt/intermediate-with-a-malformed-key-usage-does-not-crash",
+      "description": "A receipt chain under the pinned root whose intermediate carries a critical keyUsage extension whose value does not decode (a BIT STRING claiming five content octets and carrying two), inside the TBS the root signed. Everything else is genuine. Encoding oddities inside a certificate the pinned root signed are port-defined (owner, 2026-09-27): the port may verify or refuse with any reason, but must not crash, must not answer INTERNAL_ERROR, and must finish within maxMillis.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "keyusage-receipt-intermediate-malformed"
@@ -10443,14 +10443,14 @@
         }
       },
       "expected": {
-        "status": "error",
-        "reason": "MALFORMED"
+        "anyOutcome": true
       },
       "fault": "intermediate-key-usage-does-not-decode",
+      "maxMillis": 2000,
       "tags": [
         "receipt",
         "pkcs7",
-        "negative",
+        "tolerant",
         "chain",
         "certificate",
         "key-usage",
@@ -10458,8 +10458,8 @@
       ]
     },
     {
-      "id": "signed-data/reject-intermediate-with-a-malformed-key-usage",
-      "description": "A JWS whose x5c[1] carries a critical keyUsage extension whose value does not decode (a BIT STRING claiming five content octets and carrying two), under the pinned root. Everything else is genuine. An extension that does not decode makes the certificate unreadable: INVALID_CERTIFICATE, as for the other x5c certificates with a broken extension (lead, 2026-09-27).",
+      "id": "signed-data/intermediate-with-a-malformed-key-usage-does-not-crash",
+      "description": "A JWS whose x5c[1] carries a critical keyUsage extension whose value does not decode (a BIT STRING claiming five content octets and carrying two), inside the TBS the pinned root signed. Everything else is genuine. Encoding oddities inside a certificate the pinned root signed are port-defined (owner, 2026-09-27): the port may verify or refuse with any reason, but must not crash, must not answer INTERNAL_ERROR, and must finish within maxMillis.",
       "operation": "verifySignedData",
       "input": {
         "fixture": "keyusage-jws-intermediate-malformed"
@@ -10473,13 +10473,13 @@
         }
       },
       "expected": {
-        "status": "error",
-        "reason": "INVALID_CERTIFICATE"
+        "anyOutcome": true
       },
       "fault": "intermediate-key-usage-does-not-decode",
+      "maxMillis": 2000,
       "tags": [
         "jws",
-        "negative",
+        "tolerant",
         "chain",
         "certificate",
         "key-usage",
