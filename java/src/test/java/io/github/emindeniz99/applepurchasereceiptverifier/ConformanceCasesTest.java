@@ -202,7 +202,9 @@ class ConformanceCasesTest {
         if (payload instanceof ReceiptPayload) {
             json = ((ReceiptPayload) payload).toJson();
             if (expected.has("toJson")) {
-                assertEquals(expected.get("toJson").asText(), json, id + ": toJson");
+                // Same value, not same bytes: whitespace, key order and
+                // escaping are free (docs/design/0.7-api.md "Our JSON").
+                assertEquals(parse(id, expected.get("toJson").asText()), parse(id, json), id + ": toJson value");
             }
         } else {
             json = ((JsonPayload) payload).json();

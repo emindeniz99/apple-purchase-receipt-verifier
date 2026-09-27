@@ -1,5 +1,9 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
+import com.fasterxml.jackson.core.JsonGenerator;
+import java.io.IOException;
+import java.io.StringWriter;
+import java.io.UncheckedIOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -156,21 +160,22 @@ public final class InAppPurchase {
     }
 
     /** This purchase's object inside {@code in_app}; see {@link ReceiptPayload#toJson()}. */
-    void writeJson(StringBuilder out) {
-        CanonicalJson json = CanonicalJson.object(out)
-                .number("quantity", quantity)
-                .string("product_id", productId)
-                .string("transaction_id", transactionId)
-                .number("purchase_date_ms", purchaseDateMs)
-                .string("original_transaction_id", originalTransactionId)
-                .number("original_purchase_date_ms", originalPurchaseDateMs)
-                .number("expires_date_ms", expiresDateMs)
-                .id("web_order_line_item_id", webOrderLineItemId)
-                .number("cancellation_date_ms", cancellationDateMs)
-                .bool("is_trial_period", isTrialPeriod)
-                .bool("is_in_intro_offer_period", isInIntroOfferPeriod)
-                .attributes("unknown_attributes", unknownAttributes);
-        json.end();
+    void writeJson(JsonGenerator json) throws IOException {
+        json.writeStartObject();
+        json.writeObjectField("quantity", quantity);
+        json.writeObjectField("product_id", productId);
+        json.writeObjectField("transaction_id", transactionId);
+        json.writeObjectField("purchase_date_ms", purchaseDateMs);
+        json.writeObjectField("original_transaction_id", originalTransactionId);
+        json.writeObjectField("original_purchase_date_ms", originalPurchaseDateMs);
+        json.writeObjectField("expires_date_ms", expiresDateMs);
+        json.writeObjectField(
+                "web_order_line_item_id", webOrderLineItemId == null ? null : webOrderLineItemId.toString());
+        json.writeObjectField("cancellation_date_ms", cancellationDateMs);
+        json.writeObjectField("is_trial_period", isTrialPeriod);
+        json.writeObjectField("is_in_intro_offer_period", isInIntroOfferPeriod);
+        ReceiptPayload.writeAttributes(json, unknownAttributes);
+        json.writeEndObject();
     }
 
     @Override
@@ -214,11 +219,16 @@ public final class InAppPurchase {
                 + RawAttributes.hash(unknownAttributes);
     }
 
-    /** The purchase's canonical JSON object. */
+    /** The purchase's JSON object, as it appears inside {@link ReceiptPayload#toJson()}. */
     @Override
     public String toString() {
-        StringBuilder out = new StringBuilder(256);
-        writeJson(out);
+        StringWriter out = new StringWriter(256);
+        try (JsonGenerator json = ReceiptPayload.JSON.createGenerator(out)) {
+            writeJson(json);
+        } catch (IOException e) {
+            // A StringWriter does not fail.
+            throw new UncheckedIOException(e);
+        }
         return out.toString();
     }
 }

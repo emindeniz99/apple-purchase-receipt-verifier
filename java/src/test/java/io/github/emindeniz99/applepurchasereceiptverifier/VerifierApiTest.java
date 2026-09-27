@@ -33,7 +33,7 @@ import org.junit.jupiter.api.Test;
 /**
  * The public 0.7 surface as a caller meets it: the never-throw contract and
  * its one exception, the result and failure types, the parse-before-signature
- * rule, the canonical JSON of {@link ReceiptPayload#toJson()}, the model
+ * rule, the JSON value of {@link ReceiptPayload#toJson()}, the model
  * types' copy semantics, and the helpers.
  */
 class VerifierApiTest {
@@ -188,10 +188,21 @@ class VerifierApiTest {
                 .reason();
     }
 
-    // ------------------------------------------------------ canonical JSON
+    // ---------------------------------------------------------------- JSON
+
+    /** Ports agree on the value of toJson(), not its bytes: compare parsed trees. */
+    private static void assertSameJsonValue(String expected, String actual) throws Exception {
+        assertEquals(MAPPER.readTree(expected), MAPPER.readTree(actual), actual);
+    }
+
+    private static ReceiptPayload withAttributes(Map<Integer, List<byte[]>> unknown) {
+        return new ReceiptPayload(
+                null, null, null, null, null, null, null, null, null, null,
+                Collections.<InAppPurchase>emptyList(), null, null, null, unknown);
+    }
 
     @Test
-    void toJsonWritesEveryKeyInOrderWithNullForMissing() {
+    void toJsonWritesEveryKeyWithNullForMissing() throws Exception {
         ReceiptPayload empty = new ReceiptPayload(
                 null,
                 null,
@@ -208,7 +219,7 @@ class VerifierApiTest {
                 null,
                 null,
                 Collections.<Integer, List<byte[]>>emptyMap());
-        assertEquals(
+        assertSameJsonValue(
                 "{\"receipt_type\":null,\"app_item_id\":null,\"bundle_id\":null,\"bundle_id_bytes\":null,"
                         + "\"application_version\":null,\"opaque_value\":null,\"sha1_hash\":null,"
                         + "\"receipt_creation_date_ms\":null,\"download_id\":null,"
@@ -219,13 +230,12 @@ class VerifierApiTest {
     }
 
     /**
-     * The canonical form every port must produce byte for byte: ids as
-     * strings, dates as numbers, padded base64, only the escapes JSON
-     * requires (control characters as lowercase {@code \\u00xx}), no
-     * escaping of {@code /}, non-ASCII raw.
+     * The value every port must produce: ids as strings, dates as numbers,
+     * padded base64, and strings that survive escaping (control characters,
+     * {@code /}, non-ASCII) unchanged.
      */
     @Test
-    void toJsonIsTheCanonicalForm() {
+    void toJsonHasTheDesignsValue() throws Exception {
         Map<Integer, List<byte[]>> unknown = new LinkedHashMap<Integer, List<byte[]>>();
         unknown.put(13, Arrays.asList(new byte[] {1}, new byte[] {(byte) 0xfb, (byte) 0xff}));
         unknown.put(9, Collections.<byte[]>emptyList());
@@ -260,7 +270,7 @@ class VerifierApiTest {
                 "1.0",
                 null,
                 unknown);
-        assertEquals(
+        assertSameJsonValue(
                 "{\"receipt_type\":\"ProductionSandbox\",\"app_item_id\":\"0\",\"bundle_id\":\"com.example.app\","
                         + "\"bundle_id_bytes\":\"Y29tLmV4YW1wbGUuYXBw\",\"application_version\":\"1.2.3\","
                         + "\"opaque_value\":\"AQIDBAU=\",\"sha1_hash\":\"/w==\","
@@ -276,6 +286,49 @@ class VerifierApiTest {
                         + "\"expiration_date_ms\":null,\"unknown_attributes\":{\"9\":[],\"13\":[\"AQ==\",\"+/8=\"]}}",
                 payload.toJson());
         assertEquals(payload.toJson(), payload.toString());
+    }
+
+    @Test
+    void toJsonIsValidUtf8EvenForALoneSurrogate() throws Exception {
+        // Either half of a surrogate pair alone is no character UTF-8 can
+        // carry. toJson() escapes it, so the text stays ASCII and the string
+        // parses back unchanged.
+        InAppPurchase purchase = new InAppPurchase(
+                null, "a\uD83D|\uDE00b|\uD83D\uDE00", null, null, null, null, null, null, null, null, null,
+                Collections.<Integer, List<byte[]>>emptyMap());
+        ReceiptPayload payload = new ReceiptPayload(
+                null, null, null, null, null, null, null, null, null, null,
+                Arrays.asList(purchase), null, null, null, Collections.<Integer, List<byte[]>>emptyMap());
+        String json = payload.toJson();
+        for (int i = 0; i < json.length(); i++) {
+            assertTrue(json.charAt(i) < 0x80, json);
+        }
+        assertEquals(
+                "a\uD83D|\uDE00b|\uD83D\uDE00",
+                MAPPER.readTree(json).get("in_app").get(0).get("product_id").asText());
+    }
+
+    @Test
+    void unknownAttributesAreEqualExactlyWhenTheirJsonValueIs() throws Exception {
+        // The order types were collected in is not part of the value; each
+        // type's own list order is.
+        Map<Integer, List<byte[]>> ascending = new LinkedHashMap<Integer, List<byte[]>>();
+        ascending.put(9, Collections.singletonList(new byte[] {1}));
+        ascending.put(13, Arrays.asList(new byte[] {2}, new byte[] {3}));
+        Map<Integer, List<byte[]>> descending = new LinkedHashMap<Integer, List<byte[]>>();
+        descending.put(13, Arrays.asList(new byte[] {2}, new byte[] {3}));
+        descending.put(9, Collections.singletonList(new byte[] {1}));
+        Map<Integer, List<byte[]>> reordered = new LinkedHashMap<Integer, List<byte[]>>();
+        reordered.put(9, Collections.singletonList(new byte[] {1}));
+        reordered.put(13, Arrays.asList(new byte[] {3}, new byte[] {2}));
+
+        assertSameJsonValue(withAttributes(ascending).toJson(), withAttributes(descending).toJson());
+        assertTrue(RawAttributes.equal(ascending, descending));
+        assertEquals(RawAttributes.hash(ascending), RawAttributes.hash(descending));
+        assertNotEquals(
+                MAPPER.readTree(withAttributes(ascending).toJson()),
+                MAPPER.readTree(withAttributes(reordered).toJson()));
+        assertFalse(RawAttributes.equal(ascending, reordered));
     }
 
     /** The JSON of a verified receipt parses back to the getters, key for key. */
