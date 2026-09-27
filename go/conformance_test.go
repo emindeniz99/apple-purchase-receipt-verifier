@@ -747,3 +747,20 @@ func TestConformance(t *testing.T) {
 	t.Logf("%s: %d cases ran, %d fixtures registered, 0 skipped",
 		casesFileName, len(file.Cases), len(file.Fixtures))
 }
+
+// Every reason a case expects must be one of the exported Reason values,
+// so a typo in the case file surfaces here, named, rather than as a
+// mysterious mismatch inside one case.
+func TestEveryExpectedReasonIsInTheVocabulary(t *testing.T) {
+	known := map[string]bool{}
+	for _, reason := range applereceipt.AllReasons() {
+		known[string(reason)] = true
+	}
+	_, file := sharedCases(t)
+	for _, c := range file.Cases {
+		if c.Expected.Reason != "" && !known[c.Expected.Reason] {
+			t.Errorf("%s expects reason %q, which is not in the exported vocabulary",
+				c.ID, c.Expected.Reason)
+		}
+	}
+}

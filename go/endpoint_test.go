@@ -5,6 +5,8 @@ import (
 	"encoding/asn1"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -497,5 +499,74 @@ func TestEndpointIdsAbsentAreOmitted(t *testing.T) {
 		if strings.Contains(out, `"`+key+`"`) {
 			t.Errorf("absent attribute must omit its key %q entirely, got %s", key, out)
 		}
+	}
+}
+
+// The clock is read at most once per call (config.go). A dateless receipt
+// needs "now" twice, for the chain instant and for request_date; both must
+// be the same reading, so the response can never show a request_date the
+// chain was not judged at.
+func TestEndpointReadsTheClockOncePerCall(t *testing.T) {
+	pki := newReceiptPKI(t)
+	dateless := pki.receipt(t,
+		attr(0, derUTF8String("ProductionSandbox")),
+		attr(2, derUTF8String("com.example.app")))
+	start := time.Now().UnixMilli()
+	reads := 0
+	clock := func() int64 {
+		reads++
+		return start + int64(reads)*3_600_000
+	}
+	endpoint := endpointVerifierFor(t, pki.anchors(), clock)
+	request := `{"receipt-data":"` + applereceiptBase64(dateless) + `"}`
+
+	response := decodeEndpointResponse(t, endpoint.VerifyReceiptEndpoint(applereceipt.EnvironmentSandbox, request))
+	if response["status"] != float64(applereceipt.StatusOK) {
+		t.Fatalf("status: %v", response["status"])
+	}
+	if reads != 1 {
+		t.Fatalf("one endpoint call read the clock %d times, want 1", reads)
+	}
+	receipt, _ := response["receipt"].(map[string]any)
+	if got, want := receipt["request_date_ms"], strconv.FormatInt(start+3_600_000, 10); got != want {
+		t.Fatalf("request_date_ms %v is not the clock's one reading %s", got, want)
+	}
+
+	if _, err := endpoint.VerifyReceipt(applereceiptBase64(dateless)); err != nil {
+		t.Fatal(err)
+	}
+	if reads != 2 {
+		t.Fatalf("VerifyReceipt of a dateless receipt must read the clock exactly once, total reads %d", reads)
+	}
+}
+
+// A caller's clock that panics is the caller's failure, not the input's:
+// INTERNAL_ERROR from the verify methods and 21009 from the endpoint,
+// never a panic that takes the caller's request down.
+func TestPanickingClockBecomesAnInternalError(t *testing.T) {
+	pki := newReceiptPKI(t)
+	dateless := pki.receipt(t,
+		attr(0, derUTF8String("ProductionSandbox")),
+		attr(2, derUTF8String("com.example.app")))
+	for name, value := range map[string]any{
+		"an error": errors.New("clock backend unavailable"),
+		"a string": "clock failure",
+	} {
+		value := value
+		t.Run(name, func(t *testing.T) {
+			verifier := endpointVerifierFor(t, pki.anchors(), func() int64 { panic(value) })
+			_, err := verifier.VerifyReceipt(applereceiptBase64(dateless))
+			requireReason(t, err, applereceipt.ReasonInternalError)
+
+			request := `{"receipt-data":"` + applereceiptBase64(dateless) + `"}`
+			if got := verifier.VerifyReceiptEndpoint(applereceipt.EnvironmentSandbox, request); got != `{"status":21009}` {
+				t.Fatalf("endpoint answered %s, want {\"status\":21009}", got)
+			}
+			// A dated receipt still needs the clock for request_date.
+			dated := `{"receipt-data":"` + applereceiptBase64(pki.receipt(t)) + `"}`
+			if got := verifier.VerifyReceiptEndpoint(applereceipt.EnvironmentSandbox, dated); got != `{"status":21009}` {
+				t.Fatalf("endpoint answered %s for a dated receipt, want {\"status\":21009}", got)
+			}
+		})
 	}
 }

@@ -524,6 +524,54 @@ func TestNoPartialResultOnFailure(t *testing.T) {
 	}
 }
 
+// UNREADABLE_PAYLOAD tells an operator that Apple signed bytes the parser
+// could not read; the parser's own error is what says why, so it must
+// survive as the cause (docs/design/0.7-api.md, "cause").
+func TestUnreadablePayloadCarriesTheParserError(t *testing.T) {
+	pki := newReceiptPKI(t)
+	der := buildCMS(t, cmsSpec{
+		content:      derSet(derSequence(derInt(1), derInt(1))),
+		signer:       pki.leaf,
+		certificates: pki.embedded(), withSignedAttrs: true,
+	})
+	_, err := verifierFor(t, pki.anchors()).VerifyReceipt(applereceiptBase64(der))
+	requireReason(t, err, applereceipt.ReasonUnreadablePayload)
+	if errors.Unwrap(err) == nil {
+		t.Fatal("errors.Unwrap must give the parser's error behind UNREADABLE_PAYLOAD")
+	}
+}
+
+// A bundle id value that is not ASN.1 at all is one unparseable value,
+// not an unreadable payload: the field is nil, the octets survive.
+func TestBundleIDValueThatIsNotASN1IsKeptRaw(t *testing.T) {
+	pki := newReceiptPKI(t)
+	value := []byte{0x30, 0xff, 0xff}
+	der := pki.receipt(t, attr(2, value))
+	receipt, err := verifierFor(t, pki.anchors()).VerifyReceipt(applereceiptBase64(der))
+	if err != nil {
+		t.Fatalf("must still verify: %v", err)
+	}
+	if receipt.BundleID != nil {
+		t.Errorf("BundleID: got %q, want nil", *receipt.BundleID)
+	}
+	if !bytes.Equal(receipt.BundleIDBytes, value) {
+		t.Errorf("BundleIDBytes: got % x, want % x", receipt.BundleIDBytes, value)
+	}
+}
+
+// A nil config is a programming error the constructor reports, never a
+// panic and never a verdict.
+func TestNewVerifierRejectsANilConfig(t *testing.T) {
+	verifier, err := applereceipt.NewVerifier(nil)
+	if err == nil || verifier != nil {
+		t.Fatalf("a nil config must be refused, got %v, %v", verifier, err)
+	}
+	var failure *applereceipt.Failure
+	if errors.As(err, &failure) {
+		t.Fatalf("misconfiguration must not be a verification verdict, got %s", failure.Reason)
+	}
+}
+
 // A nil certificate among the roots is a configuration mistake too. It
 // must be refused at construction, as Java's Config.Builder.roots refuses
 // a null root, rather than surface later as a MALFORMED verdict on every
