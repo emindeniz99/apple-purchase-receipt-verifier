@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Flattens fixtures/cases-0.7.json into a line-oriented manifest a compiled
+ * Flattens fixtures/cases.json into a line-oriented manifest a compiled
  * harness can read without a JSON parser.
  *
  *   node tools/gen-cases-manifest.mjs <outdir>
@@ -108,7 +108,7 @@ function fixtureBytes(entry, id) {
   if (actual !== entry.contentSha256) {
     fail(
       `fixture "${id}" (${entry.path}, codec ${entry.codec}) has drifted: ` +
-        `cases-0.7.json records ${entry.contentSha256}, the decoded bytes hash to ${actual}`,
+        `cases.json records ${entry.contentSha256}, the decoded bytes hash to ${actual}`,
     );
   }
   return bytes;
@@ -185,10 +185,10 @@ function main() {
   const outDir = process.argv[2];
   if (!outDir) fail('usage: node tools/gen-cases-manifest.mjs <outdir>');
 
-  const casesText = readFileSync(join(FIXTURES_DIR, 'cases-0.7.json'), 'utf8');
+  const casesText = readFileSync(join(FIXTURES_DIR, 'cases.json'), 'utf8');
   const file = parseCasesKeepingExactIntegers(casesText);
   if (file.schemaVersion !== 2) {
-    fail(`cases-0.7.json is schemaVersion ${file.schemaVersion}, this generator implements 2`);
+    fail(`cases.json is schemaVersion ${file.schemaVersion}, this generator implements 2`);
   }
 
   const out = resolve(outDir);
@@ -309,7 +309,7 @@ function main() {
   }
 
   // One line per case in the parsed file, so a harness that checks every
-  // manifest id ran is checking every case id in cases-0.7.json.
+  // manifest id ran is checking every case id in cases.json.
   if (lines.length !== file.cases.length) {
     fail(`wrote ${lines.length} lines for ${file.cases.length} cases`);
   }
