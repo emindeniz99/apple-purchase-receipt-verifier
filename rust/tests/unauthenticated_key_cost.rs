@@ -394,3 +394,21 @@ fn a_genuine_apple_receipt_padded_with_stranger_keys_still_verifies() {
     assert_no_stranger_key_used(&used);
     assert_eq!(payload.unwrap(), control);
 }
+
+/// Every signature check goes through one recorded key use, the ES256 check
+/// over the JWS included: a genuine transaction uses the root's key on the
+/// intermediate, the intermediate's on the leaf, and last the leaf's own.
+#[test]
+fn the_es256_check_is_recorded_as_a_key_use() {
+    use apple_purchase_receipt_verifier::__internal::x509::Certificate;
+    let jws = common::transaction_jws();
+    let header = common::jws_header(&jws);
+    let leaf_entry = header["x5c"][0].as_str().unwrap();
+    let leaf = Certificate::from_der(
+        &apple_purchase_receipt_verifier::__internal::base64_decode_lenient(leaf_entry),
+    )
+    .unwrap();
+    let (result, used) = keys_used_during(|| common::jws_verifier().verify_signed_data(&jws));
+    assert!(result.is_ok());
+    assert_eq!(used.last().map(Vec::as_slice), Some(leaf.spki()));
+}

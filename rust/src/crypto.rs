@@ -302,10 +302,17 @@ pub fn verify_ecdsa_raw(
     }
 }
 
-/// ES256, the JWS payload signature: a P-256 key, SHA-256, and a raw 64-byte
-/// `r ‖ s` signature per RFC 7515.
+/// ES256, the JWS payload signature, under `key`'s public key: a P-256 key,
+/// SHA-256, and a raw 64-byte `r ‖ s` signature per RFC 7515.
 #[must_use]
-pub fn verify_es256(key_bits: &[u8], signature: &[u8], data: &[u8]) -> bool {
+pub(crate) fn verify_es256_under(key: &Certificate, signature: &[u8], data: &[u8]) -> bool {
+    with_key(key, |key| {
+        verify_es256(key.public_key_bits(), signature, data)
+    })
+}
+
+/// ES256 over raw key bits; see [`verify_es256_under`], the one caller.
+fn verify_es256(key_bits: &[u8], signature: &[u8], data: &[u8]) -> bool {
     if signature.len() != 64 {
         return false;
     }
@@ -413,8 +420,9 @@ std::thread_local! {
         const { core::cell::RefCell::new(None) };
 }
 
-/// Notes that the key `spki` is about to check a signature.
-pub(crate) fn record_key_use(spki: &[u8]) {
+/// Notes that the key `spki` is about to check a signature. Called from
+/// [`with_key`] only.
+fn record_key_use(spki: &[u8]) {
     KEYS_USED.with(|keys| {
         if let Some(keys) = keys.borrow_mut().as_mut() {
             keys.push(spki.to_vec());
@@ -433,8 +441,19 @@ pub fn keys_used_during<R>(body: impl FnOnce() -> R) -> (R, Vec<Vec<u8>>) {
     (result, used.unwrap_or_default())
 }
 
-fn verify_scheme(scheme: Scheme, key: &Certificate, signature: &[u8], data: &[u8]) -> bool {
+/// The one place a certificate's public key is used to check a signature:
+/// every use is recorded first, so [`keys_used_during`] sees each one,
+/// certificate links, CMS signatures and ES256 alike.
+fn with_key<R>(key: &Certificate, check: impl FnOnce(&Certificate) -> R) -> R {
     record_key_use(key.spki());
+    check(key)
+}
+
+fn verify_scheme(scheme: Scheme, key: &Certificate, signature: &[u8], data: &[u8]) -> bool {
+    with_key(key, |key| verify_scheme_with(scheme, key, signature, data))
+}
+
+fn verify_scheme_with(scheme: Scheme, key: &Certificate, signature: &[u8], data: &[u8]) -> bool {
     match scheme {
         Scheme::Pkcs1(digest) => {
             key.public_key_algorithm_oid() == OID_RSA_ENCRYPTION

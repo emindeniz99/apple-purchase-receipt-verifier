@@ -11,7 +11,7 @@
 
 use crate::base64::{decode_base64url_strict, decode_receipt_base64};
 use crate::chain::validate_pair;
-use crate::crypto::{has_unimplemented_curve, record_key_use, verify_es256};
+use crate::crypto::{has_unimplemented_curve, verify_es256_under};
 use crate::error::{Failure, Reason};
 use crate::json::{instant, whole_object_members, JsonError, Value};
 use crate::roots::TrustAnchor;
@@ -265,8 +265,7 @@ fn verify_signature(
     signing_input.extend_from_slice(header_b64.as_bytes());
     signing_input.push(b'.');
     signing_input.extend_from_slice(payload_b64.as_bytes());
-    record_key_use(leaf.spki());
-    if verify_es256(leaf.public_key_bits(), signature, &signing_input) {
+    if verify_es256_under(leaf, signature, &signing_input) {
         Ok(())
     } else {
         Err(Failure::new(
