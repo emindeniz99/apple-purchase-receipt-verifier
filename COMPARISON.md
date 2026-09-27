@@ -1,16 +1,16 @@
-# Apple `verifyReceipt` vs. our local `VerifyReceiptEndpoint`
+# Apple `verifyReceipt` vs. our local `verifyReceiptEndpoint`
 
-Every implementation ships a `VerifyReceiptEndpoint` that speaks the exact
+Every implementation ships a `verifyReceiptEndpoint` method that speaks the exact
 wire contract of Apple's deprecated
 [`verifyReceipt`](https://developer.apple.com/documentation/appstorereceipts/verify-receipt)
 endpoint — same [request body](https://developer.apple.com/documentation/appstorereceipts/requestbody),
 same [response body](https://developer.apple.com/documentation/appstorereceipts/responsebody)
 shape, same [status codes](https://developer.apple.com/documentation/appstorereceipts/status) —
-verified offline instead of by calling Apple. Each one takes either a
-parsed request body or the raw JSON body as a string — `verifyReceiptJson`
-in Java, Node and PHP, `verify_receipt_json` in Python, Ruby and Rust,
-`verifyReceiptJSON` in Swift, `VerifyReceiptJSON` in Go and
-`VerifyReceiptJson` in .NET — answering in the same form it was given. This
+verified offline instead of by calling Apple. It takes the environment it
+imitates (`PRODUCTION` or `SANDBOX`) and the raw JSON request body as a
+string, and returns the JSON response body as a string, in each language's
+casing (`verify_receipt_endpoint` in Python, Ruby and Rust,
+`VerifyReceiptEndpoint` in Go and .NET). This
 file is the honest field-by-field account of what is identical, what differs,
 and what is **impossible** to produce locally.
 
@@ -38,9 +38,9 @@ Apple counts UTF-8 bytes, not characters. A body of 3,145,729 bytes of `é`
 (1,572,874 characters) also got 413, and 3,145,727 bytes of it got 200.
 
 Every port refuses a raw body over 3,145,728 UTF-8 bytes before parsing it.
-The answer is status 21002 with the result-only reason `REQUEST_TOO_LARGE`,
-so your HTTP layer can send 413 as Apple does. A `receipt-data` over
-3,145,728 bytes, or DER over that size, is `INVALID_RECEIPT_FORMAT` (21002).
+The answer is status 21002, so your HTTP layer can send 413 as Apple does
+when it sees the body is over the cap. A `receipt-data` string over
+3,145,728 bytes is `TOO_LARGE` (21002).
 The limits are fixed constants, and `fixtures/cases.json` holds every port
 to them from both sides.
 
@@ -57,7 +57,7 @@ to them from both sides.
 | 21005 | Apple's receipt server is unavailable | ❌ never produced — there is no server to be unavailable; this is a *benefit* |
 | 21006 | valid but subscription expired (iOS 6 style only) | ❌ never produced (legacy iOS 6 transaction receipts unsupported) |
 | 21007 / 21008 | sandbox↔production routing | ✅ reproduced locally from the receipt's `receipt_type` attribute — the classic "try production, retry sandbox on 21007" dance still works unchanged. Fails closed: only `Production`/`ProductionVPP` count as production; sandbox variants and a missing attribute are treated as sandbox. `Xcode` is in that fail-closed set for completeness only — an Xcode-generated receipt is not Apple-signed, so it stops at 21003 before routing is reached |
-| 21009 / 21010 | internal error / account not found | 21009 (`INTERNAL_ERROR`) when the receipt authenticates (trusted chain, valid signature) but its signed content cannot be read, when the runtime lacks an algorithm the check needs, and on unexpected internal errors. Not the client's fault, and deterministic: the same receipt gives 21009 again, so retrying does not help. Log the cause with the library version, alert, and settle the purchase through the App Store Server API by transaction id. 21010 never (no account database) |
+| 21009 / 21010 | internal error / account not found | 21009 when the receipt authenticates (trusted chain, valid signature) but its signed content cannot be read (`UNREADABLE_PAYLOAD`), and when the library itself fails, such as a runtime lacking an algorithm the check needs (`INTERNAL_ERROR`). Not the client's fault, and deterministic: the same receipt gives 21009 again, so retrying does not help. Log the cause with the library version, alert, and settle the purchase through the App Store Server API by transaction id. 21010 never (no account database) |
 | 21100–21199 (+ `is_retryable`) | Apple internal data access error; `is_retryable` says whether retrying may help | ❌ never produced, and we never emit an `is_retryable` field either — these codes report the state of Apple's own datastore, and there is no remote call here to retry |
 
 A tampered receipt shows 21002 and 21003 diverging in practice. Altering one
@@ -126,10 +126,10 @@ own `verifyReceipt` answer for it, 2026-09-21: the endpoint now matches
 Apple on 30 of the 31 fields Apple returned for that receipt, the lone gap
 being `in_app_ownership_type`.
 
-One known difference in 0.6.0: for a purchase whose attribute 1711 is 0
-(every consumable checked, in production and sandbox), the endpoint writes
-`"web_order_line_item_id":"0"` where Apple omits the field. Compare that
-field only when it is nonzero. 0.7 omits it (ROADMAP.md).
+For a purchase whose attribute 1711 is 0 (every consumable checked, in
+production and sandbox), Apple omits `web_order_line_item_id`, and since
+0.7 so does the endpoint. 0.6.0 wrote `"web_order_line_item_id":"0"`
+there.
 
 **Key order is not part of the contract.** Inside `receipt` it matches
 Apple's for the leading keys (`receipt_type`, `adam_id`, `app_item_id`,

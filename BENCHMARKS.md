@@ -15,31 +15,35 @@ the same pair `java-bench/` uses:
 | `receipt-sandbox-g5` (g5) | 2 | SHA-256 | 7,556 | 5,665 |
 | `receipt-sandbox-legacy` (legacy) | 187 | SHA-1 | 105,472 | 79,104 |
 
-Every run verifies them against the port's built-in Apple receipt roots, with
-the bundle ids `fixtures/cases.json` pins (`dev.bonzer.weeka.app`,
-`com.nutcall.alert`). The base64 input is the canonical re-encoding of the
-DER, and the endpoints read a fixed clock (2026-01-01T00:00:00Z).
+Every run verifies them with one `Verifier` built from the port's default
+`Config` (the bundled Apple roots) and a fixed clock
+(2026-01-01T00:00:00Z), which only reaches `request_date` because both
+receipts carry a creation date. The base64 input is the canonical
+re-encoding of the DER.
 
 | benchmark | call |
 |---|---|
 | `decodeBase64` | the library's own receipt-data decoder on the canonical string |
-| `core` | `verifyReceiptCore(der, roots)` on pre-decoded DER: chain and signature, no bundle check |
-| `verifierBase64` | a `ReceiptVerifier` built in setup, `verify` on the base64 string |
-| `endpointJson` | a Sandbox `VerifyReceiptEndpoint`, `verifyReceiptJson` from request JSON to response JSON |
-| `retryViaResult` | a Production endpoint, `verifyReceiptResult(request).toJson(Sandbox)`: the 21007 retry without a second verification |
-| `rejectTamperedSignature` | `verifyReceiptCore` on the DER with one bit flipped in the middle of the SignerInfo signature |
+| `verifyReceipt` | `verifier.verifyReceipt(base64)`: decode, chain, signature and full parse |
+| `endpointJson` | `verifier.verifyReceiptEndpoint(SANDBOX, requestJson)`, from request JSON to response JSON |
+| `rejectTamperedSignature` | `verifyReceipt` on the base64 of the DER with one bit flipped in the middle of the SignerInfo signature |
 
-The names are the Java JMH names. Each port spells the calls its own way
-(`VerifyReceiptJSON` in Go, `verify_receipt_json` in Python and Ruby, and so
-on). In both fixtures the signature is a 256-byte OCTET STRING at the very end
+The names are the Java JMH names; each port spells the calls in its own
+casing. Some ports report more: Python, Ruby and Rust still also emit the
+0.6 names `core` and `verifierBase64`, both of which now time
+`verifyReceipt` over the base64; Ruby and Rust emit `retryViaResult` as a
+`PRODUCTION` call answering 21007 followed by the `SANDBOX` call; Java adds
+`endpointWrongEnv` and a `verifySignedData` benchmark. Swift reports no
+`decodeBase64` (see below). In both fixtures the signature is a 256-byte OCTET STRING at the very end
 of the DER, so every port flips the byte 128 from the end, the byte
 java-bench's `flipSignatureByte` finds by parsing the CMS.
 
 Before timing, each benchmark runs every call once and stops unless it gets
-the answer the conformance suite expects: the right bundle id and in-app
-count, status 0 with every `in_app` entry, a Sandbox status 0 from the
-Production result, and `INVALID_SIGNATURE` for the tampered receipt. A
-benchmark therefore cannot time a fast failure.
+the answer the conformance suite expects: the bundle id and in-app count
+`fixtures/cases.json` pins (`dev.bonzer.weeka.app` with 2,
+`com.nutcall.alert` with 187), status 0 with every `in_app` entry, and
+`INVALID_SIGNATURE` for the tampered receipt. A benchmark therefore cannot
+time a fast failure.
 
 `decodeBase64` reaches an internal function in most ports: through the
 internal test package in Go, a `dist/` module in Node, a private module in
@@ -47,8 +51,8 @@ Python, reflection in Java and .NET. Swift reports no `decodeBase64`. Its
 decoder is internal, and reaching it takes `-enable-testing`, which changes
 how the whole library compiles.
 
-`java-bench/` also has `endpointMap`, `endpointWrongEnv` and `resultOnly`,
-which no other port repeats.
+`java-bench/README.md` lists what Java's harness measures beyond the shared
+set.
 
 ## Tools and output
 
@@ -130,6 +134,12 @@ per port, all on `ubuntu-latest`, and each uploads an artifact named
 differ from run to run, so compare ports within one run, not across runs.
 
 ## Results
+
+**These are 0.6 numbers, under the 0.6 benchmark names; no 0.7 run has been
+recorded yet.** In 0.7 terms, `verifierBase64` is closest to `verifyReceipt`
+less the bundle-id comparison, `core` skipped the base64 decode, and
+`retryViaResult` re-rendered a result without a second verification, which
+0.7 no longer offers.
 
 **Local, shared 4 vCPU cloud VM, noisy, not a baseline.** All nine ports
 measured on 2026-09-25 at `v0.6.0` (`b934caa`), one port at a time, nothing

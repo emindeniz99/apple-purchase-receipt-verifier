@@ -65,7 +65,7 @@ recorded here.
 - **D11 — Observability is the caller's job** (owner decision,
   2026-08-05): this is a library; it exposes machine-readable reason codes
   and nothing else — no logging, no metrics, no callbacks. Integrators wire
-  `VerificationException`/`VerificationError` reasons into their own
+  the failure `Reason` values into their own
   telemetry and decide reject/alert policy.
 - **D12 — Trust anchors are NEVER fetched at runtime** (owner question,
   2026-08-05): periodic runtime download of Apple's roots was considered
@@ -82,7 +82,8 @@ recorded here.
   attribute types the library does not model are exposed raw on
   `unknownAttributes` (type → verified-but-undecoded value bytes) in every
   language, so fields Apple adds later remain accessible without a library
-  update. The JWS side was already dynamic (`verifyRaw` returns all claims).
+  update. The JWS side was already dynamic (0.6's `verifyRaw` returned all
+  claims; 0.7's `verifySignedData` returns the payload JSON as signed).
   Endpoint environment routing fails closed: only `Production` /
   `ProductionVPP` receipt types count as production; sandbox variants
   (incl. `ProductionVPPSandbox`), `Xcode`, and a missing attribute route
@@ -101,7 +102,7 @@ recorded here.
   appAppleId binding, receipt signing-time validity) is now covered in all
   four languages, not just Java.
 - **D9 — verifyReceipt wire-compat endpoint** (2026-08-05): each language
-  ships `VerifyReceiptEndpoint` speaking Apple's exact request/response/
+  ships a `verifyReceiptEndpoint` (a class of its own until 0.7) speaking Apple's exact request/response/
   status-code contract, with 21007/21008 routing reproduced locally from
   the receipt's `receipt_type` attribute. Fidelity and unavoidable gaps:
   [COMPARISON.md](./COMPARISON.md).
@@ -244,11 +245,16 @@ security-critical code we must be able to reason about.
 
 ## 2. Verification algorithms (normative for every language)
 
+Since 0.7 the library applies no policy: it checks that Apple signed the
+input and returns the payload, and the caller checks bundle id,
+environment, app Apple id and device binding on what it returns.
+[docs/design/0.7-api.md](./docs/design/0.7-api.md) is the full 0.7
+contract; where the two differ, it wins.
+
 ### 2.1 JWS signed data (StoreKit 2 / Server Notifications V2)
 
-Input: compact JWS string, expected `bundleId`, expected `environment`,
-optional `appAppleId` (required when environment = Production), trusted
-roots (Apple Root CA – G3).
+Input: compact JWS string, and the `Config`: trusted roots (Apple Root CA –
+G3 among them) and a clock.
 
 1. Split `header.payload.signature`; base64url-decode the header JSON.
 2. Require `alg == "ES256"` and an `x5c` array of **exactly 3** certificates
@@ -265,23 +271,23 @@ roots (Apple Root CA – G3).
    **not** trusted or byte-compared — only the intermediate being signed by
    one of our pinned anchors counts, so an attacker swapping in their own
    `x5c[2]` changes nothing.
-   - Validity is checked at the payload's `signedDate` (fall back to
-     `receiptCreationDate`, else current time), so historical payloads
+   - Validity is checked at the payload's `signedDate` (the `Config` clock
+     when it is missing or not a representable instant), so historical payloads
      signed with since-rotated certs still verify — same model as Apple's
      official libraries in offline mode.
 5. Verify the ES256 signature over `ASCII(header + "." + payload)` with the
    leaf public key (P-256, SHA-256, raw r‖s per RFC 7515 → DER for JCA-style APIs).
-6. Decode the payload JSON and enforce: `bundleId` matches, `environment`
-   matches, and in Production `appAppleId` matches.
-7. Return the decoded, typed payload. Any failed step throws/raises a
-   `VerificationException` with a machine-readable reason code — never a
+6. Confirm the payload is a JSON object, under the depth and size bounds;
+   one that is not is `UNREADABLE_PAYLOAD`. No claim is checked: bundle id,
+   environment and app Apple id are the caller's to compare.
+7. Return the payload JSON exactly as signed. Any failed step returns a
+   failure with one of the eight reasons of the 0.7 design — never a
    partially-verified result.
 
 ### 2.2 Legacy PKCS#7 app receipt
 
-Input: receipt bytes (DER PKCS#7/CMS, or its base64 — the exact blob apps
-send to `verifyReceipt`), expected `bundleId`, trusted roots (Apple Inc.
-Root CA), optional device GUID.
+Input: the receipt's base64 (the exact blob apps send to `verifyReceipt`),
+and the `Config`: trusted roots (Apple Inc. Root CA among them) and a clock.
 
 1. Parse as CMS `SignedData`; require signed content present (the payload).
    Present but zero bytes long counts as present.
@@ -294,7 +300,8 @@ Root CA), optional device GUID.
      trust: walk the top-level attribute SET, read each entry's type, decode
      the value of type 12 alone. Missing, empty, unreadable, present more
      than once, or a walk that fails on any entry: judge the chain at the
-     system clock instead. Reading the date never rejects a receipt.
+     `Config` clock instead. Reading the date never rejects a receipt. (Since
+     0.7 the first copy of a repeated attribute 12 is used.)
    - The chain is checked before the signature (step 4) on purpose: the
      signature check would otherwise run the attacker's own key, with an
      RSA size and exponent of their choosing, before anything is trusted.
@@ -306,14 +313,17 @@ Root CA), optional device GUID.
    "Apple Distribution"/"Apple Development" leaf, which chains through the
    same WWDR intermediate — could sign a fully forged receipt. This mirrors
    the JWS leaf marker check (§2.1 step 3). Checked **after** chain validation
-   so a foreign chain still reports `INVALID_CHAIN` first.
+   so a foreign chain still reports `UNTRUSTED_CHAIN` first. Since 0.7 the
+   WWDR intermediate must also carry `1.2.840.113635.100.6.2.1`, as on the
+   JWS path.
 4. Verify the CMS signature over the content with the signer's public key
    (Apple signs receipts with SHA-1/RSA or SHA-256/RSA — accept what the CMS
    `SignerInfo` declares, but only after the chain anchored at our pinned root
-   and the signer-purpose check). Require the signer key to be RSA.
+   and the signer-purpose check). Since 0.7 (#160) the signer's key type,
+   digest and signature algorithm are not restricted.
 5. Parse the whole payload, now that its signer is trusted. Any failure here
-   is `INTERNAL_ERROR` (status 21009 at the endpoint), never
-   `INVALID_RECEIPT_FORMAT`: a trusted signer signed content this library
+   is `UNREADABLE_PAYLOAD` (status 21009 at the endpoint), never
+   `MALFORMED`: a trusted signer signed content this library
    cannot read, which is the library's gap or a new Apple format and not a
    malformed client request. Grammar: `SET OF ReceiptAttribute ::= SEQUENCE {
    type INTEGER, version INTEGER, value OCTET STRING }`. App-level attributes:
@@ -331,11 +341,11 @@ Root CA), optional device GUID.
    1704 purchase date, 1705 original transaction id, 1706 original purchase
    date, 1708 subscription expiration date, 1711 web order line item id,
    1712 cancellation date, 1719 is-in-intro-offer-period.
-6. Enforce `bundleId` matches. If the caller supplies the device GUID:
-   check `SHA1(guid ‖ opaqueValue ‖ bundleIdRawBytes) == attribute 5`
-   (device binding — optional because servers don't always have the GUID).
-7. Return the typed receipt (app fields + list of in-app purchases); throw
-   on any failure, as in 2.1.
+6. Check nothing else. Since 0.7 the bundle id and the device binding
+   (`SHA1(guid ‖ opaqueValue ‖ bundleIdRawBytes) == attribute 5`) are the
+   caller's checks, made on the fields the payload returns.
+7. Return the typed receipt (app fields + list of in-app purchases), or a
+   failure, as in 2.1.
 
 ### 2.3 Threat model notes
 
@@ -357,30 +367,33 @@ Root CA), optional device GUID.
 
 ## 3. Shared API shape (adapt idiomatically per language)
 
+The 0.7 shape; [docs/design/0.7-api.md](./docs/design/0.7-api.md) has the
+types and each port's idiom.
+
 ```
-Environment = { PRODUCTION, SANDBOX, XCODE, LOCAL_TESTING }
+Environment = { PRODUCTION, SANDBOX }
 
-JwsVerifier(trustedRoots, bundleId, acceptedEnvironments, appAppleId?)
-  .verifyTransaction(jws)      -> TransactionPayload   (decoded fields)
-  .verifyAppTransaction(jws)   -> AppTransactionPayload
-  .verifyRaw(jws)              -> claims map — signature/chain only, caller checks
-                                  claims (covers renewal-info / notification JWS)
+Config.defaults()                      // the bundled Apple roots + the system clock
+Config.builder().roots(...).clock(...) // tests replace both
 
-ReceiptVerifier(trustedRoots, bundleId)
-  .verify(receiptBytes|base64) -> AppReceipt { bundleId, appVersion, opaqueValue,
-                                   sha1Hash, creationDate, originalAppVersion,
-                                   expirationDate, appItemId, downloadId,
-                                   versionExternalIdentifier, inAppPurchases[] }
-  .verifyWithDeviceGuid(receipt, guid)  // adds the device-hash check
+Verifier.create(config)
+  .verifyReceipt(base64)                         -> VerificationResult<ReceiptPayload>
+  .verifySignedData(jws)                         -> VerificationResult<JsonPayload>
+  .verifyReceiptEndpoint(environment, requestJson) -> response JSON string
 
-VerificationException { reason: INVALID_JWS_FORMAT | INVALID_CHAIN |
-  INVALID_SIGNATURE | INVALID_CERTIFICATE_PURPOSE | WRONG_BUNDLE_ID |
-  WRONG_ENVIRONMENT | WRONG_APP_APPLE_ID | INVALID_RECEIPT_FORMAT |
-  DEVICE_HASH_MISMATCH | ... }
+VerificationResult { verified, payload | failure }
+Failure { reason, message, cause }
+Reason = MALFORMED | TOO_LARGE | INVALID_SIGNATURE | UNTRUSTED_CHAIN |
+         INVALID_CERTIFICATE | INVALID_CERTIFICATE_PURPOSE |
+         UNREADABLE_PAYLOAD | INTERNAL_ERROR
 ```
 
-Apple root certs are **not** hard-wired: constructors take trust anchors,
-with a helper that loads the bundled `certs/*.cer`. Tests inject a
+0.6's `JwsVerifier`, `ReceiptVerifier`, `VerifyReceiptEndpoint`, the typed
+JWS models and the bundle id, environment and device-guid parameters are
+gone; each port README's "Upgrading from 0.6" maps them.
+
+Apple root certs are **not** hard-wired: a `Config` takes trust anchors,
+and `Config.defaults()` holds the bundled `certs/*.cer`. Tests inject a
 generated fake "Apple" PKI (root → intermediate-with-OID → leaf-with-OID)
 and sign fixtures with it — the same technique Apple's own libraries use —
 so tests need no real Apple secrets and prove the anchor pinning works.
@@ -396,10 +409,11 @@ so tests need no real Apple secrets and prove the anchor pinning works.
 4. **Python** (`python/`, ≥3.10, `cryptography` + `asn1crypto`). ✅
 5. **Swift** (`swift/`, SwiftPM, Swift 6, swift-certificates +
    swift-crypto + swift-asn1 only). ✅
-6. **Five more ports** — `go/` (1.22+), `ruby/` (3.1+), `rust/` (1.74+),
-   `php/` (8.1+) and `dotnet/` (netstandard2.0 + net8.0), nine in all. ✅
+6. **Five more ports** — `go/` (1.22+), `ruby/` (3.3+ since 0.7), `rust/`
+   (1.85+), `php/` (8.2+ since 0.7) and `dotnet/` (netstandard2.0 +
+   net8.0), nine in all. ✅
 7. **Cross-language fixture parity**: one shared fixture set
-   (`fixtures/generated/`, the vendored Apple-official set in
+   (`fixtures/generated/` and `fixtures/generated-0.7/`, the vendored Apple-official set in
    `fixtures/apple-official/`, and the genuine Apple receipts in
    `fixtures/public-receipts/`) driven by `fixtures/cases.json`, every
    vector verified byte-identically by all nine suites. ✅
