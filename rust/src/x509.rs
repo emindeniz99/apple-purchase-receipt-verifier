@@ -10,6 +10,9 @@
 //! re-encoded before it is verified, so the bytes checked are always the
 //! bytes parsed.
 
+// Every length and offset here comes from attacker bytes: no silent wrap.
+#![deny(clippy::arithmetic_side_effects)]
+
 use crate::asn1::{decode_oid, encode_oid, parse_exact, tag, Asn1Error, Tlv};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -207,18 +210,11 @@ impl Certificate {
     pub fn from_pem(pem: &str) -> Result<Certificate, Asn1Error> {
         const BEGIN: &str = "-----BEGIN CERTIFICATE-----";
         const END: &str = "-----END CERTIFICATE-----";
-        let start = pem
-            .find(BEGIN)
+        let (_, rest) = pem
+            .split_once(BEGIN)
             .ok_or(Asn1Error("no PEM CERTIFICATE block"))?;
-        let body_start = start + BEGIN.len();
-        let rest = pem
-            .get(body_start..)
-            .ok_or(Asn1Error("no PEM CERTIFICATE block"))?;
-        let end = rest
-            .find(END)
-            .ok_or(Asn1Error("unterminated PEM CERTIFICATE block"))?;
-        let body = rest
-            .get(..end)
+        let (body, _) = rest
+            .split_once(END)
             .ok_or(Asn1Error("unterminated PEM CERTIFICATE block"))?;
         let der = crate::base64::decode_lenient(body);
         Certificate::from_der(&der)
@@ -236,34 +232,36 @@ fn time_millis(node: &Tlv<'_>) -> Result<Option<i64>, Asn1Error> {
     // string, so such a certificate parses and only fails later, when the
     // validity comparison can never be true. None here produces exactly
     // that — the certificate is valid at no instant.
-    let year_digits = if node.tag == tag::UTC_TIME { 2 } else { 4 };
+    let (year_digits, length) = if node.tag == tag::UTC_TIME {
+        (2, 13)
+    } else {
+        (4, 15)
+    };
     let bytes = text.as_bytes();
-    if bytes.len() != year_digits + 11 || bytes.last() != Some(&b'Z') {
+    if bytes.len() != length || bytes.last() != Some(&b'Z') {
         return Ok(None);
     }
-    let field = |from: usize, len: usize| -> Option<i64> {
-        let slice = bytes.get(from..from + len)?;
-        let mut value = 0i64;
-        for byte in slice {
-            if !byte.is_ascii_digit() {
-                return None;
-            }
-            value = value * 10 + i64::from(byte - b'0');
-        }
-        Some(value)
+    let Some((year_text, rest)) = bytes.split_at_checked(year_digits) else {
+        return Ok(None);
+    };
+    let digits = |slice: Option<&[u8]>| -> Option<i64> {
+        slice?.iter().try_fold(0i64, |value, byte| {
+            let digit = char::from(*byte).to_digit(10)?;
+            value.checked_mul(10)?.checked_add(i64::from(digit))
+        })
     };
     let (Some(mut year), Some(month), Some(day), Some(hour), Some(minute), Some(second)) = (
-        field(0, year_digits),
-        field(year_digits, 2),
-        field(year_digits + 2, 2),
-        field(year_digits + 4, 2),
-        field(year_digits + 6, 2),
-        field(year_digits + 8, 2),
+        digits(Some(year_text)),
+        digits(rest.get(0..2)),
+        digits(rest.get(2..4)),
+        digits(rest.get(4..6)),
+        digits(rest.get(6..8)),
+        digits(rest.get(8..10)),
     ) else {
         return Ok(None);
     };
     if node.tag == tag::UTC_TIME {
-        year += if year >= 50 { 1900 } else { 2000 };
+        year = year.saturating_add(if year >= 50 { 1900 } else { 2000 });
     }
     let iso = format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z");
     Ok(crate::datetime::parse_rfc3339(&iso))
@@ -276,14 +274,20 @@ fn bit_string_bits(contents: &[u8]) -> Result<Vec<bool>, Asn1Error> {
     }
     let body = contents.get(1..).unwrap_or(&[]);
     let mut bits = Vec::new();
-    for (index, byte) in body.iter().enumerate() {
-        let last = index + 1 == body.len();
-        let count = if last { 8 - unused } else { 8 };
-        for bit in 0..count {
-            bits.push(byte & (0x80u8 >> bit) != 0);
+    if let Some((last, leading)) = body.split_last() {
+        for byte in leading {
+            push_bits(&mut bits, *byte, 8);
         }
+        push_bits(&mut bits, *last, 8usize.saturating_sub(unused));
     }
     Ok(bits)
+}
+
+/// The first `count` bits of `byte`, most significant first.
+fn push_bits(bits: &mut Vec<bool>, byte: u8, count: usize) {
+    for bit in 0..count {
+        bits.push(byte & (0x80u8 >> bit) != 0);
+    }
 }
 
 #[allow(clippy::too_many_lines)]
@@ -322,12 +326,10 @@ fn parse_certificate(der: &[u8]) -> Result<Certificate, Asn1Error> {
         index = 1;
     }
     let bad = Asn1Error("unexpected TBSCertificate layout");
-    let serial = fields.get(index).ok_or(bad)?;
-    let inner_signature = fields.get(index + 1).ok_or(bad)?;
-    let issuer = fields.get(index + 2).ok_or(bad)?;
-    let validity = fields.get(index + 3).ok_or(bad)?;
-    let subject = fields.get(index + 4).ok_or(bad)?;
-    let spki = fields.get(index + 5).ok_or(bad)?;
+    let Some([serial, inner_signature, issuer, validity, subject, spki, ..]) = fields.get(index..)
+    else {
+        return Err(bad);
+    };
     if serial.tag != tag::INTEGER
         || issuer.tag != tag::SEQUENCE
         || validity.tag != tag::SEQUENCE

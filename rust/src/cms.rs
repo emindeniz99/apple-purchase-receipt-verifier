@@ -7,6 +7,9 @@
 //! receipts use definite ones — so the reader accepts both and this module
 //! never assumes either.
 
+// Every length and offset here comes from attacker bytes: no silent wrap.
+#![deny(clippy::arithmetic_side_effects)]
+
 use crate::asn1::{decode_oid, encode_oid, parse_exact, tag, Asn1Error, Tlv};
 use crate::crypto::DigestAlgorithm;
 
@@ -191,7 +194,7 @@ fn parse_signer_info(node: &Tlv<'_>) -> Result<CmsSignerInfo, Asn1Error> {
             Err(err) => return Err(err),
         }
         signed_attrs = Some(attrs.to_vec());
-        index += 1;
+        index = index.saturating_add(1);
     }
     // The digest drives the hash, except for an algorithm whose parameters
     // name their own (RSASSA-PSS).
@@ -204,7 +207,7 @@ fn parse_signer_info(node: &Tlv<'_>) -> Result<CmsSignerInfo, Asn1Error> {
             "signatureAlgorithm is not an AlgorithmIdentifier",
         ))?;
     let signature_algorithm_params = signature_algorithm.child(1).map(|node| node.full.to_vec());
-    index += 1;
+    index = index.saturating_add(1);
     let signature = fields.get(index).ok_or(BAD)?.contents.to_vec();
     let digest = digest_for(digest_oid);
     Ok(CmsSignerInfo {
