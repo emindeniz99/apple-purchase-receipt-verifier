@@ -29,7 +29,7 @@ public class InputSizeBoundsTests
         Assert.Equal(64, Json.MaxDepth);
         Assert.Equal(50000, Json.MaxMemberNameLength);
         Assert.Equal(1000, Json.MaxNumberDigits);
-        Assert.Equal(64, Asn1Depth.MaxDepth);
+        Assert.Equal(32, Asn1Depth.MaxDepth);
         Assert.Equal(10, Cms.MaxEmbeddedCertificates);
         Assert.Equal(4, Cms.MaxSignerInfos);
         Assert.Equal(6, Chain.MaxPathLength);
@@ -84,8 +84,8 @@ public class InputSizeBoundsTests
         TestPki.JwsChain chain = TestPki.SharedJws.Value;
         string payload = "{\"signedDate\":1722945600000,\"x\":" + new string('[', 63) + new string(']', 63) + "}";
         string jws = chain.Sign(payload);
-        string deepReceipt = Fixtures070.ForReceipt("owner-receipt-content-depth-64");
-        IVerifier receipts = TestPki.FixtureVerifier("owner-receipt-root", 1735689600000L);
+        string deepReceipt = Fixtures070.ForReceipt("depth-receipt-content-32");
+        IVerifier receipts = TestPki.FixtureVerifier("depth-receipt-root", 1735689600000L);
 
         bool jwsVerified = false;
         bool receiptVerified = false;
