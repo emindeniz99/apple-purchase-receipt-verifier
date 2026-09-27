@@ -153,7 +153,7 @@ final class TestPki {
         return pki;
     }
 
-    /** RSA chain (no marker OIDs — receipts don't require them) — for CMS receipts. */
+    /** RSA chain with both Apple marker OIDs, for CMS receipts. */
     static TestPki receipt() throws Exception {
         Date notBefore = new Date(System.currentTimeMillis() - 86_400_000L);
         Date notAfter = new Date(System.currentTimeMillis() + 365L * 86_400_000L);
@@ -166,6 +166,14 @@ final class TestPki {
 
     /** RSA receipt chain; {@code signerOid} stamps the Apple receipt-signing marker on the leaf. */
     static TestPki receipt(Date notBefore, Date notAfter, boolean signerOid) throws Exception {
+        return receipt(notBefore, notAfter, signerOid, true);
+    }
+
+    /**
+     * Same, and {@code intermediateOid} stamps the Apple WWDR marker on the
+     * intermediate, which 0.7 checks on the receipt path as the JWS path does.
+     */
+    static TestPki receipt(Date notBefore, Date notAfter, boolean signerOid, boolean intermediateOid) throws Exception {
         KeyPair rootKp = rsaKeyPair();
         KeyPair interKp = rsaKeyPair();
         KeyPair signerKp = rsaKeyPair();
@@ -185,7 +193,7 @@ final class TestPki {
                 "CN=Fake Apple Inc Root",
                 rootKp.getPrivate(),
                 true,
-                null,
+                intermediateOid ? "1.2.840.113635.100.6.2.1" : null,
                 notBefore,
                 notAfter,
                 "SHA256withRSA");
