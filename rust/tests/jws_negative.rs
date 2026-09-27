@@ -1,7 +1,7 @@
 //! JWS rejections: every shape the format check, the certificate checks and
 //! the signature check must refuse, and the exact reason each gets.
 //!
-//! The order of the checks is observable. `cases-0.7.json` pins the order at
+//! The order of the checks is observable. `cases.json` pins the order at
 //! the level of whole vectors; these tests pin it at the level of one fault
 //! at a time, including the faults no shared vector covers.
 

@@ -1,6 +1,6 @@
 defmodule ConformanceTest do
   @moduledoc """
-  Drives `fixtures/cases-0.7.json`, the normative cross-language conformance
+  Drives `fixtures/cases.json`, the normative cross-language conformance
   vectors, through the C ABI from Elixir, over the NIF shim.
 
       node tools/gen-cases-manifest.mjs rust/ffi/target/manifest
@@ -13,7 +13,7 @@ defmodule ConformanceTest do
   library itself. Reusing it keeps this file about the boundary.
 
   Both this and `rust/ffi/examples/cpp/conformance.cpp` run every case in
-  `fixtures/cases-0.7.json` and skip none, except the `decodeBase64` groups:
+  `fixtures/cases.json` and skip none, except the `decodeBase64` groups:
   they call a port's base64 decoders directly, the ABI exposes none, and the
   manifest marks them `abiUnreachable`, so they are counted and never passed.
   After the run, every case id in the manifest must have run or been counted.
@@ -71,7 +71,7 @@ defmodule ConformanceTest do
            Enum.map_join(Enum.reverse(failures), "\n", fn {id, why} -> "FAIL  #{id}: #{why}" end)
 
     # Coverage self-check: every case id the manifest lists, one per case in
-    # cases-0.7.json, ran or was counted as unreachable, compared id by id.
+    # cases.json, ran or was counted as unreachable, compared id by id.
     missing =
       cases
       |> Enum.map(&get(&1, "id"))
@@ -294,7 +294,7 @@ defmodule ConformanceTest do
   # `<pointer>~><tag>:<text>`, the tag being `s` (string), `n` (number), `b`
   # (true or false) or `z` (absent or null). The generator only emits
   # top-level pointers; the nested ones it drops are checked by
-  # rust/ffi/tests/conformance.py, which reads cases-0.7.json directly.
+  # rust/ffi/tests/conformance.py, which reads cases.json directly.
   defp check_field(payload, field) do
     ["/" <> key, tagged] = String.split(field, "~>", parts: 2)
     <<tag::utf8, ?:, wanted::binary>> = tagged

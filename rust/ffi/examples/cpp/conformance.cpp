@@ -1,4 +1,4 @@
-// Drives fixtures/cases-0.7.json, the normative cross-language conformance
+// Drives fixtures/cases.json, the normative cross-language conformance
 // vectors, through the C ABI, from C++17, with no dependencies at all.
 //
 //   node tools/gen-cases-manifest.mjs <dir>
@@ -551,7 +551,7 @@ int main(int argc, char **argv) {
   size_t checked_fields = 0;
   size_t skipped_to_json = 0;
   // Every id the manifest lists, which gen-cases-manifest.mjs writes one per
-  // case in cases-0.7.json, and the ids that reached a verdict or were counted
+  // case in cases.json, and the ids that reached a verdict or were counted
   // as unreachable: the coverage self-check after the loop compares them.
   std::vector<std::string> listed;
   std::set<std::string> ran;

@@ -401,7 +401,7 @@ its fingerprint leaves `Config::defaults()` without anchors, and every call
 answers `INTERNAL_ERROR`.
 
 **The tests need the shared fixtures.** They look for `fixtures/` with
-`cases-0.7.json` above the crate directory, or read `APRV_FIXTURES_DIR`
+`cases.json` above the crate directory, or read `APRV_FIXTURES_DIR`
 when it is set (`tests/conformance.rs` has its own lookup, above the crate
 directory only). A few tests read the build itself: the dependency-set
 test reads `Cargo.toml`, the `certs/` drift test reads the repository's
@@ -433,7 +433,7 @@ CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback cargo +stable generate-lockfi
 
 A consumer's build ignores this file; it constrains only this repository.
 
-`tests/conformance.rs` runs `fixtures/cases-0.7.json`, the normative
+`tests/conformance.rs` runs `fixtures/cases.json`, the normative
 cross-language vector file every port of this library answers, as one named
 test per case, and fails unless every case ran. The adapter carries no
 case-specific knowledge: it checks each fixture against the digest the

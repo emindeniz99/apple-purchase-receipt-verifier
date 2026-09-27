@@ -200,13 +200,13 @@ out belong to whoever received them and are not shared.
 ## Tests
 
 Three layers, all of them driving the same shared vectors,
-`fixtures/cases-0.7.json`, the other ports answer.
+`fixtures/cases.json`, the other ports answer.
 
 ```bash
 # 1. the ABI's own edge cases: null, non-UTF-8, refused configs, the guard
 cargo test --locked --manifest-path rust/ffi/Cargo.toml
 
-# 2. fixtures/cases-0.7.json from C++17: the primary harness
+# 2. fixtures/cases.json from C++17: the primary harness
 cargo build --locked --manifest-path rust/ffi/Cargo.toml
 node tools/gen-cases-manifest.mjs rust/ffi/target/manifest
 cmake -S rust/ffi/examples/cpp -B rust/ffi/target/cppbuild
@@ -227,7 +227,7 @@ and hands over plain files. The C++ harness skips the `toJson` value
 comparison, which needs a JSON parser, and counts it; ctypes checks it.
 
 **Layer 3 is what "any FFI-capable language" means, tested.** ctypes reads
-`cases-0.7.json` itself and calls the same symbols, and it checks the nested
+`cases.json` itself and calls the same symbols, and it checks the nested
 pointers the C++ harness cannot reach: `/receipt/bundle_id`,
 `/in_app/[product_id=...]/expires_date_ms`, `/unknown_attributes/9999/0`,
 and every `toJson` value.

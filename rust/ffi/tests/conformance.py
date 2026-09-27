@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Runs fixtures/cases-0.7.json through the C ABI, from Python, over ctypes.
+"""Runs fixtures/cases.json through the C ABI, from Python, over ctypes.
 
     cargo build --locked --manifest-path rust/ffi/Cargo.toml
     python3 rust/ffi/tests/conformance.py <cargo target dir>/debug
@@ -117,17 +117,17 @@ def fixtures_dir(start: Path) -> Path:
     directory = start.resolve()
     while True:
         candidate = directory / "fixtures"
-        if (candidate / "cases-0.7.json").is_file():
+        if (candidate / "cases.json").is_file():
             return candidate
         if directory.parent == directory:
-            raise SystemExit("no fixtures/cases-0.7.json above this script")
+            raise SystemExit("no fixtures/cases.json above this script")
         directory = directory.parent
 
 
 def fixture_bytes(directory: Path, registry: dict, name: str) -> bytes:
     entry = registry.get(name)
     if entry is None:
-        raise SystemExit(f'cases-0.7.json registers no fixture "{name}"')
+        raise SystemExit(f'cases.json registers no fixture "{name}"')
     raw = (directory / entry["path"]).read_bytes()
     codec = entry["codec"]
     if codec in ("raw", "text"):
@@ -142,7 +142,7 @@ def fixture_bytes(directory: Path, registry: dict, name: str) -> bytes:
     if digest != entry["contentSha256"]:
         raise SystemExit(
             f'fixture "{name}" ({entry["path"]}, codec {codec}) has drifted: '
-            f'cases-0.7.json records {entry["contentSha256"]}, the decoded bytes hash to {digest}'
+            f'cases.json records {entry["contentSha256"]}, the decoded bytes hash to {digest}'
         )
     return data
 
@@ -330,9 +330,9 @@ def main() -> int:
         return 2
     lib = load_library(Path(sys.argv[1]))
     directory = fixtures_dir(Path(__file__).parent)
-    file = json.loads((directory / "cases-0.7.json").read_text(encoding="utf-8"))
+    file = json.loads((directory / "cases.json").read_text(encoding="utf-8"))
     if file["schemaVersion"] != 2:
-        raise SystemExit(f'cases-0.7.json is schemaVersion {file["schemaVersion"]}, this adapter is 2')
+        raise SystemExit(f'cases.json is schemaVersion {file["schemaVersion"]}, this adapter is 2')
     registry = file["fixtures"]
 
     print(
