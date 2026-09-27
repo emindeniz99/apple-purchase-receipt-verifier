@@ -5,78 +5,37 @@ declare(strict_types=1);
 namespace EminDeniz99\ApplePurchaseReceiptVerifier;
 
 /**
- * The machine-readable cause of a verification failure.
+ * Why a verification failed (docs/design/0.7-api.md, "Result").
  *
  * The vocabulary is closed and shared by every port of this library: the
- * backing string is byte-identical to Java's `Reason.name()`, Node's string
- * union, Python's enum value and Swift's `rawValue`, so a log line, a metrics
- * label and a `fixtures/cases.json` vector read the same in every language.
- * Read it with `$e->reason` and switch on the case; `$e->reason->value` is the
- * canonical `SCREAMING_SNAKE` token.
- *
- * Adding a twelfth case is a cross-port change, not a PHP one.
- *
- * Two more cases, {@see Reason::MalformedRequest} and
- * {@see Reason::RequestTooLarge}, exist only as
- * {@see \EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\VerifyReceiptResult::failureReason()}
- * values. No {@see VerificationException} is ever thrown with either, so a
- * `match` over a caught exception's reason never sees them.
+ * backing string is byte-identical to Java's `Reason.name()`, and a
+ * `fixtures/cases-0.7.json` vector reads the same in every language. Match
+ * on the case, never persist an ordinal: the set may grow between 0.x
+ * releases.
  */
 enum Reason: string
 {
-    /** Not three dot-separated segments, bad base64url/JSON, wrong `alg`, or a malformed `x5c`. */
-    case InvalidJwsFormat = 'INVALID_JWS_FORMAT';
+    /** The base64, ASN.1, CMS or JWS structure is broken, or a structural bound (other than a size cap) was exceeded. Decided before any signature is checked. */
+    case Malformed = 'MALFORMED';
 
-    /** An `x5c` entry is not a parseable X.509 certificate. */
-    case InvalidCertificate = 'INVALID_CERTIFICATE';
+    /** The input is over a fixed size cap. Decided before anything is decoded. */
+    case TooLarge = 'TOO_LARGE';
 
-    /** A certificate is well-formed but lacks the Apple marker OID its position requires. */
-    case InvalidCertificatePurpose = 'INVALID_CERTIFICATE_PURPOSE';
-
-    /** The chain does not reach a pinned anchor, or is not valid at the signing instant. */
-    case InvalidChain = 'INVALID_CHAIN';
-
-    /** The cryptographic signature over the payload does not check out. */
+    /** The signature does not match the signed content. */
     case InvalidSignature = 'INVALID_SIGNATURE';
 
-    /** The payload's bundle id is not the configured one. */
-    case WrongBundleId = 'WRONG_BUNDLE_ID';
+    /** The chain does not reach a pinned root, or is longer than the maximum. */
+    case UntrustedChain = 'UNTRUSTED_CHAIN';
 
-    /** The payload's environment is outside the accepted set. */
-    case WrongEnvironment = 'WRONG_ENVIRONMENT';
+    /** A certificate the check depends on does not decode, or is expired or not yet valid at the checked instant. */
+    case InvalidCertificate = 'INVALID_CERTIFICATE';
 
-    /** A Production AppTransaction does not name the configured app Apple id. */
-    case WrongAppAppleId = 'WRONG_APP_APPLE_ID';
+    /** A certificate that chains to a pinned root but is of the wrong kind: a marker OID is missing. */
+    case InvalidCertificatePurpose = 'INVALID_CERTIFICATE_PURPOSE';
 
-    /** The legacy receipt is not a parseable CMS SignedData / attribute set. */
-    case InvalidReceiptFormat = 'INVALID_RECEIPT_FORMAT';
+    /** The signature and chain verified — the payload bytes are Apple's — but they do not parse. `Failure::$cause` carries the parser's exception. Deterministic: alert, do not retry. */
+    case UnreadablePayload = 'UNREADABLE_PAYLOAD';
 
-    /** SHA1(guid ‖ opaqueValue ‖ bundleIdBytes) does not equal receipt attribute 5. */
-    case DeviceHashMismatch = 'DEVICE_HASH_MISMATCH';
-
-    /**
-     * Not the client's fault. Status 21009. Thrown when a trusted signer
-     * signed receipt content this library cannot read (found only after the
-     * chain and the signature passed; the parser's error is `getPrevious()`),
-     * when a verified JWS carries a modelled claim of the wrong JSON type,
-     * and reported by the endpoint for an unexpected `Throwable` inside it.
-     * Alert and retry or escalate; do not deny the user on it.
-     */
+    /** The library itself failed before it could decide. `Failure::$cause` carries the exception. Deterministic: alert, do not retry. */
     case InternalError = 'INTERNAL_ERROR';
-
-    /**
-     * The verifyReceipt request envelope is unusable: the body is not a JSON
-     * object or nests deeper than 64, or `receipt-data` is missing, empty or
-     * not a string. Status 21002. Only ever a result's failure reason.
-     */
-    case MalformedRequest = 'MALFORMED_REQUEST';
-
-    /**
-     * The raw verifyReceipt request body is over
-     * {@see \EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\VerifyReceiptEndpoint::MAX_REQUEST_BYTES}
-     * (3,145,728 bytes), the size at which Apple's endpoint answers HTTP 413.
-     * Status 21002 in the response body; an HTTP layer can map it to 413 as
-     * Apple does. Only ever a result's failure reason.
-     */
-    case RequestTooLarge = 'REQUEST_TOO_LARGE';
 }

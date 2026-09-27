@@ -42,8 +42,15 @@ namespace EminDeniz99\ApplePurchaseReceiptVerifier\Internal;
  */
 final class Der
 {
-    /** Nesting depth ceiling. Also what keeps recursion off PHP 8.1's unguarded stack. */
-    public const MAX_DEPTH = 32;
+    /**
+     * Nesting depth ceiling: at most this many constructed values inside one
+     * another, the outermost included. Also what keeps recursion off PHP's
+     * unguarded stack. 64 in every 0.7 port (docs/design/0.7-api.md,
+     * "Bounds"); measured independently on the CMS envelope and on the
+     * signed content's attribute SET, since {@see parse()} resets the count
+     * for each top-level call.
+     */
+    public const MAX_DEPTH = 64;
 
     /**
      * Default ceiling on the number of nodes one parse may produce.
@@ -105,7 +112,10 @@ final class Der
     ): Asn1Node {
         $remaining = $nodeBudget;
         $bytes = $byteBudget;
-        [$node, $end] = self::readNode($buf, 0, 0, $remaining, $bytes);
+        // The outermost value counts as depth 1 (docs/design/0.7-api.md,
+        // "Bounds": "the outermost one as 1"), so 64 nested values are
+        // accepted and a 65th is refused.
+        [$node, $end] = self::readNode($buf, 0, 1, $remaining, $bytes);
         if ($end !== strlen($buf)) {
             throw new ParseException('trailing bytes after ASN.1 value (' . (strlen($buf) - $end) . ')');
         }
@@ -123,9 +133,6 @@ final class Der
      */
     private static function readNode(string $buf, int $off, int $depth, int &$budget, int &$byteBudget): array
     {
-        if ($depth > self::MAX_DEPTH) {
-            throw new ParseException('maximum ASN.1 nesting depth exceeded');
-        }
         if ($budget <= 0) {
             throw new ParseException('ASN.1 node budget exceeded');
         }
@@ -140,6 +147,13 @@ final class Der
             throw new ParseException('multi-byte ASN.1 tags are not supported');
         }
         $constructed = ($tag & 0x20) !== 0;
+        // Only constructed values count toward the depth bound (docs/design/
+        // 0.7-api.md, "Bounds": "counts constructed values"); a primitive
+        // leaf sitting at the bottom of a deep tree is not itself a nesting
+        // level.
+        if ($constructed && $depth > self::MAX_DEPTH) {
+            throw new ParseException('maximum ASN.1 nesting depth exceeded');
+        }
         $pos = $off + 1;
         $lenByte = ord($buf[$pos]);
         ++$pos;

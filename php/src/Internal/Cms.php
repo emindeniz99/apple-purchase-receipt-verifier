@@ -5,15 +5,15 @@ declare(strict_types=1);
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Internal;
 
 use EminDeniz99\ApplePurchaseReceiptVerifier\Reason;
-use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationException;
 
 /**
  * CMS/PKCS#7 SignedData structure walking for legacy app receipts — the part
  * of receipt verification that is pure DER work. Bytes in, bytes out: the
- * crypto lives in the verifier.
+ * crypto lives in the receipt verifier.
  *
- * Ported check-for-check from `node/src/cms.ts` so the two implementations
- * cannot disagree about what a receipt contains.
+ * Every SignerInfo is decoded (up to {@see MAX_SIGNER_INFOS}), because 0.7
+ * accepts a receipt when at least one SignerInfo verifies under a pinned
+ * chain (docs/design/0.7-api.md §1, "Several SignerInfos").
  *
  * @internal
  */
@@ -21,28 +21,34 @@ final class Cms
 {
     private const OID_SIGNED_DATA = '1.2.840.113549.1.7.2';
     private const OID_MESSAGE_DIGEST = '1.2.840.113549.1.9.4';
+    private const OID_CONTENT_TYPE = '1.2.840.113549.1.9.3';
 
     /**
-     * Only the digests Apple uses for receipts. Anything else is rejected
-     * rather than looked up: a receipt is not the place to be liberal.
+     * Genuine receipts embed a leaf, an intermediate and (for the legacy
+     * SHA-1 chain) a root. Ten leaves room for a longer Apple chain while
+     * bounding what rejecting a receipt costs: this is enforced BEFORE any
+     * embedded certificate is decoded or RSA-checked.
      */
-    private const DIGEST_ALGORITHMS = [
-        '1.3.14.3.2.26' => 'sha1',
-        '2.16.840.1.101.3.4.2.1' => 'sha256',
-    ];
+    public const MAX_EMBEDDED_CERTIFICATES = 10;
+
+    /**
+     * All signers sign the same content, so an extra signer cannot change
+     * what Apple signed; a fifth fails before any signature is checked
+     * (docs/design/0.7-api.md §1, "Several SignerInfos").
+     */
+    public const MAX_SIGNER_INFOS = 4;
 
     /**
      * @param list<string> $certificates DER bytes of each embedded certificate
-     * @param 'sha1'|'sha256' $digest the digest the signature is over
+     * @param list<CmsSignerInfo> $signerInfos in receipt order, at least one
+     *
+     * @throws VerificationException
      */
     private function __construct(
         public readonly string $content,
+        public readonly string $econtentTypeOid,
         public readonly array $certificates,
-        public readonly string $signerIssuerRaw,
-        public readonly string $signerSerial,
-        public readonly string $digest,
-        public readonly ?Asn1Node $signedAttrs,
-        public readonly string $signature,
+        public readonly array $signerInfos,
     ) {
     }
 
@@ -52,7 +58,7 @@ final class Cms
         try {
             $contentInfo = Der::parse($der, $nodeBudget);
         } catch (ParseException $e) {
-            throw new VerificationException(Reason::InvalidReceiptFormat, 'not parseable ASN.1', $e);
+            throw new VerificationException(Reason::Malformed, 'not parseable ASN.1', $e);
         }
 
         try {
@@ -72,9 +78,10 @@ final class Cms
                 throw new ParseException('unexpected SignedData layout');
             }
             $encap = $signedData[2]->children();
-            if (count($encap) < 2 || $encap[1]->tag !== Der::TAG_CONTEXT_0) {
+            if (count($encap) < 2 || $encap[0]->tag !== Der::TAG_OID || $encap[1]->tag !== Der::TAG_CONTEXT_0) {
                 throw new ParseException('no encapsulated payload');
             }
+            $econtentTypeOid = $encap[0]->contents;
             $contentNode = $encap[1]->child(0);
             if ($contentNode === null || !Der::isOctetString($contentNode)) {
                 throw new ParseException('encapsulated payload is not an OCTET STRING');
@@ -91,27 +98,42 @@ final class Cms
                     );
                 }
             }
-
-            $signerInfos = $signedData[$last];
-            $signerInfo = $signerInfos->child(0);
-            if ($signerInfos->tag !== Der::TAG_SET || $signerInfo === null) {
-                throw new ParseException('no signer info');
+            if (count($certificates) > self::MAX_EMBEDDED_CERTIFICATES) {
+                throw new VerificationException(
+                    Reason::Malformed,
+                    'receipt embeds more than ' . self::MAX_EMBEDDED_CERTIFICATES . ' certificates',
+                );
             }
 
-            return self::parseSignerInfo($signerInfo, $content, $certificates);
+            $signerInfosNode = $signedData[$last];
+            if ($signerInfosNode->tag !== Der::TAG_SET) {
+                throw new ParseException('no signer info');
+            }
+            $signerNodes = $signerInfosNode->children();
+            if ($signerNodes === []) {
+                throw new VerificationException(Reason::Malformed, 'no signer info');
+            }
+            if (count($signerNodes) > self::MAX_SIGNER_INFOS) {
+                throw new VerificationException(
+                    Reason::Malformed,
+                    'receipt carries more than ' . self::MAX_SIGNER_INFOS . ' SignerInfos',
+                );
+            }
+            // Every SignerInfo's signedAttrs syntax is validated here,
+            // eagerly and in receipt order, regardless of which signer ends
+            // up verifying (hardening parity change #4 / J4).
+            $signerInfos = array_map(self::parseSignerInfo(...), $signerNodes);
+
+            return new self($content, $econtentTypeOid, $certificates, $signerInfos);
         } catch (VerificationException $e) {
             throw $e;
         } catch (ParseException $e) {
-            throw new VerificationException(Reason::InvalidReceiptFormat, 'malformed CMS structure', $e);
+            throw new VerificationException(Reason::Malformed, 'malformed CMS structure', $e);
         }
     }
 
-    /**
-     * @param list<string> $certificates
-     *
-     * @throws ParseException
-     */
-    private static function parseSignerInfo(Asn1Node $node, string $content, array $certificates): self
+    /** @throws ParseException */
+    private static function parseSignerInfo(Asn1Node $node): CmsSignerInfo
     {
         $fields = $node->children();
         if (count($fields) < 5) {
@@ -132,68 +154,90 @@ final class Cms
 
         $index = 3;
         $signedAttrs = null;
-        if ($fields[$index]->tag === Der::TAG_CONTEXT_0) {
+        if (isset($fields[$index]) && $fields[$index]->tag === Der::TAG_CONTEXT_0) {
             $signedAttrs = $fields[$index];
+            self::requireSignedAttrsSyntax($signedAttrs);
             ++$index;
         }
-        ++$index; // signatureAlgorithm — RSA PKCS#1 v1.5; the digest OID drives the hash
-        if (!isset($fields[$index])) {
+        $sigAlgNode = $fields[$index] ?? null;
+        ++$index;
+        $signatureNode = $fields[$index] ?? null;
+        if ($sigAlgNode === null || $sigAlgNode->tag !== Der::TAG_SEQUENCE
+            || $signatureNode === null || !Der::isOctetString($signatureNode)) {
             throw new ParseException('unexpected SignerInfo layout');
         }
-        $signature = $fields[$index]->contents;
-
-        // Rejected here rather than at signature time so an unsupported digest
-        // reads as a malformed receipt, which is what every other port says.
-        if (!isset(self::DIGEST_ALGORITHMS[$digestOid])) {
-            throw new ParseException('unsupported digest algorithm');
+        $sigAlgOidNode = $sigAlgNode->child(0);
+        if ($sigAlgOidNode === null || $sigAlgOidNode->tag !== Der::TAG_OID) {
+            throw new ParseException('unexpected signatureAlgorithm layout');
         }
 
-        return new self(
-            content: $content,
-            certificates: $certificates,
-            signerIssuerRaw: $issuerRaw,
-            signerSerial: $serial,
-            digest: self::DIGEST_ALGORITHMS[$digestOid],
+        return new CmsSignerInfo(
+            issuerRaw: $issuerRaw,
+            serial: $serial,
+            digestAlgorithmOid: Der::decodeOid($digestOidNode->contents),
             signedAttrs: $signedAttrs,
-            signature: $signature,
+            signatureAlgorithmOid: Der::decodeOid($sigAlgOidNode->contents),
+            signatureAlgorithmParams: $sigAlgNode->child(1),
+            signature: Der::octets($signatureNode),
         );
     }
 
     /**
-     * Index of the embedded certificate the SignerInfo names by
-     * issuerAndSerialNumber, or -1. Unparseable entries are skipped rather
-     * than fatal: a receipt may legitimately carry a certificate we cannot
-     * read alongside the one we need.
+     * `signedAttrs`'s syntax, checked before any key is used: `SET OF
+     * Attribute`, each `Attribute ::= SEQUENCE { type OID, values SET SIZE
+     * (1..MAX) OF AttributeValue }`. Semantic rules (a duplicate
+     * `messageDigest`, a mismatched `contentType`) are left to the signature
+     * check, as {@see Reason::InvalidSignature} for that signer — only the
+     * SYNTAX is judged here, for every signer, before any signature.
      *
-     * @param list<Certificate> $embedded
+     * @throws ParseException
      */
-    public function findSignerIndex(array $embedded): int
+    private static function requireSignedAttrsSyntax(Asn1Node $signedAttrs): void
     {
-        foreach ($embedded as $i => $cert) {
-            if (hash_equals($cert->serialNumber, $this->signerSerial)
-                && hash_equals($cert->issuerDer, $this->signerIssuerRaw)) {
-                return $i;
+        foreach ($signedAttrs->children() as $attr) {
+            $parts = $attr->children();
+            if ($attr->tag !== Der::TAG_SEQUENCE || count($parts) < 2
+                || $parts[0]->tag !== Der::TAG_OID || $parts[1]->tag !== Der::TAG_SET
+                || $parts[1]->childCount() < 1) {
+                throw new ParseException('malformed signedAttrs: not an attribute set');
             }
         }
-
-        return -1;
     }
 
     /**
-     * Whether $der carries the issuer Name and serialNumber the SignerInfo
-     * names, read as generic ASN.1 rather than as a certificate.
+     * Every embedded certificate `$signer` names by issuerAndSerialNumber,
+     * in bag order. More than one entry can carry the same issuer and
+     * serial as the genuine signer (a "twin", carrying its own, different
+     * key): each is a candidate to try in turn, so a copy embedded ahead of
+     * the genuine signer does not shadow it. Unparseable entries are
+     * skipped rather than fatal: a receipt may legitimately carry a
+     * certificate we cannot read alongside the one we need.
      *
-     * That is the whole point: the entries this is asked about are the ones
-     * Certificate::parse refused, and an identity is still legible in bytes
-     * that are not a certificate all the way down. Node, Swift and Go resolve
-     * the signer the same way, so all of them agree about which embedded
-     * entry a defect belongs to.
+     * @param list<Certificate> $embedded
      *
-     * TBSCertificate ::= SEQUENCE { [0] version DEFAULT v1, serialNumber
-     * INTEGER, signature AlgorithmIdentifier, issuer Name, ... } — anything
-     * without that shape is not an identity and cannot match.
+     * @return list<int>
      */
-    public function namesSigner(string $der): bool
+    public static function findSignerIndices(CmsSignerInfo $signer, array $embedded): array
+    {
+        $indices = [];
+        foreach ($embedded as $i => $cert) {
+            if (hash_equals($cert->serialNumber, $signer->serial)
+                && hash_equals($cert->issuerDer, $signer->issuerRaw)) {
+                $indices[] = $i;
+            }
+        }
+
+        return $indices;
+    }
+
+    /**
+     * Whether `$der` carries the issuer Name and serialNumber `$signer`
+     * names, read as generic ASN.1 rather than as a certificate: the whole
+     * point, since the entries this is asked about are the ones
+     * {@see Certificate::parse()} refused, and an identity is still legible
+     * in bytes that are not a certificate all the way down.
+     */
+    public static function namesSigner(string $der, CmsSignerInfo $signer): bool
     {
         try {
             $certificate = Der::parse($der);
@@ -215,32 +259,59 @@ final class Cms
             && $issuer !== null
             && $serial->tag === Der::TAG_INTEGER
             && $issuer->tag === Der::TAG_SEQUENCE
-            && hash_equals($serial->contents, $this->signerSerial)
-            && hash_equals($issuer->raw, $this->signerIssuerRaw);
+            && hash_equals($serial->contents, $signer->serial)
+            && hash_equals($issuer->raw, $signer->issuerRaw);
     }
 
-    /** @throws ParseException */
-    public function messageDigestAttribute(): ?string
+    /**
+     * The `messageDigest` signed attribute's value, and, when present, the
+     * `contentType` attribute checked against `$this->econtentTypeOid`
+     * (RFC 5652 §5.4). Both are semantic checks (a duplicate
+     * `messageDigest`, a mismatched `contentType`) reported for this signer
+     * as {@see Reason::InvalidSignature}; the syntax has already been
+     * validated by {@see requireSignedAttrsSyntax()}.
+     *
+     * @throws VerificationException {@see Reason::InvalidSignature}
+     */
+    public function messageDigestAttribute(CmsSignerInfo $signer): ?string
     {
-        if ($this->signedAttrs === null) {
+        if ($signer->signedAttrs === null) {
             return null;
         }
-        $wanted = Der::encodeOidContents(self::OID_MESSAGE_DIGEST);
-        foreach ($this->signedAttrs->children() as $attr) {
-            // Every signed attribute is SEQUENCE { OID, SET OF value }; a shape
-            // missing either part is malformed, not merely uninteresting.
+        $wantedDigest = Der::encodeOidContents(self::OID_MESSAGE_DIGEST);
+        $wantedContentType = Der::encodeOidContents(self::OID_CONTENT_TYPE);
+        $messageDigest = null;
+        $messageDigestSeen = false;
+        foreach ($signer->signedAttrs->children() as $attr) {
             $parts = $attr->children();
-            $type = $parts[0] ?? null;
-            $value = ($parts[1] ?? null)?->child(0);
-            if ($type === null || $value === null) {
-                throw new ParseException('malformed signed attribute');
-            }
-            if ($type->contents === $wanted) {
-                return $value->contents;
+            $type = $parts[0];
+            $values = $parts[1]->children();
+            if ($type->contents === $wantedDigest) {
+                if ($messageDigestSeen) {
+                    throw new VerificationException(
+                        Reason::InvalidSignature,
+                        'messageDigest attribute is present more than once',
+                    );
+                }
+                if (count($values) !== 1) {
+                    throw new VerificationException(
+                        Reason::InvalidSignature,
+                        'messageDigest attribute must carry exactly one value',
+                    );
+                }
+                $messageDigestSeen = true;
+                $messageDigest = $values[0]->contents;
+            } elseif ($type->contents === $wantedContentType) {
+                if (count($values) !== 1 || $values[0]->contents !== $this->econtentTypeOid) {
+                    throw new VerificationException(
+                        Reason::InvalidSignature,
+                        'contentType attribute does not match the encapsulated content type',
+                    );
+                }
             }
         }
 
-        return null;
+        return $messageDigest;
     }
 
     /**
@@ -249,12 +320,12 @@ final class Cms
      * IMPLICIT [0] tag for SET. Signing the `[0]`-tagged bytes as they appear
      * on the wire is the classic mistake here, and it verifies nothing.
      */
-    public function signedAttrsSignedBytes(): string
+    public static function signedAttrsSignedBytes(CmsSignerInfo $signer): string
     {
-        if ($this->signedAttrs === null) {
+        if ($signer->signedAttrs === null) {
             throw new ParseException('no signed attributes');
         }
 
-        return chr(Der::TAG_SET) . substr($this->signedAttrs->raw, 1);
+        return chr(Der::TAG_SET) . substr($signer->signedAttrs->raw, 1);
     }
 }
