@@ -306,7 +306,11 @@ namespace ApplePurchaseReceiptVerifier.Internal
             double asDouble;
             switch (value)
             {
-                case long l: asDouble = l; break;
+                // An integer the reader held as a long is the instant as is,
+                // up to long.MinValue and long.MaxValue themselves. Widening
+                // it to a double first would round the edges past the bounds
+                // below and quietly hand the chain instant to the clock.
+                case long l: return l;
                 case double d: asDouble = d; break;
                 default: return null;
             }
