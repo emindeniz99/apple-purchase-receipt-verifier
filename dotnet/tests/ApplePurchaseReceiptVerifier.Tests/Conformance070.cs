@@ -108,9 +108,9 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
         string id = Str(kase, "id");
         object? outcome = RunCase(operation, kase);
 
-        if (expected.TryGetValue("anyOutcome", out object? any) && any is bool anyOutcome && anyOutcome)
+        if (expected.TryGetValue("oneOf", out object? listed) && listed is List<object?> allowed)
         {
-            AssertNotInternalError(id, operation, outcome);
+            AssertListedOutcome(id, operation, outcome, allowed);
             return;
         }
 
@@ -157,18 +157,11 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
         }
     }
 
-    private static void AssertNotInternalError(string id, string operation, object? outcome)
+    private static void AssertListedOutcome(string id, string operation, object? outcome, List<object?> allowed)
     {
-        if (operation == "verifyReceiptEndpoint")
-        {
-            // The endpoint never throws and never fails the call itself;
-            // nothing more to assert for a tolerant case beyond "it returned".
-            Assert.True(outcome is string, $"{id}: harness error: endpoint did not return a string");
-            return;
-        }
-
         (bool verified, _, VerificationReason? reason, _) = ReadOutcome(operation, outcome!);
-        Assert.True(verified || reason != VerificationReason.InternalError, $"{id}: anyOutcome case reported INTERNAL_ERROR");
+        string got = verified ? "ok" : reason is VerificationReason r ? VerificationReasonCodes.ToCode(r) : "?";
+        Assert.True(allowed.Contains(got), $"{id}: answered {got}, want one of {string.Join(", ", allowed)}");
     }
 
     private static (bool Verified, object? PayloadJson, VerificationReason? Reason, string? Message) ReadOutcome(
