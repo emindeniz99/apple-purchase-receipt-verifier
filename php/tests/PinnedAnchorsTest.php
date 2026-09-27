@@ -5,13 +5,12 @@ declare(strict_types=1);
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Tests;
 
 use EminDeniz99\ApplePurchaseReceiptVerifier\AppleRootCerts;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Config;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Certificate;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Jws\JwsVerifier;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Reason;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Fixtures07;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\MintedPki;
-use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationException;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
 use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
@@ -107,40 +106,32 @@ final class PinnedAnchorsTest extends TestCase
     public function testAGenuineAppleReceiptIsRefusedUnderAnAnchorItDoesNotReach(): void
     {
         $pki = MintedPki::get();
-        $legacy = Support\Fixtures::bytes('public-receipt-sandbox-legacy');
+        $legacy = Fixtures07::bytes('public-receipt-sandbox-legacy');
 
-        self::assertSame(
-            'com.nutcall.alert',
-            (new ReceiptVerifier(AppleRootCerts::receiptRoots(), 'com.nutcall.alert'))->verify($legacy)->bundleId,
-        );
+        $ok = Verifier::create(Config::builder()->roots(AppleRootCerts::pinnedRoots())->build())
+            ->verifyReceipt(base64_encode($legacy));
+        self::assertTrue($ok->verified());
+        self::assertSame('com.nutcall.alert', $ok->payload->bundleId);
 
-        try {
-            (new ReceiptVerifier([$pki->rootDer], 'com.nutcall.alert'))->verify($legacy);
-            self::fail('a genuine receipt verified against an anchor it does not chain to');
-        } catch (VerificationException $e) {
-            self::assertSame(Reason::InvalidChain, $e->reason);
-        }
+        $result = Verifier::create(Config::builder()->roots([$pki->rootDer])->build())
+            ->verifyReceipt(base64_encode($legacy));
+        self::assertFalse($result->verified(), 'a genuine receipt verified against an anchor it does not chain to');
+        self::assertSame(Reason::UntrustedChain, $result->failure?->reason);
     }
 
     /** And the mirror: our own PKI is refused under Apple's real roots. */
     public function testAMintedChainIsRefusedUnderApplesRealRoots(): void
     {
         $pki = MintedPki::get();
+        $verifier = Verifier::create(Config::builder()->roots(AppleRootCerts::pinnedRoots())->build());
 
-        try {
-            (new ReceiptVerifier(AppleRootCerts::receiptRoots(), 'com.example.app'))->verify($pki->receipt());
-            self::fail('a minted receipt verified against Apple roots');
-        } catch (VerificationException $e) {
-            self::assertSame(Reason::InvalidChain, $e->reason);
-        }
+        $receiptResult = $verifier->verifyReceipt(base64_encode($pki->receipt()));
+        self::assertFalse($receiptResult->verified(), 'a minted receipt verified against Apple roots');
+        self::assertSame(Reason::UntrustedChain, $receiptResult->failure?->reason);
 
-        try {
-            (new JwsVerifier(AppleRootCerts::jwsRoots(), 'com.example.app', [Environment::Sandbox]))
-                ->verifyTransaction($pki->jws(MintedPki::transactionClaims()));
-            self::fail('a minted JWS verified against Apple roots');
-        } catch (VerificationException $e) {
-            self::assertSame(Reason::InvalidChain, $e->reason);
-        }
+        $jwsResult = $verifier->verifySignedData($pki->jws(MintedPki::transactionClaims()));
+        self::assertFalse($jwsResult->verified(), 'a minted JWS verified against Apple roots');
+        self::assertSame(Reason::UntrustedChain, $jwsResult->failure?->reason);
     }
 
     /**
@@ -164,10 +155,10 @@ final class PinnedAnchorsTest extends TestCase
         try {
             // Apple's roots are the configured anchors. The minted chain is
             // signed by a CA this PROCESS now trusts, and that must not matter.
-            (new ReceiptVerifier(AppleRootCerts::receiptRoots(), 'com.example.app'))->verify($pki->receipt());
-            self::fail('the process trust store leaked into a verification decision');
-        } catch (VerificationException $e) {
-            self::assertSame(Reason::InvalidChain, $e->reason);
+            $verifier = Verifier::create(Config::builder()->roots(AppleRootCerts::pinnedRoots())->build());
+            $result = $verifier->verifyReceipt(base64_encode($pki->receipt()));
+            self::assertFalse($result->verified(), 'the process trust store leaked into a verification decision');
+            self::assertSame(Reason::UntrustedChain, $result->failure?->reason);
         } finally {
             $previousFile === false ? putenv('SSL_CERT_FILE') : putenv('SSL_CERT_FILE=' . $previousFile);
             $previousDir === false ? putenv('SSL_CERT_DIR') : putenv('SSL_CERT_DIR=' . $previousDir);
@@ -197,37 +188,32 @@ final class PinnedAnchorsTest extends TestCase
 
         // Anchored on a real public CA, our minted chain is still refused —
         // trust is by argument, and the argument does not certify this chain.
-        try {
-            (new ReceiptVerifier([$pem], 'com.example.app'))->verify($pki->receipt());
-            self::fail('a chain unrelated to the anchor was accepted');
-        } catch (VerificationException $e) {
-            self::assertSame(Reason::InvalidChain, $e->reason);
-        }
+        $result = Verifier::create(Config::builder()->roots([$pem])->build())
+            ->verifyReceipt(base64_encode($pki->receipt()));
+        self::assertFalse($result->verified(), 'a chain unrelated to the anchor was accepted');
+        self::assertSame(Reason::UntrustedChain, $result->failure?->reason);
 
         // And Apple's own roots do not gain standing from the public CA
         // sitting next to them in the caller's list.
-        try {
-            (new ReceiptVerifier([$pem, ...AppleRootCerts::receiptRoots()], 'com.example.app'))
-                ->verify($pki->receipt());
-            self::fail('a chain unrelated to any anchor was accepted');
-        } catch (VerificationException $e) {
-            self::assertSame(Reason::InvalidChain, $e->reason);
-        }
+        $result = Verifier::create(Config::builder()->roots([$pem, ...AppleRootCerts::pinnedRoots()])->build())
+            ->verifyReceipt(base64_encode($pki->receipt()));
+        self::assertFalse($result->verified(), 'a chain unrelated to any anchor was accepted');
+        self::assertSame(Reason::UntrustedChain, $result->failure?->reason);
     }
 
     public function testAnEmptyOrUnparseableAnchorListIsAConfigurationErrorNotAVerdict(): void
     {
         foreach ([[], ['']] as $roots) {
             try {
-                new ReceiptVerifier($roots, 'com.example.app');
+                Verifier::create(Config::builder()->roots($roots)->build());
                 self::fail('an empty anchor list was accepted');
             } catch (InvalidArgumentException $e) {
-                self::assertStringContainsString('trustedRoots', $e->getMessage());
+                self::assertStringContainsString('roots', $e->getMessage());
             }
         }
 
         $this->expectException(InvalidArgumentException::class);
-        new ReceiptVerifier(['not a certificate'], 'com.example.app');
+        Verifier::create(Config::builder()->roots(['not a certificate'])->build());
     }
 
     /** A source file with its comments stripped, using PHP's own tokenizer. */

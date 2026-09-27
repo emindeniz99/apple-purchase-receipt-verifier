@@ -4,15 +4,13 @@ declare(strict_types=1);
 
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Tests;
 
+use EminDeniz99\ApplePurchaseReceiptVerifier\Config;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Jws\JwsVerifier;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Reason;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\VerifyReceiptEndpoint;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\DerWriter;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\MintedPki;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\TestPki;
-use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationException;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -21,8 +19,9 @@ use Throwable;
 /**
  * Hostile and malformed input across every public entry point.
  *
- * Two properties are asserted everywhere: nothing but `VerificationException`
- * escapes, and no hostile input is ever ACCEPTED. Containment is categorical
+ * Two properties are asserted everywhere: nothing escapes as an unhandled
+ * `Throwable` (the design promises the three `Verifier` methods never
+ * throw), and no hostile input is ever verified. Containment is categorical
  * rather than a list of expected types — an attacker-triggered `TypeError`
  * deep in a parser is indistinguishable from a bug at the call site, and
  * neither may reach a caller as a 500.
@@ -30,14 +29,9 @@ use Throwable;
 #[CoversNothing]
 final class HostileInputTest extends TestCase
 {
-    private static function receiptVerifier(): ReceiptVerifier
+    private static function verifier(): Verifier
     {
-        return new ReceiptVerifier([MintedPki::get()->rootDer], 'com.example.app');
-    }
-
-    private static function jwsVerifier(): JwsVerifier
-    {
-        return new JwsVerifier([MintedPki::get()->rootDer], 'com.example.app', [Environment::Sandbox]);
+        return Verifier::create(Config::builder()->roots([MintedPki::get()->rootDer])->build());
     }
 
     /** @return iterable<string, array{string}> */
@@ -92,10 +86,10 @@ final class HostileInputTest extends TestCase
             "\x00" . substr(MintedPki::get()->receipt(), 1),
         ];
 
-        // 200 nested SEQUENCE openers. On PHP 8.1 — which has no
-        // zend.max_allowed_stack_size — an unbounded recursive parser
-        // segfaults rather than raising, so the depth bound is the only thing
-        // between this input and a crashed FPM worker.
+        // 200 nested SEQUENCE openers. An unbounded recursive parser
+        // segfaults or exhausts the C stack rather than raising, so the
+        // depth bound is the only thing between this input and a crashed
+        // FPM worker.
         yield '200 nested SEQUENCE openers' => [str_repeat("\x30\x80", 200)];
         yield '5000 nested SEQUENCE openers' => [str_repeat("\x30\x80", 5000)];
         yield 'deep definite-length nesting' => [self::nested(200)];
@@ -107,23 +101,21 @@ final class HostileInputTest extends TestCase
         }
     }
 
+    /**
+     * Every entry above is raw bytes — a hostile client's receipt, DER or
+     * not — and 0.7 takes only base64 (docs/design/0.7-api.md §1), so each
+     * one is base64-encoded here, once, the way a real client transports it.
+     */
     #[DataProvider('hostileReceiptProvider')]
-    public function testHostileReceiptInputIsRejectedAsAVerificationException(string $input): void
+    public function testHostileReceiptInputIsRejectedAsAResultFailure(string $raw): void
     {
         try {
-            self::receiptVerifier()->verify($input);
-            self::fail('a hostile receipt was ACCEPTED');
-        } catch (VerificationException $e) {
-            self::assertContains($e->reason, [
-                Reason::InvalidReceiptFormat,
-                Reason::InvalidChain,
-                Reason::InvalidSignature,
-                Reason::InvalidCertificatePurpose,
-                Reason::WrongBundleId,
-            ], $e->getMessage());
+            $result = self::verifier()->verifyReceipt(base64_encode($raw));
         } catch (Throwable $e) {
-            self::fail('escaped as ' . $e::class . ': ' . $e->getMessage());
+            self::fail('verifyReceipt escaped as ' . $e::class . ': ' . $e->getMessage());
         }
+        self::assertFalse($result->verified(), 'a hostile receipt was ACCEPTED');
+        self::assertNotSame(Reason::InternalError, $result->failure?->reason, (string) $result->failure?->message);
     }
 
     /**
@@ -132,13 +124,19 @@ final class HostileInputTest extends TestCase
      * receipt reaching 21009 is a defect even though no exception escaped.
      */
     #[DataProvider('hostileReceiptProvider')]
-    public function testHostileReceiptInputNeverReachesTheEndpointsInternalError(string $input): void
+    public function testHostileReceiptInputNeverReachesTheEndpointsInternalError(string $raw): void
     {
-        $endpoint = new VerifyReceiptEndpoint([MintedPki::get()->rootDer], Environment::Sandbox);
-        $status = $endpoint->verifyReceiptResult(['receipt-data' => base64_encode($input)])->toResponse()['status'];
+        $requestJson = json_encode(['receipt-data' => base64_encode($raw)], JSON_THROW_ON_ERROR);
+        try {
+            $response = self::verifier()->verifyReceiptEndpoint(Environment::Sandbox, $requestJson);
+        } catch (Throwable $e) {
+            self::fail('verifyReceiptEndpoint escaped as ' . $e::class . ': ' . $e->getMessage());
+        }
+        /** @var array{status: int} $decoded */
+        $decoded = json_decode($response, true, 8, JSON_THROW_ON_ERROR);
 
-        self::assertNotSame(21009, $status);
-        self::assertNotSame(0, $status, 'a hostile receipt was ACCEPTED');
+        self::assertNotSame(21009, $decoded['status']);
+        self::assertNotSame(0, $decoded['status'], 'a hostile receipt was ACCEPTED');
     }
 
     /** @return iterable<string, array{string}> */
@@ -166,31 +164,30 @@ final class HostileInputTest extends TestCase
     }
 
     #[DataProvider('hostileJwsProvider')]
-    public function testHostileJwsInputIsRejectedAsAVerificationException(string $input): void
+    public function testHostileJwsInputIsRejectedAsAResultFailure(string $jws): void
     {
-        foreach (['verifyTransaction', 'verifyAppTransaction', 'verifyRaw'] as $operation) {
-            try {
-                self::jwsVerifier()->{$operation}($input);
-                self::fail("a hostile JWS was ACCEPTED by {$operation}");
-            } catch (VerificationException) {
-                $this->addToAssertionCount(1);
-            } catch (Throwable $e) {
-                self::fail("{$operation} escaped as " . $e::class . ': ' . $e->getMessage());
-            }
+        try {
+            $result = self::verifier()->verifySignedData($jws);
+        } catch (Throwable $e) {
+            self::fail('verifySignedData escaped as ' . $e::class . ': ' . $e->getMessage());
         }
+        self::assertFalse($result->verified(), 'a hostile JWS was ACCEPTED');
+        self::assertNotSame(Reason::InternalError, $result->failure?->reason, (string) $result->failure?->message);
     }
 
     /**
      * The transport form is canonical standard base64 and nothing else, as
-     * Apple's verifyReceipt accepts it (measured 2026-09-23): the canonical
-     * string verifies, and each spelling a lenient decoder would map to the
-     * same DER is refused, as it is by Apple and by every other port.
+     * Apple's verifyReceipt accepts it: the canonical string verifies, and
+     * each spelling a lenient decoder would map to the same DER is refused,
+     * as it is by Apple and by every other port.
      */
     public function testBase64TransportIsCanonicalStandardBase64Only(): void
     {
         $der = MintedPki::get()->receipt();
         $standard = base64_encode($der);
-        self::assertSame('com.example.app', self::receiptVerifier()->verify($standard)->bundleId);
+        $ok = self::verifier()->verifyReceipt($standard);
+        self::assertTrue($ok->verified());
+        self::assertSame('com.example.app', $ok->payload->bundleId);
 
         foreach ([
             'wrapped' => chunk_split($standard, 64, "\n"),
@@ -200,12 +197,9 @@ final class HostileInputTest extends TestCase
             'mis-padded' => str_ends_with($standard, '=') ? rtrim($standard, '=') : $standard . '=',
         ] as $label => $variant) {
             self::assertNotSame($standard, $variant, $label);
-            try {
-                self::receiptVerifier()->verify($variant);
-                self::fail("{$label}: a non-canonical spelling was accepted");
-            } catch (VerificationException $e) {
-                self::assertSame(Reason::InvalidReceiptFormat, $e->reason, $label);
-            }
+            $result = self::verifier()->verifyReceipt($variant);
+            self::assertFalse($result->verified(), "{$label}: a non-canonical spelling was accepted");
+            self::assertSame(Reason::Malformed, $result->failure?->reason, $label);
         }
     }
 

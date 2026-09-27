@@ -25,6 +25,8 @@ final class TestPki
     public const INTERMEDIATE_OID_HEX = '2a864886f76364060201';   // 1.2.840.113635.100.6.2.1
 
     private const OID_SHA256_RSA = '2a864886f70d01010b';
+    /** rsaEncryption: names no hash, so it never disagrees with whatever digestAlgorithm the SignerInfo carries. */
+    private const OID_RSA_ENCRYPTION = '2a864886f70d010101';
     private const OID_ECDSA_SHA256 = '2a8648ce3d040302';
     private const OID_COMMON_NAME = '550403';
     private const OID_BASIC_CONSTRAINTS = '551d13';
@@ -34,7 +36,7 @@ final class TestPki
     public const OID_MESSAGE_DIGEST_HEX = '2a864886f70d010904';
     public const OID_SHA256_HEX = '608648016503040201';
     public const OID_SHA1_HEX = '2b0e03021a';
-    public const OID_MD5_HEX = '2a864886f70d0202';
+    public const OID_MD5_HEX = '2a864886f70d0205';
 
     private static int $nextSerial = 1;
 
@@ -209,6 +211,7 @@ final class TestPki
             $signature = $signatureOverride;
         } else {
             $algorithm = match ($digestOidHex) {
+                self::OID_MD5_HEX => OPENSSL_ALGO_MD5,
                 self::OID_SHA1_HEX => OPENSSL_ALGO_SHA1,
                 self::OID_SHA256_HEX => OPENSSL_ALGO_SHA256,
                 default => OPENSSL_ALGO_SHA256,
@@ -227,7 +230,12 @@ final class TestPki
         if ($signedAttrs !== null) {
             $signerFields[] = $signedAttrs;
         }
-        $signerFields[] = self::rsaSha256Algorithm();
+        // Generic rsaEncryption, matching whatever $digestOidHex actually is:
+        // a hardcoded sha256WithRSAEncryption here would disagree with a
+        // SHA-1-digested SignerInfo (the default), which the 0.7 relabel
+        // check (docs/design/0.7-hardening-parity.md, "any receipt signer
+        // algorithm") now correctly refuses as INVALID_SIGNATURE.
+        $signerFields[] = self::rsaEncryptionAlgorithm();
         $signerFields[] = DerWriter::tlv(DerWriter::OCTET_STRING, $signature);
 
         return DerWriter::tlv(
@@ -253,6 +261,15 @@ final class TestPki
         return DerWriter::tlv(
             DerWriter::SEQUENCE,
             DerWriter::oid(self::OID_SHA256_RSA),
+            DerWriter::tlv(DerWriter::NULL_TAG),
+        );
+    }
+
+    private static function rsaEncryptionAlgorithm(): string
+    {
+        return DerWriter::tlv(
+            DerWriter::SEQUENCE,
+            DerWriter::oid(self::OID_RSA_ENCRYPTION),
             DerWriter::tlv(DerWriter::NULL_TAG),
         );
     }

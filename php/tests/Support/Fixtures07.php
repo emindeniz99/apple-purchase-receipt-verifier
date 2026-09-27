@@ -8,15 +8,14 @@ use RuntimeException;
 
 /**
  * Locates the repository's shared `fixtures/` directory and decodes the
- * fixtures `cases.json` registers, checking each one against the SHA-256 the
- * registry records for its DECODED logical bytes.
+ * fixtures `cases-0.7.json` registers, checking each one against the
+ * SHA-256 the registry records for its DECODED logical bytes.
  *
- * That digest check is not decoration. It is the only mechanical defence
- * against the whole conformance suite going green against fixture bytes that
- * were regenerated, re-encoded or quietly edited: the pinned expectations
- * would then describe bytes no other port ever saw.
+ * A sibling of {@see Fixtures}, kept separate because the 0.7 cases file
+ * has its own schema (schemaVersion 2) and lives beside the 0.6 one while
+ * ports migrate one by one (docs/design/0.7-api.md, "Release").
  */
-final class Fixtures
+final class Fixtures07
 {
     /** @var array<string, string> */
     private static array $cache = [];
@@ -24,16 +23,11 @@ final class Fixtures
     /** @var array<string, mixed>|null */
     private static ?array $document = null;
 
-    /**
-     * The directory is found by walking up from this file, not by a
-     * `../../..` literal, so moving the port one level deeper is a rename
-     * rather than a silent breakage.
-     */
     public static function directory(): string
     {
         $dir = __DIR__;
         for ($i = 0; $i < 12; ++$i) {
-            if (is_file($dir . '/fixtures/cases.json')) {
+            if (is_file($dir . '/fixtures/cases-0.7.json')) {
                 return $dir . '/fixtures';
             }
             $parent = dirname($dir);
@@ -43,16 +37,16 @@ final class Fixtures
             $dir = $parent;
         }
 
-        throw new RuntimeException('harness error: could not locate fixtures/cases.json by walking up from ' . __DIR__);
+        throw new RuntimeException('harness error: could not locate fixtures/cases-0.7.json by walking up from ' . __DIR__);
     }
 
     /** @return array<string, mixed> */
     public static function cases(): array
     {
         if (self::$document === null) {
-            $json = file_get_contents(self::directory() . '/cases.json');
+            $json = file_get_contents(self::directory() . '/cases-0.7.json');
             if ($json === false) {
-                throw new RuntimeException('harness error: cases.json is unreadable');
+                throw new RuntimeException('harness error: cases-0.7.json is unreadable');
             }
             /** @var array<string, mixed> $parsed */
             $parsed = json_decode($json, true, 64, JSON_THROW_ON_ERROR);
@@ -77,7 +71,7 @@ final class Fixtures
         }
         $registry = self::registry();
         if (!isset($registry[$id])) {
-            throw new RuntimeException("harness error: cases.json registers no fixture \"{$id}\"");
+            throw new RuntimeException("harness error: cases-0.7.json registers no fixture \"{$id}\"");
         }
         $entry = $registry[$id];
         $raw = file_get_contents(self::directory() . '/' . $entry['path']);
@@ -89,7 +83,7 @@ final class Fixtures
             'base64' => self::strictBase64($id, $raw),
             'utf8' => trim($raw),
             // Verbatim, untrimmed: pins how a port decodes what a client
-            // sent, whitespace (and, for one fixture, zero bytes) included.
+            // sent, whitespace included.
             'text' => $raw,
             default => throw new RuntimeException(
                 "harness error: unknown fixture codec \"{$entry['codec']}\" for \"{$id}\"",
@@ -99,7 +93,7 @@ final class Fixtures
         if (!hash_equals($entry['contentSha256'], $actual)) {
             throw new RuntimeException(
                 "fixture \"{$id}\" ({$entry['path']}, codec {$entry['codec']}) has drifted: "
-                . "cases.json records contentSha256 {$entry['contentSha256']}, "
+                . "cases-0.7.json records contentSha256 {$entry['contentSha256']}, "
                 . "the decoded bytes hash to {$actual}",
             );
         }
