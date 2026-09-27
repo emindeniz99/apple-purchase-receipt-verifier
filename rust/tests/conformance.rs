@@ -134,6 +134,9 @@ struct Expected {
     /// a log line as is.
     #[serde(default)]
     message_must_not_contain: Option<Vec<u32>>,
+    /// A tolerant case: any verdict but `INTERNAL_ERROR`, and no panic.
+    #[serde(default)]
+    any_outcome: Option<bool>,
     #[serde(default)]
     fields: Option<Map<String, Value>>,
     #[serde(default)]
@@ -593,6 +596,34 @@ fn run_case(dir: &Path, fixtures: &BTreeMap<String, Fixture>, case: &Case) -> Re
                         .map(apple_purchase_receipt_verifier::JsonPayload::into_json)
                 }
             };
+            if expected.any_outcome == Some(true) {
+                let guarded = || {
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(&call)).map_err(|_| {
+                        Failed::from(format!("{id}: the operation panicked instead of answering"))
+                    })
+                };
+                let result = match case.max_millis {
+                    None => guarded()?,
+                    Some(budget) => {
+                        let _warm_up = guarded()?;
+                        let start = std::time::Instant::now();
+                        let result = guarded()?;
+                        let elapsed = start.elapsed();
+                        if elapsed.as_millis() > u128::from(budget) {
+                            return Err(Failed::from(format!(
+                                "{id}: took {elapsed:?}, over the {budget} ms budget"
+                            )));
+                        }
+                        result
+                    }
+                };
+                if let Err(failure) = result {
+                    if failure.reason() == Reason::InternalError {
+                        return Err(Failed::from(format!("{id}: answered {failure}")));
+                    }
+                }
+                return Ok(());
+            }
             let result = match case.max_millis {
                 None => call(),
                 Some(budget) => {
