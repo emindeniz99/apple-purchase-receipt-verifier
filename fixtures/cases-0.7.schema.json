@@ -157,7 +157,7 @@
     "maxMillis": {
       "type": "integer",
       "minimum": 1,
-      "description": "A wall-clock budget in milliseconds for the verify call. The runner measures the call after one warm-up call of the same case and fails if it exceeds this. Set only on DoS cases; the file comment gives the shared figure."
+      "description": "A wall-clock budget in milliseconds for the verify call. The runner measures the call after one warm-up call of the same case and fails if it exceeds this. Set on the DoS cases and the anyOutcome cases; the file comment gives the shared figure."
     },
     "fault": {
       "type": "string",
@@ -198,6 +198,15 @@
           "description": "Code points the failure message must not contain, so it can go into a log line as is. The runner checks the message the port exposes (Failure.message() or its equivalent).",
           "items": { "type": "integer", "minimum": 0, "maximum": 1114111 }
         }
+      }
+    },
+    "expectedAnyOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["anyOutcome"],
+      "description": "A tolerant case: the port may verify or fail with any reason except INTERNAL_ERROR, but no exception or panic may escape the call, and it must finish within maxMillis when the case sets one.",
+      "properties": {
+        "anyOutcome": { "const": true }
       }
     },
     "expectedReceiptOk": {
@@ -260,7 +269,15 @@
           }
         }
       },
-      "then": { "required": ["fault"] }
+      "then": { "required": ["fault"] },
+      "else": {
+        "if": {
+          "type": "object",
+          "required": ["expected"],
+          "properties": { "expected": { "type": "object", "required": ["anyOutcome"] } }
+        },
+        "then": { "required": ["fault"] }
+      }
     },
     "case": {
       "type": "object",
@@ -283,7 +300,8 @@
             "expected": {
               "oneOf": [
                 { "$ref": "#/$defs/expectedReceiptOk" },
-                { "$ref": "#/$defs/expectedError" }
+                { "$ref": "#/$defs/expectedError" },
+                { "$ref": "#/$defs/expectedAnyOutcome" }
               ]
             },
             "fault": { "$ref": "#/$defs/fault" },
@@ -308,7 +326,8 @@
             "expected": {
               "oneOf": [
                 { "$ref": "#/$defs/expectedSignedDataOk" },
-                { "$ref": "#/$defs/expectedError" }
+                { "$ref": "#/$defs/expectedError" },
+                { "$ref": "#/$defs/expectedAnyOutcome" }
               ]
             },
             "fault": { "$ref": "#/$defs/fault" },

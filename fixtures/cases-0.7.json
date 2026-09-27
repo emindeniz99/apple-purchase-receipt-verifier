@@ -1,7 +1,7 @@
 {
   "$schema": "./cases-0.7.schema.json",
   "schemaVersion": 2,
-  "comment": "Normative cross-language conformance vectors for the 0.7 API of apple-purchase-receipt-verifier (docs/design/0.7-api.md), schema version 2 (fixtures/cases-0.7.schema.json).\nThe nine ports move from fixtures/cases.json to this file one at a time; cases.json is deleted when the last port has moved. Every case of cases.json is carried over and none is deleted: legacyId names the cases.json case each one replaces, and a case without legacyId is new in 0.7 (tag new-in-0-7).\nNo expectation here was produced by running an implementation. Values were carried from cases.json or derived from the design, then checked against an independent decode of the fixture bytes written for this file. A vector that disagrees with a port is a bug report against one of the two until a human decides.\n\nOperations. verifyReceipt(base64), verifySignedData(jws) and verifyReceiptEndpoint(environment, requestJson) are the three public 0.7 methods. verifyReceipt: a text fixture is handed over verbatim; a raw or base64 fixture holds DER, which the runner encodes as canonical standard base64 with padding. verifySignedData: the fixture's logical bytes as a string (utf8 trims, text does not). verifyReceiptEndpoint: input.fixture is wrapped by the runner as {\"receipt-data\":\"<string>\"}, the string built as for verifyReceipt; input.requestBody names a text fixture that is the whole request body, handed over verbatim. decodeBase64 is the one internal hook: 0.7 exposes no decoder, but a valid-base64 string that is not a receipt fails as MALFORMED through verifyReceipt just as invalid base64 does, so the accept side of the base64 rule is only observable on the decoders themselves. Each port's test code calls its receipt-data decoder and its x5c-entry decoder directly; a refusal is MALFORMED from receipt-data and INVALID_CERTIFICATE from x5c (an error group states MALFORMED and the runner maps it for x5c).\n\nConfig. trustedRoots is {\"source\":\"defaults\"} for Config.defaults() (the three bundled, pinned Apple roots) or {\"source\":\"fixtures\",\"fixtures\":[...]} for roots read from registered trust-anchor fixtures. The endpoint takes environment PRODUCTION or SANDBOX. There is no bundle id, accepted environment set, appAppleId or device id anywhere: 0.7 takes none of them, and the eight 0.6 policy cases now verify and pin the value the caller judges (tag policy-flip).\n\nClock. When a case carries clock.now the runner builds its Config with a clock fixed at that instant; otherwise the default clock runs. 0.7 reads the clock in two places: the certificate-validity instant when the input states no usable date (a receipt whose first attribute 12 is missing or does not parse, a JWS whose signedDate is missing or is not a representable instant) and request_date at the endpoint. This reverses 0.6, where that fallback was the system clock and an injected clock could not move it, so the dateless and unreadable-date cases now pin a clock (2025-01-01 unless the case is about the clock) and two endpoint cases pin that the clock does move the verdict. A case whose verdict or asserted fields could move with the clock pins one.\n\nExpected. verifyReceipt and verifySignedData answer {\"status\":\"ok\"} or {\"status\":\"error\",\"reason\":R}. On ok, fields maps a JSON Pointer (RFC 6901) to a value, evaluated on the verified payload as JSON: ReceiptPayload.toJson() for receipts, JsonPayload.json() for JWS. One extension: a reference token written [key=value] selects the single element of an array whose member key is the JSON string value, and a runner fails the case unless exactly one element matches. lengths maps a pointer to the length of the array there. toJson, when present, is the exact string toJson() returns; compare the UTF-8 bytes. Receipt JSON uses the design's keys: snake_case, dates as *_ms epoch milliseconds (numbers), 64-bit ids as strings, bytes as standard base64 with padding, unknown_attributes as {\"<type>\": [\"<base64>\", ...]} with keys in ascending numeric order and values in receipt order. Owner rules of 2026-09-27 the receipt vectors pin: the first occurrence of a known attribute wins, for the typed field and for the chain date; every attribute that does not end up in a typed field (a later copy of a known attribute, or a known attribute whose value does not parse, whose typed field is then null) goes raw into unknown_attributes, the in-app ones into that purchase's unknown_attributes. A date attribute whose string is empty means not set: its typed field is null and it is not kept raw; an empty non-date string is the value \"\". A date decodes only in the exact form YYYY-MM-DDTHH:MM:SSZ (year 0000 to 9999, uppercase T and Z, a real calendar date, hours 00 to 23, minutes and seconds 00 to 59, no fraction, no offset); any other non-empty date string is null and kept raw, and an attribute 12 that does not decode leaves the chain instant to the clock. An IA5String holding a byte at or above 0x80, and an INTEGER that is not DER (empty or with a redundant leading octet), do not parse either: null and kept raw. verifyReceiptEndpoint always returns Apple's response body; expected.fields is evaluated on it and always pins /status. 0.7 exposes no failure reason beside the body, so the 0.6 failureReason is gone. Everywhere, null means absent or JSON null; numbers compare by value (1722945600000.0 equals 1722945600000) and integers exactly, so a runner parses without rounding (the endpoint's download_id is 2^63-1 as a JSON number). A field a case does not list is not pinned.\n\nFailure messages. An error expectation may carry messageMustNotContain, a list of code points the failure message must not contain; the runner checks the message the port exposes. It pins that input quoted in a message (a JWS alg with CR, LF, NEL, U+2028 and a bidi override) is neutralised before a caller logs it.\n\nJSON reading. A JSON object with a duplicate member keeps the last one, in a JWS header, a JWS payload and an endpoint body; receipt attributes are the other way round (the first occurrence wins). A JWS header must be strict UTF-8 with no byte-order mark, and only whitespace may follow the header or payload object: trailing content after the header is MALFORMED, after the payload it is carried past the signature and is UNREADABLE_PAYLOAD when the signature verifies (lead, 2026-09-27). A runner parses what a port returns the same strict way, so a port that appended content to its output would fail.\n\nTime budget. A case may carry maxMillis, a wall-clock budget for the verify call. The runner measures the call after one warm-up call of the same case and fails if it exceeds the budget. It is set only on the denial-of-service cases (tag dos), which pin that a certificate no pinned root vouches for is rejected, or ignored, without its key being parsed or used (change 1 of docs/design/0.7-hardening-parity.md). The figure is 2000, one for every port: an honest verify never touches the untrusted key and finishes in a few milliseconds even on a slow CI box, while an implementation that decodes or verifies with the oversized key first spends seconds (a single 262144-bit modexp is about 5 s in Go; a 65536-bit key is expensive in every measured library). Timing is a coarse backstop; each port also asserts directly, in its own runner, that no verification used the stranger key.\n\nReasons. The 0.7 set: MALFORMED, TOO_LARGE, INVALID_SIGNATURE, UNTRUSTED_CHAIN, INVALID_CERTIFICATE, INVALID_CERTIFICATE_PURPOSE, UNREADABLE_PAYLOAD, INTERNAL_ERROR. Carried per the design's mapping: INVALID_CHAIN is UNTRUSTED_CHAIN; INVALID_RECEIPT_FORMAT, INVALID_JWS_FORMAT and MALFORMED_REQUEST fold into MALFORMED; REQUEST_TOO_LARGE is TOO_LARGE. Where the design is more specific the specific rule wins: a certificate outside its validity window at the chain instant is INVALID_CERTIFICATE (owner, 2026-09-27; tag validity-window); every input over a size cap is TOO_LARGE (the Bounds table); and a JWS payload that is not a JSON object is carried past the signature (the parse-before-signature rule), so the two unsigned 0.6 payload cases are INVALID_SIGNATURE and their signed twins UNREADABLE_PAYLOAD. None of the twelve 0.6 INTERNAL_ERROR cases stays INTERNAL_ERROR: four receipts whose Apple-signed content does not parse as an attribute set are UNREADABLE_PAYLOAD; the unreadable creation date and the unparseable in-app purchase verify with their raw octets in unknown_attributes; the six JWS claim-type cases verify because 0.7 returns the payload untyped. No input can make a correct library answer INTERNAL_ERROR, so no case expects it.\n\nFixtures. The registry works as in cases.json: codec and contentSha256 over the decoded logical bytes, re-hashed by every runner. 0.7 checks Apple's WWDR marker OID 1.2.840.113635.100.6.2.1 on the receipt intermediate, which no 0.6 synthetic receipt chain carried, so every generated receipt was re-minted for this file into fixtures/generated-0.7/ by the same generators with TestPki stamping the marker (fresh keys; same payloads), VerifierApiFixtures writes the inputs new in 0.7 (including the three base64 strings at and over the receipt cap), and HardeningParityFixtures writes the denial-of-service and signer-algorithm inputs of the hardening parity work. receipt-der-trailing-byte.der there is receipt.der plus one zero byte. The directory sits beside fixtures/generated/ because tools/lint-cases.mjs requires every file under generated/ to be registered in cases.json. JWS fixtures, public receipts, Apple's files, the request-body limits and the one over-cap receipt string refused for size before anything is decoded are shared with cases.json unchanged. Regenerate with: mvn -B -q -f java/pom.xml test-compile; mvn -B -q -f java/pom.xml dependency:build-classpath -Dmdep.outputFile=/tmp/cp.txt; then java -cp \"java/target/test-classes:java/target/classes:$(cat /tmp/cp.txt)\" io.github.emindeniz99.applepurchasereceiptverifier.<Generator> <dir>/generated for PortDivergenceFixtures, HostileReceiptFixtures, AbsentSignerFixture, ReceiptCmsDefectFixtures, ReceiptIdsFixture, VerificationOrderFixtures, LargeReceiptFixture and VerifierApiFixtures, ReceiptBase64CapFixture with <dir>, and mvn -B -q -f java/pom.xml surefire:test -Dtest=FixtureGeneratorTest -Dfixtures.generate=true -Daprv.fixtures.dir=<dir>; copy the receipt files and their roots into fixtures/generated-0.7/ and re-hash. ReviewParityFixtures (review-*), OwnerDecisionFixtures (owner-*), IntermediateKeyUsageFixtures (keyusage-*) and CertificateDerFixtures (der-*) write straight into fixtures/generated-0.7/, after the generators above, because each derives a few inputs from files already there.\n\nCanonical toJson. Keys in the design's order, no whitespace, UTF-8, strings escaped as ECMAScript JSON.stringify escapes them (\\\" \\\\ \\b \\f \\n \\r \\t, other U+0000 to U+001F as \\u00xx in lowercase hex, nothing else: no escaped slash, non-ASCII, U+2028 and U+2029 raw). Exact bytes are pinned for the shared receipt, the ids receipt, the web-order-zero receipt, a non-ASCII product id, an escapes product id and the genuine public receipts that verify.\n\n\"fault\" names the one intentional defect of a negative case. It is documentation, not an assertion. Tags are free-form; owner-review marks a case whose expectation follows from an owner rule but deserves a second look.",
+  "comment": "Normative cross-language conformance vectors for the 0.7 API of apple-purchase-receipt-verifier (docs/design/0.7-api.md), schema version 2 (fixtures/cases-0.7.schema.json).\nThe nine ports move from fixtures/cases.json to this file one at a time; cases.json is deleted when the last port has moved. Every case of cases.json is carried over and none is deleted: legacyId names the cases.json case each one replaces, and a case without legacyId is new in 0.7 (tag new-in-0-7).\nNo expectation here was produced by running an implementation. Values were carried from cases.json or derived from the design, then checked against an independent decode of the fixture bytes written for this file. A vector that disagrees with a port is a bug report against one of the two until a human decides.\n\nOperations. verifyReceipt(base64), verifySignedData(jws) and verifyReceiptEndpoint(environment, requestJson) are the three public 0.7 methods. verifyReceipt: a text fixture is handed over verbatim; a raw or base64 fixture holds DER, which the runner encodes as canonical standard base64 with padding. verifySignedData: the fixture's logical bytes as a string (utf8 trims, text does not). verifyReceiptEndpoint: input.fixture is wrapped by the runner as {\"receipt-data\":\"<string>\"}, the string built as for verifyReceipt; input.requestBody names a text fixture that is the whole request body, handed over verbatim. decodeBase64 is the one internal hook: 0.7 exposes no decoder, but a valid-base64 string that is not a receipt fails as MALFORMED through verifyReceipt just as invalid base64 does, so the accept side of the base64 rule is only observable on the decoders themselves. Each port's test code calls its receipt-data decoder and its x5c-entry decoder directly; a refusal is MALFORMED from receipt-data and INVALID_CERTIFICATE from x5c (an error group states MALFORMED and the runner maps it for x5c).\n\nConfig. trustedRoots is {\"source\":\"defaults\"} for Config.defaults() (the three bundled, pinned Apple roots) or {\"source\":\"fixtures\",\"fixtures\":[...]} for roots read from registered trust-anchor fixtures. The endpoint takes environment PRODUCTION or SANDBOX. There is no bundle id, accepted environment set, appAppleId or device id anywhere: 0.7 takes none of them, and the eight 0.6 policy cases now verify and pin the value the caller judges (tag policy-flip).\n\nClock. When a case carries clock.now the runner builds its Config with a clock fixed at that instant; otherwise the default clock runs. 0.7 reads the clock in two places: the certificate-validity instant when the input states no usable date (a receipt whose first attribute 12 is missing or does not parse, a JWS whose signedDate is missing or is not a representable instant) and request_date at the endpoint. This reverses 0.6, where that fallback was the system clock and an injected clock could not move it, so the dateless and unreadable-date cases now pin a clock (2025-01-01 unless the case is about the clock) and two endpoint cases pin that the clock does move the verdict. A case whose verdict or asserted fields could move with the clock pins one.\n\nExpected. verifyReceipt and verifySignedData answer {\"status\":\"ok\"} or {\"status\":\"error\",\"reason\":R}. On ok, fields maps a JSON Pointer (RFC 6901) to a value, evaluated on the verified payload as JSON: ReceiptPayload.toJson() for receipts, JsonPayload.json() for JWS. One extension: a reference token written [key=value] selects the single element of an array whose member key is the JSON string value, and a runner fails the case unless exactly one element matches. lengths maps a pointer to the length of the array there. toJson, when present, is the exact string toJson() returns; compare the UTF-8 bytes. Receipt JSON uses the design's keys: snake_case, dates as *_ms epoch milliseconds (numbers), 64-bit ids as strings, bytes as standard base64 with padding, unknown_attributes as {\"<type>\": [\"<base64>\", ...]} with keys in ascending numeric order and values in receipt order. Owner rules of 2026-09-27 the receipt vectors pin: the first occurrence of a known attribute wins, for the typed field and for the chain date; every attribute that does not end up in a typed field (a later copy of a known attribute, or a known attribute whose value does not parse, whose typed field is then null) goes raw into unknown_attributes, the in-app ones into that purchase's unknown_attributes. A date attribute whose string is empty means not set: its typed field is null and it is not kept raw; an empty non-date string is the value \"\". A date decodes only in the exact form YYYY-MM-DDTHH:MM:SSZ (year 0000 to 9999, uppercase T and Z, a real calendar date, hours 00 to 23, minutes and seconds 00 to 59, no fraction, no offset); any other non-empty date string is null and kept raw, and an attribute 12 that does not decode leaves the chain instant to the clock. An IA5String holding a byte at or above 0x80, and an INTEGER that is not DER (empty or with a redundant leading octet), do not parse either: null and kept raw. verifyReceiptEndpoint always returns Apple's response body; expected.fields is evaluated on it and always pins /status. 0.7 exposes no failure reason beside the body, so the 0.6 failureReason is gone. Everywhere, null means absent or JSON null; numbers compare by value (1722945600000.0 equals 1722945600000) and integers exactly, so a runner parses without rounding (the endpoint's download_id is 2^63-1 as a JSON number). A field a case does not list is not pinned.\n\nFailure messages. An error expectation may carry messageMustNotContain, a list of code points the failure message must not contain; the runner checks the message the port exposes. It pins that input quoted in a message (a JWS alg with CR, LF, NEL, U+2028 and a bidi override) is neutralised before a caller logs it.\n\nTolerant cases. expected {\"anyOutcome\":true} lets the port verify or fail with any reason except INTERNAL_ERROR; no exception or panic may escape the call, and a case with maxMillis must also finish within it (owner, 2026-09-27). It is used for encoding oddities inside certificates the chain uses, which are port-defined (docs/design/0.7-api.md, Reading certificates and signed attributes); tag tolerant.\n\nJSON reading. A JSON object with a duplicate member keeps the last one, in a JWS header, a JWS payload and an endpoint body; receipt attributes are the other way round (the first occurrence wins). A JWS header must be strict UTF-8 with no byte-order mark, and only whitespace may follow the header or payload object: trailing content after the header is MALFORMED, after the payload it is carried past the signature and is UNREADABLE_PAYLOAD when the signature verifies (lead, 2026-09-27). A runner parses what a port returns the same strict way, so a port that appended content to its output would fail.\n\nTime budget. A case may carry maxMillis, a wall-clock budget for the verify call. The runner measures the call after one warm-up call of the same case and fails if it exceeds the budget. It is set on the denial-of-service cases (tag dos), which pin that a certificate no pinned root vouches for is rejected, or ignored, without its key being parsed or used (change 1 of docs/design/0.7-hardening-parity.md), and on the tolerant cases. The figure is 2000, one for every port: an honest verify never touches the untrusted key and finishes in a few milliseconds even on a slow CI box, while an implementation that decodes or verifies with the oversized key first spends seconds (a single 262144-bit modexp is about 5 s in Go; a 65536-bit key is expensive in every measured library). Timing is a coarse backstop; each port also asserts directly, in its own runner, that no verification used the stranger key.\n\nReasons. The 0.7 set: MALFORMED, TOO_LARGE, INVALID_SIGNATURE, UNTRUSTED_CHAIN, INVALID_CERTIFICATE, INVALID_CERTIFICATE_PURPOSE, UNREADABLE_PAYLOAD, INTERNAL_ERROR. Carried per the design's mapping: INVALID_CHAIN is UNTRUSTED_CHAIN; INVALID_RECEIPT_FORMAT, INVALID_JWS_FORMAT and MALFORMED_REQUEST fold into MALFORMED; REQUEST_TOO_LARGE is TOO_LARGE. Where the design is more specific the specific rule wins: a certificate outside its validity window at the chain instant is INVALID_CERTIFICATE (owner, 2026-09-27; tag validity-window); every input over a size cap is TOO_LARGE (the Bounds table); and a JWS payload that is not a JSON object is carried past the signature (the parse-before-signature rule), so the two unsigned 0.6 payload cases are INVALID_SIGNATURE and their signed twins UNREADABLE_PAYLOAD. None of the twelve 0.6 INTERNAL_ERROR cases stays INTERNAL_ERROR: four receipts whose Apple-signed content does not parse as an attribute set are UNREADABLE_PAYLOAD; the unreadable creation date and the unparseable in-app purchase verify with their raw octets in unknown_attributes; the six JWS claim-type cases verify because 0.7 returns the payload untyped. No input can make a correct library answer INTERNAL_ERROR, so no case expects it.\n\nFixtures. The registry works as in cases.json: codec and contentSha256 over the decoded logical bytes, re-hashed by every runner. 0.7 checks Apple's WWDR marker OID 1.2.840.113635.100.6.2.1 on the receipt intermediate, which no 0.6 synthetic receipt chain carried, so every generated receipt was re-minted for this file into fixtures/generated-0.7/ by the same generators with TestPki stamping the marker (fresh keys; same payloads), VerifierApiFixtures writes the inputs new in 0.7 (including the three base64 strings at and over the receipt cap), and HardeningParityFixtures writes the denial-of-service and signer-algorithm inputs of the hardening parity work. receipt-der-trailing-byte.der there is receipt.der plus one zero byte. The directory sits beside fixtures/generated/ because tools/lint-cases.mjs requires every file under generated/ to be registered in cases.json. JWS fixtures, public receipts, Apple's files, the request-body limits and the one over-cap receipt string refused for size before anything is decoded are shared with cases.json unchanged. Regenerate with: mvn -B -q -f java/pom.xml test-compile; mvn -B -q -f java/pom.xml dependency:build-classpath -Dmdep.outputFile=/tmp/cp.txt; then java -cp \"java/target/test-classes:java/target/classes:$(cat /tmp/cp.txt)\" io.github.emindeniz99.applepurchasereceiptverifier.<Generator> <dir>/generated for PortDivergenceFixtures, HostileReceiptFixtures, AbsentSignerFixture, ReceiptCmsDefectFixtures, ReceiptIdsFixture, VerificationOrderFixtures, LargeReceiptFixture and VerifierApiFixtures, ReceiptBase64CapFixture with <dir>, and mvn -B -q -f java/pom.xml surefire:test -Dtest=FixtureGeneratorTest -Dfixtures.generate=true -Daprv.fixtures.dir=<dir>; copy the receipt files and their roots into fixtures/generated-0.7/ and re-hash. ReviewParityFixtures (review-*), OwnerDecisionFixtures (owner-*), IntermediateKeyUsageFixtures (keyusage-*) and CertificateDerFixtures (der-*) write straight into fixtures/generated-0.7/, after the generators above, because each derives a few inputs from files already there.\n\nCanonical toJson. Keys in the design's order, no whitespace, UTF-8, strings escaped as ECMAScript JSON.stringify escapes them (\\\" \\\\ \\b \\f \\n \\r \\t, other U+0000 to U+001F as \\u00xx in lowercase hex, nothing else: no escaped slash, non-ASCII, U+2028 and U+2029 raw). Exact bytes are pinned for the shared receipt, the ids receipt, the web-order-zero receipt, a non-ASCII product id, an escapes product id and the genuine public receipts that verify.\n\n\"fault\" names the one intentional defect of a negative case. It is documentation, not an assertion. Tags are free-form; owner-review marks a case whose expectation follows from an owner rule but deserves a second look.",
   "fixtures": {
     "device-guid": {
       "path": "generated/device-guid.hex",
@@ -1557,17 +1557,41 @@
       "codec": "raw",
       "contentSha256": "c9801f0a9acbc0ef40742e3f46e1c375f4ef4e0d127a7eb18ef0b5f0c829a964"
     },
+    "der-jws-intermediate-ca-boolean-01": {
+      "path": "generated-0.7/der-jws-intermediate-ca-boolean-01.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "fb53dd2977983efff0c8fd8669d9d76df7e5061bdd4bba5c60f23cce8d86e9e3"
+    },
     "der-jws-intermediate-ca-boolean-empty": {
       "path": "generated-0.7/der-jws-intermediate-ca-boolean-empty.jws",
       "role": "input",
       "codec": "utf8",
       "contentSha256": "9c1374e013e8ad0c90ba000e3c1fdb28e1e95d64613cd8364d6a91d686f0d523"
     },
+    "der-jws-intermediate-extensions-twice": {
+      "path": "generated-0.7/der-jws-intermediate-extensions-twice.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "daae174e1825e4754ad82f8fffc11a94625673d72f26d0018d0e8e1ab14ed9a3"
+    },
     "der-jws-intermediate-fourth-element": {
       "path": "generated-0.7/der-jws-intermediate-fourth-element.jws",
       "role": "input",
       "codec": "utf8",
       "contentSha256": "82ea8e29bd1c07a92276a9452c2b46e47c1f0dc092acbf2d5c164a357422450f"
+    },
+    "der-jws-intermediate-indefinite-length": {
+      "path": "generated-0.7/der-jws-intermediate-indefinite-length.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "3421953e2bde52ccbc1887de32122501ea9b5b0e95ef644ae4c652bc48562553"
+    },
+    "der-jws-intermediate-non-minimal-length": {
+      "path": "generated-0.7/der-jws-intermediate-non-minimal-length.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "21d0836557723cb2c4aaf00def1cb7bc8c808aedb861e36bbdd2dedccd816223"
     },
     "der-jws-intermediate-unknown-critical-extension": {
       "path": "generated-0.7/der-jws-intermediate-unknown-critical-extension.jws",
@@ -1581,11 +1605,23 @@
       "codec": "raw",
       "contentSha256": "902eabc155432d74557f9b38df45ee8ab18ce9d5e5486a38383aea5c72dac556"
     },
+    "der-receipt-certificates-field-twice": {
+      "path": "generated-0.7/der-receipt-certificates-field-twice.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "165ca7ea257a312a8b504ed8abfa6a0cafc8b4f84ac20b28d35ea7d8aace4321"
+    },
     "der-receipt-content-type-attribute-mismatch": {
       "path": "generated-0.7/der-receipt-content-type-attribute-mismatch.der",
       "role": "input",
       "codec": "raw",
       "contentSha256": "bb9f2609fd0d8e6a03c9a90319844f878bbaacbdd7b3dfe3ce6de01607f9fb31"
+    },
+    "der-receipt-intermediate-ca-boolean-01": {
+      "path": "generated-0.7/der-receipt-intermediate-ca-boolean-01.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "ffdb06dab535b6e822ff604af17668eb78bb1d8f109b48e4616d5163148b818c"
     },
     "der-receipt-intermediate-ca-boolean-empty": {
       "path": "generated-0.7/der-receipt-intermediate-ca-boolean-empty.der",
@@ -1593,11 +1629,29 @@
       "codec": "raw",
       "contentSha256": "9c0f7dbaf927549deaa7e7ed75a4df0d49c74b1f14d0f11e358700e0d99b9d59"
     },
+    "der-receipt-intermediate-extensions-twice": {
+      "path": "generated-0.7/der-receipt-intermediate-extensions-twice.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "84ec4ce8ee9a85aa07a32e7174b4dd51334abd4494817c5ca1ad8153a319d5fc"
+    },
     "der-receipt-intermediate-fourth-element": {
       "path": "generated-0.7/der-receipt-intermediate-fourth-element.der",
       "role": "input",
       "codec": "raw",
       "contentSha256": "3af66f11d681788d91c2c398cbf3529f1c5d013335356e2791a1ac86aabbf4b5"
+    },
+    "der-receipt-intermediate-indefinite-length": {
+      "path": "generated-0.7/der-receipt-intermediate-indefinite-length.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "7657706c634f1d3a26d931870088aea33ff90930f7f4e46b950d3c1b8b95e442"
+    },
+    "der-receipt-intermediate-non-minimal-length": {
+      "path": "generated-0.7/der-receipt-intermediate-non-minimal-length.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "0f6fbe648ff211e363f79da980917e1ce4aa48826e2cf13092d0ed6342d6cf8d"
     },
     "der-receipt-intermediate-unknown-critical-extension": {
       "path": "generated-0.7/der-receipt-intermediate-unknown-critical-extension.der",
@@ -10434,7 +10488,7 @@
     },
     {
       "id": "receipt/reject-intermediate-with-an-unknown-critical-extension",
-      "description": "An unknown extension (1.3.6.1.4.1.55555.1.1) marked critical on the receipt's intermediate, which is otherwise genuine and signed by the pinned root. A certificate carrying a critical extension the library does not understand is unusable, so the path fails: UNTRUSTED_CHAIN, as Java's PKIX validator answers.",
+      "description": "An unknown extension (1.3.6.1.4.1.55555.1.1) marked critical on the receipt's intermediate, which is otherwise genuine and signed by the pinned root. RFC 5280 says a certificate with a critical extension the reader does not understand must be rejected, so the path fails: UNTRUSTED_CHAIN.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "der-receipt-intermediate-unknown-critical-extension"
@@ -10463,7 +10517,7 @@
     },
     {
       "id": "signed-data/reject-intermediate-with-an-unknown-critical-extension",
-      "description": "An unknown extension (1.3.6.1.4.1.55555.1.1) marked critical on x5c[1], which is otherwise genuine and signed by the pinned root. A certificate carrying a critical extension the library does not understand is unusable, so the path fails: UNTRUSTED_CHAIN, as Java's PKIX validator answers.",
+      "description": "An unknown extension (1.3.6.1.4.1.55555.1.1) marked critical on x5c[1], which is otherwise genuine and signed by the pinned root. RFC 5280 says a certificate with a critical extension the reader does not understand must be rejected, so the path fails: UNTRUSTED_CHAIN.",
       "operation": "verifySignedData",
       "input": {
         "fixture": "der-jws-intermediate-unknown-critical-extension"
@@ -10490,122 +10544,8 @@
       ]
     },
     {
-      "id": "receipt/reject-intermediate-with-a-fourth-certificate-element",
-      "description": "The receipt's intermediate is a Certificate SEQUENCE with a fourth element (NULL) after the signature; the TBS and its signature are genuine. A Certificate has exactly three elements, so it does not decode: MALFORMED, as for any unreadable certificate of the unsigned bag that is not the signer.",
-      "operation": "verifyReceipt",
-      "input": {
-        "fixture": "der-receipt-intermediate-fourth-element"
-      },
-      "config": {
-        "trustedRoots": {
-          "source": "fixtures",
-          "fixtures": [
-            "der-receipt-root"
-          ]
-        }
-      },
-      "expected": {
-        "status": "error",
-        "reason": "MALFORMED"
-      },
-      "fault": "certificate-sequence-with-four-elements",
-      "tags": [
-        "receipt",
-        "pkcs7",
-        "negative",
-        "certificate",
-        "der",
-        "new-in-0-7"
-      ]
-    },
-    {
-      "id": "signed-data/reject-intermediate-with-a-fourth-certificate-element",
-      "description": "x5c[1] is a Certificate SEQUENCE with a fourth element (NULL) after the signature; the TBS and its signature are genuine. A Certificate has exactly three elements, so it does not decode: INVALID_CERTIFICATE.",
-      "operation": "verifySignedData",
-      "input": {
-        "fixture": "der-jws-intermediate-fourth-element"
-      },
-      "config": {
-        "trustedRoots": {
-          "source": "fixtures",
-          "fixtures": [
-            "der-jws-root"
-          ]
-        }
-      },
-      "expected": {
-        "status": "error",
-        "reason": "INVALID_CERTIFICATE"
-      },
-      "fault": "certificate-sequence-with-four-elements",
-      "tags": [
-        "jws",
-        "negative",
-        "certificate",
-        "der",
-        "new-in-0-7"
-      ]
-    },
-    {
-      "id": "receipt/reject-intermediate-with-an-empty-ca-boolean",
-      "description": "The receipt's intermediate carries basicConstraints whose cA BOOLEAN has empty content (01 00), inside a TBS genuinely signed by the pinned root. A BOOLEAN has exactly one content octet, so the certificate does not decode: MALFORMED, as for any unreadable certificate of the unsigned bag that is not the signer.",
-      "operation": "verifyReceipt",
-      "input": {
-        "fixture": "der-receipt-intermediate-ca-boolean-empty"
-      },
-      "config": {
-        "trustedRoots": {
-          "source": "fixtures",
-          "fixtures": [
-            "der-receipt-root"
-          ]
-        }
-      },
-      "expected": {
-        "status": "error",
-        "reason": "MALFORMED"
-      },
-      "fault": "basic-constraints-ca-boolean-empty",
-      "tags": [
-        "receipt",
-        "pkcs7",
-        "negative",
-        "certificate",
-        "der",
-        "new-in-0-7"
-      ]
-    },
-    {
-      "id": "signed-data/reject-intermediate-with-an-empty-ca-boolean",
-      "description": "x5c[1] carries basicConstraints whose cA BOOLEAN has empty content (01 00), inside a TBS genuinely signed by the pinned root. A BOOLEAN has exactly one content octet, so the certificate does not decode: INVALID_CERTIFICATE.",
-      "operation": "verifySignedData",
-      "input": {
-        "fixture": "der-jws-intermediate-ca-boolean-empty"
-      },
-      "config": {
-        "trustedRoots": {
-          "source": "fixtures",
-          "fixtures": [
-            "der-jws-root"
-          ]
-        }
-      },
-      "expected": {
-        "status": "error",
-        "reason": "INVALID_CERTIFICATE"
-      },
-      "fault": "basic-constraints-ca-boolean-empty",
-      "tags": [
-        "jws",
-        "negative",
-        "certificate",
-        "der",
-        "new-in-0-7"
-      ]
-    },
-    {
       "id": "receipt/reject-signed-attributes-with-two-message-digests",
-      "description": "A SignerInfo whose signedAttrs carry the messageDigest attribute twice, both with the correct digest, genuinely signed under the pinned chain. RFC 5652 allows exactly one messageDigest, so the signer is refused: INVALID_SIGNATURE, as Java answers.",
+      "description": "A SignerInfo whose signedAttrs carry the messageDigest attribute twice, both with the correct digest, genuinely signed under the pinned chain. RFC 5652 allows exactly one messageDigest, so the signer is refused: INVALID_SIGNATURE.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "der-receipt-message-digest-twice"
@@ -10633,7 +10573,7 @@
     },
     {
       "id": "receipt/reject-a-content-type-attribute-that-differs-from-the-econtent-type",
-      "description": "A SignerInfo whose signed contentType attribute names id-signedData while the eContentType is id-data, genuinely signed under the pinned chain. The two must match, so the signer is refused: INVALID_SIGNATURE, as Java answers.",
+      "description": "A SignerInfo whose signed contentType attribute names id-signedData while the eContentType is id-data, genuinely signed under the pinned chain. RFC 5652 requires them to match, so the signer is refused: INVALID_SIGNATURE.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "der-receipt-content-type-attribute-mismatch"
@@ -10656,6 +10596,377 @@
         "pkcs7",
         "negative",
         "signers",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/certificates-field-twice-does-not-crash",
+      "description": "A SignedData with its certificates field [0] twice, both copies holding the genuine chain, under the pinned root. The certificate bag is outside the signature. Encoding oddities in the unsigned certificate bag are port-defined (owner, 2026-09-27): the port may verify or refuse with any reason, but must not crash, must not answer INTERNAL_ERROR, and must finish within maxMillis.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "der-receipt-certificates-field-twice"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "der-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "anyOutcome": true
+      },
+      "fault": "certificates-field-twice",
+      "maxMillis": 2000,
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "tolerant",
+        "certificate",
+        "der",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/intermediate-with-a-fourth-certificate-element-does-not-crash",
+      "description": "The receipt's intermediate carries a Certificate SEQUENCE with a fourth element (NULL) after the signature, outside the signed TBS; everything else is genuine and the chain reaches the pinned root. Encoding oddities inside a certificate the pinned root signed are port-defined (owner, 2026-09-27): the port may verify or refuse with any reason, but must not crash, must not answer INTERNAL_ERROR, and must finish within maxMillis.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "der-receipt-intermediate-fourth-element"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "der-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "anyOutcome": true
+      },
+      "fault": "certificate-sequence-with-four-elements",
+      "maxMillis": 2000,
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "tolerant",
+        "certificate",
+        "der",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/intermediate-with-a-fourth-certificate-element-does-not-crash",
+      "description": "x5c[1] carries a Certificate SEQUENCE with a fourth element (NULL) after the signature, outside the signed TBS; everything else is genuine and the chain reaches the pinned root. Encoding oddities inside a certificate the pinned root signed are port-defined (owner, 2026-09-27): the port may verify or refuse with any reason, but must not crash, must not answer INTERNAL_ERROR, and must finish within maxMillis.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "der-jws-intermediate-fourth-element"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "der-jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "anyOutcome": true
+      },
+      "fault": "certificate-sequence-with-four-elements",
+      "maxMillis": 2000,
+      "tags": [
+        "jws",
+        "tolerant",
+        "certificate",
+        "der",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/intermediate-with-an-empty-ca-boolean-does-not-crash",
+      "description": "The receipt's intermediate carries basicConstraints whose cA BOOLEAN has empty content (01 00), inside the TBS the root signed; everything else is genuine and the chain reaches the pinned root. Encoding oddities inside a certificate the pinned root signed are port-defined (owner, 2026-09-27): the port may verify or refuse with any reason, but must not crash, must not answer INTERNAL_ERROR, and must finish within maxMillis.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "der-receipt-intermediate-ca-boolean-empty"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "der-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "anyOutcome": true
+      },
+      "fault": "basic-constraints-ca-boolean-empty",
+      "maxMillis": 2000,
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "tolerant",
+        "certificate",
+        "der",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/intermediate-with-an-empty-ca-boolean-does-not-crash",
+      "description": "x5c[1] carries basicConstraints whose cA BOOLEAN has empty content (01 00), inside the TBS the root signed; everything else is genuine and the chain reaches the pinned root. Encoding oddities inside a certificate the pinned root signed are port-defined (owner, 2026-09-27): the port may verify or refuse with any reason, but must not crash, must not answer INTERNAL_ERROR, and must finish within maxMillis.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "der-jws-intermediate-ca-boolean-empty"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "der-jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "anyOutcome": true
+      },
+      "fault": "basic-constraints-ca-boolean-empty",
+      "maxMillis": 2000,
+      "tags": [
+        "jws",
+        "tolerant",
+        "certificate",
+        "der",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/intermediate-with-a-ca-boolean-of-01-does-not-crash",
+      "description": "The receipt's intermediate carries basicConstraints whose cA BOOLEAN is 01 rather than FF, inside the TBS the root signed; everything else is genuine and the chain reaches the pinned root. Encoding oddities inside a certificate the pinned root signed are port-defined (owner, 2026-09-27): the port may verify or refuse with any reason, but must not crash, must not answer INTERNAL_ERROR, and must finish within maxMillis.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "der-receipt-intermediate-ca-boolean-01"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "der-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "anyOutcome": true
+      },
+      "fault": "basic-constraints-ca-boolean-01",
+      "maxMillis": 2000,
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "tolerant",
+        "certificate",
+        "der",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/intermediate-with-a-ca-boolean-of-01-does-not-crash",
+      "description": "x5c[1] carries basicConstraints whose cA BOOLEAN is 01 rather than FF, inside the TBS the root signed; everything else is genuine and the chain reaches the pinned root. Encoding oddities inside a certificate the pinned root signed are port-defined (owner, 2026-09-27): the port may verify or refuse with any reason, but must not crash, must not answer INTERNAL_ERROR, and must finish within maxMillis.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "der-jws-intermediate-ca-boolean-01"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "der-jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "anyOutcome": true
+      },
+      "fault": "basic-constraints-ca-boolean-01",
+      "maxMillis": 2000,
+      "tags": [
+        "jws",
+        "tolerant",
+        "certificate",
+        "der",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/intermediate-with-a-non-minimal-certificate-length-does-not-crash",
+      "description": "The receipt's intermediate carries its outer SEQUENCE length written in four octets, two of them leading zeros; everything else is genuine and the chain reaches the pinned root. Encoding oddities inside a certificate the pinned root signed are port-defined (owner, 2026-09-27): the port may verify or refuse with any reason, but must not crash, must not answer INTERNAL_ERROR, and must finish within maxMillis.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "der-receipt-intermediate-non-minimal-length"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "der-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "anyOutcome": true
+      },
+      "fault": "certificate-length-not-minimal",
+      "maxMillis": 2000,
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "tolerant",
+        "certificate",
+        "der",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/intermediate-with-a-non-minimal-certificate-length-does-not-crash",
+      "description": "x5c[1] carries its outer SEQUENCE length written in four octets, two of them leading zeros; everything else is genuine and the chain reaches the pinned root. Encoding oddities inside a certificate the pinned root signed are port-defined (owner, 2026-09-27): the port may verify or refuse with any reason, but must not crash, must not answer INTERNAL_ERROR, and must finish within maxMillis.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "der-jws-intermediate-non-minimal-length"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "der-jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "anyOutcome": true
+      },
+      "fault": "certificate-length-not-minimal",
+      "maxMillis": 2000,
+      "tags": [
+        "jws",
+        "tolerant",
+        "certificate",
+        "der",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/intermediate-with-an-indefinite-certificate-length-does-not-crash",
+      "description": "The receipt's intermediate carries its outer SEQUENCE in indefinite-length form; everything else is genuine and the chain reaches the pinned root. Encoding oddities inside a certificate the pinned root signed are port-defined (owner, 2026-09-27): the port may verify or refuse with any reason, but must not crash, must not answer INTERNAL_ERROR, and must finish within maxMillis.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "der-receipt-intermediate-indefinite-length"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "der-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "anyOutcome": true
+      },
+      "fault": "certificate-length-indefinite",
+      "maxMillis": 2000,
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "tolerant",
+        "certificate",
+        "der",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/intermediate-with-an-indefinite-certificate-length-does-not-crash",
+      "description": "x5c[1] carries its outer SEQUENCE in indefinite-length form; everything else is genuine and the chain reaches the pinned root. Encoding oddities inside a certificate the pinned root signed are port-defined (owner, 2026-09-27): the port may verify or refuse with any reason, but must not crash, must not answer INTERNAL_ERROR, and must finish within maxMillis.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "der-jws-intermediate-indefinite-length"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "der-jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "anyOutcome": true
+      },
+      "fault": "certificate-length-indefinite",
+      "maxMillis": 2000,
+      "tags": [
+        "jws",
+        "tolerant",
+        "certificate",
+        "der",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/intermediate-with-the-extensions-field-twice-does-not-crash",
+      "description": "The receipt's intermediate carries the extensions field [3] twice inside the TBS the root signed; everything else is genuine and the chain reaches the pinned root. Encoding oddities inside a certificate the pinned root signed are port-defined (owner, 2026-09-27): the port may verify or refuse with any reason, but must not crash, must not answer INTERNAL_ERROR, and must finish within maxMillis.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "der-receipt-intermediate-extensions-twice"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "der-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "anyOutcome": true
+      },
+      "fault": "certificate-extensions-field-twice",
+      "maxMillis": 2000,
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "tolerant",
+        "certificate",
+        "der",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/intermediate-with-the-extensions-field-twice-does-not-crash",
+      "description": "x5c[1] carries the extensions field [3] twice inside the TBS the root signed; everything else is genuine and the chain reaches the pinned root. Encoding oddities inside a certificate the pinned root signed are port-defined (owner, 2026-09-27): the port may verify or refuse with any reason, but must not crash, must not answer INTERNAL_ERROR, and must finish within maxMillis.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "der-jws-intermediate-extensions-twice"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "der-jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "anyOutcome": true
+      },
+      "fault": "certificate-extensions-field-twice",
+      "maxMillis": 2000,
+      "tags": [
+        "jws",
+        "tolerant",
+        "certificate",
+        "der",
         "new-in-0-7"
       ]
     }
