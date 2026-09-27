@@ -212,13 +212,11 @@ const PRE_1967_TRANSITIONS: [(i64, i64); 42] = [
 /// The UTC offset of `America/Los_Angeles`, in seconds, at an
 /// epoch-millisecond instant.
 ///
-/// Exact against the IANA database for every instant from 1900 onward. The
-/// four shipped ports of this library render Apple's `*_pst` fields through
-/// a full time-zone database (`Intl.DateTimeFormat`, `ZoneId`, `zoneinfo`,
-/// `TimeZone`); this crate has no such dependency, so the rules are written
-/// out, and a port that is one hour out from the other four for some instant
-/// is a real divergence — the endpoint's `request_date_pst` is rendered at a
-/// caller-supplied clock, which can name any instant at all.
+/// Exact against the IANA database for every instant from 1900 onward. This
+/// crate has no time-zone database, so the rules are written out, and they
+/// have to be right for every instant, not just recent ones: the
+/// endpoint's `request_date_pst` is rendered at a caller-supplied clock,
+/// which can name any instant at all.
 ///
 /// The rules, from 1967 on:
 ///
@@ -322,12 +320,11 @@ pub fn format_pacific(millis: i64) -> String {
 }
 
 /// Parses a receipt date attribute to epoch milliseconds: exactly
-/// `YYYY-MM-DDTHH:MM:SSZ` and nothing else (owner, 2026-09-27, Q20a). A
+/// `YYYY-MM-DDTHH:MM:SSZ` and nothing else. A
 /// four-digit year from 0000 to 9999, uppercase `T` and `Z`, a day that
 /// exists in its month, hour 00 to 23, minute and second 00 to 59; no
-/// fraction, no offset, no leap second. Every port reads a receipt date
-/// with this one grammar, so one receipt decodes, and its chain is judged,
-/// the same everywhere.
+/// fraction, no offset, no leap second. One grammar, so one receipt
+/// decodes, and its chain is judged, the same way on every host.
 #[must_use]
 pub fn parse_receipt_date(text: &str) -> Option<i64> {
     let bytes = text.as_bytes();
@@ -383,8 +380,7 @@ pub fn parse_receipt_date(text: &str) -> Option<i64> {
 /// The timezone designator is **mandatory**. That is not pedantry: a naive
 /// date would be read as the server's local time, and a receipt's creation
 /// date is the instant its certificate chain's validity is judged at — so
-/// the same receipt would verify on one host and fail on another. Java,
-/// Node, Python and Swift all reject a naive date too.
+/// the same receipt would verify on one host and fail on another.
 #[must_use]
 pub fn parse_rfc3339(text: &str) -> Option<i64> {
     let bytes = text.as_bytes();
@@ -421,8 +417,8 @@ pub fn parse_rfc3339(text: &str) -> Option<i64> {
     if !(1..=12).contains(&month) || day < 1 || day > days_in_month(year, month) {
         return None;
     }
-    // RFC 3339 allows second == 60 for a leap second; no receipt carries one
-    // and the other ports reject it, so this does too.
+    // RFC 3339 allows second == 60 for a leap second; no receipt carries one,
+    // so it is refused.
     if hour > 23 || minute > 59 || second > 59 {
         return None;
     }

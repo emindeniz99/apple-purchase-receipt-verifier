@@ -163,9 +163,8 @@ pub(crate) fn verify(
         None => clock.now()?,
     };
     validate_pair(&leaf, &intermediate, anchors, at_millis)?;
-    // The marker OIDs after the chain, as on the receipt path (owner,
-    // 2026-09-27, Q21): a foreign chain is UNTRUSTED_CHAIN whatever it
-    // carries, and only a pinned chain can be the wrong kind of Apple
+    // The marker OIDs after the chain, as on the receipt path: a foreign
+    // chain is UNTRUSTED_CHAIN whatever it carries, and only a pinned chain can be the wrong kind of Apple
     // certificate. Still before the leaf's key checks the JWS signature.
     if !leaf.has_extension(LEAF_OID) {
         return Err(Failure::new(
@@ -231,8 +230,7 @@ fn read_header(bytes: &[u8]) -> Result<(Option<String>, Option<Vec<String>>), Fa
 /// JSON object in UTF-8. Reading it never fails verification by itself.
 ///
 /// A `signedDate` that is not a number, or is a number no instant can hold
-/// (`1e300`), counts as not stated: the clock stands in for it (owner,
-/// 2026-09-27).
+/// (`1e300`), counts as not stated: the clock stands in for it.
 fn read_payload(bytes: &[u8]) -> Result<(String, Option<i64>), Unreadable> {
     let text = core::str::from_utf8(bytes).map_err(Unreadable::NotUtf8)?;
     let members = whole_object_members(text).map_err(Unreadable::NotAnObject)?;

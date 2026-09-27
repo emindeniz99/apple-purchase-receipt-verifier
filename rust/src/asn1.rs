@@ -21,9 +21,7 @@ use std::borrow::Cow;
 
 /// Maximum ASN.1 nesting depth: at most this many constructed values
 /// nested inside one another, the outermost included, and a primitive value
-/// inside the innermost. `BouncyCastle` counts the same way with the same
-/// default (`org.bouncycastle.asn1.max_cons_depth`), which the Java port
-/// uses (owner, 2026-09-27, Q24).
+/// inside the innermost.
 pub const MAX_DEPTH: usize = 64;
 
 /// Maximum number of decoded nodes in one parse.
@@ -125,7 +123,7 @@ impl<'a> Tlv<'a> {
     /// correctly signed receipt be re-encoded as, say,
     /// `24 L { 0C L1 <first half>, 02 L2 <second half> }` without changing
     /// the bytes the RSA signature covers, so one receipt had many accepted
-    /// spellings. Node's `der.ts` still joins unconditionally.
+    /// spellings.
     ///
     /// Re-chunking into *legal* `OCTET STRING` children remains possible and
     /// is inherent to BER, which genuine Xcode and `BouncyCastle` receipts
@@ -153,9 +151,8 @@ struct Budget {
 
 /// Parses exactly one value, refusing any trailing bytes.
 ///
-/// Trailing garbage after a CMS blob is a documented rejection
-/// (`PLAN.md` §2.3): accepting it would let an attacker append bytes to a
-/// genuine receipt and have it still verify.
+/// Trailing garbage after a CMS blob is refused: accepting it would let an
+/// attacker append bytes to a genuine receipt and have it still verify.
 ///
 /// # Errors
 /// [`Asn1Error`] when the input is not one well-formed value within this

@@ -20,17 +20,16 @@ name = "apple_purchase_receipt_verifier"
 path = "src/lib.rs"
 
 # Nine crates, all of them primitives. Every byte of attacker-supplied
-# ASN.1 — certificates, CMS, receipt payloads, keys, signatures — is parsed
-# by this crate's own bounded reader, so no third-party parser decides what a
-# key or a signature is, and the JSON it reads (a JWS header and payload, the
-# endpoint request body) goes through its own bounded reader as well. What
-# is delegated is arithmetic: modular
-# exponentiation, two curves, the digests, and the base64 decode of
-# `receipt-data` and `x5c` entries (`src/base64.rs`).
+# ASN.1 (certificates, CMS, receipt payloads, the ASN.1 around keys and
+# signatures) is parsed by this crate's own bounded reader, and the JSON it
+# reads (a JWS header and payload, the endpoint request body) goes through
+# its own bounded reader as well. What is delegated is arithmetic (modular
+# exponentiation, two curves, the digests), the SEC1 decoding of an EC point
+# inside p256 and p384, and the base64 decode of `receipt-data` and `x5c`
+# entries (`src/base64.rs`).
 #
 # `md-5` is here because a receipt signer and a certificate under a pinned
-# root may use any digest the crypto crates verify (owner, 2026-09-27, Q14
-# and Q15 of docs/design/0.7-hardening-parity.md). It is only ever applied
+# root may use any digest the crypto crates verify. It is only ever applied
 # to bytes a pinned chain signed.
 #
 # `deny.toml` bans, as a build-breaking rule, every crate that could bring a

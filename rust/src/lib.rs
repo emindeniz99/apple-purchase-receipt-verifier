@@ -49,8 +49,8 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 #![warn(clippy::pedantic)]
-// The panic-free contract, mechanised. The probe that preceded this port
-// found a real out-of-bounds panic in a CMS walk by mutating a genuine
+// The panic-free contract, mechanised. An early probe of this crate found a
+// real out-of-bounds panic in a CMS walk by mutating a genuine
 // receipt; `indexing_slicing` is the lint that would have caught it at
 // compile time. These apply to the library crate only; the test crates
 // index and unwrap freely.

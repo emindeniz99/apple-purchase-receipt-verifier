@@ -8,11 +8,11 @@
 //! so there is no default anchor set to fall back to and "forgot to pass the
 //! signing time" cannot compile.
 //!
-//! A path is found first and judged second, the order the Java reference's
-//! PKIX walk has: a chain that reaches no pinned root is `UNTRUSTED_CHAIN`
-//! whatever its dates say, and only a path that does reach one has its
-//! certificates' validity windows checked, where a certificate outside its
-//! window at `at_millis` is `INVALID_CERTIFICATE` (owner, 2026-09-27).
+//! A path is found first and judged second, as a PKIX walk does: a chain
+//! that reaches no pinned root is `UNTRUSTED_CHAIN` whatever its dates say,
+//! and only a path that does reach one has its certificates' validity
+//! windows checked, where a certificate outside its window at `at_millis` is
+//! `INVALID_CERTIFICATE`.
 
 use crate::crypto::{has_unimplemented_curve, verify_certificate_signature};
 use crate::error::{Failure, Reason};

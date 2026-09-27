@@ -23,8 +23,8 @@
 //! are covered by the signing input — and it is not covered by the
 //! signature at all.
 //!
-//! Strictness here goes one step past Java's `Base64.getUrlDecoder()` and
-//! Swift's `Data(base64Encoded:)`, which both accept a final character whose
+//! Strictness here goes one step past common platform decoders, which
+//! accept a final character whose
 //! unused low bits are not zero: an ES256 signature is 86 base64 characters
 //! carrying 516 bits for 512 bits of signature, so those four bits are four
 //! more bits of malleability, and 16 spellings of one signature all verified
@@ -160,9 +160,8 @@ pub fn encode(bytes: &[u8]) -> String {
 ///   included: this is base64url, not base64;
 /// - `=` anywhere at all. RFC 7515 §2 defines a JWS segment as base64url
 ///   "with all trailing '=' characters omitted", so a padded segment is
-///   another spelling rather than another encoding. Java's
-///   `Base64.getUrlDecoder()` and Swift's `Data(base64Encoded:)` both accept
-///   the padded form;
+///   another spelling rather than another encoding, though common platform
+///   decoders accept the padded form;
 /// - a length that leaves one dangling character, which encodes nothing;
 /// - a final character whose unused low bits are not zero.
 #[must_use]

@@ -272,7 +272,7 @@ the design rather than a configuration. ASN.1: nesting depth 64 constructed valu
 100,000-node budget per parse, at most four length octets, indefinite (BER)
 lengths only on constructed values, trailing bytes refused. JSON: nesting
 depth 64, numbers of at most 1,000 characters, names of at most 50,000
-bytes, strict grammar. Chains: at most six certificates, each candidate
+UTF-16 code units, strict grammar. Chains: at most six certificates, each candidate
 issuer tried once per hop. RSA keys: at most 8,192 bits, refused before any
 arithmetic.
 

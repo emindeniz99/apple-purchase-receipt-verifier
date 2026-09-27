@@ -18,11 +18,11 @@
 use core::fmt;
 
 /// How deep a document may nest: arrays and objects open at once, the
-/// outermost one included. 64 in every port.
+/// outermost one included.
 pub(crate) const MAX_NESTING_DEPTH: usize = 64;
 
-/// The longest number, in digits. The Java reference's parser refuses longer
-/// ones, so this one does too, rather than accept a document Java refuses.
+/// The longest number, in characters. Longer is no number any payload
+/// carries, and a bound keeps an unverified document cheap to read.
 pub(crate) const MAX_NUMBER_LENGTH: usize = 1000;
 
 /// The longest member name, in UTF-16 units, for the same reason.
@@ -428,8 +428,7 @@ impl<'a> Reader<'a> {
     }
 }
 
-/// A JSON number as epoch milliseconds, the way the Java reference reads
-/// `signedDate`: an integer must fit an `i64`; a number with a fraction or
+/// A JSON number as epoch milliseconds: an integer must fit an `i64`; a number with a fraction or
 /// an exponent is read as a double and truncated when it lies within the
 /// `i64` range. Anything else, `1e300` say, is no instant and is `None`.
 pub(crate) fn instant(text: &str, integer: bool) -> Option<i64> {
@@ -438,7 +437,7 @@ pub(crate) fn instant(text: &str, integer: bool) -> Option<i64> {
     }
     let value: f64 = text.parse().ok()?;
     // i64::MIN is exactly -2^63 as a double; i64::MAX rounds up to 2^63,
-    // which Java's `value <= Long.MAX_VALUE` also admits and then clamps.
+    // which the range check admits and the cast then clamps.
     #[allow(clippy::cast_precision_loss)]
     let (low, high) = (i64::MIN as f64, i64::MAX as f64);
     if value.is_finite() && value >= low && value <= high {
@@ -476,7 +475,7 @@ mod tests {
 
     #[test]
     fn anything_after_the_object_is_not_read() {
-        // As the Java reference: the object is read, what follows is not.
+        // The endpoint rule: the object is read, what follows is not.
         assert_eq!(top_level_members("{} trailing").unwrap(), vec![]);
     }
 

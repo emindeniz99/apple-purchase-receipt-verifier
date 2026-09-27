@@ -1,4 +1,4 @@
-//! The failure vocabulary shared by all nine ports of this library.
+//! The failure vocabulary.
 
 use core::fmt;
 use std::error::Error;
@@ -6,9 +6,8 @@ use std::sync::Arc;
 
 /// Why a verification failed.
 ///
-/// The set is closed by the cross-port contract (`docs/design/0.7-api.md`,
-/// Result): every port returns the same eight values for the same input, and
-/// adding one is a breaking change in all nine at once.
+/// The set is closed: these eight values are the whole contract, and adding
+/// one is a breaking change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Reason {
     /// The base64, ASN.1, CMS or JWS structure is broken, or a structural
@@ -33,7 +32,7 @@ pub enum Reason {
 }
 
 impl Reason {
-    /// The canonical `SCREAMING_SNAKE` token, identical in every port.
+    /// The canonical `SCREAMING_SNAKE` token.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {

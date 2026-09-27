@@ -31,7 +31,7 @@ pub const KEY_CERT_SIGN_BIT: usize = 5;
 ///
 /// Every field is an owned copy, so a `Certificate` never aliases the
 /// caller's input buffer: a caller reusing that buffer cannot mutate an
-/// already-parsed certificate (contract rule S13).
+/// already-parsed certificate.
 #[derive(Debug, Clone)]
 pub struct Certificate {
     der: Vec<u8>,
@@ -399,8 +399,8 @@ fn parse_certificate(der: &[u8]) -> Result<Certificate, Asn1Error> {
         return Err(Asn1Error("unexpected signatureValue layout"));
     }
     // Every signature algorithm here produces whole octets, so a
-    // signatureValue with unused bits is not one: refused as the Java
-    // reference's certificate decoder refuses it.
+    // signatureValue with unused bits is not one: the certificate does not
+    // decode.
     if signature_node.contents.first() != Some(&0) {
         return Err(Asn1Error("signatureValue is not octet-aligned"));
     }

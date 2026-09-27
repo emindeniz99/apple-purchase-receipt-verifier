@@ -3,12 +3,15 @@
 //! Everything here is public-key verification of attacker-supplied bytes:
 //! there is no private key in the process, nothing secret to leak, and no
 //! oracle to time. The RSA modular exponentiation and the two ECDSA curves
-//! come from `RustCrypto`; the parsing of every input to them is this crate's
-//! own, so no third-party parser ever decides what a key or a signature is.
+//! come from `RustCrypto`. The ASN.1 around every input to them (the RSA
+//! key's modulus and exponent, the ECDSA signature's `r` and `s`) is read by
+//! this crate's own reader; what `RustCrypto` parses is the SEC1 encoding of
+//! an EC point, a fixed format with no ASN.1 in it.
 //!
 //! No code path here — or anywhere in the crate — reads an operating-system
 //! trust store, opens a socket, or fetches a CRL, an OCSP response or an AIA
-//! URL. Revocation is disabled by design (`PLAN.md` D12).
+//! URL. Revocation is not checked, by design: that is the price of
+//! verifying offline.
 
 use crate::asn1::{decode_oid, parse_exact, tag, Tlv};
 use crate::cms::digest_for;
@@ -22,7 +25,7 @@ use sha2::{Sha224, Sha256, Sha384, Sha512};
 /// A message digest this crate can compute.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DigestAlgorithm {
-    /// MD5: accepted only because a pinned chain signed it (Q15).
+    /// MD5: accepted only because a pinned chain signed it.
     Md5,
     /// SHA-1 — Apple's legacy receipt chain and CMS digest.
     Sha1,
@@ -103,9 +106,8 @@ const OID_RSASSA_PSS: &str = "1.2.840.113549.1.1.10";
 const OID_MGF1: &str = "1.2.840.113549.1.1.8";
 
 /// The certificate `signatureAlgorithm` OIDs the chain walk accepts: every
-/// one the `RustCrypto` crates this crate is built on can verify (owner,
-/// 2026-09-27, Q14: whatever the crypto library verifies under the pinned
-/// chain, no stricter list). MD2 and DSA are absent because no crate here
+/// one the `RustCrypto` crates this crate is built on can verify, and no
+/// stricter list. MD2 and DSA are absent because no crate here
 /// implements them, not by policy.
 ///
 /// The weak digests (MD5, SHA-1) are on the list because these signatures
@@ -495,10 +497,8 @@ mod tests {
 
     /// The cost cap on an attacker's key: a modulus over [`MAX_RSA_BITS`]
     /// is refused as it is read, before any arithmetic, and so is an
-    /// exponent over the `rsa` crate's 2^33 - 1. The Java port needed a
-    /// walk-order fix because its key decoding ran a primality test that
-    /// took seconds for a 16384-bit modulus; here such a key never gets
-    /// that far.
+    /// exponent over the `rsa` crate's 2^33 - 1, so a 16384-bit modulus
+    /// never reaches any arithmetic.
     #[test]
     fn an_oversized_rsa_key_is_refused_before_any_arithmetic() {
         let largest_exponent = [0x01, 0xFF, 0xFF, 0xFF, 0xFF];

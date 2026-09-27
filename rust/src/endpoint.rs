@@ -100,8 +100,7 @@ pub(crate) fn respond(
     }
 }
 
-/// The status the endpoint answers for a failure, the same table in every
-/// port.
+/// The status the endpoint answers for a failure.
 pub(crate) const fn status(reason: Reason) -> i32 {
     match reason {
         Reason::Malformed | Reason::TooLarge => AppleStatus::MALFORMED_RECEIPT_DATA,
