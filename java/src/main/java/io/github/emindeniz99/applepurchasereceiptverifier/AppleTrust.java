@@ -15,8 +15,7 @@ import java.util.Set;
 /**
  * Trust material both paths share, and their rule for it: no key a pinned
  * root has not vouched for is ever decoded or used, so certificates are
- * checked top-down from the roots (docs/design/0.7-hardening-parity.md,
- * change 1). BouncyCastle validates an RSA key as it decodes it, which
+ * checked top-down from the roots (#161). BouncyCastle validates an RSA key as it decodes it, which
  * costs seconds for a 16384-bit modulus. {@code UnauthenticatedKeyCostTest}
  * pins the rule.
  */

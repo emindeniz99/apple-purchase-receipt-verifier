@@ -30,8 +30,8 @@ import org.bouncycastle.cert.X509v3CertificateBuilder;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 
 /**
- * Writes the hardening-parity inputs the 0.7 shared cases add
- * (docs/design/0.7-hardening-parity.md, "Shared cases to add"), into the
+ * Writes the hardening-parity inputs the 0.7 shared cases add (the
+ * denial-of-service and signer-algorithm cases of fixtures/cases.json), into the
  * directory given as the first argument. Three groups:
  *
  * <ul>
