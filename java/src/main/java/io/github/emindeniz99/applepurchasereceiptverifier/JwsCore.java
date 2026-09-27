@@ -129,30 +129,13 @@ final class JwsCore {
 
         static Header read(byte[] bytes) throws VerificationException {
             Header header = new Header();
-            String text = jsonText(bytes);
-            if (text == null) {
-                throw new VerificationException(Reason.MALFORMED, "header is not UTF-8 JSON text");
-            }
-            try (JsonParser parser = JSON.createParser(text.toCharArray())) {
-                if (parser.nextToken() != JsonToken.START_OBJECT) {
-                    throw new VerificationException(Reason.MALFORMED, "header is not a JSON object");
+            readObject(bytes, Reason.MALFORMED, "header", (name, value, parser) -> {
+                if ("alg".equals(name)) {
+                    header.alg = value == JsonToken.VALUE_STRING ? parser.getText() : null;
+                } else if ("x5c".equals(name)) {
+                    header.x5c = value == JsonToken.START_ARRAY ? strings(parser) : null;
                 }
-                while (parser.nextToken() == JsonToken.FIELD_NAME) {
-                    String name = parser.currentName();
-                    JsonToken value = parser.nextToken();
-                    if ("alg".equals(name)) {
-                        header.alg = value == JsonToken.VALUE_STRING ? parser.getText() : null;
-                    } else if ("x5c".equals(name)) {
-                        header.x5c = value == JsonToken.START_ARRAY ? strings(parser) : null;
-                    }
-                    parser.skipChildren();
-                }
-                if (parser.nextToken() != null) {
-                    throw new VerificationException(Reason.MALFORMED, "content after the header object");
-                }
-            } catch (IOException | RuntimeException e) {
-                throw new VerificationException(Reason.MALFORMED, "header is not valid JSON", e);
-            }
+            });
             return header;
         }
 
@@ -193,35 +176,51 @@ final class JwsCore {
 
     /** Reads the payload as one JSON object with nothing after it; returns its last top-level signedDate. */
     private static @Nullable Long readPayload(byte[] payload) throws VerificationException {
-        String text = jsonText(payload);
+        Long[] signedDate = {null};
+        readObject(payload, Reason.UNREADABLE_PAYLOAD, "signed payload", (name, value, parser) -> {
+            if ("signedDate".equals(name)) {
+                signedDate[0] = instant(parser, value);
+            }
+        });
+        return signedDate[0];
+    }
+
+    /** Called with each member's name and first value token; may consume the value. */
+    private interface FieldVisitor {
+        void field(String name, JsonToken value, JsonParser parser) throws IOException;
+    }
+
+    /**
+     * Reads {@code bytes} as one JSON object in strict UTF-8 with nothing
+     * after it, handing each top-level member to {@code visitor}; anything
+     * else is {@code reason}.
+     */
+    private static void readObject(byte[] bytes, Reason reason, String what, FieldVisitor visitor)
+            throws VerificationException {
+        String text = jsonText(bytes);
         if (text == null) {
-            throw unreadable("not UTF-8 JSON text", null);
+            throw notAnObject(reason, what, "not UTF-8 JSON text", null);
         }
         try (JsonParser parser = JSON.createParser(text.toCharArray())) {
             if (parser.nextToken() != JsonToken.START_OBJECT) {
-                throw unreadable("not an object", null);
+                throw notAnObject(reason, what, "not an object", null);
             }
-            Long signedDate = null;
             while (parser.nextToken() == JsonToken.FIELD_NAME) {
                 String name = parser.currentName();
-                JsonToken value = parser.nextToken();
-                if ("signedDate".equals(name)) {
-                    signedDate = instant(parser, value);
-                }
+                visitor.field(name, parser.nextToken(), parser);
                 parser.skipChildren();
             }
             if (parser.nextToken() != null) {
-                throw unreadable("content after the object", null);
+                throw notAnObject(reason, what, "content after the object", null);
             }
-            return signedDate;
         } catch (IOException | RuntimeException e) {
-            throw unreadable("not valid JSON", e);
+            throw notAnObject(reason, what, "not valid JSON", e);
         }
     }
 
-    private static VerificationException unreadable(String problem, @Nullable Exception cause) {
-        return new VerificationException(
-                Reason.UNREADABLE_PAYLOAD, "signed payload is not a JSON object: " + problem, cause);
+    private static VerificationException notAnObject(
+            Reason reason, String what, String problem, @Nullable Exception cause) {
+        return new VerificationException(reason, what + " is not a JSON object: " + problem, cause);
     }
 
     /**
