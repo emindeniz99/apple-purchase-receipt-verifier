@@ -255,6 +255,17 @@ caller pinned. Trust anchors are trusted by fiat, so **an anchor's own expiry
 is not checked**, which is what lets a receipt signed years ago under a
 since-expired chain verify at its own creation date.
 
+A certificate on the path (not the anchor) that marks critical an
+extension a PKIX validator does not process makes the path
+`UNTRUSTED_CHAIN`, as it does for a PKIX validator. Processed are
+keyUsage, basicConstraints, certificatePolicies, policyMappings,
+policyConstraints, inhibitAnyPolicy, nameConstraints, subjectAltName,
+issuingDistributionPoint and deltaCRLIndicator, and on the leaf also
+cRLDistributionPoints and extKeyUsage. A certificate decodes only as
+exactly three elements, and a BOOLEAN only with exactly one content octet.
+In signedAttrs, `contentType` or `messageDigest` twice, or a `contentType`
+that differs from the eContentType, is `INVALID_SIGNATURE`.
+
 An embedded certificate that does not decode is fatal, and the reason
 depends on which one it is: the **signer** is `INVALID_CERTIFICATE`, any
 other entry `MALFORMED`, because the certificate bag is unsigned.

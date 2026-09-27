@@ -53,6 +53,8 @@ pub struct Certificate {
     subject_key_id: Option<Vec<u8>>,
     authority_key_id: Option<Vec<u8>>,
     authority_cert_serial: Option<Vec<u8>>,
+    /// The OIDs of the extensions marked critical, dotted.
+    critical_extensions: Vec<String>,
     extension_oids: Vec<Vec<u8>>,
 }
 
@@ -176,6 +178,12 @@ impl Certificate {
         self.authority_cert_serial.as_deref()
     }
 
+    /// The dotted OIDs of the extensions this certificate marks critical.
+    #[must_use]
+    pub fn critical_extensions(&self) -> &[String] {
+        &self.critical_extensions
+    }
+
     /// Whether the certificate carries an extension with this OID.
     #[must_use]
     pub fn has_extension(&self, oid: &str) -> bool {
@@ -295,7 +303,9 @@ fn bit_string_bits(contents: &[u8]) -> Result<Vec<bool>, Asn1Error> {
 #[allow(clippy::too_many_lines)]
 fn parse_certificate(der: &[u8]) -> Result<Certificate, Asn1Error> {
     let cert = parse_exact(der)?;
-    if cert.tag != tag::SEQUENCE || cert.children().len() < 3 {
+    // Certificate ::= SEQUENCE { tbsCertificate, signatureAlgorithm,
+    // signatureValue }: exactly three, as a certificate decoder reads it.
+    if cert.tag != tag::SEQUENCE || cert.children().len() != 3 {
         return Err(Asn1Error("not an X.509 certificate"));
     }
     let tbs = cert.child(0).ok_or(Asn1Error("not an X.509 certificate"))?;
@@ -417,8 +427,15 @@ fn parse_certificate(der: &[u8]) -> Result<Certificate, Asn1Error> {
     };
     let mut by_oid: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     let mut extension_oids: Vec<Vec<u8>> = Vec::new();
+    let mut critical_extensions: Vec<String> = Vec::new();
     for extension in extension_nodes {
         let parts = extension.children();
+        // Extension ::= SEQUENCE { extnID, critical BOOLEAN DEFAULT FALSE,
+        // extnValue }: the flag, when present, sits between the two.
+        let critical = match parts {
+            [_, flag, _] if flag.tag == tag::BOOLEAN => boolean(flag)?,
+            _ => false,
+        };
         let oid_node = parts
             .first()
             .ok_or(Asn1Error("malformed certificate extension"))?;
@@ -430,6 +447,9 @@ fn parse_certificate(der: &[u8]) -> Result<Certificate, Asn1Error> {
         }
         extension_oids.push(oid_node.contents.to_vec());
         let oid = decode_oid(oid_node.contents).ok_or(Asn1Error("malformed extension OID"))?;
+        if critical {
+            critical_extensions.push(oid.clone());
+        }
         let value: Cow<'_, [u8]> = value_node
             .octet_string_value()
             .ok_or(Asn1Error("malformed certificate extension"))?;
@@ -453,8 +473,8 @@ fn parse_certificate(der: &[u8]) -> Result<Certificate, Asn1Error> {
         Some(raw) => {
             let value = parse_exact(raw)?;
             match value.child(0) {
-                Some(first) => first.tag == tag::BOOLEAN && first.contents.first() != Some(&0x00),
-                None => false,
+                Some(first) if first.tag == tag::BOOLEAN => boolean(first)?,
+                _ => false,
             }
         }
         None => false,
@@ -500,14 +520,64 @@ fn parse_certificate(der: &[u8]) -> Result<Certificate, Asn1Error> {
         authority_key_id,
         authority_cert_serial,
         extension_oids,
+        critical_extensions,
     })
+}
+
+/// A BOOLEAN's value: exactly one content octet, zero for false and any
+/// other value for true. A BOOLEAN without that one octet is no BOOLEAN,
+/// and the certificate carrying it does not decode.
+fn boolean(node: &Tlv<'_>) -> Result<bool, Asn1Error> {
+    match node.contents {
+        [value] => Ok(*value != 0x00),
+        _ => Err(Asn1Error("malformed BOOLEAN")),
+    }
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
-    use super::Certificate;
+    use super::{boolean, Certificate};
     use crate::asn1::parse_exact;
+
+    #[test]
+    fn a_certificate_is_exactly_three_elements() {
+        let genuine: &[u8] = include_bytes!("../certs/AppleRootCA-G3.cer");
+        let outer = parse_exact(genuine).unwrap();
+        // The same three elements and a fourth, NULL, in a new SEQUENCE.
+        let mut body = outer.contents.to_vec();
+        body.extend_from_slice(&[0x05, 0x00]);
+        let mut four = vec![0x30, 0x82];
+        four.extend_from_slice(&u16::try_from(body.len()).unwrap().to_be_bytes());
+        four.extend_from_slice(&body);
+        assert!(Certificate::from_der(&four).is_err());
+    }
+
+    #[test]
+    fn a_boolean_is_exactly_one_octet() {
+        let read = |der: &[u8]| boolean(&parse_exact(der).unwrap());
+        assert_eq!(read(&[0x01, 0x01, 0xff]), Ok(true));
+        // Not DER, but the one octet is there: any non-zero value is true.
+        assert_eq!(read(&[0x01, 0x01, 0x01]), Ok(true));
+        assert_eq!(read(&[0x01, 0x01, 0x00]), Ok(false));
+        assert!(read(&[0x01, 0x00]).is_err());
+        assert!(read(&[0x01, 0x02, 0xff, 0xff]).is_err());
+    }
+
+    #[test]
+    fn critical_extensions_are_read() {
+        // Apple's roots mark basicConstraints and keyUsage critical.
+        let root = Certificate::from_der(include_bytes!("../certs/AppleRootCA-G3.cer")).unwrap();
+        let critical = root.critical_extensions();
+        assert!(
+            critical.iter().any(|oid| oid == "2.5.29.19"),
+            "{critical:?}"
+        );
+        assert!(
+            critical.iter().any(|oid| oid == "2.5.29.15"),
+            "{critical:?}"
+        );
+    }
 
     #[test]
     fn a_signature_value_with_unused_bits_does_not_decode() {

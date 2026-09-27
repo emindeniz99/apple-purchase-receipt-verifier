@@ -67,6 +67,42 @@ fn issued_by(cert: &Certificate, issuer: &Certificate) -> bool {
     check_issued(cert, issuer) && verify_certificate_signature(cert, issuer)
 }
 
+/// The extensions a certificate on the path may mark critical: the ones a
+/// PKIX validator processes (RFC 5280 6.1), and for the leaf also
+/// `cRLDistributionPoints` and `extKeyUsage`. Any other extension marked
+/// critical makes the certificate unusable, so the path fails, as a PKIX
+/// validator fails it.
+const PROCESSED_EXTENSIONS: [&str; 10] = [
+    "2.5.29.15", // keyUsage
+    "2.5.29.32", // certificatePolicies
+    "2.5.29.33", // policyMappings
+    "2.5.29.54", // inhibitAnyPolicy
+    "2.5.29.28", // issuingDistributionPoint
+    "2.5.29.27", // deltaCRLIndicator
+    "2.5.29.36", // policyConstraints
+    "2.5.29.19", // basicConstraints
+    "2.5.29.17", // subjectAltName
+    "2.5.29.30", // nameConstraints
+];
+const PROCESSED_LEAF_EXTENSIONS: [&str; 2] = [
+    "2.5.29.31", // cRLDistributionPoints
+    "2.5.29.37", // extKeyUsage
+];
+
+/// Whether `certificate` marks critical an extension no step here processes.
+fn has_unprocessed_critical_extension(certificate: &Certificate, leaf: bool) -> bool {
+    certificate.critical_extensions().iter().any(|oid| {
+        let oid = oid.as_str();
+        let processed = PROCESSED_EXTENSIONS.contains(&oid)
+            || (leaf && PROCESSED_LEAF_EXTENSIONS.contains(&oid));
+        !processed
+    })
+}
+
+fn unprocessed_critical_extension() -> Failure {
+    untrusted("a certificate on the path has an unsupported critical extension")
+}
+
 fn issued_by_any_anchor(cert: &Certificate, anchors: &[TrustAnchor]) -> bool {
     anchors
         .iter()
@@ -81,6 +117,8 @@ fn issued_by_any_anchor(cert: &Certificate, anchors: &[TrustAnchor]) -> bool {
 ///
 /// # Errors
 /// `UNTRUSTED_CHAIN` for a broken link or an intermediate that is not a CA,
+/// `UNTRUSTED_CHAIN` also for a certificate that marks critical an extension
+/// a PKIX validator does not process;
 /// `INVALID_CERTIFICATE` for a certificate outside its validity window, or
 /// a vouched-for intermediate whose EC key is on a curve this crate does
 /// not implement.
@@ -110,8 +148,14 @@ pub fn validate_pair(
     if !intermediate.is_ca() {
         return Err(untrusted("intermediate is not a CA"));
     }
+    if has_unprocessed_critical_extension(intermediate, false) {
+        return Err(unprocessed_critical_extension());
+    }
     if !leaf.valid_at(at_millis) {
         return Err(outside_validity());
+    }
+    if has_unprocessed_critical_extension(leaf, true) {
+        return Err(unprocessed_critical_extension());
     }
     Ok(())
 }
@@ -265,6 +309,14 @@ pub fn build_and_validate_path<'a>(
         .any(|certificate| !certificate.valid_at(at_millis))
     {
         return Err(outside_validity());
+    }
+    // The leaf is the first certificate on the path; the anchor is not on it.
+    if path
+        .iter()
+        .enumerate()
+        .any(|(index, certificate)| has_unprocessed_critical_extension(certificate, index == 0))
+    {
+        return Err(unprocessed_critical_extension());
     }
     Ok(path)
 }
