@@ -316,8 +316,8 @@ class VerifyReceiptEndpointTest {
         assertEquals(Reason.MALFORMED, verifier.verifySignedData(null).failure().reason());
         assertTrue(verifier.verifyReceipt(SyntheticReceipts.base64()).verified());
         // A receipt without one is judged at the clock, which is broken.
-        String dateless = Base64.getEncoder()
-                .encodeToString(SyntheticReceipts.pki().signReceipt(new byte[] {0x31, 0x00}));
+        String dateless =
+                Base64.getEncoder().encodeToString(SyntheticReceipts.pki().signReceipt(new byte[] {0x31, 0x00}));
         Failure failure = verifier.verifyReceipt(dateless).failure();
         assertEquals(Reason.INTERNAL_ERROR, failure.reason());
         assertEquals("the configured clock failed", failure.message());

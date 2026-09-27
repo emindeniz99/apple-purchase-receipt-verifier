@@ -99,8 +99,7 @@ class JwsJsonReadTest {
             utf8(header + "{}"),
         };
         for (byte[] bytes : refused) {
-            VerificationException thrown =
-                    assertThrows(VerificationException.class, () -> JwsCore.Header.read(bytes));
+            VerificationException thrown = assertThrows(VerificationException.class, () -> JwsCore.Header.read(bytes));
             assertEquals(Reason.MALFORMED, thrown.reason());
         }
     }
@@ -110,9 +109,7 @@ class JwsJsonReadTest {
     void aPayloadWithTextAfterItsObjectOrAByteOrderMarkIsUnreadable() throws Exception {
         assertEquals(Long.valueOf(1), JwsCore.Payload.read(utf8("{\"signedDate\":1} \n")).signedDate);
         for (byte[] bytes : new byte[][] {
-            utf8("{\"signedDate\":1} x"),
-            utf8("{\"signedDate\":1}{}"),
-            utf8("\uFEFF{\"signedDate\":1}"),
+            utf8("{\"signedDate\":1} x"), utf8("{\"signedDate\":1}{}"), utf8("\uFEFF{\"signedDate\":1}"),
         }) {
             JwsCore.Payload payload = JwsCore.Payload.read(bytes);
             assertNull(payload.json, new String(bytes, StandardCharsets.UTF_8));
@@ -127,9 +124,7 @@ class JwsJsonReadTest {
         String longestNumber = repeat('1', BoundedJson.MAX_NUMBER_LENGTH);
         assertNull(JwsCore.Header.read(utf8("{\"" + longestName + "\":1}")).alg);
         assertNull(JwsCore.Header.read(utf8("{\"n\":" + longestNumber + "}")).alg);
-        for (String header : new String[] {
-            "{\"" + longestName + "n\":1}", "{\"n\":" + longestNumber + "1}"
-        }) {
+        for (String header : new String[] {"{\"" + longestName + "n\":1}", "{\"n\":" + longestNumber + "1}"}) {
             VerificationException thrown =
                     assertThrows(VerificationException.class, () -> JwsCore.Header.read(utf8(header)));
             assertTrue(thrown.getCause() instanceof StreamConstraintsException, String.valueOf(thrown.getCause()));

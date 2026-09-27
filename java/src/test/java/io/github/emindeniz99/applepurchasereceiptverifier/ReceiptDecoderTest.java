@@ -57,7 +57,8 @@ class ReceiptDecoderTest {
         assertNull(receipt.applicationVersion());
         assertArrayEquals(notIa5, receipt.unknownAttributes().get(3).get(0));
         assertNull(receipt.inApp().get(0).productId());
-        assertArrayEquals(notIa5, receipt.inApp().get(0).unknownAttributes().get(1702).get(0));
+        assertArrayEquals(
+                notIa5, receipt.inApp().get(0).unknownAttributes().get(1702).get(0));
         // Seven-bit text, DEL included, still decodes.
         byte[] ascii = {0x16, 0x04, '1', '.', '0', 0x7F};
         assertEquals("1.0\u007f", ReceiptDecoder.parse(set(attribute(3, ascii))).applicationVersion());
@@ -190,9 +191,8 @@ class ReceiptDecoderTest {
     }
 
     private static byte[] attribute(int type, byte[] value) throws Exception {
-        return new DERSequence(new ASN1Encodable[] {
-                    new ASN1Integer(type), new ASN1Integer(1), new DEROctetString(value)
-                })
+        return new DERSequence(
+                        new ASN1Encodable[] {new ASN1Integer(type), new ASN1Integer(1), new DEROctetString(value)})
                 .getEncoded();
     }
 

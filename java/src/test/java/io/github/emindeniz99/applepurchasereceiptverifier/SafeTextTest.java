@@ -152,8 +152,8 @@ class SafeTextTest {
     @Test
     void bidirectionalFormattingCharactersAreReplaced() {
         char[] bidi = {
-            '\u061C', '\u200E', '\u200F', '\u202A', '\u202B', '\u202C', '\u202D', '\u202E', '\u2066',
-            '\u2067', '\u2068', '\u2069'
+            '\u061C', '\u200E', '\u200F', '\u202A', '\u202B', '\u202C', '\u202D', '\u202E', '\u2066', '\u2067',
+            '\u2068', '\u2069'
         };
         for (char c : bidi) {
             assertEquals("ES256\uFFFDx", SafeText.quote("ES256" + c + "x"), Integer.toHexString(c));

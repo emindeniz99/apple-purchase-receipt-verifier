@@ -455,7 +455,8 @@ final class ReceiptDecoder {
         } catch (IOException e) {
             throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "attribute value is not valid ASN.1", e);
         } catch (RuntimeException e) {
-            throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "attribute value does not decode as a string", e);
+            throw new VerificationException(
+                    Reason.UNREADABLE_PAYLOAD, "attribute value does not decode as a string", e);
         }
     }
 
@@ -535,8 +536,16 @@ final class ReceiptDecoder {
         int hour = digits(text, 11, 2);
         int minute = digits(text, 14, 2);
         int second = digits(text, 17, 2);
-        if (year < 0 || month < 1 || month > 12 || day < 1 || hour < 0 || hour > 23
-                || minute < 0 || minute > 59 || second < 0 || second > 59) {
+        if (year < 0
+                || month < 1
+                || month > 12
+                || day < 1
+                || hour < 0
+                || hour > 23
+                || minute < 0
+                || minute > 59
+                || second < 0
+                || second > 59) {
             return null;
         }
         if (day > Month.of(month).length(Year.isLeap(year))) {
