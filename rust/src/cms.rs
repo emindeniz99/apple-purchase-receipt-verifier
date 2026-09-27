@@ -7,18 +7,24 @@
 //! receipts use definite ones — so the reader accepts both and this module
 //! never assumes either.
 
-use crate::asn1::{encode_oid, parse_exact, tag, Asn1Error, Tlv};
+use crate::asn1::{decode_oid, encode_oid, parse_exact, tag, Asn1Error, Tlv};
 use crate::crypto::DigestAlgorithm;
 
-/// The one `SignerInfo` a receipt carries.
+/// One `SignerInfo` of a receipt.
 #[derive(Debug, Clone)]
 pub struct CmsSignerInfo {
     /// The issuer `Name` TLV named by `issuerAndSerialNumber`.
     pub issuer_raw: Vec<u8>,
     /// The serial number content octets named by `issuerAndSerialNumber`.
     pub serial_contents: Vec<u8>,
-    /// The digest the signature is over.
-    pub digest: DigestAlgorithm,
+    /// The digest the signature is over, or `None` for one this crate does
+    /// not implement, which that signer then fails as a signature that
+    /// cannot be checked.
+    pub digest: Option<DigestAlgorithm>,
+    /// The `signatureAlgorithm` OID, dotted.
+    pub signature_algorithm_oid: String,
+    /// The `signatureAlgorithm` parameters TLV, when present.
+    pub signature_algorithm_params: Option<Vec<u8>>,
     /// The `signedAttrs [0]` TLV, when present.
     pub signed_attrs: Option<Vec<u8>>,
     /// The signature octets.
@@ -32,8 +38,8 @@ pub struct ParsedCms {
     pub content: Vec<u8>,
     /// The embedded certificates, as their original DER.
     pub certificates: Vec<Vec<u8>>,
-    /// The first (and only) `SignerInfo`.
-    pub signer_info: CmsSignerInfo,
+    /// Every `SignerInfo`, in order. Never empty.
+    pub signer_infos: Vec<CmsSignerInfo>,
 }
 
 fn oid_signed_data() -> Vec<u8> {
@@ -48,28 +54,40 @@ fn oid_content_type() -> Vec<u8> {
     encode_oid("1.2.840.113549.1.9.3").unwrap_or_default()
 }
 
-/// Only the digests Apple uses for receipts. Anything else is a receipt this
-/// library refuses to interpret rather than one it guesses at.
-fn digest_for(oid_contents: &[u8]) -> Option<DigestAlgorithm> {
-    let sha1 = encode_oid("1.3.14.3.2.26")?;
-    let sha256 = encode_oid("2.16.840.1.101.3.4.2.1")?;
-    if oid_contents == sha1.as_slice() {
-        Some(DigestAlgorithm::Sha1)
-    } else if oid_contents == sha256.as_slice() {
-        Some(DigestAlgorithm::Sha256)
-    } else {
-        None
-    }
+/// The digests this crate implements. Anything else leaves that signer
+/// uncheckable rather than guessed at.
+pub(crate) fn digest_for(oid_contents: &[u8]) -> Option<DigestAlgorithm> {
+    [
+        ("1.2.840.113549.2.5", DigestAlgorithm::Md5),
+        ("1.3.14.3.2.26", DigestAlgorithm::Sha1),
+        ("2.16.840.1.101.3.4.2.4", DigestAlgorithm::Sha224),
+        ("2.16.840.1.101.3.4.2.1", DigestAlgorithm::Sha256),
+        ("2.16.840.1.101.3.4.2.2", DigestAlgorithm::Sha384),
+        ("2.16.840.1.101.3.4.2.3", DigestAlgorithm::Sha512),
+    ]
+    .into_iter()
+    .find(|(oid, _)| encode_oid(oid).is_some_and(|encoded| encoded == oid_contents))
+    .map(|(_, digest)| digest)
 }
 
 const BAD: Asn1Error = Asn1Error("malformed CMS structure");
+
+/// [`find_message_digest_attribute`]'s answer for a well-formed attribute
+/// set without a `contentType` attribute.
+pub const MISSING_CONTENT_TYPE: Asn1Error =
+    Asn1Error("signedAttrs without a contentType attribute");
+
+/// [`find_message_digest_attribute`]'s answer for a well-formed attribute
+/// set without a `messageDigest` attribute.
+pub const MISSING_MESSAGE_DIGEST: Asn1Error =
+    Asn1Error("signedAttrs without a messageDigest attribute");
 
 /// Parses a CMS `SignedData` blob.
 ///
 /// # Errors
 /// [`Asn1Error`] for anything that is not a `SignedData` carrying content
-/// and exactly one usable `SignerInfo` — including trailing bytes after the
-/// outer value, which [`parse_exact`] refuses.
+/// and at least one readable `SignerInfo`, including trailing bytes after
+/// the outer value, which [`parse_exact`] refuses.
 pub fn parse_cms(der: &[u8]) -> Result<ParsedCms, Asn1Error> {
     let content_info = parse_exact(der)?;
     if content_info.tag != tag::SEQUENCE {
@@ -116,11 +134,15 @@ pub fn parse_cms(der: &[u8]) -> Result<ParsedCms, Asn1Error> {
     if signer_infos.tag != tag::SET || signer_infos.children().is_empty() {
         return Err(Asn1Error("no signer info"));
     }
-    let signer_info = parse_signer_info(signer_infos.child(0).ok_or(BAD)?)?;
+    let signer_infos = signer_infos
+        .children()
+        .iter()
+        .map(parse_signer_info)
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(ParsedCms {
         content,
         certificates,
-        signer_info,
+        signer_infos,
     })
 }
 
@@ -140,13 +162,26 @@ fn parse_signer_info(node: &Tlv<'_>) -> Result<CmsSignerInfo, Asn1Error> {
         signed_attrs = Some(fields.get(index).ok_or(BAD)?.full.to_vec());
         index += 1;
     }
-    index += 1; // signatureAlgorithm — the digest drives the hash.
+    // The digest drives the hash, except for an algorithm whose parameters
+    // name their own (RSASSA-PSS).
+    let signature_algorithm = fields.get(index).ok_or(BAD)?;
+    let signature_algorithm_oid = signature_algorithm
+        .child(0)
+        .filter(|node| signature_algorithm.tag == tag::SEQUENCE && node.tag == tag::OID)
+        .and_then(|node| decode_oid(node.contents))
+        .ok_or(Asn1Error(
+            "signatureAlgorithm is not an AlgorithmIdentifier",
+        ))?;
+    let signature_algorithm_params = signature_algorithm.child(1).map(|node| node.full.to_vec());
+    index += 1;
     let signature = fields.get(index).ok_or(BAD)?.contents.to_vec();
-    let digest = digest_for(digest_oid).ok_or(Asn1Error("unsupported digest algorithm"))?;
+    let digest = digest_for(digest_oid);
     Ok(CmsSignerInfo {
         issuer_raw,
         serial_contents,
         digest,
+        signature_algorithm_oid,
+        signature_algorithm_params,
         signed_attrs,
         signature,
     })
@@ -202,9 +237,9 @@ pub fn find_message_digest_attribute(signed_attrs: &[u8]) -> Result<Vec<u8>, Asn
         }
     }
     if !has_content_type {
-        return Err(Asn1Error("signedAttrs without a contentType attribute"));
+        return Err(MISSING_CONTENT_TYPE);
     }
-    message_digest.ok_or(Asn1Error("signedAttrs without a messageDigest attribute"))
+    message_digest.ok_or(MISSING_MESSAGE_DIGEST)
 }
 
 /// The bytes a `SignerInfo` signature covers when `signedAttrs` are present:

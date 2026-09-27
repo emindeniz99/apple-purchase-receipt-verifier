@@ -1,10 +1,12 @@
 //! The pinned trust anchors.
 //!
-//! Anchors come from exactly two places: the caller's argument, or the three
-//! Apple roots bundled here. **No code path in this crate reads an operating
-//! system trust store, a distribution CA bundle, or anything downloaded.**
-//! There is no function to disable that with, because there is no such path
-//! to disable.
+//! Anchors come from exactly two places: the caller's
+//! [`Config`](crate::Config), or the three Apple roots bundled here, which
+//! [`Config::defaults`](crate::Config::defaults) uses. **No code path in
+//! this crate reads an
+//! operating system trust store, a distribution CA bundle, or anything
+//! downloaded.** There is no function to disable that with, because there is
+//! no such path to disable.
 //!
 //! The bundled roots are `include_bytes!`-embedded, not read from disk at
 //! call time, so they work unchanged in a `FROM scratch` container. `certs/`
@@ -17,10 +19,9 @@ use std::sync::{Arc, OnceLock};
 
 /// The three published Apple roots, embedded at compile time.
 ///
-/// All three are pinned in both sets (`PLAN.md` D15). Apple deliberately
-/// does not commit to a specific root for either verification path, and G2
-/// is already published — anchoring on one root would break silently the day
-/// Apple re-anchored a chain under another.
+/// All three are pinned for both formats. Apple does not commit to a specific
+/// root for either, and G2 is already published: anchoring on one root would
+/// break silently the day Apple re-anchored a chain under another.
 static APPLE_ROOT_DER: [&[u8]; 3] = [
     include_bytes!("../certs/AppleIncRootCertificate.cer"),
     include_bytes!("../certs/AppleRootCA-G2.cer"),
@@ -58,20 +59,19 @@ impl TrustAnchor {
             .map_err(|err| ConfigError::new(format!("trust anchor is not a certificate: {err}")))
     }
 
-    /// The parsed certificate.
+    /// The anchor's DER encoding.
     #[must_use]
-    pub fn certificate(&self) -> &Certificate {
+    pub fn der(&self) -> &[u8] {
+        self.0.der()
+    }
+
+    pub(crate) fn certificate(&self) -> &Certificate {
         &self.0
     }
 }
 
-impl From<Certificate> for TrustAnchor {
-    fn from(certificate: Certificate) -> Self {
-        TrustAnchor(Arc::new(certificate))
-    }
-}
-
-fn apple_roots() -> &'static [TrustAnchor] {
+/// The bundled Apple roots, parsed once per process and shared.
+pub(crate) fn apple_roots() -> &'static [TrustAnchor] {
     static ROOTS: OnceLock<Vec<TrustAnchor>> = OnceLock::new();
     ROOTS.get_or_init(|| {
         APPLE_ROOT_DER
@@ -81,32 +81,15 @@ fn apple_roots() -> &'static [TrustAnchor] {
     })
 }
 
-/// Trust anchors for `StoreKit` 2 / App Store Server JWS chains.
-///
-/// Parsed once and shared; calling this per verification costs nothing.
-#[must_use]
-pub fn apple_jws_roots() -> &'static [TrustAnchor] {
-    apple_roots()
-}
+#[cfg(test)]
+mod tests {
+    use super::{apple_roots, APPLE_ROOT_DER};
 
-/// Trust anchors for legacy PKCS#7 app-receipt chains.
-#[must_use]
-pub fn apple_receipt_roots() -> &'static [TrustAnchor] {
-    apple_roots()
-}
-
-/// The raw DER of the bundled roots, for callers that want to inspect or
-/// re-export them.
-#[must_use]
-pub fn apple_root_der() -> &'static [&'static [u8]; 3] {
-    &APPLE_ROOT_DER
-}
-
-pub(crate) fn normalize_anchors(
-    anchors: Vec<TrustAnchor>,
-) -> Result<Arc<[TrustAnchor]>, ConfigError> {
-    if anchors.is_empty() {
-        return Err(ConfigError::new("trustedRoots must not be empty"));
+    #[test]
+    fn every_bundled_root_parses() {
+        // Config::defaults cannot report a failure, so a bundled root that
+        // stopped parsing would silently shrink the anchor set. This is the
+        // check that it has not.
+        assert_eq!(apple_roots().len(), APPLE_ROOT_DER.len());
     }
-    Ok(anchors.into())
 }

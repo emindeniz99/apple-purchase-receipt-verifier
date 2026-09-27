@@ -46,6 +46,7 @@ pub struct Certificate {
     public_key_curve_oid: Option<String>,
     public_key_bits: Vec<u8>,
     signature_algorithm_oid: String,
+    signature_algorithm_params: Option<Vec<u8>>,
     signature_value: Vec<u8>,
     is_ca: bool,
     key_usage: Option<Vec<bool>>,
@@ -128,6 +129,13 @@ impl Certificate {
     #[must_use]
     pub fn signature_algorithm_oid(&self) -> &str {
         &self.signature_algorithm_oid
+    }
+
+    /// The `signature` `AlgorithmIdentifier`'s parameters TLV, as the TBS
+    /// states it, when present.
+    #[must_use]
+    pub fn signature_algorithm_params(&self) -> Option<&[u8]> {
+        self.signature_algorithm_params.as_deref()
     }
 
     /// `signatureValue`, unused-bits octet removed.
@@ -383,6 +391,10 @@ fn parse_certificate(der: &[u8]) -> Result<Certificate, Asn1Error> {
     }
     let signature_algorithm_oid =
         decode_oid(outer_algorithm.contents).ok_or(Asn1Error("malformed signature OID"))?;
+    // The parameters come from the copy inside the signed TBS, so an
+    // algorithm that has parameters (RSASSA-PSS) is checked under the ones
+    // the signature covers.
+    let signature_algorithm_params = inner_signature.child(1).map(|node| node.full.to_vec());
     if signature_node.tag != tag::BIT_STRING || signature_node.contents.len() < 2 {
         return Err(Asn1Error("unexpected signatureValue layout"));
     }
@@ -474,6 +486,7 @@ fn parse_certificate(der: &[u8]) -> Result<Certificate, Asn1Error> {
         public_key_curve_oid,
         public_key_bits: key_bits_node.contents.get(1..).unwrap_or(&[]).to_vec(),
         signature_algorithm_oid,
+        signature_algorithm_params,
         signature_value: signature_node.contents.get(1..).unwrap_or(&[]).to_vec(),
         is_ca: basic_constraints_ca && cert_sign_allowed,
         key_usage,

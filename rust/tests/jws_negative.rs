@@ -1,60 +1,58 @@
 //! JWS rejections: every shape the format check, the certificate checks and
 //! the signature check must refuse, and the exact reason each gets.
 //!
-//! The order of the checks is observable. `cases.json` pins the order at the
-//! level of whole vectors; these tests pin it at the level of one fault at a
-//! time, including the faults no shared vector covers.
+//! The order of the checks is observable. `cases-0.7.json` pins the order at
+//! the level of whole vectors; these tests pin it at the level of one fault
+//! at a time, including the faults no shared vector covers.
 
 mod common;
 
-use apple_purchase_receipt_verifier::{
-    base64, x509::Certificate, Environment, JwsVerifier, Reason, VerificationError,
-};
+use apple_purchase_receipt_verifier::__internal::base64_decode_lenient;
+use apple_purchase_receipt_verifier::__internal::x509::Certificate;
+use apple_purchase_receipt_verifier::{Config, Failure, Reason, Verifier};
 use serde_json::{json, Value};
 
-fn verifier() -> JwsVerifier {
-    JwsVerifier::builder()
-        .trusted_roots([common::jws_root()])
-        .bundle_id("com.example.app")
-        .accepted_environments([Environment::Sandbox])
-        .build()
-        .unwrap()
+fn verifier() -> Verifier {
+    common::jws_verifier()
 }
 
 fn reason_of(jws: &str) -> Reason {
-    verifier().verify_transaction(jws).unwrap_err().reason()
+    verifier().verify_signed_data(jws).unwrap_err().reason()
 }
 
-fn expect_err(jws: &str) -> VerificationError {
-    verifier().verify_transaction(jws).unwrap_err()
+fn expect_err(jws: &str) -> Failure {
+    verifier().verify_signed_data(jws).unwrap_err()
 }
+
+/// 2025-01-01T00:00:00Z, inside the shared fixture chain's validity window.
+const INSIDE_THE_CHAIN: i64 = 1_735_689_600_000;
+
+/// 1971-01-01T00:00:00Z, before the shared fixture chain's notBefore.
+const BEFORE_THE_CHAIN: i64 = 31_536_000_000;
 
 #[test]
 fn the_shared_transaction_verifies() {
     let payload = verifier()
-        .verify_transaction(&common::transaction_jws())
+        .verify_signed_data(&common::transaction_jws())
         .unwrap();
-    assert_eq!(payload.product_id.as_deref(), Some("com.example.app.pro"));
+    assert_eq!(common::claims(&payload)["productId"], "com.example.app.pro");
 }
 
 #[test]
 fn an_empty_string_is_not_a_jws() {
-    assert_eq!(reason_of(""), Reason::InvalidJwsFormat);
+    assert_eq!(reason_of(""), Reason::Malformed);
 }
 
 #[test]
 fn two_segments_are_rejected() {
     let (header, payload, _) = common::split_jws(&common::transaction_jws());
-    assert_eq!(
-        reason_of(&format!("{header}.{payload}")),
-        Reason::InvalidJwsFormat
-    );
+    assert_eq!(reason_of(&format!("{header}.{payload}")), Reason::Malformed);
 }
 
 #[test]
 fn four_segments_are_rejected() {
     let jws = common::transaction_jws();
-    assert_eq!(reason_of(&format!("{jws}.extra")), Reason::InvalidJwsFormat);
+    assert_eq!(reason_of(&format!("{jws}.extra")), Reason::Malformed);
 }
 
 #[test]
@@ -63,7 +61,7 @@ fn a_header_that_is_not_json_is_rejected() {
     let header = common::base64url(b"not json at all");
     assert_eq!(
         reason_of(&common::join_jws(&header, &payload, &signature)),
-        Reason::InvalidJwsFormat
+        Reason::Malformed
     );
 }
 
@@ -73,7 +71,7 @@ fn a_header_that_is_a_json_array_is_rejected() {
     let header = common::base64url(b"[1,2,3]");
     assert_eq!(
         reason_of(&common::join_jws(&header, &payload, &signature)),
-        Reason::InvalidJwsFormat
+        Reason::Malformed
     );
 }
 
@@ -85,7 +83,7 @@ fn alg_must_be_es256() {
         header.insert("alg".to_owned(), json!(alg));
         assert_eq!(
             reason_of(&common::with_header(&jws, &header)),
-            Reason::InvalidJwsFormat,
+            Reason::Malformed,
             "alg {alg} must be refused"
         );
     }
@@ -98,7 +96,7 @@ fn alg_must_be_a_string() {
     header.insert("alg".to_owned(), json!(256));
     assert_eq!(
         reason_of(&common::with_header(&jws, &header)),
-        Reason::InvalidJwsFormat
+        Reason::Malformed
     );
 }
 
@@ -112,7 +110,7 @@ fn x5c_must_be_present_and_hold_exactly_three_entries() {
     absent.remove("x5c");
     assert_eq!(
         reason_of(&common::with_header(&jws, &absent)),
-        Reason::InvalidJwsFormat
+        Reason::Malformed
     );
 
     for count in [0usize, 1, 2, 4, 5] {
@@ -124,7 +122,7 @@ fn x5c_must_be_present_and_hold_exactly_three_entries() {
         header.insert("x5c".to_owned(), Value::Array(list));
         assert_eq!(
             reason_of(&common::with_header(&jws, &header)),
-            Reason::InvalidJwsFormat,
+            Reason::Malformed,
             "an x5c of {count} entries must be refused"
         );
     }
@@ -137,14 +135,14 @@ fn x5c_must_be_an_array_of_strings() {
     header.insert("x5c".to_owned(), json!("a single string"));
     assert_eq!(
         reason_of(&common::with_header(&jws, &header)),
-        Reason::InvalidJwsFormat
+        Reason::Malformed
     );
 
     let mut header = common::jws_header(&jws);
     header.insert("x5c".to_owned(), json!([1, 2, 3]));
     assert_eq!(
         reason_of(&common::with_header(&jws, &header)),
-        Reason::InvalidJwsFormat
+        Reason::Malformed
     );
 }
 
@@ -192,17 +190,12 @@ fn an_x5c_certificate_carrying_one_extension_twice_is_invalid_certificate() {
     let leaf = header.get("x5c").unwrap().as_array().unwrap()[0]
         .as_str()
         .unwrap();
-    let der = base64::decode_lenient(leaf);
+    let der = base64_decode_lenient(leaf);
     assert!(Certificate::from_der(&der).is_err());
 
-    let verifier = JwsVerifier::builder()
-        .trusted_roots([common::anchor("generated/hostile-jws-root.der")])
-        .bundle_id("com.example.app")
-        .accepted_environments([Environment::Sandbox])
-        .build()
-        .unwrap();
+    let verifier = common::verifier([common::anchor("generated/hostile-jws-root.der")]);
     assert_eq!(
-        verifier.verify_transaction(&jws).unwrap_err().reason(),
+        verifier.verify_signed_data(&jws).unwrap_err().reason(),
         Reason::InvalidCertificate
     );
 }
@@ -225,33 +218,54 @@ fn the_third_x5c_entry_is_never_trusted_but_must_be_a_certificate() {
     );
 }
 
+/// A payload that does not parse as a JSON object in UTF-8 is not judged
+/// before the signature: nothing unverified gets to decide between "broken"
+/// and "Apple signed something odd". Unsigned, it is `INVALID_SIGNATURE`.
 #[test]
-fn a_payload_that_is_not_json_reports_a_format_error_not_a_signature_error() {
+fn a_payload_that_is_not_a_json_object_is_carried_to_the_signature_check() {
     let (header, _, signature) = common::split_jws(&common::transaction_jws());
-    let payload = common::base64url(b"\xff\xfe not json");
-    assert_eq!(
-        reason_of(&common::join_jws(&header, &payload, &signature)),
-        Reason::InvalidJwsFormat
-    );
-}
-
-#[test]
-fn a_payload_that_is_a_json_scalar_is_rejected() {
-    let (header, _, signature) = common::split_jws(&common::transaction_jws());
-    for body in ["42", "\"text\"", "null", "[]"] {
-        let payload = common::base64url(body.as_bytes());
+    for body in [
+        &b"\xff\xfe not json"[..],
+        b"42",
+        b"\"text\"",
+        b"null",
+        b"[]",
+        b"",
+        b"{\"a\":1,}",
+    ] {
+        let payload = common::base64url(body);
         assert_eq!(
             reason_of(&common::join_jws(&header, &payload, &signature)),
-            Reason::InvalidJwsFormat,
-            "payload {body}"
+            Reason::InvalidSignature,
+            "payload {:?}",
+            String::from_utf8_lossy(body)
         );
+    }
+}
+
+/// The signed twins: Apple-signed (here, test-root-signed) payloads that are
+/// not JSON objects verify their chain and signature and then fail as
+/// `UNREADABLE_PAYLOAD`, with the reader's error as the source.
+#[test]
+fn a_signed_payload_that_is_not_a_json_object_is_unreadable() {
+    use std::error::Error as _;
+    let verifier = common::verifier([common::anchor("generated-0.7/api-jws-root.der")]);
+    for fixture in [
+        "generated-0.7/jws-payload-empty-signed.jws",
+        "generated-0.7/jws-payload-json-array-signed.jws",
+    ] {
+        let failure = verifier
+            .verify_signed_data(&common::read_text_fixture(fixture))
+            .unwrap_err();
+        assert_eq!(failure.reason(), Reason::UnreadablePayload, "{fixture}");
+        assert!(failure.source().is_some(), "{fixture}");
     }
 }
 
 #[test]
 fn a_signature_of_the_wrong_length_is_rejected() {
     let (header, payload, signature) = common::split_jws(&common::transaction_jws());
-    let raw = apple_purchase_receipt_verifier::base64::decode_lenient(&signature);
+    let raw = base64_decode_lenient(&signature);
     assert_eq!(raw.len(), 64);
     for length in [0usize, 1, 63, 65, 128] {
         let mut truncated = raw.clone();
@@ -269,7 +283,7 @@ fn a_signature_of_the_wrong_length_is_rejected() {
 #[test]
 fn a_single_flipped_signature_byte_is_rejected() {
     let (header, payload, signature) = common::split_jws(&common::transaction_jws());
-    let raw = apple_purchase_receipt_verifier::base64::decode_lenient(&signature);
+    let raw = base64_decode_lenient(&signature);
     for index in [0usize, 31, 32, 63] {
         let mut flipped = raw.clone();
         flipped[index] ^= 0x01;
@@ -286,7 +300,7 @@ fn a_single_flipped_signature_byte_is_rejected() {
 fn a_flipped_payload_byte_is_rejected() {
     let jws = common::transaction_jws();
     let (header, payload, signature) = common::split_jws(&jws);
-    let decoded = apple_purchase_receipt_verifier::base64::decode_lenient(&payload);
+    let decoded = base64_decode_lenient(&payload);
     let text = String::from_utf8(decoded).unwrap();
     let tampered = text.replace("com.example.app.pro", "com.example.app.PRO");
     assert_ne!(text, tampered);
@@ -298,21 +312,11 @@ fn a_flipped_payload_byte_is_rejected() {
 }
 
 #[test]
-fn a_foreign_root_is_an_invalid_chain_not_a_purpose_error() {
-    let verifier = JwsVerifier::builder()
-        .trusted_roots(
-            apple_purchase_receipt_verifier::apple_jws_roots()
-                .iter()
-                .cloned(),
-        )
-        .bundle_id("com.example.app")
-        .accepted_environments([Environment::Sandbox])
-        .build()
-        .unwrap();
-    let error = verifier
-        .verify_transaction(&common::transaction_jws())
+fn a_foreign_root_is_an_untrusted_chain_not_a_purpose_error() {
+    let error = Verifier::new(Config::defaults())
+        .verify_signed_data(&common::transaction_jws())
         .unwrap_err();
-    assert_eq!(error.reason(), Reason::InvalidChain);
+    assert_eq!(error.reason(), Reason::UntrustedChain);
 }
 
 #[test]
@@ -320,167 +324,87 @@ fn marker_oids_are_checked_before_the_chain() {
     // Both fixtures chain correctly to their own root: if the marker check
     // ran after the chain walk, these would pass instead of reporting a
     // purpose error.
-    let leaf = JwsVerifier::builder()
-        .trusted_roots([common::anchor("generated/jws-no-leaf-oid-root.der")])
-        .bundle_id("com.example.app")
-        .accepted_environments([Environment::Sandbox])
-        .build()
-        .unwrap();
-    assert_eq!(
-        leaf.verify_transaction(&common::read_text_fixture(
-            "generated/transaction-no-leaf-oid.jws"
-        ))
-        .unwrap_err()
-        .reason(),
-        Reason::InvalidCertificatePurpose
-    );
-
-    let intermediate = JwsVerifier::builder()
-        .trusted_roots([common::anchor("generated/jws-no-intermediate-oid-root.der")])
-        .bundle_id("com.example.app")
-        .accepted_environments([Environment::Sandbox])
-        .build()
-        .unwrap();
-    assert_eq!(
-        intermediate
-            .verify_transaction(&common::read_text_fixture(
-                "generated/transaction-no-intermediate-oid.jws"
-            ))
-            .unwrap_err()
-            .reason(),
-        Reason::InvalidCertificatePurpose
-    );
+    for (root, jws) in [
+        (
+            "generated/jws-no-leaf-oid-root.der",
+            "generated/transaction-no-leaf-oid.jws",
+        ),
+        (
+            "generated/jws-no-intermediate-oid-root.der",
+            "generated/transaction-no-intermediate-oid.jws",
+        ),
+    ] {
+        assert_eq!(
+            common::verifier([common::anchor(root)])
+                .verify_signed_data(&common::read_text_fixture(jws))
+                .unwrap_err()
+                .reason(),
+            Reason::InvalidCertificatePurpose,
+            "{jws}"
+        );
+    }
 }
 
 #[test]
 fn a_payload_is_never_rejected_for_its_age() {
-    // Freshness is the caller's decision (PLAN.md D5): a payload signed in
-    // 2024 still verifies, and its signedDate is there for the caller.
-    let verifier = JwsVerifier::builder()
-        .trusted_roots([common::jws_root()])
-        .bundle_id("com.example.app")
-        .accepted_environments([Environment::Sandbox])
-        .build()
+    // Freshness is the caller's decision: a payload signed in 2024 still
+    // verifies, and its signedDate is there for the caller.
+    let payload = verifier()
+        .verify_signed_data(&common::transaction_jws())
         .unwrap();
-    let payload = verifier
-        .verify_transaction(&common::transaction_jws())
-        .unwrap();
-    assert_eq!(payload.signed_date, Some(1_722_945_600_000));
+    assert_eq!(
+        common::claims(&payload)["signedDate"],
+        1_722_945_600_000_i64
+    );
 }
 
 #[test]
 fn the_chain_is_judged_at_the_signing_date() {
     // The historical payload's chain is expired today and was valid when it
-    // was signed; the fresh one was signed after it expired.
-    let verifier = JwsVerifier::builder()
-        .trusted_roots([common::anchor("generated/jws-expired-root.der")])
-        .bundle_id("com.example.app")
-        .accepted_environments([Environment::Sandbox])
-        .build()
-        .unwrap();
+    // was signed; the fresh one was signed after it expired, which is a
+    // certificate outside its validity window (owner, 2026-09-27).
+    let verifier = common::verifier([common::anchor("generated/jws-expired-root.der")]);
     let historical = common::read_text_fixture("generated/expired-cert-historical.jws");
     let fresh = common::read_text_fixture("generated/expired-cert-fresh.jws");
-    assert!(verifier.verify_transaction(&historical).is_ok());
+    assert!(verifier.verify_signed_data(&historical).is_ok());
     assert_eq!(
-        verifier.verify_transaction(&fresh).unwrap_err().reason(),
-        Reason::InvalidChain
+        verifier.verify_signed_data(&fresh).unwrap_err().reason(),
+        Reason::InvalidCertificate
     );
 }
 
+/// 0.7 takes no bundle id, environment or app Apple id: the claims come back
+/// as Apple signed them and the caller judges them, which is where 0.6
+/// answered `WRONG_BUNDLE_ID`, `WRONG_ENVIRONMENT` and `WRONG_APP_APPLE_ID`.
 #[test]
-fn claim_checks_run_bundle_id_before_environment() {
-    // A payload that is wrong on both must report the bundle id.
-    let verifier = JwsVerifier::builder()
-        .trusted_roots([common::jws_root()])
-        .bundle_id("com.other.app")
-        .accepted_environments([Environment::Production])
-        .build()
+fn claims_are_returned_for_the_caller_to_judge() {
+    let payload = verifier()
+        .verify_signed_data(&common::transaction_jws())
         .unwrap();
-    assert_eq!(
-        verifier
-            .verify_transaction(&common::transaction_jws())
-            .unwrap_err()
-            .reason(),
-        Reason::WrongBundleId
-    );
-}
+    let claims = common::claims(&payload);
+    assert_eq!(claims["bundleId"], "com.example.app");
+    assert_eq!(claims["environment"], "Sandbox");
 
-#[test]
-fn an_unknown_environment_claim_is_wrong_environment() {
-    let verifier = JwsVerifier::builder()
-        .trusted_roots([common::jws_root()])
-        .bundle_id("com.example.app")
-        .accepted_environments([
-            Environment::Production,
-            Environment::Xcode,
-            Environment::LocalTesting,
-        ])
-        .build()
-        .unwrap();
-    assert_eq!(
-        verifier
-            .verify_transaction(&common::transaction_jws())
-            .unwrap_err()
-            .reason(),
-        Reason::WrongEnvironment
-    );
-}
-
-#[test]
-fn a_production_app_transaction_needs_the_configured_apple_id() {
-    let build = |app_apple_id: Option<u64>| {
-        let mut builder = JwsVerifier::builder()
-            .trusted_roots([common::jws_root()])
-            .bundle_id("com.example.app")
-            .accepted_environments([Environment::Production]);
-        if let Some(id) = app_apple_id {
-            builder = builder.app_apple_id(id);
-        }
-        builder.build().unwrap()
-    };
-    let jws = common::read_text_fixture("generated/app-transaction-production.jws");
-    assert!(build(Some(123_456_789))
-        .verify_app_transaction(&jws)
-        .is_ok());
-    assert_eq!(
-        build(Some(999))
-            .verify_app_transaction(&jws)
-            .unwrap_err()
-            .reason(),
-        Reason::WrongAppAppleId
-    );
-    // Unset is a rejection, not a skip: an unconfigured verifier must not
-    // accept a Production AppTransaction.
-    assert_eq!(
-        build(None)
-            .verify_app_transaction(&jws)
-            .unwrap_err()
-            .reason(),
-        Reason::WrongAppAppleId
-    );
-}
-
-#[test]
-fn verify_raw_enforces_no_claim_but_still_enforces_the_signature() {
-    let verifier = JwsVerifier::builder()
-        .trusted_roots([common::jws_root()])
-        .bundle_id("conformance.unset.bundle.id")
-        .accepted_environments([Environment::LocalTesting])
-        .build()
-        .unwrap();
-    let claims = verifier.verify_raw(&common::transaction_jws()).unwrap();
-    assert_eq!(claims.get("bundleId").unwrap(), "com.example.app");
-
-    let (header, payload, signature) = common::split_jws(&common::transaction_jws());
-    let mut broken = apple_purchase_receipt_verifier::base64::decode_lenient(&signature);
-    broken[0] ^= 0xff;
-    let error = verifier
-        .verify_raw(&common::join_jws(
-            &header,
-            &payload,
-            &common::base64url(&broken),
+    let production = verifier()
+        .verify_signed_data(&common::read_text_fixture(
+            "generated/app-transaction-production.jws",
         ))
-        .unwrap_err();
+        .unwrap();
+    let claims = common::claims(&production);
+    assert_eq!(claims["receiptType"], "Production");
+    assert_eq!(claims["appAppleId"], 123_456_789);
+}
+
+#[test]
+fn a_broken_signature_is_refused_whatever_the_claims() {
+    let (header, payload, signature) = common::split_jws(&common::transaction_jws());
+    let mut broken = base64_decode_lenient(&signature);
+    broken[0] ^= 0xff;
+    let error = expect_err(&common::join_jws(
+        &header,
+        &payload,
+        &common::base64url(&broken),
+    ));
     assert_eq!(error.reason(), Reason::InvalidSignature);
 }
 
@@ -497,7 +421,7 @@ fn verify_raw_enforces_no_claim_but_still_enforces_the_signature() {
 #[test]
 fn junk_in_the_signature_segment_is_not_a_signature() {
     let jws = common::transaction_jws();
-    assert!(verifier().verify_transaction(&jws).is_ok(), "baseline");
+    assert!(verifier().verify_signed_data(&jws).is_ok(), "baseline");
     // A malformed segment is a format failure, decided before any
     // cryptography runs — the same class as a header that is not base64url
     // JSON — not a cryptographic verdict on a signature that was actually
@@ -506,7 +430,7 @@ fn junk_in_the_signature_segment_is_not_a_signature() {
         let mutated = format!("{jws}{suffix}");
         assert_eq!(
             reason_of(&mutated),
-            Reason::InvalidJwsFormat,
+            Reason::Malformed,
             "signature segment + {suffix:?} must not verify"
         );
     }
@@ -515,14 +439,14 @@ fn junk_in_the_signature_segment_is_not_a_signature() {
     let spaced: String = signature.chars().flat_map(|c| [c, '\n']).collect();
     assert_eq!(
         reason_of(&common::join_jws(&header, &payload, &spaced)),
-        Reason::InvalidJwsFormat
+        Reason::Malformed
     );
     // The standard alphabet is not the URL alphabet.
     let plus = signature.replacen('A', "+", 1);
     if plus != signature {
         assert_eq!(
             reason_of(&common::join_jws(&header, &payload, &plus)),
-            Reason::InvalidJwsFormat
+            Reason::Malformed
         );
     }
 }
@@ -543,7 +467,7 @@ fn only_the_canonical_spelling_of_the_signature_verifies() {
         let mut spelling = signature[..signature.len() - 1].to_owned();
         spelling.push(char::from(ALPHABET[(index & 0x30) | low]));
         let candidate = common::join_jws(&header, &payload, &spelling);
-        if verifier().verify_transaction(&candidate).is_ok() {
+        if verifier().verify_signed_data(&candidate).is_ok() {
             accepted.push(spelling);
         }
     }
@@ -570,27 +494,24 @@ fn a_segment_that_is_not_base64url_is_a_format_error() {
         common::join_jws(&header, &format!("{payload}\n"), &signature),
         common::join_jws(&header.replacen('e', "+", 1), &payload, &signature),
     ] {
-        assert_eq!(reason_of(&mutated), Reason::InvalidJwsFormat, "{mutated}");
+        assert_eq!(reason_of(&mutated), Reason::Malformed, "{mutated}");
     }
 }
 
-// --- date claims are read by value, not by spelling ---------------------
+// --- the signing date is read by value, not by spelling -----------------
 
 /// `signedDate` fixes the instant the certificate chain is judged at. Read
 /// with `as_i64` alone, a JSON number spelled `1.0` or `1e0` came back as
-/// *absent*, and the chain was then judged at the system clock instead —
-/// the spelling of a number moving a certificate-validity verdict. All four
-/// shipped ports read the value: Java `canConvertToLong()`, Node
-/// `typeof === 'number'`, Python `isinstance(x, (int, float))`, Swift
-/// `as? Double`.
+/// absent, and the chain was then judged at the clock instead: the spelling
+/// of a number moving a certificate-validity verdict.
 #[test]
 fn a_signed_date_is_read_by_value_whatever_its_json_spelling() {
     // 1970-01-01, long before this fixture chain's notBefore, so the chain
-    // check fails — and it must fail identically for all three spellings.
+    // is outside its window, identically for every spelling.
     for spelling in ["1", "1.0", "1e0", "1.0e0"] {
         assert_eq!(
             reason_of(&with_signed_date(spelling)),
-            Reason::InvalidChain,
+            Reason::InvalidCertificate,
             "signedDate spelled {spelling} must judge the chain at 1970"
         );
     }
@@ -605,87 +526,53 @@ fn a_signed_date_is_read_by_value_whatever_its_json_spelling() {
     }
 }
 
-/// Splices a raw JSON number into `signedDate`, keeping every other claim.
+/// A `signedDate` that is not a representable instant (`1e300`, an integer
+/// past `i64`), or not a number at all, counts as not stated: the clock
+/// stands in for it (owner, 2026-09-27). Pinned by moving the clock: inside
+/// the chain's window the input reaches the signature check, before it the
+/// chain is outside its window.
+#[test]
+fn an_unrepresentable_signed_date_is_replaced_by_the_clock() {
+    for spelling in [
+        "1e300",
+        "-1e300",
+        "9223372036854775808",
+        "\"1722945600000\"",
+        "null",
+    ] {
+        let jws = with_signed_date(spelling);
+        assert_eq!(
+            common::verifier_at([common::jws_root()], INSIDE_THE_CHAIN)
+                .verify_signed_data(&jws)
+                .unwrap_err()
+                .reason(),
+            Reason::InvalidSignature,
+            "signedDate {spelling} with the clock inside the chain"
+        );
+        assert_eq!(
+            common::verifier_at([common::jws_root()], BEFORE_THE_CHAIN)
+                .verify_signed_data(&jws)
+                .unwrap_err()
+                .reason(),
+            Reason::InvalidCertificate,
+            "signedDate {spelling} with the clock before the chain"
+        );
+    }
+}
+
+/// Splices a raw JSON value into `signedDate`, keeping every other claim.
 /// The signature no longer covers the payload, which is fine: the chain
 /// check runs first and is what these assertions read.
-fn with_signed_date(raw_number: &str) -> String {
+fn with_signed_date(raw_value: &str) -> String {
     let jws = common::transaction_jws();
     let (header, payload_b64, signature) = common::split_jws(&jws);
-    let decoded = apple_purchase_receipt_verifier::base64::decode_lenient(&payload_b64);
+    let decoded = base64_decode_lenient(&payload_b64);
     let mut claims: serde_json::Map<String, Value> =
         serde_json::from_slice(&decoded).expect("payload is JSON");
     claims.remove("signedDate");
     let rest = serde_json::to_string(&claims).unwrap();
-    let body = format!("{{\"signedDate\":{raw_number},{}", &rest[1..]);
+    let body = format!("{{\"signedDate\":{raw_value},{}", &rest[1..]);
     common::join_jws(&header, &common::base64url(body.as_bytes()), &signature)
-}
-
-/// `expiresDate` and `revocationDate` go through the same helper, and the
-/// failure there feeds an entitlement decision: a caller reads a `None`
-/// expiry as "never expires" and a `None` revocation as "not revoked", so a
-/// float-spelled claim used to make a refunded or lapsed transaction look
-/// active.
-#[test]
-fn float_spelled_dates_are_read() {
-    use apple_purchase_receipt_verifier::TransactionPayload;
-
-    for spelling in ["1690000000000", "1.69e12", "1690000000000.0"] {
-        let payload: TransactionPayload = payload_from(&format!("{{\"expiresDate\":{spelling}}}"));
-        assert_eq!(
-            payload.expires_date,
-            Some(1_690_000_000_000),
-            "an expiry spelled {spelling}"
-        );
-        let payload: TransactionPayload =
-            payload_from(&format!("{{\"revocationDate\":{spelling}}}"));
-        assert_eq!(
-            payload.revocation_date,
-            Some(1_690_000_000_000),
-            "a revocation spelled {spelling}"
-        );
-    }
-    // The claim genuinely absent stays absent.
-    assert_eq!(payload_from("{}").expires_date, None);
-}
-
-/// The modelled view of a claim set — the same construction the verifier
-/// runs after the signature check, reached through the public
-/// `from_claims`, so the date-reading helper under test is the same one.
-fn payload_from(json: &str) -> apple_purchase_receipt_verifier::TransactionPayload {
-    let claims: serde_json::Map<String, Value> = serde_json::from_str(json).unwrap();
-    apple_purchase_receipt_verifier::TransactionPayload::from_claims(claims).unwrap()
-}
-
-/// The typed read shapes no shared vector covers. A boolean is not a number
-/// even where a language treats it as one, and `quantity` held in an `i64`
-/// must refuse a whole number it cannot hold rather than clamp or drop it:
-/// either would hand the caller a value Apple never signed.
-#[test]
-fn typed_read_refuses_what_the_model_cannot_hold() {
-    use apple_purchase_receipt_verifier::TransactionPayload;
-    for spelling in [
-        "true",
-        "9223372036854775808",
-        "1e19",
-        "-1e19",
-        "0.5",
-        "\"1\"",
-    ] {
-        let claims = serde_json::from_str(&format!("{{\"quantity\":{spelling}}}")).unwrap();
-        let error = TransactionPayload::from_claims(claims).unwrap_err();
-        assert_eq!(
-            error.reason(),
-            Reason::InternalError,
-            "quantity {spelling} must be refused"
-        );
-    }
-    for spelling in ["9223372036854775807", "-9223372036854775808", "2.0", "1e3"] {
-        let claims = serde_json::from_str(&format!("{{\"quantity\":{spelling}}}")).unwrap();
-        assert!(
-            TransactionPayload::from_claims(claims).is_ok(),
-            "quantity {spelling} is a whole i64 and must be read"
-        );
-    }
 }
 
 /// `x5c[2]` has to BE a certificate, in every spelling of "is not one".
@@ -739,4 +626,56 @@ fn x5c_entries_with_line_breaks_are_not_certificates() {
         reason_of(&common::with_header(&jws, &header)),
         Reason::InvalidCertificate
     );
+}
+
+#[test]
+fn non_ascii_claims_round_trip_as_utf8() {
+    // Claims are UTF-8 on the wire (RFC 7519). The payload is handed back as
+    // the exact text that was signed, so a product id or offer id carrying
+    // non-ASCII text reaches the caller unchanged. The literals are escapes,
+    // so this file's own encoding cannot mask the check.
+    let product_id = "com.example.app.\u{e9}\u{20ac}\u{4e2d}";
+    let offer = "\u{fc}ber-\u{20ac}-\u{4e2d}\u{6587}-\u{1f600}";
+    let claims = json!({
+        "productId": product_id,
+        "offerIdentifier": offer,
+        "signedDate": INSIDE_THE_CHAIN,
+    })
+    .to_string();
+    let (root, jws) = common::mint::signed_jws(claims.as_bytes());
+    let verifier = common::verifier_at(
+        [apple_purchase_receipt_verifier::TrustAnchor::from_der(&root).unwrap()],
+        INSIDE_THE_CHAIN,
+    );
+    let payload = verifier.verify_signed_data(&jws).unwrap();
+    assert_eq!(payload.json(), claims);
+    let parsed = common::claims(&payload);
+    assert_eq!(parsed["productId"], product_id);
+    assert_eq!(parsed["offerIdentifier"], offer);
+}
+
+#[test]
+fn attacker_text_never_reaches_a_failure_message() {
+    // A failure message is what a caller logs. No message quotes the input,
+    // so a header crafted to forge a log line (a line break, a Unicode line
+    // separator, NEL, an ANSI escape) cannot reach one, whatever check refuses
+    // it.
+    let hostile = "ES256\r\n2026-01-01 INFO forged\u{85}\u{2028}\u{1b}[2J";
+    let mut header = common::jws_header(&common::transaction_jws());
+    header.insert("alg".to_owned(), Value::from(hostile));
+    let failure = expect_err(&common::with_header(&common::transaction_jws(), &header));
+    let mut x5c_header = common::jws_header(&common::transaction_jws());
+    x5c_header.insert("x5c".to_owned(), json!([hostile, hostile, hostile]));
+    let x5c_failure = expect_err(&common::with_header(
+        &common::transaction_jws(),
+        &x5c_header,
+    ));
+    for failure in [failure, x5c_failure] {
+        let text = failure.to_string();
+        assert!(!text.contains("forged"), "{text}");
+        assert!(
+            !text.chars().any(|c| c.is_control() || c == '\u{2028}'),
+            "{text:?}"
+        );
+    }
 }

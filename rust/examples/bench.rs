@@ -13,26 +13,24 @@
 //! least 100 ms each; the JSON on stdout carries the median, minimum and
 //! maximum microseconds per operation over those samples.
 
-use apple_purchase_receipt_verifier::{
-    apple_receipt_roots, base64, verify_receipt_core, Environment, FixedClock, Reason,
-    ReceiptVerifier, TrustAnchor, VerifyReceiptEndpoint, VerifyReceiptRequest,
-};
+use apple_purchase_receipt_verifier::__internal::{base64_encode, decode_receipt_data};
+use apple_purchase_receipt_verifier::{Config, Environment, Reason, Verifier};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::hint::black_box;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 const WARMUP: Duration = Duration::from_secs(1);
 const SAMPLES: usize = 10;
 const MIN_SAMPLE: Duration = Duration::from_millis(100);
 
-/// Any fixed instant (2026-01-01T00:00:00Z): it only feeds `request_date`.
+/// Any fixed instant (2026-01-01T00:00:00Z): it only feeds `request_date`,
+/// since both fixtures carry a creation date.
 const NOW_MILLIS: i64 = 1_767_225_600_000;
 
 /// File under `fixtures/public-receipts`, and the bundle id, in-app count
-/// and digest `fixtures/cases.json` pins for it.
+/// and digest `fixtures/cases-0.7.json` pins for it.
 const FIXTURES: [(&str, &str, usize, &str); 2] = [
     (
         "receipt-sandbox-g5",
@@ -49,7 +47,13 @@ const FIXTURES: [(&str, &str, usize, &str); 2] = [
 ];
 
 fn main() {
-    let roots: Vec<TrustAnchor> = apple_receipt_roots().to_vec();
+    // The roots are parsed once, here, and never per call.
+    let verifier = Verifier::new(
+        Config::builder()
+            .clock(|| NOW_MILLIS)
+            .build()
+            .expect("config"),
+    );
     let mut results = Vec::new();
     for (name, bundle_id, in_app_count, sha256) in FIXTURES {
         let der = read_fixture(name);
@@ -57,79 +61,54 @@ fn main() {
             .iter()
             .map(|b| format!("{b:02x}"))
             .collect();
-        assert_eq!(digest, sha256, "{name} does not match cases.json");
-        let text = base64::encode(&der);
+        assert_eq!(digest, sha256, "{name} does not match cases-0.7.json");
+        let text = base64_encode(&der);
         let body = format!("{{\"receipt-data\":\"{text}\"}}");
-        let request = VerifyReceiptRequest::new(text.clone());
-        let tampered = tamper(&der);
-        let verifier = ReceiptVerifier::builder()
-            .trusted_roots(roots.iter().cloned())
-            .bundle_id(bundle_id)
-            .build()
-            .expect("verifier");
-        let endpoint = |environment| {
-            VerifyReceiptEndpoint::builder()
-                .trusted_roots(roots.iter().cloned())
-                .environment(environment)
-                .clock(Arc::new(FixedClock::from_unix_millis(NOW_MILLIS)))
-                .build()
-                .expect("endpoint")
-        };
-        let sandbox = endpoint(Environment::Sandbox);
-        let production = endpoint(Environment::Production);
+        let tampered = base64_encode(&tamper(&der));
 
         // Every call once, with the answer the conformance suite expects,
         // so no benchmark can time a fast failure by accident.
-        assert_eq!(
-            base64::decode_receipt_base64(&text).as_deref(),
-            Some(&der[..])
-        );
-        for receipt in [
-            verify_receipt_core(&der, &roots).expect("core"),
-            verifier.verify_base64(&text).expect("verifierBase64"),
-        ] {
-            assert_eq!(receipt.bundle_id.as_deref(), Some(bundle_id));
-            assert_eq!(receipt.in_app_purchases.len(), in_app_count);
-        }
-        let ok = parse(&sandbox.verify_receipt_json(&body));
+        assert_eq!(decode_receipt_data(&text).ok().as_deref(), Some(&der[..]));
+        let receipt = verifier.verify_receipt(&text).expect("verifyReceipt");
+        assert_eq!(receipt.bundle_id.as_deref(), Some(bundle_id));
+        assert_eq!(receipt.in_app.len(), in_app_count);
+        let ok = parse(&verifier.verify_receipt_endpoint(Environment::Sandbox, &body));
         assert_eq!(ok["status"], 0, "endpointJson");
         assert_eq!(
             ok["receipt"]["in_app"].as_array().map(Vec::len),
             Some(in_app_count)
         );
-        let retry = production
-            .verify_receipt_result(&request)
-            .to_json_in(Environment::Sandbox)
-            .expect("retryViaResult");
-        let retry = parse(&retry);
-        assert_eq!(
-            (&retry["status"], &retry["environment"]),
-            (&json!(0), &json!("Sandbox"))
-        );
-        let rejected = verify_receipt_core(&tampered, &roots).expect_err("tampered");
-        assert_eq!(rejected.reason(), Some(Reason::InvalidSignature));
+        let first = parse(&verifier.verify_receipt_endpoint(Environment::Production, &body));
+        assert_eq!(first["status"], 21007, "retryViaResult first call");
+        let rejected = verifier.verify_receipt(&tampered).expect_err("tampered");
+        assert_eq!(rejected.reason(), Reason::InvalidSignature);
 
         let mut run = |benchmark: &str, op: &mut dyn FnMut()| {
             results.push(measure(benchmark, name, op));
         };
         run("decodeBase64", &mut || {
-            black_box(base64::decode_receipt_base64(black_box(&text)));
+            let _ = black_box(decode_receipt_data(black_box(&text)));
         });
+        // 0.7 has no DER entry point: "core" and "verifierBase64" are both
+        // verify_receipt over the base64, so both include the decode that
+        // 0.6's "core" did not.
         run("core", &mut || {
-            let _ = black_box(verify_receipt_core(black_box(&der), &roots));
+            let _ = black_box(verifier.verify_receipt(black_box(&text)));
         });
         run("verifierBase64", &mut || {
-            let _ = black_box(verifier.verify_base64(black_box(&text)));
+            let _ = black_box(verifier.verify_receipt(black_box(&text)));
         });
         run("endpointJson", &mut || {
-            black_box(sandbox.verify_receipt_json(black_box(&body)));
+            black_box(verifier.verify_receipt_endpoint(Environment::Sandbox, black_box(&body)));
         });
+        // 21007 on PRODUCTION, then the caller's second, offline call on
+        // SANDBOX, as the design routes it.
         run("retryViaResult", &mut || {
-            let result = production.verify_receipt_result(black_box(&request));
-            let _ = black_box(result.to_json_in(Environment::Sandbox));
+            black_box(verifier.verify_receipt_endpoint(Environment::Production, black_box(&body)));
+            black_box(verifier.verify_receipt_endpoint(Environment::Sandbox, black_box(&body)));
         });
         run("rejectTamperedSignature", &mut || {
-            let _ = black_box(verify_receipt_core(black_box(&tampered), &roots));
+            let _ = black_box(verifier.verify_receipt(black_box(&tampered)));
         });
     }
     let report = json!({
@@ -202,5 +181,5 @@ fn read_fixture(name: &str) -> Vec<u8> {
         .join("../fixtures/public-receipts")
         .join(format!("{name}.b64"));
     let text = std::fs::read_to_string(&path).expect("fixture");
-    base64::decode_receipt_base64(&text).expect("fixture base64")
+    decode_receipt_data(text.trim()).expect("fixture base64")
 }

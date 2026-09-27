@@ -3,7 +3,7 @@
 //! This is the first thing any attacker-supplied byte meets, so its bounds
 //! are tested directly rather than only through a verifier.
 
-use apple_purchase_receipt_verifier::asn1::{
+use apple_purchase_receipt_verifier::__internal::asn1::{
     decode_oid, encode_oid, parse_exact, tag, MAX_DEPTH, MAX_NODES,
 };
 

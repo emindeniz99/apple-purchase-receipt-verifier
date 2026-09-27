@@ -30,7 +30,12 @@ pub fn system_time_from_millis(millis: i64) -> SystemTime {
 /// Milliseconds since the Unix epoch, saturating at the `i64` bounds.
 #[must_use]
 pub fn unix_millis_of(at: SystemTime) -> i64 {
-    crate::clock::unix_millis(at)
+    match at.duration_since(UNIX_EPOCH) {
+        Ok(since) => i64::try_from(since.as_millis()).unwrap_or(i64::MAX),
+        Err(before) => {
+            i64::try_from(before.duration().as_millis()).map_or(i64::MIN, i64::wrapping_neg)
+        }
+    }
 }
 
 /// Days since 1970-01-01 for a proleptic-Gregorian civil date.

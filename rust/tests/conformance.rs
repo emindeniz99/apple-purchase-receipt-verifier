@@ -1,21 +1,22 @@
-//! Runs `fixtures/cases.json` — the normative cross-language conformance
-//! vectors — against this implementation.
+//! Runs every vector in `fixtures/cases-0.7.json`, the normative
+//! cross-language conformance set for the 0.7 API, through the three public
+//! [`Verifier`] methods and the two base64 decoders.
 //!
 //! The adapter below knows nothing about any individual case. It loads the
 //! file, resolves fixture ids to bytes and checks their recorded digest,
-//! builds a verifier from the generic config, dispatches on `operation`,
-//! normalises the result into the language-neutral view the field paths are
-//! written against, and reads the reason off a failure. There is no skip
-//! list, no case count in the source, and no per-case fix-up: a vector that
-//! disagrees with the library is a bug report against one of the two, and it
-//! is never something to special-case here.
+//! builds a [`Config`] from the case's trusted roots and clock, dispatches on
+//! `operation`, and evaluates the expectation on the JSON the library
+//! returns: `ReceiptPayload::to_json()`, `JsonPayload::json()` or the
+//! endpoint's response body. The file's top-level `comment` defines the
+//! semantics implemented here. There is no skip list, no case count in the
+//! source, and no per-case fix-up: a vector that disagrees with the library
+//! is a bug report against one of the two, never something to special-case
+//! here.
 
-use apple_purchase_receipt_verifier::base64::decode_receipt_base64;
-use apple_purchase_receipt_verifier::{
-    apple_jws_roots, apple_receipt_roots, datetime, status, AppReceipt, Environment, FixedClock,
-    InAppPurchase, JwsVerifier, Reason, ReceiptVerifier, TrustAnchor, VerificationError,
-    VerifyReceiptEndpoint, VerifyReceiptRequest,
+use apple_purchase_receipt_verifier::__internal::{
+    base64_decode_lenient, base64_encode, decode_receipt_data, decode_x5c_entry, keys_used_during,
 };
+use apple_purchase_receipt_verifier::{Config, Environment, Reason, TrustAnchor, Verifier};
 use libtest_mimic::{Arguments, Failed, Trial};
 use serde::Deserialize;
 use serde_json::{Map, Value};
@@ -23,7 +24,9 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
+
+const CASES: &str = "cases-0.7.json";
 
 // --- the vector file ----------------------------------------------------
 
@@ -34,9 +37,8 @@ struct CasesFile {
     _schema: String,
     #[serde(rename = "schemaVersion")]
     schema_version: u32,
-    _comment: Option<String>,
     #[serde(rename = "comment")]
-    _comment_text: String,
+    _comment: String,
     fixtures: BTreeMap<String, Fixture>,
     cases: Vec<Case>,
 }
@@ -56,6 +58,8 @@ struct Fixture {
 #[serde(deny_unknown_fields)]
 struct Case {
     id: String,
+    #[serde(default, rename = "legacyId")]
+    _legacy_id: Option<String>,
     #[serde(rename = "description")]
     _description: String,
     operation: String,
@@ -65,26 +69,27 @@ struct Case {
     input: Input,
     /// Absent exactly on `decodeBase64`, which builds no verifier.
     #[serde(default)]
-    config: Option<Config>,
+    config: Option<CaseConfig>,
     #[serde(default)]
     clock: Option<ClockSpec>,
     expected: Expected,
     #[serde(default, rename = "fault")]
     _fault: Option<String>,
+    /// A wall-clock budget for the verify call, measured after one warm-up
+    /// call of the same case.
+    #[serde(default, rename = "maxMillis")]
+    max_millis: Option<u64>,
     #[serde(rename = "tags")]
     _tags: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct Input {
-    /// The fixture every operation reads, absent exactly when
-    /// `request_body` is given.
     #[serde(default)]
     fixture: Option<String>,
-    /// `verifyReceiptEndpoint` only: a `text` fixture holding the whole raw
-    /// request body, handed verbatim to the endpoint's JSON entry point.
+    /// `verifyReceiptEndpoint` only: a text fixture that is the whole
+    /// request body, handed over verbatim.
     #[serde(default)]
     request_body: Option<String>,
     /// `decodeBase64` only: the spellings of the group.
@@ -92,31 +97,21 @@ struct Input {
     texts: Option<Vec<String>>,
 }
 
-/// `deny_unknown_fields` here is load-bearing: a new config key added to
-/// `cases.json` must fail this adapter loudly rather than be ignored, which
-/// would silently turn the case it belongs to into a weaker one.
+/// `deny_unknown_fields` is load-bearing: a new config key must fail this
+/// adapter loudly rather than be ignored, which would silently turn the case
+/// it belongs to into a weaker one.
 #[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
-struct Config {
+struct CaseConfig {
     trusted_roots: TrustedRoots,
-    #[serde(default)]
-    bundle_id: Option<String>,
-    #[serde(default)]
-    accepted_environments: Option<Vec<String>>,
-    #[serde(default)]
-    app_apple_id: Option<u64>,
-    #[serde(default)]
-    device_guid_hex: Option<String>,
     #[serde(default)]
     environment: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 struct TrustedRoots {
     source: String,
-    #[serde(default)]
-    name: Option<String>,
     #[serde(default)]
     fixtures: Option<Vec<String>>,
 }
@@ -128,54 +123,57 @@ struct ClockSpec {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct Expected {
-    status: String,
+    /// Absent on endpoint cases, which pin `/status` among the fields.
+    #[serde(default)]
+    status: Option<String>,
+    #[serde(default)]
+    reason: Option<String>,
     #[serde(default)]
     fields: Option<Map<String, Value>>,
     #[serde(default)]
-    reason: Option<String>,
-    /// `verifyReceiptEndpoint` only: the result's failure reason token. Not
-    /// a wire field, so it sits beside `fields`.
-    #[serde(default, rename = "failureReason")]
-    failure_reason: Option<String>,
+    lengths: Option<Map<String, Value>>,
+    #[serde(default)]
+    to_json: Option<String>,
     /// `decodeBase64` only: what every text of an ok group decodes to.
-    #[serde(default, rename = "bytesHex")]
+    #[serde(default)]
     bytes_hex: Option<String>,
 }
 
 // --- locating and decoding fixtures -------------------------------------
 
-/// Walks up from this test's own source directory until a `fixtures/`
-/// directory holding `cases.json` appears — never a `../../..` literal, so
-/// moving the port does not silently point the suite at nothing.
+/// `APRV_FIXTURES_DIR` when set, as Java's `aprv.fixtures.dir`; otherwise
+/// walks up from this crate's directory until a `fixtures/` directory holding
+/// the vectors appears, never a `../../..` literal, so moving the port does
+/// not silently point the suite at nothing.
 fn fixtures_dir() -> Result<PathBuf, Failed> {
+    if let Some(configured) = std::env::var_os("APRV_FIXTURES_DIR").filter(|v| !v.is_empty()) {
+        return Ok(PathBuf::from(configured));
+    }
     let mut dir: &Path = Path::new(env!("CARGO_MANIFEST_DIR"));
     loop {
         let candidate = dir.join("fixtures");
-        if candidate.join("cases.json").is_file() {
+        if candidate.join(CASES).is_file() {
             return Ok(candidate);
         }
-        dir = match dir.parent() {
-            Some(parent) => parent,
-            None => {
-                return Err(Failed::from(
-                    "harness error: no fixtures/cases.json above the crate directory",
-                ))
-            }
-        };
+        dir = dir.parent().ok_or_else(|| {
+            Failed::from(format!(
+                "harness error: no fixtures/{CASES} above the crate directory"
+            ))
+        })?;
     }
 }
 
 fn load_cases() -> Result<(PathBuf, CasesFile), Failed> {
     let dir = fixtures_dir()?;
-    let text = std::fs::read_to_string(dir.join("cases.json"))
-        .map_err(|err| Failed::from(format!("harness error: cannot read cases.json: {err}")))?;
+    let text = std::fs::read_to_string(dir.join(CASES))
+        .map_err(|err| Failed::from(format!("harness error: cannot read {CASES}: {err}")))?;
     let parsed: CasesFile = serde_json::from_str(&text)
-        .map_err(|err| Failed::from(format!("harness error: cannot parse cases.json: {err}")))?;
-    if parsed.schema_version != 1 {
+        .map_err(|err| Failed::from(format!("harness error: cannot parse {CASES}: {err}")))?;
+    if parsed.schema_version != 2 {
         return Err(Failed::from(format!(
-            "harness error: cases.json is schemaVersion {}, this adapter implements 1",
+            "harness error: {CASES} is schemaVersion {}, this adapter implements 2",
             parsed.schema_version
         )));
     }
@@ -183,14 +181,8 @@ fn load_cases() -> Result<(PathBuf, CasesFile), Failed> {
 }
 
 /// The decoded logical bytes of a registered fixture, checked against the
-/// digest the registry records for them.
-///
-/// `contentSha256` is not documentation: a fixture that is regenerated,
-/// re-encoded or quietly edited changes the bytes every port verifies, and
-/// the pinned expectations would then describe something no other port ever
-/// saw. Checking it here is what makes that guarantee load-bearing. The
-/// digest is over the LOGICAL bytes — post-codec, the same bytes handed to
-/// the library.
+/// digest the registry records for them, so fixture bytes and the registry
+/// cannot drift apart unnoticed.
 fn fixture_bytes(
     dir: &Path,
     fixtures: &BTreeMap<String, Fixture>,
@@ -198,7 +190,7 @@ fn fixture_bytes(
 ) -> Result<Vec<u8>, Failed> {
     let entry = fixtures.get(id).ok_or_else(|| {
         Failed::from(format!(
-            "harness error: cases.json registers no fixture \"{id}\""
+            "harness error: {CASES} registers no fixture \"{id}\""
         ))
     })?;
     let raw = std::fs::read(dir.join(&entry.path)).map_err(|err| {
@@ -208,14 +200,15 @@ fn fixture_bytes(
         ))
     })?;
     let bytes = match entry.codec.as_str() {
-        "raw" => raw,
+        // text is untrimmed, unlike utf8: a registered fixture may be 0
+        // bytes or carry CRLF, and both must survive as stored.
+        "raw" | "text" => raw,
         "base64" => {
             let text = String::from_utf8_lossy(&raw);
             let stripped: String = text.chars().filter(|c| !c.is_whitespace()).collect();
-            apple_purchase_receipt_verifier::base64::decode_lenient(&stripped)
+            base64_decode_lenient(&stripped)
         }
         "utf8" => String::from_utf8_lossy(&raw).trim().as_bytes().to_vec(),
-        "text" => raw,
         other => {
             return Err(Failed::from(format!(
                 "harness error: unknown fixture codec \"{other}\" on \"{id}\""
@@ -225,7 +218,7 @@ fn fixture_bytes(
     let actual = hex::encode(Sha256::digest(&bytes));
     if actual != entry.content_sha256 {
         return Err(Failed::from(format!(
-            "fixture \"{id}\" ({}, codec {}) has drifted: cases.json records contentSha256 {}, \
+            "fixture \"{id}\" ({}, codec {}) has drifted: {CASES} records contentSha256 {}, \
              the decoded bytes hash to {actual}",
             entry.path, entry.codec, entry.content_sha256
         )));
@@ -235,9 +228,9 @@ fn fixture_bytes(
 
 fn check_whole_registry(dir: &Path, fixtures: &BTreeMap<String, Fixture>) -> Result<(), Failed> {
     if fixtures.is_empty() {
-        return Err(Failed::from(
-            "harness error: cases.json registers no fixtures",
-        ));
+        return Err(Failed::from(format!(
+            "harness error: {CASES} registers no fixtures"
+        )));
     }
     for id in fixtures.keys() {
         fixture_bytes(dir, fixtures, id)?;
@@ -245,38 +238,22 @@ fn check_whole_registry(dir: &Path, fixtures: &BTreeMap<String, Fixture>) -> Res
     Ok(())
 }
 
-/// Every expected integer in `cases.json` survived the parse with all its
-/// digits.
+/// Every expected integer survived the parse with all its digits.
 ///
-/// The file pins a `download_id` of 2^63 - 1 — a nineteen-digit, eight-byte
-/// integer an IEEE-754 double rounds to 2^63 — precisely because Apple's
-/// real ones run to eighteen digits. `serde_json` keeps an unsuffixed
-/// integer literal as `i64`/`u64`, so the expectation this suite compares
-/// against carries all nineteen digits; a runner that read the file through
-/// a double would compare against 9223372036854775808 instead and let a
-/// rounding library pass.
-/// That failure mode is invisible in a green run, so it is checked here
-/// rather than assumed, by a property no value that passed through a double
-/// can have: at least one expected integer must come back CHANGED by an
-/// `f64` round trip. A parser that used a double for it could not produce
-/// such a value, so the check fails either way — as a float that is not an
-/// integer at all, or as an integer that survives the round trip because it
-/// had already been rounded.
+/// The file pins a `download_id` of 2^63 - 1, an integer an IEEE-754 double
+/// rounds to 2^63, precisely because Apple's real ones run to eighteen
+/// digits. A runner that read the file through a double would compare
+/// against 9223372036854775808 and let a rounding library pass. That is
+/// invisible in a green run, so it is checked here: at least one expected
+/// integer must come back changed by an `f64` round trip, which no value
+/// that passed through a double can.
 fn expectations_keep_every_digit(file: &CasesFile) -> Result<(), Failed> {
     let mut beyond_a_double = 0usize;
     for case in &file.cases {
-        for (path, value) in case.expected.fields.iter().flatten() {
+        for value in case.expected.fields.iter().flat_map(Map::values) {
             let Value::Number(number) = value else {
                 continue;
             };
-            if !number.is_i64() && !number.is_u64() {
-                return Err(Failed::from(format!(
-                    "cases.json {} field {path}: the expected integer arrived as the float \
-                     {number}, so this runner cannot compare it exactly",
-                    case.id
-                )));
-            }
-            // Negative expectations exist nowhere near this magnitude.
             let Some(exact) = number.as_u64() else {
                 continue;
             };
@@ -288,398 +265,197 @@ fn expectations_keep_every_digit(file: &CasesFile) -> Result<(), Failed> {
         }
     }
     if beyond_a_double == 0 {
-        return Err(Failed::from(
-            "no expected integer in cases.json survives an f64 round trip changed, so nothing \
-             here proves the expectations were not read through a double",
-        ));
+        return Err(Failed::from(format!(
+            "no expected integer in {CASES} survives an f64 round trip changed, so nothing \
+             here proves the expectations were not read through a double"
+        )));
     }
     Ok(())
 }
 
-// --- config → API -------------------------------------------------------
+// --- config --------------------------------------------------------------
 
-fn trust_anchors(
-    dir: &Path,
-    fixtures: &BTreeMap<String, Fixture>,
-    spec: &TrustedRoots,
-) -> Result<Vec<TrustAnchor>, Failed> {
-    match spec.source.as_str() {
-        "builtin" => match spec.name.as_deref() {
-            Some("apple-jws-roots") => Ok(apple_jws_roots().to_vec()),
-            Some("apple-receipt-roots") => Ok(apple_receipt_roots().to_vec()),
-            other => Err(Failed::from(format!(
-                "harness error: unknown builtin root set {other:?}"
-            ))),
-        },
+/// The case's config: its trusted roots, and a clock fixed at `clock.now`
+/// when it pins one, else the default clock.
+fn config(dir: &Path, fixtures: &BTreeMap<String, Fixture>, case: &Case) -> Result<Config, Failed> {
+    let spec = case
+        .config
+        .as_ref()
+        .ok_or_else(|| Failed::from(format!("{}: harness error: no config", case.id)))?;
+    let mut builder = Config::builder();
+    match spec.trusted_roots.source.as_str() {
+        "defaults" => {}
         "fixtures" => {
-            let ids = spec.fixtures.as_deref().ok_or_else(|| {
-                Failed::from("harness error: trustedRoots.source=fixtures with no fixtures")
-            })?;
-            let mut anchors = Vec::with_capacity(ids.len());
-            for id in ids {
+            let mut roots = Vec::new();
+            for id in spec.trusted_roots.fixtures.iter().flatten() {
                 let der = fixture_bytes(dir, fixtures, id)?;
-                anchors.push(TrustAnchor::from_der(&der).map_err(|err| {
-                    Failed::from(format!(
-                        "harness error: fixture \"{id}\" is not an anchor: {err}"
-                    ))
+                roots.push(TrustAnchor::from_der(&der).map_err(|err| {
+                    Failed::from(format!("{}: root \"{id}\" does not parse: {err}", case.id))
                 })?);
             }
-            Ok(anchors)
+            builder = builder.roots(roots);
         }
-        other => Err(Failed::from(format!(
-            "harness error: unknown trustedRoots source \"{other}\""
-        ))),
+        other => {
+            return Err(Failed::from(format!(
+                "{}: harness error: unknown trustedRoots source \"{other}\"",
+                case.id
+            )))
+        }
     }
-}
-
-/// `verifyRaw` enforces no claim, so its cases may omit `bundleId` and
-/// `acceptedEnvironments` — but the builder still demands both. These
-/// placeholders match nothing any fixture carries, so a claim check that
-/// leaked into `verify_raw` shows up as a failure rather than as a pass.
-/// An empty string, a wildcard, or "all four environments" would turn that
-/// leak into a silent pass.
-const UNMATCHABLE_BUNDLE_ID: &str = "conformance.unset.bundle.id";
-const UNMATCHABLE_ENVIRONMENTS: [Environment; 1] = [Environment::LocalTesting];
-
-fn environments(names: &[String]) -> Result<Vec<Environment>, Failed> {
-    names
-        .iter()
-        .map(|name| {
-            Environment::from_str(name).map_err(|err| Failed::from(format!("harness error: {err}")))
-        })
-        .collect()
-}
-
-fn jws_verifier(
-    dir: &Path,
-    fixtures: &BTreeMap<String, Fixture>,
-    config: &Config,
-    clock: Option<FixedClock>,
-) -> Result<JwsVerifier, Failed> {
-    let mut builder = JwsVerifier::builder()
-        .trusted_roots(trust_anchors(dir, fixtures, &config.trusted_roots)?)
-        .bundle_id(
-            config
-                .bundle_id
-                .clone()
-                .unwrap_or_else(|| UNMATCHABLE_BUNDLE_ID.to_owned()),
-        );
-    builder = match &config.accepted_environments {
-        Some(names) => builder.accepted_environments(environments(names)?),
-        None => builder.accepted_environments(UNMATCHABLE_ENVIRONMENTS),
-    };
-    if let Some(app_apple_id) = config.app_apple_id {
-        builder = builder.app_apple_id(app_apple_id);
-    }
-    if clock.is_some() {
-        return Err(Failed::from(
-            "harness error: JwsVerifier has no clock seam, but the case pins one",
-        ));
+    if let Some(clock) = &case.clock {
+        let now = parse_instant(&clock.now).ok_or_else(|| {
+            Failed::from(format!(
+                "{}: harness error: bad clock {}",
+                case.id, clock.now
+            ))
+        })?;
+        builder = builder.clock(move || now);
     }
     builder
         .build()
-        .map_err(|err| Failed::from(format!("harness error: cannot build JwsVerifier: {err}")))
+        .map_err(|err| Failed::from(format!("{}: config refused: {err}", case.id)))
 }
 
-fn case_clock(case: &Case) -> Result<Option<FixedClock>, Failed> {
-    let Some(spec) = &case.clock else {
-        return Ok(None);
+/// `YYYY-MM-DDTHH:MM:SSZ` to epoch milliseconds, the only form the schema
+/// allows for `clock.now`.
+fn parse_instant(text: &str) -> Option<i64> {
+    let digits = |range: std::ops::Range<usize>| text.get(range)?.parse::<i64>().ok();
+    let (year, month, day) = (digits(0..4)?, digits(5..7)?, digits(8..10)?);
+    let (hour, minute, second) = (digits(11..13)?, digits(14..16)?, digits(17..19)?);
+    // Howard Hinnant's days_from_civil.
+    let y = if month <= 2 { year - 1 } else { year };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let mp = (month + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    Some(((days * 24 + hour) * 60 + minute) * 60_000 + second * 1000)
+}
+
+/// The string `verifyReceipt` gets, and the endpoint's `receipt-data`: a
+/// text fixture verbatim, exactly as a client sent it; any other fixture
+/// holds DER, encoded as canonical base64.
+fn receipt_string(
+    dir: &Path,
+    fixtures: &BTreeMap<String, Fixture>,
+    id: &str,
+) -> Result<String, Failed> {
+    let bytes = fixture_bytes(dir, fixtures, id)?;
+    let codec = fixtures
+        .get(id)
+        .map_or("", |fixture| fixture.codec.as_str());
+    if codec == "text" {
+        String::from_utf8(bytes)
+            .map_err(|_| Failed::from(format!("harness error: text fixture \"{id}\" is not UTF-8")))
+    } else {
+        Ok(base64_encode(&bytes))
+    }
+}
+
+// --- expectations --------------------------------------------------------
+
+/// An RFC 6901 pointer with one extension: a token `[key=value]` selects the
+/// single array element whose member `key` is the JSON string `value`, and
+/// the case fails unless exactly one matches. `Ok(None)` when the pointer
+/// leads nowhere.
+fn resolve<'v>(root: &'v Value, pointer: &str) -> Result<Option<&'v Value>, String> {
+    let Some(rest) = pointer.strip_prefix('/') else {
+        return Err(format!("harness error: \"{pointer}\" is not a pointer"));
     };
-    let millis = datetime::parse_rfc3339(&spec.now).ok_or_else(|| {
-        Failed::from(format!("harness error: unparseable clock \"{}\"", spec.now))
-    })?;
-    Ok(Some(FixedClock::from_unix_millis(millis)))
-}
-
-fn require_no_clock(clock: Option<FixedClock>, operation: &str) -> Result<(), Failed> {
-    if clock.is_some() {
-        return Err(Failed::from(format!(
-            "harness error: {operation} has no clock seam, but the case pins one"
-        )));
-    }
-    Ok(())
-}
-
-// --- result normalisation ------------------------------------------------
-
-fn hex_value(bytes: &[u8]) -> Value {
-    Value::from(hex::encode(bytes))
-}
-
-fn put_bytes(target: &mut Map<String, Value>, key: &str, bytes: Option<&[u8]>) {
-    let value = bytes.map_or(Value::Null, hex_value);
-    target.insert(key.to_owned(), value.clone());
-    target.insert(format!("{key}Hex"), value);
-}
-
-fn put_date(target: &mut Map<String, Value>, key: &str, at: Option<std::time::SystemTime>) {
-    let value = at.map_or(Value::Null, |at| Value::from(datetime::to_rfc3339_utc(at)));
-    target.insert(key.to_owned(), value);
-}
-
-fn put_int(target: &mut Map<String, Value>, key: &str, value: Option<i64>) {
-    target.insert(key.to_owned(), value.map_or(Value::Null, Value::from));
-}
-
-fn put_string(target: &mut Map<String, Value>, key: &str, value: Option<&str>) {
-    target.insert(key.to_owned(), value.map_or(Value::Null, Value::from));
-}
-
-fn unknown_attributes(map: &BTreeMap<u32, Vec<Vec<u8>>>) -> Value {
-    let mut out = Map::new();
-    for (attribute_type, values) in map {
-        out.insert(
-            attribute_type.to_string(),
-            Value::Array(values.iter().map(|v| hex_value(v)).collect()),
-        );
-    }
-    Value::Object(out)
-}
-
-fn in_app_json(purchase: &InAppPurchase) -> Value {
-    let mut out = Map::new();
-    out.insert(
-        "unknownAttributes".to_owned(),
-        unknown_attributes(&purchase.unknown_attributes),
-    );
-    put_int(&mut out, "quantity", purchase.quantity);
-    put_string(&mut out, "productId", purchase.product_id.as_deref());
-    put_string(
-        &mut out,
-        "transactionId",
-        purchase.transaction_id.as_deref(),
-    );
-    put_string(
-        &mut out,
-        "originalTransactionId",
-        purchase.original_transaction_id.as_deref(),
-    );
-    put_date(&mut out, "purchaseDate", purchase.purchase_date);
-    put_date(
-        &mut out,
-        "originalPurchaseDate",
-        purchase.original_purchase_date,
-    );
-    put_date(&mut out, "expiresDate", purchase.expires_date);
-    put_date(&mut out, "cancellationDate", purchase.cancellation_date);
-    put_int(
-        &mut out,
-        "webOrderLineItemId",
-        purchase.web_order_line_item_id,
-    );
-    put_int(&mut out, "isTrialPeriod", purchase.is_trial_period);
-    put_int(
-        &mut out,
-        "isInIntroOfferPeriod",
-        purchase.is_in_intro_offer_period,
-    );
-    Value::Object(out)
-}
-
-/// The language-neutral view of a typed JWS payload: its claims, with each
-/// modelled integer claim replaced by the value the typed read produced, so
-/// a claim signed as `1.0` is compared as the `1` the model holds.
-fn typed_claims_json(mut claims: Map<String, Value>, ints: &[(&str, Option<i64>)]) -> Value {
-    for (key, value) in ints {
-        if let Some(value) = value {
-            claims.insert((*key).to_owned(), Value::from(*value));
+    let mut current = root;
+    for raw in rest.split('/') {
+        if let Some(selector) = raw.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+            if let Some((key, wanted)) = selector.split_once('=') {
+                let Value::Array(items) = current else {
+                    return Err(format!("{pointer}: {raw} needs an array"));
+                };
+                let matches: Vec<&Value> = items
+                    .iter()
+                    .filter(|item| item.get(key).and_then(Value::as_str) == Some(wanted))
+                    .collect();
+                let [only] = matches.as_slice() else {
+                    return Err(format!(
+                        "{pointer}: {raw} must select exactly one element, selected {}",
+                        matches.len()
+                    ));
+                };
+                current = only;
+                continue;
+            }
         }
-    }
-    Value::Object(claims)
-}
-
-/// The language-neutral view of an [`AppReceipt`]: dates as ISO-8601 UTC,
-/// byte fields as lowercase hex mirrored under `<name>Hex`, maps as objects
-/// keyed by the stringified attribute type.
-fn app_receipt_json(receipt: &AppReceipt) -> Value {
-    let mut out = Map::new();
-    out.insert(
-        "unknownAttributes".to_owned(),
-        unknown_attributes(&receipt.unknown_attributes),
-    );
-    put_string(&mut out, "receiptType", receipt.receipt_type.as_deref());
-    put_string(&mut out, "bundleId", receipt.bundle_id.as_deref());
-    put_bytes(
-        &mut out,
-        "bundleIdBytes",
-        receipt.bundle_id_bytes.as_deref(),
-    );
-    put_string(&mut out, "appVersion", receipt.app_version.as_deref());
-    put_bytes(&mut out, "opaqueValue", receipt.opaque_value.as_deref());
-    put_bytes(&mut out, "sha1Hash", receipt.sha1_hash.as_deref());
-    put_date(&mut out, "creationDate", receipt.creation_date);
-    put_date(
-        &mut out,
-        "originalPurchaseDate",
-        receipt.original_purchase_date,
-    );
-    put_string(
-        &mut out,
-        "originalAppVersion",
-        receipt.original_app_version.as_deref(),
-    );
-    put_date(&mut out, "expirationDate", receipt.expiration_date);
-    put_int(&mut out, "appItemId", receipt.app_item_id);
-    put_int(&mut out, "downloadId", receipt.download_id);
-    put_int(
-        &mut out,
-        "versionExternalIdentifier",
-        receipt.version_external_identifier,
-    );
-    out.insert(
-        "inAppPurchases".to_owned(),
-        Value::Array(receipt.in_app_purchases.iter().map(in_app_json).collect()),
-    );
-    Value::Object(out)
-}
-
-// --- field paths --------------------------------------------------------
-
-#[derive(Debug)]
-enum Step {
-    Name(String),
-    Bracket(String),
-}
-
-/// A path step is either a name (`bundleId`, `length`) or a bracket
-/// (`[9999]`, `[0]`, `[productId=com.example.app.vip]`). Bracket contents
-/// hold dots, so a plain `split('.')` is wrong.
-fn path_steps(path: &str) -> Result<Vec<Step>, Failed> {
-    let mut steps = Vec::new();
-    let mut current = String::new();
-    let mut chars = path.chars().peekable();
-    while let Some(c) = chars.next() {
-        match c {
-            '.' => {
-                if !current.is_empty() {
-                    steps.push(Step::Name(std::mem::take(&mut current)));
-                }
-            }
-            '[' => {
-                if !current.is_empty() {
-                    steps.push(Step::Name(std::mem::take(&mut current)));
-                }
-                let mut inner = String::new();
-                let mut closed = false;
-                for c in chars.by_ref() {
-                    if c == ']' {
-                        closed = true;
-                        break;
-                    }
-                    inner.push(c);
-                }
-                if !closed || inner.is_empty() {
-                    return Err(Failed::from(format!(
-                        "harness error: unparseable field path \"{path}\""
-                    )));
-                }
-                steps.push(Step::Bracket(inner));
-            }
-            ']' => {
-                return Err(Failed::from(format!(
-                    "harness error: unparseable field path \"{path}\""
-                )))
-            }
-            other => current.push(other),
-        }
-    }
-    if !current.is_empty() {
-        steps.push(Step::Name(current));
-    }
-    if steps.is_empty() {
-        return Err(Failed::from(format!(
-            "harness error: unparseable field path \"{path}\""
-        )));
-    }
-    Ok(steps)
-}
-
-/// Resolves one language-neutral field path against a normalised result.
-///
-/// Returns an owned value because `x.length` has no counterpart inside the
-/// tree to borrow.
-fn resolve_path(root: &Value, path: &str) -> Result<Option<Value>, Failed> {
-    let mut current = root.clone();
-    for step in path_steps(path)? {
-        if current.is_null() {
-            return Ok(None);
-        }
-        match step {
-            Step::Name(name) => {
-                if name == "length" {
-                    if let Value::Array(items) = &current {
-                        return Ok(Some(Value::from(items.len())));
-                    }
-                }
-                match current.get(&name) {
-                    Some(next) => current = next.clone(),
-                    None => return Ok(None),
-                }
-            }
-            Step::Bracket(inner) => match inner.split_once('=') {
-                Some((key, wanted)) if !key.is_empty() => {
-                    let Value::Array(items) = &current else {
-                        return Err(Failed::from(format!(
-                            "{path}: [{inner}] does not select from a list"
-                        )));
-                    };
-                    let matches: Vec<&Value> = items
-                        .iter()
-                        .filter(|item| item.get(key).and_then(Value::as_str) == Some(wanted))
-                        .collect();
-                    match matches.as_slice() {
-                        [only] => {
-                            let only = (*only).clone();
-                            current = only;
-                        }
-                        other => {
-                            return Err(Failed::from(format!(
-                                "{path}: [{inner}] must select exactly one element, selected {}",
-                                other.len()
-                            )))
-                        }
-                    }
-                }
-                _ => {
-                    let next = match &current {
-                        Value::Array(items) => inner
-                            .parse::<usize>()
-                            .ok()
-                            .and_then(|index| items.get(index))
-                            .cloned(),
-                        other => other.get(&inner).cloned(),
-                    };
-                    match next {
-                        Some(next) => current = next,
-                        None => return Ok(None),
-                    }
-                }
-            },
+        let token = raw.replace("~1", "/").replace("~0", "~");
+        let next = match current {
+            Value::Object(map) => map.get(&token),
+            Value::Array(items) => token.parse::<usize>().ok().and_then(|i| items.get(i)),
+            _ => None,
+        };
+        match next {
+            Some(next) => current = next,
+            None => return Ok(None),
         }
     }
     Ok(Some(current))
 }
 
-// --- decodeBase64 --------------------------------------------------------
-
-/// The reason each decoder a `decodeBase64` group can name refuses with. Both
-/// decode with the public `base64::decode_receipt_base64`, which answers
-/// `None`: `receipt-data` reports that as `INVALID_RECEIPT_FORMAT` and an
-/// `x5c` entry as `INVALID_CERTIFICATE`. An error group states
-/// `INVALID_RECEIPT_FORMAT`, the receipt-data answer.
-fn base64_refusal(decoder: &str) -> Result<Reason, Failed> {
-    match decoder {
-        "receipt-data" => Ok(Reason::InvalidReceiptFormat),
-        "x5c" => Ok(Reason::InvalidCertificate),
-        other => Err(Failed::from(format!(
-            "harness error: no decoder \"{other}\""
-        ))),
+/// `null` means absent or JSON null; numbers compare by value, integers
+/// exactly.
+fn matches(expected: &Value, actual: Option<&Value>) -> bool {
+    match (expected, actual) {
+        (Value::Null, None | Some(Value::Null)) => true,
+        (Value::Number(want), Some(Value::Number(got))) => match (want.as_i64(), got.as_i64()) {
+            (Some(want), Some(got)) => want == got,
+            _ => match (want.as_u64(), got.as_u64()) {
+                (Some(want), Some(got)) => want == got,
+                _ => want.as_f64().is_some() && want.as_f64() == got.as_f64(),
+            },
+        },
+        (want, Some(got)) => want == got,
+        _ => false,
     }
 }
 
+/// Every `fields` and `lengths` expectation that does not hold on `actual`.
+fn check(id: &str, expected: &Expected, actual: &Value) -> Vec<String> {
+    let mut failures = Vec::new();
+    for (pointer, want) in expected.fields.iter().flatten() {
+        match resolve(actual, pointer) {
+            Ok(got) if matches(want, got) => {}
+            Ok(got) => failures.push(format!(
+                "{id} {pointer}: expected {want} but got {}",
+                got.map_or_else(|| "absent".to_owned(), ToString::to_string)
+            )),
+            Err(err) => failures.push(format!("{id} {err}")),
+        }
+    }
+    for (pointer, want) in expected.lengths.iter().flatten() {
+        match resolve(actual, pointer) {
+            Ok(Some(Value::Array(items))) if Some(items.len() as u64) == want.as_u64() => {}
+            Ok(got) => failures.push(format!(
+                "{id} {pointer}: expected an array of {want} but got {}",
+                got.map_or_else(|| "absent".to_owned(), ToString::to_string)
+            )),
+            Err(err) => failures.push(format!("{id} {err}")),
+        }
+    }
+    failures
+}
+
+fn parse_json(id: &str, text: &str) -> Result<Value, Failed> {
+    serde_json::from_str(text).map_err(|err| {
+        Failed::from(format!(
+            "{id}: the library returned JSON that does not parse ({err}): {text}"
+        ))
+    })
+}
+
+// --- decodeBase64 --------------------------------------------------------
+
 /// Runs every text of the group through every decoder it names and reports
 /// every text that got the wrong answer, by case id, decoder, index and
-/// escaped text, rather than stopping at the first.
+/// escaped text, rather than stopping at the first. `receipt-data` refuses
+/// with `MALFORMED` and `x5c` with `INVALID_CERTIFICATE`; an error group
+/// states `MALFORMED` and is mapped here for `x5c`.
 fn run_decode_base64(case: &Case) -> Result<(), Failed> {
     let texts = case
         .input
@@ -692,34 +468,48 @@ fn run_decode_base64(case: &Case) -> Result<(), Failed> {
         .as_ref()
         .filter(|decoders| !decoders.is_empty())
         .ok_or_else(|| Failed::from("harness error: decodeBase64 needs decoders"))?;
-    let ok = case.expected.status == "ok";
+    let ok = case.expected.status.as_deref() == Some("ok");
     let want = if ok {
         case.expected
             .bytes_hex
             .clone()
             .ok_or_else(|| Failed::from("harness error: an ok group with no bytesHex"))?
-    } else if case.expected.reason.as_deref() == Some("INVALID_RECEIPT_FORMAT") {
+    } else if case.expected.reason.as_deref() == Some("MALFORMED") {
         String::new()
     } else {
         return Err(Failed::from(
-            "harness error: an error group states INVALID_RECEIPT_FORMAT",
+            "harness error: an error group states MALFORMED",
         ));
     };
     let mut failures = Vec::new();
     for decoder in decoders {
-        let refusal = base64_refusal(decoder)?;
+        let (decode, refusal): (fn(&str) -> _, Reason) = match decoder.as_str() {
+            "receipt-data" => (decode_receipt_data, Reason::Malformed),
+            "x5c" => (decode_x5c_entry, Reason::InvalidCertificate),
+            other => {
+                return Err(Failed::from(format!(
+                    "harness error: no decoder \"{other}\""
+                )))
+            }
+        };
         for (index, text) in texts.iter().enumerate() {
             let at = format!("{}: {decoder} texts[{index}] {text:?}", case.id);
-            match decode_receipt_base64(text) {
-                Some(bytes) if !ok => failures.push(format!(
+            match decode(text) {
+                Ok(bytes) if !ok => failures.push(format!(
                     "{at} was accepted (decoded to {})",
                     hex::encode(bytes)
                 )),
-                Some(bytes) if hex::encode(&bytes) != want => failures.push(format!(
+                Ok(bytes) if hex::encode(&bytes) != want => failures.push(format!(
                     "{at} decoded to {}, want {want}",
                     hex::encode(&bytes)
                 )),
-                None if ok => failures.push(format!("{at} was refused ({refusal}), want {want}")),
+                Err(failure) if ok => failures.push(format!(
+                    "{at} was refused ({}), want {want}",
+                    failure.reason()
+                )),
+                Err(failure) if failure.reason() != refusal => {
+                    failures.push(format!("{at}: reason {}, want {refusal}", failure.reason()))
+                }
                 _ => {}
             }
         }
@@ -737,262 +527,146 @@ fn run_decode_base64(case: &Case) -> Result<(), Failed> {
 /// fact rather than a loop-shaped assumption.
 static RAN: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
-fn run_case(dir: PathBuf, fixtures: BTreeMap<String, Fixture>, case: Case) -> Result<(), Failed> {
-    RAN.lock()
-        .map_err(|_| Failed::from("harness error: the ran-case list is poisoned"))?
-        .push(case.id.clone());
+fn run_case(dir: &Path, fixtures: &BTreeMap<String, Fixture>, case: &Case) -> Result<(), Failed> {
+    if let Ok(mut ran) = RAN.lock() {
+        ran.push(case.id.clone());
+    }
+    let id = case.id.as_str();
     if case.operation == "decodeBase64" {
-        return run_decode_base64(&case);
+        return run_decode_base64(case);
     }
-    let config = case
-        .config
-        .clone()
-        .ok_or_else(|| Failed::from("harness error: a case with no config"))?;
-    let input_id = match (&case.input.fixture, &case.input.request_body) {
-        (Some(id), None) => id.clone(),
-        (None, Some(id)) if case.operation == "verifyReceiptEndpoint" => id.clone(),
-        _ => {
-            return Err(Failed::from(
-                "harness error: input needs exactly one of fixture and requestBody \
-                 (requestBody on verifyReceiptEndpoint only)",
-            ))
-        }
-    };
-    if case.expected.failure_reason.is_some() && case.operation != "verifyReceiptEndpoint" {
-        return Err(Failed::from(
-            "harness error: expected.failureReason on an operation other than verifyReceiptEndpoint",
-        ));
-    }
-    let input = fixture_bytes(&dir, &fixtures, &input_id)?;
-    let clock = case_clock(&case)?;
-    let outcome: Result<Value, VerificationError> = match case.operation.as_str() {
-        "verifyTransaction" => {
-            let verifier = jws_verifier(&dir, &fixtures, &config, clock)?;
-            let jws = String::from_utf8_lossy(&input).into_owned();
-            verifier.verify_transaction(&jws).map(|p| {
-                let ints = [
-                    ("signedDate", p.signed_date),
-                    ("purchaseDate", p.purchase_date),
-                    ("originalPurchaseDate", p.original_purchase_date),
-                    ("expiresDate", p.expires_date),
-                    ("revocationDate", p.revocation_date),
-                    ("price", p.price),
-                    ("quantity", p.quantity),
-                    ("offerType", p.offer_type),
-                    ("revocationReason", p.revocation_reason),
-                ];
-                typed_claims_json(p.claims, &ints)
-            })
-        }
-        "verifyAppTransaction" => {
-            let verifier = jws_verifier(&dir, &fixtures, &config, clock)?;
-            let jws = String::from_utf8_lossy(&input).into_owned();
-            verifier.verify_app_transaction(&jws).map(|p| {
-                let ints = [
-                    ("appAppleId", p.app_apple_id),
-                    ("receiptCreationDate", p.receipt_creation_date),
-                    ("originalPurchaseDate", p.original_purchase_date),
-                    ("preorderDate", p.preorder_date),
-                    ("versionExternalIdentifier", p.version_external_identifier),
-                ];
-                typed_claims_json(p.claims, &ints)
-            })
-        }
-        "verifyRaw" => {
-            let verifier = jws_verifier(&dir, &fixtures, &config, clock)?;
-            let jws = String::from_utf8_lossy(&input).into_owned();
-            verifier.verify_raw(&jws).map(Value::Object)
-        }
-        "verifyReceipt" => {
-            require_no_clock(clock, "verifyReceipt")?;
-            let bundle_id = config.bundle_id.clone().ok_or_else(|| {
-                Failed::from("harness error: verifyReceipt case without a bundleId")
-            })?;
-            let verifier = ReceiptVerifier::builder()
-                .trusted_roots(trust_anchors(&dir, &fixtures, &config.trusted_roots)?)
-                .bundle_id(bundle_id)
-                .build()
-                .map_err(|err| {
-                    Failed::from(format!(
-                        "harness error: cannot build ReceiptVerifier: {err}"
-                    ))
-                })?;
-            let result = match &config.device_guid_hex {
-                Some(guid_hex) => {
-                    let guid = hex::decode(guid_hex).map_err(|err| {
-                        Failed::from(format!("harness error: deviceGuidHex is not hex: {err}"))
-                    })?;
-                    verifier.verify_with_device_guid(&input, &guid)
-                }
-                None => verifier.verify(&input),
-            };
-            result.map(|receipt| app_receipt_json(&receipt))
-        }
-        "verifyReceiptBase64" => {
-            require_no_clock(clock, "verifyReceiptBase64")?;
-            let bundle_id = config.bundle_id.clone().ok_or_else(|| {
-                Failed::from("harness error: verifyReceiptBase64 case without a bundleId")
-            })?;
-            let verifier = ReceiptVerifier::builder()
-                .trusted_roots(trust_anchors(&dir, &fixtures, &config.trusted_roots)?)
-                .bundle_id(bundle_id)
-                .build()
-                .map_err(|err| {
-                    Failed::from(format!(
-                        "harness error: cannot build ReceiptVerifier: {err}"
-                    ))
-                })?;
-            let text = String::from_utf8_lossy(&input).into_owned();
-            let result = match &config.device_guid_hex {
-                Some(guid_hex) => {
-                    let guid = hex::decode(guid_hex).map_err(|err| {
-                        Failed::from(format!("harness error: deviceGuidHex is not hex: {err}"))
-                    })?;
-                    verifier.verify_base64_with_device_guid(&text, &guid)
-                }
-                None => verifier.verify_base64(&text),
-            };
-            result.map(|receipt| app_receipt_json(&receipt))
-        }
+    let verifier = Verifier::new(config(dir, fixtures, case)?);
+    let expected = &case.expected;
+    let fixture = case.input.fixture.as_deref();
+    let actual = match case.operation.as_str() {
         "verifyReceiptEndpoint" => {
-            let name = config.environment.as_deref().ok_or_else(|| {
-                Failed::from("harness error: verifyReceiptEndpoint case without an environment")
-            })?;
-            let environment = Environment::from_str(name)
-                .map_err(|err| Failed::from(format!("harness error: {err}")))?;
-            let mut builder = VerifyReceiptEndpoint::builder()
-                .trusted_roots(trust_anchors(&dir, &fixtures, &config.trusted_roots)?)
-                .environment(environment);
-            if let Some(clock) = clock {
-                builder = builder.clock(Arc::new(clock));
-            }
-            let endpoint = builder.build().map_err(|err| {
-                Failed::from(format!(
-                    "harness error: cannot build VerifyReceiptEndpoint: {err}"
-                ))
-            })?;
-            let fixture = fixtures.get(&input_id).ok_or_else(|| {
-                Failed::from(format!(
-                    "harness error: cases.json registers no fixture \"{input_id}\""
-                ))
-            })?;
-            let result = if case.input.request_body.is_some() {
-                // The whole raw body, verbatim: not wrapped in receipt-data,
-                // not trimmed. A body that is not UTF-8 could not reach this
-                // `&str` entry point at all.
-                let body = String::from_utf8(input).map_err(|_| {
-                    Failed::from("harness error: a requestBody fixture is not UTF-8")
-                })?;
-                endpoint.verify_receipt_result_from_json(&body)
-            } else {
-                // A `text` fixture hands its verbatim bytes to
-                // `receipt-data`, exactly as a client sent them; raw/base64
-                // fixtures have no client-facing string of their own, so
-                // they are re-encoded as canonical base64.
-                let receipt_data = if fixture.codec == "text" {
-                    String::from_utf8_lossy(&input).into_owned()
-                } else {
-                    apple_purchase_receipt_verifier::base64::encode(&input)
-                };
-                endpoint.verify_receipt_result(&VerifyReceiptRequest::new(receipt_data))
-            };
-            if let Some(wanted) = &case.expected.failure_reason {
-                let got = result.failure_reason().map(Reason::as_str);
-                if got != Some(wanted.as_str()) {
+            let environment = match case.config.as_ref().and_then(|c| c.environment.as_deref()) {
+                Some("PRODUCTION") => Environment::Production,
+                Some("SANDBOX") => Environment::Sandbox,
+                other => {
                     return Err(Failed::from(format!(
-                        "failureReason: expected {wanted}, got {}",
-                        got.unwrap_or("none")
-                    )));
+                        "{id}: harness error: environment {other:?}"
+                    )))
                 }
-            }
-            let response = result.to_response();
-            if !matches!(
-                response.status,
-                status::OK
-                    | status::MALFORMED
-                    | status::NOT_AUTHENTICATED
-                    | status::SANDBOX_RECEIPT_ON_PRODUCTION
-                    | status::PRODUCTION_RECEIPT_ON_SANDBOX
-                    | status::INTERNAL
-            ) {
+            };
+            let body = match (&case.input.request_body, fixture) {
+                (Some(body), _) => String::from_utf8(fixture_bytes(dir, fixtures, body)?)
+                    .map_err(|_| Failed::from(format!("{id}: request body is not UTF-8")))?,
+                (None, Some(fixture)) => serde_json::to_string(&serde_json::json!({
+                    "receipt-data": receipt_string(dir, fixtures, fixture)?
+                }))
+                .map_err(|err| Failed::from(format!("{id}: harness error: {err}")))?,
+                (None, None) => return Err(Failed::from(format!("{id}: harness error: no input"))),
+            };
+            if !expected
+                .fields
+                .as_ref()
+                .is_some_and(|f| f.contains_key("/status"))
+            {
                 return Err(Failed::from(format!(
-                    "harness error: endpoint answered status {}, which is outside the documented set",
-                    response.status
+                    "{id}: harness error: /status not pinned"
                 )));
             }
-            Ok(response.to_json_value())
+            parse_json(id, &verifier.verify_receipt_endpoint(environment, &body))?
+        }
+        operation @ ("verifyReceipt" | "verifySignedData") => {
+            let fixture =
+                fixture.ok_or_else(|| Failed::from(format!("{id}: harness error: no fixture")))?;
+            let input = if operation == "verifyReceipt" {
+                receipt_string(dir, fixtures, fixture)?
+            } else {
+                String::from_utf8(fixture_bytes(dir, fixtures, fixture)?)
+                    .map_err(|_| Failed::from(format!("{id}: harness error: JWS not UTF-8")))?
+            };
+            let call = || {
+                if operation == "verifyReceipt" {
+                    verifier
+                        .verify_receipt(&input)
+                        .map(|receipt| receipt.to_json())
+                } else {
+                    verifier
+                        .verify_signed_data(&input)
+                        .map(apple_purchase_receipt_verifier::JsonPayload::into_json)
+                }
+            };
+            let result = match case.max_millis {
+                None => call(),
+                Some(budget) => {
+                    let _warm_up = call();
+                    let start = std::time::Instant::now();
+                    let (result, used) = keys_used_during(call);
+                    let elapsed = start.elapsed();
+                    if elapsed.as_millis() > u128::from(budget) {
+                        return Err(Failed::from(format!(
+                            "{id}: took {elapsed:?}, over the {budget} ms budget"
+                        )));
+                    }
+                    // The direct form of the budget: every stranger in these
+                    // cases carries a key far over the 8192-bit cap, so an
+                    // SPKI that large among the keys used means a stranger's
+                    // key reached a signature check. An 8192-bit RSA SPKI is
+                    // about 1,050 bytes.
+                    if let Some(spki) = used.iter().find(|spki| spki.len() > 1100) {
+                        return Err(Failed::from(format!(
+                            "{id}: a {}-byte stranger key checked a signature",
+                            spki.len()
+                        )));
+                    }
+                    result
+                }
+            };
+            match (expected.status.as_deref().unwrap_or(""), result) {
+                ("error", Ok(_)) => {
+                    return Err(Failed::from(format!(
+                        "{id}: expected {} but the operation verified",
+                        expected.reason.as_deref().unwrap_or("?")
+                    )))
+                }
+                ("error", Err(failure)) => {
+                    let want = expected
+                        .reason
+                        .as_deref()
+                        .ok_or_else(|| Failed::from(format!("{id}: harness error: no reason")))?;
+                    let want = Reason::from_str(want)
+                        .map_err(|err| Failed::from(format!("{id}: harness error: {err}")))?;
+                    if failure.reason() != want {
+                        return Err(Failed::from(format!(
+                            "{id}: expected {want} but got {failure}"
+                        )));
+                    }
+                    return Ok(());
+                }
+                ("ok", Err(failure)) => {
+                    return Err(Failed::from(format!("{id}: expected ok but got {failure}")))
+                }
+                ("ok", Ok(json)) => {
+                    if let Some(want) = &expected.to_json {
+                        if *want != json {
+                            return Err(Failed::from(format!(
+                                "{id}: toJson\n  expected {want}\n  but got  {json}"
+                            )));
+                        }
+                    }
+                    parse_json(id, &json)?
+                }
+                (other, _) => {
+                    return Err(Failed::from(format!(
+                        "{id}: harness error: unknown status \"{other}\""
+                    )))
+                }
+            }
         }
         other => {
             return Err(Failed::from(format!(
-                "harness error: no adapter for operation \"{other}\""
+                "{id}: harness error: unknown operation \"{other}\""
             )))
         }
     };
-
-    match outcome {
-        Err(error) => {
-            if case.expected.status != "error" {
-                return Err(Failed::from(format!(
-                    "expected success but the call failed with {}",
-                    error.reason()
-                )));
-            }
-            let expected_text = case.expected.reason.as_deref().ok_or_else(|| {
-                Failed::from("harness error: an error case with no expected reason")
-            })?;
-            // Only a VerificationError carries a canonical Reason — which
-            // the type system enforces here, since that is the only error
-            // type a verification entry point can return. An unknown token
-            // in the file is a harness failure, never a near-miss match.
-            let expected = Reason::from_str(expected_text)
-                .map_err(|err| Failed::from(format!("harness error: {err}")))?;
-            if error.reason() != expected {
-                return Err(Failed::from(format!(
-                    "reason: expected {expected}, got {}",
-                    error.reason()
-                )));
-            }
-            Ok(())
-        }
-        Ok(actual) => {
-            if case.expected.status != "ok" {
-                return Err(Failed::from(format!(
-                    "expected {} but the call returned a value",
-                    case.expected.reason.as_deref().unwrap_or("an error")
-                )));
-            }
-            let fields =
-                case.expected.fields.as_ref().ok_or_else(|| {
-                    Failed::from("harness error: an ok case with no expected fields")
-                })?;
-            for (path, expected) in fields {
-                let resolved = resolve_path(&actual, path)?;
-                match expected {
-                    // null means "absent or unset".
-                    Value::Null => {
-                        if !matches!(resolved, None | Some(Value::Null)) {
-                            return Err(Failed::from(format!(
-                                "{path}: expected absent, got {}",
-                                resolved.map_or_else(|| "nothing".to_owned(), |v| v.to_string())
-                            )));
-                        }
-                    }
-                    _ => {
-                        let Some(value) = resolved else {
-                            return Err(Failed::from(format!(
-                                "{path}: expected {expected}, got nothing"
-                            )));
-                        };
-                        if &value != expected {
-                            return Err(Failed::from(format!(
-                                "{path}: expected {expected}, got {value}"
-                            )));
-                        }
-                    }
-                }
-            }
-            Ok(())
-        }
+    let failures = check(id, expected, &actual);
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(Failed::from(failures.join("\n")))
     }
 }
 
@@ -1008,69 +682,39 @@ fn main() -> std::process::ExitCode {
 
     let mut trials = Vec::new();
 
-    // Read before any case runs: a fixture no case happens to reference
-    // would otherwise drift unnoticed, and the registry is the thing being
-    // guarded.
+    // A fixture no case happens to reference would otherwise drift
+    // unnoticed, and the registry is the thing being guarded.
     {
         let dir = dir.clone();
         let fixtures = file.fixtures.clone();
         trials.push(Trial::test(
-            "cases.json every registered fixture matches its contentSha256",
+            format!("{CASES} every registered fixture matches its contentSha256"),
             move || check_whole_registry(&dir, &fixtures),
         ));
     }
-
-    // Read before any case runs too: an expectation that lost digits on the
-    // way in would be compared against, and passed, by a library that lost
-    // the same digits.
     trials.push(Trial::test(
-        "cases.json every expected integer keeps its digits",
+        format!("{CASES} every expected integer keeps its digits"),
         || {
             let (_, fresh) = load_cases()?;
             expectations_keep_every_digit(&fresh)
         },
     ));
 
-    let mut represented: Vec<String> = Vec::new();
     for case in &file.cases {
-        represented.push(case.id.clone());
         let dir = dir.clone();
         let fixtures = file.fixtures.clone();
         let case = case.clone();
-        let name = format!("cases.json {}", case.id);
-        trials.push(Trial::test(name, move || run_case(dir, fixtures, case)));
-    }
-
-    // Coverage self-check: every case in the file became a trial, asserted
-    // against the parsed length rather than a literal, so a silently dropped
-    // operation cannot hide.
-    {
-        let represented = represented.clone();
-        trials.push(Trial::test("cases.json every case ran", move || {
-            let (_, fresh) = load_cases()?;
-            let expected: Vec<String> = fresh.cases.iter().map(|c| c.id.clone()).collect();
-            if expected.len() != represented.len() {
-                return Err(Failed::from(format!(
-                    "cases.json holds {} cases but the adapter generated {}",
-                    expected.len(),
-                    represented.len()
-                )));
-            }
-            for id in &expected {
-                if !represented.contains(id) {
-                    return Err(Failed::from(format!("case \"{id}\" was never run")));
-                }
-            }
-            Ok(())
+        trials.push(Trial::test(format!("{CASES} {}", case.id), move || {
+            run_case(&dir, &fixtures, &case)
         }));
     }
 
     let conclusion = libtest_mimic::run(&arguments, trials);
 
-    // Coverage self-check after the run, the way go/conformance_test.go does
-    // it: every case id in the parsed file actually ran, never compared
-    // against a literal count. A filter, a skip or an ignored-only run is the
-    // one thing that may leave cases unrun, so the check stands down for it.
+    // Coverage self-check after the run: every case id in the parsed file
+    // actually ran, compared against the file and never against a literal
+    // count. A filter, a skip or an ignored-only run is the one thing that
+    // may leave cases unrun, so the check stands down for it.
     if arguments.filter.is_some()
         || !arguments.skip.is_empty()
         || arguments.ignored
@@ -1100,5 +744,10 @@ fn main() -> std::process::ExitCode {
         );
         return std::process::ExitCode::FAILURE;
     }
+    println!(
+        "{CASES}: {} cases ran, {} fixtures registered, 0 skipped",
+        file.cases.len(),
+        file.fixtures.len()
+    );
     conclusion.exit_code()
 }
