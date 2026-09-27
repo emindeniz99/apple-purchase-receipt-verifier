@@ -185,21 +185,22 @@ def _verify_signature(
     first_failure: VerificationError | None = None
     for signer in signer_infos:
         try:
-            signer_cert = _find_signer_cert(readable, unreadable, signer)
-            path = build_path_top_down(signer_cert, [cert for _, cert in readable], roots)
-            for cert in path:
-                if not valid_at_ms(cert, at_ms):
-                    raise VerificationError(
-                        Reason.INVALID_CERTIFICATE,
-                        "receipt certificate is not valid at the checked instant",
+            signer_certs = _find_signer_certs(readable, unreadable, signer)
+            # Each certificate carrying the signer's identity is tried the
+            # way the SignerInfos are: one passing is enough, and only when
+            # none does is the first one's failure the verdict.
+            first_match_failure: VerificationError | None = None
+            for signer_cert in signer_certs:
+                try:
+                    _verify_with_signer_cert(
+                        content, econtent_type, signer, signer_cert, readable, roots, at_ms
                     )
-            _require_markers(path)
-            # The chain, validity and markers are checked BEFORE the
-            # signature on purpose: checking the signature first would run
-            # the attacker's own key (their choice of RSA size and exponent)
-            # before anything about it is trusted.
-            _verify_cms_signature(content, econtent_type, signer, signer_cert)
-            return content
+                    return content
+                except VerificationError as e:
+                    if first_match_failure is None:
+                        first_match_failure = e
+            assert first_match_failure is not None
+            raise first_match_failure
         except VerificationError as e:
             # Every SignerInfo signs the same content, so another one
             # passing proves the same bytes; only when none does is the
@@ -208,6 +209,30 @@ def _verify_signature(
                 first_failure = e
     assert first_failure is not None
     raise first_failure
+
+
+def _verify_with_signer_cert(
+    content: bytes,
+    econtent_type: str,
+    signer: Any,
+    signer_cert: x509.Certificate,
+    readable: "list[tuple[bytes, x509.Certificate]]",
+    roots: "Sequence[x509.Certificate]",
+    at_ms: int,
+) -> None:
+    path = build_path_top_down(signer_cert, [cert for _, cert in readable], roots)
+    for cert in path:
+        if not valid_at_ms(cert, at_ms):
+            raise VerificationError(
+                Reason.INVALID_CERTIFICATE,
+                "receipt certificate is not valid at the checked instant",
+            )
+    _require_markers(path)
+    # The chain, validity and markers are checked BEFORE the signature on
+    # purpose: checking the signature first would run the attacker's own
+    # key (their choice of RSA size and exponent) before anything about it
+    # is trusted.
+    _verify_cms_signature(content, econtent_type, signer, signer_cert)
 
 
 def _require_markers(path: "list[x509.Certificate]") -> None:
@@ -282,11 +307,15 @@ def _names_the_signer(raw: bytes, wanted_issuer: bytes, wanted_serial: int) -> b
         return False
 
 
-def _find_signer_cert(
+def _find_signer_certs(
     readable: "list[tuple[bytes, x509.Certificate]]",
     unreadable: "list[tuple[bytes, Exception]]",
     signer: Any,
-) -> x509.Certificate:
+) -> "list[x509.Certificate]":
+    """Every embedded certificate carrying the SignerInfo's issuer and
+    serial, in bag order. More than one can: the bag is unsigned, so a
+    stranger may copy the signer's identity, and it must not hide the
+    genuine certificate behind it."""
     try:
         sid = signer["sid"].chosen
         wanted_serial = sid["serial_number"].native
@@ -305,13 +334,16 @@ def _find_signer_cert(
         raise VerificationError(
             Reason.MALFORMED, "an embedded certificate is not a valid certificate"
         ) from unreadable[0][1]
+    matches = []
     for raw, cert in readable:
         matches_issuer = (
             asn1x509.Certificate.load(raw)["tbs_certificate"]["issuer"].dump() == wanted_issuer
         )
         if cert.serial_number == wanted_serial and matches_issuer:
-            return cert
-    raise VerificationError(Reason.MALFORMED, "signer certificate not embedded")
+            matches.append(cert)
+    if not matches:
+        raise VerificationError(Reason.MALFORMED, "signer certificate not embedded")
+    return matches
 
 
 def _require_attribute_set_syntax(signer: Any) -> None:
