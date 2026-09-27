@@ -1,6 +1,5 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
-import io.github.emindeniz99.applepurchasereceiptverifier.internal.BouncyCastle;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.MessageDigest;
@@ -18,11 +17,12 @@ import org.jspecify.annotations.Nullable;
 /**
  * Loads the Apple root certificates bundled with this library (copies of the
  * public roots from <a href="https://www.apple.com/certificateauthority/">Apple PKI</a>).
- * These are the production trust anchors; tests use a generated fake PKI instead.
+ * These are the production trust anchors behind {@link Config#defaults()};
+ * tests use a generated fake PKI instead.
  *
- * <p>Both sets contain all three published Apple roots. Apple deliberately
- * documents the JWS chain as ending in "an Apple root certificate" (not a
- * specific one) and its guidance is to trust every root on the PKI page, so
+ * <p>The set contains all three published Apple roots, for JWS and receipts
+ * alike. Apple deliberately documents the JWS chain as ending in "an Apple
+ * root certificate" (not a specific one) and its guidance is to trust every root on the PKI page, so
  * anchoring on a single root would break silently if Apple re-anchored a
  * path.
  *
@@ -32,11 +32,11 @@ import org.jspecify.annotations.Nullable;
  * in front of them, and every loaded certificate is checked against the
  * SHA-256 of the root it must be. A mismatch, a missing resource, or anything
  * other than the three distinct roots is an {@link IllegalStateException}:
- * both accessors fail closed rather than hand back an anchor set that is not
+ * the accessor fails closed rather than hand back an anchor set that is not
  * Apple's. That is a deployment defect, not a verdict about a payload, which
- * is why it is unchecked and never a {@link VerificationException}.
+ * is why it is unchecked and never a {@link Failure}.
  */
-public final class AppleRootCerts {
+final class AppleRootCerts {
 
     private AppleRootCerts() {}
 
@@ -53,48 +53,20 @@ public final class AppleRootCerts {
     };
 
     /**
-     * Trust anchors for StoreKit 2 / App Store Server JWS chains.
-     * Production chains currently end at Apple Root CA - G3.
-     * The roots are loaded and checked once; each call returns a new
-     * mutable set of the same certificates.
-     *
-     * <p>This currently returns the same Apple roots as
-     * {@link #receiptRoots()}. The two names are kept separate so that
-     * callers are already on the right one if Apple ever issues separate
-     * roots for JWS and for receipts.</p>
+     * The three roots, loaded and checked once. The set is unmodifiable and
+     * the certificates are immutable, so every caller can share it.
      *
      * @throws IllegalStateException if the bundled roots are missing, do not
      *                               parse, or do not match their pinned
      *                               fingerprints
      */
-    public static Set<X509Certificate> jwsRoots() {
-        return new LinkedHashSet<X509Certificate>(allRoots());
+    static Set<X509Certificate> roots() {
+        return allRoots();
     }
 
     /**
-     * Trust anchors for legacy PKCS#7 app-receipt chains.
-     * Production chains currently end at the Apple Inc. Root CA.
-     * The roots are loaded and checked once; each call returns a new
-     * mutable set of the same certificates.
-     *
-     * <p>This currently returns the same Apple roots as {@link #jwsRoots()}.
-     * The two names are kept separate so that callers are already on the
-     * right one if Apple ever issues separate roots for receipts and for
-     * JWS.</p>
-     *
-     * @throws IllegalStateException if the bundled roots are missing, do not
-     *                               parse, or do not match their pinned
-     *                               fingerprints
-     */
-    public static Set<X509Certificate> receiptRoots() {
-        return new LinkedHashSet<X509Certificate>(allRoots());
-    }
-
-    /**
-     * The roots, read, parsed and pinned once per class loader. Each accessor
-     * hands out its own mutable copy, so a caller changing its set cannot
-     * change what the next caller gets; the certificates themselves are
-     * immutable. A failed load is not cached: it is rethrown as the same
+     * The roots, read, parsed and pinned once per class loader. A failed
+     * load is not cached: it is rethrown as the same
      * {@link IllegalStateException} on every call, which a static holder
      * class would instead turn into an {@link ExceptionInInitializerError}
      * and then a {@link NoClassDefFoundError}. Two threads racing the first

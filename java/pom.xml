@@ -50,8 +50,8 @@
          to be fixed, not current; bump it with a release when convenient. -->
     <project.build.outputTimestamp>2026-09-21T00:00:00Z</project.build.outputTimestamp>
     <bouncycastle.version>1.86</bouncycastle.version>
-    <!-- Floor: Jackson 2.16. JwsVerifier and VerifyReceiptEndpoint set
-         StreamReadConstraints through internal/BoundedJson rather than relying on
+    <!-- Floor: Jackson 2.16. JwsCore and Endpoint set
+         StreamReadConstraints through BoundedJson rather than relying on
          Jackson's defaults, because the JWS header is parsed before any
          signature check and a host BOM pinning an older Jackson 2 would
          otherwise link cleanly and silently lose the nesting guard.
@@ -70,9 +70,12 @@
       <artifactId>bcpkix-jdk18on</artifactId>
       <version>${bouncycastle.version}</version>
     </dependency>
+    <!-- jackson-core only: its streaming parser reads the JWS and the
+         endpoint request, and its generator writes the endpoint response.
+         No databind, no annotations. -->
     <dependency>
       <groupId>com.fasterxml.jackson.core</groupId>
-      <artifactId>jackson-databind</artifactId>
+      <artifactId>jackson-core</artifactId>
       <version>${jackson.version}</version>
     </dependency>
     <!-- JSpecify nullness annotations on the public API, so Kotlin sees
@@ -93,6 +96,14 @@
       <optional>true</optional>
     </dependency>
 
+    <!-- Test only: TestPki and the fixture tests still build and read JSON
+         through databind. -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>${jackson.version}</version>
+      <scope>test</scope>
+    </dependency>
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
@@ -253,8 +264,7 @@
           </plugin>
           <!-- CycloneDX SBOM, attached as <artifact>-<version>-cyclonedx.json
                so it is signed and uploaded with the jars: runtime scope only,
-               which is the three BouncyCastle and three Jackson jars the
-               README's dependency table describes. -->
+               which is the three BouncyCastle jars and jackson-core. -->
           <plugin>
             <groupId>org.cyclonedx</groupId>
             <artifactId>cyclonedx-maven-plugin</artifactId>

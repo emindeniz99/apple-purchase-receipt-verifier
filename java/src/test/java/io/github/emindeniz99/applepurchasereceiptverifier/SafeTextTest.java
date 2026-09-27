@@ -5,8 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.emindeniz99.applepurchasereceiptverifier.internal.SafeText;
-import io.github.emindeniz99.applepurchasereceiptverifier.jws.JwsVerifier;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -17,8 +15,6 @@ import java.security.cert.X509Certificate;
 import java.security.spec.ECGenParameterSpec;
 import java.util.Arrays;
 import java.util.Base64;
-import java.util.Collections;
-import java.util.EnumSet;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -102,7 +98,7 @@ class SafeTextTest {
                 + ".e30.AA";
 
         VerificationException thrown =
-                assertThrows(VerificationException.class, () -> verifier().verifyTransaction(jws));
+                assertThrows(VerificationException.class, () -> Checks.signedData(verifier(), jws));
         assertTrue(
                 thrown.getMessage().length() < 200,
                 "the message is " + thrown.getMessage().length() + " characters");
@@ -138,21 +134,21 @@ class SafeTextTest {
         final String jws = TestPki.b64url(header.getBytes(StandardCharsets.UTF_8)) + "."
                 + TestPki.b64url(payload.getBytes(StandardCharsets.UTF_8))
                 + "." + TestPki.b64url(new byte[64]);
-        JwsVerifier verifier =
-                new JwsVerifier(Collections.singleton(pki.root), "com.example.app", EnumSet.of(Environment.SANDBOX));
+        Verifier verifier = Checks.verifier(pki);
 
-        VerificationException thrown = assertThrows(VerificationException.class, () -> verifier.verifyRaw(jws));
-        assertEquals(VerificationException.Reason.INVALID_CHAIN, thrown.reason(), thrown.getMessage());
+        VerificationException thrown =
+                assertThrows(VerificationException.class, () -> Checks.signedData(verifier, jws));
+        assertEquals(Reason.UNTRUSTED_CHAIN, thrown.reason(), thrown.getMessage());
         assertTrue(thrown.getMessage().contains("WARN forged log line"), thrown.getMessage());
         assertFalse(thrown.getMessage().contains("\n"), thrown.getMessage());
         assertFalse(thrown.getMessage().contains("\r"), thrown.getMessage());
     }
 
-    private static JwsVerifier verifier() throws Exception {
+    private static Verifier verifier() throws Exception {
         byte[] der = Files.readAllBytes(FIXTURES.resolve("jws-root.der"));
         X509Certificate root = (X509Certificate)
                 CertificateFactory.getInstance("X.509").generateCertificate(new ByteArrayInputStream(der));
-        return new JwsVerifier(Collections.singleton(root), "com.example.app", EnumSet.of(Environment.SANDBOX));
+        return Checks.verifier(root);
     }
 
     /** Java 8 has no {@code String.repeat}, and the artifact's floor is 8. */

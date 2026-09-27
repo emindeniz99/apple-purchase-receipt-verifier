@@ -2,13 +2,10 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
-import io.github.emindeniz99.applepurchasereceiptverifier.jws.JwsVerifier;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.URL;
@@ -21,7 +18,6 @@ import java.security.MessageDigest;
 import java.security.cert.X509Certificate;
 import java.util.Arrays;
 import java.util.Base64;
-import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -49,17 +45,12 @@ class AppleRootCertsTest {
             "c2b9b042dd57830e7d117dac55ac8ae19407d38e41d88f3215bc3a890444a050",
             "63343abfb89a6a03ebb57e9b3f5fa7be7c4f5c756f3017b3a8c488c3653e9179"));
 
-    // Both sets carry all three published Apple roots (PLAN D15): Apple only
-    // commits to "an Apple root certificate", so a single-root anchor would
-    // break silently if Apple re-anchored a path.
+    // One set carries all three published Apple roots (PLAN D15) for JWS and
+    // receipts alike: Apple only commits to "an Apple root certificate", so a
+    // single-root anchor would break silently if Apple re-anchored a path.
     @Test
-    void bundledJwsRootsAreAllThreePublishedAppleRoots() {
-        assertAllThreeRoots(AppleRootCerts.jwsRoots());
-    }
-
-    @Test
-    void bundledReceiptRootsAreAllThreePublishedAppleRoots() {
-        assertAllThreeRoots(AppleRootCerts.receiptRoots());
+    void defaultRootsAreAllThreePublishedAppleRoots() {
+        assertAllThreeRoots(Config.defaults().roots());
     }
 
     /**
@@ -71,27 +62,27 @@ class AppleRootCertsTest {
     @Test
     void bundledRootsMatchTheirPinnedFingerprints() throws Exception {
         Set<String> loaded = new HashSet<String>();
-        for (X509Certificate root : AppleRootCerts.jwsRoots()) {
+        for (X509Certificate root : Config.defaults().roots()) {
             loaded.add(sha256Hex(root.getEncoded()));
         }
         assertEquals(ROOT_FINGERPRINTS, loaded);
     }
 
     /**
-     * The roots are parsed once, but a caller still owns the set it gets:
-     * emptying one must not reach the next caller, or one careless caller
-     * would strip every later verifier of its anchors.
+     * The roots are parsed once and shared, so no caller may change them:
+     * emptying the set would otherwise strip every later verifier of its
+     * anchors.
      */
     @Test
-    void eachCallReturnsItsOwnSetOfTheSameCachedCertificates() {
-        Set<X509Certificate> first = AppleRootCerts.jwsRoots();
-        Set<X509Certificate> second = AppleRootCerts.receiptRoots();
-        assertNotSame(first, second);
+    void theDefaultRootsAreParsedOnceAndCannotBeChanged() {
+        Set<X509Certificate> first = Config.defaults().roots();
+        Set<X509Certificate> second = Config.defaults().roots();
         for (X509Certificate root : first) {
             assertTrue(second.stream().anyMatch(c -> c == root), "certificate was parsed again");
         }
-        first.clear();
-        assertAllThreeRoots(AppleRootCerts.jwsRoots());
+        assertThrows(UnsupportedOperationException.class, first::clear);
+        assertThrows(UnsupportedOperationException.class, AppleRootCerts.roots()::clear);
+        assertAllThreeRoots(Config.defaults().roots());
     }
 
     /**
@@ -151,9 +142,9 @@ class AppleRootCertsTest {
                     "the shadowing loader resolved " + resolved + " rather than the planted copy");
 
             Class<?> shadowedRoots = Class.forName(AppleRootCerts.class.getName(), true, shadowed);
-            Method jwsRoots = shadowedRoots.getMethod("jwsRoots");
-            InvocationTargetException thrown =
-                    assertThrows(InvocationTargetException.class, () -> jwsRoots.invoke(null));
+            Method roots = shadowedRoots.getDeclaredMethod("roots");
+            roots.setAccessible(true);
+            InvocationTargetException thrown = assertThrows(InvocationTargetException.class, () -> roots.invoke(null));
             assertTrue(
                     thrown.getCause() instanceof IllegalStateException,
                     "expected the anchor load to fail closed, got " + thrown.getCause());
@@ -251,7 +242,7 @@ class AppleRootCertsTest {
      * it, so the JWS carries the real x5c and a zero signature: the verifier
      * checks the marker OIDs and the chain before the signature, so reaching
      * INVALID_SIGNATURE (and not INVALID_CERTIFICATE_PURPOSE or
-     * INVALID_CHAIN) is the proof that both passed on the library's real code
+     * UNTRUSTED_CHAIN) is the proof that both passed on the library's real code
      * path. If this fails, the bundled roots or the OID checks no longer
      * accept what Apple actually ships.
      */
@@ -261,7 +252,8 @@ class AppleRootCertsTest {
                 ROOT_FINGERPRINTS.contains(sha256Hex(der(REAL_APPLE_ROOT))),
                 "Apple's Root CA - G3 from Apple's test suite is not among the bundled JWS roots");
         VerificationException e = assertThrows(
-                VerificationException.class, () -> productionVerifier().verifyRaw(realChainJws(EFFECTIVE_DATE_MILLIS)));
+                VerificationException.class,
+                () -> Checks.signedData(productionVerifier(), realChainJws(EFFECTIVE_DATE_MILLIS)));
         assertEquals(Reason.INVALID_SIGNATURE, e.reason(), e.getMessage());
     }
 
@@ -276,13 +268,13 @@ class AppleRootCertsTest {
         long afterLeaf = 1823472000000L; // 2027-10-14T00:00:00Z
         for (long at : new long[] {beforeLeaf, afterLeaf}) {
             VerificationException e = assertThrows(
-                    VerificationException.class, () -> productionVerifier().verifyRaw(realChainJws(at)));
-            assertEquals(Reason.INVALID_CHAIN, e.reason(), "signedDate " + at + ": " + e.getMessage());
+                    VerificationException.class, () -> Checks.signedData(productionVerifier(), realChainJws(at)));
+            assertEquals(Reason.UNTRUSTED_CHAIN, e.reason(), "signedDate " + at + ": " + e.getMessage());
         }
     }
 
-    private static JwsVerifier productionVerifier() {
-        return new JwsVerifier(AppleRootCerts.jwsRoots(), "com.example", EnumSet.of(Environment.PRODUCTION));
+    private static Verifier productionVerifier() {
+        return Verifier.create(Config.defaults());
     }
 
     /** A JWS over the real x5c whose signedDate is {@code signedAtMillis}; its signature is 64 zero bytes. */

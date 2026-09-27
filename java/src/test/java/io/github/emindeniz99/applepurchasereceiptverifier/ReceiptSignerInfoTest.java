@@ -3,9 +3,6 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
-import io.github.emindeniz99.applepurchasereceiptverifier.receipt.AppReceipt;
-import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifier;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.Signature;
@@ -78,7 +75,7 @@ class ReceiptSignerInfoTest {
         ec.initialize(new ECGenParameterSpec("secp256r1"));
         KeyPair signerKey = ec.generateKeyPair();
         X509Certificate signer = signerUnderTheIntermediate(signerKey);
-        AppReceipt receipt = verifier().verify(signAs(signerKey, "SHA256withECDSA", signer));
+        ReceiptPayload receipt = verify(signAs(signerKey, "SHA256withECDSA", signer));
         assertEquals(BUNDLE, receipt.bundleId());
     }
 
@@ -87,7 +84,7 @@ class ReceiptSignerInfoTest {
     void aSha512SignatureUnderThePinnedRootVerifies() throws Exception {
         KeyPair signerKey = rsaKeyPair();
         X509Certificate signer = signerUnderTheIntermediate(signerKey);
-        AppReceipt receipt = verifier().verify(signAs(signerKey, "SHA512withRSA", signer));
+        ReceiptPayload receipt = verify(signAs(signerKey, "SHA512withRSA", signer));
         assertEquals(BUNDLE, receipt.bundleId());
     }
 
@@ -115,8 +112,7 @@ class ReceiptSignerInfoTest {
                 original.getUnauthenticatedAttributes());
         byte[] receipt = withSignerInfos(signedData, new DLSet(downgraded));
 
-        VerificationException e =
-                assertThrows(VerificationException.class, () -> verifier().verify(receipt));
+        VerificationException e = assertThrows(VerificationException.class, () -> verify(receipt));
         assertEquals(Reason.INVALID_SIGNATURE, e.reason(), e.getMessage());
     }
 
@@ -131,9 +127,8 @@ class ReceiptSignerInfoTest {
         X509Certificate signer = signerUnderTheIntermediate(signerKey);
         byte[] receipt = withSignerInfos(signedData(signAs(signerKey, "SHA256withRSA", signer)), new DLSet());
 
-        VerificationException e =
-                assertThrows(VerificationException.class, () -> verifier().verify(receipt));
-        assertEquals(Reason.INVALID_RECEIPT_FORMAT, e.reason(), e.getMessage());
+        VerificationException e = assertThrows(VerificationException.class, () -> verify(receipt));
+        assertEquals(Reason.MALFORMED, e.reason(), e.getMessage());
     }
 
     private static byte[] withSignerInfos(SignedData original, ASN1Set signerInfos) throws Exception {
@@ -151,24 +146,62 @@ class ReceiptSignerInfoTest {
     void theSameConstructionWithAnRsaKeyAndSha256Verifies() throws Exception {
         KeyPair signerKey = rsaKeyPair();
         X509Certificate signer = signerUnderTheIntermediate(signerKey);
-        AppReceipt receipt = verifier().verify(signAs(signerKey, "SHA256withRSA", signer));
+        ReceiptPayload receipt = verify(signAs(signerKey, "SHA256withRSA", signer));
         assertEquals(BUNDLE, receipt.bundleId());
     }
 
     /**
-     * Current behaviour, pinned so a change to it is deliberate: only the
-     * first SignerInfo is checked, and any after it are ignored. A receipt
-     * whose first signer is genuine verifies even when a second signer is a
-     * stranger; swap the two and it fails on the stranger's chain. Apple's
-     * receipts carry exactly one SignerInfo; refusing more than one is on the
-     * roadmap.
+     * Since 0.7 any SignerInfo that verifies under a pinned chain is enough,
+     * in either position: all of them sign the same content, so an extra
+     * signer cannot change what Apple signed. 0.6 checked only the first and
+     * failed this receipt when the stranger came first.
      */
     @Test
-    void onlyTheFirstSignerInfoIsChecked() throws Exception {
+    void anyVerifyingSignerInfoIsEnoughInEitherPosition() throws Exception {
         KeyPair genuineKey = rsaKeyPair();
         X509Certificate genuine = signerUnderTheIntermediate(genuineKey);
         KeyPair strangerKey = rsaKeyPair();
-        X509Certificate stranger = TestPki.cert(
+        X509Certificate stranger = stranger(strangerKey);
+        byte[] fromGenuine = signAs(genuineKey, "SHA256withRSA", genuine);
+        byte[] fromStranger = signAs(strangerKey, "SHA256withRSA", stranger);
+
+        assertEquals(
+                BUNDLE,
+                verify(withSignerInfosInOrder(fromGenuine, fromStranger, stranger))
+                        .bundleId());
+        assertEquals(
+                BUNDLE,
+                verify(withSignerInfosInOrder(fromStranger, fromGenuine, genuine))
+                        .bundleId());
+    }
+
+    /**
+     * When no SignerInfo verifies, the first one's failure is the verdict,
+     * the same rule in every port, so a single-signer receipt fails exactly
+     * as it did in 0.6. The DL-ordered SET makes "first" the test's choice.
+     */
+    @Test
+    void whenNoSignerInfoVerifiesTheFirstOnesFailureIsTheVerdict() throws Exception {
+        KeyPair genuineKey = rsaKeyPair();
+        X509Certificate genuine = signerUnderTheIntermediate(genuineKey);
+        KeyPair strangerKey = rsaKeyPair();
+        X509Certificate stranger = stranger(strangerKey);
+        byte[] brokenGenuine = TestPki.corruptSignatures(signAs(genuineKey, "SHA256withRSA", genuine), 1);
+        byte[] fromStranger = signAs(strangerKey, "SHA256withRSA", stranger);
+
+        VerificationException strangerFirst = assertThrows(
+                VerificationException.class,
+                () -> verify(withSignerInfosInOrder(fromStranger, brokenGenuine, genuine)));
+        assertEquals(Reason.UNTRUSTED_CHAIN, strangerFirst.reason(), strangerFirst.getMessage());
+
+        VerificationException genuineFirst = assertThrows(
+                VerificationException.class,
+                () -> verify(withSignerInfosInOrder(brokenGenuine, fromStranger, stranger)));
+        assertEquals(Reason.INVALID_SIGNATURE, genuineFirst.reason(), genuineFirst.getMessage());
+    }
+
+    private static X509Certificate stranger(KeyPair strangerKey) throws Exception {
+        return TestPki.cert(
                 "CN=Stranger",
                 strangerKey,
                 "CN=Stranger",
@@ -178,20 +211,10 @@ class ReceiptSignerInfoTest {
                 pki.leaf.getNotBefore(),
                 pki.leaf.getNotAfter(),
                 "SHA256withRSA");
-        byte[] fromGenuine = signAs(genuineKey, "SHA256withRSA", genuine);
-        byte[] fromStranger = signAs(strangerKey, "SHA256withRSA", stranger);
-
-        AppReceipt receipt = verifier().verify(withSignerInfosInOrder(fromGenuine, fromStranger, stranger));
-        assertEquals(BUNDLE, receipt.bundleId());
-
-        byte[] strangerFirst = withSignerInfosInOrder(fromStranger, fromGenuine, genuine);
-        VerificationException e =
-                assertThrows(VerificationException.class, () -> verifier().verify(strangerFirst));
-        assertEquals(Reason.INVALID_CHAIN, e.reason(), e.getMessage());
     }
 
-    private static ReceiptVerifier verifier() {
-        return new ReceiptVerifier(Collections.singleton(pki.root), BUNDLE);
+    private static ReceiptPayload verify(byte[] receipt) throws VerificationException {
+        return Checks.receipt(Checks.verifier(pki), receipt);
     }
 
     private static X509Certificate signerUnderTheIntermediate(KeyPair signerKey) throws Exception {

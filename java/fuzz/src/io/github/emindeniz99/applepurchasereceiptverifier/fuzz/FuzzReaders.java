@@ -1,85 +1,68 @@
 package io.github.emindeniz99.applepurchasereceiptverifier.fuzz;
 
-import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
-import io.github.emindeniz99.applepurchasereceiptverifier.jws.JwsVerifier;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 
 /**
- * The three readers this port writes by hand, driven directly rather than
- * through a verifier — no CMS parse, no chain build, no signature check in
- * front of them, so one execution costs microseconds and the mutations land on
- * the reader instead of on the certificate machinery.
+ * The readers this port writes by hand, driven directly rather than through
+ * the verifier: no CMS parse, no chain build, no signature check in front of
+ * them, so one execution costs microseconds and the mutations land on the
+ * reader instead of on the certificate machinery.
  *
  * <ul>
- *   <li>{@code ReceiptPayload.parse}: the receipt attribute walk:
- *       the ASN.1 SET, the optional Xcode double wrap, the per-attribute type
- *       and value decode, the in-app sub-walk, the date and integer bounds.
- *   <li>{@code ReceiptBase64.decode} — the base64 dialect Apple's clients
+ *   <li>{@code ReceiptDecoder.parse}: the receipt attribute walk: the ASN.1
+ *       SET, the optional Xcode double wrap, the per-attribute type and value
+ *       decode, the in-app sub-walk, the date and integer bounds.
+ *   <li>{@code ReceiptBase64.decode}: the base64 dialect Apple's clients
  *       actually send.
- *   <li>{@code JwsVerifier.parseJson} — the strict base64url reader and the
- *       Jackson tree parse behind it, the JWS glue.
+ *   <li>{@code JwsCore.Header.read} and {@code JwsCore.Payload.read}: the
+ *       streaming reads of a decoded JWS header and payload.
  * </ul>
  *
- * <p>Reflection rather than an exported test hook: nothing about the shipped
- * jar changes to make it fuzzable. The reflective call costs a few hundred
- * nanoseconds against readers that take microseconds.
+ * <p>Reflection rather than an exported test hook: the implementation is
+ * package-private and nothing about the shipped jar changes to make it
+ * fuzzable.
  *
- * <p><strong>The containment invariant differs per reader, and the difference
- * is real rather than a concession.</strong> {@code ReceiptPayload.parse} is reached
- * only through {@code ReceiptVerifier.verifyCore}, which catches
- * {@code RuntimeException} and rewraps it as
- * {@code INVALID_RECEIPT_FORMAT} — so an unchecked exception out of
- * BouncyCastle here is contained by design and is not a finding, while an
- * {@code Error} (a {@code StackOverflowError} from nesting, an
- * {@code OutOfMemoryError} from a length prefix) escapes that catch and is.
- * The other two have no such guard above them — {@code verify(String)} decodes
- * before it enters the guarded core, and the whole JWS path is unguarded — so
- * for them the invariant is the strict one: only {@code VerificationException}.
+ * <p><strong>The containment invariant differs per reader.</strong>
+ * {@code ReceiptDecoder.parse} is reached only through
+ * {@code ReceiptCore.parseSignedPayload}, which catches
+ * {@code RuntimeException} and reports it as UNREADABLE_PAYLOAD, so an
+ * unchecked exception out of BouncyCastle here is contained by design and is
+ * not a finding, while an {@code Error} (a {@code StackOverflowError} from
+ * nesting, an {@code OutOfMemoryError} from a length prefix) escapes that
+ * catch and is. The other three contain everything themselves: only the
+ * package's own {@code VerificationException} may come out.
  */
 public final class FuzzReaders {
 
     private FuzzReaders() {}
 
-    private static final Method PARSE_PAYLOAD = method(receiptClass("ReceiptPayload"), "parse", byte[].class);
-    private static final Method DECODE_BASE64 = method(receiptClass("ReceiptBase64"), "decode", String.class);
-    private static final Method PARSE_JSON = method(JwsVerifier.class, "parseJson", String.class, String.class);
+    private static final String PACKAGE = "io.github.emindeniz99.applepurchasereceiptverifier.";
+
+    private static final Method PARSE_PAYLOAD = method("ReceiptDecoder", "parse", byte[].class);
+    private static final Method DECODE_BASE64 = method("ReceiptBase64", "decode", String.class);
+    private static final Method READ_HEADER = method("JwsCore$Header", "read", byte[].class);
+    private static final Method READ_PAYLOAD = method("JwsCore$Payload", "read", byte[].class);
 
     public static void fuzzerTestOneInput(byte[] data) {
         String text = new String(data, StandardCharsets.ISO_8859_1);
-
-        // The attribute walk, on the payload bytes as they come out of the CMS
-        // envelope. RuntimeException-contained: see the class javadoc.
-        call("ReceiptPayload.parse", PARSE_PAYLOAD, null, true, (Object) data);
-
-        // The base64 decoder, on the same bytes read as a string.
-        call("ReceiptBase64.decode", DECODE_BASE64, null, false, text);
-
-        // The JWS glue, twice: once on the raw text, which mostly exercises the
-        // strict base64url rejection path, and once on the input re-encoded as
-        // base64url, which puts the fuzzer's own bytes in front of Jackson.
-        call("JwsVerifier.parseJson(raw)", PARSE_JSON, Harness.JWS_VERIFIER, false, text, "header");
-        call(
-                "JwsVerifier.parseJson(base64url)",
-                PARSE_JSON,
-                Harness.JWS_VERIFIER,
-                false,
-                Base64.getUrlEncoder().withoutPadding().encodeToString(data),
-                "payload");
+        call("ReceiptDecoder.parse", PARSE_PAYLOAD, true, (Object) data);
+        call("ReceiptBase64.decode", DECODE_BASE64, false, text);
+        call("JwsCore.Header.read", READ_HEADER, false, (Object) data);
+        call("JwsCore.Payload.read", READ_PAYLOAD, false, (Object) data);
     }
 
     /**
      * @param runtimeContained whether a caller above this reader catches
      *                         {@code RuntimeException}; see the class javadoc
      */
-    private static void call(String where, Method method, Object receiver, boolean runtimeContained, Object... args) {
+    private static void call(String where, Method method, boolean runtimeContained, Object... args) {
         try {
-            method.invoke(receiver, args);
+            method.invoke(null, args);
         } catch (InvocationTargetException e) {
             Throwable cause = e.getCause();
-            if (cause instanceof VerificationException) {
+            if (cause.getClass().getName().equals(PACKAGE + "VerificationException")) {
                 return;
             }
             if (runtimeContained && cause instanceof RuntimeException) {
@@ -91,21 +74,13 @@ public final class FuzzReaders {
         }
     }
 
-    private static Class<?> receiptClass(String simpleName) {
+    private static Method method(String simpleName, String name, Class<?>... parameters) {
         try {
-            return Class.forName("io.github.emindeniz99.applepurchasereceiptverifier.receipt." + simpleName);
-        } catch (ClassNotFoundException e) {
-            throw new IllegalStateException(simpleName + " moved or was renamed", e);
-        }
-    }
-
-    private static Method method(Class<?> owner, String name, Class<?>... parameters) {
-        try {
-            Method method = owner.getDeclaredMethod(name, parameters);
+            Method method = Class.forName(PACKAGE + simpleName).getDeclaredMethod(name, parameters);
             method.setAccessible(true);
             return method;
-        } catch (NoSuchMethodException e) {
-            throw new IllegalStateException(owner.getName() + "." + name + " moved or changed signature", e);
+        } catch (ClassNotFoundException | NoSuchMethodException e) {
+            throw new IllegalStateException(simpleName + "." + name + " moved or changed signature", e);
         }
     }
 }

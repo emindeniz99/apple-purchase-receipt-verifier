@@ -153,7 +153,7 @@ final class TestPki {
         return pki;
     }
 
-    /** RSA chain (no marker OIDs — receipts don't require them) — for CMS receipts. */
+    /** RSA chain with both Apple marker OIDs, as genuine receipt chains carry them: for CMS receipts. */
     static TestPki receipt() throws Exception {
         Date notBefore = new Date(System.currentTimeMillis() - 86_400_000L);
         Date notAfter = new Date(System.currentTimeMillis() + 365L * 86_400_000L);
@@ -166,6 +166,15 @@ final class TestPki {
 
     /** RSA receipt chain; {@code signerOid} stamps the Apple receipt-signing marker on the leaf. */
     static TestPki receipt(Date notBefore, Date notAfter, boolean signerOid) throws Exception {
+        return receipt(notBefore, notAfter, signerOid, true);
+    }
+
+    /**
+     * RSA receipt chain; {@code signerOid} stamps the Apple receipt-signing
+     * marker on the leaf and {@code intermediateOid} the WWDR marker on the
+     * intermediate.
+     */
+    static TestPki receipt(Date notBefore, Date notAfter, boolean signerOid, boolean intermediateOid) throws Exception {
         KeyPair rootKp = rsaKeyPair();
         KeyPair interKp = rsaKeyPair();
         KeyPair signerKp = rsaKeyPair();
@@ -185,7 +194,7 @@ final class TestPki {
                 "CN=Fake Apple Inc Root",
                 rootKp.getPrivate(),
                 true,
-                null,
+                intermediateOid ? "1.2.840.113635.100.6.2.1" : null,
                 notBefore,
                 notAfter,
                 "SHA256withRSA");
@@ -239,13 +248,31 @@ final class TestPki {
         for (int i = 1; i <= intermediates; i++) {
             String subject = "CN=Deep CA " + i;
             KeyPair kp = rsaKeyPair();
-            cas.add(cert(subject, kp, issuerName, issuerKey, true, null, notBefore, notAfter, "SHA256withRSA"));
+            cas.add(cert(
+                    subject,
+                    kp,
+                    issuerName,
+                    issuerKey,
+                    true,
+                    "1.2.840.113635.100.6.2.1",
+                    notBefore,
+                    notAfter,
+                    "SHA256withRSA"));
             issuerName = subject;
             issuerKey = kp.getPrivate();
         }
         for (int i = 0; i < selfIssuedTail; i++) {
             KeyPair kp = rsaKeyPair();
-            cas.add(cert(issuerName, kp, issuerName, issuerKey, true, null, notBefore, notAfter, "SHA256withRSA"));
+            cas.add(cert(
+                    issuerName,
+                    kp,
+                    issuerName,
+                    issuerKey,
+                    true,
+                    "1.2.840.113635.100.6.2.1",
+                    notBefore,
+                    notAfter,
+                    "SHA256withRSA"));
             issuerKey = kp.getPrivate();
         }
         KeyPair signerKp = rsaKeyPair();
@@ -289,8 +316,12 @@ final class TestPki {
 
     /** Same, but with a caller-controlled header (for malformed-header tests). */
     String signJwsWithHeader(String headerJson, String payloadJson) throws Exception {
-        String input = b64url(headerJson.getBytes(StandardCharsets.UTF_8)) + "."
-                + b64url(payloadJson.getBytes(StandardCharsets.UTF_8));
+        return signCompact(b64url(headerJson.getBytes(StandardCharsets.UTF_8)) + "."
+                + b64url(payloadJson.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    /** Signs an already encoded {@code header.payload} and appends the signature segment. */
+    String signCompact(String input) throws Exception {
         Signature sig = Signature.getInstance("SHA256withECDSA");
         sig.initSign(leafKey);
         sig.update(input.getBytes(StandardCharsets.US_ASCII));
@@ -549,6 +580,64 @@ final class TestPki {
         gen.addCertificates(embedded);
         CMSSignedData signed = gen.generate(new CMSProcessableByteArray(payload), true);
         return signed.getEncoded();
+    }
+
+    /**
+     * A receipt with one SignerInfo per entry of {@code signers}, each signed
+     * by that PKI's leaf over the same payload, embedding every signer's
+     * chain once. DER sorts the SignerInfo SET, so the order in the receipt
+     * is not the order given here.
+     */
+    static byte[] signReceiptByEach(byte[] payload, List<TestPki> signers) throws Exception {
+        CMSSignedDataGenerator gen = new CMSSignedDataGenerator();
+        List<X509Certificate> embedded = new ArrayList<X509Certificate>();
+        for (TestPki signer : signers) {
+            ContentSigner cs = new JcaContentSignerBuilder("SHA256withRSA").build(signer.leafKey);
+            gen.addSignerInfoGenerator(new JcaSignerInfoGeneratorBuilder(new JcaDigestCalculatorProviderBuilder()
+                            .setProvider(BC)
+                            .build())
+                    .build(cs, signer.leaf));
+            for (X509Certificate certificate : signer.chain) {
+                if (!embedded.contains(certificate)) {
+                    embedded.add(certificate);
+                }
+            }
+        }
+        gen.addCertificates(new JcaCertStore(embedded));
+        return gen.generate(new CMSProcessableByteArray(payload), true).getEncoded();
+    }
+
+    /**
+     * {@code receipt} with one bit flipped in the middle of the signature of
+     * each of its first {@code count} SignerInfos (in receipt order): the
+     * chain, payload and digest stay genuine, so only the signature check can
+     * reject those signers. A mid-signature bit keeps the RSA value below the
+     * modulus, so the check returns false rather than erroring out.
+     */
+    static byte[] corruptSignatures(byte[] receipt, int count) throws Exception {
+        byte[] corrupted = receipt.clone();
+        int done = 0;
+        for (Object signer : new CMSSignedData(receipt).getSignerInfos().getSigners()) {
+            if (done++ == count) {
+                break;
+            }
+            byte[] signature = ((org.bouncycastle.cms.SignerInformation) signer).getSignature();
+            corrupted[indexOf(corrupted, signature) + signature.length / 2] ^= 0x01;
+        }
+        return corrupted;
+    }
+
+    private static int indexOf(byte[] haystack, byte[] needle) {
+        for (int i = 0; i <= haystack.length - needle.length; i++) {
+            boolean match = true;
+            for (int j = 0; j < needle.length && match; j++) {
+                match = haystack[i + j] == needle[j];
+            }
+            if (match) {
+                return i;
+            }
+        }
+        throw new AssertionError("needle not found");
     }
 
     /** Builds a receipt payload SET; each entry of {@code inAppSets} becomes an attr-17. */
