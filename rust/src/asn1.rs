@@ -140,6 +140,10 @@ impl<'a> Tlv<'a> {
         if !self.constructed {
             return Some(Cow::Borrowed(self.contents));
         }
+        // Each nesting level copies its children's bytes again, so the cost
+        // is O(depth * size). Both are bounded, by MAX_DEPTH and by the input
+        // size cap; a single walk collecting the primitive leaves would be
+        // the fix if either bound were ever raised.
         let mut out = Vec::new();
         for child in self.children() {
             out.extend_from_slice(&child.octet_string_value()?);
