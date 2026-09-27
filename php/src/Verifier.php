@@ -623,7 +623,7 @@ final class Verifier
             'receipt' => self::receiptJson($receipt, $requestDateMs),
         ];
         try {
-            return json_encode($body, JSON_THROW_ON_ERROR);
+            return json_encode($body, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
         } catch (JsonException) {
             // What the endpoint has always answered when the rendering
             // itself fails, for example a timezone database without

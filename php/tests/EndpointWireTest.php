@@ -131,6 +131,13 @@ final class EndpointWireTest extends TestCase
         self::assertStringContainsString('"web_order_line_item_id":"42"', $response);
         self::assertStringContainsString('"is_in_intro_offer_period":"true"', $response);
         self::assertStringContainsString('"purchase_date_ms":"1706779800000"', $response);
+        // The other ports write "/" as is; json_encode escapes it unless told
+        // not to, which a byte-level diff across ports shows as noise.
+        self::assertStringContainsString('"purchase_date":"2024-02-01 09:30:00 Etc/GMT"', $response);
+        self::assertStringContainsString('"purchase_date_pst":"2024-02-01 01:30:00 America/Los_Angeles"', $response);
+        self::assertMatchesRegularExpression('~"request_date":"[^"]+ Etc/GMT"~', $response);
+        self::assertMatchesRegularExpression('~"request_date_pst":"[^"]+ America/Los_Angeles"~', $response);
+        self::assertStringNotContainsString('\\/', $response);
         /** @var array{receipt: array{in_app: list<array<string, mixed>>}} $decoded */
         $decoded = json_decode($response, true, 8, JSON_THROW_ON_ERROR);
         $entry = $decoded['receipt']['in_app'][0];
