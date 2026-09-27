@@ -13,7 +13,7 @@ product id, device binding, refunds, idempotency) is yours; see
 ```swift
 // The manifest lives at the repository root (SwiftPM resolves a package's
 // manifest only there); the sources stay under swift/.
-.package(url: "https://github.com/emindeniz99/apple-purchase-receipt-verifier.git", from: "0.6.0")
+.package(url: "https://github.com/emindeniz99/apple-purchase-receipt-verifier.git", from: "0.7.0")
 ```
 
 Swift **6.1** or newer, macOS 13+ or Linux (`Package.swift` declares
