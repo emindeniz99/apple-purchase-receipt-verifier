@@ -5,12 +5,12 @@ import java.nio.charset.StandardCharsets;
 
 /**
  * The string a client actually sends: {@code Verifier.verifyReceipt}, and
- * therefore the size cap and {@code ReceiptBase64} in front of the whole DER
+ * therefore the size cap and {@code StrictBase64} in front of the whole DER
  * path.
  *
  * <p>Bytes are read as ISO-8859-1 rather than UTF-8 on purpose: the mapping is
  * bijective, so libFuzzer's byte mutations reach every {@code char} value below
- * 256, including the ones {@code ReceiptBase64} must reject, instead of
+ * 256, including the ones {@code StrictBase64} must reject, instead of
  * collapsing invalid UTF-8 onto U+FFFD, which would make most of the alphabet
  * unreachable and half the corpus indistinguishable.
  */

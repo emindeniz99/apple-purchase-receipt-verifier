@@ -142,10 +142,9 @@ final class JwsCore {
         X509Certificate leaf = chain.get(0);
         X509Certificate intermediate = chain.get(1);
 
-        Payload payload = Payload.read(payloadBytes);
+        Long signedDate = signedDate(payloadBytes);
         authenticateTopDown(leaf, intermediate, trustAnchors);
-        validateChain(
-                leaf, intermediate, new Date(payload.signedDate != null ? payload.signedDate : now), trustAnchors);
+        validateChain(leaf, intermediate, new Date(signedDate != null ? signedDate : now), trustAnchors);
         // The marker OIDs after the chain, as on the receipt path: a foreign
         // chain is UNTRUSTED_CHAIN whatever it carries. Still before the
         // leaf's key checks the JWS signature.
@@ -160,13 +159,8 @@ final class JwsCore {
                     "intermediate certificate lacks Apple marker OID " + AppleTrust.INTERMEDIATE_OID);
         }
         verifyEs256(leaf, parts[0] + "." + parts[1], signature);
-        if (payload.json == null) {
-            throw new VerificationException(
-                    Reason.UNREADABLE_PAYLOAD,
-                    "signed payload is not a JSON object: " + payload.problem,
-                    payload.error);
-        }
-        return new JsonPayload(payload.json);
+        requireJsonObject(payloadBytes);
+        return new JsonPayload(new String(payloadBytes, StandardCharsets.UTF_8));
     }
 
     /**
@@ -188,12 +182,9 @@ final class JwsCore {
 
         static Header read(byte[] bytes) throws VerificationException {
             Header header = new Header();
-            String text;
-            try {
-                text = jsonText(bytes);
-            } catch (NotJsonText e) {
-                throw new VerificationException(
-                        Reason.MALFORMED, "header is not JSON text: " + e.getMessage(), e.getCause());
+            String text = jsonText(bytes);
+            if (text == null) {
+                throw new VerificationException(Reason.MALFORMED, "header is not UTF-8 JSON text");
             }
             try (JsonParser parser = JSON.createParser(text.toCharArray())) {
                 if (parser.nextToken() != JsonToken.START_OBJECT) {
@@ -236,122 +227,87 @@ final class JwsCore {
     }
 
     /**
-     * What verification reads from the payload: the text, if it is a JSON
-     * object in UTF-8 with nothing but whitespace after it and no byte order
-     * mark before it, and its top-level {@code signedDate}. Reading it never
-     * fails verification by itself; a payload that does not parse is carried
-     * to the signature check (see {@link #verify}).
+     * The payload's last top-level {@code signedDate} as epoch milliseconds,
+     * or null when it is absent, not a representable instant, or the payload
+     * does not read. Never throws: nothing is trusted yet.
      */
-    static final class Payload {
-        /** The payload text; null when it is not a JSON object in UTF-8. */
-        @Nullable
-        String json;
+    static @Nullable Long signedDate(byte[] payload) {
+        try {
+            return readPayload(payload);
+        } catch (VerificationException e) {
+            return null;
+        }
+    }
 
-        /** Why {@link #json} is null. */
-        @Nullable
-        String problem;
+    /** Refuses, as UNREADABLE_PAYLOAD, a signed payload that is not one JSON object in strict UTF-8. */
+    static void requireJsonObject(byte[] payload) throws VerificationException {
+        readPayload(payload);
+    }
 
-        @Nullable
-        Exception error;
-
-        /**
-         * The last top-level {@code signedDate}, when it is a number a long
-         * holds; null when absent, not a number, or out of that range.
-         */
-        @Nullable
-        Long signedDate;
-
-        static Payload read(byte[] bytes) {
-            Payload payload = new Payload();
-            String text;
-            try {
-                text = jsonText(bytes);
-            } catch (NotJsonText e) {
-                payload.unreadable(e.getMessage(), (Exception) e.getCause());
-                return payload;
+    /** Reads the payload as one JSON object with nothing after it; returns its last top-level signedDate. */
+    private static @Nullable Long readPayload(byte[] payload) throws VerificationException {
+        String text = jsonText(payload);
+        if (text == null) {
+            throw unreadable("not UTF-8 JSON text", null);
+        }
+        try (JsonParser parser = JSON.createParser(text.toCharArray())) {
+            if (parser.nextToken() != JsonToken.START_OBJECT) {
+                throw unreadable("not an object", null);
             }
             Long signedDate = null;
-            try (JsonParser parser = JSON.createParser(text.toCharArray())) {
-                if (parser.nextToken() != JsonToken.START_OBJECT) {
-                    payload.unreadable("not an object", null);
-                    return payload;
+            while (parser.nextToken() == JsonToken.FIELD_NAME) {
+                String name = parser.currentName();
+                JsonToken value = parser.nextToken();
+                if ("signedDate".equals(name)) {
+                    signedDate = instant(parser, value);
                 }
-                while (parser.nextToken() == JsonToken.FIELD_NAME) {
-                    String name = parser.currentName();
-                    JsonToken value = parser.nextToken();
-                    if ("signedDate".equals(name)) {
-                        // A number no long holds (1e300, say) is no instant,
-                        // so it counts as not stated, like a string would.
-                        signedDate = value == JsonToken.VALUE_NUMBER_INT || value == JsonToken.VALUE_NUMBER_FLOAT
-                                ? instant(parser)
-                                : null;
-                    }
-                    parser.skipChildren();
-                }
-                if (parser.nextToken() != null) {
-                    payload.unreadable("content after the object", null);
-                    return payload;
-                }
-            } catch (IOException | RuntimeException e) {
-                // Unchecked too: whatever stops the parse, it is not reported
-                // before the signature has been checked.
-                payload.unreadable("not valid JSON", e);
-                return payload;
+                parser.skipChildren();
             }
-            payload.json = text;
-            payload.signedDate = signedDate;
-            return payload;
-        }
-
-        private void unreadable(String problem, @Nullable Exception error) {
-            this.problem = problem;
-            this.error = error;
-        }
-
-        /**
-         * The number as epoch milliseconds, or null when no long holds it,
-         * with the conversion Jackson's tree model applies: an integer must
-         * fit a long, and a fraction or exponent is read as a double and
-         * truncated if it lies within the long range.
-         */
-        private static @Nullable Long instant(JsonParser parser) throws IOException {
-            if (parser.currentToken() == JsonToken.VALUE_NUMBER_INT) {
-                JsonParser.NumberType type = parser.getNumberType();
-                return type == JsonParser.NumberType.BIG_INTEGER ? null : Long.valueOf(parser.getLongValue());
+            if (parser.nextToken() != null) {
+                throw unreadable("content after the object", null);
             }
-            double value = parser.getDoubleValue();
-            return value >= Long.MIN_VALUE && value <= Long.MAX_VALUE ? Long.valueOf((long) value) : null;
+            return signedDate;
+        } catch (IOException | RuntimeException e) {
+            throw unreadable("not valid JSON", e);
         }
+    }
+
+    private static VerificationException unreadable(String problem, @Nullable Exception cause) {
+        return new VerificationException(
+                Reason.UNREADABLE_PAYLOAD, "signed payload is not a JSON object: " + problem, cause);
     }
 
     /**
-     * A JWS segment as JSON text: strict UTF-8 (Jackson would otherwise guess
-     * UTF-16 or UTF-32 from the bytes) with no byte order mark (RFC 8259
-     * section 8.1 forbids one). The header and the payload share the rule
-     * and differ only in what a refusal means.
+     * A number as epoch milliseconds, the way Jackson's tree model converts
+     * it: an integer must fit a long, and a fraction or exponent is read as
+     * a double and truncated when it lies within the long range (2^63
+     * saturates). Null for anything else, 1e300 included.
      */
-    private static String jsonText(byte[] bytes) throws NotJsonText {
-        String text;
+    private static @Nullable Long instant(JsonParser parser, JsonToken value) {
         try {
-            text = StandardCharsets.UTF_8
+            if (value == JsonToken.VALUE_NUMBER_INT) {
+                return parser.getLongValue();
+            }
+            if (value == JsonToken.VALUE_NUMBER_FLOAT) {
+                double number = parser.getDoubleValue();
+                return number >= Long.MIN_VALUE && number <= Long.MAX_VALUE ? (long) number : null;
+            }
+        } catch (IOException e) {
+            // An integer no long holds.
+        }
+        return null;
+    }
+
+    /** Strict UTF-8 with no byte order mark (RFC 8259 8.1), or null; Jackson would guess UTF-16 or UTF-32. */
+    private static @Nullable String jsonText(byte[] bytes) {
+        try {
+            String text = StandardCharsets.UTF_8
                     .newDecoder()
                     .decode(ByteBuffer.wrap(bytes))
                     .toString();
+            return text.startsWith("\uFEFF") ? null : text;
         } catch (CharacterCodingException e) {
-            throw new NotJsonText("not UTF-8", e);
-        }
-        if (text.startsWith("\uFEFF")) {
-            throw new NotJsonText("starts with a byte order mark", null);
-        }
-        return text;
-    }
-
-    /** Why a segment is not JSON text, as a short phrase. */
-    private static final class NotJsonText extends Exception {
-        private static final long serialVersionUID = 1L;
-
-        NotJsonText(String problem, @Nullable Exception cause) {
-            super(problem, cause);
+            return null;
         }
     }
 

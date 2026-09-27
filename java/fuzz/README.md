@@ -19,10 +19,10 @@ and the harness; nothing else needs installing beyond a JDK and Maven.
 | target | what it reaches | invariant beyond "nothing escapes and nothing is `INTERNAL_ERROR`" |
 |---|---|---|
 | `receipt` | `Verifier.verifyReceipt` on raw DER (base64-encoded on the way in): BouncyCastle's CMS reader, the attribute walk, the PKIX chain build, the CMS signature check | an accepted receipt fails against an unrelated anchor set |
-| `receipt-base64` | `Verifier.verifyReceipt` on the string a client sends, so the size cap and `ReceiptBase64` in front of all of the above | the same anchor-set invariant, through the string |
+| `receipt-base64` | `Verifier.verifyReceipt` on the string a client sends, so the size cap and `StrictBase64` in front of all of the above | the same anchor-set invariant, through the string |
 | `jws` | `Verifier.verifySignedData`: strict base64url, the streaming header and payload reads, x5c decode, marker OIDs, chain, ES256 | a JWS accepted under the fixture root is refused under Apple's production roots |
 | `endpoint-json` | `Verifier.verifyReceiptEndpoint` on a raw request body, on both environments | the answer is always one JSON object led by a numeric `status`, never 21009 |
-| `readers` | `ReceiptDecoder.parse`, `ReceiptBase64.decode`, `JwsCore.Header.read` and `JwsCore.Payload.read` called directly, with no CMS parse or chain build in front of them | see "Two containment invariants" below |
+| `readers` | `ReceiptDecoder.parse`, `StrictBase64.decode`, `JwsCore.Header.read`, `JwsCore.signedDate` and `JwsCore.requireJsonObject` called directly, with no CMS parse or chain build in front of them | see "Two containment invariants" below |
 
 Every accepted result is then taken apart. `Harness.touch` reads every accessor
 `ReceiptPayload` and `InAppPurchase` declare, and the text of every accepted
@@ -60,9 +60,10 @@ leaks that are contained by design one frame up:
   BouncyCastle here is therefore contained and is *not* a finding, but an
   `Error` walks straight through that `catch`, so a `StackOverflowError` from a
   deeply nested SET or an `OutOfMemoryError` from a length prefix **is** one.
-* **`ReceiptBase64.decode`**, **`JwsCore.Header.read`** and
-  **`JwsCore.Payload.read`** contain everything themselves, so for them the
-  invariant is the strict one: only the package's `VerificationException`.
+* **`StrictBase64.decode`**, **`JwsCore.Header.read`**,
+  **`JwsCore.signedDate`** and **`JwsCore.requireJsonObject`** contain
+  everything themselves, so for them the invariant is the strict one: only the
+  package's `VerificationException`.
 
 ## The anchor-set invariants
 
