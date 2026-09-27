@@ -306,10 +306,10 @@ every port:
   not also appear in `unknownAttributes`, because `bundleIdBytes` already
   carries the raw value unconditionally.
 - **64-bit ids** (`appItemId`, `downloadId`, `versionExternalIdentifier`,
-  `webOrderLineItemId`) are plain PHP `int`; `ReceiptPayload::toJson()` and
-  `InAppPurchase::writeJson()` render them as JSON strings (JSON numbers lose
-  precision above 2^53) and everything else as JSON numbers, matching every
-  other port's canonical form byte for byte.
+  `webOrderLineItemId`) are plain PHP `int`; `ReceiptPayload::toJson()`
+  renders them as JSON strings (JSON numbers lose precision above 2^53) and
+  everything else as JSON numbers, through `json_encode()`: the same value
+  every other port writes, though the bytes may differ.
 
 ## Upgrading from 0.6
 

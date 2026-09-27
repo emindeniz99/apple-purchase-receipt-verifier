@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace EminDeniz99\ApplePurchaseReceiptVerifier;
 
-use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\CanonicalJson;
-
 /**
  * A verified legacy app receipt (docs/design/0.7-api.md §1). Only receipts
  * returned by {@see Verifier::verifyReceipt()} should be trusted: on any
@@ -68,38 +66,62 @@ final readonly class ReceiptPayload
     }
 
     /**
-     * This payload as canonical JSON, for logging and storage. Every port
-     * writes the same bytes: keys in declaration order, snake_case names,
-     * dates as numbers with a `_ms` suffix, 64-bit ids (`app_item_id`,
-     * `download_id`, `version_external_identifier`,
-     * `web_order_line_item_id`) as strings, bytes as padded standard
-     * base64, `null` for a missing value, no whitespace, only the escapes
-     * JSON requires, and non-ASCII characters raw
-     * (docs/design/0.7-api.md, "Our JSON").
+     * This payload as JSON, for logging and storage
+     * (docs/design/0.7-api.md, "Our JSON"). Every port writes the same
+     * value; the bytes may differ. snake_case names, dates as numbers with
+     * a `_ms` suffix, 64-bit ids (`app_item_id`, `download_id`,
+     * `version_external_identifier`, `web_order_line_item_id`) as strings,
+     * bytes as padded standard base64 and `null` for a missing value.
+     *
+     * @throws \JsonException when a string field is not valid UTF-8, which a
+     *         payload decoded from a receipt never is
      */
     public function toJson(): string
     {
-        $inAppJson = '[' . implode(',', array_map(
-            static fn (InAppPurchase $p): string => $p->writeJson(),
-            $this->inApp,
-        )) . ']';
+        return json_encode([
+            'receipt_type' => $this->receiptType,
+            'app_item_id' => self::idJson($this->appItemId),
+            'bundle_id' => $this->bundleId,
+            'bundle_id_bytes' => self::bytesJson($this->bundleIdBytes),
+            'application_version' => $this->applicationVersion,
+            'opaque_value' => self::bytesJson($this->opaqueValue),
+            'sha1_hash' => self::bytesJson($this->sha1Hash),
+            'receipt_creation_date_ms' => $this->receiptCreationDateMs,
+            'download_id' => self::idJson($this->downloadId),
+            'version_external_identifier' => self::idJson($this->versionExternalIdentifier),
+            'in_app' => array_map(static fn (InAppPurchase $p): array => $p->jsonValue(), $this->inApp),
+            'original_purchase_date_ms' => $this->originalPurchaseDateMs,
+            'original_application_version' => $this->originalApplicationVersion,
+            'expiration_date_ms' => $this->expirationDateMs,
+            'unknown_attributes' => self::attributesJson($this->unknownAttributes),
+        ], JSON_THROW_ON_ERROR);
+    }
 
-        return (new CanonicalJson())
-            ->string('receipt_type', $this->receiptType)
-            ->id('app_item_id', $this->appItemId)
-            ->string('bundle_id', $this->bundleId)
-            ->bytes('bundle_id_bytes', $this->bundleIdBytes)
-            ->string('application_version', $this->applicationVersion)
-            ->bytes('opaque_value', $this->opaqueValue)
-            ->bytes('sha1_hash', $this->sha1Hash)
-            ->number('receipt_creation_date_ms', $this->receiptCreationDateMs)
-            ->id('download_id', $this->downloadId)
-            ->id('version_external_identifier', $this->versionExternalIdentifier)
-            ->raw('in_app', $inAppJson)
-            ->number('original_purchase_date_ms', $this->originalPurchaseDateMs)
-            ->string('original_application_version', $this->originalApplicationVersion)
-            ->number('expiration_date_ms', $this->expirationDateMs)
-            ->attributes('unknown_attributes', $this->unknownAttributes)
-            ->build();
+    /** @internal a 64-bit id as a decimal string, so JavaScript readers do not round it */
+    public static function idJson(?int $value): ?string
+    {
+        return $value === null ? null : (string) $value;
+    }
+
+    private static function bytesJson(?string $value): ?string
+    {
+        return $value === null ? null : base64_encode($value);
+    }
+
+    /**
+     * @internal each type as a decimal key, its values base64 in receipt
+     * order; an object, so an empty set encodes as `{}` rather than `[]`
+     *
+     * @param array<int, list<string>> $attributes
+     */
+    public static function attributesJson(array $attributes): \stdClass
+    {
+        ksort($attributes);
+        $out = new \stdClass();
+        foreach ($attributes as $type => $values) {
+            $out->{(string) $type} = array_map('base64_encode', $values);
+        }
+
+        return $out;
     }
 }
