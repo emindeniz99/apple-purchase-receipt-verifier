@@ -1,0 +1,16 @@
+# build-wasmi.sh (all rows), final source; build times are incremental rebuilds (first builds took 18-58 s per Wasmi row, 115 s for Wasmtime)
+wasmi1: features=v1 toolchain=rustc_1.98.1_(48a229cea_2026-09-01) build 17 s; binary 2084776 bytes, stripped 1608264 bytes
+wasmi2-auto: features=v2-auto toolchain=rustc_1.98.1_(48a229cea_2026-09-01) build 20 s; binary 2160304 bytes, stripped 1671672 bytes
+wasmi2-tail: features=v2-tail toolchain=rustc_1.98.1_(48a229cea_2026-09-01) build 20 s; binary 2160328 bytes, stripped 1671672 bytes
+wasmi2-tail-ind: features=v2-tail-indirect toolchain=rustc_1.98.1_(48a229cea_2026-09-01) build 20 s; binary 2171760 bytes, stripped 1692120 bytes
+wasmi2-loop: features=v2-loop toolchain=rustc_1.98.1_(48a229cea_2026-09-01) build 20 s; binary 2198824 bytes, stripped 1674712 bytes
+wasmi2-loop-ind: features=v2-loop-indirect toolchain=rustc_1.98.1_(48a229cea_2026-09-01) build 21 s; binary 1970328 bytes, stripped 1603824 bytes
+wasmi2-unstable: features=v2-unstable toolchain=rustc_1.100.0-nightly_(5ceaf6608_2026-09-25) build 18 s; binary 2135976 bytes, stripped 1647432 bytes
+wasmtime: features=wt toolchain=rustc_1.98.1_(48a229cea_2026-09-01) build 0 s; binary 14624056 bytes, stripped 11968104 bytes
+aprv-wasmi1: against the build the first correctness runs used, 0 bytes differ outside the 36-byte .note.gnu.build-id (the source change between them was &store -> &mut store for Wasmtime's API)
+aprv-wasmi2-auto: against the build the first correctness runs used, 0 bytes differ outside the 36-byte .note.gnu.build-id (the source change between them was &store -> &mut store for Wasmtime's API)
+aprv-wasmi2-tail: against the build the first correctness runs used, 0 bytes differ outside the 36-byte .note.gnu.build-id (the source change between them was &store -> &mut store for Wasmtime's API)
+aprv-wasmi2-tail-ind: against the build the first correctness runs used, 0 bytes differ outside the 36-byte .note.gnu.build-id (the source change between them was &store -> &mut store for Wasmtime's API)
+aprv-wasmi2-loop: against the build the first correctness runs used, 0 bytes differ outside the 36-byte .note.gnu.build-id (the source change between them was &store -> &mut store for Wasmtime's API)
+aprv-wasmi2-loop-ind: against the build the first correctness runs used, 0 bytes differ outside the 36-byte .note.gnu.build-id (the source change between them was &store -> &mut store for Wasmtime's API)
+aprv-wasmi2-unstable: against the build the first correctness runs used, 0 bytes differ outside the 36-byte .note.gnu.build-id (the source change between them was &store -> &mut store for Wasmtime's API)

@@ -1,0 +1,16 @@
+# row wasmtime-pulley: bin/aprv-wasmtime serve abi/art/aprv-abi1.wasm  --mode pulley
+cases (node): rows 153: endpoint-same 33, old-der-only 3, old-device-binding 2, old-policy-verdict 6, old-typed-model 6, same-failure 75, same-verified 28
+    wasmtime-pulley: 153 of 153 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host": "wasmtime 49.0.1 pulley", "rows": 153, "traps": 0} 18 s wall
+hostile (node): rows 811: endpoint-same 95, old-abi-inexpressible 131, old-config-refusal 5, old-der-only 2, old-device-binding 4, same-failure 556, same-verified 18
+    wasmtime-pulley: 811 of 811 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host": "wasmtime 49.0.1 pulley", "rows": 811, "traps": 0} 10 s wall
+algorithms (node): rows 22: same-verified 22
+    wasmtime-pulley: 22 of 22 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host": "wasmtime 49.0.1 pulley", "rows": 22, "traps": 0} 4 s wall
+substrate (node): rows 193: old-der-only 1, same-failure 100, same-verified 92
+    wasmtime-pulley: 193 of 193 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host": "wasmtime 49.0.1 pulley", "rows": 193, "traps": 0} 12 s wall
+fuzz (node): rows 5000: old-abi-inexpressible 175, old-der-only 22, same-failure 4775, same-verified 28
+    wasmtime-pulley: 5000 of 5000 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host": "wasmtime 49.0.1 pulley", "rows": 5000, "traps": 0} 97 s wall
