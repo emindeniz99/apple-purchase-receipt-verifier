@@ -179,11 +179,30 @@ function verifySignature(
   let firstFailure: VerificationError | null = null;
   for (const info of cms.signerInfos) {
     try {
-      const signer = signerCertificate(info, embedded);
+      const candidates = signerCertificates(info, embedded);
       const atMs = creationDate ?? now();
       authenticated ??= authenticatedTopDown(embedded.decoded, anchors);
-      verifySigner(cms, info, signer, authenticated, anchors, atMs);
-      return cms.content;
+      // The certificate bag is unsigned, so more than one embedded
+      // certificate can carry the signer's issuer and serial: a twin on
+      // another key, self-signed, ahead of the genuine one. Each match is
+      // tried the way the SignerInfos already are: one passing is enough,
+      // and only when none does is the first match's failure the verdict.
+      let firstMatchFailure: VerificationError | undefined;
+      for (const signer of candidates) {
+        try {
+          verifySigner(cms, info, signer, authenticated, anchors, atMs);
+          return cms.content;
+        } catch (matchCause) {
+          if (!(matchCause instanceof VerificationError)) {
+            throw matchCause;
+          }
+          firstMatchFailure ??= matchCause;
+        }
+      }
+      throw (
+        firstMatchFailure ??
+        new VerificationError(Reason.MALFORMED, 'signer certificate not embedded')
+      );
     } catch (cause) {
       if (!(cause instanceof VerificationError)) {
         throw cause;
@@ -246,12 +265,19 @@ function namesTheSigner(raw: Uint8Array, info: CmsSignerInfo): boolean {
 }
 
 /**
- * The certificate `info` names, or the verdict for the bag. The signer's
- * own entry not decoding is INVALID_CERTIFICATE, as an unreadable x5c entry
- * is on the JWS path; any other entry not decoding is MALFORMED, because
- * the bag is unsigned. A broken signer outranks a broken stranger.
+ * Every embedded certificate carrying the issuer and serial `info` names, in
+ * bag order and never empty, or the verdict for the bag. The bag is
+ * unsigned, so more than one can match: a certificate with the signer's
+ * identity on another key can sit ahead of the genuine one, and the caller
+ * tries each. The signer's own entry not decoding is INVALID_CERTIFICATE, as
+ * an unreadable x5c entry is on the JWS path; any other entry not decoding
+ * is MALFORMED, because the bag is unsigned. A broken signer outranks a
+ * broken stranger.
  */
-function signerCertificate(info: CmsSignerInfo, embedded: EmbeddedCertificates): ParsedCertificate {
+function signerCertificates(
+  info: CmsSignerInfo,
+  embedded: EmbeddedCertificates,
+): ParsedCertificate[] {
   for (const raw of embedded.unreadable) {
     if (namesTheSigner(raw, info)) {
       throw new VerificationError(
@@ -266,14 +292,14 @@ function signerCertificate(info: CmsSignerInfo, embedded: EmbeddedCertificates):
       'an embedded certificate is not a valid certificate',
     );
   }
-  const signer = embedded.decoded.find(
+  const matches = embedded.decoded.filter(
     (c) =>
       bytesEqual(c.serialNumber, info.serialContents) && bytesEqual(c.issuerDer, info.issuerRaw),
   );
-  if (signer === undefined) {
+  if (matches.length === 0) {
     throw new VerificationError(Reason.MALFORMED, 'signer certificate not embedded');
   }
-  return signer;
+  return matches;
 }
 
 function verifySigner(
