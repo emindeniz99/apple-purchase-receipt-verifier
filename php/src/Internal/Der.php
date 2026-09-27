@@ -94,8 +94,6 @@ final class Der
     public const TAG_SEQUENCE = 0x30;
     public const TAG_SET = 0x31;
     public const TAG_CONTEXT_0 = 0xa0;
-    public const TAG_CONTEXT_1 = 0xa1;
-    public const TAG_CONTEXT_2 = 0xa2;
     public const TAG_CONTEXT_3 = 0xa3;
 
     /**

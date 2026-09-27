@@ -110,6 +110,33 @@ final class ReceiptDecodeTest extends TestCase
     }
 
     /**
+     * This port refuses RSA-PSS receipt signers (php/README.md). PHP's
+     * openssl_verify() has no PSS mode and the alternative is hand-written
+     * EMSA-PSS on the forgery path, so a genuine PSS signature under the
+     * pinned chain must fail closed as INVALID_SIGNATURE, through the
+     * unsupported-algorithm refusal rather than a failed check. The shared
+     * case receipt/signer-rsa-pss-does-not-crash leaves PSS port-defined.
+     */
+    public function testRefusesAGenuineRsaPssSigner(): void
+    {
+        $result = self::verify(Fixtures07::bytes('receipt-signer-rsa-pss'), Fixtures07::bytes('signer-alg-root'));
+        self::assertFalse($result->verified());
+        self::assertSame(Reason::InvalidSignature, $result->failure?->reason);
+        self::assertStringContainsString('unsupported signature algorithm', (string) $result->failure?->message);
+    }
+
+    /** A tampered PSS signature never verifies, in any port (receipt/reject-signer-rsa-pss-tampered). */
+    public function testRejectsATamperedRsaPssSigner(): void
+    {
+        $result = self::verify(
+            Fixtures07::bytes('review-receipt-signer-rsa-pss-tampered'),
+            Fixtures07::bytes('signer-alg-root'),
+        );
+        self::assertFalse($result->verified());
+        self::assertSame(Reason::InvalidSignature, $result->failure?->reason);
+    }
+
+    /**
      * A genuinely unsupported digest OID — not MD5, which 0.7 widened
      * support to (docs/design/0.7-hardening-parity.md, "any receipt signer
      * algorithm"; see {@see testAcceptsEveryModelledDigestAlgorithm}).

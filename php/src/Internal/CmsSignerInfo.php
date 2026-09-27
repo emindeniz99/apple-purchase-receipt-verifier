@@ -24,8 +24,6 @@ final class CmsSignerInfo
         public readonly ?Asn1Node $signedAttrs,
         /** Dotted signatureAlgorithm OID. */
         public readonly string $signatureAlgorithmOid,
-        /** signatureAlgorithm's parameters node, or null when absent (RSASSA-PSS carries one here). */
-        public readonly ?Asn1Node $signatureAlgorithmParams,
         public readonly string $signature,
     ) {
     }
