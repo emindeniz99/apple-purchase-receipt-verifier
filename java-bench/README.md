@@ -59,6 +59,17 @@ parameter:
 |---|---|
 | `verifySignedData` | `verifier.verifySignedData(jws)` on `fixtures/generated/transaction.jws`, under a `Config` whose only root is `fixtures/generated/jws-root.der` |
 
+A third class, `WorstCaseBenchmark`, times every shared case in
+`fixtures/cases.json` that carries a `maxMillis` budget (oversized untrusted
+keys, certificate meshes, encoding oddities inside certificates), one
+`caseId` per budgeted case, one fork. Its `main` reads the ids from
+`cases.json`, so run it through that rather than the JMH main:
+
+```bash
+java -cp java-bench/target/benchmarks.jar \
+    io.github.emindeniz99.applepurchasereceiptverifier.bench.WorstCaseBenchmark
+```
+
 `@Setup` prepares every input and runs each call once, failing the run unless
 it gives the expected answer: the right bundle id and in-app count, a Sandbox
 status 0 with every `in_app` entry rendered, `{"status":21007}`,
