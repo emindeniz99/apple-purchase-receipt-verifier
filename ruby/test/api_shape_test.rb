@@ -115,6 +115,40 @@ class ApiShapeTest < Minitest::Test
     assert_predicate receipt.unknown_attributes, :frozen?
   end
 
+  # A caller reads verified? before trusting anything, then payload or
+  # failure. That only works if exactly one of the two is set for every
+  # outcome the public methods can produce.
+  def test_a_result_carries_exactly_one_of_payload_and_failure
+    verifier = APRV::Verifier.create(APRV::Config.new(roots: receipt_roots))
+    results = {
+      "verified" => verifier.verify_receipt([TestSupport.fixture_bytes("receipt")].pack("m0")),
+      "malformed" => verifier.verify_receipt("AQIDBA=="),
+      "untrusted chain" => verifier.verify_receipt([TestSupport.fixture_bytes("receipt-foreign")].pack("m0")),
+      "malformed jws" => verifier.verify_signed_data("a.b")
+    }
+    results.each do |label, result|
+      refute_equal result.payload.nil?, result.failure.nil?, "#{label}: exactly one of payload and failure"
+      assert_equal !result.payload.nil?, result.verified?, label
+      assert_predicate result, :frozen?, label
+    end
+    assert_predicate results["verified"], :verified?
+    assert_equal APRV::Reason::MALFORMED, results["malformed"].failure.reason
+    assert_equal APRV::Reason::UNTRUSTED_CHAIN, results["untrusted chain"].failure.reason
+    assert_equal APRV::Reason::MALFORMED, results["malformed jws"].failure.reason
+  end
+
+  # A Ruby String can carry bytes that are not valid in its encoding. The
+  # public methods must treat that as malformed input, not raise on it.
+  def test_input_that_is_not_valid_utf8_is_malformed_not_a_raise
+    verifier = APRV::Verifier.create(APRV::Config.new(roots: receipt_roots))
+    text = "QU\xffD".b
+    assert_equal APRV::Reason::MALFORMED, verifier.verify_receipt(text).failure.reason
+    assert_equal APRV::Reason::MALFORMED, verifier.verify_receipt(+"QU\xffD").failure.reason
+    assert_equal APRV::Reason::MALFORMED, verifier.verify_signed_data(+"a\xff.b.c").failure.reason
+    body = +"{\"receipt-data\":\"QU\xffD\"}"
+    assert_equal 21_002, JSON.parse(verifier.verify_receipt_endpoint(APRV::Environment::SANDBOX, body))["status"]
+  end
+
   def test_the_dashed_require_path_works_too
     path = File.expand_path("../lib/apple-purchase-receipt-verifier.rb", __dir__)
     assert_path_exists path

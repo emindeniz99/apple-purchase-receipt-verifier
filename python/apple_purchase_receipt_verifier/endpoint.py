@@ -172,11 +172,14 @@ def verify_receipt_endpoint(
     Apple would return, as a JSON string. Never raises."""
     try:
         receipt = verify_receipt(_receipt_data(request_json), roots, clock)
+        status = _status_for_environment(environment, receipt)
+        if status != apple_status.OK:
+            return _render(status)
+        # Inside the try: a clock that fails here is INTERNAL_ERROR (21009),
+        # never an exception out of a method that promises not to raise.
+        request_date_ms = clock()
     except VerificationError as e:
         return _render(_status_for_reason(e.reason))
     except Exception:
         return _render(apple_status.INTERNAL_DATA_ACCESS_ERROR)
-    status = _status_for_environment(environment, receipt)
-    if status != apple_status.OK:
-        return _render(status)
-    return _render(apple_status.OK, environment, receipt, clock())
+    return _render(apple_status.OK, environment, receipt, request_date_ms)

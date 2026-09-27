@@ -3,6 +3,7 @@
 from . import endpoint as _endpoint
 from . import jws as _jws
 from . import receipt as _receipt
+from ._call_clock import CallClock
 from ._errors import VerificationError
 from .config import Config
 from .environment import Environment
@@ -46,7 +47,7 @@ class Verifier:
     def verify_receipt(self, base64: "str | None") -> VerificationResult[ReceiptPayload]:
         try:
             return VerificationResult(
-                payload=_receipt.verify_receipt(base64, self._roots, self._clock)
+                payload=_receipt.verify_receipt(base64, self._roots, CallClock(self._clock))
             )
         except VerificationError as e:
             return VerificationResult(failure=_to_failure(e))
@@ -56,7 +57,7 @@ class Verifier:
     def verify_signed_data(self, jws: "str | None") -> VerificationResult[JsonPayload]:
         try:
             return VerificationResult(
-                payload=_jws.verify_signed_data(jws, self._roots, self._clock)
+                payload=_jws.verify_signed_data(jws, self._roots, CallClock(self._clock))
             )
         except VerificationError as e:
             return VerificationResult(failure=_to_failure(e))
@@ -67,5 +68,5 @@ class Verifier:
         if not isinstance(environment, Environment):
             raise TypeError("environment must be an Environment")
         return _endpoint.verify_receipt_endpoint(
-            environment, request_json, self._roots, self._clock
+            environment, request_json, self._roots, CallClock(self._clock)
         )

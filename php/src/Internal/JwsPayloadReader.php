@@ -41,18 +41,23 @@ final class JwsPayloadReader
         if (BoundedJson::exceedsBounds($headerBytes)) {
             throw new VerificationException(Reason::Malformed, 'header is nested too deeply');
         }
+        // Decoded to objects, not associative arrays: an associative decode
+        // turns `[]` and `{}` into the same PHP value, and `{"0":…,"1":…}`
+        // into a list, so an array could pass for an object and an object
+        // for an array.
         try {
-            $decoded = json_decode($headerBytes, true, self::JSON_MAX_DEPTH, JSON_THROW_ON_ERROR);
+            $decoded = json_decode($headerBytes, false, self::JSON_MAX_DEPTH, JSON_THROW_ON_ERROR);
         } catch (\JsonException $e) {
             throw new VerificationException(Reason::Malformed, 'header is not valid JSON', $e);
         }
-        if (!is_array($decoded) || ($decoded !== [] && array_is_list($decoded))) {
+        if (!$decoded instanceof \stdClass) {
             throw new VerificationException(Reason::Malformed, 'header is not a JSON object');
         }
-        $alg = $decoded['alg'] ?? null;
+        $alg = $decoded->alg ?? null;
         $alg = is_string($alg) ? $alg : null;
-        $x5c = $decoded['x5c'] ?? null;
-        if (!is_array($x5c) || !array_is_list($x5c) || !self::allStrings($x5c)) {
+        $x5c = $decoded->x5c ?? null;
+        // A JSON array decodes to a PHP list here, and nothing else does.
+        if (!is_array($x5c) || !self::allStrings($x5c)) {
             $x5c = null;
         }
 
@@ -77,15 +82,15 @@ final class JwsPayloadReader
         if (BoundedJson::exceedsBounds($payloadBytes)) {
             return [null, null, 'nested too deeply'];
         }
-        $decoded = json_decode($payloadBytes, true, self::JSON_MAX_DEPTH);
+        $decoded = json_decode($payloadBytes, false, self::JSON_MAX_DEPTH);
         if ($decoded === null && json_last_error() !== JSON_ERROR_NONE) {
             return [null, null, 'not valid JSON'];
         }
-        if (!is_array($decoded) || ($decoded !== [] && array_is_list($decoded))) {
+        if (!$decoded instanceof \stdClass) {
             return [null, null, 'not an object'];
         }
 
-        return [$payloadBytes, self::signedAtMillis($decoded['signedDate'] ?? null), null];
+        return [$payloadBytes, self::signedAtMillis($decoded->signedDate ?? null), null];
     }
 
     /**
@@ -116,7 +121,7 @@ final class JwsPayloadReader
         return (int) $raw;
     }
 
-    /** @param list<mixed> $values */
+    /** @param array<mixed> $values */
     private static function allStrings(array $values): bool
     {
         foreach ($values as $value) {

@@ -13,6 +13,7 @@ import time
 import unittest
 from pathlib import Path
 from typing import Any, ClassVar
+from unittest import mock
 
 from apple_purchase_receipt_verifier import Config, Environment, Reason, Verifier
 from asn1crypto import cms as asn1cms
@@ -315,6 +316,572 @@ class ClockTest(unittest.TestCase):
         body = json.dumps({"receipt-data": receipt_base64(fixture("generated-0.7", "receipt.der"))})
         response = json.loads(verifier.verify_receipt_endpoint(Environment.SANDBOX, body))
         self.assertEqual("2030-03-04 05:06:07 Etc/GMT", response["receipt"]["request_date"])
+
+
+class ClockReadTest(unittest.TestCase):
+    """The clock is read at most once per call, and a clock that fails is
+    the host's fault: INTERNAL_ERROR (21009 at the endpoint), never a
+    verdict about the input and never an exception out of a method that
+    promises not to raise (docs/design/0.7-api.md, "Setup")."""
+
+    def dateless(self) -> str:
+        return receipt_base64(fixture("generated-0.7", "receipt-no-creation-date.der"))
+
+    def dateless_verifier(self, clock: "Any") -> Verifier:
+        roots = [cert("generated-0.7", "divergence-receipt-root.der")]
+        return Verifier(Config.create(roots=roots, clock=clock))
+
+    def test_the_endpoint_reads_the_clock_once_for_a_dateless_receipt(self) -> None:
+        # A dateless receipt needs "now" twice: for the chain instant and for
+        # request_date. Both must be one reading, or the response can show a
+        # request_date the chain was not judged at.
+        reads: list[int] = []
+
+        def clock() -> int:
+            reads.append(1)
+            return 1735689600000 + len(reads) * 3_600_000  # 2025-01-01 plus an hour a read
+
+        verifier = self.dateless_verifier(clock)
+        body = json.dumps({"receipt-data": self.dateless()})
+        response = json.loads(verifier.verify_receipt_endpoint(Environment.SANDBOX, body))
+        self.assertEqual(0, response["status"])
+        self.assertEqual(1, len(reads))
+        self.assertEqual("1735693200000", response["receipt"]["request_date_ms"])
+
+        self.assertTrue(verifier.verify_receipt(self.dateless()).verified)
+        self.assertEqual(2, len(reads), "verify_receipt must read the clock exactly once")
+
+    def test_a_clock_that_raises_is_an_internal_error(self) -> None:
+        def clock() -> int:
+            raise RuntimeError("clock backend unavailable")
+
+        verifier = self.dateless_verifier(clock)
+        failure = failure_of(verifier.verify_receipt(self.dateless()))
+        self.assertEqual(Reason.INTERNAL_ERROR, failure.reason)
+        self.assertIsInstance(failure.cause, RuntimeError)
+
+        jws = jws_without_signed_date(text("generated", "transaction.jws"))
+        jws_failure = failure_of(
+            Verifier(
+                Config.create(roots=[cert("generated", "jws-root.der")], clock=clock)
+            ).verify_signed_data(jws)
+        )
+        self.assertEqual(Reason.INTERNAL_ERROR, jws_failure.reason)
+
+        for label, data in (
+            ("dateless", self.dateless()),
+            # A dated receipt needs the clock only for request_date.
+            ("dated", receipt_base64(fixture("generated-0.7", "receipt.der"))),
+        ):
+            with self.subTest(label):
+                roots = (
+                    [cert("generated-0.7", "divergence-receipt-root.der")]
+                    if label == "dateless"
+                    else [cert("generated-0.7", "receipt-root.der")]
+                )
+                endpoint = Verifier(Config.create(roots=roots, clock=clock))
+                body = json.dumps({"receipt-data": data})
+                self.assertEqual(
+                    '{"status":21009}', endpoint.verify_receipt_endpoint(Environment.SANDBOX, body)
+                )
+
+
+def jws_without_signed_date(compact: str) -> str:
+    """The given JWS with ``signedDate`` dropped from its payload, so the
+    chain is judged at the configured clock. The signature no longer
+    matches; the chain is checked first, so the clock is still read."""
+    header, payload, signature = compact.split(".")
+    claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+    claims.pop("signedDate", None)
+    undated = base64.urlsafe_b64encode(json.dumps(claims).encode()).rstrip(b"=").decode()
+    return f"{header}.{undated}.{signature}"
+
+
+# Reasons a failure before the signature has verified may carry. The input
+# is still unauthenticated there, so an unexpected parser error must never
+# become INTERNAL_ERROR or UNREADABLE_PAYLOAD (hardening parity change 4).
+PRE_SIGNATURE_REASONS = (
+    Reason.MALFORMED,
+    Reason.TOO_LARGE,
+    Reason.INVALID_SIGNATURE,
+    Reason.UNTRUSTED_CHAIN,
+    Reason.INVALID_CERTIFICATE,
+    Reason.INVALID_CERTIFICATE_PURPOSE,
+)
+
+# An anonymous 162-byte blob: no certificates, no signature, one creation
+# date of 0001-01-01T00:00:00+10:00, which 0.6's datetime-based decoder
+# could not convert to UTC (OverflowError).
+OUT_OF_RANGE_DATE_RECEIPT = (
+    "MIGfBgkqhkiG9w0BBwKggZEwgY4CAQExDzANBglghkgBZQMEAgEFADA2BgkqhkiG9w0BBwGgKQQnMSUw"
+    "IwIBDAIBAQQbFhkwMDAxLTAxLTAxVDAwOjAwOjAwKzEwOjAwMUAwPgIBATARMAwxCjAIBgNVBAMMAXgC"
+    "AQEwDQYJYIZIAWUDBAIBBQAwDQYJKoZIhvcNAQEBBQAECAAAAAAAAAAA"
+)
+
+_OID_MESSAGE_DIGEST = b"\x06\x09\x2a\x86\x48\x86\xf7\x0d\x01\x09\x04"
+_OID_SIGNING_TIME = b"\x06\x09\x2a\x86\x48\x86\xf7\x0d\x01\x09\x05"
+_OID_UNKNOWN = b"\x06\x03\x2a\x03\x04"
+
+
+def hostile_attribute_sets() -> "dict[str, bytes]":
+    """signedAttrs an attacker can splice in, one per raw exception class
+    a Python decoder has raised on them."""
+    nested = b""
+    for _ in range(5000):
+        nested = tlv(0x30, nested)
+    return {
+        "empty messageDigest value set": tlv(0x31, tlv(0x30, _OID_MESSAGE_DIGEST + tlv(0x31, b""))),
+        "two messageDigest values": tlv(
+            0x31,
+            tlv(
+                0x30,
+                _OID_MESSAGE_DIGEST + tlv(0x31, tlv(0x04, b"\x00" * 32) + tlv(0x04, b"\x01" * 32)),
+            ),
+        ),
+        "messageDigest that is not an octet string": tlv(
+            0x31, tlv(0x30, _OID_MESSAGE_DIGEST + tlv(0x31, tlv(0x02, b"\x01")))
+        ),
+        "signingTime with month 13": tlv(
+            0x31, tlv(0x30, _OID_SIGNING_TIME + tlv(0x31, tlv(0x17, b"241301000000Z")))
+        ),
+        "unknown attribute holding invalid UTF-8": tlv(
+            0x31, tlv(0x30, _OID_UNKNOWN + tlv(0x31, tlv(0x0C, b"\xff\xfe")))
+        ),
+        "unknown attribute nested 5000 deep": tlv(
+            0x31, tlv(0x30, _OID_UNKNOWN + tlv(0x31, nested))
+        ),
+        "integer where the attribute OID belongs": tlv(
+            0x31, tlv(0x30, tlv(0x02, b"\x01") + tlv(0x31, b""))
+        ),
+    }
+
+
+def spliced_receipt(
+    signed_attrs: "bytes | None" = None,
+    digest_algorithm: "bytes | None" = None,
+    signature: "bytes | None" = None,
+) -> bytes:
+    """The shared 0.7 receipt with attacker-supplied SignerInfo fields
+    spliced in. Its certificates and payload are untouched, so the chain and
+    marker checks still pass and the decoder runs on hostile bytes before
+    the signature check gets to reject them."""
+    info = asn1cms.ContentInfo.load(fixture("generated-0.7", "receipt.der"))
+    signed_data = info["content"]
+    signer = signed_data["signer_infos"][0]
+    spliced = tlv(
+        0x30,
+        signer["version"].dump()
+        + signer["sid"].dump()
+        + (digest_algorithm or signer["digest_algorithm"].dump())
+        + (b"\xa0" + signed_attrs[1:] if signed_attrs else signer["signed_attrs"].dump())
+        + signer["signature_algorithm"].dump()
+        + (signature or signer["signature"].dump()),
+    )
+    body = (
+        signed_data["version"].dump()
+        + signed_data["digest_algorithms"].dump()
+        + signed_data["encap_content_info"].dump()
+        + signed_data["certificates"].dump()
+        + signed_data["crls"].dump()
+        + tlv(0x31, spliced)
+    )
+    return tlv(0x30, info["content_type"].dump() + tlv(0xA0, tlv(0x30, body)))
+
+
+def payload_with_attribute_type(type_bytes: bytes) -> bytes:
+    """A receipt payload SET carrying the creation date and one attribute
+    whose type INTEGER is ``type_bytes``."""
+    date = tlv(0x02, b"\x0c") + tlv(0x02, b"\x01") + tlv(0x04, tlv(0x16, b"2024-08-06T12:00:00Z"))
+    probe = tlv(0x02, type_bytes) + tlv(0x02, b"\x01") + tlv(0x04, b"")
+    return tlv(0x31, tlv(0x30, date) + tlv(0x30, probe))
+
+
+def segment(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+
+class HostileInputTest(unittest.TestCase):
+    """The signedAttrs, the SignerInfo fields and the creation date are
+    decoded before the signature check, so an attacker reaches those
+    decoders with arbitrary bytes. Each must come back as a failure the
+    unauthenticated input can earn, never a raised exception and never
+    INTERNAL_ERROR."""
+
+    def assert_pre_signature_failure(self, result: Any, label: str) -> None:
+        self.assertFalse(result.verified, label)
+        self.assertIn(failure_of(result).reason, PRE_SIGNATURE_REASONS, label)
+
+    def test_hostile_signed_attrs_are_contained(self) -> None:
+        verifier = receipt_verifier()
+        for name, attributes in hostile_attribute_sets().items():
+            with self.subTest(name):
+                result = verifier.verify_receipt(
+                    receipt_base64(spliced_receipt(signed_attrs=attributes))
+                )
+                self.assert_pre_signature_failure(result, name)
+
+    def test_a_message_digest_with_more_than_one_value_is_refused(self) -> None:
+        # RFC 5652 section 5.3 allows exactly one value; unguarded, a decoder
+        # silently takes the first of whatever list the attacker supplied.
+        attributes = hostile_attribute_sets()["two messageDigest values"]
+        result = receipt_verifier().verify_receipt(
+            receipt_base64(spliced_receipt(signed_attrs=attributes))
+        )
+        self.assertEqual(Reason.INVALID_SIGNATURE, failure_of(result).reason)
+
+    def test_hostile_signer_info_fields_are_contained(self) -> None:
+        verifier = receipt_verifier()
+        corpus = {
+            "digest algorithm that is not an OID": spliced_receipt(
+                digest_algorithm=tlv(0x30, tlv(0x02, b"\x01"))
+            ),
+            "signature that is not an octet string": spliced_receipt(signature=tlv(0x02, b"\x01")),
+            "truncated receipt": fixture("generated-0.7", "receipt.der")[:200],
+        }
+        for name, der in corpus.items():
+            with self.subTest(name):
+                self.assert_pre_signature_failure(
+                    verifier.verify_receipt(receipt_base64(der)), name
+                )
+
+    def test_a_creation_date_no_calendar_can_convert_is_contained(self) -> None:
+        # Before trust the date only picks the chain instant; the blob embeds
+        # no signer, so the answer is a format failure, never a leaked
+        # OverflowError from the date decoder.
+        result = Verifier(Config.defaults()).verify_receipt(OUT_OF_RANGE_DATE_RECEIPT)
+        self.assertEqual(Reason.MALFORMED, failure_of(result).reason)
+
+    def test_a_negative_attribute_type_makes_the_payload_unreadable(self) -> None:
+        # 0x80 is the smallest leading byte of a negative two's-complement
+        # INTEGER. An attribute type is a 32-bit signed value that cannot
+        # be negative, so the signed content does not parse. Driven through
+        # the payload parser: a shared case cannot sign content this broken
+        # under every port's own test PKI.
+        from apple_purchase_receipt_verifier._errors import VerificationError
+        from apple_purchase_receipt_verifier.receipt import _parse_signed_payload
+
+        with self.assertRaises(VerificationError) as ctx:
+            _parse_signed_payload(payload_with_attribute_type(b"\x80"))
+        self.assertEqual(Reason.UNREADABLE_PAYLOAD, ctx.exception.reason)
+
+    def test_unreadable_payload_keeps_the_parser_error_as_its_cause(self) -> None:
+        # The cause tells an operator why Apple-signed content did not parse
+        # (docs/design/0.7-api.md, "cause").
+        verifier = Verifier(
+            Config.create(
+                roots=[cert("generated-0.7", "api-receipt-root.der")],
+                clock=lambda: 1735689600000,  # 2025-01-01, inside the chain window
+            )
+        )
+        result = verifier.verify_receipt(
+            receipt_base64(fixture("generated-0.7", "receipt-content-not-asn1.der"))
+        )
+        failure = failure_of(result)
+        self.assertEqual(Reason.UNREADABLE_PAYLOAD, failure.reason)
+        self.assertIsInstance(failure.cause, Exception)
+        # Behind a verdict about unauthenticated input the cause is dropped:
+        # its text could quote certificate names from the input.
+        self.assertIsNone(failure_of(verifier.verify_receipt("AQIDBA==")).cause)
+
+
+class JwsHostileInputTest(unittest.TestCase):
+    """The JWS header and payload are attacker-supplied JSON, decoded before
+    the signature that would reject them. Each case here was a raw Python
+    exception out of the 0.6 JWS verifier (python/fuzz)."""
+
+    def setUp(self) -> None:
+        self.header, self.payload, self.signature = text("generated", "transaction.jws").split(".")
+
+    def header_claims(self) -> "dict[str, Any]":
+        claims: dict[str, Any] = json.loads(
+            base64.urlsafe_b64decode(self.header + "=" * (-len(self.header) % 4))
+        )
+        return claims
+
+    def test_a_signed_date_no_calendar_can_express_is_judged_at_the_clock(self) -> None:
+        # datetime covers years 1 to 9999, so 0.6 leaked OverflowError for
+        # 1e300 and ValueError for NaN, which json.loads accepts. In 0.7 such
+        # a signedDate counts as missing: the chain is judged at the clock,
+        # passes, and the forged payload fails the signature.
+        for name, raw in (
+            ("far future float", b'{"signedDate": 1e300}'),
+            ("far past float", b'{"signedDate": -1e300}'),
+            ("integer past the range", b'{"signedDate": 1' + b"0" * 30 + b"}"),
+            ("NaN", b'{"signedDate": NaN}'),
+            ("Infinity", b'{"signedDate": Infinity}'),
+        ):
+            with self.subTest(name):
+                result = jws_verifier().verify_signed_data(
+                    f"{self.header}.{segment(raw)}.{self.signature}"
+                )
+                self.assertEqual(Reason.INVALID_SIGNATURE, failure_of(result).reason)
+
+    def test_x5c_entries_of_any_json_type_but_string_are_malformed(self) -> None:
+        # A JSON array of numbers, containers or null used to reach
+        # base64.b64decode, whose TypeError the decode site did not catch.
+        # The shared case covers one non-string entry; Python's JSON types
+        # make every other shape reachable too.
+        claims = self.header_claims()
+        for name, entries in (
+            ("numbers", [1, 2, 3]),
+            ("containers and null", [[], {}, None]),
+            ("one entry short of all strings", [claims["x5c"][0], claims["x5c"][1], 3]),
+        ):
+            with self.subTest(name):
+                hostile = segment(json.dumps(dict(claims, x5c=entries)).encode())
+                result = jws_verifier().verify_signed_data(
+                    f"{hostile}.{self.payload}.{self.signature}"
+                )
+                self.assertEqual(Reason.MALFORMED, failure_of(result).reason)
+
+    def test_deep_nesting_never_reaches_the_recursive_parser(self) -> None:
+        # json.loads recurses once per level and has no depth option, so a
+        # segment nested past what the interpreter's stack allows must be
+        # refused by the bound, not by a RecursionError. 20,000 levels stay
+        # under the JWS size cap.
+        deep = ("[" * 20_000 + "]" * 20_000).encode()
+        header = jws_verifier().verify_signed_data(
+            f"{segment(deep)}.{self.payload}.{self.signature}"
+        )
+        self.assertEqual(Reason.MALFORMED, failure_of(header).reason)
+        # An over-bound payload is carried past the signature check, which
+        # the forged payload fails.
+        payload = jws_verifier().verify_signed_data(
+            f"{self.header}.{segment(deep)}.{self.signature}"
+        )
+        self.assertEqual(Reason.INVALID_SIGNATURE, failure_of(payload).reason)
+
+
+class EndpointWireTest(unittest.TestCase):
+    """The raw JSON text of verifyReceipt answers, which a shared case
+    compares only after parsing."""
+
+    def body(self) -> str:
+        return json.dumps({"receipt-data": receipt_base64(fixture("generated-0.7", "receipt.der"))})
+
+    def test_the_wire_types_are_apples(self) -> None:
+        # Raw bytes, not just the parse: status is a JSON number, every
+        # number-shaped receipt field a JSON string, as Apple sends them.
+        wire = receipt_verifier().verify_receipt_endpoint(Environment.SANDBOX, self.body())
+        self.assertIn('"status":0', wire)
+        self.assertIn('"quantity":"1"', wire)
+        self.assertIn('"web_order_line_item_id":"42"', wire)
+        parsed = json.loads(wire)
+        self.assertIs(type(parsed["status"]), int)
+        receipt = parsed["receipt"]
+        self.assertIsInstance(receipt["receipt_creation_date_ms"], str)
+        self.assertIsInstance(receipt["request_date_ms"], str)
+        for purchase in receipt["in_app"]:
+            for key in ("quantity", "web_order_line_item_id", "purchase_date_ms"):
+                self.assertIsInstance(purchase.get(key, ""), str, key)
+
+    def test_every_date_is_rendered_as_apples_triple(self) -> None:
+        receipt = json.loads(
+            receipt_verifier().verify_receipt_endpoint(Environment.SANDBOX, self.body())
+        )["receipt"]
+        for key in ("request_date", "request_date_ms", "request_date_pst"):
+            self.assertIn(key, receipt)
+        coins = next(p for p in receipt["in_app"] if p["product_id"] == "com.example.app.coins100")
+        for key in ("purchase_date", "purchase_date_ms", "purchase_date_pst"):
+            self.assertIn(key, coins)
+        vip = next(p for p in receipt["in_app"] if p["product_id"] == "com.example.app.vip")
+        for key in ("expires_date", "expires_date_ms", "expires_date_pst"):
+            self.assertIn(key, vip)
+
+    def test_is_in_intro_offer_period_is_the_string_apple_sends(self) -> None:
+        receipt_data = (FIXTURES / "public-receipts" / "receipt-sandbox-g5.b64").read_text().strip()
+        wire = Verifier(Config.defaults()).verify_receipt_endpoint(
+            Environment.SANDBOX, json.dumps({"receipt-data": receipt_data})
+        )
+        self.assertIn('"is_in_intro_offer_period":"false"', wire)
+        purchases = json.loads(wire)["receipt"]["in_app"]
+        self.assertTrue(purchases)
+        for purchase in purchases:
+            self.assertIsInstance(purchase["is_in_intro_offer_period"], str)
+
+    def test_a_non_zero_status_is_the_status_alone(self) -> None:
+        self.assertEqual(
+            '{"status":21007}',
+            receipt_verifier().verify_receipt_endpoint(Environment.PRODUCTION, self.body()),
+        )
+
+    def test_anything_but_a_request_object_answers_21002(self) -> None:
+        verifier = receipt_verifier()
+        for body in (
+            "",
+            "not json",
+            "{",
+            "[]",
+            '[{"receipt-data":"x"}]',
+            "null",
+            "3",
+            '"receipt"',
+            "true",
+            "NaN",
+            "{}",
+            '{"receipt-data":null}',
+            '{"receipt-data":5}',
+            '{"receipt-data":"AQIDBA=="}',
+            None,
+        ):
+            with self.subTest(body=body):
+                self.assertEqual(
+                    '{"status":21002}', verifier.verify_receipt_endpoint(Environment.SANDBOX, body)
+                )
+
+    def test_brackets_inside_a_string_do_not_count_as_nesting(self) -> None:
+        body = json.dumps(
+            {
+                "receipt-data": receipt_base64(fixture("generated-0.7", "receipt.der")),
+                "note": '\\"' + "[" * 1000,
+            }
+        )
+        response = json.loads(receipt_verifier().verify_receipt_endpoint(Environment.SANDBOX, body))
+        self.assertEqual(0, response["status"])
+
+    def test_a_body_nested_past_the_stack_answers_21002(self) -> None:
+        deep = "[" * 100_000 + "]" * 100_000
+        body = '{"receipt-data":"AQIDBA==","deep":' + deep + "}"
+        self.assertEqual(
+            '{"status":21002}',
+            receipt_verifier().verify_receipt_endpoint(Environment.SANDBOX, body),
+        )
+
+
+class CostBeforeCapTest(unittest.TestCase):
+    """The size caps exist so hostile input costs little to refuse: base64
+    decoding and JSON parsing both allocate a multiple of their input before
+    any signature is checked. These prove the expensive step never runs for
+    an over-cap input. The patches are test-side; nothing in the library
+    exists for them."""
+
+    def test_the_caps_are_the_documented_ones(self) -> None:
+        from apple_purchase_receipt_verifier.endpoint import MAX_REQUEST_BYTES
+        from apple_purchase_receipt_verifier.jws import MAX_JWS_BYTES
+        from apple_purchase_receipt_verifier.receipt import MAX_RECEIPT_BYTES
+
+        self.assertEqual(3145728, MAX_RECEIPT_BYTES)
+        self.assertEqual(3145728, MAX_REQUEST_BYTES)
+        self.assertEqual(262144, MAX_JWS_BYTES)
+
+    def test_an_over_cap_receipt_is_never_decoded(self) -> None:
+        from apple_purchase_receipt_verifier.receipt import MAX_RECEIPT_BYTES
+
+        # Two-byte characters: over the cap in UTF-8 bytes while under it in
+        # characters, so a character count would let the decode run.
+        for label, over in (
+            ("ASCII", "A" * (MAX_RECEIPT_BYTES + 4)),
+            ("two-byte characters", "\u00e9" * (MAX_RECEIPT_BYTES // 2) + "a"),
+        ):
+            with (
+                self.subTest(label),
+                mock.patch(
+                    "apple_purchase_receipt_verifier.receipt.decode_receipt_base64"
+                ) as decode,
+            ):
+                result = receipt_verifier().verify_receipt(over)
+                decode.assert_not_called()
+                self.assertEqual(Reason.TOO_LARGE, failure_of(result).reason)
+
+    def test_an_over_cap_request_body_is_never_parsed(self) -> None:
+        from apple_purchase_receipt_verifier.endpoint import MAX_REQUEST_BYTES
+
+        body = "[" * (MAX_REQUEST_BYTES + 1)
+        with (
+            mock.patch("apple_purchase_receipt_verifier.endpoint.json.loads") as loads,
+            mock.patch(
+                "apple_purchase_receipt_verifier.endpoint._bounded_json.exceeds_bounds"
+            ) as scan,
+        ):
+            wire = receipt_verifier().verify_receipt_endpoint(Environment.SANDBOX, body)
+        loads.assert_not_called()
+        scan.assert_not_called()
+        self.assertEqual('{"status":21002}', wire)
+
+    def test_an_over_cap_jws_is_never_decoded(self) -> None:
+        from apple_purchase_receipt_verifier.jws import MAX_JWS_BYTES
+
+        over = "A." * (MAX_JWS_BYTES // 2 + 4)
+        with mock.patch("apple_purchase_receipt_verifier.jws._decode_base64url") as decode:
+            result = jws_verifier().verify_signed_data(over)
+        decode.assert_not_called()
+        self.assertEqual(Reason.TOO_LARGE, failure_of(result).reason)
+
+    def test_utf8_count_matches_the_encoder_on_each_side_of_the_limit(self) -> None:
+        # The size check decides on len() shortcuts; each width is checked at
+        # the limit and one byte past it, so a wrong shortcut factor shows up
+        # as a verdict that disagrees with the encoder.
+        from apple_purchase_receipt_verifier._utf8 import utf8_exceeds
+
+        limit = 12
+        for char in ("a", "\u00e9", "\u20ac", "\U0001f600", "\ud800"):
+            width = len(char.encode("utf-8", "surrogatepass"))
+            for sample in (char * (limit // width), char * (limit // width) + "a"):
+                with self.subTest(char=ascii(char), length=len(sample)):
+                    size = len(sample.encode("utf-8", "surrogatepass"))
+                    self.assertEqual(size > limit, utf8_exceeds(sample, limit))
+
+    def test_the_certificate_bound_clears_the_genuine_receipts_it_must_admit(self) -> None:
+        # Read rather than asserted: the bound is only safe while it stays
+        # above what Apple actually embeds.
+        from apple_purchase_receipt_verifier.receipt import MAX_EMBEDDED_CERTIFICATES
+
+        counts = {
+            name: embedded_certificate_count(
+                base64.b64decode((FIXTURES / "public-receipts" / f"{name}.b64").read_text().strip())
+            )
+            for name in (
+                "receipt-sandbox-g5",
+                "receipt-sandbox-legacy",
+                "receipt-xcode-with-purchases",
+            )
+        }
+        self.assertLess(max(counts.values()), MAX_EMBEDDED_CERTIFICATES, counts)
+
+
+class ClockDoesNotMoveADatedChainTest(unittest.TestCase):
+    def test_a_clock_inside_the_window_cannot_rescue_a_receipt_dated_outside_it(self) -> None:
+        # The clock stands in only for a missing creation date. This receipt
+        # states one after its chain expired, and a clock pinned inside the
+        # chain window must not move the chain instant back there.
+        roots = [cert("generated-0.7", "receipt-expired-root.der")]
+        fresh = receipt_base64(fixture("generated-0.7", "receipt-expired-fresh.der"))
+        historical = receipt_base64(fixture("generated-0.7", "receipt-expired-historical.der"))
+        in_window = (
+            int(datetime.datetime(2020, 6, 1, tzinfo=datetime.timezone.utc).timestamp()) * 1000
+        )
+        for label, clock in (("system", None), ("inside the window", lambda: in_window)):
+            with self.subTest(label):
+                verifier = Verifier(Config.create(roots=roots, clock=clock))
+                self.assertTrue(verifier.verify_receipt(historical).verified)
+                self.assertEqual(
+                    Reason.INVALID_CERTIFICATE, failure_of(verifier.verify_receipt(fresh)).reason
+                )
+                body = json.dumps({"receipt-data": fresh})
+                self.assertEqual(
+                    '{"status":21003}', verifier.verify_receipt_endpoint(Environment.SANDBOX, body)
+                )
+
+
+class ApiShapeTest(unittest.TestCase):
+    def test_the_bundled_roots_are_the_three_published_apple_roots(self) -> None:
+        subjects = [c.subject.rfc4514_string() for c in Config.defaults().roots]
+        self.assertEqual(3, len(subjects), subjects)
+        self.assertTrue(any("Apple Root CA - G2" in s for s in subjects), subjects)
+        self.assertTrue(any("Apple Root CA - G3" in s for s in subjects), subjects)
+        # The file Apple labels "Apple Inc. Root" has subject CN=Apple Root CA.
+        self.assertTrue(any(s.startswith("CN=Apple Root CA,") for s in subjects), subjects)
+
+    def test_a_result_holds_exactly_one_of_payload_and_failure(self) -> None:
+        from apple_purchase_receipt_verifier import Failure, VerificationResult
+
+        failure = Failure(Reason.MALFORMED, "m")
+        with self.assertRaises(ValueError):
+            VerificationResult()
+        with self.assertRaises(ValueError):
+            VerificationResult(payload=object(), failure=failure)
+        self.assertTrue(VerificationResult(payload=object()).verified)
+        self.assertFalse(VerificationResult(failure=failure).verified)
 
 
 if __name__ == "__main__":
