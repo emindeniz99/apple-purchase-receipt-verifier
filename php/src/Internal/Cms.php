@@ -41,8 +41,6 @@ final class Cms
     /**
      * @param list<string> $certificates DER bytes of each embedded certificate
      * @param list<CmsSignerInfo> $signerInfos in receipt order, at least one
-     *
-     * @throws VerificationException
      */
     private function __construct(
         public readonly string $content,
@@ -154,15 +152,15 @@ final class Cms
 
         $index = 3;
         $signedAttrs = null;
-        if (isset($fields[$index]) && $fields[$index]->tag === Der::TAG_CONTEXT_0) {
+        if ($fields[$index]->tag === Der::TAG_CONTEXT_0) {
             $signedAttrs = $fields[$index];
             self::requireSignedAttrsSyntax($signedAttrs);
             ++$index;
         }
-        $sigAlgNode = $fields[$index] ?? null;
+        $sigAlgNode = $fields[$index];
         ++$index;
         $signatureNode = $fields[$index] ?? null;
-        if ($sigAlgNode === null || $sigAlgNode->tag !== Der::TAG_SEQUENCE
+        if ($sigAlgNode->tag !== Der::TAG_SEQUENCE
             || $signatureNode === null || !Der::isOctetString($signatureNode)) {
             throw new ParseException('unexpected SignerInfo layout');
         }

@@ -98,6 +98,10 @@ final class BoundedJson
             }
             if ($ch === '{' || $ch === '[') {
                 ++$depth;
+                // False positive: PHPStan 2.2 stops widening $depth after a
+                // few passes of this many-branched loop and infers
+                // int<-2, 4>, but 65 consecutive '[' bytes reach 65.
+                // @phpstan-ignore greater.alwaysFalse
                 if ($depth > self::MAX_NESTING_DEPTH) {
                     return true;
                 }

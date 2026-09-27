@@ -61,7 +61,7 @@ final class SafeText
         // the placeholder, which is a safe, if blunt, answer).
         $chars = preg_match('//u', $value) === 1
             ? preg_split('//u', $value, -1, PREG_SPLIT_NO_EMPTY) ?: []
-            : array_map(static fn (int $b): string => chr($b), array_values(unpack('C*', $value) ?: []));
+            : str_split($value);
         $total = count($chars);
         $cut = min($total, $maxLength);
         $out = '';
@@ -110,7 +110,7 @@ final class SafeText
      */
     private static function codepoint(string $char): ?int
     {
-        $bytes = array_values(unpack('C*', $char) ?: []);
+        $bytes = array_map(ord(...), str_split($char));
         $len = count($bytes);
         if ($len === 1) {
             return $bytes[0] < 0x80 ? $bytes[0] : null;

@@ -10,7 +10,7 @@ use InvalidArgumentException;
  * The outcome of one verification (docs/design/0.7-api.md, "Result").
  * Exactly one of {@see $payload} and {@see $failure} is set.
  *
- * @template T
+ * @template-covariant T
  */
 final readonly class VerificationResult
 {
@@ -32,7 +32,14 @@ final readonly class VerificationResult
         }
     }
 
-    /** Whether the input verified; exactly when {@see $payload} is set. */
+    /**
+     * Whether the input verified; exactly when {@see $payload} is set.
+     *
+     * @phpstan-assert-if-true !null $this->payload
+     * @phpstan-assert-if-true null $this->failure
+     * @phpstan-assert-if-false null $this->payload
+     * @phpstan-assert-if-false !null $this->failure
+     */
     public function verified(): bool
     {
         return $this->payload !== null;
