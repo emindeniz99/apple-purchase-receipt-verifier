@@ -536,18 +536,47 @@ requests a second that is minutes of slower answers after every deploy.
 Build the `Verifier` at startup, not lazily on first request, and verify a
 known receipt a couple of thousand times before the instance takes traffic.
 
-**Worst-case CPU for one call: to be measured for the 0.7 API.** 0.6.0's
-figures (about 850 to 890 µs for a JWS transaction, about 685 µs for a
-2-purchase receipt, about 3.9 ms for a 187-purchase receipt, one core) are
-not cited here as 0.7 numbers: 0.7 changed what a JWS call allocates (no
-more typed-model deserialisation on the hot path) and added a check (the
-intermediate marker on receipts), so the old figures are not a safe stand-in.
-Re-run `java-bench` against 0.7 and replace this paragraph with the result.
+The worst-case CPU for one call is measured in the next section.
 
 Memory, not CPU, is usually the limit: every concurrent call can hold tens
 of megabytes when the input is near its size cap, so bound how many
 verifications run at once (a `Semaphore`, or a bounded executor) rather than
 relying on CPU headroom alone.
+
+## Measured worst-case CPU
+
+Measured on 2026-09-27 with `java-bench`'s `WorstCaseBenchmark`, which times
+every shared case in `fixtures/cases.json` that carries a time budget:
+oversized untrusted keys, a cross-signed certificate mesh, and the encoding
+oddities inside certificates. OpenJDK 21.0.10, JMH 1.37, one thread, on a
+shared 4-vCPU KVM guest (Intel Xeon Processor @ 2.10GHz). The JIT is warm:
+each case runs once and is checked, then five 1-second warm-up iterations,
+then five 1-second measured iterations in one fork. The genuine receipt
+comes from `ReceiptBenchmark` (the same settings, two forks).
+
+| Call | Mean | Slowest iteration |
+|---|---:|---:|
+| Slowest hostile case: `receipt/verify-genuine-padded-with-oversized-strangers` (a valid receipt carrying oversized certificates it does not need) | 2.4 ms | 2.7 ms |
+| Next: `receipt/reject-untrusted-oversized-intermediates` | 1.2 ms | 1.4 ms |
+| Slowest hostile JWS: `signed-data/intermediate-with-an-indefinite-certificate-length-does-not-crash` | 1.1 ms | 1.1 ms |
+| Every other budgeted case | under 1.1 ms | under 1.2 ms |
+| For scale: `verifyReceipt` on the genuine 187-purchase legacy receipt | 3.1 ms | 3.4 ms |
+| For scale: `verifyReceiptEndpoint` on the same receipt | 4.0 ms | 4.4 ms |
+
+No hostile input in the shared suite costs more than an ordinary large
+receipt: the cost of a call follows the size of the input, which the caps in
+[Resource bounds](#resource-bounds) limit, not the structure an attacker
+chooses. These are warm-JVM figures; see [Capacity](#capacity) for the cold
+start. The machine was shared with other work, so treat them as an order of
+magnitude. For numbers on your own hardware, build as in
+[java-bench/README.md](../java-bench/README.md), then run
+
+```bash
+java -cp java-bench/target/benchmarks.jar \
+    io.github.emindeniz99.applepurchasereceiptverifier.bench.WorstCaseBenchmark
+java -jar java-bench/target/benchmarks.jar 'ReceiptBenchmark.(verifyReceipt|endpointJson)$' \
+    -p fixture=receipt-sandbox-legacy
+```
 
 ## Testing with synthetic receipts
 
