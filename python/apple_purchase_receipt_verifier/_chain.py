@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from cryptography import x509
 from cryptography.exceptions import InvalidSignature, UnsupportedAlgorithm
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from cryptography.x509.oid import ExtensionOID
 
 from ._errors import VerificationError
 from .reason import Reason
@@ -31,6 +32,23 @@ from .reason import Reason
 #: pinned anchor must be reached. Genuine receipt chains are two
 #: certificates below the root.
 MAX_PATH_LENGTH = 6
+
+#: Extensions this library actually reads. RFC 5280 4.2: a certificate
+#: carrying a critical extension outside this set is unusable to a
+#: conforming implementation, so an intermediate carrying one is rejected
+#: by ``_is_ca`` rather than silently accepted with the extension ignored.
+#: The two Apple marker OIDs (jws.LEAF_OID / jws.INTERMEDIATE_OID, not
+#: imported here to avoid a cycle) are included even though genuine Apple
+#: certificates never mark them critical, because the library does read
+#: and act on them (receipt._require_markers, jws._require_markers).
+_RECOGNIZED_CRITICAL_EXTENSIONS = frozenset(
+    [
+        ExtensionOID.BASIC_CONSTRAINTS,
+        ExtensionOID.KEY_USAGE,
+        x509.ObjectIdentifier("1.2.840.113635.100.6.11.1"),
+        x509.ObjectIdentifier("1.2.840.113635.100.6.2.1"),
+    ]
+)
 
 
 def _not_valid_before(cert: x509.Certificate) -> datetime:
@@ -63,11 +81,16 @@ def valid_at_ms(cert: x509.Certificate, at_ms: int) -> bool:
 
 def _is_ca(cert: x509.Certificate) -> bool:
     """Whether ``cert`` may issue further certificates: basicConstraints
-    marks it a CA, and, when present, keyUsage carries ``keyCertSign``.
-    Called only on a certificate whose extension block already read
-    cleanly (checked once, at load time, alongside its structural decode:
-    see ``jws._decode_chain`` and ``receipt._decode_embedded``), so nothing
-    here needs to fail closed on an unreadable extension block itself."""
+    marks it a CA, keyUsage carries ``keyCertSign`` when present, and no
+    critical extension outside :data:`_RECOGNIZED_CRITICAL_EXTENSIONS` is
+    present (RFC 5280 4.2). Called only on a certificate whose extension
+    block already read cleanly (checked once, at load time, alongside its
+    structural decode: see ``jws._decode_chain`` and
+    ``receipt._decode_embedded``), so nothing here needs to fail closed on
+    an unreadable extension block itself."""
+    for ext in cert.extensions:
+        if ext.critical and ext.oid not in _RECOGNIZED_CRITICAL_EXTENSIONS:
+            return False
     try:
         if not cert.extensions.get_extension_for_class(x509.BasicConstraints).value.ca:
             return False

@@ -305,6 +305,20 @@ class ConformanceCasesTest(unittest.TestCase):
             )
 
         expected = case["expected"]
+        if expected.get("anyOutcome"):
+            # The port may verify or refuse with any reason for this input
+            # (owner decision, per the case description), but reaching this
+            # line already proves it did not crash and finished in budget;
+            # the one thing still ruled out is answering INTERNAL_ERROR,
+            # which would mean the library's own code faulted rather than
+            # judging the input.
+            if not result.verified:
+                self.assertNotEqual(
+                    result.failure.reason.name,
+                    "INTERNAL_ERROR",
+                    f"{case['id']}: library faulted instead of judging the input",
+                )
+            return
         if case["operation"] == "verifyReceiptEndpoint":
             actual = normalize_endpoint(result)
             self._assert_fields(case, actual, expected)

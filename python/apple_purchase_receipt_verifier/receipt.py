@@ -155,7 +155,7 @@ def _verify_signature(
 ) -> bytes:
     if _asn1_depth.exceeded(der):
         raise VerificationError(Reason.MALFORMED, "receipt nests ASN.1 too deeply")
-    content, embedded_raw, signer_infos = _parse_cms(der)
+    content, econtent_type, embedded_raw, signer_infos = _parse_cms(der)
     if len(embedded_raw) > MAX_EMBEDDED_CERTIFICATES:
         raise VerificationError(
             Reason.MALFORMED,
@@ -197,7 +197,7 @@ def _verify_signature(
             # purpose: checking the signature first would run the
             # attacker's own key (their choice of RSA size and exponent)
             # before anything about it is trusted.
-            _verify_cms_signature(content, signer, signer_cert)
+            _verify_cms_signature(content, econtent_type, signer, signer_cert)
             return content
         except VerificationError as e:
             # Every SignerInfo signs the same content, so another one
@@ -225,12 +225,13 @@ def _require_markers(path: "list[x509.Certificate]") -> None:
         )
 
 
-def _parse_cms(der: bytes) -> "tuple[bytes, list[bytes], list[Any]]":
+def _parse_cms(der: bytes) -> "tuple[bytes, str, list[bytes], list[Any]]":
     try:
         info = asn1cms.ContentInfo.load(der, strict=True)  # rejects trailing bytes
         if info["content_type"].native != "signed_data":
             raise ValueError("not CMS SignedData")
         signed_data = info["content"]
+        econtent_type = signed_data["encap_content_info"]["content_type"].native
         content = signed_data["encap_content_info"]["content"].native
         if not isinstance(content, bytes):
             raise ValueError("no encapsulated payload")
@@ -240,7 +241,7 @@ def _parse_cms(der: bytes) -> "tuple[bytes, list[bytes], list[Any]]":
             for choice in certificate_choices:
                 embedded_raw.append(choice.chosen.dump())
         signer_infos = list(signed_data["signer_infos"])
-        return content, embedded_raw, signer_infos
+        return content, econtent_type, embedded_raw, signer_infos
     except VerificationError:
         raise
     except Exception as e:  # asn1crypto raises broadly on malformed input
@@ -332,7 +333,9 @@ def _require_attribute_set_syntax(signer: Any) -> None:
         ) from e
 
 
-def _verify_cms_signature(content: bytes, signer: Any, signer_cert: x509.Certificate) -> None:
+def _verify_cms_signature(
+    content: bytes, econtent_type: str, signer: Any, signer_cert: x509.Certificate
+) -> None:
     try:
         digest_name = signer["digest_algorithm"]["algorithm"].native
         signature = signer["signature"].native
@@ -369,7 +372,7 @@ def _verify_cms_signature(content: bytes, signer: Any, signer_cert: x509.Certifi
     data = (
         content
         if isinstance(signed_attrs, asn1core.Void)
-        else _signed_attrs_to_sign(signed_attrs, digest_name, content)
+        else _signed_attrs_to_sign(signed_attrs, digest_name, content, econtent_type)
     )
     try:
         # Safe to decode now: the signer is already vouched by the top-down
@@ -417,7 +420,9 @@ def _pss_salt_length(signature_algorithm: Any, hash_algorithm: Any) -> int:
     return int(hash_algorithm.digest_size)
 
 
-def _signed_attrs_to_sign(signed_attrs: Any, digest_name: str, content: bytes) -> bytes:
+def _signed_attrs_to_sign(
+    signed_attrs: Any, digest_name: str, content: bytes, econtent_type: str
+) -> bytes:
     """The bytes the signature must cover when signedAttrs are present:
     their OIDs, types and nesting are attacker-chosen and decoded here,
     before the signature check that would reject them."""
@@ -427,8 +432,16 @@ def _signed_attrs_to_sign(signed_attrs: Any, digest_name: str, content: bytes) -
         raise VerificationError(Reason.INTERNAL_ERROR, f"{digest_name} is not available") from e
     try:
         message_digest = None
+        message_digest_seen = False
         for attr in signed_attrs:
-            if attr["type"].native == "message_digest":
+            attr_type = attr["type"].native
+            if attr_type == "message_digest":
+                if message_digest_seen:  # RFC 5652 5.3: at most one instance
+                    raise VerificationError(
+                        Reason.INVALID_SIGNATURE,
+                        "messageDigest attribute is present more than once",
+                    )
+                message_digest_seen = True
                 values = attr["values"]
                 if len(values) != 1:  # RFC 5652 5.3: exactly one value
                     raise VerificationError(
@@ -436,6 +449,13 @@ def _signed_attrs_to_sign(signed_attrs: Any, digest_name: str, content: bytes) -
                         "messageDigest attribute must carry exactly one value",
                     )
                 message_digest = values[0].native
+            elif attr_type == "content_type":
+                content_type = attr["values"][0].native
+                if content_type != econtent_type:
+                    raise VerificationError(
+                        Reason.INVALID_SIGNATURE,
+                        "contentType attribute does not match the encapsulated content type",
+                    )
         if message_digest is None or not hmac.compare_digest(message_digest, content_digest):
             raise VerificationError(
                 Reason.INVALID_SIGNATURE, "messageDigest attribute does not match content"
