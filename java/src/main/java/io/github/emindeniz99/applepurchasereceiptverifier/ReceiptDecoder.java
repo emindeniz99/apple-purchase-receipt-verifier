@@ -210,32 +210,17 @@ final class ReceiptDecoder {
 
         @Nullable
         String string(int type) {
-            byte[] value = firsts.get(type);
-            try {
-                return value != null ? decodeString(value) : null;
-            } catch (VerificationException e) {
-                return keepRaw(type, value);
-            }
+            return typed(type, ReceiptDecoder::decodeString);
         }
 
         @Nullable
         Long integer(int type) {
-            byte[] value = firsts.get(type);
-            try {
-                return value != null ? decodeInteger(value) : null;
-            } catch (VerificationException e) {
-                return keepRaw(type, value);
-            }
+            return typed(type, ReceiptDecoder::decodeInteger);
         }
 
         @Nullable
         Long date(int type) {
-            byte[] value = firsts.get(type);
-            try {
-                return value != null ? ReceiptDecoder.date(value) : null;
-            } catch (VerificationException e) {
-                return keepRaw(type, value);
-            }
+            return typed(type, ReceiptDecoder::decodeDate);
         }
 
         /** An INTEGER flag: 0 is {@code false}, any other value {@code true}. */
@@ -245,10 +230,24 @@ final class ReceiptDecoder {
             return value != null ? value != 0 : null;
         }
 
-        private <T> @Nullable T keepRaw(int type, byte[] value) {
-            unknown.computeIfAbsent(type, t -> new ArrayList<>()).add(0, value);
-            return null;
+        /** The first value decoded, or null when absent; one that does not decode is kept raw. */
+        private <T> @Nullable T typed(int type, Decoder<T> decoder) {
+            byte[] value = firsts.get(type);
+            if (value == null) {
+                return null;
+            }
+            try {
+                return decoder.decode(value);
+            } catch (VerificationException e) {
+                unknown.computeIfAbsent(type, t -> new ArrayList<>()).add(0, value);
+                return null;
+            }
         }
+    }
+
+    private interface Decoder<T> {
+        @Nullable
+        T decode(byte[] der) throws VerificationException;
     }
 
     private static ASN1Set parseAttributeSet(byte[] der, String what) throws VerificationException {
@@ -334,7 +333,7 @@ final class ReceiptDecoder {
     }
 
     /** Epoch milliseconds, or null for an empty string, which is how Apple writes "not set". */
-    private static @Nullable Long date(byte[] der) throws VerificationException {
+    private static @Nullable Long decodeDate(byte[] der) throws VerificationException {
         String text = decodeString(der);
         if (text.isEmpty()) {
             return null;
@@ -361,15 +360,6 @@ final class ReceiptDecoder {
         try {
             return LocalDateTime.parse(text, RECEIPT_DATE).toEpochSecond(ZoneOffset.UTC) * 1000;
         } catch (DateTimeException e) {
-            return null;
-        }
-    }
-
-    /** {@link #date}, with {@code null} for anything that does not parse. */
-    private static @Nullable Long decodeDate(byte[] der) {
-        try {
-            return date(der);
-        } catch (VerificationException | RuntimeException e) {
             return null;
         }
     }
