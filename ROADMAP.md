@@ -478,12 +478,11 @@ receipt's own environment, `jackson-core` only, the test signer and
   flag inside CPU-bound work, and since #161 no call runs longer than
   milliseconds. Instead, measure the worst-case CPU of one call and
   document it, and advise a worker pool instead of a single thread.
-- **Java speed back to 0.5.1 levels.** 0.6.0 is 2.2 times slower on
-  typical receipts (345 to 755 µs; BENCHMARKS.md has the bisect). Cache
-  successful signature checks keyed by a digest of the certificate
-  encoding and the issuer key, as the JDK does, and verify each chain
-  signature once instead of twice. Only successes are cached, the cache is
-  bounded, and the validity dates are still checked on every call.
+- **Java speed: deferred (owner, 2026-09-27).** 0.6.0 is 2.2 times
+  slower on typical receipts (345 to 755 µs; BENCHMARKS.md has the
+  bisect). The two candidate fixes, a signature cache and a single
+  signature check per certificate, are in "Later / hardening" with the
+  reasons; neither is 0.7 work.
 - **0.7 changes dependencies.** Dropping `jackson-databind` breaks callers
   that deserialize the library's model classes with their own Jackson.
   The 0.7 CHANGELOG needs an "Upgrading from 0.6" section.

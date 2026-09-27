@@ -180,9 +180,12 @@ since #152, caches neither: every call parses the chain and verifies each
 RSA signature (about 55 µs each here), and since #161 each chain signature
 is verified twice, once by the top-down walk and once by the PKIX builder.
 BouncyCastle's RSA modulus checks are not the cause: turning them off with
-`org.bouncycastle.rsa.max_mr_tests=0` changed nothing. The fix is planned
-for 0.7 (ROADMAP.md). Capacity is unaffected for realistic loads: about
-1,270 verifications per second on one core.
+`org.bouncycastle.rsa.max_mr_tests=0` changed nothing. Both fixes, a
+signature cache and a single signature check per certificate, are deferred
+(ROADMAP.md, "Later / hardening"): the second check is what stops the
+#161 DoS, and replacing it means hand-written certificate code. Capacity
+is unaffected for realistic loads: about 1,270 verifications per second on
+one core.
 
 Rust's g5 `core` fell from 1,159 to
 567 µs now that `rsa` is built with its `u64_digit` feature again.
