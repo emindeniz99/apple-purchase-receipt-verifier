@@ -1,237 +1,91 @@
 # frozen_string_literal: true
 
 require "openssl"
+require "digest"
 
 module ApplePurchaseReceiptVerifier
   # Apple marker OID the receipt-signing leaf must carry. Without this check
   # any Apple developer's own distribution certificate — which chains through
   # the same WWDR intermediate to the same pinned root — could sign a fully
-  # forged receipt (PLAN.md D13).
+  # forged receipt.
   RECEIPT_SIGNER_OID = "1.2.840.113635.100.6.11.1"
-
-  # Genuine receipts embed one to three certificates; the public fixtures carry
-  # 1, 3 and 3. Ten leaves room for a longer Apple chain while bounding what
-  # rejecting a hostile receipt costs — every embedded certificate is otherwise
-  # decoded and RSA-checked as a candidate issuer before any signature is
-  # verified. The bound is applied to the raw DER count, before a single
-  # certificate becomes an object.
-  MAX_EMBEDDED_CERTIFICATES = 10
-
-  class << self
-    # Chain and signature verification **without** the bundle-id check — the
-    # primitive underneath both {ReceiptVerifier} and {VerifyReceiptEndpoint}
-    # (which, like Apple's endpoint, answers for any bundle).
-    #
-    # Public on purpose, and the caveat is the whole reason it is documented:
-    # **it does not check `bundle_id`.** A caller that unlocks products from
-    # the result must compare `receipt.bundle_id` itself, or use
-    # {ReceiptVerifier}, which does it.
-    #
-    # @param der [String] the receipt's DER bytes
-    # @param trusted_roots [Array<OpenSSL::X509::Certificate, String>]
-    # @return [AppReceipt]
-    # @raise [VerificationError]
-    def verify_receipt_core(der, trusted_roots:)
-      roots = Chain.normalize_roots(trusted_roots)
-      Receipt.verify(der, roots)
-    end
-  end
+  # Apple marker OID: the Worldwide Developer Relations intermediate CA,
+  # checked on the certificate that issued the receipt signer. New in 0.7:
+  # it brings the receipt path level with the JWS path, which has always
+  # checked both (docs/design/0.7-api.md).
+  WWDR_INTERMEDIATE_OID = "1.2.840.113635.100.6.2.1"
 
   # @api private
   module Receipt
+    # The receipt's base64 text, in UTF-8 bytes: 3 MiB, Apple's own
+    # verifyReceipt limit (docs/design/0.7-api.md, Bounds), checked before
+    # anything is decoded.
+    MAX_RECEIPT_BASE64_BYTES = 3_145_728
+
+    # Genuine receipts embed one to three certificates; the public fixtures
+    # carry 1, 3 and 3. Ten leaves room for a longer Apple chain while
+    # bounding what a hostile embedded set can cost.
+    MAX_EMBEDDED_CERTIFICATES = 10
+
+    # Apple signs a receipt with one SignerInfo. The library accepts a
+    # receipt when at least one SignerInfo verifies under a pinned chain,
+    # which keeps a future dual-signed receipt working; a fifth is refused
+    # before any signature is checked (docs/design/0.7-api.md).
+    MAX_SIGNER_INFOS = 4
+
+    # Everything but the standard alphabet and "=", as a String#count
+    # pattern: on a receipt up to 3 MiB a `\A...\z` Regexp match is far
+    # slower than #count and #index.
+    BASE64_DISALLOWED = "^A-Za-z0-9+/="
+
     class << self
-      def verify(der, roots)
-        contained do
-          # Measured before the binary copy below, so an oversized input is
-          # refused without being duplicated, scanned or parsed.
-          if der.is_a?(String) && der.bytesize > ReceiptVerifier::MAX_RECEIPT_BYTES
-            raise VerificationError.new(
-              Reason::INVALID_RECEIPT_FORMAT,
-              "receipt exceeds the maximum accepted size of #{ReceiptVerifier::MAX_RECEIPT_BYTES} bytes"
-            )
-          end
-
-          bytes = binary(der)
-          raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT, "receipt is empty") if bytes.empty?
-
-          begin
-            Asn1.scan!(bytes)
-          rescue Asn1::Error => e
-            raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT, e.message)
-          end
-
-          cms = Cms.parse(bytes)
-
-          # Only the creation date is read before trust is established,
-          # because it is the instant the chain's validity is judged at;
-          # nothing else in the payload is decoded until the chain and the
-          # signature have passed. A date that is missing, empty, unreadable
-          # or stated twice cannot blame anyone yet, so it only moves the chain
-          # instant to "now" and never rejects by itself.
-          #
-          # "Now" is the SYSTEM clock, never an injected one — which is why
-          # ReceiptVerifier takes no clock parameter at all. A caller injecting
-          # a clock must not be able to authenticate a chain that expired.
-          instant = ReceiptPayload.creation_date(cms.content) || Time.now.utc
-
-          if cms.certificate_ders.size > MAX_EMBEDDED_CERTIFICATES
-            raise VerificationError.new(
-              Reason::INVALID_CHAIN,
-              "receipt embeds more than #{MAX_EMBEDDED_CERTIFICATES} certificates"
-            )
-          end
-
-          embedded, unreadable, unreadable_signer =
-            decode_certificates(cms.certificate_ders, cms.signer_info)
-          signer = find_signer(embedded, cms.signer_info)
-          if signer.nil?
-            # Which entry is unreadable changes the verdict: a stranger the
-            # receipt merely carries is a defect of the receipt, while the
-            # SIGNER being unreadable is a defect of a certificate and gets
-            # the verdict an unreadable x5c entry gets on the JWS path. Only
-            # the identity an unreadable entry carries says which of the two
-            # it is — asking instead whether anything failed to decode blames
-            # a malformed stranger for a signer that is simply absent.
-            if unreadable_signer
-              raise VerificationError.new(
-                Reason::INVALID_CERTIFICATE,
-                "receipt signer certificate is not a valid certificate"
-              )
-            end
-
-            if unreadable
-              raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
-                                          "embedded certificate is not parseable")
-            end
-
-            raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
-                                        "signer certificate is not embedded in the receipt")
-          end
-          if unreadable
-            raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
-                                        "embedded certificate is not parseable")
-          end
-          assert_signer_is_readable(signer)
-
-          Chain.build_path(signer, embedded, roots, instant)
-
-          if signer.find_extension(RECEIPT_SIGNER_OID).nil?
-            raise VerificationError.new(
-              Reason::INVALID_CERTIFICATE_PURPOSE,
-              "receipt signer certificate lacks Apple marker OID #{RECEIPT_SIGNER_OID}"
-            )
-          end
-
-          unless signer.public_key.is_a?(OpenSSL::PKey::RSA)
-            raise VerificationError.new(Reason::INVALID_SIGNATURE, "receipt signer key is not RSA")
-          end
-
-          if cms.signer_info.digest_name.nil?
-            raise VerificationError.new(
-              Reason::INVALID_RECEIPT_FORMAT,
-              "unsupported receipt digest algorithm #{cms.signer_info.digest_oid}"
-            )
-          end
-
-          # The chain is checked BEFORE the signature on purpose: checking
-          # the signature first would run the attacker's own key (their choice
-          # of RSA size and exponent) before anything about it is trusted.
-          verify_cms_signature(bytes, signer, cms.content)
-
-          parse_signed_payload(cms.content)
-        end
-      end
-
-      # The full payload parse, run only after the chain and the signature
-      # have passed. A trusted signer signed these bytes, so anything that
-      # stops the parse (this library's grammar, a bound, a foreign error, a
-      # SystemStackError) is the library's failure or a format Apple added,
-      # not the client's: INTERNAL_ERROR, never INVALID_RECEIPT_FORMAT, which
-      # the endpoint answers as 21002 and an app server reads as "deny". The
-      # parser's error is kept as the raised error's `cause`.
-      def parse_signed_payload(content)
-        ReceiptPayload.parse(content)
-      rescue SystemStackError, StandardError => e
-        detail = e.is_a?(VerificationError) ? e.message.delete_prefix("#{e.reason}: ") : e.class.name
-        raise VerificationError.new(Reason::INTERNAL_ERROR,
-                                    "signed receipt content could not be read: #{detail}")
-      end
-
-      # Only VerificationError escapes. Containment is categorical, and
-      # `SystemStackError` is named explicitly because it is not a
-      # `StandardError`: the bounded scanner is the first line of defence and
-      # this is the net under it. A library that can kill a caller's request
-      # with a non-StandardError is broken, however loudly it fails.
-      def contained
-        yield
-      rescue VerificationError
-        raise
-      rescue SystemStackError
-        raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
-                                    "receipt nesting exhausted the stack")
-      rescue StandardError => e
-        raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
-                                    "malformed receipt: #{e.class}")
-      end
-
-      def binary(input)
-        unless input.is_a?(String)
-          raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
-                                      "receipt must be a String of DER bytes")
-        end
-
-        input.b
-      end
-
-      # Everything but the standard alphabet and "=", as a String#count
-      # pattern. A receipt is attacker-controlled and up to 3 MiB, so its
-      # shape is checked with #count and #index rather than a Regexp: on a
-      # string that size a `\A...\z` match measured about 85 ms where #count
-      # takes under 2.
-      BASE64_DISALLOWED = "^A-Za-z0-9+/="
-      private_constant :BASE64_DISALLOWED
-
-      # Decodes the base64 text a client sends as `receipt-data` by the rule
-      # Apple's verifyReceipt applies (measured 2026-09-23, see
-      # docs/evidence/2026-09-23-verifyreceipt-base64.md): non-empty standard
-      # base64 with exactly the canonical padding, and nothing else.
-      # Whitespace anywhere, base64url, omitted or extra padding and anything
-      # after the padding are rejected. Unused low bits in the last data
-      # character are accepted, as Apple accepts them.
-      #
-      # @param text [String] the receipt's base64 text, as a client sent it
-      # @return [String] the decoded DER bytes
+      # @param base64 [String] the receipt's base64 text, as a client sends it
+      # @param roots [Array<OpenSSL::X509::Certificate>]
+      # @param clock [ClockOnce]
+      # @return [ReceiptPayload]
       # @raise [VerificationError]
-      def decode_base64(text)
-        unless text.is_a?(String)
-          raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
-                                      "receipt must be a base64 String")
-        end
-        # Before the decode: it allocates in proportion to the input, and
-        # none of it is behind a signature check. Bytes, as Apple counts
-        # them; for base64 the count equals the character count.
-        if text.bytesize > ReceiptVerifier::MAX_RECEIPT_BYTES
-          raise VerificationError.new(
-            Reason::INVALID_RECEIPT_FORMAT,
-            "receipt exceeds the maximum accepted size of #{ReceiptVerifier::MAX_RECEIPT_BYTES} bytes"
-          )
-        end
+      def verify(base64, roots, clock)
+        contained(Reason::MALFORMED, "receipt") do
+          unless base64.is_a?(String) && !base64.empty?
+            raise VerificationError.new(Reason::MALFORMED, "receipt must be a non-empty String")
+          end
+          # Before the decode, which would otherwise allocate the bytes it
+          # decodes to; none of this is behind a signature check.
+          if base64.bytesize > MAX_RECEIPT_BASE64_BYTES
+            raise VerificationError.new(
+              Reason::TOO_LARGE,
+              "receipt exceeds the maximum accepted size of #{MAX_RECEIPT_BASE64_BYTES} bytes"
+            )
+          end
 
-        decode_canonical_base64(text) ||
-          raise(VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
-                                      "receipt is not canonical standard base64"))
+          der = decode_canonical_base64(base64)
+          if der.nil?
+            raise VerificationError.new(Reason::MALFORMED, "receipt is not canonical standard base64")
+          end
+
+          content = verify_signature(der, roots, clock)
+          parse_signed_payload(content)
+        end
       end
 
-      # The rule above as a plain decoder: the bytes, or nil. An x5c entry is
-      # held to it too (Jws), with its own verdict.
+      # The rule Apple's verifyReceipt applies to `receipt-data` (measured
+      # 2026-09-23, see docs/evidence/2026-09-23-verifyreceipt-base64.md):
+      # non-empty standard base64 with exactly the canonical padding, and
+      # nothing else. Whitespace anywhere, base64url, omitted or extra
+      # padding and anything after the padding are refused. Unused low bits
+      # in the last data character are accepted, as Apple accepts them. An
+      # `x5c` entry is held to the same rule (Jws), with its own verdict.
       #
       # `unpack1("m0")`, Ruby's strict RFC 4648 decoder, refuses the unused
-      # trailing bits Apple accepts, so the shape is checked here instead
-      # and `unpack1("m")` decodes what passes: a non-empty length that is
-      # a multiple of four, only the standard alphabet and "=", and "=" only
-      # as a run of at most two at the end. That leaves exactly the canonical
-      # padding, and "m" skips nothing in such a string.
+      # trailing bits Apple accepts, so the shape is checked here instead and
+      # `unpack1("m")` decodes what passes.
+      #
+      # @param text [String]
+      # @return [String, nil] the decoded bytes, or nil for anything that is
+      #   not canonical standard base64
       def decode_canonical_base64(text)
+        return nil unless text.is_a?(String)
+
         bytes = text.b
         size = bytes.bytesize
         return nil if size.zero? || !(size % 4).zero? || bytes.count(BASE64_DISALLOWED).positive?
@@ -242,35 +96,264 @@ module ApplePurchaseReceiptVerifier
         bytes.unpack1("m") #: String
       end
 
-      # Returns the entries OpenSSL could read, the first error from one it
-      # could not, and whether any of the entries it could not read is the one
-      # the SignerInfo names. The error is held rather than raised because
-      # which entry it belongs to decides the verdict; see the caller.
-      def decode_certificates(ders, signer_info)
-        certificates = [] #: Array[OpenSSL::X509::Certificate]
-        unreadable = nil
-        unreadable_signer = false
-        ders.each do |der|
-          certificates << OpenSSL::X509::Certificate.new(der)
-        rescue OpenSSL::OpenSSLError => e
-          unreadable ||= e
-          unreadable_signer ||= names_the_signer?(der, signer_info)
-        end
-        [certificates, unreadable, unreadable_signer]
+      private
+
+      # Only VerificationError escapes. `SystemStackError` is named
+      # explicitly because it is not a `StandardError` and would otherwise
+      # walk straight through a caller's `rescue`. `fallback_reason` is the
+      # reason for anything unexpected THIS stage produces
+      # (docs/design/0.7-hardening-parity.md, change 4): input nobody has
+      # vouched for yet must never raise INTERNAL_ERROR at will.
+      def contained(fallback_reason, what)
+        yield
+      rescue VerificationError
+        raise
+      rescue SystemStackError
+        raise VerificationError.new(fallback_reason, "#{what} nesting exhausted the stack")
+      rescue StandardError => e
+        raise VerificationError.new(fallback_reason, "malformed #{what}: #{e.class}")
       end
 
-      # Whether `der` carries the issuer Name and serialNumber the SignerInfo
-      # names, read as generic ASN.1 rather than as a certificate. The entries
-      # this is asked about are the ones OpenSSL refused, and an identity is
-      # still legible in bytes that are not a certificate all the way down —
-      # which is what says whether the SignerInfo means this entry. Node,
-      # Swift and Go resolve the signer the same way.
+      # Every check up to and including a signature; returns the signed
+      # content, not yet decoded.
+      def verify_signature(der, roots, clock)
+        begin
+          Asn1.scan!(der)
+        rescue Asn1::Error => e
+          raise VerificationError.new(Reason::MALFORMED, e.message)
+        end
+
+        cms = Cms.parse(der)
+        if cms.signer_infos.size > MAX_SIGNER_INFOS
+          raise VerificationError.new(
+            Reason::MALFORMED,
+            "receipt carries #{cms.signer_infos.size} SignerInfos, more than the maximum of " \
+            "#{MAX_SIGNER_INFOS}"
+          )
+        end
+        # Bounded before a single embedded certificate is decoded or tried
+        # as an issuer, all of which an unverified receipt would otherwise
+        # get to pay for out of the caller's CPU.
+        if cms.certificate_ders.size > MAX_EMBEDDED_CERTIFICATES
+          raise VerificationError.new(
+            Reason::MALFORMED,
+            "receipt embeds #{cms.certificate_ders.size} certificates, more than the maximum of " \
+            "#{MAX_EMBEDDED_CERTIFICATES}"
+          )
+        end
+
+        # Only the creation date is read before trust is established,
+        # because it is the instant the chain's validity is judged at;
+        # nothing else in the payload is decoded until the chain and a
+        # signature have passed.
+        creation_date_ms = ReceiptAttributes.creation_date(cms.content)
+
+        embedded, unreadable = decode_embedded_certificates(cms.certificate_ders)
+
+        # Signer-independent, so walked once for all SignerInfos, and only
+        # once one of them has named an embedded certificate that decodes.
+        authenticated = nil
+        first_failure = nil
+
+        cms.signer_infos.each do |info|
+          authenticated ||= Chain.authenticated_top_down(embedded, roots)
+          at_millis = creation_date_ms || clock.millis
+          candidates = signer_certificates(info, embedded, unreadable)
+
+          # More than one embedded certificate can carry this SignerInfo's
+          # identity (issuer + serial) — a twin cloning a genuine signer's
+          # identity onto another key, say. Each is tried in bag order; one
+          # whose chain, markers and signature all pass is enough, and a
+          # candidate's key is used only once its own chain has passed
+          # (still top-down: {Chain.authenticated_top_down} above never
+          # touches an untrusted key). Otherwise this SignerInfo's verdict
+          # is the first candidate's failure.
+          signer_failure = nil
+          candidates.each do |signer|
+            verify_one_signer(cms: cms, info: info, signer: signer, roots: roots,
+                              authenticated: authenticated, # steep:ignore ArgumentTypeMismatch
+                              at_millis: at_millis)
+            assert_content_agrees_with_openssl(der, cms.content)
+            return cms.content
+          rescue VerificationError => e
+            raise e if e.reason == Reason::INTERNAL_ERROR
+
+            signer_failure ||= e
+          end
+          first_failure ||= signer_failure
+        rescue VerificationError => e
+          # A clock failure is the library's own dependency breaking, not a
+          # verdict about this signer: it does not get shadowed by "first
+          # signer wins" and does not improve by trying another one.
+          raise e if e.reason == Reason::INTERNAL_ERROR
+
+          first_failure ||= e
+        end
+        raise first_failure # steep:ignore UnresolvedOverloading
+      end
+
+      # The certificates `info` names, in bag order, or the verdict for the
+      # bag. The signer's own entry not decoding is INVALID_CERTIFICATE, as
+      # an unreadable `x5c` entry is on the JWS path; any OTHER entry not
+      # decoding is MALFORMED, because the bag is unsigned and bytes that
+      # cannot be read there are a defect of the receipt, not of a
+      # certificate. A broken signer outranks a broken stranger.
+      def signer_certificates(info, embedded, unreadable)
+        if unreadable.any? { |der| names_the_signer?(der, info) }
+          raise VerificationError.new(Reason::INVALID_CERTIFICATE,
+                                      "receipt signer certificate does not decode")
+        end
+        unless unreadable.empty?
+          raise VerificationError.new(Reason::MALFORMED,
+                                      "an embedded certificate is not a valid certificate")
+        end
+
+        candidates = embedded.select do |cert|
+          cert.serial.to_i == info.serial && cert.issuer.to_der == info.issuer_der
+        end
+        return candidates unless candidates.empty?
+
+        raise VerificationError.new(Reason::MALFORMED, "signer certificate not embedded")
+      end
+
+      def verify_one_signer(cms:, info:, signer:, authenticated:, roots:, at_millis:)
+        path = Chain.build_and_validate_path(signer, authenticated, roots, at_millis)
+        # Checked after the chain, so a foreign chain still reports
+        # UNTRUSTED_CHAIN rather than INVALID_CERTIFICATE_PURPOSE.
+        if signer.find_extension(RECEIPT_SIGNER_OID).nil?
+          raise VerificationError.new(
+            Reason::INVALID_CERTIFICATE_PURPOSE,
+            "receipt signer certificate lacks Apple marker OID #{RECEIPT_SIGNER_OID}"
+          )
+        end
+        # The certificate after the signer on the path. A signer issued
+        # straight by a root has no WWDR certificate to carry the marker.
+        intermediate = path[1]
+        if intermediate.nil? || intermediate.find_extension(WWDR_INTERMEDIATE_OID).nil?
+          raise VerificationError.new(
+            Reason::INVALID_CERTIFICATE_PURPOSE,
+            "receipt intermediate certificate lacks Apple marker OID #{WWDR_INTERMEDIATE_OID}"
+          )
+        end
+        # The signer's key is used to check the CMS signature, so a key
+        # this build cannot decode is a defect of the certificate. Judged
+        # only now, once the chain has vouched for it.
+        Chain.decode_public_key!(signer)
+
+        verify_cms_signature(cms, info, signer)
+      end
+
+      # No key type, digest or signature algorithm allow-list beyond what
+      # this port's OpenSSL implements: the signer is already pinned to an
+      # Apple root and carries Apple's receipt-signing marker (change 3, Q14,
+      # Q15). The chain is checked BEFORE the signature on purpose: checking
+      # the signature first would run the attacker's own key (their choice of
+      # RSA size and exponent) before anything about it is trusted.
+      def verify_cms_signature(cms, info, signer)
+        if info.digest_name.nil?
+          raise VerificationError.new(Reason::INVALID_SIGNATURE,
+                                      "unsupported digest algorithm #{info.digest_oid}")
+        end
+
+        signed_bytes, message_digest, content_type = signing_input(cms, info)
+        # RFC 5652 11.1: the contentType attribute names the content the
+        # signature covers, so one that names another type is a signature
+        # over something else.
+        if !content_type.nil? && content_type != cms.content_type
+          raise VerificationError.new(Reason::INVALID_SIGNATURE,
+                                      "contentType attribute differs from the eContentType")
+        end
+        unless message_digest.nil?
+          content_digest = OpenSSL::Digest.digest(info.digest_name, cms.content)
+          unless secure_equal?(message_digest, content_digest)
+            raise VerificationError.new(Reason::INVALID_SIGNATURE,
+                                        "messageDigest attribute does not match content")
+          end
+        end
+
+        ok = Signature.verify_signer_signature(
+          public_key: signer.public_key, digest_name: info.digest_name,
+          signature_algorithm_oid: info.signature_algorithm_oid,
+          signature_algorithm_params: info.signature_algorithm_params,
+          signature: info.signature, data: signed_bytes
+        )
+        raise VerificationError.new(Reason::INVALID_SIGNATURE, "CMS signature check failed") unless ok
+      end
+
+      # @return [Array(String, String?, String?)] the exact bytes the
+      #   signature covers, the `messageDigest` attribute value to check
+      #   against the content digest, and the `contentType` attribute's
+      #   value to check against the SignedData's own eContentType (both
+      #   nil when there are no signedAttrs: the signature then covers the
+      #   content directly and there is no separate attribute to check)
+      def signing_input(cms, info)
+        signed_attrs = info.signed_attrs
+        return [cms.content, nil, nil] if signed_attrs.nil?
+
+        if info.signed_attrs_incomplete?
+          raise VerificationError.new(
+            Reason::INVALID_SIGNATURE,
+            "signedAttrs lack a contentType or messageDigest attribute, or carry one twice"
+          )
+        end
+
+        [Cms.signed_attrs_signed_bytes(signed_attrs), info.message_digest_attribute,
+         info.content_type_attribute]
+      end
+
+      # The bytes this library parsed as the encapsulated content must be
+      # the same bytes an independent parser (OpenSSL's own PKCS7 reader)
+      # finds there. Without this, a disagreement between the two readers
+      # about where the content is would be a forgery primitive. Run only
+      # structurally (NOVERIFY/NOINTERN/NOSIGS — no certificate path, no
+      # signer identification and no signature mathematics), so it applies
+      # to every signer algorithm this library accepts, not only the ones
+      # `OpenSSL::PKCS7#verify`'s own crypto can check.
+      def assert_content_agrees_with_openssl(der, content)
+        pkcs7 = OpenSSL::PKCS7.new(der)
+        flags = OpenSSL::PKCS7::NOVERIFY | OpenSSL::PKCS7::NOINTERN | OpenSSL::PKCS7::NOSIGS
+        pkcs7.verify(pkcs7.certificates, OpenSSL::X509::Store.new, nil, flags) # steep:ignore
+        agrees = pkcs7.data&.b == content.b
+        return if agrees
+
+        raise VerificationError.new(Reason::MALFORMED, "verified content does not match the parsed payload")
+      rescue OpenSSL::OpenSSLError
+        raise VerificationError.new(Reason::MALFORMED, "verified content does not match the parsed payload")
+      end
+
+      def secure_equal?(one, other)
+        one.bytesize == other.bytesize && OpenSSL.fixed_length_secure_compare(one, other)
+      end
+
+      # A certificate that OpenSSL parses but {CertificateStructure} finds
+      # unsound is bucketed with the ones OpenSSL refused outright: both are
+      # a defect of the receipt's certificate bag, not a chain verdict
+      # (docs/design/0.7-hardening-parity.md, "reject-a-stranger-whose-
+      # signature-bit-string-is-unaligned").
+      def decode_embedded_certificates(ders)
+        certificates = [] #: Array[OpenSSL::X509::Certificate]
+        unreadable = [] #: Array[String]
+        ders.each do |der|
+          certificate = OpenSSL::X509::Certificate.new(der)
+          if CertificateStructure.sound?(certificate)
+            certificates << certificate
+          else
+            unreadable << der
+          end
+        rescue OpenSSL::OpenSSLError
+          unreadable << der
+        end
+        [certificates, unreadable]
+      end
+
+      # Whether `der` carries the issuer Name and serialNumber `info` names,
+      # read as generic ASN.1 rather than as a certificate: the entries this
+      # is asked about are the ones OpenSSL refused, and an identity is
+      # still legible in bytes that are not a certificate all the way down.
       #
       #   TBSCertificate ::= SEQUENCE { [0] version DEFAULT v1, serialNumber
       #   INTEGER, signature AlgorithmIdentifier, issuer Name, ... }
-      #
-      # Anything without that shape is not an identity and cannot match.
-      def names_the_signer?(der, signer_info)
+      def names_the_signer?(der, info)
         certificate = Asn1.parse(der)
         return false unless certificate.tag == Asn1::TAG_SEQUENCE
 
@@ -284,230 +367,34 @@ module ApplePurchaseReceiptVerifier
         return false if serial.nil? || issuer.nil?
         return false if serial.tag != Asn1::TAG_INTEGER || issuer.tag != Asn1::TAG_SEQUENCE
 
-        OpenSSL::ASN1.decode(serial.raw).value.to_i == signer_info.serial &&
-          issuer.raw == signer_info.issuer_der
+        OpenSSL::ASN1.decode(serial.raw).value.to_i == info.serial && issuer.raw == info.issuer_der
       rescue Asn1::Error, OpenSSL::OpenSSLError
         false
       end
 
-      # The same three things OpenSSL decodes more leniently than the checks
-      # below assume that Jws#certificates settles for an x5c entry, plus the
-      # extension VALUES, which it never looks inside: an unknown X.509
-      # version, a repeated extension, an extnValue that stops decoding
-      # partway through, and a public key on a curve this build does not
-      # implement. Each is a defect of the certificate, so each is
-      # INVALID_CERTIFICATE, and each is settled BEFORE the chain so it
-      # cannot come out as a verdict about the path (receipt/reject-signer-*).
-      def assert_signer_is_readable(signer)
-        unless (0..2).cover?(signer.version)
-          raise VerificationError.new(Reason::INVALID_CERTIFICATE,
-                                      "receipt signer certificate has an unknown X.509 version")
-        end
-
-        oids = signer.extensions.map(&:oid)
-        unless oids.uniq.size == oids.size
-          raise VerificationError.new(Reason::INVALID_CERTIFICATE,
-                                      "receipt signer certificate carries a duplicate extension")
-        end
-
-        signer.extensions.each do |extension|
-          OpenSSL::ASN1.decode(OpenSSL::ASN1.decode(extension.to_der).value.last.value)
-        end
-        signer.public_key
-      rescue OpenSSL::OpenSSLError
-        raise VerificationError.new(Reason::INVALID_CERTIFICATE,
-                                    "receipt signer certificate is not a valid certificate")
+      # The full payload parse, run only after the chain and the signature
+      # have passed. A trusted signer signed these bytes, so anything that
+      # stops the parse (this library's grammar, a bound, a foreign error, a
+      # SystemStackError) is the library's failure or a format Apple added,
+      # not the client's: UNREADABLE_PAYLOAD, never MALFORMED.
+      def parse_signed_payload(content)
+        ReceiptAttributes.parse(content)
+      rescue VerificationError => e
+        # Our own error, whose message is already log-safe: kept as the
+        # cause so an operator can see why the content did not parse
+        # (docs/design/0.7-api.md, `cause`).
+        raise VerificationError.new(Reason::UNREADABLE_PAYLOAD, "signed receipt content could not be read",
+                                    cause_error: e)
+      rescue SystemStackError
+        raise VerificationError.new(Reason::UNREADABLE_PAYLOAD,
+                                    "signed receipt content could not be read: stack exhausted")
+      rescue StandardError => e
+        # A foreign exception's own message is not trusted with a caller's
+        # log line (docs/design/0.7-hardening-parity.md, change 6): only its
+        # class name is quoted, never `e.message`.
+        raise VerificationError.new(Reason::UNREADABLE_PAYLOAD,
+                                    "signed receipt content could not be read: #{e.class}")
       end
-
-      # Both halves of issuerAndSerialNumber must match. Matching on the serial
-      # alone would let a receipt carry a second certificate that borrows the
-      # real signer's serial under a different issuer.
-      def find_signer(embedded, signer_info)
-        embedded.find do |cert|
-          cert.serial.to_i == signer_info.serial &&
-            cert.issuer.to_der == signer_info.issuer_der
-        end
-      end
-
-      # OpenSSL owns the signature mathematics — it already implements the
-      # RFC 5652 5.4 signedAttrs re-encode and the messageDigest comparison —
-      # while this library owns every policy decision above.
-      #
-      # Two measured Ruby traps are handled here by construction:
-      #
-      # * `OpenSSL::PKCS7#verify` is NOT safely re-runnable. On one object, a
-      #   failing strict call followed by a lenient one returns false with
-      #   "bad signature", while the identical lenient call on a fresh object
-      #   returns true. So: a freshly constructed PKCS7, exactly one #verify,
-      #   never a retry.
-      # * `X509::Store#time=` is silently ignored by `PKCS7#verify` (it judges
-      #   certificates against wall-clock time regardless), which would reject
-      #   every receipt Apple signed with the now-expired legacy chain. NOVERIFY
-      #   turns that check off; this library already did it, at the right
-      #   instant. NOINTERN makes OpenSSL identify the signer only from the
-      #   certificate handed to it, so it cannot fall back to a different
-      #   embedded one. The store passed in is empty and is never consulted.
-      def verify_cms_signature(der, signer, content)
-        pkcs7 = begin
-          OpenSSL::PKCS7.new(der)
-        rescue OpenSSL::OpenSSLError, ArgumentError
-          raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT, "not a parseable PKCS#7 blob")
-        end
-
-        flags = OpenSSL::PKCS7::NOVERIFY | OpenSSL::PKCS7::NOINTERN
-        ok = begin
-          pkcs7.verify([signer], OpenSSL::X509::Store.new, nil, flags) # steep:ignore ArgumentTypeMismatch
-        rescue OpenSSL::PKCS7::PKCS7Error
-          false
-        end
-        raise VerificationError.new(Reason::INVALID_SIGNATURE, "CMS signature check failed") unless ok
-
-        # The bytes OpenSSL authenticated must be the bytes this library
-        # parsed. Without this, a disagreement between the two readers about
-        # where the content is would be a forgery primitive.
-        verified = begin
-          pkcs7.data
-        rescue OpenSSL::OpenSSLError
-          nil
-        end
-        return if verified && verified.b == content.b
-
-        raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
-                                    "verified content does not match the parsed payload")
-      end
-    end
-  end
-
-  # Verifies legacy PKCS#7 app receipts — the exact blob an app sends to
-  # Apple's `verifyReceipt` — completely offline, against trust anchors the
-  # caller pins (PLAN.md 2.2).
-  #
-  #   verifier = ApplePurchaseReceiptVerifier::ReceiptVerifier.new(
-  #     trusted_roots: ApplePurchaseReceiptVerifier.apple_receipt_roots,
-  #     bundle_id: "com.example.app"
-  #   )
-  #   receipt = verifier.verify_base64(receipt_data)
-  #
-  # There is no `clock:` here, and there must never be one: no receipt verdict
-  # depends on "now". The single instant this path needs is the chain-validity
-  # instant, which comes from the receipt's own creation date and, failing
-  # that, from the system clock.
-  class ReceiptVerifier
-    # Ceiling on the receipt this library will look at: the base64 text at
-    # every entry point that takes it ({#verify}, {#verify_base64} and the
-    # endpoint's `receipt-data`), in bytes, and the DER at every entry point
-    # that takes bytes, {ApplePurchaseReceiptVerifier.verify_receipt_core}
-    # included. A larger receipt is {Reason::INVALID_RECEIPT_FORMAT}.
-    #
-    # 3 MiB: Apple's verifyReceipt refuses a request body over 3,145,728
-    # bytes (measured 2026-09-23), so no receipt it would accept is larger.
-    # A fixed constant, the same in every port. Checked before anything is
-    # decoded: base64 decoding allocates about three quarters of the input
-    # again, the CMS parse allocates in proportion to the DER, and none of
-    # that is behind a signature check.
-    MAX_RECEIPT_BYTES = 3_145_728
-
-    # @param trusted_roots [Array<OpenSSL::X509::Certificate, String>]
-    # @param bundle_id [String] the bundle id the receipt must carry
-    def initialize(trusted_roots:, bundle_id:)
-      @roots = Chain.normalize_roots(trusted_roots)
-      unless bundle_id.is_a?(String) && !bundle_id.empty?
-        raise ArgumentError,
-              "bundle_id must be a non-empty String"
-      end
-
-      @bundle_id = bundle_id.dup.freeze
-      freeze
-    end
-
-    # Verifies a receipt supplied either as raw DER bytes or as the base64 text
-    # clients transport. The two are told apart by the first byte: DER always
-    # begins with 0x30 (SEQUENCE), which is never the first character of
-    # base64. Use {#verify_der} or {#verify_base64} where being explicit reads
-    # better.
-    #
-    # @param receipt [String] DER bytes or base64 text
-    # @param device_guid [String, nil] raw device GUID bytes — the raw bytes
-    #   of `identifierForVendor` on iOS, iPadOS, tvOS and watchOS, including
-    #   an iOS app running on an Apple silicon Mac, or the primary network
-    #   interface's MAC address from `copy_mac_address` on macOS and Mac
-    #   Catalyst. When given, `SHA1(guid + opaqueValue + bundleIdBytes)` must
-    #   equal attribute 5 (PLAN.md D4 — optional, because servers do not
-    #   always have the GUID).
-    # @return [AppReceipt]
-    # @raise [VerificationError]
-    def verify(receipt, device_guid: nil)
-      unless receipt.is_a?(String)
-        raise VerificationError.new(Reason::INVALID_RECEIPT_FORMAT,
-                                    "receipt must be a String")
-      end
-
-      # The first byte is read in place: a copy of the whole input here would
-      # be made before either path could apply MAX_RECEIPT_BYTES to it.
-      if receipt.getbyte(0) == Asn1::TAG_SEQUENCE
-        verify_der(receipt, device_guid: device_guid)
-      else
-        verify_base64(receipt, device_guid: device_guid)
-      end
-    end
-
-    # @param der [String] raw receipt bytes
-    # @param device_guid [String, nil]
-    # @return [AppReceipt]
-    def verify_der(der, device_guid: nil)
-      receipt = Receipt.verify(der, @roots)
-      Receipt.contained do
-        require_bundle_id(receipt)
-        verify_device_hash(receipt, device_guid) unless device_guid.nil?
-      end
-      receipt
-    end
-
-    # @param base64 [String] the receipt's base64 text, as clients send it
-    # @param device_guid [String, nil]
-    # @return [AppReceipt]
-    def verify_base64(base64, device_guid: nil)
-      verify_der(Receipt.decode_base64(base64), device_guid: device_guid)
-    end
-
-    private
-
-    def require_bundle_id(receipt)
-      return if receipt.bundle_id == @bundle_id
-
-      raise VerificationError.new(Reason::WRONG_BUNDLE_ID,
-                                  "receipt bundle id does not match the configured one")
-    end
-
-    def verify_device_hash(receipt, device_guid)
-      unless device_guid.is_a?(String)
-        raise VerificationError.new(Reason::DEVICE_HASH_MISMATCH,
-                                    "device_guid must be a String of raw bytes")
-      end
-      if receipt.opaque_value.nil? || receipt.sha1_hash.nil? || receipt.bundle_id_bytes.nil?
-        raise VerificationError.new(
-          Reason::DEVICE_HASH_MISMATCH,
-          "receipt lacks the attributes the device-hash check needs"
-        )
-      end
-
-      computed = begin
-        OpenSSL::Digest::SHA1.digest(
-          device_guid.b + receipt.opaque_value + receipt.bundle_id_bytes # steep:ignore ArgumentTypeMismatch
-        )
-      rescue OpenSSL::OpenSSLError
-        # Every input here is a byte string, so only the runtime can fail this.
-        raise VerificationError.new(Reason::INTERNAL_ERROR, "SHA-1 unavailable")
-      end
-      return if secure_equal?(computed, receipt.sha1_hash) # steep:ignore ArgumentTypeMismatch
-
-      raise VerificationError.new(Reason::DEVICE_HASH_MISMATCH,
-                                  "computed device hash does not match attribute 5")
-    end
-
-    # Length is public; the bytes are not.
-    def secure_equal?(one, other)
-      one.bytesize == other.bytesize && OpenSSL.fixed_length_secure_compare(one, other)
     end
   end
 end

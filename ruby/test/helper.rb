@@ -5,6 +5,7 @@ require "json"
 require "openssl"
 require "time"
 require "digest"
+require "benchmark"
 
 $LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
 require "apple_purchase_receipt_verifier"
@@ -20,7 +21,7 @@ module TestSupport
         directory = __dir__
         found = nil
         12.times do
-          candidate = File.join(directory, "fixtures", "cases.json")
+          candidate = File.join(directory, "fixtures", "cases-0.7.json")
           if File.file?(candidate)
             found = File.join(directory, "fixtures")
             break
@@ -30,7 +31,7 @@ module TestSupport
 
           directory = parent
         end
-        raise "harness error: could not locate fixtures/cases.json" if found.nil?
+        raise "harness error: could not locate fixtures/cases-0.7.json" if found.nil?
 
         found
       end
@@ -40,12 +41,16 @@ module TestSupport
       File.dirname(fixtures_root)
     end
 
+    # The 0.7 conformance vectors (docs/design/0.7-api.md). The 0.6 file,
+    # fixtures/cases.json, is untouched and no longer read here: this port's
+    # API is 0.7's, and the classes the old vectors were written against
+    # (ReceiptVerifier, JwsVerifier, VerifyReceiptEndpoint) no longer exist.
     def cases
-      @cases ||= read_fixtures_json("cases.json")
+      @cases ||= read_fixtures_json("cases-0.7.json")
     end
 
     def cases_schema
-      @cases_schema ||= read_fixtures_json("cases.schema.json")
+      @cases_schema ||= read_fixtures_json("cases-0.7.schema.json")
     end
 
     # Read as UTF-8 explicitly rather than in the default external encoding.

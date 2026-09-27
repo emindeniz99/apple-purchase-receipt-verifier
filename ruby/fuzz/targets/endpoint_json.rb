@@ -19,16 +19,18 @@ require "json"
 
 APRV = FuzzSupport::APRV
 
-ROOTS = (APRV.apple_receipt_roots +
-         [FuzzSupport.fixture_certificate("generated/receipt-root.der")]).freeze
-ENDPOINT = APRV::VerifyReceiptEndpoint.new(trusted_roots: ROOTS,
-                                           environment: APRV::Environment::SANDBOX)
+ROOTS = (APRV::Config.defaults.roots +
+         [FuzzSupport.fixture_certificate("generated-0.7/receipt-root.der")]).freeze
+VERIFIER = APRV::Verifier.create(APRV::Config.new(roots: ROOTS))
 
 TEST_ONE_INPUT = lambda do |data|
   # No error class is allowed through: NoError has no instances, so any
-  # exception at all is an invariant violation.
-  _, response = FuzzSupport.call("#verify_receipt_json", FuzzSupport::NoError) do
-    ENDPOINT.verify_receipt_json(data)
+  # exception at all is an invariant violation. `data` is the request body
+  # text directly (0.7's verify_receipt_endpoint takes the JSON string, not
+  # a pre-parsed Hash), read as UTF-8: a JSON body is text on the wire.
+  text = data.dup.force_encoding(Encoding::UTF_8)
+  _, response = FuzzSupport.call("#verify_receipt_endpoint", FuzzSupport::NoError) do
+    VERIFIER.verify_receipt_endpoint(APRV::Environment::SANDBOX, text)
   end
 
   unless response.is_a?(String)
@@ -45,17 +47,9 @@ TEST_ONE_INPUT = lambda do |data|
     FuzzSupport.violated("the endpoint's answer carries no numeric status: #{response[0, 200]}")
   end
 
-  _, result = FuzzSupport.call("#verify_receipt_result", FuzzSupport::NoError) do
-    ENDPOINT.verify_receipt_result(data)
-  end
-  if result.receipt.nil? == result.failure_reason.nil?
-    FuzzSupport.violated("verify_receipt_result broke its receipt/failure_reason invariant")
-  end
-  if result.failure_reason == APRV::Reason::INTERNAL_ERROR
-    FuzzSupport.violated("verify_receipt_result hit an internal error", result.failure_cause)
-  end
-  unless result.status == parsed["status"]
-    FuzzSupport.violated("verify_receipt_result status #{result.status} differs from #{response[0, 200]}")
+  if parsed["status"] == 21_009
+    FuzzSupport.violated("verify_receipt_endpoint hit an internal error (21009) on fuzz input, " \
+                         "which only signed content this library cannot read should produce")
   end
   nil
 end

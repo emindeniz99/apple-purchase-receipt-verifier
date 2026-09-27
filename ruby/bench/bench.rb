@@ -21,11 +21,12 @@ module CrossPortBench
   SAMPLES = 10
   MIN_SAMPLE_S = 0.1
 
-  # Any fixed instant: it only feeds the request_date fields.
-  NOW = Time.utc(2026, 1, 1).freeze
+  # Any fixed instant (2026-01-01T00:00:00Z): it only feeds request_date,
+  # since both fixtures carry a creation date.
+  NOW_MILLIS = 1_767_225_600_000
 
   # File under fixtures/public-receipts, and the bundle id, in-app count and
-  # digest fixtures/cases.json pins for it.
+  # digest fixtures/cases-0.7.json pins for it.
   FIXTURES = [
     ["receipt-sandbox-g5", "dev.bonzer.weeka.app", 2,
      "bebb16e2a17104d973eeef08177003f2c3303a19ddced83b42df349b4ac25ee0"],
@@ -73,58 +74,59 @@ module CrossPortBench
     tampered
   end
 
-  def reject(der, roots)
-    APRV.verify_receipt_core(der, trusted_roots: roots)
-  rescue APRV::VerificationError => e
-    e
+  def reject(base64, verifier)
+    verifier.verify_receipt(base64)
   end
 
   def check(condition, message)
     raise message unless condition
   end
 
-  def run_fixture(name, bundle_id, in_app_count, sha256, roots)
+  def run_fixture(name, bundle_id, in_app_count, sha256, verifier)
     path = File.expand_path("../../fixtures/public-receipts/#{name}.b64", __dir__)
     der = File.read(path).unpack1("m")
-    check(Digest::SHA256.hexdigest(der) == sha256, "#{name} does not match cases.json")
+    check(Digest::SHA256.hexdigest(der) == sha256, "#{name} does not match cases-0.7.json")
     base64 = [der].pack("m0")
-    request = { "receipt-data" => base64 }
-    request_json = JSON.generate(request)
-    tampered = tamper(der)
-    verifier = APRV::ReceiptVerifier.new(trusted_roots: roots, bundle_id: bundle_id)
-    clock = -> { NOW }
-    sandbox = APRV::VerifyReceiptEndpoint.new(trusted_roots: roots, environment: APRV::Environment::SANDBOX,
-                                              clock: clock)
-    production = APRV::VerifyReceiptEndpoint.new(trusted_roots: roots, environment: APRV::Environment::PRODUCTION,
-                                                 clock: clock)
+    request_json = JSON.generate({ "receipt-data" => base64 })
+    tampered = [tamper(der)].pack("m0")
 
     # Every call once, with the answer the conformance suite expects, so no
     # benchmark can time a fast failure by accident.
-    check(APRV::Receipt.decode_base64(base64) == der, "decodeBase64")
-    [APRV.verify_receipt_core(der, trusted_roots: roots), verifier.verify_base64(base64)].each do |receipt|
-      check(receipt.bundle_id == bundle_id && receipt.in_app_purchases.size == in_app_count, "receipt")
-    end
-    ok = JSON.parse(sandbox.verify_receipt_json(request_json))
+    check(APRV::Receipt.decode_canonical_base64(base64) == der, "decodeBase64")
+    result = verifier.verify_receipt(base64)
+    check(result.verified?, "verifyReceipt")
+    check(result.payload.bundle_id == bundle_id && result.payload.in_app.size == in_app_count, "receipt")
+    ok = JSON.parse(verifier.verify_receipt_endpoint(APRV::Environment::SANDBOX, request_json))
     check(ok["status"].zero? && ok["receipt"]["in_app"].size == in_app_count, "endpointJson")
-    retry_body = JSON.parse(production.verify_receipt_result(request).to_json(APRV::Environment::SANDBOX))
-    check(retry_body.values_at("status", "environment") == [0, "Sandbox"], "retryViaResult")
-    check(reject(tampered, roots).reason == APRV::Reason::INVALID_SIGNATURE, "rejectTamperedSignature")
+    first = JSON.parse(verifier.verify_receipt_endpoint(APRV::Environment::PRODUCTION, request_json))
+    check(first["status"] == 21_007, "retryViaResult first call")
+    rejected = reject(tampered, verifier)
+    check(!rejected.verified? && rejected.failure.reason == :INVALID_SIGNATURE, "rejectTamperedSignature")
 
     [
-      measure("decodeBase64", name) { APRV::Receipt.decode_base64(base64) },
-      measure("core", name) { APRV.verify_receipt_core(der, trusted_roots: roots) },
-      measure("verifierBase64", name) { verifier.verify_base64(base64) },
-      measure("endpointJson", name) { sandbox.verify_receipt_json(request_json) },
-      measure("retryViaResult", name) do
-        production.verify_receipt_result(request).to_json(APRV::Environment::SANDBOX)
+      measure("decodeBase64", name) { APRV::Receipt.decode_canonical_base64(base64) },
+      # 0.7 has no DER entry point: "core" and "verifierBase64" are both
+      # verify_receipt over the base64, so both include the decode that
+      # 0.6's "core" did not.
+      measure("core", name) { verifier.verify_receipt(base64) },
+      measure("verifierBase64", name) { verifier.verify_receipt(base64) },
+      measure("endpointJson", name) do
+        verifier.verify_receipt_endpoint(APRV::Environment::SANDBOX, request_json)
       end,
-      measure("rejectTamperedSignature", name) { reject(tampered, roots) }
+      # 21007 on PRODUCTION, then the caller's second, offline call on
+      # SANDBOX, as the design routes it.
+      measure("retryViaResult", name) do
+        verifier.verify_receipt_endpoint(APRV::Environment::PRODUCTION, request_json)
+        verifier.verify_receipt_endpoint(APRV::Environment::SANDBOX, request_json)
+      end,
+      measure("rejectTamperedSignature", name) { reject(tampered, verifier) }
     ]
   end
 
   def main
-    roots = APRV.apple_receipt_roots
-    results = FIXTURES.flat_map { |fixture| run_fixture(*fixture, roots) }
+    # The roots are parsed once, here, and never per call.
+    verifier = APRV::Verifier.create(APRV::Config.new(clock: -> { NOW_MILLIS }))
+    results = FIXTURES.flat_map { |fixture| run_fixture(*fixture, verifier) }
     puts JSON.pretty_generate(
       port: "ruby",
       tool: "bench/bench.rb (Process.clock_gettime)",

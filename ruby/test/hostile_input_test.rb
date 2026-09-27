@@ -13,27 +13,35 @@ class HostileInputTest < Minitest::Test
 
   def setup
     @pki = TestPki.receipt_pki
-    @verifier = APRV::ReceiptVerifier.new(trusted_roots: [@pki.root], bundle_id: "com.example.app")
+    @roots = [@pki.root]
   end
 
-  def assert_format_error(bytes, message = nil)
+  def clock
+    APRV::ClockOnce.new(-> { Time.now.to_i * 1000 })
+  end
+
+  def verify_der(der, roots: @roots)
+    APRV::Receipt.verify([der].pack("m0"), roots, clock)
+  end
+
+  def assert_format_error(der, message = nil)
     # Only pass the message when there is one. assert_raises treats a
     # trailing String as the failure message and everything else as an
     # exception class, so a nil here becomes `rescue VerificationError, nil`
     # and minitest raises TypeError instead of running the assertion.
     expected = message ? [APRV::VerificationError, message] : [APRV::VerificationError]
-    error = assert_raises(*expected) { @verifier.verify_der(bytes) }
-    assert_equal :INVALID_RECEIPT_FORMAT, error.reason, error.message
+    error = assert_raises(*expected) { verify_der(der) }
+    assert_equal :MALFORMED, error.reason, error.message
     error
   end
 
   # A payload a trusted signer signed that the library cannot read: the
   # failure is found only after the chain and the signature pass, and it is
-  # INTERNAL_ERROR with the parser's own verdict as its cause.
-  def assert_unreadable_signed_content(bytes)
-    error = assert_raises(APRV::VerificationError) { @verifier.verify_der(bytes) }
-    assert_equal :INTERNAL_ERROR, error.reason, error.message
-    assert_equal :INVALID_RECEIPT_FORMAT, error.cause&.reason, error.message
+  # UNREADABLE_PAYLOAD with the parser's own verdict as its cause.
+  def assert_unreadable_signed_content(der)
+    error = assert_raises(APRV::VerificationError) { verify_der(der) }
+    assert_equal :UNREADABLE_PAYLOAD, error.reason, error.message
+    assert_equal :MALFORMED, error.cause_error&.reason, error.message
     error
   end
 
@@ -91,14 +99,15 @@ class HostileInputTest < Minitest::Test
     assert_match(/too deep/, error.message)
   end
 
-  def test_depth_thirty_two_is_accepted_and_thirty_three_is_not
+  # MAX_DEPTH is 64 (docs/design/0.7-api.md, Bounds — raised from 0.6's 32).
+  def test_depth_sixty_four_is_accepted_and_sixty_five_is_not
     build = lambda do |containers|
       bytes = +"\x04\x00".b
-      containers.times { bytes = "\x30".b + [bytes.bytesize].pack("C") + bytes }
+      containers.times { bytes = "\x30".b + der_length(bytes.bytesize) + bytes }
       bytes
     end
-    assert_equal 33, APRV::Asn1.scan!(build.call(32))
-    error = assert_raises(APRV::Asn1::Error) { APRV::Asn1.scan!(build.call(33)) }
+    assert_equal 65, APRV::Asn1.scan!(build.call(64))
+    error = assert_raises(APRV::Asn1::Error) { APRV::Asn1.scan!(build.call(65)) }
     assert_match(/too deep/, error.message)
   end
 
@@ -124,10 +133,9 @@ class HostileInputTest < Minitest::Test
 
   def test_truncation_at_every_offset_of_a_genuine_receipt_is_contained
     der = TestSupport.fixture_bytes("public-receipt-sandbox-g5")
-    verifier = APRV::ReceiptVerifier.new(trusted_roots: APRV.apple_receipt_roots,
-                                         bundle_id: "dev.bonzer.weeka.app")
+    roots = APRV::Config.defaults.roots
     (0...der.bytesize).step(97) do |cut|
-      verifier.verify_der(der.byteslice(0, cut))
+      verify_der(der.byteslice(0, cut), roots: roots)
       flunk "a receipt truncated at #{cut} verified"
     rescue APRV::VerificationError => e
       assert_includes APRV::Reason::ALL, e.reason
@@ -136,17 +144,24 @@ class HostileInputTest < Minitest::Test
 
   def test_trailing_bytes_after_a_genuine_receipt
     der = TestSupport.fixture_bytes("public-receipt-sandbox-g5")
-    verifier = APRV::ReceiptVerifier.new(trusted_roots: APRV.apple_receipt_roots,
-                                         bundle_id: "dev.bonzer.weeka.app")
+    roots = APRV::Config.defaults.roots
     ["\x00", "\x00\x00", "junk", "\x30\x00"].each do |tail|
-      error = assert_raises(APRV::VerificationError) { verifier.verify_der(der + tail) }
-      assert_equal :INVALID_RECEIPT_FORMAT, error.reason
+      error = assert_raises(APRV::VerificationError) { verify_der(der + tail, roots: roots) }
+      assert_equal :MALFORMED, error.reason
     end
   end
 
+  # Invalid UTF-8 in an attribute value is kept raw, never an error, in 0.7
+  # (docs/design/0.7-api.md): the whole payload still verifies. bundle_id is
+  # its own case: bundle_id_bytes always carries the raw value, so an
+  # undecodable bundle_id does not additionally land in unknown_attributes.
   def test_a_payload_with_invalid_utf8_in_the_bundle_id
-    payload = TestPki.receipt_payload([[2, "\x0c\x03\xff\xfe\xfd".b]])
-    assert_unreadable_signed_content(TestPki.sign_receipt(@pki, payload))
+    value = "\x0c\x03\xff\xfe\xfd".b
+    payload = TestPki.receipt_payload([[2, value]])
+    receipt = verify_der(TestPki.sign_receipt(@pki, payload))
+    assert_nil receipt.bundle_id
+    assert_equal value, receipt.bundle_id_bytes
+    refute receipt.unknown_attributes.key?(2)
   end
 
   def test_a_message_digest_attribute_that_does_not_match_the_content
@@ -154,8 +169,8 @@ class HostileInputTest < Minitest::Test
     content = APRV::Cms.parse(der).content
     forged = der.b.sub(content, content.dup.tap { |c| c.setbyte(0, c.getbyte(0) ^ 0xff) })
     refute_equal der, forged
-    error = assert_raises(APRV::VerificationError) { @verifier.verify_der(forged) }
-    assert_includes %i[INVALID_SIGNATURE INVALID_RECEIPT_FORMAT], error.reason
+    error = assert_raises(APRV::VerificationError) { verify_der(forged) }
+    assert_includes %i[INVALID_SIGNATURE MALFORMED], error.reason
   end
 
   # Cross-port rule S1, mechanised. `set_default_paths` is the classic Ruby
@@ -192,9 +207,9 @@ class HostileInputTest < Minitest::Test
                "premise failed: the platform default store did not accept the rogue chain"
 
         error = assert_raises(APRV::VerificationError) do
-          APRV.verify_receipt_core(der, trusted_roots: APRV.apple_receipt_roots)
+          verify_der(der, roots: APRV::Config.defaults.roots)
         end
-        assert_equal :INVALID_CHAIN, error.reason
+        assert_equal :UNTRUSTED_CHAIN, error.reason
       end
     end
   end
@@ -202,19 +217,16 @@ class HostileInputTest < Minitest::Test
   def test_the_same_pinning_holds_on_the_jws_path
     rogue = TestPki.jws_pki
     jws = TestPki.sign_jws(rogue, TestPki.default_claims)
-    subject = APRV::JwsVerifier.new(
-      trusted_roots: APRV.apple_jws_roots, bundle_id: "com.example.app",
-      accepted_environments: [APRV::Environment::SANDBOX]
-    )
-    error = assert_raises(APRV::VerificationError) { subject.verify_transaction(jws) }
-    assert_equal :INVALID_CHAIN, error.reason
+    error = assert_raises(APRV::VerificationError) do
+      APRV::Jws.verify(jws, APRV::Config.defaults.roots, clock)
+    end
+    assert_equal :UNTRUSTED_CHAIN, error.reason
   end
 
   def test_a_receipt_whose_payload_is_a_huge_flat_set_is_bounded
     attributes = Array.new(5000) { |i| [9000 + i, TestPki.utf8("x")] }
     payload = TestPki.receipt_payload(attributes)
-    receipt = APRV.verify_receipt_core(TestPki.sign_receipt(@pki, payload),
-                                       trusted_roots: [@pki.root])
+    receipt = verify_der(TestPki.sign_receipt(@pki, payload))
     assert_equal 5000, receipt.unknown_attributes.size
   end
 
@@ -227,12 +239,12 @@ class HostileInputTest < Minitest::Test
     tlv = ->(tag, body) { [tag].pack("C") + der_length(body.bytesize) + body }
 
     deep = tlv.call(0x04, "")
-    40.times { deep = tlv.call(0x24, deep) }
+    80.times { deep = tlv.call(0x24, deep) }
     attribute = tlv.call(0x30, TestPki.integer(2) + TestPki.integer(1) + deep)
     payload = tlv.call(0x31, attribute)
 
     milliseconds = elapsed { assert_unreadable_signed_content(TestPki.sign_receipt(@pki, payload)) }
-    assert_operator milliseconds, :<, 250, "40-deep chunk nest took #{milliseconds.round(2)}ms"
+    assert_operator milliseconds, :<, 250, "80-deep chunk nest took #{milliseconds.round(2)}ms"
 
     # 60,000 one-byte chunks that concatenate to one valid UTF8String: the
     # legitimate shape at scale, which must stay linear rather than rejected.
@@ -245,9 +257,9 @@ class HostileInputTest < Minitest::Test
 
     receipt = nil
     milliseconds = elapsed do
-      receipt = @verifier.verify_der(TestPki.sign_receipt(@pki, tlv.call(0x31, bundle + wide)))
+      receipt = verify_der(TestPki.sign_receipt(@pki, tlv.call(0x31, bundle + wide)))
     end
-    assert_equal text, receipt.app_version
+    assert_equal text, receipt.application_version
     assert_operator milliseconds, :<, 250, "60k chunks took #{milliseconds.round(2)}ms"
   end
 
@@ -267,12 +279,10 @@ class HostileInputTest < Minitest::Test
   # What the declared budgets actually cost when a caller sits on them.
   #
   # Every structural check runs before any cryptographic one — the payload is
-  # parsed to learn the creation date the chain is judged at (PLAN.md §2.2
-  # step 2), so an unauthenticated caller can spend this per request with a
-  # blob that carries no signature. That is the same ordering as every other
-  # port; what is pinned here is that the ceiling stays LINEAR in the input.
-  # For scale: node's `der.parse` takes 252 ms on this same blob and declares
-  # no node budget at all, so nothing there stops a larger one.
+  # parsed to learn the creation date the chain is judged at, so an
+  # unauthenticated caller can spend this per request with a blob that
+  # carries no signature. That is the same ordering as every other port;
+  # what is pinned here is that the ceiling stays LINEAR in the input.
   def test_the_node_budget_ceiling_costs_a_bounded_amount
     flood = "\x30\x84".b + [199_000 * 2].pack("N") + ("\x05\x00".b * 199_000)
     milliseconds = elapsed { assert_format_error(flood) }
@@ -289,34 +299,31 @@ class HostileInputTest < Minitest::Test
   # bounds the work spent inside ONE element. A date attribute is the element
   # where that mattered: an unbounded run of fractional-second digits used to
   # be turned into an exact Rational, which is superlinear in the digit count,
-  # and `ReceiptPayload.parse` runs before the certificate bound, the chain
-  # walk and the signature check — so the cost was reachable with a blob that
-  # never carried a signature at all.
+  # and creation_date runs before the chain walk and the signature check —
+  # so the cost was reachable with a blob that never carried a signature at
+  # all.
   #
   # The ceiling is loose on purpose. A linear scan of a million digits costs
-  # well under a millisecond and the rest of the call is fixed overhead (the
-  # macOS CI runner measured 27 ms for a million digits and 27 ms for half a
-  # million), so a ratio against a half-size input cannot hold there; the
-  # exact-Rational conversion this guards against costs seconds at this size,
-  # which one second catches with a wide margin on any runner.
+  # well under a millisecond and the rest of the call is fixed overhead, so a
+  # ratio against a half-size input cannot hold there; the exact-Rational
+  # conversion this guards against costs seconds at this size, which one
+  # second catches with a wide margin on any runner.
   def test_a_date_with_a_million_fractional_digits_is_not_superlinear
-    milliseconds = elapsed { assert_core_rejects_fraction_of("1" * 1_000_000) }
+    milliseconds = elapsed { assert_rejects_fraction_of("1" * 1_000_000) }
     assert_operator milliseconds, :<, 1000, "1e6-digit fraction took #{milliseconds.round(2)}ms"
   end
 
-  def assert_core_rejects_fraction_of(digits)
+  def assert_rejects_fraction_of(digits)
     long = TestPki.default_payload(creation_date: "2024-01-01T00:00:00.#{digits}Z")
     der = TestPki.sign_receipt(@pki, long).dup
     der.setbyte(der.bytesize - 1, der.getbyte(der.bytesize - 1) ^ 0xff)
-    assert_raises(APRV::VerificationError) do
-      APRV.verify_receipt_core(der, trusted_roots: [@pki.root])
-    end
+    assert_raises(APRV::VerificationError) { verify_der(der) }
   end
 
   # The same input through the endpoint the README advertises for Rails, which
   # is the surface an unauthenticated caller actually reaches. 1.5e6 digits
-  # keeps the receipt's base64 under ReceiptVerifier::MAX_RECEIPT_BYTES,
-  # so the fraction is still read rather than refused by the size cap.
+  # keeps the receipt's base64 under Receipt::MAX_RECEIPT_BASE64_BYTES, so
+  # the fraction is still read rather than refused by the size cap.
   def test_the_endpoint_is_not_superlinear_on_a_long_fractional_second
     milliseconds = elapsed { assert_endpoint_accepts_fraction_of("9" * 1_500_000) }
     assert_operator milliseconds, :<, 2000, "1.5e6-digit fraction took #{milliseconds.round(2)}ms"
@@ -325,9 +332,9 @@ class HostileInputTest < Minitest::Test
   def assert_endpoint_accepts_fraction_of(digits)
     long = TestPki.default_payload(creation_date: "2024-01-01T00:00:00.#{digits}Z")
     der = TestPki.sign_receipt(@pki, long)
-    endpoint = APRV::VerifyReceiptEndpoint.new(trusted_roots: [@pki.root],
-                                               environment: APRV::Environment::SANDBOX)
-    response = endpoint.verify_receipt_result({ "receipt-data" => [der].pack("m0") }).to_response
+    verifier = APRV::Verifier.create(APRV::Config.new(roots: [@pki.root]))
+    request = JSON.generate({ "receipt-data" => [der].pack("m0") })
+    response = JSON.parse(verifier.verify_receipt_endpoint(APRV::Environment::SANDBOX, request))
     assert_equal 0, response["status"]
   end
 
@@ -339,54 +346,62 @@ class HostileInputTest < Minitest::Test
   def test_the_containment_boundary_converts_every_foreign_error
     [RuntimeError, TypeError, NoMethodError, ArgumentError, IndexError].each do |klass|
       error = assert_raises(APRV::VerificationError) do
-        APRV::Receipt.contained { raise klass, "boom" }
+        APRV::Receipt.send(:contained, APRV::Reason::MALFORMED, "receipt") { raise klass, "boom" }
       end
-      assert_equal :INVALID_RECEIPT_FORMAT, error.reason
+      assert_equal :MALFORMED, error.reason
       assert_includes error.message, klass.name
     end
   end
 
   def test_the_containment_boundary_covers_system_stack_error
     error = assert_raises(APRV::VerificationError) do
-      APRV::Receipt.contained { raise SystemStackError, "stack level too deep" }
+      APRV::Receipt.send(:contained, APRV::Reason::MALFORMED, "receipt") do
+        raise SystemStackError, "stack level too deep"
+      end
     end
-    assert_equal :INVALID_RECEIPT_FORMAT, error.reason
+    assert_equal :MALFORMED, error.reason
     refute_kind_of SystemStackError, error
   end
 
   # The boundary above covers everything BEFORE trust. After the chain and
   # the signature pass, a foreign error (or a SystemStackError) in the full
   # payload parse is the library's failure on content a trusted signer
-  # signed: INTERNAL_ERROR, with the error kept as the cause.
-  def test_a_foreign_error_in_the_signed_payload_parse_is_an_internal_error
+  # signed: UNREADABLE_PAYLOAD, never a bare crash.
+  def test_a_foreign_error_in_the_signed_payload_parse_is_unreadable_payload
     receipt = TestPki.sign_receipt(@pki, TestPki.default_payload)
-    [TypeError.new("boom"), SystemStackError.new("stack level too deep")].each do |failure|
-      parse = APRV::ReceiptPayload.method(:parse)
-      APRV::ReceiptPayload.define_singleton_method(:parse) { |_content| raise failure }
-      begin
-        error = assert_raises(APRV::VerificationError) { @verifier.verify_der(receipt) }
-      ensure
-        APRV::ReceiptPayload.define_singleton_method(:parse, parse)
-      end
-      assert_equal :INTERNAL_ERROR, error.reason
-      assert_includes error.message, failure.class.name
-      assert_same failure, error.cause
+    stub_parse(TypeError.new("boom")) do
+      error = assert_raises(APRV::VerificationError) { verify_der(receipt) }
+      assert_equal :UNREADABLE_PAYLOAD, error.reason
+      assert_includes error.message, "TypeError"
+    end
+    stub_parse(SystemStackError.new("stack level too deep")) do
+      error = assert_raises(APRV::VerificationError) { verify_der(receipt) }
+      assert_equal :UNREADABLE_PAYLOAD, error.reason
+      assert_includes error.message, "stack exhausted"
     end
   end
 
+  def stub_parse(failure)
+    original = APRV::ReceiptAttributes.method(:parse)
+    APRV::ReceiptAttributes.define_singleton_method(:parse) { |_content| raise failure }
+    yield
+  ensure
+    APRV::ReceiptAttributes.define_singleton_method(:parse, original)
+  end
+
   def test_a_verification_error_passes_through_the_boundary_unchanged
-    original = APRV::VerificationError.new(APRV::Reason::INVALID_CHAIN, "detail")
-    error = assert_raises(APRV::VerificationError) { APRV::Receipt.contained { raise original } }
+    original = APRV::VerificationError.new(APRV::Reason::UNTRUSTED_CHAIN, "detail")
+    error = assert_raises(APRV::VerificationError) do
+      APRV::Receipt.send(:contained, APRV::Reason::MALFORMED, "receipt") { raise original }
+    end
     assert_same original, error
   end
 
   def test_the_jws_boundary_contains_foreign_errors_too
     pki = TestPki.jws_pki
-    verifier = APRV::JwsVerifier.new(trusted_roots: [pki.root], bundle_id: "com.example.app",
-                                     accepted_environments: [APRV::Environment::SANDBOX])
     deep = "\x30\x80".b * 200_000
     error = assert_raises(APRV::VerificationError) do
-      verifier.verify_transaction([deep].pack("m0").delete("=").tr("+/", "-_"))
+      APRV::Jws.verify([deep].pack("m0").delete("=").tr("+/", "-_"), [pki.root], clock)
     end
     assert_includes APRV::Reason::ALL, error.reason
   end

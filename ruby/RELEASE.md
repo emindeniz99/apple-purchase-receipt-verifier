@@ -14,7 +14,7 @@ failing the tag run.
 ## `post-publish-smoke.yml` — added
 
 The `rubygems` job installs the exact published version into a scratch
-`GEM_HOME` outside the checkout, on the gemspec's 3.1 floor, and runs
+`GEM_HOME` outside the checkout, on the gemspec's 3.3 floor, and runs
 `.github/smoke/rubygems-smoke.rb` against
 `fixtures/public-receipts/receipt-sandbox-g5.b64`:
 

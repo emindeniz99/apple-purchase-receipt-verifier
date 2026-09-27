@@ -14,29 +14,25 @@ require_relative "../support"
 
 APRV = FuzzSupport::APRV
 
-FIXTURE = APRV::JwsVerifier.new(
-  trusted_roots: [FuzzSupport.fixture_certificate("generated/jws-root.der")],
-  bundle_id: "com.example.app",
-  accepted_environments: [APRV::Environment::SANDBOX]
+FIXTURE = APRV::Verifier.create(
+  APRV::Config.new(roots: [FuzzSupport.fixture_certificate("generated/jws-root.der")])
 )
-UNRELATED = APRV::JwsVerifier.new(
-  trusted_roots: APRV.apple_jws_roots,
-  bundle_id: "com.example.app",
-  accepted_environments: [APRV::Environment::SANDBOX]
-)
+UNRELATED = APRV::Verifier.create(APRV::Config.new(roots: APRV::Config.defaults.roots))
 
 TEST_ONE_INPUT = lambda do |data|
-  FuzzSupport.call("#verify_transaction", APRV::VerificationError) { FIXTURE.verify_transaction(data) }
-  FuzzSupport.call("#verify_app_transaction", APRV::VerificationError) do
-    FIXTURE.verify_app_transaction(data)
-  end
-  raw, = FuzzSupport.call("#verify_raw", APRV::VerificationError) { FIXTURE.verify_raw(data) }
-  next nil unless raw == :accepted
+  # verify_signed_data never raises: a VerificationResult carries the
+  # verdict, so `allowed` is NoError (nothing may escape) and the outcome is
+  # read off `result.verified?` instead of a rescued/not-rescued split. 0.7
+  # has one JWS entry point, not three (no bundle id, no accepted-
+  # environment set, no app Apple id claim checked); the caller reads those
+  # off the returned payload instead.
+  _, result = FuzzSupport.call("#verify_signed_data", FuzzSupport::NoError) { FIXTURE.verify_signed_data(data) }
+  next nil unless result.verified?
 
-  again, = FuzzSupport.call("#verify_raw (Apple roots)", APRV::VerificationError) do
-    UNRELATED.verify_raw(data)
+  _, again = FuzzSupport.call("#verify_signed_data (Apple roots)", FuzzSupport::NoError) do
+    UNRELATED.verify_signed_data(data)
   end
-  if again == :accepted
+  if again.verified?
     FuzzSupport.violated("this input verifies against Apple's roots too, " \
                          "so the anchors are not being enforced")
   end
