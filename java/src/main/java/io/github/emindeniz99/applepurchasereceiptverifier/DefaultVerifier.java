@@ -49,7 +49,6 @@ final class DefaultVerifier implements Verifier {
     private static void buildStaticState() {
         Objects.requireNonNull(JwsCore.JSON);
         Objects.requireNonNull(Endpoint.JSON);
-        Objects.requireNonNull(EndpointResponse.JSON);
         Objects.requireNonNull(ReceiptCore.SIGNER_VERIFIERS);
     }
 
