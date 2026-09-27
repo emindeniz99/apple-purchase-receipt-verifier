@@ -8,7 +8,7 @@ use RuntimeException;
 use stdClass;
 
 /**
- * Resolves the `fields`/`lengths` pointers `fixtures/cases-0.7.schema.json`
+ * Resolves the `fields`/`lengths` pointers `fixtures/cases.schema.json`
  * defines: RFC 6901 JSON Pointer, with one extension — a reference token
  * `[key=value]` selects the single element of an array whose member `key`
  * equals the JSON string `value`.

@@ -36,7 +36,7 @@ use ReflectionClass;
 final class ApiShapeTest extends TestCase
 {
     /**
-     * The eight reasons, read out of `fixtures/cases-0.7.schema.json` rather
+     * The eight reasons, read out of `fixtures/cases.schema.json` rather
      * than restated here — a typo in a case name, or a ninth reason added
      * without a cross-port change, fails here. 0.7 has a single unified
      * vocabulary (docs/design/0.7-api.md, "Result"): every path returns a
@@ -47,7 +47,7 @@ final class ApiShapeTest extends TestCase
     {
         /** @var array{'$defs': array{reason: array{enum: list<string>}}} $schema */
         $schema = json_decode(
-            (string) file_get_contents(Fixtures07::directory() . '/cases-0.7.schema.json'),
+            (string) file_get_contents(Fixtures07::directory() . '/cases.schema.json'),
             true,
             64,
             JSON_THROW_ON_ERROR,
@@ -82,7 +82,7 @@ final class ApiShapeTest extends TestCase
     {
         /** @var array{'$defs': array{endpointConfig: array{properties: array{environment: array{enum: list<string>}}}}} $schema */
         $schema = json_decode(
-            (string) file_get_contents(Fixtures07::directory() . '/cases-0.7.schema.json'),
+            (string) file_get_contents(Fixtures07::directory() . '/cases.schema.json'),
             true,
             64,
             JSON_THROW_ON_ERROR,

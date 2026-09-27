@@ -450,7 +450,7 @@ options.
 - **10 embedded certificates, 4 SignerInfos**, enforced before any
   certificate is decoded or any signature is checked.
 
-`fixtures/cases-0.7.json` holds every port to these same numbers, from both
+`fixtures/cases.json` holds every port to these same numbers, from both
 sides of each boundary.
 
 ### Why PHP needs its own headroom

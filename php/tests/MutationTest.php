@@ -149,7 +149,7 @@ final class MutationTest extends TestCase
     private static function genuineReceiptBytes(string $fixtureId): string
     {
         $entry = Fixtures07::registry()[$fixtureId] ?? null;
-        self::assertNotNull($entry, "harness error: fixture {$fixtureId} is not registered in cases-0.7.json");
+        self::assertNotNull($entry, "harness error: fixture {$fixtureId} is not registered in cases.json");
 
         return Fixtures07::bytes($fixtureId);
     }
