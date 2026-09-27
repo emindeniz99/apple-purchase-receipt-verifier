@@ -208,20 +208,33 @@ namespace ApplePurchaseReceiptVerifier.Internal
 
         /// <summary>
         /// The US Pacific offset at <paramref name="instantMs"/>. The receipt
-        /// grammar admits years 0000 to 9999, and year 0000 lies before the
-        /// first instant <see cref="DateTimeOffset"/> can hold, so the instant
-        /// is clamped into its range first: the zone keeps one offset (local
-        /// mean time) throughout the centuries clamped away, and none after.
+        /// grammar admits years 0000 to 9999. Before the zone's first
+        /// transition (1883-11-18 20:00 UTC) the offset is tzdb's local mean
+        /// time, -07:52:58, fixed here rather than read from the system:
+        /// Windows' zone data has no local mean time and answers -08:00, and
+        /// <see cref="DateTimeOffset"/> cannot hold year 0000 anyway. From 1883
+        /// on the system zone answers; the late end is clamped a day inside
+        /// <see cref="DateTimeOffset"/>'s range, where the zone has no further
+        /// transitions.
         /// </summary>
         private static long PacificOffsetMs(long instantMs)
         {
-            long clamped = Math.Min(Math.Max(instantMs, EarliestOffsetInstantMs), LatestOffsetInstantMs);
+            if (instantMs < PacificStandardTimeStartsMs)
+            {
+                return PacificLocalMeanTimeOffsetMs;
+            }
+
+            long clamped = Math.Min(instantMs, LatestOffsetInstantMs);
             return (long)Pacific.Value.GetUtcOffset(DateTimeOffset.FromUnixTimeMilliseconds(clamped)).TotalMilliseconds;
         }
 
-        /// <summary>A day inside <see cref="DateTimeOffset"/>'s range at either end, so any offset still converts.</summary>
-        private const long EarliestOffsetInstantMs = -62135596800000L + 86400000L;
+        /// <summary>1883-11-18 20:00:00 UTC, when America/Los_Angeles left local mean time for -08:00.</summary>
+        private const long PacificStandardTimeStartsMs = -2717640000000L;
 
+        /// <summary>tzdb's local mean time for America/Los_Angeles, -07:52:58.</summary>
+        private const long PacificLocalMeanTimeOffsetMs = -((7 * 3600) + (52 * 60) + 58) * 1000L;
+
+        /// <summary>A day inside <see cref="DateTimeOffset"/>'s upper bound, so any offset still converts.</summary>
         private const long LatestOffsetInstantMs = 253402300799999L - 86400000L;
 
         private const long MillisecondsPerDay = 86400000L;
