@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.cms.SignedData;
@@ -19,10 +20,15 @@ final class ReceiptCertificates {
     /** Genuine receipts embed one to three; checked before any is decoded. */
     static final int MAX_EMBEDDED_CERTIFICATES = 10;
 
-    final List<X509Certificate> all = new ArrayList<>();
+    private final List<X509Certificate> all = new ArrayList<>();
     private final List<X509CertificateHolder> holders = new ArrayList<>();
 
     private ReceiptCertificates() {}
+
+    /** Every embedded certificate, in receipt order. */
+    List<X509Certificate> all() {
+        return Collections.unmodifiableList(all);
+    }
 
     /**
      * Decodes every entry of the raw {@code certificates [0] IMPLICIT SET},

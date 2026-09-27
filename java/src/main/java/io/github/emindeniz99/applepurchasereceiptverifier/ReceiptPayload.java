@@ -180,9 +180,8 @@ public final class ReceiptPayload {
 
     /**
      * This payload as JSON, for logging and storage (docs/design/0.7-api.md,
-     * "Our JSON"). Every port writes the same value; the bytes may differ.
-     * snake_case names, dates as numbers with a {@code _ms} suffix, 64-bit ids
-     * ({@code app_item_id}, {@code download_id},
+     * "Our JSON"): snake_case names, dates as numbers with a {@code _ms}
+     * suffix, 64-bit ids ({@code app_item_id}, {@code download_id},
      * {@code version_external_identifier}, {@code web_order_line_item_id}) as
      * strings, bytes as padded standard base64 and {@code null} for a missing
      * value.

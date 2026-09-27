@@ -20,6 +20,7 @@ import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.cms.ContentInfo;
 import org.bouncycastle.cms.CMSException;
 import org.bouncycastle.cms.CMSSignedData;
+import org.bouncycastle.cms.CMSTypedData;
 import org.bouncycastle.cms.SignerInformation;
 import org.bouncycastle.cms.SignerInformationVerifier;
 import org.bouncycastle.cms.jcajce.JcaSignerInfoVerifierBuilder;
@@ -102,10 +103,12 @@ final class ReceiptCore {
         } catch (CMSException e) {
             throw new VerificationException(Reason.MALFORMED, "not a PKCS#7/CMS blob", e);
         }
-        if (cms.getSignedContent() == null || !(cms.getSignedContent().getContent() instanceof byte[])) {
+        CMSTypedData signedContent = cms.getSignedContent();
+        Object content = signedContent != null ? signedContent.getContent() : null;
+        if (!(content instanceof byte[])) {
             throw new VerificationException(Reason.MALFORMED, "no encapsulated payload");
         }
-        byte[] payload = (byte[]) cms.getSignedContent().getContent();
+        byte[] payload = (byte[]) content;
 
         List<SignerInformation> signers = new ArrayList<>(cms.getSignerInfos().getSigners());
         if (signers.isEmpty()) {
@@ -123,7 +126,7 @@ final class ReceiptCore {
 
         ReceiptCertificates certificates = ReceiptCertificates.decode(cms);
         // Signer-independent, so walked once for every SignerInfo.
-        List<X509Certificate> authenticated = authenticatedTopDown(certificates.all, trustAnchors);
+        List<X509Certificate> authenticated = authenticatedTopDown(certificates.all(), trustAnchors);
         // Every SignerInfo signs the same content, so one passing is enough;
         // when none does, the first one's failure is the verdict.
         VerificationException first = null;
