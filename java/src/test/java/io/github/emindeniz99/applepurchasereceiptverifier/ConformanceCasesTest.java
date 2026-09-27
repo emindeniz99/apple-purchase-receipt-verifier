@@ -156,8 +156,8 @@ class ConformanceCasesTest {
             long budget = kase.get("maxMillis").asLong();
             assertTrue(millis <= budget, id + ": verify took " + millis + " ms, budget " + budget + " ms");
         }
-        // A tolerant case: any verdict but INTERNAL_ERROR, and nothing thrown.
-        if (expected.has("anyOutcome")) {
+        // A listed-outcome case: "ok" or the reason must be in the list, and nothing thrown.
+        if (expected.has("oneOf")) {
             VerificationResult<?> result;
             try {
                 result = call(verifier, receipt, argument);
@@ -165,11 +165,15 @@ class ConformanceCasesTest {
                 throw new AssertionError(id + ": the operation threw instead of answering", e);
             }
             Failure failure = result.failure();
-            if (failure != null) {
-                assertTrue(
-                        failure.reason() != Reason.INTERNAL_ERROR,
-                        id + ": answered INTERNAL_ERROR: " + failure.message());
+            String outcome = failure == null ? "ok" : failure.reason().name();
+            List<String> allowed = new ArrayList<String>();
+            for (JsonNode listed : expected.get("oneOf")) {
+                allowed.add(listed.asText());
             }
+            assertTrue(
+                    allowed.contains(outcome),
+                    id + ": answered " + outcome + (failure == null ? "" : " (" + failure.message() + ")")
+                            + ", want one of " + allowed);
             return;
         }
         VerificationResult<?> result = call(verifier, receipt, argument);
