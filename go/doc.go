@@ -4,11 +4,11 @@
 //
 //   - StoreKit 2 / App Store Server JWS payloads — signed transactions,
 //     signed AppTransactions, renewal info and Server Notifications V2 —
-//     through [JWSVerifier].
+//     through [Verifier.VerifySignedData].
 //   - The legacy PKCS#7 app receipt, the exact blob apps used to send to
-//     the deprecated verifyReceipt endpoint, through [ReceiptVerifier].
+//     the deprecated verifyReceipt endpoint, through [Verifier.VerifyReceipt].
 //
-// [VerifyReceiptEndpoint] answers Apple's verifyReceipt request bodies
+// [Verifier.VerifyReceiptEndpoint] answers Apple's verifyReceipt request bodies
 // locally, with the same response shape and the same status codes.
 //
 // # Trust model
