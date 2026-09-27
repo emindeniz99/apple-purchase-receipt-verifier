@@ -100,7 +100,7 @@ final class ReceiptCore {
     static final int MAX_RECEIPT_BYTES = 3145728;
 
     // Built once and shared by every thread; see signerVerifier.
-    private static final JcaSignerInfoVerifierBuilder SIGNER_VERIFIERS = signerVerifiers();
+    static final JcaSignerInfoVerifierBuilder SIGNER_VERIFIERS = signerVerifiers();
 
     /** The digest each hash-and-sign {@code signatureAlgorithm} names; see {@link #digestNamedBy}. */
     private static final Map<String, String> HASH_OF_SIGNATURE_ALGORITHM = hashOfSignatureAlgorithm();

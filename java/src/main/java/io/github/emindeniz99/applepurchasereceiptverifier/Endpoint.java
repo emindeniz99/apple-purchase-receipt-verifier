@@ -40,7 +40,7 @@ final class Endpoint {
     // Nothing inside the body can be larger than the body, and a body within
     // MAX_REQUEST_BYTES bytes is within it in characters too, so both length
     // bounds (counted in characters for String input) are MAX_REQUEST_BYTES.
-    private static final JsonFactory JSON = BoundedJson.factory(MAX_REQUEST_BYTES);
+    static final JsonFactory JSON = BoundedJson.factory(MAX_REQUEST_BYTES);
 
     private Endpoint() {}
 

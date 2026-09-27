@@ -71,7 +71,7 @@ final class JwsCore {
     // A segment cannot outgrow the whole JWS, so both length bounds are
     // MAX_JWS_BYTES: consistent with the entry-point bound rather than a
     // second opinion about it.
-    private static final JsonFactory JSON = BoundedJson.factory(MAX_JWS_BYTES);
+    static final JsonFactory JSON = BoundedJson.factory(MAX_JWS_BYTES);
 
     // Shared: BouncyCastle's PKIX validator keeps no per-call state (only
     // final fields, checked in 1.86). Its CertificateFactory keeps stream

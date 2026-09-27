@@ -444,7 +444,7 @@ class VerifierApiTest {
      */
     @Test
     void aClassWhoseStaticStateFailsFailsConstructionWithTheDependencyFloor() {
-        String broken = BrokenStaticState.class.getName();
+        Runnable broken = () -> assertEquals(0, BrokenStaticState.VALUE);
         IllegalStateException first =
                 assertThrows(IllegalStateException.class, () -> DefaultVerifier.initialise(broken));
         assertTrue(first.getCause() instanceof ExceptionInInitializerError, String.valueOf(first.getCause()));
@@ -455,11 +455,7 @@ class VerifierApiTest {
                 assertThrows(IllegalStateException.class, () -> DefaultVerifier.initialise(broken));
         assertTrue(second.getCause() instanceof NoClassDefFoundError, String.valueOf(second.getCause()));
         // The real classes initialise.
-        DefaultVerifier.initialise(
-                JwsCore.class.getName(),
-                Endpoint.class.getName(),
-                EndpointResponse.class.getName(),
-                ReceiptCore.class.getName());
+        assertNotNull(Verifier.create(Config.defaults()));
     }
 
     /** Stands in for a class whose static initialiser meets a dependency below its floor. */
