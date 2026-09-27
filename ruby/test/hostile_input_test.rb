@@ -99,15 +99,15 @@ class HostileInputTest < Minitest::Test
     assert_match(/too deep/, error.message)
   end
 
-  # MAX_DEPTH is 64 (docs/design/0.7-api.md, Bounds — raised from 0.6's 32).
-  def test_depth_sixty_four_is_accepted_and_sixty_five_is_not
+  # MAX_DEPTH is 32 (docs/design/0.7-api.md, Bounds; owner, 2026-09-27).
+  def test_depth_thirty_two_is_accepted_and_thirty_three_is_not
     build = lambda do |containers|
       bytes = +"\x04\x00".b
       containers.times { bytes = "\x30".b + der_length(bytes.bytesize) + bytes }
       bytes
     end
-    assert_equal 65, APRV::Asn1.scan!(build.call(64))
-    error = assert_raises(APRV::Asn1::Error) { APRV::Asn1.scan!(build.call(65)) }
+    assert_equal 33, APRV::Asn1.scan!(build.call(32))
+    error = assert_raises(APRV::Asn1::Error) { APRV::Asn1.scan!(build.call(33)) }
     assert_match(/too deep/, error.message)
   end
 
