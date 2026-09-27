@@ -320,6 +320,33 @@ while the signed receipt payload is decoded it is `UNREADABLE_PAYLOAD`;
 after that it is `INTERNAL_ERROR` (21009). Containment needs unwinding: a
 binary built with `panic = "abort"` ends the process on a panic instead.
 
+## Measured worst-case CPU
+
+Measured on 2026-09-27 with `examples/bench.rs --worst-case`, which times
+every shared case in `fixtures/cases.json` that carries a time budget:
+oversized untrusted keys, a cross-signed certificate mesh, and the encoding
+oddities inside certificates. Rust 1.94.1, release build, one thread, on a
+shared 4-vCPU KVM guest (Intel Xeon Processor @ 2.10GHz); one second of
+warm-up, then ten samples of at least 100 ms each.
+
+| Call | Median | Slowest sample |
+|---|---:|---:|
+| Slowest hostile case: `receipt/verify-genuine-padded-with-oversized-strangers` (a valid receipt carrying oversized certificates it does not need) | 2.7 ms | 3.3 ms |
+| Next: `receipt/reject-untrusted-oversized-intermediates` | 1.4 ms | 1.5 ms |
+| Slowest hostile JWS: `signed-data/intermediate-with-a-ca-boolean-of-01-does-not-crash` | 0.84 ms | 1.1 ms |
+| Every other budgeted case | under 0.70 ms | under 0.85 ms |
+| For scale: `verify_receipt` on the genuine 187-purchase legacy receipt | 1.3 ms | 1.5 ms |
+| For scale: `verify_receipt_endpoint` on the same receipt | 3.1 ms | 4.2 ms |
+
+The slowest hostile case costs about twice what `verify_receipt` spends on
+the largest genuine receipt, and less than the endpoint spends on it: the
+cost of a call follows the size of the input, which the caps above bound,
+not the structure an attacker chooses. The machine was shared with other
+work, so treat these as an order of magnitude. Run
+`cargo run --release --locked --example bench -- --worst-case` for the
+hostile cases on your own hardware, and the same command without
+`--worst-case` for the genuine receipts.
+
 ## The endpoint
 
 ```rust
