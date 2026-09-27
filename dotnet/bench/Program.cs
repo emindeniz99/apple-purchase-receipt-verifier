@@ -1,4 +1,4 @@
-// The cross-port benchmark: the same six operations on the same two genuine
+// The cross-port benchmark: the same operations on the same two genuine
 // sandbox receipts in every port, named after the Java JMH benchmarks in
 // java-bench/ (BENCHMARKS.md at the repository root has the table).
 //
@@ -19,7 +19,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
-using ApplePurchaseReceiptVerifier.Receipt;
+using ApplePurchaseReceiptVerifier;
 
 namespace ApplePurchaseReceiptVerifier.Bench
 {
@@ -30,7 +30,7 @@ namespace ApplePurchaseReceiptVerifier.Bench
         private const double MinSampleMs = 100;
 
         // File under fixtures/public-receipts, and the bundle id, in-app count
-        // and digest fixtures/cases.json pins for it.
+        // and digest fixtures/cases-0.7.json pins for it.
         private static readonly (string Name, string BundleId, int InAppCount, string Sha256)[] Fixtures =
         {
             ("receipt-sandbox-g5", "dev.bonzer.weeka.app", 2,
@@ -44,7 +44,8 @@ namespace ApplePurchaseReceiptVerifier.Bench
         // is what ships and this project must not change it. The delegate is
         // bound once, so each call costs a delegate invocation.
         private static readonly Func<string, byte[]> DecodeBase64 =
-            (Func<string, byte[]>)typeof(ReceiptVerifier)
+            (Func<string, byte[]>)typeof(IVerifier).Assembly
+                .GetType("ApplePurchaseReceiptVerifier.Internal.ReceiptVerifierCore", throwOnError: true)!
                 .GetMethod("DecodeBase64", BindingFlags.Static | BindingFlags.NonPublic, null, new[] { typeof(string) }, null)!
                 .CreateDelegate(typeof(Func<string, byte[]>));
 
@@ -53,8 +54,11 @@ namespace ApplePurchaseReceiptVerifier.Bench
 
         private static void Main()
         {
-            List<X509Certificate2> roots = AppleRootCertificates.ReceiptRoots().ToList();
-            FixedClock clock = new FixedClock(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+            Config config = Config.CreateBuilder()
+                .Roots(AppleRootCertificates.Bundled())
+                .Clock(() => new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds())
+                .Build();
+            IVerifier verifier = Verifier.Create(config);
             List<Result> results = new List<Result>();
             foreach ((string name, string bundleId, int inAppCount, string sha256) in Fixtures)
             {
@@ -62,54 +66,36 @@ namespace ApplePurchaseReceiptVerifier.Bench
                     File.ReadAllText(Path.Combine(FixturesDirectory(), "public-receipts", name + ".b64")));
                 Check(Convert.ToHexString(SHA256.HashData(der)).ToLowerInvariant() == sha256, name + " digest");
                 string base64 = Convert.ToBase64String(der);
-                Dictionary<string, object?> request = new Dictionary<string, object?> { ["receipt-data"] = base64 };
-                string requestJson = JsonSerializer.Serialize(request);
+                string requestJson = JsonSerializer.Serialize(new Dictionary<string, object?> { ["receipt-data"] = base64 });
                 byte[] tampered = Tamper(der);
-                using ReceiptVerifier verifier = new ReceiptVerifier(roots, bundleId);
-                using VerifyReceiptEndpoint sandbox = new VerifyReceiptEndpoint(roots, AppleEnvironment.Sandbox, clock);
-                using VerifyReceiptEndpoint production = new VerifyReceiptEndpoint(roots, AppleEnvironment.Production, clock);
 
                 object RejectTampered()
                 {
-                    try
-                    {
-                        return ReceiptVerifier.VerifyReceiptCore(tampered, roots);
-                    }
-                    catch (VerificationException e)
-                    {
-                        return e;
-                    }
+                    VerificationResult<ReceiptPayload> result = verifier.VerifyReceipt(Convert.ToBase64String(tampered));
+                    return result.Failure ?? (object)result;
                 }
 
                 // Every call once, with the answer the conformance suite
                 // expects, so no benchmark can time a fast failure by accident.
                 Check(DecodeBase64(base64).AsSpan().SequenceEqual(der), "decodeBase64");
-                foreach (AppReceipt receipt in new[] { ReceiptVerifier.VerifyReceiptCore(der, roots), verifier.Verify(base64) })
-                {
-                    Check(receipt.BundleId == bundleId && receipt.InAppPurchases.Count == inAppCount, "receipt");
-                }
-                using (JsonDocument ok = JsonDocument.Parse(sandbox.VerifyReceiptJson(requestJson)))
+                VerificationResult<ReceiptPayload> verified = verifier.VerifyReceipt(base64);
+                Check(
+                    verified.Verified && verified.Payload!.BundleId == bundleId && verified.Payload!.InApp.Count == inAppCount,
+                    "receipt");
+                string endpointResponse = verifier.VerifyReceiptEndpoint(AppleEnvironment.Sandbox, requestJson);
+                using (JsonDocument ok = JsonDocument.Parse(endpointResponse))
                 {
                     Check(ok.RootElement.GetProperty("status").GetInt32() == 0
                         && ok.RootElement.GetProperty("receipt").GetProperty("in_app").GetArrayLength() == inAppCount,
                         "endpointJson");
                 }
-                using (JsonDocument retry = JsonDocument.Parse(
-                    production.VerifyReceiptResult(request).ToJson(AppleEnvironment.Sandbox)))
-                {
-                    Check(retry.RootElement.GetProperty("status").GetInt32() == 0
-                        && retry.RootElement.GetProperty("environment").GetString() == "Sandbox",
-                        "retryViaResult");
-                }
-                Check(RejectTampered() is VerificationException { Reason: VerificationReason.InvalidSignature },
+                Check(
+                    RejectTampered() is Failure { Reason: VerificationReason.InvalidSignature },
                     "rejectTamperedSignature");
 
                 results.Add(Measure("decodeBase64", name, () => DecodeBase64(base64)));
-                results.Add(Measure("core", name, () => ReceiptVerifier.VerifyReceiptCore(der, roots)));
-                results.Add(Measure("verifierBase64", name, () => verifier.Verify(base64)));
-                results.Add(Measure("endpointJson", name, () => sandbox.VerifyReceiptJson(requestJson)));
-                results.Add(Measure("retryViaResult", name,
-                    () => production.VerifyReceiptResult(request).ToJson(AppleEnvironment.Sandbox)));
+                results.Add(Measure("verifyReceipt", name, () => verifier.VerifyReceipt(base64)));
+                results.Add(Measure("endpointJson", name, () => verifier.VerifyReceiptEndpoint(AppleEnvironment.Sandbox, requestJson)));
                 results.Add(Measure("rejectTamperedSignature", name, RejectTampered));
             }
             Check(s_sink is not null, "sink");
@@ -205,13 +191,13 @@ namespace ApplePurchaseReceiptVerifier.Bench
             while (directory is not null)
             {
                 string candidate = Path.Combine(directory.FullName, "fixtures");
-                if (File.Exists(Path.Combine(candidate, "cases.json")))
+                if (File.Exists(Path.Combine(candidate, "cases-0.7.json")))
                 {
                     return candidate;
                 }
                 directory = directory.Parent;
             }
-            throw new DirectoryNotFoundException("no fixtures/cases.json above " + AppContext.BaseDirectory);
+            throw new DirectoryNotFoundException("no fixtures/cases-0.7.json above " + AppContext.BaseDirectory);
         }
 
         private readonly record struct Result(

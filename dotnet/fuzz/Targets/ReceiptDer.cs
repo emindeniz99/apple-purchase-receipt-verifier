@@ -1,22 +1,21 @@
 using System;
 using System.Collections.Generic;
 using System.Security.Cryptography.X509Certificates;
-using ApplePurchaseReceiptVerifier.Receipt;
+using ApplePurchaseReceiptVerifier;
 
 namespace ApplePurchaseReceiptVerifier.Fuzz.Targets
 {
     /// <summary>
-    /// The whole legacy-receipt path on DER bytes: the structural pre-scan,
-    /// then <c>SignedCms</c> (BER), the payload parse, the chain build and the
-    /// signature check.
+    /// The whole legacy-receipt path on DER bytes, re-encoded as the base64
+    /// string the 0.7 API takes: the CMS structural parse, the payload parse,
+    /// the chain build and the signature check.
     /// </summary>
     /// <remarks>
-    /// The invariants are the Go port's three. Nothing may escape but a
-    /// <see cref="VerificationException"/>; the pre-scan and the full path must
-    /// agree on the certificate bound; and an accepted receipt is accepted
-    /// <em>because of</em> the anchors, proven by re-running it against an
-    /// unrelated anchor set and requiring failure. Without that last one a
-    /// fuzzer finds crashes and never "accepts what it should not".
+    /// Nothing may escape but a result carrying a <see cref="Failure"/>; and
+    /// an accepted receipt is accepted <em>because of</em> the anchors,
+    /// proven by re-running it against an unrelated anchor set and requiring
+    /// failure. Without that last one a fuzzer finds crashes and never
+    /// "accepts what it should not".
     /// <para>The trusted set is the pinned Apple roots plus the generated
     /// fixture receipt root, so the shared fixtures and the two public Apple
     /// receipts get past the chain check and the fuzzer can explore what lies
@@ -24,58 +23,43 @@ namespace ApplePurchaseReceiptVerifier.Fuzz.Targets
     /// </remarks>
     internal sealed class ReceiptDer : IDisposable
     {
-        private readonly List<X509Certificate2> _trusted;
-        private readonly List<X509Certificate2> _unrelated;
+        private readonly IVerifier _trusted;
+        private readonly IVerifier _unrelated;
+        private readonly List<X509Certificate2> _trustedRoots;
+        private readonly List<X509Certificate2> _unrelatedRoots;
 
         internal ReceiptDer()
         {
-            _trusted = new List<X509Certificate2>(AppleRootCertificates.ReceiptRoots())
-            {
-                Fixtures.ReceiptRoot(),
-            };
-            _unrelated = new List<X509Certificate2> { Fixtures.JwsRoot() };
+            _trustedRoots = new List<X509Certificate2>(AppleRootCertificates.Bundled()) { Fixtures.ReceiptRoot() };
+            _unrelatedRoots = new List<X509Certificate2> { Fixtures.JwsRoot() };
+            _trusted = Verifier.Create(Config.CreateBuilder().Roots(_trustedRoots).Build());
+            _unrelated = Verifier.Create(Config.CreateBuilder().Roots(_unrelatedRoots).Build());
         }
 
         internal void Run(ReadOnlySpan<byte> data)
         {
-            byte[] der = data.ToArray();
+            string base64 = Convert.ToBase64String(data);
 
-            // The pre-scan runs before SignedCms sees anything, so fuzz it
-            // both as the library calls it and on its own: its refusal to
-            // decode a certificate is what keeps a certificate flood cheap,
-            // and a leak here is a leak before any bound applies.
-            int embedded;
+            VerificationResult<ReceiptPayload> result;
             try
             {
-                embedded = Internals.CmsPreScan(der, Internals.MaxEmbeddedCertificates);
+                result = _trusted.VerifyReceipt(base64);
             }
             catch (Exception e)
             {
-                Invariant.Contained("CmsPreScan.Scan", e);
-                embedded = -1;
+                throw new InvariantException(
+                    $"VerifyReceipt is documented as never throwing, but threw {e.GetType().FullName}: {e.Message}");
             }
 
-            AppReceipt receipt;
-            try
+            if (!result.Verified)
             {
-                receipt = ReceiptVerifier.VerifyReceiptCore(der, _trusted);
-            }
-            catch (Exception e)
-            {
-                Invariant.Contained("VerifyReceiptCore", e);
                 return;
             }
 
-            Invariant.Require(receipt is not null, "a receipt that verified came back null");
-            Invariant.Require(
-                embedded >= 0 && embedded <= Internals.MaxEmbeddedCertificates,
-                $"a receipt verified while the pre-scan counted {embedded} embedded certificates");
+            Invariant.Require(result.Payload is not null, "a receipt that verified came back with no payload");
 
-            try
-            {
-                ReceiptVerifier.VerifyReceiptCore(der, _unrelated);
-            }
-            catch (VerificationException)
+            VerificationResult<ReceiptPayload> retry = _unrelated.VerifyReceipt(base64);
+            if (!retry.Verified)
             {
                 return;
             }
@@ -87,12 +71,12 @@ namespace ApplePurchaseReceiptVerifier.Fuzz.Targets
 
         public void Dispose()
         {
-            foreach (X509Certificate2 anchor in _trusted)
+            foreach (X509Certificate2 anchor in _trustedRoots)
             {
                 anchor.Dispose();
             }
 
-            foreach (X509Certificate2 anchor in _unrelated)
+            foreach (X509Certificate2 anchor in _unrelatedRoots)
             {
                 anchor.Dispose();
             }

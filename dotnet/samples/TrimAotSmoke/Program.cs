@@ -2,49 +2,47 @@ using System;
 using System.IO;
 using System.Security.Cryptography.X509Certificates;
 using ApplePurchaseReceiptVerifier;
-using ApplePurchaseReceiptVerifier.Receipt;
 
 internal static class Program
 {
     private static int Main(string[] args)
     {
         string fixtures = args.Length > 0 ? args[0] : FindFixtures();
-        byte[] der = File.ReadAllBytes(Path.Combine(fixtures, "generated", "receipt.der"));
+        byte[] der = File.ReadAllBytes(Path.Combine(fixtures, "generated-0.7", "receipt.der"));
         X509Certificate2 root = X509CertificateLoader.LoadCertificate(
-            File.ReadAllBytes(Path.Combine(fixtures, "generated", "receipt-root.der")));
+            File.ReadAllBytes(Path.Combine(fixtures, "generated-0.7", "receipt-root.der")));
+        string base64 = Convert.ToBase64String(der);
 
-        using ReceiptVerifier verifier = new(new[] { root }, "com.example.app");
-        AppReceipt receipt = verifier.Verify(der);
-        if (receipt.BundleId != "com.example.app" || receipt.InAppPurchases.Count != 2)
+        IVerifier verifier = Verifier.Create(Config.CreateBuilder().Roots(new[] { root }).Build());
+        VerificationResult<ReceiptPayload> result = verifier.VerifyReceipt(base64);
+        if (!result.Verified || result.Payload!.BundleId != "com.example.app" || result.Payload!.InApp.Count != 2)
         {
             Console.Error.WriteLine("trimmed verification returned the wrong receipt");
             return 1;
         }
 
-        using ReceiptVerifier pinned = new(AppleRootCertificates.ReceiptRoots(), "com.example.app");
-        try
+        IVerifier pinned = Verifier.Create(Config.Defaults());
+        VerificationResult<ReceiptPayload> foreign = pinned.VerifyReceipt(base64);
+        if (foreign.Verified || foreign.Failure!.Reason != VerificationReason.UntrustedChain)
         {
-            pinned.Verify(der);
             Console.Error.WriteLine("a foreign chain was accepted after trimming");
             return 1;
         }
-        catch (VerificationException e) when (e.Reason == VerificationReason.InvalidChain)
-        {
-        }
 
-        // The endpoint renders its response by hand; a trimmed build must still
-        // produce the same body and the typed result behind it.
-        using VerifyReceiptEndpoint endpoint = new(new[] { root }, AppleEnvironment.Sandbox);
-        VerifyReceiptResult result = endpoint.VerifyReceiptData(Convert.ToBase64String(der));
-        if (!result.IsVerified || result.Receipt.BundleId != "com.example.app"
-            || !result.ToJson().StartsWith("{\"status\":0,\"environment\":\"Sandbox\"", StringComparison.Ordinal)
-            || result.ToJson(AppleEnvironment.Production) != "{\"status\":21007}")
+        // The endpoint renders its response by hand; a trimmed build must
+        // still produce the same body.
+        IVerifier endpointVerifier = Verifier.Create(Config.CreateBuilder().Roots(new[] { root }).Build());
+        string request = "{\"receipt-data\":\"" + base64 + "\"}";
+        string sandboxResponse = endpointVerifier.VerifyReceiptEndpoint(AppleEnvironment.Sandbox, request);
+        string productionResponse = endpointVerifier.VerifyReceiptEndpoint(AppleEnvironment.Production, request);
+        if (!sandboxResponse.StartsWith("{\"status\":0,\"environment\":\"Sandbox\"", StringComparison.Ordinal)
+            || productionResponse != "{\"status\":21007}")
         {
             Console.Error.WriteLine("trimmed endpoint returned the wrong result");
             return 1;
         }
 
-        Console.WriteLine("trimmed smoke ok: " + receipt.BundleId);
+        Console.WriteLine("trimmed smoke ok: " + result.Payload!.BundleId);
         return 0;
     }
 
@@ -54,7 +52,7 @@ internal static class Program
         while (directory is not null)
         {
             string candidate = Path.Combine(directory.FullName, "fixtures");
-            if (File.Exists(Path.Combine(candidate, "cases.json")))
+            if (File.Exists(Path.Combine(candidate, "cases-0.7.json")))
             {
                 return candidate;
             }
