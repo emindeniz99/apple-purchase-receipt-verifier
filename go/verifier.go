@@ -26,7 +26,7 @@ type Verifier struct {
 
 // NewVerifier builds a Verifier from config.
 //
-// A nil config, or one with no trust anchors, is a plain error, never a
+// A nil config, or one with no trust anchors or a nil one, is a plain error, never a
 // *Failure: misconfiguration is a programming mistake, not a verdict about
 // any input: a verifier with no roots would answer UNTRUSTED_CHAIN to
 // everything, and nobody would notice until production, and a caller
@@ -37,6 +37,11 @@ func NewVerifier(config *Config) (*Verifier, error) {
 	}
 	if len(config.roots) == 0 {
 		return nil, errors.New("applereceipt: config has no trust anchors")
+	}
+	for _, root := range config.roots {
+		if root == nil {
+			return nil, errors.New("applereceipt: config has a nil trust anchor")
+		}
 	}
 	return &Verifier{
 		roots: append([]*x509.Certificate(nil), config.roots...),

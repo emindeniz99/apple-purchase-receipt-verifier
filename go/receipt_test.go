@@ -523,3 +523,20 @@ func TestNoPartialResultOnFailure(t *testing.T) {
 		t.Fatalf("a failed verification returned a receipt anyway: %+v", receipt)
 	}
 }
+
+// A nil certificate among the roots is a configuration mistake too. It
+// must be refused at construction, as Java's Config.Builder.roots refuses
+// a null root, rather than surface later as a MALFORMED verdict on every
+// genuine receipt.
+func TestNewVerifierRejectsANilRoot(t *testing.T) {
+	pki := newReceiptPKI(t)
+	roots := append([]*x509.Certificate{nil}, pki.anchors()...)
+	verifier, err := applereceipt.NewVerifier(applereceipt.NewConfig(applereceipt.ConfigOptions{Roots: roots}))
+	if err == nil || verifier != nil {
+		t.Fatalf("a nil root must be refused, got %v, %v", verifier, err)
+	}
+	var failure *applereceipt.Failure
+	if errors.As(err, &failure) {
+		t.Fatalf("misconfiguration must not be a verification verdict, got %s", failure.Reason)
+	}
+}
