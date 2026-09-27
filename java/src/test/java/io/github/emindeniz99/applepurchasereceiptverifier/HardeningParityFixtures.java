@@ -68,7 +68,7 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
  *
  * <p>Each run mints fresh keys and fresh random moduli, so regenerating
  * changes every byte of these files and every {@code contentSha256} in
- * fixtures/cases-0.7.json that records them.</p>
+ * fixtures/cases.json that records them.</p>
  */
 public final class HardeningParityFixtures {
 

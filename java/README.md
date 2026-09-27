@@ -723,7 +723,7 @@ pins the set against both.
 
 **The tests need the shared fixtures.** They read `fixtures/` next to
 `java/`, or the directory `-Daprv.fixtures.dir=...` names. The subset they
-use is `cases-0.7.json`, `generated/`, `generated-0.7/`, `limits/`,
+use is `cases.json`, `generated/`, `generated-0.7/`, `limits/`,
 `public-receipts/` and `apple-official/`; `cases.json` and the schemas are
 not read. Two tests also read the build itself: `VerifierApiTest` compares
 `Version.CURRENT` with `pom.xml`, and `TrustStoreIsolationTest` scans

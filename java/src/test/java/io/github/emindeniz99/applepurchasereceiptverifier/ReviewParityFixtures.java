@@ -46,7 +46,7 @@ import org.bouncycastle.util.CollectionStore;
 
 /**
  * Writes the inputs of the port-neutral cases the 2026-09-27 Java/Rust
- * cross-review moved into fixtures/cases-0.7.json, into the directory given as
+ * cross-review moved into fixtures/cases.json, into the directory given as
  * the first argument (default {@code fixtures/generated-0.7}). Every file is
  * prefixed {@code review-}.
  *

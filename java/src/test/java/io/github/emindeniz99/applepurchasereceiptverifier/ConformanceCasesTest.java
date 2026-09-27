@@ -30,7 +30,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
 
 /**
- * Runs every vector in {@code fixtures/cases-0.7.json}, the normative
+ * Runs every vector in {@code fixtures/cases.json}, the normative
  * cross-language conformance set for the 0.7 API, through the three public
  * {@link Verifier} methods and the two base64 decoders.
  *
@@ -39,7 +39,7 @@ import org.junit.jupiter.api.TestFactory;
  * and clock, dispatches on {@code operation}, and evaluates the expectation
  * on the JSON the library returns: {@link ReceiptPayload#toJson()},
  * {@link JsonPayload#json()} or the endpoint's response body. A case is added
- * by editing cases-0.7.json, never this file. The file's top-level
+ * by editing cases.json, never this file. The file's top-level
  * {@code comment} defines the semantics implemented here.</p>
  *
  * <p>Each case is its own {@link DynamicTest}, named by its case id, so a
@@ -53,7 +53,7 @@ import org.junit.jupiter.api.TestFactory;
 class ConformanceCasesTest {
 
     private static final Path FIXTURES = TestFixtures.root();
-    private static final String CASES = "cases-0.7.json";
+    private static final String CASES = "cases.json";
 
     // Big decimals for fractions and exact integers, so a pinned value
     // compares without rounding (the endpoint's download_id is 2^63-1).
