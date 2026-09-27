@@ -1,11 +1,11 @@
 #![no_main]
 
 //! The X.509 walk. A certificate that parses is then read through every
-//! accessor, because the accessors slice the input again — an offset kept
+//! accessor, because the accessors slice the input again: an offset kept
 //! from parsing is exactly the kind of state a mutated length can leave
 //! wrong.
 
-use apple_purchase_receipt_verifier::x509::Certificate;
+use apple_purchase_receipt_verifier::__internal::x509::Certificate;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
@@ -22,6 +22,7 @@ fuzz_target!(|data: &[u8]| {
     let _ = certificate.public_key_curve_oid();
     let _ = certificate.public_key_bits();
     let _ = certificate.signature_algorithm_oid();
+    let _ = certificate.signature_algorithm_params();
     let _ = certificate.signature_value();
     let _ = certificate.key_usage();
     let _ = certificate.subject_key_id();
