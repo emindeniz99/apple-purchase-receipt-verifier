@@ -115,7 +115,7 @@ final class HostileInputTest extends TestCase
             self::fail('verifyReceipt escaped as ' . $e::class . ': ' . $e->getMessage());
         }
         self::assertFalse($result->verified(), 'a hostile receipt was ACCEPTED');
-        self::assertNotSame(Reason::InternalError, $result->failure?->reason, (string) $result->failure?->message);
+        self::assertNotSame(Reason::InternalError, $result->failure->reason, $result->failure->message);
     }
 
     /**
@@ -172,7 +172,7 @@ final class HostileInputTest extends TestCase
             self::fail('verifySignedData escaped as ' . $e::class . ': ' . $e->getMessage());
         }
         self::assertFalse($result->verified(), 'a hostile JWS was ACCEPTED');
-        self::assertNotSame(Reason::InternalError, $result->failure?->reason, (string) $result->failure?->message);
+        self::assertNotSame(Reason::InternalError, $result->failure->reason, $result->failure->message);
     }
 
     /**
@@ -199,7 +199,7 @@ final class HostileInputTest extends TestCase
             self::assertNotSame($standard, $variant, $label);
             $result = self::verifier()->verifyReceipt($variant);
             self::assertFalse($result->verified(), "{$label}: a non-canonical spelling was accepted");
-            self::assertSame(Reason::Malformed, $result->failure?->reason, $label);
+            self::assertSame(Reason::Malformed, $result->failure->reason, $label);
         }
     }
 

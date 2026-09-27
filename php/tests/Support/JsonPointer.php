@@ -36,16 +36,23 @@ final class JsonPointer
         }
         $steps = [];
         $consumed = 0;
-        if (preg_match_all('#/\[([^\]]+)\]|/([^/\[\]]*)#', $path, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE) === false) {
+        // PREG_UNMATCHED_AS_NULL reports every group in every match, the one
+        // the other alternative matched included, as null: which alternative
+        // matched is then a null check rather than a guess from offsets.
+        $flags = PREG_SET_ORDER | PREG_OFFSET_CAPTURE | PREG_UNMATCHED_AS_NULL;
+        if (preg_match_all('#/\[([^\]]+)\]|/([^/\[\]]*)#', $path, $matches, $flags) === false) {
             throw new RuntimeException("harness error: unparseable field path \"{$path}\"");
         }
         foreach ($matches as $m) {
-            if ($m[0][1] !== $consumed) {
+            if ($m[0][0] === null || $m[0][1] !== $consumed) {
                 throw new RuntimeException("harness error: unparseable field path \"{$path}\"");
             }
             $consumed += strlen($m[0][0]);
-            $bracket = $m[1][0] !== '' || $m[1][1] !== -1;
-            $steps[] = [$bracket, $bracket ? $m[1][0] : self::unescape($m[2][0])];
+            if ($m[1][0] !== null) {
+                $steps[] = [true, $m[1][0]];
+            } elseif ($m[2][0] !== null) {
+                $steps[] = [false, self::unescape($m[2][0])];
+            }
         }
         if ($consumed !== strlen($path)) {
             throw new RuntimeException("harness error: unparseable field path \"{$path}\"");

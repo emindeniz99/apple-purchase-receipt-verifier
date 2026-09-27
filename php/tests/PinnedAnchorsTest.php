@@ -116,7 +116,7 @@ final class PinnedAnchorsTest extends TestCase
         $result = Verifier::create(Config::builder()->roots([$pki->rootDer])->build())
             ->verifyReceipt(base64_encode($legacy));
         self::assertFalse($result->verified(), 'a genuine receipt verified against an anchor it does not chain to');
-        self::assertSame(Reason::UntrustedChain, $result->failure?->reason);
+        self::assertSame(Reason::UntrustedChain, $result->failure->reason);
     }
 
     /** And the mirror: our own PKI is refused under Apple's real roots. */
@@ -127,11 +127,11 @@ final class PinnedAnchorsTest extends TestCase
 
         $receiptResult = $verifier->verifyReceipt(base64_encode($pki->receipt()));
         self::assertFalse($receiptResult->verified(), 'a minted receipt verified against Apple roots');
-        self::assertSame(Reason::UntrustedChain, $receiptResult->failure?->reason);
+        self::assertSame(Reason::UntrustedChain, $receiptResult->failure->reason);
 
         $jwsResult = $verifier->verifySignedData($pki->jws(MintedPki::transactionClaims()));
         self::assertFalse($jwsResult->verified(), 'a minted JWS verified against Apple roots');
-        self::assertSame(Reason::UntrustedChain, $jwsResult->failure?->reason);
+        self::assertSame(Reason::UntrustedChain, $jwsResult->failure->reason);
     }
 
     /**
@@ -158,7 +158,7 @@ final class PinnedAnchorsTest extends TestCase
             $verifier = Verifier::create(Config::builder()->roots(AppleRootCerts::pinnedRoots())->build());
             $result = $verifier->verifyReceipt(base64_encode($pki->receipt()));
             self::assertFalse($result->verified(), 'the process trust store leaked into a verification decision');
-            self::assertSame(Reason::UntrustedChain, $result->failure?->reason);
+            self::assertSame(Reason::UntrustedChain, $result->failure->reason);
         } finally {
             $previousFile === false ? putenv('SSL_CERT_FILE') : putenv('SSL_CERT_FILE=' . $previousFile);
             $previousDir === false ? putenv('SSL_CERT_DIR') : putenv('SSL_CERT_DIR=' . $previousDir);
@@ -191,14 +191,14 @@ final class PinnedAnchorsTest extends TestCase
         $result = Verifier::create(Config::builder()->roots([$pem])->build())
             ->verifyReceipt(base64_encode($pki->receipt()));
         self::assertFalse($result->verified(), 'a chain unrelated to the anchor was accepted');
-        self::assertSame(Reason::UntrustedChain, $result->failure?->reason);
+        self::assertSame(Reason::UntrustedChain, $result->failure->reason);
 
         // And Apple's own roots do not gain standing from the public CA
         // sitting next to them in the caller's list.
         $result = Verifier::create(Config::builder()->roots([$pem, ...AppleRootCerts::pinnedRoots()])->build())
             ->verifyReceipt(base64_encode($pki->receipt()));
         self::assertFalse($result->verified(), 'a chain unrelated to any anchor was accepted');
-        self::assertSame(Reason::UntrustedChain, $result->failure?->reason);
+        self::assertSame(Reason::UntrustedChain, $result->failure->reason);
     }
 
     public function testAnEmptyOrUnparseableAnchorListIsAConfigurationErrorNotAVerdict(): void

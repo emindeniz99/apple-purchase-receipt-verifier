@@ -102,7 +102,7 @@ final class ClockTest extends TestCase
 
         $outside = self::verifierOver($root, self::at('2010-01-01T00:00:00Z'))->verifySignedData($jws);
         self::assertFalse($outside->verified(), 'a clock frozen outside the window must reject it');
-        self::assertSame(Reason::InvalidCertificate, $outside->failure?->reason);
+        self::assertSame(Reason::InvalidCertificate, $outside->failure->reason);
     }
 
     /** The receipt path's fallback reads the same configured clock. */
@@ -128,7 +128,7 @@ final class ClockTest extends TestCase
 
         $outside = self::verifierOver($root, self::at('2010-01-01T00:00:00Z'))->verifyReceipt(base64_encode($receipt));
         self::assertFalse($outside->verified(), 'a clock frozen outside the window must reject it');
-        self::assertSame(Reason::InvalidCertificate, $outside->failure?->reason);
+        self::assertSame(Reason::InvalidCertificate, $outside->failure->reason);
     }
 
     /**
@@ -149,8 +149,8 @@ final class ClockTest extends TestCase
                 ->verifyReceiptEndpoint(Environment::Sandbox, $data),
         );
 
-        $pastReceipt = Shape::asArray($past['receipt'], 'receipt');
-        $futureReceipt = Shape::asArray($future['receipt'], 'receipt');
+        $pastReceipt = Shape::asArray($past['receipt'] ?? null, 'receipt');
+        $futureReceipt = Shape::asArray($future['receipt'] ?? null, 'receipt');
 
         self::assertSame(0, $past['status']);
         self::assertSame(0, $future['status']);
@@ -246,7 +246,7 @@ final class ClockTest extends TestCase
             self::fail('verifyReceipt escaped as ' . $e::class . ': ' . $e->getMessage());
         }
         self::assertFalse($result->verified());
-        self::assertSame(Reason::Malformed, $result->failure?->reason);
+        self::assertSame(Reason::Malformed, $result->failure->reason);
 
         $datelessJws = $pki->jws(['bundleId' => 'com.example.app', 'environment' => 'Sandbox']);
         try {
@@ -255,7 +255,7 @@ final class ClockTest extends TestCase
             self::fail('verifySignedData escaped as ' . $e::class . ': ' . $e->getMessage());
         }
         self::assertFalse($jwsResult->verified());
-        self::assertSame(Reason::Malformed, $jwsResult->failure?->reason);
+        self::assertSame(Reason::Malformed, $jwsResult->failure->reason);
 
         $requestJson = json_encode(['receipt-data' => base64_encode($pki->receipt())], JSON_THROW_ON_ERROR);
         try {

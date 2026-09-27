@@ -65,7 +65,7 @@ final class JwsSignatureTest extends TestCase
             $jws = $pki->jws(MintedPki::transactionClaims(), $third);
             $result = self::verifier()->verifySignedData($jws);
             self::assertFalse($result->verified(), $third);
-            self::assertSame(Reason::InvalidCertificate, $result->failure?->reason, $third);
+            self::assertSame(Reason::InvalidCertificate, $result->failure->reason, $third);
         }
     }
 
@@ -90,8 +90,8 @@ final class JwsSignatureTest extends TestCase
 
         $result = self::verifier()->verifySignedData($jws);
         self::assertFalse($result->verified());
-        self::assertSame(Reason::InvalidSignature, $result->failure?->reason);
-        self::assertStringContainsString('not EC', (string) $result->failure?->message);
+        self::assertSame(Reason::InvalidSignature, $result->failure->reason);
+        self::assertStringContainsString('not EC', $result->failure->message);
     }
 
     /** @return iterable<string, array{int}> */
@@ -112,7 +112,7 @@ final class JwsSignatureTest extends TestCase
 
         $result = self::verifier()->verifySignedData(implode('.', $parts));
         self::assertFalse($result->verified());
-        self::assertSame(Reason::InvalidSignature, $result->failure?->reason);
+        self::assertSame(Reason::InvalidSignature, $result->failure->reason);
     }
 
     /** No per-call mutation: one instance answers identically forever. */
@@ -130,7 +130,7 @@ final class JwsSignatureTest extends TestCase
         // Interleaving a failure must not poison the instance either.
         $failed = $verifier->verifySignedData('nope');
         self::assertFalse($failed->verified());
-        self::assertSame(Reason::Malformed, $failed->failure?->reason);
+        self::assertSame(Reason::Malformed, $failed->failure->reason);
         self::assertEquals($first->payload, $verifier->verifySignedData($jws)->payload);
     }
 
