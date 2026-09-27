@@ -267,9 +267,13 @@ exactly three elements, and a BOOLEAN only with exactly one content octet.
 In signedAttrs, `contentType` or `messageDigest` twice, or a `contentType`
 that differs from the eContentType, is `INVALID_SIGNATURE`.
 
-An embedded certificate that does not decode is fatal, and the reason
-depends on which one it is: the **signer** is `INVALID_CERTIFICATE`, any
-other entry `MALFORMED`, because the certificate bag is unsigned.
+An embedded certificate whose structure does not decode is fatal, and the
+reason depends on which one it is: the **signer** is `INVALID_CERTIFICATE`,
+any other entry `MALFORMED`, because the certificate bag is unsigned. A key
+the library cannot read is not a structural failure: a certificate's key is
+parsed only once a pinned root vouches for it, so a stranger carrying a key
+on an unimplemented curve is ignored and the receipt verifies (shared case
+`receipt/verify-with-a-stranger-whose-key-is-unreadable`).
 
 ### Stranger certificates
 
