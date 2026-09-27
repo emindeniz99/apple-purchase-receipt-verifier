@@ -602,6 +602,14 @@ Still worth filing as issues:
 
 ## Later / hardening
 
+- **Coverage reports with Codecov (owner, 2026-09-27).** Upload each
+  port's coverage from CI so a pull request shows which lines its tests
+  miss, across all nine ports in one place. The free Developer plan
+  allows unlimited uploads for a public repository
+  (<https://about.codecov.io/pricing/>, checked 2026-09-27). Needs a
+  coverage report per port in a format Codecov reads, an upload step
+  pinned by commit SHA with `contents: read` only, and a decision on
+  whether a coverage drop fails the check or only comments.
 - **Java signature checks, deferred (owner, 2026-09-27).** Java verifies
   each chain signature twice: once in the top-down walk that fixed the
   unauthenticated-key DoS (#161), once inside BouncyCastle's PKIX
