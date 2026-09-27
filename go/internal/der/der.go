@@ -26,11 +26,11 @@ import (
 )
 
 // MaxDepth is the deepest nesting Parse will follow. Real receipts nest
-// about six levels; 64 (docs/design/0.7-api.md, Bounds) leaves room to
-// spare while making a nesting bomb a rejection rather than a stack
-// overflow. 64 is accepted and 65 refused in every port (owner,
+// nine levels in the envelope; 32 (docs/design/0.7-api.md, Bounds) leaves
+// room to spare while making a nesting bomb a rejection rather than a stack
+// overflow. 32 is accepted and 33 refused in every port (owner,
 // 2026-09-27); it counts constructed values, the outermost one as 1.
-const MaxDepth = 64
+const MaxDepth = 32
 
 // maxNodes bounds the total TLVs one Parse may produce.
 //
