@@ -166,8 +166,8 @@ final class CertificateValidityClockTests: XCTestCase {
             for clock in clocks {
                 let verifier = try TestFixtures.verifier(roots: ["generated-0.7/receipt-expired-root.der"], clock: clock)
                 let response = verifier.verifyReceiptEndpoint(environment: .sandbox, requestJson: body)
-                XCTAssertTrue(
-                    response.hasPrefix(#"{"status":\#(expected)"#), "\(fixture) at clock \(clock): \(response.prefix(30))")
+                XCTAssertEqual(
+                    TestFixtures.status(response), expected, "\(fixture) at clock \(clock): \(response.prefix(30))")
             }
         }
     }

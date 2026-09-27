@@ -242,7 +242,7 @@ private func fieldMatches(_ actual: Any?, _ expected: Any) -> Bool {
 /// Deep equality over parsed JSON: objects by key in any order, arrays
 /// element by element, scalars as ``fieldMatches`` compares them (a boolean
 /// never equals a number, integers by their exact digits).
-private func sameJsonValue(_ actual: Any, _ expected: Any) -> Bool {
+func sameJsonValue(_ actual: Any, _ expected: Any) -> Bool {
     if let want = expected as? [String: Any] {
         guard let got = actual as? [String: Any], got.count == want.count else { return false }
         return want.allSatisfy { key, value in got[key].map { sameJsonValue($0, value) } ?? false }
@@ -403,11 +403,7 @@ final class ConformanceCasesTests: XCTestCase {
             throw HarnessError("input carries neither fixture nor requestBody")
         }
         let string = try vectors.receiptBase64String(fixture: fixtureId)
-        var out = ""
-        let json = JsonObjectWriter.open(into: { out += $0 })
-        json.string("receipt-data", string)
-        json.close()
-        return out
+        return jsonText(["receipt-data": string])
     }
 
     // MARK: assertions

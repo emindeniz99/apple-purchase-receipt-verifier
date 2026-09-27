@@ -102,7 +102,7 @@ final class VerifyReceiptResultTests: XCTestCase {
         var statuses: Set<Int> = []
         for (name, receiptData) in inputs {
             let result = verifier.verifyReceipt(base64: receiptData)
-            let body = #"{"receipt-data":"# + quoteJson(receiptData) + "}"
+            let body = jsonText(["receipt-data": receiptData])
             for environment in [Environment.production, .sandbox] {
                 let want = Self.status(result, environment)
                 let response = verifier.verifyReceiptEndpoint(environment: environment, requestJson: body)
