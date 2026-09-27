@@ -4,9 +4,11 @@
 //! None of them is behind a signature when it is read, so the reader is
 //! bounded ([`MAX_NESTING_DEPTH`], [`MAX_NUMBER_LENGTH`], [`MAX_NAME_LENGTH`])
 //! and allocates only what it keeps. It reads the first value, which must be
-//! an object, and stops at that object's closing brace: anything after it is
-//! not read, as the Java reference's streaming reader does not read it
-//! either. The grammar is strict RFC 8259 inside the object: no comments,
+//! an object. [`whole_object_members`] then allows only whitespace after it,
+//! the rule for a JWS header and payload; [`top_level_members`] stops at the
+//! object's closing brace and does not read the rest, the endpoint's rule for
+//! a request body, as Apple's endpoint does not read it either. The grammar
+//! is strict RFC 8259 inside the object: no comments,
 //! no trailing commas, no leading zeros or `+`, no `NaN`, no unescaped
 //! control characters, and only the escapes RFC 8259 defines.
 //!
@@ -64,30 +66,59 @@ pub(crate) fn top_level_members(text: &str) -> Result<Vec<(String, Value<'_>)>, 
         at: 0,
         depth: 0,
     };
+    reader.object_members()
+}
+
+/// As [`top_level_members`], but the object must be the whole document:
+/// only whitespace may follow it.
+///
+/// # Errors
+/// [`JsonError`] as [`top_level_members`], and for anything but whitespace
+/// after the object.
+pub(crate) fn whole_object_members(text: &str) -> Result<Vec<(String, Value<'_>)>, JsonError> {
+    let mut reader = Reader {
+        text,
+        bytes: text.as_bytes(),
+        at: 0,
+        depth: 0,
+    };
+    let members = reader.object_members()?;
     reader.skip_whitespace()?;
-    if reader.peek() != Some(b'{') {
-        return Err(JsonError("not a JSON object"));
+    if reader.peek().is_some() {
+        return Err(JsonError("content after the object"));
     }
-    reader.at += 1;
-    reader.enter()?;
-    let mut members = Vec::new();
-    reader.skip_whitespace()?;
-    if reader.peek() == Some(b'}') {
-        return Ok(members);
-    }
-    loop {
+    Ok(members)
+}
+
+impl<'a> Reader<'a> {
+    fn object_members(&mut self) -> Result<Vec<(String, Value<'a>)>, JsonError> {
+        let reader = self;
         reader.skip_whitespace()?;
-        let name = reader.name()?;
+        if reader.peek() != Some(b'{') {
+            return Err(JsonError("not a JSON object"));
+        }
+        reader.at += 1;
+        reader.enter()?;
+        let mut members = Vec::new();
         reader.skip_whitespace()?;
-        reader.expect(b':')?;
-        reader.skip_whitespace()?;
-        let value = reader.top_value()?;
-        members.push((name, value));
-        reader.skip_whitespace()?;
-        match reader.next_byte()? {
-            b',' => {}
-            b'}' => return Ok(members),
-            _ => return Err(JsonError("expected ',' or '}'")),
+        if reader.peek() == Some(b'}') {
+            reader.at += 1;
+            return Ok(members);
+        }
+        loop {
+            reader.skip_whitespace()?;
+            let name = reader.name()?;
+            reader.skip_whitespace()?;
+            reader.expect(b':')?;
+            reader.skip_whitespace()?;
+            let value = reader.top_value()?;
+            members.push((name, value));
+            reader.skip_whitespace()?;
+            match reader.next_byte()? {
+                b',' => {}
+                b'}' => return Ok(members),
+                _ => return Err(JsonError("expected ',' or '}'")),
+            }
         }
     }
 }
@@ -421,7 +452,7 @@ pub(crate) fn instant(text: &str, integer: bool) -> Option<i64> {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::{instant, top_level_members, Value, MAX_NESTING_DEPTH};
+    use super::{instant, top_level_members, whole_object_members, Value, MAX_NESTING_DEPTH};
 
     fn nested(depth: usize) -> String {
         format!(
@@ -447,6 +478,24 @@ mod tests {
     fn anything_after_the_object_is_not_read() {
         // As the Java reference: the object is read, what follows is not.
         assert_eq!(top_level_members("{} trailing").unwrap(), vec![]);
+    }
+
+    #[test]
+    fn a_whole_object_allows_only_whitespace_after_it() {
+        // The JWS rule: a header or payload with text after the object is
+        // not the object that was signed for.
+        assert_eq!(whole_object_members("{} \t\r\n").unwrap(), vec![]);
+        assert_eq!(whole_object_members(" {\"a\":1}").unwrap().len(), 1);
+        for text in [
+            "{} x",
+            "{}{}",
+            "{},",
+            "{\"a\":1}\u{0}",
+            "{}\u{a0}",
+            "\u{feff}{}",
+        ] {
+            assert!(whole_object_members(text).is_err(), "{text:?}");
+        }
     }
 
     #[test]

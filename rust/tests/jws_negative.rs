@@ -7,9 +7,9 @@
 
 mod common;
 
-use apple_purchase_receipt_verifier::__internal::base64_decode_lenient;
 use apple_purchase_receipt_verifier::__internal::x509::Certificate;
-use apple_purchase_receipt_verifier::{Config, Failure, Reason, Verifier};
+use apple_purchase_receipt_verifier::__internal::{base64_decode_lenient, base64_encode};
+use apple_purchase_receipt_verifier::{Config, Failure, Reason, TrustAnchor, Verifier};
 use serde_json::{json, Value};
 
 fn verifier() -> Verifier {
@@ -678,4 +678,88 @@ fn attacker_text_never_reaches_a_failure_message() {
             "{text:?}"
         );
     }
+}
+
+/// An EC SPKI on secp521r1, a curve this crate does not implement.
+fn p521_spki() -> Vec<u8> {
+    let mut bits = vec![0x00, 0x04];
+    bits.extend_from_slice(&[0x11; 132]);
+    common::der_seq(&[
+        common::der_seq(&[
+            common::der_oid("1.2.840.10045.2.1"),
+            common::der_oid("1.3.132.0.35"),
+        ]),
+        common::der(0x03, &bits),
+    ])
+}
+
+/// A curve is judged only on a key about to be used, after a pinned anchor
+/// vouched for it: never on the unused third entry, and on an intermediate
+/// no anchor signed it is the chain, not the certificate, that fails.
+#[test]
+fn an_unimplemented_curve_is_judged_only_on_a_vouched_key() {
+    let stranger = common::mint::key(9);
+    let p521 = |marker| {
+        base64_encode(&common::mint::certificate_for_spki(
+            "Stranger P-521",
+            p521_spki(),
+            "Stranger CA",
+            &stranger,
+            7,
+            true,
+            marker,
+        ))
+    };
+    // A minted chain whose third entry is on P-521, signed as it stands.
+    use common::mint::{certificate, key, RECEIPT_SIGNER_MARKER, WWDR_MARKER};
+    use p256::ecdsa::signature::Signer;
+    let (root_key, intermediate_key, leaf_key) = (key(11), key(12), key(13));
+    let root = certificate("JWS Root", &root_key, "JWS Root", &root_key, 1, true, None);
+    let intermediate = certificate(
+        "JWS WWDR",
+        &intermediate_key,
+        "JWS Root",
+        &root_key,
+        2,
+        true,
+        Some(WWDR_MARKER),
+    );
+    let leaf = certificate(
+        "JWS Leaf",
+        &leaf_key,
+        "JWS WWDR",
+        &intermediate_key,
+        3,
+        false,
+        Some(RECEIPT_SIGNER_MARKER),
+    );
+    let header = format!(
+        r#"{{"alg":"ES256","x5c":["{}","{}","{}"]}}"#,
+        base64_encode(&leaf),
+        base64_encode(&intermediate),
+        p521(None)
+    );
+    let signing_input = format!(
+        "{}.{}",
+        common::base64url(header.as_bytes()),
+        common::base64url(br#"{"signedDate":1735689600000}"#)
+    );
+    let signature: p256::ecdsa::Signature = leaf_key.sign(signing_input.as_bytes());
+    let minted = format!(
+        "{signing_input}.{}",
+        common::base64url(&signature.to_bytes())
+    );
+    let pinned = common::verifier([TrustAnchor::from_der(&root).unwrap()]);
+    assert!(pinned.verify_signed_data(&minted).is_ok());
+
+    // The shared transaction with an unvouched P-521 intermediate.
+    let jws = common::transaction_jws();
+    let mut header = common::jws_header(&jws);
+    let mut entries = header.get("x5c").unwrap().as_array().unwrap().clone();
+    entries[1] = json!(p521(Some(common::mint::WWDR_MARKER)));
+    header.insert("x5c".to_owned(), Value::Array(entries));
+    assert_eq!(
+        reason_of(&common::with_header(&jws, &header)),
+        Reason::UntrustedChain
+    );
 }

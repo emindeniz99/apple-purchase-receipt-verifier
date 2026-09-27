@@ -249,28 +249,50 @@ fn bundled_roots_are_parsed_once_and_shared() {
 }
 
 #[test]
-fn a_clock_that_panics_is_contained_as_internal_error() {
-    let verifier = Verifier::new(
-        Config::builder()
-            .roots([common::receipt_root()])
-            .clock(|| panic!("the caller's clock broke"))
-            .build()
-            .unwrap(),
-    );
-    let failure = verifier.verify_receipt("AAAA").unwrap_err();
-    assert_eq!(failure.reason(), Reason::InternalError);
-    assert!(
-        failure.message().contains("the caller's clock broke"),
-        "{failure}"
+fn the_clock_is_read_only_when_a_verdict_needs_it() {
+    // Input that fails its own checks never reaches the clock, and a clock
+    // that panics is the caller's defect: INTERNAL_ERROR with a fixed
+    // message, never the panic's own text.
+    let clock_panics = |root: TrustAnchor| {
+        Verifier::new(
+            Config::builder()
+                .roots([root])
+                .clock(|| panic!("the caller's clock broke"))
+                .build()
+                .unwrap(),
+        )
+    };
+    let verifier = clock_panics(common::receipt_root());
+    assert_eq!(
+        verifier.verify_receipt("AAAA").unwrap_err().reason(),
+        Reason::Malformed
     );
     assert_eq!(
         verifier.verify_signed_data("a.b.c").unwrap_err().reason(),
-        Reason::InternalError
+        Reason::Malformed
     );
     assert_eq!(
         verifier.verify_receipt_endpoint(Environment::Sandbox, "{}"),
+        "{\"status\":21002}"
+    );
+    // A receipt that states its creation date needs no clock to verify.
+    let dated = base64_encode(&common::receipt_der());
+    assert!(verifier.verify_receipt(&dated).is_ok());
+    // The endpoint's request_date does.
+    let body = format!("{{\"receipt-data\":\"{dated}\"}}");
+    assert_eq!(
+        verifier.verify_receipt_endpoint(Environment::Sandbox, &body),
         "{\"status\":21009}"
     );
+
+    let dateless = base64_encode(&common::read_fixture(
+        "generated-0.7/receipt-no-creation-date.der",
+    ));
+    let failure = clock_panics(common::anchor("generated-0.7/divergence-receipt-root.der"))
+        .verify_receipt(&dateless)
+        .unwrap_err();
+    assert_eq!(failure.reason(), Reason::InternalError);
+    assert_eq!(failure.message(), "the configured clock panicked");
 }
 
 #[test]

@@ -14,7 +14,7 @@
 //! certificates' validity windows checked, where a certificate outside its
 //! window at `at_millis` is `INVALID_CERTIFICATE` (owner, 2026-09-27).
 
-use crate::crypto::verify_certificate_signature;
+use crate::crypto::{has_unimplemented_curve, verify_certificate_signature};
 use crate::error::{Failure, Reason};
 use crate::roots::TrustAnchor;
 use crate::x509::{Certificate, KEY_CERT_SIGN_BIT};
@@ -81,7 +81,9 @@ fn issued_by_any_anchor(cert: &Certificate, anchors: &[TrustAnchor]) -> bool {
 ///
 /// # Errors
 /// `UNTRUSTED_CHAIN` for a broken link or an intermediate that is not a CA,
-/// `INVALID_CERTIFICATE` for a certificate outside its validity window.
+/// `INVALID_CERTIFICATE` for a certificate outside its validity window, or
+/// a vouched-for intermediate whose EC key is on a curve this crate does
+/// not implement.
 pub fn validate_pair(
     leaf: &Certificate,
     intermediate: &Certificate,
@@ -90,6 +92,14 @@ pub fn validate_pair(
 ) -> Result<(), Failure> {
     if !issued_by_any_anchor(intermediate, anchors) {
         return Err(untrusted("intermediate is not issued by a pinned root"));
+    }
+    // Vouched for, and its key is about to check the leaf: a curve this
+    // crate does not implement is the certificate's defect.
+    if has_unimplemented_curve(intermediate) {
+        return Err(Failure::new(
+            Reason::InvalidCertificate,
+            "x5c entry uses an unimplemented elliptic curve",
+        ));
     }
     if !issued_by(leaf, intermediate) {
         return Err(untrusted("leaf is not issued by the intermediate"));

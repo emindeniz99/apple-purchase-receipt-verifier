@@ -11,10 +11,11 @@
 
 use crate::base64::{decode_base64url_strict, decode_receipt_base64};
 use crate::chain::validate_pair;
-use crate::crypto::{curve_field_size, record_key_use, verify_es256};
+use crate::crypto::{has_unimplemented_curve, record_key_use, verify_es256};
 use crate::error::{Failure, Reason};
-use crate::json::{instant, top_level_members, JsonError, Value};
+use crate::json::{instant, whole_object_members, JsonError, Value};
 use crate::roots::TrustAnchor;
+use crate::verifier::{self, Clock, Stage};
 use crate::x509::{Certificate, OID_EC_PUBLIC_KEY};
 use core::fmt;
 
@@ -106,14 +107,14 @@ impl std::error::Error for Unreadable {
 /// that is not a JSON object, an `alg` other than ES256, an `x5c` that is not
 /// three strings. A payload that does not parse as a JSON object is not
 /// reported there: it is carried past the chain and signature checks with
-/// `now_millis` standing in for its signing date, and fails as
+/// the clock standing in for its signing date, and fails as
 /// `INVALID_SIGNATURE` if the signature does not verify, `UNREADABLE_PAYLOAD`
 /// if it does. Nothing unverified gets to decide which of the two a caller
 /// sees.
 pub(crate) fn verify(
     jws: &str,
     anchors: &[TrustAnchor],
-    now_millis: i64,
+    clock: &Clock<'_>,
 ) -> Result<JsonPayload, Failure> {
     if jws.is_empty() {
         return Err(malformed("jws is empty"));
@@ -171,13 +172,18 @@ pub(crate) fn verify(
     // Chain validity is judged at the payload's signing date, so a payload
     // signed with a since-rotated certificate keeps verifying.
     let signed_date = payload.as_ref().ok().and_then(|(_, date)| *date);
-    validate_pair(
-        &leaf,
-        &intermediate,
-        anchors,
-        signed_date.unwrap_or(now_millis),
-    )?;
+    let at_millis = match signed_date {
+        Some(millis) => millis,
+        None => clock.now()?,
+    };
+    validate_pair(&leaf, &intermediate, anchors, at_millis)?;
+    if has_unimplemented_curve(&leaf) {
+        return Err(invalid_certificate(
+            "x5c entry uses an unimplemented elliptic curve",
+        ));
+    }
     verify_signature(&leaf, header_b64, payload_b64, &signature)?;
+    verifier::enter(Stage::AfterSignature);
     match payload {
         Ok((json, _)) => Ok(JsonPayload { json }),
         Err(err) => Err(Failure::new(
@@ -190,13 +196,13 @@ pub(crate) fn verify(
 
 /// The last `alg` string and the last `x5c` array of strings, as a map
 /// would keep them. The header is outer structure, so anything that stops
-/// the read is `MALFORMED`.
+/// the read is `MALFORMED`: bytes that are not strict UTF-8, a byte order
+/// mark (RFC 8259 section 8.1 forbids one), and anything but whitespace
+/// after the object.
 fn read_header(bytes: &[u8]) -> Result<(Option<String>, Option<Vec<String>>), Failure> {
-    // A UTF-8 byte order mark is skipped, as a byte-oriented JSON reader
-    // skips one.
-    let bytes = bytes.strip_prefix(b"\xef\xbb\xbf").unwrap_or(bytes);
     let text = core::str::from_utf8(bytes).map_err(|_| malformed("header is not UTF-8"))?;
-    let members = top_level_members(text).map_err(|_| malformed("header is not a JSON object"))?;
+    let members =
+        whole_object_members(text).map_err(|_| malformed("header is not a JSON object"))?;
     let mut alg = None;
     let mut x5c = None;
     for (name, value) in members {
@@ -227,7 +233,7 @@ fn read_header(bytes: &[u8]) -> Result<(Option<String>, Option<Vec<String>>), Fa
 /// 2026-09-27).
 fn read_payload(bytes: &[u8]) -> Result<(String, Option<i64>), Unreadable> {
     let text = core::str::from_utf8(bytes).map_err(Unreadable::NotUtf8)?;
-    let members = top_level_members(text).map_err(Unreadable::NotAnObject)?;
+    let members = whole_object_members(text).map_err(Unreadable::NotAnObject)?;
     let mut signed_date = None;
     for (name, value) in members {
         if name == "signedDate" {
@@ -277,22 +283,42 @@ pub(crate) fn decode_x5c_entry(text: &str) -> Result<Vec<u8>, Failure> {
     decode_receipt_base64(text).ok_or_else(|| invalid_certificate("x5c entry is not valid base64"))
 }
 
-/// An EC key on a curve this crate does not implement is a defect of the
-/// certificate, not of the path it sits on: there is no key to check an
-/// issuance against.
+/// Only whether the entry IS a certificate. Its key is judged when it is
+/// about to be used, once a pinned anchor has vouched for it: the curve of
+/// the intermediate in [`validate_pair`], the leaf's before ES256, and the
+/// third entry's never.
 fn parse_x5c_certificate(entry: &str) -> Result<Certificate, Failure> {
     let der = decode_x5c_entry(entry)?;
-    let certificate = Certificate::from_der(&der)
-        .map_err(|_| invalid_certificate("x5c entry is not a valid certificate"))?;
-    if certificate.public_key_algorithm_oid() == OID_EC_PUBLIC_KEY
-        && certificate
-            .public_key_curve_oid()
-            .and_then(curve_field_size)
-            .is_none()
-    {
-        return Err(invalid_certificate(
-            "x5c entry uses an unimplemented elliptic curve",
+    Certificate::from_der(&der)
+        .map_err(|_| invalid_certificate("x5c entry is not a valid certificate"))
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::{read_header, read_payload, Unreadable};
+    use crate::Reason;
+
+    #[test]
+    fn a_header_with_a_byte_order_mark_or_trailing_text_is_malformed() {
+        let header = br#"{"alg":"ES256"}"#;
+        assert_eq!(read_header(header).unwrap().0.as_deref(), Some("ES256"));
+        assert!(read_header(b"{\"alg\":\"ES256\"}\n ").is_ok());
+        let bom = [b"\xef\xbb\xbf".as_slice(), header].concat();
+        let trailing = [header.as_slice(), b" x"].concat();
+        let not_utf8 = [header.as_slice(), b" \xff"].concat();
+        for bytes in [bom, trailing, not_utf8] {
+            let failure = read_header(&bytes).unwrap_err();
+            assert_eq!(failure.reason(), Reason::Malformed, "{bytes:?}");
+        }
+    }
+
+    #[test]
+    fn a_payload_with_trailing_text_is_unreadable() {
+        assert!(read_payload(b"{\"signedDate\":1} \r\n").is_ok());
+        assert!(matches!(
+            read_payload(b"{\"signedDate\":1} {}"),
+            Err(Unreadable::NotAnObject(_))
         ));
     }
-    Ok(certificate)
 }

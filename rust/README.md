@@ -150,7 +150,7 @@ parse `failure.message()`.
 | `InvalidCertificate` | `INVALID_CERTIFICATE` | a certificate does not decode, or is outside its validity window at the chain instant | 21003 |
 | `InvalidCertificatePurpose` | `INVALID_CERTIFICATE_PURPOSE` | a certificate lacks Apple's marker OID for its place | 21003 |
 | `UnreadablePayload` | `UNREADABLE_PAYLOAD` | the chain and signature passed, but the signed content does not parse | 21009 |
-| `InternalError` | `INTERNAL_ERROR` | the library failed (a contained panic); no input makes a correct library answer it | 21009 |
+| `InternalError` | `INTERNAL_ERROR` | the library failed (a contained panic after the signature), or the configured clock panicked; no input makes a correct library answer it | 21009 |
 
 `UNREADABLE_PAYLOAD` and `INTERNAL_ERROR` are not the client's fault: alert,
 log the failure with `VERSION`, and reconcile the purchase through the App
@@ -184,7 +184,8 @@ into different byte strings that carry the same signed content.
 
 ## The clock
 
-`Config`'s clock is read once per call, in two places:
+`Config`'s clock is read at most once per call, and only when one of these
+needs it, after the input has passed every check that comes before:
 
 - **the certificate-validity instant, when the input states no usable date
   of its own**: a receipt whose creation date (attribute 12) is missing or
@@ -193,30 +194,37 @@ into different byte strings that carry the same signed content.
 - **`request_date`** in the endpoint's response.
 
 A certificate outside its validity window at that instant is
-`INVALID_CERTIFICATE`. A clock that panics is contained as `INTERNAL_ERROR`.
+`INVALID_CERTIFICATE`. A clock that panics is contained as `INTERNAL_ERROR`
+(21009 at the endpoint), with a fixed message.
 
 ## What the checks are, and in what order
 
 The order is observable and is part of the contract: an input that fails an
 early check reports that check's reason, not a later one.
 
-**JWS.** Size cap → three segments, each strict base64url → header JSON,
+**JWS.** Size cap → three segments, each strict base64url → header JSON
+(strict UTF-8, no byte order mark, nothing but whitespace after the object),
 `alg` ES256 and exactly three `x5c` entries → the certificates decode →
 **leaf marker OID** `1.2.840.113635.100.6.11.1` → **intermediate marker
 OID** `1.2.840.113635.100.6.2.1` → the chain at `signedDate` (or the clock),
 the intermediate checked against the pinned roots **before** the leaf is
-checked against the intermediate → ES256 signature. The payload is read
-before the chain, for `signedDate`, but a payload that does not parse is
+checked against the intermediate, and each one's key refused as
+`INVALID_CERTIFICATE` if it is on a curve this crate does not implement,
+only once it has been vouched for and is about to be used → ES256
+signature. The payload is read before the chain, for `signedDate`, but a
+payload that does not parse (text after the object included) is
 reported only after the signature: `UNREADABLE_PAYLOAD` if the signature
 holds, `INVALID_SIGNATURE` if not, so nothing unsigned decides which a
 caller sees.
 
-**Receipt.** Size cap → strict base64 → CMS parse → at most four
+**Receipt.** Size cap → strict base64 → CMS parse, including the syntax of
+every `SignerInfo`'s `signedAttrs`, whatever its position → at most four
 `SignerInfo`s and ten embedded certificates → the creation date alone
 (nothing else in the payload is read yet) → for each `SignerInfo`: the
 signer's certificate → the chain, top-down from the pinned roots, at the
 creation date or the clock → **signer marker OID** → **WWDR marker OID on the
-intermediate** → the CMS signature. One `SignerInfo` passing is enough; when
+intermediate** → the signer's key on a curve this crate implements → the
+CMS signature. One `SignerInfo` passing is enough; when
 none does, the first one's failure is the verdict. Then the full payload
 parse, where any failure is `UNREADABLE_PAYLOAD`.
 
@@ -225,7 +233,15 @@ PKCS#1 v1.5, RSA-PSS or ECDSA on P-256 and P-384, over MD5, SHA-1 or the
 SHA-2 family. A signer that chains to a pinned root and carries Apple's
 marker is trusted whatever it signs with, so a change on Apple's side does
 not reject genuine receipts. The same goes for certificate signatures in the
-chain.
+chain. A `signatureAlgorithm` that names a hash (`sha256WithRSAEncryption`,
+`ecdsa-with-SHA384`, the RSA-PSS parameters) must name the `SignerInfo`'s
+`digestAlgorithm`, or the signature is `INVALID_SIGNATURE`;
+`rsaEncryption` and `id-ecPublicKey` name none and take the digest.
+
+The bundled roots are checked against their published SHA-256 fingerprints
+when they load, all three or none; `Config::builder().build()` refuses an
+empty set, and a `Verifier` from `Config::defaults()` without them answers
+`INTERNAL_ERROR`.
 
 `x5c[2]` is never compared to an anchor and never trusted, and neither is a
 receipt's embedded copy of its root: the chain terminates at an anchor the
@@ -274,8 +290,13 @@ are standard base64, JWS segments unpadded canonical base64url, so one
 signed payload has one accepted spelling.
 
 The library target additionally denies `unwrap`, `expect`, slice indexing
-and `panic!` at compile time, and every public method contains a panic as
-`INTERNAL_ERROR` (21009 at the endpoint).
+and `panic!` at compile time, and every public method contains a panic by
+where it happened, with a fixed message that never carries the panic's text:
+before a signature has verified it is `MALFORMED` (21002), as input nobody
+vouched for must not be able to raise the internal-error alarm at will;
+while the signed receipt payload is decoded it is `UNREADABLE_PAYLOAD`;
+after that it is `INTERNAL_ERROR` (21009). Containment needs unwinding: a
+binary built with `panic = "abort"` ends the process on a panic instead.
 
 ## The endpoint
 

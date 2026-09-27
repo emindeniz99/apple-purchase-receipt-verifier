@@ -87,7 +87,8 @@ pub const MISSING_MESSAGE_DIGEST: Asn1Error =
 /// # Errors
 /// [`Asn1Error`] for anything that is not a `SignedData` carrying content
 /// and at least one readable `SignerInfo`, including trailing bytes after
-/// the outer value, which [`parse_exact`] refuses.
+/// the outer value, which [`parse_exact`] refuses, and a `signedAttrs` in
+/// any `SignerInfo` that is not an attribute set.
 pub fn parse_cms(der: &[u8]) -> Result<ParsedCms, Asn1Error> {
     let content_info = parse_exact(der)?;
     if content_info.tag != tag::SEQUENCE {
@@ -159,7 +160,17 @@ fn parse_signer_info(node: &Tlv<'_>) -> Result<CmsSignerInfo, Asn1Error> {
     let mut index = 3;
     let mut signed_attrs = None;
     if fields.get(index).ok_or(BAD)?.tag == tag::CONTEXT_0 {
-        signed_attrs = Some(fields.get(index).ok_or(BAD)?.full.to_vec());
+        let attrs = fields.get(index).ok_or(BAD)?.full;
+        // The syntax of every SignerInfo's set is judged here, before any
+        // key is used, so a broken one is MALFORMED whichever position it
+        // holds; a well-formed set lacking a mandatory attribute is left to
+        // the signature check, as INVALID_SIGNATURE for that signer.
+        match find_message_digest_attribute(attrs) {
+            Ok(_) => {}
+            Err(err) if err == MISSING_CONTENT_TYPE || err == MISSING_MESSAGE_DIGEST => {}
+            Err(err) => return Err(err),
+        }
+        signed_attrs = Some(attrs.to_vec());
         index += 1;
     }
     // The digest drives the hash, except for an algorithm whose parameters

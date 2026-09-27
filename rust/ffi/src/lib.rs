@@ -362,9 +362,9 @@ pub extern "C" fn aprv_version() -> *const c_char {
 ///   clock on every call. A pointer rather than a sentinel value, because
 ///   every `int64_t` names a real instant.
 ///
-/// The clock is read once per call, in two places: the certificate-validity
-/// instant when the input states no usable signing date, and the endpoint's
-/// `request_date`. No payload is rejected for its age.
+/// The clock is read at most once per call, and only for one of two things:
+/// the certificate-validity instant when the input states no usable signing
+/// date, and the endpoint's `request_date`. No payload is rejected for its age.
 ///
 /// Returns `NULL` if any argument is rejected. The handle is owned by the
 /// caller and must be released with [`aprv_verifier_free`].

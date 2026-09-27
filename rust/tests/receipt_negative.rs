@@ -576,3 +576,59 @@ fn signed_attrs_without_content_type_or_message_digest_are_refused() {
         );
     }
 }
+
+/// A `signedAttrs` that is not an attribute set is a broken structure in
+/// whichever `SignerInfo` carries it: `MALFORMED`, judged before any key is
+/// used, so the verdict does not depend on whether a genuine `SignerInfo`
+/// comes first and would otherwise have verified.
+#[test]
+fn a_broken_signed_attrs_set_is_malformed_in_either_signer_position() {
+    let genuine = common::CmsBuilder::from_shared();
+    let mut broken = common::CmsBuilder::from_shared();
+    // An attribute whose values are not a SET.
+    broken.signed_attrs = Some(common::der(
+        tag::CONTEXT_0,
+        &common::der_seq(&[common::der_oid("1.2.840.113549.1.9.3"), common::der_int(1)]),
+    ));
+    let broken = broken.signer_info();
+
+    let mut broken_second = common::CmsBuilder::from_shared();
+    broken_second.signer_infos_after = vec![broken.clone()];
+    let mut broken_first = common::CmsBuilder::from_shared();
+    broken_first.signer_infos_before = vec![broken];
+    // The control: the genuine SignerInfo alone verifies.
+    assert!(verifier().verify(&genuine.build()).is_ok());
+    for blob in [broken_second.build(), broken_first.build()] {
+        assert_eq!(reason_of(&blob), Reason::Malformed);
+    }
+}
+
+/// A signer on a curve this crate does not implement is refused as a
+/// certificate only once the chain vouched for it. Issued by nobody pinned,
+/// its curve is nobody's business: `UNTRUSTED_CHAIN`.
+#[test]
+fn an_unvouched_signer_on_an_unimplemented_curve_is_an_untrusted_chain() {
+    let mut bits = vec![0x00, 0x04];
+    bits.extend_from_slice(&[0x11; 132]);
+    let p521_spki = common::der_seq(&[
+        common::der_seq(&[
+            common::der_oid("1.2.840.10045.2.1"),
+            common::der_oid("1.3.132.0.35"),
+        ]),
+        common::der(tag::BIT_STRING, &bits),
+    ]);
+    let signer = common::mint::certificate_for_spki(
+        "Stranger P-521",
+        p521_spki,
+        "Stranger CA",
+        &common::mint::key(9),
+        7,
+        false,
+        Some(common::mint::RECEIPT_SIGNER_MARKER),
+    );
+    let mut builder = common::CmsBuilder::from_shared();
+    builder.certificates = vec![signer];
+    builder.signer_issuer = common::mint::name("Stranger CA");
+    builder.signer_serial = vec![7];
+    assert_eq!(reason_of(&builder.build()), Reason::UntrustedChain);
+}

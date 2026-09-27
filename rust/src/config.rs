@@ -13,9 +13,9 @@ pub(crate) type ClockFn = dyn Fn() -> i64 + Send + Sync;
 /// Immutable verifier configuration.
 ///
 /// The clock answers "what time is it now?" and nothing else. The library
-/// reads it once per call, and uses it in two places: the certificate
-/// validity check when the receipt or JWS carries no usable signing date,
-/// and `request_date` in the endpoint response. A clock must be safe to call
+/// reads it at most once per call, and only for one of two things: the
+/// certificate validity check when the receipt or JWS carries no usable
+/// signing date, and `request_date` in the endpoint response. A clock must be safe to call
 /// from several threads.
 #[derive(Clone)]
 pub struct Config {
@@ -25,6 +25,12 @@ pub struct Config {
 
 impl Config {
     /// Apple's three pinned roots and the system clock.
+    ///
+    /// The bundled roots load all together or not at all, each checked
+    /// against its published SHA-256. Should they not load, this cannot say
+    /// so: a [`Verifier`](crate::Verifier) built from it then answers
+    /// `INTERNAL_ERROR` to every call, where
+    /// [`ConfigBuilder::build`] returns a [`ConfigError`].
     #[must_use]
     pub fn defaults() -> Config {
         Config {

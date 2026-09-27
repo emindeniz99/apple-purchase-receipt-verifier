@@ -15,6 +15,7 @@ use crate::json::{top_level_members, Value};
 use crate::receipt;
 use crate::receipt_payload::{InAppPurchase, Object, ReceiptPayload};
 use crate::roots::TrustAnchor;
+use crate::verifier::Clock;
 
 /// The status codes Apple documents for `verifyReceipt`, so callers do not
 /// write `21007` by hand.
@@ -71,10 +72,10 @@ pub(crate) fn respond(
     environment: Environment,
     request_json: &str,
     anchors: &[TrustAnchor],
-    now_millis: i64,
+    clock: &Clock<'_>,
 ) -> String {
     let verified =
-        receipt_data(request_json).and_then(|data| receipt::verify(&data, anchors, now_millis));
+        receipt_data(request_json).and_then(|data| receipt::verify(&data, anchors, clock));
     match verified {
         Ok(payload) => {
             let production = Environment::from_receipt_type(payload.receipt_type.as_deref())
@@ -87,7 +88,10 @@ pub(crate) fn respond(
                 _ => AppleStatus::OK,
             };
             if status == AppleStatus::OK {
-                render(environment, &payload, now_millis)
+                match clock.now() {
+                    Ok(now_millis) => render(environment, &payload, now_millis),
+                    Err(failure) => status_only(self::status(failure.reason())),
+                }
             } else {
                 status_only(status)
             }

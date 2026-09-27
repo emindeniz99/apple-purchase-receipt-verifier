@@ -38,6 +38,9 @@ const ECDSA_WITH_SHA224: &str = "1.2.840.10045.4.3.1";
 const RSASSA_PSS: &str = "1.2.840.113549.1.1.10";
 const MGF1: &str = "1.2.840.113549.1.1.8";
 const MD5: &str = "1.2.840.113549.2.5";
+/// `id-ecPublicKey` as a `signatureAlgorithm`: names no hash, so the
+/// `SignerInfo`'s digest is the one checked.
+const ID_EC_PUBLIC_KEY: &str = "1.2.840.10045.2.1";
 const SHA3_256: &str = "2.16.840.1.101.3.4.2.8";
 const SHA512: &str = "2.16.840.1.101.3.4.2.3";
 const NOW: i64 = 1_735_689_600_000;
@@ -187,7 +190,7 @@ fn an_md5_digest_under_the_pinned_root_verifies() {
     // signature and a collision.
     let pki = pki();
     let signature = sign_prehash(&pki.signer_key, &md5::Md5::digest(content()));
-    let der = receipt(&pki, MD5, ECDSA_WITH_SHA256, &signature);
+    let der = receipt(&pki, MD5, ID_EC_PUBLIC_KEY, &signature);
     assert!(common::verify_der(&pki.verifier, &der).is_ok());
 }
 
@@ -197,9 +200,28 @@ fn a_digest_the_crate_does_not_implement_is_an_invalid_signature() {
     // it cannot be checked and fails as a signature.
     let pki = pki();
     let signature: DerSignature = pki.signer_key.sign(&content());
-    let der = receipt(&pki, SHA3_256, ECDSA_WITH_SHA256, signature.as_bytes());
+    let der = receipt(&pki, SHA3_256, ID_EC_PUBLIC_KEY, signature.as_bytes());
     let failure = common::verify_der(&pki.verifier, &der).unwrap_err();
     assert_eq!(failure.reason(), Reason::InvalidSignature, "{failure}");
+}
+
+#[test]
+fn a_signature_algorithm_that_names_another_hash_than_the_digest_is_an_invalid_signature() {
+    // One genuine signature over SHA-256. Labelled with the hash it was made
+    // with, or with a key-type OID that names none, it verifies; labelled
+    // with any other hash it is not the signature the label describes, even
+    // though the key would verify it over the SignerInfo's digest.
+    let pki = pki();
+    let signature: DerSignature = pki.signer_key.sign(&content());
+    for label in [ECDSA_WITH_SHA256, ID_EC_PUBLIC_KEY] {
+        let der = receipt(&pki, SHA256, label, signature.as_bytes());
+        assert!(common::verify_der(&pki.verifier, &der).is_ok(), "{label}");
+    }
+    for label in [ECDSA_WITH_SHA224, ECDSA_WITH_SHA384, ECDSA_WITH_SHA512] {
+        let der = receipt(&pki, SHA256, label, signature.as_bytes());
+        let failure = common::verify_der(&pki.verifier, &der).unwrap_err();
+        assert_eq!(failure.reason(), Reason::InvalidSignature, "{label}");
+    }
 }
 
 // --- RSASSA-PSS ------------------------------------------------------------

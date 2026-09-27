@@ -91,6 +91,14 @@ enum Scheme {
     Ecdsa(DigestAlgorithm),
 }
 
+impl Scheme {
+    const fn digest(self) -> DigestAlgorithm {
+        match self {
+            Scheme::Pkcs1(digest) | Scheme::Pss(digest, _) | Scheme::Ecdsa(digest) => digest,
+        }
+    }
+}
+
 const OID_RSASSA_PSS: &str = "1.2.840.113549.1.1.10";
 const OID_MGF1: &str = "1.2.840.113549.1.1.8";
 
@@ -187,16 +195,29 @@ fn small_integer(node: &Tlv<'_>) -> Option<usize> {
 /// The curves this crate verifies under, and their field size in bytes.
 ///
 /// P-256 carries every App Store JWS leaf; P-384 carries Apple Root CA - G3.
-/// A key on any other curve fails closed everywhere it is reached. On the
-/// JWS path it is reached first by `parse_x5c_certificate`, which refuses
-/// the certificate outright (`INVALID_CERTIFICATE`); elsewhere the signature
-/// simply does not verify and the chain through it is `UNTRUSTED_CHAIN`.
+/// A key on any other curve fails closed everywhere it is reached. A
+/// certificate a pinned anchor has vouched for, whose key is about to be
+/// used (the JWS intermediate and leaf, the receipt signer), is refused
+/// outright (`INVALID_CERTIFICATE`, see [`has_unimplemented_curve`]);
+/// elsewhere the signature simply does not verify and the chain through it
+/// is `UNTRUSTED_CHAIN`.
 pub(crate) fn curve_field_size(oid: &str) -> Option<usize> {
     match oid {
         "1.2.840.10045.3.1.7" => Some(32), // prime256v1 / P-256
         "1.3.132.0.34" => Some(48),        // secp384r1 / P-384
         _ => None,
     }
+}
+
+/// Whether `certificate` carries an EC key on a curve this crate does not
+/// implement: a defect of the certificate, as there is no key to check a
+/// signature with. Asked only of a certificate the chain has vouched for.
+pub(crate) fn has_unimplemented_curve(certificate: &Certificate) -> bool {
+    certificate.public_key_algorithm_oid() == OID_EC_PUBLIC_KEY
+        && certificate
+            .public_key_curve_oid()
+            .and_then(curve_field_size)
+            .is_none()
 }
 
 fn rsa_public_key(spki_bits: &[u8]) -> Option<RsaPublicKey> {
@@ -346,6 +367,13 @@ pub fn verify_certificate_signature(cert: &Certificate, issuer: &Certificate) ->
 /// ECDSA for a key on a curve this crate implements, with the
 /// `SignerInfo`'s digest. Any other key, or any malformed signature, is a
 /// `false`.
+///
+/// A `signatureAlgorithm` that names a hash (`sha256WithRSAEncryption`,
+/// `ecdsa-with-SHA384`, the PSS parameters) must name the `SignerInfo`'s
+/// digest, or the signature is a `false`: a label that disagrees with what
+/// was hashed is not one signature under two names. `rsaEncryption`,
+/// `id-ecPublicKey` and OIDs this crate does not know name no hash and take
+/// the digest.
 #[must_use]
 pub fn verify_signer_signature(
     signer: &Certificate,
@@ -354,11 +382,16 @@ pub fn verify_signer_signature(
     signature: &[u8],
     data: &[u8],
 ) -> bool {
-    let scheme = match signature_algorithm {
-        (OID_RSASSA_PSS, params) => match params.and_then(pss_scheme) {
-            Some(scheme) => scheme,
-            None => return false,
-        },
+    let (oid, params) = signature_algorithm;
+    let named = certificate_signature_scheme(oid, params);
+    if oid == OID_RSASSA_PSS && named.is_none() {
+        return false;
+    }
+    if named.is_some_and(|scheme| scheme.digest() != digest) {
+        return false;
+    }
+    let scheme = match named {
+        Some(scheme @ Scheme::Pss(..)) => scheme,
         _ => match signer.public_key_algorithm_oid() {
             OID_RSA_ENCRYPTION => Scheme::Pkcs1(digest),
             OID_EC_PUBLIC_KEY => Scheme::Ecdsa(digest),

@@ -261,8 +261,11 @@ fn the_response_is_byte_stable_for_the_same_call() {
     }
 }
 
+/// At most once per call, and only when a verdict needs it: the endpoint's
+/// request_date does, a receipt that states its creation date does not, and
+/// input that fails its own checks never gets that far.
 #[test]
-fn the_clock_is_read_once_per_call() {
+fn the_clock_is_read_at_most_once_per_call_and_only_when_needed() {
     let reads = Arc::new(AtomicUsize::new(0));
     let counter = Arc::clone(&reads);
     let verifier = Verifier::new(
@@ -279,7 +282,8 @@ fn the_clock_is_read_once_per_call() {
     let _ = verifier.verify_receipt_endpoint(Environment::Sandbox, &body(&receipt));
     assert_eq!(reads.load(Ordering::SeqCst), 1);
     verifier.verify_receipt(&receipt).unwrap();
-    assert_eq!(reads.load(Ordering::SeqCst), 2);
+    assert_eq!(reads.load(Ordering::SeqCst), 1);
     verifier.verify_signed_data("a.b.c").unwrap_err();
-    assert_eq!(reads.load(Ordering::SeqCst), 3);
+    verifier.verify_receipt("AAAA").unwrap_err();
+    assert_eq!(reads.load(Ordering::SeqCst), 1);
 }

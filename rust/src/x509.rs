@@ -398,6 +398,12 @@ fn parse_certificate(der: &[u8]) -> Result<Certificate, Asn1Error> {
     if signature_node.tag != tag::BIT_STRING || signature_node.contents.len() < 2 {
         return Err(Asn1Error("unexpected signatureValue layout"));
     }
+    // Every signature algorithm here produces whole octets, so a
+    // signatureValue with unused bits is not one: refused as the Java
+    // reference's certificate decoder refuses it.
+    if signature_node.contents.first() != Some(&0) {
+        return Err(Asn1Error("signatureValue is not octet-aligned"));
+    }
 
     let mut extensions: Option<&Tlv<'_>> = None;
     for field in fields {
@@ -495,4 +501,24 @@ fn parse_certificate(der: &[u8]) -> Result<Certificate, Asn1Error> {
         authority_cert_serial,
         extension_oids,
     })
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
+mod tests {
+    use super::Certificate;
+    use crate::asn1::parse_exact;
+
+    #[test]
+    fn a_signature_value_with_unused_bits_does_not_decode() {
+        let genuine: &[u8] = include_bytes!("../certs/AppleRootCA-G3.cer");
+        assert!(Certificate::from_der(genuine).is_ok());
+        // signatureValue is the last field, so its unused-bits octet sits
+        // exactly its contents' length from the end.
+        let outer = parse_exact(genuine).unwrap();
+        let signature_contents = outer.children().last().unwrap().contents.len();
+        let mut unaligned = genuine.to_vec();
+        unaligned[genuine.len() - signature_contents] = 1;
+        assert!(Certificate::from_der(&unaligned).is_err());
+    }
 }

@@ -107,6 +107,7 @@ bool top_level_value(const std::string &json, const std::string &key, std::strin
   bool in_string = false;
   bool escaped = false;
   size_t index = 0;
+  bool found = false;
   const std::string quoted = "\"" + key + "\"";
 
   while (index < json.size()) {
@@ -170,8 +171,11 @@ bool top_level_value(const std::string &json, const std::string &key, std::strin
             if (v == ',' && value_depth == 0) break;
             cursor += 1;
           }
+          // A duplicate member: the last one wins, as JSON.parse reads it.
           out = json.substr(start, cursor - start);
-          return true;
+          found = true;
+          index = cursor;
+          continue;
         }
       }
       in_string = true;
@@ -182,7 +186,7 @@ bool top_level_value(const std::string &json, const std::string &key, std::strin
     if (c == '}' || c == ']') depth -= 1;
     index += 1;
   }
-  return false;
+  return found;
 }
 
 // The unescaped contents of a JSON string token, or `false` if the token is

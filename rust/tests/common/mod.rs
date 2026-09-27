@@ -428,6 +428,9 @@ pub struct CmsBuilder {
     pub signer_info_copies: usize,
     /// The `SignerInfo`'s `signatureAlgorithm` TLV.
     pub signature_algorithm: Vec<u8>,
+    /// Complete `SignerInfo` TLVs written before and after the builder's own.
+    pub signer_infos_before: Vec<Vec<u8>>,
+    pub signer_infos_after: Vec<Vec<u8>>,
 }
 
 impl CmsBuilder {
@@ -446,7 +449,27 @@ impl CmsBuilder {
             content_tlv: None,
             signer_info_copies: 1,
             signature_algorithm: der_seq(&[der_oid(OID_RSA), der(0x05, &[])]),
+            signer_infos_before: Vec::new(),
+            signer_infos_after: Vec::new(),
         }
+    }
+
+    /// The builder's own `SignerInfo` TLV.
+    pub fn signer_info(&self) -> Vec<u8> {
+        let mut fields = vec![
+            der_int(1),
+            der_seq(&[
+                self.signer_issuer.clone(),
+                der(tag::INTEGER, &self.signer_serial),
+            ]),
+            der_seq(&[der_oid(&self.digest_oid)]),
+        ];
+        if let Some(signed_attrs) = &self.signed_attrs {
+            fields.push(signed_attrs.clone());
+        }
+        fields.push(self.signature_algorithm.clone());
+        fields.push(der(tag::OCTET_STRING, &self.signature));
+        der_seq(&fields)
     }
 
     pub fn with_sha512_digest(mut self) -> Self {
@@ -470,26 +493,14 @@ impl CmsBuilder {
 
         let certificates = der(tag::CONTEXT_0, &self.certificates.concat());
 
-        let mut signer_infos_parts: Vec<Vec<u8>> = Vec::new();
+        let mut signer_infos_parts: Vec<Vec<u8>> = self.signer_infos_before.clone();
         if self.include_signer_info {
-            let mut fields = vec![
-                der_int(1),
-                der_seq(&[
-                    self.signer_issuer.clone(),
-                    der(tag::INTEGER, &self.signer_serial),
-                ]),
-                der_seq(&[der_oid(&self.digest_oid)]),
-            ];
-            if let Some(signed_attrs) = &self.signed_attrs {
-                fields.push(signed_attrs.clone());
-            }
-            fields.push(self.signature_algorithm.clone());
-            fields.push(der(tag::OCTET_STRING, &self.signature));
-            let signer_info = der_seq(&fields);
+            let signer_info = self.signer_info();
             for _ in 0..self.signer_info_copies {
                 signer_infos_parts.push(signer_info.clone());
             }
         }
+        signer_infos_parts.extend(self.signer_infos_after.iter().cloned());
         let signer_infos = der_set(&signer_infos_parts);
 
         let signed_data = der_seq(&[

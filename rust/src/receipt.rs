@@ -8,11 +8,12 @@ use crate::cms::{
     find_message_digest_attribute, parse_cms, signed_attrs_signed_bytes, CmsSignerInfo, ParsedCms,
     MISSING_CONTENT_TYPE, MISSING_MESSAGE_DIGEST,
 };
-use crate::crypto::{constant_time_eq, curve_field_size, verify_signer_signature};
+use crate::crypto::{constant_time_eq, has_unimplemented_curve, verify_signer_signature};
 use crate::error::{Failure, Reason};
 use crate::receipt_payload::{parse_receipt_payload, read_creation_date, ReceiptPayload};
 use crate::roots::TrustAnchor;
-use crate::x509::{Certificate, OID_EC_PUBLIC_KEY};
+use crate::verifier::{self, Clock, Stage};
+use crate::x509::Certificate;
 
 /// The Apple marker OID a receipt-signing leaf must carry.
 ///
@@ -46,12 +47,13 @@ fn malformed(detail: impl Into<String>) -> Failure {
 /// Verifies a receipt in its base64 form, the shape a client sends, and
 /// decodes its payload.
 ///
-/// `now_millis` is the chain instant when the receipt's first attribute 12
-/// is missing or does not parse.
+/// `clock` gives the chain instant when the receipt's first attribute 12
+/// is missing or does not parse, and is read only then, once a signer has
+/// been found.
 pub(crate) fn verify(
     base64: &str,
     anchors: &[TrustAnchor],
-    now_millis: i64,
+    clock: &Clock<'_>,
 ) -> Result<ReceiptPayload, Failure> {
     if base64.is_empty() {
         return Err(malformed("receipt is empty"));
@@ -66,18 +68,21 @@ pub(crate) fn verify(
     }
     let der =
         decode_receipt_base64(base64).ok_or_else(|| malformed("receipt is not valid base64"))?;
-    let content = verify_signature(&der, anchors, now_millis)?;
+    let content = verify_signature(&der, anchors, clock)?;
+    verifier::enter(Stage::PayloadParse);
     // A trusted signer signed these bytes, so a payload this crate cannot
     // read is the library's failure or a format Apple added, not the
     // client's: UNREADABLE_PAYLOAD, never MALFORMED, which the endpoint
     // answers as 21002 and an app server reads as "deny".
-    parse_receipt_payload(&content).map_err(|err| {
+    let payload = parse_receipt_payload(&content).map_err(|err| {
         Failure::new(
             Reason::UnreadablePayload,
             "signed receipt content could not be read",
         )
         .with_source(err)
-    })
+    });
+    verifier::enter(Stage::AfterSignature);
+    payload
 }
 
 /// Every check up to and including a signature; returns the signed payload,
@@ -85,7 +90,7 @@ pub(crate) fn verify(
 fn verify_signature(
     der: &[u8],
     anchors: &[TrustAnchor],
-    now_millis: i64,
+    clock: &Clock<'_>,
 ) -> Result<Vec<u8>, Failure> {
     let cms = parse_cms(der).map_err(|err| malformed(format!("malformed CMS structure: {err}")))?;
     if cms.signer_infos.len() > MAX_SIGNER_INFOS {
@@ -109,7 +114,7 @@ fn verify_signature(
     // is decoded until the chain and a signature have passed. A date that is
     // missing or unreadable cannot blame anyone yet, so it only moves the
     // chain instant to the clock and never rejects by itself.
-    let at_millis = read_creation_date(&cms.content).unwrap_or(now_millis);
+    let creation_date = read_creation_date(&cms.content);
 
     let embedded = decode_embedded(&cms);
     // Signer-independent, so walked once for all SignerInfos, and only once
@@ -118,6 +123,10 @@ fn verify_signature(
     let mut first_failure: Option<Failure> = None;
     for info in &cms.signer_infos {
         let verdict = signer_certificate(info, &embedded).and_then(|signer| {
+            let at_millis = match creation_date {
+                Some(millis) => millis,
+                None => clock.now()?,
+            };
             let authenticated = authenticated
                 .get_or_insert_with(|| authenticated_top_down(&embedded.decoded, anchors));
             verify_signer(&cms, info, signer, authenticated, anchors, at_millis)
@@ -184,6 +193,16 @@ fn verify_signer<'a>(
             format!("receipt intermediate certificate lacks Apple WWDR marker OID {WWDR_INTERMEDIATE_OID}"),
         ));
     }
+    // The signer's key is used to check the CMS signature, so a key this
+    // crate cannot build is a defect of the certificate rather than of the
+    // signature it carries, the reading the JWS path applies to x5c. Judged
+    // only once the chain has vouched for the certificate.
+    if has_unimplemented_curve(signer) {
+        return Err(Failure::new(
+            Reason::InvalidCertificate,
+            "receipt signer certificate uses an unimplemented elliptic curve",
+        ));
+    }
     // The chain is checked BEFORE the signature on purpose: checking the
     // signature first would run the attacker's own key (their choice of RSA
     // size and exponent) before anything about it is trusted.
@@ -226,20 +245,6 @@ fn signer_certificate<'e>(
                 && cert.issuer_der() == info.issuer_raw.as_slice()
         })
         .ok_or_else(|| malformed("signer certificate not embedded"))?;
-    // The signer's key is used to check the CMS signature, so a key this
-    // crate cannot build is a defect of the certificate rather than of the
-    // signature it carries, the reading the JWS path applies to x5c.
-    if signer.public_key_algorithm_oid() == OID_EC_PUBLIC_KEY
-        && signer
-            .public_key_curve_oid()
-            .and_then(curve_field_size)
-            .is_none()
-    {
-        return Err(Failure::new(
-            Reason::InvalidCertificate,
-            "receipt signer certificate uses an unimplemented elliptic curve",
-        ));
-    }
     Ok(signer)
 }
 
@@ -303,7 +308,8 @@ fn verify_cms_signature(
             // RFC 5652 5.3 makes contentType and messageDigest mandatory
             // whenever signedAttrs are present: a set without one of them
             // cannot be checked, so it fails as a signature. A set that is
-            // not an attribute set at all is a broken structure. That
+            // not an attribute set at all is a broken structure, which
+            // parse_cms has already refused for every SignerInfo. That
             // separation is a real control, not an accident of Apple's
             // grammar: genuine receipts carry no signedAttrs, so their
             // signature covers `0x31 || payload[1..]`, the very bytes the
