@@ -16,11 +16,11 @@ gitignored.
 | target | what it reaches | invariant beyond "nothing but a verdict escapes" |
 |---|---|---|
 | `parse-der` | `Der::parse` on raw bytes, then every accessor on every node | — |
-| `parse-cms` | `Cms::parse`, the embedded certificates, the signer lookup and both signed-attribute readers | — |
-| `verify-receipt` | `ReceiptVerifier::verifyReceiptCore`: CMS, payload, chain, signature | an accepted receipt fails against an unrelated anchor set |
-| `verify-receipt-base64` | `ReceiptVerifier::verify` on the transport string a client sends | — |
-| `verify-transaction` | the three `JwsVerifier` entry points | a JWS `verifyRaw` accepts under the fixture root fails under Apple's roots |
-| `endpoint-json` | `VerifyReceiptEndpoint::verifyReceiptJson` on a request body | the answer is always JSON with an integer `status` |
+| `parse-cms` | `Cms::parse`, the embedded certificates, every SignerInfo's lookup and both signed-attribute readers | — |
+| `verify-receipt` | `Verifier::verifyReceipt()` on base64-encoded raw bytes: CMS, payload, chain, signature | an accepted receipt fails against an unrelated anchor set |
+| `verify-receipt-base64` | `Verifier::verifyReceipt()` on the transport string a client sends, unencoded | — |
+| `verify-transaction` | `Verifier::verifySignedData()`, the one 0.7 JWS entry point | a JWS that verifies under the fixture root fails under Apple's roots |
+| `endpoint-json` | `Verifier::verifyReceiptEndpoint()` on a request body | the answer is always JSON with an integer `status` |
 
 The anchor-set invariant is the one that lets a fuzzer find "accepts what it
 should not" rather than only crashes: without it, an input that verifies tells
@@ -34,25 +34,26 @@ generated payloads, and each is required to fail under Apple's roots.
 
 ## What counts as a crash
 
-The library's contract is that a public entry point raises
-`VerificationException` and nothing else, so each target declares exactly the
-exception types its entry point documents and **every other `Throwable` is a
-finding**:
+0.7's three `Verifier` methods each document "never throws"
+(docs/design/0.7-api.md, "Setup"): every failure is a typed
+`VerificationResult` failure, not an exception. So the targets built on them
+declare **no** allowed exceptions at all — `verify-receipt`,
+`verify-receipt-base64`, `verify-transaction` and `endpoint-json` treat any
+`Throwable` whatsoever as a finding, which is a stronger check than 0.6 had
+here (`VerificationException` was allowed there because those methods threw
+it as their normal failure path):
 
 | target | allowed |
 |---|---|
 | `parse-der` | `Internal\ParseException` |
-| `parse-cms` | `VerificationException`, `Internal\ParseException` |
-| `verify-receipt`, `verify-receipt-base64`, `verify-transaction` | `VerificationException` |
-| `endpoint-json` | nothing — `verifyReceiptJson` never throws |
+| `parse-cms` | `Internal\VerificationException`, `Internal\ParseException` |
+| `verify-receipt`, `verify-receipt-base64`, `verify-transaction`, `endpoint-json` | nothing |
 
 That covers more than a segfault would. php-fuzzer installs an error handler
 that turns every warning and notice into an `Error`, so an undefined array key
 or a `substr()` on a negative offset is caught here even though PHP would let
-the call return; an `InvalidArgumentException` counts too, since with a
-non-empty anchor set the misconfiguration path is unreachable and reaching it
-means a parser handed the wrong thing to a constructor. `TypeError`,
-`ValueError` and `ArgumentCountError` are `Error`s and were never allowed.
+the call return. `TypeError`, `ValueError` and `ArgumentCountError` are
+`Error`s and were never allowed.
 
 The one failure mode a `catch` cannot see is a `memory_limit` fatal, which is
 not a `Throwable` at all — the reason `Der` has a retained-byte budget on top
