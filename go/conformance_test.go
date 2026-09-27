@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -73,11 +74,10 @@ type caseExpectedSpec struct {
 	Lengths               map[string]any `json:"lengths"`
 	ToJSON                *string        `json:"toJson"`
 	BytesHex              string         `json:"bytesHex"`
-	// AnyOutcome marks a port-defined case (owner, 2026-09-27): the port
-	// may verify or refuse with any reason, as long as it does not crash,
-	// does not answer INTERNAL_ERROR, and finishes within maxMillis. No
-	// status, reason or field is pinned.
-	AnyOutcome bool `json:"anyOutcome"`
+	// OneOf marks a port-defined case (owner, 2026-09-27): the outcome,
+	// "ok" or the reason, must be one of these, and the call must not
+	// crash. No field is pinned.
+	OneOf []string `json:"oneOf"`
 }
 
 type conformanceCase struct {
@@ -643,15 +643,17 @@ func runCase(t testing.TB, dir string, fixtures map[string]fixtureEntry, c confo
 			}
 		}
 
-		if expected.AnyOutcome {
+		if expected.OneOf != nil {
+			outcome := "ok"
 			if callErr != nil {
 				failure, ok := callErr.(*applereceipt.Failure)
 				if !ok {
 					t.Fatalf("%s: escaped as %T, not a *Failure: %v", c.ID, callErr, callErr)
 				}
-				if failure.Reason == applereceipt.ReasonInternalError {
-					t.Fatalf("%s: answered INTERNAL_ERROR, which anyOutcome forbids: %v", c.ID, callErr)
-				}
+				outcome = string(failure.Reason)
+			}
+			if !slices.Contains(expected.OneOf, outcome) {
+				t.Fatalf("%s: answered %s, want one of %v: %v", c.ID, outcome, expected.OneOf, callErr)
 			}
 			return
 		}
