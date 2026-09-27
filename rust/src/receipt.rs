@@ -5,8 +5,8 @@ use crate::asn1::{parse_exact, tag};
 use crate::base64::decode_receipt_base64;
 use crate::chain::{authenticated_top_down, build_and_validate_path, Authenticated};
 use crate::cms::{
-    find_message_digest_attribute, parse_cms, signed_attrs_signed_bytes, CmsSignerInfo, ParsedCms,
-    MISSING_CONTENT_TYPE, MISSING_MESSAGE_DIGEST,
+    is_unverifiable_attribute_set, parse_cms, signed_attribute_values, signed_attrs_signed_bytes,
+    CmsSignerInfo, ParsedCms,
 };
 use crate::crypto::{constant_time_eq, has_unimplemented_curve, verify_signer_signature};
 use crate::error::{Failure, Reason};
@@ -315,15 +315,23 @@ fn verify_cms_signature(
             // signature covers `0x31 || payload[1..]`, the very bytes the
             // signedAttrs branch would sign for `0xA0 || payload[1..]`, and
             // only the attribute walk refuses that forgery.
-            let message_digest = match find_message_digest_attribute(signed_attrs) {
-                Ok(digest) => digest,
-                Err(err) if err == MISSING_CONTENT_TYPE || err == MISSING_MESSAGE_DIGEST => {
+            let (message_digest, content_type) = match signed_attribute_values(signed_attrs) {
+                Ok(values) => values,
+                Err(err) if is_unverifiable_attribute_set(&err) => {
                     return Err(invalid_signature(
-                        "signedAttrs lack a contentType or messageDigest attribute",
+                        "signedAttrs lack a contentType or messageDigest attribute, or carry one twice",
                     ));
                 }
                 Err(err) => return Err(malformed(format!("malformed signedAttrs: {err}"))),
             };
+            // RFC 5652 11.1: the contentType attribute names the content
+            // the signature covers, so one that names another type is a
+            // signature over something else.
+            if content_type != cms.content_type {
+                return Err(invalid_signature(
+                    "contentType attribute differs from the eContentType",
+                ));
+            }
             if !constant_time_eq(&message_digest, &content_digest) {
                 return Err(invalid_signature(
                     "messageDigest attribute does not match content",

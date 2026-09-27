@@ -40,6 +40,8 @@ pub struct ParsedCms {
     pub certificates: Vec<Vec<u8>>,
     /// Every `SignerInfo`, in order. Never empty.
     pub signer_infos: Vec<CmsSignerInfo>,
+    /// The `eContentType` OID's content octets.
+    pub content_type: Vec<u8>,
 }
 
 fn oid_signed_data() -> Vec<u8> {
@@ -82,6 +84,20 @@ pub const MISSING_CONTENT_TYPE: Asn1Error =
 pub const MISSING_MESSAGE_DIGEST: Asn1Error =
     Asn1Error("signedAttrs without a messageDigest attribute");
 
+/// [`find_message_digest_attribute`]'s answer for a well-formed attribute
+/// set that carries `contentType` or `messageDigest` more than once: which
+/// copy the signer meant is not the reader's to choose.
+pub const DUPLICATE_ATTRIBUTE: Asn1Error =
+    Asn1Error("signedAttrs carry contentType or messageDigest twice");
+
+/// Whether `err` is one of [`find_message_digest_attribute`]'s answers for
+/// a well-formed attribute set whose signature cannot be checked, rather
+/// than for one that is not an attribute set at all.
+#[must_use]
+pub fn is_unverifiable_attribute_set(err: &Asn1Error) -> bool {
+    *err == MISSING_CONTENT_TYPE || *err == MISSING_MESSAGE_DIGEST || *err == DUPLICATE_ATTRIBUTE
+}
+
 /// Parses a CMS `SignedData` blob.
 ///
 /// # Errors
@@ -110,9 +126,12 @@ pub fn parse_cms(der: &[u8]) -> Result<ParsedCms, Asn1Error> {
     let signed_data = signed_data_node.children();
     let encap_node = signed_data.get(2).ok_or(BAD)?;
     let encap = encap_node.children();
-    if encap.first().map(|n| n.tag) != Some(tag::OID) {
-        return Err(Asn1Error("encapContentInfo has no content type"));
-    }
+    let content_type = encap
+        .first()
+        .filter(|node| node.tag == tag::OID)
+        .ok_or(Asn1Error("encapContentInfo has no content type"))?
+        .contents
+        .to_vec();
     let content_wrapper = encap.get(1).filter(|n| n.tag == tag::CONTEXT_0);
     let Some(content_wrapper) = content_wrapper else {
         return Err(Asn1Error("no encapsulated payload"));
@@ -144,6 +163,7 @@ pub fn parse_cms(der: &[u8]) -> Result<ParsedCms, Asn1Error> {
         content,
         certificates,
         signer_infos,
+        content_type,
     })
 }
 
@@ -167,7 +187,7 @@ fn parse_signer_info(node: &Tlv<'_>) -> Result<CmsSignerInfo, Asn1Error> {
         // the signature check, as INVALID_SIGNATURE for that signer.
         match find_message_digest_attribute(attrs) {
             Ok(_) => {}
-            Err(err) if err == MISSING_CONTENT_TYPE || err == MISSING_MESSAGE_DIGEST => {}
+            Err(err) if is_unverifiable_attribute_set(&err) => {}
             Err(err) => return Err(err),
         }
         signed_attrs = Some(attrs.to_vec());
@@ -224,11 +244,23 @@ fn parse_signer_info(node: &Tlv<'_>) -> Result<CmsSignerInfo, Asn1Error> {
 /// [`Asn1Error`] when an attribute is not `SEQUENCE { OID, SET OF value }`,
 /// or when `contentType` or `messageDigest` is missing.
 pub fn find_message_digest_attribute(signed_attrs: &[u8]) -> Result<Vec<u8>, Asn1Error> {
+    signed_attribute_values(signed_attrs).map(|(digest, _)| digest)
+}
+
+/// The `messageDigest` value and the `contentType` value's OID content
+/// octets, with the checks of [`find_message_digest_attribute`]. A
+/// `contentType` value that is not an OID reads as empty, which no
+/// `eContentType` matches.
+///
+/// # Errors
+/// As [`find_message_digest_attribute`].
+pub fn signed_attribute_values(signed_attrs: &[u8]) -> Result<(Vec<u8>, Vec<u8>), Asn1Error> {
     let node = parse_exact(signed_attrs)?;
     let wanted = oid_message_digest();
     let content_type = oid_content_type();
     let mut message_digest: Option<Vec<u8>> = None;
-    let mut has_content_type = false;
+    let mut content_type_value: Option<Vec<u8>> = None;
+    let mut duplicate = false;
     for attribute in node.children() {
         let children = attribute.children();
         let attribute_type = children
@@ -241,16 +273,25 @@ pub fn find_message_digest_attribute(signed_attrs: &[u8]) -> Result<Vec<u8>, Asn
             .and_then(|values| values.child(0))
             .ok_or(Asn1Error("malformed signed attribute"))?;
         if attribute_type.contents == content_type.as_slice() {
-            has_content_type = true;
+            let oid = if value.tag == tag::OID {
+                value.contents.to_vec()
+            } else {
+                Vec::new()
+            };
+            duplicate |= content_type_value.replace(oid).is_some();
         }
-        if attribute_type.contents == wanted.as_slice() && message_digest.is_none() {
-            message_digest = Some(value.contents.to_vec());
+        if attribute_type.contents == wanted.as_slice() {
+            duplicate |= message_digest.replace(value.contents.to_vec()).is_some();
         }
     }
-    if !has_content_type {
+    let Some(content_type_value) = content_type_value else {
         return Err(MISSING_CONTENT_TYPE);
+    };
+    let message_digest = message_digest.ok_or(MISSING_MESSAGE_DIGEST)?;
+    if duplicate {
+        return Err(DUPLICATE_ATTRIBUTE);
     }
-    message_digest.ok_or(MISSING_MESSAGE_DIGEST)
+    Ok((message_digest, content_type_value))
 }
 
 /// The bytes a `SignerInfo` signature covers when `signedAttrs` are present:
@@ -266,4 +307,66 @@ pub fn signed_attrs_signed_bytes(signed_attrs: &[u8]) -> Vec<u8> {
     out.push(tag::SET);
     out.extend_from_slice(signed_attrs.get(1..).unwrap_or(&[]));
     out
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::{
+        find_message_digest_attribute, signed_attribute_values, DUPLICATE_ATTRIBUTE,
+        MISSING_MESSAGE_DIGEST,
+    };
+    use crate::asn1::{encode_oid, tag};
+
+    fn tlv(tag: u8, contents: &[u8]) -> Vec<u8> {
+        let mut out = vec![tag, u8::try_from(contents.len()).unwrap()];
+        out.extend_from_slice(contents);
+        out
+    }
+
+    fn attribute(oid: &str, value: &[u8]) -> Vec<u8> {
+        let oid = tlv(tag::OID, &encode_oid(oid).unwrap());
+        tlv(tag::SEQUENCE, &[oid, tlv(tag::SET, value)].concat())
+    }
+
+    fn attrs(attributes: &[Vec<u8>]) -> Vec<u8> {
+        tlv(tag::CONTEXT_0, &attributes.concat())
+    }
+
+    const CONTENT_TYPE: &str = "1.2.840.113549.1.9.3";
+    const MESSAGE_DIGEST: &str = "1.2.840.113549.1.9.4";
+
+    #[test]
+    fn a_second_content_type_or_message_digest_leaves_nothing_to_check() {
+        let data = tlv(tag::OID, &encode_oid("1.2.840.113549.1.7.1").unwrap());
+        let digest = tlv(tag::OCTET_STRING, &[1, 2, 3]);
+        let one = attrs(&[
+            attribute(CONTENT_TYPE, &data),
+            attribute(MESSAGE_DIGEST, &digest),
+        ]);
+        let (value, content_type) = signed_attribute_values(&one).unwrap();
+        assert_eq!(value, [1, 2, 3]);
+        assert_eq!(content_type, encode_oid("1.2.840.113549.1.7.1").unwrap());
+        for twice in [
+            attrs(&[
+                attribute(CONTENT_TYPE, &data),
+                attribute(MESSAGE_DIGEST, &digest),
+                attribute(MESSAGE_DIGEST, &digest),
+            ]),
+            attrs(&[
+                attribute(CONTENT_TYPE, &data),
+                attribute(CONTENT_TYPE, &data),
+                attribute(MESSAGE_DIGEST, &digest),
+            ]),
+        ] {
+            assert_eq!(
+                find_message_digest_attribute(&twice),
+                Err(DUPLICATE_ATTRIBUTE)
+            );
+        }
+        assert_eq!(
+            find_message_digest_attribute(&attrs(&[attribute(CONTENT_TYPE, &data)])),
+            Err(MISSING_MESSAGE_DIGEST)
+        );
+    }
 }
