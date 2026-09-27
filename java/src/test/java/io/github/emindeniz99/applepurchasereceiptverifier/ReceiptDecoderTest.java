@@ -162,8 +162,8 @@ class ReceiptDecoderTest {
         }
         assertTrue(Asn1Depth.exceeded(indefinite));
         assertFalse(Asn1Depth.exceeded(java.util.Arrays.copyOfRange(indefinite, 2, indefinite.length - 2)));
-        // Why the bound is this library's: BouncyCastle's own applies to
-        // indefinite lengths only, and parses a deeper DER encoding.
+        // Why the bound is this library's: BouncyCastle's own counts one
+        // level fewer, so 65 SETs with an empty innermost one still parse.
         ASN1Primitive.fromByteArray(nestedSets(65));
 
         byte[] tooDeep = nestedSets(65);

@@ -4,10 +4,11 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
  * The ASN.1 nesting bound, checked on the encoding before BouncyCastle
  * builds anything from it.
  *
- * <p>BouncyCastle's own bound ({@code org.bouncycastle.asn1.max_cons_depth},
- * 64 by default) applies only where it reads indefinite lengths: a
- * definite-length DER encoding nested deeper parses without complaint, as
- * a test pins. So the bound is enforced here, on every encoding this
+ * <p>BouncyCastle has its own bound ({@code org.bouncycastle.asn1.max_cons_depth},
+ * 64 by default), but it counts differently: 65 nested values with an empty
+ * innermost one still parse, as a test pins. It can also be raised by a
+ * system property, and this library does not choose the BouncyCastle version
+ * its caller resolves. So the bound is enforced here, on every encoding this
  * library parses before a signature has vouched for it, and counted as: at
  * most {@link #MAX_DEPTH} constructed values inside one another, the
  * outermost included, and a primitive value inside the innermost.</p>
