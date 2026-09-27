@@ -1,41 +1,38 @@
-// Drives fixtures/cases.json — the normative cross-language conformance
-// vectors — through the C ABI, from C++17, with no dependencies at all.
+// Drives fixtures/cases-0.7.json, the normative cross-language conformance
+// vectors, through the C ABI, from C++17, with no dependencies at all.
 //
 //   node tools/gen-cases-manifest.mjs <dir>
 //   ./aprv_conformance <dir>
 //
 // This is the primary harness for the ABI: a passing run is the evidence
-// that the compiled-toolchain path works end to end — the header compiles as
+// that the compiled-toolchain path works end to end: the header compiles as
 // C++, the symbols link, the calls return what the vectors say, and every
 // string handed out is freed.
 //
 // It carries no case-specific knowledge. The generator resolved fixture ids
-// to files, checked their digests, decoded the codecs, computed the
-// environment bitmask, parsed the pinned clocks to epoch milliseconds and
-// wrote out the endpoint request bodies, because a dependency-free C++
-// program can do none of those. What is left here is the part that has to be
-// C: build a verifier from the generic config, dispatch on the operation,
+// to files, checked their digests, built each input string, parsed the
+// pinned clocks to epoch milliseconds and wrote out the endpoint request
+// bodies and the pinned toJson bytes, because a dependency-free C++ program
+// can do none of those. What is left here is the part that has to be C:
+// build a verifier from the roots and the clock, dispatch on the operation,
 // compare the status, and read a few top-level fields off the JSON the ABI
 // returned.
 //
 // Every case in the file runs except the decodeBase64 groups, which call a
 // port's base64 decoders directly: the ABI exposes none, so the manifest
-// marks them abiUnreachable and they are counted, never passed. The endpoint
-// cases that pin a clock go through aprv_endpoint_new_with_roots_and_clock,
-// which takes the instant itself rather than a callback; nothing else is
-// skipped, a case the
-// manifest ever marks unsupported fails the run, and after the loop every id
-// the manifest lists must have run or been counted.
+// marks them abiUnreachable and they are counted, never passed. After the
+// loop every id the manifest lists must have run or been counted.
 //
-// The JSON reader below is a top-level scalar extractor and nothing more —
-// no vendored parser, and no ambition to become one. Nested paths
-// (`receipt.bundle_id`, `inAppPurchases[productId=x].quantity`) are checked
-// by rust/ffi/tests/conformance.py, which has Python's json; the manifest
-// counts every one it dropped and this program prints the total, so the gap
-// is a number on the screen rather than a silence.
+// The JSON reader below is a top-level scalar extractor and nothing more:
+// no vendored parser, and no ambition to become one. Nested pointers
+// (`/receipt/bundle_id`, `/in_app/[product_id=x]/quantity`) are checked by
+// rust/ffi/tests/conformance.py, which has Python's json; the manifest counts
+// every one it dropped and this program prints the total, so the gap is a
+// number on the screen rather than a silence.
 
 #include "apple_purchase_receipt_verifier.h"
 
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -221,16 +218,21 @@ bool json_string(const std::string &token, std::string &out, std::string &error)
   return true;
 }
 
-// Whether two JSON number tokens spell the same value. Only values a double
-// holds exactly (below 2^53) qualify, so two different large integers cannot
-// round to a match.
+// Whether two JSON number tokens spell the same value. Two integer
+// spellings compare by their digits, so two different large integers can
+// never round to a match; a spelling with a fraction or an exponent
+// (1.0E300 for 1e+300) compares as the double both denote.
 bool same_number(const std::string &a, const std::string &b) {
+  const auto integral = [](const std::string &text) {
+    return text.find_first_of(".eE") == std::string::npos;
+  };
+  if (integral(a) && integral(b)) return a == b;
   char *a_end = nullptr;
   char *b_end = nullptr;
   const double x = std::strtod(a.c_str(), &a_end);
   const double y = std::strtod(b.c_str(), &b_end);
   if (a.empty() || b.empty() || *a_end != '\0' || *b_end != '\0') return false;
-  return x == y && x < 9007199254740992.0 && x > -9007199254740992.0;
+  return x == y;
 }
 
 // The number of elements in a top-level JSON array token.
@@ -270,39 +272,17 @@ bool array_length(const std::string &token, size_t &out) {
 // between them is exactly the drift the ABI promises will not happen.
 int reason_code(const std::string &token) {
   static const std::map<std::string, int> codes = {
-      {"INVALID_JWS_FORMAT", APRV_REASON_INVALID_JWS_FORMAT},
+      {"MALFORMED", APRV_REASON_MALFORMED},
+      {"TOO_LARGE", APRV_REASON_TOO_LARGE},
+      {"INVALID_SIGNATURE", APRV_REASON_INVALID_SIGNATURE},
+      {"UNTRUSTED_CHAIN", APRV_REASON_UNTRUSTED_CHAIN},
       {"INVALID_CERTIFICATE", APRV_REASON_INVALID_CERTIFICATE},
       {"INVALID_CERTIFICATE_PURPOSE", APRV_REASON_INVALID_CERTIFICATE_PURPOSE},
-      {"INVALID_CHAIN", APRV_REASON_INVALID_CHAIN},
-      {"INVALID_SIGNATURE", APRV_REASON_INVALID_SIGNATURE},
-      {"WRONG_BUNDLE_ID", APRV_REASON_WRONG_BUNDLE_ID},
-      {"WRONG_ENVIRONMENT", APRV_REASON_WRONG_ENVIRONMENT},
-      {"WRONG_APP_APPLE_ID", APRV_REASON_WRONG_APP_APPLE_ID},
-      {"INVALID_RECEIPT_FORMAT", APRV_REASON_INVALID_RECEIPT_FORMAT},
-      {"DEVICE_HASH_MISMATCH", APRV_REASON_DEVICE_HASH_MISMATCH},
+      {"UNREADABLE_PAYLOAD", APRV_REASON_UNREADABLE_PAYLOAD},
       {"INTERNAL_ERROR", APRV_REASON_INTERNAL_ERROR},
   };
   auto found = codes.find(token);
   return found == codes.end() ? -1 : found->second;
-}
-
-bool decode_hex(const std::string &text, std::vector<unsigned char> &out) {
-  if (text.size() % 2 != 0) return false;
-  out.clear();
-  for (size_t i = 0; i < text.size(); i += 2) {
-    unsigned value = 0;
-    for (size_t nibble = 0; nibble < 2; nibble += 1) {
-      char c = text[i + nibble];
-      unsigned digit;
-      if (c >= '0' && c <= '9') digit = static_cast<unsigned>(c - '0');
-      else if (c >= 'a' && c <= 'f') digit = static_cast<unsigned>(c - 'a' + 10);
-      else if (c >= 'A' && c <= 'F') digit = static_cast<unsigned>(c - 'A' + 10);
-      else return false;
-      value = value * 16 + digit;
-    }
-    out.push_back(static_cast<unsigned char>(value));
-  }
-  return true;
 }
 
 // --- anchors -------------------------------------------------------------
@@ -347,16 +327,6 @@ bool run_case(const Case &kase, std::string &error, Outcome &outcome) {
   Anchors anchors;
   if (kase.get("roots") == "files" && !anchors.load(kase, error)) return false;
 
-  std::vector<unsigned char> input;
-  if (!read_file(kase.get("input"), input)) {
-    error = "cannot read input " + kase.get("input");
-    return false;
-  }
-  // Every string the ABI takes is NUL-terminated; a fixture is a byte range.
-  std::string input_text(input.begin(), input.end());
-
-  AprvResult result = {0, nullptr};
-
   // A case that pins a clock names one instant; everything else reads the
   // system clock, which is what a NULL clock pointer asks the ABI for.
   int64_t clock_value = 0;
@@ -364,97 +334,40 @@ bool run_case(const Case &kase, std::string &error, Outcome &outcome) {
   if (pinned) clock_value = static_cast<int64_t>(std::stoll(kase.get("clockUnixMillis")));
   const int64_t *clock = pinned ? &clock_value : nullptr;
 
-  if (op == "verifyTransaction" || op == "verifyAppTransaction" || op == "verifyRaw") {
-    // The JWS verifier takes no clock, so no JWS case may pin one.
-    if (pinned) {
-      error = "harness error: the JWS verifier has no clock seam, but the case pins one";
+  AprvVerifier *verifier = aprv_verifier_new(anchors.ders(), anchors.lens(), anchors.count(), clock);
+  if (verifier == nullptr) {
+    error = "aprv_verifier_new refused the configuration";
+    return false;
+  }
+
+  AprvResult result = {0, nullptr};
+  if (op == "verifyReceipt" || op == "verifySignedData") {
+    std::vector<unsigned char> input;
+    if (!read_file(kase.get("input"), input)) {
+      aprv_verifier_free(verifier);
+      error = "cannot read input " + kase.get("input");
       return false;
     }
-    AprvJwsVerifier *verifier =
-        anchors.builtin()
-            ? aprv_verifier_new_jws(kase.get("bundleId").c_str(),
-                                    static_cast<uint32_t>(std::stoul(kase.get("envs"))),
-                                    std::stoull(kase.get("appAppleId")))
-            : aprv_verifier_new_jws_with_roots(
-                  kase.get("bundleId").c_str(),
-                  static_cast<uint32_t>(std::stoul(kase.get("envs"))),
-                  std::stoull(kase.get("appAppleId")), anchors.ders(), anchors.lens(),
-                  anchors.count());
-    if (verifier == nullptr) {
-      error = "aprv_verifier_new_jws refused the configuration";
-      return false;
-    }
-    if (op == "verifyTransaction") {
-      aprv_verify_transaction(verifier, input_text.c_str(), &result);
-    } else if (op == "verifyAppTransaction") {
-      aprv_verify_app_transaction(verifier, input_text.c_str(), &result);
-    } else {
-      aprv_verify_raw(verifier, input_text.c_str(), &result);
-    }
-    aprv_verifier_free_jws(verifier);
-  } else if (op == "verifyReceipt" || op == "verifyReceiptBase64") {
-    // ReceiptVerifier takes no clock in any port: a caller who injects one
-    // must not be able to accept an expired chain. A case that pinned one
-    // here would be a vector-file change, so it fails rather than passes.
-    if (pinned) {
-      error = "the receipt verifier has no clock seam, but the case pins one";
-      return false;
-    }
-    AprvReceiptVerifier *verifier =
-        anchors.builtin()
-            ? aprv_verifier_new_receipt(kase.get("bundleId").c_str())
-            : aprv_verifier_new_receipt_with_roots(kase.get("bundleId").c_str(), anchors.ders(),
-                                                   anchors.lens(), anchors.count());
-    if (verifier == nullptr) {
-      error = "aprv_verifier_new_receipt refused the configuration";
-      return false;
-    }
-    std::vector<unsigned char> guid;
-    if (kase.has("deviceGuidHex") && !decode_hex(kase.get("deviceGuidHex"), guid)) {
-      aprv_verifier_free_receipt(verifier);
-      error = "deviceGuidHex is not hex";
-      return false;
-    }
+    // Every string the ABI takes is NUL-terminated; a fixture is a byte range.
+    std::string input_text(input.begin(), input.end());
     if (op == "verifyReceipt") {
-      if (guid.empty()) {
-        aprv_verify_receipt_der(verifier, input.data(), input.size(), &result);
-      } else {
-        aprv_verify_receipt_der_with_device_guid(verifier, input.data(), input.size(),
-                                                 guid.data(), guid.size(), &result);
-      }
+      aprv_verify_receipt(verifier, input_text.c_str(), &result);
     } else {
-      if (guid.empty()) {
-        aprv_verify_receipt_base64(verifier, input_text.c_str(), &result);
-      } else {
-        aprv_verify_receipt_base64_with_device_guid(verifier, input_text.c_str(), guid.data(),
-                                                    guid.size(), &result);
-      }
+      aprv_verify_signed_data(verifier, input_text.c_str(), &result);
     }
-    aprv_verifier_free_receipt(verifier);
   } else if (op == "verifyReceiptEndpoint") {
     uint32_t environment = static_cast<uint32_t>(std::stoul(kase.get("endpointEnv")));
-    AprvReceiptEndpoint *endpoint =
-        pinned ? aprv_endpoint_new_with_roots_and_clock(environment, anchors.ders(),
-                                                        anchors.lens(), anchors.count(), clock)
-        : anchors.builtin()
-            ? aprv_endpoint_new(environment)
-            : aprv_endpoint_new_with_roots(environment, anchors.ders(), anchors.lens(),
-                                           anchors.count());
-    if (endpoint == nullptr) {
-      error = "aprv_endpoint_new refused the configuration";
-      return false;
-    }
     std::vector<unsigned char> body;
     if (!read_file(kase.get("request"), body)) {
-      aprv_endpoint_free(endpoint);
+      aprv_verifier_free(verifier);
       error = "cannot read request " + kase.get("request");
       return false;
     }
     std::string body_text(body.begin(), body.end());
     char *response = nullptr;
-    int status = aprv_verify_receipt_endpoint_json(endpoint, body_text.c_str(), &response);
-    aprv_endpoint_free(endpoint);
+    int status = aprv_verify_receipt_endpoint(verifier, environment, body_text.c_str(), &response);
     if (status != APRV_REASON_OK) {
+      aprv_verifier_free(verifier);
       error = "the endpoint call itself failed with status " + std::to_string(status);
       return false;
     }
@@ -463,9 +376,11 @@ bool run_case(const Case &kase, std::string &error, Outcome &outcome) {
     result.status = APRV_REASON_OK;
     result.json = response;
   } else {
+    aprv_verifier_free(verifier);
     error = "no adapter for operation " + op;
     return false;
   }
+  aprv_verifier_free(verifier);
 
   outcome.status = result.status;
   outcome.json = result.json == nullptr ? std::string() : std::string(result.json);
@@ -500,23 +415,57 @@ bool check_expectations(const Case &kase, const Outcome &outcome, std::string &e
     return true;
   }
 
+  // "ok" is a verified payload; "body" is an endpoint answer, which is a
+  // body for every input and pins its fields, the Apple status among them.
   if (outcome.status != APRV_REASON_OK) {
     error = "expected success, got status " + std::to_string(outcome.status) + " " + outcome.json;
     return false;
   }
 
+  if (kase.has("toJson")) {
+    std::vector<unsigned char> bytes;
+    if (!read_file(kase.get("toJson"), bytes)) {
+      error = "cannot read " + kase.get("toJson");
+      return false;
+    }
+    // The receipt document is exactly ReceiptPayload::to_json(): compared
+    // byte for byte, as the vectors pin it.
+    if (std::string(bytes.begin(), bytes.end()) != outcome.json) {
+      error = "toJson differs: got " + outcome.json;
+      return false;
+    }
+  }
+
+  for (const std::string &entry : kase.all("length")) {
+    size_t separator = entry.find("~>");
+    if (separator == std::string::npos || separator < 2) {
+      error = "unparseable manifest length " + entry;
+      return false;
+    }
+    const std::string pointer = entry.substr(0, separator);
+    const std::string wanted = entry.substr(separator + 2);
+    std::string token;
+    size_t length = 0;
+    if (!top_level_value(outcome.json, pointer.substr(1), token) || !array_length(token, length)) {
+      error = pointer + ": not an array in " + outcome.json;
+      return false;
+    }
+    if (std::to_string(length) != wanted) {
+      error = pointer + ": expected length " + wanted + ", got " + std::to_string(length);
+      return false;
+    }
+  }
+
   for (const std::string &field : kase.all("field")) {
     size_t separator = field.find("~>");
-    if (separator == std::string::npos || field.size() < separator + 4) {
+    if (separator == std::string::npos || separator < 2 || field.size() < separator + 4) {
       error = "unparseable manifest field " + field;
       return false;
     }
     const std::string path = field.substr(0, separator);
     const char tag = field[separator + 2];
     const std::string wanted = field.substr(separator + 4);
-
-    const bool is_length = path.size() > 7 && path.compare(path.size() - 7, 7, ".length") == 0;
-    const std::string key = is_length ? path.substr(0, path.size() - 7) : path;
+    const std::string key = path.substr(1);
 
     std::string token;
     const bool present = top_level_value(outcome.json, key, token);
@@ -532,14 +481,9 @@ bool check_expectations(const Case &kase, const Outcome &outcome, std::string &e
       error = path + ": expected " + wanted + ", got nothing";
       return false;
     }
-    if (is_length) {
-      size_t length = 0;
-      if (!array_length(token, length)) {
-        error = path + ": " + key + " is not an array";
-        return false;
-      }
-      if (std::to_string(length) != wanted) {
-        error = path + ": expected " + wanted + ", got " + std::to_string(length);
+    if (tag == 'b') {
+      if (token != wanted) {
+        error = path + ": expected " + wanted + ", got " + token;
         return false;
       }
       continue;
@@ -583,11 +527,11 @@ int main(int argc, char **argv) {
   std::ifstream stream(manifest);
   if (!stream) {
     std::cerr << "cannot read " << manifest
-              << " — run: node tools/gen-cases-manifest.mjs " << argv[1] << "\n";
+              << "; run: node tools/gen-cases-manifest.mjs " << argv[1] << "\n";
     return 2;
   }
 
-  std::cout << "apple-purchase-receipt-verifier " << aprv_version() << " — C ABI conformance\n";
+  std::cout << "apple-purchase-receipt-verifier " << aprv_version() << ": C ABI conformance\n";
 
   size_t passed = 0;
   size_t failed = 0;
@@ -596,7 +540,7 @@ int main(int argc, char **argv) {
   size_t skipped_fields = 0;
   size_t checked_fields = 0;
   // Every id the manifest lists, which gen-cases-manifest.mjs writes one per
-  // case in cases.json, and the ids that reached a verdict or were counted
+  // case in cases-0.7.json, and the ids that reached a verdict or were counted
   // as unreachable: the coverage self-check after the loop compares them.
   std::vector<std::string> listed;
   std::set<std::string> ran;
@@ -625,12 +569,11 @@ int main(int argc, char **argv) {
       continue;
     }
     skipped_fields += static_cast<size_t>(std::stoul(kase.get("skippedFields", "0")));
-    checked_fields += kase.all("field").size();
+    checked_fields += kase.all("field").size() + kase.all("length").size();
     if (kase.has("clockUnixMillis")) pinned_clocks += 1;
 
-    // Nothing is skipped any more: the clock cases run through the
-    // _and_clock endpoint constructor. An `unsupported` marker would mean the
-    // generator found a case this ABI cannot reach, which is a finding.
+    // Nothing is skipped. An `unsupported` marker would mean the generator
+    // found a case this ABI cannot reach, which is a finding.
     if (kase.has("unsupported")) {
       std::cerr << "FAIL  " << id << ": the manifest marks it unsupported (\""
                 << kase.get("unsupported") << "\")\n";
@@ -642,7 +585,29 @@ int main(int argc, char **argv) {
     std::string error;
     Outcome outcome;
     ran.insert(id);
-    if (!run_case(kase, error, outcome) || !check_expectations(kase, outcome, error)) {
+    // A maxMillis budget (the denial-of-service cases): one warm-up run of
+    // the same case, then the timed run whose outcome is checked.
+    bool failed_to_run = false;
+    if (kase.has("maxMillis")) {
+      Outcome warm_up;
+      std::string ignored;
+      run_case(kase, ignored, warm_up);
+      const auto start = std::chrono::steady_clock::now();
+      const bool ran_ok = run_case(kase, error, outcome);
+      const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(
+                              std::chrono::steady_clock::now() - start)
+                              .count();
+      if (ran_ok && millis > std::stoll(kase.get("maxMillis"))) {
+        error = "took " + std::to_string(millis) + " ms, over the " + kase.get("maxMillis") +
+                " ms budget";
+        failed_to_run = true;
+      } else if (!ran_ok) {
+        failed_to_run = true;
+      }
+    } else if (!run_case(kase, error, outcome)) {
+      failed_to_run = true;
+    }
+    if (failed_to_run || !check_expectations(kase, outcome, error)) {
       std::cerr << "FAIL  " << id << ": " << error << "\n";
       failed += 1;
       continue;

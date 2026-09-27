@@ -904,9 +904,9 @@ jobs:
       - run: cargo test --locked
         working-directory: rust/ffi
 
-      # Layer 2, the primary one: fixtures/cases.json driven through the ABI
-      # from C++17. A passing run is the evidence that the compiled-toolchain
-      # path works — header compiles as C++, symbols link, answers match the
+      # Layer 2, the primary one: fixtures/cases-0.7.json driven through the
+      # ABI from C++17. A passing run is the evidence that the compiled-toolchain
+      # path works: header compiles as C++, symbols link, answers match the
       # vectors every other port answers.
       - name: flatten the shared vectors for a compiler
         run: node tools/gen-cases-manifest.mjs rust/ffi/target/manifest

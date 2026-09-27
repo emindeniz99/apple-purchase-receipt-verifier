@@ -29,17 +29,12 @@ show = fn what, outcome ->
   end
 end
 
-{:ok, jws_verifier} =
-  AppleReceiptExample.jws_verifier("com.example.app", [:sandbox], roots: [root])
+{:ok, fixture_verifier} = AppleReceiptExample.verifier(roots: [root])
+failures = show.("transaction", AppleReceiptExample.verify_signed_data(fixture_verifier, jws))
 
-failures = show.("transaction", AppleReceiptExample.verify_transaction(jws_verifier, jws))
-
-{:ok, receipt_verifier} = AppleReceiptExample.receipt_verifier("dev.bonzer.weeka.app")
-
-failures =
-  failures +
-    show.("receipt", AppleReceiptExample.verify_receipt_base64(receipt_verifier, receipt))
+{:ok, apple_verifier} = AppleReceiptExample.verifier()
+failures = failures + show.("receipt", AppleReceiptExample.verify_receipt(apple_verifier, receipt))
 
 # Nothing is released by hand: both verifiers are references, and the garbage
-# collector runs the destructor that calls the matching aprv_*_free.
+# collector runs the destructor that calls aprv_verifier_free.
 if failures != 0, do: System.halt(1)

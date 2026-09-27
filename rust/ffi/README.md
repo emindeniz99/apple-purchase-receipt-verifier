@@ -50,106 +50,78 @@ Building from source is the only supported path today; see `ROADMAP.md`.
 
 ## The surface
 
-Twenty symbols. Three opaque handles, eight verification calls, one result
-struct, one free function.
+Seven symbols: one opaque handle, three verification calls, one result
+struct, one free function. They mirror the Rust 0.7 API one to one.
 
 ```c
 const char *aprv_version(void);
 
-AprvJwsVerifier     *aprv_verifier_new_jws(bundle_id, environments, app_apple_id);
-AprvJwsVerifier     *aprv_verifier_new_jws_with_roots(..., ders, lens, count);
-void                 aprv_verifier_free_jws(AprvJwsVerifier *);
+AprvVerifier *aprv_verifier_new(const uint8_t *const *ders, const size_t *lens, size_t count,
+                                const int64_t *fixed_clock_unix_millis);
+void          aprv_verifier_free(AprvVerifier *);
 
-AprvReceiptVerifier *aprv_verifier_new_receipt(bundle_id);
-AprvReceiptVerifier *aprv_verifier_new_receipt_with_roots(bundle_id, ders, lens, count);
-void                 aprv_verifier_free_receipt(AprvReceiptVerifier *);
-
-AprvReceiptEndpoint *aprv_endpoint_new(environment);
-AprvReceiptEndpoint *aprv_endpoint_new_with_roots(environment, ders, lens, count);
-AprvReceiptEndpoint *aprv_endpoint_new_with_roots_and_clock(environment, ders, lens, count, clock);
-void                 aprv_endpoint_free(AprvReceiptEndpoint *);
-
-int32_t aprv_verify_transaction(v, const char *jws, AprvResult *out);
-int32_t aprv_verify_app_transaction(v, const char *jws, AprvResult *out);
-int32_t aprv_verify_raw(v, const char *jws, AprvResult *out);
-int32_t aprv_verify_receipt_der(v, const uint8_t *der, size_t len, AprvResult *out);
-int32_t aprv_verify_receipt_base64(v, const char *b64, AprvResult *out);
-int32_t aprv_verify_receipt_der_with_device_guid(v, der, len, guid, guid_len, AprvResult *out);
-int32_t aprv_verify_receipt_base64_with_device_guid(v, b64, guid, guid_len, AprvResult *out);
-int32_t aprv_verify_receipt_endpoint_json(e, const char *request, char **response);
+int32_t aprv_verify_receipt(const AprvVerifier *, const char *receipt_base64, AprvResult *out);
+int32_t aprv_verify_signed_data(const AprvVerifier *, const char *jws, AprvResult *out);
+int32_t aprv_verify_receipt_endpoint(const AprvVerifier *, uint32_t environment,
+                                     const char *request_json, char **response_json);
 
 void aprv_string_free(char *);
 ```
 
-Trust anchors default to the three Apple roots the Rust library embeds. The
-`_with_roots` variants take DER certificates the caller owns, for tests and
-for a deployment that pins its own; the bytes are parsed during the call and
-never retained. Passing no anchors is not a way to disable pinning — there is
-no code path to an operating-system trust store to disable.
+`NULL`, `NULL`, `0` for the anchors selects the three Apple roots the Rust
+library embeds. Otherwise `ders` and `lens` describe DER certificates the
+caller owns, for tests and for a deployment that pins its own; the bytes are
+parsed during the call and never retained. Passing no anchors is not a way to
+disable pinning: there is no code path to an operating-system trust store to
+disable.
 
-`accepted_environments` is a bitmask of `AprvEnvironment` values. An unknown
-bit is refused rather than ignored, because silently dropping one builds a
-verifier that accepts less than the caller asked for and reports the
-difference as `WRONG_ENVIRONMENT` on a genuine payload.
+Nothing takes a bundle id, an environment set or a device id: a verified
+payload comes back whole and the caller judges it, as in every 0.7 port.
 
-### Which receipt function to use
+### Which call to use
 
-| You want | Call | You get |
+| You have | Call | You get |
 |---|---|---|
-| a pass/fail answer, with the bundle id (and optionally the device hash) checked | `aprv_verify_receipt_base64`, `aprv_verify_receipt_der`, or their `_with_device_guid` forms | the failure reason as `status`, or the normalised receipt in `json` |
-| a drop-in for Apple's `verifyReceipt` | `aprv_verify_receipt_endpoint_json` | Apple's response body, verdict in its `status` field |
+| the base64 receipt an app sends | `aprv_verify_receipt` | the failure reason as `status`, or `ReceiptPayload::to_json()` in `json` |
+| any Apple-signed JWS (transaction, renewal info, app transaction, notification) | `aprv_verify_signed_data` | the failure reason as `status`, or the signed payload text in `json` |
+| a drop-in for Apple's `verifyReceipt` | `aprv_verify_receipt_endpoint` | Apple's response body, verdict in its `status` field |
 
-The endpoint call takes Apple's request JSON. If you hold only the base64
-receipt, build `{"receipt-data":"<base64>"}` yourself: base64 without line
-breaks needs no JSON escaping. Like Apple's endpoint, it does not check the
-bundle id. Compare `receipt.bundle_id` in the response before granting
-anything, or use the receipt verifier calls, which check it for you.
+`environment` is `APRV_ENVIRONMENT_PRODUCTION` or `APRV_ENVIRONMENT_SANDBOX`;
+it drives the 21007/21008 routing. The endpoint call takes Apple's request
+JSON. If you hold only the base64 receipt, build `{"receipt-data":"<base64>"}`
+yourself: base64 without line breaks needs no JSON escaping. Like Apple's
+endpoint, it does not check the bundle id. Compare `receipt.bundle_id` in the
+response before granting anything.
 
 A request body over 3,145,728 UTF-8 bytes, the size at which Apple's own
-endpoint answers HTTP 413, gets `{"status":21002}` without being parsed. The
-Rust library reports that as the result-only reason `REQUEST_TOO_LARGE`, but
-this call returns Apple's response body only, so no reason reaches the
-caller and the ABI gains no status code for it. To answer 413 as Apple
-does, check the body's length in bytes before the call: over 3,145,728 is
-413.
+endpoint answers HTTP 413, gets `{"status":21002}` without being parsed. To
+answer 413 as Apple does, check the body's length in bytes before the call.
 
 ### The clock
 
-`aprv_endpoint_new_with_roots_and_clock` takes `const int64_t *fixed_clock_unix_millis`:
-one instant, in milliseconds since the Unix epoch. `NULL` — which is what
-every other constructor passes — reads the system clock. A pointer rather
-than a sentinel value because every `int64_t` names a real instant, `0`
-included.
+`aprv_verifier_new` takes `const int64_t *fixed_clock_unix_millis`: one
+instant, in milliseconds since the Unix epoch. `NULL` reads the system clock
+on every call. A pointer rather than a sentinel value because every `int64_t`
+names a real instant, `0` included.
 
-It is an instant and not a callback on purpose. The Rust builders take an
-`Arc<dyn Clock>`, but a function pointer the library calls back into would
-have to be thread-safe, outlive the handle and never unwind, and getting any
-of that wrong is a crash rather than a rejected argument. This surface is
+It is an instant and not a callback on purpose. The Rust `Config` takes a
+closure, but a function pointer the library calls back into would have to be
+thread-safe, outlive the handle and never unwind, and getting any of that
+wrong is a crash rather than a rejected argument. This surface is
 deliberately callback-free.
 
-**Pinning a clock is for conformance vectors and tests.** Production code has
-no reason to freeze the endpoint's "now".
-
-The clock reaches what it reaches in every other port: the `request_date` /
-`_ms` / `_pst` triple the endpoint stamps on its response. **Certificate
-validity is never judged at it.** A receipt that states no date of its own is
-checked against the system clock regardless, so an injected clock can neither
-authenticate an expired chain nor expire a live one, which is why
-`AprvJwsVerifier` and `AprvReceiptVerifier` have no clock constructor at all.
-No verifier rejects a payload for its age either: how old a signed payload
-may be is the caller's decision, made on the `signedDate` in the JSON. In C,
-with the epoch-millisecond claim already read out of that JSON:
-`bool too_old = now_millis - signed_date > 300000;`.
-
-One clock constructor rather than a `_with_clock` variant of each endpoint
-constructor: the `_and_clock` signature is the superset, because `NULL`,
-`NULL`, `0` for the anchors already selects the bundled Apple roots. The ABI
-does not grow a symbol per combination of options.
+**Pinning a clock is for conformance vectors and tests.** The clock is read
+in two places, as in every 0.7 port: the certificate-validity instant when
+the input states no usable signing date (a receipt without a readable
+creation date, a JWS without a usable `signedDate`), and the endpoint's
+`request_date` triple. No verifier rejects a payload for its age: how old a
+signed payload may be is the caller's decision, made on the `signedDate` in
+the JSON.
 
 ### Why JSON is the interchange
 
-`AprvResult.json` carries the answer: the claim object for the JWS calls, a
-normalised receipt object for the receipt calls, Apple's own response body
+`AprvResult.json` carries the answer: the signed JSON text for a JWS,
+exactly `ReceiptPayload::to_json()` for a receipt, Apple's own response body
 for the endpoint call.
 
 A verified transaction is an open-ended JSON claim set and a verified receipt
@@ -157,32 +129,30 @@ is a tree with repeated groups and raw byte attributes. Modelling either as C
 structs would put every field of a wire format Apple extends at will into the
 ABI, and every field Apple added would then be a breaking change for every
 consumer in every language. One UTF-8 JSON document instead keeps the ABI at
-twenty-one symbols and moves the schema question into a parser the caller
-already has.
+seven symbols and moves the schema question into a parser the caller already
+has.
 
-The receipt encoding is the shared cross-port view the conformance vectors
-are written against: dates as ISO-8601 UTC strings, byte attributes as
-lowercase hex (mirrored under `<name>Hex`), `unknownAttributes` as an object
-keyed by the attribute number. JWS claims are passed through exactly as Apple
-ships them, epoch-millisecond dates included.
+The receipt encoding is the canonical one every 0.7 port shares and the
+conformance vectors pin byte for byte: snake_case keys, dates as `*_ms` epoch
+milliseconds, 64-bit ids as strings, bytes as standard base64,
+`unknown_attributes` keyed by the attribute number. JWS claims are passed
+through exactly as Apple signed them.
 
 ### Status codes are stable and append-only
 
-`AprvResult.status` — also the return value — has two bands, and the split is
+`AprvResult.status`, also the return value, has two bands, and the split is
 the point.
 
-* **`1`–`12`** is a verdict about the input: the canonical `Reason`
-  vocabulary every port of this library shares, in the order that vocabulary
-  declares it. These numbers never change and are never reused: `11` was
-  `APRV_REASON_STALE_PAYLOAD`, removed with the max-signed-age policy, and
-  stays retired. `12` is
-  `APRV_REASON_INTERNAL_ERROR`: the chain and signature verified but the
-  signed receipt or JWS content cannot be read, which is not the caller's fault, so
-  alert and retry or escalate rather than deny. Adding a new reason is a
-  deliberate change to `fixtures/cases.schema.json`, `PLAN.md` and all nine
-  ports at once, and it would be `13`.
-* **`100`+** is a mistake in the call itself — a null pointer, a non-UTF-8
-  string, a rejected configuration, a caught panic — and means *nothing about
+* **`1`-`99`** is a verdict about the input: the eight canonical 0.7 reasons
+  every port of this library shares. `2` `INVALID_CERTIFICATE`, `3`
+  `INVALID_CERTIFICATE_PURPOSE`, `5` `INVALID_SIGNATURE` and `12`
+  `INTERNAL_ERROR` kept their numbers; `13` `MALFORMED`, `14` `TOO_LARGE`,
+  `15` `UNTRUSTED_CHAIN` and `16` `UNREADABLE_PAYLOAD` are new in 0.7. The
+  0.6 codes `1`, `4` and `6` to `11` are retired and never reused.
+  `UNREADABLE_PAYLOAD` and `INTERNAL_ERROR` are not the caller's fault: alert
+  and reconcile rather than deny.
+* **`100`+** is a mistake in the call itself (a null pointer, a non-UTF-8
+  string, a rejected configuration, a caught panic) and means *nothing about
   the input was checked*. A caller that treats `APRV_REASON_NULL_POINTER` as
   "the receipt is forged" is reporting its own bug as an attack.
 
@@ -193,14 +163,14 @@ rather than written down.
 On any non-zero status, `json` is `{"reason":"<token>","message":"<detail>"}`.
 The token is the `SCREAMING_SNAKE` spelling; the message is short,
 non-sensitive, and never contains receipt bytes, claims or key material.
-Match on the status or the token — never parse the message.
+Match on the status or the token; never parse the message.
 
 ### Ownership
 
 * `aprv_version()` returns a static string. **Never free it.**
-* Every `aprv_*_new*()` returns a handle the caller owns, or `NULL` if an
-  argument was rejected. Release it with the matching `aprv_*_free()`.
-  Freeing `NULL` is a no-op; freeing twice is undefined behaviour.
+* `aprv_verifier_new()` returns a handle the caller owns, or `NULL` if an
+  argument was rejected. Release it with `aprv_verifier_free()`. Freeing
+  `NULL` is a no-op; freeing twice is undefined behaviour.
 * `AprvResult.json` and the endpoint's `*response_json` are owned by the
   caller. Release each with `aprv_string_free()` — **never** with the C
   runtime's `free()`, because the allocator is Rust's.
@@ -229,14 +199,14 @@ out belong to whoever received them and are not shared.
 
 ## Tests
 
-Three layers, all of them driving the same shared vectors the other nine
-ports answer.
+Three layers, all of them driving the same shared vectors,
+`fixtures/cases-0.7.json`, the other ports answer.
 
 ```bash
 # 1. the ABI's own edge cases: null, non-UTF-8, refused configs, the guard
 cargo test --locked --manifest-path rust/ffi/Cargo.toml
 
-# 2. fixtures/cases.json from C++17 — the primary harness
+# 2. fixtures/cases-0.7.json from C++17: the primary harness
 cargo build --locked --manifest-path rust/ffi/Cargo.toml
 node tools/gen-cases-manifest.mjs rust/ffi/target/manifest
 cmake -S rust/ffi/examples/cpp -B rust/ffi/target/cppbuild
@@ -248,23 +218,25 @@ python3 rust/ffi/tests/conformance.py rust/ffi/target/debug
 ```
 
 **Layer 2 is the primary evidence.** A passing C++ run says the header
-compiles as C++, the symbols link, and the answers match the vectors — the
+compiles as C++, the symbols link, and the answers match the vectors: the
 whole compiled-toolchain path, on all three operating systems in CI.
-`tools/gen-cases-manifest.mjs` flattens `cases.json` into a line-oriented
+`tools/gen-cases-manifest.mjs` flattens the vector file into a line-oriented
 manifest first, because a dependency-free C++17 program cannot parse JSON,
-base64-decode a fixture or check its SHA-256; the generator does all three
-and hands over plain files.
+base64-encode a fixture or check its SHA-256; the generator does all three
+and hands over plain files, including the exact `toJson` bytes a case pins.
 
 **Layer 3 is what "any FFI-capable language" means, tested.** ctypes reads
-`cases.json` itself and calls the same symbols, and it checks the nested
-field paths the C++ harness cannot reach — `receipt.bundle_id`,
-`inAppPurchases[productId=…].expiresDate`, `unknownAttributes[9999][0]`.
+`cases-0.7.json` itself and calls the same symbols, and it checks the nested
+pointers the C++ harness cannot reach: `/receipt/bundle_id`,
+`/in_app/[product_id=...]/expires_date_ms`, `/unknown_attributes/9999/0`.
 
-Both harnesses run every case in `cases.json` and skip none. The endpoint
-cases that pin a clock go through the `_and_clock` constructor described above. Nothing is skipped and
-nothing is assumed: a case the manifest ever marks unsupported fails the run
-rather than shrinking it quietly, and both harnesses print how many pinned a
-clock alongside the pass count.
+Both harnesses run every case in the file and skip none, except the
+`decodeBase64` groups: they call a port's base64 decoders directly, and the
+ABI exposes none, so they are counted as not reachable, never as passed. A
+case that pins a clock passes the instant to `aprv_verifier_new`. A case with
+a `maxMillis` budget (the denial-of-service cases) runs once to warm up and
+fails if the second run takes longer. After the run every case id must have
+run or been counted.
 
 ## Example
 
@@ -280,13 +252,13 @@ rust/ffi/target/cppbuild/bin/aprv_example \
 ```
 
 ```
-apple-purchase-receipt-verifier 0.4.0
+apple-purchase-receipt-verifier 0.6.0
 
 transaction: status 0
-{"bundleId":"com.example.app","environment":"Sandbox","inAppOwnershipType":"PURCHASED", …}
+{"bundleId":"com.example.app","environment":"Sandbox","signedDate":1722945600000, ...}
 
 receipt: status 0
-{"appVersion":"2","bundleId":"dev.bonzer.weeka.app","creationDate":"2025-12-26T18:39:47Z", …}
+{"receipt_type":"ProductionSandbox","app_item_id":"0","bundle_id":"...", ...}
 ```
 
 `examples/python/example.py` is the same page from Python, with nothing but
@@ -330,9 +302,9 @@ consumers, one manifest, identical counts.
 
 Two things the shim does that a C caller does not have to think about.
 
-**Handles are released by the garbage collector.** Each handle from
-`aprv_*_new*` lives in an `ErlNifResourceType` whose destructor calls the
-matching `aprv_*_free`, so dropping the last Elixir reference frees it.
+**Handles are released by the garbage collector.** The handle from
+`aprv_verifier_new` lives in an `ErlNifResourceType` whose destructor calls
+`aprv_verifier_free`, so dropping the last Elixir reference frees it.
 Strings are copied into Erlang binaries and released with `aprv_string_free`
 before the NIF returns, so no Rust allocation outlives a call.
 

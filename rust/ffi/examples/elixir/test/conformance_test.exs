@@ -1,7 +1,7 @@
 defmodule ConformanceTest do
   @moduledoc """
-  Drives `fixtures/cases.json` — the normative cross-language conformance
-  vectors — through the C ABI from Elixir, over the NIF shim.
+  Drives `fixtures/cases-0.7.json`, the normative cross-language conformance
+  vectors, through the C ABI from Elixir, over the NIF shim.
 
       node tools/gen-cases-manifest.mjs rust/ffi/target/manifest
       mix test
@@ -13,35 +13,31 @@ defmodule ConformanceTest do
   library itself. Reusing it keeps this file about the boundary.
 
   Both this and `rust/ffi/examples/cpp/conformance.cpp` run every case in
-  `fixtures/cases.json` and skip none, except the `decodeBase64` groups: they
-  call a port's base64 decoders directly, the ABI exposes none, and the
+  `fixtures/cases-0.7.json` and skip none, except the `decodeBase64` groups:
+  they call a port's base64 decoders directly, the ABI exposes none, and the
   manifest marks them `abiUnreachable`, so they are counted and never passed.
   After the run, every case id in the manifest must have run or been counted.
-  The endpoint cases that pin a clock go through
-  `aprv_endpoint_new_with_roots_and_clock`, which takes the instant itself
-  rather than a callback; the generator has already parsed it to epoch
-  milliseconds. A case the manifest marks unsupported fails the run rather
-  than being counted away.
+  A case that pins a clock passes the instant to `aprv_verifier_new`; the
+  generator has already parsed it to epoch milliseconds. A case the manifest
+  marks unsupported fails the run rather than being counted away.
   """
 
   use ExUnit.Case, async: false
 
   alias AppleReceiptExample, as: Aprv
+  alias AppleReceiptExample.Native
 
   @manifest_dir System.get_env("APRV_MANIFEST_DIR") ||
                   Path.expand("../../../target/manifest", __DIR__)
 
   @reason_codes %{
-    "INVALID_JWS_FORMAT" => :invalid_jws_format,
+    "MALFORMED" => :malformed,
+    "TOO_LARGE" => :too_large,
+    "INVALID_SIGNATURE" => :invalid_signature,
+    "UNTRUSTED_CHAIN" => :untrusted_chain,
     "INVALID_CERTIFICATE" => :invalid_certificate,
     "INVALID_CERTIFICATE_PURPOSE" => :invalid_certificate_purpose,
-    "INVALID_CHAIN" => :invalid_chain,
-    "INVALID_SIGNATURE" => :invalid_signature,
-    "WRONG_BUNDLE_ID" => :wrong_bundle_id,
-    "WRONG_ENVIRONMENT" => :wrong_environment,
-    "WRONG_APP_APPLE_ID" => :wrong_app_apple_id,
-    "INVALID_RECEIPT_FORMAT" => :invalid_receipt_format,
-    "DEVICE_HASH_MISMATCH" => :device_hash_mismatch,
+    "UNREADABLE_PAYLOAD" => :unreadable_payload,
     "INTERNAL_ERROR" => :internal_error
   }
 
@@ -53,7 +49,7 @@ defmodule ConformanceTest do
     cases = read_manifest()
     assert cases != [], "the manifest held no cases"
 
-    IO.puts("apple-purchase-receipt-verifier #{Aprv.version()} — C ABI conformance over NIFs")
+    IO.puts("apple-purchase-receipt-verifier #{Aprv.version()}: C ABI conformance over NIFs")
 
     pinned_clocks = Enum.count(cases, &(get(&1, "clockUnixMillis") != nil))
 
@@ -75,7 +71,7 @@ defmodule ConformanceTest do
            Enum.map_join(Enum.reverse(failures), "\n", fn {id, why} -> "FAIL  #{id}: #{why}" end)
 
     # Coverage self-check: every case id the manifest lists, one per case in
-    # cases.json, ran or was counted as unreachable, compared id by id.
+    # cases-0.7.json, ran or was counted as unreachable, compared id by id.
     missing =
       cases
       |> Enum.map(&get(&1, "id"))
@@ -90,7 +86,7 @@ defmodule ConformanceTest do
   # and the ABI exposes none.
   defp tally(kase, {failures, passed, skipped, fields, ran, unreachable}) do
     id = get(kase, "id")
-    fields = fields + length(all(kase, "field"))
+    fields = fields + length(all(kase, "field")) + length(all(kase, "length"))
 
     cond do
       get(kase, "abiUnreachable") != nil ->
@@ -121,7 +117,7 @@ defmodule ConformanceTest do
     path = Path.join(@manifest_dir, "cases.tsv")
 
     if not File.exists?(path) do
-      flunk("cannot read #{path} — run: node tools/gen-cases-manifest.mjs #{@manifest_dir}")
+      flunk("cannot read #{path}; run: node tools/gen-cases-manifest.mjs #{@manifest_dir}")
     end
 
     path
@@ -144,91 +140,60 @@ defmodule ConformanceTest do
 
   defp all(kase, key), do: for({^key, value} <- kase, do: value)
 
-  defp integer(kase, key), do: String.to_integer(get(kase, key, "0"))
 
   # --- one case -----------------------------------------------------------
 
   defp run_and_check(kase) do
-    with {:ok, outcome} <- run_case(kase) do
+    with {:ok, outcome} <- timed(kase) do
       check(kase, outcome)
     end
   end
 
+  # A maxMillis budget (the denial-of-service cases): one warm-up run of the
+  # same case, then the timed run whose outcome is checked.
+  defp timed(kase) do
+    case get(kase, "maxMillis") do
+      nil ->
+        run_case(kase)
+
+      budget ->
+        run_case(kase)
+        {micros, result} = :timer.tc(fn -> run_case(kase) end)
+        millis = div(micros, 1000)
+
+        if millis > String.to_integer(budget),
+          do: {:error, "took #{millis} ms, over the #{budget} ms budget"},
+          else: result
+    end
+  end
+
+  # `{:ok, {:ok, raw_json}}`, `{:ok, {:error, status, raw_json}}`, or
+  # `{:error, why}` when the case could not be run at all. The raw text is
+  # kept because a toJson expectation compares bytes.
   defp run_case(kase) do
     roots = Enum.map(all(kase, "root"), &File.read!/1)
-    input = File.read!(get(kase, "input"))
-    guid = decode_hex(get(kase, "deviceGuidHex", ""))
-    # nil is the ABI's NULL clock pointer: the system clock, which is what a
-    # case that pins none must be answered at.
-    clock = clock_millis(kase)
 
-    case get(kase, "op") do
-      operation
-      when operation in ~w(verifyTransaction verifyAppTransaction verifyRaw) and clock == nil ->
-        with {:ok, verifier} <-
-               open(
-                 Aprv.jws_verifier(
-                   get(kase, "bundleId"),
-                   # already computed by the generator, so passed as the mask
-                   integer(kase, "envs"),
-                   app_apple_id: integer(kase, "appAppleId"),
-                   roots: roots
-                 ),
-                 "aprv_verifier_new_jws refused the configuration"
-               ) do
-          {:ok,
-           case operation do
-             "verifyTransaction" -> Aprv.verify_transaction(verifier, input)
-             "verifyAppTransaction" -> Aprv.verify_app_transaction(verifier, input)
-             "verifyRaw" -> Aprv.verify_raw(verifier, input)
-           end}
-        end
+    with {:ok, verifier} <- open(Native.verifier_new(roots, clock_millis(kase))) do
+      case get(kase, "op") do
+        "verifyReceipt" ->
+          {:ok, Native.verify_receipt(verifier, File.read!(get(kase, "input")))}
 
-      operation
-      when operation in ~w(verifyReceipt verifyReceiptBase64) and clock == nil ->
-        with {:ok, verifier} <-
-               open(
-                 Aprv.receipt_verifier(get(kase, "bundleId"), roots: roots),
-                 "aprv_verifier_new_receipt refused the configuration"
-               ) do
-          {:ok,
-           case operation do
-             "verifyReceipt" ->
-               Aprv.verify_receipt(verifier, input, device_guid: guid)
+        "verifySignedData" ->
+          {:ok, Native.verify_signed_data(verifier, File.read!(get(kase, "input")))}
 
-             "verifyReceiptBase64" ->
-               Aprv.verify_receipt_base64(verifier, input, device_guid: guid)
-           end}
-        end
+        "verifyReceiptEndpoint" ->
+          environment = String.to_integer(get(kase, "endpointEnv"))
 
-      "verifyReceiptEndpoint" ->
-        environment = if integer(kase, "endpointEnv") == 1, do: :production, else: :sandbox
-
-        with {:ok, endpoint} <-
-               open(
-                 Aprv.endpoint(environment, roots: roots, clock_unix_millis: clock),
-                 "aprv_endpoint_new refused the configuration"
-               ) do
-          case Aprv.verify_receipt_endpoint(endpoint, File.read!(get(kase, "request"))) do
+          case Native.verify_receipt_endpoint(verifier, environment, File.read!(get(kase, "request"))) do
             # The endpoint never reports a verdict through the return value:
             # the Apple status code is a field of the body it answers.
-            {:ok, body} ->
-              {:ok, {:ok, body}}
-
-            {:error, reason} ->
-              {:error, "the endpoint call itself failed with #{inspect(reason)}"}
+            {:ok, body} -> {:ok, {:ok, body}}
+            {:error, status} -> {:error, "the endpoint call itself failed with #{status}"}
           end
-        end
 
-      operation
-      when operation in ~w(verifyReceipt verifyReceiptBase64 verifyTransaction verifyAppTransaction verifyRaw) ->
-        # The receipt and JWS verifiers take no clock in any port: an
-        # injected one must never be able to accept an expired chain. A case
-        # pinning one here would be a change to the vectors, so it fails.
-        {:error, "#{operation} has no clock seam, but the case pins one"}
-
-      operation ->
-        {:error, "no adapter for operation #{operation}"}
+        operation ->
+          {:error, "no adapter for operation #{operation}"}
+      end
     end
   end
 
@@ -241,15 +206,15 @@ defmodule ConformanceTest do
     end
   end
 
-  defp open({:ok, handle}, _message), do: {:ok, handle}
-  defp open({:error, :invalid_argument}, message), do: {:error, message}
+  defp open({:ok, handle}), do: {:ok, handle}
+  defp open({:error, :invalid_argument}), do: {:error, "aprv_verifier_new refused the configuration"}
 
   # --- expectations -------------------------------------------------------
 
   defp check(kase, outcome) do
     case get(kase, "expect") do
       "error" -> check_error(kase, outcome)
-      "ok" -> check_ok(kase, outcome)
+      expect when expect in ["ok", "body"] -> check_ok(kase, outcome)
     end
   end
 
@@ -257,73 +222,89 @@ defmodule ConformanceTest do
     token = get(kase, "reason")
     wanted = Map.get(@reason_codes, token)
 
-    cond do
-      wanted == nil ->
-        {:error, "unknown expected reason #{token}"}
+    case outcome do
+      {:error, status, json} ->
+        body = JSON.decode!(json)
 
-      match?({:error, ^wanted, _}, outcome) ->
-        # The status is the contract; the token in the body must agree.
-        {:error, _, body} = outcome
+        cond do
+          wanted == nil -> {:error, "unknown expected reason #{token}"}
+          Aprv.reason(status) != wanted -> {:error, "reason: expected #{token}, got #{json}"}
+          # The status is the contract; the token in the body must agree.
+          body["reason"] != token -> {:error, "the error body does not name #{token}: #{json}"}
+          true -> :ok
+        end
 
-        if body["reason"] == token,
-          do: :ok,
-          else: {:error, "the error body does not name #{token}: #{inspect(body)}"}
-
-      true ->
-        {:error, "reason: expected #{token}, got #{inspect(outcome)}"}
+      {:ok, json} ->
+        {:error, "reason: expected #{token}, but it verified: #{json}"}
     end
   end
 
-  defp check_ok(_kase, {:error, reason, body}) do
-    {:error, "expected success, got #{inspect(reason)} #{inspect(body)}"}
+  defp check_ok(_kase, {:error, status, json}) do
+    {:error, "expected success, got #{inspect(Aprv.reason(status))} #{json}"}
   end
 
-  defp check_ok(kase, {:ok, payload}) do
-    Enum.find_value(all(kase, "field"), :ok, fn field ->
-      case check_field(payload, field) do
-        :ok -> nil
-        {:error, why} -> {:error, why}
+  defp check_ok(kase, {:ok, json}) do
+    payload = JSON.decode!(json)
+
+    to_json =
+      case get(kase, "toJson") do
+        nil ->
+          :ok
+
+        path ->
+          # The receipt document is exactly ReceiptPayload::to_json():
+          # compared byte for byte, as the vectors pin it.
+          if File.read!(path) == json, do: :ok, else: {:error, "toJson differs: got #{json}"}
       end
-    end)
+
+    checks = Enum.map(all(kase, "length"), &check_length(payload, &1)) ++
+               Enum.map(all(kase, "field"), &check_field(payload, &1))
+
+    Enum.find([to_json | checks], :ok, &(&1 != :ok))
   end
 
-  # `<path>~><tag>:<text>`, the tag being `s` (string), `n` (number) or `z`
-  # (absent or null). The generator only emits top-level scalars and
-  # `<array>.length`; the nested paths it drops are checked by
-  # rust/ffi/tests/conformance.py, which reads cases.json directly.
+  defp check_length(payload, entry) do
+    ["/" <> key, wanted] = String.split(entry, "~>", parts: 2)
+    found = Map.get(payload, key)
+
+    if is_list(found),
+      do: compare("/" <> key, length(found), String.to_integer(wanted)),
+      else: {:error, "/#{key}: not an array"}
+  end
+
+  # `<pointer>~><tag>:<text>`, the tag being `s` (string), `n` (number), `b`
+  # (true or false) or `z` (absent or null). The generator only emits
+  # top-level pointers; the nested ones it drops are checked by
+  # rust/ffi/tests/conformance.py, which reads cases-0.7.json directly.
   defp check_field(payload, field) do
-    [path, tagged] = String.split(field, "~>", parts: 2)
+    ["/" <> key, tagged] = String.split(field, "~>", parts: 2)
     <<tag::utf8, ?:, wanted::binary>> = tagged
-
-    {key, length?} =
-      if String.ends_with?(path, ".length"),
-        do: {String.replace_suffix(path, ".length", ""), true},
-        else: {path, false}
-
+    path = "/" <> key
     found = Map.get(payload, key, :missing)
 
     cond do
       tag == ?z and found in [:missing, nil] -> :ok
       tag == ?z -> {:error, "#{path}: expected absent, got #{inspect(found)}"}
       found == :missing -> {:error, "#{path}: expected #{wanted}, got nothing"}
-      length? and not is_list(found) -> {:error, "#{path}: #{key} is not an array"}
-      length? -> compare(path, length(found), String.to_integer(wanted))
       tag == ?s -> compare(path, found, wanted)
+      tag == ?b -> compare(path, found, wanted == "true")
       tag == ?n -> compare(path, found, number(wanted))
     end
   end
 
+  # Numbers compare by value (1722945600000.0 equals 1722945600000), and
+  # integers exactly, since JSON.decode! keeps every integer's digits.
   defp compare(_path, found, wanted) when found == wanted, do: :ok
 
   defp compare(path, found, wanted),
     do: {:error, "#{path}: expected #{inspect(wanted)}, got #{inspect(found)}"}
 
   defp number(text) do
-    if String.contains?(text, [".", "e", "E"]),
-      do: String.to_float(text),
-      else: String.to_integer(text)
+    if String.contains?(text, [".", "e", "E"]) do
+      {value, ""} = Float.parse(text)
+      value
+    else
+      String.to_integer(text)
+    end
   end
-
-  defp decode_hex(""), do: ""
-  defp decode_hex(text), do: Base.decode16!(text, case: :mixed)
 end

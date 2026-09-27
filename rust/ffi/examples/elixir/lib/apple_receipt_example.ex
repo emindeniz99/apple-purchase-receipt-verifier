@@ -4,41 +4,38 @@ defmodule AppleReceiptExample do
   ABI in `rust/ffi`.
 
   This is an example, not a package. It shows the shape a real Elixir client
-  would take: a handle built once and shared, verification calls that return
-  a decoded map, and a reason atom instead of a status number.
+  would take: a verifier built once and shared, verification calls that
+  return a decoded map, and a reason atom instead of a status number.
 
   A verifier is a reference to a native handle. It is immutable and safe to
   share between processes, and the garbage collector releases it, so there is
   nothing to close.
 
-      {:ok, verifier} = AppleReceiptExample.jws_verifier("com.example.app", [:sandbox])
-      {:ok, claims} = AppleReceiptExample.verify_transaction(verifier, jws)
+      {:ok, verifier} = AppleReceiptExample.verifier()
+      {:ok, claims} = AppleReceiptExample.verify_signed_data(verifier, jws)
 
   A failed verification is `{:error, reason, body}`, where `reason` is one of
-  the twelve canonical tokens every port of this library shares and `body`
+  the eight canonical tokens every port of this library shares and `body`
   also carries a short non-sensitive message. Match on the reason; never
   parse the message.
   """
 
   alias AppleReceiptExample.Native
 
-  @environments %{production: 1, sandbox: 2, xcode: 4, local_testing: 8}
+  @environments %{production: 1, sandbox: 2}
 
-  # The 1..12 band is a verdict about the input; the 100+ band is a mistake
+  # The 1..99 band is a verdict about the input; the 100+ band is a mistake
   # in the call itself and means nothing about the input was checked. Keeping
   # both as atoms keeps the distinction visible at the call site.
   @reasons %{
-    1 => :invalid_jws_format,
     2 => :invalid_certificate,
     3 => :invalid_certificate_purpose,
-    4 => :invalid_chain,
     5 => :invalid_signature,
-    6 => :wrong_bundle_id,
-    7 => :wrong_environment,
-    8 => :wrong_app_apple_id,
-    9 => :invalid_receipt_format,
-    10 => :device_hash_mismatch,
     12 => :internal_error,
+    13 => :malformed,
+    14 => :too_large,
+    15 => :untrusted_chain,
+    16 => :unreadable_payload,
     100 => :null_pointer,
     101 => :invalid_utf8,
     102 => :invalid_argument,
@@ -54,104 +51,50 @@ defmodule AppleReceiptExample do
   defdelegate version(), to: Native
 
   @doc """
-  A verifier for Apple-signed JWS payloads.
+  A verifier. Options are `:roots`, a list of DER certificates that replaces
+  the three bundled Apple roots, and `:clock_unix_millis`, which pins the
+  clock (for tests and conformance vectors; the system clock otherwise).
 
-  `environments` is a list of `:production`, `:sandbox`, `:xcode` or
-  `:local_testing`, or the bitmask itself for a caller that already has one.
-  Options are `:app_apple_id` (required to accept a Production
-  `AppTransaction`) and `:roots`, a list of DER certificates that replaces
-  the three bundled Apple roots.
-
-  No payload is rejected for its age: how old a signed payload may be is the
-  caller's decision, made on the `signedDate` in the verified JSON. A payload
-  stating no date of its own is judged at system time.
+  The clock is read in two places: the certificate-validity instant when the
+  input states no usable signing date, and the endpoint's `request_date`. No
+  payload is rejected for its age: how old a signed payload may be is the
+  caller's decision.
   """
-  @spec jws_verifier(binary(), [atom()] | non_neg_integer(), keyword()) ::
-          {:ok, verifier()} | {:error, :invalid_argument}
-  def jws_verifier(bundle_id, environments, options \\ []) do
-    Native.jws_verifier_new(
-      bundle_id,
-      mask(environments),
-      Keyword.get(options, :app_apple_id, 0),
-      Keyword.get(options, :roots, [])
-    )
-  end
-
-  @doc "A verifier for legacy PKCS#7 app receipts. Takes the `:roots` option."
-  @spec receipt_verifier(binary(), keyword()) :: {:ok, verifier()} | {:error, :invalid_argument}
-  def receipt_verifier(bundle_id, options \\ []) do
-    Native.receipt_verifier_new(bundle_id, Keyword.get(options, :roots, []))
+  @spec verifier(keyword()) :: {:ok, verifier()} | {:error, :invalid_argument}
+  def verifier(options \\ []) do
+    Native.verifier_new(Keyword.get(options, :roots, []), Keyword.get(options, :clock_unix_millis))
   end
 
   @doc """
-  A local `verifyReceipt` endpoint for `:production` or `:sandbox`. The
-  choice drives the 21007/21008 routing. Takes the `:roots` and
-  `:clock_unix_millis` options; the clock stamps the `request_date` triple of
-  the response body and nothing else.
+  Verifies a legacy app receipt given as the base64 an app sends, and
+  returns every field it carries. The caller compares `bundle_id` and
+  anything else it grants on.
   """
-  @spec endpoint(atom(), keyword()) :: {:ok, verifier()} | {:error, :invalid_argument}
-  def endpoint(environment, options \\ []) do
-    Native.endpoint_new(
-      mask([environment]),
-      Keyword.get(options, :roots, []),
-      Keyword.get(options, :clock_unix_millis)
-    )
-  end
-
-  @doc "Verifies a signed transaction, then checks bundle id and environment."
-  @spec verify_transaction(verifier(), binary()) :: outcome()
-  def verify_transaction(verifier, jws), do: decode(Native.verify_transaction(verifier, jws))
+  @spec verify_receipt(verifier(), binary()) :: outcome()
+  def verify_receipt(verifier, receipt_base64),
+    do: decode(Native.verify_receipt(verifier, receipt_base64))
 
   @doc """
-  Verifies a signed `AppTransaction`, then checks bundle id, environment and,
-  in Production, the app Apple id.
+  Verifies any Apple-signed compact JWS and returns its claims. No claim is
+  enforced: the caller checks bundle id, environment and anything else.
   """
-  @spec verify_app_transaction(verifier(), binary()) :: outcome()
-  def verify_app_transaction(verifier, jws),
-    do: decode(Native.verify_app_transaction(verifier, jws))
+  @spec verify_signed_data(verifier(), binary()) :: outcome()
+  def verify_signed_data(verifier, jws), do: decode(Native.verify_signed_data(verifier, jws))
 
   @doc """
-  Verifies the chain and signature only, and returns every claim. No claim is
-  enforced, so the caller must check bundle id, environment and app Apple id
-  itself. For renewal info and notification envelopes.
+  Handles one `verifyReceipt` request body as `:production` or `:sandbox`
+  and returns Apple's response body.
+
+  Like Apple's own endpoint this never reports a verification failure
+  through the tuple: the verdict is the `status` field inside the map. An
+  `{:error, reason}` here means the call itself was malformed.
   """
-  @spec verify_raw(verifier(), binary()) :: outcome()
-  def verify_raw(verifier, jws), do: decode(Native.verify_raw(verifier, jws))
-
-  @doc """
-  Verifies a legacy app receipt in its raw DER form. With `:device_guid` set
-  it also checks that attribute 5 equals
-  `SHA1(guid <> opaqueValue <> bundleIdBytes)`.
-  """
-  @spec verify_receipt(verifier(), binary(), keyword()) :: outcome()
-  def verify_receipt(verifier, der, options \\ []) do
-    decode(Native.verify_receipt_der(verifier, der, Keyword.get(options, :device_guid, "")))
-  end
-
-  @doc "Verifies a legacy app receipt given as the base64 a client sends."
-  @spec verify_receipt_base64(verifier(), binary(), keyword()) :: outcome()
-  def verify_receipt_base64(verifier, receipt_base64, options \\ []) do
-    decode(
-      Native.verify_receipt_base64(
-        verifier,
-        receipt_base64,
-        Keyword.get(options, :device_guid, "")
-      )
-    )
-  end
-
-  @doc """
-  Handles one `verifyReceipt` request body and returns Apple's response body.
-
-  The request is JSON, because that is what a client posts. Like Apple's own
-  endpoint this never reports a verification failure through the tuple: the
-  verdict is the `status` field inside the map. An `{:error, reason}` here
-  means the call itself was malformed.
-  """
-  @spec verify_receipt_endpoint(verifier(), binary()) ::
+  @spec verify_receipt_endpoint(verifier(), atom(), binary()) ::
           {:ok, map()} | {:error, atom() | integer()}
-  def verify_receipt_endpoint(endpoint, request_json) do
-    case Native.verify_receipt_endpoint_json(endpoint, request_json) do
+  def verify_receipt_endpoint(verifier, environment, request_json) do
+    code = Map.fetch!(@environments, environment)
+
+    case Native.verify_receipt_endpoint(verifier, code, request_json) do
       {:ok, body} -> {:ok, JSON.decode!(body)}
       {:error, status} -> {:error, reason(status)}
     end
@@ -163,15 +106,4 @@ defmodule AppleReceiptExample do
 
   defp decode({:ok, json}), do: {:ok, JSON.decode!(json)}
   defp decode({:error, status, json}), do: {:error, reason(status), JSON.decode!(json)}
-
-  defp mask(bits) when is_integer(bits), do: bits
-
-  defp mask(environments) when is_list(environments) do
-    Enum.reduce(environments, 0, fn name, acc ->
-      case Map.fetch(@environments, name) do
-        {:ok, bit} -> Bitwise.bor(acc, bit)
-        :error -> raise ArgumentError, "unknown environment #{inspect(name)}"
-      end
-    end)
-  end
 end

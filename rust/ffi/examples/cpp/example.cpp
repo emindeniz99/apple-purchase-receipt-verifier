@@ -41,20 +41,21 @@ int main(int argc, char **argv) {
   const std::string receipt = read(argv[3]);
   int failures = 0;
 
+  // A verifier pinned to the fixture root, and one on the bundled Apple
+  // roots. A NULL clock reads the system clock.
   const uint8_t *ders[] = {reinterpret_cast<const uint8_t *>(root.data())};
   const size_t lens[] = {root.size()};
-  AprvJwsVerifier *jws_verifier = aprv_verifier_new_jws_with_roots(
-      "com.example.app", APRV_ENVIRONMENT_SANDBOX, 0, ders, lens, 1);
+  AprvVerifier *fixture_verifier = aprv_verifier_new(ders, lens, 1, nullptr);
   AprvResult transaction = {0, nullptr};
-  aprv_verify_transaction(jws_verifier, jws.c_str(), &transaction);
+  aprv_verify_signed_data(fixture_verifier, jws.c_str(), &transaction);
   failures += show("transaction", transaction);
-  aprv_verifier_free_jws(jws_verifier);
+  aprv_verifier_free(fixture_verifier);
 
-  AprvReceiptVerifier *receipt_verifier = aprv_verifier_new_receipt("dev.bonzer.weeka.app");
+  AprvVerifier *apple_verifier = aprv_verifier_new(nullptr, nullptr, 0, nullptr);
   AprvResult app_receipt = {0, nullptr};
-  aprv_verify_receipt_base64(receipt_verifier, receipt.c_str(), &app_receipt);
+  aprv_verify_receipt(apple_verifier, receipt.c_str(), &app_receipt);
   failures += show("receipt", app_receipt);
-  aprv_verifier_free_receipt(receipt_verifier);
+  aprv_verifier_free(apple_verifier);
 
   return failures == 0 ? 0 : 1;
 }

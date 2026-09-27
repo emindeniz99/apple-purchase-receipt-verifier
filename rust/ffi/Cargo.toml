@@ -22,11 +22,9 @@ name = "apple_purchase_receipt_verifier_ffi"
 path = "src/lib.rs"
 crate-type = ["cdylib", "staticlib"]
 
-# One dependency, and it is the library itself. JSON is built through the
-# `serde_json` the library re-exports, so this crate cannot end up holding a
-# different major version than the one `Claims` is made of — and cargo-deny's
-# banned-crate list keeps meaning what it means, because nothing new enters
-# the graph.
+# One dependency, and it is the library itself. The JSON the ABI hands out
+# is the library's own (`ReceiptPayload::to_json()` and the signed JWS text),
+# so nothing new enters the graph and cargo-deny's banned-crate list keeps
+# meaning what it means.
 [dependencies.apple-purchase-receipt-verifier]
 path = ".."
-features = ["endpoint"]
