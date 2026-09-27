@@ -21,12 +21,12 @@ public final class VerificationResult<T> {
 
     /** A verified result carrying {@code payload}; for callers mocking {@link Verifier}. */
     public static <T> VerificationResult<T> of(T payload) {
-        return new VerificationResult<T>(Objects.requireNonNull(payload, "payload"), null);
+        return new VerificationResult<>(Objects.requireNonNull(payload, "payload"), null);
     }
 
     /** A failed result; for callers mocking {@link Verifier}. */
     public static <T> VerificationResult<T> failed(Failure failure) {
-        return new VerificationResult<T>(null, Objects.requireNonNull(failure, "failure"));
+        return new VerificationResult<>(null, Objects.requireNonNull(failure, "failure"));
     }
 
     /** Whether the input verified; exactly when {@link #payload()} is non-null. */

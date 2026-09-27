@@ -56,7 +56,7 @@ final class AppleTrust {
         if (trustedRoots.isEmpty()) {
             throw new IllegalArgumentException("trustedRoots must not be empty");
         }
-        Set<TrustAnchor> anchors = new HashSet<TrustAnchor>();
+        Set<TrustAnchor> anchors = new HashSet<>();
         for (X509Certificate root : trustedRoots) {
             anchors.add(new TrustAnchor(root, null));
         }
@@ -87,7 +87,7 @@ final class AppleTrust {
 
     /** The certificates of {@code trustAnchors}. */
     static List<X509Certificate> roots(Set<TrustAnchor> trustAnchors) {
-        List<X509Certificate> roots = new ArrayList<X509Certificate>(trustAnchors.size());
+        List<X509Certificate> roots = new ArrayList<>(trustAnchors.size());
         for (TrustAnchor anchor : trustAnchors) {
             roots.add(anchor.getTrustedCert());
         }

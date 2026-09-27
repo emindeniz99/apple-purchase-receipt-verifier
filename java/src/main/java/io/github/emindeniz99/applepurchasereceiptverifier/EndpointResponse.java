@@ -100,7 +100,7 @@ final class EndpointResponse {
         // Apple omits the key when attribute 1711 is 0, as it is for
         // consumables.
         Long webOrderLineItemId = purchase.webOrderLineItemId();
-        if (webOrderLineItemId != null && webOrderLineItemId.longValue() != 0) {
+        if (webOrderLineItemId != null && webOrderLineItemId != 0) {
             json.writeStringField("web_order_line_item_id", webOrderLineItemId.toString());
         }
         if (purchase.isTrialPeriod() != null) {
@@ -125,7 +125,7 @@ final class EndpointResponse {
 
     private static void number(JsonGenerator json, String key, @Nullable Long value) throws IOException {
         if (value != null) {
-            json.writeNumberField(key, value.longValue());
+            json.writeNumberField(key, value);
         }
     }
 
@@ -134,7 +134,7 @@ final class EndpointResponse {
         if (epochMillis == null) {
             return;
         }
-        Instant instant = Instant.ofEpochMilli(epochMillis.longValue());
+        Instant instant = Instant.ofEpochMilli(epochMillis);
         json.writeStringField(prefix, FORMAT.format(instant.atZone(ZoneOffset.UTC)) + " Etc/GMT");
         json.writeStringField(prefix + "_ms", epochMillis.toString());
         json.writeStringField(prefix + "_pst", FORMAT.format(instant.atZone(PACIFIC)) + " America/Los_Angeles");

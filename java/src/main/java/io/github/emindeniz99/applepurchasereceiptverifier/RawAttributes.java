@@ -20,9 +20,9 @@ final class RawAttributes {
      * every other.
      */
     static Map<Integer, List<byte[]>> copy(Map<Integer, List<byte[]>> attributes) {
-        Map<Integer, List<byte[]>> copy = new LinkedHashMap<Integer, List<byte[]>>(attributes.size());
+        Map<Integer, List<byte[]>> copy = new LinkedHashMap<>(attributes.size());
         for (Map.Entry<Integer, List<byte[]>> entry : attributes.entrySet()) {
-            List<byte[]> values = new ArrayList<byte[]>(entry.getValue().size());
+            List<byte[]> values = new ArrayList<>(entry.getValue().size());
             for (byte[] value : entry.getValue()) {
                 values.add(Objects.requireNonNull(value, "attribute value").clone());
             }

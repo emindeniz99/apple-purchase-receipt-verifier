@@ -188,8 +188,7 @@ final class ReceiptCore {
         }
         byte[] payload = (byte[]) cms.getSignedContent().getContent();
 
-        List<SignerInformation> signers =
-                new ArrayList<SignerInformation>(cms.getSignerInfos().getSigners());
+        List<SignerInformation> signers = new ArrayList<>(cms.getSignerInfos().getSigners());
         if (signers.isEmpty()) {
             throw new VerificationException(Reason.MALFORMED, "no signer info");
         }
@@ -361,10 +360,10 @@ final class ReceiptCore {
     private static List<X509Certificate> authenticatedTopDown(
             List<X509Certificate> embedded, Set<TrustAnchor> trustAnchors) {
         List<X509Certificate> issuers = AppleTrust.roots(trustAnchors);
-        List<X509Certificate> accepted = new ArrayList<X509Certificate>();
-        List<X509Certificate> pending = new ArrayList<X509Certificate>(embedded);
+        List<X509Certificate> accepted = new ArrayList<>();
+        List<X509Certificate> pending = new ArrayList<>(embedded);
         for (int round = 0; round < MAX_PATH_LENGTH && !pending.isEmpty(); round++) {
-            List<X509Certificate> acceptedThisRound = new ArrayList<X509Certificate>();
+            List<X509Certificate> acceptedThisRound = new ArrayList<>();
             for (X509Certificate candidate : pending) {
                 if (AppleTrust.signedByAny(candidate, issuers)) {
                     acceptedThisRound.add(candidate);

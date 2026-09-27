@@ -70,7 +70,7 @@ public final class Config {
          * {@link Verifier#create}.
          */
         public Builder roots(Collection<X509Certificate> roots) {
-            Set<X509Certificate> copy = new LinkedHashSet<X509Certificate>();
+            Set<X509Certificate> copy = new LinkedHashSet<>();
             for (X509Certificate root : roots) {
                 copy.add(Objects.requireNonNull(root, "root"));
             }

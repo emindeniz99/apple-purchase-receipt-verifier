@@ -97,7 +97,7 @@ final class ReceiptDecoder {
     private static final int IAP_IS_IN_INTRO_OFFER_PERIOD = 1719;
 
     /** The top-level types that fill a typed field. 17 is absent: every copy is a purchase. */
-    private static final Set<Integer> TOP_LEVEL = new HashSet<Integer>(Arrays.asList(
+    private static final Set<Integer> TOP_LEVEL = new HashSet<>(Arrays.asList(
             ATTR_RECEIPT_TYPE,
             ATTR_APP_ITEM_ID,
             ATTR_BUNDLE_ID,
@@ -112,7 +112,7 @@ final class ReceiptDecoder {
             ATTR_EXPIRATION_DATE));
 
     /** The in-app types that fill a typed field of {@link InAppPurchase}. */
-    private static final Set<Integer> IN_APP = new HashSet<Integer>(Arrays.asList(
+    private static final Set<Integer> IN_APP = new HashSet<>(Arrays.asList(
             IAP_QUANTITY,
             IAP_PRODUCT_ID,
             IAP_TRANSACTION_ID,
@@ -409,7 +409,7 @@ final class ReceiptDecoder {
             if (value.bitLength() > 63) {
                 throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "receipt integer out of range");
             }
-            return Long.valueOf(value.longValue());
+            return value.longValue();
         } catch (IOException e) {
             throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "attribute value is not valid ASN.1", e);
         } catch (RuntimeException e) {
