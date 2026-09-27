@@ -93,8 +93,8 @@ final class AppleTrust {
     }
 
     /** Whether a path failure, or anything it wraps, says a certificate was outside its validity window. */
-    static boolean outsideValidity(Throwable failure) {
-        for (Throwable t = failure; t != null; t = t.getCause() == t ? null : t.getCause()) {
+    private static boolean outsideValidity(Throwable failure) {
+        for (Throwable t = failure; t != null; t = t.getCause()) {
             if (t instanceof CertificateExpiredException || t instanceof CertificateNotYetValidException) {
                 return true;
             }
