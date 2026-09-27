@@ -17,6 +17,22 @@ Delete a line in the commit that ships it.
    NuGet and the Go proxy, and submit the repository to Packagist
    (the root manifest is landed; see BOOTSTRAP.md).
 
+## 0.7: the API redesign (owner, 2026-09-27)
+
+The design lives in [docs/design/0.7-api.md](./docs/design/0.7-api.md):
+one `Verifier` with three methods (`verifyReceipt`, `verifySignedData`,
+`verifyReceiptEndpoint`), a `Config` of roots and clock, no policy
+parameters, results that never throw, epoch-millisecond dates, and our own
+`snake_case` JSON for receipts. Java is built first; all nine ports ship
+together as 0.7. The 0.6 API is removed without a deprecation period.
+
+Where the sections below disagree with the design, the design wins. In
+particular it drops: the endpoint bundle id helper, `isAccepted()`, an
+accepted-environments set on `ReceiptVerifier`, typed `verifyNotification`
+and `verifyRenewalInfo`, the typed JWS models and their new claims, the
+`deviceGuid` parameter, `decodeUnverified()`, and the Java speed fix
+(moved to "Later / hardening" below).
+
 ## Next
 
 - **Endpoint result API, base64 fast path and input caps: done ✅**
@@ -578,6 +594,20 @@ Still worth filing as issues:
 
 ## Later / hardening
 
+- **Java signature checks, deferred (owner, 2026-09-27).** Java verifies
+  each chain signature twice: once in the top-down walk that fixed the
+  unauthenticated-key DoS (#161), once inside BouncyCastle's PKIX
+  builder, about 170 µs extra per call. Dropping the walk brings the DoS
+  back, and replacing PKIX means hand-written certificate checks, so
+  neither is acceptable. A cache of successful signature checks (about
+  345 µs per call instead of 755) waits too. 0.7 ms per call covers
+  current loads; revisit when a user reports CPU pressure.
+- **Online revocation checks (OCSP or CRL).** Offline verification is the
+  point of the library, so this would be an opt-in at most. Not queued.
+- **A shared Rust core compiled to WebAssembly under every port.** A
+  future idea for its own branch. The 0.7 design keeps the door open: the
+  core would take `now_ms` as an argument instead of calling back into the
+  host for the time.
 - Decide whether to support the ancient `transactionReceipt`
   (purchase-info) format at all (double-wrapped payloads are handled ✅).
 - **Dev-mode environments**: Apple's `SignedDataVerifier` deliberately
