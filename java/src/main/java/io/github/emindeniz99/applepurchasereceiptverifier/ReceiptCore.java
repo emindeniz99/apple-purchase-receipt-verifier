@@ -2,8 +2,6 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import java.io.IOException;
 import java.security.GeneralSecurityException;
-import java.security.InvalidAlgorithmParameterException;
-import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertPathBuilder;
 import java.security.cert.CertPathBuilderException;
 import java.security.cert.CertPathBuilderResult;
@@ -355,6 +353,7 @@ final class ReceiptCore {
             params.setRevocationEnabled(false);
             params.setDate(at);
             params.setMaxPathLength(MAX_PATH_LENGTH - 1);
+            // Per call: BouncyCastle's builder keeps state for the build it runs.
             CertPathBuilderResult result =
                     CertPathBuilder.getInstance("PKIX", BouncyCastle.PROVIDER).build(params);
             // getCertPath() excludes the trust anchor, so this counts the
@@ -366,11 +365,6 @@ final class ReceiptCore {
             return path;
         } catch (CertPathBuilderException e) {
             throw AppleTrust.chainFailure(e, "receipt", "signer chain", at);
-        } catch (NoSuchAlgorithmException | InvalidAlgorithmParameterException e) {
-            // Not raised by the pinned BouncyCastle PKIX and Collection
-            // implementations for parameters built from the pinned anchors.
-            // Should it happen, it is the library's failure, never the receipt's.
-            throw new VerificationException(Reason.INTERNAL_ERROR, "chain validation is not available", e);
         } catch (GeneralSecurityException e) {
             throw new VerificationException(Reason.UNTRUSTED_CHAIN, "embedded certificate could not be used", e);
         } catch (RuntimeException e) {

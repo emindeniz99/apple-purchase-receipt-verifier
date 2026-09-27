@@ -73,6 +73,11 @@ final class JwsCore {
     // second opinion about it.
     private static final JsonFactory JSON = BoundedJson.factory(MAX_JWS_BYTES);
 
+    // Shared: BouncyCastle's PKIX validator keeps no per-call state (only
+    // final fields, checked in 1.86). Its CertificateFactory keeps stream
+    // state and a Signature is stateful by contract, so those stay per call.
+    private static final CertPathValidator PKIX = pkixValidator();
+
     private JwsCore() {}
 
     /**
@@ -374,8 +379,8 @@ final class JwsCore {
 
     private static List<X509Certificate> decodeChain(List<String> x5c) throws VerificationException {
         List<X509Certificate> chain = new ArrayList<X509Certificate>(3);
-        CertificateFactory cf = x509Factory();
         try {
+            CertificateFactory cf = CertificateFactory.getInstance("X.509", BouncyCastle.PROVIDER);
             for (String entry : x5c) {
                 byte[] der = StrictBase64.decode(entry, Reason.INVALID_CERTIFICATE, "x5c entry");
                 if (Asn1Depth.exceeded(der)) {
@@ -437,18 +442,13 @@ final class JwsCore {
     private static void validateChain(
             X509Certificate leaf, X509Certificate intermediate, Date at, Set<TrustAnchor> trustAnchors)
             throws VerificationException {
-        CertPathValidator validator;
         try {
-            validator = CertPathValidator.getInstance("PKIX", BouncyCastle.PROVIDER);
-        } catch (NoSuchAlgorithmException e) {
-            throw new VerificationException(Reason.INTERNAL_ERROR, "PKIX path validation is not available", e);
-        }
-        try {
-            CertPath path = x509Factory().generateCertPath(Arrays.asList(leaf, intermediate));
+            CertPath path = CertificateFactory.getInstance("X.509", BouncyCastle.PROVIDER)
+                    .generateCertPath(Arrays.asList(leaf, intermediate));
             PKIXParameters params = new PKIXParameters(trustAnchors);
             params.setRevocationEnabled(false);
             params.setDate(at);
-            validator.validate(path, params);
+            PKIX.validate(path, params);
         } catch (CertPathValidatorException e) {
             throw AppleTrust.chainFailure(e, "x5c", "certificate chain", at);
         } catch (InvalidAlgorithmParameterException e) {
@@ -468,12 +468,11 @@ final class JwsCore {
         }
     }
 
-    /** BouncyCastle's X.509 factory; its absence would be the library's failure, not the input's. */
-    private static CertificateFactory x509Factory() throws VerificationException {
+    private static CertPathValidator pkixValidator() {
         try {
-            return CertificateFactory.getInstance("X.509", BouncyCastle.PROVIDER);
-        } catch (CertificateException e) {
-            throw new VerificationException(Reason.INTERNAL_ERROR, "X.509 certificate decoding is not available", e);
+            return CertPathValidator.getInstance("PKIX", BouncyCastle.PROVIDER);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("BouncyCastle PKIX validator unavailable", e);
         }
     }
 
@@ -483,13 +482,8 @@ final class JwsCore {
             throw new VerificationException(
                     Reason.INVALID_SIGNATURE, "ES256 signature must be 64 bytes, got " + signature.length);
         }
-        Signature verifier;
         try {
-            verifier = Signature.getInstance("SHA256withPLAIN-ECDSA", BouncyCastle.PROVIDER);
-        } catch (NoSuchAlgorithmException e) {
-            throw new VerificationException(Reason.INTERNAL_ERROR, "ES256 verification is not available", e);
-        }
-        try {
+            Signature verifier = Signature.getInstance("SHA256withPLAIN-ECDSA", BouncyCastle.PROVIDER);
             // JWS ES256 signatures are raw r || s (RFC 7515), which
             // BouncyCastle's PLAIN-ECDSA takes as is. The JDK's own name for
             // it, SHA256withECDSAinP1363Format, is Java 9+ and this library
