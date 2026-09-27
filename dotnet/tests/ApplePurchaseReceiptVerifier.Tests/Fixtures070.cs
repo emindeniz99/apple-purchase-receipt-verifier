@@ -9,20 +9,17 @@ using ApplePurchaseReceiptVerifier.Internal;
 namespace ApplePurchaseReceiptVerifier.Tests;
 
 /// <summary>
-/// The fixture registry from <c>fixtures/cases.json</c>: ids to logical bytes,
-/// each checked against the SHA-256 the registry records for them.
+/// The fixture registry from <c>fixtures/cases-0.7.json</c>: ids to logical
+/// bytes, each checked against the SHA-256 the registry records for them.
 /// </summary>
-internal static class Fixtures
+internal static class Fixtures070
 {
-    /// <summary>The parsed <c>fixtures/cases.json</c> document.</summary>
     internal static readonly OrderedMap Cases = LoadCases();
 
-    /// <summary>The <c>fixtures/</c> directory, found by walking up from the test binary.</summary>
     internal static readonly string Root = FindFixturesDirectory();
 
     private static readonly Dictionary<string, byte[]> Cache = new(StringComparer.Ordinal);
 
-    /// <summary>Every registered fixture id.</summary>
     internal static IEnumerable<string> Ids
     {
         get
@@ -35,20 +32,9 @@ internal static class Fixtures
     }
 
     private static OrderedMap Registry =>
-        Cases["fixtures"] as OrderedMap ?? throw new InvalidOperationException("cases.json has no fixtures map");
+        Cases["fixtures"] as OrderedMap ?? throw new InvalidOperationException("cases-0.7.json has no fixtures map");
 
-    /// <summary>
-    /// The decoded logical bytes of a registered fixture, verified against the
-    /// digest the registry records.
-    /// </summary>
-    /// <remarks>
-    /// <c>contentSha256</c> is the anti-drift guarantee for the vectors: a
-    /// fixture that is regenerated, re-encoded or silently edited changes the
-    /// bytes every port verifies, and the expected fields would then be pinned
-    /// to something no other port ever saw. Checking it here is what makes the
-    /// guarantee load-bearing rather than documentary — and the digest is over
-    /// the logical bytes, which are the bytes handed to the library.
-    /// </remarks>
+    /// <summary>The fixture's logical bytes, per its codec, digest-checked.</summary>
     internal static byte[] Bytes(string id)
     {
         lock (Cache)
@@ -61,7 +47,7 @@ internal static class Fixtures
 
         if (Registry[id] is not OrderedMap entry)
         {
-            throw new InvalidOperationException($"harness error: cases.json registers no fixture \"{id}\"");
+            throw new InvalidOperationException($"harness error: cases-0.7.json registers no fixture \"{id}\"");
         }
 
         string path = Str(entry, "path");
@@ -73,9 +59,6 @@ internal static class Fixtures
             "raw" => raw,
             "base64" => Convert.FromBase64String(Strip(Encoding.ASCII.GetString(raw))),
             "utf8" => Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(raw).Trim()),
-            // Verbatim, untrimmed: the whole point of this codec is pinning
-            // what a port does with the whitespace and padding a client sent,
-            // so nothing here may normalize it away.
             "text" => raw,
             _ => throw new InvalidOperationException($"harness error: unknown fixture codec \"{codec}\""),
         };
@@ -84,7 +67,7 @@ internal static class Fixtures
         if (!string.Equals(actual, expected, StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
-                $"fixture \"{id}\" ({path}, codec {codec}) has drifted: cases.json records "
+                $"fixture \"{id}\" ({path}, codec {codec}) has drifted: cases-0.7.json records "
                 + $"contentSha256 {expected}, the decoded bytes hash to {actual}");
         }
 
@@ -96,15 +79,20 @@ internal static class Fixtures
         return bytes;
     }
 
-    /// <summary>The fixture's bytes as UTF-8 text — the JWS transport form.</summary>
-    internal static string Text(string id) => Encoding.UTF8.GetString(Bytes(id));
+    /// <summary>As the string handed to <c>verifyReceipt</c> / the endpoint's <c>receipt-data</c>: verbatim for a text fixture, canonical base64 otherwise.</summary>
+    internal static string ForReceipt(string id)
+    {
+        return Codec(id) == "text" ? Encoding.UTF8.GetString(Bytes(id)) : Convert.ToBase64String(Bytes(id));
+    }
 
-    /// <summary>The fixture's registered codec, e.g. to branch on <c>"text"</c>.</summary>
+    /// <summary>As the string handed to <c>verifySignedData</c>: the logical bytes, decoded as UTF-8.</summary>
+    internal static string ForSignedData(string id) => Encoding.UTF8.GetString(Bytes(id));
+
     internal static string Codec(string id)
     {
         if (Registry[id] is not OrderedMap entry)
         {
-            throw new InvalidOperationException($"harness error: cases.json registers no fixture \"{id}\"");
+            throw new InvalidOperationException($"harness error: cases-0.7.json registers no fixture \"{id}\"");
         }
 
         return Str(entry, "codec");
@@ -140,20 +128,16 @@ internal static class Fixtures
 
     private static OrderedMap LoadCases()
     {
-        // Parsed with the reader the library itself ships, so the conformance
-        // run is also a few hundred more inputs through it.
-        return Json.ParseObject(File.ReadAllText(Path.Combine(FindFixturesDirectory(), "cases.json")));
+        return Json.ParseObject(File.ReadAllText(Path.Combine(FindFixturesDirectory(), "cases-0.7.json")));
     }
 
     private static string FindFixturesDirectory()
     {
-        // Walk up rather than hardcode "../../..": the relative depth changes
-        // the moment the target-framework count does.
         DirectoryInfo? directory = new(AppContext.BaseDirectory);
         while (directory is not null)
         {
             string candidate = Path.Combine(directory.FullName, "fixtures");
-            if (File.Exists(Path.Combine(candidate, "cases.json")))
+            if (File.Exists(Path.Combine(candidate, "cases-0.7.json")))
             {
                 return candidate;
             }
@@ -161,6 +145,6 @@ internal static class Fixtures
             directory = directory.Parent;
         }
 
-        throw new InvalidOperationException("harness error: could not locate fixtures/cases.json");
+        throw new InvalidOperationException("harness error: could not locate fixtures/cases-0.7.json");
     }
 }

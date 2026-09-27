@@ -198,9 +198,9 @@ public class JsonTests
     [Fact]
     public void TheCasesFileItselfParses()
     {
-        Assert.True(Fixtures.Cases.ContainsKey("cases"));
-        Assert.True(Fixtures.Cases.ContainsKey("fixtures"));
-        Assert.Equal(1L, Fixtures.Cases["schemaVersion"]);
+        Assert.True(Fixtures070.Cases.ContainsKey("cases"));
+        Assert.True(Fixtures070.Cases.ContainsKey("fixtures"));
+        Assert.Equal(2L, Fixtures070.Cases["schemaVersion"]);
     }
 
     /// <summary>

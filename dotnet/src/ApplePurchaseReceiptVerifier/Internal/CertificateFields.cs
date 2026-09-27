@@ -26,10 +26,14 @@ namespace ApplePurchaseReceiptVerifier.Internal
             byte[] tbsCertificate,
             int version,
             string signatureAlgorithmOid,
+            byte[]? signatureAlgorithmParams,
             string tbsSignatureAlgorithmOid,
             byte[] signature,
+            byte[] serialNumberRaw,
+            byte[] issuerRaw,
             string? subjectPublicKeyAlgorithmOid,
             IReadOnlyDictionary<string, byte[]> extensions,
+            IReadOnlyDictionary<string, bool> extensionCritical,
             bool hasDuplicateExtension,
             bool hasUndecodableExtension)
         {
@@ -37,9 +41,13 @@ namespace ApplePurchaseReceiptVerifier.Internal
             Version = version;
             SubjectPublicKeyAlgorithmOid = subjectPublicKeyAlgorithmOid;
             SignatureAlgorithmOid = signatureAlgorithmOid;
+            SignatureAlgorithmParams = signatureAlgorithmParams;
             TbsSignatureAlgorithmOid = tbsSignatureAlgorithmOid;
             Signature = signature;
+            SerialNumberRaw = serialNumberRaw;
+            IssuerRaw = issuerRaw;
             Extensions = extensions;
+            ExtensionCritical = extensionCritical;
             HasDuplicateExtension = hasDuplicateExtension;
             HasUndecodableExtension = hasUndecodableExtension;
         }
@@ -68,14 +76,30 @@ namespace ApplePurchaseReceiptVerifier.Internal
         /// <summary>The outer <c>signatureAlgorithm</c> OID.</summary>
         internal string SignatureAlgorithmOid { get; }
 
-        /// <summary>The <c>signature</c> AlgorithmIdentifier OID from inside the TBS.</summary>
+        /// <summary>
+        /// The outer <c>signatureAlgorithm</c> AlgorithmIdentifier's raw
+        /// <c>parameters</c> field, or <see langword="null"/> when absent.
+        /// Needed to interpret RSASSA-PSS parameters (hash, salt length).
+        /// </summary>
+        internal byte[]? SignatureAlgorithmParams { get; }
+
+        /// <summary>The <c>signature</c> AlgorithmIdentifier OID from inside the TBS. Not used for verification (Q14).</summary>
         internal string TbsSignatureAlgorithmOid { get; }
 
         /// <summary>The raw signature bits.</summary>
         internal byte[] Signature { get; }
 
+        /// <summary>The <c>serialNumber</c> field, tag and length included — for matching a CMS SignerInfo's <c>issuerAndSerialNumber</c>.</summary>
+        internal byte[] SerialNumberRaw { get; }
+
+        /// <summary>The <c>issuer</c> Name field, tag and length included — for matching a CMS SignerInfo's <c>issuerAndSerialNumber</c>.</summary>
+        internal byte[] IssuerRaw { get; }
+
         /// <summary>Extension OID to raw <c>extnValue</c> octets. Duplicates keep the first.</summary>
         internal IReadOnlyDictionary<string, byte[]> Extensions { get; }
+
+        /// <summary>Extension OID to its <c>critical</c> flag (defaults to <see langword="false"/> when absent). Same first-copy rule as <see cref="Extensions"/>.</summary>
+        internal IReadOnlyDictionary<string, bool> ExtensionCritical { get; }
 
         /// <summary>
         /// Whether the certificate carries the same extension OID more than
@@ -116,7 +140,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
 
                 byte[] tbs = certificate.PeekEncodedValue().ToArray();
                 AsnReader tbsReader = certificate.ReadSequence();
-                string outerOid = ReadAlgorithmIdentifierOid(certificate);
+                (string outerOid, byte[]? outerParams) = ReadAlgorithmIdentifier(certificate);
                 byte[] signature = certificate.ReadBitString(out int unusedBits);
                 if (unusedBits != 0 || certificate.HasData)
                 {
@@ -139,15 +163,16 @@ namespace ApplePurchaseReceiptVerifier.Internal
                             : 0;
                 }
 
-                tbsReader.ReadEncodedValue();                       // serialNumber
-                string tbsOid = ReadAlgorithmIdentifierOid(tbsReader);
-                tbsReader.ReadEncodedValue();                       // issuer
+                byte[] serialNumberRaw = tbsReader.ReadEncodedValue().ToArray();
+                (string tbsOid, _) = ReadAlgorithmIdentifier(tbsReader);
+                byte[] issuerRaw = tbsReader.ReadEncodedValue().ToArray();
                 tbsReader.ReadEncodedValue();                       // validity
                 tbsReader.ReadEncodedValue();                       // subject
                 string? subjectPublicKeyAlgorithmOid =
                     TryReadSubjectPublicKeyAlgorithmOid(tbsReader.ReadEncodedValue());
 
                 Dictionary<string, byte[]> extensions = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+                Dictionary<string, bool> critical = new Dictionary<string, bool>(StringComparer.Ordinal);
                 bool duplicate = false;
                 bool undecodable = false;
                 while (tbsReader.HasData)
@@ -165,17 +190,21 @@ namespace ApplePurchaseReceiptVerifier.Internal
                     }
 
                     ReadExtensions(
-                        tbsReader.ReadSequence(tag).ReadSequence(), extensions, ref duplicate, ref undecodable);
+                        tbsReader.ReadSequence(tag).ReadSequence(), extensions, critical, ref duplicate, ref undecodable);
                 }
 
                 return new CertificateFields(
                     tbs,
                     version,
                     outerOid,
+                    outerParams,
                     tbsOid,
                     signature,
+                    serialNumberRaw,
+                    issuerRaw,
                     subjectPublicKeyAlgorithmOid,
                     extensions,
+                    critical,
                     duplicate,
                     undecodable);
             }
@@ -193,6 +222,24 @@ namespace ApplePurchaseReceiptVerifier.Internal
         internal byte[]? Extension(string oid)
         {
             return Extensions.TryGetValue(oid, out byte[]? value) ? value : null;
+        }
+
+        /// <summary>Whether extension <paramref name="oid"/> is present and marked critical.</summary>
+        internal bool IsCritical(string oid)
+        {
+            return ExtensionCritical.TryGetValue(oid, out bool critical) && critical;
+        }
+
+        /// <summary>Every extension OID marked critical, for the unknown-critical-extension check.</summary>
+        internal IEnumerable<string> CriticalExtensionOids()
+        {
+            foreach (KeyValuePair<string, bool> entry in ExtensionCritical)
+            {
+                if (entry.Value)
+                {
+                    yield return entry.Key;
+                }
+            }
         }
 
         /// <summary>Whether the certificate is marked as a CA by BasicConstraints.</summary>
@@ -228,15 +275,20 @@ namespace ApplePurchaseReceiptVerifier.Internal
 
         /// <summary>Reads the extension list, flagging a repeated OID and a value that will not decode.</summary>
         private static void ReadExtensions(
-            AsnReader sequence, Dictionary<string, byte[]> into, ref bool duplicate, ref bool undecodable)
+            AsnReader sequence,
+            Dictionary<string, byte[]> into,
+            Dictionary<string, bool> critical,
+            ref bool duplicate,
+            ref bool undecodable)
         {
             while (sequence.HasData)
             {
                 AsnReader extension = sequence.ReadSequence();
                 string oid = extension.ReadObjectIdentifier();
+                bool isCritical = false;
                 if (extension.HasData && extension.PeekTag() == Asn1Tag.Boolean)
                 {
-                    extension.ReadBoolean();
+                    isCritical = extension.ReadBoolean();
                 }
 
                 byte[] value = extension.ReadOctetString();
@@ -266,6 +318,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
                 }
 
                 into.Add(oid, value);
+                critical.Add(oid, isCritical);
             }
         }
 
@@ -281,7 +334,8 @@ namespace ApplePurchaseReceiptVerifier.Internal
             try
             {
                 AsnReader spki = new AsnReader(subjectPublicKeyInfo, AsnEncodingRules.DER).ReadSequence();
-                return ReadAlgorithmIdentifierOid(spki);
+                (string oid, _) = ReadAlgorithmIdentifier(spki);
+                return oid;
             }
             catch (AsnContentException)
             {
@@ -289,10 +343,13 @@ namespace ApplePurchaseReceiptVerifier.Internal
             }
         }
 
-        private static string ReadAlgorithmIdentifierOid(AsnReader reader)
+        /// <summary>Reads one AlgorithmIdentifier, returning its OID and the raw <c>parameters</c> field, if present.</summary>
+        private static (string Oid, byte[]? Parameters) ReadAlgorithmIdentifier(AsnReader reader)
         {
             AsnReader algorithm = reader.ReadSequence();
-            return algorithm.ReadObjectIdentifier();
+            string oid = algorithm.ReadObjectIdentifier();
+            byte[]? parameters = algorithm.HasData ? algorithm.ReadEncodedValue().ToArray() : null;
+            return (oid, parameters);
         }
     }
 }
