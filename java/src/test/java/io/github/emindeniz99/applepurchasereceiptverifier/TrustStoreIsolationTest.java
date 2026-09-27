@@ -6,9 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
-import io.github.emindeniz99.applepurchasereceiptverifier.jws.JwsVerifier;
-import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifier;
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -31,7 +28,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collections;
-import java.util.EnumSet;
 import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -125,10 +121,18 @@ class TrustStoreIsolationTest {
         Path java = javaExecutable();
         assumeTrue(java != null, "no java executable next to java.home, so no child JVM can be started");
 
+        // The receipt and its root, signed in this JVM under a chain that
+        // carries the WWDR marker (see SyntheticReceipts), handed to the child
+        // as files.
+        Path synthetic = Files.createDirectories(tmp.resolve("synthetic"));
+        Files.write(synthetic.resolve("receipt.der"), SyntheticReceipts.der());
+        Files.write(
+                synthetic.resolve("receipt-root.der"), SyntheticReceipts.root().getEncoded());
+
         Path store = tmp.resolve("planted-truststore.jks");
         KeyStore planted = KeyStore.getInstance("JKS");
         planted.load(null, null);
-        planted.setCertificateEntry("receipt-root", cert("generated", "receipt-root.der"));
+        planted.setCertificateEntry("receipt-root", SyntheticReceipts.root());
         planted.setCertificateEntry("jws-root", cert("generated", "jws-root.der"));
         try (OutputStream out = Files.newOutputStream(store)) {
             planted.store(out, STORE_PASSWORD.toCharArray());
@@ -143,7 +147,8 @@ class TrustStoreIsolationTest {
                 System.getProperty("java.class.path"),
                 PlantedTrustStoreChild.class.getName(),
                 FIXTURES.toAbsolutePath().toString(),
-                store.toAbsolutePath().toString());
+                store.toAbsolutePath().toString(),
+                synthetic.toAbsolutePath().toString());
         // Cleared so the child's ambient trust store is the planted one and
         // nothing else: both variables can carry a -Djavax.net.ssl.trustStore
         // of their own, and a CI runner or a proxied developer machine
@@ -173,13 +178,14 @@ class TrustStoreIsolationTest {
         public static void main(String[] args) throws Exception {
             Path fixtures = Paths.get(args[0]);
             String storePath = args[1];
+            Path synthetic = Paths.get(args[2]);
 
             require(
                     storePath.equals(System.getProperty("javax.net.ssl.trustStore")),
                     "javax.net.ssl.trustStore is " + System.getProperty("javax.net.ssl.trustStore")
                             + ", not the planted store, so nothing below would prove anything");
 
-            X509Certificate receiptRoot = certificate(read(fixtures, "generated", "receipt-root.der"));
+            X509Certificate receiptRoot = certificate(read(synthetic, "receipt-root.der"));
             X509Certificate jwsRoot = certificate(read(fixtures, "generated", "jws-root.der"));
 
             // The premise. TrustManagerFactory.init((KeyStore) null) is the
@@ -200,60 +206,51 @@ class TrustStoreIsolationTest {
                             + " certificates)");
             System.out.println(PREMISE);
 
-            byte[] receipt = read(fixtures, "generated", "receipt.der");
+            byte[] receipt = read(synthetic, "receipt.der");
             String jws = text(fixtures, "generated", "transaction.jws");
-            Set<X509Certificate> plantedReceipt = Collections.singleton(receiptRoot);
-            Set<X509Certificate> plantedJws = Collections.singleton(jwsRoot);
+            Verifier planted = Checks.verifier(receiptRoot, jwsRoot);
+            Verifier apple = Verifier.create(Config.defaults());
 
             // Positive controls first: the only thing separating these from
             // the refusals below is which anchors were passed.
             require(
-                    BUNDLE.equals(new ReceiptVerifier(plantedReceipt, BUNDLE)
-                            .verify(receipt)
-                            .bundleId()),
+                    BUNDLE.equals(Checks.receipt(planted, receipt).bundleId()),
                     "the receipt does not verify under the root that signed it");
             require(
-                    BUNDLE.equals(new JwsVerifier(plantedJws, BUNDLE, EnumSet.of(Environment.SANDBOX))
-                            .verifyTransaction(jws)
-                            .bundleId()),
+                    Checks.signedData(planted, jws).json().contains(BUNDLE),
                     "the transaction does not verify under the root that signed it");
 
             // And the refusals: the same bytes, under the bundled Apple
             // anchors, while the JVM around them trusts the roots that signed
             // them.
             requireInvalidChain(
-                    () -> new ReceiptVerifier(AppleRootCerts.receiptRoots(), BUNDLE).verify(receipt),
-                    "a receipt whose root is in the JVM's trust store");
+                    () -> Checks.receipt(apple, receipt), "a receipt whose root is in the JVM's trust store");
             requireInvalidChain(
-                    () -> ReceiptVerifier.verifyReceiptCore(receipt, AppleRootCerts.receiptRoots()),
-                    "the same receipt through verifyReceiptCore");
-            requireInvalidChain(
-                    () -> new JwsVerifier(AppleRootCerts.jwsRoots(), BUNDLE, EnumSet.of(Environment.SANDBOX))
-                            .verifyTransaction(jws),
-                    "a transaction whose root is in the JVM's trust store");
+                    () -> Checks.signedData(apple, jws), "a transaction whose root is in the JVM's trust store");
+            String response = apple.verifyReceiptEndpoint(
+                    Environment.SANDBOX,
+                    "{\"receipt-data\":\"" + Base64.getEncoder().encodeToString(receipt) + "\"}");
+            require(
+                    response.equals("{\"status\":21003}"),
+                    "the same receipt through the endpoint answered " + response);
 
             // No ambient set to fall back to, even now that there is a
             // populated one to fall back to: an empty anchor set is a
             // configuration error and is refused up front.
             requireIllegalArgument(
-                    () -> new ReceiptVerifier(Collections.<X509Certificate>emptySet(), BUNDLE),
-                    "an empty receipt anchor set");
-            requireIllegalArgument(
-                    () -> ReceiptVerifier.verifyReceiptCore(receipt, Collections.<X509Certificate>emptySet()),
-                    "an empty anchor set through verifyReceiptCore");
-            requireIllegalArgument(
-                    () -> new JwsVerifier(
-                            Collections.<X509Certificate>emptySet(), BUNDLE, EnumSet.of(Environment.SANDBOX)),
-                    "an empty JWS anchor set");
+                    () -> Verifier.create(Config.builder()
+                            .roots(Collections.<X509Certificate>emptySet())
+                            .build()),
+                    "an empty anchor set");
 
             // The other direction: the planted store did not take anything
             // away either. Genuine Apple material still verifies under the
             // bundled roots in this JVM whose trust store holds neither.
             String genuine = text(fixtures, "public-receipts", "receipt-sandbox-g5.b64");
             require(
-                    GENUINE_BUNDLE.equals(new ReceiptVerifier(AppleRootCerts.receiptRoots(), GENUINE_BUNDLE)
-                            .verify(Base64.getMimeDecoder().decode(genuine))
-                            .bundleId()),
+                    GENUINE_BUNDLE.equals(
+                            Checks.receipt(apple, Base64.getMimeDecoder().decode(genuine))
+                                    .bundleId()),
                     "a genuine Apple receipt stopped verifying under the bundled roots");
 
             System.out.println(DONE);
@@ -269,7 +266,7 @@ class TrustStoreIsolationTest {
             try {
                 body.run();
             } catch (VerificationException e) {
-                require(e.reason() == Reason.INVALID_CHAIN, what + " was refused as " + e.getMessage());
+                require(e.reason() == Reason.UNTRUSTED_CHAIN, what + " was refused as " + e.getMessage());
                 return;
             } catch (Exception e) {
                 throw new IllegalStateException(what + " raised " + e, e);
@@ -325,7 +322,8 @@ class TrustStoreIsolationTest {
         // that would stop being true — but Apple is not in the Mozilla root
         // programme most cacerts are built from, so a JDK that did ship its
         // roots would make the refusals below vacuous rather than wrong.
-        Set<X509Certificate> bundled = new HashSet<X509Certificate>(AppleRootCerts.receiptRoots());
+        Set<X509Certificate> bundled =
+                new HashSet<X509Certificate>(Config.defaults().roots());
         bundled.retainAll(cacerts);
         assumeTrue(bundled.isEmpty(), "this JDK ships an Apple root in cacerts, so it cannot be used as a foil");
 
@@ -335,23 +333,21 @@ class TrustStoreIsolationTest {
         byte[] genuine = Base64.getMimeDecoder().decode(fixtureText("public-receipts", "receipt-sandbox-g5.b64"));
         assertEquals(
                 GENUINE_BUNDLE,
-                new ReceiptVerifier(AppleRootCerts.receiptRoots(), GENUINE_BUNDLE)
-                        .verify(genuine)
-                        .bundleId());
+                Checks.receipt(Verifier.create(Config.defaults()), genuine).bundleId());
 
-        assertInvalidChain(() -> new ReceiptVerifier(cacerts, GENUINE_BUNDLE).verify(genuine));
-        assertInvalidChain(() -> ReceiptVerifier.verifyReceiptCore(fixture("generated", "receipt.der"), cacerts));
-        assertInvalidChain(() -> new JwsVerifier(cacerts, BUNDLE, EnumSet.of(Environment.SANDBOX))
-                .verifyTransaction(fixtureText("generated", "transaction.jws")));
+        Verifier underCacerts = Verifier.create(Config.builder().roots(cacerts).build());
+        assertInvalidChain(() -> Checks.receipt(underCacerts, genuine));
+        assertInvalidChain(() -> Checks.receipt(underCacerts, SyntheticReceipts.der()));
+        assertInvalidChain(() -> Checks.signedData(underCacerts, fixtureText("generated", "transaction.jws")));
 
         // And a public root gains nothing from sitting next to Apple's in the
         // caller's list: the anchor still has to have issued the chain.
-        Set<X509Certificate> mixed = new LinkedHashSet<X509Certificate>(AppleRootCerts.receiptRoots());
+        Set<X509Certificate> mixed =
+                new LinkedHashSet<X509Certificate>(Config.defaults().roots());
         mixed.add(cacerts.iterator().next());
-        assertEquals(
-                GENUINE_BUNDLE,
-                new ReceiptVerifier(mixed, GENUINE_BUNDLE).verify(genuine).bundleId());
-        assertInvalidChain(() -> ReceiptVerifier.verifyReceiptCore(fixture("generated", "receipt.der"), mixed));
+        Verifier underMixed = Verifier.create(Config.builder().roots(mixed).build());
+        assertEquals(GENUINE_BUNDLE, Checks.receipt(underMixed, genuine).bundleId());
+        assertInvalidChain(() -> Checks.receipt(underMixed, SyntheticReceipts.der()));
     }
 
     /**
@@ -363,15 +359,13 @@ class TrustStoreIsolationTest {
     @Test
     void anEmptyAnchorSetIsAConfigurationErrorNotAFallback() {
         Set<X509Certificate> none = Collections.emptySet();
-        assertThrows(IllegalArgumentException.class, () -> new ReceiptVerifier(none, BUNDLE));
-        assertThrows(
-                IllegalArgumentException.class, () -> new JwsVerifier(none, BUNDLE, EnumSet.of(Environment.SANDBOX)));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> ReceiptVerifier.verifyReceiptCore(fixture("generated", "receipt.der"), none));
-        assertThrows(IllegalArgumentException.class, () -> new ReceiptVerifier(null, BUNDLE));
-        assertThrows(
-                IllegalArgumentException.class, () -> new JwsVerifier(null, BUNDLE, EnumSet.of(Environment.SANDBOX)));
+                () -> Verifier.create(Config.builder().roots(none).build()));
+        // A null config or root set is a programming error, not an empty set
+        // to widen.
+        assertThrows(NullPointerException.class, () -> Verifier.create(null));
+        assertThrows(NullPointerException.class, () -> Config.builder().roots(null));
     }
 
     // ------------------------------------------------------------------
@@ -440,8 +434,8 @@ class TrustStoreIsolationTest {
      * The PKIX seam itself. Both {@link PKIXParameters} and its builder
      * subclass have a {@code (KeyStore, CertSelector)} constructor that turns
      * a key store — {@code cacerts} included — into trust anchors; this asserts
-     * that the only constructor either verifier reaches takes the caller's
-     * {@code Set<TrustAnchor>} field, and that revocation checking (the one
+     * that the only constructor either verification path reaches takes the
+     * caller's {@code Set<TrustAnchor>}, and that revocation checking (the one
      * thing PKIX validation would otherwise fetch over the network) is turned
      * off at every one of them.
      */
@@ -527,9 +521,9 @@ class TrustStoreIsolationTest {
             }
         }
         // Certificate factory (twice), path builder, cert store, path
-        // validator, ES256 signature and two digests; the certificate
-        // converter and the CMS verifier builders.
-        assertTrue(lookups >= 8, "only " + lookups + " JCA lookups were found, so the scan is not reading the code");
+        // validator, ES256 signature and the root-pinning digest; the
+        // certificate converter and the CMS verifier builders.
+        assertTrue(lookups >= 7, "only " + lookups + " JCA lookups were found, so the scan is not reading the code");
         assertTrue(builders >= 3, "only " + builders + " JCA builders were found, so the scan is not reading the code");
     }
 
@@ -591,19 +585,17 @@ class TrustStoreIsolationTest {
      */
     @Test
     void theReceiptChainIsAnchoredOnlyByTheCallersRoots() throws Exception {
-        byte[] receipt = fixture("generated", "receipt.der");
+        byte[] receipt = SyntheticReceipts.der();
         X509Certificate jwsRoot = cert("generated", "jws-root.der");
-        Set<X509Certificate> passed =
-                new LinkedHashSet<X509Certificate>(Arrays.asList(jwsRoot, cert("generated", "receipt-root.der")));
+        Verifier passed = Checks.verifier(jwsRoot, SyntheticReceipts.root());
         List<String> requests = hostProviderRequestsDuring(() -> {
-            assertEquals(
-                    BUNDLE, new ReceiptVerifier(passed, BUNDLE).verify(receipt).bundleId());
-            // The device-hash digest too, which a wrong GUID still computes.
-            VerificationException e = assertThrows(
-                    VerificationException.class,
-                    () -> new ReceiptVerifier(passed, BUNDLE).verify(receipt, new byte[16]));
-            assertEquals(Reason.DEVICE_HASH_MISMATCH, e.reason());
-            assertInvalidChain(() -> ReceiptVerifier.verifyReceiptCore(receipt, Collections.singleton(jwsRoot)));
+            assertEquals(BUNDLE, Checks.receipt(passed, receipt).bundleId());
+            // The endpoint too, which renders the verified receipt.
+            assertTrue(passed.verifyReceiptEndpoint(
+                            Environment.SANDBOX,
+                            "{\"receipt-data\":\"" + Base64.getEncoder().encodeToString(receipt) + "\"}")
+                    .startsWith("{\"status\":0,"));
+            assertInvalidChain(() -> Checks.receipt(Checks.verifier(jwsRoot), receipt));
         });
         assertEquals(Collections.emptyList(), requests, "the receipt verifier asked the JVM's provider list");
     }
@@ -612,18 +604,11 @@ class TrustStoreIsolationTest {
     @Test
     void theJwsChainIsAnchoredOnlyByTheCallersRoots() throws Exception {
         String jws = fixtureText("generated", "transaction.jws");
-        X509Certificate receiptRoot = cert("generated", "receipt-root.der");
-        Set<X509Certificate> passed =
-                new LinkedHashSet<X509Certificate>(Arrays.asList(receiptRoot, cert("generated", "jws-root.der")));
+        X509Certificate receiptRoot = SyntheticReceipts.root();
+        Verifier passed = Checks.verifier(receiptRoot, cert("generated", "jws-root.der"));
         List<String> requests = hostProviderRequestsDuring(() -> {
-            assertEquals(
-                    BUNDLE,
-                    new JwsVerifier(passed, BUNDLE, EnumSet.of(Environment.SANDBOX))
-                            .verifyTransaction(jws)
-                            .bundleId());
-            assertInvalidChain(
-                    () -> new JwsVerifier(Collections.singleton(receiptRoot), BUNDLE, EnumSet.of(Environment.SANDBOX))
-                            .verifyTransaction(jws));
+            assertTrue(Checks.signedData(passed, jws).json().contains(BUNDLE));
+            assertInvalidChain(() -> Checks.signedData(Checks.verifier(receiptRoot), jws));
         });
         assertEquals(Collections.emptyList(), requests, "the JWS verifier asked the JVM's provider list");
     }
@@ -703,12 +688,12 @@ class TrustStoreIsolationTest {
         try {
             body.run();
         } catch (VerificationException e) {
-            assertEquals(Reason.INVALID_CHAIN, e.reason(), e.getMessage());
+            assertEquals(Reason.UNTRUSTED_CHAIN, e.reason(), e.getMessage());
             return;
         } catch (Exception e) {
-            throw new AssertionError("expected INVALID_CHAIN, got " + e, e);
+            throw new AssertionError("expected UNTRUSTED_CHAIN, got " + e, e);
         }
-        throw new AssertionError("expected INVALID_CHAIN but the material was accepted");
+        throw new AssertionError("expected UNTRUSTED_CHAIN but the material was accepted");
     }
 
     private static byte[] fixture(String... segments) throws IOException {

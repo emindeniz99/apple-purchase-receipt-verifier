@@ -1,8 +1,5 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
-import io.github.emindeniz99.applepurchasereceiptverifier.jws.JwsVerifier;
-import io.github.emindeniz99.applepurchasereceiptverifier.receipt.AppReceipt;
-import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifier;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -18,9 +15,7 @@ import java.security.cert.X509Certificate;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.Collections;
 import java.util.Date;
-import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -51,13 +46,15 @@ public final class HostPolicyProbe {
     private HostPolicyProbe() {}
 
     public static void main(String[] args) throws Exception {
+        Verifier apple = Verifier.create(Config.defaults());
         byte[] legacy = publicReceipt("receipt-sandbox-legacy");
-        AppReceipt receipt = ReceiptVerifier.verifyReceiptCore(legacy, AppleRootCerts.receiptRoots());
-        String refusal = jdkRefusal(legacy, receipt.creationDate());
+        ReceiptPayload receipt = Checks.receipt(apple, legacy);
+        Long created = receipt.receiptCreationDateMs();
+        String refusal = jdkRefusal(legacy, created == null ? null : Instant.ofEpochMilli(created.longValue()));
         System.out.println(refusal == null ? JDK_ACCEPTS : JDK_REFUSES + ": " + refusal);
         System.out.println(LEGACY + ": " + receipt.bundleId());
 
-        ReceiptVerifier.verifyReceiptCore(publicReceipt("receipt-sandbox-g5"), AppleRootCerts.receiptRoots());
+        Checks.receipt(apple, publicReceipt("receipt-sandbox-g5"));
         System.out.println(CURRENT);
 
         X509Certificate jwsRoot = (X509Certificate) CertificateFactory.getInstance("X.509")
@@ -67,8 +64,7 @@ public final class HostPolicyProbe {
                         Files.readAllBytes(FIXTURES.resolve("generated").resolve("transaction.jws")),
                         StandardCharsets.US_ASCII)
                 .trim();
-        new JwsVerifier(Collections.singleton(jwsRoot), "com.example.app", EnumSet.of(Environment.SANDBOX))
-                .verifyTransaction(jws);
+        Checks.signedData(Checks.verifier(jwsRoot), jws);
         System.out.println(JWS);
     }
 
@@ -94,7 +90,7 @@ public final class HostPolicyProbe {
             embedded.add((X509Certificate) factory.generateCertificate(new ByteArrayInputStream(holder.getEncoded())));
         }
         Set<TrustAnchor> anchors = new HashSet<TrustAnchor>();
-        for (X509Certificate root : AppleRootCerts.receiptRoots()) {
+        for (X509Certificate root : Config.defaults().roots()) {
             anchors.add(new TrustAnchor(
                     (X509Certificate) factory.generateCertificate(new ByteArrayInputStream(root.getEncoded())), null));
         }

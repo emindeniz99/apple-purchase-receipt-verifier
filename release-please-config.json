@@ -46,6 +46,10 @@
         {
           "type": "generic",
           "path": "java/README.md"
+        },
+        {
+          "type": "generic",
+          "path": "java/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/Version.java"
         }
       ]
     }

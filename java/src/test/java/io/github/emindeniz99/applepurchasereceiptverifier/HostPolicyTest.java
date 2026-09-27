@@ -4,8 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import io.github.emindeniz99.applepurchasereceiptverifier.receipt.AppReceipt;
-import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifier;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -25,7 +23,7 @@ import org.junit.jupiter.api.io.TempDir;
  * {@code jdk.certpath.disabledAlgorithms}, and RHEL, Fedora and many
  * hardened images disable SHA-1 there. Apple signs every legacy receipt chain
  * with SHA-1, so while chains were built with the JDK's PKIX code each genuine
- * legacy receipt failed on such a host as INVALID_CHAIN, as if it were forged.
+ * legacy receipt failed on such a host as UNTRUSTED_CHAIN, as if it were forged.
  * The library now builds and validates chains with its own BouncyCastle
  * instance, which does not read that property.</p>
  */
@@ -41,8 +39,10 @@ class HostPolicyTest {
     @Test
     void theJdkBuildsTheLegacyChainUnderThisJvmsPolicy() throws Exception {
         byte[] legacy = HostPolicyProbe.publicReceipt("receipt-sandbox-legacy");
-        AppReceipt receipt = ReceiptVerifier.verifyReceiptCore(legacy, AppleRootCerts.receiptRoots());
-        String refusal = HostPolicyProbe.jdkRefusal(legacy, receipt.creationDate());
+        ReceiptPayload receipt = Checks.receipt(Verifier.create(Config.defaults()), legacy);
+        Long created = receipt.receiptCreationDateMs();
+        String refusal = HostPolicyProbe.jdkRefusal(
+                legacy, created == null ? null : java.time.Instant.ofEpochMilli(created.longValue()));
         assumeTrue(
                 refusal == null,
                 "this JVM's own policy refuses the legacy chain, so it cannot be the control: " + refusal);

@@ -16,61 +16,53 @@ MVN_ARGS=-o ./run.sh readers    # build offline
 `run.sh` fetches the Jazzer jars itself (sha256-pinned) and builds the library
 and the harness; nothing else needs installing beyond a JDK and Maven.
 
-| target | what it reaches | invariant beyond "nothing but `VerificationException` escapes" |
+| target | what it reaches | invariant beyond "nothing escapes and nothing is `INTERNAL_ERROR`" |
 |---|---|---|
-| `receipt` | `ReceiptVerifier.verifyReceiptCore` on raw DER: BouncyCastle's CMS reader, the attribute walk, the PKIX chain build, the CMS signature check | an accepted receipt fails against an unrelated anchor set |
-| `receipt-base64` | `ReceiptVerifier.verify(String)` and its device-GUID overload — the string a client sends, so `ReceiptBase64` in front of all of the above, plus the SHA-1 device binding | the same anchor-set invariant, through the string entry point |
-| `jws` | `JwsVerifier.verifyTransaction` / `verifyAppTransaction` / `verifyRaw`: strict base64url, Jackson header and payload, x5c decode, marker OIDs, chain, ES256 | a JWS `verifyRaw` accepts under the fixture root is refused under Apple's production JWS roots |
-| `endpoint-json` | `VerifyReceiptEndpoint.verifyReceiptJson` on a raw request body | it never throws at all, and the answer is always a JSON object with a numeric `status` |
-| `readers` | `ReceiptPayload.parse`, `ReceiptBase64.decode` and `JwsVerifier.parseJson` called directly, with no CMS parse or chain build in front of them | see "Two containment invariants" below |
+| `receipt` | `Verifier.verifyReceipt` on raw DER (base64-encoded on the way in): BouncyCastle's CMS reader, the attribute walk, the PKIX chain build, the CMS signature check | an accepted receipt fails against an unrelated anchor set |
+| `receipt-base64` | `Verifier.verifyReceipt` on the string a client sends, so the size cap and `ReceiptBase64` in front of all of the above | the same anchor-set invariant, through the string |
+| `jws` | `Verifier.verifySignedData`: strict base64url, the streaming header and payload reads, x5c decode, marker OIDs, chain, ES256 | a JWS accepted under the fixture root is refused under Apple's production roots |
+| `endpoint-json` | `Verifier.verifyReceiptEndpoint` on a raw request body, on both environments | the answer is always one JSON object led by a numeric `status`, never 21009 |
+| `readers` | `ReceiptDecoder.parse`, `ReceiptBase64.decode`, `JwsCore.Header.read` and `JwsCore.Payload.read` called directly, with no CMS parse or chain build in front of them | see "Two containment invariants" below |
 
 Every accepted result is then taken apart. `Harness.touch` reads every accessor
-`AppReceipt`, `InAppPurchase`, `TransactionPayload` and `AppTransactionPayload`
-declare, plus every claim of an accepted `verifyRaw` map. A receipt the library
-has just called Apple-signed is one your next line of code reads, so an
-accessor that throws on an accepted-but-strange receipt leaks as surely as a
-verifier that throws. `Harness` collects that accessor list by reflection at
-startup, so an accessor added to the library gets covered whether or not anyone
-remembers this file.
+`ReceiptPayload` and `InAppPurchase` declare, and the text of every accepted
+`JsonPayload`. A receipt the library has just called Apple-signed is one your
+next line of code reads, so an accessor that throws on an accepted-but-strange
+receipt leaks as surely as a verifier that throws. `Harness` collects that
+accessor list by reflection at startup, so an accessor added to the library
+gets covered whether or not anyone remembers this file.
 
 ## The containment invariant
 
-The only exception a public entry point may throw is `VerificationException`.
-It is asserted as "is not a `VerificationException`" rather than as a list of
-forbidden types, because the leak that matters is always the type nobody
-thought to list. BouncyCastle reports malformed ASN.1 with *unchecked*
-exceptions, and which ones is neither documented nor stable across releases;
-`StackOverflowError` from a nested structure and `OutOfMemoryError` from a
-length prefix are not exceptions at all. One phrasing covers all of them, and
-enumerating types is exactly what let eleven characters of attacker base64
-escape the declared contract once already (see
-`ReceiptVerifier.verifyCore`'s comment).
+The verify methods never throw, for any input. That is asserted as "nothing
+comes out" rather than as a list of forbidden types, because the leak that
+matters is always the type nobody thought to list. BouncyCastle reports
+malformed ASN.1 with *unchecked* exceptions, and which ones is neither
+documented nor stable across releases; `StackOverflowError` from a nested
+structure and `OutOfMemoryError` from a length prefix are not exceptions at
+all. One phrasing covers all of them.
 
-`endpoint-json` is stricter still, because its javadoc is: `verifyReceiptJson`
-never throws, and its answer is always a JSON object carrying a numeric
-`status`. A body that produced a null, a bare stack trace or a response Jackson
-cannot read back would each end the run.
+The verifier's own last-resort `catch` answers an exception its checks did not
+contain as `INTERNAL_ERROR` (21009 at the endpoint). So `Harness.attempt` also
+fails on that reason: fuzz input must never be able to raise the "alert, do not
+retry" signal at will. `UNREADABLE_PAYLOAD` is not a finding, since it needs a
+signature that verifies.
 
 ### Two containment invariants, and why `readers` has the weaker one
 
-`readers` drives private methods, so the contract to hold them to is the
-contract of whoever calls them — not the public one, which would report leaks
-that are contained by design one frame up:
+`readers` drives package-private methods, so the contract to hold them to is
+the contract of whoever calls them, not the public one, which would report
+leaks that are contained by design one frame up:
 
-* **`ReceiptPayload.parse`** is reached only through
-  `ReceiptVerifier.verifyCore`, which catches `RuntimeException` and rewraps it
-  as `INVALID_RECEIPT_FORMAT`. An unchecked exception out of BouncyCastle here
-  is therefore contained and is *not* a finding — but an `Error` walks straight
-  through that `catch` and out of `verify()`, so a `StackOverflowError` from a
+* **`ReceiptDecoder.parse`** is reached only through
+  `ReceiptCore.parseSignedPayload`, which catches `RuntimeException` and
+  reports it as `UNREADABLE_PAYLOAD`. An unchecked exception out of
+  BouncyCastle here is therefore contained and is *not* a finding, but an
+  `Error` walks straight through that `catch`, so a `StackOverflowError` from a
   deeply nested SET or an `OutOfMemoryError` from a length prefix **is** one.
-* **`ReceiptBase64.decode`** and **`JwsVerifier.parseJson`** have no such guard
-  above them: `verify(String)` decodes *before* it enters the guarded core, and
-  the whole JWS path is unguarded end to end. For those two the invariant is
-  the strict one.
-
-The split records where the library's containment sits; it is not there to
-keep the target quiet. Remove `verifyCore`'s `catch (RuntimeException)` and
-`FuzzReaders` has to change with it.
+* **`ReceiptBase64.decode`**, **`JwsCore.Header.read`** and
+  **`JwsCore.Payload.read`** contain everything themselves, so for them the
+  invariant is the strict one: only the package's `VerificationException`.
 
 ## The anchor-set invariants
 
@@ -79,10 +71,12 @@ crashes: without them, an input that verifies tells you nothing about *why* it
 verified — a chain build that ignored its anchors and a run that found nothing
 look identical.
 
-`receipt` and `receipt-base64` trust Apple's three receipt roots **plus**
-`fixtures/generated/receipt-root.der`, so both the generated fixtures and the
-Apple-signed public receipts get past the chain check and the mutations land on
-the code beyond it. Anything they accept must then be refused under the fixture
+`receipt` and `receipt-base64` trust Apple's three roots **plus**
+`fixtures/generated/receipt-root.der`, so the Apple-signed public receipts get
+past the chain check and the mutations land on the code beyond it. The
+generated receipts under `fixtures/generated/` predate 0.7's WWDR marker check
+and now stop at `INVALID_CERTIFICATE_PURPOSE`; seed from a regenerated set to
+take them past it. Anything they accept must then be refused under the fixture
 *JWS* root, which signed no receipt in this repository. `jws` is the mirror
 image: the fixture JWS root trusted, Apple's production JWS roots the unrelated
 set.
@@ -152,8 +146,8 @@ a class path holding nothing but Jazzer.
   `java-format` CI job (`mvn spotless:check`) covers the harness. Spotless is
   bound to no lifecycle phase, so this costs `mvn test` nothing.
 
-The three package-private and private readers a target reaches directly are
-reached by reflection (`FuzzReaders`), bound once at startup. The alternative
+The four package-private readers a target reaches directly are reached by
+reflection (`FuzzReaders`), bound once at startup. The alternative
 is widening their visibility, which would mean changing the shipped jar in
 order to test it. Reflection costs a few hundred nanoseconds against readers
 that take microseconds, and because it is the library's own bytecode that runs,
@@ -187,6 +181,9 @@ die at "expected 3 dot-separated segments", so its execution count buys less
 than its rank suggests — read its `cov`, which is the highest here, instead.
 
 ### The acceptance rates are the number to watch
+
+Measured on 0.6; the receipt rows need re-measuring once the generated receipts
+carry the WWDR marker.
 
 A target whose seeds never verify still reports coverage, still finds no crash,
 and still looks healthy — while its anchor-set invariant never runs once. What
