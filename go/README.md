@@ -125,17 +125,16 @@ receipt.ReceiptCreationDateMs       // *int64
 receipt.InApp[0].ProductID
 receipt.InApp[0].ExpiresDateMs
 receipt.UnknownAttributes           // map[int64][][]byte, in receipt order
-receipt.ToJSON()                    // the canonical JSON every port shares
+receipt.ToJSON()                    // JSON with the same value in every port
 ```
 
 Decoding follows the rules every port shares: the first occurrence of an
 attribute wins; every attribute that does not end up in a typed field (a
 later copy, or a value that does not decode, whose field is then `nil`) is
 kept raw in `UnknownAttributes`, the in-app ones in that purchase's own; an
-empty date string means "not set" and is not kept. `ToJSON()` writes keys
-in a fixed order with `JSON.stringify` escapes, byte-identical across
-ports. It never uses Go's `encoding/json` for this: its HTML-escaping and
-alphabetical key sorting would break that.
+empty date string means "not set" and is not kept. `ToJSON()` writes
+JSON with `encoding/json` whose parsed value is the same in every port; the
+bytes may differ.
 
 ### `Failure` and `Reason`
 

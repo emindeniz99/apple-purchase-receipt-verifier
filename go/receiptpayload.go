@@ -1,8 +1,10 @@
 package applereceipt
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"errors"
-	"strings"
+	"strconv"
 	"time"
 	"unicode/utf8"
 
@@ -642,14 +644,72 @@ func daysInMonth(year, month int) int {
 	}
 }
 
-// --- canonical JSON --------------------------------------------------------
+// --- JSON ------------------------------------------------------------------
 
-// ToJSON is the canonical JSON every port produces byte for byte
-// (docs/design/0.7-api.md, Canonical form): the keys below in this order,
-// no whitespace, null for a missing field, 64-bit ids as strings, bytes as
-// padded standard base64, unknown_attributes keys in ascending numeric
-// order, and strings escaped exactly as ECMAScript JSON.stringify escapes
-// them.
+// receiptJSON and inAppJSON are the shapes ToJSON hands to encoding/json.
+// A nil pointer is written as null, never omitted; []byte is written as
+// padded standard base64.
+type receiptJSON struct {
+	ReceiptType                *string             `json:"receipt_type"`
+	AppItemID                  *string             `json:"app_item_id"`
+	BundleID                   *string             `json:"bundle_id"`
+	BundleIDBytes              []byte              `json:"bundle_id_bytes"`
+	ApplicationVersion         *string             `json:"application_version"`
+	OpaqueValue                []byte              `json:"opaque_value"`
+	SHA1Hash                   []byte              `json:"sha1_hash"`
+	ReceiptCreationDateMs      *int64              `json:"receipt_creation_date_ms"`
+	DownloadID                 *string             `json:"download_id"`
+	VersionExternalIdentifier  *string             `json:"version_external_identifier"`
+	InApp                      []inAppJSON         `json:"in_app"`
+	OriginalPurchaseDateMs     *int64              `json:"original_purchase_date_ms"`
+	OriginalApplicationVersion *string             `json:"original_application_version"`
+	ExpirationDateMs           *int64              `json:"expiration_date_ms"`
+	UnknownAttributes          map[string][]string `json:"unknown_attributes"`
+}
+
+type inAppJSON struct {
+	Quantity               *int64              `json:"quantity"`
+	ProductID              *string             `json:"product_id"`
+	TransactionID          *string             `json:"transaction_id"`
+	PurchaseDateMs         *int64              `json:"purchase_date_ms"`
+	OriginalTransactionID  *string             `json:"original_transaction_id"`
+	OriginalPurchaseDateMs *int64              `json:"original_purchase_date_ms"`
+	ExpiresDateMs          *int64              `json:"expires_date_ms"`
+	WebOrderLineItemID     *string             `json:"web_order_line_item_id"`
+	CancellationDateMs     *int64              `json:"cancellation_date_ms"`
+	IsTrialPeriod          *bool               `json:"is_trial_period"`
+	IsInIntroOfferPeriod   *bool               `json:"is_in_intro_offer_period"`
+	UnknownAttributes      map[string][]string `json:"unknown_attributes"`
+}
+
+// idJSON is a 64-bit id as a decimal string, so JavaScript readers do not
+// round it.
+func idJSON(value *int64) *string {
+	if value == nil {
+		return nil
+	}
+	text := strconv.FormatInt(*value, 10)
+	return &text
+}
+
+// attributesJSON keys each type by its decimal string, the values base64
+// in receipt order. Never nil, so an empty set is {} rather than null.
+func attributesJSON(attrs UnknownAttributes) map[string][]string {
+	out := make(map[string][]string, len(attrs))
+	for attributeType, values := range attrs {
+		encoded := make([]string, len(values))
+		for i, value := range values {
+			encoded[i] = base64.StdEncoding.EncodeToString(value)
+		}
+		out[strconv.FormatInt(attributeType, 10)] = encoded
+	}
+	return out
+}
+
+// ToJSON is this payload as JSON, for logging and storage
+// (docs/design/0.7-api.md, "Our JSON"). Every port writes the same value;
+// the bytes may differ. null for a missing field, 64-bit ids as strings,
+// bytes as padded standard base64, dates as epoch-millisecond numbers.
 //
 // receipt_type, app_item_id, bundle_id, bundle_id_bytes,
 // application_version, opaque_value, sha1_hash, receipt_creation_date_ms,
@@ -657,51 +717,48 @@ func daysInMonth(year, month int) int {
 // original_purchase_date_ms, original_application_version,
 // expiration_date_ms, unknown_attributes.
 func (r *ReceiptPayload) ToJSON() string {
-	var b strings.Builder
-	b.Grow(512 + 512*len(r.InApp))
-	w := newJSONWriter(&b)
-	w.str("receipt_type", r.ReceiptType)
-	w.id("app_item_id", r.AppItemID)
-	w.str("bundle_id", r.BundleID)
-	w.bytesValue("bundle_id_bytes", r.BundleIDBytes)
-	w.str("application_version", r.ApplicationVersion)
-	w.bytesValue("opaque_value", r.OpaqueValue)
-	w.bytesValue("sha1_hash", r.SHA1Hash)
-	w.num("receipt_creation_date_ms", r.ReceiptCreationDateMs)
-	w.id("download_id", r.DownloadID)
-	w.id("version_external_identifier", r.VersionExternalIdentifier)
-	w.arrayStart("in_app")
+	inApp := make([]inAppJSON, len(r.InApp))
 	for i := range r.InApp {
-		if i > 0 {
-			b.WriteByte(',')
-		}
-		r.InApp[i].writeJSON(&b)
+		inApp[i] = r.InApp[i].jsonValue()
 	}
-	w.arrayEnd()
-	w.num("original_purchase_date_ms", r.OriginalPurchaseDateMs)
-	w.str("original_application_version", r.OriginalApplicationVersion)
-	w.num("expiration_date_ms", r.ExpirationDateMs)
-	w.attributes("unknown_attributes", r.UnknownAttributes)
-	w.close()
-	return b.String()
+	// Marshal cannot fail on strings, integers, booleans, slices and
+	// string-keyed maps.
+	out, _ := json.Marshal(receiptJSON{
+		ReceiptType:                r.ReceiptType,
+		AppItemID:                  idJSON(r.AppItemID),
+		BundleID:                   r.BundleID,
+		BundleIDBytes:              r.BundleIDBytes,
+		ApplicationVersion:         r.ApplicationVersion,
+		OpaqueValue:                r.OpaqueValue,
+		SHA1Hash:                   r.SHA1Hash,
+		ReceiptCreationDateMs:      r.ReceiptCreationDateMs,
+		DownloadID:                 idJSON(r.DownloadID),
+		VersionExternalIdentifier:  idJSON(r.VersionExternalIdentifier),
+		InApp:                      inApp,
+		OriginalPurchaseDateMs:     r.OriginalPurchaseDateMs,
+		OriginalApplicationVersion: r.OriginalApplicationVersion,
+		ExpirationDateMs:           r.ExpirationDateMs,
+		UnknownAttributes:          attributesJSON(r.UnknownAttributes),
+	})
+	return string(out)
 }
 
 // String is ToJSON.
 func (r *ReceiptPayload) String() string { return r.ToJSON() }
 
-func (p *InAppPurchase) writeJSON(out *strings.Builder) {
-	w := newJSONWriter(out)
-	w.num("quantity", p.Quantity)
-	w.str("product_id", p.ProductID)
-	w.str("transaction_id", p.TransactionID)
-	w.num("purchase_date_ms", p.PurchaseDateMs)
-	w.str("original_transaction_id", p.OriginalTransactionID)
-	w.num("original_purchase_date_ms", p.OriginalPurchaseDateMs)
-	w.num("expires_date_ms", p.ExpiresDateMs)
-	w.id("web_order_line_item_id", p.WebOrderLineItemID)
-	w.num("cancellation_date_ms", p.CancellationDateMs)
-	w.boolean("is_trial_period", p.IsTrialPeriod)
-	w.boolean("is_in_intro_offer_period", p.IsInIntroOfferPeriod)
-	w.attributes("unknown_attributes", p.UnknownAttributes)
-	w.close()
+func (p *InAppPurchase) jsonValue() inAppJSON {
+	return inAppJSON{
+		Quantity:               p.Quantity,
+		ProductID:              p.ProductID,
+		TransactionID:          p.TransactionID,
+		PurchaseDateMs:         p.PurchaseDateMs,
+		OriginalTransactionID:  p.OriginalTransactionID,
+		OriginalPurchaseDateMs: p.OriginalPurchaseDateMs,
+		ExpiresDateMs:          p.ExpiresDateMs,
+		WebOrderLineItemID:     idJSON(p.WebOrderLineItemID),
+		CancellationDateMs:     p.CancellationDateMs,
+		IsTrialPeriod:          p.IsTrialPeriod,
+		IsInIntroOfferPeriod:   p.IsInIntroOfferPeriod,
+		UnknownAttributes:      attributesJSON(p.UnknownAttributes),
+	}
 }

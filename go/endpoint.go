@@ -2,8 +2,8 @@ package applereceipt
 
 import (
 	"crypto/x509"
+	"encoding/json"
 	"strconv"
-	"strings"
 )
 
 // VerifyReceiptEndpoint answers Apple's verifyReceipt request bodies
@@ -133,93 +133,84 @@ func statusOnlyResponse(status int) string {
 }
 
 // renderEndpointResponse is the status-0 response body: status,
-// environment and the rendered receipt. Key order follows Apple's
-// endpoint; it is deterministic but not part of the contract.
+// environment and the rendered receipt. Keys follow Apple's endpoint; their
+// order is deterministic but not part of the contract.
 func renderEndpointResponse(environment Environment, receipt *ReceiptPayload, requestDateMs int64) string {
-	var b strings.Builder
-	b.Grow(1024 + 1024*len(receipt.InApp))
-	w := newJSONWriter(&b)
-	statusValue := int64(StatusOK)
-	w.num("status", &statusValue)
-	env := environment.String()
-	w.str("environment", &env)
-	w.key("receipt")
-	writeEndpointReceipt(&b, receipt, requestDateMs)
-	w.close()
-	return b.String()
+	// Marshal cannot fail on strings, integers, slices and string-keyed
+	// maps.
+	out, _ := json.Marshal(struct {
+		Status      int            `json:"status"`
+		Environment string         `json:"environment"`
+		Receipt     map[string]any `json:"receipt"`
+	}{StatusOK, environment.String(), endpointReceipt(receipt, requestDateMs)})
+	return string(out)
 }
 
-func writeEndpointReceipt(out *strings.Builder, receipt *ReceiptPayload, requestDateMs int64) {
-	w := newJSONWriter(out)
-	presentStr(w, "receipt_type", receipt.ReceiptType)
+func endpointReceipt(receipt *ReceiptPayload, requestDateMs int64) map[string]any {
+	m := map[string]any{}
+	presentStr(m, "receipt_type", receipt.ReceiptType)
 	// Apple echoes attribute 1 under both names (its response reference
 	// defines adam_id as "See app_item_id"), and as JSON numbers, not as
 	// the strings the in-app integers are rendered with.
-	presentNum(w, "adam_id", receipt.AppItemID)
-	presentNum(w, "app_item_id", receipt.AppItemID)
-	presentStr(w, "bundle_id", receipt.BundleID)
-	presentStr(w, "application_version", receipt.ApplicationVersion)
-	presentNum(w, "download_id", receipt.DownloadID)
-	presentNum(w, "version_external_identifier", receipt.VersionExternalIdentifier)
-	presentStr(w, "original_application_version", receipt.OriginalApplicationVersion)
-	appleDates(w, "receipt_creation_date", receipt.ReceiptCreationDateMs)
+	presentNum(m, "adam_id", receipt.AppItemID)
+	presentNum(m, "app_item_id", receipt.AppItemID)
+	presentStr(m, "bundle_id", receipt.BundleID)
+	presentStr(m, "application_version", receipt.ApplicationVersion)
+	presentNum(m, "download_id", receipt.DownloadID)
+	presentNum(m, "version_external_identifier", receipt.VersionExternalIdentifier)
+	presentStr(m, "original_application_version", receipt.OriginalApplicationVersion)
+	appleDates(m, "receipt_creation_date", receipt.ReceiptCreationDateMs)
 	requestDate := requestDateMs
-	appleDates(w, "request_date", &requestDate)
-	appleDates(w, "original_purchase_date", receipt.OriginalPurchaseDateMs)
-	appleDates(w, "expiration_date", receipt.ExpirationDateMs)
-	w.arrayStart("in_app")
+	appleDates(m, "request_date", &requestDate)
+	appleDates(m, "original_purchase_date", receipt.OriginalPurchaseDateMs)
+	appleDates(m, "expiration_date", receipt.ExpirationDateMs)
+	inApp := make([]map[string]any, len(receipt.InApp))
 	for i := range receipt.InApp {
-		if i > 0 {
-			out.WriteByte(',')
-		}
-		writeEndpointPurchase(out, &receipt.InApp[i])
+		inApp[i] = endpointPurchase(&receipt.InApp[i])
 	}
-	w.arrayEnd()
-	w.close()
+	m["in_app"] = inApp
+	return m
 }
 
-func writeEndpointPurchase(out *strings.Builder, purchase *InAppPurchase) {
-	w := newJSONWriter(out)
+func endpointPurchase(purchase *InAppPurchase) map[string]any {
+	m := map[string]any{}
 	if purchase.Quantity != nil {
-		quantity := strconv.FormatInt(*purchase.Quantity, 10)
-		w.str("quantity", &quantity)
+		m["quantity"] = strconv.FormatInt(*purchase.Quantity, 10)
 	} else {
-		w.str("quantity", nil)
+		m["quantity"] = nil
 	}
-	presentStr(w, "product_id", purchase.ProductID)
-	presentStr(w, "transaction_id", purchase.TransactionID)
-	presentStr(w, "original_transaction_id", purchase.OriginalTransactionID)
-	appleDates(w, "purchase_date", purchase.PurchaseDateMs)
-	appleDates(w, "original_purchase_date", purchase.OriginalPurchaseDateMs)
-	appleDates(w, "expires_date", purchase.ExpiresDateMs)
-	appleDates(w, "cancellation_date", purchase.CancellationDateMs)
+	presentStr(m, "product_id", purchase.ProductID)
+	presentStr(m, "transaction_id", purchase.TransactionID)
+	presentStr(m, "original_transaction_id", purchase.OriginalTransactionID)
+	appleDates(m, "purchase_date", purchase.PurchaseDateMs)
+	appleDates(m, "original_purchase_date", purchase.OriginalPurchaseDateMs)
+	appleDates(m, "expires_date", purchase.ExpiresDateMs)
+	appleDates(m, "cancellation_date", purchase.CancellationDateMs)
 	// Apple omits the key when attribute 1711 is 0, as it does for
 	// consumables.
 	if purchase.WebOrderLineItemID != nil && *purchase.WebOrderLineItemID != 0 {
-		id := strconv.FormatInt(*purchase.WebOrderLineItemID, 10)
-		w.str("web_order_line_item_id", &id)
+		m["web_order_line_item_id"] = strconv.FormatInt(*purchase.WebOrderLineItemID, 10)
 	}
-	presentBoolString(w, "is_trial_period", purchase.IsTrialPeriod)
-	presentBoolString(w, "is_in_intro_offer_period", purchase.IsInIntroOfferPeriod)
-	w.close()
+	presentBoolString(m, "is_trial_period", purchase.IsTrialPeriod)
+	presentBoolString(m, "is_in_intro_offer_period", purchase.IsInIntroOfferPeriod)
+	return m
 }
 
-func presentStr(w *jsonWriter, key string, value *string) {
+func presentStr(m map[string]any, key string, value *string) {
 	if value != nil && *value != "" {
-		w.str(key, value)
+		m[key] = *value
 	}
 }
 
-func presentNum(w *jsonWriter, key string, value *int64) {
+func presentNum(m map[string]any, key string, value *int64) {
 	if value != nil {
-		w.num(key, value)
+		m[key] = *value
 	}
 }
 
-func presentBoolString(w *jsonWriter, key string, value *bool) {
+func presentBoolString(m map[string]any, key string, value *bool) {
 	if value != nil {
-		text := strconv.FormatBool(*value)
-		w.str(key, &text)
+		m[key] = strconv.FormatBool(*value)
 	}
 }
 
@@ -227,14 +218,11 @@ func presentBoolString(w *jsonWriter, key string, value *bool) {
 // form, the epoch-millisecond form as a decimal string, and the US
 // Pacific form. Apple labels the first "Etc/GMT": that string is part of
 // the wire contract, not a description.
-func appleDates(w *jsonWriter, prefix string, ms *int64) {
+func appleDates(m map[string]any, prefix string, ms *int64) {
 	if ms == nil {
 		return
 	}
-	gmt := formatAppleDate(*ms, 0, "Etc/GMT")
-	w.str(prefix, &gmt)
-	millis := strconv.FormatInt(*ms, 10)
-	w.str(prefix+"_ms", &millis)
-	pacific := formatAppleDate(*ms, pacificOffsetSeconds(*ms), "America/Los_Angeles")
-	w.str(prefix+"_pst", &pacific)
+	m[prefix] = formatAppleDate(*ms, 0, "Etc/GMT")
+	m[prefix+"_ms"] = strconv.FormatInt(*ms, 10)
+	m[prefix+"_pst"] = formatAppleDate(*ms, pacificOffsetSeconds(*ms), "America/Los_Angeles")
 }
