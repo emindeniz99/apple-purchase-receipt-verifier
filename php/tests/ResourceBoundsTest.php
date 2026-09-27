@@ -77,7 +77,7 @@ final class ResourceBoundsTest extends TestCase
 
         $result = self::verifier()->verifyReceipt(base64_encode($flood));
         self::assertFalse($result->verified(), 'a node flood was ACCEPTED');
-        self::assertSame(Reason::Malformed, $result->failure?->reason);
+        self::assertSame(Reason::Malformed, $result->failure->reason);
     }
 
     /**
@@ -95,8 +95,8 @@ final class ResourceBoundsTest extends TestCase
         $start = microtime(true);
         $result = $verifier->verifyReceipt($big);
         self::assertFalse($result->verified(), 'an oversized receipt was ACCEPTED');
-        self::assertSame(Reason::TooLarge, $result->failure?->reason);
-        self::assertStringContainsString('maximum accepted size', (string) $result->failure?->message);
+        self::assertSame(Reason::TooLarge, $result->failure->reason);
+        self::assertStringContainsString('maximum accepted size', $result->failure->message);
         self::assertLessThan(50, (microtime(true) - $start) * 1000, 'the parser appears to have run');
     }
 
@@ -123,8 +123,8 @@ final class ResourceBoundsTest extends TestCase
         foreach (['eleven' => $flooded, 'four hundred' => $huge] as $label => $receipt) {
             $result = self::verifier()->verifyReceipt(base64_encode($receipt));
             self::assertFalse($result->verified(), "a {$label}-certificate receipt was ACCEPTED");
-            self::assertSame(Reason::Malformed, $result->failure?->reason, $label);
-            self::assertStringContainsString('more than 10 certificates', (string) $result->failure?->message, $label);
+            self::assertSame(Reason::Malformed, $result->failure->reason, $label);
+            self::assertStringContainsString('more than 10 certificates', $result->failure->message, $label);
         }
 
         // A genuine ten-certificate receipt still gets a full walk, so the
@@ -151,7 +151,7 @@ final class ResourceBoundsTest extends TestCase
             $start = microtime(true);
             $result = self::verifier()->verifyReceipt(base64_encode($receipt));
             self::assertFalse($result->verified(), 'a mesh receipt was ACCEPTED');
-            self::assertSame(Reason::UntrustedChain, $result->failure?->reason);
+            self::assertSame(Reason::UntrustedChain, $result->failure->reason);
             $timings[$layers] = (microtime(true) - $start) * 1000;
         }
 

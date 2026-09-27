@@ -97,7 +97,6 @@ final class ApiShapeTest extends TestCase
             $mapped = match ($wire) {
                 'PRODUCTION' => Environment::Production,
                 'SANDBOX' => Environment::Sandbox,
-                default => self::fail('harness error: unmapped wire environment ' . $wire),
             };
             self::assertInstanceOf(Environment::class, $mapped);
         }
@@ -111,14 +110,12 @@ final class ApiShapeTest extends TestCase
     public function testAVerificationResultRequiresExactlyOneOfPayloadAndFailure(): void
     {
         $this->expectException(InvalidArgumentException::class);
-        /** @phpstan-ignore-next-line deliberate misuse */
         new VerificationResult();
     }
 
     public function testAVerificationResultCannotCarryBoth(): void
     {
         $this->expectException(InvalidArgumentException::class);
-        /** @phpstan-ignore-next-line deliberate misuse */
         new VerificationResult(payload: 'x', failure: new Failure(Reason::Malformed, 'x'));
     }
 
@@ -142,7 +139,7 @@ final class ApiShapeTest extends TestCase
         $result = $verifier->verifyReceipt(base64_encode($receipt));
 
         self::assertFalse($result->verified());
-        $message = (string) $result->failure?->message;
+        $message = $result->failure->message;
         self::assertStringNotContainsString($secretBundle, $message);
         self::assertStringNotContainsString(base64_encode($receipt), $message);
         self::assertLessThan(200, strlen($message), 'a detail string this long is carrying data');

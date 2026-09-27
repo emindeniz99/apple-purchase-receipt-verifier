@@ -50,7 +50,7 @@ final class Base64Test extends TestCase
         ] as $what => $tampered) {
             $result = $verifier->verifySignedData($tampered);
             self::assertFalse($result->verified(), "a byte outside the base64url alphabet in the {$what} segment was ACCEPTED");
-            self::assertSame(Reason::Malformed, $result->failure?->reason, "{$what} segment");
+            self::assertSame(Reason::Malformed, $result->failure->reason, "{$what} segment");
         }
     }
 

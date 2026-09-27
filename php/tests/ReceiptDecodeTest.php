@@ -43,6 +43,7 @@ final class ReceiptDecodeTest extends TestCase
         return Verifier::create(Config::builder()->roots([$root ?? MintedPki::get()->rootDer])->build());
     }
 
+    /** @return VerificationResult<ReceiptPayload> */
     private static function verify(string $der, ?string $root = null): VerificationResult
     {
         return self::verifier($root)->verifyReceipt(base64_encode($der));
@@ -83,12 +84,12 @@ final class ReceiptDecodeTest extends TestCase
 
         $result = self::verify($noOid);
         self::assertFalse($result->verified());
-        self::assertSame(Reason::InvalidCertificatePurpose, $result->failure?->reason);
+        self::assertSame(Reason::InvalidCertificatePurpose, $result->failure->reason);
 
         // Same receipt, an anchor it does not reach: the chain speaks first.
         $result = self::verify($noOid, $pki->foreignRootDer);
         self::assertFalse($result->verified());
-        self::assertSame(Reason::UntrustedChain, $result->failure?->reason);
+        self::assertSame(Reason::UntrustedChain, $result->failure->reason);
     }
 
     /**
@@ -112,8 +113,8 @@ final class ReceiptDecodeTest extends TestCase
 
         $result = self::verify($receipt);
         self::assertFalse($result->verified());
-        self::assertSame(Reason::InvalidSignature, $result->failure?->reason);
-        self::assertStringContainsString('not RSA', (string) $result->failure?->message);
+        self::assertSame(Reason::InvalidSignature, $result->failure->reason);
+        self::assertStringContainsString('not RSA', $result->failure->message);
     }
 
     /**
@@ -128,8 +129,8 @@ final class ReceiptDecodeTest extends TestCase
     {
         $result = self::verify(Fixtures07::bytes('receipt-signer-rsa-pss'), Fixtures07::bytes('signer-alg-root'));
         self::assertFalse($result->verified());
-        self::assertSame(Reason::InvalidSignature, $result->failure?->reason);
-        self::assertStringContainsString('unsupported signature algorithm', (string) $result->failure?->message);
+        self::assertSame(Reason::InvalidSignature, $result->failure->reason);
+        self::assertStringContainsString('unsupported signature algorithm', $result->failure->message);
     }
 
     /** A tampered PSS signature never verifies, in any port (receipt/reject-signer-rsa-pss-tampered). */
@@ -140,7 +141,7 @@ final class ReceiptDecodeTest extends TestCase
             Fixtures07::bytes('signer-alg-root'),
         );
         self::assertFalse($result->verified());
-        self::assertSame(Reason::InvalidSignature, $result->failure?->reason);
+        self::assertSame(Reason::InvalidSignature, $result->failure->reason);
     }
 
     /**
@@ -161,8 +162,8 @@ final class ReceiptDecodeTest extends TestCase
 
         $result = self::verify($receipt);
         self::assertFalse($result->verified());
-        self::assertSame(Reason::InvalidSignature, $result->failure?->reason);
-        self::assertStringContainsString('unsupported digest', (string) $result->failure?->message);
+        self::assertSame(Reason::InvalidSignature, $result->failure->reason);
+        self::assertStringContainsString('unsupported digest', $result->failure->message);
     }
 
     /**
@@ -216,7 +217,7 @@ final class ReceiptDecodeTest extends TestCase
 
         $result = self::verify($swapped);
         self::assertFalse($result->verified());
-        self::assertSame(Reason::InvalidSignature, $result->failure?->reason);
+        self::assertSame(Reason::InvalidSignature, $result->failure->reason);
     }
 
     public function testRejectsASignerInfoNamingACertificateThatIsNotEmbedded(): void
@@ -231,8 +232,8 @@ final class ReceiptDecodeTest extends TestCase
 
         $result = self::verify($receipt);
         self::assertFalse($result->verified());
-        self::assertSame(Reason::Malformed, $result->failure?->reason);
-        self::assertStringContainsString('signer certificate not embedded', (string) $result->failure?->message);
+        self::assertSame(Reason::Malformed, $result->failure->reason);
+        self::assertStringContainsString('signer certificate not embedded', $result->failure->message);
     }
 
     public function testRejectsAnUnparseableEmbeddedCertificate(): void
@@ -247,14 +248,14 @@ final class ReceiptDecodeTest extends TestCase
 
         $result = self::verify($receipt);
         self::assertFalse($result->verified());
-        self::assertSame(Reason::Malformed, $result->failure?->reason);
+        self::assertSame(Reason::Malformed, $result->failure->reason);
     }
 
     public function testRejectsTrailingBytesAfterTheCmsBlob(): void
     {
         $result = self::verify(MintedPki::get()->receipt() . "\x00\x00");
         self::assertFalse($result->verified());
-        self::assertSame(Reason::Malformed, $result->failure?->reason);
+        self::assertSame(Reason::Malformed, $result->failure->reason);
     }
 
     /**
@@ -294,8 +295,8 @@ final class ReceiptDecodeTest extends TestCase
         );
         $result = self::verify($wrongDigest);
         self::assertFalse($result->verified());
-        self::assertSame(Reason::InvalidSignature, $result->failure?->reason);
-        self::assertStringContainsString('messageDigest attribute does not match', (string) $result->failure?->message);
+        self::assertSame(Reason::InvalidSignature, $result->failure->reason);
+        self::assertStringContainsString('messageDigest attribute does not match', $result->failure->message);
 
         // Signed over the [0]-tagged bytes instead of the SET re-encoding.
         openssl_sign($attrs, $wrong, $pki->receiptSignerKey, OPENSSL_ALGO_SHA256);
@@ -310,7 +311,7 @@ final class ReceiptDecodeTest extends TestCase
         );
         $result = self::verify($mistagged);
         self::assertFalse($result->verified());
-        self::assertSame(Reason::InvalidSignature, $result->failure?->reason);
+        self::assertSame(Reason::InvalidSignature, $result->failure->reason);
     }
 
     /** @return iterable<string, array{list<int>}> */
@@ -331,7 +332,7 @@ final class ReceiptDecodeTest extends TestCase
     {
         $result = self::verify(self::receiptWithAttributeType($typeBytes));
         self::assertFalse($result->verified());
-        self::assertSame(Reason::UnreadablePayload, $result->failure?->reason);
+        self::assertSame(Reason::UnreadablePayload, $result->failure->reason);
     }
 
     /**
@@ -531,7 +532,7 @@ final class ReceiptDecodeTest extends TestCase
 
         $result = self::verify($receipt);
         self::assertFalse($result->verified());
-        self::assertSame(Reason::UnreadablePayload, $result->failure?->reason);
+        self::assertSame(Reason::UnreadablePayload, $result->failure->reason);
     }
 
     public function testAcceptsAPayloadDoubleWrappedInAnOctetString(): void

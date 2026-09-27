@@ -57,11 +57,11 @@ final class AppleRootCerts
             if ($der === false) {
                 throw new RuntimeException('bundled Apple root is not decodable — the package is corrupt');
             }
-            $expected = self::PINNED_SHA256[$index] ?? null;
+            $expected = self::PINNED_SHA256[$index];
             $actual = hash('sha256', $der);
-            if ($expected === null || $actual !== $expected) {
+            if ($actual !== $expected) {
                 throw new RuntimeException(
-                    "bundled Apple root #{$index} has SHA-256 {$actual}, expected " . ($expected ?? '(none pinned)')
+                    "bundled Apple root #{$index} has SHA-256 {$actual}, expected {$expected}"
                     . ': the pinned Apple roots have been replaced',
                 );
             }

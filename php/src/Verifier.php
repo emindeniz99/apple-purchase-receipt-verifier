@@ -59,6 +59,7 @@ final class Verifier
 
     private readonly ClockInterface $clock;
 
+    /** @param list<Certificate> $roots */
     private function __construct(array $roots, ClockInterface $clock)
     {
         $this->roots = $roots;
@@ -98,9 +99,9 @@ final class Verifier
         try {
             return new VerificationResult(payload: $this->verifyReceiptInner($base64));
         } catch (VerificationException $e) {
-            return new VerificationResult(failure: self::toFailure($e));
+            return self::failed(self::toFailure($e));
         } catch (Throwable $e) {
-            return new VerificationResult(failure: self::internalError($e));
+            return self::failed(self::internalError($e));
         }
     }
 
@@ -115,9 +116,9 @@ final class Verifier
         try {
             return new VerificationResult(payload: $this->verifySignedDataInner($jws));
         } catch (VerificationException $e) {
-            return new VerificationResult(failure: self::toFailure($e));
+            return self::failed(self::toFailure($e));
         } catch (Throwable $e) {
-            return new VerificationResult(failure: self::internalError($e));
+            return self::failed(self::internalError($e));
         }
     }
 
@@ -170,6 +171,24 @@ final class Verifier
         $now = $this->clock->now();
 
         return $now->getTimestamp() * 1000 + intdiv((int) $now->format('u'), 1000);
+    }
+
+    /**
+     * A result that carries no payload, typed as fitting any payload type.
+     *
+     * @return VerificationResult<never>
+     */
+    private static function failed(Failure $failure): VerificationResult
+    {
+        // PHPStan infers T from the payload argument, and a failure has
+        // none, so it falls back to mixed. never is exact: no payload value
+        // exists, and T is covariant, so this result is a
+        // VerificationResult<ReceiptPayload> and a
+        // VerificationResult<JsonPayload> alike.
+        /** @var VerificationResult<never> $result */
+        $result = new VerificationResult(failure: $failure);
+
+        return $result;
     }
 
     /**

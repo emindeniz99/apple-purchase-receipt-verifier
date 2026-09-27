@@ -57,7 +57,7 @@ final class JwsHeaderTest extends TestCase
         $result = Verifier::create(Config::builder()->roots([$pki->rootDer])->build())->verifySignedData($jws);
 
         self::assertFalse($result->verified());
-        self::assertSame(Reason::Malformed, $result->failure?->reason);
+        self::assertSame(Reason::Malformed, $result->failure->reason);
     }
 
     /**
@@ -71,6 +71,7 @@ final class JwsHeaderTest extends TestCase
         $header = TestPki::b64url(json_encode(['alg' => 'ES256', 'x5c' => (object) $chain], JSON_THROW_ON_ERROR));
         $payload = TestPki::b64url(json_encode(MintedPki::transactionClaims(), JSON_THROW_ON_ERROR));
         self::assertTrue(openssl_sign("{$header}.{$payload}", $der, $pki->jwsLeafKey, OPENSSL_ALGO_SHA256));
+        self::assertIsString($der);
         $jws = "{$header}.{$payload}." . TestPki::b64url(TestPki::derToP1363($der));
 
         $result = Verifier::create(Config::builder()->roots([$pki->rootDer])->build())->verifySignedData($jws);

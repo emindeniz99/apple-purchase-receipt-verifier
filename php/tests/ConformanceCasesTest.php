@@ -78,7 +78,7 @@ final class ConformanceCasesTest extends TestCase
             return;
         }
 
-        $maxMillis = $case['maxMillis'] ?? null;
+        $maxMillis = isset($case['maxMillis']) ? Shape::asInt($case['maxMillis'], 'maxMillis') : null;
         if ($maxMillis !== null) {
             self::runOperation($case); // warm-up, unmeasured
         }
@@ -106,15 +106,14 @@ final class ConformanceCasesTest extends TestCase
 
         /** @var VerificationResult<mixed> $result */
         if (isset($expected['oneOf'])) {
-            $outcome = $result->verified() ? 'ok' : $result->failure?->reason->value;
-            self::assertContains($outcome, $expected['oneOf'], "{$id}: answered {$outcome}");
+            $outcome = $result->verified() ? 'ok' : $result->failure->reason->value;
+            self::assertContains($outcome, Shape::asArray($expected['oneOf'], 'oneOf'), "{$id}: answered {$outcome}");
 
             return;
         }
 
         if (!$result->verified()) {
             $failure = $result->failure;
-            self::assertNotNull($failure);
             self::assertSame('error', $expected['status'], "{$id}: expected success but got {$failure->reason->value}");
             self::assertSame($expected['reason'], $failure->reason->value, "{$id}: reason");
             /** @var list<int> $codePoints */
@@ -134,7 +133,7 @@ final class ConformanceCasesTest extends TestCase
         self::assertSame(
             'ok',
             $expected['status'],
-            "{$id}: expected " . ($expected['reason'] ?? '?') . ' but verified',
+            "{$id}: expected " . Shape::asString($expected['reason'] ?? '?', 'reason') . ' but verified',
         );
         $payload = $result->payload;
         if ($case['operation'] === 'verifyReceipt') {
@@ -145,7 +144,7 @@ final class ConformanceCasesTest extends TestCase
                 // free, so both sides are key-sorted before the strict
                 // comparison.
                 self::assertSame(
-                    self::sortKeys(json_decode($expected['toJson'], true, 65, JSON_THROW_ON_ERROR)),
+                    self::sortKeys(json_decode(Shape::asString($expected['toJson'], 'toJson'), true, 65, JSON_THROW_ON_ERROR)),
                     self::sortKeys($actual),
                     "{$id}: toJson value",
                 );
@@ -209,10 +208,11 @@ final class ConformanceCasesTest extends TestCase
     {
         /** @var array<string, mixed> $config */
         $config = Shape::asArray($case['config'], 'config');
-        $environment = match (Shape::asString($config['environment'], 'environment')) {
+        $wire = Shape::asString($config['environment'], 'environment');
+        $environment = match ($wire) {
             'PRODUCTION' => Environment::Production,
             'SANDBOX' => Environment::Sandbox,
-            default => throw new RuntimeException('harness error: unknown environment "' . $config['environment'] . '"'),
+            default => throw new RuntimeException('harness error: unknown environment "' . $wire . '"'),
         };
         /** @var array{fixture?: string, requestBody?: string} $input */
         $input = $case['input'];
@@ -356,10 +356,6 @@ final class ConformanceCasesTest extends TestCase
     // --- field/length assertions ------------------------------------------
 
     /**
-     * @param mixed $actual
-     * @param array<string, mixed> $expected
-     */
-    /**
      * A decoded JSON value with every object's keys sorted, so two values
      * compare with assertSame regardless of the key order they were written in.
      */
@@ -374,6 +370,10 @@ final class ConformanceCasesTest extends TestCase
         return $value;
     }
 
+    /**
+     * @param mixed $actual
+     * @param array<mixed> $expected
+     */
     private static function assertFields(string $id, $actual, array $expected): void
     {
         /** @var array<string, mixed> $fields */
