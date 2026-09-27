@@ -7,8 +7,8 @@ namespace EminDeniz99\ApplePurchaseReceiptVerifier\Internal;
 /**
  * One CMS SignerInfo, structurally decoded but not yet cryptographically
  * checked. `signedAttrs`, when present, has already had its SET-OF-Attribute
- * syntax validated (docs/design/0.7-hardening-parity.md, hardening parity
- * change #4 / J4): every SignerInfo's signedAttrs is checked before any
+ * syntax validated (docs/design/0.7-api.md, Reading certificates and
+ * signed attributes): every SignerInfo's signedAttrs is checked before any
  * signature, in receipt order, regardless of which signer eventually
  * verifies.
  *

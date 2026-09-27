@@ -145,8 +145,7 @@ final class ReceiptDecodeTest extends TestCase
 
     /**
      * A genuinely unsupported digest OID — not MD5, which 0.7 widened
-     * support to (docs/design/0.7-hardening-parity.md, "any receipt signer
-     * algorithm"; see {@see testAcceptsEveryModelledDigestAlgorithm}).
+     * support to (#160; see {@see testAcceptsEveryModelledDigestAlgorithm}).
      */
     public function testRejectsAGenuinelyUnknownDigestAlgorithm(): void
     {
@@ -167,8 +166,8 @@ final class ReceiptDecodeTest extends TestCase
     }
 
     /**
-     * The guaranteed-minimum digest set the hardening design widened to
-     * (docs/design/0.7-hardening-parity.md): MD5 through SHA-512, all under
+     * The guaranteed-minimum digest set 0.7 widened to (#160): MD5 through
+     * SHA-512, all under
      * the same RSA PKCS#1 v1.5 signer.
      */
     public function testAcceptsEveryModelledDigestAlgorithm(): void

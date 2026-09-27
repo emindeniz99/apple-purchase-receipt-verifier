@@ -233,8 +233,7 @@ final class TestPki
         // Generic rsaEncryption, matching whatever $digestOidHex actually is:
         // a hardcoded sha256WithRSAEncryption here would disagree with a
         // SHA-1-digested SignerInfo (the default), which the 0.7 relabel
-        // check (docs/design/0.7-hardening-parity.md, "any receipt signer
-        // algorithm") now correctly refuses as INVALID_SIGNATURE.
+        // check (#160) now correctly refuses as INVALID_SIGNATURE.
         $signerFields[] = self::rsaEncryptionAlgorithm();
         $signerFields[] = DerWriter::tlv(DerWriter::OCTET_STRING, $signature);
 
