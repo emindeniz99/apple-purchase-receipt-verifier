@@ -36,9 +36,8 @@ def _fixture(*segments: str) -> bytes:
 with atheris.instrument_imports():
     from apple_purchase_receipt_verifier import Config, Environment, Verifier
     from apple_purchase_receipt_verifier._errors import VerificationError
-    from apple_purchase_receipt_verifier.receipt import _parse_payload
+    from apple_purchase_receipt_verifier.receipt import _parse_payload, verify_receipt_der
     from apple_purchase_receipt_verifier.receipt import _PayloadFormatError as PayloadFormatError
-    from apple_purchase_receipt_verifier.receipt import verify_receipt_der
     from cryptography import x509
 
 #: The receipt anchor set: the pinned Apple roots plus the generated 0.7
@@ -95,12 +94,12 @@ __all__ = [
     "ENDPOINT_ENVIRONMENT",
     "ENDPOINT_VERIFIER",
     "JWS_VERIFIER",
-    "PayloadFormatError",
     "RECEIPT_ANCHORS",
     "RECEIPT_VERIFIER",
     "UNRELATED_ANCHORS",
-    "VerificationError",
     "InvariantViolation",
+    "PayloadFormatError",
+    "VerificationError",
     "as_text",
     "parse_receipt_payload",
     "receipt_der",

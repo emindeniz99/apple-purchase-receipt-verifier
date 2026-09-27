@@ -73,17 +73,17 @@ constructor-supplied bundle id or environment allowlist to do it for you.
 # Branch A: StoreKit 2 signed transaction
 result = verifier.verify_signed_data(jws)
 if not result.verified:
-    log(result.failure.reason)          # deny; nothing partial is returned
+    log(result.failure.reason)  # deny; nothing partial is returned
     return
 payload = json.loads(result.payload.json)
 if payload.get("bundleId") != "com.example.app":
-    return                              # step 1 of the checklist above
+    return  # step 1 of the checklist above
 environment = Environment.from_jws_environment(payload.get("environment"))
 if payload.get("revocationDate") is not None:
-    return                              # refunded or revoked as of signing time
+    return  # refunded or revoked as of signing time
 expires = payload.get("expiresDate")
 if expires is not None and expires <= now_ms:
-    return                              # subscription term had ended
+    return  # subscription term had ended
 grant(payload["productId"], environment, payload["transactionId"])  # idempotent on transactionId
 
 # Branch B: legacy PKCS#7 app receipt

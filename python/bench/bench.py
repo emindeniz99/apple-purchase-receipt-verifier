@@ -29,10 +29,10 @@ from pathlib import Path
 from typing import Any
 
 from apple_purchase_receipt_verifier import Config, Environment, Verifier
-from apple_purchase_receipt_verifier.receipt import verify_receipt_der
 
 # The library's own receipt-data decoder, which the package does not export.
 from apple_purchase_receipt_verifier._receipt_base64 import decode_receipt_base64
+from apple_purchase_receipt_verifier.receipt import verify_receipt_der
 
 WARMUP_S = 1.0
 SAMPLES = 10
