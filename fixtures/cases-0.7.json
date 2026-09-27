@@ -1407,6 +1407,18 @@
       "codec": "raw",
       "contentSha256": "196d83bf728fde5b38364d0be7293f5a952e89dd6e20c8bcea3c7f0c0400d8b6"
     },
+    "lookup-receipt-root": {
+      "path": "generated-0.7/lookup-receipt-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "efb5d9affd4470acb12c15ad58c52aa5aec594470bcf7eef37788fe64c3d9340"
+    },
+    "lookup-receipt-twin-ahead-of-signer": {
+      "path": "generated-0.7/lookup-receipt-twin-ahead-of-signer.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "35136fe228daf52ca4e58e1c8f0eb0b723dd31eccbbea454e696189493d6664a"
+    },
     "review-receipt-zero-signer-infos": {
       "path": "generated-0.7/review-receipt-zero-signer-infos.der",
       "role": "input",
@@ -8608,6 +8620,35 @@
         "negative",
         "chain",
         "review",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/verify-a-genuine-signer-behind-a-copy-of-its-identity",
+      "description": "A genuine receipt signed by the genuine leaf, whose unsigned certificate bag carries a certificate with the leaf's issuer, serial and subject on another key, self-signed, ahead of the leaf. Every embedded certificate naming the signer is tried: one passing is enough, and a match's key is used only after its chain has passed. The twin's chain fails, the genuine leaf's passes, and the receipt verifies.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "lookup-receipt-twin-ahead-of-signer"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "lookup-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "positive",
+        "chain",
         "new-in-0-7"
       ]
     },
