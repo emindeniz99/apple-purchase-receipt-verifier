@@ -476,6 +476,33 @@ survives every one of them. Decoding the body yourself before calling the
 library does not avoid the cost, it only moves the same `json_decode` out of
 this library and back into your own code, unmeasured.
 
+## Measured worst-case CPU
+
+Measured on 2026-09-27 with `php bench/bench.php --worst-case`, which times
+every shared case in `fixtures/cases.json` that carries a time budget:
+oversized untrusted keys, a cross-signed certificate mesh, and the encoding
+oddities inside certificates. PHP 8.4.19 CLI (NTS, no OPcache) with OpenSSL
+3.0.13, one thread, on a shared 4-vCPU KVM guest (Intel Xeon Processor @
+2.10GHz); one second of warm-up, then ten samples of at least 100 ms each.
+
+| Call | Median | Slowest sample |
+|---|---:|---:|
+| Slowest hostile case: `receipt/verify-genuine-padded-with-oversized-strangers` (a valid receipt carrying oversized certificates it does not need) | 10 ms | 12 ms |
+| Next: `receipt/reject-untrusted-oversized-intermediates` | 5.0 ms | 6.3 ms |
+| Slowest hostile JWS: `signed-data/intermediate-with-a-non-minimal-certificate-length-does-not-crash` | 2.1 ms | 2.6 ms |
+| Every other budgeted case | under 3.3 ms | under 4.3 ms |
+| For scale: `verifyReceipt` on the genuine 187-purchase legacy receipt | 13 ms | 14 ms |
+| For scale: `verifyReceiptEndpoint` on the same receipt | 21 ms | 22 ms |
+
+No hostile input in the shared suite costs more than an ordinary large
+receipt, though the slowest comes closest in this port: the cost of a call
+follows the size of the input, which the limits above bound, not the
+structure an attacker chooses. The machine was shared with other work, and
+a repeat run moved the genuine receipt's median by up to a third, so treat
+these as an order of magnitude. Run `php bench/bench.php --worst-case` for
+the hostile cases on your own hardware, and `php bench/bench.php` for the
+genuine receipts.
+
 ## Known platform caveats
 
 - **64-bit only.** Apple ships epoch-millisecond timestamps (~1.7×10¹²),
