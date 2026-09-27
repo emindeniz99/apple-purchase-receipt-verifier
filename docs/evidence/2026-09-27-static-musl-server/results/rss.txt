@@ -1,0 +1,4 @@
+# 2026-09-27 x86_64, 4 vCPUs; load before: 1.06 1.17 1.18
+gnu-min: runs 7; start to listening 11.4 ms; first verification 7.4 ms (then 4.95 ms warm); RSS idle 20.9 MiB, after 1 call 21.1 MiB, after 21 calls 21.1 MiB, peak 21.9 MiB
+musl-min: runs 7; start to listening 10.0 ms; first verification 6.1 ms (then 5.19 ms warm); RSS idle 19.0 MiB, after 1 call 19.0 MiB, after 21 calls 19.0 MiB, peak 19.9 MiB
+musl-mimalloc-min: runs 7; start to listening 12.7 ms; first verification 17.9 ms (then 5.68 ms warm); RSS idle 30.5 MiB, after 1 call 36.5 MiB, after 21 calls 36.6 MiB, peak 37.3 MiB

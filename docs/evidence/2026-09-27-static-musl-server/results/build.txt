@@ -1,0 +1,43 @@
+# build.sh, 2026-09-27; rustc 1.98.1 (48a229cea 2026-09-01); cargo 1.98.1 (797e8a9bc 2026-08-05); host cc: cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+# musl-gcc wrapper: musl-tools 1.2.4-2; zig 0.16.0, cargo-zigbuild 0.23.4
+wrote aprv-abi1.x86_64-unknown-linux-gnu.cwasm: 8458112 bytes, sha256 d14a8819e751f2414cd3af4ad18c9ef162f0217049a79aee8a7ab7316e13b562
+wrote aprv-abi1.x86_64-unknown-linux-musl.cwasm: 8458112 bytes, sha256 43d7102a5eb8db2115846dd2686546757785b03d2baf220e2f4e063d7eb3e1cd
+wrote aprv-abi1.aarch64-unknown-linux-musl.cwasm: 8436824 bytes, sha256 94eb2d59ecf933c337d920530137085768b9272b93d0f02ce511cd2f051c8285
+x86_64 gnu vs musl .cwasm: 978 bytes differ
+gnu-min | x86_64-unknown-linux-gnu | cargo build | features server,embed | 25 s | raw 10801512 | stripped 10322744 | gzip -9 3580885 | xz -9 2726496
+    file: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, for GNU/Linux 3.2.0, not stripped
+    readelf: 1 INTERP, 3 NEEDED: [libgcc_s.so.1] [libm.so.6] [libc.so.6] 
+musl-min | x86_64-unknown-linux-musl | cargo build | features server,embed | 26 s | raw 10957424 | stripped 10457856 | gzip -9 3656734 | xz -9 2789028
+    file: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked, not stripped
+    readelf: 0 INTERP, 0 NEEDED
+musl-mimalloc-min | x86_64-unknown-linux-musl | cargo build | features server,embed,mimalloc | 25 s | raw 11134640 | stripped 10615552 | gzip -9 3714472 | xz -9 2837972
+    file: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked, not stripped
+    readelf: 0 INTERP, 0 NEEDED
+gnu-spike | x86_64-unknown-linux-gnu | cargo build | features server,embed,spike | 26 s | raw 10845424 | stripped 10356392 | gzip -9 3597814 | xz -9 2737048
+    file: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, for GNU/Linux 3.2.0, not stripped
+    readelf: 1 INTERP, 3 NEEDED: [libgcc_s.so.1] [libm.so.6] [libc.so.6] 
+musl-spike | x86_64-unknown-linux-musl | cargo build | features server,embed,spike | 26 s | raw 11004552 | stripped 10494720 | gzip -9 3672932 | xz -9 2803064
+    file: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked, not stripped
+    readelf: 0 INTERP, 0 NEEDED
+musl-mimalloc-spike | x86_64-unknown-linux-musl | cargo build | features server,embed,spike,mimalloc | 26 s | raw 11173504 | stripped 10644224 | gzip -9 3731886 | xz -9 2848828
+    file: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked, not stripped
+    readelf: 0 INTERP, 0 NEEDED
+gnu-count | x86_64-unknown-linux-gnu | cargo build | features server,embed,spike,alloc-count | 25 s | raw 10860128 | stripped 10369656 | gzip -9 3604692 | xz -9 2743372
+    file: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, for GNU/Linux 3.2.0, not stripped
+    readelf: 1 INTERP, 3 NEEDED: [libgcc_s.so.1] [libm.so.6] [libc.so.6] 
+a64-musl-min | aarch64-unknown-linux-musl | cargo zigbuild | features server,embed | 25 s | raw 10150928 | stripped 10150752 | gzip -9 3390574 | xz -9 2430620
+    file: ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked, stripped
+    readelf: 0 INTERP, 0 NEEDED
+a64-musl-mimalloc-min | aarch64-unknown-linux-musl | cargo zigbuild | features server,embed,mimalloc | 30 s | raw 10282616 | stripped 10282440 | gzip -9 3442814 | xz -9 2472988
+    file: ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked, stripped
+    readelf: 0 INTERP, 0 NEEDED
+a64-musl-spike | aarch64-unknown-linux-musl | cargo zigbuild | features server,embed,spike | 26 s | raw 10181424 | stripped 10181248 | gzip -9 3404401 | xz -9 2441636
+    file: ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked, stripped
+    readelf: 0 INTERP, 0 NEEDED
+# compilers recorded in each binary's .comment section (which toolchain built the C parts):
+    gnu-min: GCC: (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0;Linker: LLD 22.1.8 (/checkout/src/llvm-project/llvm 52ed14fcd56afc30f9cccd8ca8ce237c2eef7e04);rustc version 1.98.1 (48a229cea 2026-09-01);
+    musl-min: GCC: (GNU) 9.4.0;GCC: (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0;rustc version 1.98.1 (48a229cea 2026-09-01);
+    musl-mimalloc-min: GCC: (GNU) 9.4.0;GCC: (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0;rustc version 1.98.1 (48a229cea 2026-09-01);
+    a64-musl-min: GCC: (GNU) 9.4.0;Linker: LLD 21.1.0;clang version 21.1.0;rustc version 1.98.1 (48a229cea 2026-09-01);
+    a64-musl-mimalloc-min: GCC: (GNU) 9.4.0;Linker: LLD 21.1.0;clang version 21.1.0;rustc version 1.98.1 (48a229cea 2026-09-01);
+a64-rt-host-wt | round 9's host, feature wt | ELF 64-bit LSB executable, ARM aarch64, stripped

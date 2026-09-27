@@ -1,0 +1,13 @@
+# alpine.sh, 2026-09-27: alpine-minirootfs-3.24.2-x86_64.tar.gz, sha256 c5ca053cfe1d85c5b96dff8b9bc57045f7f184a30ffb6b65776409ca90388677 (latest-releases.yaml says c5ca053cfe1d85c5b96dff8b9bc57045f7f184a30ffb6b65776409ca90388677)
+rootfs: 3.24.2, musl loader: lib/ld-musl-x86_64.so.1
+## 2. static server in the Alpine rootfs
+cli verify-receipt: {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.ap
+http GET /healthz -> ok
+http GET /readyz -> ready
+http POST /v1/receipt/verify -> {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.ap
+http POST /spike/call/258 -> {"verified":true,"payload":{"bundleId":"com.example.app","environment":"Sandbox","inAppOwn
+http POST /v1/verify-receipt/sandbox -> {"environment":"Sandbox","receipt":{"adam_id":0,"app_item_id":0,"application_version":"2",
+## 3. round 11's cdylib on Alpine's python3
+alpine python: Python 3.14.7
+cdylib: ELF 64-bit LSB shared object, x86-64, NEEDED: [libc.so] 
+ctypes load + instantiate + g5 on Alpine python3: verified (71 ms, bundleId dev.bonzer.weeka.app)

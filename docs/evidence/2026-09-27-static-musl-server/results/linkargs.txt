@@ -1,0 +1,9 @@
+# linkargs.sh, 2026-09-27
+x86_64-unknown-linux-musl: driver cc; 34 args
+    self-contained crt objects: rcrt1.o crti.o crtbeginS.o crtendS.o crtn.o
+    self-contained dirs: $RUSTUP_HOME/toolchains/1.98.1-x86_64-unknown-linux-gnu/lib/rustlib/x86_64-unknown-linux-musl/lib $RUSTUP_HOME/toolchains/1.98.1-x86_64-unknown-linux-gnu/lib/rustlib/x86_64-unknown-linux-musl/lib/self-contained
+    libc/link-mode flags: -lunwind -lc -nostartfiles -static-pie -nodefaultlibs
+aarch64-unknown-linux-musl: driver cargo-zigbuild's zig cc wrapper for aarch64-unknown-linux-musl; 35 args
+    self-contained crt objects: crt1.o crti.o crtbegin.o crtend.o crtn.o
+    self-contained dirs: $RUSTUP_HOME/toolchains/1.98.1-x86_64-unknown-linux-gnu/lib/rustlib/aarch64-unknown-linux-musl/lib $RUSTUP_HOME/toolchains/1.98.1-x86_64-unknown-linux-gnu/lib/rustlib/aarch64-unknown-linux-musl/lib/self-contained
+    libc/link-mode flags: -lunwind -lc -nostartfiles -static -no-pie -nodefaultlibs

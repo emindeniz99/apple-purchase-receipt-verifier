@@ -1,0 +1,69 @@
+## host: musl-spike (ELF 64-bit LSB pie executable, x86-64)
+info: arch: x86_64 os: linux module: embedded .cwasm, deserialized (8.6 ms) 
+cli verify-receipt: {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"
+cli verify-signed-data: {"message":"intermediate certificate is not signed by a pinned root","reason":"INVALID_CHAIN","verified":false
+cli verify-receipt-endpoint sandbox: {"environment":"Sandbox","receipt":{"adam_id":0,"app_item_id":0,"application_version":"2","bundle_id":"dev.bon
+server: aprv: listening on 127.0.0.1:<port>; lifecycle fresh x2; embedded .cwasm, deserialized; load 7.2 ms, instances 0.5 ms, to ready 8.3 ms
+http GET /healthz -> 200 ok
+http GET /readyz -> 200 ready
+http POST /v1/receipt/verify -> 200 {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"
+http POST /v1/signed-data/verify -> 200 {"message":"intermediate certificate is not signed by a pinned root","reason":"INVALID_CHAIN","verified":false
+http POST /spike/call/258 -> 200 {"verified":true,"payload":{"bundleId":"com.example.app","environment":"Sandbox","inAppOwnershipType":"PURCHAS
+http POST /v1/verify-receipt/sandbox -> 200 {"environment":"Sandbox","receipt":{"adam_id":0,"app_item_id":0,"application_version":"2","bundle_id":"dev.bon
+## host: musl-mimalloc-spike (ELF 64-bit LSB pie executable, x86-64)
+info: arch: x86_64 os: linux module: embedded .cwasm, deserialized (30.0 ms) 
+cli verify-receipt: {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"
+cli verify-signed-data: {"message":"intermediate certificate is not signed by a pinned root","reason":"INVALID_CHAIN","verified":false
+cli verify-receipt-endpoint sandbox: {"environment":"Sandbox","receipt":{"adam_id":0,"app_item_id":0,"application_version":"2","bundle_id":"dev.bon
+server: aprv: listening on 127.0.0.1:<port>; lifecycle fresh x2; embedded .cwasm, deserialized; load 7.4 ms, instances 0.7 ms, to ready 9.1 ms
+http GET /healthz -> 200 ok
+http GET /readyz -> 200 ready
+http POST /v1/receipt/verify -> 200 {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"
+http POST /v1/signed-data/verify -> 200 {"message":"intermediate certificate is not signed by a pinned root","reason":"INVALID_CHAIN","verified":false
+http POST /spike/call/258 -> 200 {"verified":true,"payload":{"bundleId":"com.example.app","environment":"Sandbox","inAppOwnershipType":"PURCHAS
+http POST /v1/verify-receipt/sandbox -> 200 {"environment":"Sandbox","receipt":{"adam_id":0,"app_item_id":0,"application_version":"2","bundle_id":"dev.bon
+## host: gnu-spike (ELF 64-bit LSB pie executable, x86-64)
+info: arch: x86_64 os: linux module: embedded .cwasm, deserialized (8.0 ms) 
+cli verify-receipt: {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"
+cli verify-signed-data: {"message":"intermediate certificate is not signed by a pinned root","reason":"INVALID_CHAIN","verified":false
+cli verify-receipt-endpoint sandbox: {"environment":"Sandbox","receipt":{"adam_id":0,"app_item_id":0,"application_version":"2","bundle_id":"dev.bon
+server: aprv: listening on 127.0.0.1:<port>; lifecycle fresh x2; embedded .cwasm, deserialized; load 6.8 ms, instances 0.4 ms, to ready 7.6 ms
+http GET /healthz -> 200 ok
+http GET /readyz -> 200 ready
+http POST /v1/receipt/verify -> 200 {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"
+http POST /v1/signed-data/verify -> 200 {"message":"intermediate certificate is not signed by a pinned root","reason":"INVALID_CHAIN","verified":false
+http POST /spike/call/258 -> 200 {"verified":true,"payload":{"bundleId":"com.example.app","environment":"Sandbox","inAppOwnershipType":"PURCHAS
+http POST /v1/verify-receipt/sandbox -> 200 {"environment":"Sandbox","receipt":{"adam_id":0,"app_item_id":0,"application_version":"2","bundle_id":"dev.bon
+chroot contents: . ./aprv 
+## chroot: musl-spike (ELF 64-bit LSB pie executable, x86-64)
+info: arch: x86_64 os: linux module: embedded .cwasm, deserialized (8.3 ms) 
+cli verify-receipt: {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"
+cli verify-signed-data: {"message":"intermediate certificate is not signed by a pinned root","reason":"INVALID_CHAIN","verified":false
+cli verify-receipt-endpoint sandbox: {"environment":"Sandbox","receipt":{"adam_id":0,"app_item_id":0,"application_version":"2","bundle_id":"dev.bon
+server: aprv: listening on 127.0.0.1:<port>; lifecycle fresh x2; embedded .cwasm, deserialized; load 8.3 ms, instances 0.4 ms, to ready 9.3 ms
+http GET /healthz -> 200 ok
+http GET /readyz -> 200 ready
+http POST /v1/receipt/verify -> 200 {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"
+http POST /v1/signed-data/verify -> 200 {"message":"intermediate certificate is not signed by a pinned root","reason":"INVALID_CHAIN","verified":false
+http POST /spike/call/258 -> 200 {"verified":true,"payload":{"bundleId":"com.example.app","environment":"Sandbox","inAppOwnershipType":"PURCHAS
+http POST /v1/verify-receipt/sandbox -> 200 {"environment":"Sandbox","receipt":{"adam_id":0,"app_item_id":0,"application_version":"2","bundle_id":"dev.bon
+chroot contents: . ./aprv 
+## chroot: musl-mimalloc-spike (ELF 64-bit LSB pie executable, x86-64)
+info: arch: x86_64 os: linux module: embedded .cwasm, deserialized (17.9 ms) 
+cli verify-receipt: {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"
+cli verify-signed-data: {"message":"intermediate certificate is not signed by a pinned root","reason":"INVALID_CHAIN","verified":false
+cli verify-receipt-endpoint sandbox: {"environment":"Sandbox","receipt":{"adam_id":0,"app_item_id":0,"application_version":"2","bundle_id":"dev.bon
+server: aprv: listening on 127.0.0.1:<port>; lifecycle fresh x2; embedded .cwasm, deserialized; load 8.4 ms, instances 0.7 ms, to ready 22.3 ms
+http GET /healthz -> 200 ok
+http GET /readyz -> 200 ready
+http POST /v1/receipt/verify -> 200 {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"
+http POST /v1/signed-data/verify -> 200 {"message":"intermediate certificate is not signed by a pinned root","reason":"INVALID_CHAIN","verified":false
+http POST /spike/call/258 -> 200 {"verified":true,"payload":{"bundleId":"com.example.app","environment":"Sandbox","inAppOwnershipType":"PURCHAS
+http POST /v1/verify-receipt/sandbox -> 200 {"environment":"Sandbox","receipt":{"adam_id":0,"app_item_id":0,"application_version":"2","bundle_id":"dev.bon
+chroot contents: . ./aprv 
+## chroot: gnu-spike (ELF 64-bit LSB pie executable, x86-64)
+info: 
+cli verify-receipt: chroot: failed to run command '/aprv': No such file or directory 
+cli verify-signed-data: chroot: failed to run command '/aprv': No such file or directory 
+cli verify-receipt-endpoint sandbox: chroot: failed to run command '/aprv': No such file or directory 
+server did not start: chroot: failed to run command '/aprv': No such file or directory 
