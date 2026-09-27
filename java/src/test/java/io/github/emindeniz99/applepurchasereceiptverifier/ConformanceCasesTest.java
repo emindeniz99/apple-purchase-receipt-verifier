@@ -156,6 +156,22 @@ class ConformanceCasesTest {
             long budget = kase.get("maxMillis").asLong();
             assertTrue(millis <= budget, id + ": verify took " + millis + " ms, budget " + budget + " ms");
         }
+        // A tolerant case: any verdict but INTERNAL_ERROR, and nothing thrown.
+        if (expected.has("anyOutcome")) {
+            VerificationResult<?> result;
+            try {
+                result = call(verifier, receipt, argument);
+            } catch (RuntimeException | Error e) {
+                throw new AssertionError(id + ": the operation threw instead of answering", e);
+            }
+            Failure failure = result.failure();
+            if (failure != null) {
+                assertTrue(
+                        failure.reason() != Reason.INTERNAL_ERROR,
+                        id + ": answered INTERNAL_ERROR: " + failure.message());
+            }
+            return;
+        }
         VerificationResult<?> result = call(verifier, receipt, argument);
         String status = expected.get("status").asText();
         if ("error".equals(status)) {
