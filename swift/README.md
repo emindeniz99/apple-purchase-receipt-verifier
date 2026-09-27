@@ -278,15 +278,13 @@ path, the same pair on the JWS `x5c` chain).
 | Certificates embedded in a receipt | 10 |
 | Chain length (below the anchor) | 6 |
 | SignerInfos in a receipt | 4 |
+| ASN.1 nesting depth (CMS envelope, signed content) | 32 |
 
-**Known gap:** the ASN.1 (CMS/X.509) reader is `swift-asn1`'s own, which
-caps nested constructed values at 50, stricter than this library's own
-64-level bound for the CMS envelope and the signed-content attribute set. A
-receipt nested between 51 and 64 levels deep, a case the shared conformance
-vectors require every port to accept, is refused by `swift-asn1` before
-this library's own check runs. No known genuine Apple receipt nests
-anywhere near that deep; this affects only the deliberately adversarial
-boundary cases.
+The ASN.1 depth is checked on the encoding by this library before
+`swift-asn1` parses it, because `swift-asn1`'s own bound (about 49 values)
+is looser. Past 32, the envelope is `MALFORMED` and the signed content
+`UNREADABLE_PAYLOAD`. Genuine Apple receipts nest 9 levels deep in the
+envelope.
 
 ## Thread safety
 

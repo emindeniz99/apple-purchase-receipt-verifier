@@ -29,6 +29,58 @@ final class InputSizeBoundsTests: XCTestCase {
         XCTAssertEqual(maxEmbeddedCertificates, 10)
         XCTAssertEqual(maxSignerInfos, 4)
         XCTAssertEqual(maxPathLength, 6)
+        XCTAssertEqual(maxAsn1Depth, 32)
+    }
+
+    /// `depth` SEQUENCEs inside one another around one INTEGER, definite or
+    /// BER-indefinite lengths.
+    private func nestedSequences(_ depth: Int, indefinite: Bool = false) -> [UInt8] {
+        var value: [UInt8] = [0x02, 0x01, 0x2A]
+        for _ in 0..<depth {
+            value = indefinite ? [0x30, 0x80] + value + [0x00, 0x00] : [0x30] + derLength(value.count) + value
+        }
+        return value
+    }
+
+    private func derLength(_ count: Int) -> [UInt8] {
+        count < 0x80 ? [UInt8(count)] : [0x81, UInt8(count)]
+    }
+
+    /// The ASN.1 bound as the design counts it: 32 constructed values inside
+    /// one another, the outermost included, pass; 33 do not; the primitive
+    /// inside the innermost does not count; BER indefinite lengths, which
+    /// receipt envelopes use, are followed. The shared cases pin 32 and 33
+    /// through the envelope and the signed content; this pins the counting
+    /// itself, and that the walk leaves an encoding it cannot follow to the
+    /// parser rather than calling it too deep.
+    func testTheAsn1DepthWalkCountsConstructedValuesOnly() {
+        for indefinite in [false, true] {
+            XCTAssertFalse(asn1DepthExceeded(nestedSequences(32, indefinite: indefinite)), "32, indefinite: \(indefinite)")
+            XCTAssertTrue(asn1DepthExceeded(nestedSequences(33, indefinite: indefinite)), "33, indefinite: \(indefinite)")
+        }
+        // Siblings do not add depth.
+        let wide: [UInt8] = [0x31, 0x0E] + nestedSequences(2) + nestedSequences(2)
+        XCTAssertFalse(asn1DepthExceeded(wide))
+        XCTAssertTrue(asn1DepthExceeded([0x31, 0x80] + nestedSequences(32) + [0x00, 0x00]), "33 with a sibling-free set on top")
+        // Cut off after 20 of 40 levels: the lengths promise bytes that are
+        // not there, so the walk cannot follow it and answers "not too
+        // deep"; the parser that runs next refuses it.
+        XCTAssertFalse(asn1DepthExceeded(Array(nestedSequences(40).prefix(40))))
+        XCTAssertFalse(asn1DepthExceeded([]))
+    }
+
+    /// Past the bound, the signed content does not parse: the unverified
+    /// creation-date read gives up (the clock stands in) and the full parse
+    /// throws the error that becomes UNREADABLE_PAYLOAD's cause.
+    func testSignedContentPastTheBoundDoesNotParse() {
+        // SET { SEQUENCE { INTEGER 12, INTEGER 1, OCTET STRING } } inside
+        // enough SETs to reach 33 levels.
+        let attribute: [UInt8] = [0x30, 0x09, 0x02, 0x01, 0x0C, 0x02, 0x01, 0x01, 0x04, 0x01, 0x00]
+        var content = attribute
+        for _ in 0..<32 { content = [0x31] + derLength(content.count) + content }
+        XCTAssertTrue(asn1DepthExceeded(content))
+        XCTAssertNil(readCreationDate(content))
+        XCTAssertThrowsError(try parseReceiptPayload(content)) { XCTAssertTrue($0 is PayloadError) }
     }
 
     /// Brackets inside a string are data. A depth count that saw them would

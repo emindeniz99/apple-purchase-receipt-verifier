@@ -268,8 +268,12 @@ private func parseInApp(_ value: [UInt8]) throws -> InAppPurchase {
 /// version INTEGER, value OCTET STRING }` — fields after the third are
 /// tolerated, so a field Apple appends later does not break parsing, and the
 /// version is not read. Xcode receipts double-wrap the payload in an extra
-/// OCTET STRING, unwrapped here.
+/// OCTET STRING, unwrapped here. A set nested past ``maxAsn1Depth``, or one
+/// whose double-wrapped inner set is, does not parse: for the top-level set
+/// that makes the whole payload unreadable, for an in-app purchase it keeps
+/// that purchase raw.
 private func parseAttributeSet(_ der: [UInt8]) throws -> [RawAttribute] {
+    guard !asn1DepthExceeded(der) else { throw attributeSetTooDeep() }
     var root: ASN1Node
     do {
         root = try DER.parse(der)
@@ -277,8 +281,10 @@ private func parseAttributeSet(_ der: [UInt8]) throws -> [RawAttribute] {
         throw PayloadError("attribute set is not valid ASN.1")
     }
     if root.identifier == .octetString {
+        let inner = try payloadPrimitive(root)
+        guard !asn1DepthExceeded(inner) else { throw attributeSetTooDeep() }
         do {
-            root = try DER.parse(try payloadPrimitive(root))
+            root = try DER.parse(inner)
         } catch {
             throw PayloadError("double-wrap is not valid ASN.1")
         }
@@ -304,6 +310,10 @@ private func parseAttributeSet(_ der: [UInt8]) throws -> [RawAttribute] {
         attributes.append(RawAttribute(type: Int(typeValue), value: try payloadPrimitive(fields[2])))
     }
     return attributes
+}
+
+private func attributeSetTooDeep() -> PayloadError {
+    PayloadError("attribute set nests ASN.1 deeper than \(maxAsn1Depth) values")
 }
 
 private func payloadChildren(_ node: ASN1Node) throws -> [ASN1Node] {
