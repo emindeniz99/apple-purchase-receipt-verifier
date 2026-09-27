@@ -109,10 +109,10 @@ namespace ApplePurchaseReceiptVerifier
         public IReadOnlyDictionary<int, IReadOnlyList<byte[]>> UnknownAttributes { get; }
 
         /// <summary>
-        /// The canonical JSON rendering, for logging and storage: fixed key
-        /// order, no whitespace, 64-bit ids as strings, dates as epoch
-        /// milliseconds, bytes as standard base64. The same bytes in every
-        /// port (docs/design/0.7-api.md, "Our JSON").
+        /// This payload as JSON, for logging and storage: 64-bit ids as
+        /// strings, dates as epoch milliseconds, bytes as standard base64,
+        /// <c>null</c> for a missing field. Every port writes the same value;
+        /// the bytes may differ (docs/design/0.7-api.md, "Our JSON").
         /// </summary>
         public string ToJson()
         {

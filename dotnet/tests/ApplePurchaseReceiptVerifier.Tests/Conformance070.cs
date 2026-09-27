@@ -134,10 +134,11 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
                 string actualJson = operation == "verifyReceipt"
                     ? ((VerificationResult<ReceiptPayload>)outcome!).Payload!.ToJson()
                     : throw new InvalidOperationException("harness error: toJson is only defined for verifyReceipt");
+                // Same value, not same bytes: whitespace, key order and
+                // escaping are free (docs/design/0.7-api.md "Our JSON").
                 Assert.True(
-                    Encoding.UTF8.GetByteCount(actualJson) == Encoding.UTF8.GetByteCount(expectedJson)
-                    && string.Equals(actualJson, expectedJson, StringComparison.Ordinal),
-                    $"{id}: toJson mismatch\n  want: {expectedJson}\n  got:  {actualJson}");
+                    SameJsonValue(Json.Parse(expectedJson), Json.Parse(actualJson)),
+                    $"{id}: toJson value mismatch\n  want: {expectedJson}\n  got:  {actualJson}");
             }
         }
         else
@@ -154,6 +155,51 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
                         $"{id}: message contains forbidden code point U+{codePoint:X4}: {message}");
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// Deep equality over the values <see cref="Json.Parse"/> produces:
+    /// objects compare by key regardless of order, arrays element by
+    /// element, and scalars by type and value, so <c>1</c> never equals
+    /// <c>"1"</c> or <c>true</c>.
+    /// </summary>
+    private static bool SameJsonValue(object? a, object? b)
+    {
+        switch (a)
+        {
+            case OrderedMap mapA:
+                if (b is not OrderedMap mapB || mapA.Count != mapB.Count)
+                {
+                    return false;
+                }
+
+                foreach (KeyValuePair<string, object?> entry in mapA)
+                {
+                    if (!mapB.TryGetValue(entry.Key, out object? other) || !SameJsonValue(entry.Value, other))
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            case List<object?> listA:
+                if (b is not List<object?> listB || listA.Count != listB.Count)
+                {
+                    return false;
+                }
+
+                for (int i = 0; i < listA.Count; i++)
+                {
+                    if (!SameJsonValue(listA[i], listB[i]))
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            default:
+                return Equals(a, b);
         }
     }
 

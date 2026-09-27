@@ -1,5 +1,7 @@
+using System.Collections.Generic;
 using System.Formats.Asn1;
 using System.Numerics;
+using ApplePurchaseReceiptVerifier.Internal;
 using Xunit;
 
 namespace ApplePurchaseReceiptVerifier.Tests;
@@ -55,7 +57,9 @@ public class ReceiptTests
         Assert.Equal(2, parsed.UnknownAttributes.Count);
         Assert.Equal(new[] { new byte[] { 1, 2, 3 }, new byte[] { 4, 5 } }, parsed.UnknownAttributes[9999]);
         Assert.Equal(new byte[] { 9 }, Assert.Single(parsed.UnknownAttributes[31337]));
-        Assert.Contains("\"unknown_attributes\":{\"9999\":[\"AQID\",\"BAU=\"],\"31337\":[\"CQ==\"]}", parsed.ToJson(), System.StringComparison.Ordinal);
+        OrderedMap unknown = (OrderedMap)Json.ParseObject(parsed.ToJson())["unknown_attributes"]!;
+        Assert.Equal(new object?[] { "AQID", "BAU=" }, (List<object?>)unknown["9999"]!);
+        Assert.Equal(new object?[] { "CQ==" }, (List<object?>)unknown["31337"]!);
     }
 
     /// <summary>
