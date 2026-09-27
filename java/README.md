@@ -540,6 +540,89 @@ of megabytes when the input is near its size cap, so bound how many
 verifications run at once (a `Semaphore`, or a bounded executor) rather than
 relying on CPU headroom alone.
 
+## Testing with synthetic receipts
+
+Your own logic and wiring tests need none of this: mock `Verifier` and build
+a `ReceiptPayload` by hand, or replay a sandbox receipt from your own app
+(see [What to check after verification](#what-to-check-after-verification)).
+
+For an end-to-end test, one that signs its own fake receipt or JWS and feeds
+it through a real `Verifier`, add the `tests` test-jar classifier this
+library publishes alongside the main jar. It ships `TestPki`, the same
+synthetic-PKI signer this library's own suite uses, and needs BouncyCastle
+at test scope to build and sign certificates with:
+
+```xml
+<dependency>
+  <groupId>io.github.emindeniz99</groupId>
+  <artifactId>apple-purchase-receipt-verifier</artifactId>
+  <version>0.6.0</version> <!-- x-release-please-version -->
+  <classifier>tests</classifier>
+  <type>test-jar</type>
+  <scope>test</scope>
+</dependency>
+<dependency>
+  <groupId>org.bouncycastle</groupId>
+  <artifactId>bcpkix-jdk18on</artifactId>
+  <version>1.86</version>
+  <scope>test</scope>
+</dependency>
+```
+
+`TestPki` is a public class in
+`io.github.emindeniz99.applepurchasereceiptverifier`; import it from any
+package. Only the members below are public; the rest is this library's own
+fixture machinery:
+
+| Member | Builds |
+|---|---|
+| `TestPki.receipt()` | A fresh root/intermediate/leaf chain carrying Apple's marker OIDs, for CMS receipts |
+| `TestPki.jws()` | The same, for a StoreKit 2 JWS |
+| `TestPki.receiptPayload(bundleId, appVersion, opaque, sha1Hash, creationDate, inAppSets)` | A receipt attribute SET |
+| `TestPki.inAppPurchase(quantity, productId, transactionId, originalTransactionId, purchaseDate, expiresDate)` | One in-app purchase attribute SET, for `inAppSets` above |
+| `TestPki.claims(key, value, ...)` | An insertion-ordered claims map, for `signJws` |
+| `pki.signReceipt(payload)` | CMS-signs a receipt payload with this chain |
+| `pki.signJws(claims)` | Signs claims as a compact ES256 JWS with this chain in `x5c` |
+| `pki.root` | The chain's trust anchor, to pin with `Config.builder().roots(...)` |
+
+```java
+package io.github.emindeniz99.applepurchasereceiptverifier;
+
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
+import java.util.Base64;
+import java.util.Collections;
+
+// The receipt's own creation date pins the chain-validity instant, so the
+// fixed clock below just has to be an instant TestPki.receipt()'s one-year
+// chain actually covers: "now" always is.
+Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+
+TestPki pki = TestPki.receipt();
+byte[] payload = TestPki.receiptPayload(
+        "com.example.app",
+        "1.0",
+        new byte[] {1, 2, 3, 4},   // opaqueValue
+        new byte[] {5, 6, 7, 8},   // sha1Hash
+        now.toString(),
+        Collections.<byte[]>emptyList());
+String receiptBase64 = Base64.getEncoder().encodeToString(pki.signReceipt(payload));
+
+Config config = Config.builder()
+        .roots(Collections.singleton(pki.root))
+        .clock(Clock.fixed(now, ZoneOffset.UTC))
+        .build();
+Verifier verifier = Verifier.create(config);
+
+VerificationResult<ReceiptPayload> result = verifier.verifyReceipt(receiptBase64);
+// result.verified() is true; result.payload().bundleId() is "com.example.app"
+```
+
+This example is compile-checked against the built classes in
+`ReadmeSyntheticReceiptExampleTest`, in `src/test/java`.
+
 ## Debugging a receipt by hand
 
 See ["Debugging a receipt by hand"](../README.md#debugging-a-receipt-by-hand)

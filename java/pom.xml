@@ -172,6 +172,25 @@
             </manifestEntries>
           </archive>
         </configuration>
+        <executions>
+          <!-- The TestPki synthetic-PKI signer, published as a test-jar
+               classifier ("tests", maven-jar-plugin's default for this
+               goal) so callers can build synthetic receipts/JWS in their
+               own tests without vendoring TestPki.java. Restricted to
+               TestPki.class: the rest of src/test/java is this library's
+               own internal fixture machinery, not a supported surface. -->
+          <execution>
+            <id>test-jar</id>
+            <goals>
+              <goal>test-jar</goal>
+            </goals>
+            <configuration>
+              <includes>
+                <include>io/github/emindeniz99/applepurchasereceiptverifier/TestPki.class</include>
+              </includes>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
       <!-- Format/lint gate: not bound to any lifecycle phase, so `mvn test`
            (including the java-runtime-8 profile) never touches it. Invoked

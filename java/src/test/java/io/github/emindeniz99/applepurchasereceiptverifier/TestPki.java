@@ -1,6 +1,10 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonGenerator;
+import java.io.IOException;
+import java.io.StringWriter;
+import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
@@ -55,24 +59,36 @@ import org.bouncycastle.util.CollectionStore;
 import org.bouncycastle.util.Store;
 
 /**
- * Generates a fake "Apple" PKI (root → intermediate → leaf) and signs JWS
- * payloads / CMS receipts with it — the same fixture technique Apple's own
+ * Generates a fake "Apple" PKI (root -> intermediate -> leaf) and signs JWS
+ * payloads / CMS receipts with it, the same fixture technique Apple's own
  * libraries use, so no real Apple key material is ever needed. Also proves
  * anchor pinning: chains from a second TestPki instance must be rejected.
  *
  * <p>Kept Java 8-compatible (like main sources) so the suite can run on a
- * real JDK 8 in a CI matrix — hence the DER→P1363 signature conversion
+ * real JDK 8 in a CI matrix, hence the DER-to-P1363 signature conversion
  * instead of the Java 9+ {@code SHA256withECDSAinP1363Format} algorithm.</p>
+ *
+ * <p><strong>Public API.</strong> This class also ships standalone, as the
+ * {@code tests} test-jar classifier of the main artifact (see the "Testing
+ * with synthetic receipts" section of java/README.md), so callers can build
+ * synthetic receipts/JWS in their own tests. Only the members explicitly
+ * marked {@code public} are that supported surface; everything else is
+ * internal fixture machinery for this library's own suite and can change
+ * without notice. It depends on BouncyCastle, at test scope, and on
+ * jackson-core's streaming API only, never jackson-databind.</p>
  */
-final class TestPki {
+public final class TestPki {
 
     private static final AtomicLong SERIAL = new AtomicLong(1);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final JsonFactory JSON_FACTORY = new JsonFactory();
     static final BouncyCastleProvider BC = new BouncyCastleProvider();
 
-    final X509Certificate root;
-    final X509Certificate intermediate;
-    final X509Certificate leaf;
+    /** The trust anchor a caller pins with {@code Config.builder().roots(...)}. */
+    public final X509Certificate root;
+    /** The WWDR-style intermediate this chain's leaf was issued under. */
+    public final X509Certificate intermediate;
+    /** The signing certificate embedded in receipts/JWS this instance produces. */
+    public final X509Certificate leaf;
     /**
      * The issuing keys, kept only by {@link #jws(boolean, boolean, Date, Date)}
      * so a generator can mutate a certificate's TBS and re-sign it under the
@@ -105,8 +121,12 @@ final class TestPki {
         this.chain = chain;
     }
 
-    /** EC P-256 chain with both Apple marker OIDs — for JWS fixtures. */
-    static TestPki jws() throws Exception {
+    /**
+     * Builds a fresh EC P-256 chain (root, intermediate, leaf) with both
+     * Apple marker OIDs, valid for one year from now, for JWS. Part of the
+     * public test-jar API.
+     */
+    public static TestPki jws() throws Exception {
         Date notBefore = new Date(System.currentTimeMillis() - 86_400_000L);
         Date notAfter = new Date(System.currentTimeMillis() + 365L * 86_400_000L);
         return jws(true, true, notBefore, notAfter);
@@ -153,8 +173,12 @@ final class TestPki {
         return pki;
     }
 
-    /** RSA chain with both Apple marker OIDs, as genuine receipt chains carry them: for CMS receipts. */
-    static TestPki receipt() throws Exception {
+    /**
+     * Builds a fresh RSA chain (root, intermediate, leaf) with both Apple
+     * marker OIDs, as genuine receipt chains carry them, valid for one year
+     * from now, for CMS receipts. Part of the public test-jar API.
+     */
+    public static TestPki receipt() throws Exception {
         Date notBefore = new Date(System.currentTimeMillis() - 86_400_000L);
         Date notAfter = new Date(System.currentTimeMillis() + 365L * 86_400_000L);
         return receipt(notBefore, notAfter);
@@ -294,8 +318,12 @@ final class TestPki {
         return new TestPki(rootCert, deepest, signerCert, signerKp.getPrivate(), embedded);
     }
 
-    /** Varargs {@code key, value, key, value…} claims helper (insertion-ordered). */
-    static Map<String, Object> claims(Object... kv) {
+    /**
+     * Varargs {@code key, value, key, value...} claims helper (insertion
+     * ordered), for building a {@link #signJws} payload. Part of the public
+     * test-jar API.
+     */
+    public static Map<String, Object> claims(Object... kv) {
         Map<String, Object> map = new LinkedHashMap<String, Object>();
         for (int i = 0; i < kv.length; i += 2) {
             map.put((String) kv[i], kv[i + 1]);
@@ -305,13 +333,16 @@ final class TestPki {
 
     // --- JWS -------------------------------------------------------------
 
-    /** Signs claims as an ES256 compact JWS carrying this chain in x5c. */
-    String signJws(Map<String, ?> claims) throws Exception {
+    /**
+     * Signs {@code claims} as an ES256 compact JWS carrying this chain in
+     * {@code x5c}. Part of the public test-jar API.
+     */
+    public String signJws(Map<String, ?> claims) throws Exception {
         Map<String, Object> header = new LinkedHashMap<String, Object>();
         header.put("alg", "ES256");
         header.put(
                 "x5c", Arrays.asList(b64(leaf.getEncoded()), b64(intermediate.getEncoded()), b64(root.getEncoded())));
-        return signJwsWithHeader(MAPPER.writeValueAsString(header), MAPPER.writeValueAsString(claims));
+        return signJwsWithHeader(toJson(header), toJson(claims));
     }
 
     /** Same, but with a caller-controlled header (for malformed-header tests). */
@@ -350,10 +381,57 @@ final class TestPki {
         System.arraycopy(bytes, start, out, offset + 32 - length, length);
     }
 
+    // --- JSON (jackson-core streaming only, never jackson-databind) ------
+
+    /** Serializes a JSON-shaped value (Map/List/String/Number/Boolean/null) compactly. */
+    private static String toJson(Object value) throws IOException {
+        StringWriter writer = new StringWriter();
+        try (JsonGenerator generator = JSON_FACTORY.createGenerator(writer)) {
+            writeJson(generator, value);
+        }
+        return writer.toString();
+    }
+
+    private static void writeJson(JsonGenerator generator, Object value) throws IOException {
+        if (value == null) {
+            generator.writeNull();
+        } else if (value instanceof Map) {
+            generator.writeStartObject();
+            for (Map.Entry<?, ?> entry : ((Map<?, ?>) value).entrySet()) {
+                generator.writeFieldName(String.valueOf(entry.getKey()));
+                writeJson(generator, entry.getValue());
+            }
+            generator.writeEndObject();
+        } else if (value instanceof List) {
+            generator.writeStartArray();
+            for (Object element : (List<?>) value) {
+                writeJson(generator, element);
+            }
+            generator.writeEndArray();
+        } else if (value instanceof String) {
+            generator.writeString((String) value);
+        } else if (value instanceof Boolean) {
+            generator.writeBoolean((Boolean) value);
+        } else if (value instanceof BigDecimal) {
+            generator.writeNumber((BigDecimal) value);
+        } else if (value instanceof Double || value instanceof Float) {
+            generator.writeNumber(((Number) value).doubleValue());
+        } else if (value instanceof Long) {
+            generator.writeNumber((Long) value);
+        } else if (value instanceof Integer || value instanceof Short || value instanceof Byte) {
+            generator.writeNumber(((Number) value).intValue());
+        } else {
+            throw new IllegalArgumentException("Unsupported claim value type: " + value.getClass());
+        }
+    }
+
     // --- Receipts --------------------------------------------------------
 
-    /** CMS-signs a receipt payload (encapsulated), embedding the full chain. */
-    byte[] signReceipt(byte[] payload) throws Exception {
+    /**
+     * CMS-signs a receipt payload (encapsulated), embedding the full chain,
+     * at the current time. Part of the public test-jar API.
+     */
+    public byte[] signReceipt(byte[] payload) throws Exception {
         return signReceipt(payload, new Date());
     }
 
@@ -642,8 +720,13 @@ final class TestPki {
         throw new AssertionError("needle not found");
     }
 
-    /** Builds a receipt payload SET; each entry of {@code inAppSets} becomes an attr-17. */
-    static byte[] receiptPayload(
+    /**
+     * Builds a receipt payload SET for {@link #signReceipt}: {@code
+     * receiptType} defaults to {@code ProductionSandbox}, and each entry of
+     * {@code inAppSets} (see {@link #inAppPurchase}) becomes an attr-17.
+     * Part of the public test-jar API.
+     */
+    public static byte[] receiptPayload(
             String bundleId,
             String appVersion,
             byte[] opaque,
@@ -785,8 +868,12 @@ final class TestPki {
         return attr(type, valueOctets);
     }
 
-    /** Builds one in-app purchase attribute SET (the value of an attr-17). */
-    static byte[] inAppPurchase(
+    /**
+     * Builds one in-app purchase attribute SET (the value of an attr-17),
+     * for {@link #receiptPayload}'s {@code inAppSets}. Part of the public
+     * test-jar API.
+     */
+    public static byte[] inAppPurchase(
             long quantity,
             String productId,
             String transactionId,
