@@ -21,8 +21,7 @@ final class BoundedJson {
 
     /**
      * The longest member name, in characters. Jackson's own default, stated
-     * for the same reason as {@link #MAX_NESTING_DEPTH}; the Rust port holds
-     * the same bound.
+     * for the same reason as {@link #MAX_NESTING_DEPTH}.
      */
     static final int MAX_NAME_LENGTH = 50_000;
 

@@ -8,10 +8,9 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
  * 64 by default) applies only where it reads indefinite lengths: a
  * definite-length DER encoding nested deeper parses without complaint, as
  * a test pins. So the bound is enforced here, on every encoding this
- * library parses before a signature has vouched for it, and counted the way
- * the Rust port counts it: at most {@link #MAX_DEPTH} constructed values
- * inside one another, the outermost included, and a primitive value inside
- * the innermost (owner, 2026-09-27, Q24).</p>
+ * library parses before a signature has vouched for it, and counted as: at
+ * most {@link #MAX_DEPTH} constructed values inside one another, the
+ * outermost included, and a primitive value inside the innermost.</p>
  *
  * <p>The walk judges depth and nothing else. An encoding it cannot follow
  * (a truncated length, say) is not its verdict to give: it answers "not too

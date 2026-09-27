@@ -98,8 +98,9 @@
       <optional>true</optional>
     </dependency>
 
-    <!-- Test only: TestPki and the fixture tests still build and read JSON
-         through databind. -->
+    <!-- Test only: TestPki, the fixture generators and several tests build
+         and read JSON through databind; the library uses jackson-core
+         alone. -->
     <dependency>
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-databind</artifactId>

@@ -31,13 +31,17 @@ import org.jspecify.annotations.Nullable;
  * {@link #parse} only after the chain and the signature have passed, so every
  * failure {@link #parse} reports is {@link Reason#UNREADABLE_PAYLOAD}.
  *
- * <p>Decode rules, the same in every port: a missing attribute is
- * {@code null}; a date that does not parse is {@code null}; the trial and
- * intro flags are 0 for {@code false} and anything else for {@code true};
- * integers are reported as they are when they fit a signed 64-bit value,
- * negative ones included. A string attribute that is not a UTF8String or
- * IA5String, an integer attribute that is not an INTEGER or does not fit, or
- * an attribute SET that does not parse makes the whole payload
+ * <p>Decode rules: a missing attribute is {@code null}; the trial and intro
+ * flags are 0 for {@code false} and anything else for {@code true}; integers
+ * are reported as they are when they fit a signed 64-bit value, negative
+ * ones included. A known attribute whose value does not decode (a string
+ * that is not a UTF8String or seven-bit IA5String, an integer that is not a
+ * well-formed INTEGER or does not fit, a date not in the one accepted form)
+ * is {@code null} and its raw octets are kept in {@code unknownAttributes},
+ * as are later copies of an attribute; an in-app purchase SET that does not
+ * parse is kept raw under attribute 17. An attribute SET, or an attribute
+ * in it, that does not parse, an attribute type out of range, or nesting
+ * past {@link Asn1Depth#MAX_DEPTH} makes the whole payload
  * unreadable.</p>
  */
 final class ReceiptDecoder {
@@ -440,7 +444,7 @@ final class ReceiptDecoder {
             ASN1Primitive parsed = ASN1Primitive.fromByteArray(der);
             if (parsed instanceof ASN1IA5String) {
                 // IA5 is seven-bit: a byte from 0x80 up is no IA5 character,
-                // and is not read as Latin-1 either (owner, 2026-09-27, Q23).
+                // and is not read as Latin-1 either.
                 for (byte octet : ((ASN1IA5String) parsed).getOctets()) {
                     if (octet < 0) {
                         throw new VerificationException(
@@ -512,13 +516,12 @@ final class ReceiptDecoder {
     }
 
     /**
-     * Exactly {@code YYYY-MM-DDTHH:MM:SSZ} and nothing else (owner,
-     * 2026-09-27, Q20a): a four-digit year from 0000 to 9999, uppercase
+     * Exactly {@code YYYY-MM-DDTHH:MM:SSZ} and nothing else: a four-digit year from 0000 to 9999, uppercase
      * {@code T} and {@code Z}, a day that exists in its month, hour 00 to
      * 23, minute and second 00 to 59; no fraction, no offset, no leap
      * second. Checked by hand rather than by {@code Instant.parse}, whose
-     * grammar is wider and has moved between JDKs, so every port reads one
-     * receipt the same way. Null when {@code text} is not in that form.
+     * grammar is wider and has moved between JDKs, so one receipt reads the
+     * same on every JVM. Null when {@code text} is not in that form.
      */
     static @Nullable Long parseDate(String text) {
         if (text.length() != 20

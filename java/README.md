@@ -436,7 +436,7 @@ by `name()`, never by `ordinal()`.
 | `MALFORMED` | The base64, ASN.1, CMS or JWS structure is broken, or a structural bound was exceeded (JSON nesting past 64, more than 10 embedded certificates, more than 4 SignerInfos). Decided before any signature check |
 | `TOO_LARGE` | Over a fixed size cap: 3,145,728 UTF-8 bytes for a receipt or an endpoint request body, 262,144 for a JWS. Decided before anything is decoded |
 | `INVALID_SIGNATURE` | The signature does not match the signed content |
-| `UNTRUSTED_CHAIN` | The certificate chain does not reach a pinned root, or is longer than six certificates |
+| `UNTRUSTED_CHAIN` | The certificate chain does not reach a pinned root, or has more than six certificates below the anchor |
 | `INVALID_CERTIFICATE` | A certificate the check depends on does not decode, or is expired or not yet valid at the signing instant |
 | `INVALID_CERTIFICATE_PURPOSE` | A certificate that chains to a pinned root but is the wrong kind: the leaf lacks Apple's signing marker OID, or the intermediate lacks Apple's WWDR marker OID. This is what keeps a genuine developer certificate, which chains to the same roots, from signing a receipt or JWS |
 | `UNREADABLE_PAYLOAD` | The signature and chain verified, so the payload bytes are Apple's, but they do not parse. `Failure.cause()` carries the parser's exception. Deterministic: alert, do not retry |
@@ -505,17 +505,20 @@ the library and the roots the caller passes, the same on every JVM.
 
 ## Resource bounds
 
-Checked at every public entry point before anything is decoded, and fixed
-constants in every port of this library, not configurable:
+Fixed constants, not configurable. The three size caps are checked before
+anything is decoded; the others as the structure they bound is read:
 
 | Bound | Value | `Reason` |
 |---|---|---|
 | Receipt base64, UTF-8 bytes | 3,145,728 | `TOO_LARGE` |
 | Endpoint request body, UTF-8 bytes | 3,145,728 | `TOO_LARGE` (status 21002) |
 | JWS, UTF-8 bytes | 262,144 | `TOO_LARGE` |
-| JSON nesting depth | 64 | `MALFORMED` |
+| JSON nesting depth, the outer object included | 64 | `MALFORMED` (JWS header, request body); a JWS payload is carried to the signature: `UNREADABLE_PAYLOAD` if it verifies |
+| JSON member name, characters | 50,000 | as nesting depth |
+| JSON number, characters | 1,000 | as nesting depth |
+| ASN.1 nesting, constructed values, the outermost included | 64 | `MALFORMED` (receipt envelope), `UNREADABLE_PAYLOAD` (signed receipt content), `INVALID_CERTIFICATE` (an `x5c` entry) |
 | Certificates embedded in a receipt | 10 | `MALFORMED` |
-| Chain length, leaf to root | 6 | `UNTRUSTED_CHAIN` |
+| Chain length, certificates below the anchor | 6 | `UNTRUSTED_CHAIN` |
 | SignerInfos in a receipt | 4 | `MALFORMED` |
 
 Apple's own endpoint answers a request body of exactly 3,145,728 bytes and

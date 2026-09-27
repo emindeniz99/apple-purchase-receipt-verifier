@@ -7,8 +7,8 @@ import java.util.TreeMap;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Writes the canonical JSON of {@link ReceiptPayload#toJson()}, the form every
- * port must produce byte for byte: no whitespace, keys in the order the
+ * Writes the canonical JSON of {@link ReceiptPayload#toJson()}, a form fixed
+ * byte for byte: no whitespace, keys in the order the
  * caller writes them, and strings escaped as ECMAScript's
  * {@code JSON.stringify} escapes them: {@code "} and {@code \} as {@code \"}
  * and {@code \\}, the short escapes {@code \b \f \n \r \t}, every other

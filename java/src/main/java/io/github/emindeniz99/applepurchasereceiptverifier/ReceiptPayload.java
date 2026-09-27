@@ -14,8 +14,9 @@ import org.jspecify.annotations.Nullable;
  * <p>Names are the keys of Apple's verifyReceipt response, so this class,
  * {@link #toJson()} and Apple's documentation share one vocabulary. The
  * comment on each getter names its receipt attribute type. {@code null} means
- * the attribute was absent (or, for a date, did not parse); the library
- * invents no values. Dates are epoch milliseconds, UTC; receipts carry whole
+ * the attribute was absent, or its value did not decode, in which case its
+ * octets are in {@link #unknownAttributes()}; the library invents no
+ * values. Dates are epoch milliseconds, UTC; receipts carry whole
  * seconds, so they end in {@code 000}.</p>
  *
  * <p>Nothing in here has been checked against anything: the bundle id,
@@ -196,8 +197,10 @@ public final class ReceiptPayload {
     }
 
     /**
-     * Raw value octets of the attribute types not modelled above, by type, in
-     * receipt order, so a field Apple adds later is not lost. The attribute's
+     * Raw value octets, by type, in receipt order, of the attribute types not
+     * modelled above, of a modelled attribute whose value did not decode, and
+     * of every copy of a modelled attribute after the first, so nothing Apple
+     * signed is lost. The attribute's
      * {@code version} integer is not kept. A fresh copy on each call, arrays
      * included.
      */
@@ -206,8 +209,8 @@ public final class ReceiptPayload {
     }
 
     /**
-     * This payload as canonical JSON, for logging and storage. Every port
-     * writes the same bytes: keys in declaration order, snake_case names,
+     * This payload as canonical JSON, for logging and storage. The bytes are
+     * fixed: keys in declaration order, snake_case names,
      * dates as numbers with a {@code _ms} suffix, 64-bit ids
      * ({@code app_item_id}, {@code download_id},
      * {@code version_external_identifier}, {@code web_order_line_item_id}) as

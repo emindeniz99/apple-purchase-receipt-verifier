@@ -9,8 +9,9 @@ import org.jspecify.annotations.Nullable;
  * One in-app purchase from a legacy app receipt (attribute 17). Immutable.
  *
  * <p>Names are the keys of Apple's verifyReceipt response. {@code null} means
- * the attribute was absent (or, for a date, did not parse); the library
- * invents no values. Dates are epoch milliseconds, UTC.</p>
+ * the attribute was absent, or its value did not decode, in which case its
+ * octets are in {@link #unknownAttributes()}; the library invents no
+ * values. Dates are epoch milliseconds, UTC.</p>
  */
 public final class InAppPurchase {
 

@@ -39,8 +39,8 @@ import org.jspecify.annotations.Nullable;
  * <p>Algorithm: ES256 only, exactly 3 {@code x5c} certs, PKIX path
  * validation to the pinned roots at the payload's {@code signedDate} (the
  * clock when it states none), Apple marker OIDs on leaf and intermediate,
- * then the signature. Mirrors the checks of Apple's official app-store-server-library
- * in offline mode: no OCSP, so a revoked certificate is not detected, in
+ * then the signature. Offline, like Apple's app-store-server-library with
+ * online checks off: no OCSP, so a revoked certificate is not detected, in
  * exchange for no network call. No payload is rejected for its age.</p>
  *
  * <p>Stateless, so safe from many threads: the only shared objects are the
@@ -146,9 +146,9 @@ final class JwsCore {
                 intermediate,
                 new Date(payload.signedDate != null ? payload.signedDate.longValue() : clock.millis()),
                 trustAnchors);
-        // The marker OIDs after the chain, as on the receipt path (owner,
-        // 2026-09-27, Q21): a foreign chain is UNTRUSTED_CHAIN whatever it
-        // carries. Still before the leaf's key checks the JWS signature.
+        // The marker OIDs after the chain, as on the receipt path: a foreign
+        // chain is UNTRUSTED_CHAIN whatever it carries. Still before the
+        // leaf's key checks the JWS signature.
         if (leaf.getExtensionValue(AppleTrust.SIGNING_LEAF_OID) == null) {
             throw new VerificationException(
                     Reason.INVALID_CERTIFICATE_PURPOSE,

@@ -17,7 +17,7 @@ import org.jspecify.annotations.Nullable;
  * not produced. Like Apple's endpoint, it checks no bundle id: the caller
  * compares {@code receipt.bundle_id}.
  *
- * <p>Status from the verification outcome, the same table in every port:
+ * <p>Status from the verification outcome:
  * verified answers 0, or 21007 for a receipt that is not a production receipt
  * on {@link Environment#PRODUCTION} and 21008 for a production receipt on
  * {@link Environment#SANDBOX}; {@link Reason#MALFORMED} and
