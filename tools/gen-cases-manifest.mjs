@@ -270,7 +270,9 @@ function main() {
     }
 
     const expected = kase.expected;
-    if (kase.operation === 'verifyReceiptEndpoint') {
+    if (expected.anyOutcome === true) {
+      parts.push('expect=any');
+    } else if (kase.operation === 'verifyReceiptEndpoint') {
       parts.push('expect=body');
     } else {
       parts.push(`expect=${expected.status}`);
