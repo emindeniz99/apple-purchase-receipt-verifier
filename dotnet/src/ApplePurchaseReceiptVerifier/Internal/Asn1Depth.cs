@@ -4,14 +4,14 @@ namespace ApplePurchaseReceiptVerifier.Internal
 {
     /// <summary>
     /// Bounds how deeply a BER/DER document nests constructed values (the
-    /// design's Bounds table, "ASN.1 nesting depth", 64), applied to two
+    /// design's Bounds table, "ASN.1 nesting depth", 32), applied to two
     /// documents parsed on their own: the CMS envelope from its ContentInfo,
     /// and the signed content from its attribute SET. The outermost
     /// constructed value counts as depth 1.
     /// </summary>
     internal static class Asn1Depth
     {
-        internal const int MaxDepth = 64;
+        internal const int MaxDepth = 32;
 
         /// <summary>Whether <paramref name="data"/>, read as one BER value, nests deeper than <paramref name="maxDepth"/>.</summary>
         /// <remarks>
