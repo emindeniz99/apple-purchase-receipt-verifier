@@ -57,8 +57,9 @@ human-facing version; where they overlap, they agree.
   D15, which superseded D12's two-root choice). Apple's guidance is to trust
   every root on its PKI page; don't prune them back to the two today's chains
   happen to end at.
-- **One version, eight files**: release-please's extra-files bump
+- **One version, nine files**: release-please's extra-files bump
   `version.txt`, `node/package.json`, `python/pyproject.toml`, `java/pom.xml`,
+  Java's `Version.CURRENT` (`java/src/main/java/.../Version.java`),
   `ruby/lib/apple_purchase_receipt_verifier/version.rb`, `rust/Cargo.toml`,
   `dotnet/Directory.Build.props` and the CHANGELOG together. Go and PHP carry
   no version string at all — the git tag is their version. Never hand-edit a
