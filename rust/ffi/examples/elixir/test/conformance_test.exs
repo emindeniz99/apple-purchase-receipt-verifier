@@ -213,23 +213,28 @@ defmodule ConformanceTest do
 
   defp check(kase, outcome) do
     case get(kase, "expect") do
-      "any" -> check_any(outcome)
+      "oneof" -> check_one_of(kase, outcome)
       "error" -> check_error(kase, outcome)
       expect when expect in ["ok", "body"] -> check_ok(kase, outcome)
     end
   end
 
-  # A tolerant case: any verdict but INTERNAL_ERROR, which is also what the
-  # ABI answers when the call panicked.
-  defp check_any({:error, status, json}) do
-    if Aprv.reason(status) == :internal_error do
-      {:error, "expected any verdict but INTERNAL_ERROR, got #{json}"}
-    else
-      :ok
-    end
-  end
+  # A listed-outcome case: "ok" or the reason must be listed. A panic answers
+  # INTERNAL_ERROR, which no list holds.
+  defp check_one_of(kase, outcome) do
+    allowed =
+      kase |> get("oneOf") |> String.split("|") |> Enum.map(&Map.get(@reason_codes, &1, :ok))
 
-  defp check_any({:ok, _json}), do: :ok
+    got =
+      case outcome do
+        {:error, status, _json} -> Aprv.reason(status)
+        {:ok, _json} -> :ok
+      end
+
+    if got in allowed,
+      do: :ok,
+      else: {:error, "expected one of #{get(kase, "oneOf")}, got #{inspect(got)}"}
+  end
 
   defp check_error(kase, outcome) do
     token = get(kase, "reason")

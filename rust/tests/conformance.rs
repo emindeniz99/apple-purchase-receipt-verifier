@@ -134,9 +134,9 @@ struct Expected {
     /// a log line as is.
     #[serde(default)]
     message_must_not_contain: Option<Vec<u32>>,
-    /// A tolerant case: any verdict but `INTERNAL_ERROR`, and no panic.
+    /// The outcomes a port may give, `"ok"` or a reason; no panic.
     #[serde(default)]
-    any_outcome: Option<bool>,
+    one_of: Option<Vec<String>>,
     #[serde(default)]
     fields: Option<Map<String, Value>>,
     #[serde(default)]
@@ -596,7 +596,7 @@ fn run_case(dir: &Path, fixtures: &BTreeMap<String, Fixture>, case: &Case) -> Re
                         .map(apple_purchase_receipt_verifier::JsonPayload::into_json)
                 }
             };
-            if expected.any_outcome == Some(true) {
+            if let Some(allowed) = &expected.one_of {
                 let guarded = || {
                     std::panic::catch_unwind(std::panic::AssertUnwindSafe(&call)).map_err(|_| {
                         Failed::from(format!("{id}: the operation panicked instead of answering"))
@@ -617,10 +617,9 @@ fn run_case(dir: &Path, fixtures: &BTreeMap<String, Fixture>, case: &Case) -> Re
                         result
                     }
                 };
-                if let Err(failure) = result {
-                    if failure.reason() == Reason::InternalError {
-                        return Err(Failed::from(format!("{id}: answered {failure}")));
-                    }
+                let outcome = result.as_ref().map_or_else(|f| f.reason().as_str(), |_| "ok");
+                if !allowed.iter().any(|a| a == outcome) {
+                    return Err(Failed::from(format!("{id}: answered {outcome}, want one of {allowed:?}")));
                 }
                 return Ok(());
             }
