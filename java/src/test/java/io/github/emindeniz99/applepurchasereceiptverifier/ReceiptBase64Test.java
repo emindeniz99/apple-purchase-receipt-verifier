@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The spellings {@link ReceiptBase64#decode} must accept and refuse are the
- * decodeBase64 groups of {@code fixtures/cases.json}, which
+ * decodeBase64 groups of {@code fixtures/cases-0.7.json}, which
  * {@code ConformanceCasesTest} runs against it and against the x5c decoder.
  * What stays here is the one input a JSON vector cannot hold: {@code null}.
  */
