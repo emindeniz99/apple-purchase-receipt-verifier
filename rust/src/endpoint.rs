@@ -12,8 +12,9 @@ use crate::datetime::{format_etc_gmt, format_pacific};
 use crate::environment::Environment;
 use crate::error::{Failure, Reason};
 use crate::json::{top_level_members, Value};
+use crate::json_writer::Object;
 use crate::receipt;
-use crate::receipt_payload::{InAppPurchase, Object, ReceiptPayload};
+use crate::receipt_payload::{InAppPurchase, ReceiptPayload};
 use crate::roots::TrustAnchor;
 use crate::verifier::Clock;
 

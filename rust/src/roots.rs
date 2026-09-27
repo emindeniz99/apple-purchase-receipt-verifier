@@ -39,6 +39,17 @@ static APPLE_ROOT_SHA256: [&str; 3] = [
     "63343abfb89a6a03ebb57e9b3f5fa7be7c4f5c756f3017b3a8c488c3653e9179",
 ];
 
+/// Apple marker OID on the leaf that signs App Store JWS payloads and legacy
+/// receipts alike. The chain check alone is not enough: developer
+/// certificates ("Apple Distribution", "Apple Development") chain through the
+/// same WWDR intermediate to the same pinned root, so without this purpose
+/// check any developer could sign a forged payload or receipt.
+pub(crate) const SIGNING_LEAF_OID: &str = "1.2.840.113635.100.6.11.1";
+
+/// Apple marker OID on the Worldwide Developer Relations intermediate CA
+/// that issues the signing leaf.
+pub(crate) const WWDR_INTERMEDIATE_OID: &str = "1.2.840.113635.100.6.2.1";
+
 /// A certificate a chain may terminate at.
 ///
 /// A trust anchor is trusted by fiat: **its own expiry is not checked**,

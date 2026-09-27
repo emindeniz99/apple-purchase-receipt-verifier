@@ -89,20 +89,6 @@ impl Certificate {
         &self.subject_der
     }
 
-    /// `notBefore` as epoch milliseconds, or `None` when the encoded time is
-    /// not one this parser can represent — in which case the certificate is
-    /// valid at no instant at all.
-    #[must_use]
-    pub const fn not_before(&self) -> Option<i64> {
-        self.not_before
-    }
-
-    /// `notAfter` as epoch milliseconds; see [`Certificate::not_before`].
-    #[must_use]
-    pub const fn not_after(&self) -> Option<i64> {
-        self.not_after
-    }
-
     /// The `SubjectPublicKeyInfo` TLV.
     #[must_use]
     pub fn spki(&self) -> &[u8] {

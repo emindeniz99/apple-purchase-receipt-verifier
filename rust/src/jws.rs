@@ -12,17 +12,12 @@
 use crate::base64::{decode_base64url_strict, decode_receipt_base64};
 use crate::chain::validate_pair;
 use crate::crypto::{has_unimplemented_curve, verify_es256_under};
-use crate::error::{Failure, Reason};
+use crate::error::{malformed, Failure, Reason};
 use crate::json::{instant, whole_object_members, JsonError, Value};
-use crate::roots::TrustAnchor;
+use crate::roots::{TrustAnchor, SIGNING_LEAF_OID, WWDR_INTERMEDIATE_OID};
 use crate::verifier::{self, Clock, Stage};
 use crate::x509::{Certificate, OID_EC_PUBLIC_KEY};
 use core::fmt;
-
-/// Apple marker OID: a leaf certificate used for App Store signing.
-pub(crate) const LEAF_OID: &str = "1.2.840.113635.100.6.11.1";
-/// Apple marker OID: the Worldwide Developer Relations intermediate CA.
-pub(crate) const INTERMEDIATE_OID: &str = "1.2.840.113635.100.6.2.1";
 
 /// The longest compact JWS, in UTF-8 bytes, checked before the string is
 /// split or any segment decoded, because everything below allocates in
@@ -65,10 +60,6 @@ impl fmt::Display for JsonPayload {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.json)
     }
-}
-
-fn malformed(detail: impl Into<String>) -> Failure {
-    Failure::new(Reason::Malformed, detail)
 }
 
 fn invalid_certificate(detail: &'static str) -> Failure {
@@ -166,16 +157,16 @@ pub(crate) fn verify(
     // The marker OIDs after the chain, as on the receipt path: a foreign
     // chain is UNTRUSTED_CHAIN whatever it carries, and only a pinned chain can be the wrong kind of Apple
     // certificate. Still before the leaf's key checks the JWS signature.
-    if !leaf.has_extension(LEAF_OID) {
+    if !leaf.has_extension(SIGNING_LEAF_OID) {
         return Err(Failure::new(
             Reason::InvalidCertificatePurpose,
-            format!("leaf certificate lacks Apple marker OID {LEAF_OID}"),
+            format!("leaf certificate lacks Apple marker OID {SIGNING_LEAF_OID}"),
         ));
     }
-    if !intermediate.has_extension(INTERMEDIATE_OID) {
+    if !intermediate.has_extension(WWDR_INTERMEDIATE_OID) {
         return Err(Failure::new(
             Reason::InvalidCertificatePurpose,
-            format!("intermediate certificate lacks Apple marker OID {INTERMEDIATE_OID}"),
+            format!("intermediate certificate lacks Apple marker OID {WWDR_INTERMEDIATE_OID}"),
         ));
     }
     if has_unimplemented_curve(&leaf) {

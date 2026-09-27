@@ -31,6 +31,11 @@ pub enum Reason {
     InternalError,
 }
 
+/// A [`Reason::Malformed`] failure: the input's structure is broken.
+pub(crate) fn malformed(detail: impl Into<String>) -> Failure {
+    Failure::new(Reason::Malformed, detail)
+}
+
 impl Reason {
     /// The canonical `SCREAMING_SNAKE` token.
     #[must_use]

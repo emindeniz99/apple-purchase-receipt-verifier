@@ -9,22 +9,11 @@ use crate::cms::{
     CmsSignerInfo, ParsedCms,
 };
 use crate::crypto::{constant_time_eq, has_unimplemented_curve, verify_signer_signature};
-use crate::error::{Failure, Reason};
+use crate::error::{malformed, Failure, Reason};
 use crate::receipt_payload::{parse_receipt_payload, read_creation_date, ReceiptPayload};
-use crate::roots::TrustAnchor;
+use crate::roots::{TrustAnchor, SIGNING_LEAF_OID, WWDR_INTERMEDIATE_OID};
 use crate::verifier::{self, Clock, Stage};
 use crate::x509::Certificate;
-
-/// The Apple marker OID a receipt-signing leaf must carry.
-///
-/// Without this purpose check, any developer certificate chaining to the same
-/// pinned root (every "Apple Distribution" and "Apple Development" leaf goes
-/// through the same WWDR intermediate) could sign a fully forged receipt.
-pub(crate) const RECEIPT_SIGNER_OID: &str = "1.2.840.113635.100.6.11.1";
-
-/// Apple marker OID: the Worldwide Developer Relations intermediate CA,
-/// checked on the certificate that issued the receipt signer.
-pub(crate) const WWDR_INTERMEDIATE_OID: &str = "1.2.840.113635.100.6.2.1";
 
 /// How many certificates a receipt may embed. Every embedded certificate is
 /// parsed and then tried as an issuer before anything about the receipt is
@@ -39,10 +28,6 @@ pub(crate) const MAX_SIGNER_INFOS: usize = 4;
 /// limit, checked before anything is decoded. No receipt Apple accepts can
 /// be larger than the request that carries it.
 pub(crate) const MAX_RECEIPT_BYTES: usize = 3_145_728;
-
-fn malformed(detail: impl Into<String>) -> Failure {
-    Failure::new(Reason::Malformed, detail)
-}
 
 /// Verifies a receipt in its base64 form, the shape a client sends, and
 /// decodes its payload.
@@ -176,10 +161,10 @@ fn verify_signer<'a>(
     let path = build_and_validate_path(signer, authenticated, anchors, at_millis)?;
     // Checked after the chain, so a foreign chain still reports
     // UNTRUSTED_CHAIN rather than INVALID_CERTIFICATE_PURPOSE.
-    if !signer.has_extension(RECEIPT_SIGNER_OID) {
+    if !signer.has_extension(SIGNING_LEAF_OID) {
         return Err(Failure::new(
             Reason::InvalidCertificatePurpose,
-            format!("receipt signer certificate lacks Apple receipt-signing marker OID {RECEIPT_SIGNER_OID}"),
+            format!("receipt signer certificate lacks Apple receipt-signing marker OID {SIGNING_LEAF_OID}"),
         ));
     }
     // The certificate after the signer on the path. A signer issued straight
