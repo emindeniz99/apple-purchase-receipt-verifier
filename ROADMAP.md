@@ -133,7 +133,8 @@ and `verifyRenewalInfo`, the typed JWS models and their new claims, the
   RubyGems, whose pending publisher is meant to create the gem — and the
   `smoke` job runs on the registries that did publish.)
 - **Legacy receipts fail on RHEL 9 in five ports (known issue, owner
-  decision 2026-09-24: fix after 0.6.0).** RHEL 9's DEFAULT crypto policy
+  decision 2026-09-24: fix after 0.6.0; 2026-09-27: not in 0.7, after
+  it).** RHEL 9's DEFAULT crypto policy
   makes the system OpenSSL refuse SHA-1 signatures. Apple's legacy chain
   (leaf and WWDR intermediate) and the legacy CMS signature are SHA-1, so a
   genuine legacy receipt is `INVALID_CHAIN`, the same verdict as a forgery.
