@@ -4,8 +4,8 @@
 //! Hand-rolled on purpose. Every byte this module sees is attacker-supplied,
 //! so the bounds are part of the design rather than a configuration:
 //!
-//! - nesting depth is capped at [`MAX_DEPTH`], so no input can recurse the
-//!   parser off the stack;
+//! - nesting depth is capped at [`MAX_DEPTH`] constructed values, so no
+//!   input can recurse the parser off the stack;
 //! - the total number of decoded nodes is capped at [`MAX_NODES`];
 //! - multi-byte tags are refused, and a length is at most four octets;
 //! - indefinite (BER) lengths are accepted only on constructed values,
@@ -19,8 +19,12 @@
 
 use std::borrow::Cow;
 
-/// Maximum ASN.1 nesting depth.
-pub const MAX_DEPTH: usize = 32;
+/// Maximum ASN.1 nesting depth: at most this many constructed values
+/// nested inside one another, the outermost included, and a primitive value
+/// inside the innermost. `BouncyCastle` counts the same way with the same
+/// default (`org.bouncycastle.asn1.max_cons_depth`), which the Java port
+/// uses (owner, 2026-09-27, Q24).
+pub const MAX_DEPTH: usize = 64;
 
 /// Maximum number of decoded nodes in one parse.
 pub const MAX_NODES: usize = 100_000;
@@ -187,6 +191,11 @@ fn read_node<'a>(
         return Err(Asn1Error("multi-byte ASN.1 tags are not supported"));
     }
     let constructed = tag & 0x20 != 0;
+    // `depth` counts the constructed values around this one, so a
+    // constructed value here would be number `depth + 1`.
+    if constructed && depth >= MAX_DEPTH {
+        return Err(Asn1Error("maximum ASN.1 nesting depth exceeded"));
+    }
     let mut position = offset + 1;
     let length_byte = *input
         .get(position)

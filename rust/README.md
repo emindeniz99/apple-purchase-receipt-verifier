@@ -205,13 +205,14 @@ early check reports that check's reason, not a later one.
 **JWS.** Size cap → three segments, each strict base64url → header JSON
 (strict UTF-8, no byte order mark, nothing but whitespace after the object),
 `alg` ES256 and exactly three `x5c` entries → the certificates decode →
+the chain at `signedDate` (or the clock), the intermediate checked against
+the pinned roots **before** the leaf is checked against the intermediate →
 **leaf marker OID** `1.2.840.113635.100.6.11.1` → **intermediate marker
-OID** `1.2.840.113635.100.6.2.1` → the chain at `signedDate` (or the clock),
-the intermediate checked against the pinned roots **before** the leaf is
-checked against the intermediate, and each one's key refused as
-`INVALID_CERTIFICATE` if it is on a curve this crate does not implement,
-only once it has been vouched for and is about to be used → ES256
-signature. The payload is read before the chain, for `signedDate`, but a
+OID** `1.2.840.113635.100.6.2.1` → ES256 signature. As on the receipt path,
+a chain that does not reach a pinned root is `UNTRUSTED_CHAIN` whatever
+markers it carries. A key on a curve this crate does not implement is
+`INVALID_CERTIFICATE`, judged only once it has been vouched for and is
+about to be used. The payload is read before the chain, for `signedDate`, but a
 payload that does not parse (text after the object included) is
 reported only after the signature: `UNREADABLE_PAYLOAD` if the signature
 holds, `INVALID_SIGNATURE` if not, so nothing unsigned decides which a
@@ -267,7 +268,7 @@ directly through a seam that records every key used.
 ## Defensive parsing
 
 Everything this crate parses is attacker-supplied, so the bounds are part of
-the design rather than a configuration. ASN.1: nesting depth 32, a
+the design rather than a configuration. ASN.1: nesting depth 64 constructed values (as BouncyCastle counts them), a
 100,000-node budget per parse, at most four length octets, indefinite (BER)
 lengths only on constructed values, trailing bytes refused. JSON: nesting
 depth 64, numbers of at most 1,000 characters, names of at most 50,000

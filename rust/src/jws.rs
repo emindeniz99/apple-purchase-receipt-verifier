@@ -3,9 +3,9 @@
 //! Server `signedTransactionInfo` and `signedRenewalInfo`, app transactions,
 //! Server Notifications V2), verified offline.
 //!
-//! ES256 only, exactly three `x5c` certificates, Apple's marker OIDs on leaf
-//! and intermediate, the chain to a pinned root at the payload's
-//! `signedDate` (the clock when it states none), then the signature. The
+//! ES256 only, exactly three `x5c` certificates, the chain to a pinned root
+//! at the payload's `signedDate` (the clock when it states none), Apple's
+//! marker OIDs on leaf and intermediate, then the signature. The
 //! order of the checks is observable: an input that fails an early check
 //! reports that check's reason, and the shared cases pin it.
 
@@ -154,7 +154,19 @@ pub(crate) fn verify(
     // Parsed and then dropped: the third entry is trusted by nobody, and
     // reading it decides only whether it IS a certificate.
     parse_x5c_certificate(root_entry)?;
-    // The marker OIDs are checked before the chain on the JWS path.
+    let payload = read_payload(&payload_bytes);
+    // Chain validity is judged at the payload's signing date, so a payload
+    // signed with a since-rotated certificate keeps verifying.
+    let signed_date = payload.as_ref().ok().and_then(|(_, date)| *date);
+    let at_millis = match signed_date {
+        Some(millis) => millis,
+        None => clock.now()?,
+    };
+    validate_pair(&leaf, &intermediate, anchors, at_millis)?;
+    // The marker OIDs after the chain, as on the receipt path (owner,
+    // 2026-09-27, Q21): a foreign chain is UNTRUSTED_CHAIN whatever it
+    // carries, and only a pinned chain can be the wrong kind of Apple
+    // certificate. Still before the leaf's key checks the JWS signature.
     if !leaf.has_extension(LEAF_OID) {
         return Err(Failure::new(
             Reason::InvalidCertificatePurpose,
@@ -167,16 +179,6 @@ pub(crate) fn verify(
             format!("intermediate certificate lacks Apple marker OID {INTERMEDIATE_OID}"),
         ));
     }
-
-    let payload = read_payload(&payload_bytes);
-    // Chain validity is judged at the payload's signing date, so a payload
-    // signed with a since-rotated certificate keeps verifying.
-    let signed_date = payload.as_ref().ok().and_then(|(_, date)| *date);
-    let at_millis = match signed_date {
-        Some(millis) => millis,
-        None => clock.now()?,
-    };
-    validate_pair(&leaf, &intermediate, anchors, at_millis)?;
     if has_unimplemented_curve(&leaf) {
         return Err(invalid_certificate(
             "x5c entry uses an unimplemented elliptic curve",

@@ -1,7 +1,8 @@
 //! Calendar arithmetic with no dependencies and no timezone database.
 //!
-//! Two things need dates here: the RFC 3339 strings a legacy receipt carries
-//! in its attributes, and the three renderings Apple's `verifyReceipt`
+//! Three things need dates here: the `YYYY-MM-DDTHH:MM:SSZ` strings a legacy
+//! receipt carries in its attributes ([`parse_receipt_date`]), certificate
+//! validity times, and the three renderings Apple's `verifyReceipt`
 //! response gives every date (`x` in GMT, `x_ms` in epoch milliseconds and
 //! `x_pst` in US Pacific time).
 //!
@@ -320,7 +321,64 @@ pub fn format_pacific(millis: i64) -> String {
     )
 }
 
-/// Parses an RFC 3339 timestamp to epoch milliseconds.
+/// Parses a receipt date attribute to epoch milliseconds: exactly
+/// `YYYY-MM-DDTHH:MM:SSZ` and nothing else (owner, 2026-09-27, Q20a). A
+/// four-digit year from 0000 to 9999, uppercase `T` and `Z`, a day that
+/// exists in its month, hour 00 to 23, minute and second 00 to 59; no
+/// fraction, no offset, no leap second. Every port reads a receipt date
+/// with this one grammar, so one receipt decodes, and its chain is judged,
+/// the same everywhere.
+#[must_use]
+pub fn parse_receipt_date(text: &str) -> Option<i64> {
+    let bytes = text.as_bytes();
+    if bytes.len() != 20 {
+        return None;
+    }
+    for (at, expected) in [
+        (4, b'-'),
+        (7, b'-'),
+        (10, b'T'),
+        (13, b':'),
+        (16, b':'),
+        (19, b'Z'),
+    ] {
+        if bytes.get(at) != Some(&expected) {
+            return None;
+        }
+    }
+    let digits = |from: usize, len: usize| -> Option<i64> {
+        let mut value: i64 = 0;
+        for byte in bytes.get(from..from + len)? {
+            if !byte.is_ascii_digit() {
+                return None;
+            }
+            value = value * 10 + i64::from(byte - b'0');
+        }
+        Some(value)
+    };
+    let year = digits(0, 4)?;
+    let month = digits(5, 2)?;
+    let day = digits(8, 2)?;
+    let hour = digits(11, 2)?;
+    let minute = digits(14, 2)?;
+    let second = digits(17, 2)?;
+    if !(1..=12).contains(&month)
+        || day < 1
+        || day > days_in_month(year, month)
+        || hour > 23
+        || minute > 59
+        || second > 59
+    {
+        return None;
+    }
+    let seconds =
+        days_from_civil(year, month, day) * SECONDS_PER_DAY + hour * 3600 + minute * 60 + second;
+    Some(seconds * 1000)
+}
+
+/// Parses an RFC 3339 timestamp to epoch milliseconds. Certificate validity
+/// times are read through it; receipt dates use the narrower
+/// [`parse_receipt_date`].
 ///
 /// The timezone designator is **mandatory**. That is not pedantry: a naive
 /// date would be read as the server's local time, and a receipt's creation

@@ -319,11 +319,12 @@ fn a_foreign_root_is_an_untrusted_chain_not_a_purpose_error() {
     assert_eq!(error.reason(), Reason::UntrustedChain);
 }
 
+/// The chain first, then the markers, as on the receipt path (owner,
+/// 2026-09-27, Q21). Each fixture chains to its own root and lacks one
+/// marker: pinned to that root it is the wrong kind of certificate; pinned
+/// to another it is a foreign chain, whatever it carries.
 #[test]
-fn marker_oids_are_checked_before_the_chain() {
-    // Both fixtures chain correctly to their own root: if the marker check
-    // ran after the chain walk, these would pass instead of reporting a
-    // purpose error.
+fn marker_oids_are_checked_after_the_chain() {
     for (root, jws) in [
         (
             "generated/jws-no-leaf-oid-root.der",
@@ -334,15 +335,38 @@ fn marker_oids_are_checked_before_the_chain() {
             "generated/transaction-no-intermediate-oid.jws",
         ),
     ] {
+        let jws = common::read_text_fixture(jws);
         assert_eq!(
             common::verifier([common::anchor(root)])
-                .verify_signed_data(&common::read_text_fixture(jws))
+                .verify_signed_data(&jws)
                 .unwrap_err()
                 .reason(),
             Reason::InvalidCertificatePurpose,
             "{jws}"
         );
+        assert_eq!(
+            reason_of(&jws),
+            Reason::UntrustedChain,
+            "a foreign chain without markers"
+        );
     }
+}
+
+/// Validity before the signature (owner, 2026-09-27, Q22): a payload whose
+/// chain is outside its window is INVALID_CERTIFICATE even when its
+/// signature is also broken.
+#[test]
+fn an_expired_chain_outranks_a_broken_signature() {
+    let verifier = common::verifier([common::anchor("generated/jws-expired-root.der")]);
+    let fresh = common::read_text_fixture("generated/expired-cert-fresh.jws");
+    let (header, payload, signature) = common::split_jws(&fresh);
+    let mut flipped = base64_decode_lenient(&signature);
+    flipped[0] ^= 0x01;
+    let broken = common::join_jws(&header, &payload, &common::base64url(&flipped));
+    assert_eq!(
+        verifier.verify_signed_data(&broken).unwrap_err().reason(),
+        Reason::InvalidCertificate
+    );
 }
 
 #[test]

@@ -9,6 +9,7 @@ mod common;
 
 use apple_purchase_receipt_verifier::__internal::asn1::{encode_oid, parse_exact, tag};
 use apple_purchase_receipt_verifier::__internal::base64_encode;
+use apple_purchase_receipt_verifier::__internal::cms::parse_cms;
 use apple_purchase_receipt_verifier::{Failure, Reason, ReceiptPayload, TrustAnchor, Verifier};
 
 /// A verifier pinned to one root, taking DER for this file's rebuilt blobs.
@@ -230,6 +231,38 @@ fn chain_validity_is_judged_at_the_receipts_own_creation_date() {
         verifier.verify(&fresh).unwrap_err().reason(),
         Reason::InvalidCertificate
     );
+}
+
+/// Validity before the signature (owner, 2026-09-27, Q22): a receipt whose
+/// chain is outside its window at the creation date is INVALID_CERTIFICATE
+/// even when its signature is also broken.
+#[test]
+fn an_expired_chain_outranks_a_broken_signature() {
+    let verifier = verifier_with(common::anchor("generated-0.7/receipt-expired-root.der"));
+    let mut fresh = common::read_fixture("generated-0.7/receipt-expired-fresh.der");
+    flip_a_signature_byte(&mut fresh);
+    assert_eq!(
+        verifier.verify(&fresh).unwrap_err().reason(),
+        Reason::InvalidCertificate
+    );
+    // The control: the same flip inside the window is the signature.
+    let mut historical = common::read_fixture("generated-0.7/receipt-expired-historical.der");
+    flip_a_signature_byte(&mut historical);
+    assert_eq!(
+        verifier.verify(&historical).unwrap_err().reason(),
+        Reason::InvalidSignature
+    );
+}
+
+/// Flips a byte in the middle of the first SignerInfo's signature, found by
+/// its bytes in the blob.
+fn flip_a_signature_byte(der: &mut [u8]) {
+    let signature = parse_cms(der).unwrap().signer_infos[0].signature.clone();
+    let at = der
+        .windows(signature.len())
+        .position(|window| window == signature.as_slice())
+        .unwrap();
+    der[at + signature.len() / 2] ^= 0x01;
 }
 
 #[test]

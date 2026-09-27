@@ -29,7 +29,7 @@
 //! whole payload unreadable.
 
 use crate::asn1::{parse_exact, tag, Asn1Error, Tlv};
-use crate::datetime::parse_rfc3339;
+use crate::datetime::parse_receipt_date;
 use std::collections::BTreeMap;
 
 // App-level attribute types.
@@ -409,13 +409,16 @@ fn decode_nested(der: &[u8]) -> Result<Tlv<'_>, Undecodable> {
 }
 
 /// A `UTF8String` or an `IA5String`, the two string types Apple's receipts
-/// use. A `UTF8String` must be valid UTF-8; an `IA5String` is read one byte per
-/// character, as the Java reference reads one.
+/// use. A `UTF8String` must be valid UTF-8; an `IA5String` must be ASCII,
+/// as IA5 is: a byte from 0x80 up does not decode (owner, 2026-09-27, Q23),
+/// rather than being read as Latin-1.
 fn decode_string(der: &[u8]) -> Result<String, Undecodable> {
     let node = decode_nested(der)?;
     match node.tag {
         tag::UTF8_STRING => String::from_utf8(node.contents.to_vec()).map_err(|_| Undecodable),
-        tag::IA5_STRING => Ok(node.contents.iter().map(|byte| char::from(*byte)).collect()),
+        tag::IA5_STRING if node.contents.is_ascii() => {
+            Ok(node.contents.iter().map(|byte| char::from(*byte)).collect())
+        }
         _ => Err(Undecodable),
     }
 }
@@ -429,16 +432,16 @@ fn decode_integer(der: &[u8]) -> Result<i64, Undecodable> {
     integer_value(&node).ok_or(Undecodable)
 }
 
-/// An RFC 3339 date in an `IA5String` or `UTF8String`, as epoch milliseconds.
-/// An empty string is `Ok(None)`: Apple writes an unset date that way, so it
-/// is not kept raw. The timezone designator is mandatory; see
-/// [`parse_rfc3339`].
+/// A date in an `IA5String` or `UTF8String`, as epoch milliseconds. An
+/// empty string is `Ok(None)`: Apple writes an unset date that way, so it is
+/// not kept raw. Anything else must be exactly `YYYY-MM-DDTHH:MM:SSZ`; see
+/// [`parse_receipt_date`].
 fn date(der: &[u8]) -> Result<Option<i64>, Undecodable> {
     let text = decode_string(der)?;
     if text.is_empty() {
         return Ok(None);
     }
-    parse_rfc3339(&text).map(Some).ok_or(Undecodable)
+    parse_receipt_date(&text).map(Some).ok_or(Undecodable)
 }
 
 // ------------------------------------------------------------------ JSON
@@ -713,6 +716,81 @@ mod tests {
             receipt.unknown_attributes.get(&15),
             Some(&vec![not_an_integer])
         );
+    }
+
+    #[test]
+    fn an_ia5_string_with_a_byte_from_0x80_up_is_kept_raw() {
+        // IA5 is seven-bit: 0xE9 is no IA5 character, so it is not read as
+        // Latin-1 (owner, 2026-09-27, Q23). Top level and in-app alike.
+        let not_ia5 = der(tag::IA5_STRING, b"caf\xe9");
+        let in_app = set(&[attribute(&[0x06, 0xa6], &not_ia5)]);
+        let receipt = parse_receipt_payload(&set(&[
+            attribute(&[3], &not_ia5),
+            attribute(&[17], &in_app),
+        ]))
+        .unwrap();
+        assert_eq!(receipt.application_version, None);
+        assert_eq!(
+            receipt.unknown_attributes.get(&3),
+            Some(&vec![not_ia5.clone()])
+        );
+        let purchase = receipt.in_app.first().unwrap();
+        assert_eq!(purchase.product_id, None);
+        assert_eq!(purchase.unknown_attributes.get(&1702), Some(&vec![not_ia5]));
+        // Seven-bit text still decodes.
+        let receipt = parse_receipt_payload(&set(&[attribute(&[3], &ia5("1.0\u{7f}"))])).unwrap();
+        assert_eq!(receipt.application_version.as_deref(), Some("1.0\u{7f}"));
+    }
+
+    #[test]
+    fn an_integer_or_flag_that_is_not_minimally_encoded_is_kept_raw() {
+        let padded = der(tag::INTEGER, &[0x00, 0x01]);
+        let in_app = set(&[attribute(&[0x06, 0xb1], &padded)]);
+        let receipt =
+            parse_receipt_payload(&set(&[attribute(&[1], &padded), attribute(&[17], &in_app)]))
+                .unwrap();
+        assert_eq!(receipt.app_item_id, None);
+        assert_eq!(
+            receipt.unknown_attributes.get(&1),
+            Some(&vec![padded.clone()])
+        );
+        let purchase = receipt.in_app.first().unwrap();
+        assert_eq!(purchase.is_trial_period, None);
+        assert_eq!(purchase.unknown_attributes.get(&1713), Some(&vec![padded]));
+    }
+
+    #[test]
+    fn a_date_in_any_other_form_is_kept_raw_and_does_not_set_the_chain_instant() {
+        // Owner, 2026-09-27, Q20a: exactly YYYY-MM-DDTHH:MM:SSZ.
+        let exact = parse_receipt_payload(&set(&[date("2024-08-06T12:00:00Z")])).unwrap();
+        assert_eq!(exact.receipt_creation_date_ms, Some(1_722_945_600_000));
+        for text in [
+            "2024-08-06T12:00:00.000Z",
+            "2024-08-06T12:00:00+00:00",
+            "2024-08-06t12:00:00Z",
+        ] {
+            let receipt = parse_receipt_payload(&set(&[date(text)])).unwrap();
+            assert_eq!(receipt.receipt_creation_date_ms, None, "{text}");
+            assert_eq!(receipt.unknown_attributes.get(&12), Some(&vec![ia5(text)]));
+            assert_eq!(read_creation_date(&set(&[date(text)])), None, "{text}");
+        }
+    }
+
+    #[test]
+    fn signed_content_nested_past_the_asn1_bound_is_unreadable() {
+        // The bound is the reader's (64 constructed values); signed content
+        // that exceeds it cannot be read, which the verifier reports as
+        // UNREADABLE_PAYLOAD, never MALFORMED.
+        let mut nested: Vec<u8> = Vec::new();
+        for _ in 0..=crate::asn1::MAX_DEPTH {
+            let length = u8::try_from(nested.len()).unwrap();
+            nested = if length < 0x80 {
+                [&[tag::SET, length][..], &nested].concat()
+            } else {
+                [&[tag::SET, 0x81, length][..], &nested].concat()
+            };
+        }
+        assert!(parse_receipt_payload(&nested).is_err());
     }
 
     #[test]
