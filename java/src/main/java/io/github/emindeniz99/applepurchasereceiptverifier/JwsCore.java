@@ -36,7 +36,7 @@ import org.jspecify.annotations.Nullable;
  */
 final class JwsCore {
 
-    /** In UTF-8 bytes, checked before the split; Apple's JWS are under 2.5 KB. */
+    /** In UTF-8 bytes, checked before the split; genuine JWS run from a few KB to roughly 15 KB. */
     static final int MAX_JWS_BYTES = 262144;
 
     static final JsonFactory JSON = BoundedJson.factory(MAX_JWS_BYTES);
