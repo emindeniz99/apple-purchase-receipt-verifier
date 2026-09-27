@@ -14,6 +14,14 @@ declare(strict_types=1);
  * Each benchmark warms up for one second, then takes ten samples of at least
  * 100 ms each; the JSON on stdout carries the median, minimum and maximum
  * microseconds per operation over those samples.
+ *
+ *     php bench/bench.php --worst-case
+ *
+ * times, the same way, every shared case in fixtures/cases.json that carries
+ * a maxMillis budget: the hostile inputs (oversized untrusted keys,
+ * certificate meshes, encoding oddities inside certificates) the shared suite
+ * bounds in time. Each call is run once first and must give the answer the
+ * case expects. The README's worst-case CPU figure comes from this mode.
  */
 
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Bench;
@@ -105,10 +113,74 @@ $clock = new class () implements ClockInterface {
         return new DateTimeImmutable('2026-01-01T00:00:00Z');
     }
 };
+/**
+ * A registered fixture's logical bytes, per its codec (the same rules the
+ * conformance adapter in tests/ applies).
+ *
+ * @param array{path: string, codec: string} $entry
+ */
+function fixtureBytes(array $entry): string
+{
+    $raw = file_get_contents(__DIR__ . '/../../fixtures/' . $entry['path']);
+    check($raw !== false, "{$entry['path']} is readable");
+
+    return match ($entry['codec']) {
+        'raw', 'text' => $raw,
+        'base64' => base64_decode((string) preg_replace('/\s+/', '', $raw), true),
+        'utf8' => trim($raw),
+        default => throw new RuntimeException("unknown fixture codec {$entry['codec']}"),
+    };
+}
+
+/** @return list<array<string, mixed>> */
+function worstCase(ClockInterface $clock): array
+{
+    $file = json_decode((string) file_get_contents(__DIR__ . '/../../fixtures/cases.json'), true, 512, JSON_THROW_ON_ERROR);
+    $registry = $file['fixtures'];
+    $results = [];
+    foreach ($file['cases'] as $case) {
+        if (!isset($case['maxMillis'])) {
+            continue;
+        }
+        $id = $case['id'];
+        $builder = Config::builder()->clock($clock);
+        $trusted = $case['config']['trustedRoots'];
+        if ($trusted['source'] === 'fixtures') {
+            $builder = $builder->roots(array_map(static fn (string $root) => fixtureBytes($registry[$root]), $trusted['fixtures']));
+        }
+        $verifier = Verifier::create($builder->build());
+        $entry = $registry[$case['input']['fixture']];
+        $bytes = fixtureBytes($entry);
+        $op = match ($case['operation']) {
+            'verifyReceipt' => (static function () use ($verifier, $entry, $bytes) {
+                $text = in_array($entry['codec'], ['raw', 'base64'], true) ? base64_encode($bytes) : $bytes;
+
+                return static fn () => $verifier->verifyReceipt($text);
+            })(),
+            'verifySignedData' => static fn () => $verifier->verifySignedData($bytes),
+            default => throw new RuntimeException("{$id}: no adapter for operation {$case['operation']}"),
+        };
+
+        // The answer the case expects, before anything is timed.
+        $result = $op();
+        $outcome = $result->verified() ? 'ok' : $result->failure?->reason->value;
+        $expected = $case['expected'];
+        if (isset($expected['oneOf'])) {
+            check(in_array($outcome, $expected['oneOf'], true), "{$id} answered {$outcome}");
+        } else {
+            check($outcome === ($expected['status'] === 'ok' ? 'ok' : $expected['reason']), "{$id} answered {$outcome}");
+        }
+        $results[] = measure($case['operation'], $id, $op);
+    }
+
+    return $results;
+}
+
+$worst = in_array('--worst-case', array_slice($argv, 1), true);
 // The built-in Apple roots; the fixed clock only reaches request_date.
 $verifier = Verifier::create(Config::builder()->clock($clock)->build());
-$results = [];
-foreach (FIXTURES as [$name, $bundleId, $inAppCount, $sha256]) {
+$results = $worst ? worstCase($clock) : [];
+foreach ($worst ? [] : FIXTURES as [$name, $bundleId, $inAppCount, $sha256]) {
     $text = file_get_contents(__DIR__ . "/../../fixtures/public-receipts/{$name}.b64");
     check($text !== false, "{$name} is readable");
     $der = base64_decode((string) $text, false);
@@ -144,7 +216,7 @@ foreach (FIXTURES as [$name, $bundleId, $inAppCount, $sha256]) {
 
 echo json_encode([
     'port' => 'php',
-    'tool' => 'bench/bench.php (hrtime)',
+    'tool' => 'bench/bench.php ' . ($worst ? 'worst-case' : 'cross-port') . ' (hrtime)',
     'runtime' => 'PHP ' . PHP_VERSION . ', ' . OPENSSL_VERSION_TEXT,
     'settings' => ['warmup_s' => WARMUP_S, 'samples' => SAMPLES, 'min_sample_s' => MIN_SAMPLE_S],
     'results' => $results,

@@ -10,6 +10,14 @@
 // on stdout carries the median, minimum and maximum microseconds per
 // operation over those samples. It measures the built dist/, so run the
 // build first.
+//
+//   node bench/bench.mjs --worst-case
+//
+// times, the same way, every shared case in fixtures/cases.json that carries
+// a maxMillis budget: the hostile inputs (oversized untrusted keys,
+// certificate meshes, encoding oddities inside certificates) the shared
+// suite bounds in time. Each call is run once first and must give the answer
+// the case expects. The README's worst-case CPU figure comes from this mode.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -93,45 +101,115 @@ function tamper(der) {
   return tampered;
 }
 
-// The built-in Apple roots; the fixed clock only reaches request_date.
-const verifier = createVerifier(createConfig({ clock: () => NOW }));
-const results = [];
-for (const [name, bundleId, inAppCount, sha256] of FIXTURES) {
-  const file = new URL(`../../fixtures/public-receipts/${name}.b64`, import.meta.url);
-  const der = Buffer.from(readFileSync(file, 'ascii'), 'base64');
-  assert.equal(createHash('sha256').update(der).digest('hex'), sha256, `${name} digest`);
-  const base64 = der.toString('base64');
-  const requestJson = JSON.stringify({ 'receipt-data': base64 });
-  const tamperedBase64 = tamper(der).toString('base64');
-
-  // Every call once, with the answer the conformance suite expects, so no
-  // benchmark can time a fast failure by accident.
-  assert.ok(Buffer.from(decodeReceiptBase64(base64)).equals(der), 'decodeBase64');
-  const verified = verifier.verifyReceipt(base64);
-  assert.ok(verified.verified, 'verifyReceipt');
-  assert.equal(verified.payload.bundleId, bundleId);
-  assert.equal(verified.payload.inApp.length, inAppCount);
-  const ok = JSON.parse(verifier.verifyReceiptEndpoint(Environment.SANDBOX, requestJson));
-  assert.equal(ok.status, 0, 'endpointJson');
-  assert.equal(ok.receipt.in_app.length, inAppCount, 'endpointJson in_app');
-  const rejected = verifier.verifyReceipt(tamperedBase64);
-  assert.equal(rejected.verified, false, 'rejectTamperedSignature');
-  assert.equal(rejected.failure.reason, Reason.INVALID_SIGNATURE, 'rejectTamperedSignature');
-
-  results.push(
-    measure('decodeBase64', name, () => decodeReceiptBase64(base64)),
-    measure('verifyReceipt', name, () => verifier.verifyReceipt(base64)),
-    measure('endpointJson', name, () =>
-      verifier.verifyReceiptEndpoint(Environment.SANDBOX, requestJson),
-    ),
-    measure('rejectTamperedSignature', name, () => verifier.verifyReceipt(tamperedBase64)),
-  );
+// A registered fixture's logical bytes, per its codec (the same rules the
+// conformance adapter in test/ applies).
+function fixtureBytes(registry, id) {
+  const entry = registry[id];
+  const raw = readFileSync(new URL(`../../fixtures/${entry.path}`, import.meta.url));
+  switch (entry.codec) {
+    case 'raw':
+    case 'text':
+      return raw;
+    case 'base64':
+      return Buffer.from(raw.toString('ascii').replace(/\s+/g, ''), 'base64');
+    case 'utf8':
+      return Buffer.from(raw.toString('utf8').trim(), 'utf8');
+    default:
+      throw new Error(`fixture "${id}" has unknown codec "${entry.codec}"`);
+  }
 }
+
+function worstCase() {
+  const file = JSON.parse(
+    readFileSync(new URL('../../fixtures/cases.json', import.meta.url), 'utf8'),
+  );
+  const registry = file.fixtures;
+  const results = [];
+  for (const kase of file.cases.filter((c) => c.maxMillis !== undefined)) {
+    const opts = { clock: () => NOW };
+    const trusted = kase.config.trustedRoots;
+    if (trusted.source === 'fixtures') {
+      opts.roots = trusted.fixtures.map((id) => fixtureBytes(registry, id));
+    }
+    const verifier = createVerifier(createConfig(opts));
+    const bytes = fixtureBytes(registry, kase.input.fixture);
+    const codec = registry[kase.input.fixture].codec;
+    let op;
+    switch (kase.operation) {
+      case 'verifyReceipt': {
+        const text =
+          codec === 'raw' || codec === 'base64' ? bytes.toString('base64') : bytes.toString('utf8');
+        op = () => verifier.verifyReceipt(text);
+        break;
+      }
+      case 'verifySignedData': {
+        const jws = bytes.toString('utf8');
+        op = () => verifier.verifySignedData(jws);
+        break;
+      }
+      default:
+        throw new Error(`${kase.id}: no adapter for operation ${kase.operation}`);
+    }
+
+    // The answer the case expects, before anything is timed.
+    const result = op();
+    const outcome = result.verified ? 'ok' : result.failure.reason;
+    if (kase.expected.oneOf) {
+      assert.ok(kase.expected.oneOf.includes(outcome), `${kase.id} answered ${outcome}`);
+    } else {
+      const want = kase.expected.status === 'ok' ? 'ok' : kase.expected.reason;
+      assert.equal(outcome, want, kase.id);
+    }
+    results.push(measure(kase.operation, kase.id, op));
+  }
+  return results;
+}
+
+function crossPort() {
+  // The built-in Apple roots; the fixed clock only reaches request_date.
+  const verifier = createVerifier(createConfig({ clock: () => NOW }));
+  const results = [];
+  for (const [name, bundleId, inAppCount, sha256] of FIXTURES) {
+    const file = new URL(`../../fixtures/public-receipts/${name}.b64`, import.meta.url);
+    const der = Buffer.from(readFileSync(file, 'ascii'), 'base64');
+    assert.equal(createHash('sha256').update(der).digest('hex'), sha256, `${name} digest`);
+    const base64 = der.toString('base64');
+    const requestJson = JSON.stringify({ 'receipt-data': base64 });
+    const tamperedBase64 = tamper(der).toString('base64');
+
+    // Every call once, with the answer the conformance suite expects, so no
+    // benchmark can time a fast failure by accident.
+    assert.ok(Buffer.from(decodeReceiptBase64(base64)).equals(der), 'decodeBase64');
+    const verified = verifier.verifyReceipt(base64);
+    assert.ok(verified.verified, 'verifyReceipt');
+    assert.equal(verified.payload.bundleId, bundleId);
+    assert.equal(verified.payload.inApp.length, inAppCount);
+    const ok = JSON.parse(verifier.verifyReceiptEndpoint(Environment.SANDBOX, requestJson));
+    assert.equal(ok.status, 0, 'endpointJson');
+    assert.equal(ok.receipt.in_app.length, inAppCount, 'endpointJson in_app');
+    const rejected = verifier.verifyReceipt(tamperedBase64);
+    assert.equal(rejected.verified, false, 'rejectTamperedSignature');
+    assert.equal(rejected.failure.reason, Reason.INVALID_SIGNATURE, 'rejectTamperedSignature');
+
+    results.push(
+      measure('decodeBase64', name, () => decodeReceiptBase64(base64)),
+      measure('verifyReceipt', name, () => verifier.verifyReceipt(base64)),
+      measure('endpointJson', name, () =>
+        verifier.verifyReceiptEndpoint(Environment.SANDBOX, requestJson),
+      ),
+      measure('rejectTamperedSignature', name, () => verifier.verifyReceipt(tamperedBase64)),
+    );
+  }
+  return results;
+}
+
+const worst = process.argv.includes('--worst-case');
+const results = worst ? worstCase() : crossPort();
 assert.ok(sink !== undefined);
 
 const report = {
   port: 'node',
-  tool: 'bench/bench.mjs (node:perf_hooks)',
+  tool: `bench/bench.mjs ${worst ? 'worst-case' : 'cross-port'} (node:perf_hooks)`,
   runtime: `node ${process.version}`,
   settings: { warmup_s: WARMUP_MS / 1000, samples: SAMPLES, min_sample_s: MIN_SAMPLE_MS / 1000 },
   results,
