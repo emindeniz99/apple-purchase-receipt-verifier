@@ -73,9 +73,9 @@ final class Der
      * The budget is sized by the receipt cap: the CMS envelope parse retains
      * 14 times the DER (measured on `receipt-byte-floor` and on
      * `receipt-at-der-cap`, whose 3,145,728 bytes retain 44,028,800), so
-     * {@see \EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier::MAX_RECEIPT_BYTES}
-     * of 3 MiB needs 42 MiB. 48 MiB covers a receipt of up to about 3.43 MiB
-     * of DER, so every receipt the cap lets through is parsed. The costliest
+     * the receipt cap of 3 MiB (`Verifier::MAX_RECEIPT_BYTES`) needs
+     * 42 MiB. 48 MiB covers a receipt of up to about 3.43 MiB of DER, so
+     * every receipt the cap lets through is parsed. The costliest
      * hostile shape at the cap, chains of SEQUENCEs 31 deep, still stops at a
      * peak of about 46 MB on PHP 8.4, under half of a 128M `memory_limit`.
      */
