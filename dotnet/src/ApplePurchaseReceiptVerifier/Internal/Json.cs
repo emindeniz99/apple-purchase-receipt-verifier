@@ -15,6 +15,29 @@ namespace ApplePurchaseReceiptVerifier.Internal
     }
 
     /// <summary>
+    /// A JSON number too large for a <see cref="double"/>, kept as the text the
+    /// reader validated so the writer can emit it unchanged.
+    /// </summary>
+    internal sealed class JsonNumberLiteral : IEquatable<JsonNumberLiteral>
+    {
+        internal JsonNumberLiteral(string text)
+        {
+            Text = text;
+        }
+
+        internal string Text { get; }
+
+        public bool Equals(JsonNumberLiteral? other) =>
+            other is not null && string.Equals(Text, other.Text, StringComparison.Ordinal);
+
+        public override bool Equals(object? obj) => Equals(obj as JsonNumberLiteral);
+
+        public override int GetHashCode() => StringComparer.Ordinal.GetHashCode(Text);
+
+        public override string ToString() => Text;
+    }
+
+    /// <summary>
     /// A bounded, dependency-free JSON reader and writer.
     /// </summary>
     /// <remarks>
@@ -27,8 +50,10 @@ namespace ApplePurchaseReceiptVerifier.Internal
     /// IL2CPP), and no <c>System.Text.Json</c> type in the public surface.</para>
     /// <para>Semantics are pinned to match the other ports: last key wins on
     /// duplicates, integral numbers that fit exactly become
-    /// <see cref="long"/> and everything else <see cref="double"/>, nesting and
-    /// input length are bounded, and no key is special-cased.</para>
+    /// <see cref="long"/>, a number whose double is infinite a
+    /// <see cref="JsonNumberLiteral"/>, and everything else
+    /// <see cref="double"/>, nesting and input length are bounded, and no key
+    /// is special-cased.</para>
     /// </remarks>
     internal static class Json
     {
@@ -148,6 +173,9 @@ namespace ApplePurchaseReceiptVerifier.Internal
                     }
 
                     builder.Append(d.ToString("R", CultureInfo.InvariantCulture));
+                    return;
+                case JsonNumberLiteral n:
+                    builder.Append(n.Text);
                     return;
                 case IReadOnlyDictionary<string, object?> map:
                     {
@@ -532,14 +560,13 @@ namespace ApplePurchaseReceiptVerifier.Internal
                     return asLong;
                 }
 
-                // A very long digit run (within MaxNumberDigits) is valid JSON
-                // even though its magnitude overflows a double to +-Infinity;
-                // the bound above is a resource limit, not a claim that every
-                // accepted number is finitely representable.
                 if (double.TryParse(literal, NumberStyles.Float, CultureInfo.InvariantCulture, out double asDouble)
                     && !double.IsNaN(asDouble))
                 {
-                    return asDouble;
+                    // 1e999 or a 400-digit integer is valid JSON within the
+                    // digit bound, and Jackson accepts it, but its double is
+                    // infinite and the writer cannot emit that. Keep the text.
+                    return double.IsInfinity(asDouble) ? new JsonNumberLiteral(literal) : asDouble;
                 }
 
                 throw new JsonException("malformed number " + literal);
