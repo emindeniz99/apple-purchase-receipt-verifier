@@ -117,7 +117,7 @@ func parseCms(_ der: [UInt8]) throws -> ParsedCms {
                 // oversized or unimplemented key eagerly, where the
                 // reference ports' own ASN.1 readers store the key as
                 // opaque bytes and only refuse it lazily, when it is used.
-                // Q16 (docs/design/0.7-hardening-parity.md): a certificate
+                // The certificate bag is unsigned: a certificate
                 // no pinned root vouches for is ignored rather than fatal,
                 // so this is excluded from the trust pool without being
                 // "unreadable" for the whole-receipt MALFORMED verdict.
