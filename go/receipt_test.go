@@ -102,7 +102,7 @@ func TestReceiptHostileStructures(t *testing.T) {
 			want: applereceipt.ReasonMalformed,
 		},
 		{
-			// Change 3 (docs/design/0.7-hardening-parity.md): the digest
+			// Any signer algorithm (#160): the digest
 			// itself is not restricted, but SHA-512 is not the digest the
 			// content was actually hashed under here (the cmsSpec still
 			// signs with the requested digestOID, so this vector instead
