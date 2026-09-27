@@ -8,13 +8,9 @@ import X509
 /// occur in genuine receipts — Apple's own Xcode receipts use indefinite
 /// lengths — so the reader accepts both.
 ///
-/// Depth note: `SwiftASN1`'s own `BER`/`DER` parser refuses input nested
-/// past about 49 constructed values as the design counts them
-/// (`ASN1.ParserNode._maximumNodeDepth`), which is looser than the design's
-/// 32-level bound. This library has no depth check of its own yet, so a CMS
-/// envelope or signed content nested 33 to 49 deep, which the shared cases
-/// require every port to refuse, is not refused here: a known shortfall
-/// from the design's bound.
+/// Depth: the envelope is walked by ``asn1DepthExceeded(_:)`` before
+/// `SwiftASN1` parses it, so one nested past ``maxAsn1Depth`` is
+/// ``Reason/malformed`` whatever `SwiftASN1`'s own, looser bound would say.
 
 /// One `SignerInfo` of a receipt.
 struct CmsSignerInfo {
@@ -59,6 +55,9 @@ func malformedReceipt(_ detail: String) -> Failure { Failure(.malformed, detail)
 /// embedded-certificate and SignerInfo counts before a single certificate is
 /// decoded or a single signature checked.
 func parseCms(_ der: [UInt8]) throws -> ParsedCms {
+    guard !asn1DepthExceeded(der) else {
+        throw malformedReceipt("receipt nests ASN.1 deeper than \(maxAsn1Depth) values")
+    }
     let root: ASN1Node
     do {
         root = try BER.parse(der)
