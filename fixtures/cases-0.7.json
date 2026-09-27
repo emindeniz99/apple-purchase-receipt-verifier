@@ -4668,7 +4668,7 @@
     {
       "id": "receipt/reject-signer-with-a-corrupt-extension",
       "legacyId": "receipt/reject-signer-with-a-corrupt-extension",
-      "description": "One byte of the signer certificate is changed, and it is one byte further in than the JWS twin changes. transaction/reject-x5c-corrupt-extension rewrites the extnValue OCTET STRING's own length, which breaks the DER of everything that contains it; harmless in a JWS header, where the certificate is a base64 string of its own, and wrong inside a CMS, where it would break the receipt's DER and make every port that walks the whole blob answer about the receipt instead of about the certificate. So the corruption sits INSIDE the OCTET STRING: the BasicConstraints SEQUENCE it holds is left claiming 127 content bytes in a two-byte value. A reader walking generic ASN.1 sees a well-formed primitive of the length it declares and never looks in, so the receipt parses, the chain validates, the payload is intact and the CMS signature is real; only a reader that DECODES the signer's extension block finds the defect, and that is precisely what this vector observes. The certificate has no TBS left to re-sign and no verifier can reach its signature to notice. INVALID_CERTIFICATE: the signer is embedded and is the certificate the SignerInfo names, but what comes out is not a certificate all the way down. The corruption sits past the marker OID a port looks for, so an implementation that walks the DER only far enough to answer \"does it carry 1.2.840.113635.100.6.11.1\" accepts the whole receipt.",
+      "description": "One byte of the signer certificate is changed, and it is one byte further in than the JWS twin changes. transaction/reject-x5c-corrupt-extension rewrites the extnValue OCTET STRING's own length, which breaks the DER of everything that contains it; harmless in a JWS header, where the certificate is a base64 string of its own, and wrong inside a CMS, where it would break the receipt's DER and make every port that walks the whole blob answer about the receipt instead of about the certificate. So the corruption sits INSIDE the OCTET STRING: the BasicConstraints SEQUENCE it holds is left claiming 127 content bytes in a two-byte value. A reader walking generic ASN.1 sees a well-formed primitive of the length it declares and never looks in, so the receipt parses, the chain validates, the payload is intact and the CMS signature is real; only a reader that DECODES the signer's extension block finds the defect, and that is precisely what this vector observes. The certificate has no TBS left to re-sign and no verifier can reach its signature to notice. INVALID_CERTIFICATE: the signer is embedded and is the certificate the SignerInfo names, but what comes out is not a certificate all the way down. The corruption sits past the marker OID a port looks for, so an implementation that walks the DER only far enough to answer \"does it carry 1.2.840.113635.100.6.11.1\" accepts the whole receipt. Either INVALID_CERTIFICATE or MALFORMED is accepted: a port that decodes the unsigned certificate bag as a whole refuses this entry as a malformed bag before it reaches the signer (lead, 2026-09-27).",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "receipt-signer-corrupt-extension"
@@ -4682,8 +4682,10 @@
         }
       },
       "expected": {
-        "status": "error",
-        "reason": "INVALID_CERTIFICATE"
+        "oneOf": [
+          "INVALID_CERTIFICATE",
+          "MALFORMED"
+        ]
       },
       "fault": "receipt-signer-has-a-corrupt-extension",
       "tags": [
