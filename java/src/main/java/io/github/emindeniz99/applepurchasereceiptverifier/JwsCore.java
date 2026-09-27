@@ -94,6 +94,10 @@ final class JwsCore {
         X509Certificate leaf = chain.get(0);
         X509Certificate intermediate = chain.get(1);
 
+        // The sender's signedDate picks the instant the chain must be valid at,
+        // before anything is trusted. That only moves the validity window; the
+        // signature and the chain to a pinned root are still required, as in
+        // Apple's own rule. Absent or unreadable, the clock stands in.
         Long signedDate = signedDate(payloadBytes);
         authenticateTopDown(leaf, intermediate, trustAnchors);
         validateChain(leaf, intermediate, new Date(signedDate != null ? signedDate : now), trustAnchors);

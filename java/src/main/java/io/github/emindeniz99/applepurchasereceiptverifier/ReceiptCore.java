@@ -119,8 +119,11 @@ final class ReceiptCore {
                     Reason.MALFORMED,
                     "receipt carries " + signers.size() + " SignerInfos, more than the maximum of " + MAX_SIGNER_INFOS);
         }
-        // The one payload read before trust: a date that does not parse only
-        // moves the chain instant to the clock.
+        // The one payload read before trust: the sender's own creation date
+        // picks the instant the chain must be valid at. That only moves the
+        // validity window; the signature and the chain to a pinned root are
+        // still required, as in Apple's own rule. A date that does not parse
+        // moves the instant to the clock.
         Long creationDate = ReceiptDecoder.readCreationDate(payload);
         Date at = new Date(creationDate != null ? creationDate : now);
 
@@ -172,7 +175,12 @@ final class ReceiptCore {
                     Reason.INVALID_CERTIFICATE_PURPOSE,
                     "receipt signer certificate lacks Apple receipt-signing marker OID " + AppleTrust.SIGNING_LEAF_OID);
         }
-        if (path.size() < 2 || ((X509Certificate) path.get(1)).getExtensionValue(AppleTrust.INTERMEDIATE_OID) == null) {
+        if (path.size() < 2) {
+            throw new VerificationException(
+                    Reason.INVALID_CERTIFICATE_PURPOSE,
+                    "receipt signer is issued by a root directly, with no WWDR intermediate");
+        }
+        if (((X509Certificate) path.get(1)).getExtensionValue(AppleTrust.INTERMEDIATE_OID) == null) {
             throw new VerificationException(
                     Reason.INVALID_CERTIFICATE_PURPOSE,
                     "receipt intermediate certificate lacks Apple WWDR marker OID " + AppleTrust.INTERMEDIATE_OID);
