@@ -411,6 +411,31 @@ base64url and omitted or extra padding are all refused, as at Apple. `x5c`
 entries are standard base64, JWS segments unpadded canonical base64url, so
 one signed payload has one accepted spelling.
 
+## Measured worst-case CPU
+
+Measured on 2026-09-27 with `node bench/bench.mjs --worst-case`, which
+times every shared case in `fixtures/cases.json` that carries a time
+budget: oversized untrusted keys, a cross-signed certificate mesh, and the
+encoding oddities inside certificates. Node.js 22.22.2, the built `dist/`,
+one JavaScript thread, on a shared 4-vCPU KVM guest (Intel Xeon Processor @
+2.10GHz); one second of warm-up, then ten samples of at least 100 ms each.
+
+| Call | Median | Slowest sample |
+|---|---:|---:|
+| Slowest hostile case: `receipt/verify-genuine-padded-with-oversized-strangers` (a valid receipt carrying oversized certificates it does not need) | 1.6 ms | 2.0 ms |
+| Next: `receipt/reject-untrusted-oversized-intermediates` | 1.6 ms | 2.0 ms |
+| Slowest hostile JWS: `signed-data/reject-untrusted-oversized-x5c` (a JWS near the 256 KiB cap) | 1.5 ms | 2.1 ms |
+| Every other budgeted case | under 0.51 ms | under 0.70 ms |
+| For scale: `verifyReceipt` on the genuine 187-purchase legacy receipt | 3.7 ms | 5.6 ms |
+| For scale: `verifyReceiptEndpoint` on the same receipt | 6.1 ms | 7.2 ms |
+
+No hostile input in the shared suite costs more than an ordinary large
+receipt: the cost of a call follows the size of the input, which the caps
+above bound, not the structure an attacker chooses. The machine was shared
+with other work, so treat these as an order of magnitude. Run
+`npm run build && node bench/bench.mjs --worst-case` for the hostile cases
+on your own hardware, and `node bench/bench.mjs` for the genuine receipts.
+
 ## The endpoint
 
 ```js
