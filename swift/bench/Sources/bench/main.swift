@@ -206,7 +206,7 @@ func worstCase(repository: URL) throws -> [Result] {
         let codec = registry[fixtureId]?["codec"] as? String
 
         // The answer the case expects, before anything is timed.
-        let want = expected["anyOutcome"] as? Bool == true ? nil : (expected["reason"] as? String)
+        let want = expected["reason"] as? String
         let got: Reason?
         let op: () -> Int
         switch operation {
@@ -223,8 +223,9 @@ func worstCase(repository: URL) throws -> [Result] {
         default:
             throw SetupFailure(description: "\(id): no adapter for operation \(operation)")
         }
-        if expected["anyOutcome"] as? Bool == true {
-            try check(got != .internalError, "\(id) answered INTERNAL_ERROR")
+        if let oneOf = expected["oneOf"] as? [String] {
+            let outcome = got?.rawValue ?? "ok"
+            try check(oneOf.contains(outcome), "\(id) answered \(outcome), not one of \(oneOf)")
         } else if expected["status"] as? String == "ok" {
             try check(got == nil, "\(id) expected to verify, got \(got?.rawValue ?? "?")")
         } else {
