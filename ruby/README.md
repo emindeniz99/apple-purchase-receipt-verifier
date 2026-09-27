@@ -254,12 +254,12 @@ encodes them first: `verifier.verify_receipt([der].pack("m0"))`.
   that does not parse is `nil` and kept raw in `unknown_attributes`. A
   creation-date attribute that does not parse leaves the chain instant to the
   clock.
-- `receipt.to_json` renders the canonical JSON every port produces byte for
-  byte: 64-bit ids (`app_item_id`, `download_id`,
+- `receipt.to_json` renders, with `JSON.generate`, the JSON value every port
+  produces (the bytes may differ): 64-bit ids (`app_item_id`, `download_id`,
   `version_external_identifier`, `web_order_line_item_id`) as JSON strings
   since genuine receipts carry 18-digit values above `2**53`; every other
-  field as its natural JSON type; `unknown_attributes` keys in ascending
-  numeric order.
+  field as its natural JSON type; `unknown_attributes` keyed by the decimal
+  attribute type.
 
 **Several SignerInfos.** A receipt verifies when at least one of its (up to
 four) CMS signers verifies under a pinned chain, since all signers sign the

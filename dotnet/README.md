@@ -123,7 +123,7 @@ caller can build one by hand with the public constructor for its own tests.
 Dates are epoch milliseconds (`*Ms`, `long?`); 64-bit ids (`AppItemId`,
 `DownloadId`, `VersionExternalIdentifier`, an in-app purchase's
 `WebOrderLineItemId`) stay `long?` on this payload but render as decimal
-**strings** in `ToJson()`, matching the canonical form every port shares.
+**strings** in `ToJson()`, the same JSON value every port writes.
 
 ```csharp
 payload.ReceiptType;               // "Production", "ProductionSandbox", ...
@@ -133,7 +133,7 @@ payload.ReceiptCreationDateMs;
 payload.InApp[0].ProductId;
 payload.InApp[0].ExpiresDateMs;
 payload.UnknownAttributes;         // IReadOnlyDictionary<int, IReadOnlyList<byte[]>> in receipt order
-payload.ToJson();                  // the canonical JSON every port shares
+payload.ToJson();                  // JSON with the same value in every port
 ```
 
 Decoding follows the rules every port shares: the first occurrence of an
@@ -141,7 +141,7 @@ attribute wins; every attribute that does not end up in a typed field (a
 later copy, or a value that does not decode, whose field is then `null`) is
 kept raw in `UnknownAttributes`, the in-app ones in that purchase's own; an
 empty date string means "not set" and is not kept raw. `ToJson()` writes
-keys in a fixed order, byte-identical across ports.
+JSON whose parsed value is the same in every port; the bytes may differ.
 
 ### `Failure` and `VerificationReason`
 
@@ -151,6 +151,10 @@ be a parser exception about unverified input, whose message can quote raw
 certificate text. Switch on `Failure.Reason`; never parse `Failure.Message`.
 `VerificationReasonCodes.ToCode` gives the SCREAMING_SNAKE token every port
 reports (e.g. `"UNTRUSTED_CHAIN"`) for logging or telemetry.
+
+To stand in for `IVerifier` in your own tests, build results by hand:
+`VerificationResult<ReceiptPayload>.Of(payload)`,
+`VerificationResult<ReceiptPayload>.Failed(new Failure(reason, message, cause))`.
 
 | `VerificationReason` | Raised when | Endpoint status |
 |---|---|---|

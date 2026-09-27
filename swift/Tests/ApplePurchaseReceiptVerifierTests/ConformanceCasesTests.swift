@@ -239,6 +239,22 @@ private func fieldMatches(_ actual: Any?, _ expected: Any) -> Bool {
     return expectedNumber.doubleValue == actualNumber.doubleValue
 }
 
+/// Deep equality over parsed JSON: objects by key in any order, arrays
+/// element by element, scalars as ``fieldMatches`` compares them (a boolean
+/// never equals a number, integers by their exact digits).
+private func sameJsonValue(_ actual: Any, _ expected: Any) -> Bool {
+    if let want = expected as? [String: Any] {
+        guard let got = actual as? [String: Any], got.count == want.count else { return false }
+        return want.allSatisfy { key, value in got[key].map { sameJsonValue($0, value) } ?? false }
+    }
+    if let want = expected as? [Any] {
+        guard let got = actual as? [Any], got.count == want.count else { return false }
+        return zip(got, want).allSatisfy { sameJsonValue($0, $1) }
+    }
+    if expected is NSNull { return actual is NSNull }
+    return fieldMatches(actual, expected)
+}
+
 private func int64IfExact(_ number: NSNumber) -> Int64? {
     switch String(cString: number.objCType) {
     case "q", "l", "i", "s": return number.int64Value
@@ -408,12 +424,15 @@ final class ConformanceCasesTests: XCTestCase {
                 return
             }
             let json = payload.toJson()
-            if let wantJson = expected["toJson"] as? String {
-                XCTAssertEqual(json, wantJson, "\(id): toJson")
-            }
             guard let parsed = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any] else {
                 XCTFail("\(id): toJson() did not produce a JSON object")
                 return
+            }
+            // Same value, not same bytes: whitespace, key order and escaping
+            // are free (docs/design/0.7-api.md "Our JSON").
+            if let wantJson = expected["toJson"] as? String {
+                let want = try JSONSerialization.jsonObject(with: Data(wantJson.utf8))
+                XCTAssertTrue(sameJsonValue(parsed, want), "\(id): toJson value\n  want: \(wantJson)\n  got:  \(json)")
             }
             try assertFieldsAndLengths(parsed, expected: expected, id: id)
         } else if status == "error" {

@@ -18,7 +18,13 @@ namespace ApplePurchaseReceiptVerifier
         private readonly byte[]? _opaqueValue;
         private readonly byte[]? _sha1Hash;
 
-        /// <summary>Builds a payload by hand, for a caller's own tests.</summary>
+        /// <summary>
+        /// Builds a payload by hand, for a caller's own tests. The byte arrays,
+        /// the in-app list and the unknown attributes are copied, so changing
+        /// what was passed in afterwards does not change the payload.
+        /// </summary>
+        /// <exception cref="ArgumentNullException"><paramref name="inApp"/>, one of its purchases,
+        /// <paramref name="unknownAttributes"/> or one of its values is <see langword="null"/>.</exception>
         public ReceiptPayload(
             string? receiptType,
             long? appItemId,
@@ -39,18 +45,18 @@ namespace ApplePurchaseReceiptVerifier
             ReceiptType = receiptType;
             AppItemId = appItemId;
             BundleId = bundleId;
-            _bundleIdBytes = bundleIdBytes;
+            _bundleIdBytes = ByteOps.Copy(bundleIdBytes);
             ApplicationVersion = applicationVersion;
-            _opaqueValue = opaqueValue;
-            _sha1Hash = sha1Hash;
+            _opaqueValue = ByteOps.Copy(opaqueValue);
+            _sha1Hash = ByteOps.Copy(sha1Hash);
             ReceiptCreationDateMs = receiptCreationDateMs;
             DownloadId = downloadId;
             VersionExternalIdentifier = versionExternalIdentifier;
-            InApp = inApp;
+            InApp = CopyInApp(inApp);
             OriginalPurchaseDateMs = originalPurchaseDateMs;
             OriginalApplicationVersion = originalApplicationVersion;
             ExpirationDateMs = expirationDateMs;
-            UnknownAttributes = unknownAttributes;
+            UnknownAttributes = ByteOps.CopyAttributes(unknownAttributes, nameof(unknownAttributes));
         }
 
         /// <summary>Attribute 0.</summary>
@@ -109,10 +115,10 @@ namespace ApplePurchaseReceiptVerifier
         public IReadOnlyDictionary<int, IReadOnlyList<byte[]>> UnknownAttributes { get; }
 
         /// <summary>
-        /// The canonical JSON rendering, for logging and storage: fixed key
-        /// order, no whitespace, 64-bit ids as strings, dates as epoch
-        /// milliseconds, bytes as standard base64. The same bytes in every
-        /// port (docs/design/0.7-api.md, "Our JSON").
+        /// This payload as JSON, for logging and storage: 64-bit ids as
+        /// strings, dates as epoch milliseconds, bytes as standard base64,
+        /// <c>null</c> for a missing field. Every port writes the same value;
+        /// the bytes may differ (docs/design/0.7-api.md, "Our JSON").
         /// </summary>
         public string ToJson()
         {
@@ -140,6 +146,22 @@ namespace ApplePurchaseReceiptVerifier
             json.Set("expiration_date_ms", ExpirationDateMs);
             json.Set("unknown_attributes", UnknownAttributesJson(UnknownAttributes));
             return Json.Write(json);
+        }
+
+        private static IReadOnlyList<InAppPurchase> CopyInApp(IReadOnlyList<InAppPurchase> inApp)
+        {
+            if (inApp is null)
+            {
+                throw new ArgumentNullException(nameof(inApp));
+            }
+
+            InAppPurchase[] copy = new InAppPurchase[inApp.Count];
+            for (int i = 0; i < copy.Length; i++)
+            {
+                copy[i] = inApp[i] ?? throw new ArgumentNullException(nameof(inApp), "an in-app purchase is null");
+            }
+
+            return Array.AsReadOnly(copy);
         }
 
         internal static string? IdString(long? value) =>

@@ -1,10 +1,11 @@
 import Foundation
 
-/// The JSON writer for the canonical payload form (``ReceiptPayload/toJson()``)
-/// and the endpoint's response: objects written key by key, strings escaped
-/// exactly as ECMAScript `JSON.stringify` escapes them.
+/// The JSON writer for ``ReceiptPayload/toJson()`` and the endpoint's
+/// response: objects written key by key. Ports agree on the value of
+/// `toJson()`, not its bytes (docs/design/0.7-api.md "Our JSON"), so the
+/// escaping below is one valid choice, not a cross-port contract.
 
-/// A JSON object being written, with the canonical form's rules. `target` is
+/// A JSON object being written. `target` is
 /// called with each fragment to append, in order — ordinarily a closure that
 /// appends to the caller's `String` buffer, since Swift has no way to hold a
 /// reference into a local `String` otherwise.
@@ -80,10 +81,8 @@ final class JsonObjectWriter {
     }
 }
 
-/// A JSON string as ECMAScript `JSON.stringify` writes it: `\"`, `\\` and the
-/// short escapes `\b \f \n \r \t`, every other character below U+0020 as a
-/// lowercase `\u00xx`, and nothing else (`/` and non-ASCII, U+2028 and
-/// U+2029 included, written raw).
+/// A JSON string literal: `\"`, `\\` and the short escapes `\b \f \n \r \t`,
+/// every other character below U+0020 as `\u00xx`, everything else raw.
 func quoteJson(_ value: String) -> String {
     var out = "\""
     for scalar in value.unicodeScalars {

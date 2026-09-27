@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -688,10 +689,12 @@ func runCase(t testing.TB, dir string, fixtures map[string]fixtureEntry, c confo
 			if callErr != nil {
 				t.Fatalf("%s: expected ok but got %v", c.ID, callErr)
 			}
-			if expected.ToJSON != nil && *expected.ToJSON != jsonText {
-				t.Fatalf("%s: toJson\n  expected %s\n  but got  %s", c.ID, *expected.ToJSON, jsonText)
-			}
 			actual = parseJSONAny(t, c.ID, jsonText)
+			// Same value, not same bytes: whitespace, key order and
+			// escaping are free (docs/design/0.7-api.md "Our JSON").
+			if expected.ToJSON != nil && !reflect.DeepEqual(parseJSONAny(t, c.ID, *expected.ToJSON), actual) {
+				t.Fatalf("%s: toJson value\n  expected %s\n  but got  %s", c.ID, *expected.ToJSON, jsonText)
+			}
 		default:
 			t.Fatalf("%s: harness error: unknown status %q", c.ID, expected.Status)
 		}

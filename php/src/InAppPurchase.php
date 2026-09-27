@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace EminDeniz99\ApplePurchaseReceiptVerifier;
 
-use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\CanonicalJson;
-
 /**
  * One in-app purchase from a verified legacy app receipt (attribute 17).
  *
@@ -49,22 +47,26 @@ final readonly class InAppPurchase
     ) {
     }
 
-    /** @internal renders this purchase into `$writer`'s parent object as one array element */
-    public function writeJson(): string
+    /**
+     * @internal this purchase as the value {@see ReceiptPayload::toJson()} encodes
+     *
+     * @return array<string, mixed>
+     */
+    public function jsonValue(): array
     {
-        return (new CanonicalJson())
-            ->number('quantity', $this->quantity)
-            ->string('product_id', $this->productId)
-            ->string('transaction_id', $this->transactionId)
-            ->number('purchase_date_ms', $this->purchaseDateMs)
-            ->string('original_transaction_id', $this->originalTransactionId)
-            ->number('original_purchase_date_ms', $this->originalPurchaseDateMs)
-            ->number('expires_date_ms', $this->expiresDateMs)
-            ->id('web_order_line_item_id', $this->webOrderLineItemId)
-            ->number('cancellation_date_ms', $this->cancellationDateMs)
-            ->bool('is_trial_period', $this->isTrialPeriod)
-            ->bool('is_in_intro_offer_period', $this->isInIntroOfferPeriod)
-            ->attributes('unknown_attributes', $this->unknownAttributes)
-            ->build();
+        return [
+            'quantity' => $this->quantity,
+            'product_id' => $this->productId,
+            'transaction_id' => $this->transactionId,
+            'purchase_date_ms' => $this->purchaseDateMs,
+            'original_transaction_id' => $this->originalTransactionId,
+            'original_purchase_date_ms' => $this->originalPurchaseDateMs,
+            'expires_date_ms' => $this->expiresDateMs,
+            'web_order_line_item_id' => ReceiptPayload::idJson($this->webOrderLineItemId),
+            'cancellation_date_ms' => $this->cancellationDateMs,
+            'is_trial_period' => $this->isTrialPeriod,
+            'is_in_intro_offer_period' => $this->isInIntroOfferPeriod,
+            'unknown_attributes' => ReceiptPayload::attributesJson($this->unknownAttributes),
+        ];
     }
 }

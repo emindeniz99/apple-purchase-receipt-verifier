@@ -28,6 +28,16 @@ namespace ApplePurchaseReceiptVerifier
         /// <summary>Why verification failed, or <see langword="null"/> when it verified.</summary>
         public Failure? Failure { get; }
 
+        /// <summary>A verified result carrying <paramref name="payload"/>; for callers mocking <see cref="IVerifier"/>.</summary>
+        /// <exception cref="ArgumentNullException"><paramref name="payload"/> is <see langword="null"/>.</exception>
+        public static VerificationResult<T> Of(T payload) =>
+            new VerificationResult<T>(payload ?? throw new ArgumentNullException(nameof(payload)), null);
+
+        /// <summary>A failed result; for callers mocking <see cref="IVerifier"/>.</summary>
+        /// <exception cref="ArgumentNullException"><paramref name="failure"/> is <see langword="null"/>.</exception>
+        public static VerificationResult<T> Failed(Failure failure) =>
+            new VerificationResult<T>(null, failure ?? throw new ArgumentNullException(nameof(failure)));
+
         internal static VerificationResult<T> Ok(T payload) => new VerificationResult<T>(payload, null);
 
         internal static VerificationResult<T> Failed(VerificationReason reason, string message, Exception? cause) =>

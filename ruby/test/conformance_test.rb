@@ -172,7 +172,8 @@ class ConformanceTest < Minitest::Test
 
     return unless expected.key?("toJson")
 
-    assert_equal expected["toJson"].b, result.payload.to_json.b, "#{kase["id"]}: toJson"
+    # Same value, not same bytes (docs/design/0.7-api.md, "Our JSON").
+    assert_equal JSON.parse(expected["toJson"]), actual, "#{kase["id"]}: toJson value"
   end
 
   # Runs the case's operation, measuring the SECOND call (after one

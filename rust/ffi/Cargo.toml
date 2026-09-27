@@ -24,7 +24,7 @@ crate-type = ["cdylib", "staticlib"]
 
 # One dependency, and it is the library itself. The JSON the ABI hands out
 # is the library's own (`ReceiptPayload::to_json()` and the signed JWS text),
-# so nothing new enters the graph and cargo-deny's banned-crate list keeps
-# meaning what it means.
+# so nothing beyond the library's own graph enters and cargo-deny's
+# banned-crate list keeps meaning what it means.
 [dependencies.apple-purchase-receipt-verifier]
 path = ".."

@@ -12,11 +12,11 @@ use crate::datetime::{format_etc_gmt, format_pacific};
 use crate::environment::Environment;
 use crate::error::{Failure, Reason};
 use crate::json::{top_level_members, Value};
-use crate::json_writer::Object;
 use crate::receipt;
 use crate::receipt_payload::{InAppPurchase, ReceiptPayload};
 use crate::roots::TrustAnchor;
 use crate::verifier::Clock;
+use serde_json::{Map, Value as JsonValue};
 
 /// The status codes Apple documents for `verifyReceipt`, so callers do not
 /// write `21007` by hand.
@@ -157,18 +157,16 @@ fn receipt_data(request_json: &str) -> Result<String, Failure> {
 /// and everything that lives only in Apple's server-side database are never
 /// present.
 fn render(environment: Environment, receipt: &ReceiptPayload, request_date_millis: i64) -> String {
-    let mut out = String::with_capacity(1024 + 1024 * receipt.in_app.len());
-    let mut response = Object::open(&mut out);
-    response.number("status", Some(i64::from(AppleStatus::OK)));
-    response.string("environment", Some(environment.as_str()));
-    response.key("receipt");
-    write_receipt(response.out(), receipt, request_date_millis);
-    response.close();
-    out
+    format!(
+        "{{\"status\":{},\"environment\":{},\"receipt\":{}}}",
+        AppleStatus::OK,
+        JsonValue::from(environment.as_str()),
+        receipt_json(receipt, request_date_millis)
+    )
 }
 
-fn write_receipt(out: &mut String, receipt: &ReceiptPayload, request_date_millis: i64) {
-    let mut json = Object::open(out);
+fn receipt_json(receipt: &ReceiptPayload, request_date_millis: i64) -> JsonValue {
+    let mut json = Map::new();
     present_string(&mut json, "receipt_type", receipt.receipt_type.as_deref());
     // Apple echoes attribute 1 under both names (its response reference
     // defines adam_id as "See app_item_id") and as JSON numbers, not as the
@@ -204,20 +202,15 @@ fn write_receipt(out: &mut String, receipt: &ReceiptPayload, request_date_millis
         receipt.original_purchase_date_ms,
     );
     apple_dates(&mut json, "expiration_date", receipt.expiration_date_ms);
-    json.key("in_app");
-    json.out().push('[');
-    for (index, purchase) in receipt.in_app.iter().enumerate() {
-        if index > 0 {
-            json.out().push(',');
-        }
-        write_purchase(json.out(), purchase);
-    }
-    json.out().push(']');
-    json.close();
+    json.insert(
+        "in_app".to_owned(),
+        receipt.in_app.iter().map(purchase_json).collect(),
+    );
+    JsonValue::Object(json)
 }
 
-fn write_purchase(out: &mut String, purchase: &InAppPurchase) {
-    let mut json = Object::open(out);
+fn purchase_json(purchase: &InAppPurchase) -> JsonValue {
+    let mut json = Map::new();
     present_string(
         &mut json,
         "quantity",
@@ -249,7 +242,7 @@ fn write_purchase(out: &mut String, purchase: &InAppPurchase) {
     // Apple omits the key when attribute 1711 is 0, as it is for
     // consumables.
     if let Some(id) = purchase.web_order_line_item_id.filter(|id| *id != 0) {
-        json.string("web_order_line_item_id", Some(&id.to_string()));
+        present_string(&mut json, "web_order_line_item_id", Some(&id.to_string()));
     }
     present_string(
         &mut json,
@@ -267,26 +260,30 @@ fn write_purchase(out: &mut String, purchase: &InAppPurchase) {
             .map(|flag| flag.to_string())
             .as_deref(),
     );
-    json.close();
+    JsonValue::Object(json)
 }
 
-fn present_string(json: &mut Object<'_>, key: &str, value: Option<&str>) {
-    if value.is_some() {
-        json.string(key, value);
+fn present_string(json: &mut Map<String, JsonValue>, key: &str, value: Option<&str>) {
+    if let Some(value) = value {
+        json.insert(key.to_owned(), JsonValue::from(value));
     }
 }
 
-fn present_number(json: &mut Object<'_>, key: &str, value: Option<i64>) {
-    if value.is_some() {
-        json.number(key, value);
+fn present_number(json: &mut Map<String, JsonValue>, key: &str, value: Option<i64>) {
+    if let Some(value) = value {
+        json.insert(key.to_owned(), JsonValue::from(value));
     }
 }
 
 /// Apple's three renderings of every date: `x` in GMT, `x_ms` in epoch
 /// milliseconds (as a string), and `x_pst` in US Pacific time.
-fn apple_dates(json: &mut Object<'_>, prefix: &str, millis: Option<i64>) {
+fn apple_dates(json: &mut Map<String, JsonValue>, prefix: &str, millis: Option<i64>) {
     let Some(millis) = millis else { return };
-    json.string(prefix, Some(&format_etc_gmt(millis)));
-    json.string(&format!("{prefix}_ms"), Some(&millis.to_string()));
-    json.string(&format!("{prefix}_pst"), Some(&format_pacific(millis)));
+    present_string(json, prefix, Some(&format_etc_gmt(millis)));
+    present_string(json, &format!("{prefix}_ms"), Some(&millis.to_string()));
+    present_string(
+        json,
+        &format!("{prefix}_pst"),
+        Some(&format_pacific(millis)),
+    );
 }

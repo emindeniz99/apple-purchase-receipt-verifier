@@ -361,7 +361,7 @@ fn a_verified_jws_is_returned_exactly_as_signed() {
 }
 
 #[test]
-fn payloads_can_be_built_by_hand_and_write_canonical_json() {
+fn payloads_can_be_built_by_hand_and_write_their_json_value() {
     let mut unknown = BTreeMap::new();
     unknown.insert(13, vec![vec![1, 2, 3]]);
     unknown.insert(9, vec![b"a".to_vec(), b"b".to_vec()]);
@@ -382,23 +382,30 @@ fn payloads_can_be_built_by_hand_and_write_canonical_json() {
         unknown_attributes: unknown,
         ..ReceiptPayload::default()
     };
-    // Keys in the design's order, ids as strings, unknown keys ascending
-    // (9 before 13), JSON.stringify escapes, "/" and non-ASCII raw.
+    // Compared as a value: ids as strings, missing fields null, bytes as
+    // padded base64, unknown attribute values in receipt order under their
+    // decimal type.
+    let written: serde_json::Value = serde_json::from_str(&receipt.to_json()).unwrap();
     assert_eq!(
-        receipt.to_json(),
-        "{\"receipt_type\":\"ProductionSandbox\",\"app_item_id\":\"9223372036854775807\",\
-         \"bundle_id\":\"com.example.app\",\"bundle_id_bytes\":\"DAFh\",\
-         \"application_version\":null,\"opaque_value\":null,\"sha1_hash\":null,\
-         \"receipt_creation_date_ms\":1722945600000,\"download_id\":\"-1\",\
-         \"version_external_identifier\":null,\"in_app\":[{\"quantity\":1,\
-         \"product_id\":\"line\\nbreak \\\"quoted\\\" / \u{e9} \u{2028}\",\
-         \"transaction_id\":null,\"purchase_date_ms\":null,\"original_transaction_id\":null,\
-         \"original_purchase_date_ms\":null,\"expires_date_ms\":null,\
-         \"web_order_line_item_id\":\"42\",\"cancellation_date_ms\":null,\
-         \"is_trial_period\":false,\"is_in_intro_offer_period\":null,\
-         \"unknown_attributes\":{}}],\"original_purchase_date_ms\":null,\
-         \"original_application_version\":null,\"expiration_date_ms\":null,\
-         \"unknown_attributes\":{\"9\":[\"YQ==\",\"Yg==\"],\"13\":[\"AQID\"]}}"
+        written,
+        serde_json::json!({
+            "receipt_type": "ProductionSandbox", "app_item_id": "9223372036854775807",
+            "bundle_id": "com.example.app", "bundle_id_bytes": "DAFh",
+            "application_version": null, "opaque_value": null, "sha1_hash": null,
+            "receipt_creation_date_ms": 1_722_945_600_000_i64, "download_id": "-1",
+            "version_external_identifier": null,
+            "in_app": [{
+                "quantity": 1, "product_id": "line\nbreak \"quoted\" / \u{e9} \u{2028}",
+                "transaction_id": null, "purchase_date_ms": null,
+                "original_transaction_id": null, "original_purchase_date_ms": null,
+                "expires_date_ms": null, "web_order_line_item_id": "42",
+                "cancellation_date_ms": null, "is_trial_period": false,
+                "is_in_intro_offer_period": null, "unknown_attributes": {}
+            }],
+            "original_purchase_date_ms": null, "original_application_version": null,
+            "expiration_date_ms": null,
+            "unknown_attributes": {"9": ["YQ==", "Yg=="], "13": ["AQID"]}
+        })
     );
     assert_eq!(JsonPayload::new("{}").json(), "{}");
 }

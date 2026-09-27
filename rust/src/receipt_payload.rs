@@ -29,7 +29,7 @@
 
 use crate::asn1::{parse_exact, tag, Asn1Error, Tlv};
 use crate::datetime::parse_receipt_date;
-use crate::json_writer::Object;
+use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
 // App-level attribute types.
@@ -446,12 +446,39 @@ fn date(der: &[u8]) -> Result<Option<i64>, Undecodable> {
 
 // ------------------------------------------------------------------ JSON
 
+/// A 64-bit id as a JSON string, so JavaScript readers do not round it.
+fn id_json(value: Option<i64>) -> Value {
+    value.map_or(Value::Null, |value| Value::String(value.to_string()))
+}
+
+/// Bytes as padded standard base64.
+fn bytes_json(value: Option<&[u8]>) -> Value {
+    value.map_or(Value::Null, |value| {
+        Value::String(crate::base64::encode(value))
+    })
+}
+
+/// `{"13": ["<base64>", ...]}`, each type's values in receipt order.
+fn attributes_json(attributes: &UnknownAttributes) -> Value {
+    Value::Object(
+        attributes
+            .iter()
+            .map(|(attribute_type, values)| {
+                let values = values
+                    .iter()
+                    .map(|value| Value::String(crate::base64::encode(value)))
+                    .collect();
+                (attribute_type.to_string(), Value::Array(values))
+            })
+            .collect(),
+    )
+}
+
 impl ReceiptPayload {
-    /// The canonical JSON, fixed byte for byte: the keys below
-    /// in this order, no whitespace, `null` for a missing field, 64-bit ids
-    /// as strings, bytes as padded standard base64, `unknown_attributes`
-    /// keys in ascending numeric order, and strings escaped exactly as
-    /// ECMAScript `JSON.stringify` escapes them.
+    /// This payload as JSON, for logging and storage (docs/design/0.7-api.md
+    /// "Our JSON"). Every port writes the same value; the bytes may differ.
+    /// `null` for a missing field, 64-bit ids as strings, bytes as padded
+    /// standard base64, dates as epoch-millisecond numbers.
     ///
     /// `receipt_type`, `app_item_id`, `bundle_id`, `bundle_id_bytes`,
     /// `application_version`, `opaque_value`, `sha1_hash`,
@@ -461,61 +488,43 @@ impl ReceiptPayload {
     /// `unknown_attributes`.
     #[must_use]
     pub fn to_json(&self) -> String {
-        let mut out = String::with_capacity(512 + 512 * self.in_app.len());
-        let mut json = Object::open(&mut out);
-        json.string("receipt_type", self.receipt_type.as_deref());
-        json.id("app_item_id", self.app_item_id);
-        json.string("bundle_id", self.bundle_id.as_deref());
-        json.bytes("bundle_id_bytes", self.bundle_id_bytes.as_deref());
-        json.string("application_version", self.application_version.as_deref());
-        json.bytes("opaque_value", self.opaque_value.as_deref());
-        json.bytes("sha1_hash", self.sha1_hash.as_deref());
-        json.number("receipt_creation_date_ms", self.receipt_creation_date_ms);
-        json.id("download_id", self.download_id);
-        json.id(
-            "version_external_identifier",
-            self.version_external_identifier,
-        );
-        json.key("in_app");
-        json.out().push('[');
-        for (index, purchase) in self.in_app.iter().enumerate() {
-            if index > 0 {
-                json.out().push(',');
-            }
-            purchase.write_json(json.out());
-        }
-        json.out().push(']');
-        json.number("original_purchase_date_ms", self.original_purchase_date_ms);
-        json.string(
-            "original_application_version",
-            self.original_application_version.as_deref(),
-        );
-        json.number("expiration_date_ms", self.expiration_date_ms);
-        json.attributes("unknown_attributes", &self.unknown_attributes);
-        json.close();
-        out
+        json!({
+            "receipt_type": self.receipt_type,
+            "app_item_id": id_json(self.app_item_id),
+            "bundle_id": self.bundle_id,
+            "bundle_id_bytes": bytes_json(self.bundle_id_bytes.as_deref()),
+            "application_version": self.application_version,
+            "opaque_value": bytes_json(self.opaque_value.as_deref()),
+            "sha1_hash": bytes_json(self.sha1_hash.as_deref()),
+            "receipt_creation_date_ms": self.receipt_creation_date_ms,
+            "download_id": id_json(self.download_id),
+            "version_external_identifier": id_json(self.version_external_identifier),
+            "in_app": self.in_app.iter().map(InAppPurchase::json_value).collect::<Vec<_>>(),
+            "original_purchase_date_ms": self.original_purchase_date_ms,
+            "original_application_version": self.original_application_version,
+            "expiration_date_ms": self.expiration_date_ms,
+            "unknown_attributes": attributes_json(&self.unknown_attributes),
+        })
+        .to_string()
     }
 }
 
 impl InAppPurchase {
-    fn write_json(&self, out: &mut String) {
-        let mut json = Object::open(out);
-        json.number("quantity", self.quantity);
-        json.string("product_id", self.product_id.as_deref());
-        json.string("transaction_id", self.transaction_id.as_deref());
-        json.number("purchase_date_ms", self.purchase_date_ms);
-        json.string(
-            "original_transaction_id",
-            self.original_transaction_id.as_deref(),
-        );
-        json.number("original_purchase_date_ms", self.original_purchase_date_ms);
-        json.number("expires_date_ms", self.expires_date_ms);
-        json.id("web_order_line_item_id", self.web_order_line_item_id);
-        json.number("cancellation_date_ms", self.cancellation_date_ms);
-        json.boolean("is_trial_period", self.is_trial_period);
-        json.boolean("is_in_intro_offer_period", self.is_in_intro_offer_period);
-        json.attributes("unknown_attributes", &self.unknown_attributes);
-        json.close();
+    fn json_value(&self) -> Value {
+        json!({
+            "quantity": self.quantity,
+            "product_id": self.product_id,
+            "transaction_id": self.transaction_id,
+            "purchase_date_ms": self.purchase_date_ms,
+            "original_transaction_id": self.original_transaction_id,
+            "original_purchase_date_ms": self.original_purchase_date_ms,
+            "expires_date_ms": self.expires_date_ms,
+            "web_order_line_item_id": id_json(self.web_order_line_item_id),
+            "cancellation_date_ms": self.cancellation_date_ms,
+            "is_trial_period": self.is_trial_period,
+            "is_in_intro_offer_period": self.is_in_intro_offer_period,
+            "unknown_attributes": attributes_json(&self.unknown_attributes),
+        })
     }
 }
 
@@ -528,7 +537,6 @@ mod tests {
 
     use super::{parse_receipt_payload, read_creation_date, InAppPurchase};
     use crate::asn1::tag;
-    use crate::json_writer::quote;
 
     fn der(tag: u8, contents: &[u8]) -> Vec<u8> {
         assert!(contents.len() < 0x80, "short-form lengths only");
@@ -739,30 +747,19 @@ mod tests {
     }
 
     #[test]
-    fn strings_escape_as_json_stringify_does() {
-        let mut out = String::new();
-        quote(
-            &mut out,
-            "\"\\/\u{8}\u{c}\n\r\t\u{0}\u{1f}\u{7f}\u{e9}\u{2028}\u{2029}",
-        );
-        assert_eq!(
-            out,
-            "\"\\\"\\\\/\\b\\f\\n\\r\\t\\u0000\\u001f\u{7f}\u{e9}\u{2028}\u{2029}\""
-        );
-    }
-
-    #[test]
     fn an_empty_purchase_writes_every_key_as_null() {
-        let mut out = String::new();
-        InAppPurchase::default().write_json(&mut out);
+        // A missing field is null, never omitted.
+        let json = InAppPurchase::default().json_value();
         assert_eq!(
-            out,
-            "{\"quantity\":null,\"product_id\":null,\"transaction_id\":null,\
-             \"purchase_date_ms\":null,\"original_transaction_id\":null,\
-             \"original_purchase_date_ms\":null,\"expires_date_ms\":null,\
-             \"web_order_line_item_id\":null,\"cancellation_date_ms\":null,\
-             \"is_trial_period\":null,\"is_in_intro_offer_period\":null,\
-             \"unknown_attributes\":{}}"
+            json,
+            serde_json::json!({
+                "quantity": null, "product_id": null, "transaction_id": null,
+                "purchase_date_ms": null, "original_transaction_id": null,
+                "original_purchase_date_ms": null, "expires_date_ms": null,
+                "web_order_line_item_id": null, "cancellation_date_ms": null,
+                "is_trial_period": null, "is_in_intro_offer_period": null,
+                "unknown_attributes": {}
+            })
         );
     }
 }

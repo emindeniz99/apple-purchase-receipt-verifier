@@ -147,10 +147,13 @@ final class ConformanceCasesTest extends TestCase
             /** @var ReceiptPayload $payload */
             $actual = json_decode($payload->toJson(), true, 65, JSON_THROW_ON_ERROR);
             if (isset($expected['toJson'])) {
+                // Same value, not same bytes: key order and escaping are
+                // free, so both sides are key-sorted before the strict
+                // comparison.
                 self::assertSame(
-                    $expected['toJson'],
-                    $payload->toJson(),
-                    "{$id}: toJson",
+                    self::sortKeys(json_decode($expected['toJson'], true, 65, JSON_THROW_ON_ERROR)),
+                    self::sortKeys($actual),
+                    "{$id}: toJson value",
                 );
             }
         } else {
@@ -362,6 +365,21 @@ final class ConformanceCasesTest extends TestCase
      * @param mixed $actual
      * @param array<string, mixed> $expected
      */
+    /**
+     * A decoded JSON value with every object's keys sorted, so two values
+     * compare with assertSame regardless of the key order they were written in.
+     */
+    private static function sortKeys(mixed $value): mixed
+    {
+        if (!is_array($value)) {
+            return $value;
+        }
+        $value = array_map(self::sortKeys(...), $value);
+        ksort($value);
+
+        return $value;
+    }
+
     private static function assertFields(string $id, $actual, array $expected): void
     {
         /** @var array<string, mixed> $fields */

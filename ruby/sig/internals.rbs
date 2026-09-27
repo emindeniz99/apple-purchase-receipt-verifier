@@ -1,7 +1,7 @@
 # Signatures for everything `sig/apple_purchase_receipt_verifier.rbs` leaves
 # out: private methods, module-internal constants, and the modules that are
 # implementation detail (Cms, Receipt, ReceiptAttributes, Jws, Endpoint,
-# Signature, Json, CanonicalJson).
+# Signature, Json).
 #
 # A consumer type-checks against the public file; this one exists so
 # `steep check` can prove the implementation itself, and it is checked by CI
@@ -212,7 +212,7 @@ module ApplePurchaseReceiptVerifier
 
     def self.creation_date: (String content) -> Integer?
     def self.parse: (String content) -> ReceiptPayload
-    def self.write_unknown_attributes: (untyped json, unknown_attributes attributes) -> void
+    def self.unknown_attributes_json: (unknown_attributes attributes) -> Hash[String, Array[String]]
 
     private
 
@@ -277,12 +277,11 @@ module ApplePurchaseReceiptVerifier
     def self.receipt_data: (String request_json) -> String
     def self.render: (String environment, ReceiptPayload receipt, Integer request_date_millis) -> String
     def self.apple_environment_label: (String environment) -> String
-    def self.write_receipt: (untyped json, ReceiptPayload receipt, Integer request_date_millis) -> void
-    def self.write_purchase: (untyped json, InAppPurchase purchase) -> void
+    def self.receipt_json: (ReceiptPayload receipt, Integer request_date_millis) -> Hash[String, untyped]
+    def self.purchase_json: (InAppPurchase purchase) -> Hash[String, untyped]
     def self.boolean_string: (bool? value) -> String?
-    def self.present_string: (untyped json, String key, String? value) -> void
-    def self.present_number: (untyped json, String key, Integer? value) -> void
-    def self.apple_dates: (untyped json, String prefix, Integer? millis) -> void
+    def self.present: (Hash[String, untyped] json, String key, (String | Integer)? value) -> void
+    def self.apple_dates: (Hash[String, untyped] json, String prefix, Integer? millis) -> void
   end
 
   # json.rb — the bounded strict JSON reader.
@@ -326,24 +325,5 @@ module ApplePurchaseReceiptVerifier
       ESCAPES: Hash[Integer, String]
       HEX_DIGIT: Hash[Integer, Integer]
     end
-  end
-
-  # canonical_json.rb — the shared toJson serializer.
-  class CanonicalJson
-    HEX: String
-
-    def initialize: () -> void
-    def object: () { (CanonicalJson) -> void } -> CanonicalJson
-    def array: () { (CanonicalJson) -> void } -> CanonicalJson
-    def key: (String name) -> void
-    def string: (String key, String? value) -> void
-    def number: (String key, Integer? value) -> void
-    def id: (String key, Integer? value) -> void
-    def boolean: (String key, bool? value) -> void
-    def bytes: (String key, String? value) -> void
-    def raw_value: () { (CanonicalJson) -> void } -> void
-    def comma: () -> void
-    def quote: (String value) -> CanonicalJson
-    def to_s: () -> String
   end
 end

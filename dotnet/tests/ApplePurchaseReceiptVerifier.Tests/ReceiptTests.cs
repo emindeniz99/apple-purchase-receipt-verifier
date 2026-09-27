@@ -1,5 +1,7 @@
+using System.Collections.Generic;
 using System.Formats.Asn1;
 using System.Numerics;
+using ApplePurchaseReceiptVerifier.Internal;
 using Xunit;
 
 namespace ApplePurchaseReceiptVerifier.Tests;
@@ -55,7 +57,9 @@ public class ReceiptTests
         Assert.Equal(2, parsed.UnknownAttributes.Count);
         Assert.Equal(new[] { new byte[] { 1, 2, 3 }, new byte[] { 4, 5 } }, parsed.UnknownAttributes[9999]);
         Assert.Equal(new byte[] { 9 }, Assert.Single(parsed.UnknownAttributes[31337]));
-        Assert.Contains("\"unknown_attributes\":{\"9999\":[\"AQID\",\"BAU=\"],\"31337\":[\"CQ==\"]}", parsed.ToJson(), System.StringComparison.Ordinal);
+        OrderedMap unknown = (OrderedMap)Json.ParseObject(parsed.ToJson())["unknown_attributes"]!;
+        Assert.Equal(new object?[] { "AQID", "BAU=" }, (List<object?>)unknown["9999"]!);
+        Assert.Equal(new object?[] { "CQ==" }, (List<object?>)unknown["31337"]!);
     }
 
     /// <summary>
@@ -106,5 +110,74 @@ public class ReceiptTests
         Assert.Equal(
             VerificationReason.UnreadablePayload,
             chain.Verifier().VerifyReceipt(chain.SignBase64(twice.Encode())).Failure?.Reason);
+    }
+
+    /// <summary>
+    /// A payload built by hand is a snapshot: a caller that keeps and later
+    /// changes the arrays, the purchase list or the attribute map it passed
+    /// in cannot change what the payload reports or what ToJson writes.
+    /// </summary>
+    [Fact]
+    public void AHandBuiltPayloadDoesNotChangeWhenItsInputsDo()
+    {
+        byte[] bundleIdBytes = { 0x0c, 0x01, 0x61 };
+        byte[] opaque = { 1, 2 };
+        byte[] sha1 = { 3, 4 };
+        byte[] raw = { 5, 6 };
+        List<byte[]> rawValues = new() { raw };
+        Dictionary<int, IReadOnlyList<byte[]>> purchaseUnknown = new() { [1799] = rawValues };
+        InAppPurchase purchase = new(1, "p", "t", null, null, null, null, null, null, null, null, purchaseUnknown);
+        List<InAppPurchase> inApp = new() { purchase };
+        Dictionary<int, IReadOnlyList<byte[]>> unknown = new() { [9999] = new List<byte[]> { raw } };
+        ReceiptPayload payload = new(
+            "Production", null, "a", bundleIdBytes, null, opaque, sha1, null, null, null,
+            inApp, null, null, null, unknown);
+        string before = payload.ToJson();
+
+        bundleIdBytes[0] = 0xff;
+        opaque[0] = 0xff;
+        sha1[0] = 0xff;
+        raw[0] = 0xff;
+        rawValues.Add(new byte[] { 7 });
+        purchaseUnknown[42] = new List<byte[]> { new byte[] { 8 } };
+        inApp.Add(purchase);
+        unknown[1] = new List<byte[]> { new byte[] { 9 } };
+
+        Assert.Equal(before, payload.ToJson());
+        Assert.Equal(new byte[] { 0x0c, 0x01, 0x61 }, payload.BundleIdBytes);
+        Assert.Equal(new byte[] { 5, 6 }, Assert.Single(payload.UnknownAttributes[9999]));
+        Assert.Single(payload.InApp);
+        Assert.Equal(new byte[] { 5, 6 }, Assert.Single(payload.InApp[0].UnknownAttributes[1799]));
+        Assert.Single(payload.InApp[0].UnknownAttributes);
+    }
+
+    /// <summary>
+    /// What a payload hands out cannot be recast and edited in place: the
+    /// purchase list and the attribute collections are read-only wrappers.
+    /// </summary>
+    [Fact]
+    public void AHandBuiltPayloadsCollectionsAreReadOnly()
+    {
+        ReceiptPayload payload = new(
+            null, null, null, null, null, null, null, null, null, null,
+            new List<InAppPurchase>(), null, null, null,
+            new Dictionary<int, IReadOnlyList<byte[]>> { [9999] = new List<byte[]> { new byte[] { 1 } } });
+
+        Assert.False(payload.InApp is List<InAppPurchase> || payload.InApp is InAppPurchase[]);
+        Assert.False(payload.UnknownAttributes is Dictionary<int, IReadOnlyList<byte[]>>);
+        Assert.True(((ICollection<byte[]>)payload.UnknownAttributes[9999]).IsReadOnly);
+    }
+
+    [Fact]
+    public void AHandBuiltPayloadRefusesNullCollections()
+    {
+        Assert.Throws<System.ArgumentNullException>(() => new InAppPurchase(
+            null, null, null, null, null, null, null, null, null, null, null, null!));
+        Assert.Throws<System.ArgumentNullException>(() => new ReceiptPayload(
+            null, null, null, null, null, null, null, null, null, null,
+            null!, null, null, null, new Dictionary<int, IReadOnlyList<byte[]>>()));
+        Assert.Throws<System.ArgumentNullException>(() => new ReceiptPayload(
+            null, null, null, null, null, null, null, null, null, null,
+            new List<InAppPurchase> { null! }, null, null, null, new Dictionary<int, IReadOnlyList<byte[]>>()));
     }
 }

@@ -221,7 +221,7 @@
         "toJson": {
           "type": "string",
           "minLength": 2,
-          "description": "The exact string toJson() returns; the runner compares the UTF-8 bytes."
+          "description": "One valid output of toJson(). The runner parses this string and the port's toJson() output as JSON and compares the parsed values (deep equality; numbers as numbers, strings as strings). No byte comparison: whitespace, key order and escaping style are free."
         }
       }
     },

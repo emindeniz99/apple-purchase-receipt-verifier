@@ -10,7 +10,13 @@ namespace ApplePurchaseReceiptVerifier
     /// </summary>
     public sealed class InAppPurchase
     {
-        /// <summary>Builds a purchase by hand, for a caller's own tests.</summary>
+        /// <summary>
+        /// Builds a purchase by hand, for a caller's own tests. The unknown
+        /// attributes are copied, so changing what was passed in afterwards
+        /// does not change the purchase.
+        /// </summary>
+        /// <exception cref="System.ArgumentNullException"><paramref name="unknownAttributes"/> or one of
+        /// its values is <see langword="null"/>.</exception>
         public InAppPurchase(
             long? quantity,
             string? productId,
@@ -36,7 +42,7 @@ namespace ApplePurchaseReceiptVerifier
             CancellationDateMs = cancellationDateMs;
             IsTrialPeriod = isTrialPeriod;
             IsInIntroOfferPeriod = isInIntroOfferPeriod;
-            UnknownAttributes = unknownAttributes;
+            UnknownAttributes = ByteOps.CopyAttributes(unknownAttributes, nameof(unknownAttributes));
         }
 
         /// <summary>Attribute 1701.</summary>

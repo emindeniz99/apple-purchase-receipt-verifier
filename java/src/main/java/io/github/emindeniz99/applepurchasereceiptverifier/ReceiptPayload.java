@@ -1,7 +1,14 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.json.JsonWriteFeature;
+import java.io.IOException;
+import java.io.StringWriter;
+import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -208,43 +215,68 @@ public final class ReceiptPayload {
         return RawAttributes.copy(unknownAttributes);
     }
 
+    // Every character outside ASCII is escaped, so the text is ASCII and
+    // therefore valid UTF-8, even for a lone surrogate in a hand-built payload.
+    static final JsonFactory JSON =
+            JsonFactory.builder().enable(JsonWriteFeature.ESCAPE_NON_ASCII).build();
+
     /**
-     * This payload as canonical JSON, for logging and storage. The bytes are
-     * fixed: keys in declaration order, snake_case names,
-     * dates as numbers with a {@code _ms} suffix, 64-bit ids
+     * This payload as JSON, for logging and storage (docs/design/0.7-api.md,
+     * "Our JSON"). Every port writes the same value; the bytes may differ.
+     * snake_case names, dates as numbers with a {@code _ms} suffix, 64-bit ids
      * ({@code app_item_id}, {@code download_id},
      * {@code version_external_identifier}, {@code web_order_line_item_id}) as
-     * strings, bytes as padded standard base64, {@code null} for a missing
-     * value, no whitespace, only the escapes JSON requires, and non-ASCII
-     * characters raw.
+     * strings, bytes as padded standard base64 and {@code null} for a missing
+     * value.
      */
     public String toJson() {
-        StringBuilder out = new StringBuilder(512 + 512 * inApp.size());
-        CanonicalJson json = CanonicalJson.object(out)
-                .string("receipt_type", receiptType)
-                .id("app_item_id", appItemId)
-                .string("bundle_id", bundleId)
-                .bytes("bundle_id_bytes", bundleIdBytes)
-                .string("application_version", applicationVersion)
-                .bytes("opaque_value", opaqueValue)
-                .bytes("sha1_hash", sha1Hash)
-                .number("receipt_creation_date_ms", receiptCreationDateMs)
-                .id("download_id", downloadId)
-                .id("version_external_identifier", versionExternalIdentifier);
-        json.key("in_app").append('[');
-        for (int i = 0; i < inApp.size(); i++) {
-            if (i > 0) {
-                out.append(',');
+        StringWriter out = new StringWriter(512 + 512 * inApp.size());
+        try (JsonGenerator json = JSON.createGenerator(out)) {
+            json.writeStartObject();
+            json.writeObjectField("receipt_type", receiptType);
+            json.writeObjectField("app_item_id", appItemId == null ? null : appItemId.toString());
+            json.writeObjectField("bundle_id", bundleId);
+            json.writeObjectField("bundle_id_bytes", base64(bundleIdBytes));
+            json.writeObjectField("application_version", applicationVersion);
+            json.writeObjectField("opaque_value", base64(opaqueValue));
+            json.writeObjectField("sha1_hash", base64(sha1Hash));
+            json.writeObjectField("receipt_creation_date_ms", receiptCreationDateMs);
+            json.writeObjectField("download_id", downloadId == null ? null : downloadId.toString());
+            json.writeObjectField(
+                    "version_external_identifier",
+                    versionExternalIdentifier == null ? null : versionExternalIdentifier.toString());
+            json.writeArrayFieldStart("in_app");
+            for (InAppPurchase purchase : inApp) {
+                purchase.writeJson(json);
             }
-            inApp.get(i).writeJson(out);
+            json.writeEndArray();
+            json.writeObjectField("original_purchase_date_ms", originalPurchaseDateMs);
+            json.writeObjectField("original_application_version", originalApplicationVersion);
+            json.writeObjectField("expiration_date_ms", expirationDateMs);
+            writeAttributes(json, unknownAttributes);
+            json.writeEndObject();
+        } catch (IOException e) {
+            // A StringWriter does not fail.
+            throw new UncheckedIOException(e);
         }
-        out.append(']');
-        json.number("original_purchase_date_ms", originalPurchaseDateMs)
-                .string("original_application_version", originalApplicationVersion)
-                .number("expiration_date_ms", expirationDateMs)
-                .attributes("unknown_attributes", unknownAttributes)
-                .end();
         return out.toString();
+    }
+
+    private static @Nullable String base64(byte @Nullable [] bytes) {
+        return bytes == null ? null : Base64.getEncoder().encodeToString(bytes);
+    }
+
+    /** {@code "unknown_attributes": {"13": ["<base64>", ...]}}, each type's values in receipt order. */
+    static void writeAttributes(JsonGenerator json, Map<Integer, List<byte[]>> attributes) throws IOException {
+        json.writeObjectFieldStart("unknown_attributes");
+        for (Map.Entry<Integer, List<byte[]>> entry : attributes.entrySet()) {
+            json.writeArrayFieldStart(entry.getKey().toString());
+            for (byte[] value : entry.getValue()) {
+                json.writeString(Base64.getEncoder().encodeToString(value));
+            }
+            json.writeEndArray();
+        }
+        json.writeEndObject();
     }
 
     @Override
