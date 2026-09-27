@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
+require "json"
 require "time"
-require_relative "canonical_json"
 
 module ApplePurchaseReceiptVerifier
   # One in-app purchase decoded from a legacy app receipt (attribute 17).
@@ -17,22 +17,22 @@ module ApplePurchaseReceiptVerifier
     :is_trial_period, :is_in_intro_offer_period, :unknown_attributes
   ) do
     # @api private
-    def write_json(json) # steep:ignore UndeclaredMethodDefinition
+    def json_value # steep:ignore UndeclaredMethodDefinition
       # @type self: InAppPurchase
-      json.object do |o|
-        o.number("quantity", quantity)
-        o.string("product_id", product_id)
-        o.string("transaction_id", transaction_id)
-        o.number("purchase_date_ms", purchase_date_ms)
-        o.string("original_transaction_id", original_transaction_id)
-        o.number("original_purchase_date_ms", original_purchase_date_ms)
-        o.number("expires_date_ms", expires_date_ms)
-        o.id("web_order_line_item_id", web_order_line_item_id)
-        o.number("cancellation_date_ms", cancellation_date_ms)
-        o.boolean("is_trial_period", is_trial_period)
-        o.boolean("is_in_intro_offer_period", is_in_intro_offer_period)
-        ReceiptAttributes.write_unknown_attributes(o, unknown_attributes)
-      end
+      {
+        "quantity" => quantity,
+        "product_id" => product_id,
+        "transaction_id" => transaction_id,
+        "purchase_date_ms" => purchase_date_ms,
+        "original_transaction_id" => original_transaction_id,
+        "original_purchase_date_ms" => original_purchase_date_ms,
+        "expires_date_ms" => expires_date_ms,
+        "web_order_line_item_id" => web_order_line_item_id&.to_s,
+        "cancellation_date_ms" => cancellation_date_ms,
+        "is_trial_period" => is_trial_period,
+        "is_in_intro_offer_period" => is_in_intro_offer_period,
+        "unknown_attributes" => ReceiptAttributes.unknown_attributes_json(unknown_attributes)
+      }
     end
   end
 
@@ -50,36 +50,32 @@ module ApplePurchaseReceiptVerifier
     :version_external_identifier, :in_app, :original_purchase_date_ms,
     :original_application_version, :expiration_date_ms, :unknown_attributes
   ) do
-    # The canonical JSON every port produces byte for byte, for logging and
-    # storage (docs/design/0.7-api.md, "Our JSON"): the fields in the design's
-    # order, no whitespace, `null` for a missing field, 64-bit ids as JSON
-    # strings, bytes as padded standard base64, `unknown_attributes` keys in
-    # ascending numeric order with each key's values in receipt order, and
-    # strings escaped as ECMAScript `JSON.stringify` escapes them.
+    # This payload as JSON, for logging and storage (docs/design/0.7-api.md,
+    # "Our JSON"). Every port writes the same value; the bytes may differ.
+    # `null` for a missing field, 64-bit ids as JSON strings, bytes as padded
+    # standard base64, `unknown_attributes` keyed by the decimal type with
+    # each key's values in receipt order.
     #
     # @return [String]
     def to_json(*)
       # @type self: ReceiptPayload
-      json = CanonicalJson.new
-      json.object do |o|
-        o.string("receipt_type", receipt_type)
-        o.id("app_item_id", app_item_id)
-        o.string("bundle_id", bundle_id)
-        o.bytes("bundle_id_bytes", bundle_id_bytes)
-        o.string("application_version", application_version)
-        o.bytes("opaque_value", opaque_value)
-        o.bytes("sha1_hash", sha1_hash)
-        o.number("receipt_creation_date_ms", receipt_creation_date_ms)
-        o.id("download_id", download_id)
-        o.id("version_external_identifier", version_external_identifier)
-        o.key("in_app")
-        o.array { |a| in_app.each { |purchase| a.raw_value { purchase.write_json(a) } } }
-        o.number("original_purchase_date_ms", original_purchase_date_ms)
-        o.string("original_application_version", original_application_version)
-        o.number("expiration_date_ms", expiration_date_ms)
-        ReceiptAttributes.write_unknown_attributes(o, unknown_attributes)
-      end
-      json.to_s
+      JSON.generate(
+        "receipt_type" => receipt_type,
+        "app_item_id" => app_item_id&.to_s,
+        "bundle_id" => bundle_id,
+        "bundle_id_bytes" => bundle_id_bytes && [bundle_id_bytes].pack("m0"),
+        "application_version" => application_version,
+        "opaque_value" => opaque_value && [opaque_value].pack("m0"),
+        "sha1_hash" => sha1_hash && [sha1_hash].pack("m0"),
+        "receipt_creation_date_ms" => receipt_creation_date_ms,
+        "download_id" => download_id&.to_s,
+        "version_external_identifier" => version_external_identifier&.to_s,
+        "in_app" => in_app.map(&:json_value),
+        "original_purchase_date_ms" => original_purchase_date_ms,
+        "original_application_version" => original_application_version,
+        "expiration_date_ms" => expiration_date_ms,
+        "unknown_attributes" => ReceiptAttributes.unknown_attributes_json(unknown_attributes)
+      )
     end
   end
 
@@ -248,15 +244,11 @@ module ApplePurchaseReceiptVerifier
         )
       end
 
-      # Writes `unknown_attributes` in the canonical form: keys in ascending
-      # numeric order, each key's values in receipt order.
-      def write_unknown_attributes(json, attributes)
-        json.key("unknown_attributes")
-        json.object do |o|
-          attributes.keys.sort.each do |type|
-            o.key(type.to_s)
-            o.array { |a| attributes[type].each { |value| a.raw_value { a.quote([value].pack("m0")) } } }
-          end
+      # `unknown_attributes` as JSON: each type as a decimal key, its values
+      # base64 in receipt order.
+      def unknown_attributes_json(attributes)
+        attributes.keys.sort.to_h do |type|
+          [type.to_s, attributes[type].map { |value| [value].pack("m0") }]
         end
       end
 

@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative "canonical_json"
+require "json"
 
 module ApplePurchaseReceiptVerifier
   # @api private
@@ -88,14 +88,11 @@ module ApplePurchaseReceiptVerifier
       # The status-0 response. Keys and value types follow Apple's endpoint;
       # key order is deterministic but not part of the contract.
       def render(environment, receipt, request_date_millis)
-        json = CanonicalJson.new
-        json.object do |o|
-          o.number("status", AppleStatus::OK)
-          o.string("environment", apple_environment_label(environment))
-          o.key("receipt")
-          write_receipt(o, receipt, request_date_millis)
-        end
-        json.to_s
+        JSON.generate(
+          "status" => AppleStatus::OK,
+          "environment" => apple_environment_label(environment),
+          "receipt" => receipt_json(receipt, request_date_millis)
+        )
       end
 
       # {Environment::PRODUCTION} and {Environment::SANDBOX} are this
@@ -106,47 +103,48 @@ module ApplePurchaseReceiptVerifier
         environment == Environment::PRODUCTION ? "Production" : "Sandbox"
       end
 
-      def write_receipt(json, receipt, request_date_millis)
-        json.object do |o|
-          present_string(o, "receipt_type", receipt.receipt_type)
-          # Apple echoes attribute 1 under both names (its response
-          # reference defines adam_id as "See app_item_id"), and as JSON
-          # numbers, not as the strings toJson's 64-bit ids are rendered
-          # with.
-          present_number(o, "adam_id", receipt.app_item_id)
-          present_number(o, "app_item_id", receipt.app_item_id)
-          present_string(o, "bundle_id", receipt.bundle_id)
-          present_string(o, "application_version", receipt.application_version)
-          present_number(o, "download_id", receipt.download_id)
-          present_number(o, "version_external_identifier", receipt.version_external_identifier)
-          present_string(o, "original_application_version", receipt.original_application_version)
-          apple_dates(o, "receipt_creation_date", receipt.receipt_creation_date_ms)
-          apple_dates(o, "request_date", request_date_millis)
-          apple_dates(o, "original_purchase_date", receipt.original_purchase_date_ms)
-          apple_dates(o, "expiration_date", receipt.expiration_date_ms)
-          o.key("in_app")
-          o.array { |a| receipt.in_app.each { |purchase| a.raw_value { write_purchase(a, purchase) } } }
-        end
+      def receipt_json(receipt, request_date_millis)
+        # @type var o: Hash[String, untyped]
+        o = {}
+        present(o, "receipt_type", receipt.receipt_type)
+        # Apple echoes attribute 1 under both names (its response
+        # reference defines adam_id as "See app_item_id"), and as JSON
+        # numbers, not as the strings toJson's 64-bit ids are rendered
+        # with.
+        present(o, "adam_id", receipt.app_item_id)
+        present(o, "app_item_id", receipt.app_item_id)
+        present(o, "bundle_id", receipt.bundle_id)
+        present(o, "application_version", receipt.application_version)
+        present(o, "download_id", receipt.download_id)
+        present(o, "version_external_identifier", receipt.version_external_identifier)
+        present(o, "original_application_version", receipt.original_application_version)
+        apple_dates(o, "receipt_creation_date", receipt.receipt_creation_date_ms)
+        apple_dates(o, "request_date", request_date_millis)
+        apple_dates(o, "original_purchase_date", receipt.original_purchase_date_ms)
+        apple_dates(o, "expiration_date", receipt.expiration_date_ms)
+        o["in_app"] = receipt.in_app.map { |purchase| purchase_json(purchase) }
+        o
       end
 
-      def write_purchase(json, purchase)
-        json.object do |o|
-          present_string(o, "quantity", purchase.quantity&.to_s)
-          present_string(o, "product_id", purchase.product_id)
-          present_string(o, "transaction_id", purchase.transaction_id)
-          present_string(o, "original_transaction_id", purchase.original_transaction_id)
-          apple_dates(o, "purchase_date", purchase.purchase_date_ms)
-          apple_dates(o, "original_purchase_date", purchase.original_purchase_date_ms)
-          apple_dates(o, "expires_date", purchase.expires_date_ms)
-          apple_dates(o, "cancellation_date", purchase.cancellation_date_ms)
-          # Apple omits the key when attribute 1711 is 0, as it does for
-          # consumables.
-          unless purchase.web_order_line_item_id.nil? || purchase.web_order_line_item_id.zero?
-            o.string("web_order_line_item_id", purchase.web_order_line_item_id.to_s)
-          end
-          present_string(o, "is_trial_period", boolean_string(purchase.is_trial_period))
-          present_string(o, "is_in_intro_offer_period", boolean_string(purchase.is_in_intro_offer_period))
+      def purchase_json(purchase)
+        # @type var o: Hash[String, untyped]
+        o = {}
+        present(o, "quantity", purchase.quantity&.to_s)
+        present(o, "product_id", purchase.product_id)
+        present(o, "transaction_id", purchase.transaction_id)
+        present(o, "original_transaction_id", purchase.original_transaction_id)
+        apple_dates(o, "purchase_date", purchase.purchase_date_ms)
+        apple_dates(o, "original_purchase_date", purchase.original_purchase_date_ms)
+        apple_dates(o, "expires_date", purchase.expires_date_ms)
+        apple_dates(o, "cancellation_date", purchase.cancellation_date_ms)
+        # Apple omits the key when attribute 1711 is 0, as it does for
+        # consumables.
+        unless purchase.web_order_line_item_id.nil? || purchase.web_order_line_item_id.zero?
+          o["web_order_line_item_id"] = purchase.web_order_line_item_id.to_s
         end
+        present(o, "is_trial_period", boolean_string(purchase.is_trial_period))
+        present(o, "is_in_intro_offer_period", boolean_string(purchase.is_in_intro_offer_period))
+        o
       end
 
       def boolean_string(value)
@@ -155,12 +153,8 @@ module ApplePurchaseReceiptVerifier
         value.to_s
       end
 
-      def present_string(json, key, value)
-        json.string(key, value) unless value.nil?
-      end
-
-      def present_number(json, key, value)
-        json.number(key, value) unless value.nil?
+      def present(json, key, value)
+        json[key] = value unless value.nil?
       end
 
       # Apple renders every date three ways: GMT wall-clock, epoch
@@ -169,10 +163,10 @@ module ApplePurchaseReceiptVerifier
         return if millis.nil?
 
         utc = Time.at(Rational(millis, 1000)).utc
-        json.string(prefix, "#{utc.strftime("%Y-%m-%d %H:%M:%S")} Etc/GMT")
-        json.string("#{prefix}_ms", millis.to_s)
+        json[prefix] = "#{utc.strftime("%Y-%m-%d %H:%M:%S")} Etc/GMT"
+        json["#{prefix}_ms"] = millis.to_s
         pacific = PacificTime.wall_clock(utc)
-        json.string("#{prefix}_pst", "#{pacific.strftime("%Y-%m-%d %H:%M:%S")} #{PacificTime::ZONE_LABEL}")
+        json["#{prefix}_pst"] = "#{pacific.strftime("%Y-%m-%d %H:%M:%S")} #{PacificTime::ZONE_LABEL}"
       end
     end
   end

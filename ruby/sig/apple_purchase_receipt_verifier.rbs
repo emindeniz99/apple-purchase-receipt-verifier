@@ -136,7 +136,7 @@ module ApplePurchaseReceiptVerifier
                      web_order_line_item_id: Integer?, cancellation_date_ms: Integer?,
                      is_trial_period: bool?, is_in_intro_offer_period: bool?,
                      unknown_attributes: Hash[Integer, Array[String]]) -> void
-    def write_json: (untyped json) -> void
+    def json_value: () -> Hash[String, untyped]
   end
 
   class ReceiptPayload
