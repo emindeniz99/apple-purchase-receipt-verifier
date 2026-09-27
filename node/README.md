@@ -419,6 +419,13 @@ import { Environment } from 'apple-purchase-receipt-verifier';
 const body = verifier.verifyReceiptEndpoint(Environment.PRODUCTION, rawRequestBody);
 ```
 
+`rawRequestBody` must be the request's raw JSON text. A framework whose body
+parser defaults to `application/x-www-form-urlencoded` (or that only
+populates `req.body` after parsing it as one) will hand this method a
+stringified form object, not the JSON Apple's client actually sent, and
+`receipt-data` will read as missing. Read the body as `application/json`
+before calling this method, or parse it yourself and re-stringify it.
+
 | Status | Meaning |
 |---|---|
 | `0` | verified, and the receipt matches the requested environment |
