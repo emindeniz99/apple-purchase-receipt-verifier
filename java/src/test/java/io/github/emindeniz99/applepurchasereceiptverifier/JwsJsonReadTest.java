@@ -107,13 +107,14 @@ class JwsJsonReadTest {
     /** A payload with anything after its object is not the object: carried to the signature as unreadable. */
     @Test
     void aPayloadWithTextAfterItsObjectOrAByteOrderMarkIsUnreadable() throws Exception {
-        assertEquals(Long.valueOf(1), JwsCore.Payload.read(utf8("{\"signedDate\":1} \n")).signedDate);
+        assertEquals(Long.valueOf(1), JwsCore.signedDate(utf8("{\"signedDate\":1} \n")));
         for (byte[] bytes : new byte[][] {
             utf8("{\"signedDate\":1} x"), utf8("{\"signedDate\":1}{}"), utf8("\uFEFF{\"signedDate\":1}"),
         }) {
-            JwsCore.Payload payload = JwsCore.Payload.read(bytes);
-            assertNull(payload.json, new String(bytes, StandardCharsets.UTF_8));
-            assertNull(payload.signedDate);
+            VerificationException thrown =
+                    assertThrows(VerificationException.class, () -> JwsCore.requireJsonObject(bytes));
+            assertEquals(Reason.UNREADABLE_PAYLOAD, thrown.reason());
+            assertNull(JwsCore.signedDate(bytes), new String(bytes, StandardCharsets.UTF_8));
         }
     }
 
@@ -225,12 +226,13 @@ class JwsJsonReadTest {
     }
 
     private static String streamingPayload(byte[] bytes) throws Exception {
-        JwsCore.Payload payload = JwsCore.Payload.read(bytes);
-        if (payload.json == null) {
+        try {
+            JwsCore.requireJsonObject(bytes);
+        } catch (VerificationException e) {
+            assertNull(JwsCore.signedDate(bytes));
             return "unreadable";
         }
-        assertEquals(new String(bytes, StandardCharsets.UTF_8), payload.json);
-        return "object signedDate=" + payload.signedDate;
+        return "object signedDate=" + JwsCore.signedDate(bytes);
     }
 
     /**

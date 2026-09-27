@@ -8,23 +8,19 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
 public enum Reason {
     /**
      * The base64, ASN.1, CMS or JWS structure is broken, or a structural
-     * bound was exceeded (JSON nesting deeper than 64, more than 10 embedded
-     * certificates, more than 4 SignerInfos). Decided before any signature
-     * is checked.
+     * bound was exceeded (JSON nesting, embedded certificates, SignerInfos;
+     * see "Resource bounds" in the README). Decided before any signature is
+     * checked.
      */
     MALFORMED,
     /**
-     * The input is over a fixed size cap: 3,145,728 UTF-8 bytes for a receipt
-     * or an endpoint request body, 262,144 for a JWS. Decided before
-     * anything is decoded.
+     * The input is over its fixed size cap (see "Resource bounds" in the
+     * README). Decided before anything is decoded.
      */
     TOO_LARGE,
     /** The signature does not match the signed content. */
     INVALID_SIGNATURE,
-    /**
-     * The certificate chain does not reach a pinned root, or is longer than
-     * six certificates.
-     */
+    /** The certificate chain does not reach a pinned root, or is longer than the chain-length bound. */
     UNTRUSTED_CHAIN,
     /**
      * A certificate the check depends on does not decode, or is expired or

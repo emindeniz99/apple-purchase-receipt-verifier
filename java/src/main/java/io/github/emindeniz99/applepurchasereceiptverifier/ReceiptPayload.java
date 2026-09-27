@@ -7,7 +7,6 @@ import java.io.IOException;
 import java.io.StringWriter;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
@@ -71,58 +70,17 @@ public final class ReceiptPayload {
             @Nullable String originalApplicationVersion,
             @Nullable Long expirationDateMs,
             Map<Integer, List<byte[]>> unknownAttributes) {
-        this(
-                receiptType,
-                appItemId,
-                bundleId,
-                clone(bundleIdBytes),
-                applicationVersion,
-                clone(opaqueValue),
-                clone(sha1Hash),
-                receiptCreationDateMs,
-                downloadId,
-                versionExternalIdentifier,
-                inApp,
-                originalPurchaseDateMs,
-                originalApplicationVersion,
-                expirationDateMs,
-                RawAttributes.copy(Objects.requireNonNull(unknownAttributes, "unknownAttributes")),
-                true);
-    }
-
-    /**
-     * For {@link ReceiptDecoder}, which hands over arrays and a map that
-     * nothing else references, so the public constructor's defensive copies
-     * would only repeat themselves.
-     */
-    ReceiptPayload(
-            @Nullable String receiptType,
-            @Nullable Long appItemId,
-            @Nullable String bundleId,
-            byte @Nullable [] ownedBundleIdBytes,
-            @Nullable String applicationVersion,
-            byte @Nullable [] ownedOpaqueValue,
-            byte @Nullable [] ownedSha1Hash,
-            @Nullable Long receiptCreationDateMs,
-            @Nullable Long downloadId,
-            @Nullable Long versionExternalIdentifier,
-            List<InAppPurchase> inApp,
-            @Nullable Long originalPurchaseDateMs,
-            @Nullable String originalApplicationVersion,
-            @Nullable Long expirationDateMs,
-            Map<Integer, List<byte[]>> ownedUnknownAttributes,
-            boolean owned) {
         this.receiptType = receiptType;
         this.appItemId = appItemId;
         this.bundleId = bundleId;
-        this.bundleIdBytes = ownedBundleIdBytes;
+        this.bundleIdBytes = clone(bundleIdBytes);
         this.applicationVersion = applicationVersion;
-        this.opaqueValue = ownedOpaqueValue;
-        this.sha1Hash = ownedSha1Hash;
+        this.opaqueValue = clone(opaqueValue);
+        this.sha1Hash = clone(sha1Hash);
         this.receiptCreationDateMs = receiptCreationDateMs;
         this.downloadId = downloadId;
         this.versionExternalIdentifier = versionExternalIdentifier;
-        List<InAppPurchase> purchases = new ArrayList<InAppPurchase>(Objects.requireNonNull(inApp, "inApp"));
+        List<InAppPurchase> purchases = new ArrayList<>(Objects.requireNonNull(inApp, "inApp"));
         for (InAppPurchase purchase : purchases) {
             Objects.requireNonNull(purchase, "in-app purchase");
         }
@@ -130,7 +88,7 @@ public final class ReceiptPayload {
         this.originalPurchaseDateMs = originalPurchaseDateMs;
         this.originalApplicationVersion = originalApplicationVersion;
         this.expirationDateMs = expirationDateMs;
-        this.unknownAttributes = ownedUnknownAttributes;
+        this.unknownAttributes = RawAttributes.copy(Objects.requireNonNull(unknownAttributes, "unknownAttributes"));
     }
 
     /** Attribute 0, such as {@code Production} or {@code ProductionSandbox}. */
@@ -279,50 +237,15 @@ public final class ReceiptPayload {
         json.writeEndObject();
     }
 
+    /** Equal when {@link #toJson()} is. */
     @Override
     public boolean equals(@Nullable Object other) {
-        if (this == other) {
-            return true;
-        }
-        if (!(other instanceof ReceiptPayload)) {
-            return false;
-        }
-        ReceiptPayload that = (ReceiptPayload) other;
-        return Objects.equals(receiptType, that.receiptType)
-                && Objects.equals(appItemId, that.appItemId)
-                && Objects.equals(bundleId, that.bundleId)
-                && Arrays.equals(bundleIdBytes, that.bundleIdBytes)
-                && Objects.equals(applicationVersion, that.applicationVersion)
-                && Arrays.equals(opaqueValue, that.opaqueValue)
-                && Arrays.equals(sha1Hash, that.sha1Hash)
-                && Objects.equals(receiptCreationDateMs, that.receiptCreationDateMs)
-                && Objects.equals(downloadId, that.downloadId)
-                && Objects.equals(versionExternalIdentifier, that.versionExternalIdentifier)
-                && inApp.equals(that.inApp)
-                && Objects.equals(originalPurchaseDateMs, that.originalPurchaseDateMs)
-                && Objects.equals(originalApplicationVersion, that.originalApplicationVersion)
-                && Objects.equals(expirationDateMs, that.expirationDateMs)
-                && RawAttributes.equal(unknownAttributes, that.unknownAttributes);
+        return other instanceof ReceiptPayload && toJson().equals(((ReceiptPayload) other).toJson());
     }
 
     @Override
     public int hashCode() {
-        int hash = Objects.hash(
-                receiptType,
-                appItemId,
-                bundleId,
-                applicationVersion,
-                receiptCreationDateMs,
-                downloadId,
-                versionExternalIdentifier,
-                inApp,
-                originalPurchaseDateMs,
-                originalApplicationVersion,
-                expirationDateMs);
-        hash = 31 * hash + Arrays.hashCode(bundleIdBytes);
-        hash = 31 * hash + Arrays.hashCode(opaqueValue);
-        hash = 31 * hash + Arrays.hashCode(sha1Hash);
-        return 31 * hash + RawAttributes.hash(unknownAttributes);
+        return toJson().hashCode();
     }
 
     /** {@link #toJson()}. */

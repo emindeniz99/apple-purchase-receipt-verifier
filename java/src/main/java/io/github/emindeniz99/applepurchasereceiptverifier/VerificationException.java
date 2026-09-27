@@ -8,8 +8,7 @@ import org.jspecify.annotations.Nullable;
  * cause only for {@link Reason#UNREADABLE_PAYLOAD} and
  * {@link Reason#INTERNAL_ERROR}.
  *
- * <p>The message is log-safe by construction: anything quoted out of the
- * input goes through {@link SafeText} before it is put here.</p>
+ * <p>The message never quotes the input, so it is safe to log as is.</p>
  */
 final class VerificationException extends Exception {
 

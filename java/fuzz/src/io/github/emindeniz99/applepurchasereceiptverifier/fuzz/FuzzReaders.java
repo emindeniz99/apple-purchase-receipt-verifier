@@ -1,5 +1,6 @@
 package io.github.emindeniz99.applepurchasereceiptverifier.fuzz;
 
+import io.github.emindeniz99.applepurchasereceiptverifier.Reason;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
@@ -14,10 +15,11 @@ import java.nio.charset.StandardCharsets;
  *   <li>{@code ReceiptDecoder.parse}: the receipt attribute walk: the ASN.1
  *       SET, the optional Xcode double wrap, the per-attribute type and value
  *       decode, the in-app sub-walk, the date and integer bounds.
- *   <li>{@code ReceiptBase64.decode}: the base64 dialect Apple's clients
+ *   <li>{@code StrictBase64.decode}: the base64 dialect Apple's clients
  *       actually send.
- *   <li>{@code JwsCore.Header.read} and {@code JwsCore.Payload.read}: the
- *       streaming reads of a decoded JWS header and payload.
+ *   <li>{@code JwsCore.Header.read}, {@code JwsCore.signedDate} and
+ *       {@code JwsCore.requireJsonObject}: the streaming reads of a decoded
+ *       JWS header and payload.
  * </ul>
  *
  * <p>Reflection rather than an exported test hook: the implementation is
@@ -31,8 +33,9 @@ import java.nio.charset.StandardCharsets;
  * unchecked exception out of BouncyCastle here is contained by design and is
  * not a finding, while an {@code Error} (a {@code StackOverflowError} from
  * nesting, an {@code OutOfMemoryError} from a length prefix) escapes that
- * catch and is. The other three contain everything themselves: only the
- * package's own {@code VerificationException} may come out.
+ * catch and is. The others contain everything themselves: only the
+ * package's own {@code VerificationException} may come out, and
+ * {@code signedDate} lets nothing out at all.
  */
 public final class FuzzReaders {
 
@@ -41,16 +44,19 @@ public final class FuzzReaders {
     private static final String PACKAGE = "io.github.emindeniz99.applepurchasereceiptverifier.";
 
     private static final Method PARSE_PAYLOAD = method("ReceiptDecoder", "parse", byte[].class);
-    private static final Method DECODE_BASE64 = method("ReceiptBase64", "decode", String.class);
+    private static final Method DECODE_BASE64 =
+            method("StrictBase64", "decode", String.class, Reason.class, String.class);
     private static final Method READ_HEADER = method("JwsCore$Header", "read", byte[].class);
-    private static final Method READ_PAYLOAD = method("JwsCore$Payload", "read", byte[].class);
+    private static final Method SIGNED_DATE = method("JwsCore", "signedDate", byte[].class);
+    private static final Method REQUIRE_OBJECT = method("JwsCore", "requireJsonObject", byte[].class);
 
     public static void fuzzerTestOneInput(byte[] data) {
         String text = new String(data, StandardCharsets.ISO_8859_1);
         call("ReceiptDecoder.parse", PARSE_PAYLOAD, true, (Object) data);
-        call("ReceiptBase64.decode", DECODE_BASE64, false, text);
+        call("StrictBase64.decode", DECODE_BASE64, false, text, Reason.MALFORMED, "receipt");
         call("JwsCore.Header.read", READ_HEADER, false, (Object) data);
-        call("JwsCore.Payload.read", READ_PAYLOAD, false, (Object) data);
+        call("JwsCore.signedDate", SIGNED_DATE, false, (Object) data);
+        call("JwsCore.requireJsonObject", REQUIRE_OBJECT, false, (Object) data);
     }
 
     /**

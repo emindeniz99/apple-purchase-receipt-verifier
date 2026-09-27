@@ -9,7 +9,6 @@ use DateTimeZone;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Config;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Base64;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Reason;
 use EminDeniz99\ApplePurchaseReceiptVerifier\ReceiptPayload;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Fixtures07;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\FrozenClock;
@@ -106,14 +105,9 @@ final class ConformanceCasesTest extends TestCase
         }
 
         /** @var VerificationResult<mixed> $result */
-        if (($expected['anyOutcome'] ?? false) === true) {
-            if (!$result->verified()) {
-                self::assertNotSame(
-                    Reason::InternalError,
-                    $result->failure?->reason,
-                    "{$id}: library faulted instead of judging the input",
-                );
-            }
+        if (isset($expected['oneOf'])) {
+            $outcome = $result->verified() ? 'ok' : $result->failure?->reason->value;
+            self::assertContains($outcome, $expected['oneOf'], "{$id}: answered {$outcome}");
 
             return;
         }

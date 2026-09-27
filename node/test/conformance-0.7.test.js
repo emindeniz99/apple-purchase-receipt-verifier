@@ -295,14 +295,11 @@ function defineTargetTests(name, build, async_) {
       }
       return;
     }
-    if (kase.expected.anyOutcome === true) {
-      // Port-defined: verify or refuse with any reason, but never crash (a
-      // result object came back either way, or callOperation would have
-      // thrown) and never INTERNAL_ERROR, which would mean an unexpected
-      // library fault rather than a judged encoding oddity.
-      if (!result.verified) {
-        assert.notEqual(result.failure.reason, 'INTERNAL_ERROR', result.failure.message);
-      }
+    if (kase.expected.oneOf) {
+      // Port-defined within a list: "ok" or the reason must be listed. A
+      // crash would have thrown from callOperation already.
+      const outcome = result.verified ? 'ok' : result.failure.reason;
+      assert.ok(kase.expected.oneOf.includes(outcome), `answered ${outcome}, want one of ${kase.expected.oneOf}`);
       return;
     }
     if (kase.expected.status === 'error') {

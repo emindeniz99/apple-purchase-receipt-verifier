@@ -45,8 +45,8 @@ class ChainHardeningTest < Minitest::Test
   # somewhere on the path to a verdict — not necessarily by
   # `cert_sign_permitted?` itself, since `CertificateStructure.sound?`
   # already screens out a certificate carrying any extension neither
-  # `OpenSSL::ASN1.decode` can read (fixtures/cases-0.7.json now marks this
-  # combination `anyOutcome: true`, "port-defined", for exactly that reason:
+  # `OpenSSL::ASN1.decode` can read (fixtures/cases-0.7.json lists this
+  # combination's outcomes as port-defined, `oneOf`, for exactly that reason:
   # the two checks overlap on this shape). What must hold regardless of
   # which check catches it first: the receipt is refused, not accepted, and
   # refused with a real reason rather than crashing.

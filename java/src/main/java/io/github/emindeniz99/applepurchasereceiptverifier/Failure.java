@@ -7,9 +7,8 @@ import org.jspecify.annotations.Nullable;
  * Why a verification failed. Immutable.
  *
  * <p>Match on {@link #reason()}. {@link #message()} is for logs and support
- * requests: it never embeds raw input, anything quoted from the input has its
- * control and line-breaking characters replaced, and its wording may change
- * between releases.</p>
+ * requests: it never quotes the input, so it can go into a log line as is,
+ * and its wording may change between releases.</p>
  */
 public final class Failure {
 

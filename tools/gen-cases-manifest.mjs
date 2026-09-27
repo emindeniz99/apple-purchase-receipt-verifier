@@ -42,9 +42,11 @@
  *   root                path to one DER anchor (repeated, roots=files)
  *   clockUnixMillis     the pinned `clock.now`, already parsed to epoch
  *                       milliseconds; absent when the case pins none
- *   expect              ok | error | body (an endpoint case, which always
- *                       answers a body and pins its fields)
+ *   expect              ok | error | oneof | body (an endpoint case, which
+ *                       always answers a body and pins its fields)
  *   reason              the canonical token, error cases only
+ *   oneOf               the outcomes a oneof case allows, "ok" or reason
+ *                       tokens joined by "|"
  *   field               one expected top-level field (repeated)
  *   length              one expected top-level array length (repeated)
  *   toJson              path to JSON whose value toJson() must equal (the
@@ -272,8 +274,8 @@ function main() {
     }
 
     const expected = kase.expected;
-    if (expected.anyOutcome === true) {
-      parts.push('expect=any');
+    if (expected.oneOf) {
+      parts.push('expect=oneof', `oneOf=${expected.oneOf.join('|')}`);
     } else if (kase.operation === 'verifyReceiptEndpoint') {
       parts.push('expect=body');
     } else {

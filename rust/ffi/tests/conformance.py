@@ -286,12 +286,10 @@ def run_case(lib, directory: Path, registry: dict, case: dict):
 def check(case: dict, status: int, text: str) -> str:
     """An empty string when the case passes, else what went wrong."""
     expected = case["expected"]
-    if expected.get("anyOutcome") is True:
-        # A tolerant case: any verdict but INTERNAL_ERROR, which is also what
-        # the ABI answers when the call panicked.
-        if status == REASON_CODES["INTERNAL_ERROR"]:
-            return f"expected any verdict but INTERNAL_ERROR, got {text}"
-        return ""
+    if "oneOf" in expected:
+        # A panic answers INTERNAL_ERROR, which no list holds.
+        allowed = [OK if o == "ok" else REASON_CODES[o] for o in expected["oneOf"]]
+        return "" if status in allowed else f'expected one of {expected["oneOf"]}, got status {status}: {text}'
     if case["operation"] != "verifyReceiptEndpoint" and expected.get("status") == "error":
         wanted = REASON_CODES[expected["reason"]]
         if status != wanted:

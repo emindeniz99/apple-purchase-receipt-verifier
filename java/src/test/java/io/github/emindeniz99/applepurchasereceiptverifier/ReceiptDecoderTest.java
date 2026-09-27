@@ -9,7 +9,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.security.cert.TrustAnchor;
-import java.time.Clock;
 import java.util.Collections;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1Integer;
@@ -111,6 +110,7 @@ class ReceiptDecoderTest {
             "2024-08-00T12:00:00Z",
             "10000-01-01T00:00:00Z",
             "+2024-08-06T12:00:00Z",
+            "+12024-08-06T12:00:00Z",
             "-0001-08-06T12:00:00Z",
             "2024-08-06 12:00:00Z",
             " 2024-08-06T12:00:00Z",
@@ -169,8 +169,7 @@ class ReceiptDecoderTest {
         byte[] tooDeep = nestedSets(33);
         VerificationException envelope = assertThrows(
                 VerificationException.class,
-                () -> ReceiptCore.verifyDer(
-                        tooDeep, Collections.<TrustAnchor>emptySet(), new CallClock(Clock.systemUTC())));
+                () -> ReceiptCore.verifyDer(tooDeep, Collections.<TrustAnchor>emptySet(), System.currentTimeMillis()));
         assertEquals(Reason.MALFORMED, envelope.reason());
         VerificationException content = assertThrows(VerificationException.class, () -> ReceiptDecoder.parse(tooDeep));
         assertEquals(Reason.UNREADABLE_PAYLOAD, content.reason());

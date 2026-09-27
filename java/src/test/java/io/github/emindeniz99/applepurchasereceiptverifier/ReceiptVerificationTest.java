@@ -242,14 +242,15 @@ class ReceiptVerificationTest {
     }
 
     @Test
-    void verifiesAGenuineSignerBehindACopyOfItsIdentity() throws Exception {
+    void aCopyOfTheSignerIdentityAheadOfTheGenuineLeafFailsClosed() throws Exception {
         // The certificate bag is unsigned, so anyone relaying a receipt can put
         // a certificate with the signer's issuer and serial on another key in
-        // front of the genuine leaf. Taking the first match would fail a
-        // receipt Apple did sign; each match is tried, and the twin's own key
-        // is never used because its chain fails first.
+        // front of the genuine leaf. The first match is the one used; its
+        // chain fails before its key is touched, so the relayed receipt is
+        // refused, never accepted on the twin's key.
         byte[] relayed = pki.signReceiptWithTwinAheadOfSigner(payload(BUNDLE, creationDate.toString()));
-        assertEquals(BUNDLE, verify(pki, relayed).bundleId());
+        VerificationException e = assertThrows(VerificationException.class, () -> verify(pki, relayed));
+        assertEquals(Reason.UNTRUSTED_CHAIN, e.reason());
     }
 
     @Test

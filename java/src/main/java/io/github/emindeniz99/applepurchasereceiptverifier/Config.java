@@ -17,9 +17,9 @@ import org.jspecify.annotations.Nullable;
  * library, and tests substitute their own.</p>
  *
  * <p><strong>The clock</strong> answers "what time is it now?" and nothing
- * else. It is read at most once per call, and only for one of two things:
- * the chain-validity instant when a receipt or JWS states no signing date,
- * and {@code request_date} in the endpoint response. It must be safe to
+ * else. It is read once per call and used for two things: the
+ * chain-validity instant when a receipt or JWS states no signing date, and
+ * {@code request_date} in the endpoint response. It must be safe to
  * call from several threads.</p>
  */
 public final class Config {
@@ -35,9 +35,7 @@ public final class Config {
     /**
      * Apple's three pinned roots and {@link Clock#systemUTC()}.
      *
-     * @throws IllegalStateException if the bundled roots are missing, do not
-     *                               parse, or do not match their pinned
-     *                               fingerprints
+     * @throws IllegalStateException if the bundled roots do not parse
      */
     public static Config defaults() {
         return builder().build();
@@ -70,7 +68,7 @@ public final class Config {
          * {@link Verifier#create}.
          */
         public Builder roots(Collection<X509Certificate> roots) {
-            Set<X509Certificate> copy = new LinkedHashSet<X509Certificate>();
+            Set<X509Certificate> copy = new LinkedHashSet<>();
             for (X509Certificate root : roots) {
                 copy.add(Objects.requireNonNull(root, "root"));
             }
@@ -88,8 +86,8 @@ public final class Config {
          *                               Apple roots fail to load
          */
         public Config build() {
-            Set<X509Certificate> chosen = roots != null ? roots : AppleRootCerts.roots();
-            return new Config(Collections.unmodifiableSet(new LinkedHashSet<X509Certificate>(chosen)), clock);
+            // roots(...) already copied, and never touches a set it handed on.
+            return new Config(roots != null ? Collections.unmodifiableSet(roots) : AppleRootCerts.roots(), clock);
         }
     }
 }

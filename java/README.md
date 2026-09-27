@@ -92,8 +92,8 @@ decides whether a certificate is expired when the input states a date; see
 [Trust anchors](#trust-anchors).
 
 `Verifier.create` and `Config.defaults()` fail at startup, not per call:
-`Config.defaults()` throws `IllegalStateException` if the bundled roots are
-missing or do not match their pinned fingerprints, and `Verifier.create`
+`Config.defaults()` throws `IllegalStateException` if the bundled roots do
+not parse, and `Verifier.create`
 throws `IllegalArgumentException` for an empty root set, since a verifier
 with no roots would answer `UNTRUSTED_CHAIN` to everything and nobody would
 notice until production. `Verifier.create` also builds the library's static state (the
@@ -449,13 +449,12 @@ a breaking change.
 ## Trust anchors
 
 `Config.defaults()` trusts all three published Apple roots (Apple Inc. Root
-CA, Apple Root CA - G2, Apple Root CA - G3), loaded from `.cer` resources
-bundled in the jar and checked against each root's SHA-256 fingerprint.
+CA, Apple Root CA - G2, Apple Root CA - G3), compiled into `AppleRootCerts`
+as base64 constants, so no resource on the classpath can stand in for them.
 Apple documents the JWS chain as ending in "an Apple root certificate"
 rather than naming one, so narrowing the set would fail closed, silently,
-the day Apple re-anchored a path. A mismatch, a missing resource, or
-anything other than three distinct roots throws `IllegalStateException`
-rather than returning an anchor set that is not Apple's.
+the day Apple re-anchored a path. `AppleRootCertsTest` pins the three to
+Apple's published SHA-256 fingerprints and to the repository's `certs/`.
 
 Certificate validity is judged at the payload's own signing instant (a
 receipt's creation date, or a JWS's `signedDate`), not at verification time,
@@ -685,7 +684,7 @@ from the verified payload and decide yourself (see
 ## Vendoring
 
 The library is one package with no generated code, so copying
-`src/main/java` and `src/main/resources` into another build works. What a
+`src/main/java` into another build works. What a
 vendored copy has to carry with it:
 
 **Dependency floors.** `jackson-core` 2.16 or later: the JSON readers set
@@ -701,25 +700,26 @@ BouncyCastle behaviours that are not API contracts:
   (`ReceiptCore.signerVerifier`). That is safe only because its `build`
   writes no state and makes a new content-verifier provider per
   certificate; read `build` again after an upgrade.
+- One PKIX `CertPathValidator` is shared too (`JwsCore.PKIX`): its SPI holds
+  only final fields. The `CertificateFactory` (it keeps stream state between
+  calls), the `CertPathBuilder` (it keeps per-build counters) and every
+  `Signature` stay per call.
 - BouncyCastle's own ASN.1 depth bound (`org.bouncycastle.asn1.max_cons_depth`)
   applies to indefinite lengths only, which is why `Asn1Depth` exists; if
   that changes, the explicit check still stays, because its bound (32) is
   stricter than BouncyCastle's default (64).
 - The signature BIT STRING of a certificate is decoded lazily, so the
   decoders read it once on purpose (`JwsCore.decodeChain`,
-  `ReceiptCertificates.decodeEmbedded`).
+  `ReceiptCertificates.decode`).
 - `IA5String` does not check that its bytes are seven-bit, so
   `ReceiptDecoder.decodeString` does.
 
-**The trust anchors are package-relative resources.** The three roots live
-in `src/main/resources/io/github/emindeniz99/applepurchasereceiptverifier/certs/`
-and load from the package of `AppleRootCerts`, never from the classpath
-root; move the package and move them with it. Each is pinned to its
-SHA-256 in `AppleRootCerts.ROOTS`. To add a root Apple publishes, put the
-`.cer` file next to the others, add a `{file, sha256}` row to `ROOTS` with
-the fingerprint Apple lists on its PKI page (check it with
-`sha256sum` on the DER file), and update `AppleRootCertsTest`, which pins
-the set. The distinct-roots check counts `ROOTS`, so it follows.
+**The trust anchors are compiled in.** The three roots are base64
+constants in `AppleRootCerts`. To add a root Apple publishes, add its
+`.cer` to the repository's `certs/`, add its base64 as a constant and to
+the `parse(...)` call, and add the fingerprint Apple lists on its PKI page
+(check it with `sha256sum` on the DER file) to `AppleRootCertsTest`, which
+pins the set against both.
 
 **The tests need the shared fixtures.** They read `fixtures/` next to
 `java/`, or the directory `-Daprv.fixtures.dir=...` names. The subset they

@@ -197,8 +197,21 @@ class VerifierApiTest {
 
     private static ReceiptPayload withAttributes(Map<Integer, List<byte[]>> unknown) {
         return new ReceiptPayload(
-                null, null, null, null, null, null, null, null, null, null,
-                Collections.<InAppPurchase>emptyList(), null, null, null, unknown);
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                Collections.<InAppPurchase>emptyList(),
+                null,
+                null,
+                null,
+                unknown);
     }
 
     @Test
@@ -294,11 +307,34 @@ class VerifierApiTest {
         // carry. toJson() escapes it, so the text stays ASCII and the string
         // parses back unchanged.
         InAppPurchase purchase = new InAppPurchase(
-                null, "a\uD83D|\uDE00b|\uD83D\uDE00", null, null, null, null, null, null, null, null, null,
+                null,
+                "a\uD83D|\uDE00b|\uD83D\uDE00",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 Collections.<Integer, List<byte[]>>emptyMap());
         ReceiptPayload payload = new ReceiptPayload(
-                null, null, null, null, null, null, null, null, null, null,
-                Arrays.asList(purchase), null, null, null, Collections.<Integer, List<byte[]>>emptyMap());
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                Arrays.asList(purchase),
+                null,
+                null,
+                null,
+                Collections.<Integer, List<byte[]>>emptyMap());
         String json = payload.toJson();
         for (int i = 0; i < json.length(); i++) {
             assertTrue(json.charAt(i) < 0x80, json);
@@ -322,13 +358,15 @@ class VerifierApiTest {
         reordered.put(9, Collections.singletonList(new byte[] {1}));
         reordered.put(13, Arrays.asList(new byte[] {3}, new byte[] {2}));
 
-        assertSameJsonValue(withAttributes(ascending).toJson(), withAttributes(descending).toJson());
-        assertTrue(RawAttributes.equal(ascending, descending));
-        assertEquals(RawAttributes.hash(ascending), RawAttributes.hash(descending));
+        assertSameJsonValue(
+                withAttributes(ascending).toJson(), withAttributes(descending).toJson());
+        assertEquals(withAttributes(ascending), withAttributes(descending));
+        assertEquals(
+                withAttributes(ascending).hashCode(), withAttributes(descending).hashCode());
         assertNotEquals(
                 MAPPER.readTree(withAttributes(ascending).toJson()),
                 MAPPER.readTree(withAttributes(reordered).toJson()));
-        assertFalse(RawAttributes.equal(ascending, reordered));
+        assertNotEquals(withAttributes(ascending), withAttributes(reordered));
     }
 
     /** The JSON of a verified receipt parses back to the getters, key for key. */
@@ -497,7 +535,7 @@ class VerifierApiTest {
      */
     @Test
     void aClassWhoseStaticStateFailsFailsConstructionWithTheDependencyFloor() {
-        String broken = BrokenStaticState.class.getName();
+        Runnable broken = () -> assertEquals(0, BrokenStaticState.VALUE);
         IllegalStateException first =
                 assertThrows(IllegalStateException.class, () -> DefaultVerifier.initialise(broken));
         assertTrue(first.getCause() instanceof ExceptionInInitializerError, String.valueOf(first.getCause()));
@@ -508,11 +546,7 @@ class VerifierApiTest {
                 assertThrows(IllegalStateException.class, () -> DefaultVerifier.initialise(broken));
         assertTrue(second.getCause() instanceof NoClassDefFoundError, String.valueOf(second.getCause()));
         // The real classes initialise.
-        DefaultVerifier.initialise(
-                JwsCore.class.getName(),
-                Endpoint.class.getName(),
-                EndpointResponse.class.getName(),
-                ReceiptCore.class.getName());
+        assertNotNull(Verifier.create(Config.defaults()));
     }
 
     /** Stands in for a class whose static initialiser meets a dependency below its floor. */
@@ -571,7 +605,7 @@ class VerifierApiTest {
         }
         // The scan found the build output, including the newest classes.
         assertTrue(implementation.contains("Asn1Depth"), implementation.toString());
-        assertTrue(implementation.contains("CallClock"), implementation.toString());
+        assertTrue(implementation.contains("Endpoint"), implementation.toString());
         assertTrue(implementation.contains("ReceiptCertificates"), implementation.toString());
     }
 }

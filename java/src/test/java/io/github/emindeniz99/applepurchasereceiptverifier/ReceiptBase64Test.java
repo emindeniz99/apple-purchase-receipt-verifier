@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.security.cert.TrustAnchor;
-import java.time.Clock;
 import java.util.Collections;
 import org.junit.jupiter.api.Test;
 
@@ -21,7 +20,7 @@ class ReceiptBase64Test {
     void nullIsInvalidReceiptFormat() {
         VerificationException thrown = assertThrows(
                 VerificationException.class,
-                () -> ReceiptCore.verify(null, Collections.<TrustAnchor>emptySet(), new CallClock(Clock.systemUTC())));
+                () -> ReceiptCore.verify(null, Collections.<TrustAnchor>emptySet(), System.currentTimeMillis()));
         assertEquals(Reason.MALFORMED, thrown.reason());
     }
 }

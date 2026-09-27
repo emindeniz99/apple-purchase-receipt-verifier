@@ -9,58 +9,31 @@ import java.util.Set;
 import org.jspecify.annotations.Nullable;
 
 /**
- * {@link Verifier#verifyReceiptEndpoint}: a local stand-in for Apple's
- * deprecated verifyReceipt endpoint. Same request body, same response body,
- * same status codes, but verified offline against the pinned roots instead of
- * by calling Apple. Fields that exist only in Apple's server-side database,
- * such as {@code latest_receipt_info} and {@code pending_renewal_info}, are
- * not produced. Like Apple's endpoint, it checks no bundle id: the caller
- * compares {@code receipt.bundle_id}.
- *
- * <p>Status from the verification outcome:
- * verified answers 0, or 21007 for a receipt that is not a production receipt
- * on {@link Environment#PRODUCTION} and 21008 for a production receipt on
- * {@link Environment#SANDBOX}; {@link Reason#MALFORMED} and
- * {@link Reason#TOO_LARGE} answer 21002; the chain, certificate and signature
- * reasons answer 21003; {@link Reason#UNREADABLE_PAYLOAD} and
- * {@link Reason#INTERNAL_ERROR} answer 21009. A receipt whose
- * {@code receipt_type} is missing or unknown counts as non-production.</p>
+ * {@link Verifier#verifyReceiptEndpoint}: Apple's verifyReceipt request and
+ * response, verified offline. The status table is docs/design/0.7-api.md's.
  */
 final class Endpoint {
 
-    /**
-     * Ceiling on the request body, in UTF-8 bytes: 3 MiB, Apple's own limit.
-     * Both of Apple's verifyReceipt endpoints answer a body of 3,145,728
-     * bytes and send HTTP 413 for 3,145,729; this answers 21002 instead,
-     * decided before any parsing. The body is measured without being
-     * encoded, so a {@code String} of any size costs no copy to refuse.
-     */
+    /** Apple's own limit, in UTF-8 bytes (it answers HTTP 413 above it); this answers 21002. */
     static final int MAX_REQUEST_BYTES = 3145728;
 
-    // Nothing inside the body can be larger than the body, and a body within
-    // MAX_REQUEST_BYTES bytes is within it in characters too, so both length
-    // bounds (counted in characters for String input) are MAX_REQUEST_BYTES.
-    private static final JsonFactory JSON = BoundedJson.factory(MAX_REQUEST_BYTES);
+    static final JsonFactory JSON = BoundedJson.factory(MAX_REQUEST_BYTES);
 
     private Endpoint() {}
 
     static String respond(
-            Environment environment, @Nullable String requestJson, Set<TrustAnchor> trustAnchors, CallClock clock) {
+            Environment environment, @Nullable String requestJson, Set<TrustAnchor> trustAnchors, long now) {
         int status;
         ReceiptPayload receipt = null;
-        long requestDateMillis = 0;
         try {
-            receipt = ReceiptCore.verify(receiptData(requestJson), trustAnchors, clock);
+            receipt = ReceiptCore.verify(receiptData(requestJson), trustAnchors, now);
             status = status(environment, receipt);
-            if (status == AppleStatus.OK) {
-                requestDateMillis = clock.millis();
-            }
         } catch (VerificationException e) {
             status = status(e.reason());
         } catch (RuntimeException e) {
             status = AppleStatus.INTERNAL_DATA_ACCESS_ERROR;
         }
-        return EndpointResponse.render(status, environment, receipt, requestDateMillis);
+        return EndpointResponse.render(status, environment, receipt, now);
     }
 
     static int status(Reason reason) {
@@ -90,27 +63,10 @@ final class Endpoint {
     }
 
     /**
-     * The {@code receipt-data} string of a request body. A body over
-     * {@link #MAX_REQUEST_BYTES} is TOO_LARGE; a body that is not a JSON
-     * object (unparseable, empty, {@code null}, an array, a scalar) or nests
-     * deeper than 64, and a {@code receipt-data} that is missing or not a
-     * string, are MALFORMED. Apple has no status for "that wasn't JSON";
-     * 21002 is the closest, and it is what a JSON object without usable
-     * {@code receipt-data} gets anyway.
-     *
-     * <p>The whole object is read, so a body that breaks after
-     * {@code receipt-data} is still refused, and the last
-     * {@code receipt-data} wins, as it would in a map. Anything after the
-     * object is not read. {@code password} and
-     * {@code exclude-old-transactions} are read and ignored.</p>
-     *
-     * <p>The parser reads the body from one char array. Given a
-     * {@code String} longer than 32,768 characters, Jackson wraps it in a
-     * StringReader and reads it in chunks, and a string value longer than a
-     * chunk goes through its slow character-at-a-time path;
-     * {@code receipt-data} is such a value for any receipt with more than a
-     * handful of purchases, and reading it that way took longer than
-     * decoding it.</p>
+     * The {@code receipt-data} string of a request body: TOO_LARGE over the
+     * cap, MALFORMED when the body is not a JSON object or
+     * {@code receipt-data} is missing or not a string. The whole object is
+     * read and the last {@code receipt-data} wins; nothing after it is read.
      */
     static String receiptData(@Nullable String requestJson) throws VerificationException {
         if (requestJson == null) {
@@ -122,6 +78,7 @@ final class Endpoint {
         }
         String receiptData = null;
         boolean isString = false;
+        // One char array: Jackson reads a long String in chunks, and a long value in them slowly.
         try (JsonParser parser = JSON.createParser(requestJson.toCharArray())) {
             if (parser.nextToken() != JsonToken.START_OBJECT) {
                 throw new VerificationException(Reason.MALFORMED, "request body is not a JSON object");

@@ -13,7 +13,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
-import java.time.Clock;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collections;
@@ -101,7 +100,7 @@ class InputSizeBoundsTest {
                 () -> JwsCore.verify(
                         headerJws(nestedJson(200)),
                         AppleTrust.anchors(Collections.singleton(root("jws-root.der"))),
-                        new CallClock(Clock.systemUTC())));
+                        System.currentTimeMillis()));
         assertEquals(Reason.MALFORMED, thrown.reason());
         assertTrue(
                 thrown.getCause() instanceof StreamConstraintsException,
@@ -114,7 +113,7 @@ class InputSizeBoundsTest {
         VerificationException thrown =
                 assertThrows(VerificationException.class, () -> verifyJws(headerJws(nestedJson(60))));
         assertEquals(Reason.MALFORMED, thrown.reason());
-        assertTrue(thrown.getMessage().contains("alg must be ES256"), thrown.getMessage());
+        assertTrue(thrown.getMessage().contains("alg is not ES256"), thrown.getMessage());
     }
 
     // ------------------------------------------------------------------

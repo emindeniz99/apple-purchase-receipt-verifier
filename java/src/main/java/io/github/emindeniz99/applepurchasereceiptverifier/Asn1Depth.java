@@ -1,23 +1,10 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
 /**
- * The ASN.1 nesting bound, checked on the encoding before BouncyCastle
- * builds anything from it.
- *
- * <p>BouncyCastle has its own bound ({@code org.bouncycastle.asn1.max_cons_depth},
- * 64 by default). Ours is stricter: {@link #MAX_DEPTH} is 32, and
- * BouncyCastle also counts differently, one level fewer, so 65 nested values
- * with an empty innermost one would still parse there. Its bound can also be
- * raised by a system property, and this library does not choose the
- * BouncyCastle version its caller resolves. So the bound is enforced here,
- * on every encoding this library parses before a signature has vouched for
- * it, and counted as: at most {@link #MAX_DEPTH} constructed values inside
- * one another, the outermost included, and a primitive value inside the
- * innermost.</p>
- *
- * <p>The walk judges depth and nothing else. An encoding it cannot follow
- * (a truncated length, say) is not its verdict to give: it answers "not too
- * deep" and leaves the refusal to the parser that runs next.</p>
+ * The ASN.1 nesting bound, checked on the encoding before BouncyCastle parses
+ * it: BouncyCastle's own bound is looser, counts one level fewer and can be
+ * raised by a system property. An encoding the walk cannot follow is left to
+ * the parser that runs next.
  */
 final class Asn1Depth {
 
@@ -33,15 +20,16 @@ final class Asn1Depth {
             return false;
         } catch (TooDeep e) {
             return true;
-        } catch (Unfollowable e) {
-            return false;
         }
     }
 
-    /** Walks the value at {@code at}, below {@code depth} constructed values; returns where it ends. */
-    private static int walk(byte[] der, int at, int end, int depth) throws TooDeep, Unfollowable {
+    /**
+     * Walks the value at {@code at}, below {@code depth} constructed values;
+     * returns where it ends, or -1 when the encoding cannot be followed.
+     */
+    private static int walk(byte[] der, int at, int end, int depth) throws TooDeep {
         if (at >= end) {
-            throw new Unfollowable();
+            return -1;
         }
         int tag = der[at] & 0xFF;
         int position = at + 1;
@@ -57,20 +45,21 @@ final class Asn1Depth {
             throw new TooDeep();
         }
         if (position >= end) {
-            throw new Unfollowable();
+            return -1;
         }
         int first = der[position++] & 0xFF;
         if (first == 0x80) {
             if (!constructed) {
-                throw new Unfollowable();
+                return -1;
             }
             // Indefinite length: children until the end-of-contents octets.
-            while (true) {
+            while (position >= 0) {
                 if (position + 1 < end && der[position] == 0 && der[position + 1] == 0) {
                     return position + 2;
                 }
                 position = walk(der, position, end, depth + 1);
             }
+            return -1;
         }
         long length;
         if (first < 0x80) {
@@ -78,7 +67,7 @@ final class Asn1Depth {
         } else {
             int count = first & 0x7F;
             if (count > 4 || position + count > end) {
-                throw new Unfollowable();
+                return -1;
             }
             length = 0;
             for (int i = 0; i < count; i++) {
@@ -86,12 +75,15 @@ final class Asn1Depth {
             }
         }
         if (length > end - position) {
-            throw new Unfollowable();
+            return -1;
         }
         int contentEnd = position + (int) length;
         if (constructed) {
-            while (position < contentEnd) {
+            while (position >= 0 && position < contentEnd) {
                 position = walk(der, position, contentEnd, depth + 1);
+            }
+            if (position < 0) {
+                return -1;
             }
         }
         return contentEnd;
@@ -101,14 +93,6 @@ final class Asn1Depth {
         private static final long serialVersionUID = 1L;
 
         TooDeep() {
-            super(null, null, false, false);
-        }
-    }
-
-    private static final class Unfollowable extends Exception {
-        private static final long serialVersionUID = 1L;
-
-        Unfollowable() {
             super(null, null, false, false);
         }
     }

@@ -395,14 +395,19 @@ bool run_case(const Case &kase, std::string &error, Outcome &outcome) {
 bool check_expectations(const Case &kase, const Outcome &outcome, std::string &error) {
   const std::string expect = kase.get("expect");
 
-  // A tolerant case: any verdict but INTERNAL_ERROR, which is also what the
-  // ABI answers when the call panicked.
-  if (expect == "any") {
-    if (outcome.status == APRV_REASON_INTERNAL_ERROR) {
-      error = "expected any verdict but INTERNAL_ERROR, got " + outcome.json;
-      return false;
+  // A listed-outcome case: "ok" or the reason must be listed. A panic
+  // answers INTERNAL_ERROR, which no list holds.
+  if (expect == "oneof") {
+    const std::string listed = kase.get("oneOf") + "|";
+    for (size_t start = 0, bar; (bar = listed.find('|', start)) != std::string::npos; start = bar + 1) {
+      const std::string token = listed.substr(start, bar - start);
+      if (outcome.status == (token == "ok" ? APRV_REASON_OK : reason_code(token))) {
+        return true;
+      }
     }
-    return true;
+    error = "expected one of " + kase.get("oneOf") + ", got status " + std::to_string(outcome.status) + " " +
+            outcome.json;
+    return false;
   }
 
   if (expect == "error") {
