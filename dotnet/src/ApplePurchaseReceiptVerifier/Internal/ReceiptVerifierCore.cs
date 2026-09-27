@@ -103,7 +103,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
             // Only the creation date is read before trust is established,
             // because chain validity is anchored at signing time.
             long? creationMs = ReceiptAttributes.ReadCreationDateMs(cms.Content);
-            long at = creationMs ?? clock();
+            long at = creationMs ?? CallClock.Read(clock);
 
             EmbeddedCertificates embedded = DecodeEmbedded(cms.CertificateEntries);
 

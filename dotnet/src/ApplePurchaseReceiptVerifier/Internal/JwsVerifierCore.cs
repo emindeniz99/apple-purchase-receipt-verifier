@@ -103,7 +103,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
             ParseX5cEntry(x5c[2]); // parsed, then dropped: nobody vouches for x5c[2].
 
             PayloadRead payload = ReadPayload(payloadBytes);
-            long atMs = payload.SignedDateMs ?? clock();
+            long atMs = payload.SignedDateMs ?? CallClock.Read(clock);
             Chain.ValidatePair(leaf, intermediate, anchors, atMs);
 
             // The marker OIDs after the chain: a foreign chain is
