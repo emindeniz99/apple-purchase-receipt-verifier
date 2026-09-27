@@ -17,7 +17,6 @@ import java.util.Date;
 import java.util.List;
 import java.util.Set;
 import org.bouncycastle.asn1.ASN1Primitive;
-import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.cms.ContentInfo;
 import org.bouncycastle.cms.CMSException;
 import org.bouncycastle.cms.CMSSignedData;
@@ -34,9 +33,6 @@ import org.jspecify.annotations.Nullable;
  * {@link BouncyCastle#PROVIDER}.
  */
 final class ReceiptCore {
-
-    /** Genuine receipts embed one to three; checked before any is decoded. */
-    static final int MAX_EMBEDDED_CERTIFICATES = 10;
 
     /** Genuine receipts carry one; each SignerInfo costs a chain build and a signature check. */
     static final int MAX_SIGNER_INFOS = 4;
@@ -124,22 +120,12 @@ final class ReceiptCore {
                     Reason.MALFORMED,
                     "receipt carries " + signers.size() + " SignerInfos, more than the maximum of " + MAX_SIGNER_INFOS);
         }
-        // The raw set, so the cap is checked before any entry is decoded.
-        ASN1Set certificateSet = ReceiptCertificates.embeddedCertificateSet(cms);
-        int embeddedCount = certificateSet == null ? 0 : certificateSet.size();
-        if (embeddedCount > MAX_EMBEDDED_CERTIFICATES) {
-            throw new VerificationException(
-                    Reason.MALFORMED,
-                    "receipt embeds " + embeddedCount + " certificates, more than the maximum of "
-                            + MAX_EMBEDDED_CERTIFICATES);
-        }
-
         // The one payload read before trust: a date that does not parse only
         // moves the chain instant to the clock.
         Long creationDate = ReceiptDecoder.readCreationDate(payload);
         Date at = new Date(creationDate != null ? creationDate : now);
 
-        ReceiptCertificates certificates = ReceiptCertificates.decode(certificateSet);
+        ReceiptCertificates certificates = ReceiptCertificates.decode(cms);
         // Signer-independent, so walked once for every SignerInfo.
         List<X509Certificate> authenticated = authenticatedTopDown(certificates.all, trustAnchors);
         // Every SignerInfo signs the same content, so one passing is enough;
