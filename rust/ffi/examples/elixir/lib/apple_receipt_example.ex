@@ -95,7 +95,7 @@ defmodule AppleReceiptExample do
     code = Map.fetch!(@environments, environment)
 
     case Native.verify_receipt_endpoint(verifier, code, request_json) do
-      {:ok, body} -> {:ok, JSON.decode!(body)}
+      {:ok, body} -> {:ok, decode_json!(body)}
       {:error, status} -> {:error, reason(status)}
     end
   end
@@ -104,6 +104,34 @@ defmodule AppleReceiptExample do
   @spec reason(integer()) :: atom() | integer()
   def reason(status), do: Map.get(@reasons, status, status)
 
-  defp decode({:ok, json}), do: {:ok, JSON.decode!(json)}
-  defp decode({:error, status, json}), do: {:error, reason(status), JSON.decode!(json)}
+  @doc """
+  Decodes one JSON document the ABI handed back. A member name that repeats
+  in an object keeps its last value.
+
+  A JWS payload comes back exactly as signed, so a repeated member, such as
+  two `signedDate`s, reaches the caller intact. The verifier reads the last
+  one, as `JSON.parse` does, and judges the chain at that instant.
+  `JSON.decode!/1` keeps the first, which would hand the caller a different
+  `signedDate` from the one the signature was checked against. Each object's
+  members arrive in reverse document order, so building the map from them
+  re-reversed lets the last one win.
+  """
+  @spec decode_json!(binary()) :: term()
+  def decode_json!(text) do
+    case JSON.decode(text, :ok, object_finish: &last_member_wins/2) do
+      {decoded, :ok, ""} ->
+        decoded
+
+      {_decoded, :ok, rest} ->
+        raise ArgumentError, "trailing content after the JSON: #{inspect(rest)}"
+
+      {:error, reason} ->
+        raise ArgumentError, "not JSON: #{inspect(reason)}"
+    end
+  end
+
+  defp last_member_wins(members, outer), do: {members |> Enum.reverse() |> Map.new(), outer}
+
+  defp decode({:ok, json}), do: {:ok, decode_json!(json)}
+  defp decode({:error, status, json}), do: {:error, reason(status), decode_json!(json)}
 end

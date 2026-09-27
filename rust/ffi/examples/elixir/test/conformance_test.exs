@@ -45,6 +45,14 @@ defmodule ConformanceTest do
     assert Aprv.version() =~ ~r/^\d+\.\d+\.\d+/
   end
 
+  # The verifier judges a JWS at its last `signedDate`, and the payload comes
+  # back with every repetition intact. A decoder that kept the first would
+  # report a signing date the chain was never checked against.
+  test "a repeated member keeps its last value, as the verifier reads it" do
+    assert Aprv.decode_json!(~s({"signedDate":1,"n":{"k":1,"k":2},"signedDate":2})) ==
+             %{"signedDate" => 2, "n" => %{"k" => 2}}
+  end
+
   test "the shared conformance vectors" do
     cases = read_manifest()
     assert cases != [], "the manifest held no cases"
@@ -242,7 +250,7 @@ defmodule ConformanceTest do
 
     case outcome do
       {:error, status, json} ->
-        body = JSON.decode!(json)
+        body = Aprv.decode_json!(json)
 
         cond do
           wanted == nil -> {:error, "unknown expected reason #{token}"}
@@ -262,7 +270,7 @@ defmodule ConformanceTest do
   end
 
   defp check_ok(kase, {:ok, json}) do
-    payload = JSON.decode!(json)
+    payload = Aprv.decode_json!(json)
 
     to_json =
       case get(kase, "toJson") do
@@ -271,7 +279,7 @@ defmodule ConformanceTest do
 
         path ->
           # Same value, not same bytes; === keeps 1 and 1.0 apart.
-          if JSON.decode!(File.read!(path)) === payload,
+          if Aprv.decode_json!(File.read!(path)) === payload,
             do: :ok,
             else: {:error, "toJson value differs: got #{json}"}
       end
@@ -312,7 +320,7 @@ defmodule ConformanceTest do
   end
 
   # Numbers compare by value (1722945600000.0 equals 1722945600000), and
-  # integers exactly, since JSON.decode! keeps every integer's digits.
+  # integers exactly, since the decoder keeps every integer's digits.
   defp compare(_path, found, wanted) when found == wanted, do: :ok
 
   defp compare(path, found, wanted),
