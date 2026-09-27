@@ -6,7 +6,7 @@ namespace ApplePurchaseReceiptVerifier
     /// The machine-readable cause of a failed verification. The vocabulary is
     /// closed and shared by every language port; the canonical wire spelling of
     /// each member is its <see cref="VerificationReasonCodes.ToCode"/> value,
-    /// which is what <c>fixtures/cases-0.7.schema.json</c> pins.
+    /// which is what <c>fixtures/cases.schema.json</c> pins.
     /// </summary>
     /// <remarks>
     /// Members are PascalCase because that is the .NET naming rule; the

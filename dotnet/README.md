@@ -356,7 +356,7 @@ The receipt and request caps are Apple's own limit. Measured on 2026-09-23
 against both of Apple's verifyReceipt endpoints (production and sandbox), a
 request body of 3,145,728 bytes is answered normally and one of 3,145,729
 bytes gets HTTP 413. Apple counts UTF-8 bytes, not characters.
-`fixtures/cases-0.7.json` holds every port to these numbers from both
+`fixtures/cases.json` holds every port to these numbers from both
 sides.
 
 - **the endpoint request body and the receipt base64 string**: 3,145,728
@@ -484,7 +484,7 @@ dotnet test dotnet/tests/ApplePurchaseReceiptVerifier.Tests           # the whol
 dotnet test dotnet/tests/ApplePurchaseReceiptVerifier.Tests.Floor     # the netstandard2.0 asset, loaded into net8.0/9.0/10.0
 ```
 
-`Conformance070.cs` runs every case in `fixtures/cases-0.7.json`, the
+`Conformance070.cs` runs every case in `fixtures/cases.json`, the
 normative cross-language vector file every port of this library answers,
 as one named test per case, and fails unless every case in the file ran.
 The adapter carries no case-specific knowledge: it builds a `Config` from

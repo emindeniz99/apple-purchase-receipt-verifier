@@ -16,7 +16,7 @@ public class ApiShapeTests
 {
     /// <summary>
     /// The eight canonical tokens, read out of
-    /// <c>fixtures/cases-0.7.schema.json</c> rather than retyped — so a
+    /// <c>fixtures/cases.schema.json</c> rather than retyped — so a
     /// drifted spelling fails here instead of in another port's CI.
     /// </summary>
     public static TheoryData<string> SchemaReasonCodes
@@ -295,7 +295,7 @@ public class ApiShapeTests
     private static IEnumerable<string> ReasonCodesFromSchema()
     {
         OrderedMap schema = Json.ParseObject(
-            System.IO.File.ReadAllText(System.IO.Path.Combine(Fixtures070.Root, "cases-0.7.schema.json")));
+            System.IO.File.ReadAllText(System.IO.Path.Combine(Fixtures070.Root, "cases.schema.json")));
         OrderedMap defs = (OrderedMap)schema["$defs"]!;
         OrderedMap reason = (OrderedMap)defs["reason"]!;
         foreach (object? code in (List<object?>)reason["enum"]!)

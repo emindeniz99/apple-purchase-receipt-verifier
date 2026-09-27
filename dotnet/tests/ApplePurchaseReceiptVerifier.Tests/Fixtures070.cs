@@ -9,7 +9,7 @@ using ApplePurchaseReceiptVerifier.Internal;
 namespace ApplePurchaseReceiptVerifier.Tests;
 
 /// <summary>
-/// The fixture registry from <c>fixtures/cases-0.7.json</c>: ids to logical
+/// The fixture registry from <c>fixtures/cases.json</c>: ids to logical
 /// bytes, each checked against the SHA-256 the registry records for them.
 /// </summary>
 internal static class Fixtures070
@@ -32,7 +32,7 @@ internal static class Fixtures070
     }
 
     private static OrderedMap Registry =>
-        Cases["fixtures"] as OrderedMap ?? throw new InvalidOperationException("cases-0.7.json has no fixtures map");
+        Cases["fixtures"] as OrderedMap ?? throw new InvalidOperationException("cases.json has no fixtures map");
 
     /// <summary>The fixture's logical bytes, per its codec, digest-checked.</summary>
     internal static byte[] Bytes(string id)
@@ -47,7 +47,7 @@ internal static class Fixtures070
 
         if (Registry[id] is not OrderedMap entry)
         {
-            throw new InvalidOperationException($"harness error: cases-0.7.json registers no fixture \"{id}\"");
+            throw new InvalidOperationException($"harness error: cases.json registers no fixture \"{id}\"");
         }
 
         string path = Str(entry, "path");
@@ -67,7 +67,7 @@ internal static class Fixtures070
         if (!string.Equals(actual, expected, StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
-                $"fixture \"{id}\" ({path}, codec {codec}) has drifted: cases-0.7.json records "
+                $"fixture \"{id}\" ({path}, codec {codec}) has drifted: cases.json records "
                 + $"contentSha256 {expected}, the decoded bytes hash to {actual}");
         }
 
@@ -92,7 +92,7 @@ internal static class Fixtures070
     {
         if (Registry[id] is not OrderedMap entry)
         {
-            throw new InvalidOperationException($"harness error: cases-0.7.json registers no fixture \"{id}\"");
+            throw new InvalidOperationException($"harness error: cases.json registers no fixture \"{id}\"");
         }
 
         return Str(entry, "codec");
@@ -128,7 +128,7 @@ internal static class Fixtures070
 
     private static OrderedMap LoadCases()
     {
-        return Json.ParseObject(File.ReadAllText(Path.Combine(FindFixturesDirectory(), "cases-0.7.json")));
+        return Json.ParseObject(File.ReadAllText(Path.Combine(FindFixturesDirectory(), "cases.json")));
     }
 
     private static string FindFixturesDirectory()
@@ -137,7 +137,7 @@ internal static class Fixtures070
         while (directory is not null)
         {
             string candidate = Path.Combine(directory.FullName, "fixtures");
-            if (File.Exists(Path.Combine(candidate, "cases-0.7.json")))
+            if (File.Exists(Path.Combine(candidate, "cases.json")))
             {
                 return candidate;
             }
@@ -145,6 +145,6 @@ internal static class Fixtures070
             directory = directory.Parent;
         }
 
-        throw new InvalidOperationException("harness error: could not locate fixtures/cases-0.7.json");
+        throw new InvalidOperationException("harness error: could not locate fixtures/cases.json");
     }
 }

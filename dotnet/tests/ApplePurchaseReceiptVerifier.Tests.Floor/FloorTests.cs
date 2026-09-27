@@ -10,7 +10,7 @@ namespace ApplePurchaseReceiptVerifier.Tests.Floor;
 
 /// <summary>
 /// The netstandard2.0 asset, exercised end to end against real fixtures from
-/// <c>fixtures/cases-0.7.json</c>. The floor exists so a .NET Framework, Mono
+/// <c>fixtures/cases.json</c>. The floor exists so a .NET Framework, Mono
 /// or Unity consumer can use this package from one asset; a floor nothing
 /// runs is a claim, not a fact.
 /// </summary>
@@ -154,7 +154,7 @@ public class FloorTests
         while (directory is not null)
         {
             string candidate = Path.Combine(directory.FullName, "fixtures");
-            if (File.Exists(Path.Combine(candidate, "cases-0.7.json")))
+            if (File.Exists(Path.Combine(candidate, "cases.json")))
             {
                 return candidate;
             }
