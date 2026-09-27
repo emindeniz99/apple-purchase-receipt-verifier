@@ -451,7 +451,9 @@ final class ConformanceCasesTests: XCTestCase {
                 XCTFail("\(id): expected ok but got \(result.failure.map { String(describing: $0.reason) } ?? "no result")")
                 return
             }
-            guard let parsed = try JSONSerialization.jsonObject(with: Data(payload.json.utf8)) as? [String: Any] else {
+            // The payload is the text as signed and may name a key twice;
+            // JSONSerialization keeps the first on Darwin, the last on Linux.
+            guard let parsed = try parseJsonLastWins(payload.json) as? [String: Any] else {
                 XCTFail("\(id): json() did not produce a JSON object")
                 return
             }
