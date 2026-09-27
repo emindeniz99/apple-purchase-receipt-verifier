@@ -2,6 +2,7 @@ package applereceipt_test
 
 import (
 	"crypto/x509"
+	"slices"
 	"testing"
 	"time"
 
@@ -77,6 +78,57 @@ func BenchmarkVerifyReceiptEndpoint(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		verifier.VerifyReceiptEndpoint(applereceipt.EnvironmentSandbox, body)
+	}
+}
+
+// BenchmarkWorstCase times every shared case in fixtures/cases.json that
+// carries a maxMillis budget: the hostile inputs (oversized untrusted
+// keys, certificate meshes, encoding oddities inside certificates) the
+// shared suite bounds in time. Each call is run once first and must give
+// the answer the case expects. The README's worst-case CPU figure comes
+// from this benchmark:
+//
+//	go test -run '^$' -bench '^BenchmarkWorstCase$' -count 10 .
+func BenchmarkWorstCase(b *testing.B) {
+	dir, doc := loadCases(b)
+	for _, c := range doc.Cases {
+		if c.MaxMillis == nil {
+			continue
+		}
+		verifier := buildVerifier(b, buildConfig(b, dir, doc.Fixtures, c.Config, c.Clock))
+		var call func() error
+		switch c.Operation {
+		case "verifyReceipt":
+			input := receiptString(b, dir, doc.Fixtures, c.Input.Fixture)
+			call = func() error { _, err := verifier.VerifyReceipt(input); return err }
+		case "verifySignedData":
+			input := string(fixtureBytesIn(b, dir, doc.Fixtures, c.Input.Fixture))
+			call = func() error { _, err := verifier.VerifySignedData(input); return err }
+		default:
+			b.Fatalf("%s: no adapter for operation %s", c.ID, c.Operation)
+		}
+
+		// The answer the case expects, before anything is timed.
+		outcome := "ok"
+		if err := call(); err != nil {
+			reason, _ := applereceipt.ReasonOf(err)
+			outcome = string(reason)
+		}
+		switch {
+		case c.Expected.OneOf != nil:
+			if !slices.Contains(c.Expected.OneOf, outcome) {
+				b.Fatalf("%s answered %s, not one of %v", c.ID, outcome, c.Expected.OneOf)
+			}
+		case c.Expected.Status == "ok" && outcome != "ok",
+			c.Expected.Status == "error" && outcome != c.Expected.Reason:
+			b.Fatalf("%s answered %s", c.ID, outcome)
+		}
+
+		b.Run(c.ID, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				_ = call()
+			}
+		})
 	}
 }
 
