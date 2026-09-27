@@ -1,0 +1,18 @@
+wasmtime-py 49.0.0, target aarch64-unknown-linux-gnu: Support for this target is disabled (the process aborted: a Rust panic, not a Python exception)
+wasmtime-py 49.0.0, target x86_64-apple-darwin: target 'x86_64-apple-darwin' specified in the configuration does not match the host
+wasmtime-py 49.0.0, target x86_64-pc-windows-msvc: target 'x86_64-pc-windows-msvc' specified in the configuration does not match the host
+CLI: wasmtime 49.0.1 (46c23a87d 2026-09-24)
+CLI cranelift x86_64-unknown-linux-gnu: 958 ms, 8556416 bytes, deflated 2727816 bytes
+CLI winch x86_64-unknown-linux-gnu: 471 ms, 12611936 bytes, deflated 2497470 bytes
+CLI cranelift aarch64-unknown-linux-gnu: 963 ms, 8502360 bytes, deflated 2532127 bytes
+CLI winch aarch64-unknown-linux-gnu: 518 ms, 13685776 bytes, deflated 2491071 bytes
+CLI cranelift x86_64-apple-darwin: 976 ms, 8556416 bytes, deflated 2727808 bytes
+CLI winch x86_64-apple-darwin: 474 ms, 12611936 bytes, deflated 2497463 bytes
+CLI cranelift aarch64-apple-darwin: 944 ms, 8436824 bytes, deflated 2530862 bytes
+CLI winch aarch64-apple-darwin: 525 ms, 13554704 bytes, deflated 2488716 bytes
+CLI cranelift x86_64-pc-windows-msvc: 1021 ms, 10072000 bytes, deflated 2746831 bytes
+CLI winch x86_64-pc-windows-msvc: 498 ms, 14082472 bytes, deflated 2513402 bytes
+CLI cranelift aarch64-pc-windows-msvc: 948 ms, 7892128 bytes, deflated 2503609 bytes
+CLI winch aarch64-pc-windows-msvc: 515 ms, 13243480 bytes, deflated 2482157 bytes
+CLI-made cranelift .cwasm in wasmtime-py 49.0.0: summary: 37 passed, 0 failed
+CLI-made winch .cwasm in wasmtime-py 49.0.0: summary: 37 passed, 0 failed

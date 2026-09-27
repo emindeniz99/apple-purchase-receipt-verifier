@@ -1,0 +1,32 @@
+{"wasmtime": "49.0.0", "file": "cranelift-native.cwasm", "engine": "cranelift-native", "result": "loads"}
+{"wasmtime": "49.0.0", "file": "cranelift-native.cwasm", "engine": "cranelift-baseline", "result": "loads"}
+{"wasmtime": "49.0.0", "file": "cranelift-native.cwasm", "engine": "winch-baseline", "result": "refused: failed deserialization for: cranelift-native.cwasm | Caused by: | Module was compiled without Winch calling convention but it is enabled for the host"}
+{"wasmtime": "49.0.0", "file": "cranelift-native.cwasm", "engine": "pulley64", "result": "refused: failed deserialization for: cranelift-native.cwasm | Caused by: | Module was compiled for architecture 'x86_64'"}
+{"wasmtime": "49.0.0", "file": "cranelift-baseline.cwasm", "engine": "cranelift-native", "result": "loads"}
+{"wasmtime": "49.0.0", "file": "cranelift-baseline.cwasm", "engine": "cranelift-baseline", "result": "loads"}
+{"wasmtime": "49.0.0", "file": "cranelift-baseline.cwasm", "engine": "winch-baseline", "result": "refused: failed deserialization for: cranelift-baseline.cwasm | Caused by: | Module was compiled without Winch calling convention but it is enabled for the host"}
+{"wasmtime": "49.0.0", "file": "cranelift-baseline.cwasm", "engine": "pulley64", "result": "refused: failed deserialization for: cranelift-baseline.cwasm | Caused by: | Module was compiled for architecture 'x86_64'"}
+{"wasmtime": "49.0.0", "file": "winch-baseline.cwasm", "engine": "cranelift-native", "result": "refused: failed deserialization for: winch-baseline.cwasm | Caused by: | Module was compiled with Winch calling convention but it is not enabled for the host"}
+{"wasmtime": "49.0.0", "file": "winch-baseline.cwasm", "engine": "cranelift-baseline", "result": "refused: failed deserialization for: winch-baseline.cwasm | Caused by: | Module was compiled with Winch calling convention but it is not enabled for the host"}
+{"wasmtime": "49.0.0", "file": "winch-baseline.cwasm", "engine": "winch-baseline", "result": "loads"}
+{"wasmtime": "49.0.0", "file": "winch-baseline.cwasm", "engine": "pulley64", "result": "refused: failed deserialization for: winch-baseline.cwasm | Caused by: | Module was compiled for architecture 'x86_64'"}
+{"wasmtime": "49.0.0", "file": "pulley64.cwasm", "engine": "cranelift-native", "result": "refused: failed deserialization for: pulley64.cwasm | Caused by: | Module was compiled for architecture 'pulley64'"}
+{"wasmtime": "49.0.0", "file": "pulley64.cwasm", "engine": "cranelift-baseline", "result": "refused: failed deserialization for: pulley64.cwasm | Caused by: | Module was compiled for architecture 'pulley64'"}
+{"wasmtime": "49.0.0", "file": "pulley64.cwasm", "engine": "winch-baseline", "result": "refused: failed deserialization for: pulley64.cwasm | Caused by: | Module was compiled for architecture 'pulley64'"}
+{"wasmtime": "49.0.0", "file": "pulley64.cwasm", "engine": "pulley64", "result": "loads"}
+{"wasmtime": "48.0.0", "file": "cranelift-native.cwasm", "engine": "cranelift-native", "result": "refused: failed deserialization for: cranelift-native.cwasm | Caused by: | Module was compiled with incompatible version '49'"}
+{"wasmtime": "48.0.0", "file": "cranelift-native.cwasm", "engine": "cranelift-baseline", "result": "refused: failed deserialization for: cranelift-native.cwasm | Caused by: | Module was compiled with incompatible version '49'"}
+{"wasmtime": "48.0.0", "file": "cranelift-native.cwasm", "engine": "winch-baseline", "result": "refused: failed deserialization for: cranelift-native.cwasm | Caused by: | Module was compiled with incompatible version '49'"}
+{"wasmtime": "48.0.0", "file": "cranelift-native.cwasm", "engine": "pulley64", "result": "refused: failed deserialization for: cranelift-native.cwasm | Caused by: | Module was compiled with incompatible version '49'"}
+{"wasmtime": "48.0.0", "file": "cranelift-baseline.cwasm", "engine": "cranelift-native", "result": "refused: failed deserialization for: cranelift-baseline.cwasm | Caused by: | Module was compiled with incompatible version '49'"}
+{"wasmtime": "48.0.0", "file": "cranelift-baseline.cwasm", "engine": "cranelift-baseline", "result": "refused: failed deserialization for: cranelift-baseline.cwasm | Caused by: | Module was compiled with incompatible version '49'"}
+{"wasmtime": "48.0.0", "file": "cranelift-baseline.cwasm", "engine": "winch-baseline", "result": "refused: failed deserialization for: cranelift-baseline.cwasm | Caused by: | Module was compiled with incompatible version '49'"}
+{"wasmtime": "48.0.0", "file": "cranelift-baseline.cwasm", "engine": "pulley64", "result": "refused: failed deserialization for: cranelift-baseline.cwasm | Caused by: | Module was compiled with incompatible version '49'"}
+{"wasmtime": "48.0.0", "file": "winch-baseline.cwasm", "engine": "cranelift-native", "result": "refused: failed deserialization for: winch-baseline.cwasm | Caused by: | Module was compiled with incompatible version '49'"}
+{"wasmtime": "48.0.0", "file": "winch-baseline.cwasm", "engine": "cranelift-baseline", "result": "refused: failed deserialization for: winch-baseline.cwasm | Caused by: | Module was compiled with incompatible version '49'"}
+{"wasmtime": "48.0.0", "file": "winch-baseline.cwasm", "engine": "winch-baseline", "result": "refused: failed deserialization for: winch-baseline.cwasm | Caused by: | Module was compiled with incompatible version '49'"}
+{"wasmtime": "48.0.0", "file": "winch-baseline.cwasm", "engine": "pulley64", "result": "refused: failed deserialization for: winch-baseline.cwasm | Caused by: | Module was compiled with incompatible version '49'"}
+{"wasmtime": "48.0.0", "file": "pulley64.cwasm", "engine": "cranelift-native", "result": "refused: failed deserialization for: pulley64.cwasm | Caused by: | Module was compiled with incompatible version '49'"}
+{"wasmtime": "48.0.0", "file": "pulley64.cwasm", "engine": "cranelift-baseline", "result": "refused: failed deserialization for: pulley64.cwasm | Caused by: | Module was compiled with incompatible version '49'"}
+{"wasmtime": "48.0.0", "file": "pulley64.cwasm", "engine": "winch-baseline", "result": "refused: failed deserialization for: pulley64.cwasm | Caused by: | Module was compiled with incompatible version '49'"}
+{"wasmtime": "48.0.0", "file": "pulley64.cwasm", "engine": "pulley64", "result": "refused: failed deserialization for: pulley64.cwasm | Caused by: | Module was compiled with incompatible version '49'"}
