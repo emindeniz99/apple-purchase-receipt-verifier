@@ -31,8 +31,6 @@
 //! before this decoder existed. No encoder produces them; they are only ever
 //! hand-made.
 
-const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
 fn value_of(byte: u8) -> Option<u32> {
     match byte {
         b'A'..=b'Z' => Some(u32::from(byte - b'A')),
@@ -45,19 +43,14 @@ fn value_of(byte: u8) -> Option<u32> {
 }
 
 /// Decodes base64 or base64url, skipping every character outside both
-/// alphabets (whitespace, padding, PEM line breaks).
+/// alphabets (whitespace, padding, PEM line breaks). No engine of the
+/// `base64` crate skips characters, so this one stays hand-written.
 #[must_use]
 pub fn decode_lenient(text: &str) -> Vec<u8> {
-    decode_lenient_bytes(text.as_bytes())
-}
-
-/// [`decode_lenient`] over raw bytes.
-#[must_use]
-pub fn decode_lenient_bytes(text: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(text.len() / 4 * 3 + 3);
     let mut accumulator: u32 = 0;
     let mut bits: u32 = 0;
-    for byte in text {
+    for byte in text.as_bytes() {
         let Some(value) = value_of(*byte) else {
             continue;
         };
@@ -110,44 +103,19 @@ pub fn decode_receipt_base64(text: &str) -> Option<Vec<u8>> {
 /// Standard base64 with padding.
 #[must_use]
 pub fn encode(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    let mut chunks = bytes.chunks_exact(3);
-    for chunk in &mut chunks {
-        let (a, b, c) = (
-            u32::from(*chunk.first().unwrap_or(&0)),
-            u32::from(*chunk.get(1).unwrap_or(&0)),
-            u32::from(*chunk.get(2).unwrap_or(&0)),
-        );
-        let n = (a << 16) | (b << 8) | c;
-        for shift in [18, 12, 6, 0] {
-            let index = usize::try_from((n >> shift) & 0x3f).unwrap_or(0);
-            out.push(char::from(*ALPHABET.get(index).unwrap_or(&b'A')));
-        }
-    }
-    let rest = chunks.remainder();
-    let push = |out: &mut String, value: u32| {
-        let index = usize::try_from(value & 0x3f).unwrap_or(0);
-        out.push(char::from(*ALPHABET.get(index).unwrap_or(&b'A')));
-    };
-    match rest.len() {
-        1 => {
-            let a = u32::from(*rest.first().unwrap_or(&0));
-            push(&mut out, a >> 2);
-            push(&mut out, a << 4);
-            out.push_str("==");
-        }
-        2 => {
-            let a = u32::from(*rest.first().unwrap_or(&0));
-            let b = u32::from(*rest.get(1).unwrap_or(&0));
-            push(&mut out, a >> 2);
-            push(&mut out, (a << 4) | (b >> 4));
-            push(&mut out, b << 2);
-            out.push('=');
-        }
-        _ => {}
-    }
-    out
+    use ::base64::Engine as _;
+    ::base64::engine::general_purpose::STANDARD.encode(bytes)
 }
+
+/// The `base64` crate's URL-safe engine as RFC 7515 section 2 reads a JWS
+/// segment: no padding at all, and a final character's unused low bits
+/// must be zero (the crate's default, restated here).
+const JWS_SEGMENT_ENGINE: ::base64::engine::GeneralPurpose = ::base64::engine::GeneralPurpose::new(
+    &::base64::alphabet::URL_SAFE,
+    ::base64::engine::GeneralPurposeConfig::new()
+        .with_decode_allow_trailing_bits(false)
+        .with_decode_padding_mode(::base64::engine::DecodePaddingMode::RequireNone),
+);
 
 /// Decodes unpadded base64url — RFC 4648 §5 as RFC 7515 §2 requires it —
 /// or `None`.
@@ -166,32 +134,102 @@ pub fn encode(bytes: &[u8]) -> String {
 /// - a final character whose unused low bits are not zero.
 #[must_use]
 pub fn decode_base64url_strict(text: &str) -> Option<Vec<u8>> {
-    let body = text.as_bytes();
-    if body.len() % 4 == 1 {
-        return None;
+    use ::base64::Engine as _;
+    JWS_SEGMENT_ENGINE.decode(text).ok()
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
+mod tests {
+    //! The engines replaced two hand-written routines; these are those
+    //! routines, kept as the oracle the engines must match byte for byte.
+    use super::{decode_base64url_strict, encode};
+
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    fn old_encode(bytes: &[u8]) -> String {
+        let mut out = String::new();
+        for chunk in bytes.chunks(3) {
+            let n = chunk
+                .iter()
+                .enumerate()
+                .fold(0u32, |n, (i, b)| n | (u32::from(*b) << (16 - 8 * i)));
+            for (i, shift) in [18, 12, 6, 0].into_iter().enumerate() {
+                if i <= chunk.len() {
+                    out.push(char::from(ALPHABET[((n >> shift) & 0x3f) as usize]));
+                } else {
+                    out.push('=');
+                }
+            }
+        }
+        out
     }
-    let mut out = Vec::with_capacity(body.len() / 4 * 3 + 2);
-    let mut accumulator: u32 = 0;
-    let mut bits: u32 = 0;
-    for byte in body {
-        let value = match byte {
-            b'A'..=b'Z' => u32::from(*byte - b'A'),
-            b'a'..=b'z' => u32::from(*byte - b'a') + 26,
-            b'0'..=b'9' => u32::from(*byte - b'0') + 52,
-            b'-' => 62,
-            b'_' => 63,
-            _ => return None,
-        };
-        accumulator = (accumulator << 6) | value;
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            out.push(u8::try_from((accumulator >> bits) & 0xff).ok()?);
+
+    fn old_strict(text: &str) -> Option<Vec<u8>> {
+        let body = text.as_bytes();
+        if body.len() % 4 == 1 {
+            return None;
+        }
+        let mut out = Vec::new();
+        let (mut accumulator, mut bits) = (0u32, 0u32);
+        for byte in body {
+            let value = match byte {
+                b'A'..=b'Z' => u32::from(*byte - b'A'),
+                b'a'..=b'z' => u32::from(*byte - b'a') + 26,
+                b'0'..=b'9' => u32::from(*byte - b'0') + 52,
+                b'-' => 62,
+                b'_' => 63,
+                _ => return None,
+            };
+            accumulator = (accumulator << 6) | value;
+            bits += 6;
+            if bits >= 8 {
+                bits -= 8;
+                out.push(((accumulator >> bits) & 0xff) as u8);
+            }
+        }
+        if bits > 0 && accumulator & ((1 << bits) - 1) != 0 {
+            return None;
+        }
+        Some(out)
+    }
+
+    struct Rng(u64);
+
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            self.0
         }
     }
-    // The leftover bits are padding, and canonical padding is zero.
-    if bits > 0 && accumulator & ((1 << bits) - 1) != 0 {
-        return None;
+
+    #[test]
+    fn the_engines_match_the_hand_written_routines() {
+        let symbols = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_+/= \n";
+        let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
+        for _ in 0..200_000 {
+            let length = (rng.next() % 24) as usize;
+            let text: String = (0..length)
+                .map(|_| {
+                    // Mostly the URL alphabet, sometimes anything else.
+                    let pick = rng.next();
+                    let index = if pick % 8 == 0 {
+                        pick % symbols.len() as u64
+                    } else {
+                        pick % 64
+                    };
+                    char::from(symbols[index as usize])
+                })
+                .collect();
+            assert_eq!(
+                decode_base64url_strict(&text),
+                old_strict(&text),
+                "{text:?}"
+            );
+            let bytes: Vec<u8> = (0..length).map(|_| rng.next() as u8).collect();
+            assert_eq!(encode(&bytes), old_encode(&bytes), "{bytes:?}");
+        }
     }
-    Some(out)
 }
