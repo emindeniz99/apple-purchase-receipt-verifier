@@ -48,8 +48,7 @@ MAX_EMBEDDED_CERTIFICATES = 10
 MAX_SIGNER_INFOS = 4
 
 #: The digests this library verifies a receipt signature under: the
-#: guaranteed minimum set (docs/design/0.7-hardening-parity.md, "any
-#: receipt signer algorithm").
+#: guaranteed minimum set (#160, docs/design/0.7-api.md).
 _DIGESTS: "dict[str, Any]" = {
     "md5": hashes.MD5,
     "sha1": hashes.SHA1,
