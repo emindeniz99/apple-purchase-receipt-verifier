@@ -604,6 +604,18 @@ Still worth filing as issues:
   current loads; revisit when a user reports CPU pressure.
 - **Online revocation checks (OCSP or CRL).** Offline verification is the
   point of the library, so this would be an opt-in at most. Not queued.
+  Apple publishes revocations only through the CRL (`crl.apple.com`) and
+  OCSP (`ocsp.apple.com`) addresses in its certificates. Apple's own
+  library runs OCSP behind `enableOnlineChecks` and then judges validity
+  at the current time instead of `signedDate`. The shape that keeps this
+  library offline: the host downloads the CRL on its own schedule (every
+  15 minutes, say) with its own HTTP client and hands the bytes to a
+  helper, which verifies the CRL's signature under the pinned root and
+  keeps the revoked serials in memory. `Config.builder().revocations(...)`
+  wires it in, and each call does an in-memory lookup. A revoked chain
+  fails as `INVALID_CERTIFICATE`. Open policy question for the host: accept
+  or reject when the CRL is stale because a download failed. The 0.7
+  design keeps room for this (docs/design/0.7-api.md).
 - **A shared Rust core compiled to WebAssembly under every port.** A
   future idea for its own branch. The 0.7 design keeps the door open: the
   core would take `now_ms` as an argument instead of calling back into the
