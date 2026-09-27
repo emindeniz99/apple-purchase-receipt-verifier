@@ -190,15 +190,10 @@ final class JwsCore {
             Header header = new Header();
             String text;
             try {
-                text = StandardCharsets.UTF_8
-                        .newDecoder()
-                        .decode(ByteBuffer.wrap(bytes))
-                        .toString();
-            } catch (CharacterCodingException e) {
-                throw new VerificationException(Reason.MALFORMED, "header is not UTF-8", e);
-            }
-            if (text.startsWith("\uFEFF")) {
-                throw new VerificationException(Reason.MALFORMED, "header starts with a byte order mark");
+                text = jsonText(bytes);
+            } catch (NotJsonText e) {
+                throw new VerificationException(
+                        Reason.MALFORMED, "header is not JSON text: " + e.getMessage(), e.getCause());
             }
             try (JsonParser parser = JSON.createParser(text.toCharArray())) {
                 if (parser.nextToken() != JsonToken.START_OBJECT) {
@@ -270,16 +265,9 @@ final class JwsCore {
             Payload payload = new Payload();
             String text;
             try {
-                text = StandardCharsets.UTF_8
-                        .newDecoder()
-                        .decode(ByteBuffer.wrap(bytes))
-                        .toString();
-            } catch (CharacterCodingException e) {
-                payload.unreadable("not UTF-8", e);
-                return payload;
-            }
-            if (text.startsWith("\uFEFF")) {
-                payload.unreadable("starts with a byte order mark", null);
+                text = jsonText(bytes);
+            } catch (NotJsonText e) {
+                payload.unreadable(e.getMessage(), (Exception) e.getCause());
                 return payload;
             }
             Long signedDate = null;
@@ -333,6 +321,37 @@ final class JwsCore {
             }
             double value = parser.getDoubleValue();
             return value >= Long.MIN_VALUE && value <= Long.MAX_VALUE ? Long.valueOf((long) value) : null;
+        }
+    }
+
+    /**
+     * A JWS segment as JSON text: strict UTF-8 (Jackson would otherwise guess
+     * UTF-16 or UTF-32 from the bytes) with no byte order mark (RFC 8259
+     * section 8.1 forbids one). The header and the payload share the rule
+     * and differ only in what a refusal means.
+     */
+    private static String jsonText(byte[] bytes) throws NotJsonText {
+        String text;
+        try {
+            text = StandardCharsets.UTF_8
+                    .newDecoder()
+                    .decode(ByteBuffer.wrap(bytes))
+                    .toString();
+        } catch (CharacterCodingException e) {
+            throw new NotJsonText("not UTF-8", e);
+        }
+        if (text.startsWith("\uFEFF")) {
+            throw new NotJsonText("starts with a byte order mark", null);
+        }
+        return text;
+    }
+
+    /** Why a segment is not JSON text, as a short phrase. */
+    private static final class NotJsonText extends Exception {
+        private static final long serialVersionUID = 1L;
+
+        NotJsonText(String problem, @Nullable Exception cause) {
+            super(problem, cause);
         }
     }
 
@@ -415,7 +434,7 @@ final class JwsCore {
     private static void authenticateTopDown(
             X509Certificate leaf, X509Certificate intermediate, Set<TrustAnchor> trustAnchors)
             throws VerificationException {
-        if (!signedByAPinnedRoot(intermediate, trustAnchors)) {
+        if (!AppleTrust.signedByAny(intermediate, AppleTrust.roots(trustAnchors))) {
             throw new VerificationException(
                     Reason.UNTRUSTED_CHAIN, "intermediate certificate is not signed by a pinned Apple root");
         }
@@ -427,22 +446,6 @@ final class JwsCore {
                     Reason.UNTRUSTED_CHAIN, "leaf certificate is not signed by the intermediate", e);
         }
         decodeKey(leaf, 0);
-    }
-
-    private static boolean signedByAPinnedRoot(X509Certificate certificate, Set<TrustAnchor> trustAnchors) {
-        for (TrustAnchor anchor : trustAnchors) {
-            X509Certificate root = anchor.getTrustedCert();
-            if (!certificate.getIssuerX500Principal().equals(root.getSubjectX500Principal())) {
-                continue;
-            }
-            try {
-                certificate.verify(root.getPublicKey(), BouncyCastle.PROVIDER);
-                return true;
-            } catch (GeneralSecurityException | RuntimeException e) {
-                // Not signed by this root; try the next one.
-            }
-        }
-        return false;
     }
 
     /** The key of an x5c entry whose signature has already verified; one no decoder accepts is its verdict. */
@@ -470,17 +473,7 @@ final class JwsCore {
             params.setDate(at);
             validator.validate(path, params);
         } catch (CertPathValidatorException e) {
-            if (AppleTrust.outsideValidity(e)) {
-                throw new VerificationException(
-                        Reason.INVALID_CERTIFICATE,
-                        "x5c certificate is outside its validity window at " + at.getTime() + ": "
-                                + SafeText.detail(e.getMessage()),
-                        e);
-            }
-            throw new VerificationException(
-                    Reason.UNTRUSTED_CHAIN,
-                    "certificate chain does not validate to a pinned Apple root: " + SafeText.detail(e.getMessage()),
-                    e);
+            throw AppleTrust.chainFailure(e, "x5c", "certificate chain", at);
         } catch (InvalidAlgorithmParameterException e) {
             // Raised for the pinned anchors or the path type, never for a certificate.
             throw new VerificationException(Reason.INTERNAL_ERROR, "chain validation rejected its parameters", e);

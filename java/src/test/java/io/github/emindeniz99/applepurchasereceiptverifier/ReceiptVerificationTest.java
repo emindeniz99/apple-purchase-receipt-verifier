@@ -354,15 +354,14 @@ class ReceiptVerificationTest {
         // The same seven certificates below the anchor, except that the last
         // one repeats its issuer's subject name. PKIX exempts self-issued
         // intermediates from maxPathLength (RFC 5280 6.1.4), so the builder
-        // returns this path even though it is a hop too long; the hand-rolled
-        // walks count every hop and reject it. Measuring the built path is
-        // what makes the two agree — delete that check and this test fails
-        // while the two above still pass.
+        // alone would return this path even though it is a hop too long. The
+        // top-down walk counts every hop, stops at six and never reaches the
+        // signer, so the signer is refused before the builder runs.
         TestPki deep = TestPki.deepReceipt(5, 1);
         byte[] tooLong = deep.signReceipt(payload(BUNDLE, creationDate.toString()));
         VerificationException e = assertThrows(VerificationException.class, () -> verify(deep, tooLong));
         assertEquals(Reason.UNTRUSTED_CHAIN, e.reason());
-        assertTrue(e.getMessage().contains("chain exceeds maximum length"), e.getMessage());
+        assertTrue(e.getMessage().contains("not issued under a pinned Apple root"), e.getMessage());
     }
 
     @Test

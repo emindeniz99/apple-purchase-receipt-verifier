@@ -346,20 +346,25 @@ final class ReceiptCore {
     private static List<? extends Certificate> validateChain(
             X509Certificate signerCert, List<X509Certificate> authenticated, Date at, Set<TrustAnchor> trustAnchors)
             throws VerificationException {
+        // A signer the top-down walk did not reach has no path to a pinned
+        // root, so it is refused here, before the path builder or anything
+        // else can decode its key (see AppleTrust).
+        if (!authenticated.contains(signerCert)) {
+            throw new VerificationException(
+                    Reason.UNTRUSTED_CHAIN, "signer certificate is not issued under a pinned Apple root");
+        }
+        // Issued under a pinned root, so decoding its key is safe now; a key
+        // no decoder accepts is a verdict about the certificate.
+        try {
+            signerCert.getPublicKey();
+        } catch (RuntimeException e) {
+            throw new VerificationException(
+                    Reason.INVALID_CERTIFICATE, "receipt signer certificate does not decode", e);
+        }
         try {
             X509CertSelector target = new X509CertSelector();
             target.setCertificate(signerCert);
             PKIXBuilderParameters params = new PKIXBuilderParameters(trustAnchors, target);
-            if (authenticated.contains(signerCert)) {
-                // Issued under a pinned root, so decoding its key is safe now;
-                // a key no decoder accepts is a verdict about the certificate.
-                try {
-                    signerCert.getPublicKey();
-                } catch (RuntimeException e) {
-                    throw new VerificationException(
-                            Reason.INVALID_CERTIFICATE, "receipt signer certificate does not decode", e);
-                }
-            }
             params.addCertStore(CertStore.getInstance(
                     "Collection", new CollectionCertStoreParameters(authenticated), BouncyCastle.PROVIDER));
             params.setRevocationEnabled(false);
@@ -375,17 +380,7 @@ final class ReceiptCore {
             }
             return path;
         } catch (CertPathBuilderException e) {
-            if (AppleTrust.outsideValidity(e)) {
-                throw new VerificationException(
-                        Reason.INVALID_CERTIFICATE,
-                        "receipt certificate is outside its validity window at " + at.getTime() + ": "
-                                + SafeText.detail(e.getMessage()),
-                        e);
-            }
-            throw new VerificationException(
-                    Reason.UNTRUSTED_CHAIN,
-                    "signer chain does not validate to a pinned Apple root: " + SafeText.detail(e.getMessage()),
-                    e);
+            throw AppleTrust.chainFailure(e, "receipt", "signer chain", at);
         } catch (NoSuchAlgorithmException | InvalidAlgorithmParameterException e) {
             // Not raised by the pinned BouncyCastle PKIX and Collection
             // implementations for parameters built from the pinned anchors.
@@ -419,26 +414,14 @@ final class ReceiptCore {
      */
     private static List<X509Certificate> authenticatedTopDown(
             List<X509Certificate> embedded, Set<TrustAnchor> trustAnchors) {
-        List<X509Certificate> issuers = new ArrayList<X509Certificate>();
-        for (TrustAnchor anchor : trustAnchors) {
-            issuers.add(anchor.getTrustedCert());
-        }
+        List<X509Certificate> issuers = AppleTrust.roots(trustAnchors);
         List<X509Certificate> accepted = new ArrayList<X509Certificate>();
         List<X509Certificate> pending = new ArrayList<X509Certificate>(embedded);
         for (int round = 0; round < MAX_PATH_LENGTH && !pending.isEmpty(); round++) {
             List<X509Certificate> acceptedThisRound = new ArrayList<X509Certificate>();
             for (X509Certificate candidate : pending) {
-                for (X509Certificate issuer : issuers) {
-                    if (!candidate.getIssuerX500Principal().equals(issuer.getSubjectX500Principal())) {
-                        continue;
-                    }
-                    try {
-                        candidate.verify(issuer.getPublicKey(), BouncyCastle.PROVIDER);
-                        acceptedThisRound.add(candidate);
-                        break;
-                    } catch (Exception e) {
-                        // Not signed by this issuer; try the next one.
-                    }
+                if (AppleTrust.signedByAny(candidate, issuers)) {
+                    acceptedThisRound.add(candidate);
                 }
             }
             if (acceptedThisRound.isEmpty()) {

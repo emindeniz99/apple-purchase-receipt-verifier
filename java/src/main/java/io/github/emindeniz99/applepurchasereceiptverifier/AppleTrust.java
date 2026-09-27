@@ -1,15 +1,35 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
+import java.security.GeneralSecurityException;
 import java.security.cert.CertPathValidatorException;
 import java.security.cert.CertificateExpiredException;
 import java.security.cert.CertificateNotYetValidException;
 import java.security.cert.TrustAnchor;
 import java.security.cert.X509Certificate;
+import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 /**
- * Trust material both verification paths share.
+ * Trust material both verification paths share, and the rule they share for
+ * using it.
+ *
+ * <p><strong>No key a pinned root has not vouched for is ever decoded or
+ * used.</strong> A certificate's public key is decoded only after its own
+ * signature has verified under a pinned root, or under a certificate already
+ * accepted that way: top-down, never bottom-up. BouncyCastle validates an RSA
+ * key as it decodes it, with a primality test that costs seconds for a
+ * 16384-bit modulus, and a path builder verifies signatures with whatever
+ * keys it is handed, so the other order would let a few KB of unsigned
+ * certificates cost the caller seconds of CPU. The receipt path walks its
+ * certificate bag down from the roots ({@code ReceiptCore.authenticatedTopDown})
+ * and refuses a signer that walk did not reach before anything else touches
+ * it; the JWS path checks its intermediate against the roots and then its
+ * leaf against the intermediate ({@code JwsCore.authenticateTopDown}). Both
+ * use {@link #signedByAny}. {@code UnauthenticatedKeyCostTest} pins the rule
+ * by recording every key used and by timing hostile keys.</p>
  */
 final class AppleTrust {
 
@@ -41,6 +61,59 @@ final class AppleTrust {
             anchors.add(new TrustAnchor(root, null));
         }
         return anchors;
+    }
+
+    /**
+     * Whether one of {@code issuers} signed {@code certificate}. An issuer's
+     * key is decoded only when its subject is the certificate's issuer name,
+     * and every issuer handed here is one a pinned root has vouched for (a
+     * root itself, or a certificate accepted top-down), so no other key is
+     * ever decoded.
+     */
+    static boolean signedByAny(X509Certificate certificate, Iterable<X509Certificate> issuers) {
+        for (X509Certificate issuer : issuers) {
+            if (!certificate.getIssuerX500Principal().equals(issuer.getSubjectX500Principal())) {
+                continue;
+            }
+            try {
+                certificate.verify(issuer.getPublicKey(), BouncyCastle.PROVIDER);
+                return true;
+            } catch (GeneralSecurityException | RuntimeException e) {
+                // Not signed by this issuer; try the next one.
+            }
+        }
+        return false;
+    }
+
+    /** The certificates of {@code trustAnchors}. */
+    static List<X509Certificate> roots(Set<TrustAnchor> trustAnchors) {
+        List<X509Certificate> roots = new ArrayList<X509Certificate>(trustAnchors.size());
+        for (TrustAnchor anchor : trustAnchors) {
+            roots.add(anchor.getTrustedCert());
+        }
+        return roots;
+    }
+
+    /**
+     * The verdict for a failed PKIX build or validation: INVALID_CERTIFICATE
+     * when a certificate was outside its validity window at {@code at}
+     * ({@link #outsideValidity}), else UNTRUSTED_CHAIN. {@code certificates}
+     * and {@code chain} name the two in the message ("receipt", "signer
+     * chain").
+     */
+    static VerificationException chainFailure(
+            GeneralSecurityException failure, String certificates, String chain, Date at) {
+        if (outsideValidity(failure)) {
+            return new VerificationException(
+                    Reason.INVALID_CERTIFICATE,
+                    certificates + " certificate is outside its validity window at " + at.getTime() + ": "
+                            + SafeText.detail(failure.getMessage()),
+                    failure);
+        }
+        return new VerificationException(
+                Reason.UNTRUSTED_CHAIN,
+                chain + " does not validate to a pinned Apple root: " + SafeText.detail(failure.getMessage()),
+                failure);
     }
 
     /**
