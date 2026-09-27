@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /*
- * The cross-port benchmark: the same six operations on the same two genuine
+ * The cross-port benchmark: the same four operations on the same two genuine
  * sandbox receipts in every port, named after the Java JMH benchmarks in
  * java-bench/ (BENCHMARKS.md at the repository root has the table).
  *
@@ -19,13 +19,11 @@ declare(strict_types=1);
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Bench;
 
 use DateTimeImmutable;
-use EminDeniz99\ApplePurchaseReceiptVerifier\AppleRootCerts;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Config;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Base64;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Reason;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\VerifyReceiptEndpoint;
-use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationException;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
 use Psr\Clock\ClockInterface;
 use RuntimeException;
 
@@ -92,16 +90,6 @@ function tamper(string $der): string
     return $der;
 }
 
-/** @param list<mixed> $roots */
-function reject(string $der, array $roots): mixed
-{
-    try {
-        return ReceiptVerifier::verifyReceiptCore($der, $roots);
-    } catch (VerificationException $e) {
-        return $e;
-    }
-}
-
 function check(bool $condition, string $what): void
 {
     if (!$condition) {
@@ -112,11 +100,13 @@ function check(bool $condition, string $what): void
 $clock = new class () implements ClockInterface {
     public function now(): DateTimeImmutable
     {
-        // Any fixed instant: it only feeds the request_date fields.
+        // Any fixed instant: both receipts carry a creation date, so it
+        // only feeds the request_date fields.
         return new DateTimeImmutable('2026-01-01T00:00:00Z');
     }
 };
-$roots = AppleRootCerts::receiptRoots();
+// The built-in Apple roots; the fixed clock only reaches request_date.
+$verifier = Verifier::create(Config::builder()->clock($clock)->build());
 $results = [];
 foreach (FIXTURES as [$name, $bundleId, $inAppCount, $sha256]) {
     $text = file_get_contents(__DIR__ . "/../../fixtures/public-receipts/{$name}.b64");
@@ -124,41 +114,32 @@ foreach (FIXTURES as [$name, $bundleId, $inAppCount, $sha256]) {
     $der = base64_decode((string) $text, false);
     check(hash('sha256', $der) === $sha256, "{$name} matches its digest in cases.json");
     $base64 = base64_encode($der);
-    $request = ['receipt-data' => $base64];
-    $requestJson = json_encode($request, JSON_THROW_ON_ERROR);
-    $tampered = tamper($der);
-    $verifier = new ReceiptVerifier($roots, $bundleId);
-    $sandbox = new VerifyReceiptEndpoint($roots, Environment::Sandbox, $clock);
-    $production = new VerifyReceiptEndpoint($roots, Environment::Production, $clock);
+    $requestJson = json_encode(['receipt-data' => $base64], JSON_THROW_ON_ERROR);
+    $tamperedBase64 = base64_encode(tamper($der));
 
     // Every call once, with the answer the conformance suite expects, so no
     // benchmark can time a fast failure by accident.
     check(Base64::decodeCanonical($base64) === $der, 'decodeBase64');
-    foreach ([ReceiptVerifier::verifyReceiptCore($der, $roots), $verifier->verify($base64)] as $receipt) {
-        check($receipt->bundleId === $bundleId && count($receipt->inAppPurchases) === $inAppCount, 'receipt');
-    }
-    $ok = json_decode($sandbox->verifyReceiptJson($requestJson), true, 512, JSON_THROW_ON_ERROR);
-    check($ok['status'] === 0 && count($ok['receipt']['in_app']) === $inAppCount, 'endpointJson');
-    $retry = json_decode(
-        $production->verifyReceiptResult($request)->toJson(Environment::Sandbox),
-        true,
-        512,
-        JSON_THROW_ON_ERROR,
+    $verified = $verifier->verifyReceipt($base64);
+    check(
+        $verified->verified()
+            && $verified->payload->bundleId === $bundleId
+            && count($verified->payload->inApp) === $inAppCount,
+        'verifyReceipt',
     );
-    check($retry['status'] === 0 && $retry['environment'] === 'Sandbox', 'retryViaResult');
-    $rejected = reject($tampered, $roots);
-    check($rejected instanceof VerificationException && $rejected->reason === Reason::InvalidSignature, 'rejectTamperedSignature');
+    $ok = json_decode($verifier->verifyReceiptEndpoint(Environment::Sandbox, $requestJson), true, 512, JSON_THROW_ON_ERROR);
+    check($ok['status'] === 0 && count($ok['receipt']['in_app']) === $inAppCount, 'endpointJson');
+    $rejected = $verifier->verifyReceipt($tamperedBase64);
+    check($rejected->failure?->reason === Reason::InvalidSignature, 'rejectTamperedSignature');
 
     $results[] = measure('decodeBase64', $name, static fn () => Base64::decodeCanonical($base64));
-    $results[] = measure('core', $name, static fn () => ReceiptVerifier::verifyReceiptCore($der, $roots));
-    $results[] = measure('verifierBase64', $name, static fn () => $verifier->verify($base64));
-    $results[] = measure('endpointJson', $name, static fn () => $sandbox->verifyReceiptJson($requestJson));
+    $results[] = measure('verifyReceipt', $name, static fn () => $verifier->verifyReceipt($base64));
     $results[] = measure(
-        'retryViaResult',
+        'endpointJson',
         $name,
-        static fn () => $production->verifyReceiptResult($request)->toJson(Environment::Sandbox),
+        static fn () => $verifier->verifyReceiptEndpoint(Environment::Sandbox, $requestJson),
     );
-    $results[] = measure('rejectTamperedSignature', $name, static fn () => reject($tampered, $roots));
+    $results[] = measure('rejectTamperedSignature', $name, static fn () => $verifier->verifyReceipt($tamperedBase64));
 }
 
 echo json_encode([
