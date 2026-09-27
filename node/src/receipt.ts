@@ -3,8 +3,7 @@
  * against the pinned roots.
  *
  * Checks, in order: strict base64, the CMS envelope, the chain to a pinned
- * root walked top-down (docs/design/0.7-hardening-parity.md change 1,
- * #161), Apple's marker OIDs on both the leaf (receipt signing) and the
+ * root walked top-down (#161), Apple's marker OIDs on both the leaf (receipt signing) and the
  * WWDR intermediate, certificate validity at the receipt's creation date,
  * and last the signature. Several SignerInfos: the receipt verifies when at
  * least one verifies under a pinned chain; when none does, the first
@@ -39,9 +38,8 @@ const MAX_EMBEDDED_CERTIFICATES = 10;
 const MAX_SIGNER_INFOS = 4;
 
 /**
- * Names only the exception's class (docs/design/0.7-hardening-parity.md
- * change 6: "catch-all guards name only the exception class"), never its
- * message: an unexpected error here runs on input nobody has vouched for,
+ * Names only the exception's class (docs/design/0.7-api.md, Result), never
+ * its message: an unexpected error here runs on input nobody has vouched for,
  * so its message may itself quote that input.
  */
 function describeError(e: unknown): string {
@@ -92,7 +90,7 @@ export function verifyReceipt(
       throw cause;
     }
     // Contains any unexpected error before the signature has verified
-    // (docs/design/0.7-hardening-parity.md change 4): everything up to here
+    // (docs/design/0.7-api.md, Setup): everything up to here
     // runs on input nobody has vouched for, so it is MALFORMED, never
     // INTERNAL_ERROR, which would let anyone raise that alert at will.
     throw new VerificationError(
@@ -341,7 +339,7 @@ function verifySigner(
  * No algorithm or key-type allowlist beyond what `node:crypto` implements:
  * the signer is already pinned to an Apple root and carries Apple's
  * receipt-signing marker, so a change of algorithm on Apple's side does not
- * reject genuine receipts (docs/design/0.7-hardening-parity.md change 3).
+ * reject genuine receipts (#160).
  */
 function verifyCmsSignature(cms: ParsedCms, info: CmsSignerInfo, signer: ParsedCertificate): void {
   let signedBytes: Uint8Array;

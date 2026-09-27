@@ -20,7 +20,7 @@ use std::sync::Arc;
 #[test]
 fn every_reason_spells_the_canonical_token() {
     // These eight strings are the cross-port contract. A change here is a
-    // change to fixtures/cases-0.7.schema.json and to all nine ports.
+    // change to fixtures/cases.schema.json and to all nine ports.
     let expected = [
         "MALFORMED",
         "TOO_LARGE",

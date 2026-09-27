@@ -30,7 +30,7 @@ const MIN_SAMPLE: Duration = Duration::from_millis(100);
 const NOW_MILLIS: i64 = 1_767_225_600_000;
 
 /// File under `fixtures/public-receipts`, and the bundle id, in-app count
-/// and digest `fixtures/cases-0.7.json` pins for it.
+/// and digest `fixtures/cases.json` pins for it.
 const FIXTURES: [(&str, &str, usize, &str); 2] = [
     (
         "receipt-sandbox-g5",
@@ -61,7 +61,7 @@ fn main() {
             .iter()
             .map(|b| format!("{b:02x}"))
             .collect();
-        assert_eq!(digest, sha256, "{name} does not match cases-0.7.json");
+        assert_eq!(digest, sha256, "{name} does not match cases.json");
         let text = base64_encode(&der);
         let body = format!("{{\"receipt-data\":\"{text}\"}}");
         let tampered = base64_encode(&tamper(&der));

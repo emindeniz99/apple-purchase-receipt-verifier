@@ -55,7 +55,7 @@ func base64URL(_ bytes: [UInt8]) -> String {
         .replacingOccurrences(of: "=", with: "")
 }
 
-/// What the shared cases in fixtures/cases-0.7.json do not pin: reader
+/// What the shared cases in fixtures/cases.json do not pin: reader
 /// details a vector file cannot express, the bundled roots, and dependency
 /// regressions that need more than one call to show.
 final class VerifierTests: XCTestCase {
@@ -79,7 +79,7 @@ final class VerifierTests: XCTestCase {
     }
 
     /// An `x5c[1]` whose 262,144-bit RSA key BoringSSL refuses, under a root
-    /// nobody pinned (docs/design/0.7-hardening-parity.md, change 1). The
+    /// nobody pinned (the top-down walk, #161). The
     /// shared case `signed-data/reject-untrusted-oversized-x5c` pins the
     /// verdict, UNTRUSTED_CHAIN; this pins why it is that verdict. Building
     /// the certificate decodes its key and fails, so the answer could only

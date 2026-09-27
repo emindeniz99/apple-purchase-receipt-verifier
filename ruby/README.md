@@ -635,7 +635,7 @@ its own version, and a release commit that bumps only `version.rb` would then
 break every frozen install. `Gemfile.lock` and the two files under
 `gemfiles/` are committed, and CI installs them with `BUNDLE_FROZEN=true`.
 
-`test/conformance_test.rb` runs `fixtures/cases-0.7.json`, the normative
+`test/conformance_test.rb` runs `fixtures/cases.json`, the normative
 cross-language vectors every implementation in this repository answers. It
 carries no per-case knowledge and no skip list.
 

@@ -213,7 +213,7 @@ test('web and Node builds agree over a corpus of mutated receipts', async () => 
     const fromNode = nodeVerifier.verifyReceipt(base64);
     const fromWeb = await webVerifier.verifyReceipt(base64);
     // A flip inside a stranger certificate, which the unsigned bag may
-    // carry and verification ignores (0.7-hardening-parity Q16), leaves the
+    // carry and verification ignores, leaves the
     // receipt genuine. Then both builds must accept it and return the same
     // payload; otherwise both must refuse it.
     assert.equal(
@@ -449,7 +449,7 @@ test('a JWS whose x5c[2] carries a key WebCrypto cannot import verifies in both 
 });
 
 test('a receipt signer with a key WebCrypto cannot import gets one verdict from both builds', async () => {
-  // Any signer algorithm is allowed (0.7-hardening-parity change 3), but
+  // Any signer algorithm is allowed (#160), but
   // WebCrypto has no DSA. The key is used only after its chain and markers
   // pass, and the signature here is empty, so the honest verdict in both
   // builds is INVALID_SIGNATURE, never a throw or a certificate verdict.

@@ -79,7 +79,7 @@ jobs:
   # that: under that policy the full conformance suite passes. Surefire names
   # dynamic tests by index, so the discriminating case
   # receipt/verify-genuine-legacy-sha1-chain is not grepped by name here;
-  # ConformanceCasesTest's last test fails if any case in cases-0.7.json did not
+  # ConformanceCasesTest's last test fails if any case in cases.json did not
   # run, so 0 failures means it ran and passed (java-distroless asserts it by
   # name). HostPolicyProbe then shows the premise on the same JDK: under the
   # same policy the JDK's own PKIX refuses the chain the suite accepted.
@@ -102,7 +102,7 @@ jobs:
           printf 'jdk.certpath.disabledAlgorithms=MD2, MD5, SHA1, RSA keySize < 1024\n' > "$RUNNER_TEMP/hardened.properties"
           mvn -B test -Dtest=ConformanceCasesTest "-DargLine=-Djava.security.properties=$RUNNER_TEMP/hardened.properties" | tee "$RUNNER_TEMP/hardened.log"
           grep -E '^\[INFO\] Tests run: [0-9]+, Failures: 0, Errors: 0, Skipped: 0$' "$RUNNER_TEMP/hardened.log"
-          grep -F '"id": "receipt/verify-genuine-legacy-sha1-chain"' ../fixtures/cases-0.7.json
+          grep -F '"id": "receipt/verify-genuine-legacy-sha1-chain"' ../fixtures/cases.json
           mvn -B -q dependency:build-classpath -Dmdep.outputFile="$RUNNER_TEMP/cp.txt"
           java "-Djava.security.properties=$RUNNER_TEMP/hardened.properties" \
             -cp "target/test-classes:target/classes:$(cat "$RUNNER_TEMP/cp.txt")" \
@@ -619,7 +619,7 @@ jobs:
       - name: fuzz the verifiers
         run: |
           set -euo pipefail
-          for target in FuzzVerifyReceipt FuzzVerifyReceiptBase64 FuzzVerifyTransaction; do
+          for target in FuzzVerifyReceipt FuzzVerifySignedData; do
             go test . -run "^${target}\$" -fuzz "^${target}\$" -fuzztime=60s
           done
         working-directory: go
@@ -696,11 +696,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Every supported line (endoflife.date/ruby: 4.0, 3.4, 3.3) plus 3.2
-        # and 3.1. Both are EOL upstream, but 3.1 is the gemspec's
-        # required_ruby_version floor and Debian 12's system Ruby, so it stays
-        # tested while it is claimed — the java-runtime-8 / python-3.10 rule.
-        ruby: ["3.1", "3.2", "3.3", "3.4", "4.0"]
+        # Every supported line (endoflife.date/ruby: 4.0, 3.4, 3.3). 3.3 is
+        # also the gemspec's required_ruby_version floor since 0.7 (for
+        # Data), so it stays tested while it is claimed, even past its EOL:
+        # the java-runtime-8 / python-3.10 rule.
+        ruby: ["3.3", "3.4", "4.0"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -738,7 +738,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ruby: ["3.1", "4.0"]      # the floor and the newest line
+        ruby: ["3.3", "4.0"]      # the floor and the newest line
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -904,7 +904,7 @@ jobs:
       - run: cargo test --locked
         working-directory: rust/ffi
 
-      # Layer 2, the primary one: fixtures/cases-0.7.json driven through the
+      # Layer 2, the primary one: fixtures/cases.json driven through the
       # ABI from C++17. A passing run is the evidence that the compiled-toolchain
       # path works: header compiles as C++, symbols link, answers match the
       # vectors every other port answers.
@@ -1043,7 +1043,7 @@ jobs:
         working-directory: rust/fuzz
 
   # The exploratory pass over the hand-written DER and CMS readers and the
-  # three public verifiers; node/fuzz/README.md lists the targets and their
+  # three public Verifier methods; node/fuzz/README.md lists the targets and their
   # invariants. Seeds come from fixtures/, so a crasher is a mutation of a
   # genuine receipt or JWS, not of noise. The fuzzer is a native addon and
   # lives in node/fuzz's own package.json, which is why this job installs
@@ -1306,20 +1306,21 @@ jobs:
       - run: cargo deny --manifest-path ffi/Cargo.toml --config deny.toml check
         working-directory: rust
 
-  # Every line the composer.json floor admits. 8.1 is the floor and is past
-  # its own security-support end; it stays here for exactly as long as the
-  # manifest claims it, the same rule as node 20 and python 3.10. That leg is
-  # not decoration: PHP gained zend.max_allowed_stack_size in 8.3, so on 8.1
-  # an unbounded recursive parser segfaults rather than raising, and this is
-  # the only leg where the DER reader's depth bound is what stands between
-  # hostile input and a crashed worker.
+  # Every line the composer.json floor admits. 8.2 is the floor since 0.7 (for
+  # readonly class); it stays here for exactly as long as the manifest claims
+  # it, even past its own security-support end, the same rule as node 20 and
+  # python 3.10. That leg is not decoration: PHP gained
+  # zend.max_allowed_stack_size in 8.3, so on 8.2 an unbounded recursive
+  # parser segfaults rather than raising, and this is the only leg where the
+  # DER reader's depth bound is what stands between hostile input and a
+  # crashed worker.
   php:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        php: ["8.1", "8.2", "8.3", "8.4", "8.5"]
+        php: ["8.2", "8.3", "8.4", "8.5"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1332,10 +1333,10 @@ jobs:
           ini-values: memory_limit=256M
       # composer install, not update: php/composer.lock is committed and is
       # what every leg here installs, so no push resolves a version range.
-      # The lock is resolved for the floor (config.platform.php = 8.1.0 in
-      # composer.json), which is what lets one file install on all five legs:
-      # it pins PHPUnit 10.5, the only line whose php constraint spans 8.1 to
-      # 8.5. --no-scripts for the same reason every npm ci carries
+      # The lock is resolved for the floor (config.platform.php = 8.2.0 in
+      # composer.json), which is what lets one file install on all four legs:
+      # it pins PHPUnit 11.5, whose php constraint spans 8.2 to 8.5.
+      # --no-scripts for the same reason every npm ci carries
       # --ignore-scripts.
       - run: composer install --no-scripts --no-progress --no-interaction --prefer-dist
         working-directory: php
@@ -1347,7 +1348,7 @@ jobs:
   # a change that quietly needs a newer psr/clock or PHPUnit fails here rather
   # than on a consumer's machine. It is the one PHP leg that still resolves
   # from ranges, and deliberately: resolving is what it tests. The lockfile
-  # would make it a copy of the `php` job's 8.1 leg.
+  # would make it a copy of the `php` job's 8.2 leg.
   php-lowest:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -1357,7 +1358,7 @@ jobs:
           persist-credentials: false
       - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
         with:
-          php-version: "8.1"
+          php-version: "8.2"
           extensions: openssl, json
           coverage: none
       - run: composer update --no-progress --no-interaction --prefer-lowest --prefer-stable
@@ -1498,7 +1499,7 @@ jobs:
           docker run --rm -v "$PWD:/work" -w /work \
             mono:6.12@sha256:34d816779b1248b5cfd095770b64ecbaf1798e2aca693a91c11a018dce9c7ad5 \
             monop -r:src/ApplePurchaseReceiptVerifier/bin/Release/netstandard2.0/ApplePurchaseReceiptVerifier.dll \
-              ApplePurchaseReceiptVerifier.Receipt.ReceiptVerifier
+              ApplePurchaseReceiptVerifier.Verifier
 
   # certs/ is the reviewable source of truth for the pinned Apple roots;
   # Internal/AppleRootData.cs is generated from it and compiled in. A certs
@@ -1628,11 +1629,14 @@ jobs:
       # the one `uv sync` fills.
       - run: uv sync --locked --extra dev
         working-directory: python
-      - run: uv run --locked ruff check .
+      # --extra dev on every run as well: without it `uv run` re-syncs to
+      # the base environment, which has no ruff or mypy, and falls back to
+      # tools that cannot see cryptography.
+      - run: uv run --locked --extra dev ruff check .
         working-directory: python
-      - run: uv run --locked ruff format --check .
+      - run: uv run --locked --extra dev ruff format --check .
         working-directory: python
-      - run: uv run --locked mypy
+      - run: uv run --locked --extra dev mypy
         working-directory: python
       # ty, Astral's type checker, is ADVISORY and must stay that way for
       # now: it is 0.0.x preview software, and mypy above remains the gate.

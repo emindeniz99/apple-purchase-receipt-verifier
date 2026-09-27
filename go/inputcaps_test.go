@@ -20,7 +20,7 @@ import (
 // would have cost), exactly at the cap is not refused by the cap, and the
 // exact output a caller sees.
 //
-// The resource-bounds shared cases (fixtures/cases-0.7.json, run by
+// The resource-bounds shared cases (fixtures/cases.json, run by
 // conformance_test.go) additionally pin the byte-floor and node-floor
 // receipts end to end; this file pins the boundary of each numeric cap.
 
@@ -32,7 +32,7 @@ const capAllocationBudget = 64 << 10
 // The request and receipt caps are Apple's: its verifyReceipt answers a
 // 3,145,728-byte request body and refuses a 3,145,729-byte one with HTTP
 // 413 (measured 2026-09-23), and no receipt it accepts can be larger than
-// the body that carries it. fixtures/cases-0.7.schema.json holds every
+// the body that carries it. fixtures/cases.schema.json holds every
 // port to them.
 func TestCapNumbersMatchTheOtherPorts(t *testing.T) {
 	for _, entry := range []struct {

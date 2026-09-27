@@ -6,7 +6,7 @@ import XCTest
 // Places where this port and another had drifted apart. The nine
 // implementations are one product, so each of these is a single answer all
 // of them owe, and each test below is the pin that keeps this port on it
-// where the shared cases in fixtures/cases-0.7.json do not reach.
+// where the shared cases in fixtures/cases.json do not reach.
 
 // MARK: - receipt payload surgery
 

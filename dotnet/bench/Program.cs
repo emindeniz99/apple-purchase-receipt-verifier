@@ -30,7 +30,7 @@ namespace ApplePurchaseReceiptVerifier.Bench
         private const double MinSampleMs = 100;
 
         // File under fixtures/public-receipts, and the bundle id, in-app count
-        // and digest fixtures/cases-0.7.json pins for it.
+        // and digest fixtures/cases.json pins for it.
         private static readonly (string Name, string BundleId, int InAppCount, string Sha256)[] Fixtures =
         {
             ("receipt-sandbox-g5", "dev.bonzer.weeka.app", 2,
@@ -191,13 +191,13 @@ namespace ApplePurchaseReceiptVerifier.Bench
             while (directory is not null)
             {
                 string candidate = Path.Combine(directory.FullName, "fixtures");
-                if (File.Exists(Path.Combine(candidate, "cases-0.7.json")))
+                if (File.Exists(Path.Combine(candidate, "cases.json")))
                 {
                     return candidate;
                 }
                 directory = directory.Parent;
             }
-            throw new DirectoryNotFoundException("no fixtures/cases-0.7.json above " + AppContext.BaseDirectory);
+            throw new DirectoryNotFoundException("no fixtures/cases.json above " + AppContext.BaseDirectory);
         }
 
         private readonly record struct Result(

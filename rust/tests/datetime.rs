@@ -40,7 +40,7 @@ const PACIFIC_VECTORS: [(i64, &str); 21] = [
     (1_173_607_200_000, "2007-03-11 03:00:00 America/Los_Angeles"),
     (1_194_166_799_000, "2007-11-04 01:59:59 America/Los_Angeles"),
     (1_194_166_800_000, "2007-11-04 01:00:00 America/Los_Angeles"),
-    // The two values fixtures/cases-0.7.json pins, in both seasons.
+    // The two values fixtures/cases.json pins, in both seasons.
     (1_722_945_600_000, "2024-08-06 05:00:00 America/Los_Angeles"),
     (1_735_689_600_000, "2024-12-31 16:00:00 America/Los_Angeles"),
     // Ordinary days either side, including one past 2038.

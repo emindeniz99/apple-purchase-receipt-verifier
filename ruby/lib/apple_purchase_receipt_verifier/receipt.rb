@@ -102,7 +102,7 @@ module ApplePurchaseReceiptVerifier
       # explicitly because it is not a `StandardError` and would otherwise
       # walk straight through a caller's `rescue`. `fallback_reason` is the
       # reason for anything unexpected THIS stage produces
-      # (docs/design/0.7-hardening-parity.md, change 4): input nobody has
+      # (docs/design/0.7-api.md, Setup): input nobody has
       # vouched for yet must never raise INTERNAL_ERROR at will.
       def contained(fallback_reason, what)
         yield
@@ -328,8 +328,8 @@ module ApplePurchaseReceiptVerifier
       # A certificate that OpenSSL parses but {CertificateStructure} finds
       # unsound is bucketed with the ones OpenSSL refused outright: both are
       # a defect of the receipt's certificate bag, not a chain verdict
-      # (docs/design/0.7-hardening-parity.md, "reject-a-stranger-whose-
-      # signature-bit-string-is-unaligned").
+      # (shared case "receipt/reject-a-stranger-whose-signature-bit-string-
+      # is-unaligned").
       def decode_embedded_certificates(ders)
         certificates = [] #: Array[OpenSSL::X509::Certificate]
         unreadable = [] #: Array[String]
@@ -390,7 +390,7 @@ module ApplePurchaseReceiptVerifier
                                     "signed receipt content could not be read: stack exhausted")
       rescue StandardError => e
         # A foreign exception's own message is not trusted with a caller's
-        # log line (docs/design/0.7-hardening-parity.md, change 6): only its
+        # log line (docs/design/0.7-api.md, Result): only its
         # class name is quoted, never `e.message`.
         raise VerificationError.new(Reason::UNREADABLE_PAYLOAD,
                                     "signed receipt content could not be read: #{e.class}")

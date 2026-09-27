@@ -8,7 +8,7 @@ module ApplePurchaseReceiptVerifier
   # arithmetic (RSA and EC key decoding, PKCS1/PSS padding, ECDSA); this
   # module only decides which of them a `SignerInfo` names and that its
   # `signatureAlgorithm` does not contradict its `digestAlgorithm`
-  # (docs/design/0.7-hardening-parity.md, change 3, Q14 and Q15). No key type,
+  # (#160, docs/design/0.7-api.md). No key type,
   # digest or signature algorithm is restricted: a receipt signer is already
   # pinned to an Apple root and carries Apple's receipt-signing marker, so a
   # change of algorithm on Apple's side must not reject a genuine receipt.
@@ -27,8 +27,8 @@ module ApplePurchaseReceiptVerifier
 
     # `signatureAlgorithm` OIDs that name their own digest, mapped to the
     # OpenSSL digest name they name. A signature under one of these must be
-    # checked with exactly that digest (docs/design/0.7-hardening-parity.md,
-    # "reject-relabelled-signature-algorithm"); `rsaEncryption`,
+    # checked with exactly that digest (shared case
+    # "receipt/relabelled-signature-algorithm-does-not-crash"); `rsaEncryption`,
     # `id-ecPublicKey`, RSASSA-PSS (handled separately, its own parameters
     # name its digest) and any OID not in this table name no hash and take
     # the `SignerInfo`'s `digestAlgorithm`.

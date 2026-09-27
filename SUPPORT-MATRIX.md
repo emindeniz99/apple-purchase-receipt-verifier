@@ -110,25 +110,24 @@ Go 1.28 ships in February 2027.
 
 | Line | Status | Ends | CI |
 |---|---|---|---|
-| 3.1 | floor, EOL 2025-03-26 | kept | `ruby`, `ruby-gem` |
-| 3.2 | EOL 2026-03-31 | kept | `ruby` |
-| 3.3 | security | 2027-03-31 | `ruby`, `ruby-tools` |
-| 3.4 | active | 2028-03-31 | `ruby`, `ruby-macos`, `ruby-fuzz` |
+| 3.3 | floor, security | 2027-03-31 | `ruby`, `ruby-gem`, `ruby-fuzz` |
+| 3.4 | active | 2028-03-31 | `ruby`, `ruby-macos`, `ruby-tools` |
 | 4.0 | active | 2029-03-31 | `ruby`, `ruby-gem` |
 
-Ruby 4.1 ships in December 2026.
+Ruby 4.1 ships in December 2026. 0.7 raised the floor from 3.1 to 3.3 for
+`Data` (rule 2), and 3.1 and 3.2, both past EOL, left the matrix with it.
 
 ### PHP
 
 | Line | Status | Ends | CI |
 |---|---|---|---|
-| 8.1 | floor, EOL 2025-12-31 | kept | `php`, `php-lowest` |
-| 8.2 | security | 2026-12-31 | `php` |
+| 8.2 | floor, security | 2026-12-31 | `php`, `php-lowest` |
 | 8.3 | security | 2027-12-31 | `php`, `php-static`, `php-mutation`, `php-fuzz` |
 | 8.4 | active | 2028-12-31 | `php` |
 | 8.5 | active | 2029-12-31 | `php` |
 
-PHP 8.6 ships in November 2026.
+PHP 8.6 ships in November 2026. 0.7 raised the floor from 8.1 to 8.2 for
+`readonly class` (rule 2), and 8.1, past EOL, left the matrix with it.
 
 ### Rust
 

@@ -85,7 +85,7 @@ module ApplePurchaseReceiptVerifier
     # Runs `verify` with a fresh, lazily-read clock and turns whatever it
     # raises into a {VerificationResult}. `StandardError` and
     # `SystemStackError` map to MALFORMED, never INTERNAL_ERROR
-    # (docs/design/0.7-hardening-parity.md, change 4): by construction every
+    # (docs/design/0.7-api.md, Setup): by construction every
     # checked failure inside {Receipt} and {Jws} already raises a
     # {VerificationError} with the right {Reason} at the right point, so
     # anything landing here uncaught is, at worst, a bug in input nobody has

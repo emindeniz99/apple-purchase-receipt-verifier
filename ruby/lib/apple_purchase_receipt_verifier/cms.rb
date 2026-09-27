@@ -14,8 +14,8 @@ module ApplePurchaseReceiptVerifier
   #   is decoded, which `PKCS7.new` has already done by the time you can ask;
   # * every `SignerInfo`'s digest and signature algorithm, and its
   #   `signedAttrs` if it carries any, must be read structurally so the
-  #   library can check any of them, any digest, any key type (docs/design/
-  #   0.7-hardening-parity.md, change 3), which `OpenSSL::PKCS7::SignerInfo`
+  #   library can check any of them, any digest, any key type (#160),
+  #   which `OpenSSL::PKCS7::SignerInfo`
   #   does not expose at all (its public instance methods are `issuer`,
   #   `serial` and `signed_time`).
   #
@@ -176,7 +176,7 @@ module ApplePurchaseReceiptVerifier
           # position it holds; a well-formed set lacking a mandatory
           # attribute, or carrying one twice, is left to the signature
           # check, INVALID_SIGNATURE for that signer only (docs/design/
-          # 0.7-hardening-parity.md, change 4).
+          # 0.7-api.md, Reading certificates and signed attributes).
           content_type_attribute, message_digest, duplicate_attribute = signed_attributes(attrs_node)
           signed_attrs = attrs_node.raw
           index += 1

@@ -7,8 +7,8 @@ namespace ApplePurchaseReceiptVerifier.Internal
 {
     /// <summary>
     /// Every signature scheme this library verifies under, with no allowlist
-    /// beyond what the .NET crypto stack itself implements (docs/design/0.7-hardening-parity.md
-    /// Q14/Q15, owner 2026-09-27): whatever <see cref="RSA"/> and
+    /// beyond what the .NET crypto stack itself implements (#160, owner
+    /// 2026-09-27): whatever <see cref="RSA"/> and
     /// <see cref="ECDsa"/> can check is accepted, on a certificate a pinned
     /// chain has already vouched for, or a CMS SignerInfo whose signer
     /// certificate has.

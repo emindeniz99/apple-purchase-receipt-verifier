@@ -2,7 +2,7 @@
 
 require_relative "helper"
 
-# Runs fixtures/cases-0.7.json — the normative cross-language conformance
+# Runs fixtures/cases.json — the normative cross-language conformance
 # vectors for the 0.7 API (docs/design/0.7-api.md) — against this
 # implementation.
 #
@@ -40,7 +40,7 @@ class ConformanceTest < Minitest::Test
   # otherwise drift unnoticed, and the registry is the thing being guarded.
   def test_every_registered_fixture_matches_its_recorded_content_sha256
     ids = CASES["fixtures"].keys
-    refute_empty ids, "cases-0.7.json must register fixtures"
+    refute_empty ids, "cases.json must register fixtures"
     ids.each { |id| TestSupport.fixture_bytes(id) }
   end
 
@@ -78,7 +78,7 @@ class ConformanceTest < Minitest::Test
   # --- fixtures and roots ---------------------------------------------------
 
   def fixture_entry(id)
-    CASES["fixtures"].fetch(id) { raise "harness error: cases-0.7.json registers no fixture #{id.inspect}" }
+    CASES["fixtures"].fetch(id) { raise "harness error: cases.json registers no fixture #{id.inspect}" }
   end
 
   # verifyReceipt / the endpoint's receipt-data: a text fixture is handed
@@ -176,8 +176,8 @@ class ConformanceTest < Minitest::Test
   # Runs the case's operation, measuring the SECOND call (after one
   # warm-up) against `maxMillis` when the case carries one, and — on every
   # case tagged "dos" — asserting directly that no verification this call
-  # made used a key too large to be a genuine chain certificate (change 1,
-  # docs/design/0.7-hardening-parity.md): the timing budget alone is a
+  # made used a key too large to be a genuine chain certificate (the
+  # top-down walk, #161): the timing budget alone is a
   # coarse backstop, never the only proof.
   def measured(kase, &block)
     return yield unless kase["maxMillis"] || (kase["tags"] || []).include?("dos")

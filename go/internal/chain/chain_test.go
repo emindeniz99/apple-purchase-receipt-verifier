@@ -19,7 +19,7 @@ import (
 // covered through the public API and the shared conformance cases; these
 // pin what is invisible from outside: the exact validity-window boundary,
 // that every failure carries the right Reason, the top-down walk
-// (docs/design/0.7-hardening-parity.md, change 1) and the RSA modulus cap.
+// (#161) and the RSA modulus cap.
 
 var serial int64 = 1
 

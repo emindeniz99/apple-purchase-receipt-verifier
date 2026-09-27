@@ -26,7 +26,7 @@ module CrossPortBench
   NOW_MILLIS = 1_767_225_600_000
 
   # File under fixtures/public-receipts, and the bundle id, in-app count and
-  # digest fixtures/cases-0.7.json pins for it.
+  # digest fixtures/cases.json pins for it.
   FIXTURES = [
     ["receipt-sandbox-g5", "dev.bonzer.weeka.app", 2,
      "bebb16e2a17104d973eeef08177003f2c3303a19ddced83b42df349b4ac25ee0"],
@@ -85,7 +85,7 @@ module CrossPortBench
   def run_fixture(name, bundle_id, in_app_count, sha256, verifier)
     path = File.expand_path("../../fixtures/public-receipts/#{name}.b64", __dir__)
     der = File.read(path).unpack1("m")
-    check(Digest::SHA256.hexdigest(der) == sha256, "#{name} does not match cases-0.7.json")
+    check(Digest::SHA256.hexdigest(der) == sha256, "#{name} does not match cases.json")
     base64 = [der].pack("m0")
     request_json = JSON.generate({ "receipt-data" => base64 })
     tampered = [tamper(der)].pack("m0")

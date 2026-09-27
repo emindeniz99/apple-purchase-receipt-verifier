@@ -7,8 +7,8 @@ import X509
 /// Verifying a CMS `SignerInfo` signature against a receipt signer's public
 /// key: any digest and signature algorithm this library's crypto
 /// dependencies (swift-crypto, `_CryptoExtras`) implement, never a
-/// hand-written primitive (#160: "any receipt signer algorithm" —
-/// docs/design/0.7-hardening-parity.md change 3). The signer is already
+/// hand-written primitive (#160: "any receipt signer algorithm",
+/// docs/design/0.7-api.md). The signer is already
 /// pinned to an Apple root and carries Apple's receipt-signing marker before
 /// this runs, so a change of algorithm on Apple's side does not reject
 /// genuine receipts.

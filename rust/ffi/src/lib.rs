@@ -1037,7 +1037,7 @@ mod tests {
         let mut dir: &std::path::Path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         loop {
             let candidate = dir.join("fixtures");
-            if candidate.join("cases-0.7.json").is_file() {
+            if candidate.join("cases.json").is_file() {
                 return candidate.join(relative);
             }
             dir = dir

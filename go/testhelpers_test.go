@@ -20,7 +20,7 @@ import (
 func applereceiptBase64(b []byte) string { return base64.StdEncoding.EncodeToString(b) }
 
 // Shared conveniences for every _test.go file in this package: a single
-// fixture's bytes by id, read from the same fixtures/cases-0.7.json the
+// fixture's bytes by id, read from the same fixtures/cases.json the
 // conformance suite runs, and the two assertions almost every hand-written
 // test makes: the Reason a call failed with, and a substring of its
 // message.

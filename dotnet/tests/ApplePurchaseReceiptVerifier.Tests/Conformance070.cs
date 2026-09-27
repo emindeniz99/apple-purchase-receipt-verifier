@@ -12,7 +12,7 @@ using Xunit.v3;
 namespace ApplePurchaseReceiptVerifier.Tests;
 
 /// <summary>
-/// Runs <c>fixtures/cases-0.7.json</c> — the normative cross-language 0.7
+/// Runs <c>fixtures/cases.json</c> — the normative cross-language 0.7
 /// conformance vectors — against this implementation.
 /// </summary>
 /// <remarks>
@@ -27,7 +27,7 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
 {
     private static readonly List<object?> CaseList =
         Fixtures070.Cases["cases"] as List<object?>
-        ?? throw new InvalidOperationException("cases-0.7.json has no cases array");
+        ?? throw new InvalidOperationException("cases.json has no cases array");
 
     public static TheoryData<string> CaseIds
     {
@@ -53,7 +53,7 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
             count++;
         }
 
-        Assert.True(count > 0, "cases-0.7.json must register fixtures");
+        Assert.True(count > 0, "cases.json must register fixtures");
     }
 
     [Fact]

@@ -26,14 +26,15 @@ GEM_HOME=... ruby rubygems-smoke.rb
 
 It requires the gem by both the underscored and the dashed name, asserts the
 three bundled roots — the check that catches `certs/` falling out of
-`spec.files` — verifies a genuine Apple-signed receipt and rejects one for
-another bundle id.
+`spec.files` — verifies a genuine Apple-signed receipt, and expects
+`INVALID_SIGNATURE` for the same receipt with one DER byte flipped in its
+signature.
 
 It is a new program rather than `ruby/script/consumer_smoke.rb`, which this
 file used to name, for two reasons: `consumer_smoke.rb` calls Apple's
 `verifyReceipt` endpoint, and a post-publish job must not depend on Apple being
 up; and the four other smoke programs all live in `.github/smoke/` and share
-one fixture, one bundle id and one pair of assertions. `consumer_smoke.rb`
+one fixture and one pair of assertions. `consumer_smoke.rb`
 still runs in the `ruby-gem` CI job against a locally built gem.
 
 The leg is gated on the `registries` input, so it skips rather than fails while

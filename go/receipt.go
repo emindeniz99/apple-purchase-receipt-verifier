@@ -365,7 +365,7 @@ func invalidSignature(format string, args ...any) error {
 //
 // The signer's key type, digest and signature algorithm are not
 // restricted beyond what this package's cryptography can check
-// (docs/design/0.7-hardening-parity.md, change 3): the signer is already
+// (#160, docs/design/0.7-api.md): the signer is already
 // pinned to an Apple root and carries Apple's receipt-signing marker, so a
 // change of algorithm on Apple's side does not reject genuine receipts.
 func verifyCMSSignature(cms *parsedCMS, info cmsSignerInfo, signer *x509.Certificate) error {

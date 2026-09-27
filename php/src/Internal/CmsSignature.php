@@ -8,8 +8,7 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Reason;
 
 /**
  * Verifies a CMS SignerInfo's signature under whatever algorithm its pinned
- * chain vouches for (docs/design/0.7-hardening-parity.md, "any receipt
- * signer algorithm"): the guaranteed minimum set is RSA PKCS#1 v1.5,
+ * chain vouches for (#160, docs/design/0.7-api.md): the guaranteed minimum set is RSA PKCS#1 v1.5,
  * ECDSA over P-256/P-384, and MD5/SHA-1/SHA-224/SHA-256/SHA-384/SHA-512
  * digests. No key-type or algorithm allowlist beyond what OpenSSL itself can
  * verify (Q14).

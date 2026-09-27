@@ -3,7 +3,7 @@
 require_relative "helper"
 require_relative "test_pki"
 
-# docs/design/0.7-hardening-parity.md, "Reverse gaps": Ruby's keyUsage check
+# Ruby's keyUsage check
 # used to answer "allowed" when the extension was present but did not
 # decode. Fixed to fail CLOSED (chain.rb, `cert_sign_permitted?`, in the
 # `rescue StandardError, Asn1::Error` branch, which the 0.6 code answered
@@ -45,7 +45,7 @@ class ChainHardeningTest < Minitest::Test
   # somewhere on the path to a verdict — not necessarily by
   # `cert_sign_permitted?` itself, since `CertificateStructure.sound?`
   # already screens out a certificate carrying any extension neither
-  # `OpenSSL::ASN1.decode` can read (fixtures/cases-0.7.json lists this
+  # `OpenSSL::ASN1.decode` can read (fixtures/cases.json lists this
   # combination's outcomes as port-defined, `oneOf`, for exactly that reason:
   # the two checks overlap on this shape). What must hold regardless of
   # which check catches it first: the receipt is refused, not accepted, and

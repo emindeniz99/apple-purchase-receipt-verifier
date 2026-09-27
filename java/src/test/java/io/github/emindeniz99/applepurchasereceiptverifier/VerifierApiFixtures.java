@@ -94,7 +94,7 @@ import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
  * </pre>
  *
  * <p>Each run mints fresh keys, so regenerating changes every byte of these
- * files and every {@code contentSha256} in fixtures/cases-0.7.json that
+ * files and every {@code contentSha256} in fixtures/cases.json that
  * records them.</p>
  */
 public final class VerifierApiFixtures {

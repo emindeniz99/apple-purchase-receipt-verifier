@@ -414,7 +414,7 @@ startup, loudly, rather than leaving every call to answer
 `UNTRUSTED_CHAIN`.
 
 **The tests need the shared fixtures.** They look for `fixtures/` with
-`cases-0.7.json` above the module directory, or read `APRV_FIXTURES_DIR`
+`cases.json` above the module directory, or read `APRV_FIXTURES_DIR`
 when it is set.
 
 ## Testing
@@ -426,7 +426,7 @@ gofmt -l .          # must print nothing
 go vet ./...
 ```
 
-`conformance_test.go` runs `fixtures/cases-0.7.json`, the normative
+`conformance_test.go` runs `fixtures/cases.json`, the normative
 cross-language vector file every port of this library answers, as one
 named test per case, and fails unless every case ran. The adapter carries
 no case-specific knowledge: it checks each fixture against the digest the

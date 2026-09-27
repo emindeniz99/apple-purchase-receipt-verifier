@@ -8,8 +8,8 @@ import (
 	"github.com/emindeniz99/apple-purchase-receipt-verifier/go/internal/der"
 )
 
-// Any receipt signer algorithm (docs/design/0.7-hardening-parity.md,
-// change 3): the signer must chain to a pinned root and carry Apple's
+// Any receipt signer algorithm (#160, docs/design/0.7-api.md): the
+// signer must chain to a pinned root and carry Apple's
 // receipt-signing marker, and its signature must verify; its key type,
 // digest and signature algorithm are not restricted beyond what
 // crypto/x509 and crypto/rsa can check. This file resolves a CMS

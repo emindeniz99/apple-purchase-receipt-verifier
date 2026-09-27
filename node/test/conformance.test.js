@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
-// Runs fixtures/cases-0.7.json — the normative cross-language conformance
+// Runs fixtures/cases.json — the normative cross-language conformance
 // vectors for the 0.7 API — against BOTH builds (the default Node entry
 // point and the WebCrypto-only /web entry point), through the same
 // adapter, so a vector that disagrees with either build is a bug report
@@ -37,7 +37,7 @@ function parseWithBigInts(text) {
   );
 }
 
-const CASES = parseWithBigInts(readFileSync(fixtureUrl('cases-0.7.json'), 'utf8'));
+const CASES = parseWithBigInts(readFileSync(fixtureUrl('cases.json'), 'utf8'));
 
 const FIXTURE_CACHE = new Map();
 
@@ -62,7 +62,7 @@ function decodeFixtureFile(entry) {
 function fixtureBytes(id) {
   const entry = CASES.fixtures[id];
   if (entry === undefined) {
-    throw new Error(`harness error: cases-0.7.json registers no fixture "${id}"`);
+    throw new Error(`harness error: cases.json registers no fixture "${id}"`);
   }
   const cached = FIXTURE_CACHE.get(id);
   if (cached !== undefined) {
@@ -73,22 +73,22 @@ function fixtureBytes(id) {
   if (actual !== entry.contentSha256) {
     throw new Error(
       `fixture "${id}" (${entry.path}, codec ${entry.codec}) has drifted: ` +
-        `cases-0.7.json records contentSha256 ${entry.contentSha256}, decoded bytes hash to ${actual}`,
+        `cases.json records contentSha256 ${entry.contentSha256}, decoded bytes hash to ${actual}`,
     );
   }
   FIXTURE_CACHE.set(id, bytes);
   return bytes;
 }
 
-test('every fixture cases-0.7.json registers matches its recorded contentSha256', () => {
+test('every fixture cases.json registers matches its recorded contentSha256', () => {
   const ids = Object.keys(CASES.fixtures);
-  assert.ok(ids.length > 0, 'cases-0.7.json must register fixtures');
+  assert.ok(ids.length > 0, 'cases.json must register fixtures');
   for (const id of ids) {
     fixtureBytes(id);
   }
 });
 
-test('cases-0.7.json expectations keep the integers a double cannot hold', () => {
+test('cases.json expectations keep the integers a double cannot hold', () => {
   const big = [];
   const walk = (value) => {
     if (typeof value === 'bigint') {
@@ -412,7 +412,7 @@ function defineTargetTests(name, build, async_) {
     /^--test-(name-pattern|skip-pattern|only)\b/.test(arg),
   );
 
-  test(`${name}: every case in cases-0.7.json ran`, (t) => {
+  test(`${name}: every case in cases.json ran`, (t) => {
     if (TEST_FILTER !== undefined) {
       t.diagnostic(`${TEST_FILTER} filters tests; the coverage self-check needs a full run`);
       return;

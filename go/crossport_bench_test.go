@@ -27,7 +27,7 @@ type crossPortFixture struct {
 	sha256 string
 }
 
-// The digests fixtures/cases-0.7.json pins for the same public receipts.
+// The digests fixtures/cases.json pins for the same public receipts.
 var crossPortFixtures = []crossPortFixture{
 	{"receipt-sandbox-g5", "bebb16e2a17104d973eeef08177003f2c3303a19ddced83b42df349b4ac25ee0"},
 	{"receipt-sandbox-legacy", "ec62c6bd4a34bd8e56b11e675bf5a28319ce69b71d050e73344bab22f46799a8"},
@@ -100,7 +100,7 @@ func crossPortSetUp(b *testing.B, fixture crossPortFixture, roots []*x509.Certif
 	}
 	digest := sha256.Sum256(der)
 	if hex.EncodeToString(digest[:]) != fixture.sha256 {
-		b.Fatalf("%s does not match its contentSha256 in cases-0.7.json", fixture.name)
+		b.Fatalf("%s does not match its contentSha256 in cases.json", fixture.name)
 	}
 	in := crossPortInputs{der: der, tampered: crossPortTamper(b, der)}
 	in.base64 = base64.StdEncoding.EncodeToString(der)
@@ -150,12 +150,12 @@ func crossPortFixturesDir() (string, error) {
 		return "", err
 	}
 	for {
-		if _, err := os.Stat(filepath.Join(dir, "fixtures", "cases-0.7.json")); err == nil {
+		if _, err := os.Stat(filepath.Join(dir, "fixtures", "cases.json")); err == nil {
 			return filepath.Join(dir, "fixtures"), nil
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", errors.New("no fixtures/cases-0.7.json above the working directory")
+			return "", errors.New("no fixtures/cases.json above the working directory")
 		}
 		dir = parent
 	}

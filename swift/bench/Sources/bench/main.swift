@@ -10,7 +10,7 @@
 //
 //     swift run -c release --package-path swift/bench bench --worst-case
 //
-// times, the same way, every shared case in fixtures/cases-0.7.json that
+// times, the same way, every shared case in fixtures/cases.json that
 // carries a `maxMillis` budget: the hostile inputs (oversized untrusted keys,
 // certificate meshes, encoding oddities inside certificates) the shared
 // suite bounds in time. Each call is run once first and must give the answer
@@ -32,7 +32,7 @@ let minSample = Duration.milliseconds(100)
 let nowMillis: Int64 = 1_767_225_600_000
 
 /// File under fixtures/public-receipts, and the bundle id and in-app count
-/// fixtures/cases-0.7.json pins for it.
+/// fixtures/cases.json pins for it.
 let fixtures: [(name: String, bundleId: String, inAppCount: Int)] = [
     ("receipt-sandbox-g5", "dev.bonzer.weeka.app", 2),
     ("receipt-sandbox-legacy", "com.nutcall.alert", 187),
@@ -163,7 +163,7 @@ func run(
 /// conformance adapter in swift/Tests applies).
 func fixtureBytes(_ id: String, registry: [String: [String: Any]], fixturesDirectory: URL) throws -> [UInt8] {
     guard let entry = registry[id], let path = entry["path"] as? String, let codec = entry["codec"] as? String
-    else { throw SetupFailure(description: "cases-0.7.json registers no fixture \"\(id)\"") }
+    else { throw SetupFailure(description: "cases.json registers no fixture \"\(id)\"") }
     let raw = try Data(contentsOf: fixturesDirectory.appendingPathComponent(path))
     switch codec {
     case "raw", "text":
@@ -183,10 +183,10 @@ func fixtureBytes(_ id: String, registry: [String: [String: Any]], fixturesDirec
 func worstCase(repository: URL) throws -> [Result] {
     let fixturesDirectory = repository.appendingPathComponent("fixtures")
     let file = try JSONSerialization.jsonObject(
-        with: Data(contentsOf: fixturesDirectory.appendingPathComponent("cases-0.7.json")))
+        with: Data(contentsOf: fixturesDirectory.appendingPathComponent("cases.json")))
     guard let file = file as? [String: Any], let registry = file["fixtures"] as? [String: [String: Any]],
         let cases = file["cases"] as? [[String: Any]]
-    else { throw SetupFailure(description: "cases-0.7.json is not the expected JSON object") }
+    else { throw SetupFailure(description: "cases.json is not the expected JSON object") }
 
     var results: [Result] = []
     for kase in cases where kase["maxMillis"] != nil {
@@ -206,7 +206,7 @@ func worstCase(repository: URL) throws -> [Result] {
         let codec = registry[fixtureId]?["codec"] as? String
 
         // The answer the case expects, before anything is timed.
-        let want = expected["anyOutcome"] as? Bool == true ? nil : (expected["reason"] as? String)
+        let want = expected["reason"] as? String
         let got: Reason?
         let op: () -> Int
         switch operation {
@@ -223,8 +223,9 @@ func worstCase(repository: URL) throws -> [Result] {
         default:
             throw SetupFailure(description: "\(id): no adapter for operation \(operation)")
         }
-        if expected["anyOutcome"] as? Bool == true {
-            try check(got != .internalError, "\(id) answered INTERNAL_ERROR")
+        if let oneOf = expected["oneOf"] as? [String] {
+            let outcome = got?.rawValue ?? "ok"
+            try check(oneOf.contains(outcome), "\(id) answered \(outcome), not one of \(oneOf)")
         } else if expected["status"] as? String == "ok" {
             try check(got == nil, "\(id) expected to verify, got \(got?.rawValue ?? "?")")
         } else {

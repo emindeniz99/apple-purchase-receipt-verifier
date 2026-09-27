@@ -10,12 +10,12 @@ import (
 //
 // The eight constants below are the complete vocabulary a verifier
 // returns. It is closed by the cross-port contract
-// (fixtures/cases-0.7.schema.json); a ninth reason is a change to every
+// (fixtures/cases.schema.json); a ninth reason is a change to every
 // implementation in one go, not a Go-local addition.
 type Reason = apperr.Reason
 
 // The error vocabulary. The string values are normative: they are the
-// tokens fixtures/cases-0.7.json pins and every port reports, so
+// tokens fixtures/cases.json pins and every port reports, so
 // string(reason) is the canonical wire form.
 const (
 	// ReasonMalformed: the base64, ASN.1, CMS or JWS structure is broken,

@@ -166,7 +166,7 @@ class InputSizeBoundsTest {
     }
 
     /**
-     * The limits are Apple's, fixed in every port by fixtures/cases-0.7.json:
+     * The limits are Apple's, fixed in every port by fixtures/cases.json:
      * Apple's verifyReceipt answers a 3,145,728-byte request body and refuses
      * a 3,145,729-byte one (measured 2026-09-23), and no receipt it accepts
      * can be larger than the body that carries it.

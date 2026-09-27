@@ -1,4 +1,4 @@
-//! Runs every vector in `fixtures/cases-0.7.json`, the normative
+//! Runs every vector in `fixtures/cases.json`, the normative
 //! cross-language conformance set for the 0.7 API, through the three public
 //! [`Verifier`] methods and the two base64 decoders.
 //!
@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Mutex;
 
-const CASES: &str = "cases-0.7.json";
+const CASES: &str = "cases.json";
 
 // --- the vector file ----------------------------------------------------
 

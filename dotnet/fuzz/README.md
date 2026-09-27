@@ -15,17 +15,19 @@ JOBS=4 ./run.sh all 300                # four at a time
 | target | what it reaches | invariant beyond "no exception leaks" |
 |---|---|---|
 | `json` | `Internal.Json.Parse` on raw bytes, then `Json.Write` | what the reader accepts, the writer emits and the reader reads back to an equal value |
-| `receipt` | `CmsPreScan.Scan`, then `ReceiptVerifier.VerifyReceiptCore`: CMS (BER), payload, chain, signature | an accepted receipt fails against an unrelated anchor set; the pre-scan and the full path agree on the ten-certificate bound |
-| `receipt-base64` | `ReceiptVerifier.Verify(string)` and the device-guid overload — the string a client sends | — |
-| `jws` | `JwsVerifier.VerifyTransaction` / `VerifyAppTransaction` / `VerifyRaw` | a JWS `VerifyRaw` accepts under the fixture root is refused under Apple's real JWS roots |
-| `endpoint-json` | `VerifyReceiptEndpoint.VerifyReceiptJson` on a request body | the answer is always JSON with a numeric `status`, and the call never throws |
+| `receipt` | `IVerifier.VerifyReceipt` on the DER re-encoded as canonical base64: CMS (BER), payload, chain, signature | an accepted receipt fails against an unrelated anchor set |
+| `receipt-base64` | `IVerifier.VerifyReceipt(string)` on the fuzzer's bytes as text — the string a client sends | — |
+| `jws` | `IVerifier.VerifySignedData` | a JWS accepted under the fixture root is refused under Apple's real JWS roots |
+| `endpoint-json` | `IVerifier.VerifyReceiptEndpoint` on a request body | the answer is always JSON with a numeric `status`, and the call never throws |
 
-The containment invariant is shared and categorical: the only exception any
-public entry point may throw is `VerificationException`. It is asserted as
-"is not a `VerificationException`" rather than as a list of forbidden types,
-because the leak that matters is always the type nobody thought to list —
-`AsnContentException` derives from `Exception` and not from
-`CryptographicException`, which is exactly how a type-by-type catch springs one.
+The containment invariant is shared and categorical: no public verify
+method throws for any input, so every failure must come back as a result
+carrying a `Failure`, and any exception that escapes, whatever its type,
+fails the target. Catching everything rather than a list of forbidden types
+matters, because the leak that matters is always the type nobody thought to
+list — `AsnContentException` derives from `Exception` and not from
+`CryptographicException`, which is exactly how a type-by-type catch springs
+one.
 
 The anchor-set invariants are what let a fuzzer find "accepts what it should
 not" rather than only crashes: without them, an input that verifies tells you

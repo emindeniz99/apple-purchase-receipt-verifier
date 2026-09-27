@@ -8,7 +8,7 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Reason;
 
 /**
  * Certificate chain validation against pinned trust anchors, walked
- * top-down (docs/design/0.7-hardening-parity.md, change #161): a
+ * top-down (#161): a
  * certificate's signature is checked only with a key a pinned root has
  * already vouched for, and a certificate's own key is never decoded until
  * ITS signature has verified that way. This is what keeps a receipt or JWS

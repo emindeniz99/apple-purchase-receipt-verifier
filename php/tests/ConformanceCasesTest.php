@@ -24,7 +24,7 @@ use RuntimeException;
 use Throwable;
 
 /**
- * Runs `fixtures/cases-0.7.json` — the normative cross-language 0.7
+ * Runs `fixtures/cases.json` — the normative cross-language 0.7
  * conformance vectors — against this implementation.
  *
  * This adapter knows nothing about any individual case. It loads the file,
@@ -56,7 +56,7 @@ final class ConformanceCasesTest extends TestCase
     public function testEveryRegisteredFixtureMatchesItsRecordedDigest(): void
     {
         $ids = array_keys(Fixtures07::registry());
-        self::assertNotEmpty($ids, 'cases-0.7.json must register fixtures');
+        self::assertNotEmpty($ids, 'cases.json must register fixtures');
         foreach ($ids as $id) {
             Fixtures07::bytes($id);
             $this->addToAssertionCount(1);

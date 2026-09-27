@@ -84,10 +84,10 @@ Verifier verifier = Verifier.create(config);
 ```
 
 `Config.defaults()` uses Apple's three bundled, pinned roots and
-`Clock.systemUTC()`. The clock is read at most once per call, only when one
-of exactly two things needs it, after the input has passed every check that
-comes before: the chain-validity instant when the receipt or JWS states no signing
-date of its own, and `request_date` in the endpoint response. It never
+`Clock.systemUTC()`. The clock is read once per call, before the input is
+looked at, and used for two things: the chain-validity instant when the
+receipt or JWS states no signing date, and `request_date` in the endpoint
+response. It never
 decides whether a certificate is expired when the input states a date; see
 [Trust anchors](#trust-anchors).
 
@@ -205,16 +205,15 @@ the same for both:
   `webOrderLineItemId`) are `Long`, not `int`: genuine receipts carry
   18-digit `downloadId` values.
 
-`ReceiptPayload.toJson()` renders a canonical form for logging and storage,
-built so every one of the nine ports of this library produces the same
-bytes: keys in declaration order, no whitespace, UTF-8, the 64-bit ids above
-as JSON strings (dates stay numbers: epoch milliseconds do not exceed 2^53
-until roughly the year 287,000), bytes as padded standard base64, `null` for
-a missing value rather than an omitted key, `unknown_attributes` keyed in
-ascending numeric attribute-type order, and only the escapes ECMAScript's
-`JSON.stringify` uses (`/` and non-ASCII characters written raw). Match on
-field values, not on the JSON string, unless you specifically need
-byte-identical output.
+`ReceiptPayload.toJson()` renders the payload as JSON for logging and
+storage, written by jackson-core's generator. Every one of the nine ports of
+this library produces the same JSON value, not the same bytes: key order,
+whitespace and escaping style are free. The 64-bit ids above are JSON
+strings (dates stay numbers: epoch milliseconds do not exceed 2^53 until
+roughly the year 287,000), bytes are padded standard base64, a missing value
+is `null` rather than an omitted key, and `unknown_attributes` is an object
+keyed by the decimal attribute type. Parse it and compare values, never the
+string.
 
 ## App Store Server Notifications V2
 
@@ -723,9 +722,9 @@ pins the set against both.
 
 **The tests need the shared fixtures.** They read `fixtures/` next to
 `java/`, or the directory `-Daprv.fixtures.dir=...` names. The subset they
-use is `cases-0.7.json`, `generated/`, `generated-0.7/`, `limits/`,
-`public-receipts/` and `apple-official/`; `cases.json` and the schemas are
-not read. Two tests also read the build itself: `VerifierApiTest` compares
+use is `cases.json`, `generated/`, `generated-0.7/`, `limits/`,
+`public-receipts/` and `apple-official/`; `cases.schema.json` is not
+read. Two tests also read the build itself: `VerifierApiTest` compares
 `Version.CURRENT` with `pom.xml`, and `TrustStoreIsolationTest` scans
 `src/main/java`.
 

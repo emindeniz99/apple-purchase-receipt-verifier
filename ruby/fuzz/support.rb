@@ -77,14 +77,14 @@ module FuzzSupport
       directory = __dir__
       12.times do
         candidate = File.join(directory, "fixtures")
-        return candidate if File.file?(File.join(candidate, "cases-0.7.json"))
+        return candidate if File.file?(File.join(candidate, "cases.json"))
 
         parent = File.dirname(directory)
         break if parent == directory
 
         directory = parent
       end
-      raise "harness error: could not locate fixtures/cases-0.7.json above #{__dir__}"
+      raise "harness error: could not locate fixtures/cases.json above #{__dir__}"
     end
   end
 end

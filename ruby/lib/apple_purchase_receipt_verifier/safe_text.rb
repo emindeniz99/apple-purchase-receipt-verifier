@@ -3,7 +3,7 @@
 module ApplePurchaseReceiptVerifier
   # Quotes a piece of untrusted input for embedding in a {Failure} message,
   # so the message stays safe to write into a log line as is
-  # (docs/design/0.7-hardening-parity.md, change 6).
+  # (docs/design/0.7-api.md, Result).
   #
   # Deliberately not `String#inspect`: MRI's choice of which characters
   # count as "non-printable" there depends on `Encoding.default_external`

@@ -49,7 +49,7 @@ namespace ApplePurchaseReceiptVerifier.Fuzz
             while (directory is not null)
             {
                 string candidate = Path.Combine(directory.FullName, "fixtures");
-                if (File.Exists(Path.Combine(candidate, "cases-0.7.json")))
+                if (File.Exists(Path.Combine(candidate, "cases.json")))
                 {
                     return candidate;
                 }

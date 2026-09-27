@@ -107,7 +107,7 @@ apple-purchase-receipt-verifier <version>: C ABI conformance over NIFs
 <F> expected fields checked here, nested paths left to conformance.py
 ```
 
-`<N>` is the number of cases in `cases-0.7.json` the ABI can reach (every
+`<N>` is the number of cases in `cases.json` the ABI can reach (every
 one but the `decodeBase64` groups), `<C>` the ones among them that pin a
 clock, and `<F>` the expected fields and lengths this harness checks.
 

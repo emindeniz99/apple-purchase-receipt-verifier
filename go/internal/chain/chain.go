@@ -10,7 +10,7 @@
 // signatures, and every genuine legacy Apple receipt chain is SHA-1
 // signed end to end. So the walk is hand-written.
 //
-// The walk is top-down (docs/design/0.7-hardening-parity.md, change 1): a
+// The walk is top-down (#161): a
 // certificate's signature is checked only with the key of a certificate a
 // pinned anchor has already vouched for, directly or transitively, walking
 // down from the anchors. A certificate no pinned root vouches for is never
@@ -42,8 +42,7 @@ const MaxPathLength = 6
 
 // MaxRSABits is the widest RSA modulus this package will ever hand to
 // crypto/rsa for a signature check, checked before crypto/rsa is called at
-// all (docs/design/0.7-hardening-parity.md, "Measurements behind change
-// 1"). crypto/rsa has no cap of its own: one verify measured 21 ms at
+// all. crypto/rsa has no cap of its own: one verify measured 21 ms at
 // 16,384 bits, 317 ms at 65,536 bits and 5.2 s at 262,144 bits. Apple's
 // largest published root is RSA-4096, so 8,192 bits (the BoringSSL ceiling
 // the Swift port inherits) is ample headroom for a genuine chain and a

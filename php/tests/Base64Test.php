@@ -19,7 +19,7 @@ use PHPUnit\Framework\TestCase;
  * receipt-data and x5c entries ({@see Base64::decodeCanonical()}).
  *
  * The receipt-data and x5c spellings themselves are the decodeBase64 groups
- * of fixtures/cases-0.7.json, which ConformanceCasesTest runs against
+ * of fixtures/cases.json, which ConformanceCasesTest runs against
  * decodeCanonical(); what stays here is why the check in front of
  * base64_decode() exists.
  */

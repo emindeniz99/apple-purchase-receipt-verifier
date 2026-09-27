@@ -9,7 +9,7 @@ namespace EminDeniz99\ApplePurchaseReceiptVerifier;
  *
  * The vocabulary is closed and shared by every port of this library: the
  * backing string is byte-identical to Java's `Reason.name()`, and a
- * `fixtures/cases-0.7.json` vector reads the same in every language. Match
+ * `fixtures/cases.json` vector reads the same in every language. Match
  * on the case, never persist an ordinal: the set may grow between 0.x
  * releases.
  */

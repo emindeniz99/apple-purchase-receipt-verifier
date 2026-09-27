@@ -3,7 +3,7 @@
 require_relative "helper"
 require_relative "test_pki"
 
-# The JWS path beyond what fixtures/cases-0.7.json pins: shapes the shared
+# The JWS path beyond what fixtures/cases.json pins: shapes the shared
 # vectors have no fixture for, and the exact check order the cross-port
 # contract makes observable. 0.7 takes no bundle id, accepted-environment set
 # or app Apple id (docs/design/0.7-api.md): the JWS verifies and the caller

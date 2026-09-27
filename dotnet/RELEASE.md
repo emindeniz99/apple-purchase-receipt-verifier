@@ -21,8 +21,8 @@ restores `ApplePurchaseReceiptVerifier` from nuget.org at the exact version —
 `Version="[$(SmokeVersion)]"`, an exact-version range, passed as
 `-p:SmokeVersion=$VERSION` — then runs it. `Program.cs` asserts three bundled
 roots, verifies `fixtures/public-receipts/receipt-sandbox-g5.b64` and checks
-that a verifier configured for another bundle id rejects it with
-`VerificationReason.WrongBundleId`.
+that the same receipt with one DER byte flipped in its signature fails with
+`VerificationReason.InvalidSignature`.
 
 Registries do not publish atomically, so the restore is retried; each attempt
 passes `--no-cache`, because NuGet caches an HTTP response — a 404 for a

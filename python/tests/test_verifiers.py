@@ -1,5 +1,5 @@
 """Python-only tests over the shared fixture sets. The facts every
-implementation must agree on live in fixtures/cases-0.7.json and are run by
+implementation must agree on live in fixtures/cases.json and are run by
 tests/test_conformance.py; what is left here is what a shared vector cannot
 express: forged and mutated inputs built at run time, the raw JSON wire
 form, resource bounds, and Config/Verifier construction."""

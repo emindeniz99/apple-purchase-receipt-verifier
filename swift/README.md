@@ -291,7 +291,7 @@ envelope.
 ## Measured worst-case CPU
 
 Measured on 2026-09-27 with `bench --worst-case`, which times every shared
-case in `fixtures/cases-0.7.json` that carries a time budget: oversized
+case in `fixtures/cases.json` that carries a time budget: oversized
 untrusted keys, a cross-signed certificate mesh, and the encoding oddities
 inside certificates. Swift 6.3.3, release build, one thread, on a shared
 4-vCPU KVM guest (Intel Xeon Processor @ 2.10GHz); one second of warm-up,

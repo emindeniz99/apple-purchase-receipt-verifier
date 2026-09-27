@@ -8,7 +8,7 @@ use RuntimeException;
 
 /**
  * Locates the repository's shared `fixtures/` directory and decodes the
- * fixtures `cases-0.7.json` registers, checking each one against the
+ * fixtures `cases.json` registers, checking each one against the
  * SHA-256 the registry records for its DECODED logical bytes.
  *
  * A sibling of {@see Fixtures}, kept separate because the 0.7 cases file
@@ -27,7 +27,7 @@ final class Fixtures07
     {
         $dir = __DIR__;
         for ($i = 0; $i < 12; ++$i) {
-            if (is_file($dir . '/fixtures/cases-0.7.json')) {
+            if (is_file($dir . '/fixtures/cases.json')) {
                 return $dir . '/fixtures';
             }
             $parent = dirname($dir);
@@ -37,16 +37,16 @@ final class Fixtures07
             $dir = $parent;
         }
 
-        throw new RuntimeException('harness error: could not locate fixtures/cases-0.7.json by walking up from ' . __DIR__);
+        throw new RuntimeException('harness error: could not locate fixtures/cases.json by walking up from ' . __DIR__);
     }
 
     /** @return array<string, mixed> */
     public static function cases(): array
     {
         if (self::$document === null) {
-            $json = file_get_contents(self::directory() . '/cases-0.7.json');
+            $json = file_get_contents(self::directory() . '/cases.json');
             if ($json === false) {
-                throw new RuntimeException('harness error: cases-0.7.json is unreadable');
+                throw new RuntimeException('harness error: cases.json is unreadable');
             }
             /** @var array<string, mixed> $parsed */
             $parsed = json_decode($json, true, 64, JSON_THROW_ON_ERROR);
@@ -71,7 +71,7 @@ final class Fixtures07
         }
         $registry = self::registry();
         if (!isset($registry[$id])) {
-            throw new RuntimeException("harness error: cases-0.7.json registers no fixture \"{$id}\"");
+            throw new RuntimeException("harness error: cases.json registers no fixture \"{$id}\"");
         }
         $entry = $registry[$id];
         $raw = file_get_contents(self::directory() . '/' . $entry['path']);
@@ -93,7 +93,7 @@ final class Fixtures07
         if (!hash_equals($entry['contentSha256'], $actual)) {
             throw new RuntimeException(
                 "fixture \"{$id}\" ({$entry['path']}, codec {$entry['codec']}) has drifted: "
-                . "cases-0.7.json records contentSha256 {$entry['contentSha256']}, "
+                . "cases.json records contentSha256 {$entry['contentSha256']}, "
                 . "the decoded bytes hash to {$actual}",
             );
         }

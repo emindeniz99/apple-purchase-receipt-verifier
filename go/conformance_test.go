@@ -1,6 +1,6 @@
 package applereceipt_test
 
-// Runs every vector in fixtures/cases-0.7.json, the normative
+// Runs every vector in fixtures/cases.json, the normative
 // cross-language conformance set for the 0.7 API, through the three
 // public Verifier methods and the two base64 decoders.
 //
@@ -36,7 +36,7 @@ import (
 	"github.com/emindeniz99/apple-purchase-receipt-verifier/go/internal/chain"
 )
 
-const casesFileName = "cases-0.7.json"
+const casesFileName = "cases.json"
 
 // --- the vector file -------------------------------------------------------
 

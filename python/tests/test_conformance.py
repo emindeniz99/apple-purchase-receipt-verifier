@@ -1,4 +1,4 @@
-"""Runs fixtures/cases-0.7.json (the normative cross-language 0.7
+"""Runs fixtures/cases.json (the normative cross-language 0.7
 conformance vectors) against this implementation. The adapter below knows
 nothing about any individual case: it loads the file, resolves fixture ids
 to bytes, builds a ``Config``/``Verifier`` from the generic config,
@@ -25,7 +25,7 @@ FIXTURES = Path(__file__).resolve().parents[2] / "fixtures"
 # Read as UTF-8 explicitly rather than in the locale encoding: the file
 # carries non-ASCII characters in its comments, and a machine whose locale
 # resolves to ASCII would fail here before a single vector runs.
-CASES = json.loads((FIXTURES / "cases-0.7.json").read_text(encoding="utf-8"))
+CASES = json.loads((FIXTURES / "cases.json").read_text(encoding="utf-8"))
 
 
 def case_clock(case):
@@ -42,10 +42,10 @@ def case_clock(case):
 
 def fixture_bytes(fixture_id):
     """Decodes a registered fixture to its logical bytes (fixture.codec),
-    and checks them against the digest cases-0.7.json records for it."""
+    and checks them against the digest cases.json records for it."""
     entry = CASES["fixtures"].get(fixture_id)
     if entry is None:
-        raise AssertionError(f"harness error: cases-0.7.json registers no fixture {fixture_id!r}")
+        raise AssertionError(f"harness error: cases.json registers no fixture {fixture_id!r}")
     # read_bytes(), not a text-mode open(): the "text" codec's contract is
     # the file bytes VERBATIM, and a text-mode read on a platform whose
     # default newline handling translates line endings would silently
@@ -70,7 +70,7 @@ def fixture_bytes(fixture_id):
     if actual != expected:
         raise AssertionError(
             f"fixture {fixture_id!r} ({entry['path']}) does not match the digest "
-            f"cases-0.7.json records: expected {expected}, got {actual}"
+            f"cases.json records: expected {expected}, got {actual}"
         )
     return content
 
@@ -186,7 +186,7 @@ def _iso_utc(value):
 
 def normalize_receipt(payload):
     """A ReceiptPayload/InAppPurchase, normalized to its own canonical
-    JSON, then re-parsed: the field paths in cases-0.7.json are written
+    JSON, then re-parsed: the field paths in cases.json are written
     against that exact JSON shape (snake_case, *_ms epoch numbers, 64-bit
     ids as strings)."""
     return json.loads(payload.to_json())
@@ -271,7 +271,7 @@ def resolve_length(root, path):
 
 
 class ConformanceCasesTest(unittest.TestCase):
-    """One test method per case in fixtures/cases-0.7.json (generated below)."""
+    """One test method per case in fixtures/cases.json (generated below)."""
 
     def run_case(self, case):
         RAN.add(case["id"])

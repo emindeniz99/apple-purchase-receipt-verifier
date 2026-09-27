@@ -390,7 +390,7 @@ The receipt and request caps are Apple's own limit. Measured on 2026-09-23
 against both of Apple's verifyReceipt endpoints (production and sandbox), a
 request body of 3,145,728 bytes is answered normally and one of 3,145,729
 bytes gets HTTP 413. Apple counts UTF-8 bytes, not characters.
-`fixtures/cases-0.7.json` holds every port to these numbers from both sides.
+`fixtures/cases.json` holds every port to these numbers from both sides.
 
 - **the endpoint request body and the receipt base64 string**: 3,145,728
   UTF-8 bytes (`MAX_REQUEST_BYTES`, `MAX_RECEIPT_BYTES`). Over it is
@@ -519,7 +519,7 @@ npm run test:runtimes:web    # the web build on Node, the Vercel Edge runtime, w
 npm run test:runtimes:fastly # the web build on Fastly Compute (needs viceroy)
 ```
 
-`test/conformance-0.7.test.js` runs `fixtures/cases-0.7.json`, the normative
+`test/conformance.test.js` runs `fixtures/cases.json`, the normative
 cross-language vector file every port of this library answers, as one named
 test per case **per build** (Node and `/web`), and fails unless every case
 ran on both. The adapter carries no case-specific knowledge: it builds a

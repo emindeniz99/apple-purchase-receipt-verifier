@@ -76,7 +76,7 @@ internal static class TestPki
         return builder.Build();
     }
 
-    /// <summary>A certificate from the <c>cases-0.7.json</c> fixture registry.</summary>
+    /// <summary>A certificate from the <c>cases.json</c> fixture registry.</summary>
     internal static X509Certificate2 FixtureCertificate(string id) =>
         X509CertificateLoader.LoadCertificate(Fixtures070.Bytes(id));
 

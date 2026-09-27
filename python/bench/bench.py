@@ -43,7 +43,7 @@ MIN_SAMPLE_S = 0.1
 NOW_MS = 1767225600000
 
 # File under fixtures/public-receipts, and the bundle id, in-app count and
-# digest fixtures/cases-0.7.json pins for it.
+# digest fixtures/cases.json pins for it.
 FIXTURES = [
     (
         "receipt-sandbox-g5",

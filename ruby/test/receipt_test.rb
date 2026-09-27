@@ -3,7 +3,7 @@
 require_relative "helper"
 require_relative "test_pki"
 
-# The receipt path beyond fixtures/cases-0.7.json: CMS shapes no fixture
+# The receipt path beyond fixtures/cases.json: CMS shapes no fixture
 # carries, the attribute grammar's edges, and the pinning properties (marker
 # OID after the chain, anchors only) stated as security rules rather than
 # vectors. 0.7 takes no bundle id and no device GUID (docs/design/
