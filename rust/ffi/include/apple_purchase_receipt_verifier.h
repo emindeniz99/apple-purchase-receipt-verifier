@@ -162,9 +162,8 @@ extern "C" {
 // The library version, as a static NUL-terminated string. **Do not free
 // it**, and do not assume it stays valid across a `dlclose`.
 //
-// It is the repository's own `version.txt`, the single file every port's
-// version is bumped from, so it can never drift from the Rust library this
-// ABI is compiled against.
+// It is the Rust library's own `VERSION`, so it names the library this
+// ABI is compiled against and needs no file outside the crate.
 const char *aprv_version(void);
 
 // A verifier: the pinned roots and the clock.
