@@ -10,6 +10,14 @@ benchmark warms up for one second, then takes ten samples of at least 100 ms
 each, with the garbage collector left on as it is in every other port; the
 JSON on stdout carries the median, minimum and maximum microseconds per
 operation over those samples.
+
+    uv run --locked python bench/bench.py --worst-case
+
+times, the same way, every shared case in fixtures/cases.json that carries a
+maxMillis budget: the hostile inputs (oversized untrusted keys, certificate
+meshes, encoding oddities inside certificates) the shared suite bounds in
+time. Each call is run once first and must give the answer the case expects.
+The README's worst-case CPU figure comes from this mode.
 """
 
 from __future__ import annotations
@@ -33,6 +41,7 @@ from apple_purchase_receipt_verifier import Config, Environment, Verifier
 # The library's own receipt-data decoder, which the package does not export.
 from apple_purchase_receipt_verifier._receipt_base64 import decode_receipt_base64
 from apple_purchase_receipt_verifier.receipt import verify_receipt_der
+from cryptography import x509
 
 WARMUP_S = 1.0
 SAMPLES = 10
@@ -95,7 +104,65 @@ def tamper(der: bytes) -> bytes:
     return bytes(tampered)
 
 
-def main() -> None:
+def fixture_bytes(fixtures_dir: Path, entry: dict[str, str]) -> bytes:
+    """A registered fixture's logical bytes, per its codec (the same rules
+    the conformance adapter in tests/ applies)."""
+    raw = (fixtures_dir / entry["path"]).read_bytes()
+    codec = entry["codec"]
+    if codec in ("raw", "text"):
+        return raw
+    if codec == "base64":
+        return base64.b64decode(b"".join(raw.split()))
+    if codec == "utf8":
+        return raw.decode("utf-8").strip().encode("utf-8")
+    raise ValueError(f"unknown fixture codec {codec!r}")
+
+
+def worst_case() -> list[dict[str, Any]]:
+    fixtures_dir = Path(__file__).resolve().parents[2] / "fixtures"
+    file = json.loads((fixtures_dir / "cases.json").read_text(encoding="utf-8"))
+    registry = file["fixtures"]
+    results = []
+    for case in file["cases"]:
+        if "maxMillis" not in case:
+            continue
+        trusted = case["config"]["trustedRoots"]
+        roots = None
+        if trusted["source"] == "fixtures":
+            roots = [
+                x509.load_der_x509_certificate(fixture_bytes(fixtures_dir, registry[i]))
+                for i in trusted["fixtures"]
+            ]
+        verifier = Verifier(Config.create(roots=roots, clock=lambda: NOW_MS))
+        entry = registry[case["input"]["fixture"]]
+        data = fixture_bytes(fixtures_dir, entry)
+        operation = case["operation"]
+        if operation == "verifyReceipt":
+            text = (
+                base64.b64encode(data).decode("ascii")
+                if entry["codec"] in ("raw", "base64")
+                else data.decode("utf-8")
+            )
+            op = partial(verifier.verify_receipt, text)
+        elif operation == "verifySignedData":
+            op = partial(verifier.verify_signed_data, data.decode("utf-8"))
+        else:
+            raise ValueError(f"{case['id']}: no adapter for operation {operation}")
+
+        # The answer the case expects, before anything is timed.
+        result = op()
+        outcome = "ok" if result.verified else result.failure.reason.name
+        expected = case["expected"]
+        if "oneOf" in expected:
+            assert outcome in expected["oneOf"], f"{case['id']} answered {outcome}"
+        else:
+            want = "ok" if expected["status"] == "ok" else expected["reason"]
+            assert outcome == want, f"{case['id']} answered {outcome}"
+        results.append(measure(operation, case["id"], op))
+    return results
+
+
+def cross_port() -> list[dict[str, Any]]:
     fixtures_dir = Path(__file__).resolve().parents[2] / "fixtures" / "public-receipts"
     roots = list(Config.defaults().roots)
     results = []
@@ -136,9 +203,15 @@ def main() -> None:
                 partial(production_endpoint, json.dumps({"receipt-data": tampered})),
             ),
         ]
+    return results
+
+
+def main() -> None:
+    worst = "--worst-case" in sys.argv[1:]
+    results = worst_case() if worst else cross_port()
     report = {
         "port": "python",
-        "tool": "bench/bench.py (timeit)",
+        "tool": f"bench/bench.py {'worst-case' if worst else 'cross-port'} (timeit)",
         "runtime": f"{platform.python_implementation()} {platform.python_version()}",
         "settings": {"warmup_s": WARMUP_S, "samples": SAMPLES, "min_sample_s": MIN_SAMPLE_S},
         "results": results,
