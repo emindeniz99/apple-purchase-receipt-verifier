@@ -8,6 +8,14 @@
 // warms up for one second, then takes ten samples of at least 100 ms each;
 // the JSON on stdout carries the median, minimum and maximum microseconds per
 // operation over those samples.
+//
+//   dotnet run -c Release --project dotnet/bench -- --worst-case
+//
+// times, the same way, every shared case in fixtures/cases.json that carries
+// a maxMillis budget: the hostile inputs (oversized untrusted keys,
+// certificate meshes, encoding oddities inside certificates) the shared suite
+// bounds in time. Each call is run once first and must give the answer the
+// case expects. The README's worst-case CPU figure comes from this mode.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -52,11 +60,22 @@ namespace ApplePurchaseReceiptVerifier.Bench
         // Keeps each result reachable so no call can be optimized away.
         private static object? s_sink;
 
-        private static void Main()
+        private static readonly long NowMillis =
+            new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+
+        private static void Main(string[] args)
+        {
+            bool worstCase = args.Contains("--worst-case");
+            List<Result> results = worstCase ? WorstCase() : CrossPort();
+            Check(s_sink is not null, "sink");
+            WriteReport(results, worstCase ? "worst-case" : "cross-port");
+        }
+
+        private static List<Result> CrossPort()
         {
             Config config = Config.CreateBuilder()
                 .Roots(AppleRootCertificates.Bundled())
-                .Clock(() => new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds())
+                .Clock(() => NowMillis)
                 .Build();
             IVerifier verifier = Verifier.Create(config);
             List<Result> results = new List<Result>();
@@ -98,9 +117,82 @@ namespace ApplePurchaseReceiptVerifier.Bench
                 results.Add(Measure("endpointJson", name, () => verifier.VerifyReceiptEndpoint(AppleEnvironment.Sandbox, requestJson)));
                 results.Add(Measure("rejectTamperedSignature", name, RejectTampered));
             }
-            Check(s_sink is not null, "sink");
-            WriteReport(results);
+            return results;
         }
+
+        private static List<Result> WorstCase()
+        {
+            string fixtures = FixturesDirectory();
+            using JsonDocument file = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(fixtures, "cases.json")));
+            JsonElement registry = file.RootElement.GetProperty("fixtures");
+
+            // A registered fixture's logical bytes, per its codec (the same
+            // rules the conformance adapter in tests/ applies).
+            byte[] FixtureBytes(string id)
+            {
+                JsonElement entry = registry.GetProperty(id);
+                byte[] raw = File.ReadAllBytes(Path.Combine(fixtures, entry.GetProperty("path").GetString()!));
+                return entry.GetProperty("codec").GetString() switch
+                {
+                    "raw" or "text" => raw,
+                    "base64" => Convert.FromBase64String(System.Text.Encoding.ASCII.GetString(raw)),
+                    "utf8" => System.Text.Encoding.UTF8.GetBytes(System.Text.Encoding.UTF8.GetString(raw).Trim()),
+                    var codec => throw new InvalidOperationException("fixture " + id + " has codec " + codec),
+                };
+            }
+
+            List<Result> results = new List<Result>();
+            foreach (JsonElement kase in file.RootElement.GetProperty("cases").EnumerateArray())
+            {
+                if (!kase.TryGetProperty("maxMillis", out _))
+                {
+                    continue;
+                }
+                string id = kase.GetProperty("id").GetString()!;
+                string operation = kase.GetProperty("operation").GetString()!;
+                JsonElement trusted = kase.GetProperty("config").GetProperty("trustedRoots");
+                IEnumerable<X509Certificate2> roots = trusted.GetProperty("source").GetString() == "fixtures"
+                    ? trusted.GetProperty("fixtures").EnumerateArray()
+                        .Select(root => X509CertificateLoader.LoadCertificate(FixtureBytes(root.GetString()!)))
+                        .ToList()
+                    : AppleRootCertificates.Bundled();
+                IVerifier verifier = Verifier.Create(Config.CreateBuilder().Roots(roots).Clock(() => NowMillis).Build());
+                string fixture = kase.GetProperty("input").GetProperty("fixture").GetString()!;
+                byte[] bytes = FixtureBytes(fixture);
+                string codec = registry.GetProperty(fixture).GetProperty("codec").GetString()!;
+                Func<Failure?> op = operation switch
+                {
+                    "verifyReceipt" when codec is "raw" or "base64" => Receipt(verifier, Convert.ToBase64String(bytes)),
+                    "verifyReceipt" => Receipt(verifier, System.Text.Encoding.UTF8.GetString(bytes)),
+                    "verifySignedData" => SignedData(verifier, System.Text.Encoding.UTF8.GetString(bytes)),
+                    _ => throw new InvalidOperationException(id + ": no adapter for operation " + operation),
+                };
+
+                // The answer the case expects, before anything is timed.
+                Failure? failure = op();
+                string outcome = failure is null ? "ok" : VerificationReasonCodes.ToCode(failure.Reason);
+                JsonElement expected = kase.GetProperty("expected");
+                if (expected.TryGetProperty("oneOf", out JsonElement oneOf))
+                {
+                    Check(oneOf.EnumerateArray().Any(o => o.GetString() == outcome), id + " answered " + outcome);
+                }
+                else
+                {
+                    string want = expected.GetProperty("status").GetString() == "ok"
+                        ? "ok"
+                        : expected.GetProperty("reason").GetString()!;
+                    Check(outcome == want, id + " answered " + outcome);
+                }
+                results.Add(Measure(operation, id, () => op() ?? (object)outcome));
+            }
+            return results;
+        }
+
+        private static Func<Failure?> Receipt(IVerifier verifier, string base64) =>
+            () => verifier.VerifyReceipt(base64).Failure;
+
+        private static Func<Failure?> SignedData(IVerifier verifier, string jws) =>
+            () => verifier.VerifySignedData(jws).Failure;
 
         private static Result Measure(string benchmark, string fixture, Func<object> op)
         {
@@ -130,14 +222,14 @@ namespace ApplePurchaseReceiptVerifier.Bench
             return new Result(benchmark, fixture, median, samples[0], samples[Samples - 1], ops);
         }
 
-        private static void WriteReport(List<Result> results)
+        private static void WriteReport(List<Result> results, string mode)
         {
             using Stream stdout = Console.OpenStandardOutput();
             using (Utf8JsonWriter json = new Utf8JsonWriter(stdout, new JsonWriterOptions { Indented = true }))
             {
                 json.WriteStartObject();
                 json.WriteString("port", "dotnet");
-                json.WriteString("tool", "bench/Program.cs (System.Diagnostics.Stopwatch)");
+                json.WriteString("tool", "bench/Program.cs " + mode + " (System.Diagnostics.Stopwatch)");
                 json.WriteString("runtime", RuntimeInformation.FrameworkDescription);
                 json.WriteStartObject("settings");
                 json.WriteNumber("warmup_s", WarmupMs / 1000);
