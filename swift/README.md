@@ -1,633 +1,323 @@
 # apple-purchase-receipt-verifier (Swift)
 
-Verify Apple in-app purchases locally — no calls to Apple's servers.
+Verify Apple in-app purchases locally: no calls to Apple's servers. Checks a
+StoreKit 2 signed JWS or a legacy PKCS#7 app receipt against pinned Apple root
+certificates and hands back what Apple signed.
 
-Replaces the deprecated `verifyReceipt` endpoint by validating StoreKit 2
-signed JWS transactions and legacy PKCS#7 app receipts against pinned Apple
-root certificates.
+This is a verifier, not business logic. It answers one question: did Apple
+sign this data? If so, it returns the data, unfiltered by bundle id,
+environment or product. Every policy decision (bundle id, environment,
+product id, device binding, refunds, idempotency) is yours; see
+[What to check after verification](#what-to-check-after-verification).
 
 ```swift
-// v0.3.0 is the newest tag; check the project README's badge for the current one
-.package(url: "https://github.com/emindeniz99/apple-purchase-receipt-verifier.git", from: "0.3.0")
-```
-
-```swift
-import ApplePurchaseReceiptVerifier
-
-// Legacy PKCS#7 app receipt
-let receipts = try ReceiptVerifier(trustedRoots: appleReceiptRoots(), bundleId: "com.example.app")
-let receipt = try await receipts.verify(base64Receipt: receiptBase64)
-print(receipt.receiptType ?? "", receipt.inAppPurchases.count)
-
-// StoreKit 2 signed transaction
-let transactions = try JwsVerifier(
-    trustedRoots: appleJwsRoots(), bundleId: "com.example.app",
-    acceptedEnvironments: [.production, .sandbox])
-let transaction = try await transactions.verifyTransaction(jws)
-print(transaction.productId ?? "", transaction.expiresDate ?? 0)
+// The manifest lives at the repository root (SwiftPM resolves a package's
+// manifest only there); the sources stay under swift/.
+.package(url: "https://github.com/emindeniz99/apple-purchase-receipt-verifier.git", from: "0.6.0")
 ```
 
 Swift **6.1** or newer, macOS 13+ or Linux (`Package.swift` declares
-`.macOS(.v13)`; CI runs the suite on Swift 6.1, 6.2 and 6.3, each on Linux).
-The manifest lives at the repository root — SwiftPM resolves a package's
-manifest only there — while the sources themselves stay under `swift/`.
+`.macOS(.v13)`). Coming from 0.6? Read
+[Upgrading from 0.6](#upgrading-from-06): the API is smaller, synchronous,
+and every type name has changed.
 
-Every type is `Sendable`, and every verification method is `async throws`,
-because `swift-certificates`' chain validation is an `async` method. Share
-one instance of each verifier across requests; see
-[Thread safety](#thread-safety).
-
-## The three JWS entry points
-
-```swift
-let verifier = try JwsVerifier(
-    trustedRoots: appleJwsRoots(),
-    bundleId: "com.example.app",
-    acceptedEnvironments: [.production, .sandbox],
-    appAppleId: 1_234_567_890)       // required to accept a Production AppTransaction
-
-let transaction = try await verifier.verifyTransaction(jws)     // TransactionPayload
-let app = try await verifier.verifyAppTransaction(jws)          // AppTransactionPayload
-let claims = try await verifier.verifyRaw(jws)                  // [String: Any]
-```
-
-`verifyRaw` checks the chain and the signature, and enforces no *identity*
-claim: the caller checks `bundleId`, `environment` and `appAppleId` in the
-returned dictionary itself.
-
-Include `.sandbox` in `acceptedEnvironments` on any endpoint App Review can
-reach: App Review runs production builds against sandbox.
-
-**Date claims on `TransactionPayload` and `AppTransactionPayload` are
-`Int64?` epoch-millisecond fields** — `signedDate`, `purchaseDate`,
-`expiresDate`, `revocationDate`, `receiptCreationDate` — exactly as Apple
-ships them. That is contractual across every port of this library:
-converting them to `Date` would lose the raw claim and put this port out of
-step with the other eight. Receipt *attribute* dates are the opposite case
-and are `Date?` on `AppReceipt` and `InAppPurchase`.
-
-**Entitlement is your rule.** There is no "is active" helper, as in Apple's
-own libraries; read the signed fields:
-
-```swift
-let nowMillis = Int64(Date().timeIntervalSince1970 * 1000)
-let entitled = payload.revocationDate == nil && (payload.expiresDate.map { $0 > nowMillis } ?? true)
-```
-
-That is only what the payload said when it was signed. A billing grace
-period (it lives in the renewal info), an upgrade (`isUpgraded`) and a refund
-after signing are yours to handle; App Store Server Notifications V2 or the
-App Store Server API give the live status. `isActive(at:)` is gone.
-
-`JwsVerifier.init` throws `VerificationError`, not only its verification
-methods: an empty `trustedRoots`, an empty `bundleId`, or an empty
-`acceptedEnvironments` set fails at construction.
-
-## Legacy PKCS#7 app receipts
-
-Every input form is reachable with and without the device GUID:
-
-```swift
-let verifier = try ReceiptVerifier(trustedRoots: appleReceiptRoots(), bundleId: "com.example.app")
-
-try await verifier.verify(receipt: receiptDER)
-try await verifier.verify(base64Receipt: receiptBase64)
-try await verifier.verify(receipt: receiptDER, deviceGuid: deviceGuid)
-try await verifier.verify(base64Receipt: receiptBase64, deviceGuid: deviceGuid)
-```
-
-`verify(base64Receipt:)` decodes exactly what Apple's verifyReceipt accepts
-as `receipt-data` (measured 2026-09-23, see
-[`docs/evidence/2026-09-23-verifyreceipt-base64.md`](../docs/evidence/2026-09-23-verifyreceipt-base64.md)):
-standard base64 (`+`/`/`) with the canonical `=` padding and nothing else.
-Whitespace anywhere, the base64url alphabet, omitted or extra padding,
-anything after the padding and an empty string are `.invalidReceiptFormat`
-before any bytes reach the CMS parser. Unused low bits in the last data
-character are accepted, as Apple accepts them. See `decodeReceiptBase64` in
-`ReceiptVerifier.swift`.
-
-Passing `deviceGuid` additionally enforces the device binding:
-`SHA1(guid ‖ opaqueValue ‖ bundleIdBytes)` must equal attribute 5, compared in
-constant time. The check is optional because a server does not always have
-the client's device GUID — the raw bytes of `identifierForVendor` on iOS,
-iPadOS, tvOS and watchOS, including an iOS app running on an Apple silicon
-Mac, or the primary network interface's MAC address from
-`copy_mac_address` on macOS and Mac Catalyst.
-
-Four attribute types are modelled although Apple documents none of them:
-`AppReceipt.appItemId` (type 1, which Apple's endpoint echoes under both
-`adam_id` and `app_item_id`), `AppReceipt.downloadId` (15),
-`AppReceipt.versionExternalIdentifier` (16) and `InAppPurchase.isTrialPeriod`
-(1713, an `Int64?` like `isInIntroOfferPeriod`). Their meaning was established
-by lining a genuine production receipt's attributes up against the answer
-Apple's `verifyReceipt` endpoint gives for the same receipt (measured
-2026-09-21). All four are `Int64?` rather than narrower: download ids run past
-2^53, so a `Double` would round them.
-
-Attribute types the library does not model are exposed verbatim on
-`AppReceipt.unknownAttributes` / `InAppPurchase.unknownAttributes`
-(`[Int: [Data]]`), the raw verified-but-undecoded value bytes keyed by
-type — so a field Apple adds later stays reachable without a library update.
-
-CMS parsing accepts BER, not only strict DER: genuine Apple and Xcode
-receipts use indefinite-length encoding.
-
-`ReceiptVerifier.verifyCore(receipt:)` is the instance-level primitive
-**without** the bundle-id check, and `ReceiptVerifier.verifyCore(receipt:
-trustedRoots:)` is the same primitive as a static function for a caller with
-no single bundle id to check — what the `verifyReceipt`-compatible endpoint
-below is built on:
-
-```swift
-let receipt = try await ReceiptVerifier.verifyCore(receipt: receiptDER, trustedRoots: appleReceiptRoots())
-```
-
-A caller that unlocks a product on the strength of it, without comparing
-`receipt.bundleId`, will accept a genuine, correctly signed receipt from a
-different app.
-
-## The `verifyReceipt`-compatible endpoint
-
-`VerifyReceiptEndpoint` answers Apple's deprecated `verifyReceipt` request
-with the same response body, verified offline. One instance emulates one
-environment, `.production` or `.sandbox`.
-
-```swift
-let endpoint = try VerifyReceiptEndpoint(trustedRoots: appleReceiptRoots(), environment: .production)
-
-// The request body as a dictionary, or the raw JSON text.
-let result = await endpoint.verifyReceiptResult(requestBody)
-let response = result.response()  // Apple's body as [String: Any]
-let json = result.json()          // Apple's body as JSON
-
-// The same as verifyReceiptResult(rawRequestBody).json().
-let body = await endpoint.verifyReceiptJSON(rawRequestBody)
-// receipt-data alone, with no request envelope.
-let bare = await endpoint.verifyReceiptData(receiptBase64)
-```
-
-No endpoint method throws on a request: the Apple status is part of the
-result, for every input, including a body that is not JSON
-(`{"status":21002}`). The statuses it can produce are
-`VerifyReceiptEndpoint.statusOK` (`0`), `.statusMalformed` (`21002`),
-`.statusNotAuthenticated` (`21003`), `.statusSandboxReceiptOnProduction`
-(`21007`), `.statusProductionReceiptOnSandbox` (`21008`) and
-`.statusInternal` (`21009`), and no others, because the rest describe
-conditions that only exist on Apple's servers. Local 21007/21008 routing
-fails closed: only receipt types `Production` and `ProductionVPP` count as
-production.
-
-A `VerifyReceiptResult` is one verification. It is an immutable `Sendable`
-struct, and only the endpoint creates one.
-
-- `outcome` is `.verified(AppReceipt)` or
-  `.failed(reason: VerificationError.Reason, cause: (any Error)?)`.
-- `receipt` is the verified `AppReceipt` whenever the receipt bytes
-  verified, 21007 and 21008 included, and `failureReason` says why there is
-  none. Exactly one of them is non-nil.
-- `isVerified` is true exactly when `receipt` is non-nil. That includes
-  21007 and 21008, so it is not the same check as `status == 0`:
-  `status == 0` asks whether this endpoint's environment accepts the
-  receipt, `isVerified` asks whether the receipt verified at all.
-- `failureCause` is what is behind an `.internalError`, for logging: the
-  parser's error for signed content that could not be read, or the
-  unexpected error the endpoint caught.
-- `status` is the answer for the endpoint's own environment.
-- `requestDate` is the instant rendered as `request_date`.
-
-The response is rendered when `response()` or `json()` is called, not
-before.
-
-```swift
-switch result.outcome {
-case .verified(let receipt):
-    guard receipt.bundleId == "com.example.app" else { return reject() }
-    grant(receipt.inAppPurchases)
-case .failed(let reason, let cause):
-    log(reason.rawValue, cause)
-}
-```
-
-**Retrying in the other environment costs no second verification.**
-`response(for:)` and `json(for:)` render what an endpoint of that
-environment would answer, recomputing the status from the receipt's own
-type:
-
-| receipt | on `.production` | on `.sandbox` |
-|---|---|---|
-| `Production`, `ProductionVPP` | 0 | 21008 |
-| any other type, or none | 21007 | 0 |
-| failed verification | its own status | its own status |
-
-```swift
-let result = await production.verifyReceiptResult(requestBody)
-if result.status == VerifyReceiptEndpoint.statusSandboxReceiptOnProduction {
-    let body = try result.json(for: .sandbox)
-}
-```
-
-A sandbox receipt never renders as a production 0, whichever endpoint
-verified it. `.xcode` and `.localTesting` throw
-`VerificationError(.wrongEnvironment, ...)`, as the initializer does.
-
-| `failureReason` | status | when |
-|---|---|---|
-| `.requestTooLarge` | 21002 | the raw body is over `VerifyReceiptEndpoint.maxRequestBytes` (3,145,728 UTF-8 bytes); Apple answers HTTP 413 here |
-| `.malformedRequest` | 21002 | the body is not a JSON object or nests past 64 levels, or `receipt-data` is missing, empty or not a string |
-| `.invalidReceiptFormat` | 21002 | `receipt-data` is over `ReceiptVerifier.maxReceiptBytes`, is not base64 or its CMS envelope does not parse |
-| `.invalidChain`, `.invalidSignature`, other certificate reasons | 21003 | the receipt did not authenticate |
-| `.internalError` | 21009 | not the client's fault: the receipt authenticated but its signed content cannot be read, or an unexpected error; `failureCause` holds what is behind it. Alert and retry or escalate; do not deny the user |
-
-`.malformedRequest` and `.requestTooLarge` only ever appear on a result. No
-`VerificationError` is thrown with either. `.internalError` is also thrown
-by `ReceiptVerifier`, with the parser's error as `VerificationError.cause`.
-
-**`request_date`.** `verifyReceiptResult` and `verifyReceiptData` take an
-optional `now: Date?` that becomes `request_date` in place of the
-endpoint's clock. Without it the clock is read once, when the call is made.
-`now` reaches `request_date` and nothing else: certificate validity never
-sees it.
-
-Like Apple's endpoint, this does **not** check the bundle id: compare
-`result.receipt?.bundleId` yourself before granting anything, or use
-`ReceiptVerifier`, which checks it for you. `password` and
-`exclude-old-transactions` are accepted for wire compatibility and never
-read. `json()` and `verifyReceiptJSON` are deterministic: Swift
-dictionaries carry no insertion order, so keys are serialized
-`.sortedKeys` rather than in declaration order. See
-[COMPARISON.md](../COMPARISON.md) for the field-by-field fidelity account.
-
-`init(trustedRoots:environment:clock:)` only accepts `.production` or
-`.sandbox` for `environment`. `.xcode` and `.localTesting` throw
-`VerificationError(.wrongEnvironment, ...)` at construction, since Apple's
-endpoint has no other environment to emulate.
-
-A raw request body and `receipt-data` are both measured before they are
-parsed or decoded; see [Resource bounds](#resource-bounds).
-
-Migrating from 0.5: `endpoint.verifyReceipt(body)` is removed; use
-`await endpoint.verifyReceiptResult(body).response()`. The deprecated
-`init(trustedRoots:production:clock:)` is removed; pass
-`environment: .production` for `true` and `.sandbox` for `false`.
-
-## The error vocabulary
-
-Every verification verdict is a `VerificationError`, a `Sendable`,
-`CustomStringConvertible` struct carrying a `reason: Reason` and a
-`message: String`. Switch on `reason`, never parse `description` or
-`message`. The one exception is a malformed trust anchor: a `trustedRoots`
-entry that is not a parseable DER certificate makes swift-certificates' own
-parsing error come back out, not a `VerificationError`. That is usually a
-construction-time failure — `JwsVerifier.init` and `ReceiptVerifier.init`
-decode their anchors once — but the static
-`ReceiptVerifier.verifyCore(receipt:trustedRoots:)` takes its anchors per
-call and decodes them per call, so on that entry point the same error
-surfaces at verification time. Either way, treat anchors as configuration to
-validate at startup rather than as input to catch per call.
-
-```swift
-do {
-    let transaction = try await verifier.verifyTransaction(jws)
-} catch let error as VerificationError {
-    switch error.reason {
-    case .wrongEnvironment:
-        retryAgainstSandbox()
-    case .invalidChain, .invalidSignature:
-        alertSecurity()
-    default:
-        reject(error.reason)
-    }
-}
-```
-
-| `Reason` | Raw value | Raised when |
-|---|---|---|
-| `.invalidJwsFormat` | `INVALID_JWS_FORMAT` | longer than `JwsVerifier.maxJwsBytes`, a header or payload nesting past 64 levels, not three dot-separated segments, a segment that is not base64url JSON, `alg != "ES256"`, or an `x5c` that is not exactly three entries |
-| `.invalidCertificate` | `INVALID_CERTIFICATE` | an `x5c` entry does not parse as a certificate. All three are parsed, `x5c[2]` included, though the third is never trusted (`transaction/reject-x5c-root-that-is-not-a-certificate`). An entry that is not standard base64 with canonical padding (RFC 7515 §4.1.6) is refused before it is decoded: a junk character, a space or line break, a base64url `-` or `_`, or omitted or extra `=` padding gets this verdict rather than being skipped, as in every port |
-| `.invalidCertificatePurpose` | `INVALID_CERTIFICATE_PURPOSE` | the leaf or intermediate lacks its Apple marker OID, or the receipt signer lacks its own |
-| `.invalidChain` | `INVALID_CHAIN` | the path does not reach a pinned anchor, a certificate was not valid at the signing instant, or a receipt embeds more than ten certificates |
-| `.invalidSignature` | `INVALID_SIGNATURE` | the ES256 or CMS signature check failed, or the signer key is not RSA |
-| `.wrongBundleId` | `WRONG_BUNDLE_ID` | the verified payload or receipt names another bundle |
-| `.wrongEnvironment` | `WRONG_ENVIRONMENT` | the environment is outside the accepted set |
-| `.wrongAppAppleId` | `WRONG_APP_APPLE_ID` | a Production `AppTransaction` does not name the configured app Apple id |
-| `.invalidReceiptFormat` | `INVALID_RECEIPT_FORMAT` | the receipt is over `ReceiptVerifier.maxReceiptBytes`, the CMS blob does not parse, or it has no signer info |
-| `.deviceHashMismatch` | `DEVICE_HASH_MISMATCH` | the device hash does not match attribute 5, or the receipt lacks the attributes the check needs |
-| `.malformedRequest` | `MALFORMED_REQUEST` | never thrown: reported only on a `VerifyReceiptResult`, for an unusable request envelope |
-| `.requestTooLarge` | `REQUEST_TOO_LARGE` | never thrown: reported only on a `VerifyReceiptResult`, for a raw body over `VerifyReceiptEndpoint.maxRequestBytes` (status 21002; Apple answers HTTP 413) |
-| `.internalError` | `INTERNAL_ERROR` | the receipt's chain and signature verified, but its payload does not parse (`cause` is the parser's error), or a JWS passed chain and signature but `verifyTransaction`/`verifyAppTransaction` found a modelled claim of the wrong type (a string field not a JSON string, an integer field not a whole number that fits); also reported on a `VerifyReceiptResult` for an unexpected error. Status 21009. Not the client's fault: alert and retry or escalate, do not deny |
-
-**Order of the receipt checks.** CMS parse → the creation date alone
-(attribute 12; nothing else in the payload is decoded yet) → chain at that
-date, or at the system clock when the date is missing, empty, unreadable or
-stated twice → receipt-signing marker OID → CMS signature → full payload
-parse → bundle id → device hash. Nothing is trusted before the chain and
-the signature, so reading the date never rejects. The chain comes first so
-the attacker's own key is never run before it is trusted. A payload that
-fails the full parse was signed by a trusted signer, so it is
-`.internalError`, not `.invalidReceiptFormat`.
-
-The vocabulary is **closed** by the cross-port contract, and it doubles as
-the misconfiguration channel: an empty `trustedRoots`, an empty `bundleId`,
-or an empty `acceptedEnvironments` set throws `VerificationError` from
-`init` too, not a separate error type — `Reason` cases like
-`.invalidCertificate` and `.invalidJwsFormat` are reused there rather than
-introducing a new reason just for construction.
-
-## Integrating: from verified payload to entitlement
-
-The backend flow these calls sit inside is written out once in the
-[project README](../README.md#integrating-from-verified-payload-to-entitlement):
-verify offline, deny on any failure, check the refund field, refresh a payload
-past the freshness window, guard against replay on the transaction id, then
-grant. That section also carries the policy table saying what each reason
-means and which ones are worth an alert. Here are its two branches in this
-port's API.
-
-A StoreKit 2 signed transaction:
+## Quick start
 
 ```swift
 import ApplePurchaseReceiptVerifier
 
-func makeVerifier() throws -> JwsVerifier {
-    try JwsVerifier(
-        trustedRoots: appleJwsRoots(),
-        bundleId: "com.example.app",
-        acceptedEnvironments: [.production, .sandbox])
+// Build once, at startup, and share it: Verifier is immutable and Sendable.
+let verifier = Verifier(config: .defaults())
+
+// A legacy PKCS#7 app receipt, as StoreKit hands it to the app.
+let receiptResult = verifier.verifyReceipt(base64: receiptBase64)
+if let receipt = receiptResult.payload {
+    print(receipt.bundleId ?? "", receipt.inApp.count)
+} else if let failure = receiptResult.failure {
+    print("\(failure.reason): \(failure.message)")
 }
 
-func redeemTransaction(_ verifier: JwsVerifier, userId: String, jws: String) async -> Verdict {
-    let payload: TransactionPayload
-    do {
-        payload = try await verifier.verifyTransaction(jws)          // step 2
-    } catch let error as VerificationError {
-        logger.warning("purchase rejected: \(error.reason.rawValue)")
-        return .denied
-    } catch {
-        return .denied
-    }
-
-    if payload.revocationDate != nil { return .denied }              // step 3
-
-    // step 4, your call: past the window, ask the client for a fresh
-    // jwsRepresentation, or fetch one from the App Store Server API and
-    // verify that instead
-    let nowMillis = Int64(Date().timeIntervalSince1970 * 1000)
-    guard let signed = payload.signedDate, nowMillis - signed <= 300_000 else { return .refresh }
-
-    guard let id = payload.transactionId else { return .denied }
-    if grants.exists(id) { return .denied }                          // step 5
-    grants.record(id, payload.originalTransactionId, userId)
-
-    grant(userId, payload.productId)
-    return .granted
+// A StoreKit 2 signed transaction, renewal info, app transaction or notification.
+let jwsResult = verifier.verifySignedData(jws: jws)
+if let payload = jwsResult.payload {
+    let json = payload.json  // parse it yourself, see below
 }
+
+// The deprecated verifyReceipt HTTP contract, answered locally.
+let responseJson = verifier.verifyReceiptEndpoint(environment: .production, requestJson: requestJson)
 ```
 
-The legacy PKCS#7 app receipt is the same policy on the other input, the one
-StoreKit 1 apps and older SDKs still send:
+**No method throws for any input.** An empty `base64` / `jws` / `requestJson`
+is input and fails as `Reason.malformed`, the same as a garbled one. An
+unexpected error inside the library is reported by where it happened: before
+a signature has verified it is `.malformed` (input nobody vouched for must
+not be able to raise the internal-error alarm at will), while the signed
+receipt content is decoded `.unreadablePayload`, and anywhere else
+`.internalError`. Swift has no equivalent of Java's `catch (Throwable)` or
+Rust's `catch_unwind`: an out-of-bounds access or a forced unwrap traps and
+cannot be recovered from, in this library or any other. This containment
+comes from bounds-checked parsing throughout (`throw`, never a force-unwrap
+or an array index that can go out of range on unverified input), not from a
+runtime safety net that could catch a trap after the fact.
+
+**A custom clock**, for tests or for pinning `request_date`:
 
 ```swift
-// Same policy keyed on the receipt's own dates. `verify(base64Receipt:)` takes
-// the string the client sends; `VerifyReceiptEndpoint` is the alternative,
-// answering Apple's `verifyReceipt` JSON shape with a status instead.
-func redeemReceipt(
-    _ verifier: ReceiptVerifier, userId: String, receiptData: String, productId: String
-) async -> Verdict {
-    guard let receipt = try? await verifier.verify(base64Receipt: receiptData) else {
-        return .denied                                               // step 2
-    }
-    let now = Date()
-    guard let purchase = receipt.inAppPurchases.first(where: { $0.productId == productId }),
-        purchase.cancellationDate == nil                             // step 3
-    else {
-        return .denied
-    }
-    if let expires = purchase.expiresDate, expires <= now { return .denied }
+let config = try Config.builder().clock { 1_735_689_600_000 }.build()  // 2025-01-01T00:00:00Z
+let verifier = Verifier(config: config)
+```
 
-    // step 4: the same caller-side check, on the creation date. Past
-    // the window, ask the client to refresh its receipt, or call the App Store
-    // Server API by transactionId and verify the JWS it returns.
-    guard let created = receipt.creationDate, now.timeIntervalSince(created) <= 300 else {
-        return .refresh
-    }
+`Config.defaults()` uses Apple's three bundled, pinned roots and the system
+clock. The clock is read at most once per call, only when one of exactly two
+things needs it, after the input has passed every check that comes before:
+the chain-validity instant when the receipt or JWS states no signing date of
+its own, and `request_date` in the endpoint response. It never decides
+whether a certificate is expired when the input states a date; see
+[Trust anchors](#trust-anchors).
 
-    guard let id = purchase.transactionId else { return .denied }
-    if grants.exists(id) { return .denied }                          // step 5
-    grants.record(id, purchase.originalTransactionId, userId)
+`Config.defaults()` cannot report a failure (there is nothing to throw to):
+should the bundled roots fail to load or match their pinned SHA-256
+fingerprints, it silently hands back an empty root set, and every
+`Verifier` call built from it then answers `.internalError`, never a
+misleading `.untrustedChain`, rather than crashing at startup. Building a
+`Config` explicitly through `Config.builder()...build()` DOES throw
+`ConfigError` for an empty root set, since a verifier with no roots would
+otherwise answer `.untrustedChain` to everything and nobody would notice
+until production.
 
-    grant(userId, purchase.productId)
-    return .granted
+## Which method to call
+
+| You have | Call |
+|---|---|
+| `receipt-data` from `SKReceiptRefreshRequest` or the app bundle | `verifyReceipt(base64:)` |
+| A StoreKit 2 `Transaction.jwsRepresentation`, `signedTransactionInfo`, `signedRenewalInfo`, `AppTransaction.jwsRepresentation`, or a nested notification JWS | `verifySignedData(jws:)` |
+| A `verifyReceipt` HTTP request body, from a client that still POSTs one | `verifyReceiptEndpoint(environment:requestJson:)` |
+
+## What to check after verification
+
+The library verifies; it does not decide. After a call returns a payload,
+check, in your own code:
+
+- **Bundle id**: `receipt.bundleId` / the JWS payload's `bundleId` claim
+  equals your app's bundle identifier.
+- **Environment**: `Environment.fromReceiptType(receipt.receiptType)` or
+  `Environment.fromJwsEnvironment(claims["environment"])` is the one you
+  expect (a sandbox receipt reaching a production server is not
+  automatically wrong, but your policy should say what to do with it).
+- **Product id**: the transaction is for a product you sell.
+- **Idempotency**: `transactionId` (JWS) or each in-app purchase's
+  `transactionId` (receipt) has not been applied before; verifying the same
+  receipt twice must not grant the purchase twice.
+
+## The device-hash example
+
+A legacy receipt's attribute 5 (`sha1Hash`) is Apple's device-binding hash:
+`SHA1(deviceId ‖ opaqueValue ‖ bundleIdBytes)`. The library takes no device
+id parameter; the check is yours to run, in constant time, on the fields it
+returns:
+
+```swift
+import Crypto
+
+func deviceHashMatches(_ receipt: ReceiptPayload, deviceId: [UInt8]) -> Bool {
+    guard let opaque = receipt.opaqueValue, let bundleBytes = receipt.bundleIdBytes,
+        let expected = receipt.sha1Hash
+    else { return false }
+    var input: [UInt8] = deviceId
+    input.append(contentsOf: opaque)
+    input.append(contentsOf: bundleBytes)
+    let computed = Array(Insecure.SHA1.hash(data: input))
+    guard computed.count == expected.count else { return false }
+    // Constant-time comparison.
+    var diff: UInt8 = 0
+    for i in 0..<computed.count { diff |= computed[i] ^ expected[i] }
+    return diff == 0
 }
 ```
+
+## App Store Server Notifications V2
+
+Apple POSTs `{"signedPayload": "<JWS>"}`. Verify the outer JWS, then each
+nested `signedTransactionInfo` and `signedRenewalInfo` it carries:
+
+```swift
+struct NotificationEnvelope: Decodable {
+    let notificationType: String
+    let data: Payload?
+    struct Payload: Decodable {
+        let signedTransactionInfo: String?
+        let signedRenewalInfo: String?
+    }
+}
+
+let outer = verifier.verifySignedData(jws: signedPayload)
+guard let outerPayload = outer.payload,
+    let envelope = try? JSONDecoder().decode(NotificationEnvelope.self, from: Data(outerPayload.json.utf8))
+else { return }
+
+if let signedTransactionInfo = envelope.data?.signedTransactionInfo {
+    let transaction = verifier.verifySignedData(jws: signedTransactionInfo)
+    // ...
+}
+if let signedRenewalInfo = envelope.data?.signedRenewalInfo {
+    let renewal = verifier.verifySignedData(jws: signedRenewalInfo)
+    // ...
+}
+// A TEST notification carries neither: envelope.data is absent.
+```
+
+## Deserialising a JWS payload
+
+The library ships no typed JWS models: `verifySignedData(jws:)` returns the
+verified JSON text unchanged (`JsonPayload.json`), and Apple's claims are
+epoch milliseconds already. Declare a `Decodable` struct for the fields you
+use:
+
+```swift
+struct TransactionInfo: Decodable {
+    let bundleId: String?
+    let productId: String?
+    let transactionId: String?
+    let purchaseDate: Int64?
+    let expiresDate: Int64?
+    let environment: String?
+}
+
+let info = try JSONDecoder().decode(TransactionInfo.self, from: Data(payload.json.utf8))
+```
+
+## The verifyReceipt-compatible endpoint
+
+`verifyReceiptEndpoint(environment:requestJson:)` answers the response body
+Apple's deprecated `verifyReceipt` would, verified offline against the
+pinned roots instead of by calling Apple. It never fails: every verdict is
+the `status` field inside the body:
+
+| Verification outcome | `status` |
+|---|---|
+| verified, environment matches | 0 |
+| verified, sandbox receipt on `.production` | 21007 |
+| verified, production receipt on `.sandbox` | 21008 |
+| `.malformed`, `.tooLarge` | 21002 |
+| `.invalidSignature`, `.untrustedChain`, `.invalidCertificate`, `.invalidCertificatePurpose` | 21003 |
+| `.unreadablePayload`, `.internalError` | 21009 |
+
+Both 21009 cases are deterministic for the same input: alert on 21009,
+never retry it. `AppleStatus` names every status code Apple documents, so
+callers do not write `21007` by hand.
+
+**Framework request bodies.** If your web framework already parses
+`application/x-www-form-urlencoded` or multipart bodies before your handler
+runs, `requestJson` must be the RAW JSON body, not a re-serialized form.
+Rebuilding the body from parsed fields can reorder or drop bytes the
+signature-adjacent JSON reader (member-name length, duplicate-key-wins)
+treats as significant. Read the raw body in your route handler and pass it
+through unchanged.
+
+`password` and `exclude-old-transactions` are read and ignored, as Apple's
+own endpoint behaviour is understood today (see the root README's
+COMPARISON.md).
+
+## Decoding a receipt
+
+`ReceiptPayload` fields follow Apple's own verifyReceipt vocabulary
+(`bundleId`, `applicationVersion`, `inApp`, …), one struct per receipt, one
+`InAppPurchase` per attribute-17 entry. Rules, pinned by the shared
+conformance vectors:
+
+- A missing attribute decodes to `nil`. The library invents no values.
+- Dates are `Int64` epoch milliseconds, UTC. A receipt date parses only in
+  the exact form `YYYY-MM-DDTHH:MM:SSZ`; anything else is `nil` and the raw
+  bytes are kept in `unknownAttributes`.
+- The trial and intro-offer flags are `Bool`: `0` is `false`, any other
+  value `true`.
+- `bundleIdBytes`, `opaqueValue` and `sha1Hash` are the attribute value
+  octets exactly as they sit in the receipt, the device-hash formula's
+  input above.
+- A known attribute that appears more than once: the FIRST occurrence wins,
+  for the typed field and for the chain-validity date. This holds at the top
+  level and inside each in-app purchase.
+- Nothing Apple signed is lost: every attribute that does not end up in a
+  typed field (an unmodelled type, a later copy of a known attribute, or a
+  known attribute whose value does not parse) goes raw into
+  `unknownAttributes`, keyed by attribute type.
+- `receipt.toJson()` renders the canonical JSON form used by the shared
+  conformance vectors: fixed key order, no whitespace, 64-bit ids as JSON
+  strings (a `downloadId` can run to 18 digits, above `2^53`), bytes as
+  padded standard base64.
 
 ## Trust anchors
 
-`appleJwsRoots()` and `appleReceiptRoots()` are top-level functions, each
-returning all three published Apple roots (Apple Inc. Root CA, Apple Root
-CA - G2, Apple Root CA - G3) as `[Data]` — DER bytes read from `.cer`
-resources bundled in the package (`Bundle.module`). Apple deliberately
-documents the JWS chain as ending in "an Apple root certificate" rather than
-naming one, so narrowing either set would fail closed, silently, the day
-Apple re-anchored a path.
+`Config.defaults()` embeds Apple's three published roots (Apple Inc. Root
+CA, Apple Root CA - G2, Apple Root CA - G3), each checked against its
+published SHA-256 when loaded. No code path in this library reads the
+operating system's trust store, a distribution CA bundle, or anything
+downloaded. The only anchors are the bundled ones, or the ones a caller
+supplies through `Config.builder().roots(...)`.
 
-To pin your own anchors instead, pass DER-encoded certificates as `[Data]` to
-either initializer's `trustedRoots:` parameter.
-
-Trust reaches this library through exactly that argument, never through
-`Security.framework`, `SecTrustEvaluateWithError`, or
-`CertificateStore.systemTrustRoots` — the one-word substitution that would
-silently switch this library onto the platform trust store on Linux.
-`TrustStoreIsolationTests` (below) is what proves that, rather than only
-documenting it.
-
-## Environment routing and freshness
-
-`acceptedEnvironments` on `JwsVerifier` is a `Set<AppleEnvironment>` checked
-against the payload's `environment` (or `receiptType`, for an
-`AppTransaction`) claim; a value outside it is `.wrongEnvironment`.
-`VerifyReceiptEndpoint`'s single `environment` drives the 21007/21008 status
-routing the same way the other ports do.
-
-**Freshness is your call.** No payload is rejected for its age, as in Apple's
-own App Store Server Libraries: `signedDate` only decides the instant the
-chain is judged at. The right limit depends on the endpoint (Apple retries a
-server notification for days, and a device may present an old but genuine
-payload), so apply one yourself where it fits:
-`let tooOld = Int64(Date().timeIntervalSince1970 * 1000) - (transaction.signedDate ?? 0) > 300_000`
-
-## The clock
-
-`VerifyReceiptEndpoint.init` takes an optional
-`clock: (@Sendable () -> Date)?`; `nil` (the default) reads `Date()`. It is
-read in exactly one place: the `request_date` / `_ms` / `_pst` triple, once
-per call and only when the call passes no `now`.
-
-**Certificate validity is never judged by the injected clock.** It is judged
-at the payload's own `signedDate` / `receiptCreationDate`, or at the
-receipt's attribute-12 creation date; where the input states no date of its
-own, the fallback reads `Date()` directly, not the injected clock, so a
-caller injecting a clock to pin `request_date`, or to work around skew,
-cannot thereby accept an expired chain or expire a live one.
-
-`JwsVerifier` and `ReceiptVerifier` therefore take **no clock at all**: it would have no
-consumer, and an option with no consumer is an invitation to wire it into the
-one place it must never reach.
-
-The closure type is deliberately `@Sendable () -> Date`, not Swift's `Clock`
-protocol (`ContinuousClock`, `SuspendingClock`): those measure elapsed time
-from an arbitrary origin and cannot name a wall-clock instant like
-2025-01-01, which is exactly what pinning "now" for a test requires.
-
-## Thread safety
-
-`JwsVerifier`, `ReceiptVerifier` and `VerifyReceiptEndpoint` are immutable
-structs, meant to be shared: build one of each at startup and hand it to
-every request. Each holds only `let` properties (the parsed roots, the
-configuration and, where there is one, a `@Sendable` clock) and keeps
-per-call state in locals.
-Every public type, the results included, is `Sendable`, and the package
-builds in Swift 6 language mode, so the compiler rejects a data race on a
-shared verifier or a verified payload instead of leaving it to review.
-
-`ConcurrencyTests` is the runtime check: sixteen child tasks in a
-`TaskGroup`, fifty iterations each, through one shared `ReceiptVerifier`
-(`verify(base64Receipt:)`), `VerifyReceiptEndpoint` (the dictionary and
-raw JSON entry points) and `JwsVerifier` (`verifyTransaction`), each answer
-compared to the answer a sequential call gets.
-
-**Nothing in the verification path is serialized.** `swift-certificates`'
-`Verifier` is a struct, not an actor, and its `validate` is a nonisolated
-`async` method, which runs on the global concurrent executor. Each call
-builds its own `Verifier` and `CertificateStore`, so concurrent calls share
-nothing to wait on, and the library has no actor, lock or global actor of
-its own.
+The chain is walked top-down: from a pinned root outward, a certificate's
+signature is checked only once the key that will verify it has already been
+vouched for, directly or transitively, by a pinned root. A certificate no
+root vouches for, including one carrying a deliberately oversized or
+unusable key, is never decoded into a usable key and never has its
+signature checked; it is simply excluded from the path. A certificate on the
+resulting path is then checked for validity at the chain instant, and last
+for Apple's marker OIDs (the receipt-signing / WWDR OIDs on the receipt
+path, the same pair on the JWS `x5c` chain).
 
 ## Resource bounds
 
-`ReceiptVerifier.verifyCore` bounds a receipt's embedded certificates at ten,
-enforced before any of them is decoded — the same number every other port in
-this repository uses, and genuine receipts carry one to three. The chain
-walk beneath it is bounded by construction rather than by a separate
-counter: each step takes only the certificate that actually signed the
-current tip and never revisits a subject, so the walk is never longer than
-the embedded certificate bag.
+| Bound | Value |
+|---|---|
+| Receipt base64, UTF-8 bytes | 3,145,728 |
+| Endpoint request body, UTF-8 bytes | 3,145,728 |
+| JWS, UTF-8 bytes | 262,144 |
+| JSON nesting depth | 64 |
+| JSON member name, characters | 50,000 |
+| JSON number, digits | 1,000 |
+| Certificates embedded in a receipt | 10 |
+| Chain length (below the anchor) | 6 |
+| SignerInfos in a receipt | 4 |
 
-Dates read from a payload or receipt are checked against
-`isRepresentableAsCertificateValidationTime` before they reach the
-certificate-validation policy — `GeneralizedTime` in `swift-certificates`
-holds only years 0001 through 9999, and an unchecked date outside that range
-would abort the process rather than fail the verification. An
-attacker-supplied year like `999999` is therefore `.invalidChain` (JWS) or
-`.invalidReceiptFormat` (receipt attribute), not a crash.
+**Known gap:** the ASN.1 (CMS/X.509) reader is `swift-asn1`'s own, which
+caps nested constructed values at 50, stricter than this library's own
+64-level bound for the CMS envelope and the signed-content attribute set. A
+receipt nested between 51 and 64 levels deep, a case the shared conformance
+vectors require every port to accept, is refused by `swift-asn1` before
+this library's own check runs. No known genuine Apple receipt nests
+anywhere near that deep; this affects only the deliberately adversarial
+boundary cases.
 
-### Input size limits
+## Thread safety
 
-Base64 decoding and JSON parsing both allocate a multiple of their input
-before any signature is checked, so the input is measured first. These are
-constants, not initializer options.
+`Config`, `Verifier`, `ReceiptPayload`, `JsonPayload`, `VerificationResult`
+and `Failure` are all `Sendable`. Build one `Verifier` and share it across
+every request; nothing about a call mutates shared state.
 
-The request and receipt caps are Apple's, fixed in every port of this
-library. Measured on 2026-09-23 against both of Apple's verifyReceipt
-endpoints (production and sandbox), a request body of 3,145,728 bytes is
-answered and one of 3,145,729 bytes gets HTTP 413. Apple counts UTF-8
-bytes, not characters: 3,145,729 bytes of `é`, only 1,572,874 characters,
-also got 413.
+## Upgrading from 0.6
 
-- **`VerifyReceiptEndpoint.maxRequestBytes` (3 MiB, 3,145,728 bytes).**
-  Applied to a raw JSON body before the depth scan and the parse. A larger
-  body answers 21002 with `.requestTooLarge`. A body already decoded to a
-  dictionary is not measured.
-- **`ReceiptVerifier.maxReceiptBytes` (3 MiB, 3,145,728 bytes).** Applied to
-  the base64 string at `verify(base64Receipt:)` and at the endpoint's
-  `receipt-data` (every entry point), before decoding, and to the DER at
-  every entry point that takes bytes, both `verifyCore` overloads included.
-  A larger receipt is `.invalidReceiptFormat` (21002 at the endpoint).
-  `fixtures/cases.json` requires every port to accept a receipt of up to
-  1 MiB of DER, about 1.38 MB of base64, which fits in a JSON body too; the
-  largest genuine receipt in the corpus is 79 KB.
-- **`JwsVerifier.maxJwsBytes` (256 KiB, 262,144).** Applied to a compact JWS
-  before it is split. A longer one is `.invalidJwsFormat`. Every JWS in the
-  corpus is under 2.5 KB.
-- **JSON nesting depth 64.** `JSONSerialization` and `JSONDecoder` take no
-  depth option, so the depth of a request body, and of a JWS header and
-  payload, is counted before either runs. A deeper request body answers
-  21002 with `.malformedRequest`; a deeper JWS segment is
-  `.invalidJwsFormat`. Brackets inside strings are not counted.
+0.6's `ReceiptVerifier`, `JwsVerifier` and `VerifyReceiptEndpoint` are gone,
+replaced by one `Verifier` with three methods. Every method is now
+**synchronous** (0.6's were `async throws`, because `swift-certificates`'
+built-in chain validator is `async`; 0.7 walks the chain itself). The bundle
+id, accepted-environment set, `appAppleId` and device-guid parameters are
+gone. The library returns the data, and you compare it yourself (see
+[What to check after verification](#what-to-check-after-verification) and
+[The device-hash example](#the-device-hash-example)).
 
-Every string is measured in UTF-8 bytes with `utf8.count`, which copies
-nothing and is constant time for a native Swift string (a string bridged
-from `NSString` may walk its contents, and the count is still exact).
-
-**Answering 413 like Apple.** `.requestTooLarge` exists so an HTTP layer
-can send the status Apple sends. The body is Apple's 21002 either way:
-
-```swift
-let result = await endpoint.verifyReceiptResult(rawRequestBody)
-let httpStatus = result.failureReason == .requestTooLarge ? 413 : 200
-return Response(status: httpStatus, body: result.json())
-```
-
-A framework or proxy that caps request bodies itself has to allow at least
-3 MiB, or it refuses bodies Apple would answer.
-
-## Testing
-
-```bash
-swift test                                  # from the repository root; the manifest lives there
-swift test --filter ConformanceCasesTests   # just the shared cross-language vectors
-```
-
-`ConformanceCasesTests` runs every case in `fixtures/cases.json`, the
-normative cross-language vector file every port of this library answers.
-
-`TrustStoreIsolationTests`
-(`swift/Tests/ApplePurchaseReceiptVerifierTests/TrustStoreIsolationTests.swift`)
-asserts the trust-pinning rule three ways: structurally, by scanning every
-source file for any spelling that could reach `Security.framework`, a
-socket, or the network; behaviourally, on chains that are well-formed in
-every respect except their anchor; and against this machine's real trust
-store, which is loaded and effective in the test process and still moves no
-verdict.
-
-Beyond conformance and trust isolation, `PublicApiTests` exercises the
-public surface, `VerifierTests` covers hostile and malformed input against a
-generated fake Apple PKI, and `PortDivergenceTests` pins the handful of
-places this port's behaviour is deliberately allowed to differ from the
-others (documented in the root [ROADMAP.md](../ROADMAP.md)).
-
-`swift/fuzz/` holds six libFuzzer targets built with SwiftPM's own
-`-sanitize=fuzzer` support — no third-party fuzzing dependency, since the
-Swift toolchain already carries libFuzzer. It is a separate package
-(`swift/fuzz/Package.swift`, depending on the library by path) so that
-`swift build`/`swift test` at the root never builds or knows about it:
-
-```bash
-cd swift/fuzz
-./run.sh all              # every target, 60 s each
-./run.sh receipt-der 600  # one target, ten minutes
-```
-
-`swift/fuzz/README.md` lists the six targets and the invariant each asserts
-beyond "nothing traps" — Swift's `throws` is untyped and `fatalError`, a
-force-unwrap, an out-of-range index, and arithmetic overflow all abort the
-process rather than throw, so "only `VerificationError` escapes" has to be
-checked, not assumed.
-
-## Why offline
-
-Signature verification cannot fail because a vendor endpoint is down, so a
-purchase can be honoured immediately and reconciled against the App Store
-Server API afterwards. Refunds and revocations still need that
-reconciliation pass — a signature proves what Apple signed, not what
-happened since.
-
-This is one of nine implementations (Java, Node, Python, Swift, Go, Ruby,
-Rust, PHP, .NET) that share a single fixture suite, including Apple's own
-official test fixtures, and are required to agree byte for byte. See the
-[project README](../README.md) for the full picture and
-[COMPARISON.md](../COMPARISON.md) for how it differs from Apple's official
-libraries.
+| 0.6 | 0.7 |
+|---|---|
+| `ReceiptVerifier(trustedRoots:bundleId:)` | `Verifier(config:)`, compare `bundleId` yourself |
+| `try await receiptVerifier.verify(base64Receipt:deviceGuid:)` | `verifier.verifyReceipt(base64:)` (never throws) |
+| `AppReceipt` | `ReceiptPayload` (dates are `Int64` ms, not `Date`) |
+| `JwsVerifier(trustedRoots:bundleId:acceptedEnvironments:appAppleId:)` | `Verifier(config:)` |
+| `try await jwsVerifier.verifyTransaction(_:)` / `.verifyAppTransaction(_:)` / `.verifyRaw(_:)` | `verifier.verifySignedData(jws:)` for all of them (returns untyped JSON; deserialise it yourself) |
+| `VerificationError` (thrown) | `Failure` (returned inside `VerificationResult`, never thrown) |
+| `VerifyReceiptEndpoint(trustedRoots:environment:clock:)` | `Verifier(config:)`, pass `environment` per call |
+| `.verifyReceiptResult(_:)` / `.verifyReceiptJSON(_:)` | `verifier.verifyReceiptEndpoint(environment:requestJson:)` |
+| `appleReceiptRoots()` / `appleJwsRoots()` | `Config.defaults()` (one root set for both) |
+| n/a | `Reason.invalidCertificatePurpose` split out from the old `INVALID_CERTIFICATE_PURPOSE`-shaped failures; `Reason.unreadablePayload` split out from `INTERNAL_ERROR` for a payload Apple signed but this library cannot parse |
 
 ## Licence
 
-MIT — see [LICENSE](../LICENSE).
+See the repository root.
