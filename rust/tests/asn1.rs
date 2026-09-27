@@ -99,9 +99,9 @@ fn the_depth_bound_is_exactly_where_it_says_it_is() {
         }
         nested
     };
-    // Owner, 2026-09-27 (Q24): 64 constructed values, as BouncyCastle
+    // Owner, 2026-09-27 (Q24): 32 constructed values, as BouncyCastle
     // counts them, whatever is inside the innermost.
-    assert_eq!(MAX_DEPTH, 64);
+    assert_eq!(MAX_DEPTH, 32);
     assert!(parse_exact(&build(MAX_DEPTH, &[0x05, 0x00])).is_ok());
     assert!(parse_exact(&build(MAX_DEPTH, &[])).is_ok());
     assert!(parse_exact(&build(MAX_DEPTH + 1, &[0x05, 0x00])).is_err());

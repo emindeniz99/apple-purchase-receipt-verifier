@@ -284,7 +284,7 @@ directly through a seam that records every key used.
 ## Defensive parsing
 
 Everything this crate parses is attacker-supplied, so the bounds are part of
-the design rather than a configuration. ASN.1: nesting depth 64 constructed values (as BouncyCastle counts them), a
+the design rather than a configuration. ASN.1: nesting depth 32 constructed values (as BouncyCastle counts them), a
 100,000-node budget per parse, at most four length octets, indefinite (BER)
 lengths only on constructed values, trailing bytes refused. JSON: nesting
 depth 64, numbers of at most 1,000 characters, names of at most 50,000
