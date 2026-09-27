@@ -1,5 +1,8 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
+import java.security.cert.CertPathValidatorException;
+import java.security.cert.CertificateExpiredException;
+import java.security.cert.CertificateNotYetValidException;
 import java.security.cert.TrustAnchor;
 import java.security.cert.X509Certificate;
 import java.util.HashSet;
@@ -40,4 +43,25 @@ final class AppleTrust {
         return anchors;
     }
 
+    /**
+     * Whether a path validator or builder failure, or anything it wraps, says
+     * a certificate was outside its validity window at the checked instant.
+     * That is a verdict about a certificate (INVALID_CERTIFICATE), not about
+     * the chain to a root.
+     */
+    static boolean outsideValidity(Throwable failure) {
+        for (Throwable t = failure; t != null; t = t.getCause() == t ? null : t.getCause()) {
+            if (t instanceof CertificateExpiredException || t instanceof CertificateNotYetValidException) {
+                return true;
+            }
+            if (t instanceof CertPathValidatorException) {
+                CertPathValidatorException.Reason reason = ((CertPathValidatorException) t).getReason();
+                if (reason == CertPathValidatorException.BasicReason.EXPIRED
+                        || reason == CertPathValidatorException.BasicReason.NOT_YET_VALID) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
 }

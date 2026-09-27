@@ -3,18 +3,21 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import org.jspecify.annotations.Nullable;
 
 /**
  * Writes the canonical JSON of {@link ReceiptPayload#toJson()}, the form every
  * port must produce byte for byte: no whitespace, keys in the order the
- * caller writes them, only the escapes JSON requires ({@code "} and
- * {@code \} as {@code \"} and {@code \\}, every other character below U+0020
- * as a lowercase <code>&#92;u00xx</code>), {@code /} unescaped, and non-ASCII
- * characters written raw.
+ * caller writes them, and strings escaped as ECMAScript's
+ * {@code JSON.stringify} escapes them: {@code "} and {@code \} as {@code \"}
+ * and {@code \\}, the short escapes {@code \b \f \n \r \t}, every other
+ * character below U+0020 as a lowercase <code>&#92;u00xx</code>, and nothing
+ * else ({@code /} and non-ASCII, U+2028 and U+2029 included, written raw).
+ * Unknown attribute keys are written in ascending numeric order.
  *
- * <p>Written by hand rather than through Jackson's generator, which uses the
- * short escapes ({@code \n}, {@code \t}) that the canonical form does not.</p>
+ * <p>Written by hand rather than through Jackson's generator so the escaping
+ * is pinned here rather than to a Jackson default.</p>
  */
 final class CanonicalJson {
 
@@ -68,11 +71,14 @@ final class CanonicalJson {
         return string(key, value == null ? null : Base64.getEncoder().encodeToString(value));
     }
 
-    /** {@code {"13": ["<base64>", ...], ...}} in the map's own order. */
+    /**
+     * {@code {"9": ["<base64>", ...], "13": [...]}}: keys in ascending numeric
+     * order, each key's values in the order the list holds them.
+     */
     CanonicalJson attributes(String key, Map<Integer, List<byte[]>> attributes) {
         key(key);
         CanonicalJson object = object(out);
-        for (Map.Entry<Integer, List<byte[]>> entry : attributes.entrySet()) {
+        for (Map.Entry<Integer, List<byte[]>> entry : new TreeMap<Integer, List<byte[]>>(attributes).entrySet()) {
             object.key(entry.getKey().toString());
             out.append('[');
             boolean firstValue = true;
@@ -106,6 +112,16 @@ final class CanonicalJson {
             char c = value.charAt(i);
             if (c == '"' || c == '\\') {
                 out.append('\\').append(c);
+            } else if (c == '\b') {
+                out.append("\\b");
+            } else if (c == '\f') {
+                out.append("\\f");
+            } else if (c == '\n') {
+                out.append("\\n");
+            } else if (c == '\r') {
+                out.append("\\r");
+            } else if (c == '\t') {
+                out.append("\\t");
             } else if (c < 0x20) {
                 out.append("\\u00").append(HEX[c >> 4]).append(HEX[c & 0xF]);
             } else {

@@ -356,6 +356,13 @@ final class ReceiptCore {
             }
             return path;
         } catch (CertPathBuilderException e) {
+            if (AppleTrust.outsideValidity(e)) {
+                throw new VerificationException(
+                        Reason.INVALID_CERTIFICATE,
+                        "receipt certificate is outside its validity window at " + at.getTime() + ": "
+                                + SafeText.detail(e.getMessage()),
+                        e);
+            }
             throw new VerificationException(
                     Reason.UNTRUSTED_CHAIN,
                     "signer chain does not validate to a pinned Apple root: " + SafeText.detail(e.getMessage()),

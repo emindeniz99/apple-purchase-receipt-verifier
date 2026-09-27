@@ -259,8 +259,8 @@ class AppleRootCertsTest {
 
     /**
      * The same chain judged at an instant outside the leaf's validity
-     * (2025-09-19 to 2027-10-13) fails the chain check: a genuine chain is
-     * not a pass at any date.
+     * (2025-09-19 to 2027-10-13) fails as INVALID_CERTIFICATE: a genuine
+     * chain is not a pass at any date.
      */
     @Test
     void rejectsApplesRealProductionChainOutsideItsValidity() throws Exception {
@@ -269,7 +269,7 @@ class AppleRootCertsTest {
         for (long at : new long[] {beforeLeaf, afterLeaf}) {
             VerificationException e = assertThrows(
                     VerificationException.class, () -> Checks.signedData(productionVerifier(), realChainJws(at)));
-            assertEquals(Reason.UNTRUSTED_CHAIN, e.reason(), "signedDate " + at + ": " + e.getMessage());
+            assertEquals(Reason.INVALID_CERTIFICATE, e.reason(), "signedDate " + at + ": " + e.getMessage());
         }
     }
 

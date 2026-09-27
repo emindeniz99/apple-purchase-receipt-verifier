@@ -22,12 +22,14 @@ public enum Reason {
     /** The signature does not match the signed content. */
     INVALID_SIGNATURE,
     /**
-     * The certificate chain does not reach a pinned root at the signing
-     * instant, including a chain that is expired or not yet valid there, or
-     * longer than six certificates.
+     * The certificate chain does not reach a pinned root, or is longer than
+     * six certificates.
      */
     UNTRUSTED_CHAIN,
-    /** A certificate the check depends on does not decode. */
+    /**
+     * A certificate the check depends on does not decode, or is expired or
+     * not yet valid at the signing instant.
+     */
     INVALID_CERTIFICATE,
     /**
      * A certificate that chains to a pinned root but is of the wrong kind:

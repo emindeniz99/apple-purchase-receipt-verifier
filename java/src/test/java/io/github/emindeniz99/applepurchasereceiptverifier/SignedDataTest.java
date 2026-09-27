@@ -177,7 +177,7 @@ class SignedDataTest {
         Date notBefore = new Date(System.currentTimeMillis() - 730L * 86_400_000L);
         Date notAfter = new Date(System.currentTimeMillis() - 365L * 86_400_000L);
         TestPki expired = TestPki.jws(true, true, notBefore, notAfter);
-        assertEquals(Reason.UNTRUSTED_CHAIN, failure(expired, expired.signJws(transactionClaims("Sandbox"))));
+        assertEquals(Reason.INVALID_CERTIFICATE, failure(expired, expired.signJws(transactionClaims("Sandbox"))));
     }
 
     /** Freshness is the caller's decision (PLAN.md D5): an old payload still verifies. */
@@ -324,7 +324,7 @@ class SignedDataTest {
         String insideWindow = expired.signJws(historical);
         String outsideWindow = expired.signJws(transactionClaims("Sandbox"));
         assertEquals(BUNDLE, verify(expired, insideWindow).get("bundleId").asText());
-        assertEquals(Reason.UNTRUSTED_CHAIN, failure(expired, outsideWindow));
+        assertEquals(Reason.INVALID_CERTIFICATE, failure(expired, outsideWindow));
     }
 
     /**
@@ -343,7 +343,7 @@ class SignedDataTest {
         dateless.remove("signedDate");
         dateless.put("receiptCreationDate", now - 547L * 86_400_000L);
         String expiredJws = expired.signJws(dateless);
-        assertEquals(Reason.UNTRUSTED_CHAIN, failure(expired, expiredJws));
+        assertEquals(Reason.INVALID_CERTIFICATE, failure(expired, expiredJws));
         assertEquals(BUNDLE, verify(pki, pki.signJws(dateless)).get("bundleId").asText());
 
         Clock insideTheWindow = Clock.fixed(Instant.ofEpochMilli(notBefore.getTime() + 86_400_000L), ZoneOffset.UTC);

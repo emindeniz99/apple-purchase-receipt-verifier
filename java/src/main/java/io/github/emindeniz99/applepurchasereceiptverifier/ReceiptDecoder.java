@@ -4,9 +4,12 @@ import java.io.IOException;
 import java.math.BigInteger;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1IA5String;
 import org.bouncycastle.asn1.ASN1Integer;
@@ -84,6 +87,35 @@ final class ReceiptDecoder {
     private static final int IAP_IS_TRIAL_PERIOD = 1713;
     private static final int IAP_IS_IN_INTRO_OFFER_PERIOD = 1719;
 
+    /** The top-level types that fill a typed field. 17 is absent: every copy is a purchase. */
+    private static final Set<Integer> TOP_LEVEL = new HashSet<Integer>(Arrays.asList(
+            ATTR_RECEIPT_TYPE,
+            ATTR_APP_ITEM_ID,
+            ATTR_BUNDLE_ID,
+            ATTR_APP_VERSION,
+            ATTR_OPAQUE_VALUE,
+            ATTR_SHA1_HASH,
+            ATTR_CREATION_DATE,
+            ATTR_DOWNLOAD_ID,
+            ATTR_VERSION_EXTERNAL_IDENTIFIER,
+            ATTR_ORIGINAL_PURCHASE_DATE,
+            ATTR_ORIGINAL_APP_VERSION,
+            ATTR_EXPIRATION_DATE));
+
+    /** The in-app types that fill a typed field of {@link InAppPurchase}. */
+    private static final Set<Integer> IN_APP = new HashSet<Integer>(Arrays.asList(
+            IAP_QUANTITY,
+            IAP_PRODUCT_ID,
+            IAP_TRANSACTION_ID,
+            IAP_PURCHASE_DATE,
+            IAP_ORIGINAL_TRANSACTION_ID,
+            IAP_ORIGINAL_PURCHASE_DATE,
+            IAP_EXPIRES_DATE,
+            IAP_WEB_ORDER_LINE_ITEM_ID,
+            IAP_CANCELLATION_DATE,
+            IAP_IS_TRIAL_PERIOD,
+            IAP_IS_IN_INTRO_OFFER_PERIOD));
+
     private ReceiptDecoder() {}
 
     /**
@@ -92,25 +124,24 @@ final class ReceiptDecoder {
      * SET is walked shallowly, each entry's type is read, and only the value
      * of type 12 is decoded.
      *
-     * <p>{@code null} means "judge the chain at the clock": no attribute 12, an
-     * empty one, one that does not decode, more than one, or a walk that
-     * fails anywhere. An entry the walk cannot read fails it as a whole rather
-     * than being skipped, since that entry might have been a second attribute
-     * 12. Never throws: nothing is trusted yet, so nothing here can blame
+     * <p>The first attribute 12 decides, as it does for the typed field.
+     * {@code null} means "judge the chain at the clock": no attribute 12, a
+     * first one that is empty or does not decode, or a walk that fails
+     * anywhere. An entry the walk cannot read fails it as a whole rather than
+     * being skipped, since that entry might have been the first attribute 12.
+     * Never throws: nothing is trusted yet, so nothing here can blame
      * anyone.</p>
      */
     static @Nullable Long readCreationDate(byte[] payload) {
         try {
             byte[] date = null;
-            int dates = 0;
             for (ASN1Encodable element : parseAttributeSet(payload, "receipt payload")) {
                 Attribute attr = Attribute.of(element);
-                if (attr.type == ATTR_CREATION_DATE) {
-                    dates++;
+                if (attr.type == ATTR_CREATION_DATE && date == null) {
                     date = attr.value;
                 }
             }
-            return dates == 1 && date != null ? decodeDate(date) : null;
+            return date != null ? decodeDate(date) : null;
         } catch (VerificationException | RuntimeException e) {
             return null;
         }
@@ -134,54 +165,68 @@ final class ReceiptDecoder {
         List<InAppPurchase> purchases = new ArrayList<InAppPurchase>();
         Map<Integer, List<byte[]>> unknown = new LinkedHashMap<Integer, List<byte[]>>();
 
+        Set<Integer> seen = new HashSet<Integer>();
         for (ASN1Encodable element : attributes) {
             Attribute attr = Attribute.of(element);
-            switch (attr.type) {
-                case ATTR_RECEIPT_TYPE:
-                    receiptType = decodeString(attr.value);
-                    break;
-                case ATTR_APP_ITEM_ID:
-                    appItemId = decodeInteger(attr.value);
-                    break;
-                case ATTR_ORIGINAL_PURCHASE_DATE:
-                    originalPurchaseDate = decodeDate(attr.value);
-                    break;
-                case ATTR_BUNDLE_ID:
-                    parsedBundleId = decodeString(attr.value);
-                    bundleIdBytes = attr.value;
-                    break;
-                case ATTR_APP_VERSION:
-                    appVersion = decodeString(attr.value);
-                    break;
-                case ATTR_OPAQUE_VALUE:
-                    opaqueValue = attr.value;
-                    break;
-                case ATTR_SHA1_HASH:
-                    sha1Hash = attr.value;
-                    break;
-                case ATTR_CREATION_DATE:
-                    creationDate = decodeDate(attr.value);
-                    break;
-                case ATTR_DOWNLOAD_ID:
-                    downloadId = decodeInteger(attr.value);
-                    break;
-                case ATTR_VERSION_EXTERNAL_IDENTIFIER:
-                    versionExternalIdentifier = decodeInteger(attr.value);
-                    break;
-                case ATTR_IN_APP:
-                    purchases.add(parseInApp(attr.value));
-                    break;
-                case ATTR_ORIGINAL_APP_VERSION:
-                    originalAppVersion = decodeString(attr.value);
-                    break;
-                case ATTR_EXPIRATION_DATE:
-                    expirationDate = decodeDate(attr.value);
-                    break;
-                default:
-                    // Undocumented attribute types stay accessible, so a
-                    // field Apple adds later is not lost.
-                    recordUnknown(unknown, attr);
-                    break;
+            if (isLaterCopy(attr.type, TOP_LEVEL, seen)) {
+                recordUnknown(unknown, attr);
+                continue;
+            }
+            try {
+                switch (attr.type) {
+                    case ATTR_RECEIPT_TYPE:
+                        receiptType = decodeString(attr.value);
+                        break;
+                    case ATTR_APP_ITEM_ID:
+                        appItemId = decodeInteger(attr.value);
+                        break;
+                    case ATTR_ORIGINAL_PURCHASE_DATE:
+                        originalPurchaseDate = date(attr.value);
+                        break;
+                    case ATTR_BUNDLE_ID:
+                        // The raw octets are a typed field of their own, so they
+                        // are kept even when the string does not decode.
+                        bundleIdBytes = attr.value;
+                        parsedBundleId = decodeBundleId(attr.value);
+                        break;
+                    case ATTR_APP_VERSION:
+                        appVersion = decodeString(attr.value);
+                        break;
+                    case ATTR_OPAQUE_VALUE:
+                        opaqueValue = attr.value;
+                        break;
+                    case ATTR_SHA1_HASH:
+                        sha1Hash = attr.value;
+                        break;
+                    case ATTR_CREATION_DATE:
+                        creationDate = date(attr.value);
+                        break;
+                    case ATTR_DOWNLOAD_ID:
+                        downloadId = decodeInteger(attr.value);
+                        break;
+                    case ATTR_VERSION_EXTERNAL_IDENTIFIER:
+                        versionExternalIdentifier = decodeInteger(attr.value);
+                        break;
+                    case ATTR_IN_APP:
+                        purchases.add(parseInApp(attr.value));
+                        break;
+                    case ATTR_ORIGINAL_APP_VERSION:
+                        originalAppVersion = decodeString(attr.value);
+                        break;
+                    case ATTR_EXPIRATION_DATE:
+                        expirationDate = date(attr.value);
+                        break;
+                    default:
+                        // Undocumented attribute types stay accessible, so a
+                        // field Apple adds later is not lost.
+                        recordUnknown(unknown, attr);
+                        break;
+                }
+            } catch (VerificationException e) {
+                // A known attribute whose value does not decode: its typed
+                // field stays null and the value is kept raw, so nothing
+                // Apple signed is lost.
+                recordUnknown(unknown, attr);
             }
         }
         return new ReceiptPayload(
@@ -218,45 +263,54 @@ final class ReceiptDecoder {
         Boolean isInIntroOfferPeriod = null;
         Map<Integer, List<byte[]>> unknown = new LinkedHashMap<Integer, List<byte[]>>();
 
+        Set<Integer> seen = new HashSet<Integer>();
         for (ASN1Encodable element : attributes) {
             Attribute attr = Attribute.of(element);
-            switch (attr.type) {
-                case IAP_QUANTITY:
-                    quantity = decodeInteger(attr.value);
-                    break;
-                case IAP_PRODUCT_ID:
-                    productId = decodeString(attr.value);
-                    break;
-                case IAP_TRANSACTION_ID:
-                    transactionId = decodeString(attr.value);
-                    break;
-                case IAP_PURCHASE_DATE:
-                    purchaseDate = decodeDate(attr.value);
-                    break;
-                case IAP_ORIGINAL_TRANSACTION_ID:
-                    originalTransactionId = decodeString(attr.value);
-                    break;
-                case IAP_ORIGINAL_PURCHASE_DATE:
-                    originalPurchaseDate = decodeDate(attr.value);
-                    break;
-                case IAP_EXPIRES_DATE:
-                    expiresDate = decodeDate(attr.value);
-                    break;
-                case IAP_WEB_ORDER_LINE_ITEM_ID:
-                    webOrderLineItemId = decodeInteger(attr.value);
-                    break;
-                case IAP_CANCELLATION_DATE:
-                    cancellationDate = decodeDate(attr.value);
-                    break;
-                case IAP_IS_TRIAL_PERIOD:
-                    isTrialPeriod = decodeFlag(attr.value);
-                    break;
-                case IAP_IS_IN_INTRO_OFFER_PERIOD:
-                    isInIntroOfferPeriod = decodeFlag(attr.value);
-                    break;
-                default:
-                    recordUnknown(unknown, attr);
-                    break;
+            if (isLaterCopy(attr.type, IN_APP, seen)) {
+                recordUnknown(unknown, attr);
+                continue;
+            }
+            try {
+                switch (attr.type) {
+                    case IAP_QUANTITY:
+                        quantity = decodeInteger(attr.value);
+                        break;
+                    case IAP_PRODUCT_ID:
+                        productId = decodeString(attr.value);
+                        break;
+                    case IAP_TRANSACTION_ID:
+                        transactionId = decodeString(attr.value);
+                        break;
+                    case IAP_PURCHASE_DATE:
+                        purchaseDate = date(attr.value);
+                        break;
+                    case IAP_ORIGINAL_TRANSACTION_ID:
+                        originalTransactionId = decodeString(attr.value);
+                        break;
+                    case IAP_ORIGINAL_PURCHASE_DATE:
+                        originalPurchaseDate = date(attr.value);
+                        break;
+                    case IAP_EXPIRES_DATE:
+                        expiresDate = date(attr.value);
+                        break;
+                    case IAP_WEB_ORDER_LINE_ITEM_ID:
+                        webOrderLineItemId = decodeInteger(attr.value);
+                        break;
+                    case IAP_CANCELLATION_DATE:
+                        cancellationDate = date(attr.value);
+                        break;
+                    case IAP_IS_TRIAL_PERIOD:
+                        isTrialPeriod = decodeFlag(attr.value);
+                        break;
+                    case IAP_IS_IN_INTRO_OFFER_PERIOD:
+                        isInIntroOfferPeriod = decodeFlag(attr.value);
+                        break;
+                    default:
+                        recordUnknown(unknown, attr);
+                        break;
+                }
+            } catch (VerificationException e) {
+                recordUnknown(unknown, attr);
             }
         }
         return new InAppPurchase(
@@ -273,6 +327,15 @@ final class ReceiptDecoder {
                 isInIntroOfferPeriod,
                 RawAttributes.wrap(unknown),
                 true);
+    }
+
+    /**
+     * Whether {@code type} is a known attribute already seen in this SET. The
+     * first copy decides the typed field; a later one is kept raw. Attribute
+     * 17 is not covered: every copy of it is one in-app purchase.
+     */
+    private static boolean isLaterCopy(int type, Set<Integer> known, Set<Integer> seen) {
+        return known.contains(type) && !seen.add(type);
     }
 
     private static void recordUnknown(Map<Integer, List<byte[]>> unknown, Attribute attr) {
@@ -394,16 +457,37 @@ final class ReceiptDecoder {
     }
 
     /**
-     * An RFC 3339 date in an IA5String, as epoch milliseconds. Empty (real
-     * receipts do this) and anything that does not parse are {@code null}:
-     * a date that cannot be read is a missing date, not an unreadable
-     * receipt. That includes an expanded year ({@code +1000000000-...}) that
+     * An RFC 3339 date in an IA5String, as epoch milliseconds, or
+     * {@code null} when empty (Apple writes an unset date that way, so it is
+     * not kept raw). A value that does not parse throws, and the caller keeps
+     * it raw. That includes an expanded year ({@code +1000000000-...}) that
      * {@link Instant#parse} accepts but no epoch-millisecond long can hold.
      */
+    private static @Nullable Long date(byte[] der) throws VerificationException {
+        String text = decodeString(der);
+        if (text.isEmpty()) {
+            return null;
+        }
+        try {
+            return Long.valueOf(Instant.parse(text).toEpochMilli());
+        } catch (RuntimeException e) {
+            throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "attribute value is not an RFC 3339 date", e);
+        }
+    }
+
+    /** {@link #date}, with {@code null} for anything that does not parse. */
     private static @Nullable Long decodeDate(byte[] der) {
         try {
-            String text = decodeString(der);
-            return text.isEmpty() ? null : Long.valueOf(Instant.parse(text).toEpochMilli());
+            return date(der);
+        } catch (VerificationException | RuntimeException e) {
+            return null;
+        }
+    }
+
+    /** The bundle id string, or {@code null} when it does not decode; its octets are kept either way. */
+    private static @Nullable String decodeBundleId(byte[] der) {
+        try {
+            return decodeString(der);
         } catch (VerificationException | RuntimeException e) {
             return null;
         }

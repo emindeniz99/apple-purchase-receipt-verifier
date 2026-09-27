@@ -1,6 +1,8 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.time.Instant;
@@ -80,12 +82,12 @@ class HostileReceiptInputTest {
     @Test
     void containsInvalidUtf8AttributeValue() throws Exception {
         // A UTF8String whose single content byte is 0xFF: ASN1UTF8String.getString()
-        // rejects it with IllegalArgumentException, the same shape as the receipt
-        // date that overflowed epoch millis. The signer is trusted, so it is
-        // UNREADABLE_PAYLOAD, never a leaked runtime exception.
-        byte[] receipt = pki.signReceipt(TestPki.singleAttributePayload(2, new byte[] {0x0c, 0x01, (byte) 0xff}));
-        VerificationException e = assertThrows(VerificationException.class, () -> verify(receipt));
-        assertEquals(Reason.UNREADABLE_PAYLOAD, e.reason());
+        // rejects it with IllegalArgumentException. That must not leak: the
+        // bundle id decodes to null and its octets are still returned.
+        byte[] value = {0x0c, 0x01, (byte) 0xff};
+        ReceiptPayload payload = verify(pki.signReceipt(TestPki.singleAttributePayload(2, value)));
+        assertNull(payload.bundleId());
+        assertArrayEquals(value, payload.bundleIdBytes());
     }
 
     @Test

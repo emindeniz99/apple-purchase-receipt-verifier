@@ -266,14 +266,14 @@ class VerifierApiTest {
                         + "\"opaque_value\":\"AQIDBAU=\",\"sha1_hash\":\"/w==\","
                         + "\"receipt_creation_date_ms\":1722945600000,\"download_id\":\"9223372036854775807\","
                         + "\"version_external_identifier\":\"-1\",\"in_app\":[{\"quantity\":1,"
-                        + "\"product_id\":\"com.example.é中😀/\\\"q\\\"\\\\\\u000a\\u001f\u007f \","
+                        + "\"product_id\":\"com.example.é中😀/\\\"q\\\"\\\\\\n\\u001f\u007f \","
                         + "\"transaction_id\":\"2000000000000001\",\"purchase_date_ms\":1705320000000,"
                         + "\"original_transaction_id\":\"2000000000000001\",\"original_purchase_date_ms\":1705320000000,"
                         + "\"expires_date_ms\":null,\"web_order_line_item_id\":\"123456789012345678\","
                         + "\"cancellation_date_ms\":null,\"is_trial_period\":true,\"is_in_intro_offer_period\":false,"
                         + "\"unknown_attributes\":{\"1720\":[\"AA==\"]}}],"
                         + "\"original_purchase_date_ms\":1722945600000,\"original_application_version\":\"1.0\","
-                        + "\"expiration_date_ms\":null,\"unknown_attributes\":{\"13\":[\"AQ==\",\"+/8=\"],\"9\":[]}}",
+                        + "\"expiration_date_ms\":null,\"unknown_attributes\":{\"9\":[],\"13\":[\"AQ==\",\"+/8=\"]}}",
                 payload.toJson());
         assertEquals(payload.toJson(), payload.toString());
     }

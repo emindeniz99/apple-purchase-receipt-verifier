@@ -277,8 +277,8 @@ class VerifyReceiptEndpointTest {
 
     @Test
     void unreadableSignedContentAnswers21009() throws Exception {
-        byte[] receipt = SyntheticReceipts.pki()
-                .signReceipt(TestPki.singleAttributePayload(2, new byte[] {0x0c, 0x01, (byte) 0xff}));
+        // Signed content that is an INTEGER rather than the attribute SET.
+        byte[] receipt = SyntheticReceipts.pki().signReceipt(new byte[] {0x02, 0x01, 0x01});
         assertEquals("{\"status\":21009}", respond(Environment.SANDBOX, request(receipt)));
     }
 

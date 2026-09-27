@@ -65,10 +65,20 @@ class JwsJsonReadTest {
             String expected = treePayload(payload);
             assertEquals(expected, streamingPayload(payload), new String(payload, StandardCharsets.UTF_8));
             dated += expected.startsWith("object signedDate=") && !expected.endsWith("null") ? 1 : 0;
-            outOfRange += expected.equals("out of range") ? 1 : 0;
+            outOfRange += outOfRangeDate(payload) ? 1 : 0;
         }
         assertTrue(dated > 500, "only " + dated + " payloads carried a usable signedDate");
         assertTrue(outOfRange > 50, "only " + outOfRange + " payloads carried an out-of-range signedDate");
+    }
+
+    /** Whether the payload's signedDate is a number no long holds, which both reads treat as absent. */
+    private static boolean outOfRangeDate(byte[] bytes) {
+        try {
+            JsonNode claim = MAPPER.readTree(bytes).path("signedDate");
+            return claim.isNumber() && !claim.canConvertToLong();
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private static String treeHeader(byte[] bytes) {
@@ -130,27 +140,20 @@ class JwsJsonReadTest {
             return "unreadable";
         }
         JsonNode claim = tree.path("signedDate");
+        // A number no long holds (1e300) counts as not stated, like a string.
         if (claim.canConvertToLong()) {
             return "object signedDate=" + claim.asLong();
-        }
-        if (claim.isNumber()) {
-            return "out of range";
         }
         return "object signedDate=null";
     }
 
     private static String streamingPayload(byte[] bytes) throws Exception {
-        try {
-            JwsCore.Payload payload = JwsCore.Payload.read(bytes);
-            if (payload.json == null) {
-                return "unreadable";
-            }
-            assertEquals(new String(bytes, StandardCharsets.UTF_8), payload.json);
-            return "object signedDate=" + payload.signedDate;
-        } catch (VerificationException e) {
-            assertEquals(Reason.UNTRUSTED_CHAIN, e.reason());
-            return "out of range";
+        JwsCore.Payload payload = JwsCore.Payload.read(bytes);
+        if (payload.json == null) {
+            return "unreadable";
         }
+        assertEquals(new String(bytes, StandardCharsets.UTF_8), payload.json);
+        return "object signedDate=" + payload.signedDate;
     }
 
     /**

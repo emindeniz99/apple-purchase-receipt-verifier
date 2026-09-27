@@ -164,9 +164,7 @@ class EndpointStatusTest {
         receipts.put(RECEIPTS.get("foreign"), Reason.UNTRUSTED_CHAIN);
         receipts.put(RECEIPTS.get("tampered"), Reason.INVALID_SIGNATURE);
         receipts.put(
-                Base64.getEncoder().encodeToString(pki.signReceipt(TestPki.singleAttributePayload(2, new byte[] {
-                    0x0c, 0x01, (byte) 0xff
-                }))),
+                Base64.getEncoder().encodeToString(pki.signReceipt(new byte[] {0x02, 0x01, 0x01})),
                 Reason.UNREADABLE_PAYLOAD);
         for (Map.Entry<String, Reason> receipt : receipts.entrySet()) {
             Reason reason = verifier.verifyReceipt(receipt.getKey()).failure().reason();

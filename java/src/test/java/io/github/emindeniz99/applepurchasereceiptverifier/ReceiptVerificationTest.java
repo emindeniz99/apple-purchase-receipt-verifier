@@ -492,10 +492,11 @@ class ReceiptVerificationTest {
                 new DERUniversalString(BUNDLE.getBytes(StandardCharsets.US_ASCII)).getEncoded(),
                 new DERPrintableString(BUNDLE).getEncoded(),
                 new DERBMPString(BUNDLE).getEncoded())) {
-            byte[] receipt = pki.signReceipt(TestPki.singleAttributePayload(2, value));
-            VerificationException e =
-                    assertThrows(VerificationException.class, () -> verify(pki, receipt), Arrays.toString(value));
-            assertEquals(Reason.UNREADABLE_PAYLOAD, e.reason(), Arrays.toString(value));
+            // Not decoded as a string, and not lost: the octets stay in
+            // bundleIdBytes, where the device-hash computation reads them.
+            ReceiptPayload receipt = verify(pki, pki.signReceipt(TestPki.singleAttributePayload(2, value)));
+            assertNull(receipt.bundleId(), Arrays.toString(value));
+            assertArrayEquals(value, receipt.bundleIdBytes(), Arrays.toString(value));
         }
     }
 
@@ -540,7 +541,7 @@ class ReceiptVerificationTest {
         Date signedAt = new Date(notBefore.getTime() + 86_400_000L);
         byte[] stale = expired.signReceipt(datelessPayload, signedAt);
         VerificationException e = assertThrows(VerificationException.class, () -> verify(expired, stale));
-        assertEquals(Reason.UNTRUSTED_CHAIN, e.reason());
+        assertEquals(Reason.INVALID_CERTIFICATE, e.reason());
 
         Clock insideTheWindow = Clock.fixed(Instant.ofEpochMilli(notBefore.getTime() + 86_400_000L), ZoneOffset.UTC);
         assertEquals(
@@ -560,7 +561,7 @@ class ReceiptVerificationTest {
         VerificationException e = assertThrows(
                 VerificationException.class,
                 () -> Checks.receipt(Checks.verifier(insideTheWindow, expired.root), fresh));
-        assertEquals(Reason.UNTRUSTED_CHAIN, e.reason());
+        assertEquals(Reason.INVALID_CERTIFICATE, e.reason());
     }
 
     @Test
@@ -652,7 +653,7 @@ class ReceiptVerificationTest {
         TestPki expired = TestPki.receipt(notBefore, notAfter);
         byte[] fresh = expired.signReceipt(payload(BUNDLE, Instant.now().toString()));
         VerificationException e = assertThrows(VerificationException.class, () -> verify(expired, fresh));
-        assertEquals(Reason.UNTRUSTED_CHAIN, e.reason());
+        assertEquals(Reason.INVALID_CERTIFICATE, e.reason());
     }
 
     // ------------------------------------------------ several SignerInfos
@@ -763,11 +764,11 @@ class ReceiptVerificationTest {
     }
 
     @Test
-    void anIntegerWiderThanALongMakesThePayloadUnreadable() throws Exception {
-        byte[] der = pki.signReceipt(
-                TestPki.singleAttributePayload(15, new ASN1Integer(BigInteger.ONE.shiftLeft(63)).getEncoded()));
-        VerificationException e = assertThrows(VerificationException.class, () -> verify(pki, der));
-        assertEquals(Reason.UNREADABLE_PAYLOAD, e.reason());
+    void anIntegerWiderThanALongIsKeptRaw() throws Exception {
+        byte[] value = new ASN1Integer(BigInteger.ONE.shiftLeft(63)).getEncoded();
+        ReceiptPayload receipt = verify(pki, pki.signReceipt(TestPki.singleAttributePayload(15, value)));
+        assertNull(receipt.downloadId());
+        assertArrayEquals(value, receipt.unknownAttributes().get(15).get(0));
     }
 
     private static int indexOf(byte[] haystack, byte[] needle) {

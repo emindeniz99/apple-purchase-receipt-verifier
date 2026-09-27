@@ -238,11 +238,14 @@ final class JwsCore {
         @Nullable
         Exception error;
 
-        /** The last top-level {@code signedDate}, when it is a number; null when absent or not a number. */
+        /**
+         * The last top-level {@code signedDate}, when it is a number a long
+         * holds; null when absent, not a number, or out of that range.
+         */
         @Nullable
         Long signedDate;
 
-        static Payload read(byte[] bytes) throws VerificationException {
+        static Payload read(byte[] bytes) {
             Payload payload = new Payload();
             String text;
             try {
@@ -255,7 +258,6 @@ final class JwsCore {
                 return payload;
             }
             Long signedDate = null;
-            String outOfRange = null;
             try (JsonParser parser = JSON.createParser(text.toCharArray())) {
                 if (parser.nextToken() != JsonToken.START_OBJECT) {
                     payload.unreadable("not an object", null);
@@ -265,14 +267,11 @@ final class JwsCore {
                     String name = parser.currentName();
                     JsonToken value = parser.nextToken();
                     if ("signedDate".equals(name)) {
-                        outOfRange = null;
-                        signedDate = null;
-                        if (value == JsonToken.VALUE_NUMBER_INT || value == JsonToken.VALUE_NUMBER_FLOAT) {
-                            signedDate = instant(parser);
-                            if (signedDate == null) {
-                                outOfRange = parser.getText();
-                            }
-                        }
+                        // A number no long holds (1e300, say) is no instant,
+                        // so it counts as not stated, like a string would.
+                        signedDate = value == JsonToken.VALUE_NUMBER_INT || value == JsonToken.VALUE_NUMBER_FLOAT
+                                ? instant(parser)
+                                : null;
                     }
                     parser.skipChildren();
                 }
@@ -281,16 +280,6 @@ final class JwsCore {
                 // before the signature has been checked.
                 payload.unreadable("not valid JSON", e);
                 return payload;
-            }
-            // Only for a payload that parsed: a claim that IS a number but no
-            // long can hold, 1e300 say, is not "not stated". Treating it as
-            // absent would validate the chain at the clock, which is an
-            // attacker choosing the instant a certificate's window is judged
-            // at. An instant no calendar can express is inside no window.
-            if (outOfRange != null) {
-                throw new VerificationException(
-                        Reason.UNTRUSTED_CHAIN,
-                        "payload signing date " + SafeText.quote(outOfRange) + " is not a valid instant");
             }
             payload.json = text;
             payload.signedDate = signedDate;
@@ -447,6 +436,13 @@ final class JwsCore {
             params.setDate(at);
             validator.validate(path, params);
         } catch (CertPathValidatorException e) {
+            if (AppleTrust.outsideValidity(e)) {
+                throw new VerificationException(
+                        Reason.INVALID_CERTIFICATE,
+                        "x5c certificate is outside its validity window at " + at.getTime() + ": "
+                                + SafeText.detail(e.getMessage()),
+                        e);
+            }
             throw new VerificationException(
                     Reason.UNTRUSTED_CHAIN,
                     "certificate chain does not validate to a pinned Apple root: " + SafeText.detail(e.getMessage()),
