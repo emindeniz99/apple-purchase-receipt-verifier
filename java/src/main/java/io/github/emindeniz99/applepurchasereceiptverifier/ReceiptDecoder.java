@@ -2,9 +2,11 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import java.io.IOException;
 import java.math.BigInteger;
-import java.time.LocalDate;
-import java.time.Month;
-import java.time.Year;
+import java.time.DateTimeException;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.time.format.ResolverStyle;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -122,6 +124,9 @@ final class ReceiptDecoder {
             IAP_CANCELLATION_DATE,
             IAP_IS_TRIAL_PERIOD,
             IAP_IS_IN_INTRO_OFFER_PERIOD));
+
+    private static final DateTimeFormatter RECEIPT_DATE =
+            DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss'Z'").withResolverStyle(ResolverStyle.STRICT);
 
     private ReceiptDecoder() {}
 
@@ -436,59 +441,21 @@ final class ReceiptDecoder {
     }
 
     /**
-     * Exactly {@code YYYY-MM-DDTHH:MM:SSZ} and nothing else: a four-digit year from 0000 to 9999, uppercase
-     * {@code T} and {@code Z}, a day that exists in its month, hour 00 to
-     * 23, minute and second 00 to 59; no fraction, no offset, no leap
-     * second. Checked by hand rather than by {@code Instant.parse}, whose
-     * grammar is wider and has moved between JDKs, so one receipt reads the
-     * same on every JVM. Null when {@code text} is not in that form.
+     * Exactly {@code YYYY-MM-DDTHH:MM:SSZ}: a year from 0000 to 9999, a real
+     * calendar date, hours 00 to 23, minutes and seconds 00 to 59, uppercase
+     * {@code T} and {@code Z}, nothing else. Null when {@code text} is not in
+     * that form.
      */
     static @Nullable Long parseDate(String text) {
-        if (text.length() != 20
-                || text.charAt(4) != '-'
-                || text.charAt(7) != '-'
-                || text.charAt(10) != 'T'
-                || text.charAt(13) != ':'
-                || text.charAt(16) != ':'
-                || text.charAt(19) != 'Z') {
+        // uuuu also reads a signed or five-digit year; the accepted form is 20 characters.
+        if (text.length() != 20) {
             return null;
         }
-        int year = digits(text, 0, 4);
-        int month = digits(text, 5, 2);
-        int day = digits(text, 8, 2);
-        int hour = digits(text, 11, 2);
-        int minute = digits(text, 14, 2);
-        int second = digits(text, 17, 2);
-        if (year < 0
-                || month < 1
-                || month > 12
-                || day < 1
-                || hour < 0
-                || hour > 23
-                || minute < 0
-                || minute > 59
-                || second < 0
-                || second > 59) {
+        try {
+            return LocalDateTime.parse(text, RECEIPT_DATE).toEpochSecond(ZoneOffset.UTC) * 1000;
+        } catch (DateTimeException e) {
             return null;
         }
-        if (day > Month.of(month).length(Year.isLeap(year))) {
-            return null;
-        }
-        long days = LocalDate.of(year, month, day).toEpochDay();
-        return Long.valueOf(((days * 24 + hour) * 60 + minute) * 60_000L + second * 1000L);
-    }
-
-    /** The decimal value of {@code length} ASCII digits at {@code from}, or -1 if any is not one. */
-    private static int digits(String text, int from, int length) {
-        int value = 0;
-        for (int i = from; i < from + length; i++) {
-            char c = text.charAt(i);
-            if (c < '0' || c > '9') {
-                return -1;
-            }
-            value = value * 10 + (c - '0');
-        }
-        return value;
     }
 
     /** {@link #date}, with {@code null} for anything that does not parse. */
