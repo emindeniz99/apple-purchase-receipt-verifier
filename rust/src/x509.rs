@@ -557,14 +557,8 @@ mod tests {
         // Apple's roots mark basicConstraints and keyUsage critical.
         let root = Certificate::from_der(include_bytes!("../certs/AppleRootCA-G3.cer")).unwrap();
         let critical = root.critical_extensions();
-        assert!(
-            critical.iter().any(|oid| oid == "2.5.29.19"),
-            "{critical:?}"
-        );
-        assert!(
-            critical.iter().any(|oid| oid == "2.5.29.15"),
-            "{critical:?}"
-        );
+        assert!(critical.iter().any(|oid| oid == "2.5.29.19"));
+        assert!(critical.iter().any(|oid| oid == "2.5.29.15"));
     }
 
     #[test]
