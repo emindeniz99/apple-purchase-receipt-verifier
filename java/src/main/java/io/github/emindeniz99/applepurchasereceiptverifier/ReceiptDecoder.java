@@ -7,11 +7,12 @@ import java.time.Month;
 import java.time.Year;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1IA5String;
 import org.bouncycastle.asn1.ASN1Integer;
@@ -140,13 +141,8 @@ final class ReceiptDecoder {
      */
     static @Nullable Long readCreationDate(byte[] payload) {
         try {
-            byte[] date = null;
-            for (ASN1Encodable element : parseAttributeSet(payload, "receipt payload")) {
-                Attribute attr = Attribute.of(element);
-                if (attr.type == ATTR_CREATION_DATE && date == null) {
-                    date = attr.value;
-                }
-            }
+            byte[] date =
+                    readAttributes(payload, "receipt payload", TOP_LEVEL).firsts.get(ATTR_CREATION_DATE);
             return date != null ? decodeDate(date) : null;
         } catch (VerificationException | RuntimeException e) {
             return null;
@@ -154,201 +150,128 @@ final class ReceiptDecoder {
     }
 
     static ReceiptPayload parse(byte[] payload) throws VerificationException {
-        ASN1Set attributes = parseAttributeSet(payload, "receipt payload");
-        String receiptType = null;
-        String parsedBundleId = null;
-        byte[] bundleIdBytes = null;
-        String appVersion = null;
-        byte[] opaqueValue = null;
-        byte[] sha1Hash = null;
-        Long creationDate = null;
-        Long originalPurchaseDate = null;
-        String originalAppVersion = null;
-        Long expirationDate = null;
-        Long appItemId = null;
-        Long downloadId = null;
-        Long versionExternalIdentifier = null;
-        List<InAppPurchase> purchases = new ArrayList<InAppPurchase>();
-        Map<Integer, List<byte[]>> unknown = new LinkedHashMap<Integer, List<byte[]>>();
-
-        Set<Integer> seen = new HashSet<Integer>();
-        for (ASN1Encodable element : attributes) {
-            Attribute attr = Attribute.of(element);
-            if (isLaterCopy(attr.type, TOP_LEVEL, seen)) {
-                recordUnknown(unknown, attr);
-                continue;
-            }
-            try {
-                switch (attr.type) {
-                    case ATTR_RECEIPT_TYPE:
-                        receiptType = decodeString(attr.value);
-                        break;
-                    case ATTR_APP_ITEM_ID:
-                        appItemId = decodeInteger(attr.value);
-                        break;
-                    case ATTR_ORIGINAL_PURCHASE_DATE:
-                        originalPurchaseDate = date(attr.value);
-                        break;
-                    case ATTR_BUNDLE_ID:
-                        // The raw octets are a typed field of their own, so they
-                        // are kept even when the string does not decode.
-                        bundleIdBytes = attr.value;
-                        parsedBundleId = decodeBundleId(attr.value);
-                        break;
-                    case ATTR_APP_VERSION:
-                        appVersion = decodeString(attr.value);
-                        break;
-                    case ATTR_OPAQUE_VALUE:
-                        opaqueValue = attr.value;
-                        break;
-                    case ATTR_SHA1_HASH:
-                        sha1Hash = attr.value;
-                        break;
-                    case ATTR_CREATION_DATE:
-                        creationDate = date(attr.value);
-                        break;
-                    case ATTR_DOWNLOAD_ID:
-                        downloadId = decodeInteger(attr.value);
-                        break;
-                    case ATTR_VERSION_EXTERNAL_IDENTIFIER:
-                        versionExternalIdentifier = decodeInteger(attr.value);
-                        break;
-                    case ATTR_IN_APP:
-                        purchases.add(parseInApp(attr.value));
-                        break;
-                    case ATTR_ORIGINAL_APP_VERSION:
-                        originalAppVersion = decodeString(attr.value);
-                        break;
-                    case ATTR_EXPIRATION_DATE:
-                        expirationDate = date(attr.value);
-                        break;
-                    default:
-                        // Undocumented attribute types stay accessible, so a
-                        // field Apple adds later is not lost.
-                        recordUnknown(unknown, attr);
-                        break;
+        Attributes attributes = readAttributes(payload, "receipt payload", TOP_LEVEL);
+        // 17 is not in TOP_LEVEL: every copy is one purchase, and one that
+        // does not parse is kept raw.
+        List<InAppPurchase> purchases = new ArrayList<>();
+        List<byte[]> inApp = attributes.unknown.remove(ATTR_IN_APP);
+        if (inApp != null) {
+            for (byte[] purchase : inApp) {
+                try {
+                    purchases.add(parseInApp(purchase));
+                } catch (VerificationException e) {
+                    attributes
+                            .unknown
+                            .computeIfAbsent(ATTR_IN_APP, type -> new ArrayList<>())
+                            .add(purchase);
                 }
-            } catch (VerificationException e) {
-                // A known attribute whose value does not decode: its typed
-                // field stays null and the value is kept raw, so nothing
-                // Apple signed is lost.
-                recordUnknown(unknown, attr);
             }
         }
+        // The raw octets are a typed field of their own, kept even when the
+        // string does not decode, so they are not also kept raw.
+        byte[] bundleIdBytes = attributes.firsts.get(ATTR_BUNDLE_ID);
         return new ReceiptPayload(
-                receiptType,
-                appItemId,
-                parsedBundleId,
+                attributes.string(ATTR_RECEIPT_TYPE),
+                attributes.integer(ATTR_APP_ITEM_ID),
+                bundleIdBytes != null ? decodeBundleId(bundleIdBytes) : null,
                 bundleIdBytes,
-                appVersion,
-                opaqueValue,
-                sha1Hash,
-                creationDate,
-                downloadId,
-                versionExternalIdentifier,
+                attributes.string(ATTR_APP_VERSION),
+                attributes.firsts.get(ATTR_OPAQUE_VALUE),
+                attributes.firsts.get(ATTR_SHA1_HASH),
+                attributes.date(ATTR_CREATION_DATE),
+                attributes.integer(ATTR_DOWNLOAD_ID),
+                attributes.integer(ATTR_VERSION_EXTERNAL_IDENTIFIER),
                 purchases,
-                originalPurchaseDate,
-                originalAppVersion,
-                expirationDate,
-                unknown);
+                attributes.date(ATTR_ORIGINAL_PURCHASE_DATE),
+                attributes.string(ATTR_ORIGINAL_APP_VERSION),
+                attributes.date(ATTR_EXPIRATION_DATE),
+                attributes.unknown);
     }
 
     private static InAppPurchase parseInApp(byte[] inAppSet) throws VerificationException {
-        ASN1Set attributes = parseAttributeSet(inAppSet, "in-app purchase attribute");
-        Long quantity = null;
-        String productId = null;
-        String transactionId = null;
-        String originalTransactionId = null;
-        Long purchaseDate = null;
-        Long originalPurchaseDate = null;
-        Long expiresDate = null;
-        Long cancellationDate = null;
-        Long webOrderLineItemId = null;
-        Boolean isTrialPeriod = null;
-        Boolean isInIntroOfferPeriod = null;
-        Map<Integer, List<byte[]>> unknown = new LinkedHashMap<Integer, List<byte[]>>();
-
-        Set<Integer> seen = new HashSet<Integer>();
-        for (ASN1Encodable element : attributes) {
-            Attribute attr = Attribute.of(element);
-            if (isLaterCopy(attr.type, IN_APP, seen)) {
-                recordUnknown(unknown, attr);
-                continue;
-            }
-            try {
-                switch (attr.type) {
-                    case IAP_QUANTITY:
-                        quantity = decodeInteger(attr.value);
-                        break;
-                    case IAP_PRODUCT_ID:
-                        productId = decodeString(attr.value);
-                        break;
-                    case IAP_TRANSACTION_ID:
-                        transactionId = decodeString(attr.value);
-                        break;
-                    case IAP_PURCHASE_DATE:
-                        purchaseDate = date(attr.value);
-                        break;
-                    case IAP_ORIGINAL_TRANSACTION_ID:
-                        originalTransactionId = decodeString(attr.value);
-                        break;
-                    case IAP_ORIGINAL_PURCHASE_DATE:
-                        originalPurchaseDate = date(attr.value);
-                        break;
-                    case IAP_EXPIRES_DATE:
-                        expiresDate = date(attr.value);
-                        break;
-                    case IAP_WEB_ORDER_LINE_ITEM_ID:
-                        webOrderLineItemId = decodeInteger(attr.value);
-                        break;
-                    case IAP_CANCELLATION_DATE:
-                        cancellationDate = date(attr.value);
-                        break;
-                    case IAP_IS_TRIAL_PERIOD:
-                        isTrialPeriod = decodeFlag(attr.value);
-                        break;
-                    case IAP_IS_IN_INTRO_OFFER_PERIOD:
-                        isInIntroOfferPeriod = decodeFlag(attr.value);
-                        break;
-                    default:
-                        recordUnknown(unknown, attr);
-                        break;
-                }
-            } catch (VerificationException e) {
-                recordUnknown(unknown, attr);
-            }
-        }
+        Attributes attributes = readAttributes(inAppSet, "in-app purchase attribute", IN_APP);
         return new InAppPurchase(
-                quantity,
-                productId,
-                transactionId,
-                purchaseDate,
-                originalTransactionId,
-                originalPurchaseDate,
-                expiresDate,
-                webOrderLineItemId,
-                cancellationDate,
-                isTrialPeriod,
-                isInIntroOfferPeriod,
-                unknown);
+                attributes.integer(IAP_QUANTITY),
+                attributes.string(IAP_PRODUCT_ID),
+                attributes.string(IAP_TRANSACTION_ID),
+                attributes.date(IAP_PURCHASE_DATE),
+                attributes.string(IAP_ORIGINAL_TRANSACTION_ID),
+                attributes.date(IAP_ORIGINAL_PURCHASE_DATE),
+                attributes.date(IAP_EXPIRES_DATE),
+                attributes.integer(IAP_WEB_ORDER_LINE_ITEM_ID),
+                attributes.date(IAP_CANCELLATION_DATE),
+                attributes.flag(IAP_IS_TRIAL_PERIOD),
+                attributes.flag(IAP_IS_IN_INTRO_OFFER_PERIOD),
+                attributes.unknown);
     }
 
     /**
-     * Whether {@code type} is a known attribute already seen in this SET. The
-     * first copy decides the typed field; a later one is kept raw. Attribute
-     * 17 is not covered: every copy of it is one in-app purchase.
+     * One attribute SET: the first value of each type in {@code known}, and
+     * every other value raw, by type in ascending order, each type's values
+     * in receipt order. The typed getters move a first value that does not
+     * decode to the front of its raw list, where receipt order puts it.
      */
-    private static boolean isLaterCopy(int type, Set<Integer> known, Set<Integer> seen) {
-        return known.contains(type) && !seen.add(type);
+    private static Attributes readAttributes(byte[] der, String what, Set<Integer> known) throws VerificationException {
+        Attributes attributes = new Attributes();
+        for (ASN1Encodable element : parseAttributeSet(der, what)) {
+            Attribute attr = Attribute.of(element);
+            if (!known.contains(attr.type) || attributes.firsts.containsKey(attr.type)) {
+                attributes
+                        .unknown
+                        .computeIfAbsent(attr.type, type -> new ArrayList<>())
+                        .add(attr.value);
+            } else {
+                attributes.firsts.put(attr.type, attr.value);
+            }
+        }
+        return attributes;
     }
 
-    private static void recordUnknown(Map<Integer, List<byte[]>> unknown, Attribute attr) {
-        List<byte[]> values = unknown.get(attr.type);
-        if (values == null) {
-            values = new ArrayList<byte[]>();
-            unknown.put(attr.type, values);
+    private static final class Attributes {
+        final Map<Integer, byte[]> firsts = new HashMap<>();
+        final Map<Integer, List<byte[]>> unknown = new TreeMap<>();
+
+        @Nullable
+        String string(int type) {
+            byte[] value = firsts.get(type);
+            try {
+                return value != null ? decodeString(value) : null;
+            } catch (VerificationException e) {
+                return keepRaw(type, value);
+            }
         }
-        values.add(attr.value);
+
+        @Nullable
+        Long integer(int type) {
+            byte[] value = firsts.get(type);
+            try {
+                return value != null ? decodeInteger(value) : null;
+            } catch (VerificationException e) {
+                return keepRaw(type, value);
+            }
+        }
+
+        @Nullable
+        Long date(int type) {
+            byte[] value = firsts.get(type);
+            try {
+                return value != null ? ReceiptDecoder.date(value) : null;
+            } catch (VerificationException e) {
+                return keepRaw(type, value);
+            }
+        }
+
+        /** An INTEGER flag: 0 is {@code false}, any other value {@code true}. */
+        @Nullable
+        Boolean flag(int type) {
+            Long value = integer(type);
+            return value != null ? value != 0 : null;
+        }
+
+        private <T> @Nullable T keepRaw(int type, byte[] value) {
+            unknown.computeIfAbsent(type, t -> new ArrayList<>()).add(0, value);
+            return null;
+        }
     }
 
     private static ASN1Set parseAttributeSet(byte[] der, String what) throws VerificationException {
@@ -490,11 +413,6 @@ final class ReceiptDecoder {
             // is kept raw, as for a string that does not decode.
             throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "attribute value is not a valid integer", e);
         }
-    }
-
-    /** An INTEGER flag: 0 is {@code false}, any other value {@code true}. */
-    private static Boolean decodeFlag(byte[] der) throws VerificationException {
-        return Boolean.valueOf(decodeInteger(der).longValue() != 0);
     }
 
     /**
