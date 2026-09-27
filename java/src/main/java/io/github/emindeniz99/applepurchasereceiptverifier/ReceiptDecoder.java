@@ -37,7 +37,6 @@ final class ReceiptDecoder {
     // Where each type comes from, 0, 1, 15, 16, 18 and 1713 included, is in RECEIPT-FIELDS.md.
     private static final int ATTR_RECEIPT_TYPE = 0;
     private static final int ATTR_APP_ITEM_ID = 1;
-    private static final int ATTR_ORIGINAL_PURCHASE_DATE = 18;
     private static final int ATTR_BUNDLE_ID = 2;
     private static final int ATTR_APP_VERSION = 3;
     private static final int ATTR_OPAQUE_VALUE = 4;
@@ -46,6 +45,7 @@ final class ReceiptDecoder {
     private static final int ATTR_DOWNLOAD_ID = 15;
     private static final int ATTR_VERSION_EXTERNAL_IDENTIFIER = 16;
     private static final int ATTR_IN_APP = 17;
+    private static final int ATTR_ORIGINAL_PURCHASE_DATE = 18;
     private static final int ATTR_ORIGINAL_APP_VERSION = 19;
     private static final int ATTR_EXPIRATION_DATE = 21;
 
@@ -61,7 +61,7 @@ final class ReceiptDecoder {
     private static final int IAP_IS_TRIAL_PERIOD = 1713;
     private static final int IAP_IS_IN_INTRO_OFFER_PERIOD = 1719;
 
-    /** The top-level types that fill a typed field. 17 is absent: every copy is a purchase. */
+    /** The top-level types that fill a typed field. */
     private static final Set<Integer> TOP_LEVEL = new HashSet<>(Arrays.asList(
             ATTR_RECEIPT_TYPE,
             ATTR_APP_ITEM_ID,
@@ -183,7 +183,8 @@ final class ReceiptDecoder {
                 // More than three fields is tolerated, for a field Apple appends later.
                 if (seq.size() < 3) {
                     throw new VerificationException(
-                            Reason.UNREADABLE_PAYLOAD, "receipt attribute has " + seq.size() + " fields, expected 3");
+                            Reason.UNREADABLE_PAYLOAD,
+                            "receipt attribute has " + seq.size() + " fields, expected at least 3");
                 }
                 BigInteger rawType = ASN1Integer.getInstance(seq.getObjectAt(0)).getValue();
                 // 0 to Integer.MAX_VALUE; a wider type is refused, since narrowing would invent one.
@@ -286,7 +287,7 @@ final class ReceiptDecoder {
      * other {@link ASN1String} is refused rather than rendered.
      */
     private static String decodeString(byte[] der) throws VerificationException {
-        // The creation date is read through here before any signature.
+        // A nested encoding inside an OCTET STRING, which the payload's own depth walk did not enter.
         requireDepth(der, "attribute value");
         try {
             ASN1Primitive parsed = ASN1Primitive.fromByteArray(der);
@@ -368,7 +369,7 @@ final class ReceiptDecoder {
     private static @Nullable String decodeBundleId(byte[] der) {
         try {
             return decodeString(der);
-        } catch (VerificationException | RuntimeException e) {
+        } catch (VerificationException e) {
             return null;
         }
     }
