@@ -26,6 +26,14 @@ parameters, results that never throw, epoch-millisecond dates, and our own
 `snake_case` JSON for receipts. Java is built first; all nine ports ship
 together as 0.7. The 0.6 API is removed without a deprecation period.
 
+Two floors move with it, per SUPPORT-MATRIX.md rule 2 and 4: Ruby 3.1 to
+3.3 (for `Data`; 3.1 and 3.2 are past EOL) and PHP 8.1 to 8.2 (for
+`readonly class`; 8.1 is past EOL). Each lands with its port and updates
+the matrix. A multi-release jar with `module-info` for Java 9+ is not in
+0.7: the single-package layout already hides the implementation, and a
+`module-info` would only add hiding for modular consumers at the cost of
+a second compile pass. It stays under "Java 0.7" below as a later item.
+
 Where the sections below disagree with the design, the design wins. In
 particular it drops: the endpoint bundle id helper, `isAccepted()`, an
 accepted-environments set on `ReceiptVerifier`, typed `verifyNotification`
