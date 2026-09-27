@@ -440,6 +440,9 @@ final class ReceiptDecoder {
      * whole payload.</p>
      */
     private static String decodeString(byte[] der) throws VerificationException {
+        // The creation date is read through here before any signature, so
+        // an attribute value is bounded like every other unverified parse.
+        requireDepth(der, "attribute value");
         try {
             ASN1Primitive parsed = ASN1Primitive.fromByteArray(der);
             if (parsed instanceof ASN1IA5String) {
@@ -470,6 +473,7 @@ final class ReceiptDecoder {
      * receipts carry up to 7-byte integers.
      */
     private static Long decodeInteger(byte[] der) throws VerificationException {
+        requireDepth(der, "attribute value");
         try {
             ASN1Primitive parsed = ASN1Primitive.fromByteArray(der);
             if (!(parsed instanceof ASN1Integer)) {

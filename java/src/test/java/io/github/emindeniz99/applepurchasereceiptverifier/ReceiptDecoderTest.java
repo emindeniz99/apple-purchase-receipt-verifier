@@ -176,6 +176,22 @@ class ReceiptDecoderTest {
         assertEquals(Reason.UNREADABLE_PAYLOAD, content.reason());
     }
 
+    /**
+     * An attribute value is parsed on its own, and the creation date before
+     * any signature, so a value is held to the same depth bound: one nested
+     * past it is kept raw, and as a creation date it is no date.
+     */
+    @Test
+    void anAttributeValueNestedPastTheBoundIsKeptRawAndIsNoCreationDate() throws Exception {
+        byte[] tooDeep = nestedSets(65);
+        ReceiptPayload receipt = ReceiptDecoder.parse(set(attribute(3, tooDeep), attribute(1, tooDeep)));
+        assertNull(receipt.applicationVersion());
+        assertNull(receipt.appItemId());
+        assertArrayEquals(tooDeep, receipt.unknownAttributes().get(3).get(0));
+        assertArrayEquals(tooDeep, receipt.unknownAttributes().get(1).get(0));
+        assertNull(ReceiptDecoder.readCreationDate(set(attribute(12, tooDeep))));
+    }
+
     /** {@code levels} SETs inside one another, the innermost empty. */
     private static byte[] nestedSets(int levels) throws Exception {
         return nested(levels, null).getEncoded();
