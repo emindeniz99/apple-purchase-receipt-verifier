@@ -68,7 +68,7 @@ final class ReceiptCore {
      * {@link #MAX_PATH_LENGTH} already cuts that off; this count bound does
      * not rely on it.</p>
      */
-    static final int MAXIMUM_EMBEDDED_CERTIFICATES = 10;
+    static final int MAX_EMBEDDED_CERTIFICATES = 10;
 
     /**
      * Ceiling on the SignerInfos a receipt may carry. Genuine receipts carry
@@ -76,29 +76,15 @@ final class ReceiptCore {
      * the chain builds and signature checks one receipt can ask for, since
      * every SignerInfo gets its own.
      */
-    static final int MAXIMUM_SIGNER_INFOS = 4;
+    static final int MAX_SIGNER_INFOS = 4;
 
     /**
-     * The longest path the builder will walk, anchor excluded: at most this
-     * many certificates starting at the leaf before a pinned anchor must be
-     * reached. Genuine receipt chains
-     * are two certificates below the root, so six leaves room for a longer
-     * Apple chain while bounding what a hostile embedded set can cost.
-     *
-     * <p>Two things stand between this constant and the JDK, and both are
-     * needed to make the bound mean here what it means there:</p>
-     *
-     * <ul>
-     *   <li>{@link PKIXBuilderParameters#setMaxPathLength} counts <em>the
-     *       intermediates</em> rather than the certificates, so it is set one
-     *       lower. Stating it also removes the reliance on the JDK's own
-     *       default of 5, which happens to land on the same boundary, but is
-     *       a default this class does not control.</li>
-     *   <li>That parameter exempts self-issued intermediates from its count
-     *       (RFC 5280 6.1.4), so a path builder honouring it can still return
-     *       a path longer than this constant. The built path is therefore
-     *       measured afterwards.</li>
-     * </ul>
+     * The most certificates below the anchor, leaf included. Genuine chains
+     * have two; six leaves room while bounding what a hostile set can cost.
+     * The top-down walk stops after this many rounds.
+     * {@link PKIXBuilderParameters#setMaxPathLength} counts intermediates, so
+     * it is set one lower, and exempts self-issued ones (RFC 5280 6.1.4), so
+     * the built path is measured afterwards too.
      */
     private static final int MAX_PATH_LENGTH = 6;
 
@@ -129,8 +115,8 @@ final class ReceiptCore {
      * <p>What it checks, in order: the string is non-empty and at most
      * {@link #MAX_RECEIPT_BYTES} UTF-8 bytes; it is strict base64; the DER
      * parses completely with no trailing bytes and is a CMS SignedData with
-     * an encapsulated payload, one to {@link #MAXIMUM_SIGNER_INFOS}
-     * SignerInfos and at most {@link #MAXIMUM_EMBEDDED_CERTIFICATES}
+     * an encapsulated payload, one to {@link #MAX_SIGNER_INFOS}
+     * SignerInfos and at most {@link #MAX_EMBEDDED_CERTIFICATES}
      * certificates. Then, for each SignerInfo in turn until one passes: its
      * certificate is embedded and decodes, a path from it reaches one of
      * {@code trustAnchors} at the receipt's creation date ({@code clock},
@@ -222,11 +208,10 @@ final class ReceiptCore {
         if (signers.isEmpty()) {
             throw new VerificationException(Reason.MALFORMED, "no signer info");
         }
-        if (signers.size() > MAXIMUM_SIGNER_INFOS) {
+        if (signers.size() > MAX_SIGNER_INFOS) {
             throw new VerificationException(
                     Reason.MALFORMED,
-                    "receipt carries " + signers.size() + " SignerInfos, more than the maximum of "
-                            + MAXIMUM_SIGNER_INFOS);
+                    "receipt carries " + signers.size() + " SignerInfos, more than the maximum of " + MAX_SIGNER_INFOS);
         }
         for (SignerInformation signer : signers) {
             requireAttributeSetSyntax(signer);
@@ -237,11 +222,11 @@ final class ReceiptCore {
         // Bounded here, before a single embedded certificate is decoded or
         // handed to the path builder, all of which an unverified receipt
         // would otherwise get to pay for out of the caller's CPU.
-        if (embeddedCount > MAXIMUM_EMBEDDED_CERTIFICATES) {
+        if (embeddedCount > MAX_EMBEDDED_CERTIFICATES) {
             throw new VerificationException(
                     Reason.MALFORMED,
                     "receipt embeds " + embeddedCount + " certificates, more than the maximum of "
-                            + MAXIMUM_EMBEDDED_CERTIFICATES);
+                            + MAX_EMBEDDED_CERTIFICATES);
         }
 
         // Only the creation date is read before trust is established, because

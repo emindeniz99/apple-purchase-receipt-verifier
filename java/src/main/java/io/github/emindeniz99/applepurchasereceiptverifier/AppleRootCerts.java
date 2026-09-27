@@ -53,18 +53,6 @@ final class AppleRootCerts {
     };
 
     /**
-     * The three roots, loaded and checked once. The set is unmodifiable and
-     * the certificates are immutable, so every caller can share it.
-     *
-     * @throws IllegalStateException if the bundled roots are missing, do not
-     *                               parse, or do not match their pinned
-     *                               fingerprints
-     */
-    static Set<X509Certificate> roots() {
-        return allRoots();
-    }
-
-    /**
      * The roots, read, parsed and pinned once per class loader. A failed
      * load is not cached: it is rethrown as the same
      * {@link IllegalStateException} on every call, which a static holder
@@ -74,7 +62,15 @@ final class AppleRootCerts {
      */
     private static volatile @Nullable Set<X509Certificate> cached;
 
-    private static Set<X509Certificate> allRoots() {
+    /**
+     * The three roots, loaded and checked once. The set is unmodifiable and
+     * the certificates are immutable, so every caller can share it.
+     *
+     * @throws IllegalStateException if the bundled roots are missing, do not
+     *                               parse, or do not match their pinned
+     *                               fingerprints
+     */
+    static Set<X509Certificate> roots() {
         Set<X509Certificate> roots = cached;
         if (roots == null) {
             roots = Collections.unmodifiableSet(loadRoots());

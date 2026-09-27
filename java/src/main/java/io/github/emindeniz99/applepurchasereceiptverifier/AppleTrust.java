@@ -50,10 +50,10 @@ final class AppleTrust {
     /**
      * One {@link TrustAnchor} per root, with no name constraints.
      *
-     * @throws IllegalArgumentException if {@code trustedRoots} is null or empty
+     * @throws IllegalArgumentException if {@code trustedRoots} is empty
      */
     static Set<TrustAnchor> anchors(Set<X509Certificate> trustedRoots) {
-        if (trustedRoots == null || trustedRoots.isEmpty()) {
+        if (trustedRoots.isEmpty()) {
             throw new IllegalArgumentException("trustedRoots must not be empty");
         }
         Set<TrustAnchor> anchors = new HashSet<TrustAnchor>();

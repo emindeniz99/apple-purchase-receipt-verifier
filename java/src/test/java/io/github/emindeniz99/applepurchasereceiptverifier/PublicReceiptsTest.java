@@ -38,7 +38,7 @@ class PublicReceiptsTest {
     @Test
     void theEmbeddedCertificateBoundClearsEveryGenuineChain() throws Exception {
         // The bound is only safe if it sits above the largest chain Apple
-        // actually ships, and MAXIMUM_EMBEDDED_CERTIFICATES is private to
+        // actually ships, and MAX_EMBEDDED_CERTIFICATES is private to
         // another package, so its value is read where the implementation
         // states it: out of the rejection it raises. That takes making the
         // bound fire: a genuine receipt re-packed with copies of its own

@@ -471,10 +471,15 @@ class VerifierApiTest {
         }
     }
 
-    /** Only the API types are public; the implementation is package-private. */
+    /**
+     * Only the API types are public; the implementation is package-private.
+     * The implementation side is every other top-level class compiled into
+     * the package, read from the build output, so a class added later is
+     * checked without being listed here.
+     */
     @Test
-    void onlyTheApiTypesArePublic() {
-        for (Class<?> type : Arrays.<Class<?>>asList(
+    void onlyTheApiTypesArePublic() throws Exception {
+        List<Class<?>> api = Arrays.<Class<?>>asList(
                 Verifier.class,
                 Config.class,
                 Config.Builder.class,
@@ -486,27 +491,34 @@ class VerifierApiTest {
                 JsonPayload.class,
                 Environment.class,
                 Version.class,
-                AppleStatus.class)) {
+                AppleStatus.class);
+        for (Class<?> type : api) {
             assertTrue(java.lang.reflect.Modifier.isPublic(type.getModifiers()), type.getName());
         }
-        for (Class<?> type : Arrays.<Class<?>>asList(
-                DefaultVerifier.class,
-                ReceiptCore.class,
-                ReceiptDecoder.class,
-                JwsCore.class,
-                Endpoint.class,
-                EndpointResponse.class,
-                CanonicalJson.class,
-                RawAttributes.class,
-                AppleRootCerts.class,
-                AppleTrust.class,
-                BouncyCastle.class,
-                BoundedJson.class,
-                SafeText.class,
-                ReceiptBase64.class,
-                Utf8Length.class,
-                VerificationException.class)) {
-            assertFalse(java.lang.reflect.Modifier.isPublic(type.getModifiers()), type.getName());
+        java.nio.file.Path packageDir = Paths.get(Verifier.class
+                        .getProtectionDomain()
+                        .getCodeSource()
+                        .getLocation()
+                        .toURI())
+                .resolve(Verifier.class.getPackage().getName().replace('.', '/'));
+        List<String> implementation = new ArrayList<String>();
+        try (java.nio.file.DirectoryStream<java.nio.file.Path> classes =
+                Files.newDirectoryStream(packageDir, "*.class")) {
+            for (java.nio.file.Path file : classes) {
+                String simple = file.getFileName().toString().replace(".class", "");
+                if (simple.contains("$") || simple.equals("package-info")) {
+                    continue;
+                }
+                Class<?> type = Class.forName(Verifier.class.getPackage().getName() + "." + simple);
+                if (!api.contains(type)) {
+                    implementation.add(simple);
+                    assertFalse(java.lang.reflect.Modifier.isPublic(type.getModifiers()), type.getName());
+                }
+            }
         }
+        // The scan found the build output, including the newest classes.
+        assertTrue(implementation.contains("Asn1Depth"), implementation.toString());
+        assertTrue(implementation.contains("CallClock"), implementation.toString());
+        assertTrue(implementation.contains("ReceiptCertificates"), implementation.toString());
     }
 }

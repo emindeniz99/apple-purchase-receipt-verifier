@@ -1,7 +1,6 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import java.util.Base64;
-import org.jspecify.annotations.Nullable;
 
 /**
  * Decodes the base64 text a client sends as {@code receipt-data} by the rule
@@ -22,10 +21,8 @@ final class ReceiptBase64 {
 
     private ReceiptBase64() {}
 
-    static byte[] decode(@Nullable String receipt) throws VerificationException {
-        if (receipt == null) {
-            throw new VerificationException(Reason.MALFORMED, "receipt is null");
-        }
+    /** {@code receipt} is never null: {@code ReceiptCore.verify} refuses a null or empty one first. */
+    static byte[] decode(String receipt) throws VerificationException {
         if (receipt.isEmpty() || receipt.length() % 4 != 0) {
             throw new VerificationException(Reason.MALFORMED, "receipt is not canonically padded standard base64");
         }
