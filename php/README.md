@@ -366,11 +366,19 @@ thrown `VerificationException`.
   expire; a receipt is valid if its chain was valid when Apple signed it, or,
   when the receipt or JWS states no signing time, at the configured clock
   (see "What the clock can move" below).
-- **Any receipt signer algorithm Apple has used.** RSA PKCS#1 v1.5, RSA-PSS
-  and ECDSA over P-256/P-384, with MD5 through SHA-512 digests — no
+- **Any receipt signer algorithm Apple has used.** RSA PKCS#1 v1.5 and
+  ECDSA over P-256/P-384, with MD5 through SHA-512 digests — no
   algorithm allowlist beyond what the trusted chain and OpenSSL itself can
   verify. A relabel — a `signatureAlgorithm` naming a different hash than
   `digestAlgorithm` — is refused.
+- **No RSA-PSS receipt signers.** A SignerInfo signed with RSASSA-PSS fails
+  as `INVALID_SIGNATURE`, even when the signature is genuine. Apple has never
+  signed a receipt with PSS. PHP's `openssl_verify()` has no PSS mode, so
+  supporting it would take hand-written EMSA-PSS padding checks, and the
+  signer chooses its own algorithm, so that code would sit on the forgery
+  path. This port does not hand-write crypto. The other ports may verify PSS
+  signers; the shared conformance case leaves it to each port. Certificate
+  chain links are unaffected: OpenSSL checks those itself, PSS included.
 - **Several SignerInfos, and several certificates claiming the same
   identity.** A receipt with more than one SignerInfo verifies when at least
   one does, tried in order; when more than one embedded certificate carries a

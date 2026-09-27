@@ -177,7 +177,6 @@ final class Cms
             digestAlgorithmOid: Der::decodeOid($digestOidNode->contents),
             signedAttrs: $signedAttrs,
             signatureAlgorithmOid: Der::decodeOid($sigAlgOidNode->contents),
-            signatureAlgorithmParams: $sigAlgNode->child(1),
             signature: Der::octets($signatureNode),
         );
     }

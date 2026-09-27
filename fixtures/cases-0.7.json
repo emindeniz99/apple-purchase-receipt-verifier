@@ -8138,8 +8138,8 @@
       ]
     },
     {
-      "id": "receipt/verify-signer-rsa-pss",
-      "description": "A receipt whose CMS signature is RSASSA-PSS with SHA-256 under the test PKI. The signature algorithm is not restricted (change 3), so it verifies.",
+      "id": "receipt/signer-rsa-pss-does-not-crash",
+      "description": "A receipt whose CMS signature is RSASSA-PSS with SHA-256 under the test PKI; the signature is genuine. Apple never signs receipts with RSA-PSS, so RSA-PSS support is port-defined (owner, 2026-09-27): the port may verify or refuse with any reason, but must not crash, must not answer INTERNAL_ERROR, and must finish within maxMillis. PHP refuses it, because its OpenSSL binding has no PSS mode and the owner rules out hand-written crypto.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "receipt-signer-rsa-pss"
@@ -8153,15 +8153,14 @@
         }
       },
       "expected": {
-        "status": "ok",
-        "fields": {
-          "/bundle_id": "com.example.app"
-        }
+        "anyOutcome": true
       },
+      "fault": "signer-algorithm-is-rsa-pss",
+      "maxMillis": 2000,
       "tags": [
         "receipt",
         "pkcs7",
-        "positive",
+        "tolerant",
         "signer-algorithm",
         "new-in-0-7"
       ]

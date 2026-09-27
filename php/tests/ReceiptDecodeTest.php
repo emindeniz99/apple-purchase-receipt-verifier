@@ -91,7 +91,14 @@ final class ReceiptDecodeTest extends TestCase
         self::assertSame(Reason::UntrustedChain, $result->failure?->reason);
     }
 
-    public function testRejectsASignerWhoseKeyIsNotRsa(): void
+    /**
+     * Not a key-type allowlist: an ECDSA signer verifies in 0.7 (shared case
+     * receipt/verify-signer-ecdsa-p256). This pins the family check: a
+     * SignerInfo whose signatureAlgorithm says rsaEncryption must come from
+     * an RSA key, so an EC key under an RSA label is refused before
+     * openssl_verify() is asked to reconcile the two.
+     */
+    public function testRejectsAnRsaLabelledSignerWhoseKeyIsEc(): void
     {
         $pki = MintedPki::get();
         $receipt = TestPki::receipt(
@@ -107,6 +114,33 @@ final class ReceiptDecodeTest extends TestCase
         self::assertFalse($result->verified());
         self::assertSame(Reason::InvalidSignature, $result->failure?->reason);
         self::assertStringContainsString('not RSA', (string) $result->failure?->message);
+    }
+
+    /**
+     * This port refuses RSA-PSS receipt signers (php/README.md). PHP's
+     * openssl_verify() has no PSS mode and the alternative is hand-written
+     * EMSA-PSS on the forgery path, so a genuine PSS signature under the
+     * pinned chain must fail closed as INVALID_SIGNATURE, through the
+     * unsupported-algorithm refusal rather than a failed check. The shared
+     * case receipt/signer-rsa-pss-does-not-crash leaves PSS port-defined.
+     */
+    public function testRefusesAGenuineRsaPssSigner(): void
+    {
+        $result = self::verify(Fixtures07::bytes('receipt-signer-rsa-pss'), Fixtures07::bytes('signer-alg-root'));
+        self::assertFalse($result->verified());
+        self::assertSame(Reason::InvalidSignature, $result->failure?->reason);
+        self::assertStringContainsString('unsupported signature algorithm', (string) $result->failure?->message);
+    }
+
+    /** A tampered PSS signature never verifies, in any port (receipt/reject-signer-rsa-pss-tampered). */
+    public function testRejectsATamperedRsaPssSigner(): void
+    {
+        $result = self::verify(
+            Fixtures07::bytes('review-receipt-signer-rsa-pss-tampered'),
+            Fixtures07::bytes('signer-alg-root'),
+        );
+        self::assertFalse($result->verified());
+        self::assertSame(Reason::InvalidSignature, $result->failure?->reason);
     }
 
     /**
