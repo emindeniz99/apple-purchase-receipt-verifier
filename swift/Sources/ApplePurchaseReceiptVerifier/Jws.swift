@@ -72,11 +72,14 @@ private func verifyJwsSignature(
     let (alg, x5c) = try readHeader(headerBytes)
     guard alg == "ES256" else { throw malformedJws("alg must be ES256") }
     guard let x5c, x5c.count == 3 else { throw malformedJws("x5c must contain exactly 3 certificates") }
-    let leaf = try parseX5cCertificate(x5c[0])
-    let intermediate = try parseX5cCertificate(x5c[1])
-    // Parsed and then dropped: the third entry is trusted by nobody, and
-    // reading it decides only whether it IS a certificate.
-    _ = try parseX5cCertificate(x5c[2])
+    // Sliced, not parsed: swift-certificates decodes a certificate's public
+    // key while it parses it, so a `Certificate` is built only once a pinned
+    // root has vouched for its signature (``validatePair``). The third entry
+    // is trusted by nobody and is never built at all; slicing it decides
+    // only whether it has the shape of a certificate.
+    let leafSlice = try sliceX5cCertificate(x5c[0])
+    let intermediateSlice = try sliceX5cCertificate(x5c[1])
+    _ = try sliceX5cCertificate(x5c[2])
 
     let payload = readPayload(payloadBytes)
     // Chain validity is judged at the payload's signing date, so a payload
@@ -88,7 +91,8 @@ private func verifyJwsSignature(
     // needs to additionally bound the value to a representable calendar
     // date the way 0.6 did to avoid a crash in that type.
     let atMillis = payload?.signedDate ?? clock()
-    try validatePair(leaf: leaf, intermediate: intermediate, anchors: roots, atMillis: atMillis)
+    let (leaf, intermediate) = try validatePair(
+        leaf: leafSlice, intermediate: intermediateSlice, anchors: roots, atMillis: atMillis)
     // The marker OIDs after the chain, as on the receipt path: a foreign
     // chain is untrustedChain whatever it carries, and only a pinned chain
     // can be the wrong kind of Apple certificate.
@@ -163,23 +167,19 @@ private func readPayload(_ bytes: [UInt8]) -> (json: String, signedDate: Int64?)
     return (text, signedDate)
 }
 
-/// Decodes one `x5c` entry: standard base64 with canonical padding (RFC 7515
-/// §4.1.6), then a certificate. Its key is judged only when it is about to
-/// be used, once a pinned anchor has vouched for it — except that
-/// swift-certificates itself constructs a certificate's public key eagerly,
-/// so an x5c[1] with an oversized or unimplemented key fails to parse here
-/// rather than later, unlike the reference ports' lazier readers (reported
-/// rather than reproduced: `signed-data/reject-untrusted-oversized-x5c`).
-func parseX5cCertificate(_ entry: String) throws -> Certificate {
+/// Decodes one `x5c` entry — standard base64 with canonical padding (RFC
+/// 7515 §4.1.6) — and slices it into the parts a signature check needs,
+/// without decoding its key. Anything that does not even have the shape of
+/// a certificate is ``Reason/invalidCertificate``, as an entry that does not
+/// parse always was; what swift-certificates would refuse inside the TBS (a
+/// key it cannot use, an extension that does not decode) is found when the
+/// certificate is built, after a pinned root has vouched for it.
+func sliceX5cCertificate(_ entry: String) throws -> CertificateSlices {
     guard let der = decodeReceiptBase64(entry) else {
         throw Failure(.invalidCertificate, "x5c entry is not valid base64")
     }
-    guard certificateSignatureBitStringIsAligned(der), let certificate = try? Certificate(derEncoded: der)
-    else {
+    guard let slices = sliceCertificate(der) else {
         throw Failure(.invalidCertificate, "x5c entry is not a valid certificate")
     }
-    guard hasOnlyDecodableExtensions(certificate) else {
-        throw Failure(.invalidCertificate, "x5c entry is not a valid certificate")
-    }
-    return certificate
+    return slices
 }

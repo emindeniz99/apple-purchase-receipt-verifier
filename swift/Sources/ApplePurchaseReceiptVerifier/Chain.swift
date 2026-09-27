@@ -93,29 +93,126 @@ func issuedByAnyAnchor(_ certificate: Certificate, _ anchors: [Certificate]) -> 
     anchors.contains { issuedBy(certificate, $0) }
 }
 
-/// Validates the fixed JWS path leaf, intermediate, pinned anchor.
+/// A certificate cut into the three parts of `Certificate ::= SEQUENCE {
+/// tbsCertificate, signatureAlgorithm, signatureValue }` with swift-asn1, the
+/// way ``parseCms(_:)`` reads a receipt: enough to check the signature over
+/// the TBS with a key that is already trusted, and nothing that decodes the
+/// certificate's own key. swift-certificates builds a `Certificate`'s public
+/// key while it parses it — BoringSSL refusing an oversized RSA key, say —
+/// so a `Certificate` is built from these bytes only after a pinned root has
+/// vouched for them.
+struct CertificateSlices {
+    /// The whole certificate, for building it once it is vouched for.
+    let der: [UInt8]
+    /// The encoded `tbsCertificate`, the bytes the issuer signed.
+    let tbs: [UInt8]
+    /// The outer `signatureAlgorithm`, when it is one swift-certificates
+    /// verifies certificate signatures with; `nil` for any other, which no
+    /// key then verifies.
+    let signatureAlgorithm: Certificate.SignatureAlgorithm?
+    /// The `signatureValue` BIT STRING's bytes, without its unused-bits octet.
+    let signature: [UInt8]
+}
+
+/// The certificate signature algorithms swift-certificates implements
+/// (`Certificate.Signature(signatureAlgorithm:signatureBytes:)`), by OID. No
+/// allowlist beyond what the library verifies (Q14); a built certificate's
+/// own `signatureAlgorithm`, parameters included, must still equal the one
+/// matched here (``buildVouched(_:)``).
+private let certificateSignatureAlgorithms: [ASN1ObjectIdentifier: Certificate.SignatureAlgorithm] = [
+    [1, 2, 840, 10045, 4, 3, 2]: .ecdsaWithSHA256,
+    [1, 2, 840, 10045, 4, 3, 3]: .ecdsaWithSHA384,
+    [1, 2, 840, 10045, 4, 3, 4]: .ecdsaWithSHA512,
+    [1, 2, 840, 113549, 1, 1, 5]: .sha1WithRSAEncryption,
+    [1, 2, 840, 113549, 1, 1, 11]: .sha256WithRSAEncryption,
+    [1, 2, 840, 113549, 1, 1, 12]: .sha384WithRSAEncryption,
+    [1, 2, 840, 113549, 1, 1, 13]: .sha512WithRSAEncryption,
+    [1, 3, 101, 112]: .ed25519,
+]
+
+/// `der` sliced as a certificate, or `nil` when it does not have the shape
+/// of one: not DER, not a SEQUENCE of exactly a SEQUENCE, an
+/// AlgorithmIdentifier and a byte-aligned BIT STRING.
+func sliceCertificate(_ der: [UInt8]) -> CertificateSlices? {
+    guard let root = try? DER.parse(der), root.identifier == .sequence,
+        case .constructed(let topLevel) = root.content
+    else { return nil }
+    let fields = Array(topLevel)
+    guard fields.count == 3, fields[0].identifier == .sequence, fields[1].identifier == .sequence,
+        fields[2].identifier == .bitString, case .primitive(let bits) = fields[2].content, bits.first == 0,
+        case .constructed(let algorithm) = fields[1].content, let oidNode = Array(algorithm).first,
+        let oid = try? ASN1ObjectIdentifier(derEncoded: oidNode)
+    else { return nil }
+    return CertificateSlices(
+        der: der, tbs: [UInt8](fields[0].encodedBytes), signatureAlgorithm: certificateSignatureAlgorithms[oid],
+        signature: [UInt8](bits.dropFirst()))
+}
+
+/// Whether `issuer`'s key — one a pinned root has already vouched for, or
+/// the root's own — verifies `slices`' signature over its TBS. The
+/// verification is swift-crypto's, through swift-certificates' public
+/// byte-level API; nothing about the certificate under test is decoded.
+func signatureVerifies(_ slices: CertificateSlices, by issuer: Certificate) -> Bool {
+    guard let algorithm = slices.signatureAlgorithm else { return false }
+    return issuer.publicKey.isValidSignature(slices.signature, for: slices.tbs, signatureAlgorithm: algorithm)
+}
+
+/// The certificate behind `slices`, built now that its signature has
+/// verified under a vouched key: ``Reason/invalidCertificate`` when
+/// swift-certificates refuses it (a key it cannot use, a malformed field) or
+/// one of its extensions does not decode. The built certificate must carry
+/// the signature algorithm the check used, parameters included, so the
+/// check covered exactly what swift-certificates would have verified.
+func buildVouched(_ slices: CertificateSlices) throws -> Certificate {
+    guard let certificate = try? Certificate(derEncoded: slices.der), hasOnlyDecodableExtensions(certificate)
+    else {
+        throw Failure(.invalidCertificate, "x5c entry is not a valid certificate")
+    }
+    guard certificate.signatureAlgorithm == slices.signatureAlgorithm else {
+        throw untrusted("certificate signature algorithm parameters do not match")
+    }
+    return certificate
+}
+
+/// Validates the fixed JWS path leaf, intermediate, pinned anchor, and
+/// returns the two certificates.
 ///
-/// The two signatures are checked from the anchor down first, so no key an
-/// anchor did not vouch for is used; then the intermediate's window, its CA
-/// flag and the leaf's window, at `atMillis`.
+/// Walked from the anchor down, and lazily: the intermediate's signature is
+/// checked with the pinned anchors' keys on its sliced bytes, and only then
+/// is it built (which decodes its key); the leaf is checked with that key
+/// and only then built. So no key an anchor did not vouch for is decoded or
+/// used — an `x5c[1]` carrying an attacker's oversized key under a foreign
+/// root is ``Reason/untrustedChain``, never a verdict about that key. Then
+/// the names, key identifiers and keyUsage of each link, the intermediate's
+/// window, its CA flag and the leaf's window, at `atMillis`.
 func validatePair(
-    leaf: Certificate, intermediate: Certificate, anchors: [Certificate], atMillis: Int64
-) throws {
-    guard issuedByAnyAnchor(intermediate, anchors) else {
+    leaf: CertificateSlices, intermediate: CertificateSlices, anchors: [Certificate], atMillis: Int64
+) throws -> (leaf: Certificate, intermediate: Certificate) {
+    let vouching = anchors.filter { signatureVerifies(intermediate, by: $0) }
+    guard !vouching.isEmpty else {
         throw untrusted("intermediate is not issued by a pinned root")
     }
-    guard issuedBy(leaf, intermediate) else {
+    let intermediateCertificate = try buildVouched(intermediate)
+    guard vouching.contains(where: { checkIssued(intermediateCertificate, issuedBy: $0) }) else {
+        throw untrusted("intermediate is not issued by a pinned root")
+    }
+    guard signatureVerifies(leaf, by: intermediateCertificate) else {
         throw untrusted("leaf is not issued by the intermediate")
     }
-    guard certificateValid(intermediate, atMillis: atMillis) else { throw outsideValidity() }
-    guard isCA(intermediate) else { throw untrusted("intermediate is not a CA") }
-    guard !hasUnprocessedCriticalExtension(intermediate, leaf: false) else {
+    let leafCertificate = try buildVouched(leaf)
+    guard checkIssued(leafCertificate, issuedBy: intermediateCertificate) else {
+        throw untrusted("leaf is not issued by the intermediate")
+    }
+    guard certificateValid(intermediateCertificate, atMillis: atMillis) else { throw outsideValidity() }
+    guard isCA(intermediateCertificate) else { throw untrusted("intermediate is not a CA") }
+    guard !hasUnprocessedCriticalExtension(intermediateCertificate, leaf: false) else {
         throw unprocessedCriticalExtension()
     }
-    guard certificateValid(leaf, atMillis: atMillis) else { throw outsideValidity() }
-    guard !hasUnprocessedCriticalExtension(leaf, leaf: true) else {
+    guard certificateValid(leafCertificate, atMillis: atMillis) else { throw outsideValidity() }
+    guard !hasUnprocessedCriticalExtension(leafCertificate, leaf: true) else {
         throw unprocessedCriticalExtension()
     }
+    return (leafCertificate, intermediateCertificate)
 }
 
 /// Whether every one of `certificate`'s extensions decodes all the way

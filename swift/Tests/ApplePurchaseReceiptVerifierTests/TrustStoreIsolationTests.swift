@@ -192,15 +192,15 @@ final class TrustStoreIsolationTests: XCTestCase {
 
     // MARK: - helpers
 
-    /// The leaf and intermediate out of a compact JWS's `x5c` header — the two
-    /// certificates `validatePair` judges.
-    private static func chainOf(_ jws: String) throws -> (Certificate, Certificate) {
+    /// The leaf and intermediate out of a compact JWS's `x5c` header, sliced
+    /// — the two certificates `validatePair` judges.
+    private static func chainOf(_ jws: String) throws -> (CertificateSlices, CertificateSlices) {
         let segments = jws.components(separatedBy: ".")
         let header = try XCTUnwrap(
             try JSONSerialization.jsonObject(with: Data(XCTUnwrap(decodeBase64URLStrict(segments[0]))))
                 as? [String: Any])
         let x5c = try XCTUnwrap(header["x5c"] as? [String])
-        return (try parseX5cCertificate(x5c[0]), try parseX5cCertificate(x5c[1]))
+        return (try sliceX5cCertificate(x5c[0]), try sliceX5cCertificate(x5c[1]))
     }
 
     /// The two paths swift-certificates itself reads for

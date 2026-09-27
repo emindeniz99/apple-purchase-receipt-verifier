@@ -72,6 +72,27 @@ final class VerifierTests: XCTestCase {
         XCTAssertEqual(result.failure?.reason, .invalidCertificate, result.failure?.message ?? "verified")
     }
 
+    /// An `x5c[1]` whose 262,144-bit RSA key BoringSSL refuses, under a root
+    /// nobody pinned (docs/design/0.7-hardening-parity.md, change 1). The
+    /// shared case `signed-data/reject-untrusted-oversized-x5c` pins the
+    /// verdict, UNTRUSTED_CHAIN; this pins why it is that verdict. Building
+    /// the certificate decodes its key and fails, so the answer could only
+    /// have been INVALID_CERTIFICATE had the key been decoded: its slices are
+    /// all the chain check read, and no pinned root verified them.
+    func testAnUntrustedX5cIntermediateIsNeverBuilt() throws {
+        let jws = try TestFixtures.text("generated-0.7/jws-untrusted-oversized-x5c.jws")
+        let header = try XCTUnwrap(
+            try JSONSerialization.jsonObject(
+                with: Data(XCTUnwrap(decodeBase64URLStrict(jws.components(separatedBy: ".")[0])))) as? [String: Any])
+        let x5c = try XCTUnwrap(header["x5c"] as? [String])
+        let intermediate = try sliceX5cCertificate(x5c[1])
+        XCTAssertNil(try? Certificate(derEncoded: intermediate.der), "the premise: building it decodes a refused key")
+        let roots = try Config.builder().roots([try TestFixtures.bytes("generated-0.7/hardening-jws-root.der")]).build()
+        XCTAssertFalse(roots.roots.contains { signatureVerifies(intermediate, by: $0) })
+        let result = ApplePurchaseReceiptVerifier.Verifier(config: roots).verifySignedData(jws: jws)
+        XCTAssertEqual(result.failure?.reason, .untrustedChain)
+    }
+
     /// `Config.defaults()` carries all three published Apple roots (PLAN
     /// D15): Apple's guidance is to trust every root on its PKI page, and a
     /// chain re-anchored on the one a trimmed set left out would fail closed,
