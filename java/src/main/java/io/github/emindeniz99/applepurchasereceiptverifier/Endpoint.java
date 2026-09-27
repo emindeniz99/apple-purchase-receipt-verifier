@@ -77,7 +77,6 @@ final class Endpoint {
                     Reason.TOO_LARGE, "request body exceeds the maximum of " + MAX_REQUEST_BYTES + " bytes");
         }
         String receiptData = null;
-        boolean isString = false;
         // One char array: Jackson reads a long String in chunks, and a long value in them slowly.
         try (JsonParser parser = JSON.createParser(requestJson.toCharArray())) {
             if (parser.nextToken() != JsonToken.START_OBJECT) {
@@ -87,8 +86,7 @@ final class Endpoint {
                 String name = parser.currentName();
                 JsonToken value = parser.nextToken();
                 if ("receipt-data".equals(name)) {
-                    isString = value == JsonToken.VALUE_STRING;
-                    receiptData = isString ? parser.getText() : null;
+                    receiptData = value == JsonToken.VALUE_STRING ? parser.getText() : null;
                 }
                 parser.skipChildren();
             }
@@ -97,7 +95,7 @@ final class Endpoint {
             // read: MALFORMED, never the 21009 an unexpected exception gets.
             throw new VerificationException(Reason.MALFORMED, "request body is not valid JSON", e);
         }
-        if (!isString || receiptData == null) {
+        if (receiptData == null) {
             throw new VerificationException(Reason.MALFORMED, "receipt-data is missing or not a string");
         }
         return receiptData;
