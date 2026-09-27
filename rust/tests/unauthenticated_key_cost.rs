@@ -24,10 +24,10 @@
 
 mod common;
 
-use apple_purchase_receipt_verifier::Reason;
 use apple_purchase_receipt_verifier::__internal::asn1::tag;
 use apple_purchase_receipt_verifier::__internal::x509::Certificate;
 use apple_purchase_receipt_verifier::__internal::{base64_encode, chain, keys_used_during};
+use apple_purchase_receipt_verifier::Reason;
 use common::{der, der_int, der_oid, der_seq, CmsBuilder};
 use std::time::{Duration, Instant};
 

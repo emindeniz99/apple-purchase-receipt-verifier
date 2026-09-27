@@ -617,9 +617,13 @@ fn run_case(dir: &Path, fixtures: &BTreeMap<String, Fixture>, case: &Case) -> Re
                         result
                     }
                 };
-                let outcome = result.as_ref().map_or_else(|f| f.reason().as_str(), |_| "ok");
+                let outcome = result
+                    .as_ref()
+                    .map_or_else(|f| f.reason().as_str(), |_| "ok");
                 if !allowed.iter().any(|a| a == outcome) {
-                    return Err(Failed::from(format!("{id}: answered {outcome}, want one of {allowed:?}")));
+                    return Err(Failed::from(format!(
+                        "{id}: answered {outcome}, want one of {allowed:?}"
+                    )));
                 }
                 return Ok(());
             }
