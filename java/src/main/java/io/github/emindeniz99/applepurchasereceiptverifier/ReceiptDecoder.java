@@ -174,15 +174,31 @@ final class ReceiptDecoder {
      */
     private static Attributes readAttributes(byte[] der, String what, Set<Integer> known) throws VerificationException {
         Attributes attributes = new Attributes();
+        // ReceiptAttribute ::= SEQUENCE { type INTEGER, version INTEGER, value OCTET STRING }
         for (ASN1Encodable element : parseAttributeSet(der, what)) {
-            Attribute attr = Attribute.of(element);
-            if (!known.contains(attr.type) || attributes.firsts.containsKey(attr.type)) {
-                attributes
-                        .unknown
-                        .computeIfAbsent(attr.type, type -> new ArrayList<>())
-                        .add(attr.value);
+            int type;
+            byte[] value;
+            try {
+                ASN1Sequence seq = ASN1Sequence.getInstance(element);
+                // More than three fields is tolerated, for a field Apple appends later.
+                if (seq.size() < 3) {
+                    throw new VerificationException(
+                            Reason.UNREADABLE_PAYLOAD, "receipt attribute has " + seq.size() + " fields, expected 3");
+                }
+                BigInteger rawType = ASN1Integer.getInstance(seq.getObjectAt(0)).getValue();
+                // 0 to Integer.MAX_VALUE; a wider type is refused, since narrowing would invent one.
+                if (rawType.signum() < 0 || rawType.bitLength() > 31) {
+                    throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "receipt attribute type out of range");
+                }
+                type = rawType.intValue();
+                value = ASN1OctetString.getInstance(seq.getObjectAt(2)).getOctets();
+            } catch (IllegalArgumentException e) {
+                throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "malformed receipt attribute", e);
+            }
+            if (!known.contains(type) || attributes.firsts.containsKey(type)) {
+                attributes.unknown.computeIfAbsent(type, t -> new ArrayList<>()).add(value);
             } else {
-                attributes.firsts.put(attr.type, attr.value);
+                attributes.firsts.put(type, value);
             }
         }
         return attributes;
@@ -264,42 +280,6 @@ final class ReceiptDecoder {
             throw new VerificationException(
                     Reason.UNREADABLE_PAYLOAD, what + " nests ASN.1 deeper than " + Asn1Depth.MAX_DEPTH + " values");
         }
-    }
-
-    /** {@code ReceiptAttribute ::= SEQUENCE { type INTEGER, version INTEGER, value OCTET STRING }} */
-    private static final class Attribute {
-        final int type;
-        final byte[] value;
-
-        private Attribute(int type, byte[] value) {
-            this.type = type;
-            this.value = value;
-        }
-
-        static Attribute of(ASN1Encodable element) throws VerificationException {
-            try {
-                ASN1Sequence seq = ASN1Sequence.getInstance(element);
-                // More than three fields is tolerated, for a field Apple appends later.
-                if (seq.size() < 3) {
-                    throw new VerificationException(
-                            Reason.UNREADABLE_PAYLOAD, "receipt attribute has " + seq.size() + " fields, expected 3");
-                }
-                int type = attributeType(
-                        ASN1Integer.getInstance(seq.getObjectAt(0)).getValue());
-                byte[] value = ASN1OctetString.getInstance(seq.getObjectAt(2)).getOctets();
-                return new Attribute(type, value);
-            } catch (IllegalArgumentException e) {
-                throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "malformed receipt attribute", e);
-            }
-        }
-    }
-
-    /** 0 to {@link Integer#MAX_VALUE}; a wider type is refused, since narrowing would invent one. */
-    private static int attributeType(BigInteger value) throws VerificationException {
-        if (value.signum() < 0 || value.bitLength() > 31) {
-            throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "receipt attribute type out of range");
-        }
-        return value.intValue();
     }
 
     /**
