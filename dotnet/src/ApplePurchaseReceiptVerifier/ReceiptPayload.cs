@@ -152,15 +152,11 @@ namespace ApplePurchaseReceiptVerifier
 
         private static IReadOnlyList<InAppPurchase> CopyInApp(IReadOnlyList<InAppPurchase> inApp)
         {
-            if (inApp is null)
-            {
-                throw new ArgumentNullException(nameof(inApp));
-            }
-
-            InAppPurchase[] copy = new InAppPurchase[inApp.Count];
+            IReadOnlyList<InAppPurchase> source = inApp ?? throw new ArgumentNullException(nameof(inApp));
+            InAppPurchase[] copy = new InAppPurchase[source.Count];
             for (int i = 0; i < copy.Length; i++)
             {
-                copy[i] = inApp[i] ?? throw new ArgumentNullException(nameof(inApp), "an in-app purchase is null");
+                copy[i] = source[i] ?? throw new ArgumentNullException(nameof(inApp), "an in-app purchase is null");
             }
 
             return Array.AsReadOnly(copy);

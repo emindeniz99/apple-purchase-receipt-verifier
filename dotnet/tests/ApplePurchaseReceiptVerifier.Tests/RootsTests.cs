@@ -115,8 +115,7 @@ public class RootsTests
 
         Assert.True(verifier.VerifyReceipt(receipt).Verified);
         Assert.Equal(VerificationReason.UntrustedChain, verifier.VerifyReceipt(foreign).Failure?.Reason);
-        Assert.Single(config.Roots);
-        Assert.NotEmpty(config.Roots[0].RawData);
+        Assert.NotEmpty(Assert.Single(config.Roots).RawData);
     }
 
     /// <summary>The pinned roots are anchors, but their expiry is worth reporting.</summary>

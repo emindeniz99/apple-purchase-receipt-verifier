@@ -143,15 +143,15 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
         }
         else
         {
-            Assert.True(!verified, $"{id}: expected {Str(expected, "reason")} but the call verified");
+            Assert.False(verified, $"{id}: expected {Str(expected, "reason")} but the call verified");
             Assert.Equal(Str(expected, "reason"), reason is VerificationReason r ? VerificationReasonCodes.ToCode(r) : null);
             if (expected.TryGetValue("messageMustNotContain", out object? forbidden) && forbidden is List<object?> codePoints)
             {
                 foreach (object? cp in codePoints)
                 {
                     int codePoint = (int)(long)cp!;
-                    Assert.True(
-                        !ContainsCodePoint(message ?? string.Empty, codePoint),
+                    Assert.False(
+                        ContainsCodePoint(message ?? string.Empty, codePoint),
                         $"{id}: message contains forbidden code point U+{codePoint:X4}: {message}");
                 }
             }

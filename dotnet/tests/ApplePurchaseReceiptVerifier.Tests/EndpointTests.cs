@@ -171,12 +171,10 @@ public class EndpointTests
         Assert.Equal("-62167219200000", yearZero["purchase_date_ms"]);
         Assert.Equal("0001-01-01 00:00:00 Etc/GMT", yearZero["purchase_date"]);
 
-        // Java prints 16:07:02 (tzdb's local mean time is -07:52:58);
-        // TimeZoneInfo holds offsets in whole minutes, so the seconds of an
-        // offset that old are the one place the two can differ.
-        string pst = (string)yearZero["purchase_date_pst"]!;
-        Assert.StartsWith("0002-12-31 16:07:", pst, StringComparison.Ordinal);
-        Assert.EndsWith(" America/Los_Angeles", pst, StringComparison.Ordinal);
+        // tzdb's local mean time, -07:52:58, as Java prints it, on every
+        // platform: Windows' own zone data has no local mean time and would
+        // give -08:00 (16:00:00) if the system zone were asked this far back.
+        Assert.Equal("0002-12-31 16:07:02 America/Los_Angeles", yearZero["purchase_date_pst"]);
 
         OrderedMap lastSecond = InApp(answer, "70000000000202");
         Assert.Equal("253402300799000", lastSecond["purchase_date_ms"]);

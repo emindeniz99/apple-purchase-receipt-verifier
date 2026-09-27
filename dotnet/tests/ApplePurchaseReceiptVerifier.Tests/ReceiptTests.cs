@@ -146,9 +146,9 @@ public class ReceiptTests
         Assert.Equal(before, payload.ToJson());
         Assert.Equal(new byte[] { 0x0c, 0x01, 0x61 }, payload.BundleIdBytes);
         Assert.Equal(new byte[] { 5, 6 }, Assert.Single(payload.UnknownAttributes[9999]));
-        Assert.Single(payload.InApp);
-        Assert.Equal(new byte[] { 5, 6 }, Assert.Single(payload.InApp[0].UnknownAttributes[1799]));
-        Assert.Single(payload.InApp[0].UnknownAttributes);
+        InAppPurchase onlyPurchase = Assert.Single(payload.InApp);
+        Assert.Equal(new byte[] { 5, 6 }, Assert.Single(onlyPurchase.UnknownAttributes[1799]));
+        Assert.Single(onlyPurchase.UnknownAttributes);
     }
 
     /// <summary>
