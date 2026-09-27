@@ -4,15 +4,16 @@
  * before the step it guards: base64 decoding, ASN.1 parsing and JSON parsing
  * all allocate in proportion to their input, and all of them run before any
  * signature has been checked. The receipt and request caps are Apple's own
- * limit and the same fixed constants in every port.
+ * limit and the same fixed constants in every port. JSON structural bounds
+ * (nesting depth, member name length, number length) live in json.ts, which
+ * enforces them while parsing rather than as a separate pre-scan.
  */
 
 /**
  * Ceiling on a legacy receipt: the base64 string, in UTF-8 bytes, before it
- * is decoded, and the DER, in bytes, before it is parsed. 3 MiB: Apple's
- * verifyReceipt refuses a request body over 3,145,728 bytes (measured
- * 2026-09-23), so no receipt it would accept is larger. For base64, which is
- * what a receipt string is, bytes and characters are the same count.
+ * is decoded. 3 MiB: Apple's verifyReceipt refuses a request body over
+ * 3,145,728 bytes (measured 2026-09-23), so no receipt it would accept is
+ * larger.
  */
 export const MAX_RECEIPT_BYTES = 3145728;
 
@@ -26,17 +27,10 @@ export const MAX_RECEIPT_BYTES = 3145728;
 export const MAX_REQUEST_BYTES = 3145728;
 
 /**
- * Ceiling on a compact JWS, in characters, before it is split or decoded.
+ * Ceiling on a compact JWS, in UTF-8 bytes, before it is split or decoded.
  * Apple's JWS payloads are a few kilobytes, three certificates included.
  */
 export const MAX_JWS_BYTES = 262144;
-
-/**
- * How many arrays and objects a JSON text may have open at once: a
- * verifyReceipt body, and a JWS header or payload. `JSON.parse` has no depth
- * option, so the depth is counted before it runs.
- */
-export const MAX_JSON_NESTING_DEPTH = 64;
 
 /**
  * Whether `text` is longer than `max` bytes once encoded as UTF-8, measured
@@ -75,35 +69,6 @@ export function utf8LengthExceeds(text: string, max: number): boolean {
     }
     if (bytes > max) {
       return true;
-    }
-  }
-  return false;
-}
-
-/**
- * Whether `text` opens more than {@link MAX_JSON_NESTING_DEPTH} arrays and
- * objects at once, counting brackets outside string literals only. Text that
- * is not JSON may be miscounted either way; `JSON.parse` refuses it anyway.
- */
-export function jsonNestingExceeds(text: string): boolean {
-  let depth = 0;
-  let inString = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text.charCodeAt(i);
-    if (inString) {
-      if (c === 0x5c /* \ */) {
-        i++;
-      } else if (c === 0x22 /* " */) {
-        inString = false;
-      }
-    } else if (c === 0x22) {
-      inString = true;
-    } else if (c === 0x5b /* [ */ || c === 0x7b /* { */) {
-      if (++depth > MAX_JSON_NESTING_DEPTH) {
-        return true;
-      }
-    } else if (c === 0x5d /* ] */ || c === 0x7d /* } */) {
-      depth--;
     }
   }
   return false;

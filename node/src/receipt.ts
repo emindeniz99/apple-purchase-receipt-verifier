@@ -1,393 +1,389 @@
-import { X509Certificate, createHash, timingSafeEqual, verify as cryptoVerify } from 'node:crypto';
-import { Reason, VerificationError } from './errors.js';
+/**
+ * `verifyReceipt(base64)`: legacy PKCS#7 app receipts, verified offline
+ * against the pinned roots.
+ *
+ * Checks, in order: strict base64, the CMS envelope, the chain to a pinned
+ * root walked top-down (docs/design/0.7-hardening-parity.md change 1,
+ * #161), Apple's marker OIDs on both the leaf (receipt signing) and the
+ * WWDR intermediate, certificate validity at the receipt's creation date,
+ * and last the signature. Several SignerInfos: the receipt verifies when at
+ * least one verifies under a pinned chain; when none does, the first
+ * SignerInfo's failure is the verdict.
+ */
+import { createHash } from 'node:crypto';
+import { base64Decode, isCanonicalBase64, timingSafeBytesEqual } from './bytes.js';
+import { callClock } from './call-clock.js';
+import { authenticatedTopDown, buildAndValidatePath } from './chain.js';
 import {
-  findMessageDigestAttribute,
-  findSignerCertIndex,
   parseCms,
+  requireAttributeSetSyntax,
+  signedAttributeValues,
   signedAttrsSignedBytes,
+  type CmsSignerInfo,
   type ParsedCms,
 } from './cms.js';
-import {
-  hasExtension,
-  requireDecodableExtensions,
-  requireKnownVersion,
-  requireNoDuplicateExtensions,
-} from './der.js';
-import { isCanonicalBase64 } from './bytes.js';
+import { digestForOid, requireBuildablePublicKey, verifySignerSignature } from './crypto.js';
+import { ParseError } from './der.js';
+import { Reason, VerificationError } from './errors.js';
 import { MAX_RECEIPT_BYTES, utf8LengthExceeds } from './limits.js';
-import {
-  parseSignedReceiptPayload,
-  readCreationDate,
-  type RawAppReceipt,
-  type RawInAppPurchase,
-} from './receipt-payload.js';
-import { buildAndValidatePath, normalizeRoots, type RootInput } from './chain.js';
+import { parseReceiptPayload, readCreationDate, type ReceiptPayload } from './receipt-payload.js';
+import { parse as parseAsn1, Tag } from './der.js';
+import { bytesEqual } from './bytes.js';
+import { parseCertificate, type ParsedCertificate } from './x509.js';
 
-// Apple marker OID on the receipt-signing leaf. Without this purpose check,
-// any developer cert chaining to the same pinned root could sign a forged
-// receipt (the chain check alone does not distinguish signer purpose).
+export { MAX_RECEIPT_BYTES };
+
 const RECEIPT_SIGNER_OID = '1.2.840.113635.100.6.11.1';
-
-// Genuine receipts embed a leaf, an intermediate and (for the legacy SHA-1
-// chain) a root: the public fixtures carry 1, 3 and 3. Ten leaves room for a
-// longer Apple chain while bounding what rejecting a receipt costs, because
-// every embedded certificate is converted and then RSA-checked as a candidate
-// issuer before any signature is checked: a 722 KB receipt carrying 1057 of
-// them measured 122-172 ms to reject, 26 to 45 times the cost of verifying
-// the genuine 79 KB legacy receipt.
+const WWDR_INTERMEDIATE_OID = '1.2.840.113635.100.6.2.1';
 const MAX_EMBEDDED_CERTIFICATES = 10;
+const MAX_SIGNER_INFOS = 4;
 
-/** One in-app purchase from a legacy app receipt (attribute 17). */
-export interface InAppPurchase {
-  /** Raw unmodeled attributes by type — forward compatibility (PLAN D10). */
-  unknownAttributes: Map<number, Buffer[]>;
-  quantity: number | null;
-  productId: string | null;
-  transactionId: string | null;
-  originalTransactionId: string | null;
-  purchaseDate: Date | null;
-  originalPurchaseDate: Date | null;
-  expiresDate: Date | null;
-  cancellationDate: Date | null;
-  webOrderLineItemId: number | null;
-  /**
-   * Attribute 1713 (undocumented) — 1 while the purchase is inside a free
-   * trial, 0 otherwise. Carried as the integer it is, like
-   * {@link isInIntroOfferPeriod}, which Apple's verifyReceipt answer renders
-   * as the string "true"/"false".
-   */
-  isTrialPeriod: number | null;
-  isInIntroOfferPeriod: number | null;
+/**
+ * Names only the exception's class (docs/design/0.7-hardening-parity.md
+ * change 6: "catch-all guards name only the exception class"), never its
+ * message: an unexpected error here runs on input nobody has vouched for,
+ * so its message may itself quote that input.
+ */
+function describeError(e: unknown): string {
+  if (e instanceof Error) {
+    return e.constructor.name;
+  }
+  return typeof e;
 }
 
 /**
- * A verified legacy app receipt. Only receipts returned by
- * {@link ReceiptVerifier} (or {@link verifyReceiptCore}) should be trusted.
+ * Decodes the base64 text a client sends as `receipt-data`, the rule
+ * Apple's verifyReceipt applies: non-empty, standard alphabet, exactly the
+ * canonical `=` padding, nothing else. Exported so a decodeBase64
+ * conformance case can reach it directly.
  */
-export interface AppReceipt {
-  /**
-   * Raw values of attribute types this library does not model, keyed by
-   * type — forward compatibility for fields Apple may add (PLAN D10).
-   * Values are the raw octet-string contents, verified but undecoded.
-   */
-  unknownAttributes: Map<number, Buffer[]>;
-  /** Attribute 0, e.g. "Production" / "ProductionSandbox" (undocumented). */
-  receiptType: string | null;
-  bundleId: string | null;
-  /** Raw DER bytes of attribute 2 — input to the device-hash check. */
-  bundleIdBytes: Buffer | null;
-  appVersion: string | null;
-  opaqueValue: Buffer | null;
-  sha1Hash: Buffer | null;
-  creationDate: Date | null;
-  /** Attribute 18 (undocumented; community-established). */
-  originalPurchaseDate: Date | null;
-  originalAppVersion: string | null;
-  expirationDate: Date | null;
-  /**
-   * Attribute 1 (undocumented) — the app's App Store item identifier, which
-   * Apple's verifyReceipt answer echoes under BOTH `adam_id` and
-   * `app_item_id`. Zero in sandbox receipts, since a sandbox purchase is not
-   * tied to a storefront item. A `bigint` because real values of the three
-   * ids below run past `Number.MAX_SAFE_INTEGER` — see {@link downloadId}.
-   */
-  appItemId: bigint | null;
-  /**
-   * Attribute 15 (undocumented) — identifies the App Store download this
-   * receipt came from. Apple's are eighteen digits, well past the range a
-   * JavaScript number holds exactly, so this is a `bigint`: a `number` would
-   * silently round the id it is meant to identify a download by.
-   */
-  downloadId: bigint | null;
-  /** Attribute 16 (undocumented) — the App Store's own id for this app version. */
-  versionExternalIdentifier: bigint | null;
-  inAppPurchases: InAppPurchase[];
-}
-
-export interface ReceiptVerifierOptions {
-  /** Pinned roots (production: `appleReceiptRoots()`). */
-  trustedRoots: RootInput[];
-  /** Bundle id the receipt must carry. */
-  bundleId: string;
-}
-
-/**
- * Decodes a client-supplied `receipt-data` string to DER per the
- * receipt-data contract, throwing {@link Reason.INVALID_RECEIPT_FORMAT}
- * (rather than silently skipping bad characters) when it does not conform.
- * Shared by {@link ReceiptVerifier.verify} and {@link VerifyReceiptEndpoint}.
- */
-export function decodeReceiptDataString(text: string): Buffer {
-  // Before the shape check and the decode, which scan the whole string and
-  // allocate the bytes it decodes to.
-  if (utf8LengthExceeds(text, MAX_RECEIPT_BYTES)) {
+export function decodeReceiptBase64(receipt: string): Uint8Array {
+  if (!isCanonicalBase64(receipt)) {
     throw new VerificationError(
-      Reason.INVALID_RECEIPT_FORMAT,
+      Reason.MALFORMED,
+      'receipt is not canonically padded standard base64',
+    );
+  }
+  return base64Decode(receipt);
+}
+
+export function verifyReceipt(
+  base64: string,
+  anchors: readonly ParsedCertificate[],
+  now: () => number,
+): ReceiptPayload {
+  if (base64 === '') {
+    throw new VerificationError(Reason.MALFORMED, 'receipt is empty');
+  }
+  // Before the decode, which would otherwise allocate the bytes it decodes to.
+  if (utf8LengthExceeds(base64, MAX_RECEIPT_BYTES)) {
+    throw new VerificationError(
+      Reason.TOO_LARGE,
       `receipt exceeds the maximum accepted size of ${MAX_RECEIPT_BYTES} bytes`,
     );
   }
-  // Buffer.from never rejects anything, so the rule is checked first; after
-  // it Buffer.from decodes exactly the canonical string, trailing bits
-  // ignored as Apple ignores them.
-  if (!isCanonicalBase64(text)) {
-    throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'receipt-data is not valid base64');
-  }
-  return Buffer.from(text, 'base64');
-}
-
-/** Zero-copy Buffer view over shared-parser output, which is Uint8Array. */
-function asBuffer(bytes: Uint8Array): Buffer {
-  return Buffer.isBuffer(bytes)
-    ? bytes
-    : Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-}
-
-function bufferValues(unknown: Map<number, Uint8Array[]>): Map<number, Buffer[]> {
-  return new Map([...unknown].map(([type, values]) => [type, values.map(asBuffer)]));
-}
-
-function toAppReceipt(raw: RawAppReceipt): AppReceipt {
-  return {
-    ...raw,
-    unknownAttributes: bufferValues(raw.unknownAttributes),
-    bundleIdBytes: raw.bundleIdBytes === null ? null : asBuffer(raw.bundleIdBytes),
-    opaqueValue: raw.opaqueValue === null ? null : asBuffer(raw.opaqueValue),
-    sha1Hash: raw.sha1Hash === null ? null : asBuffer(raw.sha1Hash),
-    inAppPurchases: raw.inAppPurchases.map((purchase: RawInAppPurchase): InAppPurchase => ({
-      ...purchase,
-      unknownAttributes: bufferValues(purchase.unknownAttributes),
-    })),
-  };
-}
-
-/**
- * Chain + signature verification WITHOUT the bundle-id claim check — the
- * primitive under both {@link ReceiptVerifier} and the verifyReceipt-compat
- * endpoint (which, like Apple's endpoint, accepts any bundle). Callers that
- * unlock products must check `bundleId` themselves or use ReceiptVerifier.
- */
-export function verifyReceiptCore(der: Buffer, trustedRoots: RootInput[]): AppReceipt {
-  const roots = normalizeRoots(trustedRoots);
-  if (!Buffer.isBuffer(der) || der.length === 0) {
-    throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'receipt is empty');
-  }
-  // Before the CMS parse, which allocates in proportion to the DER.
-  if (der.length > MAX_RECEIPT_BYTES) {
-    throw new VerificationError(
-      Reason.INVALID_RECEIPT_FORMAT,
-      `receipt exceeds the maximum accepted size of ${MAX_RECEIPT_BYTES} bytes`,
-    );
-  }
-  const cms = parseCms(der);
-
-  // Only the creation date is read before trust is established, because
-  // chain validity anchors at signing time; nothing else in the payload is
-  // decoded until the chain and the signature have passed. A date that is
-  // missing, empty, unreadable or stated twice cannot blame anyone yet, so it
-  // only moves the chain instant to "now" and never rejects by itself.
-  //
-  // "Now" is the SYSTEM clock, never an injected one: a caller injecting a
-  // clock (to pin request_date, or to work around skew) must not thereby accept
-  // an expired chain. That is why the receipt path takes no clock option at
-  // all.
-  const at = readCreationDate(cms.content) ?? new Date();
-
-  // Everything below walks attacker-supplied DER through OpenSSL and through
-  // child lists that may be any shape. Callers discriminate on
-  // VerificationError.reason, and an OpenSSL Error carries a `.reason` of its
-  // own, so no foreign error type may escape from here.
+  const der = decodeReceiptBase64(base64);
+  const clock = callClock(now);
+  let content: Uint8Array;
   try {
-    // The embedded certificates are attacker-supplied and are walked into a
-    // path below, before anything about the receipt has been verified, so a
-    // receipt carrying more of them than a chain can hold is rejected here
-    // rather than converted and searched.
-    if (cms.certificates.length > MAX_EMBEDDED_CERTIFICATES) {
-      throw new VerificationError(
-        Reason.INVALID_CHAIN,
-        `receipt embeds more than ${MAX_EMBEDDED_CERTIFICATES} certificates`,
-      );
-    }
-    const signerIndex = findSignerCertIndex(cms);
-    if (signerIndex < 0) {
-      throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'signer certificate not embedded');
-    }
-    // The signer is read strictly, and before the rest of the bag, because
-    // WHICH certificate is unreadable changes the verdict. A stranger the
-    // receipt merely carries is a defect of the receipt (the bag is
-    // unsigned, so bytes that cannot be read are fatal but are the
-    // receipt's problem). The signer being unreadable is a defect of a
-    // certificate, and gets the verdict an unreadable x5c entry gets on the
-    // JWS path — receipt/reject-signer-* pins the four spellings of it.
-    const signerCert = readSignerCertificate(cms.certificates[signerIndex]!);
-    const embedded = cms.certificates.map((raw) => new X509Certificate(raw));
-    buildAndValidatePath(signerCert, embedded, roots, at);
-    let signerHasOid = false;
-    try {
-      signerHasOid = hasExtension(signerCert.raw, RECEIPT_SIGNER_OID);
-    } catch {
-      signerHasOid = false;
-    }
-    if (!signerHasOid) {
-      throw new VerificationError(
-        Reason.INVALID_CERTIFICATE_PURPOSE,
-        `receipt signer certificate lacks Apple receipt-signing marker OID ${RECEIPT_SIGNER_OID}`,
-      );
-    }
-    // The chain is checked BEFORE the signature on purpose: checking the
-    // signature first would run the attacker's own key (their choice of RSA
-    // size and exponent) before anything about it is trusted.
-    verifyCmsSignature(cms, signerCert);
+    content = verifySignature(der, anchors, clock);
   } catch (cause) {
     if (cause instanceof VerificationError) {
       throw cause;
     }
-    throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'malformed CMS structure', cause);
-  }
-  return toAppReceipt(parseSignedReceiptPayload(cms.content));
-}
-
-/**
- * Verifies legacy PKCS#7 app receipts completely offline against the pinned
- * Apple Inc. Root CA — the server-side port of Apple's "Validating receipts
- * on the device" procedure (PLAN.md §2.2), mirroring the Java implementation.
- */
-export class ReceiptVerifier {
-  /**
-   * Ceiling on a receipt, 3,145,728 bytes (Apple's request limit): the
-   * base64 string in UTF-8 bytes before it is decoded, and the DER in bytes
-   * before it is parsed, at every entry point ({@link verifyReceiptCore}
-   * included). A larger receipt is {@link Reason.INVALID_RECEIPT_FORMAT}.
-   */
-  static readonly MAX_RECEIPT_BYTES = MAX_RECEIPT_BYTES;
-
-  #roots: RootInput[];
-  #bundleId: string;
-
-  constructor({ trustedRoots, bundleId }: ReceiptVerifierOptions) {
-    normalizeRoots(trustedRoots); // validate eagerly
-    if (typeof bundleId !== 'string' || bundleId.length === 0) {
-      throw new TypeError('bundleId is required');
-    }
-    this.#roots = trustedRoots;
-    this.#bundleId = bundleId;
-  }
-
-  /**
-   * Verifies a receipt (DER Buffer, or its base64 string — the usual client
-   * transport form). A string is decoded per the receipt-data contract
-   * (canonical standard base64 and nothing else, as Apple's verifyReceipt
-   * accepts it — see {@link isCanonicalBase64}); anything else
-   * throws {@link Reason.INVALID_RECEIPT_FORMAT}. Passing `deviceGuid`
-   * additionally enforces the device-hash binding: SHA1(guid ‖ opaqueValue ‖
-   * bundleIdBytes) must equal attribute 5 (optional — PLAN.md D4).
-   */
-  verify(receipt: Buffer | string, deviceGuid: Buffer | null = null): AppReceipt {
-    const der = typeof receipt === 'string' ? decodeReceiptDataString(receipt) : receipt;
-    const fields = verifyReceiptCore(der, this.#roots);
-    if (fields.bundleId !== this.#bundleId) {
-      throw new VerificationError(
-        Reason.WRONG_BUNDLE_ID,
-        `expected ${this.#bundleId} but receipt has ${fields.bundleId}`,
-      );
-    }
-    if (deviceGuid !== null) {
-      verifyDeviceHash(fields, deviceGuid);
-    }
-    return fields;
-  }
-}
-
-/**
- * The signer certificate, or INVALID_CERTIFICATE. Everything OpenSSL lets
- * past that the checks below assume is settled here, exactly as the JWS path
- * settles it for an x5c entry: an unknown X.509 version, a repeated
- * extension, an extension value that stops decoding, and a public key this
- * runtime cannot build — the last of which must be answered here rather than
- * left to `verifyCmsSignature`, whose "not RSA" verdict is about a readable
- * key of the wrong kind.
- */
-function readSignerCertificate(raw: Uint8Array): X509Certificate {
-  try {
-    const certificate = new X509Certificate(raw);
-    requireKnownVersion(certificate.raw);
-    requireNoDuplicateExtensions(certificate.raw);
-    requireDecodableExtensions(certificate.raw);
-    void certificate.publicKey;
-    return certificate;
-  } catch (cause) {
+    // Contains any unexpected error before the signature has verified
+    // (docs/design/0.7-hardening-parity.md change 4): everything up to here
+    // runs on input nobody has vouched for, so it is MALFORMED, never
+    // INTERNAL_ERROR, which would let anyone raise that alert at will.
     throw new VerificationError(
-      Reason.INVALID_CERTIFICATE,
-      'receipt signer certificate is not a valid certificate',
+      Reason.MALFORMED,
+      `unexpected error: ${describeError(cause)}`,
+      cause,
+    );
+  }
+  try {
+    return parseReceiptPayload(content);
+  } catch (cause) {
+    // A trusted signer signed these bytes, so a payload this library
+    // cannot read is the library's failure or a format Apple added, not
+    // the client's.
+    throw new VerificationError(
+      Reason.UNREADABLE_PAYLOAD,
+      'signed receipt content could not be read',
       cause,
     );
   }
 }
 
-function verifyCmsSignature(cms: ParsedCms, signerCert: X509Certificate): void {
-  const { digest, signedAttrs, signature } = cms.signerInfo;
-  if (signerCert.publicKey.asymmetricKeyType !== 'rsa') {
-    throw new VerificationError(Reason.INVALID_SIGNATURE, 'receipt signer key is not RSA');
+/** Every check up to and including a signature; returns the signed payload, not yet decoded. */
+function verifySignature(
+  der: Uint8Array,
+  anchors: readonly ParsedCertificate[],
+  now: () => number,
+): Uint8Array {
+  let cms: ParsedCms;
+  try {
+    cms = parseCms(der);
+  } catch (cause) {
+    if (cause instanceof ParseError) {
+      throw new VerificationError(
+        Reason.MALFORMED,
+        `malformed CMS structure: ${cause.message}`,
+        cause,
+      );
+    }
+    throw cause;
   }
-  let valid: boolean;
-  if (signedAttrs !== null) {
-    const contentDigest = newHash(digest).update(cms.content).digest();
-    const messageDigest = findMessageDigestAttribute(signedAttrs);
-    if (messageDigest === null || !timingSafeEqualPadded(asBuffer(messageDigest), contentDigest)) {
+  if (cms.signerInfos.length === 0) {
+    throw new VerificationError(Reason.MALFORMED, 'no signer info');
+  }
+  if (cms.signerInfos.length > MAX_SIGNER_INFOS) {
+    throw new VerificationError(
+      Reason.MALFORMED,
+      `receipt carries ${cms.signerInfos.length} SignerInfos, more than the maximum of ${MAX_SIGNER_INFOS}`,
+    );
+  }
+  // Judged for every SignerInfo before any key is used, so a malformed
+  // signedAttrs is MALFORMED regardless of signer order.
+  for (const info of cms.signerInfos) {
+    if (info.signedAttrs !== null) {
+      try {
+        requireAttributeSetSyntax(info.signedAttrs);
+      } catch (cause) {
+        if (cause instanceof ParseError) {
+          throw new VerificationError(Reason.MALFORMED, cause.message, cause);
+        }
+        throw cause;
+      }
+    }
+  }
+  // Bounded before a single embedded certificate is decoded, all of which
+  // an unverified receipt would otherwise get to pay for out of the
+  // caller's CPU.
+  if (cms.certificateEntries.length > MAX_EMBEDDED_CERTIFICATES) {
+    throw new VerificationError(
+      Reason.MALFORMED,
+      `receipt embeds ${cms.certificateEntries.length} certificates, more than the maximum of ${MAX_EMBEDDED_CERTIFICATES}`,
+    );
+  }
+
+  // Only the creation date is read before trust is established, because
+  // chain validity is anchored at signing time; nothing else in the
+  // payload is decoded until the chain and a signature have passed.
+  const creationDate = readCreationDate(cms.content);
+
+  const embedded = decodeEmbedded(cms.certificateEntries);
+  // Signer-independent, so walked once for all SignerInfos, and only once
+  // one of them has named an embedded certificate that decodes.
+  let authenticated: ParsedCertificate[] | null = null;
+  let firstFailure: VerificationError | null = null;
+  for (const info of cms.signerInfos) {
+    try {
+      const signer = signerCertificate(info, embedded);
+      const atMs = creationDate ?? now();
+      authenticated ??= authenticatedTopDown(embedded.decoded, anchors);
+      verifySigner(cms, info, signer, authenticated, anchors, atMs);
+      return cms.content;
+    } catch (cause) {
+      if (!(cause instanceof VerificationError)) {
+        throw cause;
+      }
+      // Every SignerInfo signs the same content, so another one passing
+      // proves the same bytes; only when none does is the first one's
+      // failure the verdict.
+      firstFailure ??= cause;
+    }
+  }
+  throw firstFailure ?? new VerificationError(Reason.MALFORMED, 'no signer info');
+}
+
+interface EmbeddedCertificates {
+  decoded: ParsedCertificate[];
+  unreadable: Uint8Array[];
+}
+
+function decodeEmbedded(entries: readonly Uint8Array[]): EmbeddedCertificates {
+  const decoded: ParsedCertificate[] = [];
+  const unreadable: Uint8Array[] = [];
+  for (const raw of entries) {
+    try {
+      decoded.push(parseCertificate(raw));
+    } catch {
+      unreadable.push(raw);
+    }
+  }
+  return { decoded, unreadable };
+}
+
+/**
+ * Whether `raw` carries the issuer Name and serialNumber `info` names, read
+ * as generic ASN.1 because the entries asked about are the ones
+ * {@link parseCertificate} refused.
+ */
+function namesTheSigner(raw: Uint8Array, info: CmsSignerInfo): boolean {
+  try {
+    const certificate = parseAsn1(raw);
+    if (certificate.tag !== Tag.SEQUENCE) {
+      return false;
+    }
+    const tbs = certificate.children?.[0];
+    if (tbs?.tag !== Tag.SEQUENCE) {
+      return false;
+    }
+    const fields = tbs.children ?? [];
+    const index = fields[0]?.tag === Tag.CONTEXT_0 ? 1 : 0;
+    const serial = fields[index];
+    const issuer = fields[index + 2];
+    if (serial?.tag !== Tag.INTEGER || issuer?.tag !== Tag.SEQUENCE) {
+      return false;
+    }
+    return (
+      bytesEqual(serial.contents, info.serialContents) && bytesEqual(issuer.raw, info.issuerRaw)
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The certificate `info` names, or the verdict for the bag. The signer's
+ * own entry not decoding is INVALID_CERTIFICATE, as an unreadable x5c entry
+ * is on the JWS path; any other entry not decoding is MALFORMED, because
+ * the bag is unsigned. A broken signer outranks a broken stranger.
+ */
+function signerCertificate(info: CmsSignerInfo, embedded: EmbeddedCertificates): ParsedCertificate {
+  for (const raw of embedded.unreadable) {
+    if (namesTheSigner(raw, info)) {
+      throw new VerificationError(
+        Reason.INVALID_CERTIFICATE,
+        'receipt signer certificate does not decode',
+      );
+    }
+  }
+  if (embedded.unreadable.length > 0) {
+    throw new VerificationError(
+      Reason.MALFORMED,
+      'an embedded certificate is not a valid certificate',
+    );
+  }
+  const signer = embedded.decoded.find(
+    (c) =>
+      bytesEqual(c.serialNumber, info.serialContents) && bytesEqual(c.issuerDer, info.issuerRaw),
+  );
+  if (signer === undefined) {
+    throw new VerificationError(Reason.MALFORMED, 'signer certificate not embedded');
+  }
+  return signer;
+}
+
+function verifySigner(
+  cms: ParsedCms,
+  info: CmsSignerInfo,
+  signer: ParsedCertificate,
+  authenticated: readonly ParsedCertificate[],
+  anchors: readonly ParsedCertificate[],
+  atMs: number,
+): void {
+  const path = buildAndValidatePath(signer, authenticated, anchors, atMs);
+  // Checked after the chain, so a foreign chain still reports
+  // UNTRUSTED_CHAIN rather than INVALID_CERTIFICATE_PURPOSE.
+  if (!signer.hasExtension(RECEIPT_SIGNER_OID)) {
+    throw new VerificationError(
+      Reason.INVALID_CERTIFICATE_PURPOSE,
+      `receipt signer certificate lacks Apple receipt-signing marker OID ${RECEIPT_SIGNER_OID}`,
+    );
+  }
+  // The certificate after the signer on the path. A signer issued straight
+  // by a root has no WWDR certificate to carry the marker.
+  const intermediate = path[1];
+  if (intermediate === undefined || !intermediate.hasExtension(WWDR_INTERMEDIATE_OID)) {
+    throw new VerificationError(
+      Reason.INVALID_CERTIFICATE_PURPOSE,
+      `receipt intermediate certificate lacks Apple WWDR marker OID ${WWDR_INTERMEDIATE_OID}`,
+    );
+  }
+  // The signer's key is about to check the CMS signature; judged only
+  // once the chain has vouched for it.
+  requireBuildablePublicKey(signer);
+  // The chain is checked BEFORE the signature on purpose: checking the
+  // signature first would run the attacker's own key (their choice of RSA
+  // size and exponent) before anything about it is trusted.
+  verifyCmsSignature(cms, info, signer);
+}
+
+/**
+ * No algorithm or key-type allowlist beyond what `node:crypto` implements:
+ * the signer is already pinned to an Apple root and carries Apple's
+ * receipt-signing marker, so a change of algorithm on Apple's side does not
+ * reject genuine receipts (docs/design/0.7-hardening-parity.md change 3).
+ */
+function verifyCmsSignature(cms: ParsedCms, info: CmsSignerInfo, signer: ParsedCertificate): void {
+  let signedBytes: Uint8Array;
+  if (info.signedAttrs !== null) {
+    const digest = digestForOid(info.digestAlgorithmOid);
+    if (digest === null) {
+      throw new VerificationError(Reason.INVALID_SIGNATURE, 'unsupported digest algorithm');
+    }
+    // RFC 5652 §5.3: contentType and messageDigest are mandatory whenever
+    // signedAttrs are present. A set missing either cannot be checked, so
+    // it fails as a signature rather than as a format defect: genuine
+    // receipts carry no signedAttrs, and only this check refuses a forgery
+    // that copies the content under a re-tagged signedAttrs SET.
+    const { messageDigest, contentTypeValue, duplicate } = signedAttributeValues(info.signedAttrs);
+    if (contentTypeValue === null) {
+      throw new VerificationError(
+        Reason.INVALID_SIGNATURE,
+        'signedAttrs lack a contentType attribute',
+      );
+    }
+    if (messageDigest === null) {
+      throw new VerificationError(
+        Reason.INVALID_SIGNATURE,
+        'signedAttrs lack a messageDigest attribute',
+      );
+    }
+    // RFC 5652 §11: at most one instance of each attribute; a duplicate
+    // makes which copy the signer meant ambiguous, so it is refused before
+    // either value is trusted.
+    if (duplicate) {
+      throw new VerificationError(
+        Reason.INVALID_SIGNATURE,
+        'signedAttrs carry a contentType or messageDigest attribute twice',
+      );
+    }
+    // RFC 5652 §11.1: the contentType attribute names the content the
+    // signature covers, so one that names another type is a signature over
+    // something else.
+    if (!bytesEqual(contentTypeValue, cms.contentType)) {
+      throw new VerificationError(
+        Reason.INVALID_SIGNATURE,
+        'contentType attribute differs from the eContentType',
+      );
+    }
+    const contentDigest = createHash(digest).update(cms.content).digest();
+    if (!timingSafeBytesEqual(messageDigest, contentDigest)) {
       throw new VerificationError(
         Reason.INVALID_SIGNATURE,
         'messageDigest attribute does not match content',
       );
     }
-    valid = cryptoVerify(
-      digest,
-      signedAttrsSignedBytes(signedAttrs),
-      signerCert.publicKey,
-      signature,
-    );
+    signedBytes = signedAttrsSignedBytes(info.signedAttrs.raw);
   } else {
-    valid = cryptoVerify(digest, cms.content, signerCert.publicKey, signature);
+    signedBytes = cms.content;
   }
+  const valid = verifySignerSignature(
+    signer.spki,
+    signer.publicKeyAlgorithmOid,
+    info.digestAlgorithmOid,
+    info.signatureAlgorithmOid,
+    info.signatureAlgorithmParams,
+    info.signature,
+    signedBytes,
+  );
   if (!valid) {
-    throw new VerificationError(Reason.INVALID_SIGNATURE, 'CMS signature check failed');
-  }
-}
-
-/**
- * The digest is one of the two parseCms admits, so a runtime that cannot
- * build it is the environment's failure, never the receipt's.
- */
-function newHash(algorithm: string): ReturnType<typeof createHash> {
-  try {
-    return createHash(algorithm);
-  } catch (cause) {
     throw new VerificationError(
-      Reason.INTERNAL_ERROR,
-      `${algorithm} digest is unavailable in this runtime`,
-      cause,
-    );
-  }
-}
-
-function timingSafeEqualPadded(a: Buffer, b: Buffer): boolean {
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
-function verifyDeviceHash(fields: AppReceipt, deviceGuid: Buffer): void {
-  if (fields.opaqueValue === null || fields.sha1Hash === null || fields.bundleIdBytes === null) {
-    throw new VerificationError(
-      Reason.DEVICE_HASH_MISMATCH,
-      'receipt lacks the attributes needed for the device-hash check',
-    );
-  }
-  const computed = newHash('sha1')
-    .update(deviceGuid)
-    .update(fields.opaqueValue)
-    .update(fields.bundleIdBytes)
-    .digest();
-  if (!timingSafeEqualPadded(computed, fields.sha1Hash)) {
-    throw new VerificationError(
-      Reason.DEVICE_HASH_MISMATCH,
-      'computed device hash does not match attribute 5',
+      Reason.INVALID_SIGNATURE,
+      "CMS signature does not match the signer certificate's key",
     );
   }
 }

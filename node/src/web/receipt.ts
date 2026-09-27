@@ -1,263 +1,314 @@
-import { Reason, VerificationError } from '../errors.js';
-import { base64Decode, concatBytes, isCanonicalBase64, timingSafeBytesEqual } from '../bytes.js';
+/**
+ * `verifyReceipt(base64)` for the web build — the same algorithm as the
+ * Node build's receipt.ts, async because `crypto.subtle` is.
+ */
+import { base64Decode, bytesEqual, isCanonicalBase64, timingSafeBytesEqual } from '../bytes.js';
+import { callClock } from '../call-clock.js';
 import {
-  findMessageDigestAttribute,
-  findSignerCertIndex,
   parseCms,
+  requireAttributeSetSyntax,
+  signedAttributeValues,
   signedAttrsSignedBytes,
+  type CmsSignerInfo,
   type ParsedCms,
 } from '../cms.js';
-import { parseSignedReceiptPayload, readCreationDate } from '../receipt-payload.js';
+import { parse as parseAsn1, ParseError, Tag } from '../der.js';
+import { Reason, VerificationError } from '../errors.js';
 import { MAX_RECEIPT_BYTES, utf8LengthExceeds } from '../limits.js';
-import { requireDecodableExtensions } from '../der.js';
+import { parseReceiptPayload, readCreationDate, type ReceiptPayload } from '../receipt-payload.js';
 import { parseCertificate, type ParsedCertificate } from '../x509.js';
-import { buildAndValidatePath, normalizeRoots, type RootInput } from './chain.js';
-import { digest, verifyRsaPkcs1 } from './crypto.js';
-import { OID_RSA_ENCRYPTION, requireBuildablePublicKey } from './jwk.js';
+import { authenticatedTopDown, buildAndValidatePath } from './chain.js';
+import { digest, nodeDigestNameForOid, verifySignerSignature } from './crypto.js';
+import { requireBuildablePublicKey } from './jwk.js';
 
-export type {
-  RawAppReceipt as AppReceipt,
-  RawInAppPurchase as InAppPurchase,
-} from '../receipt-payload.js';
+export { MAX_RECEIPT_BYTES };
 
-import type { RawAppReceipt } from '../receipt-payload.js';
-
-// Apple marker OID on the receipt-signing leaf. Without this purpose check,
-// any developer cert chaining to the same pinned root could sign a forged
-// receipt (the chain check alone does not distinguish signer purpose).
 const RECEIPT_SIGNER_OID = '1.2.840.113635.100.6.11.1';
-
-// Same bound as the Node build: genuine receipts embed 1 to 3 certificates,
-// and every embedded one is parsed and then signature-checked as a candidate
-// issuer before anything about the receipt has been verified.
+const WWDR_INTERMEDIATE_OID = '1.2.840.113635.100.6.2.1';
 const MAX_EMBEDDED_CERTIFICATES = 10;
+const MAX_SIGNER_INFOS = 4;
 
-export interface ReceiptVerifierOptions {
-  /** Pinned roots (production: `appleReceiptRoots()`). */
-  trustedRoots: RootInput[];
-  /** Bundle id the receipt must carry. */
-  bundleId: string;
+function describeError(e: unknown): string {
+  if (e instanceof Error) {
+    return e.constructor.name;
+  }
+  return typeof e;
 }
 
-/**
- * Decodes a client-supplied `receipt-data` string to DER per the
- * receipt-data contract, throwing {@link Reason.INVALID_RECEIPT_FORMAT}
- * (rather than silently skipping bad characters) when it does not conform.
- * Matches the Node build's function of the same name in `../receipt.js`.
- * Shared by {@link ReceiptVerifier.verify} and the web VerifyReceiptEndpoint.
- */
-export function decodeReceiptDataString(text: string): Uint8Array {
-  // Before the shape check and the decode, which scan the whole string and
-  // allocate the bytes it decodes to.
-  if (utf8LengthExceeds(text, MAX_RECEIPT_BYTES)) {
+/** Decodes the base64 text a client sends as `receipt-data`, Apple's own rule. */
+export function decodeReceiptBase64(receipt: string): Uint8Array {
+  if (!isCanonicalBase64(receipt)) {
     throw new VerificationError(
-      Reason.INVALID_RECEIPT_FORMAT,
+      Reason.MALFORMED,
+      'receipt is not canonically padded standard base64',
+    );
+  }
+  return base64Decode(receipt);
+}
+
+export async function verifyReceipt(
+  base64: string,
+  anchors: readonly ParsedCertificate[],
+  now: () => number,
+): Promise<ReceiptPayload> {
+  if (base64 === '') {
+    throw new VerificationError(Reason.MALFORMED, 'receipt is empty');
+  }
+  if (utf8LengthExceeds(base64, MAX_RECEIPT_BYTES)) {
+    throw new VerificationError(
+      Reason.TOO_LARGE,
       `receipt exceeds the maximum accepted size of ${MAX_RECEIPT_BYTES} bytes`,
     );
   }
-  if (!isCanonicalBase64(text)) {
-    throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'receipt-data is not valid base64');
-  }
-  return base64Decode(text);
-}
-
-/**
- * Chain + signature verification WITHOUT the bundle-id claim check — the
- * primitive under {@link ReceiptVerifier}, matching the Node build's
- * `verifyReceiptCore`. Callers that unlock products must check `bundleId`
- * themselves or use ReceiptVerifier.
- */
-export async function verifyReceiptCore(
-  der: Uint8Array,
-  trustedRoots: RootInput[],
-): Promise<RawAppReceipt> {
-  const roots = normalizeRoots(trustedRoots);
-  if (!(der instanceof Uint8Array) || der.length === 0) {
-    throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'receipt is empty');
-  }
-  // Before the CMS parse, which allocates in proportion to the DER.
-  if (der.length > MAX_RECEIPT_BYTES) {
-    throw new VerificationError(
-      Reason.INVALID_RECEIPT_FORMAT,
-      `receipt exceeds the maximum accepted size of ${MAX_RECEIPT_BYTES} bytes`,
-    );
-  }
-  const cms = parseCms(der);
-
-  // Only the creation date is read before trust is established; see the
-  // Node build's verifyReceiptCore for the whole of the reasoning. An
-  // unusable date moves the chain instant to the SYSTEM clock, never to an
-  // injected one, and never rejects by itself.
-  const at = readCreationDate(cms.content) ?? new Date();
-
-  // Everything below walks attacker-supplied DER through the certificate
-  // parser and through child lists that may be any shape. Callers
-  // discriminate on VerificationError.reason, so no foreign error type may
-  // escape from here.
+  const der = decodeReceiptBase64(base64);
+  const clock = callClock(now);
+  let content: Uint8Array;
   try {
-    // The embedded certificates are attacker-supplied and are walked into a
-    // path below, before anything about the receipt has been verified, so a
-    // receipt carrying more of them than a chain can hold is rejected here
-    // rather than parsed and searched.
-    if (cms.certificates.length > MAX_EMBEDDED_CERTIFICATES) {
-      throw new VerificationError(
-        Reason.INVALID_CHAIN,
-        `receipt embeds more than ${MAX_EMBEDDED_CERTIFICATES} certificates`,
-      );
-    }
-    const signerIndex = findSignerCertIndex(cms);
-    if (signerIndex < 0) {
-      throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'signer certificate not embedded');
-    }
-    // Read strictly, and before the rest of the bag: which certificate is
-    // unreadable changes the verdict. See the Node build's
-    // readSignerCertificate for the whole of the reasoning.
-    const signerCert = readSignerCertificate(cms.certificates[signerIndex]!);
-    const embedded = cms.certificates.map((raw) => parseCertificate(raw));
-    await buildAndValidatePath(signerCert, embedded, roots, at);
-    if (!signerCert.hasExtension(RECEIPT_SIGNER_OID)) {
-      throw new VerificationError(
-        Reason.INVALID_CERTIFICATE_PURPOSE,
-        `receipt signer certificate lacks Apple receipt-signing marker OID ${RECEIPT_SIGNER_OID}`,
-      );
-    }
-    // Chain before signature: the attacker's own key is not run until the
-    // chain has made it a trusted one.
-    await verifyCmsSignature(cms, signerCert);
+    content = await verifySignature(der, anchors, clock);
   } catch (cause) {
     if (cause instanceof VerificationError) {
       throw cause;
     }
-    throw new VerificationError(Reason.INVALID_RECEIPT_FORMAT, 'malformed CMS structure', cause);
+    throw new VerificationError(
+      Reason.MALFORMED,
+      `unexpected error: ${describeError(cause)}`,
+      cause,
+    );
   }
-  // A trusted signer signed it: unreadable content is INTERNAL_ERROR.
-  return parseSignedReceiptPayload(cms.content);
-}
-
-/**
- * The WebCrypto twin of the Node build's {@link ReceiptVerifier}: same
- * options, same checks in the same order, same {@link VerificationError}
- * reasons — `verify` returns a Promise because `crypto.subtle` is async.
- */
-export class ReceiptVerifier {
-  /**
-   * Ceiling on a receipt, as in the Node build: 3,145,728 bytes, the base64
-   * string in UTF-8 bytes before it is decoded, and the DER in bytes before
-   * it is parsed, at every entry point ({@link verifyReceiptCore} included).
-   * A larger receipt is {@link Reason.INVALID_RECEIPT_FORMAT}.
-   */
-  static readonly MAX_RECEIPT_BYTES = MAX_RECEIPT_BYTES;
-
-  #roots: RootInput[];
-  #bundleId: string;
-
-  constructor({ trustedRoots, bundleId }: ReceiptVerifierOptions) {
-    normalizeRoots(trustedRoots); // validate eagerly
-    if (typeof bundleId !== 'string' || bundleId.length === 0) {
-      throw new TypeError('bundleId is required');
-    }
-    this.#roots = trustedRoots;
-    this.#bundleId = bundleId;
-  }
-
-  /**
-   * Verifies a receipt (DER bytes, or its base64 string — the usual client
-   * transport form). A string is decoded per the receipt-data contract
-   * (canonical standard base64 and nothing else, as Apple's verifyReceipt
-   * accepts it — see {@link isCanonicalBase64}, matching the Node build);
-   * anything else throws {@link Reason.INVALID_RECEIPT_FORMAT}. Passing
-   * `deviceGuid` additionally enforces the device-hash binding:
-   * SHA1(guid ‖ opaqueValue ‖ bundleIdBytes) must equal attribute 5
-   * (optional — PLAN.md D4).
-   */
-  async verify(
-    receipt: Uint8Array | string,
-    deviceGuid: Uint8Array | null = null,
-  ): Promise<RawAppReceipt> {
-    const der = typeof receipt === 'string' ? decodeReceiptDataString(receipt) : receipt;
-    const fields = await verifyReceiptCore(der, this.#roots);
-    if (fields.bundleId !== this.#bundleId) {
-      throw new VerificationError(
-        Reason.WRONG_BUNDLE_ID,
-        `expected ${this.#bundleId} but receipt has ${fields.bundleId}`,
-      );
-    }
-    if (deviceGuid !== null) {
-      await verifyDeviceHash(fields, deviceGuid);
-    }
-    return fields;
-  }
-}
-
-/** The signer certificate, or INVALID_CERTIFICATE — see the Node build. */
-function readSignerCertificate(raw: Uint8Array): ParsedCertificate {
   try {
-    const certificate = parseCertificate(raw);
-    // parseCertificate settles the version and a repeated extension; these
-    // two are what it leaves. Decoding every extension VALUE is what makes
-    // reading a certificate different from scanning it for a marker OID,
-    // and building the key is the only way to learn that it sits on a curve
-    // this build cannot import — the web build's equivalents of the Node
-    // build's requireDecodableExtensions and `.publicKey`. Like `.publicKey`,
-    // the key check refuses an RSA or EC key that will not build and says
-    // nothing about a key of another algorithm: a readable DSA signer is a
-    // verdict about the SIGNATURE, and verifyCmsSignature below makes it.
-    requireDecodableExtensions(raw);
-    requireBuildablePublicKey(certificate.publicKeyAlgorithmOid, certificate.spki);
-    return certificate;
+    return parseReceiptPayload(content);
   } catch (cause) {
     throw new VerificationError(
-      Reason.INVALID_CERTIFICATE,
-      'receipt signer certificate is not a valid certificate',
+      Reason.UNREADABLE_PAYLOAD,
+      'signed receipt content could not be read',
       cause,
     );
   }
 }
 
-async function verifyCmsSignature(cms: ParsedCms, signerCert: ParsedCertificate): Promise<void> {
-  const { digest: digestName, signedAttrs, signature } = cms.signerInfo;
-  if (signerCert.publicKeyAlgorithmOid !== OID_RSA_ENCRYPTION) {
-    throw new VerificationError(Reason.INVALID_SIGNATURE, 'receipt signer key is not RSA');
+async function verifySignature(
+  der: Uint8Array,
+  anchors: readonly ParsedCertificate[],
+  now: () => number,
+): Promise<Uint8Array> {
+  let cms: ParsedCms;
+  try {
+    cms = parseCms(der);
+  } catch (cause) {
+    if (cause instanceof ParseError) {
+      throw new VerificationError(
+        Reason.MALFORMED,
+        `malformed CMS structure: ${cause.message}`,
+        cause,
+      );
+    }
+    throw cause;
   }
-  let valid: boolean;
-  if (signedAttrs !== null) {
+  if (cms.signerInfos.length === 0) {
+    throw new VerificationError(Reason.MALFORMED, 'no signer info');
+  }
+  if (cms.signerInfos.length > MAX_SIGNER_INFOS) {
+    throw new VerificationError(
+      Reason.MALFORMED,
+      `receipt carries ${cms.signerInfos.length} SignerInfos, more than the maximum of ${MAX_SIGNER_INFOS}`,
+    );
+  }
+  for (const info of cms.signerInfos) {
+    if (info.signedAttrs !== null) {
+      try {
+        requireAttributeSetSyntax(info.signedAttrs);
+      } catch (cause) {
+        if (cause instanceof ParseError) {
+          throw new VerificationError(Reason.MALFORMED, cause.message, cause);
+        }
+        throw cause;
+      }
+    }
+  }
+  if (cms.certificateEntries.length > MAX_EMBEDDED_CERTIFICATES) {
+    throw new VerificationError(
+      Reason.MALFORMED,
+      `receipt embeds ${cms.certificateEntries.length} certificates, more than the maximum of ${MAX_EMBEDDED_CERTIFICATES}`,
+    );
+  }
+
+  const creationDate = readCreationDate(cms.content);
+  const embedded = decodeEmbedded(cms.certificateEntries);
+  let authenticated: ParsedCertificate[] | null = null;
+  let firstFailure: VerificationError | null = null;
+  for (const info of cms.signerInfos) {
+    try {
+      const signer = signerCertificate(info, embedded);
+      const atMs = creationDate ?? now();
+      // oxlint-disable-next-line no-await-in-loop
+      authenticated ??= await authenticatedTopDown(embedded.decoded, anchors);
+      // oxlint-disable-next-line no-await-in-loop
+      await verifySigner(cms, info, signer, authenticated, anchors, atMs);
+      return cms.content;
+    } catch (cause) {
+      if (!(cause instanceof VerificationError)) {
+        throw cause;
+      }
+      firstFailure ??= cause;
+    }
+  }
+  throw firstFailure ?? new VerificationError(Reason.MALFORMED, 'no signer info');
+}
+
+interface EmbeddedCertificates {
+  decoded: ParsedCertificate[];
+  unreadable: Uint8Array[];
+}
+
+function decodeEmbedded(entries: readonly Uint8Array[]): EmbeddedCertificates {
+  const decoded: ParsedCertificate[] = [];
+  const unreadable: Uint8Array[] = [];
+  for (const raw of entries) {
+    try {
+      decoded.push(parseCertificate(raw));
+    } catch {
+      unreadable.push(raw);
+    }
+  }
+  return { decoded, unreadable };
+}
+
+function namesTheSigner(raw: Uint8Array, info: CmsSignerInfo): boolean {
+  try {
+    const certificate = parseAsn1(raw);
+    if (certificate.tag !== Tag.SEQUENCE) {
+      return false;
+    }
+    const tbs = certificate.children?.[0];
+    if (tbs?.tag !== Tag.SEQUENCE) {
+      return false;
+    }
+    const fields = tbs.children ?? [];
+    const index = fields[0]?.tag === Tag.CONTEXT_0 ? 1 : 0;
+    const serial = fields[index];
+    const issuer = fields[index + 2];
+    if (serial?.tag !== Tag.INTEGER || issuer?.tag !== Tag.SEQUENCE) {
+      return false;
+    }
+    return (
+      bytesEqual(serial.contents, info.serialContents) && bytesEqual(issuer.raw, info.issuerRaw)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function signerCertificate(info: CmsSignerInfo, embedded: EmbeddedCertificates): ParsedCertificate {
+  for (const raw of embedded.unreadable) {
+    if (namesTheSigner(raw, info)) {
+      throw new VerificationError(
+        Reason.INVALID_CERTIFICATE,
+        'receipt signer certificate does not decode',
+      );
+    }
+  }
+  if (embedded.unreadable.length > 0) {
+    throw new VerificationError(
+      Reason.MALFORMED,
+      'an embedded certificate is not a valid certificate',
+    );
+  }
+  const signer = embedded.decoded.find(
+    (c) =>
+      bytesEqual(c.serialNumber, info.serialContents) && bytesEqual(c.issuerDer, info.issuerRaw),
+  );
+  if (signer === undefined) {
+    throw new VerificationError(Reason.MALFORMED, 'signer certificate not embedded');
+  }
+  return signer;
+}
+
+async function verifySigner(
+  cms: ParsedCms,
+  info: CmsSignerInfo,
+  signer: ParsedCertificate,
+  authenticated: readonly ParsedCertificate[],
+  anchors: readonly ParsedCertificate[],
+  atMs: number,
+): Promise<void> {
+  const path = await buildAndValidatePath(signer, authenticated, anchors, atMs);
+  if (!signer.hasExtension(RECEIPT_SIGNER_OID)) {
+    throw new VerificationError(
+      Reason.INVALID_CERTIFICATE_PURPOSE,
+      `receipt signer certificate lacks Apple receipt-signing marker OID ${RECEIPT_SIGNER_OID}`,
+    );
+  }
+  const intermediate = path[1];
+  if (intermediate === undefined || !intermediate.hasExtension(WWDR_INTERMEDIATE_OID)) {
+    throw new VerificationError(
+      Reason.INVALID_CERTIFICATE_PURPOSE,
+      `receipt intermediate certificate lacks Apple WWDR marker OID ${WWDR_INTERMEDIATE_OID}`,
+    );
+  }
+  requireBuildablePublicKey(signer.publicKeyAlgorithmOid, signer.spki);
+  await verifyCmsSignature(cms, info, signer);
+}
+
+async function verifyCmsSignature(
+  cms: ParsedCms,
+  info: CmsSignerInfo,
+  signer: ParsedCertificate,
+): Promise<void> {
+  let signedBytes: Uint8Array;
+  if (info.signedAttrs !== null) {
+    const digestName = nodeDigestNameForOid(info.digestAlgorithmOid);
+    if (digestName === null) {
+      throw new VerificationError(Reason.INVALID_SIGNATURE, 'unsupported digest algorithm');
+    }
+    const { messageDigest, contentTypeValue, duplicate } = signedAttributeValues(info.signedAttrs);
+    if (contentTypeValue === null) {
+      throw new VerificationError(
+        Reason.INVALID_SIGNATURE,
+        'signedAttrs lack a contentType attribute',
+      );
+    }
+    if (messageDigest === null) {
+      throw new VerificationError(
+        Reason.INVALID_SIGNATURE,
+        'signedAttrs lack a messageDigest attribute',
+      );
+    }
+    if (duplicate) {
+      throw new VerificationError(
+        Reason.INVALID_SIGNATURE,
+        'signedAttrs carry a contentType or messageDigest attribute twice',
+      );
+    }
+    if (!bytesEqual(contentTypeValue, cms.contentType)) {
+      throw new VerificationError(
+        Reason.INVALID_SIGNATURE,
+        'contentType attribute differs from the eContentType',
+      );
+    }
     const contentDigest = await digest(digestName, cms.content);
-    const messageDigest = findMessageDigestAttribute(signedAttrs);
-    if (messageDigest === null || !timingSafeBytesEqual(messageDigest, contentDigest)) {
+    if (!timingSafeBytesEqual(messageDigest, contentDigest)) {
       throw new VerificationError(
         Reason.INVALID_SIGNATURE,
         'messageDigest attribute does not match content',
       );
     }
-    valid = await verifyRsaPkcs1(
-      signerCert.spki,
-      digestName,
-      signature,
-      signedAttrsSignedBytes(signedAttrs),
-    );
+    signedBytes = signedAttrsSignedBytes(info.signedAttrs.raw);
   } else {
-    valid = await verifyRsaPkcs1(signerCert.spki, digestName, signature, cms.content);
+    signedBytes = cms.content;
   }
-  if (!valid) {
-    throw new VerificationError(Reason.INVALID_SIGNATURE, 'CMS signature check failed');
-  }
-}
-
-async function verifyDeviceHash(fields: RawAppReceipt, deviceGuid: Uint8Array): Promise<void> {
-  if (fields.opaqueValue === null || fields.sha1Hash === null || fields.bundleIdBytes === null) {
-    throw new VerificationError(
-      Reason.DEVICE_HASH_MISMATCH,
-      'receipt lacks the attributes needed for the device-hash check',
-    );
-  }
-  const computed = await digest(
-    'sha1',
-    concatBytes([deviceGuid, fields.opaqueValue, fields.bundleIdBytes]),
+  const valid = await verifySignerSignature(
+    signer.spki,
+    signer.publicKeyAlgorithmOid,
+    info.digestAlgorithmOid,
+    info.signatureAlgorithmOid,
+    info.signatureAlgorithmParams,
+    info.signature,
+    signedBytes,
   );
-  if (!timingSafeBytesEqual(computed, fields.sha1Hash)) {
+  if (!valid) {
     throw new VerificationError(
-      Reason.DEVICE_HASH_MISMATCH,
-      'computed device hash does not match attribute 5',
+      Reason.INVALID_SIGNATURE,
+      "CMS signature does not match the signer certificate's key",
     );
   }
 }

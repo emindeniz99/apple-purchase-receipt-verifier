@@ -16,14 +16,18 @@
     "src/web",
     "src/apple-date.ts",
     "src/bytes.ts",
+    "src/call-clock.ts",
     "src/cms.ts",
     "src/der.ts",
+    "src/environment.ts",
     "src/errors.ts",
-    "src/jws-claims.ts",
+    "src/json.ts",
     "src/limits.ts",
+    "src/pem.ts",
     "src/receipt-payload.ts",
     "src/roots-data.ts",
-    "src/verify-receipt-result.ts",
+    "src/safe-text.ts",
+    "src/strict-utf8.ts",
     "src/x509.ts"
   ]
 }

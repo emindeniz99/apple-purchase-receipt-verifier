@@ -1,195 +1,278 @@
-import { X509Certificate, verify as cryptoVerify } from 'node:crypto';
-import { Environment, Reason, VerificationError } from './errors.js';
+/**
+ * `verifySignedData(jws)`: any Apple-signed compact JWS (StoreKit 2
+ * `jwsRepresentation`, App Store Server `signedTransactionInfo` and
+ * `signedRenewalInfo`, app transactions, Server Notifications V2), verified
+ * offline.
+ *
+ * ES256 only, exactly three `x5c` certificates, the chain to a pinned root
+ * at the payload's `signedDate` (the clock when it states none), Apple's
+ * marker OIDs on leaf and intermediate, then the signature. The order of
+ * the checks is observable: an input that fails an early check reports
+ * that check's reason, and the shared cases pin it.
+ */
+import { asciiEncode, base64Decode, base64UrlDecodeStrict, isCanonicalBase64 } from './bytes.js';
+import { callClock } from './call-clock.js';
+import { validatePair } from './chain.js';
+import { requireBuildablePublicKey, verifyEs256 } from './crypto.js';
+import { Reason, VerificationError } from './errors.js';
 import {
-  hasExtension,
-  requireDecodableExtensions,
-  requireKnownVersion,
-  requireNoDuplicateExtensions,
-} from './der.js';
-import { normalizeRoots, validatePair, type RootInput } from './chain.js';
-import {
-  decodeJwsSegment,
-  INTERMEDIATE_OID,
-  JwsClaimChecker,
-  LEAF_OID,
-  parseJsonSegment,
-  readAppTransactionPayload,
-  readTransactionPayload,
-  signedAtMillisOf,
-  splitJws,
-} from './jws-claims.js';
-import { MAX_JWS_BYTES } from './limits.js';
-import { x5cBase64Decode } from './bytes.js';
+  JsonError,
+  asInstantMs,
+  asString,
+  asStringArray,
+  onlyWhitespaceAfter,
+  parseOneValue,
+  parseWholeObject,
+} from './json.js';
+import { MAX_JWS_BYTES, utf8LengthExceeds } from './limits.js';
+import { quote } from './safe-text.js';
+import { decodeStrictUtf8 } from './strict-utf8.js';
+import { parseCertificate, type ParsedCertificate } from './x509.js';
 
-export type { AppTransactionPayload, Claims, Clock, TransactionPayload } from './jws-claims.js';
+/** A verified JWS payload: the JSON object Apple signed, unchanged. */
+export interface JsonPayload {
+  readonly json: string;
+}
 
-import type { AppTransactionPayload, Claims, TransactionPayload } from './jws-claims.js';
+/** Builds a {@link JsonPayload} by hand, for callers' own tests. */
+export function createJsonPayload(json: string): JsonPayload {
+  return { json };
+}
 
-export interface JwsVerifierOptions {
-  /** Pinned roots (production: `appleJwsRoots()`). */
-  trustedRoots: RootInput[];
-  /** Bundle id every payload must carry. */
-  bundleId: string;
-  /** Include `'Sandbox'` on endpoints App Review can hit (PLAN.md D3). */
-  acceptedEnvironments: Environment[];
-  /** Required to accept Production AppTransactions. */
-  appAppleId?: number | null;
+const LEAF_OID = '1.2.840.113635.100.6.11.1';
+const INTERMEDIATE_OID = '1.2.840.113635.100.6.2.1';
+
+export { MAX_JWS_BYTES };
+
+/**
+ * Names only the exception's class (docs/design/0.7-hardening-parity.md
+ * change 6), never its message: an unexpected error here runs on input
+ * nobody has vouched for, so its message may itself quote that input.
+ */
+function describeError(e: unknown): string {
+  if (e instanceof Error) {
+    return e.constructor.name;
+  }
+  return typeof e;
+}
+
+export function verifySignedData(
+  jws: string,
+  anchors: readonly ParsedCertificate[],
+  now: () => number,
+): JsonPayload {
+  if (jws === '') {
+    throw new VerificationError(Reason.MALFORMED, 'jws is empty');
+  }
+  if (utf8LengthExceeds(jws, MAX_JWS_BYTES)) {
+    throw new VerificationError(
+      Reason.TOO_LARGE,
+      `jws exceeds the maximum accepted size of ${MAX_JWS_BYTES} bytes`,
+    );
+  }
+  try {
+    return verifyUnguarded(jws, anchors, callClock(now));
+  } catch (cause) {
+    if (cause instanceof VerificationError) {
+      throw cause;
+    }
+    // Contains any unexpected error before the signature has verified
+    // (docs/design/0.7-hardening-parity.md change 4): everything up to here
+    // runs on input nobody has vouched for, so it is MALFORMED, never
+    // INTERNAL_ERROR, which would let anyone raise that alert at will.
+    throw new VerificationError(
+      Reason.MALFORMED,
+      `unexpected error: ${describeError(cause)}`,
+      cause,
+    );
+  }
+}
+
+function verifyUnguarded(
+  jws: string,
+  anchors: readonly ParsedCertificate[],
+  now: () => number,
+): JsonPayload {
+  const parts = jws.split('.');
+  if (parts.length !== 3) {
+    throw new VerificationError(
+      Reason.MALFORMED,
+      `expected 3 dot-separated segments, got ${parts.length}`,
+    );
+  }
+  const [headerB64, payloadB64, signatureB64] = parts as [string, string, string];
+  const headerBytes = base64UrlDecodeStrict(headerB64);
+  if (headerBytes === null) {
+    throw new VerificationError(Reason.MALFORMED, 'header is not canonical base64url');
+  }
+  const payloadBytes = base64UrlDecodeStrict(payloadB64);
+  if (payloadBytes === null) {
+    throw new VerificationError(Reason.MALFORMED, 'payload is not canonical base64url');
+  }
+  const signature = base64UrlDecodeStrict(signatureB64);
+  if (signature === null) {
+    throw new VerificationError(Reason.MALFORMED, 'signature is not canonical base64url');
+  }
+
+  const header = readHeader(headerBytes);
+  if (header.alg !== 'ES256') {
+    throw new VerificationError(Reason.MALFORMED, `alg must be ES256, got ${quote(header.alg)}`);
+  }
+  if (header.x5c === null || header.x5c.length !== 3) {
+    throw new VerificationError(Reason.MALFORMED, 'x5c must contain exactly 3 certificates');
+  }
+  const leaf = parseX5cCertificate(header.x5c[0]!);
+  const intermediate = parseX5cCertificate(header.x5c[1]!);
+  // Parsed and then dropped: the third entry is trusted by nobody, and
+  // reading it decides only whether it IS a certificate.
+  parseX5cCertificate(header.x5c[2]!);
+
+  const payload = readPayload(payloadBytes);
+  // Chain validity is judged at the payload's signing date, so a payload
+  // signed with a since-rotated certificate keeps verifying.
+  const atMs = payload.signedDateMs ?? now();
+  validatePair(leaf, intermediate, anchors, atMs);
+  // The marker OIDs after the chain, as on the receipt path (owner,
+  // 2026-09-27): a foreign chain is UNTRUSTED_CHAIN whatever it carries, and
+  // only a pinned chain can be the wrong kind of Apple certificate. Still
+  // before the leaf's key checks the JWS signature.
+  if (!leaf.hasExtension(LEAF_OID)) {
+    throw new VerificationError(
+      Reason.INVALID_CERTIFICATE_PURPOSE,
+      `leaf certificate lacks Apple marker OID ${LEAF_OID}`,
+    );
+  }
+  if (!intermediate.hasExtension(INTERMEDIATE_OID)) {
+    throw new VerificationError(
+      Reason.INVALID_CERTIFICATE_PURPOSE,
+      `intermediate certificate lacks Apple marker OID ${INTERMEDIATE_OID}`,
+    );
+  }
+  // The leaf's key is about to check the JWS signature; judged only once
+  // trusted, same as the intermediate inside validatePair.
+  requireBuildablePublicKey(leaf);
+  const signingInput = asciiEncode(`${headerB64}.${payloadB64}`);
+  if (!verifyEs256(leaf.spki, signature, signingInput)) {
+    throw new VerificationError(
+      Reason.INVALID_SIGNATURE,
+      'ES256 signature does not match the leaf key',
+    );
+  }
+  if (payload.json === null) {
+    throw new VerificationError(
+      Reason.UNREADABLE_PAYLOAD,
+      `signed payload is not a JSON object: ${payload.problem}`,
+    );
+  }
+  return createJsonPayload(payload.json);
+}
+
+interface Header {
+  alg: string | null;
+  x5c: string[] | null;
 }
 
 /**
- * Verifies Apple-signed JWS payloads (StoreKit 2 `jwsRepresentation`,
- * `signedTransactionInfo` / `signedRenewalInfo`, Server Notifications V2)
- * completely offline against pinned Apple roots — PLAN.md §2.1, mirroring
- * the Java implementation check-for-check.
+ * What verification reads from the header: the last `alg` and `x5c`
+ * members. The header is outer structure, so anything that stops the read
+ * is MALFORMED: bytes that are not strict UTF-8, a byte order mark
+ * (RFC 8259 §8.1 forbids one), and anything but whitespace after the
+ * object.
  */
-export class JwsVerifier {
-  /**
-   * Ceiling on a compact JWS, in characters, checked before it is split or
-   * decoded. A longer one, or a header or payload nesting JSON more than 64
-   * levels deep, is {@link Reason.INVALID_JWS_FORMAT}.
-   */
-  static readonly MAX_JWS_BYTES = MAX_JWS_BYTES;
-
-  #roots: X509Certificate[];
-  #claims: JwsClaimChecker;
-
-  constructor(options: JwsVerifierOptions) {
-    this.#roots = normalizeRoots(options.trustedRoots);
-    this.#claims = new JwsClaimChecker(options);
+function readHeader(bytes: Uint8Array): Header {
+  let text: string;
+  try {
+    text = decodeStrictUtf8(bytes);
+  } catch {
+    throw new VerificationError(Reason.MALFORMED, 'header is not UTF-8');
   }
-
-  /** Verifies a signed transaction and checks bundle id + environment. */
-  verifyTransaction(jws: string): TransactionPayload {
-    const payload = readTransactionPayload(this.#verifySignature(jws));
-    this.#claims.requireBundleId(payload.bundleId);
-    this.#claims.requireAcceptedEnvironment(payload.environment);
-    return payload;
+  if (text.startsWith('﻿')) {
+    throw new VerificationError(Reason.MALFORMED, 'header starts with a byte order mark');
   }
-
-  /**
-   * Verifies a signed AppTransaction and checks bundle id, environment
-   * (`receiptType`), and — in Production — the app Apple id.
-   */
-  verifyAppTransaction(jws: string): AppTransactionPayload {
-    const payload = readAppTransactionPayload(this.#verifySignature(jws));
-    this.#claims.requireBundleId(payload.bundleId);
-    const environment = this.#claims.requireAcceptedEnvironment(payload.receiptType);
-    this.#claims.requireAppAppleId(environment, payload.appAppleId);
-    return payload;
-  }
-
-  /**
-   * Verifies the signature/chain only and returns the raw claims — for
-   * payload types without a dedicated model (renewal info, notification
-   * envelopes). The caller must check bundle id / environment / app Apple
-   * id in the returned claims itself.
-   */
-  verifyRaw(jws: string): Claims {
-    return this.#verifySignature(jws);
-  }
-
-  #verifySignature(jws: string): Claims {
-    const { headerB64, payloadB64, signatureB64, x5c } = splitJws(jws);
-    let leaf: X509Certificate;
-    let intermediate: X509Certificate;
-    try {
-      leaf = new X509Certificate(x5cBase64Decode(x5c[0]!));
-      intermediate = new X509Certificate(x5cBase64Decode(x5c[1]!));
-      // The third entry is parsed and then dropped. It is the JWS-supplied
-      // root: it is never compared to an anchor and never trusted, so
-      // swapping in a stranger's root still changes nothing — but an entry
-      // that is not a certificate is INVALID_CERTIFICATE at every index
-      // (transaction/reject-x5c-root-that-is-not-a-certificate), and java
-      // already answered that way when nobody else did.
-      const suppliedRoot = new X509Certificate(x5cBase64Decode(x5c[2]!));
-      // OpenSSL decodes an x5c entry far more leniently than the checks
-      // below assume, so all four of the things it lets past are settled
-      // here, while the verdict is still "this is not a certificate":
-      //
-      //  - the version, which OpenSSL keeps as whatever integer it found and
-      //    nothing downstream ever reads (requireKnownVersion);
-      //  - a repeated extension, which RFC 5280 4.2 forbids and OpenSSL
-      //    reports only by flagging the certificate invalid, so the issuer
-      //    check failed and a defect of the certificate came out as a
-      //    verdict about the chain (requireNoDuplicateExtensions);
-      //  - the public key, which is decoded lazily, so a namedCurve this
-      //    runtime does not implement surfaces later as a raw
-      //    ERR_OSSL_EVP_DECODE_ERROR out of `.publicKey`. Today the issuer
-      //    check happens to fail its name comparison first; reading the key
-      //    here means the escape cannot come back if that order changes.
-      //  - an extension value that stops decoding partway through, which
-      //    OpenSSL never looks inside (requireDecodableExtensions).
-      for (const certificate of [leaf, intermediate, suppliedRoot]) {
-        requireKnownVersion(certificate.raw);
-        requireNoDuplicateExtensions(certificate.raw);
-        requireDecodableExtensions(certificate.raw);
-        void certificate.publicKey;
-      }
-    } catch (cause) {
+  try {
+    const members = parseWholeObject(text);
+    return { alg: asString(members.get('alg')), x5c: asStringArray(members.get('x5c')) };
+  } catch (cause) {
+    if (cause instanceof JsonError) {
       throw new VerificationError(
-        Reason.INVALID_CERTIFICATE,
-        'x5c entry is not a valid certificate',
+        Reason.MALFORMED,
+        `header is not valid JSON: ${cause.message}`,
         cause,
       );
     }
-    if (!safeHasExtension(leaf, LEAF_OID)) {
-      throw new VerificationError(
-        Reason.INVALID_CERTIFICATE_PURPOSE,
-        `leaf certificate lacks Apple marker OID ${LEAF_OID}`,
-      );
-    }
-    if (!safeHasExtension(intermediate, INTERMEDIATE_OID)) {
-      throw new VerificationError(
-        Reason.INVALID_CERTIFICATE_PURPOSE,
-        `intermediate certificate lacks Apple marker OID ${INTERMEDIATE_OID}`,
-      );
-    }
-
-    const payload = parseJsonSegment(payloadB64, 'payload');
-    // Chain validity is checked at signing time so payloads signed with
-    // since-rotated certificates keep verifying (PLAN.md §2.1 step 4).
-    const signedAtMillis = signedAtMillisOf(payload);
-    const effectiveDate = signedAtMillis === null ? new Date() : new Date(signedAtMillis);
-    validatePair(leaf, intermediate, this.#roots, effectiveDate);
-
-    if (leaf.publicKey.asymmetricKeyType !== 'ec') {
-      throw new VerificationError(Reason.INVALID_SIGNATURE, 'leaf key is not EC');
-    }
-    const signature = Buffer.from(decodeJwsSegment(signatureB64, 'signature'));
-    if (signature.length !== 64) {
-      throw new VerificationError(
-        Reason.INVALID_SIGNATURE,
-        `ES256 signature must be 64 bytes, got ${signature.length}`,
-      );
-    }
-    const signingInput = Buffer.from(`${headerB64}.${payloadB64}`, 'ascii');
-    // The key goes in as SPKI DER rather than as the KeyObject itself:
-    // Cloudflare workerd's node:crypto rejects a KeyObject inside the
-    // options form of verify() (the form dsaEncoding needs), while Node,
-    // Bun and Deno accept both. Same key, same check.
-    const valid = cryptoVerify(
-      'sha256',
-      signingInput,
-      {
-        key: leaf.publicKey.export({ type: 'spki', format: 'der' }),
-        format: 'der',
-        type: 'spki',
-        dsaEncoding: 'ieee-p1363',
-      },
-      signature,
-    );
-    if (!valid) {
-      throw new VerificationError(Reason.INVALID_SIGNATURE, 'ES256 signature check failed');
-    }
-
-    return payload;
+    throw cause;
   }
 }
 
-function safeHasExtension(cert: X509Certificate, oid: string): boolean {
+interface PayloadRead {
+  json: string | null;
+  problem: string | null;
+  signedDateMs: number | null;
+}
+
+/**
+ * What verification reads from the payload: the text, if it is a JSON
+ * object in UTF-8 with nothing but whitespace after it and no byte order
+ * mark before it, and its last top-level `signedDate`. Reading it never
+ * fails verification by itself; a payload that does not parse is carried to
+ * the signature check.
+ */
+function readPayload(bytes: Uint8Array): PayloadRead {
+  let text: string;
   try {
-    return hasExtension(cert.raw, oid);
+    text = decodeStrictUtf8(bytes);
   } catch {
-    return false;
+    return { json: null, problem: 'not UTF-8', signedDateMs: null };
+  }
+  if (text.startsWith('﻿')) {
+    return { json: null, problem: 'starts with a byte order mark', signedDateMs: null };
+  }
+  let value;
+  let end;
+  try {
+    ({ value, end } = parseOneValue(text));
+  } catch {
+    return { json: null, problem: 'not valid JSON', signedDateMs: null };
+  }
+  if (value.kind !== 'object') {
+    return { json: null, problem: 'not an object', signedDateMs: null };
+  }
+  if (!onlyWhitespaceAfter(text, end)) {
+    return { json: null, problem: 'content after the object', signedDateMs: null };
+  }
+  const signedDate = asInstantMs(value.members.get('signedDate'));
+  return {
+    json: text,
+    problem: null,
+    signedDateMs: signedDate === null ? null : Number(signedDate),
+  };
+}
+
+/**
+ * Decodes one `x5c` entry: standard base64 with canonical padding
+ * (RFC 7515 §4.1.6). Exported so a decodeBase64 conformance case can reach
+ * it directly.
+ */
+export function decodeX5cEntry(text: string): Uint8Array {
+  if (!isCanonicalBase64(text)) {
+    throw new VerificationError(
+      Reason.INVALID_CERTIFICATE,
+      'x5c entry is not canonical standard base64',
+    );
+  }
+  return base64Decode(text);
+}
+
+/** Only whether the entry IS a certificate; its key is judged once trusted. */
+function parseX5cCertificate(entry: string): ParsedCertificate {
+  const der = decodeX5cEntry(entry);
+  try {
+    return parseCertificate(der);
+  } catch (cause) {
+    throw new VerificationError(
+      Reason.INVALID_CERTIFICATE,
+      'x5c entry is not a valid certificate',
+      cause,
+    );
   }
 }
