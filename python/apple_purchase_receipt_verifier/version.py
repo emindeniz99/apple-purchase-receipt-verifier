@@ -1,5 +1,6 @@
-"""The published version, for startup logs. Bumped by release-please, which
-joins the ``extra-files`` list in release-please-config.json in the same
-commit that adds it."""
+"""The published version, for startup logs. This file is listed in
+release-please-config.json's ``extra-files``; release-please bumps the
+marked line below, so it stays at the last released version until then and
+is never edited by hand otherwise."""
 
-CURRENT = "0.7.0"
+CURRENT = "0.6.0"  # x-release-please-version
