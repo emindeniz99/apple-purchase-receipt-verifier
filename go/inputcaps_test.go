@@ -1,9 +1,6 @@
 package applereceipt_test
 
 import (
-	"crypto/ecdsa"
-	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"strings"
@@ -16,12 +13,16 @@ import (
 
 // Every input this library decodes or parses is capped BEFORE the
 // expensive step, with the same fixed numbers every port uses: base64
-// decoding, CMS parsing and JSON parsing all allocate in
-// proportion to their input, and none of that work sits behind a
-// signature check. Each cap is pinned three ways: one unit over is refused
-// by the cap itself (its own message, and an allocation far below what the
-// skipped step would have cost), exactly at the cap is not refused by the
-// cap, and the exact output a caller sees.
+// decoding, CMS parsing and JSON parsing all allocate in proportion to
+// their input, and none of that work sits behind a signature check. Each
+// cap is pinned three ways: one unit over is refused by the cap itself
+// (its own message, and an allocation far below what the skipped step
+// would have cost), exactly at the cap is not refused by the cap, and the
+// exact output a caller sees.
+//
+// The resource-bounds shared cases (fixtures/cases-0.7.json, run by
+// conformance_test.go) additionally pin the byte-floor and node-floor
+// receipts end to end; this file pins the boundary of each numeric cap.
 
 // capAllocationBudget is what a refusal may allocate. Each skipped step
 // would allocate at least a large fraction of its input, and every input
@@ -31,7 +32,8 @@ const capAllocationBudget = 64 << 10
 // The request and receipt caps are Apple's: its verifyReceipt answers a
 // 3,145,728-byte request body and refuses a 3,145,729-byte one with HTTP
 // 413 (measured 2026-09-23), and no receipt it accepts can be larger than
-// the body that carries it. fixtures/cases.json holds every port to them.
+// the body that carries it. fixtures/cases-0.7.schema.json holds every
+// port to them.
 func TestCapNumbersMatchTheOtherPorts(t *testing.T) {
 	for _, entry := range []struct {
 		name      string
@@ -48,34 +50,13 @@ func TestCapNumbersMatchTheOtherPorts(t *testing.T) {
 	}
 }
 
-func requireMessage(t *testing.T, err error, want string) {
+// requireEndpointStatus checks the parsed status field: a StatusOK
+// response carries a full receipt body, so this cannot be exact string
+// equality the way a failure's `{"status":N}` short form could be.
+func requireEndpointStatus(t *testing.T, response string, status int) {
 	t.Helper()
-	if err == nil {
-		t.Fatalf("expected %q, got no error", want)
-	}
-	if err.Error() != want {
-		t.Fatalf("error = %q, want %q", err.Error(), want)
-	}
-}
-
-// requireRefusal21002 pins everything a caller of the endpoint sees for a
-// refusal: status, reason, message and the rendered body byte for byte.
-func requireRefusal21002(t *testing.T, result *applereceipt.VerifyReceiptResult,
-	reason applereceipt.Reason, message string) {
-	t.Helper()
-	if result.Status() != applereceipt.StatusMalformed || result.Reason() != reason {
-		t.Fatalf("status %d reason %s, want 21002 %s (%v)", result.Status(), result.Reason(), reason, result.Err())
-	}
-	requireMessage(t, result.Err(), message)
-	if got := string(result.JSON()); got != `{"status":21002}` {
-		t.Fatalf("body = %s, want {\"status\":21002}", got)
-	}
-}
-
-func requireVerifiedBody(t *testing.T, result *applereceipt.VerifyReceiptResult) {
-	t.Helper()
-	if result.Status() != applereceipt.StatusOK {
-		t.Fatalf("status %d reason %s (%v), want 0", result.Status(), result.Reason(), result.Err())
+	if got := endpointStatus(t, response); got != status {
+		t.Fatalf("response = %.120s, want status %d", response, status)
 	}
 }
 
@@ -85,70 +66,6 @@ func requireVerifiedBody(t *testing.T, result *applereceipt.VerifyReceiptResult)
 func padToLength(encoded string, length int) string {
 	return encoded + strings.Repeat("\n", length-len(encoded))
 }
-
-// --- receipt base64 string: 3 MiB, before the decode ---------------------
-
-func TestReceiptBase64CapIsCheckedBeforeDecoding(t *testing.T) {
-	pki := newReceiptPKI(t)
-	verifier := receiptVerifier(t, pki, "com.example.app")
-	endpoint := endpointFor(t, pki.anchors(), applereceipt.EnvironmentSandbox, fixedClock)
-	genuine := receiptOfType(t, pki, "ProductionSandbox")
-
-	// Canonical base64 admits nothing around the data, so the string at the
-	// cap is a genuine receipt whose base64 is exactly the cap: 3/4 of it
-	// in DER, no padding.
-	atCap := base64.StdEncoding.EncodeToString(receiptOfSize(t, pki, applereceipt.MaxReceiptBytes/4*3))
-	if len(atCap) != applereceipt.MaxReceiptBytes {
-		t.Fatalf("built a %d-character receipt string, want %d", len(atCap), applereceipt.MaxReceiptBytes)
-	}
-	if _, err := verifier.VerifyBase64(atCap); err != nil {
-		t.Fatalf("a receipt string of exactly the cap was refused: %v", err)
-	}
-	if _, err := verifier.VerifyBase64WithDeviceGUID(atCap, nil); err == nil ||
-		strings.Contains(err.Error(), "exceeds") {
-		t.Fatalf("at the cap the device check, not the cap, must answer: %v", err)
-	}
-	requireVerifiedBody(t, endpoint.VerifyReceiptData(atCap))
-
-	// One over, and made of valid base64 so that a decode, had it run,
-	// would have allocated 2.25 MiB.
-	overCap := strings.Repeat("QUFB", applereceipt.MaxReceiptBytes/4) + "Q"
-	const message = "INVALID_RECEIPT_FORMAT: receipt base64 exceeds the 3145728 byte limit"
-	for _, entry := range []struct {
-		name string
-		call func() error
-	}{
-		{"VerifyBase64", func() error { _, err := verifier.VerifyBase64(overCap); return err }},
-		{"VerifyBase64WithDeviceGUID", func() error {
-			_, err := verifier.VerifyBase64WithDeviceGUID(overCap, []byte("guid"))
-			return err
-		}},
-	} {
-		t.Run(entry.name, func(t *testing.T) {
-			var err error
-			allocated := allocatedBy(func() { err = entry.call() })
-			requireReason(t, err, applereceipt.ReasonInvalidReceiptFormat)
-			requireMessage(t, err, message)
-			if allocated > capAllocationBudget {
-				t.Errorf("refusing an over-cap string allocated %d bytes; the decode ran", allocated)
-			}
-		})
-	}
-
-	// A genuine receipt padded one character past the cap: the message
-	// shows the cap answered, not the decode that would refuse the padding.
-	_, err := verifier.VerifyBase64(padToLength(genuine, applereceipt.MaxReceiptBytes+1))
-	requireMessage(t, err, message)
-
-	var result *applereceipt.VerifyReceiptResult
-	allocated := allocatedBy(func() { result = endpoint.VerifyReceiptData(overCap) })
-	requireRefusal21002(t, result, applereceipt.ReasonInvalidReceiptFormat, message)
-	if allocated > capAllocationBudget {
-		t.Errorf("the endpoint allocated %d bytes refusing an over-cap receipt-data", allocated)
-	}
-}
-
-// --- receipt DER: 3 MiB, before the CMS parse ----------------------------
 
 // receiptOfSize builds a genuine signed receipt of exactly size bytes by
 // growing an unmodelled attribute.
@@ -167,44 +84,54 @@ func receiptOfSize(t *testing.T, pki receiptPKI, size int) []byte {
 	return nil
 }
 
-func TestReceiptDERCapIsCheckedBeforeParsing(t *testing.T) {
+// --- receipt base64 string: 3 MiB, before the decode ---------------------
+
+func TestReceiptBase64CapIsCheckedBeforeDecoding(t *testing.T) {
 	pki := newReceiptPKI(t)
-	verifier := receiptVerifier(t, pki, "com.example.app")
+	verifier := verifierFor(t, pki.anchors())
+	genuine := applereceiptBase64(pki.receipt(t))
 
-	atCap := receiptOfSize(t, pki, applereceipt.MaxReceiptBytes)
-	if _, err := verifier.Verify(atCap); err != nil {
-		t.Fatalf("a genuine receipt of exactly the cap was refused: %v", err)
+	// Canonical base64 admits nothing around the data, so the string at the
+	// cap is a genuine receipt whose base64 is exactly the cap: 3/4 of it
+	// in DER, no padding.
+	atCap := base64.StdEncoding.EncodeToString(receiptOfSize(t, pki, applereceipt.MaxReceiptBytes/4*3))
+	if len(atCap) != applereceipt.MaxReceiptBytes {
+		t.Fatalf("built a %d-character receipt string, want %d", len(atCap), applereceipt.MaxReceiptBytes)
 	}
-	if _, err := applereceipt.VerifyReceiptCore(atCap, pki.anchors()); err != nil {
-		t.Fatalf("VerifyReceiptCore refused a genuine receipt of exactly the cap: %v", err)
+	if _, err := verifier.VerifyReceipt(atCap); err != nil {
+		t.Fatalf("a receipt string of exactly the cap was refused: %v", err)
+	}
+	// Not exercised through the endpoint here: MaxRequestBytes equals
+	// MaxReceiptBytes, so wrapping a receipt-data string at its own cap in
+	// `{"receipt-data":"..."}` already exceeds the REQUEST cap on the
+	// wrapper bytes alone. TestRequestBodyCapIsCheckedBeforeParsing pins
+	// that boundary with a receipt small enough to leave room for it.
+
+	// One over, and made of valid base64 so that a decode, had it run,
+	// would have allocated 2.25 MiB.
+	overCap := strings.Repeat("QUFB", applereceipt.MaxReceiptBytes/4) + "Q"
+	const message = "receipt exceeds the maximum accepted size of 3145728 bytes"
+	var err error
+	allocated := allocatedBy(func() { _, err = verifier.VerifyReceipt(overCap) })
+	requireReason(t, err, applereceipt.ReasonTooLarge)
+	requireMessage(t, err, "receipt exceeds the maximum accepted size of 3145728 bytes")
+	if allocated > capAllocationBudget {
+		t.Errorf("refusing an over-cap string allocated %d bytes; the decode ran", allocated)
 	}
 
-	// Genuine in every respect but its size, so only the cap can refuse it.
-	overCap := receiptOfSize(t, pki, applereceipt.MaxReceiptBytes+1)
-	const message = "INVALID_RECEIPT_FORMAT: receipt exceeds the 3145728 byte limit"
-	for _, entry := range []struct {
-		name string
-		call func() error
-	}{
-		{"Verify", func() error { _, err := verifier.Verify(overCap); return err }},
-		{"VerifyWithDeviceGUID", func() error {
-			_, err := verifier.VerifyWithDeviceGUID(overCap, []byte("guid"))
-			return err
-		}},
-		{"VerifyReceiptCore", func() error {
-			_, err := applereceipt.VerifyReceiptCore(overCap, pki.anchors())
-			return err
-		}},
-	} {
-		t.Run(entry.name, func(t *testing.T) {
-			var err error
-			allocated := allocatedBy(func() { err = entry.call() })
-			requireReason(t, err, applereceipt.ReasonInvalidReceiptFormat)
-			requireMessage(t, err, message)
-			if allocated > capAllocationBudget {
-				t.Errorf("refusing an over-cap receipt allocated %d bytes; the parse ran", allocated)
-			}
-		})
+	// A genuine receipt padded one character past the cap: the message
+	// shows the cap answered, not the decode that would refuse the padding.
+	_, err = verifier.VerifyReceipt(padToLength(genuine, applereceipt.MaxReceiptBytes+1))
+	requireMessage(t, err, message)
+
+	overCapRequest := `{"receipt-data":"` + overCap + `"}`
+	var response string
+	allocated = allocatedBy(func() {
+		response = verifier.VerifyReceiptEndpoint(applereceipt.EnvironmentSandbox, overCapRequest)
+	})
+	requireEndpointStatus(t, response, applereceipt.StatusMalformedReceiptData)
+	if allocated > capAllocationBudget {
+		t.Errorf("the endpoint allocated %d bytes refusing an over-cap receipt-data", allocated)
 	}
 }
 
@@ -212,43 +139,42 @@ func TestReceiptDERCapIsCheckedBeforeParsing(t *testing.T) {
 
 // bodyOfLength wraps receipt-data in a request body of exactly length
 // bytes, padded with JSON whitespace.
-func bodyOfLength(receiptData string, length int) []byte {
+func bodyOfLength(receiptData string, length int) string {
 	head := `{"receipt-data":"` + receiptData + `"`
-	return []byte(head + strings.Repeat(" ", length-len(head)-1) + "}")
+	return head + strings.Repeat(" ", length-len(head)-1) + "}"
 }
 
 func TestRequestBodyCapIsCheckedBeforeParsing(t *testing.T) {
 	pki := newReceiptPKI(t)
-	endpoint := endpointFor(t, pki.anchors(), applereceipt.EnvironmentSandbox, fixedClock)
-	genuine := receiptOfType(t, pki, "ProductionSandbox")
+	verifier := verifierFor(t, pki.anchors())
+	genuine := applereceiptBase64(pki.receipt(t))
 
 	atCap := bodyOfLength(genuine, applereceipt.MaxRequestBytes)
-	requireVerifiedBody(t, endpoint.VerifyReceiptBody(atCap))
+	requireEndpointStatus(t,
+		verifier.VerifyReceiptEndpoint(applereceipt.EnvironmentSandbox, atCap), applereceipt.StatusOK)
 
 	overCap := bodyOfLength(genuine, applereceipt.MaxRequestBytes+1)
-	var result *applereceipt.VerifyReceiptResult
-	allocated := allocatedBy(func() { result = endpoint.VerifyReceiptBody(overCap) })
-	requireRefusal21002(t, result, applereceipt.ReasonRequestTooLarge,
-		"REQUEST_TOO_LARGE: the request body exceeds the 3145728 byte limit")
+	var response string
+	allocated := allocatedBy(func() {
+		response = verifier.VerifyReceiptEndpoint(applereceipt.EnvironmentSandbox, overCap)
+	})
+	requireEndpointStatus(t, response, applereceipt.StatusMalformedReceiptData)
 	if allocated > capAllocationBudget {
 		t.Errorf("refusing an over-cap body allocated %d bytes; the JSON parse ran", allocated)
 	}
-	if got := string(endpoint.VerifyReceiptJSON(overCap)); got != `{"status":21002}` {
-		t.Fatalf("VerifyReceiptJSON = %s, want {\"status\":21002}", got)
-	}
 
 	// The size is decided first: a body over the cap that is also nested
-	// too deep and not JSON at all is still REQUEST_TOO_LARGE, the answer
-	// Apple gives (413) before it reads anything.
-	junk := []byte(strings.Repeat("[", applereceipt.MaxRequestBytes+1))
-	requireRefusal21002(t, endpoint.VerifyReceiptBody(junk), applereceipt.ReasonRequestTooLarge,
-		"REQUEST_TOO_LARGE: the request body exceeds the 3145728 byte limit")
+	// too deep and not JSON at all is still StatusMalformedReceiptData, the
+	// answer Apple gives (413) before it reads anything.
+	junk := strings.Repeat("[", applereceipt.MaxRequestBytes+1)
+	requireEndpointStatus(t,
+		verifier.VerifyReceiptEndpoint(applereceipt.EnvironmentSandbox, junk), applereceipt.StatusMalformedReceiptData)
 }
 
 // twoBytePadding is exactly n bytes of U+00E9 (two bytes each in UTF-8),
 // with one ASCII character when n is odd.
 func twoBytePadding(n int) string {
-	pad := strings.Repeat("\u00e9", n/2)
+	pad := strings.Repeat("é", n/2)
 	if n%2 == 1 {
 		pad += "a"
 	}
@@ -258,14 +184,15 @@ func twoBytePadding(n int) string {
 // Apple's limit counts UTF-8 bytes, not characters. A body padded with
 // U+00E9 to one byte over the cap is barely half the cap in characters, so
 // a character count would let it through; the same shape one byte shorter
-// verifies. The padding sits in password, which is accepted and never read.
+// verifies. The padding sits in password, which is accepted and never
+// read.
 func TestRequestBodyIsMeasuredInUTF8BytesNotCharacters(t *testing.T) {
 	pki := newReceiptPKI(t)
-	endpoint := endpointFor(t, pki.anchors(), applereceipt.EnvironmentSandbox, fixedClock)
-	genuine := receiptOfType(t, pki, "ProductionSandbox")
+	verifier := verifierFor(t, pki.anchors())
+	genuine := applereceiptBase64(pki.receipt(t))
 	limit := applereceipt.MaxRequestBytes
-	bodyWith := func(padding string) []byte {
-		return []byte(`{"receipt-data":"` + genuine + `","password":"` + padding + `"}`)
+	bodyWith := func(padding string) string {
+		return `{"receipt-data":"` + genuine + `","password":"` + padding + `"}`
 	}
 	fixed := len(bodyWith(""))
 
@@ -273,17 +200,18 @@ func TestRequestBodyIsMeasuredInUTF8BytesNotCharacters(t *testing.T) {
 	if len(over) != limit+1 {
 		t.Fatalf("built a %d byte body, want %d", len(over), limit+1)
 	}
-	if chars := utf8.RuneCount(over); chars >= limit/2+fixed {
+	if chars := utf8.RuneCountInString(over); chars >= limit/2+fixed {
 		t.Fatalf("the over-cap body is %d characters; a character count must call it far under the cap", chars)
 	}
-	requireRefusal21002(t, endpoint.VerifyReceiptBody(over), applereceipt.ReasonRequestTooLarge,
-		"REQUEST_TOO_LARGE: the request body exceeds the 3145728 byte limit")
+	requireEndpointStatus(t,
+		verifier.VerifyReceiptEndpoint(applereceipt.EnvironmentSandbox, over), applereceipt.StatusMalformedReceiptData)
 
 	at := bodyWith(twoBytePadding(limit - fixed))
 	if len(at) != limit {
 		t.Fatalf("built a %d byte body, want %d", len(at), limit)
 	}
-	requireVerifiedBody(t, endpoint.VerifyReceiptBody(at))
+	requireEndpointStatus(t,
+		verifier.VerifyReceiptEndpoint(applereceipt.EnvironmentSandbox, at), applereceipt.StatusOK)
 }
 
 // --- request body nesting: 64, counted before the JSON parse ------------
@@ -294,103 +222,41 @@ func nested(depth int) string {
 
 func TestRequestBodyNestingIsCountedBeforeParsing(t *testing.T) {
 	pki := newReceiptPKI(t)
-	endpoint := endpointFor(t, pki.anchors(), applereceipt.EnvironmentSandbox, fixedClock)
-	genuine := receiptOfType(t, pki, "ProductionSandbox")
-	body := func(prefix string) []byte {
-		return []byte(`{` + prefix + `"receipt-data":"` + genuine + `"}`)
+	verifier := verifierFor(t, pki.anchors())
+	genuine := applereceiptBase64(pki.receipt(t))
+	body := func(prefix string) string {
+		return `{` + prefix + `"receipt-data":"` + genuine + `"}`
 	}
-	const message = "MALFORMED_REQUEST: the request body nests deeper than 64 levels"
 
 	// The body object is one level, so 63 arrays inside it is exactly 64.
-	requireVerifiedBody(t, endpoint.VerifyReceiptBody(body(`"pad":`+nested(63)+`,`)))
-	requireRefusal21002(t, endpoint.VerifyReceiptBody(body(`"pad":`+nested(64)+`,`)),
-		applereceipt.ReasonMalformedRequest, message)
+	requireEndpointStatus(t, verifier.VerifyReceiptEndpoint(
+		applereceipt.EnvironmentSandbox, body(`"pad":`+nested(63)+`,`)), applereceipt.StatusOK)
+	requireEndpointStatus(t, verifier.VerifyReceiptEndpoint(
+		applereceipt.EnvironmentSandbox, body(`"pad":`+nested(64)+`,`)), applereceipt.StatusMalformedReceiptData)
 
 	// Brackets inside a string are data. An escaped backslash ends before
 	// the closing quote, so the brackets after that string DO count.
-	requireVerifiedBody(t, endpoint.VerifyReceiptBody(body(`"pad":"\"`+strings.Repeat("[", 1000)+`",`)))
-	requireRefusal21002(t, endpoint.VerifyReceiptBody(body(`"a":"\\","pad":`+nested(64)+`,`)),
-		applereceipt.ReasonMalformedRequest, message)
+	requireEndpointStatus(t, verifier.VerifyReceiptEndpoint(applereceipt.EnvironmentSandbox,
+		body(`"pad":"\"`+strings.Repeat("[", 1000)+`",`)), applereceipt.StatusOK)
+	requireEndpointStatus(t, verifier.VerifyReceiptEndpoint(applereceipt.EnvironmentSandbox,
+		body(`"a":"\\","pad":`+nested(64)+`,`)), applereceipt.StatusMalformedReceiptData)
 
 	// A body nested far past what encoding/json would still accept is
 	// refused in one pass without the parser allocating per level.
 	deep := body(`"pad":` + nested(200000) + `,`)
-	var result *applereceipt.VerifyReceiptResult
-	allocated := allocatedBy(func() { result = endpoint.VerifyReceiptBody(deep) })
-	requireRefusal21002(t, result, applereceipt.ReasonMalformedRequest, message)
-	if allocated > capAllocationBudget {
-		t.Errorf("refusing a deeply nested body allocated %d bytes; the JSON parse ran", allocated)
-	}
-}
-
-// --- the byte-floor fixture ----------------------------------------------
-
-// The normative floor receipt (1 MiB of DER) must verify through every
-// verifier entry point. Its base64 is about 1.38 MB, so its JSON body is
-// well under the 3 MiB request cap and the body path verifies it too.
-func TestByteFloorReceiptVerifiesThroughEveryEntryPoint(t *testing.T) {
-	var config caseConfig
-	for _, kase := range mustCases(t).Cases {
-		if kase.ID == "receipt/verify-at-the-byte-floor" {
-			config = kase.Config
-		}
-	}
-	if config.BundleID == nil {
-		t.Fatal("receipt/verify-at-the-byte-floor is missing from fixtures/cases.json")
-	}
-	roots := trustedRootsFor(t, config.TrustedRoots)
-	der := fixtureBytes(t, "receipt-byte-floor")
-	encoded := base64.StdEncoding.EncodeToString(der)
-
-	verifier, err := applereceipt.NewReceiptVerifier(applereceipt.ReceiptVerifierOptions{
-		TrustedRoots: roots, BundleID: *config.BundleID,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := verifier.Verify(der); err != nil {
-		t.Fatalf("Verify refused the byte floor: %v", err)
-	}
-	if _, err := verifier.VerifyBase64(encoded); err != nil {
-		t.Fatalf("VerifyBase64 refused the byte floor: %v", err)
-	}
-
-	endpoint := endpointFor(t, roots, applereceipt.EnvironmentSandbox, fixedClock)
-	if status := endpoint.VerifyReceiptData(encoded).Status(); status == applereceipt.StatusMalformed {
-		t.Fatalf("VerifyReceiptData answered 21002 for the byte floor")
-	}
-	body, err := json.Marshal(map[string]string{"receipt-data": encoded})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(body) > applereceipt.MaxRequestBytes {
-		t.Fatalf("the byte floor's body is %d bytes, over the request cap", len(body))
-	}
-	if status := endpoint.VerifyReceiptBody(body).Status(); status == applereceipt.StatusMalformed {
-		t.Fatalf("VerifyReceiptBody answered 21002 for the byte floor")
+	var response string
+	allocated := allocatedBy(func() { response = verifier.VerifyReceiptEndpoint(applereceipt.EnvironmentSandbox, deep) })
+	requireEndpointStatus(t, response, applereceipt.StatusMalformedReceiptData)
+	// VerifyReceiptEndpoint takes a string, so one copy into a []byte is
+	// unavoidable (proportional to the input) before the nesting scan
+	// even starts; the invariant this pins is that nothing beyond that is
+	// paid: no per-level allocation from an actual recursive JSON parse.
+	if budget := 2*uint64(len(deep)) + capAllocationBudget; allocated > budget {
+		t.Errorf("refusing a deeply nested body allocated %d bytes (budget %d); the JSON parse ran", allocated, budget)
 	}
 }
 
 // --- JWS: 256 KiB before any split, and 64 levels before each parse -----
-
-func signRawJWS(t *testing.T, p jwsPKI, header, payload []byte) string {
-	t.Helper()
-	headerB64 := base64.RawURLEncoding.EncodeToString(header)
-	payloadB64 := base64.RawURLEncoding.EncodeToString(payload)
-	key, ok := p.leaf.key.(*ecdsa.PrivateKey)
-	if !ok {
-		t.Fatal("signRawJWS needs an ECDSA leaf key")
-	}
-	digest := sha256.Sum256([]byte(headerB64 + "." + payloadB64))
-	r, s, err := ecdsa.Sign(rand.Reader, key, digest[:])
-	if err != nil {
-		t.Fatal(err)
-	}
-	signature := make([]byte, 64)
-	r.FillBytes(signature[:32])
-	s.FillBytes(signature[32:])
-	return headerB64 + "." + payloadB64 + "." + base64.RawURLEncoding.EncodeToString(signature)
-}
 
 // jwsHeaderJSON is a genuine header with extra members spliced in.
 func jwsHeaderJSON(t *testing.T, p jwsPKI, extra string) []byte {
@@ -432,7 +298,7 @@ func signedJWSOfLength(t *testing.T, p jwsPKI, length int) string {
 			}
 			base := jwsPayloadJSON(t, `"pad":"",`)
 			payload := jwsPayloadJSON(t, `"pad":"`+strings.Repeat("p", n-len(base))+`",`)
-			jws := signRawJWS(t, p, header, payload)
+			jws := signRawJWS(t, p.leaf, header, payload)
 			if len(jws) != length {
 				t.Fatalf("built a %d character JWS, want %d", len(jws), length)
 			}
@@ -445,83 +311,90 @@ func signedJWSOfLength(t *testing.T, p jwsPKI, length int) string {
 
 func TestJWSSizeCapIsCheckedBeforeSplitting(t *testing.T) {
 	pki := newJWSPKI(t)
-	verifier := jwsVerifierFor(t, pki.anchorSlice(), nil)
+	verifier := verifierFor(t, pki.anchorSlice())
 
-	if _, err := verifier.VerifyRaw(signedJWSOfLength(t, pki, applereceipt.MaxJWSBytes)); err != nil {
+	if _, err := verifier.VerifySignedData(signedJWSOfLength(t, pki, applereceipt.MaxJWSBytes)); err != nil {
 		t.Fatalf("a genuine JWS of exactly the cap was refused: %v", err)
 	}
 
-	const message = "INVALID_JWS_FORMAT: jws exceeds the 262144 byte limit"
-	_, err := verifier.VerifyRaw(signedJWSOfLength(t, pki, applereceipt.MaxJWSBytes+1))
-	requireReason(t, err, applereceipt.ReasonInvalidJWSFormat)
+	const message = "jws exceeds the maximum accepted size of 262144 bytes"
+	_, err := verifier.VerifySignedData(signedJWSOfLength(t, pki, applereceipt.MaxJWSBytes+1))
+	requireReason(t, err, applereceipt.ReasonTooLarge)
 	requireMessage(t, err, message)
 
 	// All dots: a split, had it run, would have answered "got 262146
-	// segments" and allocated one string header per segment (4 MiB).
+	// segments" and allocated one string header per segment. The size cap
+	// is checked first, so it never runs.
 	dots := strings.Repeat(".", applereceipt.MaxJWSBytes+1)
-	for _, entry := range []struct {
-		name string
-		call func() error
-	}{
-		{"VerifyRaw", func() error { _, err := verifier.VerifyRaw(dots); return err }},
-		{"VerifyTransaction", func() error { _, err := verifier.VerifyTransaction(dots); return err }},
-		{"VerifyAppTransaction", func() error { _, err := verifier.VerifyAppTransaction(dots); return err }},
-	} {
-		t.Run(entry.name, func(t *testing.T) {
-			var err error
-			allocated := allocatedBy(func() { err = entry.call() })
-			requireMessage(t, err, message)
-			if allocated > capAllocationBudget {
-				t.Errorf("refusing an over-cap JWS allocated %d bytes; the split ran", allocated)
-			}
-		})
+	var allocErr error
+	allocated := allocatedBy(func() { _, allocErr = verifier.VerifySignedData(dots) })
+	requireMessage(t, allocErr, message)
+	if allocated > capAllocationBudget {
+		t.Errorf("refusing an over-cap JWS allocated %d bytes; the split ran", allocated)
 	}
 }
 
-func TestJWSNestingIsCountedBeforeParsing(t *testing.T) {
+// The header's nesting is checked immediately: a header that nests too
+// deep is ReasonMalformed before the chain or the signature is ever
+// touched.
+func TestJWSHeaderNestingIsCountedBeforeParsing(t *testing.T) {
 	pki := newJWSPKI(t)
-	verifier := jwsVerifierFor(t, pki.anchorSlice(), nil)
-	genuineHeader := jwsHeaderJSON(t, pki, "")
+	verifier := verifierFor(t, pki.anchorSlice())
 	genuinePayload := jwsPayloadJSON(t, "")
+	const message = "header exceeds a JSON bound"
 
-	// The object is one level, so 63 arrays inside it is exactly 64; each
-	// JWS is genuinely signed, so at 64 it must verify outright.
-	for _, entry := range []struct {
-		name            string
-		header, payload func(depth int) []byte
-		message         string
-	}{
-		{
-			"header",
-			func(depth int) []byte { return jwsHeaderJSON(t, pki, `"pad":`+nested(depth)+`,`) },
-			func(int) []byte { return genuinePayload },
-			"INVALID_JWS_FORMAT: header nests deeper than 64 levels",
-		},
-		{
-			"payload",
-			func(int) []byte { return genuineHeader },
-			func(depth int) []byte { return jwsPayloadJSON(t, `"pad":`+nested(depth)+`,`) },
-			"INVALID_JWS_FORMAT: payload nests deeper than 64 levels",
-		},
-	} {
-		t.Run(entry.name, func(t *testing.T) {
-			if _, err := verifier.VerifyRaw(signRawJWS(t, pki, entry.header(63), entry.payload(63))); err != nil {
-				t.Fatalf("a genuine JWS nested exactly 64 deep was refused: %v", err)
-			}
-			_, err := verifier.VerifyRaw(signRawJWS(t, pki, entry.header(64), entry.payload(64)))
-			requireReason(t, err, applereceipt.ReasonInvalidJWSFormat)
-			requireMessage(t, err, entry.message)
+	// 63 arrays inside the header object (one level) is exactly 64; signed
+	// genuinely, so it must verify outright.
+	shallow := signRawJWS(t, pki.leaf, jwsHeaderJSON(t, pki, `"pad":`+nested(63)+`,`), genuinePayload)
+	if _, err := verifier.VerifySignedData(shallow); err != nil {
+		t.Fatalf("a genuine JWS nested exactly 64 deep was refused: %v", err)
+	}
 
-			// Deep enough that encoding/json would allocate visibly per
-			// level, and still under the size cap.
-			deep := signRawJWS(t, pki, entry.header(90000), entry.payload(90000))
-			allocated := allocatedBy(func() { _, err = verifier.VerifyRaw(deep) })
-			requireMessage(t, err, entry.message)
-			// The base64url decode of the deep segment itself is paid (the
-			// counter reads decoded JSON); only the parse must be skipped.
-			if budget := uint64(len(deep)) + capAllocationBudget; allocated > budget {
-				t.Errorf("refusing a deeply nested %s allocated %d bytes; the JSON parse ran", entry.name, allocated)
-			}
-		})
+	deep64 := signRawJWS(t, pki.leaf, jwsHeaderJSON(t, pki, `"pad":`+nested(64)+`,`), genuinePayload)
+	_, err := verifier.VerifySignedData(deep64)
+	requireReason(t, err, applereceipt.ReasonMalformed)
+	requireMessage(t, err, message)
+
+	// Deep enough that encoding/json would allocate visibly per level, and
+	// still under the size cap.
+	deep := signRawJWS(t, pki.leaf, jwsHeaderJSON(t, pki, `"pad":`+nested(90000)+`,`), genuinePayload)
+	var deepErr error
+	allocated := allocatedBy(func() { _, deepErr = verifier.VerifySignedData(deep) })
+	requireMessage(t, deepErr, message)
+	if budget := uint64(len(deep)) + capAllocationBudget; allocated > budget {
+		t.Errorf("refusing a deeply nested header allocated %d bytes; the JSON parse ran", allocated)
+	}
+}
+
+// The payload's nesting is a different shape (owner, 2026-09-27): reading
+// it never itself fails verification, so a too-deep payload is carried
+// past the chain and signature checks and only surfaces as
+// UNREADABLE_PAYLOAD once the signature over it has genuinely verified.
+func TestJWSPayloadNestingIsCarriedPastTheSignatureCheck(t *testing.T) {
+	pki := newJWSPKI(t)
+	verifier := verifierFor(t, pki.anchorSlice())
+	genuineHeader := jwsHeaderJSON(t, pki, "")
+
+	shallow := signRawJWS(t, pki.leaf, genuineHeader, jwsPayloadJSON(t, `"pad":`+nested(63)+`,`))
+	if _, err := verifier.VerifySignedData(shallow); err != nil {
+		t.Fatalf("a genuine JWS nested exactly 64 deep was refused: %v", err)
+	}
+
+	deep64 := signRawJWS(t, pki.leaf, genuineHeader, jwsPayloadJSON(t, `"pad":`+nested(64)+`,`))
+	_, err := verifier.VerifySignedData(deep64)
+	requireReason(t, err, applereceipt.ReasonUnreadablePayload)
+
+	deep := signRawJWS(t, pki.leaf, genuineHeader, jwsPayloadJSON(t, `"pad":`+nested(90000)+`,`))
+	var deepErr error
+	allocated := allocatedBy(func() { _, deepErr = verifier.VerifySignedData(deep) })
+	requireReason(t, deepErr, applereceipt.ReasonUnreadablePayload)
+	// A larger multiple than the header case: unlike a too-deep header,
+	// reading the payload never itself fails, so the full chain and
+	// signature check (proportional to the input: three certificates
+	// parsed, a P-256 verify over the whole signing input) runs BEFORE
+	// the nesting cap is even consulted. What must still not happen is a
+	// per-level allocation from an actual recursive JSON parse.
+	if budget := 10*uint64(len(deep)) + capAllocationBudget; allocated > budget {
+		t.Errorf("refusing a deeply nested payload allocated %d bytes (budget %d); the JSON parse ran", allocated, budget)
 	}
 }

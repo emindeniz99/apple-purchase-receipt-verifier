@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	applereceipt "github.com/emindeniz99/apple-purchase-receipt-verifier/go"
 )
@@ -162,69 +161,56 @@ func TestModuleHasNoDependencies(t *testing.T) {
 
 // The public API shape, asserted by compiling against it. Any signature
 // change breaks this file, which is the point: the surface is a contract
-// shared with four other ports.
+// shared with the other ports at the 0.7 API (docs/design/0.7-api.md).
 func TestPublicAPIShape(t *testing.T) {
 	var (
-		_ func(applereceipt.JWSVerifierOptions) (*applereceipt.JWSVerifier, error)                     = applereceipt.NewJWSVerifier
-		_ func(applereceipt.ReceiptVerifierOptions) (*applereceipt.ReceiptVerifier, error)             = applereceipt.NewReceiptVerifier
-		_ func(applereceipt.VerifyReceiptEndpointOptions) (*applereceipt.VerifyReceiptEndpoint, error) = applereceipt.NewVerifyReceiptEndpoint
-		_ func([]byte, []*x509.Certificate) (*applereceipt.AppReceipt, error)                          = applereceipt.VerifyReceiptCore
-		_ func() []*x509.Certificate                                                                   = applereceipt.AppleJWSRoots
-		_ func() []*x509.Certificate                                                                   = applereceipt.AppleReceiptRoots
-		_ func(error) (applereceipt.Reason, bool)                                                      = applereceipt.ReasonOf
-		_ func() []applereceipt.Reason                                                                 = applereceipt.AllReasons
+		_ func(*applereceipt.Config) (*applereceipt.Verifier, error) = applereceipt.NewVerifier
+		_ func() *applereceipt.Config                                = applereceipt.DefaultConfig
+		_ func(applereceipt.ConfigOptions) *applereceipt.Config      = applereceipt.NewConfig
+		_ func() []*x509.Certificate                                 = applereceipt.AppleRoots
+		_ func(error) (applereceipt.Reason, bool)                    = applereceipt.ReasonOf
+		_ func() []applereceipt.Reason                               = applereceipt.AllReasons
+		_ string                                                     = applereceipt.Version
 	)
 
-	jws := &applereceipt.JWSVerifier{}
+	config := &applereceipt.Config{}
 	var (
-		_ func(string) (*applereceipt.TransactionPayload, error)    = jws.VerifyTransaction
-		_ func(string) (*applereceipt.AppTransactionPayload, error) = jws.VerifyAppTransaction
-		_ func(string) (applereceipt.Claims, error)                 = jws.VerifyRaw
+		_ func() []*x509.Certificate = config.Roots
+		_ func() func() int64        = config.Clock
 	)
 
-	receipts := &applereceipt.ReceiptVerifier{}
-	// The device-GUID matrix is complete: every input form is reachable
-	// with and without the GUID.
+	verifier := &applereceipt.Verifier{}
 	var (
-		_ func([]byte) (*applereceipt.AppReceipt, error)         = receipts.Verify
-		_ func([]byte, []byte) (*applereceipt.AppReceipt, error) = receipts.VerifyWithDeviceGUID
-		_ func(string) (*applereceipt.AppReceipt, error)         = receipts.VerifyBase64
-		_ func(string, []byte) (*applereceipt.AppReceipt, error) = receipts.VerifyBase64WithDeviceGUID
+		_ func(string) (*applereceipt.ReceiptPayload, error) = verifier.VerifyReceipt
+		_ func(string) (*applereceipt.JSONPayload, error)    = verifier.VerifySignedData
+		_ func(applereceipt.Environment, string) string      = verifier.VerifyReceiptEndpoint
 	)
 
-	endpoint := &applereceipt.VerifyReceiptEndpoint{}
+	payload := &applereceipt.JSONPayload{}
 	var (
-		_ func(applereceipt.VerifyReceiptRequest) *applereceipt.VerifyReceiptResult            = endpoint.VerifyReceipt
-		_ func(applereceipt.VerifyReceiptRequest, time.Time) *applereceipt.VerifyReceiptResult = endpoint.VerifyReceiptAt
-		_ func(string) *applereceipt.VerifyReceiptResult                                       = endpoint.VerifyReceiptData
-		_ func(string, time.Time) *applereceipt.VerifyReceiptResult                            = endpoint.VerifyReceiptDataAt
-		_ func([]byte) *applereceipt.VerifyReceiptResult                                       = endpoint.VerifyReceiptBody
-		_ func([]byte, time.Time) *applereceipt.VerifyReceiptResult                            = endpoint.VerifyReceiptBodyAt
-		_ func([]byte) []byte                                                                  = endpoint.VerifyReceiptJSON
+		_ func() string = payload.JSON
+		_ func() string = payload.String
 	)
+	_ = applereceipt.NewJSONPayload("{}")
 
-	result := &applereceipt.VerifyReceiptResult{}
+	failure := &applereceipt.Failure{}
 	var (
-		_ func() int                                                                 = result.Status
-		_ func() bool                                                                = result.Verified
-		_ func() *applereceipt.AppReceipt                                            = result.Receipt
-		_ func() applereceipt.Reason                                                 = result.Reason
-		_ func() error                                                               = result.Err
-		_ func() time.Time                                                           = result.RequestDate
-		_ func() applereceipt.VerifyReceiptResponse                                  = result.Response
-		_ func() []byte                                                              = result.JSON
-		_ func(applereceipt.Environment) (applereceipt.VerifyReceiptResponse, error) = result.ResponseFor
-		_ func(applereceipt.Environment) ([]byte, error)                             = result.JSONFor
+		_ func() string       = failure.Error
+		_ func() error        = failure.Unwrap
+		_ func(error) bool    = failure.Is
+		_ applereceipt.Reason = failure.Reason
+		_ string              = failure.Message
+		_ error               = failure.Cause
 	)
 
-	// The status codes this port can produce, and only these.
+	// The status codes this port's endpoint can produce, and only these.
 	for _, status := range []int{
 		applereceipt.StatusOK,
-		applereceipt.StatusMalformed,
+		applereceipt.StatusMalformedReceiptData,
 		applereceipt.StatusNotAuthenticated,
 		applereceipt.StatusSandboxReceiptOnProduction,
 		applereceipt.StatusProductionReceiptOnSandbox,
-		applereceipt.StatusInternal,
+		applereceipt.StatusInternalDataAccessError,
 	} {
 		switch status {
 		case 0, 21002, 21003, 21007, 21008, 21009:
@@ -233,15 +219,31 @@ func TestPublicAPIShape(t *testing.T) {
 		}
 	}
 
-	// The four environments, spelled as Apple spells them.
+	// The two environments the 0.7 API models, spelled as Apple spells
+	// them. Xcode and LocalTesting are gone: nothing an offline verifier
+	// checks distinguishes them from Sandbox (docs/design/0.7-api.md).
 	for environment, want := range map[applereceipt.Environment]string{
-		applereceipt.EnvironmentProduction:   "Production",
-		applereceipt.EnvironmentSandbox:      "Sandbox",
-		applereceipt.EnvironmentXcode:        "Xcode",
-		applereceipt.EnvironmentLocalTesting: "LocalTesting",
+		applereceipt.EnvironmentProduction: "Production",
+		applereceipt.EnvironmentSandbox:    "Sandbox",
 	} {
 		if string(environment) != want || environment.String() != want {
 			t.Errorf("environment %q is spelled wrong", want)
 		}
+	}
+
+	// The eight-reason vocabulary, by symbol rather than by string (the
+	// exact tokens are pinned in errors_test.go).
+	var reasons = []applereceipt.Reason{
+		applereceipt.ReasonMalformed,
+		applereceipt.ReasonTooLarge,
+		applereceipt.ReasonInvalidSignature,
+		applereceipt.ReasonUntrustedChain,
+		applereceipt.ReasonInvalidCertificate,
+		applereceipt.ReasonInvalidCertificatePurpose,
+		applereceipt.ReasonUnreadablePayload,
+		applereceipt.ReasonInternalError,
+	}
+	if len(reasons) != len(applereceipt.AllReasons()) {
+		t.Errorf("this file's reason list and AllReasons() have drifted apart")
 	}
 }

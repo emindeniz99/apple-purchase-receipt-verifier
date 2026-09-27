@@ -2,63 +2,56 @@ package applereceipt_test
 
 import (
 	"crypto/x509"
-	"encoding/base64"
 	"testing"
 	"time"
 
 	applereceipt "github.com/emindeniz99/apple-purchase-receipt-verifier/go"
 )
 
-func benchReceiptVerifier(tb testing.TB, bundleID string) *applereceipt.ReceiptVerifier {
+func benchVerifier(tb testing.TB, roots []*x509.Certificate) *applereceipt.Verifier {
 	tb.Helper()
-	verifier, err := applereceipt.NewReceiptVerifier(applereceipt.ReceiptVerifierOptions{
-		TrustedRoots: applereceipt.AppleReceiptRoots(), BundleID: bundleID,
-	})
+	verifier, err := applereceipt.NewVerifier(applereceipt.NewConfig(applereceipt.ConfigOptions{Roots: roots}))
 	if err != nil {
 		tb.Fatal(err)
 	}
 	return verifier
 }
 
-func BenchmarkVerifyTransaction(b *testing.B) {
+func BenchmarkVerifySignedData(b *testing.B) {
 	root := parseFixtureCertificate(b, "jws-root")
 	input := string(fixtureBytes(b, "transaction"))
-	verifier, err := applereceipt.NewJWSVerifier(applereceipt.JWSVerifierOptions{
-		TrustedRoots:         []*x509.Certificate{root},
-		BundleID:             "com.example.app",
-		AcceptedEnvironments: []applereceipt.Environment{applereceipt.EnvironmentSandbox},
-	})
-	if err != nil {
+	verifier := benchVerifier(b, []*x509.Certificate{root})
+	if _, err := verifier.VerifySignedData(input); err != nil {
 		b.Fatal(err)
 	}
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := verifier.VerifyTransaction(input); err != nil {
+		if _, err := verifier.VerifySignedData(input); err != nil {
 			b.Fatal(err)
 		}
 	}
 }
 
 func BenchmarkVerifyReceiptG5(b *testing.B) {
-	verifier := benchReceiptVerifier(b, "dev.bonzer.weeka.app")
-	input := fixtureBytes(b, "public-receipt-sandbox-g5")
+	verifier := benchVerifier(b, applereceipt.AppleRoots())
+	input := applereceiptBase64(fixtureBytes(b, "public-receipt-sandbox-g5"))
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := verifier.Verify(input); err != nil {
+		if _, err := verifier.VerifyReceipt(input); err != nil {
 			b.Fatal(err)
 		}
 	}
 }
 
 func BenchmarkVerifyReceiptLegacy(b *testing.B) {
-	verifier := benchReceiptVerifier(b, "com.nutcall.alert")
-	input := fixtureBytes(b, "public-receipt-sandbox-legacy")
+	verifier := benchVerifier(b, applereceipt.AppleRoots())
+	input := applereceiptBase64(fixtureBytes(b, "public-receipt-sandbox-legacy"))
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := verifier.Verify(input); err != nil {
+		if _, err := verifier.VerifyReceipt(input); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -66,11 +59,11 @@ func BenchmarkVerifyReceiptLegacy(b *testing.B) {
 
 func BenchmarkRejectCertificateFlood(b *testing.B) {
 	input := certificateFlood(b)
-	roots := applereceipt.AppleReceiptRoots()
+	verifier := benchVerifier(b, applereceipt.AppleRoots())
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := applereceipt.VerifyReceiptCore(input, roots); err == nil {
+		if _, err := verifier.VerifyReceipt(input); err == nil {
 			b.Fatal("the flood must be rejected")
 		}
 	}
@@ -78,37 +71,36 @@ func BenchmarkRejectCertificateFlood(b *testing.B) {
 
 func BenchmarkVerifyReceiptEndpoint(b *testing.B) {
 	root := parseFixtureCertificate(b, "receipt-root")
-	body := []byte(`{"receipt-data":"` +
-		base64.StdEncoding.EncodeToString(fixtureBytes(b, "receipt")) + `"}`)
-	endpoint, err := applereceipt.NewVerifyReceiptEndpoint(applereceipt.VerifyReceiptEndpointOptions{
-		TrustedRoots: []*x509.Certificate{root}, Environment: applereceipt.EnvironmentSandbox,
-	})
-	if err != nil {
-		b.Fatal(err)
-	}
+	body := `{"receipt-data":"` + receiptFixtureString(b, "receipt") + `"}`
+	verifier := benchVerifier(b, []*x509.Certificate{root})
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		endpoint.VerifyReceiptJSON(body)
+		verifier.VerifyReceiptEndpoint(applereceipt.EnvironmentSandbox, body)
 	}
 }
 
-// certificateFlood is a receipt padded with far more embedded
+func receiptFixtureString(tb testing.TB, id string) string {
+	tb.Helper()
+	return applereceiptBase64(fixtureBytes(tb, id))
+}
+
+// certificateFlood is a receipt (base64) padded with far more embedded
 // certificates than a chain can hold. Rejecting it is the DoS-relevant
 // path: without the pre-decode bound every one of them would be parsed
-// and then RSA-checked as a candidate issuer.
-func certificateFlood(tb testing.TB) []byte {
+// and then tried as a candidate issuer.
+func certificateFlood(tb testing.TB) string {
 	tb.Helper()
 	// Synthetic rather than an edited genuine receipt: the point is the
 	// count, not the contents. Sized to stay comfortably under
-	// MaxReceiptBytes, so it is the certificate bound being
-	// exercised and not the input-size bound.
+	// MaxReceiptBytes, so it is the certificate bound being exercised and
+	// not the input-size bound.
 	filler := derSequence(derOctetString(make([]byte, 256)))
 	certificates := make([][]byte, 0, 1024)
 	for i := 0; i < 1024; i++ {
 		certificates = append(certificates, filler)
 	}
-	return buildCMSFlood(tb, certificates)
+	return applereceiptBase64(buildCMSFlood(tb, certificates))
 }
 
 func buildCMSFlood(tb testing.TB, certificates [][]byte) []byte {
@@ -144,25 +136,24 @@ func buildCMSFlood(tb testing.TB, certificates [][]byte) []byte {
 //
 // A certificate flood is only one shape of that attack, and the cheapest
 // to defeat, because the bound is a count comparison. The other shape is
-// ASN.1 nesting, which is paid in the parser BEFORE the count is looked
-// at; TestNestedReceiptDoesNotAmplify covers it.
+// ASN.1 nesting, which is paid in the parser before the count is looked
+// at; the shared cases-0.7.json nested-64/65 cases cover it.
 func TestRejectionCostIsBounded(t *testing.T) {
 	if testing.Short() {
 		t.Skip("timing-sensitive")
 	}
 	flood := certificateFlood(t)
-	roots := applereceipt.AppleReceiptRoots()
-	genuine := fixtureBytes(t, "public-receipt-sandbox-legacy")
-	verifier := benchReceiptVerifier(t, "com.nutcall.alert")
+	verifier := benchVerifier(t, applereceipt.AppleRoots())
+	genuine := applereceiptBase64(fixtureBytes(t, "public-receipt-sandbox-legacy"))
 
 	// Warm up, so neither figure pays for a first-call cost.
-	_, _ = applereceipt.VerifyReceiptCore(flood, roots)
-	_, _ = verifier.Verify(genuine)
+	_, _ = verifier.VerifyReceipt(flood)
+	_, _ = verifier.VerifyReceipt(genuine)
 
 	const runs = 20
 	start := time.Now()
 	for i := 0; i < runs; i++ {
-		if _, err := verifier.Verify(genuine); err != nil {
+		if _, err := verifier.VerifyReceipt(genuine); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -170,7 +161,7 @@ func TestRejectionCostIsBounded(t *testing.T) {
 
 	start = time.Now()
 	for i := 0; i < runs; i++ {
-		if _, err := applereceipt.VerifyReceiptCore(flood, roots); err == nil {
+		if _, err := verifier.VerifyReceipt(flood); err == nil {
 			t.Fatal("the flood must be rejected")
 		}
 	}
@@ -199,32 +190,25 @@ func TestAllocationsOnTheHappyPathsAreBounded(t *testing.T) {
 	if testing.Short() {
 		t.Skip("allocation-sensitive")
 	}
-	t.Run("VerifyTransaction", func(t *testing.T) {
+	t.Run("VerifySignedData", func(t *testing.T) {
 		root := parseFixtureCertificate(t, "jws-root")
 		input := string(fixtureBytes(t, "transaction"))
-		verifier, err := applereceipt.NewJWSVerifier(applereceipt.JWSVerifierOptions{
-			TrustedRoots:         []*x509.Certificate{root},
-			BundleID:             "com.example.app",
-			AcceptedEnvironments: []applereceipt.Environment{applereceipt.EnvironmentSandbox},
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
+		verifier := benchVerifier(t, []*x509.Certificate{root})
 		allocations := testing.AllocsPerRun(20, func() {
-			if _, err := verifier.VerifyTransaction(input); err != nil {
+			if _, err := verifier.VerifySignedData(input); err != nil {
 				t.Fatal(err)
 			}
 		})
-		t.Logf("%.0f allocations per VerifyTransaction", allocations)
+		t.Logf("%.0f allocations per VerifySignedData", allocations)
 		if allocations > 500 {
-			t.Fatalf("%.0f allocations per VerifyTransaction is a regression", allocations)
+			t.Fatalf("%.0f allocations per VerifySignedData is a regression", allocations)
 		}
 	})
-	t.Run("Verify (79 KB legacy receipt, 187 in-app purchases)", func(t *testing.T) {
-		verifier := benchReceiptVerifier(t, "com.nutcall.alert")
-		input := fixtureBytes(t, "public-receipt-sandbox-legacy")
+	t.Run("VerifyReceipt (79 KB legacy receipt, 187 in-app purchases)", func(t *testing.T) {
+		verifier := benchVerifier(t, applereceipt.AppleRoots())
+		input := applereceiptBase64(fixtureBytes(t, "public-receipt-sandbox-legacy"))
 		allocations := testing.AllocsPerRun(10, func() {
-			if _, err := verifier.Verify(input); err != nil {
+			if _, err := verifier.VerifyReceipt(input); err != nil {
 				t.Fatal(err)
 			}
 		})

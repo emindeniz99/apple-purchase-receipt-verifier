@@ -26,9 +26,11 @@ import (
 )
 
 // MaxDepth is the deepest nesting Parse will follow. Real receipts nest
-// about six levels; 32 leaves room to spare while making a nesting bomb a
-// rejection rather than a stack overflow.
-const MaxDepth = 32
+// about six levels; 64 (docs/design/0.7-api.md, Bounds) leaves room to
+// spare while making a nesting bomb a rejection rather than a stack
+// overflow. 64 is accepted and 65 refused in every port (owner,
+// 2026-09-27); it counts constructed values, the outermost one as 1.
+const MaxDepth = 64
 
 // maxNodes bounds the total TLVs one Parse may produce.
 //
@@ -98,9 +100,6 @@ func Parse(b []byte) (*Node, error) {
 }
 
 func (p *parser) readNode(off, depth int) (*Node, int, error) {
-	if depth > MaxDepth {
-		return nil, 0, fmt.Errorf("maximum ASN.1 nesting depth (%d) exceeded", MaxDepth)
-	}
 	p.nodes++
 	if p.nodes > maxNodes {
 		return nil, 0, fmt.Errorf("ASN.1 value has more than %d nodes", maxNodes)
@@ -113,6 +112,15 @@ func (p *parser) readNode(off, depth int) (*Node, int, error) {
 		return nil, 0, errors.New("multi-byte ASN.1 tags are not supported")
 	}
 	constructed := tag&0x20 != 0
+	// depth counts the constructed values that already enclose this one,
+	// the outermost at 0, so a constructed value here would be number
+	// depth+1: rejecting when depth >= MaxDepth means MaxDepth constructed
+	// values are accepted and the (MaxDepth+1)th is refused before its
+	// children are ever read, matching the Rust reference reader exactly.
+	// A primitive value never recurses, so it needs no check here.
+	if constructed && depth >= MaxDepth {
+		return nil, 0, fmt.Errorf("maximum ASN.1 nesting depth (%d) exceeded", MaxDepth)
+	}
 	pos := off + 1
 	lenByte := p.buf[pos]
 	pos++

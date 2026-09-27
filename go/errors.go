@@ -8,95 +8,86 @@ import (
 
 // Reason is the machine-readable cause of a verification failure.
 //
-// The eleven constants below are the complete vocabulary a verifier
+// The eight constants below are the complete vocabulary a verifier
 // returns. It is closed by the cross-port contract
-// (fixtures/cases.schema.json); a twelfth reason is a change to every
-// implementation in one go, not a Go-local addition. A
-// [VerifyReceiptResult] can also report ReasonMalformedRequest and
-// ReasonRequestTooLarge, which every port's endpoint result shares.
+// (fixtures/cases-0.7.schema.json); a ninth reason is a change to every
+// implementation in one go, not a Go-local addition.
 type Reason = apperr.Reason
 
-// The error vocabulary. The string values are normative — they are the
-// tokens fixtures/cases.json pins and every port reports — so
+// The error vocabulary. The string values are normative: they are the
+// tokens fixtures/cases-0.7.json pins and every port reports, so
 // string(reason) is the canonical wire form.
 const (
-	ReasonInvalidJWSFormat          = apperr.ReasonInvalidJWSFormat
-	ReasonInvalidCertificate        = apperr.ReasonInvalidCertificate
+	// ReasonMalformed: the base64, ASN.1, CMS or JWS structure is broken,
+	// or a structural bound (JSON depth, embedded certificates,
+	// SignerInfos) is exceeded.
+	ReasonMalformed = apperr.ReasonMalformed
+	// ReasonTooLarge: the input is over one of the fixed size caps.
+	ReasonTooLarge = apperr.ReasonTooLarge
+	// ReasonInvalidSignature: the signature does not match the content.
+	ReasonInvalidSignature = apperr.ReasonInvalidSignature
+	// ReasonUntrustedChain: the chain does not reach a pinned root.
+	ReasonUntrustedChain = apperr.ReasonUntrustedChain
+	// ReasonInvalidCertificate: a certificate does not decode, or is
+	// outside its validity window at the chain instant.
+	ReasonInvalidCertificate = apperr.ReasonInvalidCertificate
+	// ReasonInvalidCertificatePurpose: a valid Apple certificate of the
+	// wrong kind, an Apple marker OID is missing.
 	ReasonInvalidCertificatePurpose = apperr.ReasonInvalidCertificatePurpose
-	ReasonInvalidChain              = apperr.ReasonInvalidChain
-	ReasonInvalidSignature          = apperr.ReasonInvalidSignature
-	ReasonWrongBundleID             = apperr.ReasonWrongBundleID
-	ReasonWrongEnvironment          = apperr.ReasonWrongEnvironment
-	ReasonWrongAppAppleID           = apperr.ReasonWrongAppAppleID
-	ReasonInvalidReceiptFormat      = apperr.ReasonInvalidReceiptFormat
-	ReasonDeviceHashMismatch        = apperr.ReasonDeviceHashMismatch
-	// ReasonInternalError is not the client's fault. A verifier returns it
-	// when a trusted signer signed receipt content or a modelled JWS claim
-	// this library cannot read, found only after the chain and the
-	// signature passed (for a receipt, Unwrap gives the parser's error), or
-	// when the runtime cannot compute the device hash; a
-	// VerifyReceiptEndpoint also reports it for an unexpected error or
-	// panic inside it. Status 21009. Alert and
-	// retry or escalate; do not deny the user on it.
+	// ReasonUnreadablePayload: Apple signed it, but the content does not
+	// parse.
+	ReasonUnreadablePayload = apperr.ReasonUnreadablePayload
+	// ReasonInternalError is not the client's fault: the library failed
+	// before it could decide, found only after the chain and the
+	// signature passed (for a receipt or a signed payload, Unwrap gives
+	// the parser's error), or the configured clock panicked. Alert; do
+	// not retry.
 	ReasonInternalError = apperr.ReasonInternalError
-)
-
-// Two more reasons exist only on a [VerifyReceiptResult]. No verifier
-// returns either, and neither is in AllReasons, which is the shared
-// schema's vocabulary.
-const (
-	// ReasonMalformedRequest: the verifyReceipt request envelope is
-	// unusable. The body is not a JSON object or nests deeper than
-	// MaxJSONNestingDepth, or receipt-data is missing, empty or not a
-	// string. Status 21002.
-	ReasonMalformedRequest = apperr.ReasonMalformedRequest
-	// ReasonRequestTooLarge: the raw request body is over
-	// MaxRequestBytes (3,145,728 bytes), the size at which Apple's
-	// endpoint answers HTTP 413. Status 21002 in the response body; an
-	// HTTP layer can map it to 413 as Apple does.
-	ReasonRequestTooLarge = apperr.ReasonRequestTooLarge
 )
 
 // AllReasons is the whole vocabulary, in the order the shared schema
 // lists it.
 func AllReasons() []Reason { return append([]Reason(nil), apperr.AllReasons...) }
 
-// VerificationError is the only error type a verification entry point
-// returns. Read it with errors.As:
+// Failure is the only error type a verification method returns. Match on
+// Reason; Message is safe to log (it never embeds raw input, and control
+// characters and bidi controls quoted from the input are neutralised) but
+// is not meant to be parsed and may change between releases.
 //
-//	var verr *applereceipt.VerificationError
-//	if errors.As(err, &verr) {
-//		switch verr.Reason {
-//		case applereceipt.ReasonWrongEnvironment:
-//			retryAgainstSandbox()
-//		case applereceipt.ReasonInvalidChain:
+// Cause, reached through errors.Unwrap, carries the parser or provider
+// error behind ReasonUnreadablePayload and ReasonInternalError, so an
+// operator can see why Apple-signed content did not parse; it is nil
+// otherwise, and it never carries raw library text that might quote
+// certificate names from the input.
+//
+// Read it with errors.As:
+//
+//	var failure *applereceipt.Failure
+//	if errors.As(err, &failure) {
+//		switch failure.Reason {
+//		case applereceipt.ReasonUntrustedChain:
 //			alertSecurity()
 //		}
 //	}
 //
-// errors.Is(err, applereceipt.ReasonInvalidChain) also works, as sugar;
-// errors.As is canonical because it also carries Detail and the cause.
-//
-// Detail is safe to log: it never contains receipt bytes, claim values or
-// key material (PLAN.md D11 — the reason code is the whole observability
-// surface).
-type VerificationError = apperr.Error
+// errors.Is(err, applereceipt.ReasonUntrustedChain) also works, as sugar;
+// errors.As is canonical because it also carries Message and Cause.
+type Failure = apperr.Error
 
-// ReasonOf extracts the Reason from err, if err is (or wraps) a
-// *VerificationError. It is the switch-on-reason convenience over
-// errors.As.
+// ReasonOf extracts the Reason from err, if err is (or wraps) a *Failure.
+// It is the switch-on-reason convenience over errors.As.
 func ReasonOf(err error) (Reason, bool) {
-	var verr *VerificationError
-	if errors.As(err, &verr) && verr != nil {
-		return verr.Reason, true
+	var failure *Failure
+	if errors.As(err, &failure) && failure != nil {
+		return failure.Reason, true
 	}
 	return "", false
 }
 
-func newError(reason Reason, format string, args ...any) *VerificationError {
+func newError(reason Reason, format string, args ...any) *Failure {
 	return apperr.New(reason, format, args...)
 }
 
-func wrapError(reason Reason, cause error, format string, args ...any) *VerificationError {
+func wrapError(reason Reason, cause error, format string, args ...any) *Failure {
 	return apperr.Wrap(reason, cause, format, args...)
 }

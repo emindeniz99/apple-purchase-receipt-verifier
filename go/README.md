@@ -1,11 +1,10 @@
-# apple-purchase-receipt-verifier (Go)
+# apple-purchase-receipt-verifier
 
-Verify Apple in-app purchases locally — no calls to Apple's servers.
+Verify Apple in-app purchases locally, with no calls to Apple's servers.
 
 Replaces the deprecated `verifyReceipt` endpoint by validating StoreKit 2
-signed JWS transactions and legacy PKCS#7 app receipts against pinned Apple
-root certificates. No third-party dependencies: `go.mod` has no `require`
-block, and a test fails the build if one appears.
+signed JWS payloads and legacy PKCS#7 app receipts against pinned Apple root
+certificates.
 
 ```bash
 go get github.com/emindeniz99/apple-purchase-receipt-verifier/go
@@ -13,537 +12,449 @@ go get github.com/emindeniz99/apple-purchase-receipt-verifier/go
 
 ```go
 import applereceipt "github.com/emindeniz99/apple-purchase-receipt-verifier/go"
+
+// Build once, share everywhere: the roots are parsed once, not per call.
+// Verifier is safe for concurrent use by multiple goroutines.
+verifier, err := applereceipt.NewVerifier(applereceipt.DefaultConfig())
+
+// A legacy app receipt, as the base64 string the app sends.
+receipt, err := verifier.VerifyReceipt(receiptBase64)
+fmt.Println(receipt.BundleID, len(receipt.InApp))
+
+// Any Apple-signed JWS: a transaction, renewal info, an app transaction or
+// a notification. The payload comes back as the JSON text Apple signed.
+payload, err := verifier.VerifySignedData(jws)
+fmt.Println(payload.JSON())
 ```
 
-The import path ends in `/go` because that is the module's directory in the
-repository; the package it declares is `applereceipt`, since `go` is a
-keyword.
-
-## Legacy PKCS#7 app receipt
-
-```go
-verifier, err := applereceipt.NewReceiptVerifier(applereceipt.ReceiptVerifierOptions{
-	TrustedRoots: applereceipt.AppleReceiptRoots(),
-	BundleID:     "com.example.app",
-})
-if err != nil {
-	return err // a configuration mistake, not a verdict about a receipt
-}
-
-receipt, err := verifier.VerifyBase64(receiptFromTheClient)
-if err != nil {
-	return err // a *VerificationError; see "Errors" below
-}
-for _, purchase := range receipt.InAppPurchases {
-	grant(purchase.ProductID)
-}
-```
-
-Four entry points, so every input form is reachable with and without the
-optional device binding:
-
-| | DER bytes | base64 |
-|---|---|---|
-| without the device GUID | `Verify` | `VerifyBase64` |
-| with the device GUID | `VerifyWithDeviceGUID` | `VerifyBase64WithDeviceGUID` |
-
-The device check computes `SHA1(guid ‖ opaqueValue ‖ bundleIdBytes)` and
-compares it, in constant time, with attribute 5. It is optional because a
-server does not always hold the device's GUID — the raw bytes of
-`identifierForVendor` on iOS, iPadOS, tvOS and watchOS, including an iOS
-app running on an Apple silicon Mac, or the primary network interface's
-MAC address from `copy_mac_address` on macOS and Mac Catalyst.
-
-`VerifyReceiptCore(der, roots)` is the same verification **without** the
-bundle-id check — the primitive the endpoint below is built on. If you unlock
-products with its result, compare `receipt.BundleID` yourself.
-
-## StoreKit 2 / App Store Server JWS
-
-```go
-verifier, err := applereceipt.NewJWSVerifier(applereceipt.JWSVerifierOptions{
-	TrustedRoots: applereceipt.AppleJWSRoots(),
-	BundleID:     "com.example.app",
-	// Include Sandbox on any endpoint App Review can reach: review runs
-	// production builds against sandbox, and a Production-only accept set
-	// rejects purchases during review.
-	AcceptedEnvironments: []applereceipt.Environment{
-		applereceipt.EnvironmentProduction,
-		applereceipt.EnvironmentSandbox,
-	},
-	AppAppleID: &appAppleID, // required to accept a Production AppTransaction
-})
-
-payload, err := verifier.VerifyTransaction(jws)          // JWSTransactionDecodedPayload
-appTxn, err := verifier.VerifyAppTransaction(jws)        // AppTransaction
-claims, err := verifier.VerifyRaw(jws)                   // renewal info, notifications
-```
-
-`VerifyTransaction` and `VerifyAppTransaction` return typed payloads whose
-`Claims` field carries every claim, including ones the struct does not model.
-`VerifyRaw` verifies the chain and the signature and enforces no claim at all;
-the caller checks `bundleId`, `environment` and `appAppleId` itself.
-
-**Freshness is your call.** No verifier rejects a payload for its age, as in
-Apple's own App Store Server Libraries: `signedDate` only decides the instant
-the chain is judged at. The right limit depends on the endpoint (Apple retries
-a server notification for days, and a device may present an old but genuine
-payload), so apply one yourself where it fits:
-
-```go
-if payload.SignedDate != nil && time.Since(time.UnixMilli(*payload.SignedDate)) > 5*time.Minute { /* too old for this endpoint */ }
-```
-
-**Date claims are epoch milliseconds, as `*int64`, exactly as Apple ships
-them.** That is contractual across all ports: converting to `time.Time` loses
-the raw claim and invites a timezone bug. Only legacy receipt attributes
-(`AppReceipt`, `InAppPurchase`) use `time.Time`.
-
-**Entitlement is your rule.** The library has no "is active" helper, as in
-Apple's own App Store Server Libraries. Read the signed fields yourself:
-
-```go
-expired := payload.ExpiresDate != nil && *payload.ExpiresDate <= time.Now().UnixMilli()
-entitled := payload.RevocationDate == nil && !expired
-```
-
-That is only what the payload said when it was signed. A billing grace
-period (it lives in the renewal info), an upgrade (`isUpgraded`) and a refund
-after signing are yours to handle; App Store Server Notifications V2 or the
-App Store Server API give the live status.
-
-## The verifyReceipt-compatible endpoint
-
-A drop-in for a POST to Apple's deprecated endpoint: the same request body,
-the same response body, the same status codes — answered locally.
-
-```go
-endpoint, err := applereceipt.NewVerifyReceiptEndpoint(
-	applereceipt.VerifyReceiptEndpointOptions{
-		TrustedRoots: applereceipt.AppleReceiptRoots(),
-		Environment:  applereceipt.EnvironmentProduction, // drives 21007/21008
-	})
-
-body := endpoint.VerifyReceiptJSON(requestBody) // JSON in, JSON out
-
-result := endpoint.VerifyReceipt(applereceipt.VerifyReceiptRequest{
-	ReceiptData: base64Receipt,
-})
-response := result.Response() // Apple's body, typed
-jsonBody := result.JSON()     // Apple's body, as JSON
-
-result = endpoint.VerifyReceiptBody(requestBody)  // the raw JSON request
-result = endpoint.VerifyReceiptData(base64Receipt) // receipt-data alone
-```
-
-No endpoint method returns an error or panics: every failure is a status in
-the result. Like Apple's endpoint it does **not** check the bundle id: compare
-`result.Receipt().BundleID` yourself before granting anything, or use
-`ReceiptVerifier`, which checks it for you.
-
-A `*VerifyReceiptResult` is one verification:
-
-- `Status()` is the answer for the endpoint's own environment.
-- `Receipt()` is the verified `*AppReceipt` whenever the receipt bytes
-  verified, 21007 and 21008 included. Treat it as read-only.
-- `Reason()` says why there is no receipt. Exactly one of `Receipt()` and
-  `Reason()` is set.
-- `Verified()` is true exactly when `Receipt()` is non-nil. That includes
-  21007 and 21008, so it is not the same check as `Status() == 0`:
-  `Status() == 0` asks whether this endpoint's environment accepts the
-  receipt, `Verified()` asks whether the receipt verified at all.
-- `Err()` is the failure as a `*VerificationError`, or nil. For
-  `INTERNAL_ERROR`, `errors.Unwrap(result.Err())` is what is behind it, for
-  logging: the parser's error for signed content that could not be read, or
-  the unexpected error or panic.
-- `RequestDate()` is the instant rendered as `request_date`.
-
-Only the endpoint creates a meaningful result, and it never changes. Each
-response is rendered when asked for. The zero value reports `INTERNAL_ERROR`
-and status 21009. Passed to `encoding/json`, a result marshals as the same
-bytes as `JSON()`.
-
-**Retrying in the other environment costs no second verification.**
-`ResponseFor(environment)` and `JSONFor(environment)` render what an endpoint
-of that environment would answer, with the status recomputed from the
-receipt's own type:
-
-| receipt | on `Production` | on `Sandbox` |
-|---|---|---|
-| `Production`, `ProductionVPP` | 0 | 21008 |
-| any other type, or none | 21007 | 0 |
-| failed verification | its own status | its own status |
-
-```go
-result := production.VerifyReceipt(request)
-if result.Status() == applereceipt.StatusSandboxReceiptOnProduction {
-	jsonBody, err = result.JSONFor(applereceipt.EnvironmentSandbox)
-}
-```
-
-A sandbox receipt never renders as a production 0, whichever endpoint
-verified it. Any environment other than Production or Sandbox is a plain
-error, as it is for `NewVerifyReceiptEndpoint`.
-
-| `Reason()` | status | when |
-|---|---|---|
-| `REQUEST_TOO_LARGE` | 21002 | the raw body is over `MaxRequestBytes` (3,145,728 bytes); Apple answers HTTP 413 here, see [Trust model](#trust-model) |
-| `MALFORMED_REQUEST` | 21002 | the body is not a JSON object or nests deeper than 64, or `receipt-data` is missing, empty or not a string |
-| `INVALID_RECEIPT_FORMAT` | 21002 | `receipt-data` is not base64, is over `MaxReceiptBytes`, or its CMS envelope does not parse |
-| `INVALID_CHAIN`, `INVALID_SIGNATURE`, other certificate reasons | 21003 | the receipt did not authenticate |
-| `INTERNAL_ERROR` | 21009 | not the client's fault: the receipt authenticated but its signed content cannot be read, or an unexpected error or panic. Alert and retry or escalate; do not deny the user |
-
-`MALFORMED_REQUEST` and `REQUEST_TOO_LARGE` only ever appear on a result. No
-verifier returns either, and `AllReasons()` does not list them.
-
-**`request_date`.** `VerifyReceiptAt`, `VerifyReceiptBodyAt` and
-`VerifyReceiptDataAt` take a `time.Time` that becomes `request_date` in place
-of the endpoint's clock. Without one the clock is read once, when the call is
-made. The time reaches `request_date` and nothing else: certificate validity
-never sees it.
-
-Migrating from 0.5: `endpoint.VerifyReceipt(request)` now returns a
-`*VerifyReceiptResult`; use `endpoint.VerifyReceipt(request).Response()` for
-the old `VerifyReceiptResponse`. `VerifyReceiptJSON` is unchanged.
-
-Statuses this produces: `0`, `21002`, `21003`, `21007`, `21008`, `21009`.
-`21000`, `21004`, `21005`, `21006`, `21010`, the `21100`–`21199` range and
-`is_retryable` are out of scope and never appear
-([COMPARISON.md](../COMPARISON.md)). `password` and
-`exclude-old-transactions` are accepted and never read.
-
-**No `http.Handler` ships with this package, deliberately.** COMPARISON.md
-places status `21000` out of scope on the grounds that this is a body-level
-API with no HTTP layer, and a handler would have to answer questions — which
-methods, which content types, what body cap, what HTTP status accompanies
-21002 — that no other port answered. Wire `VerifyReceiptJSON` into your own
-mux in three lines.
-
-The `_pst` fields need the IANA time zone database. A `FROM scratch` or
-distroless image has none, and a compiled Go binary does not carry
-`$GOROOT/lib/time/zoneinfo.zip` either, so `NewVerifyReceiptEndpoint` returns
-an error naming the remedy — add `import _ "time/tzdata"` to your main
-package — rather than rendering a wrong instant. `PacificLocation` in the
-options takes a `*time.Location` if you would rather supply one. The library
-itself does not embed `time/tzdata`: it is ~450 KB in every consumer binary,
-including the majority that never touch this endpoint.
-
-## Errors
-
-Every failed verification returns a `*VerificationError` carrying one of
-eleven `Reason` values, and nothing else — no logging, no metrics, no
-callbacks. The `Detail` string is safe to log: it never contains receipt
-bytes, claim values or key material.
-
-```go
-var verr *applereceipt.VerificationError
-if errors.As(err, &verr) {
-	switch verr.Reason {
-	case applereceipt.ReasonWrongEnvironment:
-		retryAgainstSandbox()
-	case applereceipt.ReasonInvalidChain, applereceipt.ReasonInvalidSignature:
-		alertSecurity()
-	}
-}
-```
-
-`errors.Is(err, applereceipt.ReasonInvalidChain)` also works, as sugar;
-`errors.As` is canonical because it also carries the detail and any wrapped
-cause. `ReasonOf(err)` is the one-line form.
-
-| Reason | Raised when |
-|---|---|
-| `INVALID_JWS_FORMAT` | longer than `MaxJWSBytes`, not three segments, header not base64url JSON, header or payload JSON nested deeper than `MaxJSONNestingDepth`, `alg` is not ES256, `x5c` is absent or not exactly three entries |
-| `INVALID_CERTIFICATE` | an `x5c` entry does not parse as a certificate |
-| `INVALID_CERTIFICATE_PURPOSE` | a marker OID is missing: `1.2.840.113635.100.6.11.1` on the JWS leaf and on the receipt signer, `1.2.840.113635.100.6.2.1` on the JWS intermediate |
-| `INVALID_CHAIN` | validity window at signing time, name mismatch, issuer signature, disallowed signature algorithm, not a CA, no path to a pinned anchor, path too long, more than ten embedded certificates |
-| `INVALID_SIGNATURE` | ES256 signature not 64 bytes or not verifying, leaf key not EC, receipt signer key not RSA, CMS signature or `messageDigest` mismatch |
-| `WRONG_BUNDLE_ID` | the payload's bundle id is not the configured one |
-| `WRONG_ENVIRONMENT` | the environment (or `receiptType`) claim is outside the accept set |
-| `WRONG_APP_APPLE_ID` | a Production `AppTransaction` whose app Apple id is unset or does not match |
-| `INVALID_RECEIPT_FORMAT` | unparseable CMS, trailing bytes after the blob, no encapsulated content, no `SignerInfo`, an embedded certificate that does not decode, signer not embedded, unsupported digest OID, a base64 string or a DER receipt over `MaxReceiptBytes` |
-| `DEVICE_HASH_MISMATCH` | the device-hash check was requested and failed, or the receipt lacks the attributes it needs |
-| `INTERNAL_ERROR` | the receipt's chain and signature verified, but its payload does not parse (bad attribute shape, an unreadable value, a bound hit; `errors.Unwrap` gives the parser's error); a verified JWS claim that `TransactionPayload` or `AppTransactionPayload` models has the wrong JSON type (a string where an integer belongs, `1.5`, a whole number outside int64); or the runtime cannot compute the device hash (SHA-1 under `GODEBUG=fips140=only`). Not the client's fault: alert and retry or escalate, do not deny |
-
-Misconfiguration — no trust anchors, an empty bundle id, an environment other
-than Production or Sandbox on the endpoint — is a **plain error from the
-`New…` constructor**, never a `*VerificationError`. A caller switching on
-`Reason` should never have to consider a programming bug.
-
-## Integrating: from verified payload to entitlement
-
-The backend flow these calls sit inside is written out once in the
-[project README](../README.md#integrating-from-verified-payload-to-entitlement):
-verify offline, deny on any failure, check the refund field, refresh a payload
-past the freshness window, guard against replay on the transaction id, then
-grant. That section also carries the policy table saying what each reason
-means and which ones are worth an alert. Here are its two branches in this
-port's API.
-
-A StoreKit 2 signed transaction:
-
-```go
-func newVerifier() (*applereceipt.JWSVerifier, error) {
-	return applereceipt.NewJWSVerifier(applereceipt.JWSVerifierOptions{
-		TrustedRoots: applereceipt.AppleJWSRoots(),
-		BundleID:     "com.example.app",
-		AcceptedEnvironments: []applereceipt.Environment{
-			applereceipt.EnvironmentProduction,
-			applereceipt.EnvironmentSandbox,
-		},
-	})
-}
-
-func redeemTransaction(verifier *applereceipt.JWSVerifier, userID, jws string) string {
-	payload, err := verifier.VerifyTransaction(jws) // step 2
-	if err != nil {
-		log.Printf("purchase rejected: %v", err)
-		return "denied"
-	}
-
-	if payload.RevocationDate != nil { // step 3
-		return "denied"
-	}
-
-	// step 4, your call: past the window, ask the client for a fresh
-	// jwsRepresentation, or fetch one from the App Store Server API and
-	// verify that instead
-	if payload.SignedDate == nil || time.Since(time.UnixMilli(*payload.SignedDate)) > 5*time.Minute {
-		return "refresh"
-	}
-
-	if grants.Exists(payload.TransactionID) { // step 5
-		return "denied"
-	}
-	grants.Record(payload.TransactionID, payload.OriginalTransactionID, userID)
-
-	grant(userID, payload.ProductID)
-	return "granted"
-}
-```
-
-The legacy PKCS#7 app receipt is the same policy on the other input, the one
-StoreKit 1 apps and older SDKs still send:
-
-```go
-func newReceiptVerifier() (*applereceipt.ReceiptVerifier, error) {
-	return applereceipt.NewReceiptVerifier(applereceipt.ReceiptVerifierOptions{
-		TrustedRoots: applereceipt.AppleReceiptRoots(),
-		BundleID:     "com.example.app",
-	})
-}
-
-// Same policy keyed on the receipt's own dates. VerifyBase64 takes the string
-// the client sends; VerifyReceiptEndpoint is the alternative, answering
-// Apple's verifyReceipt JSON shape with a status instead.
-func redeemReceipt(receipts *applereceipt.ReceiptVerifier, userID, receiptData, productID string) string {
-	receipt, err := receipts.VerifyBase64(receiptData) // step 2
-	if err != nil {
-		return "denied"
-	}
-	now := time.Now()
-	for _, purchase := range receipt.InAppPurchases {
-		if purchase.ProductID != productID {
-			continue
-		}
-		if purchase.CancellationDate != nil { // step 3
-			return "denied"
-		}
-		if purchase.ExpiresDate != nil && !purchase.ExpiresDate.After(now) {
-			return "denied"
-		}
-		// step 4: the same caller-side check, on the creation date. Past the
-		// window, ask the client to refresh its receipt, or call the App Store
-		// Server API by TransactionID and verify the JWS it returns.
-		if receipt.CreationDate == nil || now.Sub(*receipt.CreationDate) > 5*time.Minute {
-			return "refresh"
-		}
-		if grants.Exists(purchase.TransactionID) { // step 5
-			return "denied"
-		}
-		grants.Record(purchase.TransactionID, purchase.OriginalTransactionID, userID)
-
-		grant(userID, purchase.ProductID)
-		return "granted"
-	}
-	return "denied"
-}
-```
-
-## Trust model
-
-- **Pinned anchors only.** Trust comes from the `TrustedRoots` you pass.
-  `AppleJWSRoots()` and `AppleReceiptRoots()` return the three published Apple
-  roots (Apple Root CA, Apple Root CA - G2, Apple Root CA - G3), compiled into
-  the binary with `go:embed`, and both sets are the same three (PLAN.md D15).
-  The operating system trust store is never read: `x509.Certificate.Verify`,
-  `x509.SystemCertPool` and `x509.CertPool` appear nowhere in the module, the
-  path builder is hand-written, and a test enforces all of that by parsing the
-  library's own source.
-- **No network, ever.** No OCSP, no CRL, no AIA fetch, no runtime root
-  download. `net` and `net/http` are not imported, and the same source test
-  keeps it that way.
-- **Marker OIDs are mandatory.** Without them any Apple developer's own
-  certificate — which chains through the same WWDR intermediate to the same
-  pinned root — could sign a fully forged receipt. On the JWS path they are
-  checked before the chain; on the receipt path after it, so a foreign chain
-  reports `INVALID_CHAIN` rather than `INVALID_CERTIFICATE_PURPOSE`.
-- **Validity is judged at signing time**, not now: `signedDate`, else
-  `receiptCreationDate`, else the receipt's attribute-12 creation date, else
-  the system clock. That is what lets a historical payload signed with a
-  since-rotated certificate keep verifying.
-- **A receipt is read chain first.** CMS parse → the creation date alone
-  (nothing else in the payload is decoded yet; missing, empty, unreadable or
-  stated twice means the system clock) → chain → marker OID → CMS signature →
-  full payload parse → bundle id → device hash. Reading the date never
-  rejects. The chain comes before the signature so the attacker's own key is
-  never run before it is trusted, and a payload that fails the full parse was
-  signed by a trusted signer, so it is `INTERNAL_ERROR`, not
-  `INVALID_RECEIPT_FORMAT`.
-- **The injected clock cannot move a certificate verdict.** `Now` exists
-  only on `VerifyReceiptEndpoint` (for `request_date`). It reaches nothing
-  else, and `JWSVerifier` and `ReceiptVerifier` take no clock at all: a caller
-  injecting one to pin `request_date`, or to work around skew, must not
-  thereby be able to accept a receipt signed under an expired chain.
-- **Defensive parsing.** The BER/DER reader bounds nesting depth (32), node
-  count (100,000 — the genuine 79 KB legacy receipt parses to 271 nodes),
-  long-form lengths, and rejects trailing bytes after the outermost value.
-  It is zero-copy: nesting an indefinite-length value does not multiply the
-  bytes a parse materializes, so depth is not an amplification lever.
-  Receipts are capped at ten embedded certificates, enforced *before* any
-  certificate is decoded.
-- **Input size limits, checked before anything is decoded or parsed.** The
-  request and receipt limits are Apple's. Measured on 2026-09-23 against
-  both of Apple's verifyReceipt endpoints (production and sandbox), a request
-  body of 3,145,728 bytes is answered normally and one of 3,145,729 bytes
-  gets HTTP 413. Apple counts UTF-8 bytes, not characters: 3,145,729 bytes of
-  `é`, only 1,572,874 characters, also got 413. No receipt Apple accepts can
-  be larger than the request that carries it. Every limit is a fixed
-  constant, the same in every port, and `fixtures/cases.json` holds every
-  port to them from both sides:
-
-  | Input | Limit | Checked before | Answer |
-  |---|---|---|---|
-  | receipt base64 string (`VerifyBase64*`, `receipt-data`) | `MaxReceiptBytes` = 3,145,728 bytes | base64 decode | `INVALID_RECEIPT_FORMAT`; `21002` at the endpoint |
-  | receipt DER (`Verify*`, `VerifyReceiptCore`) | the same, 3,145,728 bytes | CMS parse | `INVALID_RECEIPT_FORMAT` |
-  | raw request body (`VerifyReceiptBody*`, `VerifyReceiptJSON`) | `MaxRequestBytes` = 3,145,728 bytes | nesting count and JSON parse | `21002`, `REQUEST_TOO_LARGE` |
-  | request body nesting | `MaxJSONNestingDepth` = 64 | JSON parse | `21002`, `MALFORMED_REQUEST` |
-  | compact JWS | `MaxJWSBytes` = 262,144 bytes | split and base64url decode | `INVALID_JWS_FORMAT` |
-  | JWS header and payload nesting | `MaxJSONNestingDepth` = 64 | JSON parse | `INVALID_JWS_FORMAT` |
-
-  A string is measured as sent, in bytes, before the decoder's shape check
-  walks it. A Go string or
-  `[]byte` already holds UTF-8 bytes, so `len` is Apple's measure and nothing
-  is copied to take it. Nesting is counted in one pass over the bytes
-  (brackets inside strings do not count) before `encoding/json` sees them.
-  The body size is checked first, so a huge body that is also malformed is
-  `REQUEST_TOO_LARGE`. The byte-floor fixture (1 MiB of DER, about 1.38 MB of
-  base64) verifies through every entry point, the raw body included.
-
-  **Answering 413 like Apple.** `REQUEST_TOO_LARGE` exists so an HTTP layer
-  can send the status Apple sends. The body is Apple's 21002 either way:
-
-  ```go
-  result := endpoint.VerifyReceiptBody(body)
-  if result.Reason() == applereceipt.ReasonRequestTooLarge {
-  	w.WriteHeader(http.StatusRequestEntityTooLarge)
-  }
-  w.Write(result.JSON())
-  ```
-
-  An `http.MaxBytesReader` or proxy limit in front of the endpoint has to
-  allow at least 3 MiB, or it refuses bodies Apple would answer.
-- **An embedded certificate that does not decode is fatal.** The CMS
-  certificate bag is the one region of a receipt the `SignerInfo` signature
-  does not cover, so it is where a genuine receipt can be rewritten for
-  free. An entry `crypto/x509` cannot parse rejects the receipt rather than
-  being skipped: a verified result must never describe bytes the library
-  could not read.
-- **Byte fields are copies.** Everything on a returned `AppReceipt` is
-  freshly allocated, so a caller reusing its receipt buffer cannot mutate an
-  already-verified receipt, and holding a result does not pin the input's
-  backing array.
-- **Only `*VerificationError` escapes.** Containment is categorical, including
-  panics: under `GODEBUG=fips140=only`, `crypto/sha1` panics rather than
-  erroring, and every genuine legacy Apple receipt is SHA-1 signed. Measured
-  in a child process, that panic comes back as `INVALID_RECEIPT_FORMAT`
-  instead of taking the caller's process down; SHA-256 receipts still verify.
-
-What signatures cannot tell you: a refund, a revocation or a renewal after
-signing is invisible offline, and so is a replayed receipt. Track transaction
-ids server-side and reconcile against Apple's App Store Server API
-([INTENT.md](../INTENT.md)).
+Go 1.22 or newer, no third-party dependencies.
+
+The library answers one question: did Apple sign this? It checks the chain
+to a pinned root, Apple's marker OIDs and the signature, and hands back
+everything the payload says. Whether the payload is for your app, your
+environment, your user and still current is your decision, made on the
+fields it returns ([What to check after verification](#what-to-check-after-verification)).
 
 ## Runtime and version floor
 
-`go 1.22`, following PLAN.md D2's "enterprise reality" rule rather than Go's
-own two-release support window: 1.22 is the toolchain in Ubuntu 24.04 LTS's
-`golang-go` and in RHEL 9's `go-toolset`. The suite is run on every line from
-the floor to current, with `GOTOOLCHAIN=local`, so the floor is a tested fact
-and not a claim. Nothing in the design needs anything newer.
+- **Go 1.22**, declared as `go 1.22` in `go.mod` and proven by CI: the whole
+  suite, conformance included, runs on `go1.22` through `go1.27` with
+  `GOTOOLCHAIN=local`, so the floor is what actually compiles rather than
+  what a newer toolchain silently upgrades to.
+- **No third-party dependencies.** `go.mod` has no `require` block and no
+  `go.sum`. Every byte of attacker-supplied ASN.1 (certificates, CMS,
+  receipt payloads) and every byte of JSON (a JWS header and payload, the
+  endpoint request body) is read by this module's own bounded readers
+  (`internal/der`, `encoding.go`), so no third-party parser decides what a
+  key, a signature or a claim is. What is delegated to the standard library
+  is arithmetic: `crypto/rsa`, `crypto/ecdsa`, `crypto/x509`.
+- **No I/O, no goroutines started, no global state beyond the bundled
+  roots.** Every entry point is synchronous, and `*Verifier` is immutable
+  after construction and safe for concurrent use by multiple goroutines.
 
-No build tags, no cgo, no platform-specific code.
+## What it will never do
 
-Every verifier is immutable after construction and safe for concurrent use by
-multiple goroutines; a `-race` test drives all three from 64 goroutines and
-requires identical answers.
+These are the properties the library exists to hold, and each is asserted by
+a test rather than only documented.
 
-## Two Go-specific behaviours worth knowing
+- **It never reads the operating system's trust store.** Anchors come from
+  the caller's `Config` or from `DefaultConfig()`, which holds `go:embed`-ed
+  copies of Apple's three published roots, so they work unchanged in a
+  `FROM scratch` container. `internal/chain`'s path builder is hand-written
+  precisely so `x509.Certificate.Verify` is never called. With a nil
+  `VerifyOptions.Roots` it falls back to the platform verifier.
+- **It never touches the network.** No OCSP, no CRL, no AIA fetch, no root
+  download. Revocation checking is disabled by design; an integrator who
+  needs it must layer it on top.
+- **It never uses a key no pinned root vouched for.** Certificate signatures
+  are checked from the roots down, so a certificate carrying an attacker's
+  key (their choice of size and exponent) is never used to check anything
+  ([Stranger certificates](#stranger-certificates)).
+- **It never returns anything partial.** A failure returns a `*Failure` and
+  a `nil` payload; a success returns only data that passed every check, in
+  fresh slices that do not alias the input.
+- **It never logs, meters or calls back into your code** except for the
+  clock you give it. `Reason` is the whole observability surface, and a
+  failure message never quotes the input.
 
-**SHA-1 certificate signatures.** `Certificate.CheckSignatureFrom` refuses
-them and the `GODEBUG=x509sha1=1` escape hatch was removed in Go 1.24, but
-the exported three-argument `Certificate.CheckSignature` still accepts them.
-Apple's legacy receipt chain is `sha1WithRSAEncryption` from the leaf up, so
-the whole legacy path rests on that asymmetry. It is public API but not a
-documented guarantee, so a canary test asserts it on every supported
-toolchain; if a future Go closes it, the documented replacement is
-`rsa.VerifyPKCS1v15(pub, crypto.SHA1, sha1(tbs), sig)`, which that test also
-exercises.
+## The API
 
-**Base64 strictness.** Receipt base64 (`ReceiptVerifier.VerifyBase64` and the
-`verifyReceipt` endpoint's `receipt-data`, and `x5c` along with it, since they
-share a decoder) is accepted exactly as Apple's verifyReceipt accepts it
-(measured 2026-09-23, see
-[`docs/evidence/2026-09-23-verifyreceipt-base64.md`](../docs/evidence/2026-09-23-verifyreceipt-base64.md)):
-standard base64 (`+/`) with the canonical `=` padding and nothing else. CR,
-LF, space or tab anywhere, the base64url alphabet, omitted or extra padding,
-anything after the padding, an impossible length and an empty string are
-`INVALID_RECEIPT_FORMAT` (`21002` at the endpoint; `INVALID_CERTIFICATE` for
-an `x5c` entry). Unused low bits in the last data character are accepted, as
-Apple accepts them, which is why the decoder is `base64.StdEncoding` behind a
-shape check rather than `StdEncoding.Strict()`. This is the cross-port contract
-every implementation is held to (`fixtures/cases.json`'s `receipt-base64/*`
-and `endpoint/receipt-data-*` vectors), not a Go-specific choice. Compact-JWS
-segments are decoded **strictly**, by a separate decoder — a character
-outside the base64url alphabet, `=` padding, a wrong length, or non-zero bits
-in the final quantum is `INVALID_JWS_FORMAT`, for all three segments (header,
-payload, signature). Appending junk to a compact JWS, padding a segment, or
-flipping the unused bits of a segment's last character must make every port
-reject. Strictness here can only turn an accept into a reject, and it means
-every byte of a JWS a port accepts is a byte the signature covers.
+### `Config`: the roots and the clock
 
-## Tests
+```go
+config := applereceipt.DefaultConfig() // Apple's three roots, the system clock
 
-`go test ./...` runs everything, including the shared cross-language
-conformance vectors in `fixtures/cases.json` — the same file the Java, Node,
-Python and Swift suites read, with every fixture's `contentSha256` re-checked
-against its decoded bytes before any case runs.
+pinned := applereceipt.NewConfig(applereceipt.ConfigOptions{
+    Roots: []*x509.Certificate{myRoot}, // replaces the defaults
+    Clock: func() int64 { return 1_735_689_600_000 }, // epoch milliseconds
+})
+verifier, err := applereceipt.NewVerifier(pinned)
+```
 
-Beyond conformance the suite covers hostile and malformed input at every
-layer, the certificate-flood and nesting bounds, the unsigned certificate
-bag, result aliasing, allocation ceilings measured as a ratio to the input
-so they hold on any machine, the OS trust store (a CA is installed into the process's trust store
-and the library still rejects a chain under it), FIPS-140-only mode, the
-concurrency claim under `-race`, deterministic mutation passes over the
-genuine receipts, and three fuzz targets whose seed corpora run on every
-build.
+A nil `*Config`, or one with no trust anchors, is a plain `error` from
+`NewVerifier`, never a `*Failure`: a verifier with no roots would reject
+everything, and nobody would notice until production, and a caller
+switching on `Reason` must never see a misconfiguration.
 
-## Licence
+### `Verifier`: three methods
 
-MIT — see [LICENSE](./LICENSE).
+| Method | Input | Success |
+|---|---|---|
+| `VerifyReceipt(string)` | the base64 receipt an app sends | `*ReceiptPayload, error` |
+| `VerifySignedData(string)` | any Apple-signed compact JWS | `*JSONPayload, error`: the signed JSON text |
+| `VerifyReceiptEndpoint(Environment, string)` | a `verifyReceipt` request body | Apple's response body, always, as a `string` |
 
-This is one of several implementations that share a single fixture suite,
-including Apple's own official test fixtures, and are required to agree byte
-for byte. See the [project README](../README.md) for the full picture and
-[COMPARISON.md](../COMPARISON.md) for how it differs from Apple's official
-libraries.
+The first two return `error` as `*Failure` on rejection. The endpoint never
+returns an error and never panics: the Apple status code is a field of the
+body, for every input.
+
+`applereceipt.Version` is the library version; `AppleStatus`-named
+constants (`StatusOK`, `StatusMalformedReceiptData`, ...) hold Apple's
+`verifyReceipt` status codes.
+
+### `ReceiptPayload`
+
+Every scalar field is a pointer (`nil` means absent), byte fields are
+`[]byte`, ids are `int64`, dates are epoch milliseconds:
+
+```go
+receipt.ReceiptType                 // *string: "Production", "ProductionSandbox", ...
+receipt.BundleID                    // decoded attribute 2
+receipt.BundleIDBytes               // its raw octets: the device-hash input
+receipt.ReceiptCreationDateMs       // *int64
+receipt.InApp[0].ProductID
+receipt.InApp[0].ExpiresDateMs
+receipt.UnknownAttributes           // map[int64][][]byte, in receipt order
+receipt.ToJSON()                    // the canonical JSON every port shares
+```
+
+Decoding follows the rules every port shares: the first occurrence of an
+attribute wins; every attribute that does not end up in a typed field (a
+later copy, or a value that does not decode, whose field is then `nil`) is
+kept raw in `UnknownAttributes`, the in-app ones in that purchase's own; an
+empty date string means "not set" and is not kept. `ToJSON()` writes keys
+in a fixed order with `JSON.stringify` escapes, byte-identical across
+ports. It never uses Go's `encoding/json` for this: its HTML-escaping and
+alphabetical key sorting would break that.
+
+### `Failure` and `Reason`
+
+`*Failure` implements `error`, with `Cause` holding the parser's error for
+`UNREADABLE_PAYLOAD`. Match on `failure.Reason`; never parse
+`failure.Message`.
+
+| `Reason` | Token | Raised when | Endpoint |
+|---|---|---|---|
+| `ReasonMalformed` | `MALFORMED` | the base64, ASN.1, CMS or JWS structure is broken, or a structural bound is exceeded | 21002 |
+| `ReasonTooLarge` | `TOO_LARGE` | the input is over its size cap and was not decoded | 21002 |
+| `ReasonInvalidSignature` | `INVALID_SIGNATURE` | the signature did not verify | 21003 |
+| `ReasonUntrustedChain` | `UNTRUSTED_CHAIN` | the chain does not reach a pinned root | 21003 |
+| `ReasonInvalidCertificate` | `INVALID_CERTIFICATE` | a certificate does not decode, or is outside its validity window at the chain instant | 21003 |
+| `ReasonInvalidCertificatePurpose` | `INVALID_CERTIFICATE_PURPOSE` | a certificate lacks Apple's marker OID for its place | 21003 |
+| `ReasonUnreadablePayload` | `UNREADABLE_PAYLOAD` | the chain and signature passed, but the signed content does not parse | 21009 |
+| `ReasonInternalError` | `INTERNAL_ERROR` | the library failed (a contained panic after the signature), or the configured clock panicked; no input makes a correct library answer it | 21009 |
+
+`errors.As(err, &failure)` is the canonical read; `errors.Is(err,
+applereceipt.ReasonUntrustedChain)` is sugar for the single-reason case, and
+`applereceipt.ReasonOf(err)` returns `(Reason, bool)` without an `errors.As`
+call. `UNREADABLE_PAYLOAD` and `INTERNAL_ERROR` are not the client's fault:
+alert, log the failure with `applereceipt.Version`, and reconcile the
+purchase through the App Store Server API rather than deny the user.
+
+## What to check after verification
+
+The library proves Apple signed the payload. Before granting anything, check
+what it says:
+
+```go
+receipt, err := verifier.VerifyReceipt(receiptBase64)
+if err != nil {
+    return err
+}
+if receipt.BundleID == nil || *receipt.BundleID != "com.example.app" {
+    return errOtherApp
+}
+```
+
+For a JWS, read the claims with your own JSON decoder. No typed JWS models
+ship with this library; Apple's own `app-store-server-library` publishes
+those for languages that have one:
+
+```go
+var transaction struct {
+    BundleID    string `json:"bundleId"`
+    Environment string `json:"environment"`
+    ExpiresDate *int64 `json:"expiresDate"`
+}
+json.Unmarshal([]byte(payload.JSON()), &transaction)
+```
+
+`bundleId`, `environment`, `appAppleId` for a Production `AppTransaction`,
+`revocationDate`, `expiresDate`, and `signedDate` for freshness. No payload
+is rejected for its age, as in Apple's own App Store Server Libraries: the
+right limit depends on the endpoint (Apple retries a server notification for
+days), so apply one yourself.
+
+**The device hash** is yours too, when you have the device's identifier:
+`SHA1(deviceID || OpaqueValue || BundleIDBytes)` must equal `SHA1Hash`.
+
+**Deduplicate on transaction ids, never on the receipt or JWS bytes.** A
+legacy receipt is BER, and one correctly signed receipt can be re-chunked
+into different byte strings that carry the same signed content.
+
+## The clock
+
+`Config`'s clock is a `func() int64` (epoch milliseconds), read at most once
+per call, memoised for the rest of that call, and only when one of these
+needs it, after the input has passed every check that comes before:
+
+- **the certificate-validity instant, when the input states no usable date
+  of its own**: a receipt whose creation date (attribute 12) is missing or
+  does not parse, a JWS without a representable `signedDate`. Otherwise the
+  chain is judged at the date the input states.
+- **`request_date`** in the endpoint's response.
+
+A certificate outside its validity window at that instant is
+`INVALID_CERTIFICATE`. A clock that panics is contained as `INTERNAL_ERROR`
+(21009 at the endpoint), with a fixed message that never carries the
+panic's own text.
+
+## What the checks are, and in what order
+
+The order is observable and is part of the contract: an input that fails an
+early check reports that check's reason, not a later one.
+
+**JWS (`VerifySignedData`).** Size cap → three segments, each strict
+base64url → header JSON (strict UTF-8, no byte order mark, nothing but
+whitespace after the object) → `alg` `ES256` and exactly three `x5c`
+entries → the certificates decode → the chain at `signedDate` (or the
+clock), the intermediate checked against the pinned roots **before** the
+leaf is checked against the intermediate → **leaf marker OID**
+`1.2.840.113635.100.6.11.1` → **intermediate marker OID**
+`1.2.840.113635.100.6.2.1` → ES256 signature. A chain that does not reach a
+pinned root is `UNTRUSTED_CHAIN` whatever markers it carries. The marker
+checks run only once the chain is trusted. The payload is read before the
+chain, for `signedDate`, but a payload that does not parse (trailing
+content included) is reported only after the signature:
+`UNREADABLE_PAYLOAD` if the signature holds, `INVALID_SIGNATURE` if not, so
+nothing unsigned decides which a caller sees.
+
+**Receipt (`VerifyReceipt`).** Size cap → strict base64 → CMS parse,
+including the shape of every `SignerInfo`'s `signedAttrs`, whatever its
+position → at most four `SignerInfo`s and ten embedded certificates → any
+certificate that parses but whose signature is not canonically encoded is
+fatal, wherever it sits → the creation date alone (nothing else in the
+payload is read yet) → for each `SignerInfo`, every embedded certificate
+matching its issuer and serial number, tried in bag order: the chain,
+top-down from the pinned roots, at the creation date or the clock →
+**signer marker OID** → **WWDR marker OID on the intermediate** → the CMS
+signature. A candidate's key is used only once its own chain has passed, so
+a stranger certificate that merely claims the genuine signer's identity
+cannot shadow it. One candidate of one `SignerInfo` passing is enough; when
+none does, the first failure is the verdict. Then the full payload parse,
+where any failure is `UNREADABLE_PAYLOAD`.
+
+The receipt signer may use any algorithm `crypto/rsa` and `crypto/ecdsa`
+verify: RSA PKCS#1 v1.5 or ECDSA, over MD5 (via `crypto/rsa.VerifyPKCS1v15`
+directly, since `crypto/x509` refuses to check an MD5 signature at all),
+SHA-1 or the SHA-2 family, and RSA-PSS. A signer that chains to a pinned
+root and carries Apple's marker is trusted whatever it signs with. There is
+no certificate signature-algorithm allowlist beyond what `crypto/x509`
+itself verifies under a pinned chain, so a change on Apple's side does not
+reject genuine receipts. A `signatureAlgorithm` that names a hash
+(`sha256WithRSAEncryption`, `ecdsa-with-SHA384`, the RSA-PSS parameters)
+must name the `SignerInfo`'s `digestAlgorithm`, or the signature is
+`INVALID_SIGNATURE`; `rsaEncryption` and `id-ecPublicKey` name none and take
+the digest.
+
+The bundled roots are checked against their published SHA-256 fingerprints
+when they load, all three or none; a mismatch panics inside `AppleRoots()`
+(and so inside `DefaultConfig()`) rather than silently answering
+`UNTRUSTED_CHAIN` for everything.
+
+`x5c[2]` is never compared to an anchor and never trusted, and neither is a
+receipt's embedded copy of its root: the chain terminates at an anchor the
+caller pinned. Trust anchors are trusted by fiat, so **an anchor's own
+expiry is not checked**, which is what lets a receipt signed years ago
+under a since-expired chain verify at its own creation date.
+
+A certificate on the path (not the anchor) that marks critical an
+extension `crypto/x509` does not itself process (`Certificate
+.UnhandledCriticalExtensions`) makes the path `UNTRUSTED_CHAIN`, per RFC
+5280 §4.2. In `signedAttrs`, `contentType` or `messageDigest` twice, or a
+`contentType` that differs from the `eContentType`, is `INVALID_SIGNATURE`
+(RFC 5652 §5.3, §11.1).
+
+### Stranger certificates
+
+A receipt's certificate bag is not signed, so anyone can add to it.
+
+- A certificate that genuinely fails to parse, and whose raw bytes do not
+  name the `SignerInfo`'s own signer, is exactly the kind of stranger no
+  pinned root ever vouches for: it is simply excluded from the top-down
+  walk, the same as a certificate that parses fine but names nobody real.
+  A genuine receipt padded with such certificates still verifies.
+- A certificate that DOES parse, but whose signature is not canonically
+  encoded, is fatal wherever it sits, signer or stranger:
+  `crypto/x509.ParseCertificate` parses it anyway, silently
+  reinterpreting the signature bytes as something other than what was
+  actually signed, which is exactly the platform-parser leniency this
+  library refuses to trust.
+- An unreadable entry whose raw bytes DO name the signer is
+  `INVALID_CERTIFICATE`, the same as an unreadable `x5c` entry on the JWS
+  path.
+
+The walk starts at the roots, so the cost of a stranger is a name
+comparison, however large or broken its key: an 8,192-bit RSA modulus cap
+is checked before any modulus is handed to `crypto/rsa`, so an
+attacker-chosen oversized key is never the thing that gets slow. The shared
+denial-of-service cases pin this with a time budget, and the tests assert
+it directly through a seam that records every key used.
+
+## Defensive parsing
+
+Everything this module parses is attacker-supplied, so the bounds are part
+of the design rather than a configuration. ASN.1 (`internal/der`): nesting
+depth 64 constructed values, a 100,000-node budget per parse, indefinite
+(BER) lengths only on constructed values, trailing bytes refused. JSON:
+nesting depth 64, numbers of at most 1,000 digits, member names of at most
+50,000 characters, applied to the JWS header, the JWS payload and the
+endpoint request body alike. Chains: at most six certificates below the
+anchor. RSA keys: at most 8,192 bits, refused before any arithmetic.
+
+Input size is capped before anything is decoded, and the caps are Apple's
+own (measured on 2026-09-23 against both `verifyReceipt` endpoints):
+
+- the endpoint request body and the receipt base64 string:
+  `applereceipt.MaxReceiptBytes` / `MaxRequestBytes`, 3,145,728 UTF-8 bytes.
+  Over it is `TOO_LARGE`, 21002 at the endpoint. Apple answers HTTP 413
+  there, so check the body's length before the call to do the same.
+- the compact JWS: `applereceipt.MaxJWSBytes`, 262,144 bytes, `TOO_LARGE`.
+
+`receipt-data` is decoded exactly as Apple's `verifyReceipt` accepts it:
+standard base64 with canonical `=` padding and nothing else. `x5c` entries
+are standard base64, JWS segments unpadded canonical base64url, so one
+signed payload has one accepted spelling.
+
+Every verify method contains its own panics: before a signature has
+verified it is `MALFORMED` (21002), as input nobody vouched for must not be
+able to raise the internal-error alarm at will; while the signed receipt
+payload is decoded it is `UNREADABLE_PAYLOAD`; after that it is
+`INTERNAL_ERROR` (21009). The fixed message never carries the panic's own
+text.
+
+## The endpoint
+
+```go
+body := verifier.VerifyReceiptEndpoint(applereceipt.EnvironmentProduction, rawRequestBody)
+```
+
+**Pass the exact bytes the client posted.** `rawRequestBody` must be the
+JSON body itself (`application/json`, `{"receipt-data": "..."}`), not a
+form re-encoded as `application/x-www-form-urlencoded` by an HTTP
+framework or a proxy in front of your handler: this method parses JSON
+only, and a form-encoded body simply fails as a malformed request (status
+21002) rather than being decoded some other way.
+
+The statuses it produces are `0`, `21002`, `21003`, `21007`, `21008` and
+`21009`, and no others, because the rest describe conditions that exist
+only on Apple's servers. Local 21007 / 21008 routing fails closed: only
+receipt types `Production` and `ProductionVPP` count as production. Like
+Apple's endpoint, it does **not** check the bundle id: compare
+`receipt.bundle_id` in the response before granting anything. `password`
+and `exclude-old-transactions` are accepted for compatibility and never
+read.
+
+## Upgrading from 0.6
+
+0.7 replaces the three verifiers with one `Verifier` and takes no policy: no
+bundle id, no accepted environments, no app Apple id, no device id, no
+`EnvironmentXcode` / `EnvironmentLocalTesting`. The caller checks those on
+the returned payload.
+
+| 0.6 | 0.7 |
+|---|---|
+| `ReceiptVerifier.VerifyBase64` | `Verifier.VerifyReceipt`, then compare `BundleID` |
+| `ReceiptVerifier.Verify` (DER) | base64-encode, then `VerifyReceipt` |
+| `..._WithDeviceGUID` | compute the device hash from `OpaqueValue` and `BundleIDBytes` |
+| `JWSVerifier.VerifyTransaction`, `VerifyAppTransaction`, `VerifyRaw` | `Verifier.VerifySignedData`, then read the claims from `JSON()` |
+| `VerifyReceiptEndpoint.VerifyReceiptJSON` | `Verifier.VerifyReceiptEndpoint` |
+| `AppleJWSRoots()`, `AppleReceiptRoots()` | `AppleRoots()` (one pinned set for both paths) |
+| a per-verifier `Now func() time.Time` | `ConfigOptions.Clock func() int64` (epoch milliseconds) |
+| `VerificationError` | `Failure` |
+| `AppReceipt` | `ReceiptPayload` (`*_ms` epoch milliseconds, pointer fields) |
+
+| 0.6 `Reason` | 0.7 `Reason` |
+|---|---|
+| `ReasonInvalidJWSFormat`, `ReasonInvalidReceiptFormat`, `ReasonMalformedRequest` | `ReasonMalformed` |
+| `ReasonRequestTooLarge` | `ReasonTooLarge` |
+| `ReasonInvalidChain` | `ReasonUntrustedChain`, or `ReasonInvalidCertificate` for a certificate outside its validity window |
+| `ReasonInternalError` for signed content that does not parse | `ReasonUnreadablePayload` |
+| `ReasonWrongBundleID`, `ReasonWrongEnvironment`, `ReasonWrongAppAppleID`, a device-hash mismatch | gone: the caller's checks |
+
+## Vendoring
+
+To build the module from a copy rather than `go get`, copy the `go/`
+directory whole: `certs/` (the repository's canonical root certificates)
+and `roots/certs/` (`go generate`'s copy of them, embedded with
+`go:embed`). An embed pattern cannot reach outside its module directory,
+so the copy exists precisely so `go build` needs nothing outside `go/`.
+
+**Rotating or adding a root** touches, together:
+
+- the `.cer` file in the repository's `certs/` (and `go/roots/certs/`,
+  regenerated with `go generate ./...` and checked byte for byte by a
+  test and by CI's `go-generate-check` job);
+- the fingerprint in `roots.go`'s `appleRootFingerprints`, the SHA-256
+  Apple publishes for the file (check it with `sha256sum` on the DER);
+- the fingerprint and count tests in `roots_test.go`.
+
+The roots load all together or not at all, so a file that does not match
+its fingerprint panics inside `AppleRoots()` / `DefaultConfig()` at
+startup, loudly, rather than leaving every call to answer
+`UNTRUSTED_CHAIN`.
+
+**The tests need the shared fixtures.** They look for `fixtures/` with
+`cases-0.7.json` above the module directory, or read `APRV_FIXTURES_DIR`
+when it is set.
+
+## Testing
+
+```bash
+go test ./...
+go test -race -count=2 ./...
+gofmt -l .          # must print nothing
+go vet ./...
+```
+
+`conformance_test.go` runs `fixtures/cases-0.7.json`, the normative
+cross-language vector file every port of this library answers, as one
+named test per case, and fails unless every case ran. The adapter carries
+no case-specific knowledge: it checks each fixture against the digest the
+registry records, builds a `Config` from the case, dispatches on the
+operation and evaluates the expected JSON Pointers on the result. The
+`decodeBase64` cases call the two base64 decoders directly through
+test-only exported hooks (`export_test.go`), and a case with a `maxMillis`
+budget is timed after a warm-up call, with the SPKI of every key a
+certificate-signature check used recorded through
+`internal/chain.KeysUsedDuring` and checked against the DoS budget
+directly, not only against a clock.
+
+The native suite beyond conformance covers hostile and malformed input, the
+resource bounds above, the public API's shape (`apisurface_test.go`), the
+module's forbidden-import and forbidden-identifier gates, the trust-pinning
+rule from three directions (`systemtrust_test.go` plants a root in the OS
+trust store in a subprocess and proves it is still never consulted), the
+SHA-1 `CheckSignature`/`CheckSignatureFrom` asymmetry the legacy path
+depends on (`sha1_canary_test.go`), stranger certificates and their key
+cost, every signer and certificate algorithm, US-Pacific date rendering,
+FIPS-140-only mode not crashing the caller (`fips_test.go`), and a
+mutation pass over the genuine receipts (`mutation_test.go`). The mutation
+pass asserts the invariant that matters: a mutated receipt is either
+rejected or produces an identical result.
+
+Two seed-corpus fuzz targets, `FuzzVerifyReceipt` and `FuzzVerifySignedData`
+(plus `internal/der`'s own `FuzzParseDER`), run on every `go test` and are
+additionally run by CI with `-fuzz` for a fixed budget on every push; a
+crasher it finds is written under `testdata/fuzz/` and becomes a permanent
+regression case once committed.

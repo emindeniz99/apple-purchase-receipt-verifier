@@ -71,11 +71,12 @@ func TestNestedReceiptDoesNotAmplify(t *testing.T) {
 	pki := newReceiptPKI(t)
 	roots := pki.anchors()
 
+	verifier := verifierFor(t, roots)
 	// The eContent nesting and the per-attribute nesting are separate
 	// budgets: each is re-parsed from depth zero, and together they must
-	// stay under the reader's MaxDepth of 32 or the blob is rejected on
+	// stay under the reader's MaxDepth of 64 or the blob is rejected on
 	// depth alone and never reaches the amplifying path at all.
-	for _, levels := range [][2]int{{1, 1}, {6, 12}, {12, 24}} {
+	for _, levels := range [][2]int{{1, 1}, {6, 12}, {24, 48}} {
 		outer, inner := levels[0], levels[1]
 		blob := hostileNestedReceipt(t, pki, 1200, 700, outer, inner)
 		if len(blob) > applereceipt.MaxReceiptBytes {
@@ -85,7 +86,7 @@ func TestNestedReceiptDoesNotAmplify(t *testing.T) {
 		runtime.GC()
 		runtime.ReadMemStats(&before)
 		started := time.Now()
-		_, err := applereceipt.VerifyReceiptCore(blob, roots)
+		_, err := verifier.VerifyReceipt(applereceiptBase64(blob))
 		elapsed := time.Since(started)
 		runtime.ReadMemStats(&after)
 		if err == nil {
