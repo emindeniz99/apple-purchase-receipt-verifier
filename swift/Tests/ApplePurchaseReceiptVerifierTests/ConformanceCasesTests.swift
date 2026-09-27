@@ -397,8 +397,9 @@ final class ConformanceCasesTests: XCTestCase {
     // MARK: assertions
 
     private func assertReceiptResult(_ result: VerificationResult<ReceiptPayload>, expected: [String: Any], id: String) throws {
-        if (expected["anyOutcome"] as? Bool) == true {
-            XCTAssertNotEqual(result.failure?.reason, .internalError, "\(id): anyOutcome must never be internalError")
+        if let allowed = expected["oneOf"] as? [String] {
+            let outcome = result.failure?.reason.rawValue ?? "ok"
+            XCTAssertTrue(allowed.contains(outcome), "\(id): answered \(outcome), want one of \(allowed)")
             return
         }
         guard let status = expected["status"] as? String else { throw HarnessError("\(id): expected.status missing") }
@@ -424,8 +425,9 @@ final class ConformanceCasesTests: XCTestCase {
     }
 
     private func assertSignedDataResult(_ result: VerificationResult<JsonPayload>, expected: [String: Any], id: String) throws {
-        if (expected["anyOutcome"] as? Bool) == true {
-            XCTAssertNotEqual(result.failure?.reason, .internalError, "\(id): anyOutcome must never be internalError")
+        if let allowed = expected["oneOf"] as? [String] {
+            let outcome = result.failure?.reason.rawValue ?? "ok"
+            XCTAssertTrue(allowed.contains(outcome), "\(id): answered \(outcome), want one of \(allowed)")
             return
         }
         guard let status = expected["status"] as? String else { throw HarnessError("\(id): expected.status missing") }
