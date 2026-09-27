@@ -147,12 +147,9 @@ class ConformanceTest < Minitest::Test
     expected = kase["expected"]
     result = measured(kase) { dispatch(kase) }
 
-    if expected["anyOutcome"]
-      return if result.verified?
-
-      refute_equal "INTERNAL_ERROR", result.failure.reason.to_s,
-                   "#{kase["id"]}: a tolerant case must never answer INTERNAL_ERROR " \
-                   "(#{result.failure.message})"
+    if expected["oneOf"]
+      outcome = result.verified? ? "ok" : result.failure.reason.to_s
+      assert_includes expected["oneOf"], outcome, "#{kase["id"]}: answered #{outcome}"
       return
     end
 
