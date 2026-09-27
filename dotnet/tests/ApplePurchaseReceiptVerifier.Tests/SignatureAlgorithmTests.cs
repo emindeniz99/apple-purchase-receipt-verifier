@@ -6,7 +6,7 @@ namespace ApplePurchaseReceiptVerifier.Tests;
 /// <summary>
 /// Which certificate signature algorithms the path walk verifies under. 0.6
 /// kept an allowlist that refused <c>ecdsa-with-SHA1</c>; 0.7 removes it
-/// (docs/design/0.7-hardening-parity.md, Q14): whatever the platform verifies
+/// (owner, 2026-09-27): whatever the platform verifies
 /// under the pinned chain is accepted, as Java does. A certificate signed
 /// that way is accepted only because a pinned key really signed it — a
 /// relabelled signature is still a failed check

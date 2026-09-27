@@ -25,7 +25,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
     /// is checked with the key of a certificate already vouched for (an
     /// anchor, or something an anchor vouched for), never with the key of a
     /// certificate nobody has vouched for yet
-    /// (docs/design/0.7-hardening-parity.md change 1, #161).
+    /// (#161).
     /// <c>X509Chain</c> is never constructed anywhere in this library.
     /// </summary>
     internal static class Chain
