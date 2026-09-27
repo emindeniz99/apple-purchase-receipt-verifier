@@ -64,14 +64,20 @@ const donorSignerInfo = donorSignedData[donorSignedData.length - 1].children[0].
 // issuerAndSerialNumber of the real leaf, so the signer lookup picks it out.
 const donorSid = Buffer.from(donorSignerInfo[1].raw);
 const donorDigestAlgorithm = Buffer.from(donorSignerInfo[2].raw);
+const donorSignatureAlgorithm = Buffer.from(donorSignerInfo[donorSignerInfo.length - 2].raw);
 const donorSignature = Buffer.from(donorSignerInfo[donorSignerInfo.length - 1].raw);
 
-function forge({ certificates = donorCertificates, payload, signedAttrs = null }) {
+function forge({
+  certificates = donorCertificates,
+  payload,
+  signedAttrs = null,
+  signatureAlgorithm = tlv(SEQUENCE),
+}) {
   const signerFields = [tlv(INTEGER, Buffer.from([1])), donorSid, donorDigestAlgorithm];
   if (signedAttrs !== null) {
     signerFields.push(signedAttrs);
   }
-  signerFields.push(tlv(SEQUENCE), donorSignature);
+  signerFields.push(signatureAlgorithm, donorSignature);
   return tlv(
     SEQUENCE,
     tlv(OID, OID_SIGNED_DATA),
@@ -112,6 +118,16 @@ const DEGENERATE_SIGNED_ATTRS = [
     tlv(CONTEXT_0, messageDigestAttribute(tlv(INTEGER, Buffer.from([0])))),
   ],
   ['empty attribute value SET', tlv(CONTEXT_0, messageDigestAttribute(tlv(SET)))],
+];
+
+// Attribute types that carry the OID tag but do not decode as an OID. The
+// syntax check once looked only at the tag, so these reached the attribute
+// readers and threw from them (found by the parse-cms fuzz target).
+const UNDECODABLE_ATTRIBUTE_TYPES = [
+  ['an empty OID', Buffer.alloc(0)],
+  // The messageDigest OID with its last arc cut open: the final byte still
+  // has the continuation bit set.
+  ['an OID ending mid-arc', Buffer.from('2a864886f70d01f7f6', 'hex')],
 ];
 
 function* mutations(label, receipt, step) {
@@ -180,6 +196,34 @@ test('a forged receipt never earns more than a pre-signature verdict, in either 
     checked += 1;
   }
   assert.ok(checked >= 9, `only ${checked} inputs`);
+});
+
+test('signedAttrs whose attribute type is not a valid OID are MALFORMED in both builds', async () => {
+  for (const [what, type] of UNDECODABLE_ATTRIBUTE_TYPES) {
+    const signedAttrs = tlv(
+      CONTEXT_0,
+      tlv(SEQUENCE, tlv(OID, type), tlv(SET, tlv(OCTET_STRING, Buffer.alloc(32)))),
+    );
+    // The donor's own signatureAlgorithm, so parseCms accepts the SignerInfo
+    // and the signedAttrs reach the syntax check.
+    const base64 = forge({
+      payload: payloadDated(SIGNING_TIME),
+      signedAttrs,
+      signatureAlgorithm: donorSignatureAlgorithm,
+    }).toString('base64');
+    for (const [name, verifier] of [
+      ['node', nodeVerifier],
+      ['web', webVerifier],
+    ]) {
+      const result = await verifier.verifyReceipt(base64);
+      assert.equal(result.verified, false, `${name}: ${what} verified`);
+      // Java's DER parser refuses these bytes before it reaches the
+      // SignerInfo, so MALFORMED is the verdict, and it must come from the
+      // syntax check rather than from an escaped reader error.
+      assert.equal(result.failure.reason, 'MALFORMED', `${name}: ${what}`);
+      assert.match(result.failure.message, /not a valid OBJECT IDENTIFIER/, `${name}: ${what}`);
+    }
+  }
 });
 
 /**
