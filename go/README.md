@@ -342,6 +342,36 @@ payload is decoded it is `UNREADABLE_PAYLOAD`; after that it is
 `INTERNAL_ERROR` (21009). The fixed message never carries the panic's own
 text.
 
+## Measured worst-case CPU
+
+Measured on 2026-09-27 with `BenchmarkWorstCase`, which times every shared
+case in `fixtures/cases.json` that carries a time budget: oversized
+untrusted keys, a cross-signed certificate mesh, and the encoding oddities
+inside certificates. Go 1.24.7, `GOMAXPROCS=1` (`-cpu 1`), on a shared
+4-vCPU KVM guest (Intel Xeon Processor @ 2.10GHz); each call is run once
+and checked first, then `testing.B` calibrates its iteration count, and the
+table gives the median and slowest of ten runs of at least 500 ms each.
+
+| Call | Median | Slowest run |
+|---|---:|---:|
+| Slowest hostile case: `receipt/verify-genuine-padded-with-oversized-strangers` (a valid receipt carrying oversized certificates it does not need) | 1.2 ms | 1.5 ms |
+| Next: `receipt/reject-untrusted-oversized-intermediates` | 1.0 ms | 1.2 ms |
+| Slowest hostile JWS: `signed-data/reject-untrusted-oversized-x5c` (a JWS near the 256 KiB cap) | 0.76 ms | 0.88 ms |
+| Every other budgeted case | under 0.30 ms | under 0.32 ms |
+| For scale: `VerifyReceipt` on the genuine 187-purchase legacy receipt | 2.4 ms | 2.7 ms |
+| For scale: `VerifyReceiptEndpoint` on the same receipt | 5.9 ms | 6.2 ms |
+
+No hostile input in the shared suite costs more than an ordinary large
+receipt: the cost of a call follows the size of the input, which the caps
+above bound, not the structure an attacker chooses. The machine was shared
+with other work, so treat these as an order of magnitude. For numbers on
+your own hardware, run
+
+```sh
+go test -run '^$' -bench '^BenchmarkWorstCase$' -benchtime 500ms -count 10 -cpu 1 .
+go test -run '^$' -bench '^BenchmarkCrossPort$/^(verifyReceipt|endpointJson)/receipt-sandbox-legacy$' -benchtime 500ms -count 10 -cpu 1 .
+```
+
 ## The endpoint
 
 ```go
