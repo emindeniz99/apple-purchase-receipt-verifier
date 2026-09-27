@@ -1521,6 +1521,12 @@
       "codec": "raw",
       "contentSha256": "24f10a60523576c74c192156c2f1db8c2ca29697db2222d014ac163c8544352b"
     },
+    "keyusage-jws-intermediate-malformed": {
+      "path": "generated-0.7/keyusage-jws-intermediate-malformed.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "7bae44368393b38dfc9d7f0ecf36cb8da1619d64f4dba8a2fbd0fb2d54044c74"
+    },
     "keyusage-jws-intermediate-without-keycertsign": {
       "path": "generated-0.7/keyusage-jws-intermediate-without-keycertsign.jws",
       "role": "input",
@@ -1532,6 +1538,12 @@
       "role": "trust-anchor",
       "codec": "raw",
       "contentSha256": "1e92b59d4754b6c7aa03a9c683ed9c27eef4cd457037885f0963fd8a74814149"
+    },
+    "keyusage-receipt-intermediate-malformed": {
+      "path": "generated-0.7/keyusage-receipt-intermediate-malformed.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "063fd73fbcc149eeb8e35c1c5e6980206d64fad08ee05ae08638c692fcf0316e"
     },
     "keyusage-receipt-intermediate-without-keycertsign": {
       "path": "generated-0.7/keyusage-receipt-intermediate-without-keycertsign.der",
@@ -10292,6 +10304,65 @@
         "reason": "UNTRUSTED_CHAIN"
       },
       "fault": "intermediate-key-usage-without-key-cert-sign",
+      "tags": [
+        "jws",
+        "negative",
+        "chain",
+        "certificate",
+        "key-usage",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/reject-intermediate-with-a-malformed-key-usage",
+      "description": "A receipt chain under the pinned root whose intermediate carries a critical keyUsage extension whose value does not decode (a BIT STRING claiming five content octets and carrying two). Everything else is genuine. An extension that does not decode makes the certificate unreadable, and an unreadable entry of the unsigned certificate bag that is not the signer is a defect of the receipt: MALFORMED (lead, 2026-09-27).",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "keyusage-receipt-intermediate-malformed"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "keyusage-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "MALFORMED"
+      },
+      "fault": "intermediate-key-usage-does-not-decode",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "negative",
+        "chain",
+        "certificate",
+        "key-usage",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/reject-intermediate-with-a-malformed-key-usage",
+      "description": "A JWS whose x5c[1] carries a critical keyUsage extension whose value does not decode (a BIT STRING claiming five content octets and carrying two), under the pinned root. Everything else is genuine. An extension that does not decode makes the certificate unreadable: INVALID_CERTIFICATE, as for the other x5c certificates with a broken extension (lead, 2026-09-27).",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "keyusage-jws-intermediate-malformed"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "keyusage-jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_CERTIFICATE"
+      },
+      "fault": "intermediate-key-usage-does-not-decode",
       "tags": [
         "jws",
         "negative",
