@@ -60,8 +60,12 @@ String responseJson = verifier.verifyReceiptEndpoint(Environment.PRODUCTION, req
 
 **No method throws for any input.** A `null` or empty `base64` / `jws` /
 `requestJson` is input and fails as `Reason.MALFORMED`, the same as a garbled
-one; an unexpected runtime exception inside the library is
-`Reason.INTERNAL_ERROR`. Only a JVM error such as `OutOfMemoryError` escapes.
+one. An unexpected runtime exception inside the library is reported by where
+it happened: before a signature has verified it is `Reason.MALFORMED` (input
+nobody vouched for must not be able to raise the internal-error alarm at
+will), while the signed receipt content is decoded `Reason.UNREADABLE_PAYLOAD`,
+and anywhere else `Reason.INTERNAL_ERROR`. Only a JVM error such as
+`OutOfMemoryError` escapes.
 The one exception: a `null` `Environment` or `Config` is a programming
 mistake, not something a receipt can cause, and throws
 `NullPointerException`.

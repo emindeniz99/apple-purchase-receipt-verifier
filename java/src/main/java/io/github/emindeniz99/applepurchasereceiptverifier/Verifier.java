@@ -13,9 +13,12 @@ import org.jspecify.annotations.Nullable;
  * in their own tests.</p>
  *
  * <p><strong>No method throws for any input.</strong> A {@code null} or empty
- * input string fails as {@link Reason#MALFORMED}, and an unexpected runtime
- * exception inside the library as {@link Reason#INTERNAL_ERROR}; only JVM
- * errors such as {@link OutOfMemoryError} escape. The one exception: a
+ * input string fails as {@link Reason#MALFORMED}. An unexpected runtime
+ * exception inside the library is reported by where it happened: before a
+ * signature has verified as {@link Reason#MALFORMED}, while the signed
+ * receipt content is decoded as {@link Reason#UNREADABLE_PAYLOAD}, and
+ * anywhere else as {@link Reason#INTERNAL_ERROR}. Only JVM errors such as
+ * {@link OutOfMemoryError} escape. The one exception: a
  * {@code null} {@link Environment} is a programming error and throws
  * {@link NullPointerException}.</p>
  */
@@ -40,9 +43,9 @@ public interface Verifier {
      * (the {@code receipt-data} a client sends), and decodes it.
      *
      * <p>Checks, in order: the size cap, strict base64, the CMS envelope, the
-     * chain from a SignerInfo's certificate to a pinned root (checked at the
-     * receipt's creation date, the clock when it states none), Apple's marker
-     * OIDs on the signer and on the intermediate that issued it, and the CMS
+     * chain from a SignerInfo's certificate to a pinned root with its
+     * validity (at the receipt's creation date, the clock when it states
+     * none), Apple's marker OIDs on the signer and on the intermediate that issued it, and the CMS
      * signature. A receipt with several SignerInfos verifies when at least
      * one of them does.</p>
      */
