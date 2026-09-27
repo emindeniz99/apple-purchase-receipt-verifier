@@ -107,14 +107,28 @@ fn verify_signature(
     let mut authenticated: Option<Authenticated<'_>> = None;
     let mut first_failure: Option<Failure> = None;
     for info in &cms.signer_infos {
-        let verdict = signer_certificate(info, &embedded).and_then(|signer| {
+        let verdict = signer_certificates(info, &embedded).and_then(|matches| {
             let at_millis = match creation_date {
                 Some(millis) => millis,
                 None => clock.now()?,
             };
             let authenticated = authenticated
                 .get_or_insert_with(|| authenticated_top_down(&embedded.decoded, anchors));
-            verify_signer(&cms, info, signer, authenticated, anchors, at_millis)
+            // The bag is unsigned, so a certificate carrying the signer's
+            // identity on another key can sit ahead of the genuine one. Each
+            // match is tried as the SignerInfos are: one passing is enough,
+            // and only when none does is the first one's failure the verdict.
+            // No match's key is used before its chain has passed.
+            let mut first_match_failure: Option<Failure> = None;
+            for signer in matches {
+                match verify_signer(&cms, info, signer, authenticated, anchors, at_millis) {
+                    Ok(()) => return Ok(()),
+                    Err(failure) => {
+                        first_match_failure.get_or_insert(failure);
+                    }
+                }
+            }
+            Err(first_match_failure.unwrap_or_else(|| malformed("signer certificate not embedded")))
         });
         match verdict {
             Ok(()) => return Ok(cms.content),
@@ -194,16 +208,16 @@ fn verify_signer<'a>(
     verify_cms_signature(cms, info, signer)
 }
 
-/// The certificate `info` names, or the verdict for the bag. The signer's
-/// own entry not decoding is `INVALID_CERTIFICATE`, as an unreadable `x5c`
-/// entry is on the JWS path; any other entry not decoding is `MALFORMED`,
-/// because the bag is unsigned and bytes that cannot be read there are a
-/// defect of the receipt, not of a certificate. A broken signer outranks a
-/// broken stranger.
-fn signer_certificate<'e>(
+/// The certificates carrying the issuer and serial `info` names, never
+/// empty, or the verdict for the bag. The signer's own entry not decoding is
+/// `INVALID_CERTIFICATE`, as an unreadable `x5c` entry is on the JWS path;
+/// any other entry not decoding is `MALFORMED`, because the bag is unsigned
+/// and bytes that cannot be read there are a defect of the receipt, not of a
+/// certificate. A broken signer outranks a broken stranger.
+fn signer_certificates<'e>(
     info: &CmsSignerInfo,
     embedded: &'e Embedded<'_>,
-) -> Result<&'e Certificate, Failure> {
+) -> Result<Vec<&'e Certificate>, Failure> {
     // Which entry an unreadable one is has to be read out of the entry
     // itself: an identity is still legible in bytes that are not a
     // certificate all the way down.
@@ -222,15 +236,18 @@ fn signer_certificate<'e>(
             "an embedded certificate is not a valid certificate",
         ));
     }
-    let signer = embedded
+    let matches: Vec<&Certificate> = embedded
         .decoded
         .iter()
-        .find(|cert| {
+        .filter(|cert| {
             cert.serial_number() == info.serial_contents.as_slice()
                 && cert.issuer_der() == info.issuer_raw.as_slice()
         })
-        .ok_or_else(|| malformed("signer certificate not embedded"))?;
-    Ok(signer)
+        .collect();
+    if matches.is_empty() {
+        return Err(malformed("signer certificate not embedded"));
+    }
+    Ok(matches)
 }
 
 /// Whether `raw` carries the issuer Name and serialNumber the `SignerInfo`
