@@ -250,8 +250,7 @@ final class ReceiptDecoder {
                 originalPurchaseDate,
                 originalAppVersion,
                 expirationDate,
-                RawAttributes.wrap(unknown),
-                true);
+                unknown);
     }
 
     private static InAppPurchase parseInApp(byte[] inAppSet) throws VerificationException {
@@ -331,8 +330,7 @@ final class ReceiptDecoder {
                 cancellationDate,
                 isTrialPeriod,
                 isInIntroOfferPeriod,
-                RawAttributes.wrap(unknown),
-                true);
+                unknown);
     }
 
     /**

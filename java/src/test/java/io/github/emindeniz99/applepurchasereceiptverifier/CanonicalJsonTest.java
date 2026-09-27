@@ -2,7 +2,6 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -48,10 +47,14 @@ class CanonicalJsonTest {
         reordered.put(13, Arrays.asList(new byte[] {3}, new byte[] {2}));
 
         assertEquals(json(ascending), json(descending));
-        assertTrue(RawAttributes.equal(ascending, descending));
-        assertEquals(RawAttributes.hash(ascending), RawAttributes.hash(descending));
+        assertEquals(purchase(ascending), purchase(descending));
+        assertEquals(purchase(ascending).hashCode(), purchase(descending).hashCode());
         assertFalse(json(ascending).equals(json(reordered)));
-        assertFalse(RawAttributes.equal(ascending, reordered));
+        assertFalse(purchase(ascending).equals(purchase(reordered)));
+    }
+
+    private static InAppPurchase purchase(Map<Integer, List<byte[]>> unknown) {
+        return new InAppPurchase(null, null, null, null, null, null, null, null, null, null, null, unknown);
     }
 
     private static String json(Map<Integer, List<byte[]>> attributes) {

@@ -42,41 +42,6 @@ public final class InAppPurchase {
             @Nullable Boolean isTrialPeriod,
             @Nullable Boolean isInIntroOfferPeriod,
             Map<Integer, List<byte[]>> unknownAttributes) {
-        this(
-                quantity,
-                productId,
-                transactionId,
-                purchaseDateMs,
-                originalTransactionId,
-                originalPurchaseDateMs,
-                expiresDateMs,
-                webOrderLineItemId,
-                cancellationDateMs,
-                isTrialPeriod,
-                isInIntroOfferPeriod,
-                RawAttributes.copy(Objects.requireNonNull(unknownAttributes, "unknownAttributes")),
-                true);
-    }
-
-    /**
-     * For {@link ReceiptDecoder}, which hands over a map built by
-     * {@link RawAttributes#wrap} that nothing else references, so the
-     * public constructor's defensive copy would only repeat itself.
-     */
-    InAppPurchase(
-            @Nullable Long quantity,
-            @Nullable String productId,
-            @Nullable String transactionId,
-            @Nullable Long purchaseDateMs,
-            @Nullable String originalTransactionId,
-            @Nullable Long originalPurchaseDateMs,
-            @Nullable Long expiresDateMs,
-            @Nullable Long webOrderLineItemId,
-            @Nullable Long cancellationDateMs,
-            @Nullable Boolean isTrialPeriod,
-            @Nullable Boolean isInIntroOfferPeriod,
-            Map<Integer, List<byte[]>> ownedUnknownAttributes,
-            boolean owned) {
         this.quantity = quantity;
         this.productId = productId;
         this.transactionId = transactionId;
@@ -88,7 +53,7 @@ public final class InAppPurchase {
         this.cancellationDateMs = cancellationDateMs;
         this.isTrialPeriod = isTrialPeriod;
         this.isInIntroOfferPeriod = isInIntroOfferPeriod;
-        this.unknownAttributes = ownedUnknownAttributes;
+        this.unknownAttributes = RawAttributes.copy(Objects.requireNonNull(unknownAttributes, "unknownAttributes"));
     }
 
     /** Attribute 1701. */
@@ -173,45 +138,15 @@ public final class InAppPurchase {
         json.end();
     }
 
+    /** Equal when {@link #toString()}, the canonical JSON, is. */
     @Override
     public boolean equals(@Nullable Object other) {
-        if (this == other) {
-            return true;
-        }
-        if (!(other instanceof InAppPurchase)) {
-            return false;
-        }
-        InAppPurchase that = (InAppPurchase) other;
-        return Objects.equals(quantity, that.quantity)
-                && Objects.equals(productId, that.productId)
-                && Objects.equals(transactionId, that.transactionId)
-                && Objects.equals(purchaseDateMs, that.purchaseDateMs)
-                && Objects.equals(originalTransactionId, that.originalTransactionId)
-                && Objects.equals(originalPurchaseDateMs, that.originalPurchaseDateMs)
-                && Objects.equals(expiresDateMs, that.expiresDateMs)
-                && Objects.equals(webOrderLineItemId, that.webOrderLineItemId)
-                && Objects.equals(cancellationDateMs, that.cancellationDateMs)
-                && Objects.equals(isTrialPeriod, that.isTrialPeriod)
-                && Objects.equals(isInIntroOfferPeriod, that.isInIntroOfferPeriod)
-                && RawAttributes.equal(unknownAttributes, that.unknownAttributes);
+        return other instanceof InAppPurchase && toString().equals(other.toString());
     }
 
     @Override
     public int hashCode() {
-        return 31
-                        * Objects.hash(
-                                quantity,
-                                productId,
-                                transactionId,
-                                purchaseDateMs,
-                                originalTransactionId,
-                                originalPurchaseDateMs,
-                                expiresDateMs,
-                                webOrderLineItemId,
-                                cancellationDateMs,
-                                isTrialPeriod,
-                                isInIntroOfferPeriod)
-                + RawAttributes.hash(unknownAttributes);
+        return toString().hashCode();
     }
 
     /** The purchase's canonical JSON object. */
