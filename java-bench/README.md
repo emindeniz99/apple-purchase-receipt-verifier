@@ -38,35 +38,48 @@ One `@State(Scope.Benchmark)` class, `ReceiptBenchmark`, with
 | `receipt-sandbox-g5` | 2 | SHA-256 | 7,556 | 5,665 |
 | `receipt-sandbox-legacy` | 187 | SHA-1 | 105,472 | 79,104 |
 
-Both are verified as `ConformanceCasesTest` verifies them: the built-in
-`AppleRootCerts.receiptRoots()`, the bundle id `fixtures/cases.json` pins
-(`dev.bonzer.weeka.app`, `com.nutcall.alert`), the file decoded with the MIME
-decoder and checked against its `contentSha256`, and re-encoded as canonical
-base64 for the string entry points. The endpoint gets a fixed `Clock`
-(2026-01-01T00:00:00Z); `ReceiptVerifier` accepts no clock.
+Both are verified with one `Verifier` built in setup over the built-in Apple
+roots (`Config.defaults().roots()`) and a fixed `Clock`
+(2026-01-01T00:00:00Z), which only feeds the endpoint's `request_date`. Each
+file is decoded with the MIME decoder, checked against its `contentSha256`
+in `fixtures/cases.json`, and re-encoded as canonical base64.
 
 | benchmark | call |
 |---|---|
-| `decodeBase64` | the package-private `ReceiptBase64.decode(base64)`, bound once by reflection; added for the cross-port set in `BENCHMARKS.md` and not in the baseline below |
-| `core` | `ReceiptVerifier.verifyReceiptCore(der, roots)` on pre-decoded DER |
-| `verifierBase64` | `new ReceiptVerifier(roots, bundleId).verify(base64)` (verifier built in setup) |
-| `endpointMap` | `VerifyReceiptEndpoint` in `SANDBOX`, `verifyReceiptResult({"receipt-data": base64}).toResponse()`, status 0 with the full receipt |
-| `endpointJson` | the same endpoint, `verifyReceiptJson("{\"receipt-data\":\"...\"}")` |
-| `endpointWrongEnv` | the endpoint in `PRODUCTION` on the same sandbox receipt, `verifyReceiptResult(...).toResponse()`, status 21007 |
-| `resultOnly` | the `SANDBOX` endpoint, `verifyReceiptResult(...)` with no rendering |
-| `retryViaResult` | the `PRODUCTION` endpoint, `verifyReceiptResult(...).toJson(Environment.SANDBOX)`: the 21007 retry without a second verification |
-| `rejectTamperedSignature` | `verifyReceiptCore` on the DER with one bit flipped in the middle of the SignerInfo signature; the `VerificationException` is caught and consumed |
+| `decodeBase64` | the package-private `ReceiptBase64.decode(base64)`, bound once by reflection, for the cross-port set in `BENCHMARKS.md` |
+| `verifyReceipt` | `verifier.verifyReceipt(base64)` |
+| `endpointJson` | `verifier.verifyReceiptEndpoint(Environment.SANDBOX, "{\"receipt-data\":\"...\"}")`, status 0 with the full receipt |
+| `endpointWrongEnv` | the same request in `Environment.PRODUCTION`, status 21007 |
+| `rejectTamperedSignature` | `verifyReceipt` on the base64 of the DER with one bit flipped in the middle of the SignerInfo signature; returns a failed result |
+
+A second class, `SignedDataBenchmark`, has one benchmark with no fixture
+parameter:
+
+| benchmark | call |
+|---|---|
+| `verifySignedData` | `verifier.verifySignedData(jws)` on `fixtures/generated/transaction.jws`, under a `Config` whose only root is `fixtures/generated/jws-root.der` |
 
 `@Setup` prepares every input and runs each call once, failing the run unless
-it gives the expected answer: the right bundle id and in-app count, status 0
-with every `in_app` entry rendered, status 21007, a result with status 0
-and a receipt, a Sandbox status-0 body from the production result, and `INVALID_SIGNATURE` for
-the tampered receipt (checked for both fixtures). A benchmark therefore cannot
-time a fast failure by accident.
+it gives the expected answer: the right bundle id and in-app count, a Sandbox
+status 0 with every `in_app` entry rendered, `{"status":21007}`,
+`INVALID_SIGNATURE` for the tampered receipt (checked for both fixtures), and
+the transaction id the JWS fixture carries. A benchmark therefore cannot time
+a fast failure by accident.
 
 Settings: `Mode.AverageTime`, µs/op, 5 warmup and 5 measurement iterations of
 1 s each, 2 forks (10 samples per score), one thread, JMH's default (compiler)
 blackholes. Error is JMH's 99.9% confidence interval.
+
+## Results from the 0.6 API
+
+Every measurement below predates 0.7 and used the 0.6 API: `core` was
+`ReceiptVerifier.verifyReceiptCore(der, roots)`, `verifierBase64` was
+`ReceiptVerifier.verify(base64)` with a bundle-id check, and the endpoint
+benchmarks called `VerifyReceiptEndpoint`. 0.7 takes only base64 and has
+no endpoint result object, so `core`, `verifierBase64`, `endpointMap`,
+`resultOnly` and `retryViaResult` are gone; `verifyReceipt` is the nearest
+successor of `verifierBase64`, less the bundle-id comparison. No 0.7
+baseline has been recorded yet.
 
 ## Baseline, 2026-09-24
 

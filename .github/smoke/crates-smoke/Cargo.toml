@@ -3,7 +3,7 @@
 # at the published version so the manifest can never pin a stale one.
 #
 #   cp -R .github/smoke/crates-smoke/. "$SMOKE/" && cd "$SMOKE"
-#   cargo add "apple-purchase-receipt-verifier@=0.4.0"
+#   cargo add "apple-purchase-receipt-verifier@=0.7.0"
 #   cargo run
 #
 # Cargo.toml's `exclude` drops tests/ and fuzz/ from the published tarball, so

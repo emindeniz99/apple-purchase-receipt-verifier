@@ -1,7 +1,7 @@
 // Smoke-tests the package as published to npm, by name, from a directory that
 // is not the repository. Run it after installing the published version:
 //
-//   cd "$(mktemp -d)" && npm init -y && npm i apple-purchase-receipt-verifier@0.2.1
+//   cd "$(mktemp -d)" && npm init -y && npm i apple-purchase-receipt-verifier@0.7.0
 //   cp <repo>/fixtures/public-receipts/receipt-sandbox-g5.b64 .
 //   node <repo>/.github/smoke/npm-smoke.mjs
 //
@@ -9,17 +9,25 @@
 // missing entry point fails here rather than in a user's project. 0.1.1 and
 // 0.2.0 shipped with no dist/ at all and this file is what would have caught it.
 import { readFileSync } from 'node:fs'
-import { ReceiptVerifier, appleReceiptRoots } from 'apple-purchase-receipt-verifier'
+import { Reason, createVerifier, defaultConfig } from 'apple-purchase-receipt-verifier'
 
 const receiptB64 = readFileSync('receipt-sandbox-g5.b64', 'ascii').trim()
-const verifier = new ReceiptVerifier({
-  trustedRoots: appleReceiptRoots(),
-  bundleId: 'dev.bonzer.weeka.app',
-})
+
+// A package that lost its bundled roots would still load; this is where it
+// shows. defaultConfig() also throws if they fail their pinned fingerprints.
+const config = defaultConfig()
+if (config.roots.length !== 3) {
+  throw new Error(`expected three bundled Apple roots, got ${config.roots.length}`)
+}
+const verifier = createVerifier(config)
 
 // A real Apple-signed receipt against the real pinned root: exercises the
 // bundled certs, the DER reader, the chain build and the signature check.
-const receipt = verifier.verify(receiptB64)
+const result = verifier.verifyReceipt(receiptB64)
+if (!result.verified) {
+  throw new Error(`verification failed: ${result.failure.reason}: ${result.failure.message}`)
+}
+const receipt = result.payload
 if (receipt.receiptType !== 'ProductionSandbox') {
   throw new Error(`receiptType was ${receipt.receiptType}, expected ProductionSandbox`)
 }
@@ -28,17 +36,15 @@ if (receipt.bundleId !== 'dev.bonzer.weeka.app') {
 }
 
 // And the negative direction, so a verifier that accepted everything would fail
-// here too.
-let rejected = false
-try {
-  new ReceiptVerifier({ trustedRoots: appleReceiptRoots(), bundleId: 'com.other.app' })
-    .verify(receiptB64)
-} catch (e) {
-  rejected = e.reason === 'WRONG_BUNDLE_ID'
-}
-if (!rejected) {
-  throw new Error('a receipt for another bundle id was not rejected')
+// here too: the same receipt with one bit flipped in its signature, the byte
+// 128 from the end of the DER (BENCHMARKS.md).
+const der = Buffer.from(receiptB64, 'base64')
+der[der.length - 128] ^= 0x01
+const tampered = verifier.verifyReceipt(der.toString('base64'))
+if (tampered.verified || tampered.failure.reason !== Reason.INVALID_SIGNATURE) {
+  throw new Error(`a tampered signature was not rejected as INVALID_SIGNATURE: ${
+    tampered.verified ? 'verified' : tampered.failure.reason}`)
 }
 
 console.log(`npm: published package verified a genuine Apple receipt (${receipt.bundleId}, `
-  + `${receipt.inAppPurchases.length} purchases) and rejected a foreign bundle id`)
+  + `${receipt.inApp.length} purchases) and rejected a tampered signature`)
