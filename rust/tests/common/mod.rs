@@ -11,7 +11,12 @@ use apple_purchase_receipt_verifier::{
 };
 use std::path::{Path, PathBuf};
 
+/// The shared fixtures: `APRV_FIXTURES_DIR` when set, else the first
+/// `fixtures/` holding `cases-0.7.json` above the crate directory.
 pub fn fixtures_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os("APRV_FIXTURES_DIR") {
+        return PathBuf::from(dir);
+    }
     let mut dir: &Path = Path::new(env!("CARGO_MANIFEST_DIR"));
     loop {
         let candidate = dir.join("fixtures");

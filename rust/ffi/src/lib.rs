@@ -37,6 +37,7 @@
 //! `every_exported_function_is_guarded` test reads this file and fails if an
 //! export is ever added that does not do that.
 
+#![deny(unsafe_op_in_unsafe_fn)]
 #![warn(missing_docs)]
 #![warn(clippy::pedantic)]
 #![allow(clippy::missing_panics_doc)]
@@ -226,7 +227,9 @@ unsafe fn borrow_str<'a>(pointer: *const c_char) -> Result<&'a str, i32> {
     if pointer.is_null() {
         return Err(AprvReason::NullPointer as i32);
     }
-    CStr::from_ptr(pointer)
+    // SAFETY: non-null, and the caller guarantees a NUL-terminated string
+    // valid for the call.
+    unsafe { CStr::from_ptr(pointer) }
         .to_str()
         .map_err(|_| AprvReason::InvalidUtf8 as i32)
 }
@@ -251,14 +254,18 @@ unsafe fn anchors_of(
     if ders.is_null() || lens.is_null() {
         return Err(AprvReason::NullPointer as i32);
     }
-    let pointers = std::slice::from_raw_parts(ders, count);
-    let lengths = std::slice::from_raw_parts(lens, count);
+    // SAFETY: both non-null, and the caller guarantees `count` readable
+    // elements behind each.
+    let pointers = unsafe { std::slice::from_raw_parts(ders, count) };
+    // SAFETY: as above.
+    let lengths = unsafe { std::slice::from_raw_parts(lens, count) };
     let mut anchors = Vec::with_capacity(count);
     for (pointer, len) in pointers.iter().zip(lengths) {
         if pointer.is_null() {
             return Err(AprvReason::NullPointer as i32);
         }
-        let der = std::slice::from_raw_parts(*pointer, *len);
+        // SAFETY: non-null, and the caller guarantees `len` readable bytes.
+        let der = unsafe { std::slice::from_raw_parts(*pointer, *len) };
         anchors.push(TrustAnchor::from_der(der).map_err(|_| AprvReason::InvalidArgument as i32)?);
     }
     Ok(Some(anchors))
@@ -312,10 +319,14 @@ fn error_json(status: i32, message: &str) -> String {
 /// `out`, when non-null, must point at a writable `AprvResult`.
 unsafe fn finish(out: *mut AprvResult, status: i32, json: String) -> i32 {
     if !out.is_null() {
-        out.write(AprvResult {
-            status,
-            json: into_c_string(Some(json)),
-        });
+        // SAFETY: non-null, and the caller guarantees a writable
+        // `AprvResult`.
+        unsafe {
+            out.write(AprvResult {
+                status,
+                json: into_c_string(Some(json)),
+            });
+        }
     }
     status
 }
@@ -336,14 +347,13 @@ fn outcome(result: Result<String, Failure>) -> (i32, String) {
 /// The library version, as a static NUL-terminated string. **Do not free
 /// it**, and do not assume it stays valid across a `dlclose`.
 ///
-/// It is the repository's own `version.txt`, the single file every port's
-/// version is bumped from, so it can never drift from the Rust library this
-/// ABI is compiled against.
+/// It is the Rust library's own `VERSION`, so it names the library this
+/// ABI is compiled against and needs no file outside the crate.
 #[no_mangle]
 pub extern "C" fn aprv_version() -> *const c_char {
     static VERSION: OnceLock<CString> = OnceLock::new();
     let version = VERSION.get_or_init(|| {
-        CString::new(include_str!("../../../version.txt").trim())
+        CString::new(apple_purchase_receipt_verifier::VERSION)
             .unwrap_or_else(|_| CString::default())
     });
     version.as_ptr()
@@ -381,7 +391,9 @@ pub unsafe extern "C" fn aprv_verifier_new(
     fixed_clock_unix_millis: *const i64,
 ) -> *mut AprvVerifier {
     guard_ptr(|| {
-        let Ok(anchors) = anchors_of(ders, lens, count) else {
+        // SAFETY: the anchor arguments are passed through under this
+        // function's own contract.
+        let Ok(anchors) = (unsafe { anchors_of(ders, lens, count) }) else {
             return std::ptr::null_mut();
         };
         let mut builder = Config::builder();
@@ -389,7 +401,9 @@ pub unsafe extern "C" fn aprv_verifier_new(
             builder = builder.roots(anchors);
         }
         if !fixed_clock_unix_millis.is_null() {
-            let now = *fixed_clock_unix_millis;
+            // SAFETY: non-null, and the caller guarantees one readable,
+            // aligned `int64_t`.
+            let now = unsafe { *fixed_clock_unix_millis };
             builder = builder.clock(move || now);
         }
         match builder.build() {
@@ -411,7 +425,9 @@ pub unsafe extern "C" fn aprv_verifier_new(
 pub unsafe extern "C" fn aprv_verifier_free(verifier: *mut AprvVerifier) {
     guard(|| {
         if !verifier.is_null() {
-            drop(Box::from_raw(verifier));
+            // SAFETY: a live handle from `aprv_verifier_new`, which made it
+            // with `Box::into_raw`, freed once, per the caller's contract.
+            drop(unsafe { Box::from_raw(verifier) });
         }
         AprvReason::Ok as i32
     });
@@ -433,11 +449,15 @@ pub unsafe extern "C" fn aprv_verify_receipt(
     out: *mut AprvResult,
 ) -> i32 {
     guard(|| {
-        call(verifier, receipt_base64, out, |verifier, input| {
-            verifier
-                .verify_receipt(input)
-                .map(|payload| payload.to_json())
-        })
+        // SAFETY: the arguments are passed through under this function's
+        // own contract, which is `call`'s.
+        unsafe {
+            call(verifier, receipt_base64, out, |verifier, input| {
+                verifier
+                    .verify_receipt(input)
+                    .map(|payload| payload.to_json())
+            })
+        }
     })
 }
 
@@ -454,16 +474,23 @@ pub unsafe extern "C" fn aprv_verify_signed_data(
     out: *mut AprvResult,
 ) -> i32 {
     guard(|| {
-        call(verifier, jws, out, |verifier, input| {
-            verifier
-                .verify_signed_data(input)
-                .map(apple_purchase_receipt_verifier::JsonPayload::into_json)
-        })
+        // SAFETY: as in `aprv_verify_receipt`.
+        unsafe {
+            call(verifier, jws, out, |verifier, input| {
+                verifier
+                    .verify_signed_data(input)
+                    .map(apple_purchase_receipt_verifier::JsonPayload::into_json)
+            })
+        }
     })
 }
 
 /// The body both verification calls share: the argument checks, the call,
 /// and the result.
+///
+/// # Safety
+/// `verifier` must be `NULL` or a live handle, `input` `NULL` or a
+/// NUL-terminated string, and `out` `NULL` or a writable `AprvResult`.
 unsafe fn call(
     verifier: *const AprvVerifier,
     input: *const c_char,
@@ -472,9 +499,11 @@ unsafe fn call(
 ) -> i32 {
     if verifier.is_null() {
         let status = AprvReason::NullPointer as i32;
-        return finish(out, status, error_json(status, "verifier is NULL"));
+        // SAFETY: `out` is passed through under this function's contract.
+        return unsafe { finish(out, status, error_json(status, "verifier is NULL")) };
     }
-    let input = match borrow_str(input) {
+    // SAFETY: `input` is `NULL` or a NUL-terminated string, per the contract.
+    let input = match unsafe { borrow_str(input) } {
         Ok(input) => input,
         Err(status) => {
             let message = if status == AprvReason::NullPointer as i32 {
@@ -482,11 +511,15 @@ unsafe fn call(
             } else {
                 "input is not UTF-8"
             };
-            return finish(out, status, error_json(status, message));
+            // SAFETY: as above.
+            return unsafe { finish(out, status, error_json(status, message)) };
         }
     };
-    let (status, json) = outcome(verify(&(*verifier).inner, input));
-    finish(out, status, json)
+    // SAFETY: non-null, and a live handle per the contract.
+    let verifier = unsafe { &(*verifier).inner };
+    let (status, json) = outcome(verify(verifier, input));
+    // SAFETY: as above.
+    unsafe { finish(out, status, json) }
 }
 
 /// Apple's `verifyReceipt`, answered locally: `request_json` is the request
@@ -520,12 +553,16 @@ pub unsafe extern "C" fn aprv_verify_receipt_endpoint(
             2 => Environment::Sandbox,
             _ => return AprvReason::InvalidArgument as i32,
         };
-        let body = match borrow_str(request_json) {
+        // SAFETY: a NUL-terminated string or `NULL`, per the contract.
+        let body = match unsafe { borrow_str(request_json) } {
             Ok(body) => body,
             Err(status) => return status,
         };
-        let response = (*verifier).inner.verify_receipt_endpoint(environment, body);
-        response_json.write(into_c_string(Some(response)));
+        // SAFETY: non-null, and a live handle per the contract.
+        let verifier = unsafe { &(*verifier).inner };
+        let response = verifier.verify_receipt_endpoint(environment, body);
+        // SAFETY: non-null, and a writable `char *` per the contract.
+        unsafe { response_json.write(into_c_string(Some(response))) };
         AprvReason::Ok as i32
     })
 }
@@ -542,7 +579,9 @@ pub unsafe extern "C" fn aprv_verify_receipt_endpoint(
 pub unsafe extern "C" fn aprv_string_free(text: *mut c_char) {
     guard(|| {
         if !text.is_null() {
-            drop(CString::from_raw(text));
+            // SAFETY: a string this library made with `CString::into_raw`,
+            // not yet freed, per the caller's contract.
+            drop(unsafe { CString::from_raw(text) });
         }
         AprvReason::Ok as i32
     });
@@ -959,9 +998,9 @@ mod tests {
     // --- the rest of the surface -----------------------------------------
 
     #[test]
-    fn the_version_is_the_repository_version() {
+    fn the_version_is_the_library_version() {
         let version = unsafe { CStr::from_ptr(aprv_version()) }.to_str().unwrap();
-        assert_eq!(version, include_str!("../../../version.txt").trim());
+        assert_eq!(version, apple_purchase_receipt_verifier::VERSION);
         assert_eq!(version.split('.').count(), 3, "{version} is not x.y.z");
         assert!(version.split('.').all(|part| part.parse::<u32>().is_ok()));
         // Static: the same pointer every call, and never freed.
