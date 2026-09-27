@@ -436,9 +436,16 @@ namespace ApplePurchaseReceiptVerifier.Internal
                     }
                 }
             }
-            catch (CryptographicException)
+            catch (Exception e) when (e is not OutOfMemoryException)
             {
-                throw new VerificationException(reason, what + " has a key this library cannot build");
+                // Not only CryptographicException: OpenSSL refuses an
+                // undecodable key with one, but on macOS the key is built by
+                // Apple's Security framework and the refusal escaped this
+                // catch as some other type, reaching the caller's catch-all
+                // as MALFORMED. Either way the certificate was vouched for and
+                // its key cannot be built, so the verdict must not depend on
+                // the platform.
+                throw new VerificationException(reason, what + " has a key this library cannot build", e);
             }
 
             throw new VerificationException(reason, what + " has a key this library cannot build");
