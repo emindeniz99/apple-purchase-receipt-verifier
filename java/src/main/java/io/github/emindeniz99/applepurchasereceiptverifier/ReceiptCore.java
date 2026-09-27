@@ -197,6 +197,10 @@ final class ReceiptCore {
     /** Every check up to and including a signature; returns the signed payload, not yet decoded. */
     private static byte[] verifySignature(byte[] receiptDer, Set<TrustAnchor> trustAnchors, CallClock clock)
             throws VerificationException {
+        if (Asn1Depth.exceeded(receiptDer)) {
+            throw new VerificationException(
+                    Reason.MALFORMED, "receipt nests ASN.1 deeper than " + Asn1Depth.MAX_DEPTH + " values");
+        }
         ASN1Primitive parsed;
         try {
             // Rejects trailing bytes after the CMS blob, so bytes appended to a

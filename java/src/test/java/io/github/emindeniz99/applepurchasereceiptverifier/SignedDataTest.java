@@ -161,6 +161,41 @@ class SignedDataTest {
         assertEquals(Reason.INVALID_CERTIFICATE_PURPOSE, failure(noOid, noOid.signJws(transactionClaims("Sandbox"))));
     }
 
+    /**
+     * The chain first, then the markers, as on the receipt path (owner,
+     * 2026-09-27, Q21): a chain that does not reach a pinned root is
+     * UNTRUSTED_CHAIN whatever markers it lacks.
+     */
+    @Test
+    void aForeignChainWithoutMarkersIsAnUntrustedChain() throws Exception {
+        Date notBefore = new Date(System.currentTimeMillis() - 86_400_000L);
+        Date notAfter = new Date(System.currentTimeMillis() + 365L * 86_400_000L);
+        for (TestPki noOid : new TestPki[] {
+            TestPki.jws(false, true, notBefore, notAfter), TestPki.jws(true, false, notBefore, notAfter)
+        }) {
+            assertEquals(Reason.UNTRUSTED_CHAIN, failure(pki, noOid.signJws(transactionClaims("Sandbox"))));
+        }
+    }
+
+    /**
+     * Validity before the signature (owner, 2026-09-27, Q22): a payload whose
+     * chain is outside its window is INVALID_CERTIFICATE even when its
+     * signature is also broken.
+     */
+    @Test
+    void anExpiredChainOutranksABrokenSignature() throws Exception {
+        Date notBefore = new Date(System.currentTimeMillis() - 730L * 86_400_000L);
+        Date notAfter = new Date(System.currentTimeMillis() - 365L * 86_400_000L);
+        TestPki expired = TestPki.jws(true, true, notBefore, notAfter);
+        String jws = expired.signJws(transactionClaims("Sandbox"));
+        int signatureStart = jws.lastIndexOf('.') + 1;
+        // The first character carries six whole bits, so changing it keeps
+        // the segment canonical base64url.
+        char flipped = jws.charAt(signatureStart) == 'A' ? 'B' : 'A';
+        String broken = jws.substring(0, signatureStart) + flipped + jws.substring(signatureStart + 1);
+        assertEquals(Reason.INVALID_CERTIFICATE, failure(expired, broken));
+    }
+
     @Test
     void acceptsHistoricalPayloadSignedByNowExpiredCert() throws Exception {
         Date notBefore = new Date(System.currentTimeMillis() - 730L * 86_400_000L);

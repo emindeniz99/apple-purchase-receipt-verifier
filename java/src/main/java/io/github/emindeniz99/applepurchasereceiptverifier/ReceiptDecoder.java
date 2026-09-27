@@ -2,7 +2,9 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import java.io.IOException;
 import java.math.BigInteger;
-import java.time.Instant;
+import java.time.LocalDate;
+import java.time.Month;
+import java.time.Year;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -348,6 +350,7 @@ final class ReceiptDecoder {
     }
 
     private static ASN1Set parseAttributeSet(byte[] der, String what) throws VerificationException {
+        requireDepth(der, what);
         ASN1Primitive parsed;
         try {
             parsed = ASN1Primitive.fromByteArray(der);
@@ -357,8 +360,10 @@ final class ReceiptDecoder {
         if (parsed instanceof ASN1OctetString) {
             // Xcode receipts double-wrap the payload in an extra OCTET
             // STRING (upstream receipt_utility handles the same shape).
+            byte[] inner = ((ASN1OctetString) parsed).getOctets();
+            requireDepth(inner, what);
             try {
-                parsed = ASN1Primitive.fromByteArray(((ASN1OctetString) parsed).getOctets());
+                parsed = ASN1Primitive.fromByteArray(inner);
             } catch (IOException e) {
                 throw new VerificationException(Reason.UNREADABLE_PAYLOAD, what + " double-wrap is not valid ASN.1", e);
             }
@@ -367,6 +372,13 @@ final class ReceiptDecoder {
             throw new VerificationException(Reason.UNREADABLE_PAYLOAD, what + " is not an ASN.1 SET");
         }
         return (ASN1Set) parsed;
+    }
+
+    private static void requireDepth(byte[] der, String what) throws VerificationException {
+        if (Asn1Depth.exceeded(der)) {
+            throw new VerificationException(
+                    Reason.UNREADABLE_PAYLOAD, what + " nests ASN.1 deeper than " + Asn1Depth.MAX_DEPTH + " values");
+        }
     }
 
     /** {@code ReceiptAttribute ::= SEQUENCE { type INTEGER, version INTEGER, value OCTET STRING }} */
@@ -426,7 +438,16 @@ final class ReceiptDecoder {
     private static String decodeString(byte[] der) throws VerificationException {
         try {
             ASN1Primitive parsed = ASN1Primitive.fromByteArray(der);
-            if (!(parsed instanceof ASN1UTF8String) && !(parsed instanceof ASN1IA5String)) {
+            if (parsed instanceof ASN1IA5String) {
+                // IA5 is seven-bit: a byte from 0x80 up is no IA5 character,
+                // and is not read as Latin-1 either (owner, 2026-09-27, Q23).
+                for (byte octet : ((ASN1IA5String) parsed).getOctets()) {
+                    if (octet < 0) {
+                        throw new VerificationException(
+                                Reason.UNREADABLE_PAYLOAD, "IA5String attribute value is not seven-bit");
+                    }
+                }
+            } else if (!(parsed instanceof ASN1UTF8String)) {
                 throw new VerificationException(
                         Reason.UNREADABLE_PAYLOAD, "attribute value is not a UTF8String or IA5String");
             }
@@ -456,6 +477,11 @@ final class ReceiptDecoder {
             return Long.valueOf(value.longValue());
         } catch (IOException e) {
             throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "attribute value is not valid ASN.1", e);
+        } catch (RuntimeException e) {
+            // BouncyCastle refuses a malformed INTEGER (one not minimally
+            // encoded, say) with an unchecked exception: that one attribute
+            // is kept raw, as for a string that does not decode.
+            throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "attribute value is not a valid integer", e);
         }
     }
 
@@ -465,22 +491,72 @@ final class ReceiptDecoder {
     }
 
     /**
-     * An RFC 3339 date in an IA5String, as epoch milliseconds, or
+     * A date in an IA5String or UTF8String, as epoch milliseconds, or
      * {@code null} when empty (Apple writes an unset date that way, so it is
-     * not kept raw). A value that does not parse throws, and the caller keeps
-     * it raw. That includes an expanded year ({@code +1000000000-...}) that
-     * {@link Instant#parse} accepts but no epoch-millisecond long can hold.
+     * not kept raw). Anything else must be exactly
+     * {@code YYYY-MM-DDTHH:MM:SSZ} (see {@link #parseDate}); a value that is
+     * not throws, and the caller keeps it raw.
      */
     private static @Nullable Long date(byte[] der) throws VerificationException {
         String text = decodeString(der);
         if (text.isEmpty()) {
             return null;
         }
-        try {
-            return Long.valueOf(Instant.parse(text).toEpochMilli());
-        } catch (RuntimeException e) {
-            throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "attribute value is not an RFC 3339 date", e);
+        Long millis = parseDate(text);
+        if (millis == null) {
+            throw new VerificationException(
+                    Reason.UNREADABLE_PAYLOAD, "attribute value is not a YYYY-MM-DDTHH:MM:SSZ date");
         }
+        return millis;
+    }
+
+    /**
+     * Exactly {@code YYYY-MM-DDTHH:MM:SSZ} and nothing else (owner,
+     * 2026-09-27, Q20a): a four-digit year from 0000 to 9999, uppercase
+     * {@code T} and {@code Z}, a day that exists in its month, hour 00 to
+     * 23, minute and second 00 to 59; no fraction, no offset, no leap
+     * second. Checked by hand rather than by {@code Instant.parse}, whose
+     * grammar is wider and has moved between JDKs, so every port reads one
+     * receipt the same way. Null when {@code text} is not in that form.
+     */
+    static @Nullable Long parseDate(String text) {
+        if (text.length() != 20
+                || text.charAt(4) != '-'
+                || text.charAt(7) != '-'
+                || text.charAt(10) != 'T'
+                || text.charAt(13) != ':'
+                || text.charAt(16) != ':'
+                || text.charAt(19) != 'Z') {
+            return null;
+        }
+        int year = digits(text, 0, 4);
+        int month = digits(text, 5, 2);
+        int day = digits(text, 8, 2);
+        int hour = digits(text, 11, 2);
+        int minute = digits(text, 14, 2);
+        int second = digits(text, 17, 2);
+        if (year < 0 || month < 1 || month > 12 || day < 1 || hour < 0 || hour > 23
+                || minute < 0 || minute > 59 || second < 0 || second > 59) {
+            return null;
+        }
+        if (day > Month.of(month).length(Year.isLeap(year))) {
+            return null;
+        }
+        long days = LocalDate.of(year, month, day).toEpochDay();
+        return Long.valueOf(((days * 24 + hour) * 60 + minute) * 60_000L + second * 1000L);
+    }
+
+    /** The decimal value of {@code length} ASCII digits at {@code from}, or -1 if any is not one. */
+    private static int digits(String text, int from, int length) {
+        int value = 0;
+        for (int i = from; i < from + length; i++) {
+            char c = text.charAt(i);
+            if (c < '0' || c > '9') {
+                return -1;
+            }
+            value = value * 10 + (c - '0');
+        }
+        return value;
     }
 
     /** {@link #date}, with {@code null} for anything that does not parse. */

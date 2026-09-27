@@ -36,10 +36,10 @@ import org.jspecify.annotations.Nullable;
  * transactions, Server Notifications V2) completely offline, against pinned
  * Apple roots.
  *
- * <p>Algorithm: ES256 only, exactly 3 {@code x5c} certs, Apple marker OIDs on
- * leaf and intermediate, PKIX path validation to the pinned roots at the
- * payload's {@code signedDate} (the clock when it states none), then the
- * signature. Mirrors the checks of Apple's official app-store-server-library
+ * <p>Algorithm: ES256 only, exactly 3 {@code x5c} certs, PKIX path
+ * validation to the pinned roots at the payload's {@code signedDate} (the
+ * clock when it states none), Apple marker OIDs on leaf and intermediate,
+ * then the signature. Mirrors the checks of Apple's official app-store-server-library
  * in offline mode: no OCSP, so a revoked certificate is not detected, in
  * exchange for no network call. No payload is rejected for its age.</p>
  *
@@ -116,7 +116,7 @@ final class JwsCore {
         }
     }
 
-    /** Structure, then certificates, OIDs, chain, signature, and last the payload verdict. */
+    /** Structure, then certificates, chain, OIDs, signature, and last the payload verdict. */
     private static JsonPayload verifyUnguarded(String jws, Set<TrustAnchor> trustAnchors, CallClock clock)
             throws VerificationException {
         String[] parts = jws.split("\\.", -1);
@@ -138,6 +138,17 @@ final class JwsCore {
         List<X509Certificate> chain = decodeChain(header.x5c);
         X509Certificate leaf = chain.get(0);
         X509Certificate intermediate = chain.get(1);
+
+        Payload payload = Payload.read(payloadBytes);
+        authenticateTopDown(leaf, intermediate, trustAnchors);
+        validateChain(
+                leaf,
+                intermediate,
+                new Date(payload.signedDate != null ? payload.signedDate.longValue() : clock.millis()),
+                trustAnchors);
+        // The marker OIDs after the chain, as on the receipt path (owner,
+        // 2026-09-27, Q21): a foreign chain is UNTRUSTED_CHAIN whatever it
+        // carries. Still before the leaf's key checks the JWS signature.
         if (leaf.getExtensionValue(AppleTrust.SIGNING_LEAF_OID) == null) {
             throw new VerificationException(
                     Reason.INVALID_CERTIFICATE_PURPOSE,
@@ -148,14 +159,6 @@ final class JwsCore {
                     Reason.INVALID_CERTIFICATE_PURPOSE,
                     "intermediate certificate lacks Apple marker OID " + AppleTrust.INTERMEDIATE_OID);
         }
-
-        Payload payload = Payload.read(payloadBytes);
-        authenticateTopDown(leaf, intermediate, trustAnchors);
-        validateChain(
-                leaf,
-                intermediate,
-                new Date(payload.signedDate != null ? payload.signedDate.longValue() : clock.millis()),
-                trustAnchors);
         verifyEs256(leaf, parts[0] + "." + parts[1], signature);
         if (payload.json == null) {
             throw new VerificationException(
@@ -379,6 +382,11 @@ final class JwsCore {
         try {
             for (String entry : x5c) {
                 byte[] der = decodeX5cEntry(entry);
+                if (Asn1Depth.exceeded(der)) {
+                    throw new VerificationException(
+                            Reason.INVALID_CERTIFICATE,
+                            "x5c[" + chain.size() + "] nests ASN.1 deeper than " + Asn1Depth.MAX_DEPTH + " values");
+                }
                 X509Certificate certificate = (X509Certificate) cf.generateCertificate(new ByteArrayInputStream(der));
                 // Result unused: BouncyCastle decodes the signature BIT
                 // STRING lazily, so one that is not whole octets would

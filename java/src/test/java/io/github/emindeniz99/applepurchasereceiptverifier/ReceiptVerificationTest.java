@@ -556,7 +556,7 @@ class ReceiptVerificationTest {
         Date notBefore = new Date(System.currentTimeMillis() - 730L * 86_400_000L);
         Date notAfter = new Date(System.currentTimeMillis() - 365L * 86_400_000L);
         TestPki expired = TestPki.receipt(notBefore, notAfter);
-        byte[] fresh = expired.signReceipt(payload(BUNDLE, Instant.now().toString()));
+        byte[] fresh = expired.signReceipt(payload(BUNDLE, Instant.now().truncatedTo(ChronoUnit.SECONDS).toString()));
         Clock insideTheWindow = Clock.fixed(Instant.ofEpochMilli(notBefore.getTime() + 86_400_000L), ZoneOffset.UTC);
         VerificationException e = assertThrows(
                 VerificationException.class,
@@ -651,9 +651,31 @@ class ReceiptVerificationTest {
         Date notBefore = new Date(System.currentTimeMillis() - 730L * 86_400_000L);
         Date notAfter = new Date(System.currentTimeMillis() - 365L * 86_400_000L);
         TestPki expired = TestPki.receipt(notBefore, notAfter);
-        byte[] fresh = expired.signReceipt(payload(BUNDLE, Instant.now().toString()));
+        byte[] fresh = expired.signReceipt(payload(BUNDLE, Instant.now().truncatedTo(ChronoUnit.SECONDS).toString()));
         VerificationException e = assertThrows(VerificationException.class, () -> verify(expired, fresh));
         assertEquals(Reason.INVALID_CERTIFICATE, e.reason());
+    }
+
+    /**
+     * Validity before the signature (owner, 2026-09-27, Q22): a receipt whose
+     * chain is outside its window at the creation date is INVALID_CERTIFICATE
+     * even when its signature is also broken.
+     */
+    @Test
+    void anExpiredChainOutranksABrokenSignature() throws Exception {
+        Date notBefore = new Date(System.currentTimeMillis() - 730L * 86_400_000L);
+        Date notAfter = new Date(System.currentTimeMillis() - 365L * 86_400_000L);
+        TestPki expired = TestPki.receipt(notBefore, notAfter);
+        byte[] fresh = TestPki.corruptSignatures(
+                expired.signReceipt(payload(BUNDLE, Instant.now().truncatedTo(ChronoUnit.SECONDS).toString())), 1);
+        VerificationException e = assertThrows(VerificationException.class, () -> verify(expired, fresh));
+        assertEquals(Reason.INVALID_CERTIFICATE, e.reason());
+        // The control: the same corruption inside the window is the signature.
+        Instant signedAt = Instant.now().minus(547, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
+        byte[] historical = TestPki.corruptSignatures(
+                expired.signReceipt(payload(BUNDLE, signedAt.toString()), Date.from(signedAt)), 1);
+        e = assertThrows(VerificationException.class, () -> verify(expired, historical));
+        assertEquals(Reason.INVALID_SIGNATURE, e.reason());
     }
 
     // ------------------------------------------------ several SignerInfos
