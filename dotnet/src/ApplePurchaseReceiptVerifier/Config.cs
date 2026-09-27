@@ -40,8 +40,16 @@ namespace ApplePurchaseReceiptVerifier
         /// <summary>Starts building a <see cref="Config"/> with different roots or a different clock.</summary>
         public static Builder CreateBuilder() => new Builder();
 
-        /// <summary>The pinned trust anchors, an unmodifiable copy taken at build time.</summary>
-        public IReadOnlyList<X509Certificate2> Roots => _roots;
+        /// <summary>
+        /// The pinned trust anchors: an unmodifiable list of fresh copies on
+        /// every call, so nothing a caller does to what it gets back — casting
+        /// the list, disposing a certificate — reaches this config or a
+        /// verifier built from it.
+        /// </summary>
+        public IReadOnlyList<X509Certificate2> Roots => Certificates.CopyAnchors(_roots, "roots").AsReadOnly();
+
+        /// <summary>The anchors themselves, for the verifier; never handed to a caller.</summary>
+        internal IReadOnlyList<X509Certificate2> Anchors => _roots;
 
         /// <summary>The source of "now", in epoch milliseconds.</summary>
         public Func<long> Clock { get; }

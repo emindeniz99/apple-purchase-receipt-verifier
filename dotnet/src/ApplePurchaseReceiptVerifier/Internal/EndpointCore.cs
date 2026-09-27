@@ -14,8 +14,6 @@ namespace ApplePurchaseReceiptVerifier.Internal
     {
         internal const int MaxRequestBytes = 3145728;
 
-        private const string DateFormat = "yyyy-MM-dd HH:mm:ss";
-
         private static readonly Lazy<TimeZoneInfo> Pacific = new Lazy<TimeZoneInfo>(ResolvePacific);
 
         internal static string Verify(
@@ -203,13 +201,68 @@ namespace ApplePurchaseReceiptVerifier.Internal
                 return;
             }
 
-            DateTimeOffset utc = DateTimeOffset.FromUnixTimeMilliseconds(ms);
-            json.Set(prefix, utc.UtcDateTime.ToString(DateFormat, CultureInfo.InvariantCulture) + " Etc/GMT");
+            json.Set(prefix, Civil(ms) + " Etc/GMT");
             json.Set(prefix + "_ms", ms.ToString(CultureInfo.InvariantCulture));
-            json.Set(
-                prefix + "_pst",
-                TimeZoneInfo.ConvertTime(utc, Pacific.Value).DateTime.ToString(DateFormat, CultureInfo.InvariantCulture)
-                + " America/Los_Angeles");
+            json.Set(prefix + "_pst", Civil(ms + PacificOffsetMs(ms)) + " America/Los_Angeles");
+        }
+
+        /// <summary>
+        /// The US Pacific offset at <paramref name="instantMs"/>. The receipt
+        /// grammar admits years 0000 to 9999, and year 0000 lies before the
+        /// first instant <see cref="DateTimeOffset"/> can hold, so the instant
+        /// is clamped into its range first: the zone keeps one offset (local
+        /// mean time) throughout the centuries clamped away, and none after.
+        /// </summary>
+        private static long PacificOffsetMs(long instantMs)
+        {
+            long clamped = Math.Min(Math.Max(instantMs, EarliestOffsetInstantMs), LatestOffsetInstantMs);
+            return (long)Pacific.Value.GetUtcOffset(DateTimeOffset.FromUnixTimeMilliseconds(clamped)).TotalMilliseconds;
+        }
+
+        /// <summary>A day inside <see cref="DateTimeOffset"/>'s range at either end, so any offset still converts.</summary>
+        private const long EarliestOffsetInstantMs = -62135596800000L + 86400000L;
+
+        private const long LatestOffsetInstantMs = 253402300799999L - 86400000L;
+
+        private const long MillisecondsPerDay = 86400000L;
+
+        /// <summary>
+        /// <paramref name="ms"/> as <c>yyyy-MM-dd HH:mm:ss</c> in the proleptic
+        /// Gregorian calendar, computed rather than formatted through
+        /// <see cref="DateTime"/>, whose range starts at year 1. The year is
+        /// printed as a year of era, as the Java reference's <c>yyyy</c> does:
+        /// year 0000 is 1 BC and prints as <c>0001</c>.
+        /// </summary>
+        private static string Civil(long ms)
+        {
+            long days = ms / MillisecondsPerDay;
+            long msOfDay = ms % MillisecondsPerDay;
+            if (msOfDay < 0)
+            {
+                days--;
+                msOfDay += MillisecondsPerDay;
+            }
+
+            // Days since 1970-01-01 to a civil date (H. Hinnant, "chrono-
+            // Compatible Low-Level Date Algorithms", days_from_civil inverse).
+            long z = days + 719468;
+            long era = (z >= 0 ? z : z - 146096) / 146097;
+            long dayOfEra = z - (era * 146097);
+            long yearOfEra400 = (dayOfEra - (dayOfEra / 1460) + (dayOfEra / 36524) - (dayOfEra / 146096)) / 365;
+            long dayOfYear = dayOfEra - ((365 * yearOfEra400) + (yearOfEra400 / 4) - (yearOfEra400 / 100));
+            long monthIndex = ((5 * dayOfYear) + 2) / 153;
+            long day = dayOfYear - (((153 * monthIndex) + 2) / 5) + 1;
+            long month = monthIndex < 10 ? monthIndex + 3 : monthIndex - 9;
+            long year = yearOfEra400 + (era * 400) + (month <= 2 ? 1 : 0);
+            long yearOfEra = year > 0 ? year : 1 - year;
+
+            long seconds = msOfDay / 1000;
+            return yearOfEra.ToString("D4", CultureInfo.InvariantCulture)
+                + "-" + month.ToString("D2", CultureInfo.InvariantCulture)
+                + "-" + day.ToString("D2", CultureInfo.InvariantCulture)
+                + " " + (seconds / 3600).ToString("D2", CultureInfo.InvariantCulture)
+                + ":" + (seconds / 60 % 60).ToString("D2", CultureInfo.InvariantCulture)
+                + ":" + (seconds % 60).ToString("D2", CultureInfo.InvariantCulture);
         }
 
         private static TimeZoneInfo ResolvePacific()

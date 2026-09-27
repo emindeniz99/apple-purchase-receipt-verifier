@@ -103,7 +103,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
             // Only the creation date is read before trust is established,
             // because chain validity is anchored at signing time.
             long? creationMs = ReceiptAttributes.ReadCreationDateMs(cms.Content);
-            long at = creationMs ?? clock();
+            long at = creationMs ?? CallClock.Read(clock);
 
             EmbeddedCertificates embedded = DecodeEmbedded(cms.CertificateEntries);
 
@@ -210,11 +210,6 @@ namespace ApplePurchaseReceiptVerifier.Internal
                 }
             }
 
-            if (embedded.Unreadable.Count > 0)
-            {
-                throw Malformed("an embedded certificate is not a valid certificate");
-            }
-
             List<LoadedCertificate> matches = new List<LoadedCertificate>();
             foreach (LoadedCertificate certificate in embedded.Decoded)
             {
@@ -223,6 +218,23 @@ namespace ApplePurchaseReceiptVerifier.Internal
                 {
                     matches.Add(certificate);
                 }
+            }
+
+            if (embedded.Unreadable.Count > 0)
+            {
+                // A signer this library condemns from its own bytes is as
+                // broken as one the platform could not load, and outranks the
+                // broken stranger the same way. Which of the two a given
+                // signer is depends on the host's decoder (macOS refuses a
+                // version-11 certificate that OpenSSL loads), so the verdict
+                // must not.
+                foreach (LoadedCertificate signer in matches)
+                {
+                    Chain.RequireStructurallySound(
+                        signer, VerificationReason.InvalidCertificate, "the receipt signer certificate");
+                }
+
+                throw Malformed("an embedded certificate is not a valid certificate");
             }
 
             if (matches.Count == 0)
