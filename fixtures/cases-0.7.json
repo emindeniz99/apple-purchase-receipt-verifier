@@ -1,7 +1,7 @@
 {
   "$schema": "./cases-0.7.schema.json",
   "schemaVersion": 2,
-  "comment": "Normative cross-language conformance vectors for the 0.7 API of apple-purchase-receipt-verifier (docs/design/0.7-api.md), schema version 2 (fixtures/cases-0.7.schema.json).\nThe nine ports move from fixtures/cases.json to this file one at a time; cases.json is deleted when the last port has moved. Every case of cases.json is carried over and none is deleted: legacyId names the cases.json case each one replaces, and a case without legacyId is new in 0.7 (tag new-in-0-7).\nNo expectation here was produced by running an implementation. Values were carried from cases.json or derived from the design, then checked against an independent decode of the fixture bytes written for this file. A vector that disagrees with a port is a bug report against one of the two until a human decides.\n\nOperations. verifyReceipt(base64), verifySignedData(jws) and verifyReceiptEndpoint(environment, requestJson) are the three public 0.7 methods. verifyReceipt: a text fixture is handed over verbatim; a raw or base64 fixture holds DER, which the runner encodes as canonical standard base64 with padding. verifySignedData: the fixture's logical bytes as a string (utf8 trims, text does not). verifyReceiptEndpoint: input.fixture is wrapped by the runner as {\"receipt-data\":\"<string>\"}, the string built as for verifyReceipt; input.requestBody names a text fixture that is the whole request body, handed over verbatim. decodeBase64 is the one internal hook: 0.7 exposes no decoder, but a valid-base64 string that is not a receipt fails as MALFORMED through verifyReceipt just as invalid base64 does, so the accept side of the base64 rule is only observable on the decoders themselves. Each port's test code calls its receipt-data decoder and its x5c-entry decoder directly; a refusal is MALFORMED from receipt-data and INVALID_CERTIFICATE from x5c (an error group states MALFORMED and the runner maps it for x5c).\n\nConfig. trustedRoots is {\"source\":\"defaults\"} for Config.defaults() (the three bundled, pinned Apple roots) or {\"source\":\"fixtures\",\"fixtures\":[...]} for roots read from registered trust-anchor fixtures. The endpoint takes environment PRODUCTION or SANDBOX. There is no bundle id, accepted environment set, appAppleId or device id anywhere: 0.7 takes none of them, and the eight 0.6 policy cases now verify and pin the value the caller judges (tag policy-flip).\n\nClock. When a case carries clock.now the runner builds its Config with a clock fixed at that instant; otherwise the default clock runs. 0.7 reads the clock in two places: the certificate-validity instant when the input states no usable date (a receipt whose first attribute 12 is missing or does not parse, a JWS whose signedDate is missing or is not a representable instant) and request_date at the endpoint. This reverses 0.6, where that fallback was the system clock and an injected clock could not move it, so the dateless and unreadable-date cases now pin a clock (2025-01-01 unless the case is about the clock) and two endpoint cases pin that the clock does move the verdict. A case whose verdict or asserted fields could move with the clock pins one.\n\nExpected. verifyReceipt and verifySignedData answer {\"status\":\"ok\"} or {\"status\":\"error\",\"reason\":R}. On ok, fields maps a JSON Pointer (RFC 6901) to a value, evaluated on the verified payload as JSON: ReceiptPayload.toJson() for receipts, JsonPayload.json() for JWS. One extension: a reference token written [key=value] selects the single element of an array whose member key is the JSON string value, and a runner fails the case unless exactly one element matches. lengths maps a pointer to the length of the array there. toJson, when present, is the exact string toJson() returns; compare the UTF-8 bytes. Receipt JSON uses the design's keys: snake_case, dates as *_ms epoch milliseconds (numbers), 64-bit ids as strings, bytes as standard base64 with padding, unknown_attributes as {\"<type>\": [\"<base64>\", ...]} with keys in ascending numeric order and values in receipt order. Owner rules of 2026-09-27 the receipt vectors pin: the first occurrence of a known attribute wins, for the typed field and for the chain date; every attribute that does not end up in a typed field (a later copy of a known attribute, or a known attribute whose value does not parse, whose typed field is then null) goes raw into unknown_attributes, the in-app ones into that purchase's unknown_attributes. A date attribute whose string is empty means not set: its typed field is null and it is not kept raw; an empty non-date string is the value \"\". verifyReceiptEndpoint always returns Apple's response body; expected.fields is evaluated on it and always pins /status. 0.7 exposes no failure reason beside the body, so the 0.6 failureReason is gone. Everywhere, null means absent or JSON null; numbers compare by value (1722945600000.0 equals 1722945600000) and integers exactly, so a runner parses without rounding (the endpoint's download_id is 2^63-1 as a JSON number). A field a case does not list is not pinned.\n\nReasons. The 0.7 set: MALFORMED, TOO_LARGE, INVALID_SIGNATURE, UNTRUSTED_CHAIN, INVALID_CERTIFICATE, INVALID_CERTIFICATE_PURPOSE, UNREADABLE_PAYLOAD, INTERNAL_ERROR. Carried per the design's mapping: INVALID_CHAIN is UNTRUSTED_CHAIN; INVALID_RECEIPT_FORMAT, INVALID_JWS_FORMAT and MALFORMED_REQUEST fold into MALFORMED; REQUEST_TOO_LARGE is TOO_LARGE. Where the design is more specific the specific rule wins: a certificate outside its validity window at the chain instant is INVALID_CERTIFICATE (owner, 2026-09-27; tag validity-window); every input over a size cap is TOO_LARGE (the Bounds table); and a JWS payload that is not a JSON object is carried past the signature (the parse-before-signature rule), so the two unsigned 0.6 payload cases are INVALID_SIGNATURE and their signed twins UNREADABLE_PAYLOAD. None of the twelve 0.6 INTERNAL_ERROR cases stays INTERNAL_ERROR: four receipts whose Apple-signed content does not parse as an attribute set are UNREADABLE_PAYLOAD; the unreadable creation date and the unparseable in-app purchase verify with their raw octets in unknown_attributes; the six JWS claim-type cases verify because 0.7 returns the payload untyped. No input can make a correct library answer INTERNAL_ERROR, so no case expects it.\n\nFixtures. The registry works as in cases.json: codec and contentSha256 over the decoded logical bytes, re-hashed by every runner. 0.7 checks Apple's WWDR marker OID 1.2.840.113635.100.6.2.1 on the receipt intermediate, which no 0.6 synthetic receipt chain carried, so every generated receipt was re-minted for this file into fixtures/generated-0.7/ by the same generators with TestPki stamping the marker (fresh keys; same payloads), and VerifierApiFixtures writes the inputs new in 0.7, including the three base64 strings at and over the receipt cap. receipt-der-trailing-byte.der there is receipt.der plus one zero byte. The directory sits beside fixtures/generated/ because tools/lint-cases.mjs requires every file under generated/ to be registered in cases.json. JWS fixtures, public receipts, Apple's files, the request-body limits and the one over-cap receipt string refused for size before anything is decoded are shared with cases.json unchanged. Regenerate with: mvn -B -q -f java/pom.xml test-compile; mvn -B -q -f java/pom.xml dependency:build-classpath -Dmdep.outputFile=/tmp/cp.txt; then java -cp \"java/target/test-classes:java/target/classes:$(cat /tmp/cp.txt)\" io.github.emindeniz99.applepurchasereceiptverifier.<Generator> <dir>/generated for PortDivergenceFixtures, HostileReceiptFixtures, AbsentSignerFixture, ReceiptCmsDefectFixtures, ReceiptIdsFixture, VerificationOrderFixtures, LargeReceiptFixture and VerifierApiFixtures, ReceiptBase64CapFixture with <dir>, and mvn -B -q -f java/pom.xml surefire:test -Dtest=FixtureGeneratorTest -Dfixtures.generate=true -Daprv.fixtures.dir=<dir>; copy the receipt files and their roots into fixtures/generated-0.7/ and re-hash.\n\nCanonical toJson. Keys in the design's order, no whitespace, UTF-8, strings escaped as ECMAScript JSON.stringify escapes them (\\\" \\\\ \\b \\f \\n \\r \\t, other U+0000 to U+001F as \\u00xx in lowercase hex, nothing else: no escaped slash, non-ASCII, U+2028 and U+2029 raw). Exact bytes are pinned for the shared receipt, the ids receipt, the web-order-zero receipt, a non-ASCII product id, an escapes product id and the genuine public receipts that verify.\n\n\"fault\" names the one intentional defect of a negative case. It is documentation, not an assertion. Tags are free-form; owner-review marks a case whose expectation follows from an owner rule but deserves a second look.",
+  "comment": "Normative cross-language conformance vectors for the 0.7 API of apple-purchase-receipt-verifier (docs/design/0.7-api.md), schema version 2 (fixtures/cases-0.7.schema.json).\nThe nine ports move from fixtures/cases.json to this file one at a time; cases.json is deleted when the last port has moved. Every case of cases.json is carried over and none is deleted: legacyId names the cases.json case each one replaces, and a case without legacyId is new in 0.7 (tag new-in-0-7).\nNo expectation here was produced by running an implementation. Values were carried from cases.json or derived from the design, then checked against an independent decode of the fixture bytes written for this file. A vector that disagrees with a port is a bug report against one of the two until a human decides.\n\nOperations. verifyReceipt(base64), verifySignedData(jws) and verifyReceiptEndpoint(environment, requestJson) are the three public 0.7 methods. verifyReceipt: a text fixture is handed over verbatim; a raw or base64 fixture holds DER, which the runner encodes as canonical standard base64 with padding. verifySignedData: the fixture's logical bytes as a string (utf8 trims, text does not). verifyReceiptEndpoint: input.fixture is wrapped by the runner as {\"receipt-data\":\"<string>\"}, the string built as for verifyReceipt; input.requestBody names a text fixture that is the whole request body, handed over verbatim. decodeBase64 is the one internal hook: 0.7 exposes no decoder, but a valid-base64 string that is not a receipt fails as MALFORMED through verifyReceipt just as invalid base64 does, so the accept side of the base64 rule is only observable on the decoders themselves. Each port's test code calls its receipt-data decoder and its x5c-entry decoder directly; a refusal is MALFORMED from receipt-data and INVALID_CERTIFICATE from x5c (an error group states MALFORMED and the runner maps it for x5c).\n\nConfig. trustedRoots is {\"source\":\"defaults\"} for Config.defaults() (the three bundled, pinned Apple roots) or {\"source\":\"fixtures\",\"fixtures\":[...]} for roots read from registered trust-anchor fixtures. The endpoint takes environment PRODUCTION or SANDBOX. There is no bundle id, accepted environment set, appAppleId or device id anywhere: 0.7 takes none of them, and the eight 0.6 policy cases now verify and pin the value the caller judges (tag policy-flip).\n\nClock. When a case carries clock.now the runner builds its Config with a clock fixed at that instant; otherwise the default clock runs. 0.7 reads the clock in two places: the certificate-validity instant when the input states no usable date (a receipt whose first attribute 12 is missing or does not parse, a JWS whose signedDate is missing or is not a representable instant) and request_date at the endpoint. This reverses 0.6, where that fallback was the system clock and an injected clock could not move it, so the dateless and unreadable-date cases now pin a clock (2025-01-01 unless the case is about the clock) and two endpoint cases pin that the clock does move the verdict. A case whose verdict or asserted fields could move with the clock pins one.\n\nExpected. verifyReceipt and verifySignedData answer {\"status\":\"ok\"} or {\"status\":\"error\",\"reason\":R}. On ok, fields maps a JSON Pointer (RFC 6901) to a value, evaluated on the verified payload as JSON: ReceiptPayload.toJson() for receipts, JsonPayload.json() for JWS. One extension: a reference token written [key=value] selects the single element of an array whose member key is the JSON string value, and a runner fails the case unless exactly one element matches. lengths maps a pointer to the length of the array there. toJson, when present, is the exact string toJson() returns; compare the UTF-8 bytes. Receipt JSON uses the design's keys: snake_case, dates as *_ms epoch milliseconds (numbers), 64-bit ids as strings, bytes as standard base64 with padding, unknown_attributes as {\"<type>\": [\"<base64>\", ...]} with keys in ascending numeric order and values in receipt order. Owner rules of 2026-09-27 the receipt vectors pin: the first occurrence of a known attribute wins, for the typed field and for the chain date; every attribute that does not end up in a typed field (a later copy of a known attribute, or a known attribute whose value does not parse, whose typed field is then null) goes raw into unknown_attributes, the in-app ones into that purchase's unknown_attributes. A date attribute whose string is empty means not set: its typed field is null and it is not kept raw; an empty non-date string is the value \"\". verifyReceiptEndpoint always returns Apple's response body; expected.fields is evaluated on it and always pins /status. 0.7 exposes no failure reason beside the body, so the 0.6 failureReason is gone. Everywhere, null means absent or JSON null; numbers compare by value (1722945600000.0 equals 1722945600000) and integers exactly, so a runner parses without rounding (the endpoint's download_id is 2^63-1 as a JSON number). A field a case does not list is not pinned.\n\nTime budget. A case may carry maxMillis, a wall-clock budget for the verify call. The runner measures the call after one warm-up call of the same case and fails if it exceeds the budget. It is set only on the denial-of-service cases (tag dos), which pin that a certificate no pinned root vouches for is rejected, or ignored, without its key being parsed or used (change 1 of docs/design/0.7-hardening-parity.md). The figure is 2000, one for every port: an honest verify never touches the untrusted key and finishes in a few milliseconds even on a slow CI box, while an implementation that decodes or verifies with the oversized key first spends seconds (a single 262144-bit modexp is about 5 s in Go; a 65536-bit key is expensive in every measured library). Timing is a coarse backstop; each port also asserts directly, in its own runner, that no verification used the stranger key.\n\nReasons. The 0.7 set: MALFORMED, TOO_LARGE, INVALID_SIGNATURE, UNTRUSTED_CHAIN, INVALID_CERTIFICATE, INVALID_CERTIFICATE_PURPOSE, UNREADABLE_PAYLOAD, INTERNAL_ERROR. Carried per the design's mapping: INVALID_CHAIN is UNTRUSTED_CHAIN; INVALID_RECEIPT_FORMAT, INVALID_JWS_FORMAT and MALFORMED_REQUEST fold into MALFORMED; REQUEST_TOO_LARGE is TOO_LARGE. Where the design is more specific the specific rule wins: a certificate outside its validity window at the chain instant is INVALID_CERTIFICATE (owner, 2026-09-27; tag validity-window); every input over a size cap is TOO_LARGE (the Bounds table); and a JWS payload that is not a JSON object is carried past the signature (the parse-before-signature rule), so the two unsigned 0.6 payload cases are INVALID_SIGNATURE and their signed twins UNREADABLE_PAYLOAD. None of the twelve 0.6 INTERNAL_ERROR cases stays INTERNAL_ERROR: four receipts whose Apple-signed content does not parse as an attribute set are UNREADABLE_PAYLOAD; the unreadable creation date and the unparseable in-app purchase verify with their raw octets in unknown_attributes; the six JWS claim-type cases verify because 0.7 returns the payload untyped. No input can make a correct library answer INTERNAL_ERROR, so no case expects it.\n\nFixtures. The registry works as in cases.json: codec and contentSha256 over the decoded logical bytes, re-hashed by every runner. 0.7 checks Apple's WWDR marker OID 1.2.840.113635.100.6.2.1 on the receipt intermediate, which no 0.6 synthetic receipt chain carried, so every generated receipt was re-minted for this file into fixtures/generated-0.7/ by the same generators with TestPki stamping the marker (fresh keys; same payloads), VerifierApiFixtures writes the inputs new in 0.7 (including the three base64 strings at and over the receipt cap), and HardeningParityFixtures writes the denial-of-service and signer-algorithm inputs of the hardening parity work. receipt-der-trailing-byte.der there is receipt.der plus one zero byte. The directory sits beside fixtures/generated/ because tools/lint-cases.mjs requires every file under generated/ to be registered in cases.json. JWS fixtures, public receipts, Apple's files, the request-body limits and the one over-cap receipt string refused for size before anything is decoded are shared with cases.json unchanged. Regenerate with: mvn -B -q -f java/pom.xml test-compile; mvn -B -q -f java/pom.xml dependency:build-classpath -Dmdep.outputFile=/tmp/cp.txt; then java -cp \"java/target/test-classes:java/target/classes:$(cat /tmp/cp.txt)\" io.github.emindeniz99.applepurchasereceiptverifier.<Generator> <dir>/generated for PortDivergenceFixtures, HostileReceiptFixtures, AbsentSignerFixture, ReceiptCmsDefectFixtures, ReceiptIdsFixture, VerificationOrderFixtures, LargeReceiptFixture and VerifierApiFixtures, ReceiptBase64CapFixture with <dir>, and mvn -B -q -f java/pom.xml surefire:test -Dtest=FixtureGeneratorTest -Dfixtures.generate=true -Daprv.fixtures.dir=<dir>; copy the receipt files and their roots into fixtures/generated-0.7/ and re-hash.\n\nCanonical toJson. Keys in the design's order, no whitespace, UTF-8, strings escaped as ECMAScript JSON.stringify escapes them (\\\" \\\\ \\b \\f \\n \\r \\t, other U+0000 to U+001F as \\u00xx in lowercase hex, nothing else: no escaped slash, non-ASCII, U+2028 and U+2029 raw). Exact bytes are pinned for the shared receipt, the ids receipt, the web-order-zero receipt, a non-ASCII product id, an escapes product id and the genuine public receipts that verify.\n\n\"fault\" names the one intentional defect of a negative case. It is documentation, not an assertion. Tags are free-form; owner-review marks a case whose expectation follows from an owner rule but deserves a second look.",
   "fixtures": {
     "device-guid": {
       "path": "generated/device-guid.hex",
@@ -974,6 +974,96 @@
       "role": "input",
       "codec": "utf8",
       "contentSha256": "29de771360a1bcc292dbb164ba22bb4ab19989e4a96118c3950dc11893792b52"
+    },
+    "hardening-jws-root": {
+      "path": "generated-0.7/hardening-jws-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "a5effad266b0f0bfa4c585260967f971cc8cdb490131a986ab1e0111a39873a2"
+    },
+    "hardening-receipt-root": {
+      "path": "generated-0.7/hardening-receipt-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "83c9842d04d54a2ac0548685b2c9361c63f01673693181cd551bda6b94365eef"
+    },
+    "signer-alg-root": {
+      "path": "generated-0.7/signer-alg-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "088d5a83a8139655b8651378ee69338d9520d98ff736132956fa395db8b9cf94"
+    },
+    "jws-untrusted-oversized-x5c": {
+      "path": "generated-0.7/jws-untrusted-oversized-x5c.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "ee14dbd330b25835ac9ccbfd6a8ab046ee94e7dbfc4a28b8fdbfecbf8117801b"
+    },
+    "receipt-untrusted-oversized-intermediates": {
+      "path": "generated-0.7/receipt-untrusted-oversized-intermediates.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "0e8cc3e29d694e76e75e19692c325b054a6a60e49a774a5d602573fad4589e68"
+    },
+    "receipt-genuine-padded-with-oversized-strangers": {
+      "path": "generated-0.7/receipt-genuine-padded-with-oversized-strangers.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "fac52b0a7c8652495982973b762fcc65e73d90226899f490db87da7014f63f3e"
+    },
+    "receipt-signer-ecdsa-p256": {
+      "path": "generated-0.7/receipt-signer-ecdsa-p256.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "458c7eaca069a13be1a3b7aa15f8c00428a96ebf5b05a6ca1f4be3ac86a6b53e"
+    },
+    "receipt-signer-ecdsa-p256-tampered": {
+      "path": "generated-0.7/receipt-signer-ecdsa-p256-tampered.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "58f184d1fc3162b48f148551d7a52cffb13c178812cd4b8d922140411703b7f3"
+    },
+    "receipt-signer-sha384": {
+      "path": "generated-0.7/receipt-signer-sha384.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "36c2ee3dc39a6852337b9401ab3ddb18e1a8cc9f465dae02c4c9aeddb631c705"
+    },
+    "receipt-signer-rsa-pss": {
+      "path": "generated-0.7/receipt-signer-rsa-pss.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "f9876ba89c8b0d387b1cbdb771222bbaa940093eb10e38c227c2d1c040e7e31b"
+    },
+    "jws-real-apple-chain-zero-signature": {
+      "path": "generated-0.7/jws-real-apple-chain-zero-signature.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "fb633b29a33ee6e636b2c58385c0c015abd61c7b2230d6907c2a15304877ae79"
+    },
+    "jws-real-apple-chain-outside-validity": {
+      "path": "generated-0.7/jws-real-apple-chain-outside-validity.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "302a001402409e033d5f9aefe374f6cfaa960f4a9c2cd803274e32cf5fe53432"
+    },
+    "jws-four-segments": {
+      "path": "generated-0.7/jws-four-segments.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "1688292ceb16626741116a63d768989cf0101a1b2a1f8652833c86dabdc1716c"
+    },
+    "receipt-sandbox-g5-tampered": {
+      "path": "generated-0.7/receipt-sandbox-g5-tampered.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "e032ff7b7bdd20d216b84622d9d354c6459400a98d3fcc974d78b77c4b574a6f"
+    },
+    "legacy-purchase-info": {
+      "path": "apple-official/mock_signed_data/legacyTransaction",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "c89576769b0c418d867eb9bbb6e16316ded4b9177c2e5e857917fab3665d837b"
     },
     "receipt-b64-at-cap-trailing-zeros": {
       "path": "generated-0.7/receipt-b64-at-cap-trailing-zeros.txt",
@@ -7195,6 +7285,375 @@
         "positive",
         "to-json",
         "generated",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/reject-untrusted-oversized-x5c",
+      "description": "A JWS whose x5c[1] is signed by no pinned root and carries a 262144-bit RSA modulus. A top-down chain check verifies x5c[1] against the pinned root, which fails, and never parses its key: UNTRUSTED_CHAIN, within maxMillis. A port that checks x5c[0] against x5c[1] first parses the oversized key and spends seconds (Go about 5 s per modexp).",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "jws-untrusted-oversized-x5c"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "hardening-jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "UNTRUSTED_CHAIN"
+      },
+      "fault": "oversized-key-in-untrusted-x5c",
+      "maxMillis": 2000,
+      "tags": [
+        "jws",
+        "negative",
+        "chain",
+        "dos",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/reject-untrusted-oversized-intermediates",
+      "description": "A receipt whose signer names an intermediate that only eight untrusted certificates claim, each with a 65536-bit RSA modulus and none vouched for by the pinned root. A top-down check rejects them without parsing a key: UNTRUSTED_CHAIN, within maxMillis. A bottom-up builder verifies the signer against each oversized key and spends seconds.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt-untrusted-oversized-intermediates"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "hardening-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "UNTRUSTED_CHAIN"
+      },
+      "fault": "oversized-keys-in-untrusted-intermediates",
+      "maxMillis": 2000,
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "negative",
+        "chain",
+        "dos",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/verify-genuine-padded-with-oversized-strangers",
+      "description": "A genuine receipt (signer, intermediate and root that verify) padded with seven stranger certificates named like the intermediate, each with a 65536-bit RSA modulus, ten certificates in all at the cap. The strangers are vouched for by no pinned root, so a top-down check ignores them (Q16) and the receipt verifies, within maxMillis. A bottom-up builder tries each stranger as the signer issuer and spends seconds before finding the real intermediate.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt-genuine-padded-with-oversized-strangers"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "hardening-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app",
+          "/receipt_creation_date_ms": 1722945600000
+        }
+      },
+      "maxMillis": 2000,
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "positive",
+        "dos",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/verify-signer-ecdsa-p256",
+      "description": "A receipt whose signer holds an ECDSA P-256 key and whose CMS signature is ECDSA with SHA-256, under the test PKI. The signer chains to a pinned root and carries the receipt-signing marker, so it verifies: 0.7 does not restrict the signer key or signature algorithm (owner Q15, change 3).",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt-signer-ecdsa-p256"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "signer-alg-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "positive",
+        "signer-algorithm",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/reject-signer-ecdsa-p256-tampered",
+      "description": "The ECDSA-signed receipt with one content byte flipped after signing: the ECDSA check fails, INVALID_SIGNATURE, so accepting any signer algorithm does not accept a bad signature.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt-signer-ecdsa-p256-tampered"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "signer-alg-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_SIGNATURE"
+      },
+      "fault": "content-byte-flipped-after-signing",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "negative",
+        "signer-algorithm",
+        "signature",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/verify-signer-sha384-digest",
+      "description": "A receipt signed with an RSA signer and a SHA-384 digest under the test PKI. Any digest the pinned chain signed is accepted (owner Q15), so it verifies.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt-signer-sha384"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "signer-alg-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "positive",
+        "signer-algorithm",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/verify-signer-rsa-pss",
+      "description": "A receipt whose CMS signature is RSASSA-PSS with SHA-256 under the test PKI. The signature algorithm is not restricted (change 3), so it verifies.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt-signer-rsa-pss"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "signer-alg-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "positive",
+        "signer-algorithm",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/reject-genuine-content-byte-flip",
+      "description": "The genuine sandbox g5 receipt with one byte of its bundle id flipped. Genuine Apple receipts carry no CMS signed attributes, so the RSA check runs over the content itself and the flip breaks it: INVALID_SIGNATURE, with the chain and creation date left as Apple signed them. Pins #158 in the shared suite.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt-sandbox-g5-tampered"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "defaults"
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_SIGNATURE"
+      },
+      "fault": "genuine-content-byte-flipped",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "negative",
+        "signature",
+        "genuine",
+        "public-receipts",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/reject-four-segment-jws",
+      "description": "Apple's genuine transactionInfo JWS with a fourth base64url segment appended. A compact JWS has exactly three segments, so this is rejected before any chain work: MALFORMED.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "jws-four-segments"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "apple-test-ca"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "MALFORMED"
+      },
+      "fault": "jws-has-four-segments",
+      "tags": [
+        "jws",
+        "negative",
+        "format",
+        "apple-official",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/reject-legacy-purchase-info",
+      "description": "Apple's pre-2018 legacy purchase-info receipt, a base64 property list rather than a PKCS#7 envelope. Base64-decoding it yields no CMS structure, so it is MALFORMED. Pins #158 in the shared suite.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "legacy-purchase-info"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "defaults"
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "MALFORMED"
+      },
+      "fault": "legacy-purchase-info-format",
+      "tags": [
+        "receipt",
+        "negative",
+        "format",
+        "apple-official",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "endpoint/legacy-purchase-info-answers-21002",
+      "description": "The same legacy purchase-info receipt at the endpoint answers 21002, as Apple does for a receipt it cannot read.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "fixture": "legacy-purchase-info"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "defaults"
+        },
+        "environment": "SANDBOX"
+      },
+      "expected": {
+        "fields": {
+          "/status": 21002,
+          "/receipt": null,
+          "/environment": null
+        }
+      },
+      "fault": "legacy-purchase-info-format",
+      "tags": [
+        "endpoint",
+        "receipt",
+        "negative",
+        "format",
+        "apple-official",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/reject-real-apple-chain-zero-signature",
+      "description": "A JWS carrying Apple's real production x5c (leaf, WWDR G6, Apple Root CA - G3, from Apple's own test suite) with a signedDate inside the leaf validity and a 64-byte zero signature, against the bundled roots. The marker OIDs and the chain pass on the real code path, so the verdict is INVALID_SIGNATURE: proof the bundled roots still accept what Apple ships.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "jws-real-apple-chain-zero-signature"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "defaults"
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_SIGNATURE"
+      },
+      "fault": "real-apple-chain-zero-signature",
+      "tags": [
+        "jws",
+        "negative",
+        "signature",
+        "apple-official",
+        "genuine",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/reject-real-apple-chain-outside-validity",
+      "description": "The same real Apple chain with a signedDate before the leaf's notBefore. A genuine chain is not a pass at any date: judged outside the validity window it is INVALID_CERTIFICATE (owner Q1, 2026-09-27).",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "jws-real-apple-chain-outside-validity"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "defaults"
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_CERTIFICATE"
+      },
+      "fault": "real-apple-chain-outside-validity",
+      "tags": [
+        "jws",
+        "negative",
+        "certificate",
+        "validity-window",
+        "apple-official",
+        "genuine",
         "new-in-0-7"
       ]
     }

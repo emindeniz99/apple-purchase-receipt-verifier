@@ -154,6 +154,11 @@
       "description": "The id of the fixtures/cases.json case this one replaces. Absent on a case new in 0.7."
     },
     "description": { "type": "string", "minLength": 1 },
+    "maxMillis": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "A wall-clock budget in milliseconds for the verify call. The runner measures the call after one warm-up call of the same case and fails if it exceeds this. Set only on DoS cases; the file comment gives the shared figure."
+    },
     "fault": {
       "type": "string",
       "description": "The one intentional defect of a negative case. Documentation, never asserted.",
@@ -266,6 +271,7 @@
             "operation": { "const": "verifyReceipt" },
             "input": { "$ref": "#/$defs/fixtureInput" },
             "config": { "$ref": "#/$defs/verifyConfig" },
+            "maxMillis": { "$ref": "#/$defs/maxMillis" },
             "clock": { "$ref": "#/$defs/clock" },
             "expected": {
               "oneOf": [
@@ -290,6 +296,7 @@
             "operation": { "const": "verifySignedData" },
             "input": { "$ref": "#/$defs/fixtureInput" },
             "config": { "$ref": "#/$defs/verifyConfig" },
+            "maxMillis": { "$ref": "#/$defs/maxMillis" },
             "clock": { "$ref": "#/$defs/clock" },
             "expected": {
               "oneOf": [
