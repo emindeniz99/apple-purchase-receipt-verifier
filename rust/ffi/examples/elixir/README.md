@@ -81,10 +81,18 @@ emulator runs it on a dirty scheduler instead.
 
 ### JSON
 
-The ABI hands back one UTF-8 JSON document per call, and `JSON.decode!/1`
-from Elixir's own standard library reads it. That is why `mix.exs` claims
+The ABI hands back one UTF-8 JSON document per call, and `JSON` from
+Elixir's own standard library reads it. That is why `mix.exs` claims
 Elixir 1.18: `JSON` arrived there, and taking it as the floor keeps the
 example's dependency count at zero without a hand-written reader.
+
+It is not read with `JSON.decode!/1`, though. A JWS payload comes back
+exactly as signed, repeated member names included, and the verifier takes
+the last of them, as `JSON.parse` does: a payload with two `signedDate`s is
+judged at the second. `JSON.decode!/1` keeps the first, so it would report a
+signing date the chain was never checked against. `decode_json!/1` passes
+`JSON.decode/3` an `object_finish` that lets the last member win, and every
+call in the example, and the conformance run, decodes through it.
 
 ### The clock
 
