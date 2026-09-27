@@ -1,7 +1,7 @@
 {
   "$schema": "./cases-0.7.schema.json",
   "schemaVersion": 2,
-  "comment": "Normative cross-language conformance vectors for the 0.7 API of apple-purchase-receipt-verifier (docs/design/0.7-api.md), schema version 2 (fixtures/cases-0.7.schema.json).\nThe nine ports move from fixtures/cases.json to this file one at a time; cases.json is deleted when the last port has moved. Every case of cases.json is carried over and none is deleted: legacyId names the cases.json case each one replaces, and a case without legacyId is new in 0.7 (tag new-in-0-7).\nNo expectation here was produced by running an implementation. Values were carried from cases.json or derived from the design, then checked against an independent decode of the fixture bytes written for this file. A vector that disagrees with a port is a bug report against one of the two until a human decides.\n\nOperations. verifyReceipt(base64), verifySignedData(jws) and verifyReceiptEndpoint(environment, requestJson) are the three public 0.7 methods. verifyReceipt: a text fixture is handed over verbatim; a raw or base64 fixture holds DER, which the runner encodes as canonical standard base64 with padding. verifySignedData: the fixture's logical bytes as a string (utf8 trims, text does not). verifyReceiptEndpoint: input.fixture is wrapped by the runner as {\"receipt-data\":\"<string>\"}, the string built as for verifyReceipt; input.requestBody names a text fixture that is the whole request body, handed over verbatim. decodeBase64 is the one internal hook: 0.7 exposes no decoder, but a valid-base64 string that is not a receipt fails as MALFORMED through verifyReceipt just as invalid base64 does, so the accept side of the base64 rule is only observable on the decoders themselves. Each port's test code calls its receipt-data decoder and its x5c-entry decoder directly; a refusal is MALFORMED from receipt-data and INVALID_CERTIFICATE from x5c (an error group states MALFORMED and the runner maps it for x5c).\n\nConfig. trustedRoots is {\"source\":\"defaults\"} for Config.defaults() (the three bundled, pinned Apple roots) or {\"source\":\"fixtures\",\"fixtures\":[...]} for roots read from registered trust-anchor fixtures. The endpoint takes environment PRODUCTION or SANDBOX. There is no bundle id, accepted environment set, appAppleId or device id anywhere: 0.7 takes none of them, and the eight 0.6 policy cases now verify and pin the value the caller judges (tag policy-flip).\n\nClock. When a case carries clock.now the runner builds its Config with a clock fixed at that instant; otherwise the default clock runs. 0.7 reads the clock in two places: the certificate-validity instant when the input states no usable date (a receipt whose first attribute 12 is missing or does not parse, a JWS whose signedDate is missing or is not a representable instant) and request_date at the endpoint. This reverses 0.6, where that fallback was the system clock and an injected clock could not move it, so the dateless and unreadable-date cases now pin a clock (2025-01-01 unless the case is about the clock) and two endpoint cases pin that the clock does move the verdict. A case whose verdict or asserted fields could move with the clock pins one.\n\nExpected. verifyReceipt and verifySignedData answer {\"status\":\"ok\"} or {\"status\":\"error\",\"reason\":R}. On ok, fields maps a JSON Pointer (RFC 6901) to a value, evaluated on the verified payload as JSON: ReceiptPayload.toJson() for receipts, JsonPayload.json() for JWS. One extension: a reference token written [key=value] selects the single element of an array whose member key is the JSON string value, and a runner fails the case unless exactly one element matches. lengths maps a pointer to the length of the array there. toJson, when present, is the exact string toJson() returns; compare the UTF-8 bytes. Receipt JSON uses the design's keys: snake_case, dates as *_ms epoch milliseconds (numbers), 64-bit ids as strings, bytes as standard base64 with padding, unknown_attributes as {\"<type>\": [\"<base64>\", ...]} with keys in ascending numeric order and values in receipt order. Owner rules of 2026-09-27 the receipt vectors pin: the first occurrence of a known attribute wins, for the typed field and for the chain date; every attribute that does not end up in a typed field (a later copy of a known attribute, or a known attribute whose value does not parse, whose typed field is then null) goes raw into unknown_attributes, the in-app ones into that purchase's unknown_attributes. A date attribute whose string is empty means not set: its typed field is null and it is not kept raw; an empty non-date string is the value \"\". verifyReceiptEndpoint always returns Apple's response body; expected.fields is evaluated on it and always pins /status. 0.7 exposes no failure reason beside the body, so the 0.6 failureReason is gone. Everywhere, null means absent or JSON null; numbers compare by value (1722945600000.0 equals 1722945600000) and integers exactly, so a runner parses without rounding (the endpoint's download_id is 2^63-1 as a JSON number). A field a case does not list is not pinned.\n\nFailure messages. An error expectation may carry messageMustNotContain, a list of code points the failure message must not contain; the runner checks the message the port exposes. It pins that input quoted in a message (a JWS alg with CR, LF, NEL, U+2028 and a bidi override) is neutralised before a caller logs it.\n\nJSON reading. A JSON object with a duplicate member keeps the last one, in a JWS header, a JWS payload and an endpoint body; receipt attributes are the other way round (the first occurrence wins). A JWS header must be strict UTF-8 with no byte-order mark, and only whitespace may follow the header or payload object: trailing content after the header is MALFORMED, after the payload it is carried past the signature and is UNREADABLE_PAYLOAD when the signature verifies (lead, 2026-09-27). A runner parses what a port returns the same strict way, so a port that appended content to its output would fail.\n\nTime budget. A case may carry maxMillis, a wall-clock budget for the verify call. The runner measures the call after one warm-up call of the same case and fails if it exceeds the budget. It is set only on the denial-of-service cases (tag dos), which pin that a certificate no pinned root vouches for is rejected, or ignored, without its key being parsed or used (change 1 of docs/design/0.7-hardening-parity.md). The figure is 2000, one for every port: an honest verify never touches the untrusted key and finishes in a few milliseconds even on a slow CI box, while an implementation that decodes or verifies with the oversized key first spends seconds (a single 262144-bit modexp is about 5 s in Go; a 65536-bit key is expensive in every measured library). Timing is a coarse backstop; each port also asserts directly, in its own runner, that no verification used the stranger key.\n\nReasons. The 0.7 set: MALFORMED, TOO_LARGE, INVALID_SIGNATURE, UNTRUSTED_CHAIN, INVALID_CERTIFICATE, INVALID_CERTIFICATE_PURPOSE, UNREADABLE_PAYLOAD, INTERNAL_ERROR. Carried per the design's mapping: INVALID_CHAIN is UNTRUSTED_CHAIN; INVALID_RECEIPT_FORMAT, INVALID_JWS_FORMAT and MALFORMED_REQUEST fold into MALFORMED; REQUEST_TOO_LARGE is TOO_LARGE. Where the design is more specific the specific rule wins: a certificate outside its validity window at the chain instant is INVALID_CERTIFICATE (owner, 2026-09-27; tag validity-window); every input over a size cap is TOO_LARGE (the Bounds table); and a JWS payload that is not a JSON object is carried past the signature (the parse-before-signature rule), so the two unsigned 0.6 payload cases are INVALID_SIGNATURE and their signed twins UNREADABLE_PAYLOAD. None of the twelve 0.6 INTERNAL_ERROR cases stays INTERNAL_ERROR: four receipts whose Apple-signed content does not parse as an attribute set are UNREADABLE_PAYLOAD; the unreadable creation date and the unparseable in-app purchase verify with their raw octets in unknown_attributes; the six JWS claim-type cases verify because 0.7 returns the payload untyped. No input can make a correct library answer INTERNAL_ERROR, so no case expects it.\n\nFixtures. The registry works as in cases.json: codec and contentSha256 over the decoded logical bytes, re-hashed by every runner. 0.7 checks Apple's WWDR marker OID 1.2.840.113635.100.6.2.1 on the receipt intermediate, which no 0.6 synthetic receipt chain carried, so every generated receipt was re-minted for this file into fixtures/generated-0.7/ by the same generators with TestPki stamping the marker (fresh keys; same payloads), VerifierApiFixtures writes the inputs new in 0.7 (including the three base64 strings at and over the receipt cap), and HardeningParityFixtures writes the denial-of-service and signer-algorithm inputs of the hardening parity work. receipt-der-trailing-byte.der there is receipt.der plus one zero byte. The directory sits beside fixtures/generated/ because tools/lint-cases.mjs requires every file under generated/ to be registered in cases.json. JWS fixtures, public receipts, Apple's files, the request-body limits and the one over-cap receipt string refused for size before anything is decoded are shared with cases.json unchanged. Regenerate with: mvn -B -q -f java/pom.xml test-compile; mvn -B -q -f java/pom.xml dependency:build-classpath -Dmdep.outputFile=/tmp/cp.txt; then java -cp \"java/target/test-classes:java/target/classes:$(cat /tmp/cp.txt)\" io.github.emindeniz99.applepurchasereceiptverifier.<Generator> <dir>/generated for PortDivergenceFixtures, HostileReceiptFixtures, AbsentSignerFixture, ReceiptCmsDefectFixtures, ReceiptIdsFixture, VerificationOrderFixtures, LargeReceiptFixture and VerifierApiFixtures, ReceiptBase64CapFixture with <dir>, and mvn -B -q -f java/pom.xml surefire:test -Dtest=FixtureGeneratorTest -Dfixtures.generate=true -Daprv.fixtures.dir=<dir>; copy the receipt files and their roots into fixtures/generated-0.7/ and re-hash.\n\nCanonical toJson. Keys in the design's order, no whitespace, UTF-8, strings escaped as ECMAScript JSON.stringify escapes them (\\\" \\\\ \\b \\f \\n \\r \\t, other U+0000 to U+001F as \\u00xx in lowercase hex, nothing else: no escaped slash, non-ASCII, U+2028 and U+2029 raw). Exact bytes are pinned for the shared receipt, the ids receipt, the web-order-zero receipt, a non-ASCII product id, an escapes product id and the genuine public receipts that verify.\n\n\"fault\" names the one intentional defect of a negative case. It is documentation, not an assertion. Tags are free-form; owner-review marks a case whose expectation follows from an owner rule but deserves a second look.",
+  "comment": "Normative cross-language conformance vectors for the 0.7 API of apple-purchase-receipt-verifier (docs/design/0.7-api.md), schema version 2 (fixtures/cases-0.7.schema.json).\nThe nine ports move from fixtures/cases.json to this file one at a time; cases.json is deleted when the last port has moved. Every case of cases.json is carried over and none is deleted: legacyId names the cases.json case each one replaces, and a case without legacyId is new in 0.7 (tag new-in-0-7).\nNo expectation here was produced by running an implementation. Values were carried from cases.json or derived from the design, then checked against an independent decode of the fixture bytes written for this file. A vector that disagrees with a port is a bug report against one of the two until a human decides.\n\nOperations. verifyReceipt(base64), verifySignedData(jws) and verifyReceiptEndpoint(environment, requestJson) are the three public 0.7 methods. verifyReceipt: a text fixture is handed over verbatim; a raw or base64 fixture holds DER, which the runner encodes as canonical standard base64 with padding. verifySignedData: the fixture's logical bytes as a string (utf8 trims, text does not). verifyReceiptEndpoint: input.fixture is wrapped by the runner as {\"receipt-data\":\"<string>\"}, the string built as for verifyReceipt; input.requestBody names a text fixture that is the whole request body, handed over verbatim. decodeBase64 is the one internal hook: 0.7 exposes no decoder, but a valid-base64 string that is not a receipt fails as MALFORMED through verifyReceipt just as invalid base64 does, so the accept side of the base64 rule is only observable on the decoders themselves. Each port's test code calls its receipt-data decoder and its x5c-entry decoder directly; a refusal is MALFORMED from receipt-data and INVALID_CERTIFICATE from x5c (an error group states MALFORMED and the runner maps it for x5c).\n\nConfig. trustedRoots is {\"source\":\"defaults\"} for Config.defaults() (the three bundled, pinned Apple roots) or {\"source\":\"fixtures\",\"fixtures\":[...]} for roots read from registered trust-anchor fixtures. The endpoint takes environment PRODUCTION or SANDBOX. There is no bundle id, accepted environment set, appAppleId or device id anywhere: 0.7 takes none of them, and the eight 0.6 policy cases now verify and pin the value the caller judges (tag policy-flip).\n\nClock. When a case carries clock.now the runner builds its Config with a clock fixed at that instant; otherwise the default clock runs. 0.7 reads the clock in two places: the certificate-validity instant when the input states no usable date (a receipt whose first attribute 12 is missing or does not parse, a JWS whose signedDate is missing or is not a representable instant) and request_date at the endpoint. This reverses 0.6, where that fallback was the system clock and an injected clock could not move it, so the dateless and unreadable-date cases now pin a clock (2025-01-01 unless the case is about the clock) and two endpoint cases pin that the clock does move the verdict. A case whose verdict or asserted fields could move with the clock pins one.\n\nExpected. verifyReceipt and verifySignedData answer {\"status\":\"ok\"} or {\"status\":\"error\",\"reason\":R}. On ok, fields maps a JSON Pointer (RFC 6901) to a value, evaluated on the verified payload as JSON: ReceiptPayload.toJson() for receipts, JsonPayload.json() for JWS. One extension: a reference token written [key=value] selects the single element of an array whose member key is the JSON string value, and a runner fails the case unless exactly one element matches. lengths maps a pointer to the length of the array there. toJson, when present, is the exact string toJson() returns; compare the UTF-8 bytes. Receipt JSON uses the design's keys: snake_case, dates as *_ms epoch milliseconds (numbers), 64-bit ids as strings, bytes as standard base64 with padding, unknown_attributes as {\"<type>\": [\"<base64>\", ...]} with keys in ascending numeric order and values in receipt order. Owner rules of 2026-09-27 the receipt vectors pin: the first occurrence of a known attribute wins, for the typed field and for the chain date; every attribute that does not end up in a typed field (a later copy of a known attribute, or a known attribute whose value does not parse, whose typed field is then null) goes raw into unknown_attributes, the in-app ones into that purchase's unknown_attributes. A date attribute whose string is empty means not set: its typed field is null and it is not kept raw; an empty non-date string is the value \"\". A date decodes only in the exact form YYYY-MM-DDTHH:MM:SSZ (year 0000 to 9999, uppercase T and Z, a real calendar date, hours 00 to 23, minutes and seconds 00 to 59, no fraction, no offset); any other non-empty date string is null and kept raw, and an attribute 12 that does not decode leaves the chain instant to the clock. An IA5String holding a byte at or above 0x80, and an INTEGER that is not DER (empty or with a redundant leading octet), do not parse either: null and kept raw. verifyReceiptEndpoint always returns Apple's response body; expected.fields is evaluated on it and always pins /status. 0.7 exposes no failure reason beside the body, so the 0.6 failureReason is gone. Everywhere, null means absent or JSON null; numbers compare by value (1722945600000.0 equals 1722945600000) and integers exactly, so a runner parses without rounding (the endpoint's download_id is 2^63-1 as a JSON number). A field a case does not list is not pinned.\n\nFailure messages. An error expectation may carry messageMustNotContain, a list of code points the failure message must not contain; the runner checks the message the port exposes. It pins that input quoted in a message (a JWS alg with CR, LF, NEL, U+2028 and a bidi override) is neutralised before a caller logs it.\n\nJSON reading. A JSON object with a duplicate member keeps the last one, in a JWS header, a JWS payload and an endpoint body; receipt attributes are the other way round (the first occurrence wins). A JWS header must be strict UTF-8 with no byte-order mark, and only whitespace may follow the header or payload object: trailing content after the header is MALFORMED, after the payload it is carried past the signature and is UNREADABLE_PAYLOAD when the signature verifies (lead, 2026-09-27). A runner parses what a port returns the same strict way, so a port that appended content to its output would fail.\n\nTime budget. A case may carry maxMillis, a wall-clock budget for the verify call. The runner measures the call after one warm-up call of the same case and fails if it exceeds the budget. It is set only on the denial-of-service cases (tag dos), which pin that a certificate no pinned root vouches for is rejected, or ignored, without its key being parsed or used (change 1 of docs/design/0.7-hardening-parity.md). The figure is 2000, one for every port: an honest verify never touches the untrusted key and finishes in a few milliseconds even on a slow CI box, while an implementation that decodes or verifies with the oversized key first spends seconds (a single 262144-bit modexp is about 5 s in Go; a 65536-bit key is expensive in every measured library). Timing is a coarse backstop; each port also asserts directly, in its own runner, that no verification used the stranger key.\n\nReasons. The 0.7 set: MALFORMED, TOO_LARGE, INVALID_SIGNATURE, UNTRUSTED_CHAIN, INVALID_CERTIFICATE, INVALID_CERTIFICATE_PURPOSE, UNREADABLE_PAYLOAD, INTERNAL_ERROR. Carried per the design's mapping: INVALID_CHAIN is UNTRUSTED_CHAIN; INVALID_RECEIPT_FORMAT, INVALID_JWS_FORMAT and MALFORMED_REQUEST fold into MALFORMED; REQUEST_TOO_LARGE is TOO_LARGE. Where the design is more specific the specific rule wins: a certificate outside its validity window at the chain instant is INVALID_CERTIFICATE (owner, 2026-09-27; tag validity-window); every input over a size cap is TOO_LARGE (the Bounds table); and a JWS payload that is not a JSON object is carried past the signature (the parse-before-signature rule), so the two unsigned 0.6 payload cases are INVALID_SIGNATURE and their signed twins UNREADABLE_PAYLOAD. None of the twelve 0.6 INTERNAL_ERROR cases stays INTERNAL_ERROR: four receipts whose Apple-signed content does not parse as an attribute set are UNREADABLE_PAYLOAD; the unreadable creation date and the unparseable in-app purchase verify with their raw octets in unknown_attributes; the six JWS claim-type cases verify because 0.7 returns the payload untyped. No input can make a correct library answer INTERNAL_ERROR, so no case expects it.\n\nFixtures. The registry works as in cases.json: codec and contentSha256 over the decoded logical bytes, re-hashed by every runner. 0.7 checks Apple's WWDR marker OID 1.2.840.113635.100.6.2.1 on the receipt intermediate, which no 0.6 synthetic receipt chain carried, so every generated receipt was re-minted for this file into fixtures/generated-0.7/ by the same generators with TestPki stamping the marker (fresh keys; same payloads), VerifierApiFixtures writes the inputs new in 0.7 (including the three base64 strings at and over the receipt cap), and HardeningParityFixtures writes the denial-of-service and signer-algorithm inputs of the hardening parity work. receipt-der-trailing-byte.der there is receipt.der plus one zero byte. The directory sits beside fixtures/generated/ because tools/lint-cases.mjs requires every file under generated/ to be registered in cases.json. JWS fixtures, public receipts, Apple's files, the request-body limits and the one over-cap receipt string refused for size before anything is decoded are shared with cases.json unchanged. Regenerate with: mvn -B -q -f java/pom.xml test-compile; mvn -B -q -f java/pom.xml dependency:build-classpath -Dmdep.outputFile=/tmp/cp.txt; then java -cp \"java/target/test-classes:java/target/classes:$(cat /tmp/cp.txt)\" io.github.emindeniz99.applepurchasereceiptverifier.<Generator> <dir>/generated for PortDivergenceFixtures, HostileReceiptFixtures, AbsentSignerFixture, ReceiptCmsDefectFixtures, ReceiptIdsFixture, VerificationOrderFixtures, LargeReceiptFixture and VerifierApiFixtures, ReceiptBase64CapFixture with <dir>, and mvn -B -q -f java/pom.xml surefire:test -Dtest=FixtureGeneratorTest -Dfixtures.generate=true -Daprv.fixtures.dir=<dir>; copy the receipt files and their roots into fixtures/generated-0.7/ and re-hash. ReviewParityFixtures (review-*) and OwnerDecisionFixtures (owner-*) write straight into fixtures/generated-0.7/, after the generators above, because each derives a few inputs from files already there.\n\nCanonical toJson. Keys in the design's order, no whitespace, UTF-8, strings escaped as ECMAScript JSON.stringify escapes them (\\\" \\\\ \\b \\f \\n \\r \\t, other U+0000 to U+001F as \\u00xx in lowercase hex, nothing else: no escaped slash, non-ASCII, U+2028 and U+2029 raw). Exact bytes are pinned for the shared receipt, the ids receipt, the web-order-zero receipt, a non-ASCII product id, an escapes product id and the genuine public receipts that verify.\n\n\"fault\" names the one intentional defect of a negative case. It is documentation, not an assertion. Tags are free-form; owner-review marks a case whose expectation follows from an owner rule but deserves a second look.",
   "fixtures": {
     "device-guid": {
       "path": "generated/device-guid.hex",
@@ -1418,6 +1418,108 @@
       "role": "trust-anchor",
       "codec": "raw",
       "contentSha256": "17ce347c4ee9de89a7bc5de4006c2f991bc5c831eae57f2ed4015f9a57b2d92e"
+    },
+    "owner-jws-expired-bad-signature": {
+      "path": "generated-0.7/owner-jws-expired-bad-signature.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "6d04aa1d20b61cc1b8d5069fc3a53910dec972a85f274f255d2aa9b57e2610ca"
+    },
+    "owner-jws-foreign-chain-without-markers": {
+      "path": "generated-0.7/owner-jws-foreign-chain-without-markers.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "543ead1d07df728b34b1b8452193a1558a8d2cd52a244600498bed046f8c4230"
+    },
+    "owner-jws-header-name-50000": {
+      "path": "generated-0.7/owner-jws-header-name-50000.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "0d7a9a9e12360499f84f03e76b5217aef0b0144759b585eb1556eab7bb4c77cd"
+    },
+    "owner-jws-header-name-50001": {
+      "path": "generated-0.7/owner-jws-header-name-50001.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "a4d30642711984067bb27190c419364d121f829b66ac060cdd82bd1fb37a0e02"
+    },
+    "owner-jws-header-number-1000": {
+      "path": "generated-0.7/owner-jws-header-number-1000.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "9645c685236f33da62c4026b60c6084d032669751700a32073c0713d87f87646"
+    },
+    "owner-jws-header-number-1001": {
+      "path": "generated-0.7/owner-jws-header-number-1001.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "e47a976738a3a943d86bfef55dbebe51cdd08149103a8f093580c1d5a1d9da08"
+    },
+    "owner-jws-root": {
+      "path": "generated-0.7/owner-jws-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "adf454bcdf5ee3376ee36a19cad25eea3614ec5ea228f3ca1f89a02c68934cea"
+    },
+    "owner-receipt-content-depth-64": {
+      "path": "generated-0.7/owner-receipt-content-depth-64.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "0132c450740162483297cd2001c2faf779eba21d8fb53ccdbb46777f1efe7395"
+    },
+    "owner-receipt-content-depth-65": {
+      "path": "generated-0.7/owner-receipt-content-depth-65.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "d94e0873b994e1fd59df2fbf4bf191a7599d81c2c3f6af82b14ba0dddcb5694e"
+    },
+    "owner-receipt-creation-date-lowercase-t": {
+      "path": "generated-0.7/owner-receipt-creation-date-lowercase-t.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "22f5fd90e22442892874db81ff75105b10ac6f21795020c15c2c9d6f201e8e39"
+    },
+    "owner-receipt-date-grammar": {
+      "path": "generated-0.7/owner-receipt-date-grammar.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "3805e9a50c7cbc4d57d41a1cb4089bad57c863ecb49cd4ca5c56aeb66feb108b"
+    },
+    "owner-receipt-envelope-depth-64": {
+      "path": "generated-0.7/owner-receipt-envelope-depth-64.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "0e4e8ba116fbbad84bcd6d9f876f33564e4f5ebb816b03ae0b9db4c52124e8b8"
+    },
+    "owner-receipt-envelope-depth-65": {
+      "path": "generated-0.7/owner-receipt-envelope-depth-65.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "0871495499769f22d4a36505f756077a54af461d71770067d8617c099964c46f"
+    },
+    "owner-receipt-expired-bad-signature": {
+      "path": "generated-0.7/owner-receipt-expired-bad-signature.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "0464624bb7d655c9e436e61ad8ac82902ef318a85df6b7aec363a7d7c298a158"
+    },
+    "owner-receipt-ia5-high-bytes": {
+      "path": "generated-0.7/owner-receipt-ia5-high-bytes.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "cc8ab5610f4a42293a6bda80bcbd028013430c6dfc1d02322c2e6accd8f39aaa"
+    },
+    "owner-receipt-malformed-integers": {
+      "path": "generated-0.7/owner-receipt-malformed-integers.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "48e2f853bb077cd4623ef8f14059e180433a08abceb11d16b215432c4af485b0"
+    },
+    "owner-receipt-root": {
+      "path": "generated-0.7/owner-receipt-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "24f10a60523576c74c192156c2f1db8c2ca29697db2222d014ac163c8544352b"
     },
     "receipt-b64-at-cap-trailing-zeros": {
       "path": "generated-0.7/receipt-b64-at-cap-trailing-zeros.txt",
@@ -9612,6 +9714,507 @@
         "endpoint",
         "positive",
         "review",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/reject-foreign-chain-without-markers",
+      "description": "A genuinely signed JWS whose x5c chains to a root nobody pins, and whose leaf and intermediate carry neither Apple marker OID. The chain is judged before the markers, so the verdict is UNTRUSTED_CHAIN, not INVALID_CERTIFICATE_PURPOSE (owner, 2026-09-27).",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "owner-jws-foreign-chain-without-markers"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "owner-jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "UNTRUSTED_CHAIN"
+      },
+      "fault": "foreign-chain-without-apple-markers",
+      "tags": [
+        "jws",
+        "negative",
+        "chain",
+        "oid",
+        "verification-order",
+        "owner-decision",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/reject-expired-chain-with-a-bad-signature",
+      "description": "The expired receipt chain (valid 2020 to 2021) signing a 2024-08-06 receipt, with one bit of the SignerInfo signature flipped. Validity is judged before the signature: INVALID_CERTIFICATE, not INVALID_SIGNATURE (owner, 2026-09-27).",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "owner-receipt-expired-bad-signature"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-expired-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_CERTIFICATE"
+      },
+      "fault": "expired-chain-and-signature-bit-flipped",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "negative",
+        "validity-window",
+        "signature",
+        "verification-order",
+        "owner-decision",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/reject-expired-chain-with-a-bad-signature",
+      "description": "The expired JWS chain (valid 2020-01-01 to 2021-01-01) signing a 2024-08-06 payload, with one bit of the signature flipped. Validity is judged before the signature: INVALID_CERTIFICATE, not INVALID_SIGNATURE (owner, 2026-09-27).",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "owner-jws-expired-bad-signature"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-expired-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_CERTIFICATE"
+      },
+      "fault": "expired-chain-and-signature-bit-flipped",
+      "tags": [
+        "jws",
+        "negative",
+        "validity-window",
+        "signature",
+        "verification-order",
+        "owner-decision",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/ia5-string-high-bytes-are-kept-raw",
+      "description": "IA5String values holding one byte at or above 0x80: the application version, attribute 18, and in-app 1702 and 1704. Each high byte is an ASCII character with its top bit set, so a reader that masks the top bit or reads Latin-1 would see a value. IA5String is 7-bit: each typed field is null and each value is kept raw (owner, 2026-09-27). The receipt verifies.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "owner-receipt-ia5-high-bytes"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "owner-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/application_version": null,
+          "/unknown_attributes/3/0": "FgUxLjIusw==",
+          "/original_purchase_date_ms": null,
+          "/unknown_attributes/18/0": "FhQyMDI0LTA4LTA21DEyOjAwOjAwWg==",
+          "/receipt_creation_date_ms": 1722945600000,
+          "/in_app/0/product_id": null,
+          "/in_app/0/unknown_attributes/1702/0": "FhVjb20uZXhhbXBsZS5hcHAuY29pbvM=",
+          "/in_app/0/purchase_date_ms": null,
+          "/in_app/0/unknown_attributes/1704/0": "FhQyMDI0LTAxLTE11DEyOjAwOjAwWg=="
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "positive",
+        "unparseable-attribute",
+        "owner-decision",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/malformed-integers-are-kept-raw",
+      "description": "INTEGER values that are not DER: app_item_id and in-app quantity with a redundant leading octet (02 02 00 05 and 02 02 FF FF), download_id and in-app is_trial_period empty (02 00). Each typed field is null and each value is kept raw; the receipt verifies (owner, 2026-09-27).",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "owner-receipt-malformed-integers"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "owner-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/app_item_id": null,
+          "/unknown_attributes/1/0": "AgIABQ==",
+          "/download_id": null,
+          "/unknown_attributes/15/0": "AgA=",
+          "/in_app/0/quantity": null,
+          "/in_app/0/unknown_attributes/1701/0": "AgL//w==",
+          "/in_app/0/is_trial_period": null,
+          "/in_app/0/unknown_attributes/1713/0": "AgA=",
+          "/in_app/0/product_id": "com.example.app.coins"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "positive",
+        "unparseable-attribute",
+        "integers",
+        "owner-decision",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/date-grammar",
+      "description": "Fifteen in-app purchases, each with one purchase date. A receipt date decodes only in the exact form YYYY-MM-DDTHH:MM:SSZ: a four-digit year 0000 to 9999, uppercase T and Z, a real calendar date, hours 00 to 23, minutes and seconds 00 to 59, no fraction, no offset (owner, 2026-09-27). Accepted: year 0000, 9999-12-31T23:59:59Z, Feb 29 in 2024 and 2000, 23:59:59. Rejected, so null and kept raw: lowercase t, lowercase z, a .5 fraction, a +03:00 offset, second 60, Feb 29 in 2023 and in 1900, a five-digit year, no Z, hour 24.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "owner-receipt-date-grammar"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "owner-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/receipt_creation_date_ms": 1722945600000,
+          "/in_app/[transaction_id=70000000000201]/purchase_date_ms": -62167219200000,
+          "/in_app/[transaction_id=70000000000201]/unknown_attributes/1704": null,
+          "/in_app/[transaction_id=70000000000202]/purchase_date_ms": 253402300799000,
+          "/in_app/[transaction_id=70000000000202]/unknown_attributes/1704": null,
+          "/in_app/[transaction_id=70000000000203]/purchase_date_ms": 1709208000000,
+          "/in_app/[transaction_id=70000000000203]/unknown_attributes/1704": null,
+          "/in_app/[transaction_id=70000000000204]/purchase_date_ms": 951825600000,
+          "/in_app/[transaction_id=70000000000204]/unknown_attributes/1704": null,
+          "/in_app/[transaction_id=70000000000205]/purchase_date_ms": 1722988799000,
+          "/in_app/[transaction_id=70000000000205]/unknown_attributes/1704": null,
+          "/in_app/[transaction_id=70000000000211]/purchase_date_ms": null,
+          "/in_app/[transaction_id=70000000000211]/unknown_attributes/1704/0": "FhQyMDI0LTA4LTA2dDEyOjAwOjAwWg==",
+          "/in_app/[transaction_id=70000000000212]/purchase_date_ms": null,
+          "/in_app/[transaction_id=70000000000212]/unknown_attributes/1704/0": "FhQyMDI0LTA4LTA2VDEyOjAwOjAweg==",
+          "/in_app/[transaction_id=70000000000213]/purchase_date_ms": null,
+          "/in_app/[transaction_id=70000000000213]/unknown_attributes/1704/0": "FhYyMDI0LTA4LTA2VDEyOjAwOjAwLjVa",
+          "/in_app/[transaction_id=70000000000214]/purchase_date_ms": null,
+          "/in_app/[transaction_id=70000000000214]/unknown_attributes/1704/0": "FhkyMDI0LTA4LTA2VDEyOjAwOjAwKzAzOjAw",
+          "/in_app/[transaction_id=70000000000215]/purchase_date_ms": null,
+          "/in_app/[transaction_id=70000000000215]/unknown_attributes/1704/0": "FhQyMDI0LTA4LTA2VDEyOjAwOjYwWg==",
+          "/in_app/[transaction_id=70000000000216]/purchase_date_ms": null,
+          "/in_app/[transaction_id=70000000000216]/unknown_attributes/1704/0": "FhQyMDIzLTAyLTI5VDEyOjAwOjAwWg==",
+          "/in_app/[transaction_id=70000000000217]/purchase_date_ms": null,
+          "/in_app/[transaction_id=70000000000217]/unknown_attributes/1704/0": "FhQxOTAwLTAyLTI5VDEyOjAwOjAwWg==",
+          "/in_app/[transaction_id=70000000000218]/purchase_date_ms": null,
+          "/in_app/[transaction_id=70000000000218]/unknown_attributes/1704/0": "FhUxMjAyNC0wOC0wNlQxMjowMDowMFo=",
+          "/in_app/[transaction_id=70000000000219]/purchase_date_ms": null,
+          "/in_app/[transaction_id=70000000000219]/unknown_attributes/1704/0": "FhMyMDI0LTA4LTA2VDEyOjAwOjAw",
+          "/in_app/[transaction_id=70000000000220]/purchase_date_ms": null,
+          "/in_app/[transaction_id=70000000000220]/unknown_attributes/1704/0": "FhQyMDI0LTA4LTA2VDI0OjAwOjAwWg=="
+        },
+        "toJson": "{\"receipt_type\":\"ProductionSandbox\",\"app_item_id\":null,\"bundle_id\":\"com.example.app\",\"bundle_id_bytes\":\"DA9jb20uZXhhbXBsZS5hcHA=\",\"application_version\":null,\"opaque_value\":null,\"sha1_hash\":null,\"receipt_creation_date_ms\":1722945600000,\"download_id\":null,\"version_external_identifier\":null,\"in_app\":[{\"quantity\":1,\"product_id\":\"com.example.app.coins\",\"transaction_id\":\"70000000000219\",\"purchase_date_ms\":null,\"original_transaction_id\":null,\"original_purchase_date_ms\":null,\"expires_date_ms\":null,\"web_order_line_item_id\":null,\"cancellation_date_ms\":null,\"is_trial_period\":null,\"is_in_intro_offer_period\":null,\"unknown_attributes\":{\"1704\":[\"FhMyMDI0LTA4LTA2VDEyOjAwOjAw\"]}},{\"quantity\":1,\"product_id\":\"com.example.app.coins\",\"transaction_id\":\"70000000000201\",\"purchase_date_ms\":-62167219200000,\"original_transaction_id\":null,\"original_purchase_date_ms\":null,\"expires_date_ms\":null,\"web_order_line_item_id\":null,\"cancellation_date_ms\":null,\"is_trial_period\":null,\"is_in_intro_offer_period\":null,\"unknown_attributes\":{}},{\"quantity\":1,\"product_id\":\"com.example.app.coins\",\"transaction_id\":\"70000000000202\",\"purchase_date_ms\":253402300799000,\"original_transaction_id\":null,\"original_purchase_date_ms\":null,\"expires_date_ms\":null,\"web_order_line_item_id\":null,\"cancellation_date_ms\":null,\"is_trial_period\":null,\"is_in_intro_offer_period\":null,\"unknown_attributes\":{}},{\"quantity\":1,\"product_id\":\"com.example.app.coins\",\"transaction_id\":\"70000000000203\",\"purchase_date_ms\":1709208000000,\"original_transaction_id\":null,\"original_purchase_date_ms\":null,\"expires_date_ms\":null,\"web_order_line_item_id\":null,\"cancellation_date_ms\":null,\"is_trial_period\":null,\"is_in_intro_offer_period\":null,\"unknown_attributes\":{}},{\"quantity\":1,\"product_id\":\"com.example.app.coins\",\"transaction_id\":\"70000000000204\",\"purchase_date_ms\":951825600000,\"original_transaction_id\":null,\"original_purchase_date_ms\":null,\"expires_date_ms\":null,\"web_order_line_item_id\":null,\"cancellation_date_ms\":null,\"is_trial_period\":null,\"is_in_intro_offer_period\":null,\"unknown_attributes\":{}},{\"quantity\":1,\"product_id\":\"com.example.app.coins\",\"transaction_id\":\"70000000000205\",\"purchase_date_ms\":1722988799000,\"original_transaction_id\":null,\"original_purchase_date_ms\":null,\"expires_date_ms\":null,\"web_order_line_item_id\":null,\"cancellation_date_ms\":null,\"is_trial_period\":null,\"is_in_intro_offer_period\":null,\"unknown_attributes\":{}},{\"quantity\":1,\"product_id\":\"com.example.app.coins\",\"transaction_id\":\"70000000000211\",\"purchase_date_ms\":null,\"original_transaction_id\":null,\"original_purchase_date_ms\":null,\"expires_date_ms\":null,\"web_order_line_item_id\":null,\"cancellation_date_ms\":null,\"is_trial_period\":null,\"is_in_intro_offer_period\":null,\"unknown_attributes\":{\"1704\":[\"FhQyMDI0LTA4LTA2dDEyOjAwOjAwWg==\"]}},{\"quantity\":1,\"product_id\":\"com.example.app.coins\",\"transaction_id\":\"70000000000212\",\"purchase_date_ms\":null,\"original_transaction_id\":null,\"original_purchase_date_ms\":null,\"expires_date_ms\":null,\"web_order_line_item_id\":null,\"cancellation_date_ms\":null,\"is_trial_period\":null,\"is_in_intro_offer_period\":null,\"unknown_attributes\":{\"1704\":[\"FhQyMDI0LTA4LTA2VDEyOjAwOjAweg==\"]}},{\"quantity\":1,\"product_id\":\"com.example.app.coins\",\"transaction_id\":\"70000000000215\",\"purchase_date_ms\":null,\"original_transaction_id\":null,\"original_purchase_date_ms\":null,\"expires_date_ms\":null,\"web_order_line_item_id\":null,\"cancellation_date_ms\":null,\"is_trial_period\":null,\"is_in_intro_offer_period\":null,\"unknown_attributes\":{\"1704\":[\"FhQyMDI0LTA4LTA2VDEyOjAwOjYwWg==\"]}},{\"quantity\":1,\"product_id\":\"com.example.app.coins\",\"transaction_id\":\"70000000000216\",\"purchase_date_ms\":null,\"original_transaction_id\":null,\"original_purchase_date_ms\":null,\"expires_date_ms\":null,\"web_order_line_item_id\":null,\"cancellation_date_ms\":null,\"is_trial_period\":null,\"is_in_intro_offer_period\":null,\"unknown_attributes\":{\"1704\":[\"FhQyMDIzLTAyLTI5VDEyOjAwOjAwWg==\"]}},{\"quantity\":1,\"product_id\":\"com.example.app.coins\",\"transaction_id\":\"70000000000217\",\"purchase_date_ms\":null,\"original_transaction_id\":null,\"original_purchase_date_ms\":null,\"expires_date_ms\":null,\"web_order_line_item_id\":null,\"cancellation_date_ms\":null,\"is_trial_period\":null,\"is_in_intro_offer_period\":null,\"unknown_attributes\":{\"1704\":[\"FhQxOTAwLTAyLTI5VDEyOjAwOjAwWg==\"]}},{\"quantity\":1,\"product_id\":\"com.example.app.coins\",\"transaction_id\":\"70000000000220\",\"purchase_date_ms\":null,\"original_transaction_id\":null,\"original_purchase_date_ms\":null,\"expires_date_ms\":null,\"web_order_line_item_id\":null,\"cancellation_date_ms\":null,\"is_trial_period\":null,\"is_in_intro_offer_period\":null,\"unknown_attributes\":{\"1704\":[\"FhQyMDI0LTA4LTA2VDI0OjAwOjAwWg==\"]}},{\"quantity\":1,\"product_id\":\"com.example.app.coins\",\"transaction_id\":\"70000000000218\",\"purchase_date_ms\":null,\"original_transaction_id\":null,\"original_purchase_date_ms\":null,\"expires_date_ms\":null,\"web_order_line_item_id\":null,\"cancellation_date_ms\":null,\"is_trial_period\":null,\"is_in_intro_offer_period\":null,\"unknown_attributes\":{\"1704\":[\"FhUxMjAyNC0wOC0wNlQxMjowMDowMFo=\"]}},{\"quantity\":1,\"product_id\":\"com.example.app.coins\",\"transaction_id\":\"70000000000213\",\"purchase_date_ms\":null,\"original_transaction_id\":null,\"original_purchase_date_ms\":null,\"expires_date_ms\":null,\"web_order_line_item_id\":null,\"cancellation_date_ms\":null,\"is_trial_period\":null,\"is_in_intro_offer_period\":null,\"unknown_attributes\":{\"1704\":[\"FhYyMDI0LTA4LTA2VDEyOjAwOjAwLjVa\"]}},{\"quantity\":1,\"product_id\":\"com.example.app.coins\",\"transaction_id\":\"70000000000214\",\"purchase_date_ms\":null,\"original_transaction_id\":null,\"original_purchase_date_ms\":null,\"expires_date_ms\":null,\"web_order_line_item_id\":null,\"cancellation_date_ms\":null,\"is_trial_period\":null,\"is_in_intro_offer_period\":null,\"unknown_attributes\":{\"1704\":[\"FhkyMDI0LTA4LTA2VDEyOjAwOjAwKzAzOjAw\"]}}],\"original_purchase_date_ms\":null,\"original_application_version\":null,\"expiration_date_ms\":null,\"unknown_attributes\":{}}"
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "positive",
+        "dates",
+        "owner-decision",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/creation-date-outside-the-grammar-leaves-the-chain-to-the-clock",
+      "description": "Attribute 12 is \"2020-01-01t00:00:00Z\", before the chain's 2024 start, with a lowercase t. It does not decode, so the chain is judged at the config clock (2025-01-01) and the receipt verifies: receipt_creation_date_ms is null and the value is kept raw. A reader that accepts the lowercase t judges the chain at 2020 and fails it (owner, 2026-09-27).",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "owner-receipt-creation-date-lowercase-t"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "owner-receipt-root"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2025-01-01T00:00:00Z"
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/receipt_creation_date_ms": null,
+          "/unknown_attributes/12/0": "FhQyMDIwLTAxLTAxdDAwOjAwOjAwWg=="
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "positive",
+        "dates",
+        "validity-window",
+        "owner-decision",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/accept-signed-content-nested-64-deep",
+      "description": "Signed content whose ASN.1 nests 64 constructed values deep, counting the payload SET as 1: an unknown attribute 9000 carries a fourth field of nested SEQUENCEs. At the bound, so it decodes and the receipt verifies (owner, 2026-09-27).",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "owner-receipt-content-depth-64"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "owner-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app",
+          "/unknown_attributes/9000/0": "AgEB"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "positive",
+        "limits",
+        "owner-decision",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/unreadable-signed-content-nested-65-deep",
+      "description": "The same signed content nested 65 deep: over the ASN.1 depth bound. Content inside a well-formed envelope that does not parse is carried past the chain (judged at the config clock) and the signature, which verifies: UNREADABLE_PAYLOAD (owner, 2026-09-27).",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "owner-receipt-content-depth-65"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "owner-receipt-root"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2025-01-01T00:00:00Z"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "UNREADABLE_PAYLOAD"
+      },
+      "fault": "signed-content-nested-65-deep",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "negative",
+        "limits",
+        "verification-order",
+        "owner-decision",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/accept-an-envelope-nested-64-deep",
+      "description": "A genuine receipt whose SignerInfo gains an unsigned attribute of nested SEQUENCEs, so the CMS envelope nests 64 constructed values deep, counting the ContentInfo as 1. Unsigned attributes are outside the signature; at the bound, the receipt verifies (owner, 2026-09-27).",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "owner-receipt-envelope-depth-64"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "owner-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "positive",
+        "limits",
+        "owner-decision",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/reject-an-envelope-nested-65-deep",
+      "description": "The same envelope nested 65 deep: over the ASN.1 depth bound, MALFORMED before any cryptography (owner, 2026-09-27).",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "owner-receipt-envelope-depth-65"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "owner-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "MALFORMED"
+      },
+      "fault": "envelope-nested-65-deep",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "negative",
+        "limits",
+        "owner-decision",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/accept-a-header-member-name-of-50000-characters",
+      "description": "A genuinely signed header with an extra member whose name is 50000 ASCII characters: at the JSON name length bound, so it is read and the JWS verifies.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "owner-jws-header-name-50000"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "owner-jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundleId": "com.example.app"
+        }
+      },
+      "tags": [
+        "jws",
+        "positive",
+        "limits",
+        "owner-decision",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/reject-a-header-member-name-of-50001-characters",
+      "description": "The same header with a 50001-character member name: over the JSON name length bound, MALFORMED.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "owner-jws-header-name-50001"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "owner-jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "MALFORMED"
+      },
+      "fault": "json-name-too-long",
+      "tags": [
+        "jws",
+        "negative",
+        "limits",
+        "owner-decision",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/accept-a-header-number-of-1000-digits",
+      "description": "A genuinely signed header with an extra member whose value is an integer of 1000 digits: at the JSON number length bound, so it is read and the JWS verifies.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "owner-jws-header-number-1000"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "owner-jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundleId": "com.example.app"
+        }
+      },
+      "tags": [
+        "jws",
+        "positive",
+        "limits",
+        "owner-decision",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/reject-a-header-number-of-1001-digits",
+      "description": "The same header with an integer of 1001 digits: over the JSON number length bound, MALFORMED.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "owner-jws-header-number-1001"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "owner-jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "MALFORMED"
+      },
+      "fault": "json-number-too-long",
+      "tags": [
+        "jws",
+        "negative",
+        "limits",
+        "owner-decision",
         "new-in-0-7"
       ]
     }
