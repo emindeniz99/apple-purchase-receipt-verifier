@@ -682,6 +682,59 @@ from the verified payload and decide yourself (see
 | `INTERNAL_ERROR` | `INTERNAL_ERROR` when the library or runtime itself failed; `UNREADABLE_PAYLOAD` when the chain and signature verified but the payload does not parse (this reason did not distinguish the two cases in 0.6) |
 | `WRONG_BUNDLE_ID`, `WRONG_ENVIRONMENT`, `WRONG_APP_APPLE_ID`, `DEVICE_HASH_MISMATCH` | Gone. These were policy checks the library made for you; it verifies and returns the data now, so check these fields yourself (see the checklist above) |
 
+## Vendoring
+
+The library is one package with no generated code, so copying
+`src/main/java` and `src/main/resources` into another build works. What a
+vendored copy has to carry with it:
+
+**Dependency floors.** `jackson-core` 2.16 or later: the JSON readers set
+`StreamReadConstraints` (`maxDocumentLength` and `maxNameLength` are 2.16
+API), and below it `Verifier.create` throws `IllegalStateException`.
+BouncyCastle `bcprov` and `bcpkix` 1.86, the version the code was checked
+against.
+
+**What to re-check on a BouncyCastle upgrade.** The code relies on a few
+BouncyCastle behaviours that are not API contracts:
+
+- One `JcaSignerInfoVerifierBuilder` is shared by every thread
+  (`ReceiptCore.signerVerifier`). That is safe only because its `build`
+  writes no state and makes a new content-verifier provider per
+  certificate; read `build` again after an upgrade.
+- BouncyCastle's own ASN.1 depth bound (`org.bouncycastle.asn1.max_cons_depth`)
+  applies to indefinite lengths only, which is why `Asn1Depth` exists; if
+  that changes, the explicit check stays correct but becomes redundant.
+- The signature BIT STRING of a certificate is decoded lazily, so the
+  decoders read it once on purpose (`JwsCore.decodeChain`,
+  `ReceiptCertificates.decodeEmbedded`).
+- `IA5String` does not check that its bytes are seven-bit, so
+  `ReceiptDecoder.decodeString` does.
+
+**The trust anchors are package-relative resources.** The three roots live
+in `src/main/resources/io/github/emindeniz99/applepurchasereceiptverifier/certs/`
+and load from the package of `AppleRootCerts`, never from the classpath
+root; move the package and move them with it. Each is pinned to its
+SHA-256 in `AppleRootCerts.ROOTS`. To add a root Apple publishes, put the
+`.cer` file next to the others, add a `{file, sha256}` row to `ROOTS` with
+the fingerprint Apple lists on its PKI page (check it with
+`sha256sum` on the DER file), and update `AppleRootCertsTest`, which pins
+the set. The distinct-roots check counts `ROOTS`, so it follows.
+
+**The tests need the shared fixtures.** They read `fixtures/` next to
+`java/`, or the directory `-Daprv.fixtures.dir=...` names. The subset they
+use is `cases-0.7.json`, `generated/`, `generated-0.7/`, `limits/`,
+`public-receipts/` and `apple-official/`; `cases.json` and the schemas are
+not read. Two tests also read the build itself: `VerifierApiTest` compares
+`Version.CURRENT` with `pom.xml`, and `TrustStoreIsolationTest` scans
+`src/main/java`.
+
+**Generators are tests that write nothing by default.**
+`FixtureGeneratorTest` and the classes named `*Fixture` or `*Fixtures`
+(other than `TestFixtures`) regenerate files under `fixtures/`, and only
+with `-Dfixtures.generate=true`. Keep them compiled: `TestPki`,
+`SyntheticReceipts` and `InputSizeBoundsTest` share helpers with several of
+them.
+
 ## Stability
 
 The version is `0.x`: the API can still change between minor versions.
