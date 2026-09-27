@@ -45,22 +45,18 @@ final class Endpoint {
     private Endpoint() {}
 
     static String respond(
-            Environment environment, @Nullable String requestJson, Set<TrustAnchor> trustAnchors, CallClock clock) {
+            Environment environment, @Nullable String requestJson, Set<TrustAnchor> trustAnchors, long now) {
         int status;
         ReceiptPayload receipt = null;
-        long requestDateMillis = 0;
         try {
-            receipt = ReceiptCore.verify(receiptData(requestJson), trustAnchors, clock);
+            receipt = ReceiptCore.verify(receiptData(requestJson), trustAnchors, now);
             status = status(environment, receipt);
-            if (status == AppleStatus.OK) {
-                requestDateMillis = clock.millis();
-            }
         } catch (VerificationException e) {
             status = status(e.reason());
         } catch (RuntimeException e) {
             status = AppleStatus.INTERNAL_DATA_ACCESS_ERROR;
         }
-        return EndpointResponse.render(status, environment, receipt, requestDateMillis);
+        return EndpointResponse.render(status, environment, receipt, now);
     }
 
     static int status(Reason reason) {

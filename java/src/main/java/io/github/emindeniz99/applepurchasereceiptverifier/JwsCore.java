@@ -83,12 +83,12 @@ final class JwsCore {
      * that is not a JSON object, an {@code alg} other than ES256, an
      * {@code x5c} that is not three strings. A payload that does not parse as
      * a JSON object is not reported here: it is carried past the chain and
-     * signature checks with {@code clock} standing in for its signing
+     * signature checks with {@code now} standing in for its signing
      * date, and fails as INVALID_SIGNATURE if the signature does not verify,
      * UNREADABLE_PAYLOAD if it does. Nothing unverified gets to decide which
      * of those two a caller sees.</p>
      */
-    static JsonPayload verify(@Nullable String jws, Set<TrustAnchor> trustAnchors, CallClock clock)
+    static JsonPayload verify(@Nullable String jws, Set<TrustAnchor> trustAnchors, long now)
             throws VerificationException {
         if (jws == null || jws.isEmpty()) {
             throw new VerificationException(Reason.MALFORMED, "jws is empty");
@@ -107,7 +107,7 @@ final class JwsCore {
         // answering an unknown error with INTERNAL_ERROR ("alert and
         // reconcile") would let anyone raise that alert at will.
         try {
-            return verifyUnguarded(jws, trustAnchors, clock);
+            return verifyUnguarded(jws, trustAnchors, now);
         } catch (VerificationException e) {
             throw e;
         } catch (RuntimeException e) {
@@ -117,7 +117,7 @@ final class JwsCore {
     }
 
     /** Structure, then certificates, chain, OIDs, signature, and last the payload verdict. */
-    private static JsonPayload verifyUnguarded(String jws, Set<TrustAnchor> trustAnchors, CallClock clock)
+    private static JsonPayload verifyUnguarded(String jws, Set<TrustAnchor> trustAnchors, long now)
             throws VerificationException {
         String[] parts = jws.split("\\.", -1);
         if (parts.length != 3) {
@@ -142,10 +142,7 @@ final class JwsCore {
         Payload payload = Payload.read(payloadBytes);
         authenticateTopDown(leaf, intermediate, trustAnchors);
         validateChain(
-                leaf,
-                intermediate,
-                new Date(payload.signedDate != null ? payload.signedDate.longValue() : clock.millis()),
-                trustAnchors);
+                leaf, intermediate, new Date(payload.signedDate != null ? payload.signedDate : now), trustAnchors);
         // The marker OIDs after the chain, as on the receipt path: a foreign
         // chain is UNTRUSTED_CHAIN whatever it carries. Still before the
         // leaf's key checks the JWS signature.

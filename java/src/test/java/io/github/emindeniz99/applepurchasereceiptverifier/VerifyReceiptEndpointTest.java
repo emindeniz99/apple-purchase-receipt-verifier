@@ -306,21 +306,18 @@ class VerifyReceiptEndpointTest {
             }
         };
         Verifier verifier = Checks.verifier(broken, SyntheticReceipts.root());
-        // request_date needs the clock.
+        // The clock is read once at the start of every call, so a broken
+        // clock is the host's fault on every call: never an answer that
+        // blames the input, and never an exception.
         assertEquals("{\"status\":21009}", verifier.verifyReceiptEndpoint(Environment.SANDBOX, request()));
-        // The clock is read only when a verdict needs it: input that fails
-        // its own checks never reaches it, and a receipt that states its
-        // creation date needs none.
-        assertEquals("{\"status\":21002}", verifier.verifyReceiptEndpoint(Environment.SANDBOX, "{}"));
-        assertEquals(Reason.MALFORMED, verifier.verifyReceipt("AAAA").failure().reason());
-        assertEquals(Reason.MALFORMED, verifier.verifySignedData(null).failure().reason());
-        assertTrue(verifier.verifyReceipt(SyntheticReceipts.base64()).verified());
-        // A receipt without one is judged at the clock, which is broken.
-        String dateless =
-                Base64.getEncoder().encodeToString(SyntheticReceipts.pki().signReceipt(new byte[] {0x31, 0x00}));
-        Failure failure = verifier.verifyReceipt(dateless).failure();
+        assertEquals("{\"status\":21009}", verifier.verifyReceiptEndpoint(Environment.SANDBOX, "{}"));
+        assertEquals(
+                Reason.INTERNAL_ERROR, verifier.verifyReceipt("AAAA").failure().reason());
+        assertEquals(
+                Reason.INTERNAL_ERROR, verifier.verifySignedData(null).failure().reason());
+        Failure failure = verifier.verifyReceipt(SyntheticReceipts.base64()).failure();
         assertEquals(Reason.INTERNAL_ERROR, failure.reason());
-        assertEquals("the configured clock failed", failure.message());
+        assertTrue(failure.cause() instanceof IllegalStateException, String.valueOf(failure.cause()));
     }
 
     /**

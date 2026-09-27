@@ -17,9 +17,9 @@ import org.jspecify.annotations.Nullable;
  * library, and tests substitute their own.</p>
  *
  * <p><strong>The clock</strong> answers "what time is it now?" and nothing
- * else. It is read at most once per call, and only for one of two things:
- * the chain-validity instant when a receipt or JWS states no signing date,
- * and {@code request_date} in the endpoint response. It must be safe to
+ * else. It is read once per call and used for two things: the
+ * chain-validity instant when a receipt or JWS states no signing date, and
+ * {@code request_date} in the endpoint response. It must be safe to
  * call from several threads.</p>
  */
 public final class Config {

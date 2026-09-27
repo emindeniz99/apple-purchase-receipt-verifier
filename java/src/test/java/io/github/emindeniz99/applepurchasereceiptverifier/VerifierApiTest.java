@@ -518,7 +518,7 @@ class VerifierApiTest {
         }
         // The scan found the build output, including the newest classes.
         assertTrue(implementation.contains("Asn1Depth"), implementation.toString());
-        assertTrue(implementation.contains("CallClock"), implementation.toString());
+        assertTrue(implementation.contains("Endpoint"), implementation.toString());
         assertTrue(implementation.contains("ReceiptCertificates"), implementation.toString());
     }
 }

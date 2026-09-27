@@ -119,8 +119,8 @@ final class ReceiptCore {
      * SignerInfos and at most {@link #MAX_EMBEDDED_CERTIFICATES}
      * certificates. Then, for each SignerInfo in turn until one passes: its
      * certificate is embedded and decodes, a path from it reaches one of
-     * {@code trustAnchors} at the receipt's creation date ({@code clock},
-     * read only then, when the receipt states none) with no revocation check, it carries
+     * {@code trustAnchors} at the receipt's creation date ({@code now}
+     * when the receipt states none) with no revocation check, it carries
      * Apple's receipt-signing marker OID and the intermediate that issued it
      * carries Apple's WWDR marker OID, and its CMS signature verifies. Only
      * then is the payload decoded.</p>
@@ -129,7 +129,7 @@ final class ReceiptCore {
      * reported, so a single-signer receipt fails exactly as it always
      * has.</p>
      */
-    static ReceiptPayload verify(@Nullable String base64, Set<TrustAnchor> trustAnchors, CallClock clock)
+    static ReceiptPayload verify(@Nullable String base64, Set<TrustAnchor> trustAnchors, long now)
             throws VerificationException {
         if (base64 == null || base64.isEmpty()) {
             throw new VerificationException(Reason.MALFORMED, "receipt is empty");
@@ -139,11 +139,11 @@ final class ReceiptCore {
         if (Utf8Length.exceeds(base64, MAX_RECEIPT_BYTES)) {
             throw tooLarge();
         }
-        return verifyDer(ReceiptBase64.decode(base64), trustAnchors, clock);
+        return verifyDer(ReceiptBase64.decode(base64), trustAnchors, now);
     }
 
     /** {@link #verify} after the base64 step. */
-    static ReceiptPayload verifyDer(byte[] receiptDer, Set<TrustAnchor> trustAnchors, CallClock clock)
+    static ReceiptPayload verifyDer(byte[] receiptDer, Set<TrustAnchor> trustAnchors, long now)
             throws VerificationException {
         // BouncyCastle's ASN.1 and CMS entry points report malformed input with
         // UNCHECKED exceptions, and which ones is neither documented nor stable
@@ -151,7 +151,7 @@ final class ReceiptCore {
         // by type: a list of types would miss the next one.
         byte[] payload;
         try {
-            payload = verifySignature(receiptDer, trustAnchors, clock);
+            payload = verifySignature(receiptDer, trustAnchors, now);
         } catch (VerificationException e) {
             throw e;
         } catch (RuntimeException e) {
@@ -173,7 +173,7 @@ final class ReceiptCore {
     }
 
     /** Every check up to and including a signature; returns the signed payload, not yet decoded. */
-    private static byte[] verifySignature(byte[] receiptDer, Set<TrustAnchor> trustAnchors, CallClock clock)
+    private static byte[] verifySignature(byte[] receiptDer, Set<TrustAnchor> trustAnchors, long now)
             throws VerificationException {
         if (Asn1Depth.exceeded(receiptDer)) {
             throw new VerificationException(
@@ -236,7 +236,7 @@ final class ReceiptCore {
         // anyone yet, so it only moves the chain instant to the clock and
         // never rejects by itself.
         Long creationDate = ReceiptDecoder.readCreationDate(payload);
-        Date at = null;
+        Date at = new Date(creationDate != null ? creationDate : now);
 
         ReceiptCertificates.EmbeddedCertificates certificates = ReceiptCertificates.decodeEmbedded(certificateSet);
         // Signer-independent, so walked once for all SignerInfos, and only
@@ -246,9 +246,6 @@ final class ReceiptCore {
         for (SignerInformation signer : signers) {
             try {
                 List<X509Certificate> signerCerts = certificates.signers(signer);
-                if (at == null) {
-                    at = new Date(creationDate != null ? creationDate.longValue() : clock.millis());
-                }
                 if (authenticated == null) {
                     authenticated = authenticatedTopDown(certificates.all, trustAnchors);
                 }

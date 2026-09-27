@@ -13,7 +13,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
-import java.time.Clock;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collections;
@@ -101,7 +100,7 @@ class InputSizeBoundsTest {
                 () -> JwsCore.verify(
                         headerJws(nestedJson(200)),
                         AppleTrust.anchors(Collections.singleton(root("jws-root.der"))),
-                        new CallClock(Clock.systemUTC())));
+                        System.currentTimeMillis()));
         assertEquals(Reason.MALFORMED, thrown.reason());
         assertTrue(
                 thrown.getCause() instanceof StreamConstraintsException,
