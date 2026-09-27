@@ -359,7 +359,7 @@ jobs:
       # and python jobs.
       - uses: ruby/setup-ruby@bec3f19a76460dbe12f60def7d1a77585f07516c # v1.322.0
         with:
-          ruby-version: "3.1"
+          ruby-version: "3.3"
           # No bundler cache, and nothing else this action caches: see the
           # note above the jobs. The gem under test comes from the registry
           # into a scratch GEM_HOME, never from a restored cache.

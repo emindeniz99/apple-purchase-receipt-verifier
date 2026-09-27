@@ -3,7 +3,7 @@
 // Smoke-tests the Swift library as SwiftPM consumers get it: resolved from the
 // published git tag, not from this working tree. Run with the released version:
 //
-//   SMOKE_VERSION=0.2.1 swift run Smoke
+//   SMOKE_VERSION=0.7.0 swift run Smoke
 //
 // SwiftPM has no registry here, so the tag itself is the artifact — a tag whose
 // Package.swift references files that were not committed fails at resolve time,
@@ -12,7 +12,7 @@ import Foundation
 import PackageDescription
 
 guard let smokeVersion = ProcessInfo.processInfo.environment["SMOKE_VERSION"] else {
-    fatalError("set SMOKE_VERSION to the published version, e.g. SMOKE_VERSION=0.2.1")
+    fatalError("set SMOKE_VERSION to the published version, e.g. SMOKE_VERSION=0.7.0")
 }
 
 let package = Package(

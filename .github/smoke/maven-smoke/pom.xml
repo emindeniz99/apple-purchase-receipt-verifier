@@ -3,7 +3,7 @@
   Smoke-tests the artifact as published to Maven Central, resolved from the
   remote repository by coordinates. Run with the published version:
 
-    mvn -q -Dsmoke.version=0.2.1 -DoutputFile=cp.txt dependency:build-classpath
+    mvn -q -Dsmoke.version=0.7.0 -DoutputFile=cp.txt dependency:build-classpath
     javac -cp "$(cat cp.txt)" Smoke.java -d .
     java -cp ".:$(cat cp.txt)" Smoke
 
