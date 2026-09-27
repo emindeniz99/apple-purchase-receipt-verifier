@@ -88,8 +88,8 @@ public final class Config {
          *                               Apple roots fail to load
          */
         public Config build() {
-            Set<X509Certificate> chosen = roots != null ? roots : AppleRootCerts.roots();
-            return new Config(Collections.unmodifiableSet(new LinkedHashSet<X509Certificate>(chosen)), clock);
+            // roots(...) already copied, and never touches a set it handed on.
+            return new Config(roots != null ? Collections.unmodifiableSet(roots) : AppleRootCerts.roots(), clock);
         }
     }
 }
