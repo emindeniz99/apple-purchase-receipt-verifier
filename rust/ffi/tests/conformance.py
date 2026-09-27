@@ -286,6 +286,12 @@ def run_case(lib, directory: Path, registry: dict, case: dict):
 def check(case: dict, status: int, text: str) -> str:
     """An empty string when the case passes, else what went wrong."""
     expected = case["expected"]
+    if expected.get("anyOutcome") is True:
+        # A tolerant case: any verdict but INTERNAL_ERROR, which is also what
+        # the ABI answers when the call panicked.
+        if status == REASON_CODES["INTERNAL_ERROR"]:
+            return f"expected any verdict but INTERNAL_ERROR, got {text}"
+        return ""
     if case["operation"] != "verifyReceiptEndpoint" and expected.get("status") == "error":
         wanted = REASON_CODES[expected["reason"]]
         if status != wanted:

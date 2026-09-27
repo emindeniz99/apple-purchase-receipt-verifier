@@ -395,6 +395,16 @@ bool run_case(const Case &kase, std::string &error, Outcome &outcome) {
 bool check_expectations(const Case &kase, const Outcome &outcome, std::string &error) {
   const std::string expect = kase.get("expect");
 
+  // A tolerant case: any verdict but INTERNAL_ERROR, which is also what the
+  // ABI answers when the call panicked.
+  if (expect == "any") {
+    if (outcome.status == APRV_REASON_INTERNAL_ERROR) {
+      error = "expected any verdict but INTERNAL_ERROR, got " + outcome.json;
+      return false;
+    }
+    return true;
+  }
+
   if (expect == "error") {
     const std::string token = kase.get("reason");
     int wanted = reason_code(token);

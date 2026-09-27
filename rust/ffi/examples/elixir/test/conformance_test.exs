@@ -213,10 +213,23 @@ defmodule ConformanceTest do
 
   defp check(kase, outcome) do
     case get(kase, "expect") do
+      "any" -> check_any(outcome)
       "error" -> check_error(kase, outcome)
       expect when expect in ["ok", "body"] -> check_ok(kase, outcome)
     end
   end
+
+  # A tolerant case: any verdict but INTERNAL_ERROR, which is also what the
+  # ABI answers when the call panicked.
+  defp check_any({:error, status, json}) do
+    if Aprv.reason(status) == :internal_error do
+      {:error, "expected any verdict but INTERNAL_ERROR, got #{json}"}
+    else
+      :ok
+    end
+  end
+
+  defp check_any({:ok, _json}), do: :ok
 
   defp check_error(kase, outcome) do
     token = get(kase, "reason")
