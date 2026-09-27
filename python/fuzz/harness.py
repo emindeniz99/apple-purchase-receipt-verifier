@@ -43,7 +43,7 @@ with atheris.instrument_imports():
 #: The receipt anchor set: the pinned Apple roots plus the generated 0.7
 #: fixture root, so both the shared fixture receipt and the two public Apple
 #: receipts get past the chain check and the fuzzer can explore what lies
-#: beyond it. Parsed once — re-reading the DER on every execution would cost
+#: beyond it. Parsed once: re-reading the DER on every execution would cost
 #: more than the code under test.
 RECEIPT_ANCHORS = [
     *Config.defaults().roots,
@@ -54,13 +54,13 @@ RECEIPT_ANCHORS = [
 #: fixture *JWS* root, which certified nothing in the receipt world.
 UNRELATED_ANCHORS = [x509.load_der_x509_certificate(_fixture("generated", "jws-root.der"))]
 
-#: ``Verifier.verify_receipt`` on a string — the form a client actually sends.
+#: ``Verifier.verify_receipt`` on a string (the form a client actually sends).
 RECEIPT_VERIFIER = Verifier(Config.create(roots=RECEIPT_ANCHORS))
 
 #: Anchored on the fixture JWS root, so the generated ``.jws`` fixtures verify.
 JWS_VERIFIER = Verifier(Config.create(roots=UNRELATED_ANCHORS))
 
-#: The same shape of verifier anchored on Apple's production roots — the
+#: The same shape of verifier anchored on Apple's production roots: the
 #: unrelated set for the JWS accept-invariant.
 APPLE_JWS_VERIFIER = Verifier(Config.defaults())
 
@@ -129,8 +129,8 @@ def require_no_exception(call: "Callable[[], Any]", what: str) -> Any:
     """0.7's ``Verifier`` never raises for any input
     (docs/design/0.7-api.md): every result comes back as a
     ``VerificationResult``, or a JSON string for the endpoint. Anything
-    escaping as an exception — a ``TypeError``, an ``OverflowError``, an
-    ``asn1crypto`` internal error — means hostile input reached a call site
+    escaping as an exception (a ``TypeError``, an ``OverflowError``, an
+    ``asn1crypto`` internal error) means hostile input reached a call site
     that was not expecting it, which is the class of bug these targets
     exist to find, so it is reported rather than tolerated."""
     try:

@@ -30,7 +30,7 @@ class Verifier:
     raise for any input: an unexpected exception is caught and reported as
     :attr:`~.reason.Reason.INTERNAL_ERROR`.
 
-    :raises ValueError: if ``config.roots`` is empty — a verifier with no
+    :raises ValueError: if ``config.roots`` is empty: a verifier with no
         roots would answer ``UNTRUSTED_CHAIN`` to everything and nobody
         would notice until production
     """

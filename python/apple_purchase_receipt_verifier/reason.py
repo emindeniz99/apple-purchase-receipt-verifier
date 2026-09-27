@@ -1,4 +1,4 @@
-"""Why verification failed — the 0.7 API (docs/design/0.7-api.md). The same
+"""Why verification failed: the 0.7 API (docs/design/0.7-api.md). The same
 values, with the same meaning, in every port."""
 
 import enum

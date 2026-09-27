@@ -1,5 +1,5 @@
-"""Runs fixtures/cases-0.7.json — the normative cross-language 0.7
-conformance vectors — against this implementation. The adapter below knows
+"""Runs fixtures/cases-0.7.json (the normative cross-language 0.7
+conformance vectors) against this implementation. The adapter below knows
 nothing about any individual case: it loads the file, resolves fixture ids
 to bytes, builds a ``Config``/``Verifier`` from the generic config,
 dispatches on "operation", normalizes the result and reads the reason off a
@@ -202,8 +202,8 @@ def normalize_endpoint(response_json):
 
 # --- field paths --------------------------------------------------------
 
-# A path step is a JSON Pointer (RFC 6901) reference token — "/name" or
-# "/0" — or this schema's extension, "/[key=value]", selecting the single
+# A path step is a JSON Pointer (RFC 6901) reference token, "/name" or
+# "/0", or this schema's extension, "/[key=value]", selecting the single
 # array element whose member equals value. The bracket form's own "/" is
 # part of the bracket token, so it must be tried before the plain-name
 # alternative or that would consume the "/" on its own with an empty name.
@@ -271,7 +271,7 @@ def resolve_length(root, path):
 
 
 class ConformanceCasesTest(unittest.TestCase):
-    """One test method per case in fixtures/cases-0.7.json — generated below."""
+    """One test method per case in fixtures/cases-0.7.json (generated below)."""
 
     def run_case(self, case):
         RAN.add(case["id"])

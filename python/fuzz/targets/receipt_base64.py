@@ -1,5 +1,5 @@
-"""``Verifier.verify_receipt`` on a string — the form a client actually sends
-— through the receipt-data accept/reject rule and then the whole DER path
+"""``Verifier.verify_receipt`` on a string (the form a client actually sends),
+through the receipt-data accept/reject rule and then the whole DER path
 behind it.
 
 Seeded from the ``receipt-b64`` fixtures and the public receipts, so the

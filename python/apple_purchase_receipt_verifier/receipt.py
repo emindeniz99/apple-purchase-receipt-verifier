@@ -686,7 +686,7 @@ def _read_creation_date(content: bytes) -> "int | None":
     """The receipt creation date (attribute 12), read the only way anything
     in a payload is read before its signer is trusted: the top-level
     attribute SET is walked shallowly, and only the value of the FIRST
-    occurrence of type 12 is decoded — the same "first wins" rule the full
+    occurrence of type 12 is decoded, the same "first wins" rule the full
     parse applies to every known attribute (owner, 2026-09-27). ``None``
     means "judge the chain at the clock": no attribute 12, or a first one
     that is empty or does not decode. Never raises: nothing is trusted yet,

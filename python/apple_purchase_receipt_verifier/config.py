@@ -15,8 +15,8 @@ def _system_clock_ms() -> int:
 
 
 def _ordered_unique(roots: "Iterable[x509.Certificate]") -> "tuple[x509.Certificate, ...]":
-    """``roots`` with later duplicates dropped, in first-seen order — the
-    behaviour of Java's ``LinkedHashSet``, which the design's ``Config``
+    """``roots`` with later duplicates dropped, in first-seen order (the
+    behaviour of Java's ``LinkedHashSet``), which the design's ``Config``
     mirrors. Kept in the caller's order (not a hash order) so the roots
     that reach the chain builder are, object for object, the ones the
     caller passed."""

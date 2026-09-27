@@ -3,7 +3,7 @@ top-down (hardening parity change #161): a certificate's signature is
 checked only with a key a pinned root has already vouched for, and a
 certificate's own key is never decoded until ITS signature has verified
 that way. This is what keeps a receipt or JWS padded with a stranger
-certificate — including one carrying a key too large to decode cheaply —
+certificate (including one carrying a key too large to decode cheaply)
 from costing more than the handful of signature checks a genuine chain
 needs: an unvouched candidate is never tried as an issuer, so its key is
 never read.
@@ -70,7 +70,7 @@ def valid_at_ms(cert: x509.Certificate, at_ms: int) -> bool:
     milliseconds). Compared as plain integers rather than by building a
     ``datetime`` for ``at_ms``: a signing date an attacker chose can be far
     outside the range ``datetime`` represents (years 1-9999) while still
-    fitting a signed 64-bit value — the JWS `signedDate: 9e15` case — and
+    fitting a signed 64-bit value (the JWS `signedDate: 9e15` case), and
     such an instant is still perfectly comparable to a certificate's
     (always sane) bounds without ever being constructed as a ``datetime``.
     """
@@ -107,7 +107,7 @@ def _is_ca(cert: x509.Certificate) -> bool:
 
 def _issued_by(cert: x509.Certificate, issuer: x509.Certificate, *, strict: bool = False) -> bool:
     """Whether ``issuer``'s key verifies ``cert``'s signature. Only
-    ``issuer``'s key is ever decoded or used here — never ``cert``'s —
+    ``issuer``'s key is ever decoded or used here (never ``cert``'s),
     which is what makes the walks below top-down: a certificate is tried as
     an issuer only once it is itself vouched for.
 
@@ -202,7 +202,7 @@ def build_path_top_down(
     Walked top-down in two passes, mirroring the Java port's
     ``authenticatedTopDown``: first every embedded certificate that a
     pinned root vouches for AND may itself issue further certificates
-    (basicConstraints/keyUsage) is found — trying only certificates already
+    (basicConstraints/keyUsage) is found: trying only certificates already
     vouched for as an issuer, so a stranger's key, oversized or not, is
     never decoded to test whether it issued anything. ``target``'s own path
     is then read off that result. Raises ``UNTRUSTED_CHAIN`` when no such

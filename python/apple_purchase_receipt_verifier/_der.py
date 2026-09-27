@@ -1,11 +1,11 @@
 """Minimal DER TLV reading, for the one thing beyond structural decoding
 this library checks about a raw certificate before trusting it: that its
 outer ``signatureValue`` BIT STRING declares zero unused bits, as every
-X.509 signature (a full byte string — RSA and ECDSA signatures are DER
+X.509 signature (a full byte string: RSA and ECDSA signatures are DER
 octet sequences, never a partial final byte) must. ``cryptography`` reads
 past a nonzero count here rather than refusing it, so a certificate whose
-DER is corrupted exactly there — genuine everywhere else, unusable as an
-identity all the way down — would otherwise verify.
+DER is corrupted exactly there (genuine everywhere else, unusable as an
+identity all the way down) would otherwise verify.
 
 Certificates are always definite-length DER (RFC 5280 4.1), so this reader
 need not follow BER's indefinite lengths the way ``_asn1_depth`` does for

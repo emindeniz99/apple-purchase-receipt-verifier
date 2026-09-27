@@ -112,7 +112,7 @@ class MutationFuzzTest(unittest.TestCase):
 
 
 def tlv(tag: int, contents: bytes) -> bytes:
-    """DER tag-length-value — these builders emit structures no encoder
+    """DER tag-length-value: these builders emit structures no encoder
     would produce for them (extra decoy certificates spliced in)."""
     if len(contents) < 0x80:
         return bytes([tag, len(contents)]) + contents
@@ -129,7 +129,7 @@ MESH_NAMES = ("Fake WWDR CA", "Fake Apple Inc Root")
 def cross_signed_mesh(layers: int = 14, branching: int = 2) -> "list[bytes]":
     """``branching`` CA certificates per layer, each cross-signed by every
     node of the layer above and the top layer wrapped back onto the bottom,
-    so no path ever terminates — the shape that makes a path builder
+    so no path ever terminates: the shape that makes a path builder
     without a length bound explore ``branching**layers`` paths. Every
     certificate is a CA, valid now, and named after the layer's issuer, so
     nothing but the count disqualifies it as a candidate."""
@@ -165,7 +165,7 @@ def cross_signed_mesh(layers: int = 14, branching: int = 2) -> "list[bytes]":
 def receipt_with_extra_certificates(extra: "list[bytes]") -> bytes:
     """The shared 0.7 receipt with ``extra`` certificates spliced in ahead
     of its own. Payload, chain and signature are untouched, so without a
-    bound on the count everything still verifies — after the extras have
+    bound on the count everything still verifies, after the extras have
     been parsed and offered to path building."""
     info = asn1cms.ContentInfo.load(fixture("generated-0.7", "receipt.der"))
     signed_data = info["content"]
