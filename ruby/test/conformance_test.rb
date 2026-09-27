@@ -2,7 +2,7 @@
 
 require_relative "helper"
 
-# Runs fixtures/cases-0.7.json — the normative cross-language conformance
+# Runs fixtures/cases.json — the normative cross-language conformance
 # vectors for the 0.7 API (docs/design/0.7-api.md) — against this
 # implementation.
 #
@@ -40,7 +40,7 @@ class ConformanceTest < Minitest::Test
   # otherwise drift unnoticed, and the registry is the thing being guarded.
   def test_every_registered_fixture_matches_its_recorded_content_sha256
     ids = CASES["fixtures"].keys
-    refute_empty ids, "cases-0.7.json must register fixtures"
+    refute_empty ids, "cases.json must register fixtures"
     ids.each { |id| TestSupport.fixture_bytes(id) }
   end
 
@@ -78,7 +78,7 @@ class ConformanceTest < Minitest::Test
   # --- fixtures and roots ---------------------------------------------------
 
   def fixture_entry(id)
-    CASES["fixtures"].fetch(id) { raise "harness error: cases-0.7.json registers no fixture #{id.inspect}" }
+    CASES["fixtures"].fetch(id) { raise "harness error: cases.json registers no fixture #{id.inspect}" }
   end
 
   # verifyReceipt / the endpoint's receipt-data: a text fixture is handed

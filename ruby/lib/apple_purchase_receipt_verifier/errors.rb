@@ -2,7 +2,7 @@
 
 module ApplePurchaseReceiptVerifier
   # The machine-readable failure vocabulary. Eight reasons, closed by the
-  # cross-port contract: `fixtures/cases-0.7.schema.json` holds the same enum
+  # cross-port contract: `fixtures/cases.schema.json` holds the same enum
   # and every port mirrors it. A ninth reason is a change to that file, to
   # docs/design/0.7-api.md and to every port in one pull request.
   #

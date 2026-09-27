@@ -3,7 +3,7 @@
 require_relative "helper"
 
 # The spellings Receipt.decode_canonical_base64 must accept and refuse are the
-# decodeBase64 groups of fixtures/cases-0.7.json, which conformance_test.rb
+# decodeBase64 groups of fixtures/cases.json, which conformance_test.rb
 # runs against both the receipt-data and the x5c decoder. What stays here is
 # what a shared vector cannot hold: bytes outside the base64 alphabet
 # entirely (which JSON text cannot carry either), and why neither of Ruby's
