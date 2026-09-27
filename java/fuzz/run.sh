@@ -104,8 +104,11 @@ build() {
   "$mvn" ${MVN_ARGS:-} -B -q -f "$root/java/pom.xml" dependency:build-classpath \
     -DincludeScope=runtime -Dmdep.outputFile="$here/.build/deps.txt"
 
+  # Every classifier jar is excluded by name, the `tests` one included: it
+  # holds only TestPki and sorts ahead of the main jar ('-' < '.'), so
+  # `head` would otherwise hand javac a jar with none of the library in it.
   local jar
-  jar="$(ls "$root"/java/target/apple-purchase-receipt-verifier-*.jar | grep -v -e -sources -e -javadoc | head -n 1)"
+  jar="$(ls "$root"/java/target/apple-purchase-receipt-verifier-*.jar | grep -v -e -sources -e -javadoc -e -tests | head -n 1)"
   classpath="$jar:$(cat "$here/.build/deps.txt")"
 
   rm -rf "$here/.build/classes"
