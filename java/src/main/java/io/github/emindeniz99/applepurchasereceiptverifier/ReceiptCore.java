@@ -59,7 +59,8 @@ final class ReceiptCore {
             throw new VerificationException(Reason.MALFORMED, "receipt is empty");
         }
         if (Utf8Length.exceeds(base64, MAX_RECEIPT_BYTES)) {
-            throw tooLarge();
+            throw new VerificationException(
+                    Reason.TOO_LARGE, "receipt exceeds the maximum accepted size of " + MAX_RECEIPT_BYTES + " bytes");
         }
         return verifyDer(StrictBase64.decode(base64, Reason.MALFORMED, "receipt"), trustAnchors, now);
     }
@@ -78,11 +79,6 @@ final class ReceiptCore {
                     Reason.MALFORMED, "unexpected " + e.getClass().getName(), e);
         }
         return parseSignedPayload(payload);
-    }
-
-    private static VerificationException tooLarge() {
-        return new VerificationException(
-                Reason.TOO_LARGE, "receipt exceeds the maximum accepted size of " + MAX_RECEIPT_BYTES + " bytes");
     }
 
     /** Every check up to and including a signature; returns the signed payload, not yet decoded. */
