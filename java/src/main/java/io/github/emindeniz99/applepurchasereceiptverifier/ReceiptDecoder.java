@@ -37,7 +37,6 @@ final class ReceiptDecoder {
     // Where each type comes from, 0, 1, 15, 16, 18 and 1713 included, is in RECEIPT-FIELDS.md.
     private static final int ATTR_RECEIPT_TYPE = 0;
     private static final int ATTR_APP_ITEM_ID = 1;
-    private static final int ATTR_ORIGINAL_PURCHASE_DATE = 18;
     private static final int ATTR_BUNDLE_ID = 2;
     private static final int ATTR_APP_VERSION = 3;
     private static final int ATTR_OPAQUE_VALUE = 4;
@@ -46,6 +45,7 @@ final class ReceiptDecoder {
     private static final int ATTR_DOWNLOAD_ID = 15;
     private static final int ATTR_VERSION_EXTERNAL_IDENTIFIER = 16;
     private static final int ATTR_IN_APP = 17;
+    private static final int ATTR_ORIGINAL_PURCHASE_DATE = 18;
     private static final int ATTR_ORIGINAL_APP_VERSION = 19;
     private static final int ATTR_EXPIRATION_DATE = 21;
 
@@ -61,7 +61,7 @@ final class ReceiptDecoder {
     private static final int IAP_IS_TRIAL_PERIOD = 1713;
     private static final int IAP_IS_IN_INTRO_OFFER_PERIOD = 1719;
 
-    /** The top-level types that fill a typed field. 17 is absent: every copy is a purchase. */
+    /** The top-level types that fill a typed field. */
     private static final Set<Integer> TOP_LEVEL = new HashSet<>(Arrays.asList(
             ATTR_RECEIPT_TYPE,
             ATTR_APP_ITEM_ID,
@@ -174,15 +174,32 @@ final class ReceiptDecoder {
      */
     private static Attributes readAttributes(byte[] der, String what, Set<Integer> known) throws VerificationException {
         Attributes attributes = new Attributes();
+        // ReceiptAttribute ::= SEQUENCE { type INTEGER, version INTEGER, value OCTET STRING }
         for (ASN1Encodable element : parseAttributeSet(der, what)) {
-            Attribute attr = Attribute.of(element);
-            if (!known.contains(attr.type) || attributes.firsts.containsKey(attr.type)) {
-                attributes
-                        .unknown
-                        .computeIfAbsent(attr.type, type -> new ArrayList<>())
-                        .add(attr.value);
+            int type;
+            byte[] value;
+            try {
+                ASN1Sequence seq = ASN1Sequence.getInstance(element);
+                // More than three fields is tolerated, for a field Apple appends later.
+                if (seq.size() < 3) {
+                    throw new VerificationException(
+                            Reason.UNREADABLE_PAYLOAD,
+                            "receipt attribute has " + seq.size() + " fields, expected at least 3");
+                }
+                BigInteger rawType = ASN1Integer.getInstance(seq.getObjectAt(0)).getValue();
+                // 0 to Integer.MAX_VALUE; a wider type is refused, since narrowing would invent one.
+                if (rawType.signum() < 0 || rawType.bitLength() > 31) {
+                    throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "receipt attribute type out of range");
+                }
+                type = rawType.intValue();
+                value = ASN1OctetString.getInstance(seq.getObjectAt(2)).getOctets();
+            } catch (IllegalArgumentException e) {
+                throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "malformed receipt attribute", e);
+            }
+            if (!known.contains(type) || attributes.firsts.containsKey(type)) {
+                attributes.unknown.computeIfAbsent(type, t -> new ArrayList<>()).add(value);
             } else {
-                attributes.firsts.put(attr.type, attr.value);
+                attributes.firsts.put(type, value);
             }
         }
         return attributes;
@@ -194,32 +211,17 @@ final class ReceiptDecoder {
 
         @Nullable
         String string(int type) {
-            byte[] value = firsts.get(type);
-            try {
-                return value != null ? decodeString(value) : null;
-            } catch (VerificationException e) {
-                return keepRaw(type, value);
-            }
+            return typed(type, ReceiptDecoder::decodeString);
         }
 
         @Nullable
         Long integer(int type) {
-            byte[] value = firsts.get(type);
-            try {
-                return value != null ? decodeInteger(value) : null;
-            } catch (VerificationException e) {
-                return keepRaw(type, value);
-            }
+            return typed(type, ReceiptDecoder::decodeInteger);
         }
 
         @Nullable
         Long date(int type) {
-            byte[] value = firsts.get(type);
-            try {
-                return value != null ? ReceiptDecoder.date(value) : null;
-            } catch (VerificationException e) {
-                return keepRaw(type, value);
-            }
+            return typed(type, ReceiptDecoder::decodeDate);
         }
 
         /** An INTEGER flag: 0 is {@code false}, any other value {@code true}. */
@@ -229,10 +231,24 @@ final class ReceiptDecoder {
             return value != null ? value != 0 : null;
         }
 
-        private <T> @Nullable T keepRaw(int type, byte[] value) {
-            unknown.computeIfAbsent(type, t -> new ArrayList<>()).add(0, value);
-            return null;
+        /** The first value decoded, or null when absent; one that does not decode is kept raw. */
+        private <T> @Nullable T typed(int type, Decoder<T> decoder) {
+            byte[] value = firsts.get(type);
+            if (value == null) {
+                return null;
+            }
+            try {
+                return decoder.decode(value);
+            } catch (VerificationException e) {
+                unknown.computeIfAbsent(type, t -> new ArrayList<>()).add(0, value);
+                return null;
+            }
         }
+    }
+
+    private interface Decoder<T> {
+        @Nullable
+        T decode(byte[] der) throws VerificationException;
     }
 
     private static ASN1Set parseAttributeSet(byte[] der, String what) throws VerificationException {
@@ -266,48 +282,12 @@ final class ReceiptDecoder {
         }
     }
 
-    /** {@code ReceiptAttribute ::= SEQUENCE { type INTEGER, version INTEGER, value OCTET STRING }} */
-    private static final class Attribute {
-        final int type;
-        final byte[] value;
-
-        private Attribute(int type, byte[] value) {
-            this.type = type;
-            this.value = value;
-        }
-
-        static Attribute of(ASN1Encodable element) throws VerificationException {
-            try {
-                ASN1Sequence seq = ASN1Sequence.getInstance(element);
-                // More than three fields is tolerated, for a field Apple appends later.
-                if (seq.size() < 3) {
-                    throw new VerificationException(
-                            Reason.UNREADABLE_PAYLOAD, "receipt attribute has " + seq.size() + " fields, expected 3");
-                }
-                int type = attributeType(
-                        ASN1Integer.getInstance(seq.getObjectAt(0)).getValue());
-                byte[] value = ASN1OctetString.getInstance(seq.getObjectAt(2)).getOctets();
-                return new Attribute(type, value);
-            } catch (IllegalArgumentException e) {
-                throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "malformed receipt attribute", e);
-            }
-        }
-    }
-
-    /** 0 to {@link Integer#MAX_VALUE}; a wider type is refused, since narrowing would invent one. */
-    private static int attributeType(BigInteger value) throws VerificationException {
-        if (value.signum() < 0 || value.bitLength() > 31) {
-            throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "receipt attribute type out of range");
-        }
-        return value.intValue();
-    }
-
     /**
      * A UTF8String or a seven-bit IA5String, the two types Apple uses; any
      * other {@link ASN1String} is refused rather than rendered.
      */
     private static String decodeString(byte[] der) throws VerificationException {
-        // The creation date is read through here before any signature.
+        // A nested encoding inside an OCTET STRING, which the payload's own depth walk did not enter.
         requireDepth(der, "attribute value");
         try {
             ASN1Primitive parsed = ASN1Primitive.fromByteArray(der);
@@ -354,7 +334,7 @@ final class ReceiptDecoder {
     }
 
     /** Epoch milliseconds, or null for an empty string, which is how Apple writes "not set". */
-    private static @Nullable Long date(byte[] der) throws VerificationException {
+    private static @Nullable Long decodeDate(byte[] der) throws VerificationException {
         String text = decodeString(der);
         if (text.isEmpty()) {
             return null;
@@ -385,20 +365,11 @@ final class ReceiptDecoder {
         }
     }
 
-    /** {@link #date}, with {@code null} for anything that does not parse. */
-    private static @Nullable Long decodeDate(byte[] der) {
-        try {
-            return date(der);
-        } catch (VerificationException | RuntimeException e) {
-            return null;
-        }
-    }
-
     /** The bundle id string, or {@code null} when it does not decode; its octets are kept either way. */
     private static @Nullable String decodeBundleId(byte[] der) {
         try {
             return decodeString(der);
-        } catch (VerificationException | RuntimeException e) {
+        } catch (VerificationException e) {
             return null;
         }
     }

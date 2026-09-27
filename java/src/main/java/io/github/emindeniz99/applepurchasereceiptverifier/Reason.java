@@ -1,9 +1,9 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
 /**
- * Why verification failed. The same values, with the same meaning, in every
- * port. Ordinals are not stable across 0.x releases: switch on the constant
- * or persist its {@link #name()}, never its {@link #ordinal()}.
+ * Why verification failed. Ordinals are not stable across 0.x releases:
+ * switch on the constant or persist its {@link #name()}, never its
+ * {@link #ordinal()}.
  */
 public enum Reason {
     /**

@@ -88,7 +88,10 @@ final class EndpointResponse {
 
     private static void writePurchase(JsonGenerator json, InAppPurchase purchase) throws IOException {
         json.writeStartObject();
-        string(json, "quantity", stringOrNull(purchase.quantity()));
+        Long quantity = purchase.quantity();
+        if (quantity != null) {
+            json.writeStringField("quantity", quantity.toString());
+        }
         string(json, "product_id", purchase.productId());
         string(json, "transaction_id", purchase.transactionId());
         string(json, "original_transaction_id", purchase.originalTransactionId());
@@ -110,10 +113,6 @@ final class EndpointResponse {
                     "is_in_intro_offer_period", purchase.isInIntroOfferPeriod().toString());
         }
         json.writeEndObject();
-    }
-
-    private static @Nullable String stringOrNull(@Nullable Long value) {
-        return value == null ? null : value.toString();
     }
 
     private static void string(JsonGenerator json, String key, @Nullable String value) throws IOException {

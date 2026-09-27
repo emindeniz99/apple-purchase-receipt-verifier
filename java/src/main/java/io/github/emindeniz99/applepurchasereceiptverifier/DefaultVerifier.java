@@ -49,7 +49,6 @@ final class DefaultVerifier implements Verifier {
     private static void buildStaticState() {
         Objects.requireNonNull(JwsCore.JSON);
         Objects.requireNonNull(Endpoint.JSON);
-        Objects.requireNonNull(EndpointResponse.JSON);
         Objects.requireNonNull(ReceiptCore.SIGNER_VERIFIERS);
     }
 
@@ -90,7 +89,7 @@ final class DefaultVerifier implements Verifier {
         return Endpoint.respond(environment, requestJson, trustAnchors, now);
     }
 
-    static Failure internalError(RuntimeException e) {
+    private static Failure internalError(RuntimeException e) {
         return new Failure(Reason.INTERNAL_ERROR, "unexpected " + e.getClass().getName(), e);
     }
 }

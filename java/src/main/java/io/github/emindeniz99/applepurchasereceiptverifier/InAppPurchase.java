@@ -143,7 +143,7 @@ public final class InAppPurchase {
         json.writeEndObject();
     }
 
-    /** Equal when {@link #toString()}, the canonical JSON, is. */
+    /** Equal when {@link #toString()}, the purchase's JSON, is. */
     @Override
     public boolean equals(@Nullable Object other) {
         return other instanceof InAppPurchase && toString().equals(other.toString());

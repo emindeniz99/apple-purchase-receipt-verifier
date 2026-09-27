@@ -17,10 +17,10 @@ import java.util.Date;
 import java.util.List;
 import java.util.Set;
 import org.bouncycastle.asn1.ASN1Primitive;
-import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.cms.ContentInfo;
 import org.bouncycastle.cms.CMSException;
 import org.bouncycastle.cms.CMSSignedData;
+import org.bouncycastle.cms.CMSTypedData;
 import org.bouncycastle.cms.SignerInformation;
 import org.bouncycastle.cms.SignerInformationVerifier;
 import org.bouncycastle.cms.jcajce.JcaSignerInfoVerifierBuilder;
@@ -34,9 +34,6 @@ import org.jspecify.annotations.Nullable;
  * {@link BouncyCastle#PROVIDER}.
  */
 final class ReceiptCore {
-
-    /** Genuine receipts embed one to three; checked before any is decoded. */
-    static final int MAX_EMBEDDED_CERTIFICATES = 10;
 
     /** Genuine receipts carry one; each SignerInfo costs a chain build and a signature check. */
     static final int MAX_SIGNER_INFOS = 4;
@@ -63,7 +60,8 @@ final class ReceiptCore {
             throw new VerificationException(Reason.MALFORMED, "receipt is empty");
         }
         if (Utf8Length.exceeds(base64, MAX_RECEIPT_BYTES)) {
-            throw tooLarge();
+            throw new VerificationException(
+                    Reason.TOO_LARGE, "receipt exceeds the maximum accepted size of " + MAX_RECEIPT_BYTES + " bytes");
         }
         return verifyDer(StrictBase64.decode(base64, Reason.MALFORMED, "receipt"), trustAnchors, now);
     }
@@ -82,11 +80,6 @@ final class ReceiptCore {
                     Reason.MALFORMED, "unexpected " + e.getClass().getName(), e);
         }
         return parseSignedPayload(payload);
-    }
-
-    private static VerificationException tooLarge() {
-        return new VerificationException(
-                Reason.TOO_LARGE, "receipt exceeds the maximum accepted size of " + MAX_RECEIPT_BYTES + " bytes");
     }
 
     /** Every check up to and including a signature; returns the signed payload, not yet decoded. */
@@ -110,10 +103,12 @@ final class ReceiptCore {
         } catch (CMSException e) {
             throw new VerificationException(Reason.MALFORMED, "not a PKCS#7/CMS blob", e);
         }
-        if (cms.getSignedContent() == null || !(cms.getSignedContent().getContent() instanceof byte[])) {
+        CMSTypedData signedContent = cms.getSignedContent();
+        Object content = signedContent != null ? signedContent.getContent() : null;
+        if (!(content instanceof byte[])) {
             throw new VerificationException(Reason.MALFORMED, "no encapsulated payload");
         }
-        byte[] payload = (byte[]) cms.getSignedContent().getContent();
+        byte[] payload = (byte[]) content;
 
         List<SignerInformation> signers = new ArrayList<>(cms.getSignerInfos().getSigners());
         if (signers.isEmpty()) {
@@ -124,24 +119,14 @@ final class ReceiptCore {
                     Reason.MALFORMED,
                     "receipt carries " + signers.size() + " SignerInfos, more than the maximum of " + MAX_SIGNER_INFOS);
         }
-        // The raw set, so the cap is checked before any entry is decoded.
-        ASN1Set certificateSet = ReceiptCertificates.embeddedCertificateSet(cms);
-        int embeddedCount = certificateSet == null ? 0 : certificateSet.size();
-        if (embeddedCount > MAX_EMBEDDED_CERTIFICATES) {
-            throw new VerificationException(
-                    Reason.MALFORMED,
-                    "receipt embeds " + embeddedCount + " certificates, more than the maximum of "
-                            + MAX_EMBEDDED_CERTIFICATES);
-        }
-
         // The one payload read before trust: a date that does not parse only
         // moves the chain instant to the clock.
         Long creationDate = ReceiptDecoder.readCreationDate(payload);
         Date at = new Date(creationDate != null ? creationDate : now);
 
-        ReceiptCertificates certificates = ReceiptCertificates.decode(certificateSet);
+        ReceiptCertificates certificates = ReceiptCertificates.decode(cms);
         // Signer-independent, so walked once for every SignerInfo.
-        List<X509Certificate> authenticated = authenticatedTopDown(certificates.all, trustAnchors);
+        List<X509Certificate> authenticated = authenticatedTopDown(certificates.all(), trustAnchors);
         // Every SignerInfo signs the same content, so one passing is enough;
         // when none does, the first one's failure is the verdict.
         VerificationException first = null;

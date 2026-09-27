@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.cms.SignedData;
@@ -12,22 +13,39 @@ import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cms.CMSSignedData;
 import org.bouncycastle.cms.SignerId;
 import org.bouncycastle.cms.SignerInformation;
-import org.jspecify.annotations.Nullable;
 
 /** A receipt's embedded certificate bag, every entry decoded once except its public key. */
 final class ReceiptCertificates {
 
-    final List<X509Certificate> all = new ArrayList<>();
+    /** Genuine receipts embed one to three; checked before any is decoded. */
+    static final int MAX_EMBEDDED_CERTIFICATES = 10;
+
+    private final List<X509Certificate> all = new ArrayList<>();
     private final List<X509CertificateHolder> holders = new ArrayList<>();
 
     private ReceiptCertificates() {}
 
+    /** Every embedded certificate, in receipt order. */
+    List<X509Certificate> all() {
+        return Collections.unmodifiableList(all);
+    }
+
     /**
-     * Decodes every entry of the raw {@code certificates} set. The bag is
-     * unsigned, so an entry that does not decode is a defect of the receipt:
-     * MALFORMED, whichever certificate it was meant to be.
+     * Decodes every entry of the raw {@code certificates [0] IMPLICIT SET},
+     * after counting the set against {@link #MAX_EMBEDDED_CERTIFICATES}. The
+     * bag is unsigned, so an entry that does not decode is a defect of the
+     * receipt: MALFORMED, whichever certificate it was meant to be.
      */
-    static ReceiptCertificates decode(@Nullable ASN1Set certificateSet) throws VerificationException {
+    static ReceiptCertificates decode(CMSSignedData cms) throws VerificationException {
+        ASN1Set certificateSet =
+                SignedData.getInstance(cms.toASN1Structure().getContent()).getCertificates();
+        int embeddedCount = certificateSet == null ? 0 : certificateSet.size();
+        if (embeddedCount > MAX_EMBEDDED_CERTIFICATES) {
+            throw new VerificationException(
+                    Reason.MALFORMED,
+                    "receipt embeds " + embeddedCount + " certificates, more than the maximum of "
+                            + MAX_EMBEDDED_CERTIFICATES);
+        }
         JcaX509CertificateConverter converter = new JcaX509CertificateConverter().setProvider(BouncyCastle.PROVIDER);
         ReceiptCertificates certificates = new ReceiptCertificates();
         if (certificateSet == null) {
@@ -61,13 +79,5 @@ final class ReceiptCertificates {
             }
         }
         throw new VerificationException(Reason.MALFORMED, "signer certificate not embedded");
-    }
-
-    /**
-     * The raw {@code certificates [0] IMPLICIT SET}, or null when there is
-     * none: counted against the cap before a single entry is decoded.
-     */
-    static @Nullable ASN1Set embeddedCertificateSet(CMSSignedData cms) {
-        return SignedData.getInstance(cms.toASN1Structure().getContent()).getCertificates();
     }
 }

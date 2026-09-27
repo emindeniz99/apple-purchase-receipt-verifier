@@ -10,6 +10,8 @@ import java.util.Base64;
  */
 final class StrictBase64 {
 
+    private static final String NOT_CANONICAL = " is not canonically padded standard base64";
+
     private StrictBase64() {}
 
     /** {@code text} decoded, or a {@code reason} failure naming {@code what}. */
@@ -17,12 +19,12 @@ final class StrictBase64 {
         // The basic decoder accepts omitted padding and decodes "" to nothing;
         // the MIME decoder would skip illegal characters.
         if (text.isEmpty() || text.length() % 4 != 0) {
-            throw new VerificationException(reason, what + " is not canonically padded standard base64");
+            throw new VerificationException(reason, what + NOT_CANONICAL);
         }
         try {
             return Base64.getDecoder().decode(text);
         } catch (IllegalArgumentException e) {
-            throw new VerificationException(reason, what + " is not canonically padded standard base64", e);
+            throw new VerificationException(reason, what + NOT_CANONICAL, e);
         }
     }
 }
