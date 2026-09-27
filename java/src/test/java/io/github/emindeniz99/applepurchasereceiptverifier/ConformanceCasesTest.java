@@ -288,7 +288,7 @@ class ConformanceCasesTest {
                 String where = id + ": " + name + " texts[" + index + "] " + escape(text);
                 String decoded;
                 try {
-                    decoded = hex("x5c".equals(name) ? JwsCore.decodeX5cEntry(text) : ReceiptBase64.decode(text));
+                    decoded = hex(StrictBase64.decode(text, refusal, name));
                 } catch (VerificationException e) {
                     if (ok) {
                         failures.add(where + " was refused (" + e.reason() + "), want " + want);

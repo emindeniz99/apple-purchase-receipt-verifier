@@ -139,7 +139,7 @@ final class ReceiptCore {
         if (Utf8Length.exceeds(base64, MAX_RECEIPT_BYTES)) {
             throw tooLarge();
         }
-        return verifyDer(ReceiptBase64.decode(base64), trustAnchors, now);
+        return verifyDer(StrictBase64.decode(base64, Reason.MALFORMED, "receipt"), trustAnchors, now);
     }
 
     /** {@link #verify} after the base64 step. */
@@ -152,8 +152,6 @@ final class ReceiptCore {
         byte[] payload;
         try {
             payload = verifySignature(receiptDer, trustAnchors, now);
-        } catch (VerificationException e) {
-            throw e;
         } catch (RuntimeException e) {
             // MALFORMED, not INTERNAL_ERROR, on purpose. Everything that can
             // throw here runs before a signature has verified, so it is

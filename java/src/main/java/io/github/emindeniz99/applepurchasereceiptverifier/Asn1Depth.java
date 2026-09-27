@@ -33,15 +33,16 @@ final class Asn1Depth {
             return false;
         } catch (TooDeep e) {
             return true;
-        } catch (Unfollowable e) {
-            return false;
         }
     }
 
-    /** Walks the value at {@code at}, below {@code depth} constructed values; returns where it ends. */
-    private static int walk(byte[] der, int at, int end, int depth) throws TooDeep, Unfollowable {
+    /**
+     * Walks the value at {@code at}, below {@code depth} constructed values;
+     * returns where it ends, or -1 when the encoding cannot be followed.
+     */
+    private static int walk(byte[] der, int at, int end, int depth) throws TooDeep {
         if (at >= end) {
-            throw new Unfollowable();
+            return -1;
         }
         int tag = der[at] & 0xFF;
         int position = at + 1;
@@ -57,20 +58,21 @@ final class Asn1Depth {
             throw new TooDeep();
         }
         if (position >= end) {
-            throw new Unfollowable();
+            return -1;
         }
         int first = der[position++] & 0xFF;
         if (first == 0x80) {
             if (!constructed) {
-                throw new Unfollowable();
+                return -1;
             }
             // Indefinite length: children until the end-of-contents octets.
-            while (true) {
+            while (position >= 0) {
                 if (position + 1 < end && der[position] == 0 && der[position + 1] == 0) {
                     return position + 2;
                 }
                 position = walk(der, position, end, depth + 1);
             }
+            return -1;
         }
         long length;
         if (first < 0x80) {
@@ -78,7 +80,7 @@ final class Asn1Depth {
         } else {
             int count = first & 0x7F;
             if (count > 4 || position + count > end) {
-                throw new Unfollowable();
+                return -1;
             }
             length = 0;
             for (int i = 0; i < count; i++) {
@@ -86,12 +88,15 @@ final class Asn1Depth {
             }
         }
         if (length > end - position) {
-            throw new Unfollowable();
+            return -1;
         }
         int contentEnd = position + (int) length;
         if (constructed) {
-            while (position < contentEnd) {
+            while (position >= 0 && position < contentEnd) {
                 position = walk(der, position, contentEnd, depth + 1);
+            }
+            if (position < 0) {
+                return -1;
             }
         }
         return contentEnd;
@@ -101,14 +106,6 @@ final class Asn1Depth {
         private static final long serialVersionUID = 1L;
 
         TooDeep() {
-            super(null, null, false, false);
-        }
-    }
-
-    private static final class Unfollowable extends Exception {
-        private static final long serialVersionUID = 1L;
-
-        Unfollowable() {
             super(null, null, false, false);
         }
     }

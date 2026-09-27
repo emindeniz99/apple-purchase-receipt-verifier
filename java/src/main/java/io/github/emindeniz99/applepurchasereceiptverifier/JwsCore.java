@@ -108,8 +108,6 @@ final class JwsCore {
         // reconcile") would let anyone raise that alert at will.
         try {
             return verifyUnguarded(jws, trustAnchors, now);
-        } catch (VerificationException e) {
-            throw e;
         } catch (RuntimeException e) {
             throw new VerificationException(
                     Reason.MALFORMED, "unexpected " + e.getClass().getName(), e);
@@ -374,30 +372,12 @@ final class JwsCore {
         }
     }
 
-    /**
-     * Decodes one x5c entry. RFC 7515 4.1.6: standard base64, no line breaks.
-     * The MIME decoder would silently skip any illegal character instead. The
-     * basic decoder accepts omitted padding and decodes {@code ""}, so the
-     * length is held to a non-zero multiple of four first, as receipt-data
-     * is. Package-private so tests can call it directly.
-     */
-    static byte[] decodeX5cEntry(String text) throws VerificationException {
-        if (text.isEmpty() || text.length() % 4 != 0) {
-            throw new VerificationException(Reason.INVALID_CERTIFICATE, "x5c entry is not canonically padded base64");
-        }
-        try {
-            return Base64.getDecoder().decode(text);
-        } catch (IllegalArgumentException e) {
-            throw new VerificationException(Reason.INVALID_CERTIFICATE, "x5c entry is not valid base64", e);
-        }
-    }
-
     private static List<X509Certificate> decodeChain(List<String> x5c) throws VerificationException {
         List<X509Certificate> chain = new ArrayList<X509Certificate>(3);
         CertificateFactory cf = x509Factory();
         try {
             for (String entry : x5c) {
-                byte[] der = decodeX5cEntry(entry);
+                byte[] der = StrictBase64.decode(entry, Reason.INVALID_CERTIFICATE, "x5c entry");
                 if (Asn1Depth.exceeded(der)) {
                     throw new VerificationException(
                             Reason.INVALID_CERTIFICATE,
