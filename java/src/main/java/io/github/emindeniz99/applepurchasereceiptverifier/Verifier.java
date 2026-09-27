@@ -27,6 +27,9 @@ public interface Verifier {
      * @throws NullPointerException     if {@code config} is null
      * @throws IllegalArgumentException if {@code config} has no roots, since
      *                                  such a verifier would reject everything
+     * @throws IllegalStateException    if a dependency does not load: a
+     *                                  jackson-core below 2.16, or a
+     *                                  BouncyCastle that fails to initialise
      */
     static Verifier create(Config config) {
         return new DefaultVerifier(config);

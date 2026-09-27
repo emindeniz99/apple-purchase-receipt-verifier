@@ -436,6 +436,41 @@ class VerifierApiTest {
         assertEquals(version.group(1), Version.CURRENT);
     }
 
+    /**
+     * Static state built on first use (the bounded Jackson factories, the
+     * shared BouncyCastle verifier builder) is built by Verifier.create, so a
+     * dependency below its floor fails there and not inside a verify method
+     * documented never to throw.
+     */
+    @Test
+    void aClassWhoseStaticStateFailsFailsConstructionWithTheDependencyFloor() {
+        String broken = BrokenStaticState.class.getName();
+        IllegalStateException first =
+                assertThrows(IllegalStateException.class, () -> DefaultVerifier.initialise(broken));
+        assertTrue(first.getCause() instanceof ExceptionInInitializerError, String.valueOf(first.getCause()));
+        assertTrue(first.getMessage().contains("jackson-core 2.16"), first.getMessage());
+        // A second attempt meets the class already failed, which is a
+        // NoClassDefFoundError: reported the same way.
+        IllegalStateException second =
+                assertThrows(IllegalStateException.class, () -> DefaultVerifier.initialise(broken));
+        assertTrue(second.getCause() instanceof NoClassDefFoundError, String.valueOf(second.getCause()));
+        // The real classes initialise.
+        DefaultVerifier.initialise(
+                JwsCore.class.getName(),
+                Endpoint.class.getName(),
+                EndpointResponse.class.getName(),
+                ReceiptCore.class.getName());
+    }
+
+    /** Stands in for a class whose static initialiser meets a dependency below its floor. */
+    static final class BrokenStaticState {
+        static final int VALUE = fail();
+
+        private static int fail() {
+            throw new UnsupportedOperationException("as a missing Jackson method would");
+        }
+    }
+
     /** Only the API types are public; the implementation is package-private. */
     @Test
     void onlyTheApiTypesArePublic() {

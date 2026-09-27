@@ -24,10 +24,43 @@ final class DefaultVerifier implements Verifier {
     private final Set<TrustAnchor> trustAnchors;
     private final Clock clock;
 
+    /**
+     * The classes whose static state (the bounded Jackson factories, the
+     * shared BouncyCastle signer-verifier builder) is built on first use.
+     * Initialised by the constructor, so a Jackson below 2.16 or a broken
+     * BouncyCastle fails {@link Verifier#create} rather than the first call,
+     * where it would escape a method documented never to throw.
+     */
+    private static final String[] STATIC_STATE = {
+        JwsCore.class.getName(),
+        Endpoint.class.getName(),
+        EndpointResponse.class.getName(),
+        ReceiptCore.class.getName(),
+    };
+
     DefaultVerifier(Config config) {
         Objects.requireNonNull(config, "config");
+        initialise(STATIC_STATE);
         this.trustAnchors = AppleTrust.anchors(config.roots());
         this.clock = config.clock();
+    }
+
+    /**
+     * Initialises each named class, turning a failure into an
+     * {@link IllegalStateException} that names the dependency floor.
+     */
+    static void initialise(String... classNames) {
+        ClassLoader loader = DefaultVerifier.class.getClassLoader();
+        for (String name : classNames) {
+            try {
+                Class.forName(name, true, loader);
+            } catch (ClassNotFoundException | LinkageError e) {
+                throw new IllegalStateException(
+                        "the verifier could not initialise " + name
+                                + "; it needs jackson-core 2.16 or later and BouncyCastle (bcprov, bcpkix) 1.86",
+                        e);
+            }
+        }
     }
 
     @Override

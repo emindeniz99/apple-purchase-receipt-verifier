@@ -92,7 +92,10 @@ decides whether a certificate is expired when the input states a date; see
 missing or do not match their pinned fingerprints, and `Verifier.create`
 throws `IllegalArgumentException` for an empty root set, since a verifier
 with no roots would answer `UNTRUSTED_CHAIN` to everything and nobody would
-notice until production.
+notice until production. `Verifier.create` also builds the library's static state (the
+bounded Jackson readers, the shared BouncyCastle signature verifier), so a
+jackson-core below 2.16 or a BouncyCastle that does not load throws
+`IllegalStateException` there rather than on the first call.
 
 ## Which method to call
 

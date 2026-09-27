@@ -36,10 +36,12 @@ final class BoundedJson {
      * {@link #MAX_NAME_LENGTH} and {@link #MAX_NUMBER_LENGTH}, and bounds
      * every string and the whole document to {@code maxLength}, stated rather
      * than inherited from whatever Jackson the host resolved.
-     * {@link StreamReadConstraints} needs Jackson 2.15 and
-     * {@code maxDocumentLength} needs 2.16; below that floor this call fails
-     * loudly at construction instead of leaving the library running with
-     * guards it believes it set.
+     * {@link StreamReadConstraints} needs Jackson 2.15, and
+     * {@code maxDocumentLength} and {@code maxNameLength} need 2.16; below
+     * that floor this call fails with a {@link LinkageError} in the static
+     * initialiser of the class that calls it, which {@link Verifier#create}
+     * runs and reports as an {@link IllegalStateException}, instead of
+     * leaving the library running with guards it believes it set.
      */
     static JsonFactory factory(int maxLength) {
         return JsonFactory.builder()

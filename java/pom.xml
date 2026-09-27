@@ -55,8 +55,10 @@
          Jackson's defaults, because the JWS header is parsed before any
          signature check and a host BOM pinning an older Jackson 2 would
          otherwise link cleanly and silently lose the nesting guard.
-         StreamReadConstraints arrived in 2.15 and maxDocumentLength in
-         2.16, so below 2.16 the verifier fails at construction instead. -->
+         StreamReadConstraints arrived in 2.15, maxDocumentLength and
+         maxNameLength in 2.16, so below 2.16 Verifier.create throws
+         IllegalStateException (it initialises every class that builds a
+         reader) instead of the first call failing. -->
     <jackson.version>2.22.2</jackson.version>
     <!-- Annotations only, and only at compile time: see the <optional>
          dependency below. -->
