@@ -250,8 +250,8 @@ every port:
 - **64-bit ids** (`app_item_id`, `download_id`, `version_external_identifier`,
   `web_order_line_item_id`) are plain Python `int`; `ReceiptPayload.to_json()`
   renders them as JSON strings (JSON numbers lose precision above 2^53) and
-  everything else as JSON numbers, matching every other port's canonical
-  form byte for byte.
+  everything else as JSON numbers, the same value every other port
+  writes (the bytes may differ).
 
 ## Upgrading from 0.6
 

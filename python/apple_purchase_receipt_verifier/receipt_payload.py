@@ -17,11 +17,27 @@ reads :attr:`ReceiptPayload.receipt_type`; the device-hash check is
 :attr:`ReceiptPayload.sha1_hash`.
 """
 
+import base64
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
 
-from . import _canonical_json
+
+def _id(value: "int | None") -> "str | None":
+    """A 64-bit id as a decimal string, so JavaScript readers do not round it."""
+    return None if value is None else str(value)
+
+
+def _base64(value: "bytes | None") -> "str | None":
+    return None if value is None else base64.b64encode(value).decode("ascii")
+
+
+def _attributes_json(attributes: "Mapping[int, Sequence[bytes]]") -> "dict[str, list[str]]":
+    return {
+        str(k): [base64.b64encode(v).decode("ascii") for v in attributes[k]]
+        for k in sorted(attributes)
+    }
 
 
 def _frozen_attributes(
@@ -65,23 +81,21 @@ class InAppPurchase:
     def __post_init__(self) -> None:
         object.__setattr__(self, "unknown_attributes", _frozen_attributes(self.unknown_attributes))
 
-    def _write_json(self) -> str:
-        writer = (
-            _canonical_json.ObjectWriter()
-            .number("quantity", self.quantity)
-            .string("product_id", self.product_id)
-            .string("transaction_id", self.transaction_id)
-            .number("purchase_date_ms", self.purchase_date_ms)
-            .string("original_transaction_id", self.original_transaction_id)
-            .number("original_purchase_date_ms", self.original_purchase_date_ms)
-            .number("expires_date_ms", self.expires_date_ms)
-            .id_("web_order_line_item_id", self.web_order_line_item_id)
-            .number("cancellation_date_ms", self.cancellation_date_ms)
-            .bool_("is_trial_period", self.is_trial_period)
-            .bool_("is_in_intro_offer_period", self.is_in_intro_offer_period)
-            .attributes("unknown_attributes", self.unknown_attributes)
-        )
-        return writer.build()
+    def _json_value(self) -> "dict[str, object]":
+        return {
+            "quantity": self.quantity,
+            "product_id": self.product_id,
+            "transaction_id": self.transaction_id,
+            "purchase_date_ms": self.purchase_date_ms,
+            "original_transaction_id": self.original_transaction_id,
+            "original_purchase_date_ms": self.original_purchase_date_ms,
+            "expires_date_ms": self.expires_date_ms,
+            "web_order_line_item_id": _id(self.web_order_line_item_id),
+            "cancellation_date_ms": self.cancellation_date_ms,
+            "is_trial_period": self.is_trial_period,
+            "is_in_intro_offer_period": self.is_in_intro_offer_period,
+            "unknown_attributes": _attributes_json(self.unknown_attributes),
+        }
 
 
 @dataclass(frozen=True)
@@ -130,33 +144,31 @@ class ReceiptPayload:
         object.__setattr__(self, "unknown_attributes", _frozen_attributes(self.unknown_attributes))
 
     def to_json(self) -> str:
-        """This payload as canonical JSON, for logging and storage. Every
-        port writes the same bytes: keys in declaration order, snake_case
-        names, dates as numbers with a ``_ms`` suffix, 64-bit ids
-        (``app_item_id``, ``download_id``, ``version_external_identifier``,
+        """This payload as JSON, for logging and storage. Every port writes
+        the same value (the bytes may differ): snake_case keys, dates as
+        numbers with a ``_ms`` suffix, 64-bit ids (``app_item_id``,
+        ``download_id``, ``version_external_identifier``,
         ``web_order_line_item_id``) as strings, bytes as padded standard
-        base64, ``null`` for a missing value, no whitespace, only the
-        escapes JSON requires, and non-ASCII characters raw."""
-        in_app_json = "[" + ",".join(p._write_json() for p in self.in_app) + "]"
-        writer = (
-            _canonical_json.ObjectWriter()
-            .string("receipt_type", self.receipt_type)
-            .id_("app_item_id", self.app_item_id)
-            .string("bundle_id", self.bundle_id)
-            .bytes_("bundle_id_bytes", self.bundle_id_bytes)
-            .string("application_version", self.application_version)
-            .bytes_("opaque_value", self.opaque_value)
-            .bytes_("sha1_hash", self.sha1_hash)
-            .number("receipt_creation_date_ms", self.receipt_creation_date_ms)
-            .id_("download_id", self.download_id)
-            .id_("version_external_identifier", self.version_external_identifier)
-            .raw("in_app", in_app_json)
-            .number("original_purchase_date_ms", self.original_purchase_date_ms)
-            .string("original_application_version", self.original_application_version)
-            .number("expiration_date_ms", self.expiration_date_ms)
-            .attributes("unknown_attributes", self.unknown_attributes)
-        )
-        return writer.build()
+        base64 and ``null`` for a missing value. Non-ASCII is escaped, so
+        the text is ASCII and therefore valid UTF-8."""
+        value = {
+            "receipt_type": self.receipt_type,
+            "app_item_id": _id(self.app_item_id),
+            "bundle_id": self.bundle_id,
+            "bundle_id_bytes": _base64(self.bundle_id_bytes),
+            "application_version": self.application_version,
+            "opaque_value": _base64(self.opaque_value),
+            "sha1_hash": _base64(self.sha1_hash),
+            "receipt_creation_date_ms": self.receipt_creation_date_ms,
+            "download_id": _id(self.download_id),
+            "version_external_identifier": _id(self.version_external_identifier),
+            "in_app": [p._json_value() for p in self.in_app],
+            "original_purchase_date_ms": self.original_purchase_date_ms,
+            "original_application_version": self.original_application_version,
+            "expiration_date_ms": self.expiration_date_ms,
+            "unknown_attributes": _attributes_json(self.unknown_attributes),
+        }
+        return json.dumps(value, separators=(",", ":"), allow_nan=False)
 
 
 @dataclass(frozen=True)

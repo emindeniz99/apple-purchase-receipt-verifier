@@ -346,9 +346,12 @@ class ConformanceCasesTest(unittest.TestCase):
         if case["operation"] == "verifyReceipt":
             actual = normalize_receipt(payload)
             if "toJson" in expected:
+                # Same value, not same bytes (docs/design/0.7-api.md).
+                # Re-encoding both sides with sorted keys ignores key order
+                # and escaping but, unlike ==, tells true from 1.
                 self.assertEqual(
-                    payload.to_json().encode("utf-8"),
-                    expected["toJson"].encode("utf-8"),
+                    json.dumps(json.loads(payload.to_json()), sort_keys=True),
+                    json.dumps(json.loads(expected["toJson"]), sort_keys=True),
                     f"{case['id']}: toJson",
                 )
         else:
