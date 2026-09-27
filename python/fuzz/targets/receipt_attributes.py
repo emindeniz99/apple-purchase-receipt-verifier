@@ -8,15 +8,15 @@ rule, the 8-byte integer cap, UTF8String/IA5String decoding, and the RFC 3339
 date parse. The attribute SET walk and the date parse run on bytes that are
 still unauthenticated, because the creation date is what anchors the
 certificate validity window; the rest runs only under a trusted signature,
-where a failure is INTERNAL_ERROR. Either way the reader must hold up.
+where a failure is UNREADABLE_PAYLOAD. Either way the reader must hold up.
 
 ``receipt_der.py`` reaches this code only through a CMS envelope the fuzzer
 has to keep well-formed. Here it gets the payload bytes directly, so a length
 or offset bug shows up without a signature structure around it.
 
-Invariant: one parsed receipt or a ``VerificationError``, never an
-``IndexError``, a ``UnicodeDecodeError``, an ``OverflowError`` from a date, or
-anything else raw.
+Invariant: one parsed receipt or the reader's own ``PayloadFormatError``,
+never an ``IndexError``, a ``UnicodeDecodeError``, an ``OverflowError`` from
+a date, or anything else raw.
 """
 
 from harness import parse_receipt_payload, require_verification_error, run

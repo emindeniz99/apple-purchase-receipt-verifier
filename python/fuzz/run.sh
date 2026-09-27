@@ -48,7 +48,7 @@ b64 = fixtures.joinpath("public-receipts", "receipt-sandbox-g5.b64").read_text()
     json.dumps({"receipt-data": "".join(b64)})
 )
 for name in ("receipt", "receipt-type-vpp", "receipt-no-type"):
-    der = fixtures.joinpath("generated", f"{name}.der").read_bytes()
+    der = fixtures.joinpath("generated-0.7", f"{name}.der").read_bytes()
     payload = cms.ContentInfo.load(der)["content"]["encap_content_info"]["content"].native
     (generated / "receipt-attributes" / name).write_bytes(payload)
 PY
@@ -58,7 +58,7 @@ run_one() {
   local seeds
   case "$name" in
     receipt-der)
-      seeds=("$fixtures/generated" "$fixtures/apple-official/certs") ;;
+      seeds=("$fixtures/generated-0.7" "$fixtures/generated" "$fixtures/apple-official/certs") ;;
     receipt-attributes)
       seeds=("$generated/receipt-attributes" "$fixtures/generated") ;;
     receipt-base64)

@@ -1,4 +1,4 @@
-"""The cross-port benchmark: the same six operations on the same two genuine
+"""The cross-port benchmark: the same operations on the same two genuine
 sandbox receipts in every port, named after the Java JMH benchmarks in
 java-bench/ (BENCHMARKS.md at the repository root has the table).
 
@@ -28,14 +28,8 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
-from apple_purchase_receipt_verifier import (
-    Reason,
-    ReceiptVerifier,
-    VerificationError,
-    VerifyReceiptEndpoint,
-    apple_receipt_roots,
-    verify_receipt_core,
-)
+from apple_purchase_receipt_verifier import Config, Environment, Verifier
+from apple_purchase_receipt_verifier.receipt import verify_receipt_der
 
 # The library's own receipt-data decoder, which the package does not export.
 from apple_purchase_receipt_verifier._receipt_base64 import decode_receipt_base64
@@ -44,11 +38,12 @@ WARMUP_S = 1.0
 SAMPLES = 10
 MIN_SAMPLE_S = 0.1
 
-# Any fixed instant (2026-01-01T00:00:00Z): it only feeds request_date.
-NOW = 1767225600.0
+# Any fixed instant (2026-01-01T00:00:00Z), in epoch milliseconds: it only
+# feeds request_date.
+NOW_MS = 1767225600000
 
 # File under fixtures/public-receipts, and the bundle id, in-app count and
-# digest fixtures/cases.json pins for it.
+# digest fixtures/cases-0.7.json pins for it.
 FIXTURES = [
     (
         "receipt-sandbox-g5",
@@ -94,59 +89,52 @@ def tamper(der: bytes) -> bytes:
     java-bench's flipSignatureByte flips. In both fixtures the signature is a
     256-byte OCTET STRING that ends the DER (openssl asn1parse shows it), so
     its middle byte is 128 from the end; setup proves the flip landed there
-    by requiring INVALID_SIGNATURE."""
+    by requiring a failed verification."""
     tampered = bytearray(der)
     tampered[-128] ^= 0x01
     return bytes(tampered)
 
 
-def reject(der: bytes, roots: list[Any]) -> object:
-    try:
-        return verify_receipt_core(der, roots)
-    except VerificationError as error:
-        return error
-
-
-def retry_in_sandbox(production: VerifyReceiptEndpoint, request: dict[str, str]) -> str:
-    return production.verify_receipt_result(request).to_json("Sandbox")
-
-
 def main() -> None:
     fixtures_dir = Path(__file__).resolve().parents[2] / "fixtures" / "public-receipts"
-    roots = apple_receipt_roots()
+    roots = list(Config.defaults().roots)
     results = []
     for name, bundle_id, in_app_count, sha256 in FIXTURES:
         der = base64.b64decode((fixtures_dir / f"{name}.b64").read_text(encoding="ascii"))
         assert hashlib.sha256(der).hexdigest() == sha256, f"{name} digest"
         text = base64.b64encode(der).decode("ascii")
-        request = {"receipt-data": text}
-        request_json = json.dumps(request)
-        tampered = tamper(der)
-        verifier = ReceiptVerifier(roots, bundle_id)
-        sandbox = VerifyReceiptEndpoint(roots, "Sandbox", clock=lambda: NOW)
-        production = VerifyReceiptEndpoint(roots, "Production", clock=lambda: NOW)
+        request_json = json.dumps({"receipt-data": text})
+        tampered = base64.b64encode(tamper(der)).decode("ascii")
+        clock = lambda: NOW_MS  # noqa: E731
+        verifier = Verifier(Config.create(roots=roots, clock=clock))
+        sandbox_endpoint = partial(verifier.verify_receipt_endpoint, Environment.SANDBOX)
+        production_endpoint = partial(verifier.verify_receipt_endpoint, Environment.PRODUCTION)
 
         # Every call once, with the answer the conformance suite expects, so
         # no benchmark can time a fast failure by accident.
         assert decode_receipt_base64(text) == der
-        for receipt in (verify_receipt_core(der, roots), verifier.verify(text)):
+        for receipt in (
+            verify_receipt_der(der, roots, clock),
+            verifier.verify_receipt(text).payload,
+        ):
+            assert receipt is not None
             assert receipt.bundle_id == bundle_id
-            assert len(receipt.in_app_purchases) == in_app_count
-        ok = json.loads(sandbox.verify_receipt_json(request_json))
+            assert len(receipt.in_app) == in_app_count
+        ok = json.loads(sandbox_endpoint(request_json))
         assert ok["status"] == 0 and len(ok["receipt"]["in_app"]) == in_app_count
-        retry = json.loads(production.verify_receipt_result(request).to_json("Sandbox"))
-        assert (retry["status"], retry["environment"]) == (0, "Sandbox")
-        rejected = reject(tampered, roots)
-        assert isinstance(rejected, VerificationError)
-        assert rejected.reason == Reason.INVALID_SIGNATURE
+        rejected = json.loads(production_endpoint(json.dumps({"receipt-data": tampered})))
+        assert rejected["status"] == 21003
 
         results += [
             measure("decodeBase64", name, partial(decode_receipt_base64, text)),
-            measure("core", name, partial(verify_receipt_core, der, roots)),
-            measure("verifierBase64", name, partial(verifier.verify, text)),
-            measure("endpointJson", name, partial(sandbox.verify_receipt_json, request_json)),
-            measure("retryViaResult", name, partial(retry_in_sandbox, production, request)),
-            measure("rejectTamperedSignature", name, partial(reject, tampered, roots)),
+            measure("core", name, partial(verify_receipt_der, der, roots, clock)),
+            measure("verifierBase64", name, partial(verifier.verify_receipt, text)),
+            measure("endpointJson", name, partial(sandbox_endpoint, request_json)),
+            measure(
+                "rejectTamperedSignature",
+                name,
+                partial(production_endpoint, json.dumps({"receipt-data": tampered})),
+            ),
         ]
     report = {
         "port": "python",
