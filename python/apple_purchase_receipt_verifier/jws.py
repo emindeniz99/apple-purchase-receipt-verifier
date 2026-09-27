@@ -1,15 +1,22 @@
-"""Offline verification of Apple-signed JWS payloads (StoreKit 2
-``jwsRepresentation``, ``signedTransactionInfo`` / ``signedRenewalInfo``,
-Server Notifications V2) against pinned Apple roots — PLAN.md §2.1,
-mirroring the Java implementation check-for-check."""
+"""Offline verification of Apple-signed compact JWS (StoreKit 2
+``jwsRepresentation``, ``signedTransactionInfo`` / ``signedRenewalInfo``, app
+transactions, Server Notifications V2) against pinned Apple roots
+(docs/design/0.7-api.md §2).
+
+Algorithm, in order: the compact JWS structure, ``alg`` equal to ``ES256``,
+the ``x5c`` chain to a pinned root walked top-down (hardening parity #161),
+Apple's marker OIDs on the leaf and the intermediate, certificate validity
+at the payload's ``signedDate`` (the clock when it is missing or not a
+representable instant), and last the signature. No payload is rejected for
+its age.
+"""
 
 import base64
 import binascii
 import json
+import math
 import re
-import time
-from collections.abc import Iterable
-from typing import Any, ClassVar
+from collections.abc import Callable, Sequence
 
 from cryptography import x509
 from cryptography.exceptions import InvalidSignature
@@ -17,373 +24,277 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
 
-from ._chain import as_utc, validate_pair
+from . import _asn1_depth, _bounded_json, _der, _safe_text
+from ._chain import authenticate_pair_top_down, valid_at_ms
+from ._errors import VerificationError
 from ._receipt_base64 import decode_canonical_base64
-from .exceptions import ENVIRONMENTS, Reason, VerificationError
+from ._utf8 import utf8_exceeds
+from .reason import Reason
+from .receipt_payload import JsonPayload
 
 #: Apple marker OID: leaf certificate used for App Store signing.
 LEAF_OID = x509.ObjectIdentifier("1.2.840.113635.100.6.11.1")
 #: Apple marker OID: Worldwide Developer Relations intermediate CA.
 INTERMEDIATE_OID = x509.ObjectIdentifier("1.2.840.113635.100.6.2.1")
 
+#: Ceiling on the compact JWS this verifier will look at, in UTF-8 bytes,
+#: checked before the input is split or any segment is decoded. Real Apple
+#: JWS payloads, Apple's own mock notification data included, are under
+#: 2.5 KB, so 256 KiB is a hundredfold headroom over anything Apple has ever
+#: signed.
+MAX_JWS_BYTES = 262144
 
 #: RFC 7515 section 2 compact-JWS segments are unpadded canonical base64url:
 #: this alphabet only, no "=" padding.
 _B64URL_RE = re.compile(r"^[A-Za-z0-9_-]*$")
-
-#: How deep the header/payload JSON may nest; the Java port's number. Both
-#: segments are parsed before the signature is checked, so this bound guards
-#: attacker-chosen bytes. ``json.loads`` has no depth option of its own and
-#: recurses once per level, so the depth is measured before it runs. Apple's
-#: payloads are flat objects, so 64 is far above anything real.
-_MAX_JSON_NESTING_DEPTH = 64
-#: A JSON string literal, escapes included. Brackets inside one are data, not
-#: nesting.
-_JSON_STRING_RE = re.compile(r'"[^"\\]*(?:\\.[^"\\]*)*"', re.DOTALL)
-_JSON_BRACKET_RE = re.compile(r"[\[\]{}]")
-
-
-def _nesting_exceeds_limit(raw: bytes) -> bool:
-    """Whether the decoded segment ``raw`` opens more than
-    :data:`_MAX_JSON_NESTING_DEPTH` arrays and objects at once, outside
-    string literals. Decoding errors are replaced rather than raised: an
-    invalid encoding is rejected by ``json.loads`` right after, and this
-    check must never fail differently than that does."""
-    text = raw.decode("utf-8", "replace")
-    depth = 0
-    for bracket in _JSON_BRACKET_RE.findall(_JSON_STRING_RE.sub("", text)):
-        if bracket in "[{":
-            depth += 1
-            if depth > _MAX_JSON_NESTING_DEPTH:
-                return True
-        else:
-            depth -= 1
-    return False
-
-
-def _b64url(segment: str, what: str) -> bytes:
-    # Reject anything outside the base64url alphabet (incl. "=" padding) and
-    # any length base64 cannot represent, before decoding at all — Python's
-    # decoder silently discards non-alphabet characters otherwise, which
-    # would recover the original bytes from a corrupted segment.
-    if _B64URL_RE.match(segment) is None or len(segment) % 4 == 1:
-        raise VerificationError(Reason.INVALID_JWS_FORMAT, f"{what} is not valid base64url")
-    padded = segment + "=" * (-len(segment) % 4)
-    try:
-        decoded = base64.urlsafe_b64decode(padded)
-    except (binascii.Error, ValueError) as e:
-        raise VerificationError(Reason.INVALID_JWS_FORMAT, f"{what} is not valid base64url") from e
-    # Canonical check: the decoder ignores unused bits in the final
-    # character, so a segment whose trailing bits are non-zero decodes to
-    # the same bytes as its canonical spelling. Re-encoding must round-trip
-    # to the original segment, or it isn't the canonical encoding of those
-    # bytes.
-    if base64.urlsafe_b64encode(decoded).rstrip(b"=").decode("ascii") != segment:
-        raise VerificationError(Reason.INVALID_JWS_FORMAT, f"{what} is not valid base64url")
-    return decoded
-
-
-def _json_segment(segment: str, what: str) -> "dict[str, Any]":
-    raw = _b64url(segment, what)
-    # Before json.loads, which recurses once per nesting level and has no
-    # depth option of its own to stop it.
-    if _nesting_exceeds_limit(raw):
-        raise VerificationError(Reason.INVALID_JWS_FORMAT, f"{what} is nested too deeply")
-    try:
-        parsed = json.loads(raw)
-    except (ValueError, UnicodeDecodeError) as e:
-        raise VerificationError(Reason.INVALID_JWS_FORMAT, f"{what} is not valid JSON") from e
-    if not isinstance(parsed, dict):
-        raise VerificationError(Reason.INVALID_JWS_FORMAT, f"{what} is not a JSON object")
-    return parsed
-
-
-#: The claims verify_transaction and verify_app_transaction read as typed,
-#: by name: "s" a JSON string, "i" a whole JSON number. The Java port's
-#: TransactionPayload and AppTransactionPayload, so every port refuses the
-#: same payloads. A claim not listed is returned as signed, whatever its type.
-_TRANSACTION_CLAIMS = {
-    "appAccountToken": "s", "bundleId": "s", "currency": "s", "environment": "s",
-    "expiresDate": "i", "inAppOwnershipType": "s", "offerIdentifier": "s", "offerType": "i",
-    "originalPurchaseDate": "i", "originalTransactionId": "s", "price": "i", "productId": "s",
-    "purchaseDate": "i", "quantity": "i", "revocationDate": "i", "revocationReason": "i",
-    "signedDate": "i", "storefront": "s", "subscriptionGroupIdentifier": "s",
-    "transactionId": "s", "transactionReason": "s", "type": "s", "webOrderLineItemId": "s",
-}  # fmt: skip
-_APP_TRANSACTION_CLAIMS = {
-    "appAppleId": "i", "appTransactionId": "s", "applicationVersion": "s", "bundleId": "s",
-    "deviceVerification": "s", "deviceVerificationNonce": "s",
-    "originalApplicationVersion": "s", "originalPurchaseDate": "i", "preorderDate": "i",
-    "receiptCreationDate": "i", "receiptType": "s", "versionExternalIdentifier": "i",
-}  # fmt: skip
-
-
-def _read_typed_claims(payload: dict[str, Any], claims: dict[str, str]) -> dict[str, Any]:
-    """Checks each modelled claim against its type, after the chain and the
-    signature pass. A trusted signer wrote the payload, so a claim of the
-    wrong type is a format this library does not know, INTERNAL_ERROR, and
-    never read as absent. JSON null is absent. A whole number spelled with a
-    fraction (1.0) is returned as that integer; bool is a subclass of int in
-    Python and is refused explicitly."""
-    for name, kind in claims.items():
-        value = payload.get(name)
-        if value is None:
-            continue
-        if kind == "s":
-            if not isinstance(value, str):
-                raise VerificationError(
-                    Reason.INTERNAL_ERROR, f"signed payload claim {name} is not a string"
-                )
-        elif isinstance(value, float) and value.is_integer():
-            payload[name] = int(value)
-        elif isinstance(value, bool) or not isinstance(value, int):
-            raise VerificationError(
-                Reason.INTERNAL_ERROR, f"signed payload claim {name} is not an integer"
-            )
-    return payload
+_TRAILING_WHITESPACE_RE = re.compile(r"[ \t\r\n]*")
 
 
 def _has_extension(cert: x509.Certificate, oid: x509.ObjectIdentifier) -> bool:
     # `cert.extensions` parses the whole extension block lazily, so ONE
     # malformed extension anywhere in an x5c certificate makes every lookup
     # raise ValueError rather than ExtensionNotFound. Both mean the same
-    # thing here — the certificate has not shown it carries the marker OID —
-    # so both fail closed, as the Node port's safeHasExtension does.
+    # thing here: the certificate has not shown it carries the marker OID.
     try:
         cert.extensions.get_extension_for_oid(oid)
         return True
     except (x509.ExtensionNotFound, ValueError):
         return False
     except x509.DuplicateExtension as e:
-        # A certificate carrying one extension twice is the other way this
-        # block refuses to be read, and it does not mean the same thing: RFC
-        # 5280 4.2 forbids a second instance of any extension, so there is no
-        # answer to "does it carry the marker OID" — a parser that allowed
-        # one would have to pick a copy, and two ports could pick different
-        # ones. It is the certificate that is unusable rather than its
-        # purpose that is unproven, which is the verdict the ports whose
-        # decoders refuse these outright reach (INVALID_CERTIFICATE), so this
-        # is a rejection rather than a false return. Named rather than folded
-        # into the tuple above because DuplicateExtension derives from
-        # Exception, not ValueError, and so escaped this function, every
-        # other `except` in the module and the caller — the fuzz finding
-        # `transaction/reject-x5c-duplicate-extension` now pins.
+        # RFC 5280 4.2 forbids a second instance of any extension: the
+        # certificate is unusable, not merely lacking the marker.
         raise VerificationError(
-            Reason.INVALID_CERTIFICATE, f"certificate carries a duplicate extension: {e}"
+            Reason.INVALID_CERTIFICATE,
+            f"certificate carries a duplicate extension: {_safe_text.detail(str(e))}",
         ) from e
 
 
-class JwsVerifier:
-    """Thread-safe once constructed.
+def _decode_base64url(segment: str, what: str) -> bytes:
+    # Reject anything outside the base64url alphabet (incl. "=" padding) and
+    # any length base64 cannot represent, before decoding at all.
+    if _B64URL_RE.match(segment) is None or len(segment) % 4 == 1:
+        raise VerificationError(Reason.MALFORMED, f"{what} is not valid base64url")
+    padded = segment + "=" * (-len(segment) % 4)
+    try:
+        decoded = base64.urlsafe_b64decode(padded)
+    except (binascii.Error, ValueError) as e:
+        raise VerificationError(Reason.MALFORMED, f"{what} is not valid base64url") from e
+    # Canonical check: the decoder ignores unused bits in the final
+    # character, so re-encoding must round-trip to the original segment.
+    if base64.urlsafe_b64encode(decoded).rstrip(b"=").decode("ascii") != segment:
+        raise VerificationError(Reason.MALFORMED, f"{what} is not valid base64url")
+    return decoded
 
-    :param trusted_roots: pinned root certificates
-        (production: :func:`apple_purchase_receipt_verifier.apple_jws_roots`)
-    :param bundle_id: the app's bundle id every payload must carry
-    :param accepted_environments: e.g. ``["Production", "Sandbox"]`` —
-        include Sandbox on endpoints App Review can hit (PLAN.md D3)
-    :param app_apple_id: required to accept Production AppTransactions
 
-    No payload is rejected for its age: how old a signed payload may be is
-    the caller's decision, made on its ``signedDate`` (PLAN.md D5).
-    """
+def _read_header(header_bytes: bytes) -> "tuple[str | None, list[str] | None]":
+    """What verification reads from the header: the ``alg`` and ``x5c``
+    members. Anything that stops the read is MALFORMED: bytes that are not
+    strict UTF-8, and anything but whitespace after the object."""
+    try:
+        text = header_bytes.decode("utf-8")
+    except UnicodeDecodeError as e:
+        raise VerificationError(Reason.MALFORMED, "header is not UTF-8") from e
+    if _bounded_json.exceeds_bounds(text):
+        raise VerificationError(Reason.MALFORMED, "header is nested too deeply")
+    try:
+        obj, end = json.JSONDecoder().raw_decode(text)
+    except ValueError as e:
+        raise VerificationError(Reason.MALFORMED, "header is not valid JSON") from e
+    if _TRAILING_WHITESPACE_RE.fullmatch(text[end:]) is None:
+        raise VerificationError(Reason.MALFORMED, "content after the header object")
+    if not isinstance(obj, dict):
+        raise VerificationError(Reason.MALFORMED, "header is not a JSON object")
+    alg = obj.get("alg")
+    alg = alg if isinstance(alg, str) else None
+    x5c = obj.get("x5c")
+    if not (isinstance(x5c, list) and all(isinstance(e, str) for e in x5c)):
+        x5c = None
+    return alg, x5c
 
-    #: Ceiling on the compact JWS this verifier will look at, in characters,
-    #: checked before the input is split or any segment is decoded: base64url
-    #: decoding produces three quarters of a segment again as bytes, and
-    #: ``json.loads`` holds the whole parsed header and payload, none of it
-    #: behind a signature check. The number is the Java and PHP ports'. Every
-    #: JWS in the shared corpus, Apple's own mock notification data included,
-    #: is under 2.5 KB, so 256 KiB is a hundredfold headroom over anything
-    #: Apple has ever signed. A compact JWS is base64url and dots, so its
-    #: characters and its bytes are the same count for any input that could
-    #: verify.
-    MAX_JWS_BYTES: ClassVar[int] = 262144
+
+class _Payload:
+    __slots__ = ("error", "json_text", "problem", "signed_date_ms")
 
     def __init__(
         self,
-        trusted_roots: Iterable[Any],
-        bundle_id: str,
-        accepted_environments: Iterable[str],
-        app_apple_id: int | None = None,
-    ):
-        roots = list(trusted_roots)
-        if not roots:
-            raise ValueError("trusted_roots must not be empty")
-        if not bundle_id:
-            raise ValueError("bundle_id is required")
-        environments = set(accepted_environments)
-        if not environments or not environments.issubset(ENVIRONMENTS):
-            raise ValueError(
-                "accepted_environments must be a non-empty subset of known environments"
-            )
-        self._roots = roots
-        self._bundle_id = bundle_id
-        self._accepted_environments = environments
-        self._app_apple_id = app_apple_id
+        json_text: "str | None",
+        signed_date_ms: "int | None",
+        problem: "str | None",
+        error: "Exception | None",
+    ) -> None:
+        self.json_text = json_text
+        self.signed_date_ms = signed_date_ms
+        self.problem = problem
+        self.error = error
 
-    def verify_transaction(self, jws: str) -> dict[str, Any]:
-        """Verifies a signed transaction and checks bundle id + environment."""
-        payload = _read_typed_claims(self._verify_signature(jws), _TRANSACTION_CLAIMS)
-        self._require_bundle_id(payload.get("bundleId"))
-        self._require_accepted_environment(payload.get("environment"))
-        return payload
 
-    def verify_app_transaction(self, jws: str) -> dict[str, Any]:
-        """Verifies a signed AppTransaction and checks bundle id, environment
-        (``receiptType``), and — in Production — the app Apple id."""
-        payload = _read_typed_claims(self._verify_signature(jws), _APP_TRANSACTION_CLAIMS)
-        self._require_bundle_id(payload.get("bundleId"))
-        environment = self._require_accepted_environment(payload.get("receiptType"))
-        if environment == "Production" and (
-            self._app_apple_id is None or self._app_apple_id != payload.get("appAppleId")
-        ):
-            raise VerificationError(
-                Reason.WRONG_APP_APPLE_ID,
-                f"expected {self._app_apple_id} but payload has {payload.get('appAppleId')}",
-            )
-        return payload
+def _signed_date_ms(raw: object) -> "int | None":
+    """The claim as epoch milliseconds, or ``None`` when no signed 64-bit
+    value holds it: absent, not a number, a bool, or out of range. A
+    fraction or exponent is read as a float and truncated toward zero when
+    it lies within range."""
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        return None
+    if isinstance(raw, int):
+        return raw if -(2**63) <= raw <= 2**63 - 1 else None
+    if not math.isfinite(raw):
+        return None
+    if -(2.0**63) <= raw <= 2.0**63 - 1:
+        return int(raw)
+    return None
 
-    def verify_raw(self, jws: str) -> dict[str, Any]:
-        """Verifies the signature/chain only and returns the raw claims — for
-        payload types without a dedicated model (renewal info, notification
-        envelopes). The caller must check bundle id / environment /
-        app Apple id in the returned claims itself."""
-        return self._verify_signature(jws)
 
-    def _verify_signature(self, jws: str) -> dict[str, Any]:
-        if not isinstance(jws, str):
-            raise VerificationError(Reason.INVALID_JWS_FORMAT, "jws must be a string")
-        # Before the split, so nothing downstream allocates in proportion to
-        # an input this verifier has already decided not to look at.
-        if len(jws) > JwsVerifier.MAX_JWS_BYTES:
-            raise VerificationError(
-                Reason.INVALID_JWS_FORMAT,
-                f"jws exceeds the maximum accepted size of {JwsVerifier.MAX_JWS_BYTES} characters",
-            )
-        parts = jws.split(".")
-        if len(parts) != 3:
-            raise VerificationError(
-                Reason.INVALID_JWS_FORMAT, f"expected 3 dot-separated segments, got {len(parts)}"
-            )
-        header = _json_segment(parts[0], "header")
-        if header.get("alg") != "ES256":
-            raise VerificationError(
-                Reason.INVALID_JWS_FORMAT, f"alg must be ES256, got {header.get('alg')}"
-            )
-        x5c = header.get("x5c")
-        # Every entry has to be a string as well as present: the header is
-        # attacker-supplied JSON, so `"x5c": [1, 2, 3]` otherwise reaches
-        # b64decode and comes back as a TypeError, which is not one of the
-        # two exception types the decode below catches. The statically typed
-        # ports get this from their JSON decoding; here it is a check.
-        if (
-            not isinstance(x5c, list)
-            or len(x5c) != 3
-            or not all(isinstance(entry, str) for entry in x5c)
-        ):
-            raise VerificationError(
-                Reason.INVALID_JWS_FORMAT, "x5c must contain exactly 3 certificates"
-            )
+def _read_payload(payload_bytes: bytes) -> _Payload:
+    """What verification reads from the payload: the text, if it is a JSON
+    object in UTF-8 with nothing but whitespace after it, and its top-level
+    ``signedDate``. Reading it never fails verification by itself; a
+    payload that does not parse is carried to the signature check."""
+    try:
+        text = payload_bytes.decode("utf-8")
+    except UnicodeDecodeError as e:
+        return _Payload(None, None, "not UTF-8", e)
+    if _bounded_json.exceeds_bounds(text):
+        return _Payload(None, None, "nested too deeply", None)
+    try:
+        obj, end = json.JSONDecoder().raw_decode(text)
+    except ValueError as e:
+        return _Payload(None, None, "not valid JSON", e)
+    if _TRAILING_WHITESPACE_RE.fullmatch(text[end:]) is None:
+        return _Payload(None, None, "content after the object", None)
+    if not isinstance(obj, dict):
+        return _Payload(None, None, "not an object", None)
+    return _Payload(text, _signed_date_ms(obj.get("signedDate")), None, None)
+
+
+def _decode_chain(x5c: "list[str]") -> "list[x509.Certificate]":
+    """Decodes the three ``x5c`` entries (RFC 7515 4.1.6: standard base64,
+    canonical padding). Structural decode only: no certificate's public key
+    is read here (the top-down walk decodes a key only once its certificate
+    is vouched for)."""
+    certs = []
+    for index, entry in enumerate(x5c):
         try:
-            # An x5c entry is standard base64 (RFC 7515 section 4.1.6) with
-            # canonical padding, the receipt-data rule: a character outside
-            # that alphabet, whitespace and base64url's '-' and '_' included,
-            # or a wrong '=' count is refused rather than skipped on the way
-            # to a genuine certificate.
-            leaf = x509.load_der_x509_certificate(decode_canonical_base64(x5c[0]))
-            intermediate = x509.load_der_x509_certificate(decode_canonical_base64(x5c[1]))
-            # The third entry is loaded and then dropped. It is the
-            # JWS-supplied root: never compared to an anchor and never
-            # trusted, so swapping in a stranger's root still changes
-            # nothing — but an entry that is not a certificate is
-            # INVALID_CERTIFICATE at every index, which java alone answered
-            # until transaction/reject-x5c-root-that-is-not-a-certificate
-            # pinned it for all nine ports.
-            supplied_root = x509.load_der_x509_certificate(decode_canonical_base64(x5c[2]))
-            # cryptography decodes the SubjectPublicKeyInfo lazily, so a curve
-            # it does not implement only surfaces later — as UnsupportedAlgorithm
-            # out of the issuer check, where the chain gets blamed for a defect
-            # of the certificate. Building both keys here settles it while the
-            # verdict is still INVALID_CERTIFICATE, which is what java, swift
-            # and go answer: their decoders refuse the certificate outright.
-            leaf.public_key()
-            intermediate.public_key()
-            supplied_root.public_key()
+            der = decode_canonical_base64(entry)
+            if _asn1_depth.exceeded(der):
+                raise ValueError("nests ASN.1 too deeply")
+            if not _der.certificate_signature_is_aligned(der):
+                raise ValueError("signature BIT STRING is not byte-aligned")
+            cert = x509.load_der_x509_certificate(der)
+            # Forces the whole extension block to decode now, while the
+            # verdict is still "not a valid certificate": a malformed
+            # extension anywhere (not only the marker OIDs) is read lazily
+            # by `cryptography` and would otherwise surface later as a
+            # chain failure instead of what it is, a broken certificate.
+            _ = cert.extensions
+            certs.append(cert)
         except Exception as e:
-            # Broad by category, for the reason verify_receipt_core states at
-            # length: which exception a malformed certificate produces is
-            # neither documented nor stable. Naming (ValueError, binascii.Error)
-            # here was tried first and missed InvalidVersion, which derives
-            # from Exception directly and comes out of the loader itself.
-            # Every one of them means the same thing to a caller, and it is
-            # the verdict Node reaches with its own blanket catch.
             raise VerificationError(
-                Reason.INVALID_CERTIFICATE, "x5c entry is not a valid certificate"
+                Reason.INVALID_CERTIFICATE, f"x5c[{index}] is not a valid certificate"
             ) from e
-        if not _has_extension(leaf, LEAF_OID):
-            raise VerificationError(
-                Reason.INVALID_CERTIFICATE_PURPOSE,
-                f"leaf certificate lacks Apple marker OID {LEAF_OID.dotted_string}",
-            )
-        if not _has_extension(intermediate, INTERMEDIATE_OID):
-            raise VerificationError(
-                Reason.INVALID_CERTIFICATE_PURPOSE,
-                f"intermediate certificate lacks Apple marker OID {INTERMEDIATE_OID.dotted_string}",
-            )
+    return certs
 
-        payload = _json_segment(parts[1], "payload")
-        # Chain validity is checked at signing time so payloads signed with
-        # since-rotated certificates keep verifying (PLAN.md §2.1 step 4).
-        signed_at = payload.get("signedDate")
-        if not isinstance(signed_at, (int, float)):
-            signed_at = payload.get("receiptCreationDate")
-        if not isinstance(signed_at, (int, float)):
-            signed_at = None
-        # The system clock. This fallback only fires for a payload carrying neither signedDate nor
-        # receiptCreationDate, where PLAN.md's "else current time" leaves the
-        # window anchored to real time.
-        try:
-            effective = as_utc(signed_at) if signed_at is not None else as_utc(time.time() * 1000)
-        except (ValueError, OverflowError, OSError) as e:
-            # signedDate is a JSON number an attacker picks, and datetime
-            # covers years 1-9999: 1e300 raises OverflowError and NaN (which
-            # json.loads accepts) raises ValueError, neither of which the
-            # caller should ever see. An instant no calendar can express is
-            # inside no certificate's validity window, which is the verdict
-            # the other ports reach through their own date types — Node's
-            # `new Date(1e300)` is an Invalid Date and every comparison
-            # against it is false.
-            raise VerificationError(
-                Reason.INVALID_CHAIN, f"payload signing date {signed_at} is not a valid instant"
-            ) from e
-        validate_pair(leaf, intermediate, self._roots, effective)
 
+def _verify_es256(leaf: x509.Certificate, signing_input: bytes, signature: bytes) -> None:
+    if len(signature) != 64:
+        raise VerificationError(
+            Reason.INVALID_SIGNATURE, f"ES256 signature must be 64 bytes, got {len(signature)}"
+        )
+    try:
         public_key = leaf.public_key()
-        if not isinstance(public_key, ec.EllipticCurvePublicKey):
-            raise VerificationError(Reason.INVALID_SIGNATURE, "leaf key is not EC")
-        signature = _b64url(parts[2], "signature")
-        if len(signature) != 64:
-            raise VerificationError(
-                Reason.INVALID_SIGNATURE, f"ES256 signature must be 64 bytes, got {len(signature)}"
-            )
-        r = int.from_bytes(signature[:32], "big")
-        s = int.from_bytes(signature[32:], "big")
-        signing_input = f"{parts[0]}.{parts[1]}".encode("ascii")
-        try:
-            public_key.verify(encode_dss_signature(r, s), signing_input, ec.ECDSA(hashes.SHA256()))
-        except InvalidSignature as e:
-            raise VerificationError(Reason.INVALID_SIGNATURE, "ES256 signature check failed") from e
-        return payload
+    except Exception as e:
+        raise VerificationError(
+            Reason.INVALID_CERTIFICATE, "leaf certificate key does not decode"
+        ) from e
+    if not isinstance(public_key, ec.EllipticCurvePublicKey):
+        raise VerificationError(Reason.INVALID_SIGNATURE, "leaf key is not EC")
+    r = int.from_bytes(signature[:32], "big")
+    s = int.from_bytes(signature[32:], "big")
+    try:
+        public_key.verify(encode_dss_signature(r, s), signing_input, ec.ECDSA(hashes.SHA256()))
+    except (InvalidSignature, ValueError) as e:
+        raise VerificationError(Reason.INVALID_SIGNATURE, "ES256 signature check failed") from e
 
-    def _require_bundle_id(self, actual: Any) -> None:
-        if actual != self._bundle_id:
-            raise VerificationError(
-                Reason.WRONG_BUNDLE_ID, f"expected {self._bundle_id} but payload has {actual}"
-            )
 
-    def _require_accepted_environment(self, claim: Any) -> Any:
-        if claim not in self._accepted_environments:
-            raise VerificationError(
-                Reason.WRONG_ENVIRONMENT, f"payload environment {claim} not in accepted set"
-            )
-        return claim
+def _require_marker(cert: x509.Certificate, oid: x509.ObjectIdentifier, what: str) -> None:
+    if not _has_extension(cert, oid):
+        raise VerificationError(
+            Reason.INVALID_CERTIFICATE_PURPOSE,
+            f"{what} certificate lacks Apple marker OID {oid.dotted_string}",
+        )
+
+
+def _require_valid(cert: x509.Certificate, at_ms: int, what: str) -> None:
+    if not valid_at_ms(cert, at_ms):
+        raise VerificationError(
+            Reason.INVALID_CERTIFICATE, f"{what} certificate is not valid at the checked instant"
+        )
+
+
+def _verify_unguarded(
+    jws: str, roots: "Sequence[x509.Certificate]", clock: Callable[[], int]
+) -> JsonPayload:
+    parts = jws.split(".")
+    if len(parts) != 3:
+        raise VerificationError(
+            Reason.MALFORMED, f"expected 3 dot-separated segments, got {len(parts)}"
+        )
+    header_bytes = _decode_base64url(parts[0], "header")
+    payload_bytes = _decode_base64url(parts[1], "payload")
+    signature_bytes = _decode_base64url(parts[2], "signature")
+
+    alg, x5c = _read_header(header_bytes)
+    if alg != "ES256":
+        raise VerificationError(Reason.MALFORMED, f"alg must be ES256, got {_safe_text.quote(alg)}")
+    if x5c is None or len(x5c) != 3:
+        raise VerificationError(Reason.MALFORMED, "x5c must contain exactly 3 certificates")
+    # x5c[2] is decoded (structurally, above) and then dropped: it is the
+    # JWS-supplied root, never compared to a pinned anchor and never
+    # trusted, so a stranger's root changes nothing.
+    chain = _decode_chain(x5c)
+    leaf, intermediate = chain[0], chain[1]
+
+    payload = _read_payload(payload_bytes)
+
+    authenticate_pair_top_down(leaf, intermediate, roots)
+    _require_marker(leaf, LEAF_OID, "leaf")
+    _require_marker(intermediate, INTERMEDIATE_OID, "intermediate")
+
+    at_ms = payload.signed_date_ms if payload.signed_date_ms is not None else clock()
+    _require_valid(leaf, at_ms, "leaf")
+    _require_valid(intermediate, at_ms, "intermediate")
+
+    signing_input = f"{parts[0]}.{parts[1]}".encode("ascii")
+    _verify_es256(leaf, signing_input, signature_bytes)
+
+    if payload.json_text is None:
+        raise VerificationError(
+            Reason.UNREADABLE_PAYLOAD, f"signed payload is not a JSON object: {payload.problem}"
+        ) from payload.error
+    return JsonPayload(json=payload.json_text)
+
+
+def verify_signed_data(
+    jws: "str | None", roots: "Sequence[x509.Certificate]", clock: Callable[[], int]
+) -> JsonPayload:
+    """Verifies ``jws`` and returns its payload.
+
+    :raises VerificationError: never for a caught, understood defect; see
+        :mod:`.reason` for what each :class:`~.reason.Reason` means
+    """
+    if not jws:
+        raise VerificationError(Reason.MALFORMED, "jws is empty")
+    if utf8_exceeds(jws, MAX_JWS_BYTES):
+        raise VerificationError(
+            Reason.TOO_LARGE, f"jws exceeds the maximum accepted size of {MAX_JWS_BYTES} bytes"
+        )
+    try:
+        return _verify_unguarded(jws, roots, clock)
+    except VerificationError:
+        raise
+    except Exception as e:
+        # Everything here runs on input nobody has vouched for yet, so an
+        # exception this module did not anticipate is reported as a format
+        # defect (MALFORMED), never INTERNAL_ERROR: answering an unknown
+        # error with INTERNAL_ERROR ("alert and reconcile") would let anyone
+        # raise that alert at will (hardening parity change #4).
+        raise VerificationError(Reason.MALFORMED, f"unexpected {type(e).__name__}") from e
