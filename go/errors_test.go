@@ -10,7 +10,7 @@ import (
 )
 
 // The eight reason tokens are normative: they are what
-// fixtures/cases-0.7.schema.json pins and what every port reports. A typo
+// fixtures/cases.schema.json pins and what every port reports. A typo
 // in one is otherwise invisible, so the table is written out by hand here
 // rather than derived from the constants.
 func TestReasonTokensAreTheCanonicalVocabulary(t *testing.T) {

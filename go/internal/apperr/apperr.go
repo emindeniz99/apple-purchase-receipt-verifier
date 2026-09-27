@@ -12,11 +12,11 @@ import "fmt"
 // Reason is the machine-readable cause of a verification failure. The
 // eight constants below are the complete vocabulary (docs/design/0.7-api.md,
 // Result); it is closed by the cross-port contract
-// (fixtures/cases-0.7.schema.json) and changing it is a cross-port change.
+// (fixtures/cases.schema.json) and changing it is a cross-port change.
 type Reason string
 
 // The eight reasons. The string values are normative: they are the tokens
-// fixtures/cases-0.7.json pins and every port reports.
+// fixtures/cases.json pins and every port reports.
 const (
 	ReasonMalformed                 Reason = "MALFORMED"
 	ReasonTooLarge                  Reason = "TOO_LARGE"
@@ -28,7 +28,7 @@ const (
 	ReasonInternalError             Reason = "INTERNAL_ERROR"
 )
 
-// AllReasons is every reason, in the order fixtures/cases-0.7.schema.json
+// AllReasons is every reason, in the order fixtures/cases.schema.json
 // lists them. Exposed so a test can assert the vocabulary is complete.
 var AllReasons = []Reason{
 	ReasonMalformed,

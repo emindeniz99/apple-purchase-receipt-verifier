@@ -137,7 +137,7 @@ func buildCMSFlood(tb testing.TB, certificates [][]byte) []byte {
 // A certificate flood is only one shape of that attack, and the cheapest
 // to defeat, because the bound is a count comparison. The other shape is
 // ASN.1 nesting, which is paid in the parser before the count is looked
-// at; the shared cases-0.7.json nested-64/65 cases cover it.
+// at; the shared cases.json nested-64/65 cases cover it.
 func TestRejectionCostIsBounded(t *testing.T) {
 	if testing.Short() {
 		t.Skip("timing-sensitive")

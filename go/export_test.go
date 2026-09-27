@@ -1,7 +1,7 @@
 package applereceipt
 
 // Test-only hooks for the external conformance_test package, which runs
-// the decodeBase64 groups of fixtures/cases-0.7.json against the two
+// the decodeBase64 groups of fixtures/cases.json against the two
 // base64 decoders directly rather than through a verifier: 0.7 exposes no
 // public decoder.
 
