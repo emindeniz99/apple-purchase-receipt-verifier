@@ -186,6 +186,31 @@ public class JsonTests
         Assert.Equal(1e20d, again["exp"]);
     }
 
+    /// <summary>
+    /// A number inside the 1,000-digit bound whose double is infinite is still
+    /// valid JSON, and Jackson accepts it, so the reader must too. The writer
+    /// refuses an infinite double, so reading it as one made the endpoint's and
+    /// <c>ToJson</c>'s writer unable to emit what the reader had accepted; the
+    /// <c>json</c> fuzz target found that. The reader keeps the text instead.
+    /// </summary>
+    [Fact]
+    public void ANumberTooLargeForADoubleIsReadAcceptedAndWrittenUnchanged()
+    {
+        string digits = "9" + new string('0', Json.MaxNumberDigits - 1);
+        foreach (string literal in new[] { "1e999", "-1e999", "1E+400", digits, "-" + digits })
+        {
+            string json = "{\"n\":" + literal + "}";
+            OrderedMap map = Json.ParseObject(json);
+
+            Assert.Equal(literal, Assert.IsType<JsonNumberLiteral>(map["n"]).Text);
+            Assert.Equal(json, Json.Write(map));
+            Assert.Equal(map["n"], Json.ParseObject(Json.Write(map))["n"]);
+        }
+
+        // The digit bound still refuses one digit more.
+        Assert.Throws<JsonException>(() => Json.Parse(digits + "0"));
+    }
+
     [Fact]
     public void TheWriterRefusesValuesJsonCannotCarry()
     {
