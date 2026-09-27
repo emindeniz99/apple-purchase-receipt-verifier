@@ -96,8 +96,8 @@ const required = [
   'php/LICENSE',
   'php/README.md',
   'php/src/AppleRootCerts.php',
-  'php/src/Jws/JwsVerifier.php',
-  'php/src/Receipt/ReceiptVerifier.php',
+  'php/src/Config.php',
+  'php/src/Verifier.php',
   'php/src/Internal/RootsData.php',
   ...roots.map((n) => `php/certs/${n}`),
 ];
