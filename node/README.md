@@ -93,7 +93,7 @@ local runtime, viceroy, serves it. viceroy is a Rust binary rather than an
 npm package, so it is a separate script; install it with
 `cargo install viceroy --locked` and the runner says so if it is missing.
 CI runs `test:runtimes`, `test:runtimes:web` and `test:runtimes:fastly` on
-every push.
+every pull request and every push to main.
 
 Akamai EdgeWorkers is expected to work — it implements the same WebCrypto
 API — but is untested: it has no local runtime to run it in, so the claim
