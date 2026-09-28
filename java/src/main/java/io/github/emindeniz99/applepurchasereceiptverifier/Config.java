@@ -103,10 +103,13 @@ public final class Config {
 
         /**
          * Turns the runtime probe on or off. When on, {@link Verifier#create}
-         * asks the BouncyCastle provider for the digest, ES256, X.509 and PKIX
-         * engines and checks each bundled Apple root's own signature, and
-         * throws {@link IllegalStateException} if any of that fails. Turned
-         * off, a runtime that cannot verify shows up as
+         * asks the BouncyCastle provider for the digest, ES256, X.509, PKIX
+         * and Collection cert store engines and checks each bundled Apple
+         * root's own signature, and throws {@link IllegalStateException} if
+         * any of that fails. It checks the bundled roots, not the roots in
+         * this config, so with custom roots a runtime that lacks their
+         * signature algorithm still answers {@link Reason#INTERNAL_ERROR} on
+         * the first call. Turned off, a runtime that cannot verify shows up as
          * {@link Reason#INTERNAL_ERROR} on the first call instead. Leaving it
          * unset means on.
          */

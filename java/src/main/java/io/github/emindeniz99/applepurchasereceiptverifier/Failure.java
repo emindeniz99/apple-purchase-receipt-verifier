@@ -7,8 +7,9 @@ import org.jspecify.annotations.Nullable;
  * Why a verification failed. Immutable.
  *
  * <p>Match on {@link #reason()}. {@link #message()} is for logs and support
- * requests: it never quotes the input, so it can go into a log line as is,
- * and its wording may change between releases.</p>
+ * requests: it never quotes the input's bytes, so it can go into a log line
+ * as is, though it may state a date or a count the input declared. Its
+ * wording may change between releases.</p>
  */
 public final class Failure {
 
@@ -23,6 +24,7 @@ public final class Failure {
         this.cause = cause;
     }
 
+    /** What went wrong, as the value to match on. */
     public Reason reason() {
         return reason;
     }
@@ -34,8 +36,8 @@ public final class Failure {
 
     /**
      * The exception behind an {@link Reason#UNREADABLE_PAYLOAD} or
-     * {@link Reason#INTERNAL_ERROR}, when there is one; {@code null} for
-     * every other reason.
+     * {@link Reason#INTERNAL_ERROR}, when there is one; normally {@code null}
+     * for every other reason.
      */
     public @Nullable Throwable cause() {
         return cause;

@@ -452,8 +452,9 @@ if (!result.verified()) {
 }
 ```
 
-`Failure.message()` is safe to log as is (it never quotes the input, so
-there is nothing in it to neutralise) but is not meant to be parsed; match
+`Failure.message()` is safe to log as is (it never quotes the input's bytes,
+so there is nothing in it to neutralise; a message may state a date or a
+count the input declared) but is not meant to be parsed; match
 on `reason()`, never on the message text, and store a reason by `name()`,
 never by `ordinal()`.
 
@@ -577,9 +578,12 @@ verify is what tells them apart.
 
 **Let `Verifier.create` fail a broken runtime at deployment.** By default
 `Verifier.create` asks the library's BouncyCastle provider for the SHA-256
-digest, the ES256 signature, the X.509 certificate factory and the PKIX path
-validator and builder, and checks the signature of each of the three bundled
-Apple roots, the SHA-1 one included. It needs no receipt or JWS. If any
+digest, the ES256 signature, the X.509 certificate factory, the PKIX path
+validator and builder and the Collection cert store, and checks the signature
+of each of the three bundled Apple roots, the SHA-1 one included. It needs no
+receipt or JWS. It checks the bundled roots, not the roots in your `Config`,
+so a deployment with custom roots whose runtime lacks their signature
+algorithm still answers `INTERNAL_ERROR` on the first call. If any
 step fails, as on a stripped JRE, a
 FIPS-mode JDK that refuses the provider or a corrupt jar, it throws
 `IllegalStateException`, so the deploy fails instead of the first request
