@@ -256,7 +256,8 @@ final class ReceiptDecoder {
         ASN1Primitive parsed;
         try {
             parsed = ASN1Primitive.fromByteArray(der);
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
+            // BouncyCastle's indefinite-length path refuses some values unchecked.
             throw new VerificationException(Reason.UNREADABLE_PAYLOAD, what + " is not valid ASN.1", e);
         }
         if (parsed instanceof ASN1OctetString) {
@@ -265,7 +266,7 @@ final class ReceiptDecoder {
             requireDepth(inner, what);
             try {
                 parsed = ASN1Primitive.fromByteArray(inner);
-            } catch (IOException e) {
+            } catch (IOException | RuntimeException e) {
                 throw new VerificationException(Reason.UNREADABLE_PAYLOAD, what + " double-wrap is not valid ASN.1", e);
             }
         }
