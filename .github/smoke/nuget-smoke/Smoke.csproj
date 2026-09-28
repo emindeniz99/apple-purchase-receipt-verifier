@@ -10,6 +10,9 @@
   netstandard2.0 asset needs a net4x consumer on a Windows runner and is still
   untested (dotnet/RELEASE.md).
 
+  Before a release, ci.yml's smoke-nuget job restores the same project from a
+  folder that `dotnet pack` just filled, by adding that folder as a source.
+
   The PackageReference is conditional because tools restore this project
   without SmokeVersion: GitHub's dependency submission restores every csproj
   in the repository, and "[]" is not a valid version range, so an
