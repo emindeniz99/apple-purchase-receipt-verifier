@@ -22,20 +22,25 @@ require_relative "../support"
 
 APRV = FuzzSupport::APRV
 
-TRUSTED = (APRV.apple_receipt_roots +
-           [FuzzSupport.fixture_certificate("generated/receipt-root.der")]).freeze
+TRUSTED = (APRV::Config.defaults.roots +
+           [FuzzSupport.fixture_certificate("generated-0.7/receipt-root.der")]).freeze
 UNRELATED = [FuzzSupport.fixture_certificate("generated/jws-root.der")].freeze
 
 TEST_ONE_INPUT = lambda do |data|
-  outcome, receipt = FuzzSupport.call("verify_receipt_core", APRV::VerificationError) do
-    APRV.verify_receipt_core(data, trusted_roots: TRUSTED)
+  # 0.7 has no DER entry point (docs/design/0.7-api.md): Receipt.verify takes
+  # the base64 text a client sends, so the raw fuzz bytes are encoded first.
+  # That still reaches the same CMS/chain/signature machinery this target
+  # exists to cover; only the transport encoding changed.
+  base64 = [data].pack("m0")
+  outcome, receipt = FuzzSupport.call("Receipt.verify", APRV::VerificationError) do
+    APRV::Receipt.verify(base64, TRUSTED, APRV::ClockOnce.new(-> { Time.now.to_i * 1000 }))
   end
   next nil unless outcome == :accepted
 
-  FuzzSupport.violated("verify_receipt_core returned nil for an accepted receipt") if receipt.nil?
+  FuzzSupport.violated("Receipt.verify returned nil for an accepted receipt") if receipt.nil?
 
-  again, = FuzzSupport.call("verify_receipt_core (unrelated anchors)", APRV::VerificationError) do
-    APRV.verify_receipt_core(data, trusted_roots: UNRELATED)
+  again, = FuzzSupport.call("Receipt.verify (unrelated anchors)", APRV::VerificationError) do
+    APRV::Receipt.verify(base64, UNRELATED, APRV::ClockOnce.new(-> { Time.now.to_i * 1000 }))
   end
   if again == :accepted
     FuzzSupport.violated("this input verifies against an unrelated anchor set too, " \

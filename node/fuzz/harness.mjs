@@ -8,9 +8,8 @@
  * written to.
  */
 import { readFileSync } from 'node:fs';
-import { X509Certificate } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { VerificationError, appleJwsRoots, appleReceiptRoots } from '../dist/index.js';
+import { VerificationError, createConfig, defaultConfig } from '../dist/index.js';
 import { ParseError } from '../dist/der.js';
 
 const fixture = (relative) =>
@@ -20,22 +19,20 @@ const fixture = (relative) =>
  * The receipt anchor set: the pinned Apple roots plus the generated fixture
  * root, so both the shared fixture receipts and the two public Apple
  * receipts get past the chain check and the fuzzer can explore what lies
- * beyond it. Roots are converted once — `normalizeRoots` would otherwise
- * re-parse a DER buffer on every single execution.
+ * beyond it.
  */
-export const RECEIPT_ANCHORS = [
-  ...appleReceiptRoots(),
-  new X509Certificate(fixture('generated/receipt-root.der')),
-];
+export const RECEIPT_CONFIG = createConfig({
+  roots: [...defaultConfig().roots.map((r) => r.raw), fixture('generated/receipt-root.der')],
+});
 
 /** The unrelated anchor set the accept-invariant re-runs against. */
-export const UNRELATED_ANCHORS = [new X509Certificate(fixture('generated/jws-root.der'))];
+export const UNRELATED_CONFIG = createConfig({ roots: [fixture('generated/jws-root.der')] });
 
 /** The fixture JWS root, the anchor the generated `.jws` fixtures chain to. */
-export const JWS_ANCHORS = [new X509Certificate(fixture('generated/jws-root.der'))];
+export const JWS_CONFIG = createConfig({ roots: [fixture('generated/jws-root.der')] });
 
-/** Apple's production JWS roots — the unrelated set for the JWS target. */
-export const APPLE_JWS_ANCHORS = appleJwsRoots();
+/** Apple's production roots — the unrelated set for the JWS target. */
+export const APPLE_CONFIG = defaultConfig();
 
 /**
  * Every failure a caller can see must be the library's own typed error.
@@ -55,7 +52,7 @@ export function requireTypedError(error, what, allowed = [VerificationError]) {
 /** `requireTypedError`'s allow-list for the DER reader, whose error is its own. */
 export const PARSE_ERRORS = [ParseError];
 
-/** The CMS readers throw either — `parseCms` wraps, the attribute readers do not. */
+/** The CMS readers throw either — `parseCms` wraps some paths, others raise `ParseError` directly. */
 export const CMS_ERRORS = [VerificationError, ParseError];
 
 const UTF8 = new TextDecoder('utf-8', { fatal: true });

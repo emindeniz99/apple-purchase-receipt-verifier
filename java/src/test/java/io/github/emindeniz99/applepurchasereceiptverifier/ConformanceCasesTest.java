@@ -1,26 +1,13 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
-import com.fasterxml.jackson.annotation.JsonAutoDetect;
-import com.fasterxml.jackson.annotation.PropertyAccessor;
-import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
-import io.github.emindeniz99.applepurchasereceiptverifier.jws.JwsVerifier;
-import io.github.emindeniz99.applepurchasereceiptverifier.receipt.AppReceipt;
-import io.github.emindeniz99.applepurchasereceiptverifier.receipt.InAppPurchase;
-import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifier;
-import io.github.emindeniz99.applepurchasereceiptverifier.receipt.VerifyReceiptEndpoint;
-import io.github.emindeniz99.applepurchasereceiptverifier.receipt.VerifyReceiptResult;
 import java.io.ByteArrayInputStream;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -32,12 +19,9 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.Collection;
 import java.util.Collections;
-import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -46,45 +30,46 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
 
 /**
- * Runs every vector in {@code fixtures/cases.json} — the normative
- * cross-language conformance set that java, node, python and swift all
- * answer identically.
+ * Runs every vector in {@code fixtures/cases.json}, the normative
+ * cross-language conformance set for the 0.7 API, through the three public
+ * {@link Verifier} methods and the two base64 decoders.
  *
  * <p>This adapter carries no knowledge of any individual case. It resolves a
- * fixture id to bytes, builds a verifier from the generic config, dispatches
- * on {@code operation}, normalizes the success object onto the shared
- * (language-neutral) field names, and reads
- * {@link VerificationException#reason()} out of a failure. A case is added by
- * editing cases.json, never this file.</p>
+ * fixture id to bytes, builds a {@link Config} from the case's trusted roots
+ * and clock, dispatches on {@code operation}, and evaluates the expectation
+ * on the JSON the library returns: {@link ReceiptPayload#toJson()},
+ * {@link JsonPayload#json()} or the endpoint's response body. A case is added
+ * by editing cases.json, never this file. The file's top-level
+ * {@code comment} defines the semantics implemented here.</p>
  *
  * <p>Each case is its own {@link DynamicTest}, named by its case id, so a
- * failure names the vector that broke.</p>
- *
- * <p>A case carrying a {@code clock} is run with that instant injected, so a
- * verdict that moves with wall-clock time is deterministic. Only one surface
- * takes one: the endpoint (request_date stamping). The JWS and receipt
- * verifiers take none (their only "now" is a certificate-validity instant,
- * which no injected clock may move), so their cases cannot pin a clock and
- * none does. A case without one gets
- * the library default, the system clock.</p>
+ * failure names the vector that broke (java-distroless greps for one by
+ * name).</p>
  *
  * <p>Every fixture the adapter loads is checked against the
- * {@code contentSha256} the registry records for it, over the DECODED bytes,
- * so fixture bytes and cases.json cannot drift apart unnoticed.</p>
+ * {@code contentSha256} the registry records for it, over the decoded bytes,
+ * so fixture bytes and the registry cannot drift apart unnoticed.</p>
  */
 class ConformanceCasesTest {
 
     private static final Path FIXTURES = TestFixtures.root();
+    private static final String CASES = "cases.json";
 
-    /** FIELD visibility so the payload models normalize without accessors. */
-    private static final ObjectMapper MAPPER =
-            new ObjectMapper().setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY);
+    // Big decimals for fractions and exact integers, so a pinned value
+    // compares without rounding (the endpoint's download_id is 2^63-1).
+    private static final ObjectMapper MAPPER = new ObjectMapper()
+            .enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
+            .enable(DeserializationFeature.USE_BIG_INTEGER_FOR_INTS);
 
-    private static final TypeReference<Map<String, Object>> MAP = new TypeReference<Map<String, Object>>() {};
+    private static JsonNode document() throws Exception {
+        JsonNode document = MAPPER.readTree(FIXTURES.resolve(CASES).toFile());
+        assertEquals(2, document.get("schemaVersion").asInt(), CASES + " schemaVersion");
+        return document;
+    }
 
     @TestFactory
     List<DynamicTest> conformanceCases() throws Exception {
-        JsonNode document = MAPPER.readTree(FIXTURES.resolve("cases.json").toFile());
+        JsonNode document = document();
         final JsonNode fixtures = document.get("fixtures");
         List<DynamicTest> tests = new ArrayList<DynamicTest>();
         final List<String> ids = new ArrayList<String>();
@@ -102,15 +87,14 @@ class ConformanceCasesTest {
                 runCase(fixtures, kase);
             }));
         }
-        System.out.println("conformance: " + tests.size() + " cases in fixtures/cases.json, " + pinned
+        System.out.println("conformance: " + tests.size() + " cases in fixtures/" + CASES + ", " + pinned
                 + " with a pinned clock, 0 skipped");
         // Coverage self-check, last in the list and so run after every case:
         // each case id in the parsed file ran, compared against the file and
         // never against a literal count, so a case this factory stopped
         // reaching fails here. A run that selects individual dynamic tests
-        // (an IDE rerun, a unique-id selector) does not select this one, so
-        // a filtered run needs no stand-down of its own.
-        tests.add(DynamicTest.dynamicTest("cases.json every case ran", () -> {
+        // does not select this one, so a filtered run needs no stand-down.
+        tests.add(DynamicTest.dynamicTest(CASES + " every case ran", () -> {
             List<String> missing = new ArrayList<String>();
             for (String id : ids) {
                 if (!ran.contains(id)) {
@@ -125,91 +109,171 @@ class ConformanceCasesTest {
     }
 
     // Surefire reports a dynamic test by its index, not its display name, so
-    // every message repeats the case id — otherwise a CI log names no vector.
+    // every message repeats the case id; otherwise a CI log names no vector.
     private static void runCase(JsonNode fixtures, JsonNode kase) throws Exception {
         String id = kase.get("id").asText();
+        String operation = kase.get("operation").asText();
         JsonNode expected = kase.get("expected");
-        if ("decodeBase64".equals(kase.get("operation").asText())) {
+        if ("decodeBase64".equals(operation)) {
             List<String> failures = decodeBase64Failures(kase);
             assertTrue(failures.isEmpty(), String.join("\n", failures));
             return;
         }
-        boolean expectError = "error".equals(expected.get("status").asText());
-        Object result;
-        try {
-            result = invoke(fixtures, kase);
-        } catch (VerificationException e) {
-            if (!expectError) {
-                throw new AssertionError(id + ": expected success but failed with " + e.getMessage(), e);
-            }
-            assertEquals(Reason.valueOf(expected.get("reason").asText()), e.reason(), id + ": " + e.getMessage());
+        Verifier verifier = Verifier.create(config(fixtures, kase));
+        JsonNode input = kase.get("input");
+        if ("verifyReceiptEndpoint".equals(operation)) {
+            Environment environment =
+                    Environment.valueOf(kase.get("config").get("environment").asText());
+            String body = input.has("requestBody")
+                    ? text(fixtureBytes(fixtures, input.get("requestBody").asText()))
+                    : MAPPER.writeValueAsString(
+                            Collections.singletonMap("receipt-data", receiptString(fixtures, input)));
+            String response = verifier.verifyReceiptEndpoint(environment, body);
+            assertTrue(expected.get("fields").has("/status"), id + ": harness error: /status not pinned");
+            check(id, expected, parse(id, response));
             return;
-        } catch (Exception e) {
-            // Never map an arbitrary failure onto an expected Reason: anything
-            // other than a VerificationException is a harness/library defect.
-            throw new AssertionError(
-                    id + ": harness error — the operation raised "
-                            + e.getClass().getName() + " instead of a VerificationException",
-                    e);
         }
-        if (expectError) {
-            fail(id + ": expected " + expected.get("reason").asText() + " but the operation succeeded");
+        final String argument;
+        final boolean receipt;
+        if ("verifyReceipt".equals(operation)) {
+            argument = receiptString(fixtures, input);
+            receipt = true;
+        } else if ("verifySignedData".equals(operation)) {
+            argument = text(fixtureBytes(fixtures, input.get("fixture").asText()));
+            receipt = false;
+        } else {
+            throw new IllegalStateException(id + ": harness error: unknown operation " + operation);
         }
-        if (result instanceof VerifyReceiptResult) {
-            // failureReason is not on Apple's wire, so an endpoint case pins
-            // it beside the wire fields rather than among them.
-            VerifyReceiptResult endpointResult = (VerifyReceiptResult) result;
-            if (expected.has("failureReason")) {
-                Reason failure = endpointResult.failureReason();
-                assertEquals(
-                        expected.get("failureReason").asText(),
-                        failure == null ? null : failure.name(),
-                        id + " failureReason");
+        // A maxMillis budget (the DoS cases): one warm-up call of the same
+        // case, then the timed call. An honest verify never parses the
+        // untrusted key and finishes in a few milliseconds; an implementation
+        // that decodes or verifies with the oversized key first spends seconds.
+        if (kase.has("maxMillis")) {
+            call(verifier, receipt, argument);
+            long start = System.nanoTime();
+            call(verifier, receipt, argument);
+            long millis = (System.nanoTime() - start) / 1_000_000;
+            long budget = kase.get("maxMillis").asLong();
+            assertTrue(millis <= budget, id + ": verify took " + millis + " ms, budget " + budget + " ms");
+        }
+        // A listed-outcome case: "ok" or the reason must be in the list, and nothing thrown.
+        if (expected.has("oneOf")) {
+            VerificationResult<?> result;
+            try {
+                result = call(verifier, receipt, argument);
+            } catch (RuntimeException | Error e) {
+                throw new AssertionError(id + ": the operation threw instead of answering", e);
             }
-            result = endpointResult.toResponse();
+            Failure failure = result.failure();
+            String outcome = failure == null ? "ok" : failure.reason().name();
+            List<String> allowed = new ArrayList<String>();
+            for (JsonNode listed : expected.get("oneOf")) {
+                allowed.add(listed.asText());
+            }
+            assertTrue(
+                    allowed.contains(outcome),
+                    id + ": answered " + outcome + (failure == null ? "" : " (" + failure.message() + ")")
+                            + ", want one of " + allowed);
+            return;
         }
-        assertFields(id, expected.get("fields"), result);
+        VerificationResult<?> result = call(verifier, receipt, argument);
+        String status = expected.get("status").asText();
+        if ("error".equals(status)) {
+            Failure failure = result.failure();
+            if (failure == null) {
+                fail(id + ": expected " + expected.get("reason").asText() + " but the operation verified");
+            }
+            assertEquals(expected.get("reason").asText(), failure.reason().name(), id + ": " + failure.message());
+            if (expected.has("messageMustNotContain")) {
+                String message = failure.message();
+                for (JsonNode codePoint : expected.get("messageMustNotContain")) {
+                    int cp = codePoint.asInt();
+                    assertTrue(
+                            message.indexOf(cp) < 0,
+                            id + ": the failure message contains U+" + String.format("%04X", cp) + ": "
+                                    + message.replaceAll("\\p{Cntrl}", "?"));
+                }
+            }
+            return;
+        }
+        assertEquals("ok", status, id + ": harness error: unknown status");
+        Object payload = result.payload();
+        if (payload == null) {
+            Failure failure = result.failure();
+            fail(id + ": expected ok but failed with " + failure.reason() + ": " + failure.message());
+        }
+        String json;
+        if (payload instanceof ReceiptPayload) {
+            json = ((ReceiptPayload) payload).toJson();
+            if (expected.has("toJson")) {
+                // Same value, not same bytes: whitespace, key order and
+                // escaping are free (docs/design/0.7-api.md "Our JSON").
+                assertEquals(parse(id, expected.get("toJson").asText()), parse(id, json), id + ": toJson value");
+            }
+        } else {
+            json = ((JsonPayload) payload).json();
+        }
+        check(id, expected, parse(id, json));
+    }
+
+    private static VerificationResult<?> call(Verifier verifier, boolean receipt, String argument) {
+        return receipt ? verifier.verifyReceipt(argument) : verifier.verifySignedData(argument);
+    }
+
+    // ------------------------------------------------------------ inputs
+
+    /**
+     * The config the case names: its trusted roots, and a clock fixed at
+     * {@code clock.now} when it pins one, else the default clock.
+     */
+    private static Config config(JsonNode fixtures, JsonNode kase) throws Exception {
+        JsonNode roots = kase.get("config").get("trustedRoots");
+        Config.Builder builder = Config.builder();
+        String source = roots.get("source").asText();
+        if ("fixtures".equals(source)) {
+            CertificateFactory factory = CertificateFactory.getInstance("X.509");
+            List<X509Certificate> certificates = new ArrayList<X509Certificate>();
+            for (JsonNode id : roots.get("fixtures")) {
+                certificates.add((X509Certificate)
+                        factory.generateCertificate(new ByteArrayInputStream(fixtureBytes(fixtures, id.asText()))));
+            }
+            builder.roots(certificates);
+        } else if (!"defaults".equals(source)) {
+            throw new IllegalStateException("harness error: unknown trustedRoots source " + source);
+        }
+        if (kase.has("clock")) {
+            builder.clock(Clock.fixed(Instant.parse(kase.get("clock").get("now").asText()), ZoneOffset.UTC));
+        }
+        return builder.build();
+    }
+
+    /**
+     * The string verifyReceipt gets, and the endpoint's receipt-data: a text
+     * fixture verbatim, exactly as a client sent it; any other fixture holds
+     * DER, encoded as canonical base64.
+     */
+    private static String receiptString(JsonNode fixtures, JsonNode input) throws Exception {
+        String id = input.get("fixture").asText();
+        byte[] bytes = fixtureBytes(fixtures, id);
+        String codec = fixtures.get(id).get("codec").asText();
+        return "text".equals(codec) ? text(bytes) : Base64.getEncoder().encodeToString(bytes);
     }
 
     // ------------------------------------------------------------ decodeBase64
 
     /**
-     * The two decoders a decodeBase64 group can name, reached by reflection
-     * because both are package-private in other packages: receipt-data is
-     * {@code receipt.ReceiptBase64#decode} and x5c is
-     * {@code jws.JwsVerifier#decodeX5cEntry}. Each answers with its own
-     * reason; an error group states INVALID_RECEIPT_FORMAT, the receipt-data
-     * answer, and x5c answers INVALID_CERTIFICATE.
-     */
-    private static Method base64Decoder(String name) throws Exception {
-        Method method;
-        if ("receipt-data".equals(name)) {
-            method = Class.forName("io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptBase64")
-                    .getDeclaredMethod("decode", String.class);
-        } else if ("x5c".equals(name)) {
-            method = JwsVerifier.class.getDeclaredMethod("decodeX5cEntry", String.class);
-        } else {
-            throw new IllegalStateException("harness error: no decoder " + name);
-        }
-        method.setAccessible(true);
-        return method;
-    }
-
-    private static Reason base64Refusal(String name) {
-        return "x5c".equals(name) ? Reason.INVALID_CERTIFICATE : Reason.INVALID_RECEIPT_FORMAT;
-    }
-
-    /**
      * Every text of a decodeBase64 group that got the wrong answer from a
      * decoder the group names, by case id, decoder, index and escaped text,
-     * rather than stopping at the first.
+     * rather than stopping at the first. receipt-data refuses with
+     * MALFORMED and x5c with INVALID_CERTIFICATE; an error group states
+     * MALFORMED and is mapped here for x5c.
      */
-    private static List<String> decodeBase64Failures(JsonNode kase) throws Exception {
+    private static List<String> decodeBase64Failures(JsonNode kase) {
         String id = kase.get("id").asText();
         JsonNode expected = kase.get("expected");
         boolean ok = "ok".equals(expected.get("status").asText());
         if (!ok) {
-            assertEquals("INVALID_RECEIPT_FORMAT", expected.get("reason").asText(), id + ": harness error");
+            assertEquals("MALFORMED", expected.get("reason").asText(), id + ": harness error");
         }
         String want = ok ? expected.get("bytesHex").asText() : "";
         JsonNode texts = kase.get("input").get("texts");
@@ -217,25 +281,29 @@ class ConformanceCasesTest {
         List<String> failures = new ArrayList<String>();
         for (JsonNode decoderName : kase.get("decoders")) {
             String name = decoderName.asText();
-            Method decoder = base64Decoder(name);
-            Reason refusal = base64Refusal(name);
+            Reason refusal;
+            if ("receipt-data".equals(name)) {
+                refusal = Reason.MALFORMED;
+            } else if ("x5c".equals(name)) {
+                refusal = Reason.INVALID_CERTIFICATE;
+            } else {
+                throw new IllegalStateException(id + ": harness error: no decoder " + name);
+            }
             for (int index = 0; index < texts.size(); index++) {
                 String text = texts.get(index).asText();
                 String where = id + ": " + name + " texts[" + index + "] " + escape(text);
                 String decoded;
                 try {
-                    decoded = hex((byte[]) decoder.invoke(null, text));
-                } catch (InvocationTargetException e) {
-                    Throwable cause = e.getCause();
-                    if (!(cause instanceof VerificationException)) {
-                        failures.add(where + ": harness error: threw " + cause);
-                    } else if (ok) {
-                        failures.add(where + " was refused (" + ((VerificationException) cause).reason() + "), want "
-                                + want);
-                    } else if (((VerificationException) cause).reason() != refusal) {
-                        failures.add(
-                                where + ": reason " + ((VerificationException) cause).reason() + ", want " + refusal);
+                    decoded = hex(StrictBase64.decode(text, refusal, name));
+                } catch (VerificationException e) {
+                    if (ok) {
+                        failures.add(where + " was refused (" + e.reason() + "), want " + want);
+                    } else if (e.reason() != refusal) {
+                        failures.add(where + ": reason " + e.reason() + ", want " + refusal);
                     }
+                    continue;
+                } catch (RuntimeException e) {
+                    failures.add(where + ": harness error: threw " + e);
                     continue;
                 }
                 if (!ok) {
@@ -264,176 +332,44 @@ class ConformanceCasesTest {
         return out.append('"').toString();
     }
 
-    // ---------------------------------------------------------------- dispatch
-
-    private static Object invoke(JsonNode fixtures, JsonNode kase) throws Exception {
-        JsonNode config = kase.get("config");
-        Set<X509Certificate> roots = trustedRoots(fixtures, config.get("trustedRoots"));
-        JsonNode inputSpec = kase.get("input");
-        // A requestBody names a fixture too: the whole raw request body.
-        String fixtureId = inputSpec.has("requestBody")
-                ? inputSpec.get("requestBody").asText()
-                : inputSpec.get("fixture").asText();
-        byte[] input = fixtureBytes(fixtures, fixtureId);
-        String operation = kase.get("operation").asText();
-        // Only the endpoint has a clock seam; a pinned clock anywhere else
-        // would be silently ignored, so it fails the case instead.
-        if (kase.has("clock") && !"verifyReceiptEndpoint".equals(operation)) {
-            throw new IllegalStateException(operation + " has no clock seam, but the case pins one");
-        }
-        if ("verifyTransaction".equals(operation)) {
-            return MAPPER.convertValue(jwsVerifier(roots, config).verifyTransaction(text(input)), MAP);
-        }
-        if ("verifyAppTransaction".equals(operation)) {
-            return MAPPER.convertValue(jwsVerifier(roots, config).verifyAppTransaction(text(input)), MAP);
-        }
-        if ("verifyRaw".equals(operation)) {
-            return jwsVerifier(roots, config).verifyRaw(text(input));
-        }
-        if ("verifyReceipt".equals(operation)) {
-            // No clock: receipt verification has no verdict that moves with
-            // wall-clock time, and its one "now" is a certificate-validity
-            // instant that an injected clock must not be able to shift.
-            ReceiptVerifier verifier =
-                    new ReceiptVerifier(roots, config.get("bundleId").asText());
-            byte[] deviceGuid = config.has("deviceGuidHex")
-                    ? unhex(config.get("deviceGuidHex").asText())
-                    : null;
-            return normalize(verifier.verify(input, deviceGuid));
-        }
-        if ("verifyReceiptBase64".equals(operation)) {
-            // Same DER underneath as verifyReceipt, but the fixture is a text
-            // fixture: the verbatim string is what a client actually sends,
-            // and how it turns into DER is exactly what this operation pins.
-            ReceiptVerifier verifier =
-                    new ReceiptVerifier(roots, config.get("bundleId").asText());
-            byte[] deviceGuid = config.has("deviceGuidHex")
-                    ? unhex(config.get("deviceGuidHex").asText())
-                    : null;
-            return normalize(verifier.verify(text(input), deviceGuid));
-        }
-        if ("verifyReceiptEndpoint".equals(operation)) {
-            Environment environment =
-                    Environment.fromValue(config.get("environment").asText());
-            if (environment == null) {
-                throw new IllegalStateException(
-                        "unknown environment " + config.get("environment").asText());
-            }
-            VerifyReceiptEndpoint endpoint = new VerifyReceiptEndpoint(roots, environment, clock(kase));
-            if (inputSpec.has("requestBody")) {
-                // The whole raw body, through the entry point that parses it.
-                return endpoint.verifyReceiptResult(text(input));
-            }
-            // A text fixture's bytes go into receipt-data verbatim, exactly
-            // as a client would send them; a raw or base64 fixture is
-            // re-encoded as canonical base64, as before.
-            String codec = fixtures.get(fixtureId).get("codec").asText();
-            String receiptData =
-                    "text".equals(codec) ? text(input) : Base64.getEncoder().encodeToString(input);
-            return endpoint.verifyReceiptResult(Collections.singletonMap("receipt-data", receiptData));
-        }
-        throw new IllegalStateException("unknown operation " + operation);
-    }
-
-    /**
-     * The case's pinned "now", or null for the library default (the system
-     * clock). cases.json spells it as an ISO-8601 UTC instant.
-     */
-    private static Clock clock(JsonNode kase) {
-        if (!kase.has("clock")) {
-            return null;
-        }
-        return Clock.fixed(Instant.parse(kase.get("clock").get("now").asText()), ZoneOffset.UTC);
-    }
-
-    private static JwsVerifier jwsVerifier(Set<X509Certificate> roots, JsonNode config) {
-        // verifyRaw enforces no claim, so its cases need not pin a bundle id or
-        // an accept set — but the constructor demands both. Neutral stand-ins
-        // (a bundle id no payload can carry, every environment) keep that
-        // generic rather than per-case.
-        String bundleId = config.has("bundleId") ? config.get("bundleId").asText() : "";
-        Set<Environment> environments = EnumSet.allOf(Environment.class);
-        if (config.has("acceptedEnvironments")) {
-            environments = EnumSet.noneOf(Environment.class);
-            for (JsonNode name : config.get("acceptedEnvironments")) {
-                Environment environment = Environment.fromValue(name.asText());
-                if (environment == null) {
-                    throw new IllegalStateException("unknown environment " + name.asText());
-                }
-                environments.add(environment);
-            }
-        }
-        Long appAppleId = null;
-        if (config.has("appAppleId")) {
-            appAppleId = Long.valueOf(config.get("appAppleId").asLong());
-        }
-        return new JwsVerifier(roots, bundleId, environments, appAppleId);
-    }
-
     // ---------------------------------------------------------------- fixtures
-
-    private static Set<X509Certificate> trustedRoots(JsonNode fixtures, JsonNode spec) throws Exception {
-        if ("builtin".equals(spec.get("source").asText())) {
-            String name = spec.get("name").asText();
-            if ("apple-receipt-roots".equals(name)) {
-                return AppleRootCerts.receiptRoots();
-            }
-            if ("apple-jws-roots".equals(name)) {
-                return AppleRootCerts.jwsRoots();
-            }
-            throw new IllegalStateException("unknown builtin root set " + name);
-        }
-        CertificateFactory factory = CertificateFactory.getInstance("X.509");
-        Set<X509Certificate> roots = new HashSet<X509Certificate>();
-        for (JsonNode id : spec.get("fixtures")) {
-            roots.add((X509Certificate)
-                    factory.generateCertificate(new ByteArrayInputStream(fixtureBytes(fixtures, id.asText()))));
-        }
-        return roots;
-    }
 
     /**
      * Every fixture in the registry hashes to the {@code contentSha256} it
-     * declares. {@link #fixtureBytes} checks the ones the cases actually load;
-     * this walks the whole registry, so a fixture that drifted while no case
-     * currently reaches it is still caught — which is the entire reason the
-     * field exists.
+     * declares. {@link #fixtureBytes} checks the ones the cases load; this
+     * walks the whole registry, so a fixture that drifted while no case
+     * reaches it is still caught.
      */
     @Test
     void everyFixtureMatchesItsRecordedContentDigest() throws Exception {
-        JsonNode fixtures =
-                MAPPER.readTree(FIXTURES.resolve("cases.json").toFile()).get("fixtures");
+        JsonNode fixtures = document().get("fixtures");
         int checked = 0;
         Iterator<String> ids = fixtures.fieldNames();
         while (ids.hasNext()) {
             fixtureBytes(fixtures, ids.next());
             checked++;
         }
-        assertTrue(checked > 0, "cases.json declares no fixtures");
-        System.out.println("conformance: " + checked + " fixture content digests verified against cases.json");
+        assertTrue(checked > 0, CASES + " declares no fixtures");
+        System.out.println("conformance: " + checked + " fixture content digests verified against " + CASES);
     }
 
     /**
-     * A fixture id to its logical bytes, per the registry's {@code codec} —
+     * A fixture id to its logical bytes, per the registry's {@code codec},
      * and only after those bytes hash to the {@code contentSha256} the
-     * registry records for them. The digest is over the DECODED bytes (the
-     * file itself for {@code raw} and for {@code text} — verbatim, untrimmed
-     * — the base64-decoded bytes for {@code base64}, the UTF-8 of the
-     * trimmed text for {@code utf8}), so it pins what the verifier is
-     * actually handed rather than how it is stored.
+     * registry records: raw and text are the file verbatim, utf8 the UTF-8 of
+     * the trimmed text, base64 the decoded text with whitespace stripped.
      */
     private static byte[] fixtureBytes(JsonNode fixtures, String id) throws Exception {
         JsonNode fixture = fixtures.get(id);
         if (fixture == null) {
-            throw new IllegalStateException("cases.json declares no fixture " + id);
+            throw new IllegalStateException(CASES + " declares no fixture " + id);
         }
         byte[] stored = Files.readAllBytes(FIXTURES.resolve(fixture.get("path").asText()));
         String codec = fixture.get("codec").asText();
         byte[] decoded;
         if ("raw".equals(codec) || "text".equals(codec)) {
-            // text = the file bytes verbatim, untrimmed -- unlike utf8 below,
-            // which trims. One registered fixture is 0 bytes and some carry
-            // CRLF; both must survive exactly as stored.
+            // text is untrimmed, unlike utf8: a registered fixture may be
+            // 0 bytes or carry CRLF, and both must survive as stored.
             decoded = stored;
         } else {
             String text = new String(stored, StandardCharsets.UTF_8).trim();
@@ -445,17 +381,12 @@ class ConformanceCasesTest {
                 throw new IllegalStateException("unknown codec " + codec + " on fixture " + id);
             }
         }
-        JsonNode expected = fixture.get("contentSha256");
-        if (expected == null || !expected.isTextual()) {
-            throw new IllegalStateException("fixture " + id + " declares no contentSha256");
-        }
+        String expected = fixture.get("contentSha256").asText();
         String actual = hex(MessageDigest.getInstance("SHA-256").digest(decoded));
-        if (!expected.textValue().equals(actual)) {
+        if (!expected.equals(actual)) {
             throw new AssertionError(
-                    "fixture " + id + " (" + fixture.get("path").asText()
-                            + ", codec " + codec + ") hashes to " + actual
-                            + " but cases.json records " + expected.textValue()
-                            + " — the fixture bytes and the registry have drifted apart");
+                    "fixture " + id + " (" + fixture.get("path").asText() + ", codec " + codec + ") hashes to " + actual
+                            + " but " + CASES + " records " + expected);
         }
         return decoded;
     }
@@ -464,18 +395,7 @@ class ConformanceCasesTest {
         return new String(bytes, StandardCharsets.UTF_8);
     }
 
-    private static byte[] unhex(String hex) {
-        byte[] out = new byte[hex.length() / 2];
-        for (int i = 0; i < out.length; i++) {
-            out[i] = (byte) Integer.parseInt(hex.substring(2 * i, 2 * i + 2), 16);
-        }
-        return out;
-    }
-
     private static String hex(byte[] bytes) {
-        if (bytes == null) {
-            return null;
-        }
         StringBuilder out = new StringBuilder(bytes.length * 2);
         for (byte b : bytes) {
             out.append(Character.forDigit((b >> 4) & 0xf, 16));
@@ -484,201 +404,108 @@ class ConformanceCasesTest {
         return out.toString();
     }
 
-    // --------------------------------------------------------------- normalize
+    // ------------------------------------------------------------- expectations
 
-    /** The receipt model onto the shared field names of cases.json. */
-    private static Map<String, Object> normalize(AppReceipt receipt) {
-        Map<String, Object> out = new LinkedHashMap<String, Object>();
-        out.put("receiptType", receipt.receiptType());
-        out.put("bundleId", receipt.bundleId());
-        out.put("appVersion", receipt.appVersion());
-        out.put("originalAppVersion", receipt.originalAppVersion());
-        out.put("creationDate", iso(receipt.creationDate()));
-        out.put("originalPurchaseDate", iso(receipt.originalPurchaseDate()));
-        out.put("expirationDate", iso(receipt.expirationDate()));
-        out.put("appItemId", receipt.appItemId());
-        out.put("downloadId", receipt.downloadId());
-        out.put("versionExternalIdentifier", receipt.versionExternalIdentifier());
-        out.put("opaqueValueHex", hex(receipt.opaqueValue()));
-        out.put("sha1HashHex", hex(receipt.sha1Hash()));
-        List<Object> purchases = new ArrayList<Object>();
-        for (InAppPurchase purchase : receipt.inAppPurchases()) {
-            purchases.add(normalize(purchase));
+    private static JsonNode parse(String id, String json) {
+        try {
+            // Strict: trailing content after the value fails, which a plain
+            // readTree would ignore, so a port that appended to its output
+            // cannot pass.
+            return MAPPER.reader()
+                    .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+                    .readTree(json);
+        } catch (Exception e) {
+            throw new AssertionError(id + ": the library returned JSON that does not parse: " + json, e);
         }
-        out.put("inAppPurchases", purchases);
-        out.put("unknownAttributes", unknownAttributes(receipt.unknownAttributes()));
-        return out;
     }
 
-    private static Map<String, Object> normalize(InAppPurchase purchase) {
-        Map<String, Object> out = new LinkedHashMap<String, Object>();
-        out.put("quantity", purchase.quantity());
-        out.put("productId", purchase.productId());
-        out.put("transactionId", purchase.transactionId());
-        out.put("originalTransactionId", purchase.originalTransactionId());
-        out.put("purchaseDate", iso(purchase.purchaseDate()));
-        out.put("originalPurchaseDate", iso(purchase.originalPurchaseDate()));
-        out.put("expiresDate", iso(purchase.expiresDate()));
-        out.put("cancellationDate", iso(purchase.cancellationDate()));
-        out.put("webOrderLineItemId", purchase.webOrderLineItemId());
-        out.put("isTrialPeriod", purchase.isTrialPeriod());
-        out.put("isInIntroOfferPeriod", purchase.isInIntroOfferPeriod());
-        out.put("unknownAttributes", unknownAttributes(purchase.unknownAttributes()));
-        return out;
-    }
-
-    /** Raw attribute values become lowercase hex, keyed by decimal type. */
-    private static Map<String, Object> unknownAttributes(Map<Integer, List<byte[]>> attributes) {
-        Map<String, Object> out = new LinkedHashMap<String, Object>();
-        for (Map.Entry<Integer, List<byte[]>> entry : attributes.entrySet()) {
-            List<Object> values = new ArrayList<Object>();
-            for (byte[] value : entry.getValue()) {
-                values.add(hex(value));
+    /** {@code fields} and {@code lengths}: only the listed pointers are pinned. */
+    private static void check(String id, JsonNode expected, JsonNode actual) {
+        if (expected.has("fields")) {
+            Iterator<Map.Entry<String, JsonNode>> fields =
+                    expected.get("fields").fields();
+            while (fields.hasNext()) {
+                Map.Entry<String, JsonNode> field = fields.next();
+                String where = id + " " + field.getKey();
+                assertValue(where, field.getValue(), resolve(where, actual, field.getKey()));
             }
-            out.put(String.valueOf(entry.getKey()), values);
         }
-        return out;
-    }
-
-    private static String iso(Instant instant) {
-        return instant == null ? null : instant.toString();
-    }
-
-    // ------------------------------------------------------------- assertions
-
-    /** Subset semantics: only the listed fields are pinned, extras are ignored. */
-    private static void assertFields(String id, JsonNode fields, Object result) {
-        Iterator<Map.Entry<String, JsonNode>> entries = fields.fields();
-        while (entries.hasNext()) {
-            Map.Entry<String, JsonNode> field = entries.next();
-            String path = id + " " + field.getKey();
-            assertValue(path, field.getValue(), resolve(result, field.getKey(), path));
+        if (expected.has("lengths")) {
+            Iterator<Map.Entry<String, JsonNode>> lengths =
+                    expected.get("lengths").fields();
+            while (lengths.hasNext()) {
+                Map.Entry<String, JsonNode> length = lengths.next();
+                String where = id + " " + length.getKey();
+                JsonNode array = resolve(where, actual, length.getKey());
+                assertTrue(array != null && array.isArray(), where + ": expected an array but got " + array);
+                assertEquals(length.getValue().asInt(), array.size(), where + " length");
+            }
         }
     }
 
-    private static void assertValue(String path, JsonNode expected, Object actual) {
+    /** null means absent or JSON null; numbers compare by value, exactly. */
+    private static void assertValue(String where, JsonNode expected, JsonNode actual) {
         if (expected.isNull()) {
-            assertNull(actual, path);
+            assertTrue(actual == null || actual.isNull(), where + ": expected absent or null but got " + actual);
         } else if (expected.isNumber()) {
             assertTrue(
-                    actual instanceof Number,
-                    path + ": expected the number " + expected + " but got " + describe(actual));
+                    actual != null && actual.isNumber(),
+                    where + ": expected the number " + expected + " but got " + actual);
             assertTrue(
-                    expected.decimalValue().compareTo(new BigDecimal(actual.toString())) == 0,
-                    path + ": expected " + expected + " but got " + actual);
+                    expected.decimalValue().compareTo(actual.decimalValue()) == 0,
+                    where + ": expected " + expected + " but got " + actual);
         } else if (expected.isBoolean()) {
-            assertEquals(Boolean.valueOf(expected.booleanValue()), actual, path);
+            assertTrue(
+                    actual != null && actual.isBoolean() && actual.booleanValue() == expected.booleanValue(),
+                    where + ": expected " + expected + " but got " + actual);
         } else {
-            assertEquals(expected.textValue(), actual, path);
+            assertTrue(
+                    actual != null && actual.isTextual(),
+                    where + ": expected the string " + expected + " but got " + actual);
+            assertEquals(expected.textValue(), actual.textValue(), where);
         }
     }
 
-    private static String describe(Object value) {
-        return value == null ? "null" : value + " (" + value.getClass().getSimpleName() + ")";
-    }
-
-    // ------------------------------------------------------- field-path syntax
-    // "a.b" navigates; "x.length" is a collection size; "list[k=v]" selects the
-    // element whose k equals v; "map[9999][0]" indexes a keyed list.
-
-    private static Object resolve(Object root, String field, String path) {
-        Object current = root;
-        for (String segment : segments(field)) {
-            if ("length".equals(segment)) {
-                current = length(current, path);
-                continue;
+    /**
+     * An RFC 6901 pointer, plus the one extension: a token {@code [key=value]}
+     * selects the single array element whose member {@code key} is the JSON
+     * string {@code value}, and fails unless exactly one matches. Null when
+     * the pointer leads nowhere.
+     */
+    private static JsonNode resolve(String where, JsonNode root, String pointer) {
+        if (!pointer.startsWith("/")) {
+            throw new IllegalStateException(where + ": harness error: not a pointer");
+        }
+        JsonNode current = root;
+        for (String raw : pointer.substring(1).split("/", -1)) {
+            if (current == null) {
+                return null;
             }
-            int bracket = segment.indexOf('[');
-            current = member(current, bracket < 0 ? segment : segment.substring(0, bracket), path);
-            if (bracket >= 0) {
-                for (String selector : selectors(segment.substring(bracket), path)) {
-                    current = select(current, selector, path);
+            String token = raw.replace("~1", "/").replace("~0", "~");
+            if (raw.startsWith("[") && raw.endsWith("]") && raw.indexOf('=') > 0) {
+                int equals = raw.indexOf('=');
+                String key = raw.substring(1, equals);
+                String value = raw.substring(equals + 1, raw.length() - 1);
+                assertTrue(current.isArray(), where + ": " + raw + " needs an array, got " + current);
+                JsonNode match = null;
+                int matches = 0;
+                for (JsonNode element : current) {
+                    JsonNode member = element.get(key);
+                    if (member != null && member.isTextual() && value.equals(member.textValue())) {
+                        match = element;
+                        matches++;
+                    }
                 }
+                assertEquals(1, matches, where + ": elements matching " + raw);
+                current = match;
+            } else if (current.isArray()) {
+                current = token.matches("0|[1-9][0-9]*") ? current.get(Integer.parseInt(token)) : null;
+            } else if (current.isObject()) {
+                current = current.get(token);
+            } else {
+                return null;
             }
         }
         return current;
-    }
-
-    /** Splits on dots outside brackets — selector values contain dots. */
-    private static List<String> segments(String path) {
-        List<String> segments = new ArrayList<String>();
-        int depth = 0;
-        StringBuilder segment = new StringBuilder();
-        for (int i = 0; i < path.length(); i++) {
-            char c = path.charAt(i);
-            if (c == '[') {
-                depth++;
-            } else if (c == ']') {
-                depth--;
-            } else if (c == '.' && depth == 0) {
-                segments.add(segment.toString());
-                segment.setLength(0);
-                continue;
-            }
-            segment.append(c);
-        }
-        segments.add(segment.toString());
-        return segments;
-    }
-
-    private static List<String> selectors(String brackets, String path) {
-        List<String> selectors = new ArrayList<String>();
-        int i = 0;
-        while (i < brackets.length()) {
-            int close = brackets.indexOf(']', i);
-            if (brackets.charAt(i) != '[' || close < 0) {
-                throw new IllegalStateException("unparseable field path " + path);
-            }
-            selectors.add(brackets.substring(i + 1, close));
-            i = close + 1;
-        }
-        return selectors;
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Object member(Object current, String name, String path) {
-        if (current == null) {
-            return null;
-        }
-        if (current instanceof Map) {
-            return ((Map<String, Object>) current).get(name);
-        }
-        throw new IllegalStateException(path + ": cannot read '" + name + "' of " + describe(current));
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Object select(Object current, String selector, String path) {
-        int equals = selector.indexOf('=');
-        if (equals >= 0) {
-            String key = selector.substring(0, equals);
-            String value = selector.substring(equals + 1);
-            if (!(current instanceof List)) {
-                throw new IllegalStateException(path + ": [" + selector + "] needs a list, got " + describe(current));
-            }
-            for (Object element : (List<Object>) current) {
-                Object candidate = member(element, key, path);
-                if (candidate != null && value.equals(candidate.toString())) {
-                    return element;
-                }
-            }
-            throw new IllegalStateException(path + ": no element with " + selector);
-        }
-        if (current instanceof List) {
-            return ((List<Object>) current).get(Integer.parseInt(selector));
-        }
-        if (current instanceof Map) {
-            return ((Map<String, Object>) current).get(selector);
-        }
-        throw new IllegalStateException(path + ": [" + selector + "] needs a list or map, got " + describe(current));
-    }
-
-    private static Object length(Object current, String path) {
-        if (current instanceof Collection) {
-            return Integer.valueOf(((Collection<?>) current).size());
-        }
-        if (current instanceof Map) {
-            return Integer.valueOf(((Map<?, ?>) current).size());
-        }
-        throw new IllegalStateException(path + ": .length needs a collection, got " + describe(current));
     }
 }

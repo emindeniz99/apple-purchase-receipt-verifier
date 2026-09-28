@@ -22,10 +22,14 @@ TEST_ONE_INPUT = lambda do |data|
   next nil unless parsed_outcome == :accepted
 
   FuzzSupport.call("Cms::Parsed accessors", APRV::VerificationError) do
+    parsed.content_type&.bytesize
     parsed.content&.bytesize
     parsed.certificate_ders.each(&:bytesize)
-    info = parsed.signer_info
-    [info.issuer_der&.bytesize, info.serial, info.digest_oid, info.digest_name]
+    parsed.signer_infos.each do |info|
+      [info.issuer_der&.bytesize, info.serial, info.digest_oid, info.digest_name,
+       info.signature_algorithm_oid, info.content_type_attribute, info.message_digest_attribute,
+       info.signed_attrs_duplicate_attribute, info.signed_attrs_incomplete?]
+    end
   end
   nil
 end

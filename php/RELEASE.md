@@ -13,7 +13,7 @@ current and this file no longer repeats it.
 Blocked on the Packagist submission rather than on the layout, but the job
 shape is settled. It is the only check that tests what a consumer actually
 receives — the same gap that once shipped two empty npm releases. Run it on
-the **floor**, 8.1, because that is the leg most likely to break on a
+the **floor**, 8.2, because that is the leg most likely to break on a
 published artifact and the claim least exercised anywhere else.
 
 ```yaml
@@ -25,7 +25,7 @@ published artifact and the claim least exercised anywhere else.
     steps:
       - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
         with:
-          php-version: "8.1"
+          php-version: "8.2"
           extensions: openssl, json
           coverage: none
       - name: poll Packagist for the version, then install it outside any checkout

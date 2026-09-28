@@ -1,6 +1,7 @@
 package applereceipt_test
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -12,125 +13,100 @@ import (
 // stops them compiling, and `go test` runs the ones with an Output
 // comment. They are also what pkg.go.dev shows.
 
-func ExampleJWSVerifier_VerifyTransaction() {
-	verifier, err := applereceipt.NewJWSVerifier(applereceipt.JWSVerifierOptions{
-		TrustedRoots: applereceipt.AppleJWSRoots(),
-		BundleID:     "com.example.app",
-		// Include Sandbox: App Review runs production builds against it,
-		// so a Production-only accept set rejects purchases during review.
-		AcceptedEnvironments: []applereceipt.Environment{
-			applereceipt.EnvironmentProduction,
-			applereceipt.EnvironmentSandbox,
-		},
-	})
+func ExampleVerifier_VerifySignedData() {
+	verifier, err := applereceipt.NewVerifier(applereceipt.DefaultConfig())
 	if err != nil {
 		panic(err) // a configuration mistake, not a verification verdict
 	}
 
-	payload, err := verifier.VerifyTransaction(signedTransactionFromTheClient)
+	payload, err := verifier.VerifySignedData(signedTransactionFromTheClient)
 	if err != nil {
 		return // reject the purchase; see Example_errorHandling
 	}
-	// Entitlement is your rule, read off the signed fields. A grace period,
-	// an upgrade or a refund after signing needs renewal info, App Store
-	// Server Notifications or the App Store Server API.
-	expired := payload.ExpiresDate != nil && *payload.ExpiresDate <= time.Now().UnixMilli()
-	if payload.RevocationDate == nil && !expired {
-		grantEntitlement(payload.ProductID)
+	// No typed JWS models ship with this library: parse JSON() with the
+	// JSON library of your choice, into a struct declaring the claims you
+	// use. Bundle id, product id, environment and every other business
+	// rule is the caller's decision: this call answers only "did Apple
+	// sign this".
+	var transaction struct {
+		ProductID      string `json:"productId"`
+		ExpiresDate    *int64 `json:"expiresDate"`
+		RevocationDate *int64 `json:"revocationDate"`
+	}
+	if err := json.Unmarshal([]byte(payload.JSON()), &transaction); err != nil {
+		return
+	}
+	expired := transaction.ExpiresDate != nil && *transaction.ExpiresDate <= time.Now().UnixMilli()
+	if transaction.RevocationDate == nil && !expired {
+		grantEntitlement(transaction.ProductID)
 	}
 }
 
-func ExampleReceiptVerifier_Verify() {
-	verifier, err := applereceipt.NewReceiptVerifier(applereceipt.ReceiptVerifierOptions{
-		TrustedRoots: applereceipt.AppleReceiptRoots(),
-		BundleID:     "com.example.app",
-	})
+func ExampleVerifier_VerifyReceipt() {
+	verifier, err := applereceipt.NewVerifier(applereceipt.DefaultConfig())
 	if err != nil {
 		panic(err)
 	}
 
-	// The base64 blob is what a client sends; Verify takes the DER form
-	// and VerifyBase64 the transport form.
-	receipt, err := verifier.VerifyBase64(base64ReceiptFromTheClient)
+	// The base64 blob is what a client sends.
+	receipt, err := verifier.VerifyReceipt(base64ReceiptFromTheClient)
 	if err != nil {
 		return
 	}
-	for _, purchase := range receipt.InAppPurchases {
-		grantEntitlement(purchase.ProductID)
+	for _, purchase := range receipt.InApp {
+		if purchase.ProductID != nil {
+			grantEntitlement(*purchase.ProductID)
+		}
 	}
 }
 
-func ExampleReceiptVerifier_VerifyWithDeviceGUID() {
-	verifier, err := applereceipt.NewReceiptVerifier(applereceipt.ReceiptVerifierOptions{
-		TrustedRoots: applereceipt.AppleReceiptRoots(),
-		BundleID:     "com.example.app",
-	})
-	if err != nil {
-		panic(err)
-	}
-	// The device's GUID: the raw bytes of identifierForVendor on iOS,
-	// iPadOS, tvOS and watchOS, including an iOS app running on an Apple
-	// silicon Mac, or the primary network interface's MAC address from
-	// copy_mac_address on macOS and Mac Catalyst. Optional: a server
-	// does not always have it, and it binds the receipt to one device.
-	guid := []byte{0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
-		0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00}
-	if _, err := verifier.VerifyWithDeviceGUID(receiptDER, guid); err != nil {
-		return
-	}
-}
-
-func ExampleVerifyReceiptEndpoint_VerifyReceiptJSON() {
-	endpoint, err := applereceipt.NewVerifyReceiptEndpoint(applereceipt.VerifyReceiptEndpointOptions{
-		TrustedRoots: applereceipt.AppleReceiptRoots(),
-		Environment:  applereceipt.EnvironmentProduction,
-	})
+func ExampleVerifier_VerifyReceiptEndpoint() {
+	verifier, err := applereceipt.NewVerifier(applereceipt.DefaultConfig())
 	if err != nil {
 		panic(err)
 	}
 	// A drop-in for a POST to Apple's deprecated verifyReceipt: the same
 	// request body in, the same response body out. No http.Handler ships
 	// with this library — wire it into your own mux.
-	response := endpoint.VerifyReceiptJSON(requestBodyFromTheClient)
+	response := verifier.VerifyReceiptEndpoint(applereceipt.EnvironmentProduction, requestBodyFromTheClient)
 	_ = response
 }
 
 func Example_errorHandling() {
-	err := &applereceipt.VerificationError{
-		Reason: applereceipt.ReasonWrongEnvironment,
-		Detail: "payload environment is not in the accepted set",
+	err := &applereceipt.Failure{
+		Reason:  applereceipt.ReasonUntrustedChain,
+		Message: "chain does not reach a pinned root",
 	}
 
 	// errors.As is the canonical read: it carries the reason, the
-	// log-safe detail, and any wrapped cause.
-	var verr *applereceipt.VerificationError
-	if errors.As(error(err), &verr) {
-		switch verr.Reason {
-		case applereceipt.ReasonWrongEnvironment:
-			fmt.Println("retry against the other environment")
-		case applereceipt.ReasonInvalidChain, applereceipt.ReasonInvalidSignature:
+	// log-safe message, and any wrapped cause.
+	var failure *applereceipt.Failure
+	if errors.As(error(err), &failure) {
+		switch failure.Reason {
+		case applereceipt.ReasonUntrustedChain, applereceipt.ReasonInvalidSignature:
 			fmt.Println("alert: this is not an Apple-signed payload")
 		default:
-			fmt.Println("reject:", verr.Reason)
+			fmt.Println("reject:", failure.Reason)
 		}
 	}
 
 	// errors.Is on a bare Reason is sugar for the single-reason case.
-	if errors.Is(error(err), applereceipt.ReasonWrongEnvironment) {
+	if errors.Is(error(err), applereceipt.ReasonUntrustedChain) {
 		fmt.Println("same verdict, read the short way")
 	}
 
 	// Output:
-	// retry against the other environment
+	// alert: this is not an Apple-signed payload
 	// same verdict, read the short way
 }
 
 func Example_customTrustAnchors() {
-	// Anchors always come from the caller. AppleJWSRoots() is a
-	// convenience, not a default: an integrator running their own root
-	// rotation pipeline passes their own certificates, and nothing in
-	// this library ever consults the operating system trust store.
-	anchors := applereceipt.AppleReceiptRoots()
+	// Anchors always come from the Config. AppleRoots() is what
+	// DefaultConfig uses, not the only option: an integrator running
+	// their own root rotation pipeline passes their own certificates via
+	// ConfigOptions.Roots, and nothing in this library ever consults the
+	// operating system trust store.
+	anchors := applereceipt.AppleRoots()
 	fmt.Println(len(anchors), "pinned Apple roots")
 	for _, anchor := range anchors {
 		fmt.Println(anchor.Subject.CommonName)
@@ -148,8 +124,7 @@ func Example_customTrustAnchors() {
 var (
 	signedTransactionFromTheClient = ""
 	base64ReceiptFromTheClient     = ""
-	receiptDER                     []byte
-	requestBodyFromTheClient       []byte
+	requestBodyFromTheClient       = ""
 )
 
 func grantEntitlement(productID string) { _ = productID }

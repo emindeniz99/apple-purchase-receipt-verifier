@@ -12,25 +12,18 @@ class ApiShapeTest < Minitest::Test
     [TestSupport.fixture_certificate("receipt-root")]
   end
 
-  def test_the_three_entry_points_and_the_free_function_exist
-    assert_kind_of Class, APRV::JwsVerifier
-    assert_kind_of Class, APRV::ReceiptVerifier
-    assert_kind_of Class, APRV::VerifyReceiptEndpoint
-    assert_respond_to APRV, :verify_receipt_core
-    assert_respond_to APRV, :apple_jws_roots
-    assert_respond_to APRV, :apple_receipt_roots
+  def test_the_public_classes_exist
+    [APRV::Config, APRV::Config::Builder, APRV::Verifier, APRV::VerificationResult, APRV::Failure,
+     APRV::ReceiptPayload, APRV::InAppPurchase, APRV::JsonPayload,
+     APRV::VerificationError].each do |klass|
+      assert_kind_of Class, klass
+    end
   end
 
-  def test_the_operations_are_the_six_the_other_ports_ship
-    assert_respond_to APRV::JwsVerifier.instance_method(:verify_transaction), :arity
-    %i[verify_transaction verify_app_transaction verify_raw].each do |name|
-      assert_includes APRV::JwsVerifier.public_instance_methods, name
-    end
-    %i[verify verify_der verify_base64].each do |name|
-      assert_includes APRV::ReceiptVerifier.public_instance_methods, name
-    end
-    %i[verify_receipt_result verify_receipt_data verify_receipt_json].each do |name|
-      assert_includes APRV::VerifyReceiptEndpoint.public_instance_methods, name
+  # docs/design/0.7-api.md: one verifier, three methods.
+  def test_the_three_entry_points_exist
+    %i[verify_receipt verify_signed_data verify_receipt_endpoint].each do |name|
+      assert_includes APRV::Verifier.public_instance_methods, name
     end
   end
 
@@ -41,34 +34,22 @@ class ApiShapeTest < Minitest::Test
     schema = TestSupport.cases_schema
     expected = schema["$defs"]["reason"]["enum"]
     assert_equal expected.sort, APRV::Reason::ALL.map(&:to_s).sort
-    assert_equal 11, APRV::Reason::ALL.size
+    assert_equal 8, APRV::Reason::ALL.size
     APRV::Reason::ALL.each { |reason| assert_kind_of Symbol, reason }
   end
 
-  # The endpoint's two extra reasons stay out of ALL and out of the shared
-  # thrown-reason schema: ALL is what a VerificationError can carry, and no
-  # verifier raises either. INTERNAL_ERROR is raised (signed content that
-  # cannot be read), so it is in both.
-  def test_the_endpoint_only_reasons_are_outside_the_verifier_vocabulary
-    %i[MALFORMED_REQUEST REQUEST_TOO_LARGE].each do |reason|
-      assert_equal reason, APRV::Reason.const_get(reason)
-      refute_includes APRV::Reason::ALL, reason
-      refute_includes TestSupport.cases_schema["$defs"]["reason"]["enum"], reason.to_s
-    end
-    assert_includes APRV::Reason::ALL, APRV::Reason::INTERNAL_ERROR
-    assert_includes TestSupport.cases_schema["$defs"]["reason"]["enum"], "INTERNAL_ERROR"
-  end
-
-  def test_the_environment_vocabulary_equals_the_shared_schema
-    schema = TestSupport.cases_schema
-    expected = schema["$defs"]["environment"]["enum"]
-    assert_equal expected.sort, APRV::Environment::ALL.sort
+  # 0.7 has no bundle id, no accepted-environment set: two environments,
+  # Apple's own two verifyReceipt URLs, nothing else.
+  def test_the_environment_vocabulary_is_production_and_sandbox_only
+    assert_equal %w[PRODUCTION SANDBOX], APRV::Environment::ALL.sort
+    assert_equal "PRODUCTION", APRV::Environment::PRODUCTION
+    assert_equal "SANDBOX", APRV::Environment::SANDBOX
   end
 
   def test_a_verification_error_carries_its_reason_as_data_and_in_its_message
-    error = APRV::VerificationError.new(APRV::Reason::INVALID_CHAIN, "detail")
-    assert_equal :INVALID_CHAIN, error.reason
-    assert_equal "INVALID_CHAIN: detail", error.message
+    error = APRV::VerificationError.new(APRV::Reason::UNTRUSTED_CHAIN, "detail")
+    assert_equal :UNTRUSTED_CHAIN, error.reason
+    assert_equal "detail", error.message
     assert_kind_of StandardError, error
   end
 
@@ -76,28 +57,15 @@ class ApiShapeTest < Minitest::Test
   # caller must not be able to catch a typo as though a receipt were forged.
   def test_misconfiguration_raises_argument_error_never_verification_error
     bad_constructions = [
-      -> { APRV::JwsVerifier.new(trusted_roots: [], bundle_id: "a", accepted_environments: ["Sandbox"]) },
-      -> { APRV::JwsVerifier.new(trusted_roots: "x", bundle_id: "a", accepted_environments: ["Sandbox"]) },
+      -> { APRV::Config.new(roots: "x") },
+      -> { APRV::Config.new(roots: [42]) },
+      -> { APRV::Config.new(clock: "not callable") },
+      -> { APRV::Verifier.create("not a config") },
+      -> { APRV::Verifier.create(APRV::Config.new(roots: [])) },
       lambda {
-        APRV::JwsVerifier.new(trusted_roots: receipt_roots, bundle_id: "",
-                              accepted_environments: ["Sandbox"])
-      },
-      lambda {
-        APRV::JwsVerifier.new(trusted_roots: receipt_roots, bundle_id: nil,
-                              accepted_environments: ["Sandbox"])
-      },
-      -> { APRV::JwsVerifier.new(trusted_roots: receipt_roots, bundle_id: "a", accepted_environments: []) },
-      lambda {
-        APRV::JwsVerifier.new(trusted_roots: receipt_roots, bundle_id: "a", accepted_environments: ["Nope"])
-      },
-      lambda {
-        APRV::JwsVerifier.new(trusted_roots: receipt_roots, bundle_id: "a", accepted_environments: ["Sandbox"],
-                              app_apple_id: "1")
-      },
-      -> { APRV::ReceiptVerifier.new(trusted_roots: [], bundle_id: "a") },
-      -> { APRV::ReceiptVerifier.new(trusted_roots: receipt_roots, bundle_id: nil) },
-      -> { APRV::VerifyReceiptEndpoint.new(trusted_roots: receipt_roots, environment: "Xcode") },
-      -> { APRV.verify_receipt_core("x", trusted_roots: []) }
+        APRV::Verifier.create(APRV::Config.new(roots: receipt_roots))
+                      .verify_receipt_endpoint("Sandbox", "{}")
+      }
     ]
     bad_constructions.each_with_index do |construction, index|
       error = assert_raises(ArgumentError, "construction #{index}") { construction.call }
@@ -105,28 +73,30 @@ class ApiShapeTest < Minitest::Test
     end
   end
 
-  # Freshness is the caller's decision (PLAN.md D5), so no option for it exists.
-  def test_the_jws_verifier_has_no_freshness_option
-    parameters = APRV::JwsVerifier.instance_method(:initialize).parameters.map(&:last)
-    refute_includes parameters, :max_signed_age_seconds
-    refute_includes parameters, :clock
+  # Freshness and any per-call clock override are gone: the clock lives on
+  # Config, read at most once per call, never a per-call parameter.
+  def test_verify_receipt_and_verify_signed_data_take_no_clock_parameter
+    %i[verify_receipt verify_signed_data].each do |name|
+      parameters = APRV::Verifier.instance_method(name).parameters.map(&:last)
+      refute_includes parameters, :clock
+      refute_includes parameters, :now
+    end
   end
 
-  def test_verifier_instances_are_frozen
-    jws = APRV::JwsVerifier.new(trusted_roots: receipt_roots, bundle_id: "a",
-                                accepted_environments: ["Sandbox"])
-    receipt = APRV::ReceiptVerifier.new(trusted_roots: receipt_roots, bundle_id: "a")
-    endpoint = APRV::VerifyReceiptEndpoint.new(trusted_roots: receipt_roots, environment: "Sandbox")
-    [jws, receipt, endpoint].each { |instance| assert_predicate instance, :frozen? }
+  def test_config_and_verifier_instances_are_frozen
+    config = APRV::Config.new(roots: receipt_roots)
+    verifier = APRV::Verifier.create(config)
+    assert_predicate config, :frozen?
+    assert_predicate verifier, :frozen?
   end
 
   # The "thread-safe once constructed" claim the other ports make in a doc
   # comment and never test.
   def test_one_verifier_is_usable_from_many_threads_at_once
-    verifier = APRV::ReceiptVerifier.new(trusted_roots: receipt_roots, bundle_id: "com.example.app")
-    der = TestSupport.fixture_bytes("receipt")
-    results = 8.times.map do
-      Thread.new { verifier.verify_der(der).in_app_purchases.map(&:transaction_id) }
+    verifier = APRV::Verifier.create(APRV::Config.new(roots: receipt_roots))
+    base64 = [TestSupport.fixture_bytes("receipt")].pack("m0")
+    results = Array.new(8) do
+      Thread.new { verifier.verify_receipt(base64).payload.in_app.map(&:transaction_id) }
     end.map(&:value)
     assert_equal 8, results.size
     assert_equal 1, results.uniq.size
@@ -134,12 +104,49 @@ class ApiShapeTest < Minitest::Test
   end
 
   def test_returned_value_objects_are_frozen
-    receipt = APRV.verify_receipt_core(TestSupport.fixture_bytes("receipt"),
-                                       trusted_roots: receipt_roots)
+    verifier = APRV::Verifier.create(APRV::Config.new(roots: receipt_roots))
+    base64 = [TestSupport.fixture_bytes("receipt")].pack("m0")
+    result = verifier.verify_receipt(base64)
+    assert_predicate result, :frozen?
+    receipt = result.payload
     assert_predicate receipt, :frozen?
-    assert_predicate receipt.in_app_purchases, :frozen?
-    assert_predicate receipt.in_app_purchases.first, :frozen?
+    assert_predicate receipt.in_app, :frozen?
+    assert_predicate receipt.in_app.first, :frozen?
     assert_predicate receipt.unknown_attributes, :frozen?
+  end
+
+  # A caller reads verified? before trusting anything, then payload or
+  # failure. That only works if exactly one of the two is set for every
+  # outcome the public methods can produce.
+  def test_a_result_carries_exactly_one_of_payload_and_failure
+    verifier = APRV::Verifier.create(APRV::Config.new(roots: receipt_roots))
+    results = {
+      "verified" => verifier.verify_receipt([TestSupport.fixture_bytes("receipt")].pack("m0")),
+      "malformed" => verifier.verify_receipt("AQIDBA=="),
+      "untrusted chain" => verifier.verify_receipt([TestSupport.fixture_bytes("receipt-foreign")].pack("m0")),
+      "malformed jws" => verifier.verify_signed_data("a.b")
+    }
+    results.each do |label, result|
+      refute_equal result.payload.nil?, result.failure.nil?, "#{label}: exactly one of payload and failure"
+      assert_equal !result.payload.nil?, result.verified?, label
+      assert_predicate result, :frozen?, label
+    end
+    assert_predicate results["verified"], :verified?
+    assert_equal APRV::Reason::MALFORMED, results["malformed"].failure.reason
+    assert_equal APRV::Reason::UNTRUSTED_CHAIN, results["untrusted chain"].failure.reason
+    assert_equal APRV::Reason::MALFORMED, results["malformed jws"].failure.reason
+  end
+
+  # A Ruby String can carry bytes that are not valid in its encoding. The
+  # public methods must treat that as malformed input, not raise on it.
+  def test_input_that_is_not_valid_utf8_is_malformed_not_a_raise
+    verifier = APRV::Verifier.create(APRV::Config.new(roots: receipt_roots))
+    text = "QU\xffD".b
+    assert_equal APRV::Reason::MALFORMED, verifier.verify_receipt(text).failure.reason
+    assert_equal APRV::Reason::MALFORMED, verifier.verify_receipt(+"QU\xffD").failure.reason
+    assert_equal APRV::Reason::MALFORMED, verifier.verify_signed_data(+"a\xff.b.c").failure.reason
+    body = +"{\"receipt-data\":\"QU\xffD\"}"
+    assert_equal 21_002, JSON.parse(verifier.verify_receipt_endpoint(APRV::Environment::SANDBOX, body))["status"]
   end
 
   def test_the_dashed_require_path_works_too

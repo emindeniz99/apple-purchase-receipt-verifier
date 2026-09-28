@@ -5,9 +5,9 @@ using Xunit;
 namespace ApplePurchaseReceiptVerifier.Tests;
 
 /// <summary>
-/// The spellings <c>ReceiptVerifier.DecodeBase64</c> and the x5c decoder must
+/// The spellings <c>ReceiptVerifierCore.DecodeBase64</c> and the x5c decoder must
 /// accept and refuse are the decodeBase64 groups of <c>fixtures/cases.json</c>,
-/// which <see cref="Conformance"/> runs against both. What stays here is the
+/// which <see cref="Conformance070"/> runs against both. What stays here is the
 /// one thing a shared vector cannot say: why the check in front of
 /// <c>Convert.FromBase64String</c> exists.
 /// </summary>

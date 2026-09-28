@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-# ReceiptVerifier#verify_base64 — the string a client actually sends, through
-# the receipt-base64 rule (canonical standard base64 only: alphabet, padding
+# Verifier#verify_receipt — the string a client actually sends, through the
+# receipt-base64 rule (canonical standard base64 only: alphabet, padding
 # position and length) and then the whole DER path.
 #
 # Seeded from the receipt-b64 fixtures, the public receipts and the Xcode
@@ -17,17 +17,14 @@ require_relative "../support"
 
 APRV = FuzzSupport::APRV
 
-ROOTS = (APRV.apple_receipt_roots +
-         [FuzzSupport.fixture_certificate("generated/receipt-root.der")]).freeze
-VERIFIER = APRV::ReceiptVerifier.new(trusted_roots: ROOTS, bundle_id: "dev.bonzer.weeka.app")
+ROOTS = (APRV::Config.defaults.roots +
+         [FuzzSupport.fixture_certificate("generated-0.7/receipt-root.der")]).freeze
+VERIFIER = APRV::Verifier.create(APRV::Config.new(roots: ROOTS))
 
 TEST_ONE_INPUT = lambda do |data|
-  FuzzSupport.call("ReceiptVerifier#verify_base64", APRV::VerificationError) do
-    VERIFIER.verify_base64(data)
-  end
-  # #verify is the sniffing entry point: DER or base64, told apart by the
-  # first byte. Fuzzing it as well covers the branch verify_base64 skips.
-  FuzzSupport.call("ReceiptVerifier#verify", APRV::VerificationError) { VERIFIER.verify(data) }
+  # verify_receipt never raises: a VerificationResult carries the verdict.
+  # `allowed` is NoError (nothing may escape) rather than VerificationError.
+  FuzzSupport.call("Verifier#verify_receipt", FuzzSupport::NoError) { VERIFIER.verify_receipt(data) }
   nil
 end
 

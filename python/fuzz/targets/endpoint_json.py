@@ -1,6 +1,6 @@
-"""``VerifyReceiptEndpoint.verify_receipt_json``, the one entry point that
-takes a request body rather than a receipt: JSON parse, ``receipt-data``
-extraction, the receipt-base64 rule, then the whole DER path.
+"""``Verifier.verify_receipt_endpoint``, the one entry point that takes a
+request body rather than a receipt: JSON parse, ``receipt-data`` extraction,
+the receipt-base64 rule, then the whole DER path.
 
 Its documented contract is stronger than the other targets' — it never raises
 at all — so that is what is asserted: any body, any bytes, gets a JSON object
@@ -9,7 +9,7 @@ with a numeric ``status`` back.
 
 import json
 
-from harness import ENDPOINT, InvariantViolation, as_text, run
+from harness import ENDPOINT_ENVIRONMENT, ENDPOINT_VERIFIER, InvariantViolation, as_text, run
 
 
 def one_input(data: bytes) -> None:
@@ -17,10 +17,10 @@ def one_input(data: bytes) -> None:
     if body is None:
         return
     try:
-        response = ENDPOINT.verify_receipt_json(body)
+        response = ENDPOINT_VERIFIER.verify_receipt_endpoint(ENDPOINT_ENVIRONMENT, body)
     except Exception as error:
         raise InvariantViolation(
-            f"the endpoint raised {type(error).__name__}: {error}, "
+            f"verify_receipt_endpoint raised {type(error).__name__}: {error}, "
             "but it documents that it never raises"
         ) from error
     try:

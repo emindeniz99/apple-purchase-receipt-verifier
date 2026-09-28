@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Tests;
 
-use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Config;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Base64;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Jws\JwsVerifier;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Reason;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\MintedPki;
-use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationException;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -30,36 +29,28 @@ final class Base64Test extends TestCase
     /**
      * The three compact-JWS segments (RFC 7515 §2) reject a trailing
      * out-of-alphabet byte rather than skipping it. None of the three is
-     * malleable any more: garbage appended to the signature segment used to
+     * malleable: garbage appended to the signature segment used to
      * decode-and-ignore its way to an accepted claim; now every one of the
-     * three segments fails closed with `INVALID_JWS_FORMAT`, matching
-     * `fixtures/cases.json`'s `transaction/reject-signature-segment-*`
-     * vectors.
+     * three segments fails closed as MALFORMED.
      */
     public function testCompactJwsSegmentsRejectWhatDecodeWouldHaveTolerated(): void
     {
         $pki = MintedPki::get();
         $jws = $pki->jws(MintedPki::transactionClaims());
-        $verifier = new JwsVerifier([$pki->rootDer], 'com.example.app', [Environment::Sandbox]);
+        $verifier = Verifier::create(Config::builder()->roots([$pki->rootDer])->build());
         [$header, $payload, $signature] = explode('.', $jws);
 
         // Sanity check: the genuine JWS still verifies untouched.
-        self::assertSame(
-            '2000000000000001',
-            $verifier->verifyTransaction($header . '.' . $payload . '.' . $signature)->transactionId,
-        );
+        self::assertTrue($verifier->verifySignedData($header . '.' . $payload . '.' . $signature)->verified());
 
         foreach ([
             'header' => $header . "\x00" . '.' . $payload . '.' . $signature,
             'payload' => $header . '.' . $payload . "\x00" . '.' . $signature,
             'signature' => $header . '.' . $payload . '.' . $signature . "\x00",
         ] as $what => $tampered) {
-            try {
-                $verifier->verifyTransaction($tampered);
-                self::fail("a byte outside the base64url alphabet in the {$what} segment was ACCEPTED");
-            } catch (VerificationException $e) {
-                self::assertSame(Reason::InvalidJwsFormat, $e->reason, "{$what} segment");
-            }
+            $result = $verifier->verifySignedData($tampered);
+            self::assertFalse($result->verified(), "a byte outside the base64url alphabet in the {$what} segment was ACCEPTED");
+            self::assertSame(Reason::Malformed, $result->failure->reason, "{$what} segment");
         }
     }
 
@@ -72,9 +63,8 @@ final class Base64Test extends TestCase
         yield 'impossible length (len % 4 == 1)' => ['QUJDR'];
         yield 'standard-alphabet + is not base64url' => ['+++++++='];
         // 'TR' decodes the same top byte as 'TQ' but its low 2 bits are '01'
-        // rather than the canonical '00' — the noncanonical spelling this
-        // pins is exactly what `fixtures/cases.json`'s
-        // `transaction/reject-signature-segment-noncanonical` exercises.
+        // rather than the canonical '00' — the noncanonical spelling that
+        // matters wherever a signature segment is compared byte for byte.
         yield 'noncanonical final character' => ['TR'];
     }
 

@@ -5,21 +5,23 @@ declare(strict_types=1);
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Fuzz;
 
 use EminDeniz99\ApplePurchaseReceiptVerifier\AppleRootCerts;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier;
-use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationException;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Config;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
 
 /**
  * The whole legacy-receipt path on DER bytes: CMS walk, payload parse, chain
- * build, signature check.
+ * build, signature check. `Verifier::verifyReceipt()` takes base64 only
+ * (0.7 has no raw-DER entry point — `ReceiptVerifier::verifyReceiptCore()`
+ * is gone), so the fuzzer's bytes are base64-encoded first; that keeps this
+ * target exploring DER-shaped structure the way it always did, rather than
+ * spending most of its budget on the base64 alphabet (that is
+ * `verify-receipt-base64.php`'s job).
  *
- * The invariants are the three the Go port's `FuzzVerifyReceipt` states:
- * nothing escapes but `VerificationException` (an `InvalidArgumentException`
- * is unreachable with a non-empty anchor set, so it is a bug here, and so is
- * a `TypeError` or a warning from a parser reached with an unexpected node
- * shape); and an accepted receipt is accepted BECAUSE of the anchors, proven
- * by re-running it against an unrelated anchor set and requiring failure.
- * Without that third one a fuzzer can find crashes but never "accepts what it
- * should not".
+ * `verifyReceipt()` never throws (docs/design/0.7-api.md §1), so nothing is
+ * an allowed exception. The anchor invariant is unchanged: an accepted
+ * receipt is accepted BECAUSE of the anchors, proven by re-running it
+ * against an unrelated anchor set and requiring failure. Without that a
+ * fuzzer can find crashes but never "accepts what it should not".
  *
  * The anchor set is the pinned Apple roots plus the generated fixture receipt
  * root, so both the shared fixture receipts and the two public Apple receipts
@@ -30,25 +32,21 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationException;
 /** @var \PhpFuzzer\Config $config */
 require __DIR__ . '/../bootstrap.php';
 
-$trusted = FuzzFixtures::withReceiptRoot(AppleRootCerts::receiptRoots());
-$unrelated = FuzzFixtures::jwsRootOnly();
+$trusted = Verifier::create(Config::builder()->roots(FuzzFixtures::withReceiptRoot(AppleRootCerts::pinnedRoots()))->build());
+$unrelated = Verifier::create(Config::builder()->roots(FuzzFixtures::jwsRootOnly())->build());
 
 $config->setMaxLen(16384);
-$config->setAllowedExceptions([VerificationException::class]);
 
 $config->setTarget(static function (string $input) use ($trusted, $unrelated): void {
-    ReceiptVerifier::verifyReceiptCore($input, $trusted);
-
-    // Reached only when the receipt verified. An Error, not an exception:
-    // the fuzzer treats Errors as findings and Exceptions as verdicts.
-    try {
-        ReceiptVerifier::verifyReceiptCore($input, $unrelated);
-    } catch (VerificationException) {
+    $result = $trusted->verifyReceipt(base64_encode($input));
+    if (!$result->verified()) {
         return;
     }
 
-    throw new \Error(
-        'this input verifies against an unrelated anchor set too, '
-        . 'so the anchors are not being enforced',
-    );
+    if ($unrelated->verifyReceipt(base64_encode($input))->verified()) {
+        throw new \Error(
+            'this input verifies against an unrelated anchor set too, '
+            . 'so the anchors are not being enforced',
+        );
+    }
 });

@@ -1,29 +1,33 @@
 /**
- * `ReceiptVerifier.verify` on a string — the form a client actually sends —
- * through the receipt-data base64 rule and then the whole DER path. Seeded
- * from the `receipt-b64` fixtures and the public receipts, so the fuzzer
- * starts from strings that decode rather than from noise it has to grow
- * into base64 by itself.
+ * `Verifier.verifyReceipt` on a string — the form a client actually sends —
+ * through the receipt-data base64 rule and then the whole DER path.
  *
  * Bytes that are not UTF-8 are skipped: the API takes a string, so they
- * could not reach it.
+ * could not reach it. `verifyReceipt` never throws, and never answers
+ * `INTERNAL_ERROR` for input nobody signed: a fuzzer cannot forge a trusted
+ * signature, so that reason can only mean an unexpected library error.
  */
-import { ReceiptVerifier } from '../../dist/index.js';
-import { RECEIPT_ANCHORS, asUtf8, requireTypedError } from '../harness.mjs';
+import { Reason, createVerifier } from '../../dist/index.js';
+import { RECEIPT_CONFIG } from '../harness.mjs';
 
-const verifier = new ReceiptVerifier({
-  trustedRoots: RECEIPT_ANCHORS,
-  bundleId: 'dev.bonzer.weeka.app',
-});
+const verifier = createVerifier(RECEIPT_CONFIG);
+
+const UTF8 = new TextDecoder('utf-8', { fatal: true });
 
 export function fuzz(data) {
-  const text = asUtf8(data);
-  if (text === null) {
+  let text;
+  try {
+    text = UTF8.decode(data);
+  } catch {
     return;
   }
-  try {
-    verifier.verify(text);
-  } catch (error) {
-    requireTypedError(error, 'ReceiptVerifier.verify');
+  const result = verifier.verifyReceipt(text);
+  if (!result.verified && result.failure.reason === Reason.INTERNAL_ERROR) {
+    throw new Error(
+      `verifyReceipt answered INTERNAL_ERROR for fuzz input: ${result.failure.message}`,
+      {
+        cause: result.failure.cause,
+      },
+    );
   }
 }

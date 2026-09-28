@@ -3,22 +3,19 @@ import SwiftASN1
 import XCTest
 @testable import ApplePurchaseReceiptVerifier
 
-// Places where this port and one of java/, node/, python/ had drifted apart.
-// The four implementations are one product, so each of these is a single
-// answer all four owe, and each test below is the pin that keeps this port on
-// it. A test here failing means the ports have started to disagree again, not
-// that a payload changed its mind.
+// Places where this port and another had drifted apart. The nine
+// implementations are one product, so each of these is a single answer all
+// of them owe, and each test below is the pin that keeps this port on it
+// where the shared cases in fixtures/cases.json do not reach.
 
 // MARK: - receipt payload surgery
 
 /// Splices a new payload into a genuine receipt. The fixtures are BER with
 /// indefinite lengths from the CMS SEQUENCE down to the OCTET STRING that
 /// holds the payload, so replacing that one primitive node needs no ancestor
-/// length fixups — the same property the certificate-bag surgery in
-/// VerifierTests relies on. The CMS signature covers a messageDigest over the
-/// payload, so a spliced receipt cannot pass signature verification; a test
-/// about the payload grammar re-signs the spliced payload under
-/// ``TestReceiptPki``, since the full parse runs only after that check.
+/// length fixups. The CMS signature covers the payload, so a test about the
+/// payload grammar re-signs the spliced payload under ``TestReceiptPki``,
+/// since the full parse runs only after that check.
 private enum ReceiptSurgery {
     static func children(_ node: ASN1Node) throws -> [ASN1Node] {
         guard case .constructed(let nodes) = node.content else { throw CocoaError(.formatting) }
@@ -30,32 +27,15 @@ private enum ReceiptSurgery {
         return [UInt8](bytes)
     }
 
-    /// The primitive OCTET STRING carrying the receipt's attribute set:
-    /// contentInfo → [0] → SignedData → encapContentInfo → [0] → OCTET STRING.
-    static func payloadNode(_ receipt: [UInt8]) throws -> ASN1Node {
+    /// The attribute SET inside a receipt: contentInfo → [0] → SignedData →
+    /// encapContentInfo → [0] → OCTET STRING (constructed in these BER
+    /// fixtures, one primitive chunk inside).
+    static func payload(of receipt: [UInt8]) throws -> [UInt8] {
         let contentInfo = try children(try BER.parse(receipt))
         let signedData = try children(try children(contentInfo[1])[0])
         let encap = try children(signedData[2])
-        return try children(try children(encap[1])[0])[0]
+        return try cmsOctetStringValue(try children(encap[1])[0])
     }
-
-    static func payload(of receipt: Data) throws -> [UInt8] {
-        try primitive(try payloadNode([UInt8](receipt)))
-    }
-
-    static func replacingPayload(of receipt: Data, with payload: [UInt8]) throws -> Data {
-        let bytes = [UInt8](receipt)
-        let range = try payloadNode(bytes).encodedBytes
-        var serializer = DER.Serializer()
-        try serializer.serialize(ASN1OctetString(contentBytes: payload[...]))
-        // Explicit Arrays: Swift 6.1 (the CI container) cannot type
-        // ArraySlice + [UInt8] + ArraySlice, 6.3 can.
-        return Data(
-            Array(bytes[..<range.startIndex]) + serializer.serializedBytes
-                + Array(bytes[range.endIndex...]))
-    }
-
-    // MARK: attribute-set assembly
 
     /// The top-level attributes of an attribute SET, as encoded bytes.
     static func attributes(of set: [UInt8]) throws -> [[UInt8]] {
@@ -63,8 +43,7 @@ private enum ReceiptSurgery {
     }
 
     static func type(of attribute: [UInt8]) throws -> Int {
-        try primitive(try children(try DER.parse(attribute))[0])
-            .reduce(0) { $0 * 256 + Int($1) }
+        try primitive(try children(try DER.parse(attribute))[0]).reduce(0) { $0 * 256 + Int($1) }
     }
 
     static func length(_ count: Int) -> [UInt8] {
@@ -93,270 +72,102 @@ private enum ReceiptSurgery {
         tlv(0x30, tlv(0x02, typeBytes) + tlv(0x02, [0x01]) + tlv(0x04, value))
     }
 
-    /// The same receipt with one extra attribute in its top-level set.
-    static func appendingAttribute(_ attribute: [UInt8], to receipt: Data) throws -> Data {
-        let attributes = try attributes(of: try payload(of: receipt))
-        return try replacingPayload(of: receipt, with: set(attributes + [attribute]))
-    }
-
-    /// The same receipt with one extra attribute inside its first in-app
-    /// purchase (attribute 17), whose value is itself an attribute set.
-    static func appendingInAppAttribute(_ attribute: [UInt8], to receipt: Data) throws -> Data {
-        var attributes = try attributes(of: try payload(of: receipt))
+    /// The payload with one extra attribute inside its first in-app purchase
+    /// (attribute 17), whose value is itself an attribute set.
+    static func appendingInAppAttribute(_ attribute: [UInt8], to payload: [UInt8]) throws -> [UInt8] {
+        var attributes = try attributes(of: payload)
         guard let index = try attributes.firstIndex(where: { try type(of: $0) == 17 }) else {
             throw CocoaError(.formatting)
         }
         let fields = try children(try DER.parse(attributes[index]))
         let inner = set(try Self.attributes(of: try primitive(fields[2])) + [attribute])
         attributes[index] = tlv(
-            0x30,
-            [UInt8](fields[0].encodedBytes)
-                + [UInt8](fields[1].encodedBytes) + tlv(0x04, inner))
-        return try replacingPayload(of: receipt, with: set(attributes))
-    }
-
-    /// The same receipt with attribute `type` dropped from its top-level set.
-    static func removingAttribute(_ type: Int, from receipt: Data) throws -> Data {
-        let attributes = try attributes(of: try payload(of: receipt))
-        let kept = try attributes.filter { try Self.type(of: $0) != type }
-        guard kept.count < attributes.count else { throw CocoaError(.formatting) }
-        return try replacingPayload(of: receipt, with: set(kept))
+            0x30, [UInt8](fields[0].encodedBytes) + [UInt8](fields[1].encodedBytes) + tlv(0x04, inner))
+        return set(attributes)
     }
 }
 
-// MARK: - divergence 4: attribute types wider than a 32-bit signed integer
+// MARK: - attribute types wider than a 32-bit signed integer
 
-/// Java mapped a receipt attribute type above 2^31-1 onto -1 and filed the
-/// value under `unknownAttributes`; node rejected the receipt. The answer is
-/// to reject: -1 is not a valid attribute type, and filing an unrepresentable
-/// type under a representable one is how a parser starts disagreeing with
-/// itself. No fixture pins this, so the inputs are built here.
+/// Java once mapped a receipt attribute type above 2^31-1 onto -1 and filed
+/// the value under `unknownAttributes`; node rejected the receipt. The answer
+/// is to refuse: `unknown_attributes` is keyed by a 32-bit type, and filing an
+/// unrepresentable type under a representable one is how a parser starts
+/// disagreeing with itself. The shared cases pin this for a top-level
+/// attribute (`receipt/reject-attribute-type-above-int32-max`,
+/// `receipt/attribute-type-int32-max-is-kept`); these pin it inside an in-app
+/// purchase, where an attacker choosing where to hide the type must not find
+/// a set that is parsed more leniently.
 final class OversizedAttributeTypeTests: XCTestCase {
     static let outOfRange: [UInt8] = [0x00, 0x80, 0x00, 0x00, 0x00]  // 2^31
     static let largestInRange: [UInt8] = [0x7F, 0xFF, 0xFF, 0xFF]  // 2^31 - 1
 
-    func fixture(_ name: String) throws -> Data {
-        try Data(
-            contentsOf: VerifierTests.fixturesDir
-                .appendingPathComponent("generated").appendingPathComponent(name))
-    }
-
-    func verifier() throws -> ReceiptVerifier {
-        try ReceiptVerifier(
-            trustedRoots: [try fixture("receipt-root.der")],
-            bundleId: VerifierTests.bundle)
-    }
-
-    func reason<T>(_ body: () async throws -> T) async -> VerificationError.Reason? {
-        do {
-            _ = try await body()
-            return nil
-        } catch let error as VerificationError {
-            return error.reason
-        } catch {
-            XCTFail("expected a VerificationError, got \(error)")
-            return nil
-        }
-    }
-
-    /// The spliced receipt's payload, re-signed under a test PKI the returned
-    /// verifier trusts. The full payload parse runs only after the chain and
-    /// the signature pass, so a splice that kept the donor's signature would
-    /// stop at INVALID_SIGNATURE and never reach the bound under test.
-    func signed(_ spliced: Data) throws -> (receipt: Data, verifier: ReceiptVerifier, root: Data) {
+    /// The genuine receipt's payload with `attribute` added to its first
+    /// in-app purchase, signed under a test PKI, and the verdict of a
+    /// verifier that trusts it.
+    func verify(appendingInApp attribute: [UInt8]) throws -> VerificationResult<ReceiptPayload> {
+        let payload = try ReceiptSurgery.appendingInAppAttribute(
+            attribute, to: try ReceiptSurgery.payload(of: try TestFixtures.bytes(TestFixtures.receipt)))
         let pki = try TestReceiptPki()
-        let receipt = try pki.sign(try ReceiptSurgery.payload(of: spliced))
-        let verifier = try ReceiptVerifier(trustedRoots: [pki.rootDer], bundleId: VerifierTests.bundle)
-        return (receipt, verifier, pki.rootDer)
+        let receipt = try pki.sign(payload)
+        let verifier = ApplePurchaseReceiptVerifier.Verifier(
+            config: try Config.builder().roots([[UInt8](pki.rootDer)]).build())
+        return verifier.verifyReceipt(base64: receipt.base64EncodedString())
     }
 
-    /// 2^31 is refused and 2^31-1, the largest type that IS representable, is
-    /// not. Both payloads are signed by a trusted signer, so the refusal is
-    /// INTERNAL_ERROR (content the library cannot represent, not a malformed
-    /// client request) and the control verifies outright.
-    func testRejectsAnAttributeTypeAboveTheSignedThirtyTwoBitRange() async throws {
-        let genuine = try fixture("receipt.der")
-        let oversized = try signed(
-            try ReceiptSurgery.appendingAttribute(
-                ReceiptSurgery.attribute(typeBytes: Self.outOfRange, value: [0x2A]), to: genuine))
-        let representable = try signed(
-            try ReceiptSurgery.appendingAttribute(
-                ReceiptSurgery.attribute(typeBytes: Self.largestInRange, value: [0x2A]), to: genuine))
-
-        let onOversized = await reason { try await oversized.verifier.verify(receipt: oversized.receipt) }
-        let onRepresentable = await reason {
-            try await representable.verifier.verify(receipt: representable.receipt)
+    /// 2^31 inside an in-app set: the in-app purchase does not parse, so the
+    /// whole attribute 17 is kept raw and the receipt still verifies — the
+    /// design's rule for an in-app purchase that does not parse
+    /// (`receipt/unparseable-in-app-purchase-is-kept-raw`). 2^31-1 is
+    /// representable: the purchase parses and keeps the attribute under its
+    /// own type.
+    func testAnOversizedTypeInsideAnInAppSetKeepsThePurchaseRaw() throws {
+        let value = ReceiptSurgery.tlv(0x02, [0x2A])
+        let oversized = try verify(
+            appendingInApp: ReceiptSurgery.attribute(typeBytes: Self.outOfRange, value: value))
+        let payload = try XCTUnwrap(oversized.payload, oversized.failure?.description ?? "")
+        XCTAssertEqual(payload.inApp.count, 1, "the purchase carrying the oversized type is not typed")
+        XCTAssertEqual(payload.unknownAttributes[17]?.count, 1, "and is kept raw instead")
+        for purchase in payload.inApp {
+            XCTAssertTrue(purchase.unknownAttributes.keys.allSatisfy { $0 >= 0 }, "no type was wrapped")
         }
-        XCTAssertEqual(.internalError, onOversized)
-        XCTAssertNil(onRepresentable, "2^31-1 is representable and must parse")
-    }
 
-    /// In-app attribute sets go through the same parser, so the same bound
-    /// applies there — an attacker choosing where to hide the type must not
-    /// find a set that is parsed more leniently.
-    func testRejectsAnOversizedTypeInsideAnInAppAttributeSet() async throws {
-        let genuine = try fixture("receipt.der")
-        let oversized = try signed(
-            try ReceiptSurgery.appendingInAppAttribute(
-                ReceiptSurgery.attribute(typeBytes: Self.outOfRange, value: [0x2A]), to: genuine))
-        let representable = try signed(
-            try ReceiptSurgery.appendingInAppAttribute(
-                ReceiptSurgery.attribute(typeBytes: Self.largestInRange, value: [0x2A]), to: genuine))
-
-        let onOversized = await reason { try await oversized.verifier.verify(receipt: oversized.receipt) }
-        let onRepresentable = await reason {
-            try await representable.verifier.verify(receipt: representable.receipt)
-        }
-        XCTAssertEqual(.internalError, onOversized)
-        XCTAssertNil(onRepresentable)
-    }
-
-    /// The bound is on the attribute TYPE only. Values keep their full 8-byte
-    /// range — real receipts carry 7-byte `web_order_line_item_id` integers,
-    /// and Apple has no stated ceiling under 2^63 — so a value far above
-    /// 2^31-1 must still parse, and a trusted receipt carrying it verifies.
-    func testTheBoundDoesNotReachAttributeValues() async throws {
-        // Attribute 1711 (web_order_line_item_id), value 2^63-1: the widest
-        // integer the parser accepts, and 2^32 times over the type's bound.
-        let huge = ReceiptSurgery.attribute(
-            typeBytes: [0x06, 0xAF],
-            value: ReceiptSurgery.tlv(0x02, [0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]))
-        let spliced = try signed(
-            try ReceiptSurgery.appendingInAppAttribute(huge, to: try fixture("receipt.der")))
-        let verdict = await reason { try await spliced.verifier.verify(receipt: spliced.receipt) }
-        XCTAssertNil(verdict, "the type bound must not reach attribute values")
-    }
-
-    /// Through the endpoint the same trusted input is INTERNAL_ERROR (21009):
-    /// neither a malformed client request (21002) nor an authentication
-    /// failure (21003).
-    func testTheEndpointReportsAnOversizedTypeAs21009() async throws {
-        let oversized = try signed(
-            try ReceiptSurgery.appendingAttribute(
-                ReceiptSurgery.attribute(typeBytes: Self.outOfRange, value: [0x2A]),
-                to: try fixture("receipt.der")))
-        let endpoint = try VerifyReceiptEndpoint(trustedRoots: [oversized.root], environment: .sandbox)
-        let response = await endpoint.verifyReceiptResult(
-            ["receipt-data": oversized.receipt.base64EncodedString()]).response()
-        XCTAssertEqual(21009, response["status"] as? Int)
+        let representable = try verify(
+            appendingInApp: ReceiptSurgery.attribute(typeBytes: Self.largestInRange, value: value))
+        let kept = try XCTUnwrap(representable.payload, representable.failure?.description ?? "")
+        XCTAssertEqual(kept.inApp.count, 2)
+        XCTAssertNil(kept.unknownAttributes[17])
+        XCTAssertEqual(kept.inApp.compactMap { $0.unknownAttributes[2_147_483_647] }.count, 1)
     }
 }
 
-// MARK: - divergence 1: no clock may move a certificate-validity verdict
+// MARK: - no clock moves a verdict for a dated receipt
 
-/// Certificate validity is judged at the payload's signedDate or the receipt's
-/// creation date, and — when the payload carries neither — at the SYSTEM
-/// clock, never at an injected one. A caller injecting a clock to pin
-/// request_date, or to work around skew, must not thereby accept a chain that
-/// is expired. Neither verifier takes a clock at all; these tests are what
-/// keeps the fallbacks on the system clock.
+/// Certificate validity is judged at the receipt's own creation date when it
+/// carries one; the clock stands in only when it does not
+/// (`endpoint/clock-inside-the-window-verifies-a-dateless-receipt` pins that
+/// side). A caller setting a clock to pin `request_date`, or to work around
+/// skew, must not thereby move a verdict for a dated receipt. Both
+/// expired-chain fixtures answer identically under every clock, including one
+/// inside the certificates' 2020-2021 window.
 final class CertificateValidityClockTests: XCTestCase {
-    /// Decades either side of every fixture's certificate window, plus "no
-    /// clock at all". If a clock could reach a validity decision, these three
-    /// would not agree.
-    static let clocks: [(@Sendable () -> Date)?] = [
-        nil,
-        { Date(timeIntervalSince1970: 0) },  // 1970
-        { Date(timeIntervalSince1970: 4_102_444_800) },  // 2100
-    ]
-
-    func fixture(_ name: String) throws -> Data {
-        try Data(
-            contentsOf: VerifierTests.fixturesDir
-                .appendingPathComponent("generated").appendingPathComponent(name))
-    }
-
-    func text(_ name: String) throws -> String {
-        String(data: try fixture(name), encoding: .utf8)!
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    func reason<T>(_ body: () async throws -> T) async -> VerificationError.Reason? {
-        do {
-            _ = try await body()
-            return nil
-        } catch let error as VerificationError {
-            return error.reason
-        } catch {
-            XCTFail("expected a VerificationError, got \(error)")
-            return nil
-        }
-    }
-
-    /// A JWS payload carrying NO signedDate, the case the fallback exists
-    /// for. fixtures/generated/transaction.jws is signed by a chain valid
-    /// 2024-01-01 to 2050-01-01, so at the system clock the chain validates
-    /// and the (re-encoded, no longer signed) payload fails on its signature.
-    func testAPayloadWithNoSignedDateIsJudgedAtTheSystemClock() async throws {
-        let segments = try text("transaction.jws").components(separatedBy: ".")
-        var claims =
-            try JSONSerialization.jsonObject(
-                with: base64URLDecode(segments[1])!) as! [String: Any]
-        claims.removeValue(forKey: "signedDate")
-        XCTAssertNil(claims["signedDate"])
-        let dateless = try JSONSerialization.data(withJSONObject: claims)
-            .base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
-        let jws = "\(segments[0]).\(dateless).\(segments[2])"
-
-        let verifier = try JwsVerifier(
-            trustedRoots: [try fixture("jws-root.der")], bundleId: VerifierTests.bundle,
-            acceptedEnvironments: [.sandbox])
-        let verdict = await self.reason { try await verifier.verifyTransaction(jws) }
-        XCTAssertEqual(
-            .invalidSignature, verdict,
-            "a dateless payload was not judged at the system clock")
-    }
-
-    /// The receipt equivalent: attribute 12 (the creation date) removed, so
-    /// the chain is judged at the fallback. Two fixtures pin which fallback it
-    /// is, in opposite directions — the genuine receipt's chain is valid today
-    /// (2024-2050), the expired one's is not (2020-2021) — so a fallback that
-    /// was anything but the system clock fails one of them.
-    func testAReceiptWithNoCreationDateIsJudgedAtTheSystemClock() async throws {
-        let genuine = try ReceiptSurgery.removingAttribute(
-            12, from: try fixture("receipt.der"))
-        let liveVerifier = try ReceiptVerifier(
-            trustedRoots: [try fixture("receipt-root.der")], bundleId: VerifierTests.bundle)
-        let onGenuine = await reason { try await liveVerifier.verifyCore(receipt: genuine) }
-        XCTAssertEqual(
-            .invalidSignature, onGenuine,
-            "a chain valid today must validate for a receipt with no date")
-
-        let expired = try ReceiptSurgery.removingAttribute(
-            12, from: try fixture("receipt-expired-historical.der"))
-        let expiredVerifier = try ReceiptVerifier(
-            trustedRoots: [try fixture("receipt-expired-root.der")],
-            bundleId: VerifierTests.bundle)
-        let onExpired = await reason { try await expiredVerifier.verifyCore(receipt: expired) }
-        XCTAssertEqual(
-            .invalidChain, onExpired,
-            "a chain expired today must not validate for a receipt with no date")
-    }
-
-    /// The endpoint is the one receipt-path API that takes a clock (it stamps
-    /// `request_date`). Both expired-chain fixtures answer identically under
-    /// every clock, including one sitting inside the certificate's 2020-2021
-    /// window — the clock reaches the response's timestamps and nothing else.
-    func testTheEndpointClockMovesNoCertificateValidityVerdict() async throws {
-        let insideTheWindow: @Sendable () -> Date = {
-            Date(timeIntervalSince1970: 1_593_561_600)  // 2020-07-01
-        }
+    func testTheClockMovesNoVerdictForADatedReceipt() throws {
+        let clocks: [Int64] = [
+            0,  // 1970
+            1_593_561_600_000,  // 2020-07-01, inside the expired chain's window
+            1_735_689_600_000,  // 2025
+            4_102_444_800_000,  // 2100
+        ]
         for (fixture, expected) in [
-            ("receipt-expired-historical.der", 0),
-            ("receipt-expired-fresh.der", 21003),
+            ("generated-0.7/receipt-expired-historical.der", 0),
+            ("generated-0.7/receipt-expired-fresh.der", 21003),
         ] {
-            let request = ["receipt-data": try self.fixture(fixture).base64EncodedString()]
-            for clock in Self.clocks + [insideTheWindow] {
-                let endpoint = try VerifyReceiptEndpoint(
-                    trustedRoots: [try self.fixture("receipt-expired-root.der")],
-                    environment: .sandbox, clock: clock)
-                let response = await endpoint.verifyReceiptResult(request).response()
+            let body = #"{"receipt-data":""# + standardBase64Encode(try TestFixtures.bytes(fixture)) + #""}"#
+            for clock in clocks {
+                let verifier = try TestFixtures.verifier(roots: ["generated-0.7/receipt-expired-root.der"], clock: clock)
+                let response = verifier.verifyReceiptEndpoint(environment: .sandbox, requestJson: body)
                 XCTAssertEqual(
-                    expected, response["status"] as? Int,
-                    "\(fixture): the status moved with the clock")
+                    TestFixtures.status(response), expected, "\(fixture) at clock \(clock): \(response.prefix(30))")
             }
         }
     }

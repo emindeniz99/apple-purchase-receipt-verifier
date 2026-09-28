@@ -1,20 +1,18 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using ApplePurchaseReceiptVerifier;
-using ApplePurchaseReceiptVerifier.Jws;
-using ApplePurchaseReceiptVerifier.Receipt;
 using Xunit;
 
 namespace ApplePurchaseReceiptVerifier.Tests.Floor;
 
 /// <summary>
-/// The netstandard2.0 asset, exercised end to end. The floor exists so a .NET
-/// Framework, Mono or Unity consumer can use this package from one asset; a
-/// floor nothing runs is a claim, not a fact.
+/// The netstandard2.0 asset, exercised end to end against real fixtures from
+/// <c>fixtures/cases.json</c>. The floor exists so a .NET Framework, Mono
+/// or Unity consumer can use this package from one asset; a floor nothing
+/// runs is a claim, not a fact.
 /// </summary>
 public class FloorTests
 {
@@ -23,118 +21,109 @@ public class FloorTests
     [Fact]
     public void TheAssemblyUnderTestIsTheNetstandardAsset()
     {
-        string? framework = typeof(JwsVerifier).Assembly
+        string? framework = typeof(IVerifier).Assembly
             .GetCustomAttribute<System.Runtime.Versioning.TargetFrameworkAttribute>()
             ?.FrameworkName;
         Assert.Equal(".NETStandard,Version=v2.0", framework);
     }
 
     [Fact]
-    public void AReceiptVerifiesAgainstAPinnedRoot()
+    public void AGenuineReceiptVerifiesAgainstAPinnedRoot()
     {
-        using ReceiptVerifier verifier = new(
-            new[] { Certificate("generated/receipt-root.der") }, "com.example.app");
-        AppReceipt receipt = verifier.Verify(Bytes("generated/receipt.der"));
+        Config config = Config.CreateBuilder().Roots(new[] { Certificate("generated-0.7/receipt-root.der") }).Build();
+        IVerifier verifier = Verifier.Create(config);
 
-        Assert.Equal("com.example.app", receipt.BundleId);
-        Assert.Equal("1.2.3", receipt.AppVersion);
-        Assert.Equal(new DateTimeOffset(2024, 8, 6, 12, 0, 0, TimeSpan.Zero), receipt.CreationDate);
-        Assert.Equal(2, receipt.InAppPurchases.Count);
+        VerificationResult<ReceiptPayload> result =
+            verifier.VerifyReceipt(Convert.ToBase64String(Bytes("generated-0.7/receipt.der")));
+
+        Assert.True(result.Verified);
+        Assert.Equal("com.example.app", result.Payload!.BundleId);
     }
 
     [Fact]
     public void AGenuineAppleReceiptVerifiesAgainstTheBundledRoots()
     {
-        using ReceiptVerifier verifier = new(
-            AppleRootCertificates.ReceiptRoots(), "dev.bonzer.weeka.app");
-        Assert.Equal(
-            "ProductionSandbox",
-            verifier.Verify(Base64("public-receipts/receipt-sandbox-g5.b64")).ReceiptType);
+        IVerifier verifier = Verifier.Create(Config.Defaults());
+        VerificationResult<ReceiptPayload> result = verifier.VerifyReceipt(Base64Text("generated/receipt-b64/01-genuine.txt"));
+
+        Assert.True(result.Verified);
+        Assert.Equal("ProductionSandbox", result.Payload!.ReceiptType);
+        Assert.Equal(2, result.Payload!.InApp.Count);
     }
 
     [Fact]
     public void AJwsTransactionVerifies()
     {
-        using JwsVerifier verifier = new(
-            new[] { Certificate("generated/jws-root.der") },
-            "com.example.app",
-            new[] { AppleEnvironment.Sandbox });
-        TransactionPayload payload = verifier.VerifyTransaction(Text("generated/transaction.jws"));
+        Config config = Config.CreateBuilder().Roots(new[] { Certificate("generated/jws-root.der") }).Build();
+        IVerifier verifier = Verifier.Create(config);
 
-        Assert.Equal("com.example.app.pro", payload.ProductId);
-        Assert.Equal(1722945600000L, payload.SignedDate);
+        VerificationResult<JsonPayload> result = verifier.VerifySignedData(Text("generated/transaction.jws"));
+
+        Assert.True(result.Verified);
+        Assert.Contains("\"productId\":\"com.example.app.pro\"", result.Payload!.Json, StringComparison.Ordinal);
     }
 
     [Fact]
     public void AForeignChainIsRejected()
     {
-        using JwsVerifier verifier = new(
-            AppleRootCertificates.JwsRoots(), "com.example.app", new[] { AppleEnvironment.Sandbox });
-        Assert.Equal(
-            VerificationReason.InvalidChain,
-            Assert.Throws<VerificationException>(
-                () => verifier.VerifyTransaction(Text("generated/transaction.jws"))).Reason);
+        IVerifier verifier = Verifier.Create(Config.Defaults());
+        VerificationResult<JsonPayload> result = verifier.VerifySignedData(Text("generated/transaction.jws"));
+
+        Assert.False(result.Verified);
+        Assert.Equal(VerificationReason.UntrustedChain, result.Failure!.Reason);
     }
 
     [Fact]
     public void TheEndpointAnswersABody()
     {
-        using VerifyReceiptEndpoint endpoint = new(
-            new[] { Certificate("generated/receipt-root.der") },
-            AppleEnvironment.Sandbox,
-            new FixedClock(new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero)));
+        Config config = Config.CreateBuilder()
+            .Roots(new[] { Certificate("generated-0.7/receipt-root.der") })
+            .Clock(() => new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds())
+            .Build();
+        IVerifier verifier = Verifier.Create(config);
 
         string request = "{\"receipt-data\":\""
-            + Convert.ToBase64String(Bytes("generated/receipt.der")) + "\"}";
-        string response = endpoint.VerifyReceiptJson(request);
+            + Convert.ToBase64String(Bytes("generated-0.7/receipt.der")) + "\"}";
+        string response = verifier.VerifyReceiptEndpoint(AppleEnvironment.Sandbox, request);
 
         Assert.StartsWith("{\"status\":0,\"environment\":\"Sandbox\"", response, StringComparison.Ordinal);
         Assert.Contains("\"request_date_ms\":\"1735689600000\"", response, StringComparison.Ordinal);
-        Assert.Contains(
-            "\"receipt_creation_date_pst\":\"2024-08-06 05:00:00 America/Los_Angeles\"",
-            response,
-            StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// The receipt cap on this asset's decoder: a genuinely signed receipt
-    /// whose canonical base64 is exactly the cap verifies, and one more
-    /// character is refused by the cap, as its message shows.
-    /// </summary>
     [Fact]
     public void TheReceiptCapHoldsOnTheFloorAsset()
     {
-        string atCap = Encoding.ASCII.GetString(Bytes("limits/receipt-b64-at-cap.txt"));
-        Assert.Equal(ReceiptVerifier.MaxReceiptBytes, atCap.Length);
+        // codec "text": the file bytes verbatim, untrimmed.
+        string atCap = Encoding.ASCII.GetString(Bytes("generated-0.7/receipt-b64-at-cap.txt"));
 
-        using ReceiptVerifier verifier = new(
-            new[] { Certificate("generated/receipt-b64-cap-root.der") }, "com.example.app");
-        Assert.Equal("com.example.app", verifier.Verify(atCap).BundleId);
+        Config config = Config.CreateBuilder().Roots(new[] { Certificate("generated-0.7/receipt-b64-cap-root.der") }).Build();
+        IVerifier verifier = Verifier.Create(config);
 
-        VerificationException error = Assert.Throws<VerificationException>(() => verifier.Verify(atCap + "\n"));
-        Assert.Equal(VerificationReason.InvalidReceiptFormat, error.Reason);
-        Assert.Equal(
-            "INVALID_RECEIPT_FORMAT: receipt exceeds the maximum accepted size of 3145728 bytes",
-            error.Message);
+        VerificationResult<ReceiptPayload> ok = verifier.VerifyReceipt(atCap);
+        Assert.True(ok.Verified);
+        Assert.Equal("com.example.app", ok.Payload!.BundleId);
+
+        VerificationResult<ReceiptPayload> tooBig = verifier.VerifyReceipt(atCap + "\n");
+        Assert.False(tooBig.Verified);
+        Assert.Equal(VerificationReason.TooLarge, tooBig.Failure!.Reason);
     }
 
     [Fact]
     public void TheReasonVocabularyIsIntactOnTheFloorAsset()
     {
-        // Eleven verifier reasons plus the two only a VerifyReceiptResult carries.
-        Assert.Equal(13, Enum.GetValues(typeof(VerificationReason)).Length);
-        Assert.Equal("DEVICE_HASH_MISMATCH", VerificationReasonCodes.ToCode(VerificationReason.DeviceHashMismatch));
+        Assert.Equal(8, Enum.GetValues(typeof(VerificationReason)).Length);
+        Assert.Equal("UNTRUSTED_CHAIN", VerificationReasonCodes.ToCode(VerificationReason.UntrustedChain));
         Assert.Equal("INTERNAL_ERROR", VerificationReasonCodes.ToCode(VerificationReason.InternalError));
     }
 
     [Fact]
     public void HostileInputIsStillContained()
     {
-        using ReceiptVerifier verifier = new(
-            new[] { Certificate("generated/receipt-root.der") }, "com.example.app");
+        IVerifier verifier = Verifier.Create(Config.Defaults());
         foreach (string input in new[] { "MAsGCSqGSIb3", "!!!!", "", "AAAA" })
         {
-            Assert.IsType<VerificationException>(Record.Exception(() => verifier.Verify(input)));
+            VerificationResult<ReceiptPayload> result = verifier.VerifyReceipt(input);
+            Assert.False(result.Verified);
         }
     }
 
@@ -142,7 +131,7 @@ public class FloorTests
 
     private static string Text(string relative) => File.ReadAllText(Path.Combine(Root, relative)).Trim();
 
-    private static byte[] Base64(string relative)
+    private static string Base64Text(string relative)
     {
         StringBuilder compact = new();
         foreach (char c in Text(relative))
@@ -153,7 +142,7 @@ public class FloorTests
             }
         }
 
-        return Convert.FromBase64String(compact.ToString());
+        return compact.ToString();
     }
 
     private static X509Certificate2 Certificate(string relative) =>

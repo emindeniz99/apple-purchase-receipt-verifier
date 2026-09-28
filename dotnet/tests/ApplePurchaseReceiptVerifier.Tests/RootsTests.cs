@@ -17,10 +17,10 @@ public class RootsTests
     };
 
     [Fact]
-    public void BothSetsCarryAllThreePublishedAppleRoots()
+    public void TheBundledSetAndTheDefaultsCarryAllThreePublishedAppleRoots()
     {
         foreach (IReadOnlyList<X509Certificate2> roots in
-            new[] { AppleRootCertificates.JwsRoots(), AppleRootCertificates.ReceiptRoots() })
+            new[] { AppleRootCertificates.Bundled(), Config.Defaults().Roots })
         {
             Assert.Equal(3, roots.Count);
             string[] subjects = roots.Select(r => r.Subject).ToArray();
@@ -45,7 +45,7 @@ public class RootsTests
             onDisk.Add(Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(Path.Combine(certs, file)))));
         }
 
-        List<string> compiled = AppleRootCertificates.ReceiptRoots()
+        List<string> compiled = AppleRootCertificates.Bundled()
             .Select(r => Convert.ToHexString(SHA256.HashData(r.RawData)))
             .ToList();
 
@@ -59,37 +59,70 @@ public class RootsTests
     [Fact]
     public void EachCallReturnsIndependentInstances()
     {
-        IReadOnlyList<X509Certificate2> first = AppleRootCertificates.ReceiptRoots();
+        IReadOnlyList<X509Certificate2> first = AppleRootCertificates.Bundled();
         foreach (X509Certificate2 root in first)
         {
             root.Dispose();
         }
 
-        IReadOnlyList<X509Certificate2> second = AppleRootCertificates.ReceiptRoots();
+        IReadOnlyList<X509Certificate2> second = AppleRootCertificates.Bundled();
         Assert.Equal(3, second.Count);
         Assert.NotEmpty(second[0].Subject);
         Assert.False(ReferenceEquals(first[0], second[0]));
     }
 
     /// <summary>
-    /// A verifier keeps its own copies, so a caller may dispose the anchors it
-    /// passed in.
+    /// A config keeps its own copies, so a caller may dispose the anchors it
+    /// passed in, or keep adding to the list it passed, without touching a
+    /// verifier already built.
     /// </summary>
     [Fact]
-    public void AVerifierSurvivesTheCallerDisposingTheAnchorsItPassedIn()
+    public void AVerifierSurvivesTheCallerDisposingOrChangingTheAnchorsItPassedIn()
     {
-        X509Certificate2 root = X509CertificateLoader.LoadCertificate(Fixtures.Bytes("receipt-root"));
-        using Receipt.ReceiptVerifier verifier = new(new[] { root }, "com.example.app");
+        X509Certificate2 root = TestPki.FixtureCertificate("receipt-root");
+        List<X509Certificate2> passed = new() { root };
+        IVerifier verifier = Verifier.Create(Config.CreateBuilder().Roots(passed).Build());
         root.Dispose();
+        passed.Clear();
 
-        Assert.Equal("com.example.app", verifier.Verify(Fixtures.Bytes("receipt")).BundleId);
+        Assert.True(verifier.VerifyReceipt(Fixtures070.ForReceipt("receipt")).Verified);
+    }
+
+    /// <summary>
+    /// <see cref="Config"/> is immutable and its roots are an unmodifiable
+    /// copy: nothing a caller does to what <see cref="Config.Roots"/> hands
+    /// out — changing the list, disposing a certificate — can add trust to,
+    /// or take it from, a verifier built on that config.
+    /// </summary>
+    [Fact]
+    public void WhatConfigRootsHandsOutCannotChangeTheConfig()
+    {
+        Config config = TestPki.FixtureConfig("receipt-root");
+        IVerifier verifier = Verifier.Create(config);
+        string receipt = Fixtures070.ForReceipt("receipt");
+        string foreign = Fixtures070.ForReceipt("receipt-foreign");
+
+        if (config.Roots is IList<X509Certificate2> list)
+        {
+            Assert.True(list.IsReadOnly, "Config.Roots is a writable list");
+            Assert.ThrowsAny<NotSupportedException>(() => list.Clear());
+        }
+
+        foreach (X509Certificate2 root in config.Roots)
+        {
+            root.Dispose();
+        }
+
+        Assert.True(verifier.VerifyReceipt(receipt).Verified);
+        Assert.Equal(VerificationReason.UntrustedChain, verifier.VerifyReceipt(foreign).Failure?.Reason);
+        Assert.NotEmpty(Assert.Single(config.Roots).RawData);
     }
 
     /// <summary>The pinned roots are anchors, but their expiry is worth reporting.</summary>
     [Fact]
     public void EveryPinnedRootIsStillWithinItsOwnValidityWindow()
     {
-        foreach (X509Certificate2 root in AppleRootCertificates.JwsRoots())
+        foreach (X509Certificate2 root in AppleRootCertificates.Bundled())
         {
             Assert.True(
                 root.NotAfter.ToUniversalTime() > DateTime.UtcNow,

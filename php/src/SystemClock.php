@@ -15,10 +15,10 @@ use Psr\Clock\ClockInterface;
  * write it, and so `symfony/clock`'s `MockClock` (or any other PSR-20
  * implementation) drops straight in.
  *
- * What the clock is allowed to move is deliberately narrow: the
- * {@see \EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\VerifyReceiptEndpoint}
- * `request_date` triple, and nothing else. Certificate validity is never
- * judged by an injected clock.
+ * The library reads the clock once per call, for two things: the
+ * certificate-validity instant when the receipt or JWS states no usable
+ * date of its own, and the `request_date` triple of
+ * {@see \EminDeniz99\ApplePurchaseReceiptVerifier\Verifier::verifyReceiptEndpoint()}.
  */
 final class SystemClock implements ClockInterface
 {

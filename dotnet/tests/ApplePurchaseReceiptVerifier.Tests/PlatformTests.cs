@@ -4,40 +4,33 @@ using System.Collections.Generic;
 using System.Formats.Asn1;
 using System.Linq;
 using System.Numerics;
-using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
 using System.Threading.Tasks;
-using ApplePurchaseReceiptVerifier.Jws;
-using ApplePurchaseReceiptVerifier.Receipt;
+using ApplePurchaseReceiptVerifier.Internal;
 using Xunit;
 
 namespace ApplePurchaseReceiptVerifier.Tests;
 
 /// <summary>
-/// Groups the tests that read process-wide state — the managed live set — so
-/// they do not run beside another collection's allocations. xunit's default is
-/// one collection per class, all of them in parallel, and
-/// <see cref="PlatformTests.RepeatedVerificationDoesNotGrowUnboundedly"/>
+/// Groups the tests that read or write process-wide state — the managed live
+/// set, the default thread culture — so they do not run beside another
+/// collection. xunit's default is one collection per class, all of them in
+/// parallel, and <see cref="PlatformTests.RepeatedVerificationDoesNotGrowUnboundedly"/>
 /// measures the whole heap, not just its own objects.
 /// </summary>
-[CollectionDefinition("process-heap", DisableParallelization = true)]
-public sealed class ProcessHeapCollection
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class ProcessWideCollection
 {
+    internal const string Name = "process-wide";
 }
 
 /// <summary>
 /// The parts of this port that no cross-language vector can reach: the ECDSA
-/// encoding conversion, the structural pre-scan, thread safety, and disposal.
+/// encoding conversion, thread safety, retention, and the conformance
+/// harness's own resolver.
 /// </summary>
-[Collection("process-heap")]
+[Collection(ProcessWideCollection.Name)]
 public class PlatformTests
 {
-    private static IReadOnlyList<X509Certificate2> ReceiptRoots() =>
-        new[] { X509CertificateLoader.LoadCertificate(Fixtures.Bytes("receipt-root")) };
-
-    private static IReadOnlyList<X509Certificate2> JwsRoots() =>
-        new[] { X509CertificateLoader.LoadCertificate(Fixtures.Bytes("jws-root")) };
-
     // --- DER to IEEE P1363 ---------------------------------------------------
 
     /// <summary>
@@ -53,7 +46,7 @@ public class PlatformTests
     public void DerSignaturesConvertToFixedWidthP1363(string r, string s)
     {
         byte[] der = Der(Big(r), Big(s));
-        byte[]? p1363 = Internals.DerToP1363(der, 32);
+        byte[]? p1363 = EcdsaSignatureFormat.DerToP1363(der, 32);
 
         Assert.NotNull(p1363);
         Assert.Equal(64, p1363!.Length);
@@ -66,7 +59,7 @@ public class PlatformTests
     {
         byte[] der = Der(
             Big("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"), BigInteger.One);
-        Assert.Null(Internals.DerToP1363(der, 16));
+        Assert.Null(EcdsaSignatureFormat.DerToP1363(der, 16));
     }
 
     [Theory]
@@ -76,14 +69,14 @@ public class PlatformTests
     [InlineData("300602010102010101")]
     public void MalformedDerSignaturesConvertToNull(string hex)
     {
-        Assert.Null(Internals.DerToP1363(Convert.FromHexString(hex), 32));
+        Assert.Null(EcdsaSignatureFormat.DerToP1363(Convert.FromHexString(hex), 32));
     }
 
     [Fact]
     public void ANonPositiveComponentIsRejected()
     {
-        Assert.Null(Internals.DerToP1363(Der(BigInteger.Zero, BigInteger.One), 32));
-        Assert.Null(Internals.DerToP1363(Der(BigInteger.MinusOne, BigInteger.One), 32));
+        Assert.Null(EcdsaSignatureFormat.DerToP1363(Der(BigInteger.Zero, BigInteger.One), 32));
+        Assert.Null(EcdsaSignatureFormat.DerToP1363(Der(BigInteger.MinusOne, BigInteger.One), 32));
     }
 
     [Fact]
@@ -91,57 +84,29 @@ public class PlatformTests
     {
         byte[] der = Der(BigInteger.One, BigInteger.One);
         byte[] padded = der.Concat(new byte[] { 0x05, 0x00 }).ToArray();
-        Assert.Null(Internals.DerToP1363(padded, 32));
+        Assert.Null(EcdsaSignatureFormat.DerToP1363(padded, 32));
     }
 
-    // --- the structural pre-scan --------------------------------------------
+    // --- thread safety and retention -----------------------------------------
 
-    [Fact]
-    public void ThePreScanCountsWithoutDecoding()
-    {
-        Assert.Equal(3, Internals.PreScan(Fixtures.Bytes("receipt"), 10));
-        Assert.Equal(1, Internals.PreScan(Fixtures.Bytes("public-receipt-xcode-with-purchases"), 10));
-    }
-
-    [Fact]
-    public void ThePreScanShortCircuitsAtTheLimit()
-    {
-        byte[] flood = ResourceBoundTests.WithCertificateCopies(Fixtures.Bytes("receipt"), 500);
-        // It stops the moment the bound is exceeded rather than counting to 500.
-        Assert.Equal(11, Internals.PreScan(flood, 10));
-    }
-
-    [Fact]
-    public void ThePreScanRejectsTrailingBytesAndNonCmsInput()
-    {
-        byte[] padded = Fixtures.Bytes("receipt").Concat(new byte[] { 0 }).ToArray();
-        Assert.Equal(
-            VerificationReason.InvalidReceiptFormat,
-            Assert.Throws<VerificationException>(() => Internals.PreScan(padded, 10)).Reason);
-
-        Assert.Equal(
-            VerificationReason.InvalidReceiptFormat,
-            Assert.Throws<VerificationException>(
-                () => Internals.PreScan(new byte[] { 0x05, 0x00 }, 10)).Reason);
-    }
-
-    // --- thread safety and lifetime -----------------------------------------
-
+    /// <summary>The design's promise: one verifier is immutable and thread-safe.</summary>
     [Fact]
     public void OneVerifierServesManyThreads()
     {
-        using ReceiptVerifier receipts = new(ReceiptRoots(), "com.example.app");
-        using JwsVerifier jws = new(JwsRoots(), "com.example.app", new[] { AppleEnvironment.Sandbox });
-        byte[] receipt = Fixtures.Bytes("receipt");
-        string transaction = Fixtures.Text("transaction");
+        IVerifier receipts = TestPki.FixtureVerifier("receipt-root");
+        IVerifier jws = TestPki.FixtureVerifier("jws-root");
+        string receipt = Fixtures070.ForReceipt("receipt");
+        string transaction = Fixtures070.ForSignedData("transaction");
+        string expected = receipts.VerifyReceipt(receipt).Payload!.ToJson();
+        string expectedJws = jws.VerifySignedData(transaction).Payload!.Json;
 
         ConcurrentBag<string> failures = new();
         Parallel.For(0, 512, _ =>
         {
             try
             {
-                Assert.Equal("com.example.app", receipts.Verify(receipt).BundleId);
-                Assert.Equal(1722945600000L, jws.VerifyTransaction(transaction).SignedDate);
+                Assert.Equal(expected, receipts.VerifyReceipt(receipt).Payload?.ToJson());
+                Assert.Equal(expectedJws, jws.VerifySignedData(transaction).Payload?.Json);
             }
             catch (Exception e)
             {
@@ -150,20 +115,6 @@ public class PlatformTests
         });
 
         Assert.Empty(failures);
-    }
-
-    [Fact]
-    public void ADisposedVerifierRaisesObjectDisposedNotACryptographicException()
-    {
-        ReceiptVerifier receipts = new(ReceiptRoots(), "com.example.app");
-        receipts.Dispose();
-        receipts.Dispose(); // idempotent
-        Assert.Throws<ObjectDisposedException>(() => receipts.Verify(Fixtures.Bytes("receipt")));
-
-        JwsVerifier jws = new(JwsRoots(), "com.example.app", new[] { AppleEnvironment.Sandbox });
-        jws.Dispose();
-        jws.Dispose();
-        Assert.Throws<ObjectDisposedException>(() => jws.VerifyTransaction(Fixtures.Text("transaction")));
     }
 
     /// <summary>The verifications each measured round performs.</summary>
@@ -196,35 +147,24 @@ public class PlatformTests
     /// The bound is a budget per verification rather than a flat ceiling, so it
     /// scales with the round and fails on retention that is real but small.
     /// It can be that tight only because this class runs in a collection of its
-    /// own (<see cref="ProcessHeapCollection"/>): <see cref="GC.GetTotalMemory"/>
+    /// own (<see cref="ProcessWideCollection"/>): <see cref="GC.GetTotalMemory"/>
     /// reports the whole process's live set, so a sibling collection allocating
-    /// on another thread lands in the delta. That is what made this test flaky —
-    /// deltas from -7.9 MB to +22 MB against a 16 MB ceiling — while the leak it
-    /// looks for was never there.
-    /// <para>
-    /// A quiet process is still not a silent one: on macOS/arm64 net8.0 a single
-    /// round read +262 kB once in three runs with nothing of ours retaining it
-    /// (the test host and the runtime allocate on their own threads). So the
-    /// round is measured <see cref="LiveSetRounds"/> times and the smallest
-    /// growth is judged. Retention of one object per call, the failure this
-    /// test exists for, exceeds the budget in every round and still fails.
-    /// The same platform later read +55 kB in each of the three rounds
-    /// (110 B/call) with Linux and Windows at ~0 on the same commit, which is
-    /// why the per-call budget is set above macOS noise and not at the
-    /// Linux figure.
-    /// </para>
+    /// on another thread lands in the delta. A quiet process is still not a
+    /// silent one, so the round is measured <see cref="LiveSetRounds"/> times
+    /// and the smallest growth is judged; retention of one object per call,
+    /// the failure this test exists for, exceeds the budget in every round.
     /// </remarks>
     [Fact]
     public void RepeatedVerificationDoesNotGrowUnboundedly()
     {
-        using ReceiptVerifier verifier = new(ReceiptRoots(), "com.example.app");
-        byte[] receipt = Fixtures.Bytes("receipt");
+        IVerifier verifier = TestPki.FixtureVerifier("receipt-root");
+        string receipt = Fixtures070.ForReceipt("receipt");
 
         // Warm up: first-call statics, JIT and the ASN.1 reader's pools are a
         // one-off cost, not per-call retention.
         for (int i = 0; i < 50; i++)
         {
-            verifier.Verify(receipt);
+            Assert.True(verifier.VerifyReceipt(receipt).Verified);
         }
 
         long smallestGrowth = long.MaxValue;
@@ -233,7 +173,7 @@ public class PlatformTests
         {
             for (int i = 0; i < LiveSetRoundSize; i++)
             {
-                verifier.Verify(receipt);
+                verifier.VerifyReceipt(receipt);
             }
 
             long after = LiveSet();
@@ -266,77 +206,31 @@ public class PlatformTests
     [Fact]
     public void TheFieldPathResolverSelectsWhatTheGrammarSays()
     {
-        object? model = Normalize.Value(new Dictionary<string, object?>(StringComparer.Ordinal)
-        {
-            ["receipt"] = new Dictionary<string, object?>(StringComparer.Ordinal)
-            {
-                ["in_app"] = new List<object?>
-                {
-                    new Dictionary<string, object?>(StringComparer.Ordinal)
-                    {
-                        ["product_id"] = "com.example.app.vip",
-                        ["quantity"] = "1",
-                    },
-                    new Dictionary<string, object?>(StringComparer.Ordinal)
-                    {
-                        ["product_id"] = "com.example.app.coins100",
-                        ["quantity"] = "2",
-                    },
-                },
-            },
-            ["unknownAttributes"] = new Dictionary<int, IReadOnlyList<byte[]>>
-            {
-                [9999] = new[] { new byte[] { 1, 2, 3 } },
-            },
-        });
+        object? model = Json.Parse(
+            "{\"receipt\":{\"in_app\":[{\"product_id\":\"com.example.app.vip\",\"quantity\":\"1\"},"
+            + "{\"product_id\":\"com.example.app.coins100\",\"quantity\":\"2\"}]},"
+            + "\"unknown_attributes\":{\"9999\":[\"AQID\"]},\"a/b\":{\"c~d\":7}}");
 
-        Assert.Equal(2L, Normalize.Resolve(model, "receipt.in_app.length"));
-        Assert.Equal("1", Normalize.Resolve(model, "receipt.in_app[product_id=com.example.app.vip].quantity"));
-        Assert.Equal("010203", Normalize.Resolve(model, "unknownAttributes[9999][0]"));
-        Assert.Equal(1L, Normalize.Resolve(model, "unknownAttributes[9999].length"));
-        Assert.Null(Normalize.Resolve(model, "receipt.absent"));
-        Assert.Null(Normalize.Resolve(model, "receipt.absent.deeper"));
+        Assert.Equal(2L, JsonPointer070.Length(model, "/receipt/in_app"));
+        Assert.Equal("1", JsonPointer070.Resolve(model, "/receipt/in_app/[product_id=com.example.app.vip]/quantity"));
+        Assert.Equal("2", JsonPointer070.Resolve(model, "/receipt/in_app/1/quantity"));
+        Assert.Equal("AQID", JsonPointer070.Resolve(model, "/unknown_attributes/9999/0"));
+        Assert.Equal(1L, JsonPointer070.Length(model, "/unknown_attributes/9999"));
+        Assert.Equal(7L, JsonPointer070.Resolve(model, "/a~1b/c~0d"));
+        Assert.Null(JsonPointer070.Resolve(model, "/receipt/absent"));
+        Assert.Null(JsonPointer070.Resolve(model, "/receipt/absent/deeper"));
+        Assert.Null(JsonPointer070.Resolve(model, "/receipt/in_app/5"));
     }
 
     [Fact]
     public void TheFieldPathResolverFailsWhenASelectorIsNotUnique()
     {
-        object? model = Normalize.Value(new Dictionary<string, object?>(StringComparer.Ordinal)
-        {
-            ["list"] = new List<object?>
-            {
-                new Dictionary<string, object?>(StringComparer.Ordinal) { ["id"] = "a" },
-                new Dictionary<string, object?>(StringComparer.Ordinal) { ["id"] = "a" },
-            },
-        });
+        object? model = Json.Parse("{\"list\":[{\"id\":\"a\"},{\"id\":\"a\"}]}");
 
-        Assert.ThrowsAny<Exception>(() => Normalize.Resolve(model, "list[id=a]"));
-        Assert.ThrowsAny<Exception>(() => Normalize.Resolve(model, "list[id=missing]"));
-    }
-
-    [Fact]
-    public void TheNormalizerRendersDatesAndBytesTheWayTheVectorsSpellThem()
-    {
-        Assert.Equal(
-            "2024-08-06T12:00:00Z",
-            Normalize.Value(new DateTimeOffset(2024, 8, 6, 12, 0, 0, TimeSpan.Zero)));
-        Assert.Equal(
-            "2024-08-06T12:00:00.250Z",
-            Normalize.Value(new DateTimeOffset(2024, 8, 6, 12, 0, 0, 250, TimeSpan.Zero)));
-        Assert.Equal(
-            "2024-08-06T12:00:00Z",
-            Normalize.Value(new DateTimeOffset(2024, 8, 6, 14, 0, 0, TimeSpan.FromHours(2))));
-        Assert.Equal("0a0b", Normalize.Value(new byte[] { 0x0A, 0x0B }));
-        Assert.Equal(7L, Normalize.Value(7));
-    }
-
-    [Fact]
-    public void TheHarnessMirrorsByteFieldsUnderAHexSuffix()
-    {
-        using ReceiptVerifier verifier = new(ReceiptRoots(), "com.example.app");
-        object? model = Normalize.Value(verifier.Verify(Fixtures.Bytes("receipt")));
-        Assert.Equal("0102030405060708", Normalize.Resolve(model, "opaqueValueHex"));
-        Assert.Equal("0102030405060708", Normalize.Resolve(model, "opaqueValue"));
+        Assert.ThrowsAny<Exception>(() => JsonPointer070.Resolve(model, "/list/[id=a]"));
+        Assert.ThrowsAny<Exception>(() => JsonPointer070.Resolve(model, "/list/[id=missing]"));
+        Assert.ThrowsAny<Exception>(() => JsonPointer070.Resolve(model, "list"));
+        Assert.ThrowsAny<Exception>(() => JsonPointer070.Length(model, "/list/0"));
     }
 
     private static BigInteger Big(string hex) =>

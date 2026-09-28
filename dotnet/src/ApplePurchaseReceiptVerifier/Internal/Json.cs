@@ -15,6 +15,29 @@ namespace ApplePurchaseReceiptVerifier.Internal
     }
 
     /// <summary>
+    /// A JSON number too large for a <see cref="double"/>, kept as the text the
+    /// reader validated so the writer can emit it unchanged.
+    /// </summary>
+    internal sealed class JsonNumberLiteral : IEquatable<JsonNumberLiteral>
+    {
+        internal JsonNumberLiteral(string text)
+        {
+            Text = text;
+        }
+
+        internal string Text { get; }
+
+        public bool Equals(JsonNumberLiteral? other) =>
+            other is not null && string.Equals(Text, other.Text, StringComparison.Ordinal);
+
+        public override bool Equals(object? obj) => Equals(obj as JsonNumberLiteral);
+
+        public override int GetHashCode() => StringComparer.Ordinal.GetHashCode(Text);
+
+        public override string ToString() => Text;
+    }
+
+    /// <summary>
     /// A bounded, dependency-free JSON reader and writer.
     /// </summary>
     /// <remarks>
@@ -27,8 +50,10 @@ namespace ApplePurchaseReceiptVerifier.Internal
     /// IL2CPP), and no <c>System.Text.Json</c> type in the public surface.</para>
     /// <para>Semantics are pinned to match the other ports: last key wins on
     /// duplicates, integral numbers that fit exactly become
-    /// <see cref="long"/> and everything else <see cref="double"/>, nesting and
-    /// input length are bounded, and no key is special-cased.</para>
+    /// <see cref="long"/>, a number whose double is infinite a
+    /// <see cref="JsonNumberLiteral"/>, and everything else
+    /// <see cref="double"/>, nesting and input length are bounded, and no key
+    /// is special-cased.</para>
     /// </remarks>
     internal static class Json
     {
@@ -42,6 +67,12 @@ namespace ApplePurchaseReceiptVerifier.Internal
         /// larger stacks hosts hand out; a test pins it on a 256 KiB thread.
         /// </summary>
         internal const int MaxDepth = 64;
+
+        /// <summary>An object member name over this many characters is MALFORMED (design Bounds table).</summary>
+        internal const int MaxMemberNameLength = 50000;
+
+        /// <summary>A JSON number with more digits than this is MALFORMED (design Bounds table).</summary>
+        internal const int MaxNumberDigits = 1000;
 
         private const int DefaultMaxLength = 16 * 1024 * 1024;
 
@@ -75,6 +106,32 @@ namespace ApplePurchaseReceiptVerifier.Internal
         {
             return Parse(text, maxLength) as OrderedMap
                 ?? throw new JsonException("the JSON value is not an object");
+        }
+
+        /// <summary>
+        /// Parses one JSON value starting at the beginning of <paramref name="text"/>,
+        /// tolerating trailing content, and returns how many characters were
+        /// consumed (including any leading whitespace skipped first). The
+        /// caller decides what to do with anything after that index — used to
+        /// tell "well-formed object with trailing content" apart from "not
+        /// valid JSON at all".
+        /// </summary>
+        internal static (object? Value, int Consumed) ParsePrefix(string text, int maxLength = DefaultMaxLength)
+        {
+            if (text is null)
+            {
+                throw new JsonException("input is null");
+            }
+
+            if (text.Length > maxLength)
+            {
+                throw new JsonException("input exceeds the maximum JSON length");
+            }
+
+            Reader reader = new Reader(text);
+            reader.SkipWhitespace();
+            object? value = reader.ReadValue(0);
+            return (value, reader.Position);
         }
 
         /// <summary>Serializes the value model this reader produces.</summary>
@@ -116,6 +173,9 @@ namespace ApplePurchaseReceiptVerifier.Internal
                     }
 
                     builder.Append(d.ToString("R", CultureInfo.InvariantCulture));
+                    return;
+                case JsonNumberLiteral n:
+                    builder.Append(n.Text);
                     return;
                 case IReadOnlyDictionary<string, object?> map:
                     {
@@ -206,6 +266,8 @@ namespace ApplePurchaseReceiptVerifier.Internal
 
             internal bool AtEnd => _index >= _text.Length;
 
+            internal int Position => _index;
+
             internal void SkipWhitespace()
             {
                 while (_index < _text.Length)
@@ -270,6 +332,11 @@ namespace ApplePurchaseReceiptVerifier.Internal
                     }
 
                     string key = ReadString();
+                    if (key.Length > MaxMemberNameLength)
+                    {
+                        throw new JsonException("object member name exceeds the maximum length");
+                    }
+
                     SkipWhitespace();
                     if (Peek() != ':')
                     {
@@ -439,12 +506,13 @@ namespace ApplePurchaseReceiptVerifier.Internal
                 // bare "-", "1." or ".5" are all malformed, and accepting them
                 // would make this reader disagree with every other port's.
                 int start = _index;
+                int digitCount = 0;
                 if (Peek() == '-')
                 {
                     _index++;
                 }
 
-                if (!ReadDigits(out bool leadingZero))
+                if (!ReadDigits(out bool leadingZero, ref digitCount))
                 {
                     throw new JsonException("expected a JSON number");
                 }
@@ -459,7 +527,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
                 {
                     integral = false;
                     _index++;
-                    if (!ReadDigits(out _))
+                    if (!ReadDigits(out _, ref digitCount))
                     {
                         throw new JsonException("expected digits after the decimal point");
                     }
@@ -474,10 +542,15 @@ namespace ApplePurchaseReceiptVerifier.Internal
                         _index++;
                     }
 
-                    if (!ReadDigits(out _))
+                    if (!ReadDigits(out _, ref digitCount))
                     {
                         throw new JsonException("expected digits in the exponent");
                     }
+                }
+
+                if (digitCount > MaxNumberDigits)
+                {
+                    throw new JsonException("a JSON number has more digits than the maximum allowed");
                 }
 
                 string literal = _text.Substring(start, _index - start);
@@ -487,21 +560,19 @@ namespace ApplePurchaseReceiptVerifier.Internal
                     return asLong;
                 }
 
-                if (double.TryParse(
-                        literal,
-                        NumberStyles.Float,
-                        CultureInfo.InvariantCulture,
-                        out double asDouble)
-                    && !double.IsNaN(asDouble)
-                    && !double.IsInfinity(asDouble))
+                if (double.TryParse(literal, NumberStyles.Float, CultureInfo.InvariantCulture, out double asDouble)
+                    && !double.IsNaN(asDouble))
                 {
-                    return asDouble;
+                    // 1e999 or a 400-digit integer is valid JSON within the
+                    // digit bound, and Jackson accepts it, but its double is
+                    // infinite and the writer cannot emit that. Keep the text.
+                    return double.IsInfinity(asDouble) ? new JsonNumberLiteral(literal) : asDouble;
                 }
 
                 throw new JsonException("malformed number " + literal);
             }
 
-            private bool ReadDigits(out bool leadingZero)
+            private bool ReadDigits(out bool leadingZero, ref int digitCount)
             {
                 int start = _index;
                 leadingZero = !AtEnd && _text[_index] == '0';
@@ -510,6 +581,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
                     _index++;
                 }
 
+                digitCount += _index - start;
                 return _index > start;
             }
 

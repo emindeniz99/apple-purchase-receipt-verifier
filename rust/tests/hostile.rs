@@ -6,28 +6,34 @@
 
 mod common;
 
-use apple_purchase_receipt_verifier::asn1::{parse_exact, MAX_DEPTH};
-use apple_purchase_receipt_verifier::{
-    verify_receipt_core, Environment, JwsVerifier, Reason, ReceiptVerifier,
-};
+use apple_purchase_receipt_verifier::__internal::asn1::{parse_exact, MAX_DEPTH};
+use apple_purchase_receipt_verifier::{Environment, Reason, ReceiptPayload, Verifier};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::time::Instant;
 
-fn receipt_verifier() -> ReceiptVerifier {
-    ReceiptVerifier::builder()
-        .trusted_roots([common::receipt_root()])
-        .bundle_id("com.example.app")
-        .build()
-        .unwrap()
+fn receipt_verifier() -> Verifier {
+    common::receipt_verifier()
 }
 
-fn jws_verifier() -> JwsVerifier {
-    JwsVerifier::builder()
-        .trusted_roots([common::jws_root()])
-        .bundle_id("com.example.app")
-        .accepted_environments([Environment::Sandbox])
-        .build()
-        .unwrap()
+fn jws_verifier() -> Verifier {
+    common::jws_verifier()
+}
+
+/// `verify_receipt` over the base64 of `der`.
+trait VerifyDer {
+    fn verify(
+        &self,
+        der: &[u8],
+    ) -> Result<ReceiptPayload, apple_purchase_receipt_verifier::Failure>;
+}
+
+impl VerifyDer for Verifier {
+    fn verify(
+        &self,
+        der: &[u8],
+    ) -> Result<ReceiptPayload, apple_purchase_receipt_verifier::Failure> {
+        common::verify_der(self, der)
+    }
 }
 
 #[test]
@@ -35,9 +41,9 @@ fn eleven_characters_of_base64_do_not_escape_the_contract() {
     // The exact input that once escaped a sibling port's declared contract.
     let verifier = receipt_verifier();
     for text in ["aaaaaaaaaaa", "AAAAAAAAAAA", "////////////", "MIIBIjANBgkq"] {
-        let outcome = catch_unwind(AssertUnwindSafe(|| verifier.verify_base64(text)));
-        let result = outcome.unwrap_or_else(|_| panic!("verify_base64({text}) panicked"));
-        assert_eq!(result.unwrap_err().reason(), Reason::InvalidReceiptFormat);
+        let outcome = catch_unwind(AssertUnwindSafe(|| verifier.verify_receipt(text)));
+        let result = outcome.unwrap_or_else(|_| panic!("verify_receipt({text}) panicked"));
+        assert_eq!(result.unwrap_err().reason(), Reason::Malformed);
     }
 }
 
@@ -54,7 +60,7 @@ fn deeply_nested_asn1_is_refused_rather_than_recursed() {
     assert!(parse_exact(&nested).is_err());
     assert_eq!(
         receipt_verifier().verify(&nested).unwrap_err().reason(),
-        Reason::InvalidReceiptFormat
+        Reason::Malformed
     );
 }
 
@@ -74,10 +80,7 @@ fn a_thousand_levels_of_nesting_does_not_overflow_the_stack() {
         nested = wrapped;
     }
     let outcome = catch_unwind(AssertUnwindSafe(|| receipt_verifier().verify(&nested)));
-    assert_eq!(
-        outcome.unwrap().unwrap_err().reason(),
-        Reason::InvalidReceiptFormat
-    );
+    assert_eq!(outcome.unwrap().unwrap_err().reason(), Reason::Malformed);
 }
 
 #[test]
@@ -115,7 +118,7 @@ fn a_megabyte_of_zeros_is_refused_quickly() {
     let started = Instant::now();
     assert_eq!(
         receipt_verifier().verify(&junk).unwrap_err().reason(),
-        Reason::InvalidReceiptFormat
+        Reason::Malformed
     );
     assert!(
         started.elapsed().as_millis() < 1000,
@@ -161,7 +164,7 @@ fn a_certificate_flood_is_rejected_at_a_bounded_cost() {
     for _ in 0..5 {
         assert_eq!(
             verifier.verify(&flood).unwrap_err().reason(),
-            Reason::InvalidChain
+            Reason::Malformed
         );
     }
     let flood_cost = started.elapsed();
@@ -202,7 +205,7 @@ fn a_cross_signed_certificate_mesh_stays_flat() {
 #[test]
 fn five_thousand_mutations_of_a_genuine_receipt_never_panic_and_never_verify() {
     // The contract this loop exists for: a mutated receipt may only ever
-    // come back as a VerificationError. In Rust the "no foreign error type"
+    // come back as a Failure. In Rust the "no foreign error type"
     // half is enforced by the signature, so what is left to prove is that
     // nothing panics and nothing is accepted.
     let genuine = common::receipt_der();
@@ -240,9 +243,9 @@ fn five_thousand_mutations_of_a_genuine_receipt_never_panic_and_never_verify() {
                 accepted_unchanged += 1;
             }
             Err(error) => {
-                // Every reason must still be one of the eleven.
+                // Every reason must still be one of the eight.
                 assert!(
-                    apple_purchase_receipt_verifier::Reason::all().contains(&error.reason()),
+                    Reason::all().contains(&error.reason()),
                     "mutation {iteration} produced {:?}",
                     error.reason()
                 );
@@ -299,7 +302,7 @@ fn two_thousand_mutations_of_a_genuine_jws_never_panic_and_never_verify() {
             mutated[index] ^= 1u8 << rng.below(8);
         }
         let text = String::from_utf8_lossy(&mutated).into_owned();
-        let outcome = catch_unwind(AssertUnwindSafe(|| verifier.verify_transaction(&text)));
+        let outcome = catch_unwind(AssertUnwindSafe(|| verifier.verify_signed_data(&text)));
         let result = outcome.unwrap_or_else(|_| panic!("jws mutation {iteration} panicked"));
         assert!(result.is_err(), "jws mutation {iteration} was ACCEPTED");
     }
@@ -331,11 +334,13 @@ fn arbitrary_byte_strings_never_panic_in_either_entry_point() {
         let text = String::from_utf8_lossy(&bytes).into_owned();
         let outcome = catch_unwind(AssertUnwindSafe(|| {
             let a = receipt.verify(&bytes).is_err();
-            let b = receipt.verify_base64(&text).is_err();
-            let c = jws.verify_transaction(&text).is_err();
-            let d = jws.verify_raw(&text).is_err();
-            let e = verify_receipt_core(&bytes, &[common::receipt_root()]).is_err();
-            a && b && c && d && e
+            let b = receipt.verify_receipt(&text).is_err();
+            let c = jws.verify_signed_data(&text).is_err();
+            let body = serde_json::json!({ "receipt-data": text }).to_string();
+            let d = receipt.verify_receipt_endpoint(Environment::Sandbox, &text)
+                != "{\"status\":0}"
+                && receipt.verify_receipt_endpoint(Environment::Sandbox, &body) != "{\"status\":0}";
+            a && b && c && d
         }));
         assert!(outcome.unwrap_or_else(|_| panic!("random input {iteration} panicked")));
     }
@@ -378,7 +383,7 @@ fn no_respelling_of_a_genuine_jws_is_accepted() {
     const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     let genuine = common::transaction_jws();
     let verifier = jws_verifier();
-    assert!(verifier.verify_transaction(&genuine).is_ok(), "baseline");
+    assert!(verifier.verify_signed_data(&genuine).is_ok(), "baseline");
     let (header, payload, signature) = common::split_jws(&genuine);
 
     let mut candidates: Vec<String> = Vec::new();
@@ -424,7 +429,7 @@ fn no_respelling_of_a_genuine_jws_is_accepted() {
 
     let mut accepted = Vec::new();
     for candidate in &candidates {
-        let outcome = catch_unwind(AssertUnwindSafe(|| verifier.verify_transaction(candidate)));
+        let outcome = catch_unwind(AssertUnwindSafe(|| verifier.verify_signed_data(candidate)));
         let result = outcome.unwrap_or_else(|_| panic!("respelling panicked: {candidate:?}"));
         if result.is_ok() {
             accepted.push(candidate.clone());

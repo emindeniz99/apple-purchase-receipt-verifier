@@ -7,10 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.exc.StreamConstraintsException;
-import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
-import io.github.emindeniz99.applepurchasereceiptverifier.jws.JwsVerifier;
-import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifier;
-import io.github.emindeniz99.applepurchasereceiptverifier.receipt.VerifyReceiptEndpoint;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -20,18 +16,14 @@ import java.security.cert.X509Certificate;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collections;
-import java.util.EnumSet;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /**
  * The size a public entry point will look at, and the JSON shape it will read,
  * are bounded before anything is decoded.
  *
- * <p>Both bounds guard the same promise: "every entry point throws the checked
- * {@code VerificationException}, never an unchecked one" (README). An
- * {@link OutOfMemoryError} is not a {@code VerificationException} and cannot be
+ * <p>Both bounds guard the same promise: "no verify method throws for any
+ * input" (README). An {@link OutOfMemoryError} is not a result and cannot be
  * caught meaningfully, so an input large enough to provoke one breaks the
  * promise on exactly the hostile input the promise exists for: a 64 MB JWS
  * under {@code -Xmx256m} did. Nesting is the same story with a smaller input:
@@ -62,21 +54,36 @@ class InputSizeBoundsTest {
         // the payload is parsed, and only then is the oversized signature
         // refused as INVALID_SIGNATURE for its length. With the bound nothing
         // past the length check runs.
-        String jws = genuineJws() + repeat('A', JwsVerifier.MAX_JWS_BYTES);
-        VerificationException thrown =
-                assertThrows(VerificationException.class, () -> jwsVerifier().verifyTransaction(jws));
-        assertEquals(Reason.INVALID_JWS_FORMAT, thrown.reason());
+        String jws = genuineJws() + repeat('A', JwsCore.MAX_JWS_BYTES);
+        VerificationException thrown = assertThrows(VerificationException.class, () -> verifyJws(jws));
+        assertEquals(Reason.TOO_LARGE, thrown.reason());
         assertTrue(thrown.getMessage().contains("exceeds the maximum accepted size"), thrown.getMessage());
     }
 
     @Test
     void jwsAtTheSizeLimitIsNotRefusedForItsSize() throws Exception {
         String jws = genuineJws();
-        String atLimit = jws + repeat('A', JwsVerifier.MAX_JWS_BYTES - jws.length());
-        assertEquals(JwsVerifier.MAX_JWS_BYTES, atLimit.length());
-        VerificationException thrown =
-                assertThrows(VerificationException.class, () -> jwsVerifier().verifyTransaction(atLimit));
+        String atLimit = jws + repeat('A', JwsCore.MAX_JWS_BYTES - jws.length());
+        assertEquals(JwsCore.MAX_JWS_BYTES, atLimit.length());
+        VerificationException thrown = assertThrows(VerificationException.class, () -> verifyJws(atLimit));
+        assertNotEquals(Reason.TOO_LARGE, thrown.reason());
         assertFalse(thrown.getMessage().contains("exceeds the maximum accepted size"), thrown.getMessage());
+    }
+
+    /**
+     * The JWS cap counts UTF-8 bytes, as the receipt and body caps do. A JWS
+     * that is under the cap in characters but over it in bytes is refused for
+     * its size; it could never have verified anyway, since base64url is
+     * ASCII, so only the reason tells the two checks apart.
+     */
+    @Test
+    void jwsIsMeasuredInUtf8Bytes() throws Exception {
+        String jws = genuineJws();
+        int remaining = JwsCore.MAX_JWS_BYTES - jws.length();
+        String overInBytes = jws + repeat('\u00e9', remaining / 2 + 1);
+        assertTrue(overInBytes.length() <= JwsCore.MAX_JWS_BYTES);
+        VerificationException thrown = assertThrows(VerificationException.class, () -> verifyJws(overInBytes));
+        assertEquals(Reason.TOO_LARGE, thrown.reason());
     }
 
     /**
@@ -87,8 +94,14 @@ class InputSizeBoundsTest {
     @Test
     void jwsHeaderNestedDeeperThanTheLimitIsRefusedAsMalformed() throws Exception {
         VerificationException thrown = assertThrows(
-                VerificationException.class, () -> jwsVerifier().verifyTransaction(headerJws(nestedJson(200))));
-        assertEquals(Reason.INVALID_JWS_FORMAT, thrown.reason());
+                VerificationException.class,
+                // JwsCore directly: the public Failure keeps no cause for
+                // MALFORMED, and the cause is what this test is about.
+                () -> JwsCore.verify(
+                        headerJws(nestedJson(200)),
+                        AppleTrust.anchors(Collections.singleton(root("jws-root.der"))),
+                        System.currentTimeMillis()));
+        assertEquals(Reason.MALFORMED, thrown.reason());
         assertTrue(
                 thrown.getCause() instanceof StreamConstraintsException,
                 "the refusal did not come from the reader constraints: " + thrown.getCause());
@@ -97,10 +110,10 @@ class InputSizeBoundsTest {
     /** Just under the configured 64: the same shape has to get past the reader. */
     @Test
     void jwsHeaderNestedJustUnderTheLimitReachesTheAlgorithmCheck() throws Exception {
-        VerificationException thrown = assertThrows(
-                VerificationException.class, () -> jwsVerifier().verifyTransaction(headerJws(nestedJson(60))));
-        assertEquals(Reason.INVALID_JWS_FORMAT, thrown.reason());
-        assertTrue(thrown.getMessage().contains("alg must be ES256"), thrown.getMessage());
+        VerificationException thrown =
+                assertThrows(VerificationException.class, () -> verifyJws(headerJws(nestedJson(60))));
+        assertEquals(Reason.MALFORMED, thrown.reason());
+        assertTrue(thrown.getMessage().contains("alg is not ES256"), thrown.getMessage());
     }
 
     // ------------------------------------------------------------------
@@ -115,49 +128,41 @@ class InputSizeBoundsTest {
      */
     @Test
     void receiptStringOverTheSizeLimitIsRefusedBeforeItIsDecoded() throws Exception {
-        String receipt = paddedGenuineReceipt(ReceiptVerifier.MAX_RECEIPT_BYTES + 1);
-        VerificationException thrown = assertThrows(
-                VerificationException.class, () -> receiptVerifier().verify(receipt));
-        assertEquals(Reason.INVALID_RECEIPT_FORMAT, thrown.reason());
+        String receipt = paddedGenuineReceipt(ReceiptCore.MAX_RECEIPT_BYTES + 1);
+        VerificationException thrown = assertThrows(VerificationException.class, () -> verifyReceipt(receipt));
+        assertEquals(Reason.TOO_LARGE, thrown.reason());
         assertTrue(thrown.getMessage().contains("exceeds the maximum accepted size"), thrown.getMessage());
     }
 
     /**
      * A string exactly at the bound still verifies, so the bound is where it
      * says it is. Canonical base64 admits nothing around the data, so the
-     * string is a genuinely signed receipt whose base64 is exactly the bound
-     * (fixtures/limits/receipt-b64-at-cap.txt, from ReceiptBase64CapFixture).
+     * string is a genuinely signed receipt whose base64 is exactly the bound,
+     * built here the way ReceiptBase64CapFixture builds
+     * fixtures/limits/receipt-b64-at-cap.txt: that committed file predates
+     * the WWDR marker check and no longer verifies.
      */
     @Test
     void receiptStringAtTheSizeLimitStillVerifies() throws Exception {
-        String receipt = new String(
-                Files.readAllBytes(TestFixtures.root().resolve("limits").resolve("receipt-b64-at-cap.txt")),
-                StandardCharsets.US_ASCII);
-        assertEquals(ReceiptVerifier.MAX_RECEIPT_BYTES, receipt.length());
-        ReceiptVerifier verifier = new ReceiptVerifier(Collections.singleton(root("receipt-b64-cap-root.der")), BUNDLE);
-        assertEquals(BUNDLE, verifier.verify(receipt).bundleId());
-    }
-
-    @Test
-    void receiptDerOverTheSizeLimitIsRefusedBeforeItIsParsed() throws Exception {
-        byte[] der = new byte[ReceiptVerifier.MAX_RECEIPT_BYTES + 1];
-        VerificationException thrown = assertThrows(
-                VerificationException.class, () -> receiptVerifier().verify(der));
-        assertEquals(Reason.INVALID_RECEIPT_FORMAT, thrown.reason());
-        assertTrue(thrown.getMessage().contains("exceeds the maximum accepted size"), thrown.getMessage());
+        TestPki pki = SyntheticReceipts.pki();
+        String receipt = Base64.getEncoder()
+                .encodeToString(LargeReceiptFixture.exactSize(
+                        pki, "receipt-b64-at-cap", ReceiptCore.MAX_RECEIPT_BYTES / 4 * 3));
+        assertEquals(ReceiptCore.MAX_RECEIPT_BYTES, receipt.length());
+        assertEquals(BUNDLE, Checks.receipt(Checks.verifier(pki), receipt).bundleId());
     }
 
     /**
-     * The static primitive is a public entry point of its own, so it carries
-     * the same bound rather than relying on a verifier being in front of it.
+     * Measured in UTF-8 bytes like the body: a string under the cap in
+     * characters but over it in bytes is TOO_LARGE, not the MALFORMED its
+     * non-base64 characters would otherwise earn.
      */
     @Test
-    void verifyReceiptCoreCarriesTheSameBound() throws Exception {
-        byte[] der = new byte[ReceiptVerifier.MAX_RECEIPT_BYTES + 1];
-        VerificationException thrown = assertThrows(
-                VerificationException.class,
-                () -> ReceiptVerifier.verifyReceiptCore(der, Collections.singleton(receiptRoot())));
-        assertTrue(thrown.getMessage().contains("exceeds the maximum accepted size"), thrown.getMessage());
+    void receiptStringIsMeasuredInUtf8Bytes() throws Exception {
+        String receipt = repeat('\u00e9', ReceiptCore.MAX_RECEIPT_BYTES / 2 + 1);
+        assertTrue(receipt.length() < ReceiptCore.MAX_RECEIPT_BYTES);
+        VerificationException thrown = assertThrows(VerificationException.class, () -> verifyReceipt(receipt));
+        assertEquals(Reason.TOO_LARGE, thrown.reason());
     }
 
     /**
@@ -168,8 +173,8 @@ class InputSizeBoundsTest {
      */
     @Test
     void theBoundsAreApplesThreeMebibytes() {
-        assertEquals(3145728, VerifyReceiptEndpoint.MAX_REQUEST_BYTES);
-        assertEquals(3145728, ReceiptVerifier.MAX_RECEIPT_BYTES);
+        assertEquals(3145728, Endpoint.MAX_REQUEST_BYTES);
+        assertEquals(3145728, ReceiptCore.MAX_RECEIPT_BYTES);
     }
 
     // ------------------------------------------------------------------
@@ -179,15 +184,15 @@ class InputSizeBoundsTest {
     /**
      * A request body over the limit carries a receipt that verifies, so
      * without the bound the answer is 0 rather than 21002. The reason is
-     * REQUEST_TOO_LARGE, the one an HTTP layer maps to 413 as Apple does.
+     * TOO_LARGE, the one an HTTP layer maps to 413 as Apple does.
      */
     @Test
     void requestBodyOverTheSizeLimitAnswers21002WithoutParsingIt() throws Exception {
-        String body = requestJson(repeat('x', VerifyReceiptEndpoint.MAX_REQUEST_BYTES));
-        assertTrue(body.length() > VerifyReceiptEndpoint.MAX_REQUEST_BYTES);
-        assertEquals("{\"status\":21002}", endpoint().verifyReceiptJson(body));
-        assertEquals(
-                Reason.REQUEST_TOO_LARGE, endpoint().verifyReceiptResult(body).failureReason());
+        String body = requestJson(repeat('x', Endpoint.MAX_REQUEST_BYTES));
+        assertTrue(body.length() > Endpoint.MAX_REQUEST_BYTES);
+        assertEquals("{\"status\":21002}", endpoint(body));
+        VerificationException thrown = assertThrows(VerificationException.class, () -> Endpoint.receiptData(body));
+        assertEquals(Reason.TOO_LARGE, thrown.reason());
     }
 
     /**
@@ -197,70 +202,54 @@ class InputSizeBoundsTest {
      */
     @Test
     void requestBodyIsMeasuredInUtf8BytesNotCharacters() throws Exception {
-        int limit = VerifyReceiptEndpoint.MAX_REQUEST_BYTES;
+        int limit = Endpoint.MAX_REQUEST_BYTES;
         int fixed = requestJson(null).length() + ",\"padding\":\"\"".length();
 
         String overBody = requestJson(twoBytePadding(limit + 1 - fixed));
         assertEquals(limit + 1, overBody.getBytes(StandardCharsets.UTF_8).length);
         assertTrue(overBody.length() < limit / 2 + fixed, "a character count calls this one far under the limit");
-        assertEquals(
-                Reason.REQUEST_TOO_LARGE,
-                endpoint().verifyReceiptResult(overBody).failureReason());
+        VerificationException thrown = assertThrows(VerificationException.class, () -> Endpoint.receiptData(overBody));
+        assertEquals(Reason.TOO_LARGE, thrown.reason());
+        assertEquals("{\"status\":21002}", endpoint(overBody));
 
         String atBody = requestJson(twoBytePadding(limit - fixed));
         assertEquals(limit, atBody.getBytes(StandardCharsets.UTF_8).length);
-        assertEquals(
-                VerifyReceiptEndpoint.STATUS_OK,
-                endpoint().verifyReceiptResult(atBody).status());
+        assertTrue(endpoint(atBody).startsWith("{\"status\":0,"), "the body at the limit verifies");
     }
 
     /** Nesting in the body is bounded for the same reason it is in a JWS header. */
     @Test
     void requestBodyNestedDeeperThanTheLimitAnswers21002() throws Exception {
         String body = requestJson(null).replace("}", ",\"deep\":" + nestedArray(200) + "}");
-        assertEquals("{\"status\":21002}", endpoint().verifyReceiptJson(body));
+        assertEquals("{\"status\":21002}", endpoint(body));
     }
 
-    /**
-     * The {@code Map} entry point does not see the request body, so it applies
-     * the receipt bound to {@code receipt-data} itself. No string over the
-     * bound is valid receipt-data, so without the bound this would be 21002
-     * too; what it pins is that the endpoint's answer stays 21002 with
-     * INVALID_RECEIPT_FORMAT rather than anything the decode could throw.
-     */
+    /** One level under the limit, the same shape is read through and the receipt verifies. */
     @Test
-    void receiptDataOverTheReceiptLimitAnswers21002() throws Exception {
-        Map<String, Object> request = new LinkedHashMap<String, Object>();
-        request.put("receipt-data", paddedGenuineReceipt(ReceiptVerifier.MAX_RECEIPT_BYTES + 1));
-        assertEquals(
-                Integer.valueOf(VerifyReceiptEndpoint.STATUS_MALFORMED),
-                endpoint().verifyReceiptResult(request).toResponse().get("status"));
-        assertNotEquals(
-                Integer.valueOf(VerifyReceiptEndpoint.STATUS_OK),
-                endpoint().verifyReceiptResult(request).toResponse().get("status"));
-        assertEquals(
-                Reason.INVALID_RECEIPT_FORMAT,
-                endpoint().verifyReceiptResult(request).failureReason());
+    void requestBodyNestedJustUnderTheLimitVerifies() throws Exception {
+        String body = requestJson(null).replace("}", ",\"deep\":" + nestedArray(60) + "}");
+        assertTrue(endpoint(body).startsWith("{\"status\":0,"), endpoint(body));
     }
 
     // ------------------------------------------------------------------
     // helpers
     // ------------------------------------------------------------------
 
-    private static JwsVerifier jwsVerifier() throws Exception {
-        return new JwsVerifier(Collections.singleton(root("jws-root.der")), BUNDLE, EnumSet.of(Environment.SANDBOX));
+    private static JsonPayload verifyJws(String jws) throws Exception {
+        return Checks.signedData(Checks.verifier(root("jws-root.der")), jws);
     }
 
-    private static ReceiptVerifier receiptVerifier() throws Exception {
-        return new ReceiptVerifier(Collections.singleton(receiptRoot()), BUNDLE);
+    private static ReceiptPayload verifyReceipt(String base64) throws Exception {
+        return Checks.receipt(Checks.verifier(receiptRoot()), base64);
     }
 
-    private static VerifyReceiptEndpoint endpoint() throws Exception {
-        return new VerifyReceiptEndpoint(Collections.singleton(receiptRoot()), Environment.SANDBOX);
+    /** The endpoint's answer on SANDBOX, where the shared receipt answers 0. */
+    private static String endpoint(String body) throws Exception {
+        return Checks.verifier(receiptRoot()).verifyReceiptEndpoint(Environment.SANDBOX, body);
     }
 
     private static X509Certificate receiptRoot() throws Exception {
-        return root("receipt-root.der");
+        return SyntheticReceipts.root();
     }
 
     private static X509Certificate root(String name) throws Exception {
@@ -275,13 +264,13 @@ class InputSizeBoundsTest {
 
     /** The genuine receipt as base64, space-padded to exactly {@code length} characters. */
     private static String paddedGenuineReceipt(int length) throws Exception {
-        String base64 = Base64.getEncoder().encodeToString(Files.readAllBytes(FIXTURES.resolve("receipt.der")));
+        String base64 = SyntheticReceipts.base64();
         return base64 + repeat(' ', length - base64.length());
     }
 
     /** A verifying request body, optionally carrying a padding field to grow it. */
     private static String requestJson(String padding) throws Exception {
-        String base64 = Base64.getEncoder().encodeToString(Files.readAllBytes(FIXTURES.resolve("receipt.der")));
+        String base64 = SyntheticReceipts.base64();
         String body = "{\"receipt-data\":\"" + base64 + "\"";
         if (padding != null && !padding.isEmpty()) {
             body = body + ",\"padding\":\"" + padding + "\"";

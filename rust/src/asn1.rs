@@ -4,8 +4,8 @@
 //! Hand-rolled on purpose. Every byte this module sees is attacker-supplied,
 //! so the bounds are part of the design rather than a configuration:
 //!
-//! - nesting depth is capped at [`MAX_DEPTH`], so no input can recurse the
-//!   parser off the stack;
+//! - nesting depth is capped at [`MAX_DEPTH`] constructed values, so no
+//!   input can recurse the parser off the stack;
 //! - the total number of decoded nodes is capped at [`MAX_NODES`];
 //! - multi-byte tags are refused, and a length is at most four octets;
 //! - indefinite (BER) lengths are accepted only on constructed values,
@@ -17,9 +17,14 @@
 //! re-encoded, so a signature is always checked over the bytes that were
 //! parsed rather than over a normalised view of them.
 
+// Every length and offset here comes from attacker bytes: no silent wrap.
+#![deny(clippy::arithmetic_side_effects)]
+
 use std::borrow::Cow;
 
-/// Maximum ASN.1 nesting depth.
+/// Maximum ASN.1 nesting depth: at most this many constructed values
+/// nested inside one another, the outermost included, and a primitive value
+/// inside the innermost.
 pub const MAX_DEPTH: usize = 32;
 
 /// Maximum number of decoded nodes in one parse.
@@ -121,7 +126,7 @@ impl<'a> Tlv<'a> {
     /// correctly signed receipt be re-encoded as, say,
     /// `24 L { 0C L1 <first half>, 02 L2 <second half> }` without changing
     /// the bytes the RSA signature covers, so one receipt had many accepted
-    /// spellings. Node's `der.ts` still joins unconditionally.
+    /// spellings.
     ///
     /// Re-chunking into *legal* `OCTET STRING` children remains possible and
     /// is inherent to BER, which genuine Xcode and `BouncyCastle` receipts
@@ -135,6 +140,10 @@ impl<'a> Tlv<'a> {
         if !self.constructed {
             return Some(Cow::Borrowed(self.contents));
         }
+        // Each nesting level copies its children's bytes again, so the cost
+        // is O(depth * size). Both are bounded, by MAX_DEPTH and by the input
+        // size cap; a single walk collecting the primitive leaves would be
+        // the fix if either bound were ever raised.
         let mut out = Vec::new();
         for child in self.children() {
             out.extend_from_slice(&child.octet_string_value()?);
@@ -149,9 +158,8 @@ struct Budget {
 
 /// Parses exactly one value, refusing any trailing bytes.
 ///
-/// Trailing garbage after a CMS blob is a documented rejection
-/// (`PLAN.md` §2.3): accepting it would let an attacker append bytes to a
-/// genuine receipt and have it still verify.
+/// Trailing garbage after a CMS blob is refused: accepting it would let an
+/// attacker append bytes to a genuine receipt and have it still verify.
 ///
 /// # Errors
 /// [`Asn1Error`] when the input is not one well-formed value within this
@@ -178,7 +186,7 @@ fn read_node<'a>(
     if budget.nodes == 0 {
         return Err(Asn1Error("ASN.1 node budget exceeded"));
     }
-    budget.nodes -= 1;
+    budget.nodes = budget.nodes.saturating_sub(1);
 
     let tag = *input
         .get(offset)
@@ -187,11 +195,20 @@ fn read_node<'a>(
         return Err(Asn1Error("multi-byte ASN.1 tags are not supported"));
     }
     let constructed = tag & 0x20 != 0;
-    let mut position = offset + 1;
+    // `depth` counts the constructed values around this one, so a
+    // constructed value here would be number `depth + 1`.
+    if constructed && depth >= MAX_DEPTH {
+        return Err(Asn1Error("maximum ASN.1 nesting depth exceeded"));
+    }
+    let mut position = offset
+        .checked_add(1)
+        .ok_or(Asn1Error("truncated ASN.1 value"))?;
     let length_byte = *input
         .get(position)
         .ok_or(Asn1Error("truncated ASN.1 value"))?;
-    position += 1;
+    position = position
+        .checked_add(1)
+        .ok_or(Asn1Error("truncated ASN.1 value"))?;
 
     #[allow(clippy::comparison_chain)]
     let length: Option<usize> = if length_byte < 0x80 {
@@ -206,14 +223,20 @@ fn read_node<'a>(
         if count > 4 {
             return Err(Asn1Error("unsupported ASN.1 length"));
         }
+        let octets_end = position
+            .checked_add(count)
+            .ok_or(Asn1Error("unsupported ASN.1 length"))?;
         let octets = input
-            .get(position..position + count)
+            .get(position..octets_end)
             .ok_or(Asn1Error("unsupported ASN.1 length"))?;
         let mut value: usize = 0;
         for octet in octets {
-            value = value * 256 + usize::from(*octet);
+            value = value
+                .checked_mul(256)
+                .and_then(|shifted| shifted.checked_add(usize::from(*octet)))
+                .ok_or(Asn1Error("unsupported ASN.1 length"))?;
         }
-        position += count;
+        position = octets_end;
         Some(value)
     };
 
@@ -231,7 +254,7 @@ fn read_node<'a>(
             .get(position..end)
             .ok_or(Asn1Error("ASN.1 length exceeds input"))?;
         let children = if constructed {
-            Some(read_children(contents, depth + 1, budget)?)
+            Some(read_children(contents, depth.saturating_add(1), budget)?)
         } else {
             None
         };
@@ -251,13 +274,16 @@ fn read_node<'a>(
     let contents_start = position;
     let mut children = Vec::new();
     loop {
-        if position + 2 > input.len() {
+        if input.len().saturating_sub(position) < 2 {
             return Err(Asn1Error("unterminated indefinite-length value"));
         }
-        if input.get(position) == Some(&0x00) && input.get(position + 1) == Some(&0x00) {
+        if input
+            .get(position..)
+            .is_some_and(|rest| rest.starts_with(&[0x00, 0x00]))
+        {
             break;
         }
-        let (child, next) = read_node(input, position, depth + 1, budget)?;
+        let (child, next) = read_node(input, position, depth.saturating_add(1), budget)?;
         children.push(child);
         position = next;
     }
@@ -267,7 +293,9 @@ fn read_node<'a>(
     let contents = input
         .get(contents_start..position)
         .ok_or(Asn1Error("unterminated indefinite-length value"))?;
-    let end = position + 2;
+    let end = position
+        .checked_add(2)
+        .ok_or(Asn1Error("unterminated indefinite-length value"))?;
     let full = input
         .get(offset..end)
         .ok_or(Asn1Error("unterminated indefinite-length value"))?;
@@ -362,9 +390,9 @@ pub fn decode_oid(contents: &[u8]) -> Option<String> {
     let (a, b) = if first < 40 {
         (0, first)
     } else if first < 80 {
-        (1, first - 40)
+        (1, first.saturating_sub(40))
     } else {
-        (2, first - 80)
+        (2, first.saturating_sub(80))
     };
     let mut parts = vec![a.to_string(), b.to_string()];
     for arc in arcs.get(1..)? {

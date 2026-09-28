@@ -1,58 +1,58 @@
 # apple-purchase-receipt-verifier
 
-Verify Apple in-app purchases locally — no calls to Apple's servers.
+Verify Apple in-app purchases locally, with no calls to Apple's servers.
 
 Replaces the deprecated `verifyReceipt` endpoint by validating StoreKit 2
-signed JWS transactions and legacy PKCS#7 app receipts against pinned Apple
-root certificates.
+signed JWS payloads and legacy PKCS#7 app receipts against pinned Apple root
+certificates.
 
 ```bash
 cargo add apple-purchase-receipt-verifier
 ```
 
 ```rust
-use apple_purchase_receipt_verifier::{
-    apple_jws_roots, apple_receipt_roots, Environment, JwsVerifier, ReceiptVerifier,
-};
+use apple_purchase_receipt_verifier::{Config, Verifier};
 
-// Legacy PKCS#7 app receipt
-let receipts = ReceiptVerifier::builder()
-    .trusted_roots(apple_receipt_roots().iter().cloned())
-    .bundle_id("com.example.app")
-    .build()?;
-let receipt = receipts.verify_base64(receipt_b64)?;
-println!("{:?} {}", receipt.receipt_type, receipt.in_app_purchases.len());
+// Build once, share everywhere: the roots are parsed once, not per call.
+let verifier = Verifier::new(Config::defaults());
 
-// StoreKit 2 signed transaction
-let transactions = JwsVerifier::builder()
-    .trusted_roots(apple_jws_roots().iter().cloned())
-    .bundle_id("com.example.app")
-    .accepted_environments([Environment::Production, Environment::Sandbox])
-    .build()?;
-let transaction = transactions.verify_transaction(jws)?;
-println!("{:?} {:?}", transaction.product_id, transaction.expires_date);
+// A legacy app receipt, as the base64 string the app sends.
+let receipt = verifier.verify_receipt(receipt_base64)?;
+println!("{:?} {}", receipt.bundle_id, receipt.in_app.len());
+
+// Any Apple-signed JWS: a transaction, renewal info, an app transaction or
+// a notification. The payload comes back as the JSON text Apple signed.
+let payload = verifier.verify_signed_data(jws)?;
+println!("{}", payload.json());
 ```
 
 Synchronous, `#![forbid(unsafe_code)]`, Rust 1.85 or newer.
+
+The library answers one question: did Apple sign this? It checks the chain
+to a pinned root, Apple's marker OIDs and the signature, and hands back
+everything the payload says. Whether the payload is for your app, your
+environment, your user and still current is your decision, made on the
+fields it returns ([What to check after verification](#what-to-check-after-verification)).
 
 ## Runtime and version floor
 
 - **Rust 1.85.0**, declared as `rust-version` and proven by CI: the whole
   suite, conformance included, runs on a real 1.85.0 toolchain against
   `Cargo.lock`, which is committed and resolved for that floor. Edition 2021.
-- **Nine direct dependencies**, all of them primitives: `rsa`, `p256`,
-  `p384`, `sha1`, `sha2`, `digest` and `subtle` for the arithmetic,
-  `serde_json` for the JWS payloads, which are JSON, and `base64` for
-  `receipt-data` and `x5c` entries. Every byte of
-  attacker-supplied ASN.1 — certificates, CMS,
-  receipt payloads, keys, signatures — is parsed by this crate's own bounded
-  reader, so no third-party parser decides what a key or a signature is.
-  What is delegated is arithmetic.
+- **Ten direct dependencies**: `rsa`, `p256`, `p384`, `sha1`, `md-5`,
+  `sha2`, `digest` and `subtle` for the arithmetic, `base64` for
+  `receipt-data` and `x5c` entries, and `serde_json`, which only writes
+  `to_json()` and the endpoint response and never reads input. Every byte of
+  attacker-supplied ASN.1 (certificates, CMS, receipt payloads, keys,
+  signatures) and every byte of JSON (a JWS header and payload, the endpoint
+  request body) is read by this crate's own bounded readers, so no
+  third-party parser decides what a key, a signature or a claim is. What is
+  delegated is arithmetic.
 - **No `no_std`, no async.** Nothing here does I/O, every entry point is
-  synchronous, and the verifiers are `Send + Sync + 'static`, so one can be
-  shared across threads or dropped into `spawn_blocking`.
-- Verifying the largest genuine receipt in the shared corpus — 79 KB with
-  187 in-app purchases — is sub-millisecond in a release build.
+  synchronous, and `Verifier` is `Send + Sync + Clone`, so one can be shared
+  across threads or dropped into `spawn_blocking`.
+- Verifying the largest genuine receipt in the shared corpus (79 KB, 187
+  in-app purchases) takes about 1.5 ms in a release build.
 
 ## What it will never do
 
@@ -60,581 +60,394 @@ These are the properties the library exists to hold, and each is asserted by
 a test rather than only documented.
 
 - **It never reads the operating system's trust store.** Anchors come from
-  the caller's argument or from `apple_jws_roots()` / `apple_receipt_roots()`,
-  which are `include_bytes!`-embedded copies of Apple's three published
-  roots — so they work unchanged in a `FROM scratch` container. There is no
-  code path to a system store, so there is no switch to get wrong.
-  `deny.toml` refuses, at build time, every crate that could carry one.
+  the caller's `Config` or from `Config::defaults()`, which holds
+  `include_bytes!`-embedded copies of Apple's three published roots, so they
+  work unchanged in a `FROM scratch` container. There is no code path to a
+  system store, so there is no switch to get wrong. `deny.toml` refuses, at
+  build time, every crate that could carry one.
 - **It never touches the network.** No OCSP, no CRL, no AIA fetch, no root
   download. Revocation checking is disabled by design; an integrator who
   needs it must layer it on top.
-- **It never judges a certificate at a clock the caller controls.** See
-  [The clock](#the-clock).
-- **It never returns anything partial.** A failure returns a
-  `VerificationError` and nothing else; a success returns only data that
-  passed every check, in owned buffers that do not alias the input.
-- **It never logs, meters or calls back.** `Reason` is the whole
-  observability surface, and a detail string never contains receipt bytes,
-  claims or key material.
+- **It never uses a key no pinned root vouched for.** Certificate signatures
+  are checked from the roots down, so a certificate carrying an attacker's
+  key (their choice of size and exponent) is never used to check anything
+  ([Stranger certificates](#stranger-certificates)).
+- **It never returns anything partial.** A failure returns a `Failure` and
+  nothing else; a success returns only data that passed every check, in
+  owned buffers that do not alias the input.
+- **It never logs, meters or calls back into your code** except for the
+  clock you give it. `Reason` is the whole observability surface, and a
+  failure message never quotes the input.
 
-## The three entry points
+## The API
 
-### `JwsVerifier` — StoreKit 2 and Server Notifications V2
+### `Config`: the roots and the clock
 
 ```rust
-let verifier = JwsVerifier::builder()
-    .trusted_roots(apple_jws_roots().iter().cloned())
-    .bundle_id("com.example.app")
-    .accepted_environments([Environment::Production, Environment::Sandbox])
-    .app_apple_id(1_234_567_890)          // required for Production AppTransactions
+use apple_purchase_receipt_verifier::{Config, TrustAnchor};
+
+let config = Config::defaults(); // Apple's three roots, the system clock
+
+let pinned = Config::builder()
+    .roots([TrustAnchor::from_der(&root_der)?]) // replaces the defaults
+    .clock(|| 1_735_689_600_000)                  // epoch milliseconds
     .build()?;
-
-let transaction = verifier.verify_transaction(jws)?;   // JWSTransactionDecodedPayload
-let app = verifier.verify_app_transaction(jws)?;       // AppTransaction
-let claims = verifier.verify_raw(jws)?;                // renewal info, notifications
 ```
 
-`verify_raw` checks the chain and the signature and **enforces no claim** —
-the caller checks bundle id, environment and app Apple id in the returned
-claims itself.
+An empty root set is a `ConfigError` from `build()`, never a verdict: a
+verifier with no roots would reject everything, and nobody would notice
+until production. So is a `TrustAnchor` whose bytes are not a certificate.
 
-**Freshness is your call.** No payload is rejected for its age, as in Apple's
-own App Store Server Libraries: `signedDate` only decides the instant the
-chain is judged at. The right limit depends on the endpoint (Apple retries a
-server notification for days, and a device may present an old but genuine
-payload), so apply one yourself where it fits:
-`let too_old = transaction.signed_date.map_or(true, |at| now_millis - at > 300_000);`
+At startup, prefer `Config::builder().build()?` to `Config::defaults()`,
+even with nothing to set: it reports bundled roots that did not load as a
+`ConfigError` where the process can stop, while `Config::defaults()` cannot
+fail and leaves every call answering `INTERNAL_ERROR` instead.
 
-Include `Environment::Sandbox` on any endpoint App Review can reach: App
-Review runs production builds against sandbox.
+### `Verifier`: three methods
 
-**Apple's date claims stay epoch-millisecond integers** — `signed_date`,
-`purchase_date`, `expires_date`, `revocation_date`,
-`receipt_creation_date` — exactly as Apple ships them. That is contractual
-across every port of this library, and it is not an oversight to be
-"improved" into a date type: converting loses the raw claim and makes two
-ports disagree about what the same payload says. Only *receipt attribute*
-dates become `SystemTime`.
-
-Every claim, modelled or not, is on `payload.claims`.
-**Entitlement is your rule.** There is no "is active" helper, as in Apple's
-own libraries; read the signed fields:
-
-```rust
-let entitled = payload.revocation_date.is_none()
-    && payload.expires_date.map_or(true, |expires| expires > now_millis);
-```
-
-That is only what the payload said when it was signed. A billing grace
-period (it lives in the renewal info), an upgrade (`isUpgraded`) and a refund
-after signing are yours to handle; App Store Server Notifications V2 or the
-App Store Server API give the live status. `is_active_at` is gone.
-
-### `ReceiptVerifier` — legacy PKCS#7 app receipts
-
-```rust
-let verifier = ReceiptVerifier::builder()
-    .trusted_roots(apple_receipt_roots().iter().cloned())
-    .bundle_id("com.example.app")
-    .build()?;
-
-verifier.verify(der)?;
-verifier.verify_base64(text)?;
-verifier.verify_with_device_guid(der, guid)?;
-verifier.verify_base64_with_device_guid(text, guid)?;
-```
-
-`verify_base64` and `verify_base64_with_device_guid` decode exactly what
-Apple's verifyReceipt accepts as `receipt-data` (measured 2026-09-23, see
-[`docs/evidence/2026-09-23-verifyreceipt-base64.md`](../docs/evidence/2026-09-23-verifyreceipt-base64.md)):
-standard base64 (`+`/`/`) with the canonical `=` padding and nothing else.
-Whitespace anywhere, the base64url alphabet, omitted or extra padding,
-anything after the padding and an empty string are `INVALID_RECEIPT_FORMAT`
-(`21002` at the endpoint) before any bytes reach the CMS parser. Unused low
-bits in the last data character are accepted, as Apple accepts them. See
-`decode_receipt_base64` in `base64.rs`.
-
-Every input form is reachable with and without the device GUID. Passing one
-additionally enforces the device binding:
-`SHA1(guid ‖ opaqueValue ‖ bundleIdBytes)` must equal attribute 5, compared
-in constant time. The check is optional by design — a server does not always
-have the GUID.
-
-Attribute types the library does not model are exposed verbatim on
-`unknown_attributes`, type → the raw verified-but-undecoded values, so a
-field Apple adds later stays reachable without a library update.
-
-`verify_receipt_core(der, anchors)` is the same chain-and-signature
-verification **without** the bundle-id check — the primitive the endpoint is
-built on. It is public because the alternative is a wildcard bundle id
-inside a security library, and it is documented the way it has to be: a
-caller that unlocks a product on the strength of it, without comparing
-`bundle_id`, will accept a genuine, correctly signed receipt from a
-different app.
-
-It is the one entry point that takes its anchors as a plain argument rather
-than through a builder, so it is the one that can still be called wrong. Its
-error is `CoreError`, not `VerificationError`: an empty anchor set is
-`CoreError::Config` and *not a verdict*, because reporting it as
-`INVALID_CHAIN` would make an anchor-loading bug — a typo'd path, an empty
-environment variable, a `Vec` filtered to nothing — look exactly like a
-forged receipt. `error.reason()` is `Option<Reason>` for the same reason:
-`None` means no check ran.
-
-### `VerifyReceiptEndpoint` — Apple's wire contract, locally
-
-```rust
-let endpoint = VerifyReceiptEndpoint::builder()
-    .trusted_roots(apple_receipt_roots().iter().cloned())
-    .environment(Environment::Production)
-    .build()?;
-
-let result = endpoint.verify_receipt_result(&VerifyReceiptRequest::new(receipt_b64));
-let result = endpoint.verify_receipt_result_from_json(raw_request_body);
-let result = endpoint.verify_receipt_data(receipt_b64);   // receipt-data alone, no envelope
-
-let response: VerifyReceiptResponse = result.to_response(); // Apple's body, typed
-let json: String = result.to_json();                         // Apple's body as JSON
-
-let json = endpoint.verify_receipt_json(raw_request_body);   // same as ..._from_json(body).to_json()
-```
-
-No endpoint method returns an error or panics. The Apple status code is a
-field of the body, for every input, including one that is not JSON
-(`{"status":21002}`). The statuses it can produce are `0`, `21002`, `21003`,
-`21007`, `21008` and `21009`, and no others, because the rest describe
-conditions that only exist on Apple's servers. Local 21007 / 21008 routing
-fails closed: only receipt types `Production` and `ProductionVPP` count as
-production.
-
-A `VerifyReceiptResult` holds one verification. `status()` is the answer for
-the endpoint's own environment. `outcome()` is a `VerifyReceiptOutcome`:
-`Verified(AppReceipt)` whenever the receipt bytes verified, 21007 and 21008
-included, or `Failed { reason, cause }`. `verified()`, `receipt()`,
-`failure_reason()` and `failure_cause()` read the same thing without a
-`match`. The response is rendered only when you call `to_response()` or
-`to_json()`. Only the endpoint can create a result, and it is immutable.
-
-```rust
-match result.outcome() {
-    VerifyReceiptOutcome::Verified(receipt) => { /* compare receipt.bundle_id, unlock */ }
-    VerifyReceiptOutcome::Failed { reason, .. } => { /* reject; log reason.as_str() */ }
-}
-```
-
-**Retrying in the other environment costs no second verification.**
-`to_response_in(environment)` and `to_json_in(environment)` render what an
-endpoint of that environment would answer, recomputing the status from the
-receipt's own type each time:
-
-| receipt | on `Production` | on `Sandbox` |
+| Method | Input | Success |
 |---|---|---|
-| `Production`, `ProductionVPP` | 0 | 21008 |
-| any other type, or none | 21007 | 0 |
-| failed verification | its own status | its own status |
+| `verify_receipt(&str)` | the base64 receipt an app sends | `ReceiptPayload` |
+| `verify_signed_data(&str)` | any Apple-signed compact JWS | `JsonPayload`: the signed JSON text |
+| `verify_receipt_endpoint(Environment, &str)` | a `verifyReceipt` request body | Apple's response body, always |
 
-`Xcode` and `LocalTesting` return the same `ConfigError` the builder returns
-for them. A sandbox receipt never renders as a production 0, whichever
-endpoint verified it. 21007 and 21008 bodies carry the status alone, as
-Apple's do.
+The first two return `Result<_, Failure>`. The endpoint never fails: the
+Apple status code is a field of the body, for every input.
 
-**Failure reasons.** `failure_reason()` is a `Reason`:
+`VERSION` is the library version; `AppleStatus` holds Apple's `verifyReceipt`
+status codes as constants.
 
-| `failure_reason()` | status | when |
-|---|---|---|
-| `RequestTooLarge` | 21002 | the raw body is over `MAX_REQUEST_BYTES` (3,145,728 UTF-8 bytes); Apple answers HTTP 413 here, see [Defensive parsing](#defensive-parsing) |
-| `MalformedRequest` | 21002 | the body is not a JSON object or nests deeper than 64, or `receipt-data` is missing, empty or not a string |
-| `InvalidReceiptFormat` | 21002 | `receipt-data` is not receipt base64, is over `MAX_RECEIPT_BYTES`, or its CMS envelope does not parse |
-| `InvalidChain`, `InvalidSignature`, other certificate reasons | 21003 | the receipt did not authenticate |
-| `InternalError` | 21009 | not the client's fault: the receipt authenticated but this crate cannot read its signed content (`failure_cause()` holds the parser's detail), or a panic inside the endpoint was contained (`failure_cause()` holds its message). Alert and retry or escalate; do not deny the user |
+### `ReceiptPayload`
 
-**`request_date`.** Each entry point has an `_at` variant that takes a
-`SystemTime` for `request_date` in place of the endpoint's clock. Without
-one, the endpoint reads its clock once per call and `request_date()` returns
-that instant. The instant reaches `request_date` and nothing else:
-certificate validity never sees it (see [The clock](#the-clock)).
-
-Like Apple's endpoint, this does **not** check the bundle id: compare
-`receipt.bundle_id` yourself before granting anything, or use
-`ReceiptVerifier`, which checks it for you. `password` and
-`exclude-old-transactions` are accepted for compatibility and never read.
-See [COMPARISON.md](../COMPARISON.md) for the field-by-field fidelity
-account.
-
-## The error vocabulary
-
-Verification returns `Result<_, VerificationError>`. Match on
-`error.reason()`; never parse the message. `Reason::as_str()` yields the
-canonical token, identical in every port of this library.
-
-| `Reason` | Token | Raised when |
-|---|---|---|
-| `InvalidJwsFormat` | `INVALID_JWS_FORMAT` | not three segments, a segment that is not base64url JSON, `alg != ES256`, or an `x5c` that is not exactly three entries |
-| `InvalidCertificate` | `INVALID_CERTIFICATE` | an `x5c` entry is not a parseable certificate |
-| `InvalidCertificatePurpose` | `INVALID_CERTIFICATE_PURPOSE` | a certificate lacks the Apple marker OID for its role |
-| `InvalidChain` | `INVALID_CHAIN` | the path does not reach a pinned anchor, or a certificate was not valid at the signing instant |
-| `InvalidSignature` | `INVALID_SIGNATURE` | the payload or receipt signature did not verify |
-| `WrongBundleId` | `WRONG_BUNDLE_ID` | the verified payload names another bundle |
-| `WrongEnvironment` | `WRONG_ENVIRONMENT` | the environment is outside the accepted set |
-| `WrongAppAppleId` | `WRONG_APP_APPLE_ID` | a Production `AppTransaction` does not name the configured app Apple id |
-| `InvalidReceiptFormat` | `INVALID_RECEIPT_FORMAT` | the PKCS#7/CMS envelope could not be parsed |
-| `DeviceHashMismatch` | `DEVICE_HASH_MISMATCH` | the device hash does not match attribute 5 |
-| `InternalError` | `INTERNAL_ERROR` | the chain and signature verified, but the signed content cannot be read (a receipt payload that does not parse, or a modelled JWS claim of the wrong JSON type): not the client's fault, so alert and retry or escalate rather than deny |
-
-The vocabulary is **closed** by the cross-port contract: a twelfth reason
-would be a change to the shared vector file and to every port at once.
-`Reason` is nevertheless `#[non_exhaustive]`, so that if that ever happens a
-caller with a `_ => reject` arm keeps compiling and keeps failing closed.
-That arm is a safety net, not an extension point.
-
-`Reason` also has `MalformedRequest` (`MALFORMED_REQUEST`) and
-`RequestTooLarge` (`REQUEST_TOO_LARGE`), but only as a `VerifyReceiptResult`
-failure reason. No verifier returns either, and `Reason::all()` lists only
-the eleven above. The C ABI pins its own codes: `INTERNAL_ERROR` is 12, and
-11, which was `STALE_PAYLOAD`, stays retired.
-
-**Misconfiguration is a different type.** Empty trust anchors, an empty
-bundle id, an empty accepted-environment set, an unparseable anchor and an
-endpoint environment other than Production or Sandbox all return
-`ConfigError` from `build()`. A programming mistake must not be catchable as
-a verification verdict. The free `verify_receipt_core` has no `build()` to
-fail in, so it returns `CoreError::Config` instead — see above.
-
-## Integrating: from verified payload to entitlement
-
-The backend flow these calls sit inside is written out once in the
-[project README](../README.md#integrating-from-verified-payload-to-entitlement):
-verify offline, deny on any failure, check the refund field, refresh a payload
-past the freshness window, guard against replay on the transaction id, then
-grant. That section also carries the policy table saying what each reason
-means and which ones are worth an alert. Here are its two branches in this
-port's API.
-
-A StoreKit 2 signed transaction:
+Every field is an `Option` (or a `Vec`) with public fields, so a test can
+build one by hand. Dates are epoch milliseconds (`*_ms`, `i64`), ids are
+`i64`, bytes are `Vec<u8>`:
 
 ```rust
-use std::time::{SystemTime, UNIX_EPOCH};
+receipt.receipt_type;                 // Some("Production"), Some("ProductionSandbox"), ...
+receipt.bundle_id;                    // decoded attribute 2
+receipt.bundle_id_bytes;              // its raw octets: the device-hash input
+receipt.receipt_creation_date_ms;
+receipt.in_app[0].product_id;
+receipt.in_app[0].expires_date_ms;
+receipt.unknown_attributes;           // type -> raw values, in receipt order
+receipt.to_json();                    // JSON with the same value in every port
+```
 
-use apple_purchase_receipt_verifier::{apple_jws_roots, ConfigError, Environment, JwsVerifier};
+Decoding follows the rules every port shares: the first occurrence of an
+attribute wins; every attribute that does not end up in a typed field (a
+later copy, or a value that does not decode, whose field is then `None`) is
+kept raw in `unknown_attributes`, the in-app ones in that purchase's own; an
+empty date string means "not set" and is not kept. `to_json()` writes
+JSON whose parsed value is the same in every port; the bytes may differ.
 
-fn build_verifier() -> Result<JwsVerifier, ConfigError> {
-    JwsVerifier::builder()
-        .trusted_roots(apple_jws_roots().iter().cloned())
-        .bundle_id("com.example.app")
-        .accepted_environments([Environment::Production, Environment::Sandbox])
-        .build()
-}
+### `Failure` and `Reason`
 
-fn redeem_transaction(verifier: &JwsVerifier, user_id: &str, jws: &str) -> Verdict {
-    let payload = match verifier.verify_transaction(jws) {
-        // step 2
-        Ok(payload) => payload,
-        Err(e) => {
-            tracing::warn!(reason = e.reason().as_str(), "purchase rejected");
-            return Verdict::Denied;
-        }
-    };
+`Failure` implements `std::error::Error`, with `source()` holding the
+parser's error for `UNREADABLE_PAYLOAD`. Match on `failure.reason()`; never
+parse `failure.message()`.
 
-    if payload.revocation_date.is_some() {
-        // step 3
-        return Verdict::Denied;
-    }
+| `Reason` | Token | Raised when | Endpoint |
+|---|---|---|---|
+| `Malformed` | `MALFORMED` | the base64, ASN.1, CMS or JWS structure is broken, or a structural bound is exceeded | 21002 |
+| `TooLarge` | `TOO_LARGE` | the input is over its size cap and was not decoded | 21002 |
+| `InvalidSignature` | `INVALID_SIGNATURE` | the signature did not verify | 21003 |
+| `UntrustedChain` | `UNTRUSTED_CHAIN` | the chain does not reach a pinned root | 21003 |
+| `InvalidCertificate` | `INVALID_CERTIFICATE` | a certificate does not decode, or is outside its validity window at the chain instant | 21003 |
+| `InvalidCertificatePurpose` | `INVALID_CERTIFICATE_PURPOSE` | a certificate lacks Apple's marker OID for its place | 21003 |
+| `UnreadablePayload` | `UNREADABLE_PAYLOAD` | the chain and signature passed, but the signed content does not parse | 21009 |
+| `InternalError` | `INTERNAL_ERROR` | the library failed (a contained panic after the signature), or the configured clock panicked; no input makes a correct library answer it | 21009 |
 
-    // step 4, your call: past the window, ask the client for a fresh
-    // jwsRepresentation, or fetch one from the App Store Server API and
-    // verify that instead
-    let now_millis = i64::try_from(
-        SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis(),
-    )
-    .unwrap_or(i64::MAX);
-    if payload.signed_date.map_or(true, |at| now_millis - at > 300_000) {
-        return Verdict::Refresh;
-    }
+`UNREADABLE_PAYLOAD` and `INTERNAL_ERROR` are not the client's fault: alert,
+log the failure with `VERSION`, and reconcile the purchase through the App
+Store Server API rather than deny the user.
 
-    let Some(id) = payload.transaction_id.as_deref() else {
-        return Verdict::Denied;
-    };
-    if grants::exists(id) {
-        // step 5
-        return Verdict::Denied;
-    }
-    grants::record(id, payload.original_transaction_id.as_deref(), user_id);
+## What to check after verification
 
-    grant(user_id, payload.product_id.as_deref());
-    Verdict::Granted
+The library proves Apple signed the payload. Before granting anything, check
+what it says:
+
+```rust
+let receipt = verifier.verify_receipt(receipt_base64)?;
+if receipt.bundle_id.as_deref() != Some("com.example.app") {
+    return Err(Rejected::OtherApp);
 }
 ```
 
-The legacy PKCS#7 app receipt is the same policy on the other input, the one
-StoreKit 1 apps and older SDKs still send:
+For a JWS, read the claims with your own JSON parser:
+`bundleId`, `environment`, `appAppleId` for a Production `AppTransaction`,
+`revocationDate`, `expiresDate`, and `signedDate` for freshness. No payload
+is rejected for its age, as in Apple's own App Store Server Libraries: the
+right limit depends on the endpoint (Apple retries a server notification for
+days), so apply one yourself.
 
-```rust
-use std::time::{Duration, SystemTime};
+**The device hash** is yours too, when you have the device's identifier:
+`SHA1(device_id || opaque_value || bundle_id_bytes)` must equal `sha1_hash`.
 
-use apple_purchase_receipt_verifier::{apple_receipt_roots, ConfigError, ReceiptVerifier};
-
-fn build_receipt_verifier() -> Result<ReceiptVerifier, ConfigError> {
-    ReceiptVerifier::builder()
-        .trusted_roots(apple_receipt_roots().iter().cloned())
-        .bundle_id("com.example.app")
-        .build()
-}
-
-// Same policy keyed on the receipt's own dates. `verify_base64` takes the
-// string the client sends; `VerifyReceiptEndpoint` is the alternative,
-// answering Apple's `verifyReceipt` JSON shape with a status instead.
-fn redeem_receipt(
-    verifier: &ReceiptVerifier,
-    user_id: &str,
-    receipt_data: &str,
-    product_id: &str,
-) -> Verdict {
-    let Ok(receipt) = verifier.verify_base64(receipt_data) else {
-        return Verdict::Denied; // step 2
-    };
-    let now = SystemTime::now();
-    let Some(purchase) = receipt
-        .in_app_purchases
-        .iter()
-        .find(|p| p.product_id.as_deref() == Some(product_id))
-    else {
-        return Verdict::Denied;
-    };
-
-    if purchase.cancellation_date.is_some() {
-        // step 3
-        return Verdict::Denied;
-    }
-    if purchase.expires_date.is_some_and(|at| at <= now) {
-        return Verdict::Denied;
-    }
-
-    // step 4: the same caller-side check, on the creation date. Past the
-    // window, ask the client to refresh its receipt, or call the App Store
-    // Server API by transaction_id and verify the JWS it returns.
-    let fresh = receipt
-        .creation_date
-        .and_then(|at| now.duration_since(at).ok())
-        .is_some_and(|age| age <= Duration::from_secs(300));
-    if !fresh {
-        return Verdict::Refresh;
-    }
-
-    let Some(id) = purchase.transaction_id.as_deref() else {
-        return Verdict::Denied;
-    };
-    if grants::exists(id) {
-        // step 5
-        return Verdict::Denied;
-    }
-    grants::record(id, purchase.original_transaction_id.as_deref(), user_id);
-
-    grant(user_id, purchase.product_id.as_deref());
-    Verdict::Granted
-}
-```
+**Deduplicate on transaction ids, never on the receipt or JWS bytes.** A
+legacy receipt is BER, and one correctly signed receipt can be re-chunked
+into different byte strings that carry the same signed content.
 
 ## The clock
 
-The injected `Clock` is read in exactly one place and nowhere else: the
-`request_date` / `_ms` / `_pst` triple in `VerifyReceiptEndpoint`.
+`Config`'s clock is read at most once per call, and only when one of these
+needs it, after the input has passed every check that comes before:
 
-**Certificate validity is never judged at it.** Validity is judged at the
-payload's `signedDate` / `receiptCreationDate`, or at the receipt's
-attribute-12 creation date; where the input states no date of its own, the
-fallback reads the system clock directly. A caller injecting a clock (to pin
-`request_date`, or to work around skew) must not thereby be able to accept
-an expired chain or expire a live one.
+- **the certificate-validity instant, when the input states no usable date
+  of its own**: a receipt whose creation date (attribute 12) is missing or
+  does not parse, a JWS without a representable `signedDate`. Otherwise the
+  chain is judged at the date the input states.
+- **`request_date`** in the endpoint's response.
 
-`JwsVerifier` and `ReceiptVerifier` therefore take **no clock at all**: it would have no
-consumer, and an option with no consumer is an invitation to wire it into
-the one place it must never reach.
+A certificate outside its validity window at that instant is
+`INVALID_CERTIFICATE`. A clock that panics is contained as `INTERNAL_ERROR`
+(21009 at the endpoint), with a fixed message.
 
 ## What the checks are, and in what order
 
-The order is observable and is part of the contract: a payload that fails an
+The order is observable and is part of the contract: an input that fails an
 early check reports that check's reason, not a later one.
 
-**JWS.** Segment shape → header JSON → `alg` → `x5c` → certificates parse →
+**JWS.** Size cap → three segments, each strict base64url → header JSON
+(strict UTF-8, no byte order mark, nothing but whitespace after the object),
+`alg` ES256 and exactly three `x5c` entries → the certificates decode →
+the chain at `signedDate` (or the clock), the intermediate checked against
+the pinned roots **before** the leaf is checked against the intermediate →
 **leaf marker OID** `1.2.840.113635.100.6.11.1` → **intermediate marker
-OID** `1.2.840.113635.100.6.2.1` → payload JSON → chain at the signing
-instant → ES256 signature → **typed read of the modelled
-claims** (`verify_transaction` and `verify_app_transaction` only), where a
-claim of the wrong JSON type is `INTERNAL_ERROR` → bundle id → environment →
-app Apple id.
+OID** `1.2.840.113635.100.6.2.1` → ES256 signature. As on the receipt path,
+a chain that does not reach a pinned root is `UNTRUSTED_CHAIN` whatever
+markers it carries. A key on a curve this crate does not implement is
+`INVALID_CERTIFICATE`, judged only once it has been vouched for and is
+about to be used. The payload is read before the chain, for `signedDate`, but a
+payload that does not parse (text after the object included) is
+reported only after the signature: `UNREADABLE_PAYLOAD` if the signature
+holds, `INVALID_SIGNATURE` if not, so nothing unsigned decides which a
+caller sees.
 
-**Receipt.** Base64 → CMS parse (trailing bytes after the blob are refused)
-→ **the creation date alone** (attribute 12; nothing else in the payload is
-decoded yet) → **at most ten embedded certificates**, checked before any is
-decoded → signer is among them → **the signer is a certificate this crate
-can read** → chain at the creation date, or at the system clock when that
-date is missing, empty, unreadable or stated twice → **signer marker OID** →
-RSA key, SHA-1 or SHA-256 digest → CMS signature → **full payload parse**,
-where any failure is `INTERNAL_ERROR` → bundle id → device hash.
+**Receipt.** Size cap → strict base64 → CMS parse, including the syntax of
+every `SignerInfo`'s `signedAttrs`, whatever its position → at most four
+`SignerInfo`s and ten embedded certificates → the creation date alone
+(nothing else in the payload is read yet) → for each `SignerInfo`: the
+signer's certificate → the chain, top-down from the pinned roots, at the
+creation date or the clock → **signer marker OID** → **WWDR marker OID on the
+intermediate** → the signer's key on a curve this crate implements → the
+CMS signature. One `SignerInfo` passing is enough; when
+none does, the first one's failure is the verdict. Then the full payload
+parse, where any failure is `UNREADABLE_PAYLOAD`.
 
-Nothing is trusted before the chain and the signature, so reading the
-creation date never rejects a receipt. The chain comes before the signature
-so the attacker's own key (their RSA size and exponent) is never run before
-it is trusted. A payload the crate cannot read after that is content a
-trusted signer signed, so it is `INTERNAL_ERROR` (21009): reporting it as
-`INVALID_RECEIPT_FORMAT` (21002) would tell an app server to deny a user
-who may well have paid.
+The receipt signer may use any algorithm the crypto crates verify: RSA
+PKCS#1 v1.5, RSA-PSS or ECDSA on P-256 and P-384, over MD5, SHA-1 or the
+SHA-2 family. A signer that chains to a pinned root and carries Apple's
+marker is trusted whatever it signs with, so a change on Apple's side does
+not reject genuine receipts. The same goes for certificate signatures in the
+chain. A `signatureAlgorithm` that names a hash (`sha256WithRSAEncryption`,
+`ecdsa-with-SHA384`, the RSA-PSS parameters) must name the `SignerInfo`'s
+`digestAlgorithm`, or the signature is `INVALID_SIGNATURE`;
+`rsaEncryption` and `id-ecPublicKey` name none and take the digest.
 
-Two orderings are load-bearing and deliberately opposite. On the JWS path
-the marker OIDs are checked **before** the chain; on the receipt path the
-marker OID is checked **after** it, so a receipt signed under a foreign
-chain reports `INVALID_CHAIN` rather than a purpose error.
+The bundled roots are checked against their published SHA-256 fingerprints
+when they load, all three or none; `Config::builder().build()` refuses an
+empty set, and a `Verifier` from `Config::defaults()` without them answers
+`INTERNAL_ERROR`.
 
 `x5c[2]` is never compared to an anchor and never trusted, and neither is a
-receipt's embedded copy of its root. Swapping either for another PKI's root
-changes nothing, because the chain terminates at an anchor the caller
-pinned. Being untrusted is not the same as being unread: all three `x5c`
-entries are parsed, and an entry that is not a certificate is
-`INVALID_CERTIFICATE` at whichever index it sits.
+receipt's embedded copy of its root: the chain terminates at an anchor the
+caller pinned. Trust anchors are trusted by fiat, so **an anchor's own expiry
+is not checked**, which is what lets a receipt signed years ago under a
+since-expired chain verify at its own creation date.
 
-Trust anchors are trusted by fiat: **an anchor's own expiry is not
-checked**. That is standard PKIX trust-anchor semantics, and it is what lets
-a receipt signed years ago under a since-expired chain verify at its own
-creation date.
+A certificate on the path (not the anchor) that marks critical an
+extension a PKIX validator does not process makes the path
+`UNTRUSTED_CHAIN`, as it does for a PKIX validator. Processed are
+keyUsage, basicConstraints, certificatePolicies, policyMappings,
+policyConstraints, inhibitAnyPolicy, nameConstraints, subjectAltName,
+issuingDistributionPoint and deltaCRLIndicator, and on the leaf also
+cRLDistributionPoints and extKeyUsage. A certificate decodes only as
+exactly three elements, and a BOOLEAN only with exactly one content octet.
+In signedAttrs, `contentType` or `messageDigest` twice, or a `contentType`
+that differs from the eContentType, is `INVALID_SIGNATURE`.
 
-## A verified blob is not an identifier
+An embedded certificate whose structure does not decode is fatal, and the
+reason depends on which one it is: the **signer** is `INVALID_CERTIFICATE`,
+any other entry `MALFORMED`, because the certificate bag is unsigned. A key
+the library cannot read is not a structural failure: a certificate's key is
+parsed only once a pinned root vouches for it, so a stranger carrying a key
+on an unimplemented curve is ignored and the receipt verifies (shared case
+`receipt/verify-with-a-stranger-whose-key-is-unreadable`).
 
-**Do not dedupe on the receipt or JWS bytes.** Deduplicate on
-`transaction_id` / `original_transaction_id` (JWS) or on the in-app
-purchases' transaction ids (receipt), which is what `PLAN.md` D4 means by
-"replay defence is transaction-id bookkeeping".
+### Stranger certificates
 
-The reason is not laziness, it is the formats. A legacy receipt is BER, and
-genuine Xcode and BouncyCastle receipts really do use its constructed,
-indefinite-length forms, so the CMS `eContent` of one correctly signed
-receipt can be re-chunked into different byte strings whose concatenated
-content octets — the bytes the RSA signature covers — are identical. This
-crate refuses the sharper version of that (a constructed `OCTET STRING`
-whose children are not `OCTET STRING`s is a malformed receipt, not a payload
-to be joined), but legal re-chunking remains, and it always will: rejecting
-BER would reject Apple's own Xcode receipts.
-
-The JWS side is closed instead of merely documented. The three segments are
-decoded as unpadded canonical base64url (RFC 7515 §2), so one signed payload
-has exactly one accepted spelling; a segment that is not that exact spelling
-is `INVALID_JWS_FORMAT`, decided before any cryptography runs, the same class
-as a header that is not base64url JSON. An `x5c` entry is a certificate,
-not a segment, and RFC 7515 §4.1.6 makes it standard base64: a character
-outside that alphabet, a line break, a base64url `-` or `_`, or omitted or
-extra `=` padding is `INVALID_CERTIFICATE`, refused rather than skipped, as in
-every port. It follows the `receipt-data` rule above, which differs from the
-segment rule in one way: the unused low bits of the last data character are
-not checked, because Apple does not check them.
-
-The receipt path draws one line worth stating: an embedded certificate that
-will not decode is fatal, but the reason depends on which one it is. A
-stranger the receipt merely carries is `INVALID_RECEIPT_FORMAT` — the bag is
-unsigned, so bytes that cannot be read are a defect of the receipt. The
-**signer** being unreadable is `INVALID_CERTIFICATE`, the same verdict an
-unreadable `x5c` entry gets, because the defect is in a certificate rather
-than in the CMS around it. `receipt/reject-signer-*` pins the four ways a
-signer can be unreadable: an unknown X.509 version, a repeated extension, an
-extension value that stops decoding, and a public key on a curve this crate
-does not implement.
+A receipt's certificate bag is not signed, so anyone can add to it. A
+certificate there that no pinned root vouches for, directly or through a
+certificate it vouched for, is ignored: it never reaches the path builder
+and its key is never used, so a genuine receipt padded with such
+certificates still verifies. The walk starts at the roots, so the cost of a
+stranger is a name comparison, however large or broken its key. The shared
+denial-of-service cases pin this with a time budget, and the tests assert it
+directly through a seam that records every key used.
 
 ## Defensive parsing
 
 Everything this crate parses is attacker-supplied, so the bounds are part of
-the design rather than a configuration: nesting depth capped at 32, a
-100,000-node budget per parse, multi-byte tags refused, at most four length
-octets, indefinite (BER) lengths only on constructed values, trailing bytes
-after the outer value refused, negative and out-of-range attribute integers
-refused, at most ten embedded certificates enforced before decoding, a path
-length of at most six with each candidate issuer tried once per hop.
+the design rather than a configuration. ASN.1: nesting depth 32 constructed values (as BouncyCastle counts them), a
+100,000-node budget per parse, at most four length octets, indefinite (BER)
+lengths only on constructed values, trailing bytes refused. JSON: nesting
+depth 64, numbers of at most 1,000 characters, names of at most 50,000
+UTF-16 code units, strict grammar. Chains: at most six certificates, each candidate
+issuer tried once per hop. RSA keys: at most 8,192 bits, refused before any
+arithmetic.
 
-Input size is capped before anything is decoded or parsed, because all of
-that work happens before a signature is checked. Each cap is a fixed public
-constant, the same in every port of this library, not a builder option.
+Input size is capped before anything is decoded, and the caps are Apple's
+own (measured on 2026-09-23 against both `verifyReceipt` endpoints; see
+[`docs/evidence/2026-09-23-verifyreceipt-base64.md`](../docs/evidence/2026-09-23-verifyreceipt-base64.md)):
 
-The request and receipt caps are Apple's own limit. Measured on 2026-09-23
-against both of Apple's verifyReceipt endpoints (production and sandbox), a
-request body of 3,145,728 bytes is answered normally and one of 3,145,729
-bytes gets HTTP 413. Apple counts UTF-8 bytes, not characters: 3,145,729
-bytes of `é`, only 1,572,874 characters, also got 413. `fixtures/cases.json`
-holds every port to these numbers from both sides.
+- the endpoint request body and the receipt base64 string: 3,145,728 UTF-8
+  bytes. Over it is `TOO_LARGE`, 21002 at the endpoint. Apple answers
+  HTTP 413 there, so check the body's length before the call to do the same.
+- the compact JWS: 256 KiB, `TOO_LARGE`.
 
-- `MAX_REQUEST_BYTES` (3 MiB, 3,145,728 bytes): the endpoint's raw JSON
-  request body, checked before the depth scan and before `serde_json` runs.
-  Over it is 21002 with `REQUEST_TOO_LARGE`.
-- `MAX_RECEIPT_BYTES` (3 MiB, 3,145,728 bytes): the receipt base64 string,
-  checked before it is decoded (the endpoint's `receipt-data` included), and
-  the receipt DER, checked before the CMS parse. No receipt Apple accepts can
-  be larger than the request that carries it. Over it is
-  `INVALID_RECEIPT_FORMAT`, and 21002 at the endpoint.
-- `MAX_JWS_BYTES` (256 KiB): the compact JWS, checked before it is split.
-  Over it is `INVALID_JWS_FORMAT`.
-- `MAX_JSON_NESTING_DEPTH` (64): the request body and the JWS header and
-  payload. `serde_json`'s own limit is fixed at 128, so the depth is counted
-  in one pass before the parser runs. Deeper is 21002 with
-  `MALFORMED_REQUEST` at the endpoint and `INVALID_JWS_FORMAT` on a JWS.
-
-String lengths are UTF-8 bytes (`str::len`), Apple's unit. A `&str` is
-UTF-8, so the count costs nothing and copies nothing. For base64 and a
-compact JWS it is the same count as characters.
-
-**Answering 413 like Apple.** `REQUEST_TOO_LARGE` exists so an HTTP layer can
-send the status Apple sends. The body is Apple's 21002 either way:
-
-```rust
-let result = endpoint.verify_receipt_result_from_json(&raw_request_body);
-let http_status = if result.failure_reason() == Some(Reason::RequestTooLarge) { 413 } else { 200 };
-(http_status, result.to_json())
-```
-
-A framework that caps request bodies itself has to allow at least 3 MiB, or
-it refuses bodies Apple would answer.
-
-An attribute type above `2^31 − 1` is a malformed receipt, not an attribute
-filed under a sentinel: fail closed, never clamp.
+`receipt-data` is decoded exactly as Apple's `verifyReceipt` accepts it:
+standard base64 with canonical `=` padding and nothing else. `x5c` entries
+are standard base64, JWS segments unpadded canonical base64url, so one
+signed payload has one accepted spelling.
 
 The library target additionally denies `unwrap`, `expect`, slice indexing
-and `panic!` at compile time. The probe that preceded this port found a real
-out-of-bounds panic in a CMS walk by mutating a genuine receipt; those lints
-are the mechanical form of not shipping the next one.
+and `panic!` at compile time, and every public method contains a panic by
+where it happened, with a fixed message that never carries the panic's text:
+before a signature has verified it is `MALFORMED` (21002), as input nobody
+vouched for must not be able to raise the internal-error alarm at will;
+while the signed receipt payload is decoded it is `UNREADABLE_PAYLOAD`;
+after that it is `INTERNAL_ERROR` (21009). Containment needs unwinding: a
+binary built with `panic = "abort"` ends the process on a panic instead.
 
-## The C ABI — `ffi/`
+## Measured worst-case CPU
+
+Measured on 2026-09-27 with `examples/bench.rs --worst-case`, which times
+every shared case in `fixtures/cases.json` that carries a time budget:
+oversized untrusted keys, a cross-signed certificate mesh, and the encoding
+oddities inside certificates. Rust 1.94.1, release build, one thread, on a
+shared 4-vCPU KVM guest (Intel Xeon Processor @ 2.10GHz); one second of
+warm-up, then ten samples of at least 100 ms each.
+
+| Call | Median | Slowest sample |
+|---|---:|---:|
+| Slowest hostile case: `receipt/verify-genuine-padded-with-oversized-strangers` (a valid receipt carrying oversized certificates it does not need) | 2.7 ms | 3.3 ms |
+| Next: `receipt/reject-untrusted-oversized-intermediates` | 1.4 ms | 1.5 ms |
+| Slowest hostile JWS: `signed-data/intermediate-with-a-ca-boolean-of-01-does-not-crash` | 0.84 ms | 1.1 ms |
+| Every other budgeted case | under 0.70 ms | under 0.85 ms |
+| For scale: `verify_receipt` on the genuine 187-purchase legacy receipt | 1.3 ms | 1.5 ms |
+| For scale: `verify_receipt_endpoint` on the same receipt | 3.1 ms | 4.2 ms |
+
+The slowest hostile case costs about twice what `verify_receipt` spends on
+the largest genuine receipt, and less than the endpoint spends on it: the
+cost of a call follows the size of the input, which the caps above bound,
+not the structure an attacker chooses. The machine was shared with other
+work, so treat these as an order of magnitude. Run
+`cargo run --release --locked --example bench -- --worst-case` for the
+hostile cases on your own hardware, and the same command without
+`--worst-case` for the genuine receipts.
+
+## The endpoint
+
+```rust
+use apple_purchase_receipt_verifier::{AppleStatus, Environment};
+
+let body = verifier.verify_receipt_endpoint(Environment::Production, raw_request_body);
+```
+
+The statuses it produces are `0`, `21002`, `21003`, `21007`, `21008` and
+`21009`, and no others, because the rest describe conditions that exist only
+on Apple's servers. Local 21007 / 21008 routing fails closed: only receipt
+types `Production` and `ProductionVPP` count as production. Like Apple's
+endpoint, it does **not** check the bundle id: compare `receipt.bundle_id` in
+the response before granting anything. `password` and
+`exclude-old-transactions` are accepted for compatibility and never read.
+See [COMPARISON.md](../COMPARISON.md) for the field-by-field fidelity
+account.
+
+## The C ABI: `ffi/`
 
 `ffi/` is a second crate that exposes this library through a C ABI, so C, C++
 and any FFI-capable runtime (Elixir NIFs, Lua, ctypes, P/Invoke, Java FFM)
 can call it without a reimplementation. It is a `cdylib`/`staticlib` plus a
-cbindgen-generated header, and it is a thin wrapper: every verification
-decision, parser and trust rule is this crate's, unchanged.
+cbindgen-generated header, and a thin wrapper: every verification decision,
+parser and trust rule is this crate's, unchanged.
 
-```bash
-cargo build --locked --manifest-path ffi/Cargo.toml
-```
+The shape mirrors this API: one opaque `AprvVerifier` built from DER roots
+and an optional fixed clock, `aprv_verify_receipt`, `aprv_verify_signed_data`
+and `aprv_verify_receipt_endpoint`, and one
+`AprvResult { int32_t status; char *json; }` whose `json` is exactly
+`ReceiptPayload::to_json()` or the signed JWS text. `ffi/README.md` has the
+ABI rules (ownership, thread safety, the status bands). Prebuilt binaries
+are not published yet.
 
-The shape, in one paragraph: three opaque handles (`AprvJwsVerifier`,
-`AprvReceiptVerifier`, `AprvReceiptEndpoint`), seven verification calls, and
-one `AprvResult { int32_t status; char *json; }`. JSON is the interchange
-because a claim set is open-ended and modelling it as C structs would make
-every field Apple adds a breaking ABI change. `status` is `0`, one of the
-eleven canonical [`Reason`] codes (stable and append-only; `11` is
-retired), or a `100`+ code meaning the *call* was malformed and nothing
-was checked. Every exported function runs its body inside `catch_unwind`, so
-no panic ever crosses the boundary.
+## Upgrading from 0.6
 
-It is a separate crate rather than a feature of this one for the same reason
-`fuzz/` is: a `cdylib` is a different artifact with a different lifecycle, and
-`exclude` keeps it out of the published tarball. It carries its own
-`Cargo.lock`, resolved for the same 1.85.0 floor.
+0.7 replaces the three verifiers with one `Verifier` and takes no policy:
+no bundle id, no accepted environments, no app Apple id, no device id. The
+caller checks those on the returned payload.
 
-**Prebuilt binaries are not published yet** — building from source is the
-only supported path today. See `ffi/README.md` for the ABI rules (ownership,
-thread safety, the status bands) and `ROADMAP.md` for what phase 2 would be.
+| 0.6 | 0.7 |
+|---|---|
+| `ReceiptVerifier::verify_base64` | `Verifier::verify_receipt`, then compare `bundle_id` |
+| `ReceiptVerifier::verify` (DER) | base64-encode, then `verify_receipt` |
+| `..._with_device_guid` | compute the device hash from `opaque_value` and `bundle_id_bytes` |
+| `JwsVerifier::verify_transaction`, `verify_app_transaction`, `verify_raw` | `Verifier::verify_signed_data`, then read the claims from `json()` |
+| `VerifyReceiptEndpoint::verify_receipt_json` | `Verifier::verify_receipt_endpoint` |
+| `apple_jws_roots()`, `apple_receipt_roots()` | `Config::defaults()` |
+| `Clock`, `FixedClock` | `Config::builder().clock(\|\| millis)` |
+| `VerificationError` | `Failure` |
+| `AppReceipt` (`SystemTime` dates) | `ReceiptPayload` (`*_ms` epoch milliseconds) |
+
+| 0.6 `Reason` | 0.7 `Reason` |
+|---|---|
+| `InvalidJwsFormat`, `InvalidReceiptFormat`, `MalformedRequest` | `Malformed` |
+| `RequestTooLarge` | `TooLarge` |
+| `InvalidChain` | `UntrustedChain`, or `InvalidCertificate` for a certificate outside its validity window |
+| `InternalError` for signed content that does not parse | `UnreadablePayload` |
+| `WrongBundleId`, `WrongEnvironment`, `WrongAppAppleId`, `DeviceHashMismatch` | gone: the caller's checks |
+
+The `endpoint` feature is gone: the endpoint is always there, and
+`serde_json` is an unconditional dependency that only writes JSON.
+
+## Vendoring
+
+To build the crate from a copy rather than from crates.io, copy `src/`,
+`certs/`, `Cargo.toml` and `Cargo.lock`. The three root certificates are
+compiled in with `include_bytes!("../certs/...")` from `src/roots.rs`, so
+`certs/` must sit next to `src/`. Nothing is read at run time.
+
+**Rotating or adding a root** touches, together:
+
+- the `.cer` file in `certs/` (and the repository's own `certs/`, which a
+  test compares byte for byte);
+- `APPLE_ROOT_DER` and `APPLE_ROOT_SHA256` in `src/roots.rs`, the second
+  being the SHA-256 Apple publishes for the file (check it with
+  `sha256sum` on the DER);
+- the fingerprint and count tests in `src/roots.rs` and the bundled-roots
+  tests in `tests/trust_pinning.rs`.
+
+The roots load all together or not at all, so a file that does not match
+its fingerprint leaves `Config::defaults()` without anchors, and every call
+answers `INTERNAL_ERROR`.
+
+**The tests need the shared fixtures.** They look for `fixtures/` with
+`cases.json` above the crate directory, or read `APRV_FIXTURES_DIR`
+when it is set (`tests/conformance.rs` has its own lookup, above the crate
+directory only). A few tests read the build itself: the dependency-set
+test reads `Cargo.toml`, the `certs/` drift test reads the repository's
+`certs/` next to `fixtures/`, and the date tests read
+`tests/data/pacific-transitions.txt`.
+
+**The C ABI** in `ffi/` depends on the crate by path and takes its version
+from the crate's `VERSION`, so it vendors along with it; `ffi/include/` is
+generated by cbindgen and checked in.
 
 ## Testing
 
 ```bash
-cargo test                      # default features
-cargo test --all-features
-cargo test --no-default-features
-cargo clippy --all-targets --all-features -- -D warnings
+cargo test --locked
+cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo fmt --check
 cargo deny check
 ```
@@ -653,41 +466,30 @@ A consumer's build ignores this file; it constrains only this repository.
 
 `tests/conformance.rs` runs `fixtures/cases.json`, the normative
 cross-language vector file every port of this library answers, as one named
-test per case. The adapter carries no case-specific knowledge: it resolves a
-fixture id to bytes, checks the digest the registry records for them, builds
-a verifier from the generic config, dispatches on the operation, normalises
-the result and reads the reason off a failure. A case it cannot map is a
-hard harness failure, never a skip.
+test per case, and fails unless every case ran. The adapter carries no
+case-specific knowledge: it checks each fixture against the digest the
+registry records, builds a `Config` from the case, dispatches on the
+operation and evaluates the expected JSON Pointers on the result. The
+`decodeBase64` cases call the two base64 decoders directly, and a case with
+a `maxMillis` budget is timed after a warm-up call.
 
 The native suite beyond conformance covers hostile and malformed input, the
 resource bounds above, the public API's shape, the trust-pinning rule from
-three directions, US-Pacific date rendering against vectors generated from
-the IANA database, and a mutation pass over the genuine receipts. The
+three directions, stranger certificates and their key cost, every signer and
+certificate algorithm, US-Pacific date rendering against vectors generated
+from the IANA database, and a mutation pass over the genuine receipts. The
 mutation pass asserts the invariant that matters: a mutated receipt is
-either rejected or produces a byte-identical result — anything that changes
-what the caller is told must be refused.
+either rejected or produces an identical result.
 
-The C ABI in `ffi/` has three test layers of its own — its own unit tests
-for null, non-UTF-8 and refused configurations; `fixtures/cases.json` driven
-through the ABI from C++17; and the same vectors again from Python over
-ctypes, which checks the nested field paths a dependency-free C++ program
-cannot reach. Both conformance harnesses run every case in `cases.json` and
-skip none: the endpoint cases that pin a clock go through the ABI's `_and_clock` constructor, which
-takes the instant as epoch milliseconds rather than a callback.
-`ffi/README.md` says what that clock can and cannot move.
-
-`fuzz/` holds seven `cargo fuzz` targets — the ASN.1, X.509 and CMS readers
-on their own, the three verifiers, and the endpoint body — seeded from the
-shared fixtures and run by CI for a fixed budget on every push. `fuzz/README.md`
-lists them and the invariant each asserts beyond "no panic".
+`fuzz/` holds seven `cargo fuzz` targets (the ASN.1, X.509 and CMS readers
+on their own, the verifier's three methods, and the DER receipt path)
+seeded from the shared fixtures and run by CI for a fixed budget on every
+push. `fuzz/README.md` lists them and the invariant each asserts beyond "no
+panic".
 
 `tests/data/pacific-transitions.txt` carries every `America/Los_Angeles`
 offset transition from 1900 to 2100, taken from the IANA database via
 Python's `zoneinfo`, and the suite checks the rendering rules at the second
-before and the second of each of the 308 of them. The other ports get
-this from a full time-zone database; this crate has no such dependency, so
-the whole rule set — including wartime daylight time, the 1950-1966 01:00
-switches and the two Emergency Daylight Saving Time Act years — is written
-out and checked against theirs. `request_date_pst` is rendered at a
-caller-supplied clock with no lower bound, so "no Apple date reaches that
-branch" was never a reason to leave it wrong.
+before and the second of each of the 308 of them. The other ports get this
+from a full time-zone database; this crate has no such dependency, so the
+whole rule set is written out and checked against theirs.
