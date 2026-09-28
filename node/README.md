@@ -72,6 +72,14 @@ Which entry point a runtime needs:
 | Vercel Edge runtime, Next.js edge middleware | `/web` |
 | Fastly Compute, Akamai EdgeWorkers | `/web` |
 
+The default entry point is synchronous and needs `node:crypto`'s
+`X509Certificate` and nothing else. On Cloudflare Workers it also needs the
+global `Buffer` its DER handling uses: `nodejs_compat` with a compatibility
+date of 2024-09-23 or later supplies it, and so does `nodejs_compat_v2` set
+explicitly on an older date. CI runs both spellings. Neither entry point reads a file:
+the Apple roots `defaultConfig()` returns are compiled in, so they work
+inside a bundle either way.
+
 Everything else is shared source, including the DER reader, the CMS walk,
 the receipt attribute grammar and the `Reason` vocabulary, so the two builds
 cannot drift apart on what a receipt says. `npm test` runs every shared
@@ -84,6 +92,8 @@ Compute: `js-compute-runtime` builds the smoke test to wasm and Fastly's own
 local runtime, viceroy, serves it. viceroy is a Rust binary rather than an
 npm package, so it is a separate script; install it with
 `cargo install viceroy --locked` and the runner says so if it is missing.
+CI runs `test:runtimes`, `test:runtimes:web` and `test:runtimes:fastly` on
+every push.
 
 Akamai EdgeWorkers is expected to work — it implements the same WebCrypto
 API — but is untested: it has no local runtime to run it in, so the claim
