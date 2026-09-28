@@ -44,6 +44,9 @@ final class JwsCore {
     // Shared: BouncyCastle's validator keeps no per-call state; see java/README.md.
     private static final CertPathValidator PKIX = pkixValidator();
 
+    // Raw r || s (RFC 7515), as PLAIN-ECDSA takes it; the JDK's P1363 name is Java 9+.
+    private static final String ES256_ALGORITHM = "SHA256withPLAIN-ECDSA";
+
     private JwsCore() {}
 
     /**
@@ -280,8 +283,8 @@ final class JwsCore {
 
     private static List<X509Certificate> decodeChain(List<String> x5c) throws VerificationException {
         List<X509Certificate> chain = new ArrayList<>(3);
+        CertificateFactory cf = x509Factory();
         try {
-            CertificateFactory cf = CertificateFactory.getInstance("X.509", BouncyCastle.PROVIDER);
             for (String entry : x5c) {
                 byte[] der = StrictBase64.decode(entry, Reason.INVALID_CERTIFICATE, "x5c entry");
                 if (Asn1Depth.exceeded(der)) {
@@ -331,9 +334,9 @@ final class JwsCore {
     private static void validateChain(
             X509Certificate leaf, X509Certificate intermediate, Date at, Set<TrustAnchor> trustAnchors)
             throws VerificationException {
+        CertificateFactory cf = x509Factory();
         try {
-            CertPath path = CertificateFactory.getInstance("X.509", BouncyCastle.PROVIDER)
-                    .generateCertPath(Arrays.asList(leaf, intermediate));
+            CertPath path = cf.generateCertPath(Arrays.asList(leaf, intermediate));
             PKIXParameters params = new PKIXParameters(trustAnchors);
             params.setRevocationEnabled(false);
             params.setDate(at);
@@ -354,6 +357,19 @@ final class JwsCore {
         }
     }
 
+    /**
+     * Built outside the decode and validate blocks: getInstance reports a
+     * runtime without the X.509 engine as a CertificateException, the same
+     * type a malformed x5c entry raises, and only the latter is a verdict.
+     */
+    private static CertificateFactory x509Factory() throws VerificationException {
+        try {
+            return CertificateFactory.getInstance("X.509", BouncyCastle.PROVIDER);
+        } catch (CertificateException e) {
+            throw new VerificationException(Reason.INTERNAL_ERROR, "certificate decoder could not be constructed", e);
+        }
+    }
+
     private static CertPathValidator pkixValidator() {
         try {
             return CertPathValidator.getInstance("PKIX", BouncyCastle.PROVIDER);
@@ -364,14 +380,24 @@ final class JwsCore {
 
     private static void verifyEs256(X509Certificate leaf, String signingInput, byte[] signature)
             throws VerificationException {
+        verifyEs256(leaf, signingInput, signature, ES256_ALGORITHM);
+    }
+
+    /** Takes the engine name so a test can stand in for a runtime that lacks it. */
+    static void verifyEs256(X509Certificate leaf, String signingInput, byte[] signature, String algorithm)
+            throws VerificationException {
         if (signature.length != 64) {
             throw new VerificationException(
                     Reason.INVALID_SIGNATURE, "ES256 signature must be 64 bytes, got " + signature.length);
         }
+        Signature verifier;
         try {
-            Signature verifier = Signature.getInstance("SHA256withPLAIN-ECDSA", BouncyCastle.PROVIDER);
-            // Raw r || s (RFC 7515), as PLAIN-ECDSA takes it; the JDK's
-            // P1363 name is Java 9+.
+            verifier = Signature.getInstance(algorithm, BouncyCastle.PROVIDER);
+        } catch (NoSuchAlgorithmException e) {
+            // The runtime lacks the engine, which says nothing about the JWS.
+            throw new VerificationException(Reason.INTERNAL_ERROR, "ES256 verifier could not be constructed", e);
+        }
+        try {
             verifier.initVerify(leaf.getPublicKey());
             verifier.update(signingInput.getBytes(StandardCharsets.US_ASCII));
             if (!verifier.verify(signature)) {
