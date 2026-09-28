@@ -357,6 +357,16 @@ def _require_attribute_set_syntax(signer: Any) -> None:
         for attr in signed_attrs:
             if len(attr["values"]) == 0:
                 raise ValueError("attribute carries no values")
+            # asn1crypto reads an empty OID as "" and drops an arc cut off
+            # mid-way, so the type is checked here: such a set is malformed,
+            # as in Node and Java, not an unknown attribute that the
+            # signature then vouches for.
+            oid = attr["type"].contents
+            if not oid or oid[-1] & 0x80:
+                raise VerificationError(
+                    Reason.MALFORMED,
+                    "malformed signedAttrs: attribute type is not a valid OBJECT IDENTIFIER",
+                )
     except VerificationError:
         raise
     except Exception as e:
