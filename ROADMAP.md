@@ -56,6 +56,15 @@ open: a multi-release jar with `module-info` for Java 9+ ("Java, after
 - **Cross-port benchmarks: record a 0.7 run.** All nine ports carry a
   benchmark and `benchmark.yml` runs them on demand, but the results in
   BENCHMARKS.md are from `v0.6.0`, under the 0.6 names.
+- **A startup runtime probe in the other eight ports.** Java's
+  `Verifier.create` now looks up every crypto engine a verify call uses by
+  name, checks the signature of each of the three bundled Apple roots, and
+  throws when either fails, so a runtime that cannot verify fails at
+  deployment instead of answering `INTERNAL_ERROR` on the first request.
+  `Config.runtimeProbe(false)` turns it off. Node, Python, Go, Ruby, PHP,
+  .NET, Rust and Swift should get the same shape: the engines by name, the
+  bundled roots' own signatures, and an opt-out in `Config`. PORTS.md
+  tracks it.
 - **A date round-trip conformance vector**: a date string parsed to an
   instant and rendered back as Apple's JSON must come out byte-identical in
   every port.
