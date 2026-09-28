@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifier;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -23,8 +22,8 @@ import org.junit.jupiter.api.Test;
  * MIT-licensed public test suites — see fixtures/public-receipts/README.md)
  * verified against the REAL pinned Apple Inc. Root CA.
  *
- * <p>The verdicts on these receipts are pinned in {@code fixtures/cases.json}
- * and asserted by {@link ConformanceCasesTest}. What is left here is the one
+ * <p>The verdicts on these receipts are pinned in the shared cases file and
+ * asserted by {@code ConformanceCasesTest}. What is left here is the one
  * thing a language-neutral vector cannot express: a bound read back out of the
  * rejection message it produces.</p>
  */
@@ -39,10 +38,10 @@ class PublicReceiptsTest {
     @Test
     void theEmbeddedCertificateBoundClearsEveryGenuineChain() throws Exception {
         // The bound is only safe if it sits above the largest chain Apple
-        // actually ships, and MAXIMUM_EMBEDDED_CERTIFICATES is private to
+        // actually ships, and MAX_EMBEDDED_CERTIFICATES is private to
         // another package, so its value is read where the implementation
         // states it: out of the rejection it raises. That takes making the
-        // bound fire — a genuine receipt re-packed with copies of its own
+        // bound fire: a genuine receipt re-packed with copies of its own
         // certificates, which is rejected on the count while the payload,
         // signature and chain stay the genuine ones.
         //
@@ -50,8 +49,8 @@ class PublicReceiptsTest {
         // verifies) and if it is tightened to 3 or below (the ceiling it
         // reports no longer clears sandbox-g5's three-certificate chain).
         // It does NOT check that the rejection happens before the embedded
-        // certificates are decoded — that is
-        // ReceiptVerifierTest#countsEmbeddedCertificatesBeforeDecodingAnyOfThem.
+        // certificates are decoded; that is
+        // ReceiptVerificationTest#countsEmbeddedCertificatesBeforeDecodingAnyOfThem.
         int largestGenuine = 0;
         for (String name :
                 new String[] {"receipt-sandbox-g5", "receipt-sandbox-legacy", "receipt-xcode-with-purchases"}) {
@@ -73,8 +72,9 @@ class PublicReceiptsTest {
                         genuine, new CollectionStore<X509CertificateHolder>(flood), null, null)
                 .getEncoded();
 
-        ReceiptVerifier verifier = new ReceiptVerifier(AppleRootCerts.receiptRoots(), "dev.bonzer.weeka.app");
-        VerificationException e = assertThrows(VerificationException.class, () -> verifier.verify(flooded));
+        Verifier verifier = Verifier.create(Config.defaults());
+        VerificationException e = assertThrows(VerificationException.class, () -> Checks.receipt(verifier, flooded));
+        assertEquals(Reason.MALFORMED, e.reason(), e.getMessage());
         Matcher reported = Pattern.compile("more than the maximum of (\\d+)").matcher(e.getMessage());
         assertTrue(reported.find(), e.getMessage());
         assertTrue(
@@ -93,8 +93,8 @@ class PublicReceiptsTest {
     @Test
     void aGenuineReceiptWithOneContentByteChangedIsAnInvalidSignature() throws Exception {
         byte[] genuine = Base64.getMimeDecoder().decode(receipt("receipt-sandbox-g5"));
-        ReceiptVerifier verifier = new ReceiptVerifier(AppleRootCerts.receiptRoots(), "dev.bonzer.weeka.app");
-        verifier.verify(genuine);
+        Verifier verifier = Verifier.create(Config.defaults());
+        Checks.receipt(verifier, genuine);
 
         byte[] bundleId = "dev.bonzer.weeka.app".getBytes(StandardCharsets.UTF_8);
         int at = indexOf(genuine, bundleId);
@@ -102,8 +102,8 @@ class PublicReceiptsTest {
         final byte[] tampered = genuine.clone();
         tampered[at + bundleId.length - 1] ^= 0x01;
 
-        VerificationException e = assertThrows(VerificationException.class, () -> verifier.verify(tampered));
-        assertEquals(VerificationException.Reason.INVALID_SIGNATURE, e.reason(), e.getMessage());
+        VerificationException e = assertThrows(VerificationException.class, () -> Checks.receipt(verifier, tampered));
+        assertEquals(Reason.INVALID_SIGNATURE, e.reason(), e.getMessage());
     }
 
     private static int indexOf(byte[] haystack, byte[] needle) {

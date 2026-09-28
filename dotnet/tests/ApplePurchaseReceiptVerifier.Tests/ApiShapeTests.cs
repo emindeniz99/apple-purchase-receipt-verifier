@@ -4,8 +4,6 @@ using System.Linq;
 using System.Reflection;
 using System.Security.Cryptography.X509Certificates;
 using ApplePurchaseReceiptVerifier.Internal;
-using ApplePurchaseReceiptVerifier.Jws;
-using ApplePurchaseReceiptVerifier.Receipt;
 using Xunit;
 
 namespace ApplePurchaseReceiptVerifier.Tests;
@@ -17,9 +15,9 @@ namespace ApplePurchaseReceiptVerifier.Tests;
 public class ApiShapeTests
 {
     /// <summary>
-    /// The eleven canonical tokens, read out of
-    /// <c>fixtures/cases.schema.json</c> rather than retyped — so a drifted
-    /// spelling fails here instead of in another port's CI.
+    /// The eight canonical tokens, read out of
+    /// <c>fixtures/cases.schema.json</c> rather than retyped — so a
+    /// drifted spelling fails here instead of in another port's CI.
     /// </summary>
     public static TheoryData<string> SchemaReasonCodes
     {
@@ -35,18 +33,10 @@ public class ApiShapeTests
         }
     }
 
-    /// <summary>
-    /// The two reasons only a <c>VerifyReceiptResult</c> carries. They describe
-    /// the endpoint's request envelope, not a verdict on a payload, so they
-    /// are outside the schema's verifier vocabulary. INTERNAL_ERROR is thrown
-    /// by a verifier too (signed content that cannot be read), so it is in it.
-    /// </summary>
-    private static readonly string[] ResultOnlyCodes = { "MALFORMED_REQUEST", "REQUEST_TOO_LARGE" };
-
     [Fact]
-    public void ReasonHasTheElevenVerifierMembersAndTheTwoResultOnlyOnes()
+    public void ReasonHasExactlyTheEightMembersOf07()
     {
-        Assert.Equal(13, Enum.GetValues<VerificationReason>().Length);
+        Assert.Equal(8, Enum.GetValues<VerificationReason>().Length);
     }
 
     [Fact]
@@ -70,23 +60,20 @@ public class ApiShapeTests
     }
 
     [Fact]
-    public void TheVocabularyIsExactlyTheSchemaVocabularyPlusTheResultOnlyReasons()
+    public void TheVocabularyIsExactlyTheSchemaVocabulary()
     {
         HashSet<string> schema = new(ReasonCodesFromSchema(), StringComparer.Ordinal);
         HashSet<string> ours = new(
             Enum.GetValues<VerificationReason>().Select(VerificationReasonCodes.ToCode),
             StringComparer.Ordinal);
-
-        // No result-only reason may collide with a schema token, or a
-        // vector could start expecting one from a verifier that never throws it.
-        Assert.Empty(schema.Intersect(ResultOnlyCodes));
-        ours.ExceptWith(ResultOnlyCodes);
         Assert.Equal(schema, ours);
     }
 
     [Theory]
     [InlineData("")]
-    [InlineData("invalid_chain")]
+    [InlineData("untrusted_chain")]
+    [InlineData("INVALID_CHAIN")]
+    [InlineData("WRONG_BUNDLE_ID")]
     [InlineData("SOMETHING_ELSE")]
     [InlineData(null)]
     public void UnknownCodesDoNotParse(string? code)
@@ -95,104 +82,127 @@ public class ApiShapeTests
     }
 
     [Fact]
-    public void ExceptionMessageLeadsWithTheCanonicalCode()
+    public void AReasonOutsideTheEnumHasNoCode()
     {
-        VerificationException error = new(VerificationReason.WrongBundleId, "detail");
-        Assert.StartsWith("WRONG_BUNDLE_ID: ", error.Message, StringComparison.Ordinal);
-        Assert.Equal("WRONG_BUNDLE_ID", error.ReasonCode);
-        Assert.Equal(VerificationReason.WrongBundleId, error.Reason);
+        Assert.Throws<ArgumentOutOfRangeException>(() => VerificationReasonCodes.ToCode((VerificationReason)99));
     }
 
     [Fact]
-    public void EveryEnvironmentClaimValueRoundTrips()
+    public void MessagesLeadWithTheCanonicalCode()
     {
+        VerificationException error = new(VerificationReason.UntrustedChain, "detail");
+        Assert.Equal("UNTRUSTED_CHAIN: detail", error.Message);
+        Assert.Equal("UNTRUSTED_CHAIN", error.ReasonCode);
+        Assert.Equal("detail", error.Detail);
+
+        Failure failure = TestPki.Verifier(TestPki.SharedJws.Value.Root).VerifySignedData("a.b").Failure!;
+        Assert.StartsWith("MALFORMED: ", failure.ToString(), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <c>fromReceiptType</c> states what Apple's value means and decides
+    /// nothing: the four documented spellings, exactly, and nothing else.
+    /// </summary>
+    [Theory]
+    [InlineData("Production", AppleEnvironment.Production)]
+    [InlineData("ProductionVPP", AppleEnvironment.Production)]
+    [InlineData("ProductionSandbox", AppleEnvironment.Sandbox)]
+    [InlineData("ProductionVPPSandbox", AppleEnvironment.Sandbox)]
+    [InlineData("production", null)]
+    [InlineData("Sandbox", null)]
+    [InlineData("Xcode", null)]
+    [InlineData("", null)]
+    [InlineData(null, null)]
+    public void FromReceiptTypeMapsOnlyApplesSpellings(string? receiptType, AppleEnvironment? expected)
+    {
+        Assert.Equal(expected, AppleEnvironments.FromReceiptType(receiptType));
+    }
+
+    [Theory]
+    [InlineData("Production", AppleEnvironment.Production)]
+    [InlineData("Sandbox", AppleEnvironment.Sandbox)]
+    [InlineData("Xcode", null)]
+    [InlineData("LocalTesting", null)]
+    [InlineData("sandbox", null)]
+    [InlineData("ProductionSandbox", null)]
+    [InlineData(null, null)]
+    public void FromJwsEnvironmentMapsOnlyApplesSpellings(string? claim, AppleEnvironment? expected)
+    {
+        Assert.Equal(expected, AppleEnvironments.FromJwsEnvironment(claim));
+    }
+
+    [Fact]
+    public void EveryEnvironmentsWireSpellingRoundTrips()
+    {
+        Assert.Equal(2, Enum.GetValues<AppleEnvironment>().Length);
         foreach (AppleEnvironment environment in Enum.GetValues<AppleEnvironment>())
         {
-            string value = AppleEnvironments.ToValue(environment);
-            Assert.True(AppleEnvironments.TryParse(value, out AppleEnvironment parsed));
-            Assert.Equal(environment, parsed);
+            Assert.Equal(environment, AppleEnvironments.FromJwsEnvironment(AppleEnvironments.ToValue(environment)));
         }
-
-        Assert.False(AppleEnvironments.TryParse("production", out _));
-        Assert.False(AppleEnvironments.TryParse(null, out _));
     }
 
     // --- misconfiguration is an argument error, never a verdict --------------
 
+    /// <summary>
+    /// A verifier with no roots would answer UNTRUSTED_CHAIN to everything and
+    /// nobody would notice until production, so an empty root set fails at
+    /// startup, once.
+    /// </summary>
     [Fact]
-    public void JwsVerifierRejectsEmptyRoots()
+    public void AnEmptyRootSetIsRefusedAtBuildTime()
     {
         Assert.Throws<ArgumentException>(
-            () => new JwsVerifier(Array.Empty<X509Certificate2>(), "id", new[] { AppleEnvironment.Sandbox }));
+            () => Config.CreateBuilder().Roots(Array.Empty<X509Certificate2>()).Build());
     }
 
     [Fact]
-    public void JwsVerifierRejectsAnEmptyBundleId()
+    public void NullConfigurationIsAProgrammingError()
     {
+        Assert.Throws<ArgumentNullException>(() => Config.CreateBuilder().Roots(null!));
+        Assert.Throws<ArgumentNullException>(() => Config.CreateBuilder().Clock(null!));
+        Assert.Throws<ArgumentNullException>(() => Verifier.Create(null!));
         Assert.Throws<ArgumentException>(
-            () => new JwsVerifier(Roots(), string.Empty, new[] { AppleEnvironment.Sandbox }));
-        Assert.Throws<ArgumentException>(
-            () => new JwsVerifier(Roots(), null!, new[] { AppleEnvironment.Sandbox }));
-    }
-
-    [Fact]
-    public void JwsVerifierRejectsAnEmptyAcceptSet()
-    {
-        Assert.Throws<ArgumentException>(
-            () => new JwsVerifier(Roots(), "id", Array.Empty<AppleEnvironment>()));
-        Assert.Throws<ArgumentException>(() => new JwsVerifier(Roots(), "id", null!));
-    }
-
-    [Fact]
-    public void ReceiptVerifierRejectsMisconfiguration()
-    {
-        Assert.Throws<ArgumentException>(() => new ReceiptVerifier(Array.Empty<X509Certificate2>(), "id"));
-        Assert.Throws<ArgumentException>(() => new ReceiptVerifier(Roots(), string.Empty));
-        Assert.Throws<ArgumentException>(() => new ReceiptVerifier(Roots(), null!));
-    }
-
-    [Fact]
-    public void EndpointRejectsAnEnvironmentApplesEndpointDoesNotHave()
-    {
-        Assert.Throws<ArgumentException>(
-            () => new VerifyReceiptEndpoint(Roots(), AppleEnvironment.Xcode));
-        Assert.Throws<ArgumentException>(
-            () => new VerifyReceiptEndpoint(Roots(), AppleEnvironment.LocalTesting));
-        Assert.Throws<ArgumentException>(
-            () => new VerifyReceiptEndpoint(Array.Empty<X509Certificate2>(), AppleEnvironment.Sandbox));
+            () => Config.CreateBuilder().Roots(new X509Certificate2[] { null! }).Build());
     }
 
     /// <summary>
-    /// <c>ReceiptVerifier</c> must have no clock parameter on any constructor.
-    /// Its only "now" is a certificate-validity instant, and an injected clock
-    /// must never be able to move one — an option with no legitimate consumer
-    /// is an invitation to wire it into the one place it must not reach.
+    /// The .NET spelling of "a null Environment is a programming error": an
+    /// enum value that is neither of Apple's two URLs throws, and never turns
+    /// into a status a receipt could have caused.
     /// </summary>
     [Fact]
-    public void ReceiptVerifierHasNoClockSeam()
+    public void AnEnvironmentApplesEndpointDoesNotHaveIsAProgrammingError()
     {
-        foreach (ConstructorInfo constructor in typeof(ReceiptVerifier).GetConstructors())
-        {
-            Assert.DoesNotContain(constructor.GetParameters(), p => p.ParameterType == typeof(IClock));
-        }
+        IVerifier verifier = TestPki.FixtureVerifier("receipt-root");
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => verifier.VerifyReceiptEndpoint((AppleEnvironment)2, "{\"receipt-data\":\"AAAA\"}"));
+    }
 
-        foreach (MethodInfo method in typeof(ReceiptVerifier).GetMethods(BindingFlags.Public | BindingFlags.Static))
-        {
-            Assert.DoesNotContain(method.GetParameters(), p => p.ParameterType == typeof(IClock));
-        }
+    [Fact]
+    public void TheDefaultsPinTheBundledAppleRootsAndTheSystemClock()
+    {
+        Config defaults = Config.Defaults();
+        Assert.Equal(3, defaults.Roots.Count);
+        Assert.True(Math.Abs(defaults.Clock() - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()) < 60_000);
     }
 
     /// <summary>
-    /// <c>VerifyReceiptCore</c> is public, so an endpoint never has to build a
-    /// verifier around a magic bundle id just to reach the primitive.
+    /// Callers mock <see cref="IVerifier"/> and build payloads by hand in their
+    /// own tests, so those are public; the implementation is not.
     /// </summary>
     [Fact]
-    public void VerifyReceiptCoreIsPublic()
+    public void TheImplementationIsNotPublic()
     {
-        MethodInfo? method = typeof(ReceiptVerifier).GetMethod(
-            "VerifyReceiptCore", BindingFlags.Public | BindingFlags.Static);
-        Assert.NotNull(method);
-        Assert.Equal(typeof(AppReceipt), method!.ReturnType);
+        Assert.True(typeof(IVerifier).IsInterface);
+        Assert.False(typeof(VerifierImpl).IsPublic);
+        foreach (Type type in typeof(IVerifier).Assembly.GetExportedTypes())
+        {
+            Assert.Equal("ApplePurchaseReceiptVerifier", type.Namespace);
+        }
+
+        Assert.NotNull(typeof(JsonPayload).GetMethod("Create", BindingFlags.Public | BindingFlags.Static));
+        Assert.Single(typeof(ReceiptPayload).GetConstructors());
+        Assert.Single(typeof(InAppPurchase).GetConstructors());
     }
 
     /// <summary>
@@ -207,9 +217,10 @@ public class ApiShapeTests
         string[] banned =
         {
             "System.Text.Json", "System.Formats.Asn1", "System.Security.Cryptography.Pkcs",
+            "ApplePurchaseReceiptVerifier.Internal",
         };
 
-        foreach (Type type in typeof(JwsVerifier).Assembly.GetExportedTypes())
+        foreach (Type type in typeof(IVerifier).Assembly.GetExportedTypes())
         {
             foreach (Type used in SurfaceTypes(type))
             {
@@ -224,33 +235,36 @@ public class ApiShapeTests
     }
 
     /// <summary>
-    /// JWS date claims stay epoch-millisecond integers, exactly as Apple ships
-    /// them. Converting one to a date type loses the raw claim and is a
-    /// cross-port divergence, so the types are asserted rather than assumed.
+    /// Receipt dates are epoch milliseconds, UTC, with an <c>Ms</c> suffix
+    /// (design, decode rules), not the platform's date type: a date type
+    /// carries an offset and a range the wire format does not.
     /// </summary>
     [Theory]
-    [InlineData(typeof(TransactionPayload), "SignedDate")]
-    [InlineData(typeof(TransactionPayload), "PurchaseDate")]
-    [InlineData(typeof(TransactionPayload), "ExpiresDate")]
-    [InlineData(typeof(TransactionPayload), "RevocationDate")]
-    [InlineData(typeof(TransactionPayload), "OriginalPurchaseDate")]
-    [InlineData(typeof(AppTransactionPayload), "ReceiptCreationDate")]
-    [InlineData(typeof(AppTransactionPayload), "PreorderDate")]
-    [InlineData(typeof(AppTransactionPayload), "OriginalPurchaseDate")]
-    public void JwsDateClaimsAreEpochMillisecondIntegers(Type payload, string property)
+    [InlineData(typeof(ReceiptPayload), "ReceiptCreationDateMs")]
+    [InlineData(typeof(ReceiptPayload), "OriginalPurchaseDateMs")]
+    [InlineData(typeof(ReceiptPayload), "ExpirationDateMs")]
+    [InlineData(typeof(InAppPurchase), "PurchaseDateMs")]
+    [InlineData(typeof(InAppPurchase), "OriginalPurchaseDateMs")]
+    [InlineData(typeof(InAppPurchase), "ExpiresDateMs")]
+    [InlineData(typeof(InAppPurchase), "CancellationDateMs")]
+    public void ReceiptDatesAreEpochMillisecondLongs(Type type, string property)
     {
-        Assert.Equal(typeof(long?), payload.GetProperty(property)!.PropertyType);
+        Assert.Equal(typeof(long?), type.GetProperty(property)!.PropertyType);
     }
 
-    /// <summary>Receipt attribute dates, in contrast, are the platform's date type.</summary>
-    [Theory]
-    [InlineData(typeof(AppReceipt), "CreationDate")]
-    [InlineData(typeof(AppReceipt), "ExpirationDate")]
-    [InlineData(typeof(InAppPurchase), "PurchaseDate")]
-    [InlineData(typeof(InAppPurchase), "ExpiresDate")]
-    public void ReceiptAttributeDatesAreDateTimeOffsets(Type type, string property)
+    [Fact]
+    public void NoPublicPropertyIsADateType()
     {
-        Assert.Equal(typeof(DateTimeOffset?), type.GetProperty(property)!.PropertyType);
+        foreach (Type type in typeof(IVerifier).Assembly.GetExportedTypes())
+        {
+            foreach (PropertyInfo property in type.GetProperties())
+            {
+                Assert.NotEqual(typeof(DateTimeOffset?), property.PropertyType);
+                Assert.NotEqual(typeof(DateTimeOffset), property.PropertyType);
+                Assert.NotEqual(typeof(DateTime?), property.PropertyType);
+                Assert.NotEqual(typeof(DateTime), property.PropertyType);
+            }
+        }
     }
 
     private static IEnumerable<Type> SurfaceTypes(Type type)
@@ -281,7 +295,7 @@ public class ApiShapeTests
     private static IEnumerable<string> ReasonCodesFromSchema()
     {
         OrderedMap schema = Json.ParseObject(
-            System.IO.File.ReadAllText(System.IO.Path.Combine(Fixtures.Root, "cases.schema.json")));
+            System.IO.File.ReadAllText(System.IO.Path.Combine(Fixtures070.Root, "cases.schema.json")));
         OrderedMap defs = (OrderedMap)schema["$defs"]!;
         OrderedMap reason = (OrderedMap)defs["reason"]!;
         foreach (object? code in (List<object?>)reason["enum"]!)
@@ -289,6 +303,4 @@ public class ApiShapeTests
             yield return (string)code!;
         }
     }
-
-    private static IReadOnlyList<X509Certificate2> Roots() => AppleRootCertificates.JwsRoots();
 }

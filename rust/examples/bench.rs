@@ -12,23 +12,32 @@
 //! Each benchmark warms up for one second, then takes ten samples of at
 //! least 100 ms each; the JSON on stdout carries the median, minimum and
 //! maximum microseconds per operation over those samples.
+//!
+//! ```text
+//! cargo run --release --locked --example bench -- --worst-case
+//! ```
+//!
+//! times, the same way, every shared case in `fixtures/cases.json` that
+//! carries a `maxMillis` budget: the hostile inputs (oversized untrusted
+//! keys, certificate meshes, encoding oddities inside certificates) the
+//! shared suite bounds in time. Each call is run once first and must give
+//! the answer the case expects. The README's worst-case CPU figure comes
+//! from this mode.
 
-use apple_purchase_receipt_verifier::{
-    apple_receipt_roots, base64, verify_receipt_core, Environment, FixedClock, Reason,
-    ReceiptVerifier, TrustAnchor, VerifyReceiptEndpoint, VerifyReceiptRequest,
-};
+use apple_purchase_receipt_verifier::__internal::{base64_encode, decode_receipt_data};
+use apple_purchase_receipt_verifier::{Config, Environment, Reason, TrustAnchor, Verifier};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::hint::black_box;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 const WARMUP: Duration = Duration::from_secs(1);
 const SAMPLES: usize = 10;
 const MIN_SAMPLE: Duration = Duration::from_millis(100);
 
-/// Any fixed instant (2026-01-01T00:00:00Z): it only feeds `request_date`.
+/// Any fixed instant (2026-01-01T00:00:00Z): it only feeds `request_date`,
+/// since both fixtures carry a creation date.
 const NOW_MILLIS: i64 = 1_767_225_600_000;
 
 /// File under `fixtures/public-receipts`, and the bundle id, in-app count
@@ -49,92 +58,11 @@ const FIXTURES: [(&str, &str, usize, &str); 2] = [
 ];
 
 fn main() {
-    let roots: Vec<TrustAnchor> = apple_receipt_roots().to_vec();
-    let mut results = Vec::new();
-    for (name, bundle_id, in_app_count, sha256) in FIXTURES {
-        let der = read_fixture(name);
-        let digest: String = Sha256::digest(&der)
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect();
-        assert_eq!(digest, sha256, "{name} does not match cases.json");
-        let text = base64::encode(&der);
-        let body = format!("{{\"receipt-data\":\"{text}\"}}");
-        let request = VerifyReceiptRequest::new(text.clone());
-        let tampered = tamper(&der);
-        let verifier = ReceiptVerifier::builder()
-            .trusted_roots(roots.iter().cloned())
-            .bundle_id(bundle_id)
-            .build()
-            .expect("verifier");
-        let endpoint = |environment| {
-            VerifyReceiptEndpoint::builder()
-                .trusted_roots(roots.iter().cloned())
-                .environment(environment)
-                .clock(Arc::new(FixedClock::from_unix_millis(NOW_MILLIS)))
-                .build()
-                .expect("endpoint")
-        };
-        let sandbox = endpoint(Environment::Sandbox);
-        let production = endpoint(Environment::Production);
-
-        // Every call once, with the answer the conformance suite expects,
-        // so no benchmark can time a fast failure by accident.
-        assert_eq!(
-            base64::decode_receipt_base64(&text).as_deref(),
-            Some(&der[..])
-        );
-        for receipt in [
-            verify_receipt_core(&der, &roots).expect("core"),
-            verifier.verify_base64(&text).expect("verifierBase64"),
-        ] {
-            assert_eq!(receipt.bundle_id.as_deref(), Some(bundle_id));
-            assert_eq!(receipt.in_app_purchases.len(), in_app_count);
-        }
-        let ok = parse(&sandbox.verify_receipt_json(&body));
-        assert_eq!(ok["status"], 0, "endpointJson");
-        assert_eq!(
-            ok["receipt"]["in_app"].as_array().map(Vec::len),
-            Some(in_app_count)
-        );
-        let retry = production
-            .verify_receipt_result(&request)
-            .to_json_in(Environment::Sandbox)
-            .expect("retryViaResult");
-        let retry = parse(&retry);
-        assert_eq!(
-            (&retry["status"], &retry["environment"]),
-            (&json!(0), &json!("Sandbox"))
-        );
-        let rejected = verify_receipt_core(&tampered, &roots).expect_err("tampered");
-        assert_eq!(rejected.reason(), Some(Reason::InvalidSignature));
-
-        let mut run = |benchmark: &str, op: &mut dyn FnMut()| {
-            results.push(measure(benchmark, name, op));
-        };
-        run("decodeBase64", &mut || {
-            black_box(base64::decode_receipt_base64(black_box(&text)));
-        });
-        run("core", &mut || {
-            let _ = black_box(verify_receipt_core(black_box(&der), &roots));
-        });
-        run("verifierBase64", &mut || {
-            let _ = black_box(verifier.verify_base64(black_box(&text)));
-        });
-        run("endpointJson", &mut || {
-            black_box(sandbox.verify_receipt_json(black_box(&body)));
-        });
-        run("retryViaResult", &mut || {
-            let result = production.verify_receipt_result(black_box(&request));
-            let _ = black_box(result.to_json_in(Environment::Sandbox));
-        });
-        run("rejectTamperedSignature", &mut || {
-            let _ = black_box(verify_receipt_core(black_box(&tampered), &roots));
-        });
-    }
+    let worst = std::env::args().skip(1).any(|arg| arg == "--worst-case");
+    let results = if worst { worst_case() } else { cross_port() };
     let report = json!({
         "port": "rust",
-        "tool": "examples/bench.rs (std::time)",
+        "tool": format!("examples/bench.rs {} (std::time)", if worst { "worst-case" } else { "cross-port" }),
         "settings": {
             "warmup_s": WARMUP.as_secs_f64(),
             "samples": SAMPLES,
@@ -146,6 +74,163 @@ fn main() {
         "{}",
         serde_json::to_string_pretty(&report).expect("serialize")
     );
+}
+
+fn cross_port() -> Vec<Value> {
+    // The roots are parsed once, here, and never per call.
+    let verifier = Verifier::new(
+        Config::builder()
+            .clock(|| NOW_MILLIS)
+            .build()
+            .expect("config"),
+    );
+    let mut results = Vec::new();
+    for (name, bundle_id, in_app_count, sha256) in FIXTURES {
+        let der = read_fixture(name);
+        let digest: String = Sha256::digest(&der)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        assert_eq!(digest, sha256, "{name} does not match cases.json");
+        let text = base64_encode(&der);
+        let body = format!("{{\"receipt-data\":\"{text}\"}}");
+        let tampered = base64_encode(&tamper(&der));
+
+        // Every call once, with the answer the conformance suite expects,
+        // so no benchmark can time a fast failure by accident.
+        assert_eq!(decode_receipt_data(&text).ok().as_deref(), Some(&der[..]));
+        let receipt = verifier.verify_receipt(&text).expect("verifyReceipt");
+        assert_eq!(receipt.bundle_id.as_deref(), Some(bundle_id));
+        assert_eq!(receipt.in_app.len(), in_app_count);
+        let ok = parse(&verifier.verify_receipt_endpoint(Environment::Sandbox, &body));
+        assert_eq!(ok["status"], 0, "endpointJson");
+        assert_eq!(
+            ok["receipt"]["in_app"].as_array().map(Vec::len),
+            Some(in_app_count)
+        );
+        let first = parse(&verifier.verify_receipt_endpoint(Environment::Production, &body));
+        assert_eq!(first["status"], 21007, "retryViaResult first call");
+        let rejected = verifier.verify_receipt(&tampered).expect_err("tampered");
+        assert_eq!(rejected.reason(), Reason::InvalidSignature);
+
+        let mut run = |benchmark: &str, op: &mut dyn FnMut()| {
+            results.push(measure(benchmark, name, op));
+        };
+        run("decodeBase64", &mut || {
+            let _ = black_box(decode_receipt_data(black_box(&text)));
+        });
+        // 0.7 has no DER entry point: "core" and "verifierBase64" are both
+        // verify_receipt over the base64, so both include the decode that
+        // 0.6's "core" did not.
+        run("core", &mut || {
+            let _ = black_box(verifier.verify_receipt(black_box(&text)));
+        });
+        run("verifierBase64", &mut || {
+            let _ = black_box(verifier.verify_receipt(black_box(&text)));
+        });
+        run("endpointJson", &mut || {
+            black_box(verifier.verify_receipt_endpoint(Environment::Sandbox, black_box(&body)));
+        });
+        // 21007 on PRODUCTION, then the caller's second, offline call on
+        // SANDBOX, as the design routes it.
+        run("retryViaResult", &mut || {
+            black_box(verifier.verify_receipt_endpoint(Environment::Production, black_box(&body)));
+            black_box(verifier.verify_receipt_endpoint(Environment::Sandbox, black_box(&body)));
+        });
+        run("rejectTamperedSignature", &mut || {
+            let _ = black_box(verifier.verify_receipt(black_box(&tampered)));
+        });
+    }
+    results
+}
+
+/// Every shared case with a `maxMillis` budget, each checked against the
+/// answer it expects and then timed.
+fn worst_case() -> Vec<Value> {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../fixtures");
+    let file = parse(&std::fs::read_to_string(dir.join("cases.json")).expect("cases.json"));
+    let registry = &file["fixtures"];
+    let bytes = |id: &str| -> Vec<u8> {
+        let entry = &registry[id];
+        let raw = std::fs::read(dir.join(entry["path"].as_str().expect("path"))).expect("fixture");
+        match entry["codec"].as_str() {
+            Some("raw" | "text") => raw,
+            Some("utf8") => String::from_utf8_lossy(&raw).trim().as_bytes().to_vec(),
+            Some("base64") => {
+                let text: String = String::from_utf8_lossy(&raw).split_whitespace().collect();
+                decode_receipt_data(&text).expect("fixture base64")
+            }
+            other => panic!("fixture {id} has codec {other:?}"),
+        }
+    };
+    let mut results = Vec::new();
+    for case in file["cases"].as_array().expect("cases") {
+        if case.get("maxMillis").is_none() {
+            continue;
+        }
+        let id = case["id"].as_str().expect("id");
+        let trusted = &case["config"]["trustedRoots"];
+        let mut builder = Config::builder().clock(|| NOW_MILLIS);
+        if trusted["source"] == "fixtures" {
+            let roots = trusted["fixtures"]
+                .as_array()
+                .expect("root ids")
+                .iter()
+                .map(|root| {
+                    TrustAnchor::from_der(&bytes(root.as_str().expect("root id"))).expect("root")
+                });
+            builder = builder.roots(roots.collect::<Vec<_>>());
+        }
+        let verifier = Verifier::new(builder.build().expect("config"));
+        let fixture = case["input"]["fixture"].as_str().expect("fixture");
+        let input = bytes(fixture);
+        let operation = case["operation"].as_str().expect("operation");
+        let mut op: Box<dyn FnMut() -> Option<Reason>> = match operation {
+            "verifyReceipt" => {
+                let text = if registry[fixture]["codec"] == "text"
+                    || registry[fixture]["codec"] == "utf8"
+                {
+                    String::from_utf8(input).expect("UTF-8")
+                } else {
+                    base64_encode(&input)
+                };
+                Box::new(move || {
+                    verifier
+                        .verify_receipt(black_box(&text))
+                        .err()
+                        .map(|f| f.reason())
+                })
+            }
+            "verifySignedData" => {
+                let jws = String::from_utf8(input).expect("UTF-8");
+                Box::new(move || {
+                    verifier
+                        .verify_signed_data(black_box(&jws))
+                        .err()
+                        .map(|f| f.reason())
+                })
+            }
+            other => panic!("{id}: no adapter for operation {other}"),
+        };
+
+        // The answer the case expects, before anything is timed.
+        let outcome = op().map_or("ok", Reason::as_str);
+        let expected = &case["expected"];
+        if let Some(one_of) = expected["oneOf"].as_array() {
+            assert!(
+                one_of.iter().any(|o| o == outcome),
+                "{id} answered {outcome}"
+            );
+        } else if expected["status"] == "ok" {
+            assert_eq!(outcome, "ok", "{id}");
+        } else {
+            assert_eq!(Some(outcome), expected["reason"].as_str(), "{id}");
+        }
+        results.push(measure(operation, id, &mut || {
+            black_box(op());
+        }));
+    }
+    results
 }
 
 /// Warm up, size a sample to at least `MIN_SAMPLE`, then time `SAMPLES`
@@ -202,5 +287,5 @@ fn read_fixture(name: &str) -> Vec<u8> {
         .join("../fixtures/public-receipts")
         .join(format!("{name}.b64"));
     let text = std::fs::read_to_string(&path).expect("fixture");
-    base64::decode_receipt_base64(&text).expect("fixture base64")
+    decode_receipt_data(text.trim()).expect("fixture base64")
 }

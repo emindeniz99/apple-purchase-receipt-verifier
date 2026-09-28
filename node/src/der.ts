@@ -7,6 +7,11 @@
 
 import { bytesEqual, concatBytes } from './bytes.js';
 
+// 32 constructed values inside one another, the outermost counted as 1
+// (docs/design/0.7-api.md's Bounds table): 32 is accepted, 33 refused.
+// Counted on each value parsed on its own (the CMS envelope from its
+// ContentInfo, the signed content from its attribute SET), never across the
+// two, since `parse` always starts a fresh walk at depth 0.
 const MAX_DEPTH = 32;
 
 export class ParseError extends Error {}
@@ -31,7 +36,7 @@ export function parse(buf: Uint8Array): ASN1Node {
 }
 
 function readNode(buf: Uint8Array, off: number, depth: number): [ASN1Node, number] {
-  if (depth > MAX_DEPTH) {
+  if (depth >= MAX_DEPTH) {
     throw new ParseError('maximum ASN.1 nesting depth exceeded');
   }
   if (off + 2 > buf.length) {
@@ -156,6 +161,7 @@ export const Tag = {
   IA5_STRING: 0x16,
   CONTEXT_0: 0xa0,
   CONTEXT_1: 0xa1,
+  CONTEXT_2: 0xa2,
   CONTEXT_3: 0xa3,
 } as const;
 

@@ -46,6 +46,26 @@
         {
           "type": "generic",
           "path": "java/README.md"
+        },
+        {
+          "type": "generic",
+          "path": "java/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/Version.java"
+        },
+        {
+          "type": "generic",
+          "path": "python/apple_purchase_receipt_verifier/version.py"
+        },
+        {
+          "type": "generic",
+          "path": "swift/Sources/ApplePurchaseReceiptVerifier/Version.swift"
+        },
+        {
+          "type": "generic",
+          "path": "dotnet/src/ApplePurchaseReceiptVerifier/LibraryVersion.cs"
+        },
+        {
+          "type": "generic",
+          "path": "go/version.go"
         }
       ]
     }

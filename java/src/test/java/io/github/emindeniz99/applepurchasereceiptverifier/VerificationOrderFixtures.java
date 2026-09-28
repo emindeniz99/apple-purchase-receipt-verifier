@@ -15,9 +15,9 @@ import org.bouncycastle.asn1.DERSequence;
 /**
  * Writes the receipts that pin the legacy verification order into
  * {@code fixtures/generated/}: only the creation date is read before trust
- * is established, the chain is judged at "now" whenever that date is not
- * usable, and content that cannot be read after the chain and the signature
- * passed is {@code INTERNAL_ERROR}.
+ * is established, and the chain is judged at "now" whenever that date is not
+ * usable. Content that cannot be read after the chain and the signature
+ * passed is {@code UNREADABLE_PAYLOAD}.
  *
  * <p>Three PKIs, all minted here:</p>
  * <ul>
@@ -99,7 +99,8 @@ public final class VerificationOrderFixtures {
 
         // (a) The creation date is unreadable, so the chain is judged at now.
         // Under the trusted chain that passes, the signature passes, and the
-        // full parse then fails on the same date: INTERNAL_ERROR.
+        // full parse decodes the date to null and keeps its raw value: the
+        // receipt verifies.
         byte[] unreadableDate = payload(CREATION_DATE, date(UNREADABLE_DATE));
         write(out, "receipt-unreadable-creation-date.der", trusted.signReceipt(unreadableDate, new Date(SIGNED_DATE)));
 
@@ -111,8 +112,8 @@ public final class VerificationOrderFixtures {
                 foreign.signReceipt(unreadableDate, new Date(SIGNED_DATE)));
 
         // (a') The same unreadable date under the chain that expired in 2021:
-        // judged at now, the chain is expired, so INVALID_CHAIN. Proves the
-        // fallback instant is now rather than no validity check at all.
+        // judged at now, the chain is expired, so INVALID_CERTIFICATE. Proves
+        // the fallback instant is now rather than no validity check at all.
         write(
                 out,
                 "receipt-unreadable-creation-date-expired-chain.der",
@@ -125,8 +126,9 @@ public final class VerificationOrderFixtures {
         write(out, "receipt-garbage-in-app-purchase.der", trusted.signReceipt(garbageInApp, new Date(SIGNED_DATE)));
 
         // (d) Attribute 12 twice, both inside the expired chain's window.
-        // Two dates are no usable date: judged at now, INVALID_CHAIN. A port
-        // that took either one would accept.
+        // The first one is the chain instant, so the chain is judged inside
+        // its window and the receipt verifies. A port that treated two dates
+        // as none would judge at now and refuse the expired chain.
         write(
                 out,
                 "receipt-creation-date-twice-expired-chain.der",

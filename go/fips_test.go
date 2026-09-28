@@ -36,9 +36,13 @@ func TestFIPSOnlyModeDoesNotCrashTheCaller(t *testing.T) {
 	}
 
 	// --- child, running with GODEBUG=fips140=only ----------------------
+	verifier, err := applereceipt.NewVerifier(applereceipt.DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Run("the SHA-1 legacy receipt fails without panicking", func(t *testing.T) {
 		receipt := fixtureBytes(t, "public-receipt-sandbox-legacy")
-		result, err := applereceipt.VerifyReceiptCore(receipt, applereceipt.AppleReceiptRoots())
+		result, err := verifier.VerifyReceipt(applereceiptBase64(receipt))
 		if err == nil {
 			// Some builds allow SHA-1 for signature verification even in
 			// FIPS-only mode. Verifying is a fine outcome; crashing is not.
@@ -49,37 +53,18 @@ func TestFIPSOnlyModeDoesNotCrashTheCaller(t *testing.T) {
 			}
 			return
 		}
-		var verr *applereceipt.VerificationError
-		if !errors.As(err, &verr) {
-			t.Fatalf("FIPS-only mode must produce a *VerificationError, got %T: %v", err, err)
+		var failure *applereceipt.Failure
+		if !errors.As(err, &failure) {
+			t.Fatalf("FIPS-only mode must produce a *Failure, got %T: %v", err, err)
 		}
 		t.Logf("contained as %s, which is the truth: this build cannot verify a SHA-1 receipt",
-			verr.Reason)
+			failure.Reason)
 	})
 
 	t.Run("the SHA-256 receipt still verifies", func(t *testing.T) {
 		receipt := fixtureBytes(t, "public-receipt-sandbox-g5")
-		if _, err := applereceipt.VerifyReceiptCore(receipt, applereceipt.AppleReceiptRoots()); err != nil {
+		if _, err := verifier.VerifyReceipt(applereceiptBase64(receipt)); err != nil {
 			t.Fatalf("a SHA-256 receipt must still verify in FIPS-140-only mode: %v", err)
 		}
-	})
-
-	// The device hash is SHA-1 whatever the receipt says, so no input can
-	// get past it here: that is the runtime failing, not the client.
-	t.Run("the device hash is an internal error", func(t *testing.T) {
-		receipt := fixtureBytes(t, "public-receipt-sandbox-g5")
-		fields, err := applereceipt.VerifyReceiptCore(receipt, applereceipt.AppleReceiptRoots())
-		if err != nil {
-			t.Fatal(err)
-		}
-		verifier, err := applereceipt.NewReceiptVerifier(applereceipt.ReceiptVerifierOptions{
-			TrustedRoots: applereceipt.AppleReceiptRoots(),
-			BundleID:     fields.BundleID,
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, err = verifier.VerifyWithDeviceGUID(receipt, make([]byte, 16))
-		requireReason(t, err, applereceipt.ReasonInternalError)
 	})
 }

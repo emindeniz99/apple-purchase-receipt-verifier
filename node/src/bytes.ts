@@ -165,6 +165,35 @@ export function base64UrlDecodeStrict(text: string): Uint8Array | null {
   return base64UrlEncode(decoded) === text ? decoded : null;
 }
 
+const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+/** Standard base64 encode, with `=` padding — the canonical JSON byte fields use this. */
+export function base64Encode(bytes: Uint8Array): string {
+  let out = '';
+  let i = 0;
+  for (; i + 3 <= bytes.length; i += 3) {
+    const chunk = (bytes[i]! << 16) | (bytes[i + 1]! << 8) | bytes[i + 2]!;
+    out +=
+      BASE64_ALPHABET[(chunk >> 18) & 0x3f]! +
+      BASE64_ALPHABET[(chunk >> 12) & 0x3f]! +
+      BASE64_ALPHABET[(chunk >> 6) & 0x3f]! +
+      BASE64_ALPHABET[chunk & 0x3f]!;
+  }
+  const left = bytes.length - i;
+  if (left === 1) {
+    const chunk = bytes[i]! << 16;
+    out += BASE64_ALPHABET[(chunk >> 18) & 0x3f]! + BASE64_ALPHABET[(chunk >> 12) & 0x3f]! + '==';
+  } else if (left === 2) {
+    const chunk = (bytes[i]! << 16) | (bytes[i + 1]! << 8);
+    out +=
+      BASE64_ALPHABET[(chunk >> 18) & 0x3f]! +
+      BASE64_ALPHABET[(chunk >> 12) & 0x3f]! +
+      BASE64_ALPHABET[(chunk >> 6) & 0x3f]! +
+      '=';
+  }
+  return out;
+}
+
 const BASE64URL_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 
 // Hand-rolled for the same reason base64Decode is, and one more: btoa()

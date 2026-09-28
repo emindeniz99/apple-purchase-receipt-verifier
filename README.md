@@ -16,22 +16,35 @@ a replacement for the deprecated `verifyReceipt` endpoint. Cryptographically
 proves that purchase data a client presents (StoreKit 2 signed JWS
 transactions, or legacy PKCS#7 app receipts) was signed by Apple, by
 validating the certificate chain against pinned Apple root CAs. Nine
-implementations, one normative algorithm, one shared fixture set they all
-verify byte-for-byte: **Java** (8+), **Node** (20+, zero runtime deps),
-**Python** (3.10+), **Swift** (6.1+), **Go** (1.22+), **Ruby** (3.1+),
-**Rust** (1.85+), **PHP** (8.1+) and **.NET** (netstandard2.0 and net8.0) —
+implementations, one normative algorithm, one shared fixture set on which
+they agree on every verdict and every decoded value: **Java** (8+), **Node** (20+, zero runtime deps),
+**Python** (3.10+), **Swift** (6.1+), **Go** (1.22+), **Ruby** (3.3+),
+**Rust** (1.85+), **PHP** (8.2+) and **.NET** (netstandard2.0 and net8.0) —
 plus **C and C++ via a C ABI over the Rust port**, which any FFI-capable
 runtime (Elixir NIFs, Lua, ctypes, P/Invoke) can load.
 [SUPPORT-MATRIX.md](SUPPORT-MATRIX.md) lists every line CI runs and the rule
 that adds or drops one. [PORTS.md](PORTS.md) shows which features each
 port ships.
 
-Each implementation also ships **`VerifyReceiptEndpoint`** — a drop-in
-local replacement for the deprecated `verifyReceipt` endpoint speaking
-Apple's exact request/response/status-code wire contract (incl. local
-21007/21008 sandbox routing). Hand it a parsed request body, or hand it the
-raw JSON body as a string and get the JSON response body back, so an HTTP
-handler can pipe the bytes through untouched. See
+Every implementation exposes the same three methods on one `Verifier`, built
+once from a `Config` (the pinned roots and a clock):
+
+- **`verifyReceipt(base64)`** checks a legacy PKCS#7 app receipt and returns
+  its decoded payload.
+- **`verifySignedData(jws)`** checks any Apple-signed StoreKit 2 JWS
+  (transaction, renewal info, app transaction, server notification) and
+  returns the payload JSON exactly as Apple signed it.
+- **`verifyReceiptEndpoint(environment, requestJson)`** is a drop-in local
+  replacement for the deprecated `verifyReceipt` endpoint: it takes the raw
+  request body and returns the response body Apple would send, with Apple's
+  status codes and local 21007/21008 sandbox routing, so an HTTP handler
+  can pipe the bytes through untouched.
+
+The first two return a `VerificationResult`: the payload when Apple signed
+the input, otherwise a failure carrying one of eight reasons. None of them
+throws for any input, and none takes a bundle id, environment or product id:
+those checks are yours (see below). Method names follow each language's
+casing. See
 [COMPARISON.md](./COMPARISON.md) for the field-by-field fidelity account and
 the gaps only Apple's servers can fill.
 
@@ -67,20 +80,25 @@ endpoint, the Java 8 floor and the zero-dependency Node build.
 
 ## Installing
 
-Four of the nine implementations are published today, all as
+Five of the nine implementations are published today, all as
 **`apple-purchase-receipt-verifier`**, in lockstep versions cut from this
 repository's tags.
 
+The version is `0.x`. Until 1.0, a minor release may break the API: 0.7
+replaces the 0.6 classes with a new `Verifier` without a deprecation
+period. Read the CHANGELOG before you bump the minor version, and pin it.
+
 | Registry | Install | How you import it |
 |---|---|---|
-| [Maven Central](https://central.sonatype.com/artifact/io.github.emindeniz99/apple-purchase-receipt-verifier) | `io.github.emindeniz99:apple-purchase-receipt-verifier` | `import io.github.emindeniz99.applepurchasereceiptverifier.jws.JwsVerifier;` |
-| [npm](https://www.npmjs.com/package/apple-purchase-receipt-verifier) | `npm install apple-purchase-receipt-verifier` | `import { JwsVerifier } from 'apple-purchase-receipt-verifier';` |
-| [PyPI](https://pypi.org/project/apple-purchase-receipt-verifier/) | `pip install apple-purchase-receipt-verifier` | `from apple_purchase_receipt_verifier import JwsVerifier` |
-| [SwiftPM](https://swiftpackageindex.com/emindeniz99/apple-purchase-receipt-verifier) | `.package(url: "https://github.com/emindeniz99/apple-purchase-receipt-verifier.git", from: "0.2.1")` | `import ApplePurchaseReceiptVerifier` |
+| [Maven Central](https://central.sonatype.com/artifact/io.github.emindeniz99/apple-purchase-receipt-verifier) | `io.github.emindeniz99:apple-purchase-receipt-verifier` | `import io.github.emindeniz99.applepurchasereceiptverifier.Verifier;` |
+| [npm](https://www.npmjs.com/package/apple-purchase-receipt-verifier) | `npm install apple-purchase-receipt-verifier` | `import { createConfig, createVerifier } from 'apple-purchase-receipt-verifier';` |
+| [PyPI](https://pypi.org/project/apple-purchase-receipt-verifier/) | `pip install apple-purchase-receipt-verifier` | `from apple_purchase_receipt_verifier import Config, Verifier` |
+| [SwiftPM](https://swiftpackageindex.com/emindeniz99/apple-purchase-receipt-verifier) | `.package(url: "https://github.com/emindeniz99/apple-purchase-receipt-verifier.git", from: "0.7.0")` | `import ApplePurchaseReceiptVerifier` |
+| [Go module proxy](https://pkg.go.dev/github.com/emindeniz99/apple-purchase-receipt-verifier/go) | `go get github.com/emindeniz99/apple-purchase-receipt-verifier/go` | `import applereceipt "github.com/emindeniz99/apple-purchase-receipt-verifier/go"` |
 
 **C and C++ have no registry entry and are not meant to.** The C ABI in
 [`rust/ffi/`](rust/ffi/) is built from source against the Rust port: a
-`cdylib`/`staticlib` and a generated header, twenty-one symbols, JSON as the
+`cdylib`/`staticlib` and a generated header, seven functions, JSON as the
 interchange. Prebuilt binaries per OS and architecture are a later step, not
 a shipped one. See [rust/ffi/README.md](rust/ffi/README.md). Three example
 consumers call it, one of each kind: C++17 through the header in
@@ -93,21 +111,23 @@ The import namespace is the registry name in each ecosystem's casing
 convention (`applepurchasereceiptverifier` / `apple_purchase_receipt_verifier` /
 `ApplePurchaseReceiptVerifier`) — one name everywhere.
 
-**The five newer ports are not installable from a registry yet.** Go, Ruby,
-Rust and .NET are wired into `release.yml` and are waiting on one owner action
+**Four newer ports are not installable from a registry yet.** Ruby, Rust
+and .NET are wired into `release.yml` and are waiting on one owner action
 each: a pending trusted publisher for RubyGems, a first manual publish for
-crates.io and NuGet, a public repository for the Go module proxy. Those
-actions, per registry and in order, are in [BOOTSTRAP.md](./BOOTSTRAP.md); the
-rows above gain entries once the first release goes out.
+crates.io and NuGet. Those actions, per registry and in order, are in
+[BOOTSTRAP.md](./BOOTSTRAP.md); the rows above gain entries once the first
+release goes out. Go, the fifth newer port, needed no such action:
+`proxy.golang.org` has served it since `go/v0.4.0`.
 
-PHP is the fifth, and its install path is:
+PHP is the fourth, and its install path is:
 
 ```bash
 composer require emindeniz99/apple-purchase-receipt-verifier
 ```
 
 ```php
-use EminDeniz99\ApplePurchaseReceiptVerifier\Jws\JwsVerifier;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Config;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
 ```
 
 Packagist reads `composer.json` from a repository root and nowhere else, so
@@ -128,15 +148,17 @@ runs on Node 20+, Bun, Deno and Cloudflare Workers; on Workers set
 global `Buffer` the DER handling uses, and CI runs both spellings.
 
 `apple-purchase-receipt-verifier/web` is the same verification on
-`crypto.subtle` alone: same class names, same options, same
-`VerificationError` reasons, with every method returning a Promise. It
+`crypto.subtle` alone: same function names, same options, same `Reason`
+values, with `createConfig`, `defaultConfig` and every `Verifier` method
+returning a Promise. It
 imports no `node:` module and touches no `Buffer`, so it also runs where
 only WebCrypto exists: the Vercel Edge runtime, Next.js edge middleware,
 Cloudflare Workers with no compatibility flags and Fastly Compute, each of
 them exercised on every push. Akamai EdgeWorkers implements the same
 WebCrypto API and is expected to work too, but is untested: there is no
-local runtime for it that CI can run. Neither entry point reads a file, so
-`appleReceiptRoots()` and `appleJwsRoots()` work inside a bundle either way.
+local runtime for it that CI can run. Neither entry point reads a file: the
+Apple roots `defaultConfig()` returns are compiled in, so they work inside a
+bundle either way.
 
 CI proves the default build on Node, Bun, Deno and workerd (`cd node && npm
 run test:runtimes`) and the web build on Node, the Vercel Edge runtime and
@@ -156,30 +178,37 @@ There are two branches because clients send two things, and both are
 first-class here. StoreKit 2 apps send a signed JWS transaction. StoreKit 1
 apps and older SDKs still send the base64 PKCS#7 app receipt, the blob that
 used to be POSTed to Apple's now-deprecated `verifyReceipt` endpoint, and
-`VerifyReceiptEndpoint` is the drop-in replacement for that call: the same
+`verifyReceiptEndpoint` is the drop-in replacement for that call: the same
 request body, the same response body, the same status codes, answered offline
 against pinned roots.
 
 ### Branch A: StoreKit 2 signed transaction
 
 ```text
+0. AT STARTUP
+   verifier = Verifier.create(Config.defaults())   // Apple's pinned roots;
+                                                   // immutable, share it
+
 1. RECEIVE
    POST /purchases { jws }          the client's jwsRepresentation
 
-2. VERIFY, OFFLINE
-   verifier = JwsVerifier(
-       trustedRoots         = appleJwsRoots(),
-       bundleId             = "com.example.app",
-       acceptedEnvironments = { Production, Sandbox })   // App Review runs
-                                                         // production builds
-                                                         // against Sandbox,
-                                                         // and so does every
-                                                         // TestFlight build
-   payload = verifier.verifyTransaction(jws)
+2. VERIFY, OFFLINE, THEN CHECK IT IS YOURS
+   result = verifier.verifySignedData(jws)
    on failure:
-       log(reason)                  // the reason table below says what next
+       log(result.failure.reason)   // the reason table below says what next
        deny                         // nothing partial is returned
-   environment = payload.environment // record it with the grant (step 6)
+   payload = parse(result.payload.json)   // Apple's model classes, or your
+                                          // own struct: the library checks
+                                          // no claim
+   if payload.bundleId is not "com.example.app":
+       deny
+   environment = Environment.fromJwsEnvironment(payload.environment)
+   if environment is not PRODUCTION or SANDBOX:
+       deny                         // App Review runs production builds
+                                    // against Sandbox, and so does every
+                                    // TestFlight build: accept Sandbox where
+                                    // App Review can reach, and record it
+                                    // with the grant (step 6)
 
 3. REVOKED OR EXPIRED?
    if payload.revocationDate is set:
@@ -192,8 +221,7 @@ against pinned roots.
    // compare it against the payload's own signing time
    if now - payload.signedDate > FRESHNESS_WINDOW:     // e.g. 5 minutes
        signed  = appStoreServerApi.getTransactionInfo(payload.transactionId)
-       payload = verifier.verifyTransaction(signed)   // same verifier
-       back to step 3 with the re-signed payload
+       back to step 2 with the re-signed JWS            // same verifier
 
 5. REPLAY GUARD
    owner = store.recordGrantIfAbsent(payload.transactionId,
@@ -215,29 +243,29 @@ against pinned roots.
 1. RECEIVE
    POST /purchases { receiptData }  the base64 app receipt
 
-2. VERIFY, OFFLINE
-   verifier = ReceiptVerifier(
-       trustedRoots = appleReceiptRoots(),
-       bundleId     = "com.example.app")
-   receipt = verifier.verify(receiptData)
+2. VERIFY, OFFLINE, THEN CHECK IT IS YOURS
+   result = verifier.verifyReceipt(receiptData)       // the same verifier
    on failure:
-       log(reason)
+       log(result.failure.reason)
        deny
-   // Or hand the request body straight to VerifyReceiptEndpoint and read
+   receipt = result.payload
+   if receipt.bundleId is not "com.example.app":
+       deny                         // the library checks no bundle id
+   environment = Environment.fromReceiptType(receipt.receiptType)
+   if environment is not PRODUCTION or SANDBOX:
+       deny                         // Xcode and unknown receipt types
+   // Or hand the request body straight to verifyReceiptEndpoint and read
    // `status`: 0, 21002, 21003, 21007, 21008, 21009. Like Apple's endpoint
-   // it does not check the bundle id, so compare receipt.bundle_id yourself.
-   environment = Production if receipt.receiptType is Production or
-                 ProductionVPP, else Sandbox   // the verifier accepts every
-                                               // receipt type: record it
+   // it does not check the bundle id, so compare bundle_id yourself.
 
 3. REFUNDED OR EXPIRED?
    // a receipt lists every renewal of a subscription, expired and refunded
    // ones included, in no guaranteed order: select, do not take the first
-   entries = receipt.inAppPurchases for the product you are unlocking,
-             without the ones whose cancellationDate is set
-   if any entry has an expiresDate:           // auto-renewable subscription
-       purchase = the entry with the latest expiresDate
-       if purchase.expiresDate is not in the future:
+   entries = receipt.inApp for the product you are unlocking,
+             without the ones whose cancellationDateMs is set
+   if any entry has an expiresDateMs:         // auto-renewable subscription
+       purchase = the entry with the latest expiresDateMs
+       if purchase.expiresDateMs is not in the future:
            deny                     // the latest term had ended when signed
    else:                                      // consumable, non-consumable
        each remaining entry is one purchase, granted by its transactionId
@@ -246,12 +274,11 @@ against pinned roots.
 
 4. FRESH, OR REFRESH
    // a receipt is a snapshot of the same kind: Apple re-signs it whenever the
-   // app refreshes it, and a refunded purchase carries cancellationDate
-   if now - receipt.creationDate > FRESHNESS_WINDOW:
+   // app refreshes it, and a refunded purchase carries cancellation_date
+   if now - receipt.receiptCreationDateMs > FRESHNESS_WINDOW:
        ask the client to refresh its receipt and re-send, or
-       signed  = appStoreServerApi.getTransactionInfo(purchase.transactionId)
-       payload = jwsVerifier.verifyTransaction(signed)
-       decide from the re-signed payload instead
+       signed = appStoreServerApi.getTransactionInfo(purchase.transactionId)
+       decide from verifier.verifySignedData(signed) instead, as in branch A
    // the same caller-side check as branch A, against the receipt's own
    // creation date
 
@@ -263,7 +290,7 @@ against pinned roots.
        deny
 
 6. GRANT
-   grant(userId, purchase.productId, purchase.expiresDate, environment)
+   grant(userId, purchase.productId, purchase.expiresDateMs, environment)
 ```
 
 ### Both branches
@@ -274,14 +301,16 @@ branch:
 
 ```text
 POST /apple/notifications { signedPayload }
-    n = jwsVerifier.verifyRaw(signedPayload)     // enforces no claim
+    n = parse(verifier.verifySignedData(signedPayload).payload.json)
+                                                 // deny on failure
     if n.notificationUUID was handled before:
         answer 200                               // Apple retries for days
     data = n.data                                // absent on summary types
     check data.bundleId, data.environment, and data.appAppleId in
         Production: they live under data, not at the top level
-    tx = jwsVerifier.verifyTransaction(data.signedTransactionInfo)
-    renewal = jwsVerifier.verifyRaw(data.signedRenewalInfo)   // if present
+    tx = parse(verifier.verifySignedData(data.signedTransactionInfo).payload.json)
+    renewal = parse(verifier.verifySignedData(data.signedRenewalInfo).payload.json)
+                                                 // if present
     on REFUND or REVOKE: revoke(tx.transactionId)
     record n.notificationUUID, answer 200
 ```
@@ -294,7 +323,7 @@ complete handler.
 
 **Why a fresh payload needs no network call.** Apple re-signs a transaction
 every time the app fetches it, and a refunded transaction carries
-`revocationDate` (JWS) or `cancellation_date` (receipt) from then on. So a
+`revocationDate` (JWS) or a cancellation date (receipt) from then on. So a
 payload signed seconds ago, with neither field set, is Apple's current answer
 about that purchase, and step 3 is the whole check. Five minutes is a
 reasonable default for the window where one fits, but the library enforces
@@ -320,22 +349,24 @@ beside it, since that is what ties renewals to one purchase.
 ### What to do per reason
 
 Three classes, and the class is what decides whether a rejection is worth an
-alert. Every reason except `INTERNAL_ERROR` denies the payload in front of
-you. `INTERNAL_ERROR` is not a verdict on the client at all.
+alert. Every reason except `UNREADABLE_PAYLOAD` and `INTERNAL_ERROR` denies
+the payload in front of you. Those two are not a verdict on the client at
+all.
 
 | Reason | Class | Response |
 |---|---|---|
-| `INVALID_JWS_FORMAT` | client bug | Deny. The client sent something that is not a compact JWS, or truncated one. |
-| `INVALID_RECEIPT_FORMAT` | client bug | Deny. Malformed, truncated, not base64, or over the size bound: the CMS envelope itself is defective. `21002` at the endpoint. |
-| `INVALID_CERTIFICATE` | client bug | Deny. An `x5c` entry or a receipt signer is not a parseable certificate, which mangled transport also produces. |
-| `DEVICE_HASH_MISMATCH` | client bug | Deny. The receipt is bound to a different device than the GUID supplied, or the GUID was passed as hex rather than raw bytes. |
-| `WRONG_ENVIRONMENT` | client bug | Deny, never retry elsewhere, and check the accept set: an endpoint App Review can reach must include Sandbox. Including it admits TestFlight purchases too, which are free, so record the environment with each grant and scope or expire Sandbox grants. Raised by the JWS verifier only: the receipt verifier accepts every environment, so read `receiptType` yourself. At the endpoint this is `21007` / `21008` instead. |
-| `INVALID_CHAIN` | possible fraud | Deny and alert. The path does not reach a pinned Apple root, or was not valid when the payload was signed. `21003` at the endpoint. |
-| `INVALID_SIGNATURE` | possible fraud | Deny and alert. The bytes were altered after Apple signed them. |
-| `INVALID_CERTIFICATE_PURPOSE` | possible fraud | Deny and alert. A certificate chaining to an Apple root without the marker OID its position requires: a developer's own certificate signing a forged payload looks exactly like this. |
-| `WRONG_BUNDLE_ID` | possible fraud | Deny and alert. A genuine Apple-signed payload for another app. |
-| `WRONG_APP_APPLE_ID` | possible fraud | Deny and alert. A Production `AppTransaction` naming a different app Apple id. |
-| `INTERNAL_ERROR` | not the client's | The chain and signature verified but this library cannot read what Apple signed: a receipt payload that does not parse, or a JWS claim whose type does not match the library's model. It also covers a runtime missing an algorithm and an unexpected failure inside the endpoint. Deterministic: the same bytes fail the same way, so do not retry the library. Log the cause with the library version, alert, and settle the purchase through the App Store Server API by transaction id; grant provisionally only if the business accepts that. `21009` at the endpoint. |
+| `MALFORMED` | client bug | Deny. Not base64, not a CMS envelope or a compact JWS, truncated, or past a structural bound (JSON nesting, embedded certificates, SignerInfos). Decided before any signature check. `21002` at the endpoint. |
+| `TOO_LARGE` | client bug | Deny. Over a fixed size cap: 3,145,728 UTF-8 bytes for a receipt or an endpoint request body, 262,144 for a JWS. `21002` at the endpoint. |
+| `INVALID_CERTIFICATE` | client bug | Deny. An `x5c` entry or a receipt signer is not a parseable certificate, which mangled transport also produces, or a certificate was outside its validity window at the signing date. `21003` at the endpoint. |
+| `UNTRUSTED_CHAIN` | possible fraud | Deny and alert. The path does not reach a pinned Apple root. `21003` at the endpoint. |
+| `INVALID_SIGNATURE` | possible fraud | Deny and alert. The bytes were altered after Apple signed them. `21003` at the endpoint. |
+| `INVALID_CERTIFICATE_PURPOSE` | possible fraud | Deny and alert. A certificate chaining to an Apple root without the marker OID its position requires: a developer's own certificate signing a forged payload looks exactly like this. `21003` at the endpoint. |
+| `UNREADABLE_PAYLOAD` | not the client's | The chain and signature verified, but the content Apple signed does not parse. Deterministic: the same bytes fail the same way, so do not retry the library. Log the cause with the library version, alert, and settle the purchase through the App Store Server API by transaction id; grant provisionally only if the business accepts that. `21009` at the endpoint. |
+| `INTERNAL_ERROR` | not the client's | The library itself failed before it could decide: a runtime missing an algorithm, or a clock that throws. Alert, do not retry. `21009` at the endpoint. |
+
+A payload for another app, another environment or another app Apple id
+verifies: the library returns what Apple signed and leaves those checks to
+you (step 2 of each branch).
 
 The vocabulary is closed and identical in all nine ports, so this table is one
 policy across every backend language. What signatures still cannot tell you,
@@ -362,13 +393,13 @@ swift test
 # Go (>= 1.22; no dependencies)
 cd go && go test ./...
 
-# Ruby (>= 3.1; no runtime dependencies, minitest through rake)
+# Ruby (>= 3.3; no runtime dependencies, minitest through rake)
 cd ruby && rake test
 
 # Rust (>= 1.85)
 cd rust && cargo test
 
-# PHP (>= 8.1; installs php/composer.lock)
+# PHP (>= 8.2; installs php/composer.lock)
 cd php && composer install && vendor/bin/phpunit
 
 # .NET (SDK 8.0+; runs the net8.0 suite and the netstandard2.0 floor suite)
@@ -377,9 +408,11 @@ cd dotnet && dotnet test -c Release
 
 All nine suites verify the same three shared fixture tiers:
 
-1. `fixtures/generated/` — deterministic cross-language fixtures (fake
-   Apple PKI) written by the Java `FixtureGeneratorTest`; regenerate only
-   deliberately, then re-run **every** suite.
+1. `fixtures/generated/` and `fixtures/generated-0.7/` — deterministic
+   cross-language fixtures (fake Apple PKI) written by the Java
+   `FixtureGeneratorTest` and the `*Fixtures` generators beside it; the
+   receipts in `generated-0.7/` carry the WWDR marker 0.7 checks.
+   Regenerate only deliberately, then re-run **every** suite.
 2. `fixtures/apple-official/` — Apple's own library test fixtures
    (vendored, MIT): their test-CA-signed JWS mocks verify, their negative
    cases fail with our exact reason codes, and their genuine Xcode
@@ -393,7 +426,7 @@ All nine suites verify the same three shared fixture tiers:
 The vectors those suites run the fixtures under live in
 [`fixtures/cases.json`](./fixtures/cases.json): one language-neutral case per
 semantic fact, giving the fixture bytes, the verifier config, and either the
-payload fields the call must return or the canonical reason it must raise.
+payload fields the call must return or the reason it must fail with.
 Each language reads it through a thin adapter, so the file is the contract and
 a behavior change means editing it. `node tools/lint-cases.mjs` validates it
 against `fixtures/cases.schema.json` and re-hashes every registered fixture;
@@ -424,8 +457,25 @@ Production trust anchors are all three published Apple root certificates in
 Today's chains end at Apple Inc. Root (legacy PKCS#7 receipts) and Apple Root
 CA - G3 (JWS signed data), but Apple's own guidance is to trust every root on
 its PKI page rather than a specific one — see PLAN.md D15 for the sourced
-rationale. Each language bundles its own copy as packaged resources;
-verifiers also accept caller-supplied anchors.
+rationale. Each language bundles its own copy as packaged resources or
+compiled-in constants; a `Config` also accepts caller-supplied roots.
+
+## Debugging a receipt by hand
+
+`openssl` opens a receipt without verifying it, which helps when a
+verification fails and you want to see what arrived:
+
+```bash
+base64 -d receipt.b64 > receipt.der
+openssl cms -cmsout -print -inform DER -in receipt.der          # envelope, signer, certificates
+openssl asn1parse -inform DER -in receipt.der                   # the raw ASN.1 tree
+openssl pkcs7 -inform DER -in receipt.der -print_certs -noout   # the certificate chain only
+```
+
+For a StoreKit 2 JWS, `cut -d. -f2 | base64 -d` prints the payload (add
+`=` padding if your `base64` complains). Keep production receipts and
+tokens off websites that decode them for you: they carry transaction ids
+and your bundle id.
 
 ## Notes / learnings
 

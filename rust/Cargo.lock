@@ -60,6 +60,7 @@ dependencies = [
  "digest",
  "hex",
  "libtest-mimic",
+ "md-5",
  "p256",
  "p384",
  "rsa",
@@ -360,6 +361,16 @@ dependencies = [
  "anstyle",
  "clap",
  "escape8259",
+]
+
+[[package]]
+name = "md-5"
+version = "0.10.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d89e7ee0cfbedfc4da3340218492196241d89eefb6dab27de5df917a6d2e78cf"
+dependencies = [
+ "cfg-if",
+ "digest",
 ]
 
 [[package]]

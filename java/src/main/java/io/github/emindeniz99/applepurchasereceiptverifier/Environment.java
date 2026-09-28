@@ -3,15 +3,14 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The App Store server environment a signed payload was produced in.
- * String values match the {@code environment} / {@code receiptType} claims
- * in Apple's signed payloads.
+ * Apple's two App Store environments, and the two verifyReceipt URLs
+ * {@link Verifier#verifyReceiptEndpoint} imitates. The helpers state what an
+ * Apple value means; whether to accept an environment is the caller's
+ * decision.
  */
 public enum Environment {
     PRODUCTION("Production"),
-    SANDBOX("Sandbox"),
-    XCODE("Xcode"),
-    LOCAL_TESTING("LocalTesting");
+    SANDBOX("Sandbox");
 
     private final String value;
 
@@ -19,23 +18,39 @@ public enum Environment {
         this.value = value;
     }
 
-    /** The claim value as it appears in Apple payloads (e.g. {@code "Production"}). */
-    public String value() {
+    /** The {@code environment} string of a verifyReceipt response. */
+    String value() {
         return value;
     }
 
     /**
-     * Maps a payload claim value to an Environment, or {@code null} if
-     * unknown. The claim is {@code @Nullable} because it comes out of a
-     * payload that need not carry it, and an absent claim is as unknown as
-     * an unrecognised one.
+     * Maps a receipt's {@code receipt_type} (attribute 0):
+     * {@code Production} and {@code ProductionVPP} to {@link #PRODUCTION},
+     * {@code ProductionSandbox} and {@code ProductionVPPSandbox} to
+     * {@link #SANDBOX}, anything else, a missing value included, to
+     * {@code null}. The endpoint uses the same rule for 21007 and 21008.
      */
-    @Nullable
-    public static Environment fromValue(@Nullable String value) {
-        for (Environment e : values()) {
-            if (e.value.equals(value)) {
-                return e;
-            }
+    public static @Nullable Environment fromReceiptType(@Nullable String receiptType) {
+        if ("Production".equals(receiptType) || "ProductionVPP".equals(receiptType)) {
+            return PRODUCTION;
+        }
+        if ("ProductionSandbox".equals(receiptType) || "ProductionVPPSandbox".equals(receiptType)) {
+            return SANDBOX;
+        }
+        return null;
+    }
+
+    /**
+     * Maps a JWS {@code environment} claim: {@code Production} to
+     * {@link #PRODUCTION}, {@code Sandbox} to {@link #SANDBOX}, anything else
+     * ({@code Xcode}, {@code LocalTesting}, a missing claim) to {@code null}.
+     */
+    public static @Nullable Environment fromJwsEnvironment(@Nullable String environment) {
+        if ("Production".equals(environment)) {
+            return PRODUCTION;
+        }
+        if ("Sandbox".equals(environment)) {
+            return SANDBOX;
         }
         return null;
     }

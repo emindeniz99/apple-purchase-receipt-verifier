@@ -1,31 +1,32 @@
-"""Decoder for the base64 *string* a client hands to the receipt string entry
-points — :meth:`ReceiptVerifier.verify` and the verifyReceipt endpoint's
-``receipt-data`` — used by :mod:`receipt` and :mod:`verify_receipt_endpoint`.
+"""Decoder for the base64 *string* a client hands to the receipt entry
+points — :meth:`Verifier.verify_receipt` and the ``receipt-data`` of
+:meth:`Verifier.verify_receipt_endpoint`.
 
 The rule is the one Apple's verifyReceipt applies, measured on 2026-09-23
 against production and sandbox with genuine receipts
 (``docs/evidence/2026-09-23-verifyreceipt-base64.md``): non-empty standard
 base64 (``[A-Za-z0-9+/]``) with exactly the canonical ``=`` padding for its
 length, and nothing else. Whitespace anywhere, base64url, omitted or extra
-padding and anything after the padding are ``INVALID_RECEIPT_FORMAT``. Unused
+padding and anything after the padding are ``MALFORMED``. Unused
 low bits in the last data character are accepted, as Apple accepts them."""
 
 import base64
 import re
 
-from .exceptions import Reason, VerificationError
+from ._errors import VerificationError
+from .reason import Reason
 
 _SHAPE = re.compile(r"[A-Za-z0-9+/]*={0,2}")
 
 
 def decode_receipt_base64(text: str) -> bytes:
     """Decodes a receipt-data string under the rule above, or raises
-    :class:`VerificationError` (``INVALID_RECEIPT_FORMAT``)."""
+    :class:`~._errors.VerificationError` (``MALFORMED``)."""
     try:
         return decode_canonical_base64(text)
     except ValueError as e:
         raise VerificationError(
-            Reason.INVALID_RECEIPT_FORMAT, "receipt is not canonically padded standard base64"
+            Reason.MALFORMED, "receipt is not canonically padded standard base64"
         ) from e
 
 

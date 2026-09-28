@@ -15,17 +15,19 @@ JOBS=4 ./run.sh all 300                # four at a time
 | target | what it reaches | invariant beyond "no exception leaks" |
 |---|---|---|
 | `json` | `Internal.Json.Parse` on raw bytes, then `Json.Write` | what the reader accepts, the writer emits and the reader reads back to an equal value |
-| `receipt` | `CmsPreScan.Scan`, then `ReceiptVerifier.VerifyReceiptCore`: CMS (BER), payload, chain, signature | an accepted receipt fails against an unrelated anchor set; the pre-scan and the full path agree on the ten-certificate bound |
-| `receipt-base64` | `ReceiptVerifier.Verify(string)` and the device-guid overload — the string a client sends | — |
-| `jws` | `JwsVerifier.VerifyTransaction` / `VerifyAppTransaction` / `VerifyRaw` | a JWS `VerifyRaw` accepts under the fixture root is refused under Apple's real JWS roots |
-| `endpoint-json` | `VerifyReceiptEndpoint.VerifyReceiptJson` on a request body | the answer is always JSON with a numeric `status`, and the call never throws |
+| `receipt` | `IVerifier.VerifyReceipt` on the DER re-encoded as canonical base64: CMS (BER), payload, chain, signature | an accepted receipt fails against an unrelated anchor set |
+| `receipt-base64` | `IVerifier.VerifyReceipt(string)` on the fuzzer's bytes as text — the string a client sends | — |
+| `jws` | `IVerifier.VerifySignedData` | a JWS accepted under the fixture root is refused under Apple's bundled roots |
+| `endpoint-json` | `IVerifier.VerifyReceiptEndpoint` on a request body | the answer is always JSON with a numeric `status`, and the call never throws |
 
-The containment invariant is shared and categorical: the only exception any
-public entry point may throw is `VerificationException`. It is asserted as
-"is not a `VerificationException`" rather than as a list of forbidden types,
-because the leak that matters is always the type nobody thought to list —
-`AsnContentException` derives from `Exception` and not from
-`CryptographicException`, which is exactly how a type-by-type catch springs one.
+The containment invariant is shared and categorical: no public verify
+method throws for any input, so every failure must come back as a result
+carrying a `Failure`, and any exception that escapes, whatever its type,
+fails the target. Catching everything rather than a list of forbidden types
+matters, because the leak that matters is always the type nobody thought to
+list — `AsnContentException` derives from `Exception` and not from
+`CryptographicException`, which is exactly how a type-by-type catch springs
+one.
 
 The anchor-set invariants are what let a fuzzer find "accepts what it should
 not" rather than only crashes: without them, an input that verifies tells you
@@ -56,7 +58,7 @@ Two things about that arrangement are worth knowing before reading its output:
   finding new paths in the library; `cov:` will read 2 forever.
 - **Instrumented code must not run before `Fuzzer.LibFuzzer.Run`.** The
   instrumentation writes edge counters through a shared-memory pointer that
-  `Run` installs, so an eager `AppleRootCertificates.ReceiptRoots()` in `Main`
+  `Run` installs, so an eager `AppleRootCertificates.Bundled()` in `Main`
   dereferences a pointer that does not exist yet and dies with an
   `AccessViolationException` that reads like a library crash. Every target here
   therefore builds its anchors and verifiers on its first execution — see the
@@ -83,9 +85,8 @@ harness's formatting out of the shipped package and the drift gate. For the
 same reason it opts out of central package management and pins SharpFuzz
 inline, leaving `Directory.Packages.props` a description of what ships.
 
-The two internal parsers a target reaches directly — `Internal.Json` and
-`Internal.CmsPreScan` — are reached by reflection (`Internals.cs`), bound once
-at startup. The alternative is an `InternalsVisibleTo` entry, which would mean
+The one internal parser a target reaches directly, `Internal.Json`, is
+reached by reflection (`Internals.cs`), bound once at startup. The alternative is an `InternalsVisibleTo` entry, which would mean
 changing the assembly that ships in order to test it. The reflection costs
 nothing per execution, and because it is the library's own IL that runs,
 SharpFuzz's instrumentation still reports the coverage.

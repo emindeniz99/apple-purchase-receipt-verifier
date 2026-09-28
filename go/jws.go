@@ -1,15 +1,18 @@
 package applereceipt
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/asn1"
+	"encoding/json"
 	"errors"
+	"math"
 	"math/big"
 	"strings"
-	"time"
+	"unicode/utf8"
 
 	"github.com/emindeniz99/apple-purchase-receipt-verifier/go/internal/chain"
 )
@@ -17,10 +20,10 @@ import (
 // Apple marker OIDs.
 //
 // These are what stop a "valid Apple-issued certificate, wrong purpose"
-// forgery: without them, any developer's own Apple Distribution leaf —
+// forgery: without them, any developer's own Apple Distribution leaf,
 // which chains through the same WWDR intermediate to the same pinned
-// root — could sign an accepted payload. The receipt path checks the same
-// leaf OID (PLAN.md D13).
+// root, could sign an accepted payload. The receipt path checks the
+// leaf marker too, and, new in 0.7, the WWDR marker on its intermediate.
 var (
 	// oidAppleLeafMarker is 1.2.840.113635.100.6.11.1, the App Store /
 	// receipt-signing marker on the leaf.
@@ -30,187 +33,103 @@ var (
 	oidAppleWWDRMarker = asn1.ObjectIdentifier{1, 2, 840, 113635, 100, 6, 2, 1}
 )
 
-// MaxJWSBytes bounds the compact JWS a verifier will look at. A longer
-// one is ReasonInvalidJWSFormat before it is split or decoded, which keeps
-// a hostile multi-megabyte "JWS" from being base64-decoded and
-// JSON-parsed before it is rejected. The header and payload JSON are
-// further held to MaxJSONNestingDepth before they are parsed.
+// MaxJWSBytes bounds the compact JWS a verifier will look at, in UTF-8
+// bytes, checked before the string is split or any segment decoded: a
+// hostile multi-megabyte "JWS" is refused before it is base64-decoded and
+// JSON-parsed. 256 KiB is the Java, PHP and Python ports' number; Apple's
+// payloads are a few kilobytes.
+const MaxJWSBytes = 262_144
+
+// MaxJSONNestingDepth is how many arrays and objects a JWS header, a JWS
+// payload or an endpoint request body may hold open at once, counted
+// before the JSON is parsed (docs/design/0.7-api.md, Bounds).
+const MaxJSONNestingDepth = 64
+
+// MaxJSONMemberNameLength is how many characters a JSON object member
+// name may hold, in a JWS header, a JWS payload or an endpoint request
+// body, counted before the JSON is parsed (docs/design/0.7-api.md,
+// Bounds). It bounds member NAMES only, never string values: a
+// receipt-data or productId value of any length is unaffected.
+const MaxJSONMemberNameLength = 50_000
+
+// MaxJSONNumberDigits is how many digits a JSON number literal may hold,
+// in the same three places, counted before the JSON is parsed
+// (docs/design/0.7-api.md, Bounds).
+const MaxJSONNumberDigits = 1_000
+
+// JSONPayload is a verified JWS payload: the JSON object Apple signed,
+// unchanged.
 //
-// The number is the Java, PHP and Python ports' (256 KiB). Apple's
-// payloads are a few kilobytes; the largest fixture here is under 3 KB.
-const MaxJWSBytes = 256 << 10
-
-// JWSVerifierOptions configures a JWSVerifier. A plain struct rather than
-// functional options, so every knob is greppable and an omitted field is
-// visible at the call site.
-type JWSVerifierOptions struct {
-	// TrustedRoots are the pinned anchors. Required, non-empty. Use
-	// AppleJWSRoots() in production. The operating system trust store is
-	// never consulted.
-	TrustedRoots []*x509.Certificate
-
-	// BundleID every payload must carry. Required.
-	BundleID string
-
-	// AcceptedEnvironments is the accept-set (PLAN.md D3). Required,
-	// non-empty. Include EnvironmentSandbox on endpoints App Review can
-	// reach.
-	AcceptedEnvironments []Environment
-
-	// AppAppleID is required to accept a Production AppTransaction, and
-	// ignored otherwise.
-	AppAppleID *int64
+// The library reads only signedDate from it. Parse JSON() with the JSON
+// library of your choice, into a struct declaring the claims you use;
+// Apple's claims are epoch milliseconds already. No typed JWS models ship
+// with this library: Apple's own app-store-server-library publishes the
+// transaction, renewal and notification model classes for languages that
+// have one.
+type JSONPayload struct {
+	json string
 }
 
-// JWSVerifier verifies Apple-signed JWS payloads — StoreKit 2
-// jwsRepresentation, signedTransactionInfo / signedRenewalInfo, and App
-// Store Server Notifications V2 — entirely offline against pinned Apple
-// roots (PLAN.md §2.1).
+// NewJSONPayload wraps json as a JSONPayload. Public so callers can build
+// one in their own tests.
+func NewJSONPayload(json string) *JSONPayload { return &JSONPayload{json: json} }
+
+// JSON is the verified payload, exactly as signed.
+func (p *JSONPayload) JSON() string { return p.json }
+
+// String is JSON.
+func (p *JSONPayload) String() string { return p.json }
+
+// verifySignedData is Verifier.VerifySignedData's implementation.
 //
-// A JWSVerifier is immutable after construction and safe for concurrent
-// use by multiple goroutines.
-type JWSVerifier struct {
-	roots                []*x509.Certificate
-	bundleID             string
-	acceptedEnvironments map[Environment]bool
-	appAppleID           *int64
-}
-
-// NewJWSVerifier validates the options and returns a verifier.
-//
-// A configuration mistake — no anchors, an empty bundle id, an empty or
-// unknown accept-set — is a plain error, never a *VerificationError.
-// Misconfiguration is a programming bug, not a verification verdict, and
-// a caller switching on Reason must never see one.
-func NewJWSVerifier(opts JWSVerifierOptions) (*JWSVerifier, error) {
-	if len(opts.TrustedRoots) == 0 {
-		return nil, errors.New("applereceipt: TrustedRoots must not be empty")
-	}
-	for i, root := range opts.TrustedRoots {
-		if root == nil {
-			return nil, errors.New("applereceipt: TrustedRoots contains a nil certificate at index " + itoa(i))
-		}
-	}
-	if opts.BundleID == "" {
-		return nil, errors.New("applereceipt: BundleID is required")
-	}
-	if len(opts.AcceptedEnvironments) == 0 {
-		return nil, errors.New("applereceipt: AcceptedEnvironments must not be empty")
-	}
-	accepted := make(map[Environment]bool, len(opts.AcceptedEnvironments))
-	for _, env := range opts.AcceptedEnvironments {
-		if !env.known() {
-			return nil, errors.New("applereceipt: unknown environment " + string(env))
-		}
-		accepted[env] = true
-	}
-	return &JWSVerifier{
-		roots:                append([]*x509.Certificate(nil), opts.TrustedRoots...),
-		bundleID:             opts.BundleID,
-		acceptedEnvironments: accepted,
-		appAppleID:           opts.AppAppleID,
-	}, nil
-}
-
-// VerifyTransaction verifies a signed transaction and then enforces the
-// bundle id and the environment accept-set.
-func (v *JWSVerifier) VerifyTransaction(jws string) (payload *TransactionPayload, err error) {
-	defer containPanic(ReasonInvalidJWSFormat, &err, func() { payload = nil })
-
-	claims, err := v.verifySignature(jws)
-	if err != nil {
-		return nil, err
-	}
-	result, err := newTransactionPayload(claims)
-	if err != nil {
-		return nil, err
-	}
-	if err := v.requireBundleID(result.BundleID); err != nil {
-		return nil, err
-	}
-	if err := v.requireAcceptedEnvironment(result.Environment); err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
-// VerifyAppTransaction verifies a signed AppTransaction and then enforces
-// the bundle id, the environment (its receiptType claim) and — in
-// Production — the app Apple id.
-func (v *JWSVerifier) VerifyAppTransaction(jws string) (payload *AppTransactionPayload, err error) {
-	defer containPanic(ReasonInvalidJWSFormat, &err, func() { payload = nil })
-
-	claims, err := v.verifySignature(jws)
-	if err != nil {
-		return nil, err
-	}
-	result, err := newAppTransactionPayload(claims)
-	if err != nil {
-		return nil, err
-	}
-	if err := v.requireBundleID(result.BundleID); err != nil {
-		return nil, err
-	}
-	if err := v.requireAcceptedEnvironment(result.ReceiptType); err != nil {
-		return nil, err
-	}
-	if err := v.requireAppAppleID(result.ReceiptType, result.AppAppleID); err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
-// VerifyRaw verifies the chain and the signature and returns every claim,
-// enforcing none of them.
-//
-// It is for payload types with no dedicated model — renewal info,
-// notification envelopes. The caller must check bundleId, environment and
-// appAppleId in the returned claims itself.
-func (v *JWSVerifier) VerifyRaw(jws string) (claims Claims, err error) {
-	defer containPanic(ReasonInvalidJWSFormat, &err, func() { claims = nil })
-
-	return v.verifySignature(jws)
-}
-
-// verifySignature runs steps 1-11 of PLAN.md §2.1: shape, header,
-// certificates, marker OIDs, payload, chain, signature. The
-// order is normative — a case that pins an early reason must not get a
-// later one.
-func (v *JWSVerifier) verifySignature(jws string) (Claims, error) {
+// A broken outer structure fails as ReasonMalformed before any
+// cryptography: not three segments, a segment that is not canonical
+// base64url, a header that is not a JSON object, an alg other than ES256,
+// an x5c that is not three strings. A payload that does not parse as a
+// JSON object is not reported there: it is carried past the chain and
+// signature checks with the clock standing in for its signing date, and
+// fails as ReasonInvalidSignature if the signature does not verify,
+// ReasonUnreadablePayload if it does. Nothing unverified gets to decide
+// which of the two a caller sees.
+func verifySignedData(jws string, anchors []*x509.Certificate, ctx *verifyCtx) (*JSONPayload, error) {
 	if jws == "" {
-		return nil, newError(ReasonInvalidJWSFormat, "jws is empty")
+		return nil, newError(ReasonMalformed, "jws is empty")
 	}
 	if len(jws) > MaxJWSBytes {
-		return nil, newError(ReasonInvalidJWSFormat,
-			"jws exceeds the %d byte limit", MaxJWSBytes)
+		return nil, newError(ReasonTooLarge, "jws exceeds the maximum accepted size of %d bytes", MaxJWSBytes)
 	}
 	parts := strings.Split(jws, ".")
 	if len(parts) != 3 {
-		return nil, newError(ReasonInvalidJWSFormat,
-			"expected 3 dot-separated segments, got %d", len(parts))
+		return nil, newError(ReasonMalformed, "expected 3 dot-separated segments, got %d", len(parts))
 	}
 	headerB64, payloadB64, signatureB64 := parts[0], parts[1], parts[2]
 
-	header, err := parseJSONSegment(headerB64, "header")
+	// Strict, not lenient: a lenient reading would give one Apple-signed
+	// payload unboundedly many accepted wire forms, and the signature
+	// segment is not covered by the signature at all.
+	headerBytes, err := decodeBase64URLStrict(headerB64)
 	if err != nil {
-		return nil, err
+		return nil, wrapError(ReasonMalformed, err, "header is not canonical base64url")
 	}
-	if alg, _ := header["alg"].(string); alg != "ES256" {
-		return nil, newError(ReasonInvalidJWSFormat, "alg must be ES256")
-	}
-	x5c, err := headerX5C(header)
+	payloadBytes, err := decodeBase64URLStrict(payloadB64)
 	if err != nil {
-		return nil, err
+		return nil, wrapError(ReasonMalformed, err, "payload is not canonical base64url")
+	}
+	signature, err := decodeBase64URLStrict(signatureB64)
+	if err != nil {
+		return nil, wrapError(ReasonMalformed, err, "signature is not canonical base64url")
 	}
 
-	// All three entries are parsed, and the third is still trusted by
-	// nobody: it is the JWS-supplied root, it is not a trust anchor and it
-	// is not byte-compared to ours, so an attacker swapping in their own
-	// self-signed "root" changes nothing. What parsing it settles is the
-	// other question — an x5c entry that is not a certificate is
-	// INVALID_CERTIFICATE wherever it sits, rather than something this
-	// port declined to look at (transaction/reject-x5c-root-that-is-not-a-
-	// certificate).
+	alg, x5c, herr := readJWSHeader(headerBytes)
+	if herr != nil {
+		return nil, herr
+	}
+	if alg != "ES256" {
+		return nil, newError(ReasonMalformed, "alg must be ES256")
+	}
+	if len(x5c) != 3 {
+		return nil, newError(ReasonMalformed, "x5c must contain exactly 3 certificates")
+	}
 	leaf, err := parseX5CCertificate(x5c[0], "leaf")
 	if err != nil {
 		return nil, err
@@ -219,12 +138,36 @@ func (v *JWSVerifier) verifySignature(jws string) (Claims, error) {
 	if err != nil {
 		return nil, err
 	}
+	// All three entries are parsed, and the third is still trusted by
+	// nobody: it is the JWS-supplied root, it is not a trust anchor and
+	// it is not byte-compared to ours, so an attacker swapping in their
+	// own self-signed "root" changes nothing. What parsing it settles is
+	// only whether the entry IS a certificate.
 	if _, err := parseX5CCertificate(x5c[2], "root"); err != nil {
 		return nil, err
 	}
 
-	// Marker OIDs before the chain on the JWS path (PLAN.md §2.1 step 3);
-	// the receipt path is deliberately the other way round.
+	payloadJSON, signedDateMs, perr := readJWSPayload(payloadBytes)
+	// Chain validity is judged at the payload's signing date, so a
+	// payload signed with a since-rotated certificate keeps verifying. A
+	// payload stating no usable date of its own is judged at the clock.
+	var atMillis int64
+	if signedDateMs != nil {
+		atMillis = *signedDateMs
+	} else {
+		now, cerr := ctx.now()
+		if cerr != nil {
+			return nil, cerr
+		}
+		atMillis = now
+	}
+	if cerr := chain.ValidatePair(leaf, intermediate, anchors, millisToTime(atMillis)); cerr != nil {
+		return nil, cerr
+	}
+	// The marker OIDs after the chain (owner, 2026-09-27): a chain to a
+	// foreign root is ReasonUntrustedChain whatever it carries, and only
+	// a pinned chain can be the wrong kind of Apple certificate. Still
+	// before the leaf's key checks the JWS signature.
 	if !hasExtension(leaf, oidAppleLeafMarker) {
 		return nil, newError(ReasonInvalidCertificatePurpose,
 			"leaf certificate lacks Apple marker OID %s", oidAppleLeafMarker)
@@ -233,59 +176,84 @@ func (v *JWSVerifier) verifySignature(jws string) (Claims, error) {
 		return nil, newError(ReasonInvalidCertificatePurpose,
 			"intermediate certificate lacks Apple marker OID %s", oidAppleWWDRMarker)
 	}
-
-	payload, err := parseJSONSegment(payloadB64, "payload")
-	if err != nil {
-		return nil, err
+	if serr := verifyES256(leaf, headerB64+"."+payloadB64, signature); serr != nil {
+		return nil, serr
 	}
-
-	signedAt, err := signedAtMillis(payload)
-	if err != nil {
-		return nil, err
+	ctx.enter(stageAfterSignature)
+	if perr != nil {
+		return nil, wrapError(ReasonUnreadablePayload, perr, "signed payload is not a JSON object")
 	}
-	// A payload stating no date of its own is judged at the system clock.
-	effective := time.Now()
-	if signedAt != nil {
-		effective = time.UnixMilli(*signedAt)
-	}
-	if err := chain.ValidatePair(leaf, intermediate, v.roots, effective); err != nil {
-		return nil, err
-	}
-
-	if err := verifyES256(leaf, headerB64+"."+payloadB64, signatureB64); err != nil {
-		return nil, err
-	}
-	return payload, nil
+	return &JSONPayload{json: payloadJSON}, nil
 }
 
-func headerX5C(header Claims) ([]string, error) {
-	list, ok := header["x5c"].([]any)
-	if !ok || len(list) != 3 {
-		return nil, newError(ReasonInvalidJWSFormat, "x5c must contain exactly 3 certificates")
+// readJWSHeader reads the last alg and x5c top-level members of the
+// header, a duplicate member keeps the last one, as a map would. The
+// header is outer structure, so anything that stops the read is
+// ReasonMalformed: bytes that are not strict UTF-8, a byte-order mark
+// (RFC 8259 §8.1 forbids one), a document that does not start with an
+// object, or anything but whitespace after it.
+func readJWSHeader(b []byte) (alg string, x5c []string, err error) {
+	if jsonBoundsExceeded(b, MaxJSONNestingDepth, MaxJSONMemberNameLength, MaxJSONNumberDigits) {
+		return "", nil, newError(ReasonMalformed, "header exceeds a JSON bound (nesting, member name length, or number length)")
 	}
-	out := make([]string, 3)
-	for i, entry := range list {
-		text, ok := entry.(string)
-		if !ok {
-			return nil, newError(ReasonInvalidJWSFormat, "x5c entry %d is not a string", i)
+	object, derr := decodeStrictJSONObject(b)
+	if derr != nil {
+		return "", nil, wrapError(ReasonMalformed, derr, "header is not a JSON object")
+	}
+	if value, ok := object["alg"].(string); ok {
+		alg = value
+	}
+	if list, ok := object["x5c"].([]any); ok {
+		entries := make([]string, 0, len(list))
+		for _, entry := range list {
+			text, ok := entry.(string)
+			if !ok {
+				return alg, nil, nil
+			}
+			entries = append(entries, text)
 		}
-		out[i] = text
+		x5c = entries
 	}
-	return out, nil
+	return alg, x5c, nil
 }
 
-func parseJSONSegment(segment, what string) (Claims, error) {
-	decoded, err := decodeBase64URLStrict(segment)
-	if err != nil {
-		return nil, wrapError(ReasonInvalidJWSFormat, err, "%s is not valid base64url", what)
+// readJWSPayload returns the payload text and its last top-level
+// signedDate, or why it is not a JSON object in UTF-8. Reading it never
+// fails verification by itself: the caller carries a non-nil err past
+// the chain and signature checks.
+//
+// A signedDate that is not a number, or is a number no instant can hold
+// (1e300), counts as not stated: the clock stands in for it (owner,
+// 2026-09-27).
+func readJWSPayload(b []byte) (payloadJSON string, signedDateMs *int64, err error) {
+	payloadJSON = string(b)
+	if jsonBoundsExceeded(b, MaxJSONNestingDepth, MaxJSONMemberNameLength, MaxJSONNumberDigits) {
+		return payloadJSON, nil, errors.New("payload exceeds a JSON bound (nesting, member name length, or number length)")
 	}
-	if jsonNestingExceeds(decoded, MaxJSONNestingDepth) {
-		return nil, newError(ReasonInvalidJWSFormat,
-			"%s nests deeper than %d levels", what, MaxJSONNestingDepth)
+	object, derr := decodeStrictJSONObject(b)
+	if derr != nil {
+		return payloadJSON, nil, derr
 	}
-	claims, err := decodeJSONObject(decoded)
+	if number, ok := object["signedDate"].(json.Number); ok {
+		if ms, ok := integralMillis(number); ok {
+			signedDateMs = &ms
+		}
+	}
+	return payloadJSON, signedDateMs, nil
+}
+
+// decodeStrictJSONObject decodes exactly one JSON object from b: strict
+// UTF-8, no byte-order mark, and only whitespace after the object.
+func decodeStrictJSONObject(b []byte) (map[string]any, error) {
+	if bytes.HasPrefix(b, []byte{0xEF, 0xBB, 0xBF}) {
+		return nil, errors.New("a byte order mark is not allowed")
+	}
+	if !utf8.Valid(b) {
+		return nil, errors.New("not valid UTF-8")
+	}
+	claims, err := decodeJSONObject(b)
 	if err != nil {
-		return nil, wrapError(ReasonInvalidJWSFormat, err, "%s is not valid base64url JSON", what)
+		return nil, err
 	}
 	return claims, nil
 }
@@ -294,10 +262,17 @@ func parseX5CCertificate(text, what string) (*x509.Certificate, error) {
 	// decodeBase64 refuses anything but canonical standard base64 as nil,
 	// which the parser below reports as not a certificate. The whole
 	// compact JWS is already under MaxJWSBytes, which bounds the decode.
-	cert, err := x509.ParseCertificate(decodeBase64(text))
+	decoded := decodeBase64(text)
+	if decoded == nil {
+		return nil, newError(ReasonInvalidCertificate, "x5c %s entry is not valid base64", what)
+	}
+	cert, err := x509.ParseCertificate(decoded)
 	if err != nil {
-		return nil, wrapError(ReasonInvalidCertificate, err,
-			"x5c %s entry is not a valid certificate", what)
+		return nil, wrapError(ReasonInvalidCertificate, err, "x5c %s entry is not a valid certificate", what)
+	}
+	if !certificateSignatureIsCanonicallyEncoded(decoded) {
+		return nil, newError(ReasonInvalidCertificate,
+			"x5c %s entry's signature is not canonically encoded", what)
 	}
 	return cert, nil
 }
@@ -316,7 +291,7 @@ func hasExtension(cert *x509.Certificate, oid asn1.ObjectIdentifier) bool {
 
 // verifyES256 checks the RFC 7515 signature over ASCII(header "." payload)
 // with the leaf's P-256 key. The signature is raw r||s, 64 bytes.
-func verifyES256(leaf *x509.Certificate, signingInput, signatureB64 string) error {
+func verifyES256(leaf *x509.Certificate, signingInput string, signature []byte) error {
 	key, ok := leaf.PublicKey.(*ecdsa.PublicKey)
 	if !ok {
 		return newError(ReasonInvalidSignature, "leaf key is not EC")
@@ -324,13 +299,8 @@ func verifyES256(leaf *x509.Certificate, signingInput, signatureB64 string) erro
 	if key.Curve != elliptic.P256() {
 		return newError(ReasonInvalidSignature, "leaf key is not on P-256")
 	}
-	signature, err := decodeBase64URLStrict(signatureB64)
-	if err != nil {
-		return wrapError(ReasonInvalidJWSFormat, err, "signature is not valid base64url")
-	}
 	if len(signature) != 64 {
-		return newError(ReasonInvalidSignature,
-			"ES256 signature must be 64 bytes, got %d", len(signature))
+		return newError(ReasonInvalidSignature, "ES256 signature must be 64 bytes, got %d", len(signature))
 	}
 	r := new(big.Int).SetBytes(signature[:32])
 	s := new(big.Int).SetBytes(signature[32:])
@@ -341,33 +311,36 @@ func verifyES256(leaf *x509.Certificate, signingInput, signatureB64 string) erro
 	return nil
 }
 
-// --- claim checks --------------------------------------------------------
+// --- JSON number reading --------------------------------------------------
 
-func (v *JWSVerifier) requireBundleID(actual string) error {
-	if actual != v.bundleID {
-		// The detail names neither value: it is logged by integrators.
-		return newError(ReasonWrongBundleID, "payload bundle id is not the configured one")
-	}
-	return nil
-}
+// int64 bounds as float64. Both are exactly representable, and the upper
+// one is the first float above math.MaxInt64, so the test is half-open.
+const (
+	minInt64AsFloat          = -9223372036854775808.0
+	maxInt64ExclusiveAsFloat = 9223372036854775808.0
+)
 
-func (v *JWSVerifier) requireAcceptedEnvironment(claim Environment) error {
-	if !claim.known() || !v.acceptedEnvironments[claim] {
-		return newError(ReasonWrongEnvironment, "payload environment is not in the accepted set")
+// integralMillis reads a JSON number as an int64 claim: a literal integer
+// is read directly; a number with a fraction or an exponent is read as a
+// float64 and truncated toward zero when it lies within the int64 range.
+// Anything else (1e300, say) is not representable and (0, false).
+//
+// json.Number.Int64 parses the literal spelling, so it refuses every
+// number that is not a bare integer even when the value it names fits
+// comfortably (1722945600000.0, 1.7229456e12). JSON does not distinguish
+// integers from floats and every other port reads the value rather than
+// its spelling, so this falls back to the float reading rather than
+// reading a signedDate's meaning off how it happened to be written.
+func integralMillis(number json.Number) (int64, bool) {
+	if value, err := number.Int64(); err == nil {
+		return value, true
 	}
-	return nil
-}
-
-// requireAppAppleID binds a Production AppTransaction to one app: without
-// it, a genuine Production AppTransaction for a different app would pass
-// every other check.
-func (v *JWSVerifier) requireAppAppleID(environment Environment, actual *int64) error {
-	if environment != EnvironmentProduction {
-		return nil
+	value, err := number.Float64()
+	if err != nil || math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0, false
 	}
-	if v.appAppleID == nil || actual == nil || *v.appAppleID != *actual {
-		return newError(ReasonWrongAppAppleID,
-			"production payload does not carry the configured app Apple id")
+	if value < minInt64AsFloat || value >= maxInt64ExclusiveAsFloat {
+		return 0, false
 	}
-	return nil
+	return int64(value), true
 }

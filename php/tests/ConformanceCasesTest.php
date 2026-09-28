@@ -5,94 +5,47 @@ declare(strict_types=1);
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Tests;
 
 use DateTimeImmutable;
-use DateTimeInterface;
 use DateTimeZone;
-use EminDeniz99\ApplePurchaseReceiptVerifier\AppleRootCerts;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Config;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Base64;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Jws\JwsVerifier;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\VerifyReceiptEndpoint;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\VerifyReceiptResult;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Fixtures;
+use EminDeniz99\ApplePurchaseReceiptVerifier\ReceiptPayload;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Fixtures07;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\FrozenClock;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\JsonPointer;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Shape;
-use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationException;
+use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationResult;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Depends;
 use PHPUnit\Framework\TestCase;
-use Psr\Clock\ClockInterface;
 use RuntimeException;
 use Throwable;
 
 /**
- * Runs `fixtures/cases.json` — the normative cross-language conformance
- * vectors — against this implementation.
+ * Runs `fixtures/cases.json` — the normative cross-language 0.7
+ * conformance vectors — against this implementation.
  *
  * This adapter knows nothing about any individual case. It loads the file,
- * resolves fixture ids to digest-checked bytes, builds a verifier from the
- * generic config, dispatches on `operation`, normalises the result and reads
- * the reason off a failure. There is no skip list, no per-case fixup and no
- * hardcoded count: a case it cannot map is a hard harness failure.
- *
- * A vector that disagrees with the library is a bug report against one of the
- * two (CONTRIBUTING.md). It is never something to special-case here.
+ * resolves fixture ids to digest-checked bytes, builds a `Config`/`Verifier`
+ * from the generic config, dispatches on `operation`, and reads the
+ * `VerificationResult`. There is no skip list, no per-case fixup and no
+ * hardcoded count: a case it cannot map is a hard harness failure. A vector
+ * that disagrees with the library is a bug report against one of the two;
+ * it is never something to special-case here.
  */
 #[CoversNothing]
 final class ConformanceCasesTest extends TestCase
 {
-    /**
-     * verifyRaw enforces no claim, so its cases may omit `bundleId` and
-     * `acceptedEnvironments` — but the constructor still demands both. These
-     * stand-ins match nothing any fixture carries, so a claim check that
-     * leaked into verifyRaw surfaces as a failure. An empty string, a
-     * wildcard, or "all four environments" would turn that leak into a
-     * silent pass.
-     */
-    private const UNMATCHABLE_BUNDLE_ID = 'conformance.unset.bundle.id';
-
     /** @var array<string, true> case ids this run actually executed */
     private static array $executed = [];
-
-    /**
-     * The 2^63-1 trap, on the harness's own JSON parser rather than the
-     * library's. `Fixtures::cases()` calls `json_decode($json, true, 64,
-     * JSON_THROW_ON_ERROR)` with no `JSON_BIGINT_AS_STRING`: PHP keeps an
-     * integer literal as a PHP int, exact digits included, as long as it
-     * fits a signed 64-bit int, and only falls back to a float above
-     * `PHP_INT_MAX`. `9223372036854775807` (2^63-1) IS `PHP_INT_MAX`, the
-     * documented ceiling itself, so this must decode as
-     * `int(9223372036854775807)`, not as the float that would print as
-     * `9223372036854775808`. Without this, `receipt/ids-are-decoded` and
-     * `endpoint/ids-echo-apples-keys` could pass for the wrong reason — a
-     * rounded expectation matching a rounded actual — if the decode call
-     * ever regressed.
-     */
-    public function testCasesJsonKeepsTheDownloadIdExpectationAsAnExactInteger(): void
-    {
-        /** @var list<array<string, mixed>> $cases */
-        $cases = Fixtures::cases()['cases'];
-        $case = null;
-        foreach ($cases as $candidate) {
-            if ($candidate['id'] === 'receipt/ids-are-decoded') {
-                $case = $candidate;
-                break;
-            }
-        }
-        self::assertNotNull($case, 'harness error: receipt/ids-are-decoded is not registered');
-        /** @var array{fields: array<string, mixed>} $expected */
-        $expected = $case['expected'];
-        $downloadId = $expected['fields']['downloadId'];
-        self::assertIsInt($downloadId, 'json_decode rounded the download id expectation to a float');
-        self::assertSame(9223372036854775807, $downloadId);
-    }
 
     /** @return iterable<string, array{array<string, mixed>}> */
     public static function caseProvider(): iterable
     {
         /** @var list<array<string, mixed>> $cases */
-        $cases = Fixtures::cases()['cases'];
+        $cases = Fixtures07::cases()['cases'];
         foreach ($cases as $case) {
             /** @var string $id */
             $id = $case['id'];
@@ -100,17 +53,12 @@ final class ConformanceCasesTest extends TestCase
         }
     }
 
-    /**
-     * Read before any case runs: a fixture no case happens to reference would
-     * otherwise drift unnoticed, and the registry is the thing being guarded.
-     */
     public function testEveryRegisteredFixtureMatchesItsRecordedDigest(): void
     {
-        $ids = array_keys(Fixtures::registry());
+        $ids = array_keys(Fixtures07::registry());
         self::assertNotEmpty($ids, 'cases.json must register fixtures');
         foreach ($ids as $id) {
-            // Throws on a digest mismatch; one checked fixture, one assertion.
-            Fixtures::bytes($id);
+            Fixtures07::bytes($id);
             $this->addToAssertionCount(1);
         }
     }
@@ -122,6 +70,7 @@ final class ConformanceCasesTest extends TestCase
         /** @var string $id */
         $id = $case['id'];
         self::$executed[$id] = true;
+
         if ($case['operation'] === 'decodeBase64') {
             $failures = self::decodeBase64Failures($case);
             self::assertSame([], $failures, implode("\n", $failures));
@@ -129,87 +78,93 @@ final class ConformanceCasesTest extends TestCase
             return;
         }
 
-        /** @var array<string, mixed> $config */
-        $config = $case['config'];
-        /** @var array{fixture?: string, requestBody?: string} $input */
-        $input = $case['input'];
-        if (isset($input['requestBody'])) {
-            // verifyReceiptEndpoint only: that text fixture is the whole raw
-            // request body, which the endpoint adapter tells apart by codec.
-            $bytes = Fixtures::bytes($input['requestBody']);
-            $inputCodec = 'requestBody';
-        } else {
-            $fixture = Shape::asString($input['fixture'] ?? null, 'input.fixture');
-            $bytes = Fixtures::bytes($fixture);
-            $inputCodec = Fixtures::registry()[$fixture]['codec'];
+        $maxMillis = isset($case['maxMillis']) ? Shape::asInt($case['maxMillis'], 'maxMillis') : null;
+        if ($maxMillis !== null) {
+            self::runOperation($case); // warm-up, unmeasured
         }
-        $clock = self::caseClock($case);
-        // cases.schema.json makes these types normative, so a case that does
-        // not have them is a harness failure rather than a verdict.
-        $operation = Shape::asString($case['operation'], 'operation');
+        $started = hrtime(true);
+        $result = self::runOperation($case);
+        $elapsedMs = (hrtime(true) - $started) / 1_000_000;
+        if ($maxMillis !== null) {
+            self::assertLessThanOrEqual(
+                $maxMillis,
+                $elapsedMs,
+                "{$id}: took " . round($elapsedMs, 1) . " ms, budget {$maxMillis} ms",
+            );
+        }
+
         $expected = Shape::asArray($case['expected'], 'expected');
 
-        try {
-            $result = $this->dispatch($operation, $config, $bytes, $clock, $inputCodec);
-        } catch (VerificationException $e) {
-            self::assertSame(
-                'error',
-                $expected['status'],
-                'expected success but threw ' . $e->reason->value,
-            );
-            self::assertSame($expected['reason'], $e->reason->value, 'reason');
+        if ($case['operation'] === 'verifyReceiptEndpoint') {
+            /** @var string $responseJson */
+            $responseJson = $result;
+            $actual = json_decode($responseJson, true, 65, JSON_THROW_ON_ERROR);
+            self::assertFields($id, $actual, $expected);
 
             return;
-        } catch (Throwable $e) {
-            // Only a VerificationException carries a canonical Reason.
-            // Anything else is a defect in the library or in this harness and
-            // must never be read as one of the expected reasons.
-            self::fail(sprintf(
-                'harness error: %s threw %s (%s), which is not a VerificationException',
-                $operation,
-                $e::class,
-                $e->getMessage(),
-            ));
+        }
+
+        /** @var VerificationResult<mixed> $result */
+        if (isset($expected['oneOf'])) {
+            $outcome = $result->verified() ? 'ok' : $result->failure->reason->value;
+            self::assertContains($outcome, Shape::asArray($expected['oneOf'], 'oneOf'), "{$id}: answered {$outcome}");
+
+            return;
+        }
+
+        if (!$result->verified()) {
+            $failure = $result->failure;
+            self::assertSame('error', $expected['status'], "{$id}: expected success but got {$failure->reason->value}");
+            self::assertSame($expected['reason'], $failure->reason->value, "{$id}: reason");
+            /** @var list<int> $codePoints */
+            $codePoints = $expected['messageMustNotContain'] ?? [];
+            foreach ($codePoints as $codePoint) {
+                $char = self::codepointToUtf8($codePoint);
+                self::assertStringNotContainsString(
+                    $char,
+                    $failure->message,
+                    sprintf('%s: message must not contain U+%04X: %s', $id, $codePoint, $failure->message),
+                );
+            }
+
+            return;
         }
 
         self::assertSame(
             'ok',
             $expected['status'],
-            'expected ' . Shape::asString($expected['reason'] ?? '?', 'expected.reason')
-                . ' but the call returned a value',
+            "{$id}: expected " . Shape::asString($expected['reason'] ?? '?', 'reason') . ' but verified',
         );
-        if ($result instanceof VerifyReceiptResult) {
-            // failureReason is not on Apple's wire, so an endpoint case pins
-            // it beside the wire fields rather than among them.
-            if (array_key_exists('failureReason', $expected)) {
-                self::assertSame($expected['failureReason'], $result->failureReason()?->value, 'failureReason');
+        $payload = $result->payload;
+        if ($case['operation'] === 'verifyReceipt') {
+            /** @var ReceiptPayload $payload */
+            $actual = json_decode($payload->toJson(), true, 65, JSON_THROW_ON_ERROR);
+            if (isset($expected['toJson'])) {
+                // Same value, not same bytes: key order and escaping are
+                // free, so both sides are key-sorted before the strict
+                // comparison.
+                self::assertSame(
+                    self::sortKeys(json_decode(Shape::asString($expected['toJson'], 'toJson'), true, 65, JSON_THROW_ON_ERROR)),
+                    self::sortKeys($actual),
+                    "{$id}: toJson value",
+                );
             }
-            $result = $result->toResponse();
+        } else {
+            /** @var \EminDeniz99\ApplePurchaseReceiptVerifier\JsonPayload $payload */
+            $actual = json_decode($payload->json, true, 65, JSON_THROW_ON_ERROR);
         }
-        $actual = self::normalize($result);
-        /** @var array<string, scalar|null> $fields */
-        $fields = $expected['fields'];
-        foreach ($fields as $path => $expected) {
-            $value = self::resolvePath($actual, $path);
-            if ($expected === null) {
-                // null means "absent or unset".
-                self::assertNull($value, $path . ': expected absent, got ' . var_export($value, true));
-            } else {
-                self::assertSame($expected, $value, $path);
-            }
-        }
+        self::assertFields($id, $actual, $expected);
     }
 
     /**
      * A silently dropped operation, or a provider that quietly stopped
-     * yielding, cannot hide behind a green suite. Asserted against the parsed
-     * length of the file, never a literal.
+     * yielding, cannot hide behind a green suite.
      */
     #[Depends('testCase')]
     public function testEveryCaseInTheFileRan(): void
     {
         /** @var list<array<string, mixed>> $cases */
-        $cases = Fixtures::cases()['cases'];
+        $cases = Fixtures07::cases()['cases'];
         $ids = array_map(static fn (array $c): string => Shape::asString($c['id'], 'case id'), $cases);
         self::assertSame(count($ids), count(array_unique($ids)), 'case ids must be unique');
         $missing = array_values(array_diff($ids, array_keys(self::$executed)));
@@ -217,147 +172,97 @@ final class ConformanceCasesTest extends TestCase
         self::assertCount(count($ids), self::$executed);
     }
 
-    /**
-     * The decoders a decodeBase64 group can name, each with the reason its
-     * refusal carries. Both are {@see Base64::decodeCanonical()}, which
-     * answers null; the receipt paths report that as INVALID_RECEIPT_FORMAT
-     * and the x5c path as INVALID_CERTIFICATE. An error group states
-     * INVALID_RECEIPT_FORMAT, the receipt-data answer.
-     */
-    private const BASE64_REFUSALS = [
-        'receipt-data' => 'INVALID_RECEIPT_FORMAT',
-        'x5c' => 'INVALID_CERTIFICATE',
-    ];
+    // --- dispatch --------------------------------------------------------
 
-    /**
-     * Every text of a decodeBase64 group that got the wrong answer from a
-     * decoder the group names, by case id, decoder, index and JSON-escaped
-     * text, rather than stopping at the first.
-     *
-     * @param array<string, mixed> $case
-     *
-     * @return list<string>
-     */
-    private static function decodeBase64Failures(array $case): array
+    /** @param array<string, mixed> $case */
+    private static function runOperation(array $case): mixed
     {
-        $id = Shape::asString($case['id'], 'id');
-        $expected = Shape::asArray($case['expected'], 'expected');
-        $texts = Shape::asArray(Shape::asArray($case['input'], 'input')['texts'] ?? null, 'input.texts');
-        $decoders = Shape::asArray($case['decoders'] ?? null, 'decoders');
-        self::assertNotEmpty($texts, "harness error: {$id}: input.texts is empty");
-        self::assertNotEmpty($decoders, "harness error: {$id}: decoders is empty");
-        $ok = $expected['status'] === 'ok';
-        if (!$ok) {
-            self::assertSame('INVALID_RECEIPT_FORMAT', $expected['reason'], "harness error: {$id}: an error group states INVALID_RECEIPT_FORMAT");
-        }
-        $want = $ok ? Shape::asString($expected['bytesHex'], 'expected.bytesHex') : '';
-        $failures = [];
-        foreach ($decoders as $decoder) {
-            $decoder = Shape::asString($decoder, 'decoder');
-            $refusal = self::BASE64_REFUSALS[$decoder] ?? throw new RuntimeException("harness error: no decoder \"{$decoder}\"");
-            foreach ($texts as $index => $text) {
-                $text = Shape::asString($text, 'text');
-                $where = sprintf(
-                    '%s: %s texts[%d] %s',
-                    $id,
-                    $decoder,
-                    $index,
-                    json_encode($text, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
-                );
-                $decoded = Base64::decodeCanonical($text);
-                if ($decoded === null) {
-                    if ($ok) {
-                        $failures[] = "{$where} was refused ({$refusal}), want {$want}";
-                    }
-                } elseif (!$ok) {
-                    $failures[] = "{$where} was accepted (decoded to " . bin2hex($decoded) . ')';
-                } elseif (bin2hex($decoded) !== $want) {
-                    $failures[] = "{$where} decoded to " . bin2hex($decoded) . ", want {$want}";
-                }
-            }
-        }
+        $operation = Shape::asString($case['operation'], 'operation');
 
-        return $failures;
-    }
-
-    /**
-     * @param array<string, mixed> $config
-     *
-     * @throws VerificationException
-     */
-    private function dispatch(
-        string $operation,
-        array $config,
-        string $input,
-        ?ClockInterface $clock,
-        string $inputCodec,
-    ): mixed {
         return match ($operation) {
-            'verifyTransaction' => $this->jwsVerifier($config, $clock)->verifyTransaction($input),
-            'verifyAppTransaction' => $this->jwsVerifier($config, $clock)->verifyAppTransaction($input),
-            'verifyRaw' => $this->jwsVerifier($config, $clock)->verifyRaw($input),
-            'verifyReceipt', 'verifyReceiptBase64' => $this->receiptVerifier($config, $clock)->verify(
-                $input,
-                isset($config['deviceGuidHex'])
-                    ? (string) hex2bin(Shape::asString($config['deviceGuidHex'], 'deviceGuidHex'))
-                    : null,
-            ),
-            'verifyReceiptEndpoint' => (new VerifyReceiptEndpoint(
-                self::trustedRoots($config),
-                Environment::from(Shape::asString($config['environment'], 'environment')),
-                $clock,
-            ))->verifyReceiptResult(
-                // A requestBody is the whole raw body, verbatim, through the
-                // entry point that parses JSON: never wrapped, never trimmed.
-                // A text fixture is the string a client would actually send
-                // as receipt-data; a raw/base64 fixture is decoded bytes this
-                // harness must re-encode to put back on the wire.
-                $inputCodec === 'requestBody' ? $input : [
-                    'receipt-data' => $inputCodec === 'text' ? $input : base64_encode($input),
-                ],
-            ),
+            'verifyReceipt' => self::verifier($case)->verifyReceipt(self::inputString($case)),
+            'verifySignedData' => self::verifier($case)->verifySignedData(self::jwsInputString($case)),
+            'verifyReceiptEndpoint' => self::runEndpoint($case),
             default => throw new RuntimeException("harness error: no adapter for operation \"{$operation}\""),
         };
     }
 
-    /** @param array<string, mixed> $config */
-    private function jwsVerifier(array $config, ?ClockInterface $clock): JwsVerifier
+    /**
+     * The fixture's logical bytes, as the exact JWS string a client sent —
+     * never base64-re-encoded, unlike a receipt fixture: `utf8` and `text`
+     * fixtures already ARE the JWS text (the schema's base64/raw codecs are
+     * used only for receipt and certificate fixtures).
+     *
+     * @param array<string, mixed> $case
+     */
+    private static function jwsInputString(array $case): string
     {
-        // JwsVerifier takes no clock in any port: no verdict on that path
-        // moves with the current time.
-        if ($clock !== null) {
-            throw new RuntimeException('harness error: JwsVerifier has no clock seam, but the case pins one');
-        }
-        $environments = isset($config['acceptedEnvironments'])
-            ? array_map(
-                static fn (mixed $name): Environment => Environment::from(
-                    Shape::asString($name, 'acceptedEnvironments entry'),
-                ),
-                (array) $config['acceptedEnvironments'],
-            )
-            // Unmatchable by design; see UNMATCHABLE_BUNDLE_ID.
-            : [Environment::LocalTesting];
+        /** @var array{fixture: string} $input */
+        $input = $case['input'];
 
-        return new JwsVerifier(
-            self::trustedRoots($config),
-            isset($config['bundleId']) ? Shape::asString($config['bundleId'], 'bundleId') : self::UNMATCHABLE_BUNDLE_ID,
-            array_values($environments),
-            isset($config['appAppleId']) ? Shape::asInt($config['appAppleId'], 'appAppleId') : null,
-        );
+        return Fixtures07::bytes(Shape::asString($input['fixture'], 'input.fixture'));
     }
 
-    /** @param array<string, mixed> $config */
-    private function receiptVerifier(array $config, ?ClockInterface $clock): ReceiptVerifier
+    /** @param array<string, mixed> $case */
+    private static function runEndpoint(array $case): string
     {
-        // ReceiptVerifier takes no clock in any port: its only "now" is the
-        // certificate-validity fallback, which an injected clock must not be
-        // able to move. A case that pinned one would be a harness error, and
-        // the cases.json schema refuses to express one.
-        if ($clock !== null) {
-            throw new RuntimeException('harness error: verifyReceipt has no clock seam, but the case pins one');
+        /** @var array<string, mixed> $config */
+        $config = Shape::asArray($case['config'], 'config');
+        $wire = Shape::asString($config['environment'], 'environment');
+        $environment = match ($wire) {
+            'PRODUCTION' => Environment::Production,
+            'SANDBOX' => Environment::Sandbox,
+            default => throw new RuntimeException('harness error: unknown environment "' . $wire . '"'),
+        };
+        /** @var array{fixture?: string, requestBody?: string} $input */
+        $input = $case['input'];
+        if (isset($input['requestBody'])) {
+            $requestJson = Fixtures07::bytes($input['requestBody']);
+        } else {
+            $requestJson = json_encode(['receipt-data' => self::receiptDataString($case)], JSON_THROW_ON_ERROR);
         }
 
-        return new ReceiptVerifier(self::trustedRoots($config), Shape::asString($config['bundleId'], 'bundleId'));
+        return self::verifier($case)->verifyReceiptEndpoint($environment, $requestJson);
+    }
+
+    /**
+     * The fixture as the exact string handed to `verifyReceipt` /
+     * `verifySignedData` / the endpoint's `receipt-data`: a text fixture
+     * verbatim; a raw/base64 fixture's decoded bytes, base64-encoded, since
+     * verifyReceipt takes only base64.
+     *
+     * @param array<string, mixed> $case
+     */
+    private static function inputString(array $case): string
+    {
+        /** @var array{fixture: string} $input */
+        $input = $case['input'];
+        $fixtureId = Shape::asString($input['fixture'], 'input.fixture');
+        $bytes = Fixtures07::bytes($fixtureId);
+        $codec = Fixtures07::registry()[$fixtureId]['codec'];
+
+        return $codec === 'text' ? $bytes : base64_encode($bytes);
+    }
+
+    /** @param array<string, mixed> $case */
+    private static function receiptDataString(array $case): string
+    {
+        return self::inputString($case);
+    }
+
+    /** @param array<string, mixed> $case */
+    private static function verifier(array $case): Verifier
+    {
+        /** @var array<string, mixed> $config */
+        $config = Shape::asArray($case['config'], 'config');
+        $roots = self::trustedRoots($config);
+        $builder = Config::builder()->roots($roots);
+        $clock = self::caseClock($case);
+        if ($clock !== null) {
+            $builder = $builder->clock($clock);
+        }
+
+        return Verifier::create($builder->build());
     }
 
     /**
@@ -367,26 +272,20 @@ final class ConformanceCasesTest extends TestCase
      */
     private static function trustedRoots(array $config): array
     {
-        /** @var array{source: string, name?: string, fixtures?: list<string>} $spec */
-        $spec = $config['trustedRoots'];
-        if ($spec['source'] === 'builtin') {
-            return match ($spec['name'] ?? '') {
-                'apple-jws-roots' => AppleRootCerts::jwsRoots(),
-                'apple-receipt-roots' => AppleRootCerts::receiptRoots(),
-                default => throw new RuntimeException(
-                    'harness error: unknown builtin root set "' . ($spec['name'] ?? '') . '"',
-                ),
-            };
+        /** @var array{source: string, fixtures?: list<string>} $spec */
+        $spec = Shape::asArray($config['trustedRoots'], 'config.trustedRoots');
+        if ($spec['source'] === 'defaults') {
+            return Config::defaults()->roots;
         }
         if ($spec['source'] !== 'fixtures') {
             throw new RuntimeException('harness error: unknown trustedRoots source "' . $spec['source'] . '"');
         }
 
-        return array_map(Fixtures::bytes(...), $spec['fixtures'] ?? []);
+        return array_map(Fixtures07::bytes(...), $spec['fixtures'] ?? []);
     }
 
     /** @param array<string, mixed> $case */
-    private static function caseClock(array $case): ?ClockInterface
+    private static function caseClock(array $case): ?FrozenClock
     {
         if (!isset($case['clock'])) {
             return null;
@@ -402,170 +301,127 @@ final class ConformanceCasesTest extends TestCase
         return new FrozenClock($now);
     }
 
-    // --- result normalisation ------------------------------------------
+    // --- decodeBase64 ------------------------------------------------------
 
     /**
-     * Renders a returned value into the language-neutral shape the field
-     * paths are written against: dates as ISO-8601 UTC, bytes as lowercase
-     * hex (also under `<name>Hex`, the spelling cases.json uses for a byte
-     * field), maps as objects with stringified keys.
+     * Every text of a decodeBase64 group that got the wrong answer from a
+     * decoder the group names, by case id, decoder, index and JSON-escaped
+     * text, rather than stopping at the first. Both decoders this schema
+     * names ("receipt-data", "x5c") share one canonical-base64 decoder at
+     * this level ({@see Base64::decodeCanonical()}); which public Reason
+     * their refusal becomes is exercised through the real operations above.
      *
-     * PHP spells bytes and text both `string`, so which properties hold bytes
-     * comes from the value object's own `BINARY_PROPERTIES` constant rather
-     * than from a table in this file.
+     * @param array<string, mixed> $case
+     *
+     * @return list<string>
      */
-    private static function normalize(mixed $value): mixed
+    private static function decodeBase64Failures(array $case): array
     {
-        if ($value === null) {
-            return null;
-        }
-        if ($value instanceof DateTimeInterface) {
-            return self::isoUtc($value);
-        }
-        if (is_object($value)) {
-            $binary = defined($value::class . '::BINARY_PROPERTIES')
-                ? constant($value::class . '::BINARY_PROPERTIES')
-                : [];
-            if (!is_array($binary)) {
-                throw new RuntimeException(
-                    'harness error: ' . $value::class . '::BINARY_PROPERTIES is not an array',
+        $id = Shape::asString($case['id'], 'id');
+        $expected = Shape::asArray($case['expected'], 'expected');
+        $texts = Shape::asArray(Shape::asArray($case['input'], 'input')['texts'] ?? null, 'input.texts');
+        $decoders = Shape::asArray($case['decoders'] ?? null, 'decoders');
+        self::assertNotEmpty($texts, "harness error: {$id}: input.texts is empty");
+        self::assertNotEmpty($decoders, "harness error: {$id}: decoders is empty");
+        $ok = $expected['status'] === 'ok';
+        $want = $ok ? Shape::asString($expected['bytesHex'], 'expected.bytesHex') : '';
+        $failures = [];
+        foreach ($decoders as $decoder) {
+            $decoder = Shape::asString($decoder, 'decoder');
+            foreach ($texts as $index => $text) {
+                $text = Shape::asString($text, 'text');
+                $where = sprintf(
+                    '%s: %s texts[%d] %s',
+                    $id,
+                    $decoder,
+                    $index,
+                    json_encode($text, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
                 );
-            }
-            $out = [];
-            foreach (get_object_vars($value) as $key => $property) {
-                if (in_array($key, $binary, true)) {
-                    $out[$key] = self::normalizeBinary($property);
-                    $out[$key . 'Hex'] = $out[$key];
-                } else {
-                    $out[$key] = self::normalize($property);
+                $decoded = Base64::decodeCanonical($text);
+                if ($decoded === null) {
+                    if ($ok) {
+                        $failures[] = "{$where} was refused, want {$want}";
+                    }
+                } elseif (!$ok) {
+                    $failures[] = "{$where} was accepted (decoded to " . bin2hex($decoded) . ')';
+                } elseif (bin2hex($decoded) !== $want) {
+                    $failures[] = "{$where} decoded to " . bin2hex($decoded) . ", want {$want}";
                 }
             }
-
-            return $out;
-        }
-        if (is_array($value)) {
-            if ($value !== [] && !array_is_list($value)) {
-                $out = [];
-                foreach ($value as $key => $element) {
-                    $out[(string) $key] = self::normalize($element);
-                }
-
-                return $out;
-            }
-
-            return array_map(self::normalize(...), $value);
         }
 
-        return $value;
+        return $failures;
     }
 
-    private static function normalizeBinary(mixed $value): mixed
-    {
-        if ($value === null) {
-            return null;
-        }
-        if (is_string($value)) {
-            return bin2hex($value);
-        }
-        if (is_array($value)) {
-            $out = [];
-            foreach ($value as $key => $element) {
-                $out[(string) $key] = self::normalizeBinary($element);
-            }
-
-            return $value !== [] && array_is_list($value) ? array_values($out) : $out;
-        }
-
-        return $value;
-    }
-
-    private static function isoUtc(DateTimeInterface $date): string
-    {
-        $utc = DateTimeImmutable::createFromInterface($date)->setTimezone(new DateTimeZone('UTC'));
-        $millis = (int) $utc->format('v');
-
-        return $millis === 0
-            ? $utc->format('Y-m-d\TH:i:s\Z')
-            : $utc->format('Y-m-d\TH:i:s.v\Z');
-    }
-
-    // --- field paths ----------------------------------------------------
+    // --- field/length assertions ------------------------------------------
 
     /**
-     * A path step is either a name (`bundleId`, `length`) or a bracket
-     * (`[9999]`, `[0]`, `[productId=com.example.app.vip]`). Bracket contents
-     * hold dots, so a plain `explode('.', $path)` is wrong.
+     * A decoded JSON value with every object's keys sorted, so two values
+     * compare with assertSame regardless of the key order they were written in.
      */
-    private static function resolvePath(mixed $root, string $path): mixed
+    private static function sortKeys(mixed $value): mixed
     {
-        $current = $root;
-        foreach (self::pathSteps($path) as [$isBracket, $step]) {
-            if ($current === null) {
-                return null;
-            }
-            if (!$isBracket) {
-                if ($step === 'length' && is_array($current)) {
-                    $current = count($current);
-                    continue;
-                }
-                $current = is_array($current) ? ($current[$step] ?? null) : null;
-                continue;
-            }
-            $separator = strpos($step, '=');
-            if ($separator !== false && $separator > 0) {
-                $key = substr($step, 0, $separator);
-                $wanted = substr($step, $separator + 1);
-                self::assertTrue(
-                    is_array($current) && array_is_list($current),
-                    $path . ': [' . $step . '] does not select from a list',
-                );
-                /** @var list<mixed> $current */
-                $matches = array_values(array_filter(
-                    $current,
-                    static fn (mixed $e): bool => is_array($e) && ($e[$key] ?? null) === $wanted,
-                ));
-                self::assertCount(
-                    1,
-                    $matches,
-                    $path . ': [' . $step . '] must select exactly one element, selected ' . count($matches),
-                );
-                $current = $matches[0];
-                continue;
-            }
-            $current = is_array($current) ? ($current[$step] ?? $current[(int) $step] ?? null) : null;
+        if (!is_array($value)) {
+            return $value;
         }
+        $value = array_map(self::sortKeys(...), $value);
+        ksort($value);
 
-        return $current;
+        return $value;
     }
 
-    /** @return list<array{bool, string}> */
-    private static function pathSteps(string $path): array
+    /**
+     * @param mixed $actual
+     * @param array<mixed> $expected
+     */
+    private static function assertFields(string $id, $actual, array $expected): void
     {
-        $steps = [];
-        $consumed = 0;
-        $pattern = '/\.?([^.\[\]]+)|\[([^\]]+)\]/';
-        $flags = PREG_SET_ORDER | PREG_OFFSET_CAPTURE;
-        if (preg_match_all($pattern, $path, $matches, $flags) === false) {
-            throw new RuntimeException("harness error: unparseable field path \"{$path}\"");
-        }
-        foreach ($matches as $match) {
-            if ($match[0][1] !== $consumed) {
-                throw new RuntimeException("harness error: unparseable field path \"{$path}\"");
+        /** @var array<string, mixed> $fields */
+        $fields = $expected['fields'] ?? [];
+        foreach ($fields as $path => $want) {
+            $got = JsonPointer::resolve($actual, $path);
+            if ($want === null) {
+                self::assertTrue(
+                    $got === null || JsonPointer::isMissing($got),
+                    "{$id}: {$path}: expected absent, got " . var_export($got, true),
+                );
+            } else {
+                self::assertTrue(
+                    self::fieldsEqual($got, $want),
+                    "{$id}: {$path}: expected " . var_export($want, true) . ', got ' . var_export($got, true),
+                );
             }
-            $consumed += strlen($match[0][0]);
-            // One of the two alternatives always participates, so the
-            // bracketed group is present whenever the bare one is not — the
-            // throw states that rather than assuming it.
-            $steps[] = ($match[1][0] ?? '') !== '' && $match[1][1] !== -1
-                ? [false, $match[1][0]]
-                : [true, $match[2][0] ?? throw new RuntimeException(
-                    "harness error: unparseable field path \"{$path}\"",
-                )];
         }
-        if ($consumed !== strlen($path)) {
-            throw new RuntimeException("harness error: unparseable field path \"{$path}\"");
+        /** @var array<string, int> $lengths */
+        $lengths = $expected['lengths'] ?? [];
+        foreach ($lengths as $path => $want) {
+            $got = JsonPointer::resolveLength($actual, $path);
+            self::assertSame($want, $got, "{$id}: length of {$path}");
+        }
+    }
+
+    private static function fieldsEqual(mixed $got, mixed $want): bool
+    {
+        if (is_int($got) || is_float($got)) {
+            return (is_int($want) || is_float($want)) && (float) $got === (float) $want;
         }
 
-        return $steps;
+        return $got === $want;
+    }
+
+    private static function codepointToUtf8(int $cp): string
+    {
+        if ($cp < 0x80) {
+            return chr($cp);
+        }
+        if ($cp < 0x800) {
+            return chr(0xC0 | ($cp >> 6)) . chr(0x80 | ($cp & 0x3F));
+        }
+        if ($cp < 0x10000) {
+            return chr(0xE0 | ($cp >> 12)) . chr(0x80 | (($cp >> 6) & 0x3F)) . chr(0x80 | ($cp & 0x3F));
+        }
+
+        return chr(0xF0 | ($cp >> 18)) . chr(0x80 | (($cp >> 12) & 0x3F))
+            . chr(0x80 | (($cp >> 6) & 0x3F)) . chr(0x80 | ($cp & 0x3F));
     }
 }

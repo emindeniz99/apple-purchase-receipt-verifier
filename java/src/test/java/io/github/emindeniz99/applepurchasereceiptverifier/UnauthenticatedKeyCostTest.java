@@ -4,10 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
-import io.github.emindeniz99.applepurchasereceiptverifier.jws.JwsVerifier;
-import io.github.emindeniz99.applepurchasereceiptverifier.receipt.AppReceipt;
-import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifier;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
@@ -18,7 +14,6 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
-import java.util.EnumSet;
 import java.util.List;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.DERNull;
@@ -80,7 +75,7 @@ class UnauthenticatedKeyCostTest {
         byte[] receipt = receiptSignedBy(signerKey, signer, embedded);
 
         long start = System.nanoTime();
-        AppReceipt verified = new ReceiptVerifier(Collections.singleton(pki.root), BUNDLE).verify(receipt);
+        ReceiptPayload verified = Checks.receipt(Checks.verifier(pki), receipt);
         assertFast(start);
         assertEquals(BUNDLE, verified.bundleId());
     }
@@ -98,11 +93,10 @@ class UnauthenticatedKeyCostTest {
         byte[] receipt = receiptSignedBy(signerKey, signer, embedded);
 
         long start = System.nanoTime();
-        VerificationException e = assertThrows(
-                VerificationException.class,
-                () -> new ReceiptVerifier(Collections.singleton(pki.root), BUNDLE).verify(receipt));
+        VerificationException e =
+                assertThrows(VerificationException.class, () -> Checks.receipt(Checks.verifier(pki), receipt));
         assertFast(start);
-        assertEquals(Reason.INVALID_CHAIN, e.reason(), e.getMessage());
+        assertEquals(Reason.UNTRUSTED_CHAIN, e.reason(), e.getMessage());
     }
 
     @Test
@@ -119,13 +113,12 @@ class UnauthenticatedKeyCostTest {
         String jws = TestPki.b64url(header.getBytes(StandardCharsets.UTF_8)) + "."
                 + TestPki.b64url("{}".getBytes(StandardCharsets.UTF_8)) + "."
                 + TestPki.b64url(new byte[64]);
-        JwsVerifier verifier =
-                new JwsVerifier(Collections.singleton(pki.root), BUNDLE, EnumSet.of(Environment.SANDBOX));
+        Verifier verifier = Checks.verifier(pki);
 
         long start = System.nanoTime();
-        VerificationException e = assertThrows(VerificationException.class, () -> verifier.verifyRaw(jws));
+        VerificationException e = assertThrows(VerificationException.class, () -> Checks.signedData(verifier, jws));
         assertFast(start);
-        assertEquals(Reason.INVALID_CHAIN, e.reason(), e.getMessage());
+        assertEquals(Reason.UNTRUSTED_CHAIN, e.reason(), e.getMessage());
     }
 
     /** The Apple marker OIDs, so the JWS test reaches the chain check rather than the purpose check. */

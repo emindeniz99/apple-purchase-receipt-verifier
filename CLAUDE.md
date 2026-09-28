@@ -47,22 +47,32 @@ human-facing version; where they overlap, they agree.
   generated from `certs/` by `node/scripts/gen-roots.mjs`; CI regenerates it
   and fails on a diff. Change `certs/`, re-run the script in the same commit.
   Reading the files at call time would break every bundled runtime.
-- **Four ports keep a COPY of `certs/`,** because their packaging cannot
-  reach outside the package directory: `go/roots/certs`, `ruby/certs`,
-  `rust/certs` and `php/certs`. CI diffs each copy against `certs/` and
+- **Seven ports keep a COPY of `certs/`,** because their packaging cannot
+  reach outside the package directory: `go/roots/certs`, `node/certs`,
+  `php/certs`, `python/apple_purchase_receipt_verifier/certs`, `ruby/certs`,
+  `rust/certs` and `swift/Sources/ApplePurchaseReceiptVerifier/certs`.
+  `tools/check-cert-copies.mjs` diffs each copy against `certs/`, and CI
   regenerates the inlined forms (`ruby/lib/.../roots_data.rb`,
   `php/src/Internal/RootsData.php`, `dotnet/.../Internal/AppleRootData.cs`,
-  `go generate`). A `certs/` change touches all of them in the same commit.
+  `go generate`). Java inlines the roots as base64 constants in
+  `AppleRootCerts`, with no copy and no generator: edit the constants by
+  hand, and `AppleRootCertsTest` pins them to Apple's fingerprints and to
+  `certs/`. A `certs/` change touches all of them in the same commit.
 - **`certs/` pins all three published Apple roots deliberately** (PLAN.md
   D15, which superseded D12's two-root choice). Apple's guidance is to trust
   every root on its PKI page; don't prune them back to the two today's chains
   happen to end at.
-- **One version, eight files**: release-please's extra-files bump
-  `version.txt`, `node/package.json`, `python/pyproject.toml`, `java/pom.xml`,
-  `ruby/lib/apple_purchase_receipt_verifier/version.rb`, `rust/Cargo.toml`,
-  `dotnet/Directory.Build.props` and the CHANGELOG together. Go and PHP carry
-  no version string at all — the git tag is their version. Never hand-edit a
-  version number.
+- **One version, many files**: release-please bumps `version.txt`, the
+  CHANGELOG and every `extra-files` entry in `release-please-config.json`
+  together: the manifests (`node/package.json`, `python/pyproject.toml`,
+  `java/pom.xml`, `rust/Cargo.toml`, `dotnet/Directory.Build.props`, the
+  `jvm-interop` and `java-bench` poms, the version in `java/README.md`) and
+  each port's version constant (Java `Version.java`, Python `version.py`,
+  Ruby `version.rb`, Swift `Version.swift`, .NET `LibraryVersion.cs`, Go
+  `version.go`), the generic ones found by their `x-release-please-version`
+  marker. A new version constant joins that list in the commit that adds
+  it. PHP carries no version string at all; the git tag is its version.
+  Never hand-edit a version number.
 - **Never delete or move a `go/v*` tag.** The Go module is published by that
   tag alone, and its hash is recorded in `sum.golang.org` forever; re-pointing
   one makes every consumer's build fail with a checksum mismatch that looks
@@ -75,9 +85,9 @@ human-facing version; where they overlap, they agree.
 ## Release budget
 
 - Registries that still need a one-time owner action before their publish job
-  can succeed are listed per registry in `BOOTSTRAP.md`. PHP is not publishable
-  from this repository at all until the manifest-layout question there is
-  settled.
+  can succeed are listed per registry in `BOOTSTRAP.md`. PHP publishes from
+  the root `composer.json` (layout A) once the owner submits the repository to
+  Packagist and installs its GitHub App; see the Packagist section there.
 - Maven Central's Usage Center caps `io.github.emindeniz99` at **7 releases
   per calendar month** (also 80 MB/release, 1,000 files). Every
   release-please PR merge spends one — `release.yml` publishes to Central on

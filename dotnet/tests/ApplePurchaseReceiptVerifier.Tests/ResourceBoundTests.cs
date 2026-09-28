@@ -3,102 +3,101 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Formats.Asn1;
 using System.Numerics;
-using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using ApplePurchaseReceiptVerifier.Internal;
-using ApplePurchaseReceiptVerifier.Jws;
-using ApplePurchaseReceiptVerifier.Receipt;
 using Xunit;
 
 namespace ApplePurchaseReceiptVerifier.Tests;
 
 /// <summary>
-/// The bounds that keep an unverified receipt from spending the caller's CPU
-/// and memory.
+/// The bounds that keep unverified input from spending the caller's CPU,
+/// memory and stack.
 /// </summary>
 public class ResourceBoundTests
 {
-    private static byte[] Receipt => Fixtures.Bytes("receipt");
-
-    private static IReadOnlyList<X509Certificate2> Roots() =>
-        new[] { X509CertificateLoader.LoadCertificate(Fixtures.Bytes("receipt-root")) };
-
-    [Fact]
-    public void TenEmbeddedCertificatesAreAccepted()
-    {
-        byte[] padded = WithCertificateCopies(Receipt, 10);
-        Assert.Equal(10, Internals.PreScan(padded, 10));
-        using ReceiptVerifier verifier = new(Roots(), "com.example.app");
-        Assert.Equal("com.example.app", verifier.Verify(padded).BundleId);
-    }
-
-    [Fact]
-    public void ElevenEmbeddedCertificatesAreRejected()
-    {
-        byte[] padded = WithCertificateCopies(Receipt, 11);
-        using ReceiptVerifier verifier = new(Roots(), "com.example.app");
-        Assert.Equal(
-            VerificationReason.InvalidChain,
-            Assert.Throws<VerificationException>(() => verifier.Verify(padded)).Reason);
-    }
+    private static IVerifier Receipts() => TestPki.FixtureVerifier("receipt-root");
 
     /// <summary>
-    /// The bound is on <em>parsing</em>, not on the walk. The obvious port of
-    /// it — reading <c>SignedCms.Certificates.Count</c> — is the attack:
-    /// touching that property materialises every embedded certificate, which
-    /// measured 1 045 ms and 6 000 handle-holding objects for this input,
-    /// against 35 µs for the structural pre-scan. The flood here stays under
-    /// <see cref="ReceiptVerifier.MaxReceiptBytes"/>, so it is the pre-scan
-    /// that refuses it and not the byte cap in front of it.
+    /// The certificate cap is a bound on <em>parsing</em>, not on the walk:
+    /// the obvious port of it — materialising the bag, then counting — is the
+    /// attack, since each entry becomes a platform certificate behind a
+    /// handle (measured once at 1 045 ms and 6 000 handle-holding objects for
+    /// this input). The flood stays under the base64 cap, so the count is what
+    /// refuses it, and it does so before anything is decoded.
     /// </summary>
     [Fact]
     public void ACertificateFloodIsRejectedInBoundedTime()
     {
-        byte[] flood = WithCertificateCopies(Receipt, 2_500);
-        Assert.True(flood.Length > 1_000_000, $"the flood is only {flood.Length} bytes");
-        Assert.True(flood.Length <= ReceiptVerifier.MaxReceiptBytes, $"the flood is {flood.Length} bytes, over the cap");
+        string flood = Convert.ToBase64String(TestPki.WithCertificateCopies(Fixtures070.Bytes("receipt"), 2_500));
+        Assert.True(flood.Length > 1_000_000, $"the flood is only {flood.Length} characters");
+        Assert.True(flood.Length <= ReceiptVerifierCore.MaxReceiptBytes, $"the flood is {flood.Length} characters, over the cap");
 
-        using ReceiptVerifier verifier = new(Roots(), "com.example.app");
-        // One untimed call first: the bound is on the pre-scan, not on JIT
+        IVerifier verifier = Receipts();
+
+        // One untimed call first: the bound is on the parse, not on JIT
         // compilation of the first call, which a busy CI runner stretches.
-        Assert.Throws<VerificationException>(() => verifier.Verify(flood));
+        verifier.VerifyReceipt(flood);
         Stopwatch stopwatch = Stopwatch.StartNew();
-        VerificationException error = Assert.Throws<VerificationException>(() => verifier.Verify(flood));
+        VerificationResult<ReceiptPayload> result = verifier.VerifyReceipt(flood);
         stopwatch.Stop();
 
-        Assert.Equal(VerificationReason.InvalidChain, error.Reason);
-        Assert.True(stopwatch.ElapsedMilliseconds < 250, $"took {stopwatch.ElapsedMilliseconds} ms");
+        // The budget is half the 2,000 ms the shared hostile cases allow: the
+        // macOS runner runs the net8, net9 and net10 test hosts at once and
+        // measured 725 ms here, while the materialising port took over a
+        // second on an idle machine.
+        Assert.Equal(VerificationReason.Malformed, result.Failure?.Reason);
+        Assert.True(stopwatch.ElapsedMilliseconds < 1_000, $"took {stopwatch.ElapsedMilliseconds} ms");
     }
 
+    /// <summary>
+    /// A header that claims more content than the input holds is refused from
+    /// the header, without allocating what it claims: here 2 MiB of zeros
+    /// behind a SEQUENCE that says it is 3 MiB long.
+    /// </summary>
     [Fact]
-    public void AVeryLargeBlobIsRejectedWithoutExhaustingMemory()
+    public void ALengthThatClaimsMoreThanTheInputHoldsIsMalformed()
     {
-        byte[] blob = new byte[50 * 1024 * 1024];
+        byte[] blob = new byte[2 * 1024 * 1024];
         blob[0] = 0x30;
         blob[1] = 0x84;
-        blob[2] = 0x03;
-        blob[3] = 0x00;
+        blob[2] = 0x00;
+        blob[3] = 0x30;
         blob[4] = 0x00;
         blob[5] = 0x00;
 
-        using ReceiptVerifier verifier = new(Roots(), "com.example.app");
-        Assert.Equal(
-            VerificationReason.InvalidReceiptFormat,
-            Assert.Throws<VerificationException>(() => verifier.Verify(blob)).Reason);
+        Assert.Equal(VerificationReason.Malformed, Receipts().VerifyReceipt(Convert.ToBase64String(blob)).Failure?.Reason);
     }
 
+    /// <summary>
+    /// Nesting far past the 64-level bound, in both length forms, is refused
+    /// on depth: the depth scan itself must not recurse once per level, or
+    /// this input would take the process down instead of failing.
+    /// </summary>
     [Theory]
     [InlineData(1_000)]
     [InlineData(50_000)]
     public void DeeplyNestedAsn1IsRejectedWithoutUnboundedRecursion(int depth)
     {
-        using ReceiptVerifier verifier = new(Roots(), "com.example.app");
+        IVerifier verifier = Receipts();
         Assert.Equal(
-            VerificationReason.InvalidReceiptFormat,
-            Assert.Throws<VerificationException>(() => verifier.Verify(NestedDefinite(depth))).Reason);
+            VerificationReason.Malformed,
+            verifier.VerifyReceipt(Convert.ToBase64String(NestedDefinite(depth))).Failure?.Reason);
         Assert.Equal(
-            VerificationReason.InvalidReceiptFormat,
-            Assert.Throws<VerificationException>(() => verifier.Verify(NestedIndefinite(depth))).Reason);
+            VerificationReason.Malformed,
+            verifier.VerifyReceipt(Convert.ToBase64String(NestedIndefinite(depth))).Failure?.Reason);
+    }
+
+    /// <summary>
+    /// The same bound inside signed content, where the payload parser runs:
+    /// deep nesting is Apple-signed content that does not parse, never a
+    /// stack overflow.
+    /// </summary>
+    [Fact]
+    public void DeeplyNestedSignedContentIsUnreadableWithoutUnboundedRecursion()
+    {
+        Assert.Throws<VerificationException>(() => ReceiptAttributes.Parse(NestedDefinite(50_000)));
+        Assert.Throws<VerificationException>(() => ReceiptAttributes.Parse(NestedIndefinite(50_000)));
+        Assert.Null(ReceiptAttributes.ReadCreationDateMs(NestedIndefinite(50_000)));
     }
 
     /// <summary>
@@ -108,7 +107,7 @@ public class ResourceBoundTests
     [Fact]
     public void ANestedOctetStringBombDoesNotRecurse()
     {
-        byte[] bomb = new byte[] { 0x05, 0x00 };
+        byte[] bomb = { 0x05, 0x00 };
         for (int i = 0; i < 5_000; i++)
         {
             AsnWriter writer = new(AsnEncodingRules.DER);
@@ -116,7 +115,8 @@ public class ResourceBoundTests
             bomb = writer.Encode();
         }
 
-        Assert.Equal(VerificationReason.InvalidReceiptFormat, PayloadReason(bomb));
+        Assert.Throws<VerificationException>(() => ReceiptAttributes.Parse(bomb));
+        Assert.Null(ReceiptAttributes.ReadCreationDateMs(bomb));
     }
 
     /// <summary>
@@ -143,18 +143,17 @@ public class ResourceBoundTests
             (17, selfNesting),
         });
 
-        AppReceipt receipt = ParsePayload(payload);
-        InAppPurchase purchase = Assert.Single(receipt.InAppPurchases);
+        ReceiptPayload receipt = ReceiptAttributes.Parse(payload);
+        InAppPurchase purchase = Assert.Single(receipt.InApp);
         Assert.Equal("com.example.app.pro", purchase.ProductId);
-        Assert.True(purchase.UnknownAttributes.ContainsKey(17));
-        Assert.Single(purchase.UnknownAttributes[17]);
+        Assert.Equal(inner, Assert.Single(purchase.UnknownAttributes[17]));
     }
 
     [Fact]
     public void DeeplyNestedJsonIsRejectedOnDepthNotOnTheStack()
     {
         string json = new string('[', 10_000) + new string(']', 10_000);
-        Assert.Throws<ApplePurchaseReceiptVerifier.Internal.JsonException>(() => Json.Parse(json));
+        Assert.Throws<JsonException>(() => Json.Parse(json));
 
         StringBuilder objects = new();
         for (int i = 0; i < 10_000; i++)
@@ -162,51 +161,60 @@ public class ResourceBoundTests
             objects.Append("{\"a\":");
         }
 
-        objects.Append("1");
-        for (int i = 0; i < 10_000; i++)
-        {
-            objects.Append('}');
-        }
-
-        Assert.Throws<ApplePurchaseReceiptVerifier.Internal.JsonException>(() => Json.Parse(objects.ToString()));
+        objects.Append('1').Append('}', 10_000);
+        Assert.Throws<JsonException>(() => Json.Parse(objects.ToString()));
     }
 
+    /// <summary>A JWS whose header and payload both nest ten thousand deep is contained in both positions.</summary>
     [Fact]
-    public void ADeeplyNestedJwsPayloadIsContained()
+    public void ADeeplyNestedJwsIsContained()
     {
-        string payload = new string('[', 10_000) + new string(']', 10_000);
-        string jws = TestPki.Base64Url(Encoding.UTF8.GetBytes("{\"alg\":\"ES256\",\"x5c\":[\"A\",\"A\",\"A\"]}"))
-            + "." + TestPki.Base64Url(Encoding.UTF8.GetBytes(payload))
-            + "." + TestPki.Base64Url(new byte[64]);
+        TestPki.JwsChain chain = TestPki.SharedJws.Value;
+        string deep = new string('[', 10_000) + new string(']', 10_000);
+        string signedPayload = chain.Sign("{\"signedDate\":1722945600000,\"x\":" + deep + "}");
+        string header = TestPki.Base64Url(Encoding.UTF8.GetBytes("{\"alg\":\"ES256\",\"x\":" + deep + "}"));
+        string[] parts = signedPayload.Split('.');
 
-        using JwsVerifier verifier = new(
-            AppleRootCertificates.JwsRoots(), "com.example.app", new[] { AppleEnvironment.Sandbox });
-        Assert.IsType<VerificationException>(
-            Record.Exception(() => verifier.VerifyTransaction(jws)));
+        IVerifier verifier = chain.Verifier(TestPki.SignedAtMs);
+        Assert.Equal(VerificationReason.UnreadablePayload, verifier.VerifySignedData(signedPayload).Failure?.Reason);
+        Assert.Equal(
+            VerificationReason.Malformed,
+            verifier.VerifySignedData(header + "." + parts[1] + "." + parts[2]).Failure?.Reason);
     }
 
     // --- helpers -------------------------------------------------------------
 
-    private static AppReceipt ParsePayload(byte[] payload) => ReceiptPayload.Parse(payload);
-
-    private static VerificationReason PayloadReason(byte[] payload) =>
-        Assert.Throws<VerificationException>(() => ReceiptPayload.Parse(payload)).Reason;
-
+    /// <summary>
+    /// <paramref name="depth"/> SEQUENCEs in definite-length form around a
+    /// NULL, built from the inside out in one pass: re-encoding each level
+    /// with a writer would copy the whole value once per level.
+    /// </summary>
     private static byte[] NestedDefinite(int depth)
     {
-        byte[] current = { 0x05, 0x00 };
+        List<byte[]> headers = new(depth);
+        int length = 2;
         for (int i = 0; i < depth; i++)
         {
-            AsnWriter writer = new(AsnEncodingRules.BER);
-            using (writer.PushSequence())
-            {
-                writer.WriteEncodedValue(current);
-            }
-
-            current = writer.Encode();
+            byte[] header = length < 0x80
+                ? new byte[] { 0x30, (byte)length }
+                : length <= 0xFF
+                    ? new byte[] { 0x30, 0x81, (byte)length }
+                    : length <= 0xFFFF
+                        ? new byte[] { 0x30, 0x82, (byte)(length >> 8), (byte)length }
+                        : new byte[] { 0x30, 0x83, (byte)(length >> 16), (byte)(length >> 8), (byte)length };
+            headers.Add(header);
+            length += header.Length;
         }
 
-        return current;
+        List<byte> bytes = new(length);
+        for (int i = headers.Count - 1; i >= 0; i--)
+        {
+            bytes.AddRange(headers[i]);
+        }
+
+        bytes.Add(0x05);
+        bytes.Add(0x00);
+        return bytes.ToArray();
     }
 
     private static byte[] NestedIndefinite(int depth)
@@ -227,64 +235,5 @@ public class ResourceBoundTests
         }
 
         return bytes.ToArray();
-    }
-
-    /// <summary>Rebuilds the CMS blob with the certificate bag repeated.</summary>
-    internal static byte[] WithCertificateCopies(byte[] der, int total)
-    {
-        Asn1Tag explicitTag = new(TagClass.ContextSpecific, 0, true);
-        AsnReader contentInfo = new AsnReader(der, AsnEncodingRules.BER).ReadSequence();
-        string oid = contentInfo.ReadObjectIdentifier();
-        AsnReader signedData = contentInfo.ReadSequence(explicitTag).ReadSequence();
-
-        List<byte[]> before = new();
-        List<byte[]> certificates = new();
-        List<byte[]> after = new();
-        while (signedData.HasData)
-        {
-            if (signedData.PeekTag() == explicitTag)
-            {
-                AsnReader bag = signedData.ReadSetOf(skipSortOrderValidation: true, explicitTag);
-                while (bag.HasData)
-                {
-                    certificates.Add(bag.ReadEncodedValue().ToArray());
-                }
-
-                continue;
-            }
-
-            (certificates.Count == 0 ? before : after).Add(signedData.ReadEncodedValue().ToArray());
-        }
-
-        AsnWriter writer = new(AsnEncodingRules.BER);
-        using (writer.PushSequence())
-        {
-            writer.WriteObjectIdentifier(oid);
-            using (writer.PushSequence(explicitTag))
-            {
-                using (writer.PushSequence())
-                {
-                    foreach (byte[] element in before)
-                    {
-                        writer.WriteEncodedValue(element);
-                    }
-
-                    using (writer.PushSetOf(explicitTag))
-                    {
-                        for (int i = 0; i < total; i++)
-                        {
-                            writer.WriteEncodedValue(certificates[i % certificates.Count]);
-                        }
-                    }
-
-                    foreach (byte[] element in after)
-                    {
-                        writer.WriteEncodedValue(element);
-                    }
-                }
-            }
-        }
-
-        return writer.Encode();
     }
 }

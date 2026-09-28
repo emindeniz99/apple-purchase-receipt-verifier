@@ -1,59 +1,28 @@
 /**
- * Chain building and validation for the web build — the same rules as the
- * Node build's chain.ts, with the OpenSSL calls replaced by the repo's own
- * X.509 parsing plus `crypto.subtle`, and every step async because
- * `crypto.subtle.verify` is.
+ * Certificate path building and validation for the web build — the same
+ * rules as the Node build's chain.ts, with `node:crypto` replaced by the
+ * repo's own X.509 parsing plus `crypto.subtle`, and every step async
+ * because `crypto.subtle.verify` is.
  *
- * `issuedBy` reproduces what `X509Certificate.checkIssued()` (OpenSSL's
- * X509_check_issued) accepts: the names chain, the authority key identifier
- * agrees with the issuer's subject key identifier and serial when it names
- * them, and the issuer's keyUsage — if it has one — permits keyCertSign.
- *
- * One deliberate difference: names are compared as DER bytes, where OpenSSL
- * compares canonical forms (case- and whitespace-folded). A chain whose
- * issuer and subject names differ only in encoding would be rejected here
- * and accepted there. That is the safe direction, and no chain in the
- * fixture suite — Apple's production roots included — encodes them
- * differently, which the verdict-parity tests are what prove.
+ * A path is found top-down, from the pinned roots: a certificate's
+ * signature is checked with the key of a certificate already vouched for,
+ * never with the key of a certificate nobody has vouched for yet
+ * (#161). Only once a path
+ * reaches an anchor are the certificates on it checked for their validity
+ * window.
  */
-import { Reason, VerificationError } from '../errors.js';
 import { base64Decode, bytesEqual } from '../bytes.js';
+import { Reason, VerificationError } from '../errors.js';
+import { pemBody } from '../pem.js';
 import { KEY_CERT_SIGN_BIT, parseCertificate, type ParsedCertificate } from '../x509.js';
 import { verifyCertificateSignature } from './crypto.js';
+import { requireBuildablePublicKey } from './jwk.js';
 
 /** Accepted trust-root inputs: DER bytes, or a PEM certificate. */
 export type RootInput = Uint8Array | string;
 
-// Scanned with indexOf rather than matched with a regular expression. The
-// obvious spelling — /-----BEGIN CERTIFICATE-----([\s\S]*?)-----END
-// CERTIFICATE-----/ — is a lazy unbounded quantifier between two literals,
-// and when no END marker exists the engine restarts the whole tail walk at
-// every position where BEGIN matches again. Measured on V8, 2026-09-22, with
-// an input that is nothing but repeated BEGIN lines: 112 KB took 130 ms,
-// 224 KB took 512 ms, 448 KB took 1.7 s — quadratic, on a `trustedRoots`
-// entry the caller supplies. Two indexOf calls find exactly the same leftmost
-// block in one pass.
-const PEM_BEGIN = '-----BEGIN CERTIFICATE-----';
-const PEM_END = '-----END CERTIFICATE-----';
-
-/**
- * The base64 between the first BEGIN line and the first END line after it, or
- * null when the input is not a certificate block. Whitespace is left in place:
- * {@link base64Decode} skips everything outside both alphabets, which is what
- * makes 64-column line breaks, CRLF and surrounding blank lines all decode.
- */
-function pemBody(text: string): string | null {
-  const begin = text.indexOf(PEM_BEGIN);
-  if (begin < 0) {
-    return null;
-  }
-  const bodyStart = begin + PEM_BEGIN.length;
-  const end = text.indexOf(PEM_END, bodyStart);
-  return end < 0 ? null : text.slice(bodyStart, end);
-}
-
-/** Normalizes trust-root inputs (DER Uint8Array | PEM string). */
-export function normalizeRoots(trustedRoots: RootInput[]): ParsedCertificate[] {
+/** Normalizes trust-root inputs (DER `Uint8Array` | PEM string). */
+export function normalizeRoots(trustedRoots: readonly RootInput[]): ParsedCertificate[] {
   if (!Array.isArray(trustedRoots) || trustedRoots.length === 0) {
     throw new TypeError('trustedRoots must be a non-empty array');
   }
@@ -71,10 +40,17 @@ function toCertificate(root: RootInput): ParsedCertificate {
   return parseCertificate(base64Decode(body));
 }
 
-function validAt(cert: ParsedCertificate, at: Date): boolean {
-  return cert.notBefore <= at.getTime() && at.getTime() <= cert.notAfter;
+function validAt(cert: ParsedCertificate, atMs: number): boolean {
+  return cert.notBefore <= atMs && atMs <= cert.notAfter;
 }
 
+/**
+ * What `X509_check_issued` accepts, minus the parts that need a name
+ * canonicaliser: the names chain by DER equality, the authority key
+ * identifier agrees with the issuer's subject key identifier and serial
+ * where it names them, and the issuer's keyUsage, if it has one, permits
+ * keyCertSign.
+ */
 function checkIssued(cert: ParsedCertificate, issuer: ParsedCertificate): boolean {
   if (!bytesEqual(cert.issuerDer, issuer.subjectDer)) {
     return false;
@@ -99,11 +75,13 @@ async function issuedBy(cert: ParsedCertificate, issuer: ParsedCertificate): Pro
   return checkIssued(cert, issuer) && (await verifyCertificateSignature(cert, issuer));
 }
 
-async function anyIssued(cert: ParsedCertificate, anchors: ParsedCertificate[]): Promise<boolean> {
+async function issuedByAnyAnchor(
+  cert: ParsedCertificate,
+  anchors: readonly ParsedCertificate[],
+): Promise<boolean> {
   for (const anchor of anchors) {
-    // Deliberate short-circuit: stop at the first matching anchor rather than
-    // running every remaining crypto.subtle.verify in parallel once a match
-    // is already found.
+    // Deliberate short-circuit: stop at the first matching anchor rather
+    // than running every remaining crypto.subtle.verify in parallel.
     // oxlint-disable-next-line no-await-in-loop
     if (await issuedBy(cert, anchor)) {
       return true;
@@ -113,70 +91,191 @@ async function anyIssued(cert: ParsedCertificate, anchors: ParsedCertificate[]):
 }
 
 /**
- * Validates the fixed JWS path leaf → intermediate → (pinned anchor):
- * validity windows at `at`, CA flag on the intermediate, and signature +
- * name chaining at each step. Anchors are trusted by fiat (their own
- * expiry is not checked — standard PKIX trust-anchor semantics).
+ * The extensions a certificate on the path may mark critical: the ones a
+ * PKIX validator processes (RFC 5280 §6.1), and for the leaf also
+ * cRLDistributionPoints and extKeyUsage. Any other extension marked critical
+ * makes the certificate unusable, so the path fails, as a PKIX validator
+ * fails it.
+ */
+const PROCESSED_EXTENSIONS = new Set([
+  '2.5.29.15', // keyUsage
+  '2.5.29.32', // certificatePolicies
+  '2.5.29.33', // policyMappings
+  '2.5.29.54', // inhibitAnyPolicy
+  '2.5.29.28', // issuingDistributionPoint
+  '2.5.29.27', // deltaCRLIndicator
+  '2.5.29.36', // policyConstraints
+  '2.5.29.19', // basicConstraints
+  '2.5.29.17', // subjectAltName
+  '2.5.29.30', // nameConstraints
+]);
+const PROCESSED_LEAF_EXTENSIONS = new Set([
+  '2.5.29.31', // cRLDistributionPoints
+  '2.5.29.37', // extKeyUsage
+]);
+
+/** Whether `cert` marks critical an extension no step here processes. */
+function hasUnprocessedCriticalExtension(cert: ParsedCertificate, leaf: boolean): boolean {
+  return cert.criticalExtensionOids.some(
+    (oid) => !PROCESSED_EXTENSIONS.has(oid) && !(leaf && PROCESSED_LEAF_EXTENSIONS.has(oid)),
+  );
+}
+
+function unprocessedCriticalExtension(): VerificationError {
+  return new VerificationError(
+    Reason.UNTRUSTED_CHAIN,
+    'a certificate on the path has an unsupported critical extension',
+  );
+}
+
+/** The longest path the builder will walk, anchor excluded. */
+export const MAX_PATH_LENGTH = 6;
+
+/**
+ * Validates the fixed JWS path leaf, intermediate, pinned anchor. The two
+ * signatures are checked from the anchor down first, so no key an anchor
+ * did not vouch for is ever used; then the intermediate's window, its CA
+ * flag and the leaf's window, at `atMs`.
  */
 export async function validatePair(
   leaf: ParsedCertificate,
   intermediate: ParsedCertificate,
-  anchors: ParsedCertificate[],
-  at: Date,
+  anchors: readonly ParsedCertificate[],
+  atMs: number,
 ): Promise<void> {
-  if (!validAt(leaf, at) || !validAt(intermediate, at)) {
-    throw new VerificationError(Reason.INVALID_CHAIN, 'certificate not valid at signing time');
+  if (!(await issuedByAnyAnchor(intermediate, anchors))) {
+    throw new VerificationError(
+      Reason.UNTRUSTED_CHAIN,
+      'intermediate certificate is not signed by a pinned root',
+    );
+  }
+  // Vouched for, and its key is about to check the leaf: an unbuildable key
+  // is the certificate's defect, not a chain failure.
+  requireBuildablePublicKey(intermediate.publicKeyAlgorithmOid, intermediate.spki);
+  if (!(await issuedBy(leaf, intermediate))) {
+    throw new VerificationError(
+      Reason.UNTRUSTED_CHAIN,
+      'leaf certificate is not signed by the intermediate',
+    );
+  }
+  if (!validAt(intermediate, atMs)) {
+    throw new VerificationError(
+      Reason.INVALID_CERTIFICATE,
+      'certificate is outside its validity window at the chain instant',
+    );
   }
   if (!intermediate.isCa) {
-    throw new VerificationError(Reason.INVALID_CHAIN, 'intermediate is not a CA');
+    throw new VerificationError(Reason.UNTRUSTED_CHAIN, 'intermediate is not a CA');
   }
-  if (!(await issuedBy(leaf, intermediate))) {
-    throw new VerificationError(Reason.INVALID_CHAIN, 'leaf not issued by intermediate');
+  if (hasUnprocessedCriticalExtension(intermediate, false)) {
+    throw unprocessedCriticalExtension();
   }
-  if (!(await anyIssued(intermediate, anchors))) {
-    throw new VerificationError(Reason.INVALID_CHAIN, 'intermediate not issued by a pinned root');
+  if (!validAt(leaf, atMs)) {
+    throw new VerificationError(
+      Reason.INVALID_CERTIFICATE,
+      'certificate is outside its validity window at the chain instant',
+    );
+  }
+  if (hasUnprocessedCriticalExtension(leaf, true)) {
+    throw unprocessedCriticalExtension();
   }
 }
 
-const MAX_PATH_LENGTH = 6;
+/**
+ * The embedded certificates whose signature verifies under a pinned anchor,
+ * or under a certificate already accepted this way, walking down from the
+ * anchors in at most {@link MAX_PATH_LENGTH} rounds. Only these are handed
+ * to {@link buildAndValidatePath}.
+ */
+export async function authenticatedTopDown(
+  embedded: readonly ParsedCertificate[],
+  anchors: readonly ParsedCertificate[],
+): Promise<ParsedCertificate[]> {
+  const accepted: ParsedCertificate[] = [];
+  let pending: ParsedCertificate[] = [];
+  for (const cert of embedded) {
+    if (anchors.some((anchor) => bytesEqual(anchor.raw, cert.raw))) {
+      accepted.push(cert);
+    } else {
+      pending.push(cert);
+    }
+  }
+  let issuers: readonly ParsedCertificate[] = [...anchors, ...accepted];
+  for (let round = 0; round < MAX_PATH_LENGTH && pending.length > 0; round++) {
+    const acceptedThisRound: ParsedCertificate[] = [];
+    const stillPending: ParsedCertificate[] = [];
+    for (const candidate of pending) {
+      let ok = false;
+      for (const issuer of issuers) {
+        // oxlint-disable-next-line no-await-in-loop
+        if (await issuedBy(candidate, issuer)) {
+          ok = true;
+          break;
+        }
+      }
+      (ok ? acceptedThisRound : stillPending).push(candidate);
+    }
+    pending = stillPending;
+    if (acceptedThisRound.length === 0) {
+      break;
+    }
+    accepted.push(...acceptedThisRound);
+    issuers = acceptedThisRound;
+  }
+  return accepted;
+}
 
 /**
- * Builds and validates a path from `target` through `candidates` to one of
- * the pinned `anchors` (receipt chains embed their intermediates in the CMS).
+ * Builds a path from `target` through `candidates` (the ones
+ * {@link authenticatedTopDown} accepted) to one of the pinned `anchors`;
+ * then checks every certificate on it is inside its validity window at
+ * `atMs`. Returns the path, target first, anchor excluded.
  */
 export async function buildAndValidatePath(
   target: ParsedCertificate,
-  candidates: ParsedCertificate[],
-  anchors: ParsedCertificate[],
-  at: Date,
-): Promise<void> {
+  candidates: readonly ParsedCertificate[],
+  anchors: readonly ParsedCertificate[],
+  atMs: number,
+): Promise<ParsedCertificate[]> {
+  const path: ParsedCertificate[] = [target];
   let current = target;
-  for (let depth = 0; depth < MAX_PATH_LENGTH; depth++) {
-    if (!validAt(current, at)) {
-      throw new VerificationError(Reason.INVALID_CHAIN, 'certificate not valid at signing time');
+  for (;;) {
+    if (path.length > 1 && !current.isCa) {
+      throw new VerificationError(Reason.UNTRUSTED_CHAIN, 'an intermediate is not a CA');
     }
-    if (depth > 0 && !current.isCa) {
-      throw new VerificationError(Reason.INVALID_CHAIN, 'intermediate is not a CA');
-    }
-    // Deliberate short-circuit, as in anyIssued above.
     // oxlint-disable-next-line no-await-in-loop
-    if (await anyIssued(current, anchors)) {
-      return;
+    if (await issuedByAnyAnchor(current, anchors)) {
+      break;
+    }
+    if (path.length >= MAX_PATH_LENGTH) {
+      throw new VerificationError(Reason.UNTRUSTED_CHAIN, 'chain exceeds the maximum length');
     }
     let issuer: ParsedCertificate | undefined;
     for (const candidate of candidates) {
-      // Same short-circuit: stop at the first candidate that issued `current`
-      // rather than checking every remaining one.
+      if (path.includes(candidate)) {
+        continue;
+      }
       // oxlint-disable-next-line no-await-in-loop
-      if (candidate !== current && (await issuedBy(current, candidate))) {
+      if (await issuedBy(current, candidate)) {
         issuer = candidate;
         break;
       }
     }
-    if (!issuer) {
-      throw new VerificationError(Reason.INVALID_CHAIN, 'chain does not reach a pinned root');
+    if (issuer === undefined) {
+      throw new VerificationError(Reason.UNTRUSTED_CHAIN, 'chain does not reach a pinned root');
     }
+    path.push(issuer);
     current = issuer;
   }
-  throw new VerificationError(Reason.INVALID_CHAIN, 'chain exceeds maximum length');
+  if (path.some((c) => !validAt(c, atMs))) {
+    throw new VerificationError(
+      Reason.INVALID_CERTIFICATE,
+      'certificate is outside its validity window at the chain instant',
+    );
+  }
+  // The leaf is the first certificate on the path; the anchor is not on it.
+  if (path.some((c, index) => hasUnprocessedCriticalExtension(c, index === 0))) {
+    throw unprocessedCriticalExtension();
+  }
+  return path;
 }

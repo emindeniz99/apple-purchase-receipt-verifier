@@ -25,6 +25,7 @@ trust store it then proves irrelevant.
 """
 
 import ast
+import base64
 import io
 import os
 import ssl
@@ -33,25 +34,37 @@ import tokenize
 import unittest
 import warnings
 from collections.abc import Sequence
-from datetime import datetime
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
-from apple_purchase_receipt_verifier import (
-    JwsVerifier,
-    ReceiptVerifier,
-    VerificationError,
-    apple_jws_roots,
-    apple_receipt_roots,
-    verify_receipt_core,
-)
+from apple_purchase_receipt_verifier import Config, Reason, Verifier, default_roots
 
 # Imported from the module that defines them, and patched where the two
 # verifier modules bound them: that binding is the seam an ambient anchor
 # set would have to pass through.
-from apple_purchase_receipt_verifier._chain import build_and_validate_path, validate_pair
+from apple_purchase_receipt_verifier._chain import authenticate_pair_top_down, build_path_top_down
 from cryptography import x509
 from cryptography.hazmat.primitives.serialization import Encoding
+
+
+def verifier(roots: "Sequence[x509.Certificate]") -> Verifier:
+    return Verifier(Config.create(roots=roots))
+
+
+def receipt_base64(der: bytes) -> str:
+    return base64.b64encode(der).decode("ascii")
+
+
+def failure_reason(result: Any) -> Reason:
+    assert result.failure is not None
+    return result.failure.reason  # type: ignore[no-any-return]
+
+
+def verified_payload(result: Any) -> Any:
+    assert result.payload is not None
+    return result.payload
+
 
 PORT = Path(__file__).resolve().parents[1]
 PACKAGE = PORT / "apple_purchase_receipt_verifier"
@@ -173,52 +186,40 @@ class ProcessTrustStoreTest(unittest.TestCase):
         )
 
     def test_a_receipt_ca_the_process_trusts_is_still_not_an_anchor(self) -> None:
-        root = cert("generated", "receipt-root.der")
-        der = fixture("generated", "receipt.der")
+        root = cert("generated-0.7", "receipt-root.der")
+        text = receipt_base64(fixture("generated-0.7", "receipt.der"))
         self.plant(root)
 
         # Positive control first: the only thing separating this from the
         # refusals below is which anchors were passed.
-        self.assertEqual(BUNDLE, ReceiptVerifier([root], BUNDLE).verify(der).bundle_id)
+        result = verifier([root]).verify_receipt(text)
+        self.assertTrue(result.verified)
+        self.assertEqual(BUNDLE, verified_payload(result).bundle_id)
 
-        for anchors, what in (
-            (apple_receipt_roots(), "the bundled Apple roots"),
-            (apple_jws_roots(), "the bundled JWS roots"),
-        ):
-            with self.subTest(anchors=what):
-                with self.assertRaises(VerificationError) as ctx:
-                    ReceiptVerifier(anchors, BUNDLE).verify(der)
-                self.assertEqual("INVALID_CHAIN", ctx.exception.reason)
-
-                # And the primitive under it, which is where the path
-                # builder lives.
-                with self.assertRaises(VerificationError) as ctx:
-                    verify_receipt_core(der, anchors)
-                self.assertEqual("INVALID_CHAIN", ctx.exception.reason)
+        with self.subTest(anchors="the bundled Apple roots"):
+            result = verifier(default_roots()).verify_receipt(text)
+            self.assertFalse(result.verified)
+            self.assertEqual(Reason.UNTRUSTED_CHAIN, failure_reason(result))
 
     def test_a_jws_ca_the_process_trusts_is_still_not_an_anchor(self) -> None:
         root = cert("generated", "jws-root.der")
         jws = fixture_text("generated", "transaction.jws")
         self.plant(root)
 
-        verifier = JwsVerifier([root], BUNDLE, ["Sandbox"])
-        self.assertEqual(BUNDLE, verifier.verify_transaction(jws)["bundleId"])
+        result = verifier([root]).verify_signed_data(jws)
+        self.assertTrue(result.verified)
 
-        with self.assertRaises(VerificationError) as ctx:
-            JwsVerifier(apple_jws_roots(), BUNDLE, ["Sandbox"]).verify_transaction(jws)
-        self.assertEqual("INVALID_CHAIN", ctx.exception.reason)
+        result = verifier(default_roots()).verify_signed_data(jws)
+        self.assertFalse(result.verified)
+        self.assertEqual(Reason.UNTRUSTED_CHAIN, failure_reason(result))
 
     def test_an_empty_anchor_list_is_a_configuration_error_not_a_fallback(self) -> None:
         # The failure mode this rules out: "no anchors given, so use the
         # system ones". There is no ambient set to fall back to, and asking
         # for one is refused at construction rather than silently widened.
-        self.plant(cert("generated", "receipt-root.der"))
+        self.plant(cert("generated-0.7", "receipt-root.der"))
         with self.assertRaises(ValueError):
-            ReceiptVerifier([], BUNDLE)
-        with self.assertRaises(ValueError):
-            JwsVerifier([], BUNDLE, ["Sandbox"])
-        with self.assertRaises(ValueError):
-            verify_receipt_core(fixture("generated", "receipt.der"), [])
+            Verifier(Config.create(roots=[]))
 
 
 class HostTrustStoreTest(unittest.TestCase):
@@ -232,20 +233,20 @@ class HostTrustStoreTest(unittest.TestCase):
 
     def test_a_real_public_root_is_not_an_anchor_unless_the_caller_passes_it(self) -> None:
         public_root = self.host_roots[0]
-        der = fixture("generated", "receipt.der")
+        text = receipt_base64(fixture("generated-0.7", "receipt.der"))
 
         # Anchored on a genuine public CA — one millions of TLS clients
         # accept — the fixture chain is still refused: the anchor did not
         # certify it.
-        with self.assertRaises(VerificationError) as ctx:
-            verify_receipt_core(der, [public_root])
-        self.assertEqual("INVALID_CHAIN", ctx.exception.reason)
+        result = verifier([public_root]).verify_receipt(text)
+        self.assertFalse(result.verified)
+        self.assertEqual(Reason.UNTRUSTED_CHAIN, failure_reason(result))
 
         # And it gains nothing from sitting next to Apple's roots in the
         # caller's list.
-        with self.assertRaises(VerificationError) as ctx:
-            verify_receipt_core(der, [public_root, *apple_receipt_roots()])
-        self.assertEqual("INVALID_CHAIN", ctx.exception.reason)
+        result = verifier([public_root, *default_roots()]).verify_receipt(text)
+        self.assertFalse(result.verified)
+        self.assertEqual(Reason.UNTRUSTED_CHAIN, failure_reason(result))
 
     def test_the_host_roots_do_not_verify_genuine_apple_material(self) -> None:
         # The complement of the pinning test: hand the library this machine's
@@ -254,19 +255,19 @@ class HostTrustStoreTest(unittest.TestCase):
         genuine = fixture_text("public-receipts", "receipt-sandbox-g5.b64")
         apple_bundle_id = "dev.bonzer.weeka.app"
 
-        self.assertEqual(
-            apple_bundle_id,
-            ReceiptVerifier(apple_receipt_roots(), apple_bundle_id).verify(genuine).bundle_id,
-        )
-        with self.assertRaises(VerificationError) as ctx:
-            ReceiptVerifier(self.host_roots, apple_bundle_id).verify(genuine)
-        self.assertEqual("INVALID_CHAIN", ctx.exception.reason)
+        result = verifier(default_roots()).verify_receipt(genuine)
+        self.assertTrue(result.verified)
+        self.assertEqual(apple_bundle_id, verified_payload(result).bundle_id)
+
+        result = verifier(self.host_roots).verify_receipt(genuine)
+        self.assertFalse(result.verified)
+        self.assertEqual(Reason.UNTRUSTED_CHAIN, failure_reason(result))
 
     def test_no_bundled_anchor_came_from_this_machines_trust_store(self) -> None:
         # If the package ever started folding the host's roots into its own
         # set, this is the first thing that would change.
         host = {root.public_bytes(Encoding.DER) for root in self.host_roots}
-        for anchor in [*apple_receipt_roots(), *apple_jws_roots()]:
+        for anchor in default_roots():
             self.assertNotIn(
                 anchor.public_bytes(Encoding.DER),
                 host,
@@ -283,43 +284,39 @@ class AnchorsReachTheChainBuilderUnchangedTest(unittest.TestCase):
     """
 
     def test_the_receipt_path_builder_sees_the_callers_list(self) -> None:
-        passed = [cert("generated", "jws-root.der"), cert("generated", "receipt-root.der")]
+        passed = [cert("generated", "jws-root.der"), cert("generated-0.7", "receipt-root.der")]
         seen: list[Sequence[x509.Certificate]] = []
-        real = build_and_validate_path
+        real = build_path_top_down
 
         def spy(
             target: x509.Certificate,
-            candidates: "Sequence[x509.Certificate]",
+            embedded: "Sequence[x509.Certificate]",
             anchors: "Sequence[x509.Certificate]",
-            at: datetime,
-        ) -> None:
+        ) -> "list[x509.Certificate]":
             seen.append(anchors)
-            real(target, candidates, anchors, at)
+            return real(target, embedded, anchors)
 
-        with mock.patch("apple_purchase_receipt_verifier.receipt.build_and_validate_path", spy):
-            ReceiptVerifier(passed, BUNDLE).verify(fixture("generated", "receipt.der"))
+        with mock.patch("apple_purchase_receipt_verifier.receipt.build_path_top_down", spy):
+            verifier(passed).verify_receipt(receipt_base64(fixture("generated-0.7", "receipt.der")))
 
         self.assertEqual(1, len(seen))
         self.assert_anchors_are(passed, seen[0])
 
     def test_the_jws_path_builder_sees_the_callers_list(self) -> None:
-        passed = [cert("generated", "receipt-root.der"), cert("generated", "jws-root.der")]
+        passed = [cert("generated-0.7", "receipt-root.der"), cert("generated", "jws-root.der")]
         seen: list[Sequence[x509.Certificate]] = []
-        real = validate_pair
+        real = authenticate_pair_top_down
 
         def spy(
             leaf: x509.Certificate,
             intermediate: x509.Certificate,
             anchors: "Sequence[x509.Certificate]",
-            at: datetime,
         ) -> None:
             seen.append(anchors)
-            real(leaf, intermediate, anchors, at)
+            real(leaf, intermediate, anchors)
 
-        with mock.patch("apple_purchase_receipt_verifier.jws.validate_pair", spy):
-            JwsVerifier(passed, BUNDLE, ["Sandbox"]).verify_transaction(
-                fixture_text("generated", "transaction.jws")
-            )
+        with mock.patch("apple_purchase_receipt_verifier.jws.authenticate_pair_top_down", spy):
+            verifier(passed).verify_signed_data(fixture_text("generated", "transaction.jws"))
 
         self.assertEqual(1, len(seen))
         self.assert_anchors_are(passed, seen[0])
@@ -375,13 +372,17 @@ class SourceScanTest(unittest.TestCase):
             "binascii",
             "collections",
             "cryptography",
+            "dataclasses",
             "datetime",
+            "enum",
             "hashlib",
             "hmac",
             "json",
+            "math",
             "pathlib",
             "re",
             "time",
+            "types",
             "typing",
             "zoneinfo",
         }

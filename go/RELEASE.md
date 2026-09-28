@@ -28,8 +28,8 @@ floor (1.22) with `GOTOOLCHAIN=local`, and runs
 `.github/smoke/go-smoke/main.go` against
 `fixtures/public-receipts/receipt-sandbox-g5.b64`.
 
-The assertion that earns the job its place is `AppleReceiptRoots()` returning
-three certificates. `go:embed` cannot reach outside a module, so `go/roots/certs`
+The assertion that earns the job its place is `DefaultConfig().Roots()`
+returning three certificates. `go:embed` cannot reach outside a module, so `go/roots/certs`
 is a generated copy of the repo-root `certs/`; if it ever falls out of the
 module zip the library still compiles and has no trust anchors at all. That is
 the Go shape of the two empty npm releases that motivated the workflow.

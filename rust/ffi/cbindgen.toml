@@ -38,8 +38,8 @@ header = """
  * OWNERSHIP, in one place:
  *
  *   - aprv_version() returns a static string. Never free it.
- *   - Every aprv_*_new*() returns a handle the caller owns, or NULL if an
- *     argument was rejected. Release it with the matching aprv_*_free().
+ *   - aprv_verifier_new() returns a handle the caller owns, or NULL if an
+ *     argument was rejected. Release it with aprv_verifier_free().
  *     Freeing NULL is a no-op; freeing twice is undefined behaviour.
  *   - AprvResult.json and the *response_json of the endpoint call are owned
  *     by the caller. Release each with aprv_string_free() — never with the C
@@ -51,17 +51,16 @@ header = """
  * verify through the same handle concurrently; freeing one while a call is
  * in flight is not allowed.
  *
- * THE CLOCK: aprv_endpoint_new_with_roots_and_clock takes one instant, in
- * milliseconds since the Unix epoch, instead of a callback the library would
- * call back into. A NULL clock pointer means the system clock, which is what
- * every other constructor uses. Pinning one is for conformance vectors and
- * tests; it moves the endpoint's request_date, and it never moves a
- * certificate-validity verdict. No verifier rejects a payload for its age:
- * how old a signed payload may be is the caller's decision.
+ * THE CLOCK: aprv_verifier_new takes one instant, in milliseconds since the
+ * Unix epoch, instead of a callback the library would call back into. A NULL
+ * clock pointer means the system clock. The clock is read in two places:
+ * the certificate-validity instant when the input states no usable signing
+ * date, and the endpoint's request_date. No verifier rejects a payload for
+ * its age: how old a signed payload may be is the caller's decision.
  *
  * ERRORS: a NULL pointer, a non-UTF-8 string or a rejected configuration is
  * reported in the 100+ band of AprvReason and means nothing about the input
- * was checked. The 1..12 band is a verdict about the input. Never conflate
+ * was checked. The 1..99 band is a verdict about the input. Never conflate
  * the two.
  *
  * JSON is the interchange because a verified payload is an open-ended claim
@@ -72,9 +71,8 @@ header = """
 
 [export]
 prefix = ""
-# Neither enum appears in a signature — `status` is an int32_t and the
-# environment mask a uint32_t, because a C enum has no guaranteed width and
-# a bitmask of enum values is not itself a value of that enum. cbindgen
+# Neither enum appears in a signature: `status` is an int32_t and the
+# environment a uint32_t, because a C enum has no guaranteed width. cbindgen
 # emits only what a signature reaches, so both are named here explicitly.
 include = ["AprvReason", "AprvEnvironment"]
 

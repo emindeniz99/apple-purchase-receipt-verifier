@@ -3,65 +3,37 @@ using System;
 namespace ApplePurchaseReceiptVerifier
 {
     /// <summary>
-    /// Thrown when a signed payload fails verification. <see cref="Reason"/> is
-    /// the machine-readable cause; the message carries human-readable detail.
-    /// A payload that throws must be treated as fully untrusted — this library
-    /// never returns a partially verified result.
+    /// Internal control-flow exception carrying a <see cref="VerificationReason"/>
+    /// up to the boundary in <c>Internal.VerifierImpl</c>, which converts it into
+    /// a <see cref="Failure"/> and never lets it escape a public method.
     /// </summary>
     /// <remarks>
-    /// Misconfiguration is not a verification verdict: an empty trust-anchor
-    /// set, a null bundle id or an empty accepted-environment set raise
-    /// <see cref="ArgumentException"/> from the constructor instead.
+    /// 0.7's <c>Verifier</c> methods never throw for any input (docs/design/0.7-api.md,
+    /// Setup): this type is no longer part of the public contract, only the
+    /// mechanism the implementation uses internally to unwind out of a deeply
+    /// nested parse the moment a check fails.
     /// </remarks>
-#if NETSTANDARD2_0
-    [Serializable]
-#endif
-    public class VerificationException : Exception
+    internal class VerificationException : Exception
     {
-        /// <summary>Creates an exception carrying <paramref name="reason"/>.</summary>
-        public VerificationException(VerificationReason reason, string message)
+        internal VerificationException(VerificationReason reason, string message)
             : base(VerificationReasonCodes.ToCode(reason) + ": " + message)
         {
             Reason = reason;
         }
 
-        /// <summary>Creates an exception carrying <paramref name="reason"/> and an inner cause.</summary>
-        public VerificationException(VerificationReason reason, string message, Exception? innerException)
+        internal VerificationException(VerificationReason reason, string message, Exception? innerException)
             : base(VerificationReasonCodes.ToCode(reason) + ": " + message, innerException)
         {
             Reason = reason;
         }
 
-#if NETSTANDARD2_0
-        /// <summary>Deserialization constructor (netstandard2.0 only).</summary>
-        protected VerificationException(System.Runtime.Serialization.SerializationInfo info,
-            System.Runtime.Serialization.StreamingContext context)
-            : base(info, context)
-        {
-            Reason = (VerificationReason)info.GetInt32(nameof(Reason));
-        }
+        /// <summary>The machine-readable cause.</summary>
+        internal VerificationReason Reason { get; }
 
-        /// <inheritdoc/>
-        public override void GetObjectData(System.Runtime.Serialization.SerializationInfo info,
-            System.Runtime.Serialization.StreamingContext context)
-        {
-            if (info is null)
-            {
-                throw new ArgumentNullException(nameof(info));
-            }
+        /// <summary>The canonical cross-port token for <see cref="Reason"/>.</summary>
+        internal string ReasonCode => VerificationReasonCodes.ToCode(Reason);
 
-            base.GetObjectData(info, context);
-            info.AddValue(nameof(Reason), (int)Reason);
-        }
-#endif
-
-        /// <summary>The machine-readable cause. Switch on this, never on the message.</summary>
-        public VerificationReason Reason { get; }
-
-        /// <summary>
-        /// The canonical cross-port token for <see cref="Reason"/>, e.g.
-        /// <c>"INVALID_CHAIN"</c> — the spelling to put in telemetry.
-        /// </summary>
-        public string ReasonCode => VerificationReasonCodes.ToCode(Reason);
+        /// <summary>The message with the leading "REASON: " prefix stripped, for building a <see cref="Failure"/>.</summary>
+        internal string Detail => Message.Substring(ReasonCode.Length + 2);
     }
 }

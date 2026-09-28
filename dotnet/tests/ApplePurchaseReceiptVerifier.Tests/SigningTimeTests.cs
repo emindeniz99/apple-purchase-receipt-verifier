@@ -1,193 +1,122 @@
 using System;
 using System.Globalization;
-using System.Security.Cryptography.X509Certificates;
-using ApplePurchaseReceiptVerifier.Jws;
 using Xunit;
 
 namespace ApplePurchaseReceiptVerifier.Tests;
 
 /// <summary>
-/// What the payload's stated signing time is allowed to do. It drives the
-/// certificate-validity instant (step 9), so a claim the reader cannot
-/// represent must be a rejection, never a silent "the payload states no
-/// signing time".
+/// What the payload's stated <c>signedDate</c> is allowed to do. It picks the
+/// certificate-validity instant, so the rule for reading it is part of the
+/// trust decision (design, "Which failure a parse problem gets"): a number a
+/// signed 64-bit value holds is the instant, a fraction is truncated, and
+/// anything else — absent, not a number, no representable instant — counts
+/// as not stated, so the config clock stands in.
 /// </summary>
 public class SigningTimeTests
 {
-    // 2024-08-06T12:00:00Z, the instant the shared fixtures are signed at.
-    private static readonly DateTimeOffset SignedAt = new(2024, 8, 6, 12, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset Jan2024 = new(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
-    private sealed record Pki(X509Certificate2 Root, X509Certificate2 Intermediate, X509Certificate2 Leaf);
+    /// <summary>A chain valid 2024-01-01 to 2025-01-01, minted once.</summary>
+    private static readonly Lazy<TestPki.JwsChain> ShortChain =
+        new(() => TestPki.NewJwsChain(Jan2024, new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero)));
 
-    private static Pki Mint(DateTimeOffset? leafNotBefore = null, DateTimeOffset? leafNotAfter = null)
-    {
-        X509Certificate2 root = TestPki.EcRoot();
-        X509Certificate2 intermediate = TestPki.EcChild(root, "CN=WWDR", true, TestPki.IntermediateOid);
-        X509Certificate2 leaf = TestPki.EcChild(
-            intermediate, "CN=Signing", false, TestPki.LeafOid, leafNotBefore, leafNotAfter);
-        return new Pki(root, intermediate, leaf);
-    }
+    /// <summary>2030-01-01T00:00:00Z: after <see cref="ShortChain"/> expired, so a clock fallback fails it.</summary>
+    private const long After = 1893456000000L;
 
-    private static string Jws(Pki pki, string signedDateLiteral) =>
-        TestPki.SignJws(
-            pki.Leaf,
-            new[] { pki.Leaf, pki.Intermediate, pki.Root },
-            "{\"bundleId\":\"com.example.app\",\"environment\":\"Sandbox\",\"signedDate\":"
-            + signedDateLiteral + "}");
-
-    private static JwsVerifier Verifier(Pki pki) =>
-        new(new[] { TestPki.Public(pki.Root) }, "com.example.app", new[] { AppleEnvironment.Sandbox });
+    private static string Jws(TestPki.JwsChain chain, string signedDateLiteral) =>
+        chain.Sign("{\"bundleId\":\"com.example.app\",\"signedDate\":" + signedDateLiteral + "}");
 
     /// <summary>
-    /// A non-integral <c>signedDate</c> is still a stated signing time. Java
-    /// (<c>canConvertToLong</c>), Node (<c>typeof === 'number'</c>) and Python
-    /// (<c>isinstance(int, float)</c>) all take it, so it must move the
-    /// certificate-validity instant. This leaf expired in 2025, so judging it
-    /// at the system clock rejects a payload the reference ports accept.
-    /// Asserted through VerifyRaw: the typed read refuses a fractional
-    /// <c>signedDate</c> afterwards, which is not the rule under test.
+    /// A non-integral <c>signedDate</c> is still a stated signing time. Java,
+    /// Node and Python all take it, so it must move the certificate-validity
+    /// instant: judged at the clock (2030), this chain has expired.
     /// </summary>
     [Fact]
     public void AFractionalSignedDateDrivesTheCertificateValidityInstant()
     {
-        Pki pki = Mint(
-            new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
-            new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero));
-        string jws = Jws(pki, "1722945600000.5");
-
-        using JwsVerifier verifier = Verifier(pki);
-        Assert.Equal("com.example.app", verifier.VerifyRaw(jws)["bundleId"]);
+        TestPki.JwsChain chain = ShortChain.Value;
+        Assert.True(chain.Verifier(After).VerifySignedData(Jws(chain, "1722945600000.5")).Verified);
+        Assert.True(chain.Verifier(After).VerifySignedData(Jws(chain, "1.7229456e12")).Verified);
     }
 
     /// <summary>
-    /// A signing time no instant can represent is a failed check, not a skipped
-    /// one: CONTRACT.md §2.1 step 9 owns the effective date, and its reason is
-    /// <see cref="VerificationReason.InvalidChain"/> — which is also where Java
-    /// (<c>new Date(long)</c> past the leaf's notAfter) and Node (an Invalid
-    /// Date whose NaN comparisons fail <c>validAt</c>) land.
+    /// A signing time a signed 64-bit millisecond count holds is the instant,
+    /// even where <see cref="DateTimeOffset"/> cannot represent it: the chain
+    /// is judged there and fails its validity window rather than throwing or
+    /// quietly falling back to the clock (which, inside the window, would
+    /// verify). The Java reference reads the same claim with
+    /// <c>getLongValue()</c> and judges at that instant.
     /// </summary>
     [Theory]
     [InlineData("253402300800000")]        // one millisecond past DateTimeOffset.MaxValue
     [InlineData("9223372036854775807")]    // long.MaxValue
+    [InlineData("9223372036854775000")]
     [InlineData("-62135596800001")]        // one millisecond before DateTimeOffset.MinValue
-    [InlineData("1e300")]                  // a double no long can hold
-    [InlineData("-1e300")]
-    public void AnUnrepresentableSignedDateIsAnInvalidChain(string literal)
+    [InlineData("-9223372036854775808")]   // long.MinValue
+    public void ASigningTimeALongHoldsIsTheInstantEvenOutsideTheCalendar(string literal)
     {
-        Pki pki = Mint();
-        string jws = Jws(pki, literal);
-
-        using JwsVerifier verifier = Verifier(pki);
+        TestPki.JwsChain chain = ShortChain.Value;
         Assert.Equal(
-            VerificationReason.InvalidChain,
-            Assert.Throws<VerificationException>(() => verifier.VerifyTransaction(jws)).Reason);
+            VerificationReason.InvalidCertificate,
+            chain.Verifier(TestPki.SignedAtMs).VerifySignedData(Jws(chain, literal)).Failure?.Reason);
     }
 
     /// <summary>
-    /// A number literal that overflows to infinity is rejected one step
-    /// earlier, by the reader itself (CONTRACT.md §2.1 step 8): the JSON reader
-    /// is deliberately bounded and produces no non-finite value, so such a
-    /// payload never reaches the effective-date rule. Node's JSON.parse yields
-    /// <c>Infinity</c> and reports INVALID_CHAIN instead — a pre-existing,
-    /// documented difference in the number grammar, and the narrower of the
-    /// two accept sets. Asserted so it stays a decision rather than an
-    /// accident.
-    /// </summary>
-    [Fact]
-    public void ASigningTimeThatOverflowsToInfinityIsRejectedByTheReader()
-    {
-        Pki pki = Mint();
-        string jws = Jws(pki, "1e999");
-
-        using JwsVerifier verifier = Verifier(pki);
-        Assert.Equal(
-            VerificationReason.InvalidJwsFormat,
-            Assert.Throws<VerificationException>(() => verifier.VerifyTransaction(jws)).Reason);
-    }
-
-    /// <summary>
-    /// The same claim on the <c>AppTransaction</c> spelling, which reads
-    /// <c>receiptCreationDate</c> through the identical conversion.
-    /// </summary>
-    [Fact]
-    public void AnUnrepresentableReceiptCreationDateIsAnInvalidChain()
-    {
-        Pki pki = Mint();
-        string jws = TestPki.SignJws(
-            pki.Leaf,
-            new[] { pki.Leaf, pki.Intermediate, pki.Root },
-            "{\"bundleId\":\"com.example.app\",\"receiptType\":\"Sandbox\","
-            + "\"receiptCreationDate\":253402300800000}");
-
-        using JwsVerifier verifier = Verifier(pki);
-        Assert.Equal(
-            VerificationReason.InvalidChain,
-            Assert.Throws<VerificationException>(() => verifier.VerifyAppTransaction(jws)).Reason);
-    }
-
-    /// <summary>
-    /// A fractional <c>receiptCreationDate</c> is a stated signing time too, so
-    /// the fallback to <c>receiptCreationDate</c> must see it: this leaf
-    /// expired in 2025, so judging it at the system clock would reject it.
-    /// </summary>
-    [Fact]
-    public void AFractionalReceiptCreationDateDrivesTheCertificateValidityInstant()
-    {
-        Pki pki = Mint(
-            new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
-            new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero));
-        string jws = TestPki.SignJws(
-            pki.Leaf,
-            new[] { pki.Leaf, pki.Intermediate, pki.Root },
-            "{\"bundleId\":\"com.example.app\",\"receiptType\":\"Sandbox\","
-            + "\"receiptCreationDate\":1722945600000.5}");
-
-        using JwsVerifier verifier = Verifier(pki);
-        Assert.Equal("com.example.app", verifier.VerifyRaw(jws)["bundleId"]);
-    }
-
-    /// <summary>
-    /// The genuine "no signing time" case is unchanged: a payload carrying
-    /// neither claim, and one whose claim is not a number at all, falls back to
-    /// the system clock. Through VerifyRaw, since the typed read refuses a
-    /// string <c>signedDate</c> after this rule ran.
+    /// A number no signed 64-bit value holds is no instant (owner,
+    /// 2026-09-27: "such as 1e300"), including one whose literal overflows a
+    /// double to infinity and an integer one past <c>long.MaxValue</c>. It
+    /// counts as not stated: the clock decides, inside the window here.
     /// </summary>
     [Theory]
-    [InlineData("{\"bundleId\":\"com.example.app\",\"environment\":\"Sandbox\"}")]
-    [InlineData("{\"bundleId\":\"com.example.app\",\"environment\":\"Sandbox\",\"signedDate\":\"2024\"}")]
-    [InlineData("{\"bundleId\":\"com.example.app\",\"environment\":\"Sandbox\",\"signedDate\":null}")]
-    public void APayloadWithNoNumericSigningTimeUsesTheSystemClock(string payload)
+    [InlineData("1e300")]
+    [InlineData("-1e300")]
+    [InlineData("1e999")]
+    [InlineData("9223372036854775808")]
+    [InlineData("-9223372036854775809")]
+    public void ANumberNoLongHoldsFallsBackToTheClock(string literal)
     {
-        Pki pki = Mint();
-        string jws = TestPki.SignJws(pki.Leaf, new[] { pki.Leaf, pki.Intermediate, pki.Root }, payload);
+        TestPki.JwsChain chain = ShortChain.Value;
+        string jws = Jws(chain, literal);
+        Assert.True(chain.Verifier(TestPki.SignedAtMs).VerifySignedData(jws).Verified);
+        Assert.Equal(VerificationReason.InvalidCertificate, chain.Verifier(After).VerifySignedData(jws).Failure?.Reason);
+    }
 
-        using JwsVerifier verifier = Verifier(pki);
-        Assert.Equal("com.example.app", verifier.VerifyRaw(jws)["bundleId"]);
+    /// <summary>
+    /// A <c>signedDate</c> that is not a number at all is the genuine "no
+    /// signing time" case: the clock stands in. Proved from both sides of
+    /// the window, so it cannot pass by being ignored.
+    /// </summary>
+    [Theory]
+    [InlineData("\"1722945600000\"")]
+    [InlineData("null")]
+    [InlineData("true")]
+    [InlineData("{\"ms\":1722945600000}")]
+    [InlineData("[1722945600000]")]
+    public void ANonNumericSigningTimeFallsBackToTheClock(string literal)
+    {
+        TestPki.JwsChain chain = ShortChain.Value;
+        string jws = Jws(chain, literal);
+        Assert.True(chain.Verifier(TestPki.SignedAtMs).VerifySignedData(jws).Verified);
+        Assert.Equal(VerificationReason.InvalidCertificate, chain.Verifier(After).VerifySignedData(jws).Failure?.Reason);
     }
 
     /// <summary>
     /// An in-range fractional claim truncates toward zero for the validity
     /// instant, the way <c>new Date(x)</c> and Jackson's <c>asLong()</c> do —
     /// asserted at the boundary, where a round-half-up would cross into the
-    /// next millisecond and out of the leaf's window. Through VerifyRaw, which
-    /// has no typed read to refuse the fraction.
+    /// next millisecond and out of the leaf's window.
     /// </summary>
     [Fact]
     public void AFractionalSigningTimeTruncatesTowardZero()
     {
-        DateTimeOffset notAfter = SignedAt;
-        Pki pki = Mint(new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero), notAfter);
+        DateTimeOffset notAfter = new(2024, 8, 6, 12, 0, 0, TimeSpan.Zero);
+        TestPki.JwsChain chain = TestPki.NewJwsChain(Jan2024, notAfter);
         long exact = notAfter.ToUnixTimeMilliseconds();
+        IVerifier verifier = chain.Verifier(TestPki.SignedAtMs);
 
-        using JwsVerifier verifier = Verifier(pki);
+        Assert.True(verifier.VerifySignedData(Jws(chain, exact.ToString(CultureInfo.InvariantCulture) + ".9")).Verified);
         Assert.Equal(
-            "com.example.app",
-            verifier.VerifyRaw(
-                Jws(pki, exact.ToString(CultureInfo.InvariantCulture) + ".9"))["bundleId"]);
-        Assert.Equal(
-            VerificationReason.InvalidChain,
-            Assert.Throws<VerificationException>(
-                () => verifier.VerifyRaw(
-                    Jws(pki, (exact + 1).ToString(CultureInfo.InvariantCulture) + ".0"))).Reason);
+            VerificationReason.InvalidCertificate,
+            verifier.VerifySignedData(Jws(chain, (exact + 1).ToString(CultureInfo.InvariantCulture) + ".0")).Failure?.Reason);
     }
 }

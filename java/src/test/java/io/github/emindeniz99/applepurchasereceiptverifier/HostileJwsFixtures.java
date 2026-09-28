@@ -202,14 +202,15 @@ public final class HostileJwsFixtures {
                         .getBytes(StandardCharsets.US_ASCII));
 
         // --- 7. the same signedDate, written with a decimal point ---------
-        // The one input here that must be ACCEPTED, and it belongs beside the
-        // other six because it is the boundary of the rule they set: a port
-        // that answers transaction/reject-signed-date-out-of-range by
-        // refusing every number that is not a bare integer passes that vector
-        // and fails this one. JSON draws no line between 1722945600000 and
-        // 1722945600000.0, and reading only the integer spelling fails OPEN —
-        // the date reads as absent and certificate validity falls back to the
-        // current time.
+        // Accepted with its date READ, and it belongs beside vector 2 because
+        // it is the boundary of that one: a signedDate no instant can hold
+        // does not parse, so the clock stands in for it (case
+        // transaction/signed-date-out-of-range-falls-back-to-the-clock). A
+        // port that gets there by treating every number that is not a bare
+        // integer as unparsed passes that vector and misreads this one. JSON
+        // draws no line between 1722945600000 and 1722945600000.0, and
+        // reading only the integer spelling fails OPEN — the date reads as
+        // absent and certificate validity falls back to the current time.
         // BigDecimal rather than double so the literal is written out as it
         // is spelled here.
         Map<String, Object> decimalDate = new LinkedHashMap<String, Object>(transaction);

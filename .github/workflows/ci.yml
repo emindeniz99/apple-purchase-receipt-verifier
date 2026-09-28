@@ -27,13 +27,13 @@ jobs:
     timeout-minutes: 20
     strategy:
       matrix:
-        # Every Temurin line still in support, LTS or not: 26 is the
-        # current feature release and was missing until an audit against
-        # api.adoptium.net found it. The build itself needs javac 9+ for
-        # --release 8; the artifact is Java 8 bytecode (major version 52),
-        # and the java-runtime-8 job below runs the suite on a real
+        # Every Temurin line still in support, LTS or not: 27 is the
+        # current feature release (GA 2026-09-15) and replaced 26, which
+        # reached end of life on 2026-09-18. The build itself needs javac 9+
+        # for --release 8; the artifact is Java 8 bytecode (major version
+        # 52), and the java-runtime-8 job below runs the suite on a real
         # Temurin 8 JVM.
-        jdk: ["11", "17", "21", "25", "26"]
+        jdk: ["11", "17", "21", "25", "27"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -199,6 +199,9 @@ jobs:
           # the platform and the Jupiter engine, and a second copy of them on
           # the classpath is a version conflict waiting to happen.
           mvn -B dependency:copy-dependencies -DincludeScope=runtime -DoutputDirectory=target/dep
+          # jackson-databind is test scope since 0.7 (main uses jackson-core
+          # alone), and the suite reads its JSON vectors through it.
+          mvn -B dependency:copy-dependencies -DincludeScope=test -DincludeGroupIds=com.fasterxml.jackson.core -DoutputDirectory=target/dep
           curl -fsSL --retry 3 -o target/junit-console.jar \
             "https://repo.maven.apache.org/maven2/org/junit/platform/junit-platform-console-standalone/${JUNIT_PLATFORM}/junit-platform-console-standalone-${JUNIT_PLATFORM}.jar"
           echo "${JUNIT_CONSOLE_SHA256}  target/junit-console.jar" | sha256sum -c -
@@ -410,6 +413,12 @@ jobs:
         working-directory: java
       - run: mvn -B test
         working-directory: jvm-interop
+      # java-bench/ is another consumer of that installed coordinate, and
+      # otherwise only benchmark.yml builds it, by hand. compile runs JMH's
+      # annotation processor over it, so an API change that breaks a
+      # benchmark fails here; compile stops short of packaging the JMH jar,
+      # and nothing is measured. version.txt as in benchmark.yml.
+      - run: mvn -B -f java-bench/pom.xml -Dlibrary.version="$(cat version.txt)" compile
 
   # A consumer on Spring Boot 4 imports the Boot BOM, which overrides the
   # library's Jackson 2 pin with its own and adds Jackson 3 (tools.jackson)
@@ -616,7 +625,7 @@ jobs:
       - name: fuzz the verifiers
         run: |
           set -euo pipefail
-          for target in FuzzVerifyReceipt FuzzVerifyReceiptBase64 FuzzVerifyTransaction; do
+          for target in FuzzVerifyReceipt FuzzVerifySignedData; do
             go test . -run "^${target}\$" -fuzz "^${target}\$" -fuzztime=60s
           done
         working-directory: go
@@ -693,16 +702,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Every supported line (endoflife.date/ruby: 4.0, 3.4, 3.3) plus 3.2
-        # and 3.1. Both are EOL upstream, but 3.1 is the gemspec's
-        # required_ruby_version floor and Debian 12's system Ruby, so it stays
-        # tested while it is claimed — the java-runtime-8 / python-3.10 rule.
-        ruby: ["3.1", "3.2", "3.3", "3.4", "4.0"]
+        # Every supported line (endoflife.date/ruby: 4.0, 3.4, 3.3). 3.3 is
+        # also the gemspec's required_ruby_version floor since 0.7 (for
+        # Data), so it stays tested while it is claimed, even past its EOL:
+        # the java-runtime-8 / python-3.10 rule.
+        ruby: ["3.3", "3.4", "4.0"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: ruby/setup-ruby@bec3f19a76460dbe12f60def7d1a77585f07516c # v1.322.0
+      - uses: ruby/setup-ruby@e8944e80fb94b20106697132f8c20c665fab29e9 # v1.325.0
         with:
           ruby-version: ${{ matrix.ruby }}
           # Nothing to install: the library has no runtime dependencies and the
@@ -735,12 +744,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ruby: ["3.1", "4.0"]      # the floor and the newest line
+        ruby: ["3.3", "4.0"]      # the floor and the newest line
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: ruby/setup-ruby@bec3f19a76460dbe12f60def7d1a77585f07516c # v1.322.0
+      - uses: ruby/setup-ruby@e8944e80fb94b20106697132f8c20c665fab29e9 # v1.325.0
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: false
@@ -758,7 +767,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: ruby/setup-ruby@bec3f19a76460dbe12f60def7d1a77585f07516c # v1.322.0
+      - uses: ruby/setup-ruby@e8944e80fb94b20106697132f8c20c665fab29e9 # v1.325.0
         with:
           ruby-version: "3.4"
           bundler-cache: false
@@ -784,7 +793,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: ruby/setup-ruby@bec3f19a76460dbe12f60def7d1a77585f07516c # v1.322.0
+      - uses: ruby/setup-ruby@e8944e80fb94b20106697132f8c20c665fab29e9 # v1.325.0
         with:
           ruby-version: "3.4"
           # The lockfile exists now, so the action can install and cache the
@@ -801,6 +810,13 @@ jobs:
       # constant too, which is what sig/internals.rbs is for — that file is
       # not API and exists for this step.
       - run: bundle exec steep check
+        working-directory: ruby
+      # bench/bench.rb otherwise runs only in benchmark.yml, by hand. Loading
+      # it requires the library and defines the benchmark module, but main
+      # runs only when the file is the program itself, so nothing is timed.
+      # A moved require or a renamed module-level constant fails here; calls
+      # inside its methods are only checked by running it.
+      - run: ruby -Ilib -e 'load "bench/bench.rb"'
         working-directory: ruby
 
   # The toolchains come from the rustup already on the runner, so this port
@@ -901,9 +917,9 @@ jobs:
       - run: cargo test --locked
         working-directory: rust/ffi
 
-      # Layer 2, the primary one: fixtures/cases.json driven through the ABI
-      # from C++17. A passing run is the evidence that the compiled-toolchain
-      # path works — header compiles as C++, symbols link, answers match the
+      # Layer 2, the primary one: fixtures/cases.json driven through the
+      # ABI from C++17. A passing run is the evidence that the compiled-toolchain
+      # path works: header compiles as C++, symbols link, answers match the
       # vectors every other port answers.
       - name: flatten the shared vectors for a compiler
         run: node tools/gen-cases-manifest.mjs rust/ffi/target/manifest
@@ -1040,7 +1056,7 @@ jobs:
         working-directory: rust/fuzz
 
   # The exploratory pass over the hand-written DER and CMS readers and the
-  # three public verifiers; node/fuzz/README.md lists the targets and their
+  # three public Verifier methods; node/fuzz/README.md lists the targets and their
   # invariants. Seeds come from fixtures/, so a crasher is a mutation of a
   # genuine receipt or JWS, not of noise. The fuzzer is a native addon and
   # lives in node/fuzz's own package.json, which is why this job installs
@@ -1086,6 +1102,10 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: '10.0.x'
+      # dotnet/bench sits outside the .sln for the same reason fuzz does, so
+      # nothing else on push builds it; benchmark.yml runs it only by hand.
+      # A build, as benchmark.yml does it, and no run.
+      - run: dotnet build -c Release dotnet/bench
       - run: ./run.sh all 60
         working-directory: dotnet/fuzz
 
@@ -1158,7 +1178,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: ruby/setup-ruby@bec3f19a76460dbe12f60def7d1a77585f07516c # v1.322.0
+      - uses: ruby/setup-ruby@e8944e80fb94b20106697132f8c20c665fab29e9 # v1.325.0
         with:
           # One line, not the library's matrix: this job proves the parsers
           # hold, not that they hold on five rubies. 3.3 is where the harness
@@ -1236,6 +1256,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # swift/bench is a package of its own on the same path dependency, so
+      # neither the `swift` matrix nor this job's fuzz build compiles it;
+      # benchmark.yml builds it only by hand. A debug build: the point is that
+      # it still compiles against the library, not how fast it runs.
+      - run: swift build --package-path swift/bench --force-resolved-versions
       - run: ./run.sh all 60
         working-directory: swift/fuzz
 
@@ -1303,20 +1328,21 @@ jobs:
       - run: cargo deny --manifest-path ffi/Cargo.toml --config deny.toml check
         working-directory: rust
 
-  # Every line the composer.json floor admits. 8.1 is the floor and is past
-  # its own security-support end; it stays here for exactly as long as the
-  # manifest claims it, the same rule as node 20 and python 3.10. That leg is
-  # not decoration: PHP gained zend.max_allowed_stack_size in 8.3, so on 8.1
-  # an unbounded recursive parser segfaults rather than raising, and this is
-  # the only leg where the DER reader's depth bound is what stands between
-  # hostile input and a crashed worker.
+  # Every line the composer.json floor admits. 8.2 is the floor since 0.7 (for
+  # readonly class); it stays here for exactly as long as the manifest claims
+  # it, even past its own security-support end, the same rule as node 20 and
+  # python 3.10. That leg is not decoration: PHP gained
+  # zend.max_allowed_stack_size in 8.3, so on 8.2 an unbounded recursive
+  # parser segfaults rather than raising, and this is the only leg where the
+  # DER reader's depth bound is what stands between hostile input and a
+  # crashed worker.
   php:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        php: ["8.1", "8.2", "8.3", "8.4", "8.5"]
+        php: ["8.2", "8.3", "8.4", "8.5"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1329,10 +1355,10 @@ jobs:
           ini-values: memory_limit=256M
       # composer install, not update: php/composer.lock is committed and is
       # what every leg here installs, so no push resolves a version range.
-      # The lock is resolved for the floor (config.platform.php = 8.1.0 in
-      # composer.json), which is what lets one file install on all five legs:
-      # it pins PHPUnit 10.5, the only line whose php constraint spans 8.1 to
-      # 8.5. --no-scripts for the same reason every npm ci carries
+      # The lock is resolved for the floor (config.platform.php = 8.2.0 in
+      # composer.json), which is what lets one file install on all four legs:
+      # it pins PHPUnit 11.5, whose php constraint spans 8.2 to 8.5.
+      # --no-scripts for the same reason every npm ci carries
       # --ignore-scripts.
       - run: composer install --no-scripts --no-progress --no-interaction --prefer-dist
         working-directory: php
@@ -1344,7 +1370,7 @@ jobs:
   # a change that quietly needs a newer psr/clock or PHPUnit fails here rather
   # than on a consumer's machine. It is the one PHP leg that still resolves
   # from ranges, and deliberately: resolving is what it tests. The lockfile
-  # would make it a copy of the `php` job's 8.1 leg.
+  # would make it a copy of the `php` job's 8.2 leg.
   php-lowest:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -1354,7 +1380,7 @@ jobs:
           persist-credentials: false
       - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
         with:
-          php-version: "8.1"
+          php-version: "8.2"
           extensions: openssl, json
           coverage: none
       - run: composer update --no-progress --no-interaction --prefer-lowest --prefer-stable
@@ -1392,6 +1418,10 @@ jobs:
       # php/composer.json is only the development one. Both get validated.
       - run: composer validate --strict --no-check-lock composer.json
       - run: vendor/bin/phpstan analyse --no-progress
+        working-directory: php
+      # bench/bench.php otherwise runs only in benchmark.yml, by hand. This is
+      # a syntax check and nothing more: PHPStan's paths are src and tests.
+      - run: php -l bench/bench.php
         working-directory: php
       # php/certs/ is a copy of the repository-root certs/, and
       # src/Internal/RootsData.php is generated from that copy. A roots change
@@ -1495,7 +1525,7 @@ jobs:
           docker run --rm -v "$PWD:/work" -w /work \
             mono:6.12@sha256:34d816779b1248b5cfd095770b64ecbaf1798e2aca693a91c11a018dce9c7ad5 \
             monop -r:src/ApplePurchaseReceiptVerifier/bin/Release/netstandard2.0/ApplePurchaseReceiptVerifier.dll \
-              ApplePurchaseReceiptVerifier.Receipt.ReceiptVerifier
+              ApplePurchaseReceiptVerifier.Verifier
 
   # certs/ is the reviewable source of truth for the pinned Apple roots;
   # Internal/AppleRootData.cs is generated from it and compiled in. A certs
@@ -1599,6 +1629,30 @@ jobs:
           package-manager-cache: false
       - run: npm ci --ignore-scripts && npm run lint && npm run format:check
         working-directory: node
+      # bench/bench.mjs otherwise runs only in benchmark.yml, by hand. oxlint
+      # above already parses it; this links it against the built dist, so an
+      # export it imports that was renamed or removed fails here. Linking
+      # resolves every import without evaluating the benchmark itself, so
+      # nothing is timed.
+      - run: npm run build
+        working-directory: node
+      - name: link bench/bench.mjs against dist without running it
+        working-directory: node
+        run: |
+          node --no-warnings --experimental-vm-modules --input-type=module -e '
+            import vm from "node:vm";
+            import { readFileSync } from "node:fs";
+            import { pathToFileURL } from "node:url";
+            const url = pathToFileURL("bench/bench.mjs");
+            const bench = new vm.SourceTextModule(readFileSync(url, "utf8"), { identifier: url.href });
+            await bench.link(async (specifier) => {
+              const ns = await import(new URL(specifier, url).href);
+              const names = Object.keys(ns);
+              return new vm.SyntheticModule(names, function () {
+                for (const name of names) this.setExport(name, ns[name]);
+              });
+            });
+          '
 
   # ruff and mypy for the Python port. One job, not a matrix: ruff pins the
   # language level with target-version = "py310" and mypy is told
@@ -1625,11 +1679,21 @@ jobs:
       # the one `uv sync` fills.
       - run: uv sync --locked --extra dev
         working-directory: python
-      - run: uv run --locked ruff check .
+      # --extra dev on every run as well: without it `uv run` re-syncs to
+      # the base environment, which has no ruff or mypy, and falls back to
+      # tools that cannot see cryptography.
+      - run: uv run --locked --extra dev ruff check .
         working-directory: python
-      - run: uv run --locked ruff format --check .
+      - run: uv run --locked --extra dev ruff format --check .
         working-directory: python
-      - run: uv run --locked mypy
+      - run: uv run --locked --extra dev mypy
+        working-directory: python
+      # bench/bench.py otherwise runs only in benchmark.yml, by hand. Run as a
+      # module that is not __main__, it resolves every import (the package's
+      # private helpers included) without calling main(), so nothing is
+      # timed. mypy stays off it: pyproject limits mypy to the package and
+      # the tests, and under strict it reports three errors in the bench.
+      - run: uv run --locked --extra dev python -c "import runpy; runpy.run_path('bench/bench.py')"
         working-directory: python
       # ty, Astral's type checker, is ADVISORY and must stay that way for
       # now: it is 0.0.x preview software, and mypy above remains the gate.
@@ -1740,3 +1804,238 @@ jobs:
         working-directory: php
       - run: vendor/bin/php-cs-fixer fix --dry-run --diff --allow-risky=yes
         working-directory: php
+
+  # The consumer smoke programs under .github/smoke/, run against this
+  # checkout. post-publish-smoke.yml runs the same programs after a release
+  # against what each registry serves, and until these jobs existed that was
+  # the only place they ran: a smoke program broken by an API change showed
+  # up after the release it was meant to check. Each job below builds the
+  # artifact the way release.yml does (pack, build, install), installs it
+  # outside the checkout on the same runtime floor as its post-publish leg,
+  # and runs the program unchanged. What only a registry can get wrong (a
+  # version that never indexes, a slow sync) stays post-publish's job.
+  smoke-npm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "20"
+          package-manager-cache: false
+      # npm pack runs prepack (tsc), so the tarball carries a fresh dist/.
+      - run: |
+          npm ci --ignore-scripts
+          mkdir -p "$RUNNER_TEMP/npm-pack"
+          npm pack --pack-destination "$RUNNER_TEMP/npm-pack"
+        working-directory: node
+      # The tarball is a file this job just built, not a registry fetch.
+      - name: install the packed tarball outside the checkout # zizmor: ignore[adhoc-packages]
+        run: |
+          set -euo pipefail
+          SMOKE="$RUNNER_TEMP/npm-smoke"
+          mkdir -p "$SMOKE"
+          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
+          cp .github/smoke/npm-smoke.mjs "$SMOKE/"
+          cd "$SMOKE"
+          npm init -y > /dev/null
+          npm install "$RUNNER_TEMP"/npm-pack/*.tgz
+          node npm-smoke.mjs
+
+  smoke-pypi:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.10"
+      # pip builds a wheel from python/ with the same backend release.yml's
+      # `python -m build` uses and installs that wheel, not the source tree.
+      - name: install the package from the checkout into a venv outside it
+        run: |
+          set -euo pipefail
+          SMOKE="$RUNNER_TEMP/pypi-smoke"
+          mkdir -p "$SMOKE"
+          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
+          cp .github/smoke/pypi-smoke.py "$SMOKE/"
+          python3 -m venv "$SMOKE/venv"
+          "$SMOKE/venv/bin/pip" install "$GITHUB_WORKSPACE/python"
+          cd "$SMOKE"
+          venv/bin/python pypi-smoke.py
+
+  smoke-maven:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      # install puts the jar in ~/.m2, which Maven reads before any remote,
+      # so the smoke pom resolves this build and never Central's.
+      - run: mvn -B install -DskipTests
+        working-directory: java
+      - name: resolve the installed jar outside the checkout
+        run: |
+          set -euo pipefail
+          VERSION="$(mvn -q -f java/pom.xml help:evaluate -Dexpression=project.version -DforceStdout)"
+          SMOKE="$RUNNER_TEMP/maven-smoke"
+          mkdir -p "$SMOKE"
+          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
+          cp .github/smoke/maven-smoke/pom.xml .github/smoke/maven-smoke/Smoke.java "$SMOKE/"
+          cd "$SMOKE"
+          mvn -B -q -Dsmoke.version="$VERSION" -Dmdep.outputFile=cp.txt dependency:build-classpath
+          javac -cp "$(cat cp.txt)" Smoke.java -d .
+          java -cp ".:$(cat cp.txt)" Smoke
+
+  smoke-swiftpm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # The post-publish leg's image: the manifest's 6.1 floor.
+    container: swift:6.1@sha256:98ee3a8469ce2a9c2f543ef2577939ab44e2dfc9b5ed710732a59e5dd64f9c4a
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # SMOKE_PATH makes the smoke manifest depend on the checkout by path
+      # instead of on the published tag by URL. The tag is the artifact for
+      # SwiftPM, so this proves the program and the manifest at the root,
+      # not a tag; post-publish-smoke still resolves the tag itself.
+      - name: build and run against the checkout, outside it
+        # The swift image's /bin/sh is dash, which has no `pipefail`.
+        shell: bash
+        run: |
+          set -euo pipefail
+          SMOKE="$RUNNER_TEMP/swiftpm-smoke"
+          mkdir -p "$SMOKE"
+          cp -R .github/smoke/swiftpm-smoke/. "$SMOKE/"
+          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
+          export SMOKE_PATH="$GITHUB_WORKSPACE"
+          cd "$SMOKE"
+          swift run Smoke
+
+  smoke-go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.22"
+          cache: false
+      # A replace directive points the module path at go/; the path is read
+      # from go/go.mod, since a fork's GITHUB_REPOSITORY would not match it.
+      - name: build against the checkout's module, outside it
+        env:
+          GOTOOLCHAIN: local
+          GOFLAGS: -mod=mod
+        run: |
+          set -euo pipefail
+          MODULE="$(go -C "$GITHUB_WORKSPACE/go" list -m)"
+          SMOKE="$RUNNER_TEMP/go-smoke"
+          mkdir -p "$SMOKE"
+          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
+          cp .github/smoke/go-smoke/main.go "$SMOKE/"
+          cd "$SMOKE"
+          go mod init smoke
+          go mod edit -require="$MODULE@v0.0.0" -replace="$MODULE=$GITHUB_WORKSPACE/go"
+          go run .
+
+  smoke-rubygems:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ruby/setup-ruby@e8944e80fb94b20106697132f8c20c665fab29e9 # v1.325.0
+        with:
+          ruby-version: "3.3"
+          bundler-cache: false
+      - run: gem build apple-purchase-receipt-verifier.gemspec --output "$RUNNER_TEMP/aprv.gem"
+        working-directory: ruby
+      # A scratch GEM_HOME and --local: the gem just built is the only copy
+      # of the library on the load path, and nothing is fetched.
+      - name: install the built gem outside the checkout # zizmor: ignore[adhoc-packages]
+        run: |
+          set -euo pipefail
+          SMOKE="$RUNNER_TEMP/rubygems-smoke"
+          mkdir -p "$SMOKE"
+          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
+          cp .github/smoke/rubygems-smoke.rb "$SMOKE/"
+          cd "$SMOKE"
+          export GEM_HOME="$SMOKE/gems"
+          gem install --local --no-document "$RUNNER_TEMP/aprv.gem"
+          ruby rubygems-smoke.rb
+
+  smoke-crates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install stable --profile minimal
+      # The smoke depends on the unpacked .crate, not on rust/: Cargo.toml's
+      # `exclude` makes the published file set differ from the repository's,
+      # and that difference is what the smoke exists to catch.
+      - run: cargo +stable package --locked --no-verify
+        working-directory: rust
+      - name: depend on the packaged crate, outside the checkout
+        run: |
+          set -euo pipefail
+          SMOKE="$RUNNER_TEMP/crates-smoke"
+          mkdir -p "$SMOKE/crate"
+          tar -xzf rust/target/package/apple-purchase-receipt-verifier-*.crate -C "$SMOKE/crate"
+          cp -R .github/smoke/crates-smoke/. "$SMOKE/"
+          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
+          cd "$SMOKE"
+          cargo +stable add apple-purchase-receipt-verifier --path "$(echo crate/apple-purchase-receipt-verifier-*)"
+          cargo +stable run
+
+  smoke-nuget:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # 10.0 packs (it is the SDK that wrote packages.lock.json, see
+      # dotnet-mono); 8.0 is the runtime the net8.0 smoke runs on.
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - run: dotnet pack src/ApplePurchaseReceiptVerifier -c Release -o "$RUNNER_TEMP/nupkg"
+        working-directory: dotnet
+      # The pack folder is added as a source beside nuget.org (the package's
+      # own dependencies come from there), and NUGET_PACKAGES is a scratch
+      # folder so a same-version package cached by an earlier restore on
+      # the runner cannot stand in for the one just packed.
+      - name: restore the packed package outside the checkout
+        run: |
+          set -euo pipefail
+          SMOKE="$RUNNER_TEMP/nuget-smoke"
+          mkdir -p "$SMOKE"
+          cp -R .github/smoke/nuget-smoke/. "$SMOKE/"
+          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
+          cd "$SMOKE"
+          nupkg="$(echo "$RUNNER_TEMP"/nupkg/ApplePurchaseReceiptVerifier.*.nupkg)"
+          VERSION="${nupkg##*/ApplePurchaseReceiptVerifier.}"
+          VERSION="${VERSION%.nupkg}"
+          export NUGET_PACKAGES="$SMOKE/packages"
+          dotnet restore "-p:SmokeVersion=$VERSION" \
+            --source "$RUNNER_TEMP/nupkg" --source https://api.nuget.org/v3/index.json
+          dotnet run --no-restore "-p:SmokeVersion=$VERSION"

@@ -93,6 +93,16 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+  # The Elixir consumer of the C ABI. It has no Hex dependencies today
+  # (mix.exs says why), so this entry proposes nothing yet; it is here so a
+  # dependency added later is watched from the start rather than drifting
+  # the way jvm-interop's did.
+  - package-ecosystem: mix
+    directory: /rust/ffi/examples/elixir
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
   - package-ecosystem: cargo
     directory: /rust/fuzz
     schedule:
@@ -101,6 +111,16 @@ updates:
       default-days: 7
   - package-ecosystem: swift
     directory: /swift/fuzz
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+  # swift/bench is the benchmark's own SwiftPM package, shaped like
+  # swift/fuzz: the library by path plus a committed Package.resolved that
+  # nothing else here updates. ci.yml's swift-fuzz job builds it with
+  # --force-resolved-versions, so those pins are what it compiles against.
+  - package-ecosystem: swift
+    directory: /swift/bench
     schedule:
       interval: weekly
     cooldown:
@@ -171,6 +191,17 @@ updates:
       default-days: 7
   - package-ecosystem: nuget
     directory: /dotnet
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+  # dotnet/fuzz is outside ApplePurchaseReceiptVerifier.sln, and the entry
+  # above discovers projects through that solution, so SharpFuzz (pinned
+  # inline in the fuzz csproj, not in Directory.Packages.props) had no watcher.
+  # dotnet/bench gets no entry: it has no PackageReference of its own, only
+  # the library by project reference, so there is nothing for one to bump.
+  - package-ecosystem: nuget
+    directory: /dotnet/fuzz
     schedule:
       interval: weekly
     cooldown:

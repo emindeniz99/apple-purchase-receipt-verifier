@@ -1,6 +1,10 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonGenerator;
+import java.io.IOException;
+import java.io.StringWriter;
+import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
@@ -55,24 +59,36 @@ import org.bouncycastle.util.CollectionStore;
 import org.bouncycastle.util.Store;
 
 /**
- * Generates a fake "Apple" PKI (root → intermediate → leaf) and signs JWS
- * payloads / CMS receipts with it — the same fixture technique Apple's own
+ * Generates a fake "Apple" PKI (root -> intermediate -> leaf) and signs JWS
+ * payloads / CMS receipts with it, the same fixture technique Apple's own
  * libraries use, so no real Apple key material is ever needed. Also proves
  * anchor pinning: chains from a second TestPki instance must be rejected.
  *
  * <p>Kept Java 8-compatible (like main sources) so the suite can run on a
- * real JDK 8 in a CI matrix — hence the DER→P1363 signature conversion
+ * real JDK 8 in a CI matrix, hence the DER-to-P1363 signature conversion
  * instead of the Java 9+ {@code SHA256withECDSAinP1363Format} algorithm.</p>
+ *
+ * <p><strong>Public API.</strong> This class also ships standalone, as the
+ * {@code tests} test-jar classifier of the main artifact (see the "Testing
+ * with synthetic receipts" section of java/README.md), so callers can build
+ * synthetic receipts/JWS in their own tests. Only the members explicitly
+ * marked {@code public} are that supported surface; everything else is
+ * internal fixture machinery for this library's own suite and can change
+ * without notice. It depends on BouncyCastle, at test scope, and on
+ * jackson-core's streaming API only, never jackson-databind.</p>
  */
-final class TestPki {
+public final class TestPki {
 
     private static final AtomicLong SERIAL = new AtomicLong(1);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final JsonFactory JSON_FACTORY = new JsonFactory();
     static final BouncyCastleProvider BC = new BouncyCastleProvider();
 
-    final X509Certificate root;
-    final X509Certificate intermediate;
-    final X509Certificate leaf;
+    /** The trust anchor a caller pins with {@code Config.builder().roots(...)}. */
+    public final X509Certificate root;
+    /** The WWDR-style intermediate this chain's leaf was issued under. */
+    public final X509Certificate intermediate;
+    /** The signing certificate embedded in receipts/JWS this instance produces. */
+    public final X509Certificate leaf;
     /**
      * The issuing keys, kept only by {@link #jws(boolean, boolean, Date, Date)}
      * so a generator can mutate a certificate's TBS and re-sign it under the
@@ -105,8 +121,12 @@ final class TestPki {
         this.chain = chain;
     }
 
-    /** EC P-256 chain with both Apple marker OIDs — for JWS fixtures. */
-    static TestPki jws() throws Exception {
+    /**
+     * Builds a fresh EC P-256 chain (root, intermediate, leaf) with both
+     * Apple marker OIDs, valid for one year from now, for JWS. Part of the
+     * public test-jar API.
+     */
+    public static TestPki jws() throws Exception {
         Date notBefore = new Date(System.currentTimeMillis() - 86_400_000L);
         Date notAfter = new Date(System.currentTimeMillis() + 365L * 86_400_000L);
         return jws(true, true, notBefore, notAfter);
@@ -153,8 +173,12 @@ final class TestPki {
         return pki;
     }
 
-    /** RSA chain (no marker OIDs — receipts don't require them) — for CMS receipts. */
-    static TestPki receipt() throws Exception {
+    /**
+     * Builds a fresh RSA chain (root, intermediate, leaf) with both Apple
+     * marker OIDs, as genuine receipt chains carry them, valid for one year
+     * from now, for CMS receipts. Part of the public test-jar API.
+     */
+    public static TestPki receipt() throws Exception {
         Date notBefore = new Date(System.currentTimeMillis() - 86_400_000L);
         Date notAfter = new Date(System.currentTimeMillis() + 365L * 86_400_000L);
         return receipt(notBefore, notAfter);
@@ -166,6 +190,15 @@ final class TestPki {
 
     /** RSA receipt chain; {@code signerOid} stamps the Apple receipt-signing marker on the leaf. */
     static TestPki receipt(Date notBefore, Date notAfter, boolean signerOid) throws Exception {
+        return receipt(notBefore, notAfter, signerOid, true);
+    }
+
+    /**
+     * RSA receipt chain; {@code signerOid} stamps the Apple receipt-signing
+     * marker on the leaf and {@code intermediateOid} the WWDR marker on the
+     * intermediate.
+     */
+    static TestPki receipt(Date notBefore, Date notAfter, boolean signerOid, boolean intermediateOid) throws Exception {
         KeyPair rootKp = rsaKeyPair();
         KeyPair interKp = rsaKeyPair();
         KeyPair signerKp = rsaKeyPair();
@@ -185,7 +218,7 @@ final class TestPki {
                 "CN=Fake Apple Inc Root",
                 rootKp.getPrivate(),
                 true,
-                null,
+                intermediateOid ? "1.2.840.113635.100.6.2.1" : null,
                 notBefore,
                 notAfter,
                 "SHA256withRSA");
@@ -239,13 +272,31 @@ final class TestPki {
         for (int i = 1; i <= intermediates; i++) {
             String subject = "CN=Deep CA " + i;
             KeyPair kp = rsaKeyPair();
-            cas.add(cert(subject, kp, issuerName, issuerKey, true, null, notBefore, notAfter, "SHA256withRSA"));
+            cas.add(cert(
+                    subject,
+                    kp,
+                    issuerName,
+                    issuerKey,
+                    true,
+                    "1.2.840.113635.100.6.2.1",
+                    notBefore,
+                    notAfter,
+                    "SHA256withRSA"));
             issuerName = subject;
             issuerKey = kp.getPrivate();
         }
         for (int i = 0; i < selfIssuedTail; i++) {
             KeyPair kp = rsaKeyPair();
-            cas.add(cert(issuerName, kp, issuerName, issuerKey, true, null, notBefore, notAfter, "SHA256withRSA"));
+            cas.add(cert(
+                    issuerName,
+                    kp,
+                    issuerName,
+                    issuerKey,
+                    true,
+                    "1.2.840.113635.100.6.2.1",
+                    notBefore,
+                    notAfter,
+                    "SHA256withRSA"));
             issuerKey = kp.getPrivate();
         }
         KeyPair signerKp = rsaKeyPair();
@@ -267,8 +318,12 @@ final class TestPki {
         return new TestPki(rootCert, deepest, signerCert, signerKp.getPrivate(), embedded);
     }
 
-    /** Varargs {@code key, value, key, value…} claims helper (insertion-ordered). */
-    static Map<String, Object> claims(Object... kv) {
+    /**
+     * Varargs {@code key, value, key, value...} claims helper (insertion
+     * ordered), for building a {@link #signJws} payload. Part of the public
+     * test-jar API.
+     */
+    public static Map<String, Object> claims(Object... kv) {
         Map<String, Object> map = new LinkedHashMap<String, Object>();
         for (int i = 0; i < kv.length; i += 2) {
             map.put((String) kv[i], kv[i + 1]);
@@ -278,19 +333,26 @@ final class TestPki {
 
     // --- JWS -------------------------------------------------------------
 
-    /** Signs claims as an ES256 compact JWS carrying this chain in x5c. */
-    String signJws(Map<String, ?> claims) throws Exception {
+    /**
+     * Signs {@code claims} as an ES256 compact JWS carrying this chain in
+     * {@code x5c}. Part of the public test-jar API.
+     */
+    public String signJws(Map<String, ?> claims) throws Exception {
         Map<String, Object> header = new LinkedHashMap<String, Object>();
         header.put("alg", "ES256");
         header.put(
                 "x5c", Arrays.asList(b64(leaf.getEncoded()), b64(intermediate.getEncoded()), b64(root.getEncoded())));
-        return signJwsWithHeader(MAPPER.writeValueAsString(header), MAPPER.writeValueAsString(claims));
+        return signJwsWithHeader(toJson(header), toJson(claims));
     }
 
     /** Same, but with a caller-controlled header (for malformed-header tests). */
     String signJwsWithHeader(String headerJson, String payloadJson) throws Exception {
-        String input = b64url(headerJson.getBytes(StandardCharsets.UTF_8)) + "."
-                + b64url(payloadJson.getBytes(StandardCharsets.UTF_8));
+        return signCompact(b64url(headerJson.getBytes(StandardCharsets.UTF_8)) + "."
+                + b64url(payloadJson.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    /** Signs an already encoded {@code header.payload} and appends the signature segment. */
+    String signCompact(String input) throws Exception {
         Signature sig = Signature.getInstance("SHA256withECDSA");
         sig.initSign(leafKey);
         sig.update(input.getBytes(StandardCharsets.US_ASCII));
@@ -319,10 +381,57 @@ final class TestPki {
         System.arraycopy(bytes, start, out, offset + 32 - length, length);
     }
 
+    // --- JSON (jackson-core streaming only, never jackson-databind) ------
+
+    /** Serializes a JSON-shaped value (Map/List/String/Number/Boolean/null) compactly. */
+    private static String toJson(Object value) throws IOException {
+        StringWriter writer = new StringWriter();
+        try (JsonGenerator generator = JSON_FACTORY.createGenerator(writer)) {
+            writeJson(generator, value);
+        }
+        return writer.toString();
+    }
+
+    private static void writeJson(JsonGenerator generator, Object value) throws IOException {
+        if (value == null) {
+            generator.writeNull();
+        } else if (value instanceof Map) {
+            generator.writeStartObject();
+            for (Map.Entry<?, ?> entry : ((Map<?, ?>) value).entrySet()) {
+                generator.writeFieldName(String.valueOf(entry.getKey()));
+                writeJson(generator, entry.getValue());
+            }
+            generator.writeEndObject();
+        } else if (value instanceof List) {
+            generator.writeStartArray();
+            for (Object element : (List<?>) value) {
+                writeJson(generator, element);
+            }
+            generator.writeEndArray();
+        } else if (value instanceof String) {
+            generator.writeString((String) value);
+        } else if (value instanceof Boolean) {
+            generator.writeBoolean((Boolean) value);
+        } else if (value instanceof BigDecimal) {
+            generator.writeNumber((BigDecimal) value);
+        } else if (value instanceof Double || value instanceof Float) {
+            generator.writeNumber(((Number) value).doubleValue());
+        } else if (value instanceof Long) {
+            generator.writeNumber((Long) value);
+        } else if (value instanceof Integer || value instanceof Short || value instanceof Byte) {
+            generator.writeNumber(((Number) value).intValue());
+        } else {
+            throw new IllegalArgumentException("Unsupported claim value type: " + value.getClass());
+        }
+    }
+
     // --- Receipts --------------------------------------------------------
 
-    /** CMS-signs a receipt payload (encapsulated), embedding the full chain. */
-    byte[] signReceipt(byte[] payload) throws Exception {
+    /**
+     * CMS-signs a receipt payload (encapsulated), embedding the full chain,
+     * at the current time. Part of the public test-jar API.
+     */
+    public byte[] signReceipt(byte[] payload) throws Exception {
         return signReceipt(payload, new Date());
     }
 
@@ -344,16 +453,32 @@ final class TestPki {
      */
     byte[] signReceiptWithTwinCert(byte[] payload) throws Exception {
         KeyPair rogueKp = rsaKeyPair();
+        X509Certificate twin = twinOfLeaf(rogueKp);
+        return sign(payload, new Date(), rogueKp.getPrivate(), twin, Arrays.asList(twin, leaf, intermediate, root));
+    }
+
+    /**
+     * A genuine receipt, signed by the genuine leaf, whose unsigned
+     * certificate bag carries a twin of the leaf (same issuer, serial and
+     * subject, another key, self-signed) ahead of it. Anyone relaying a
+     * receipt can add one; a verifier that takes the first certificate
+     * naming the signer fails a receipt Apple did sign.
+     */
+    byte[] signReceiptWithTwinAheadOfSigner(byte[] payload) throws Exception {
+        X509Certificate twin = twinOfLeaf(rsaKeyPair());
+        return sign(payload, new Date(), leafKey, leaf, Arrays.asList(twin, leaf, intermediate, root));
+    }
+
+    /** A certificate with the leaf's issuer, serial and subject on {@code keys}, signed by {@code keys}. */
+    private X509Certificate twinOfLeaf(KeyPair keys) throws Exception {
         X509v3CertificateBuilder builder = new JcaX509v3CertificateBuilder(
                 leaf.getIssuerX500Principal(), leaf.getSerialNumber(),
                 leaf.getNotBefore(), leaf.getNotAfter(),
-                leaf.getSubjectX500Principal(), rogueKp.getPublic());
+                leaf.getSubjectX500Principal(), keys.getPublic());
         builder.addExtension(Extension.basicConstraints, true, new BasicConstraints(false));
         builder.addExtension(new ASN1ObjectIdentifier("1.2.840.113635.100.6.11.1"), false, DERNull.INSTANCE);
-        X509Certificate twin = new JcaX509CertificateConverter()
-                .getCertificate(
-                        builder.build(new JcaContentSignerBuilder("SHA256withRSA").build(rogueKp.getPrivate())));
-        return sign(payload, new Date(), rogueKp.getPrivate(), twin, Arrays.asList(twin, leaf, intermediate, root));
+        return new JcaX509CertificateConverter()
+                .getCertificate(builder.build(new JcaContentSignerBuilder("SHA256withRSA").build(keys.getPrivate())));
     }
 
     /**
@@ -511,7 +636,9 @@ final class TestPki {
         baseAttrs.add(
                 new org.bouncycastle.asn1.cms.Attribute(CMSAttributes.signingTime, new DERSet(new Time(signingTime))));
         CMSSignedDataGenerator gen = new CMSSignedDataGenerator();
-        ContentSigner cs = new JcaContentSignerBuilder(sigAlg).build(signingKey);
+        // The BouncyCastle provider so signer algorithms the JDK has no name
+        // for, such as RSASSA-PSS spelled SHA256withRSAandMGF1, resolve here.
+        ContentSigner cs = new JcaContentSignerBuilder(sigAlg).setProvider(BC).build(signingKey);
         gen.addSignerInfoGenerator(new JcaSignerInfoGeneratorBuilder(
                         new JcaDigestCalculatorProviderBuilder().setProvider(BC).build())
                 .setSignedAttributeGenerator(new DefaultSignedAttributeTableGenerator(new AttributeTable(baseAttrs)))
@@ -551,8 +678,71 @@ final class TestPki {
         return signed.getEncoded();
     }
 
-    /** Builds a receipt payload SET; each entry of {@code inAppSets} becomes an attr-17. */
-    static byte[] receiptPayload(
+    /**
+     * A receipt with one SignerInfo per entry of {@code signers}, each signed
+     * by that PKI's leaf over the same payload, embedding every signer's
+     * chain once. DER sorts the SignerInfo SET, so the order in the receipt
+     * is not the order given here.
+     */
+    static byte[] signReceiptByEach(byte[] payload, List<TestPki> signers) throws Exception {
+        CMSSignedDataGenerator gen = new CMSSignedDataGenerator();
+        List<X509Certificate> embedded = new ArrayList<X509Certificate>();
+        for (TestPki signer : signers) {
+            ContentSigner cs = new JcaContentSignerBuilder("SHA256withRSA").build(signer.leafKey);
+            gen.addSignerInfoGenerator(new JcaSignerInfoGeneratorBuilder(new JcaDigestCalculatorProviderBuilder()
+                            .setProvider(BC)
+                            .build())
+                    .build(cs, signer.leaf));
+            for (X509Certificate certificate : signer.chain) {
+                if (!embedded.contains(certificate)) {
+                    embedded.add(certificate);
+                }
+            }
+        }
+        gen.addCertificates(new JcaCertStore(embedded));
+        return gen.generate(new CMSProcessableByteArray(payload), true).getEncoded();
+    }
+
+    /**
+     * {@code receipt} with one bit flipped in the middle of the signature of
+     * each of its first {@code count} SignerInfos (in receipt order): the
+     * chain, payload and digest stay genuine, so only the signature check can
+     * reject those signers. A mid-signature bit keeps the RSA value below the
+     * modulus, so the check returns false rather than erroring out.
+     */
+    static byte[] corruptSignatures(byte[] receipt, int count) throws Exception {
+        byte[] corrupted = receipt.clone();
+        int done = 0;
+        for (Object signer : new CMSSignedData(receipt).getSignerInfos().getSigners()) {
+            if (done++ == count) {
+                break;
+            }
+            byte[] signature = ((org.bouncycastle.cms.SignerInformation) signer).getSignature();
+            corrupted[indexOf(corrupted, signature) + signature.length / 2] ^= 0x01;
+        }
+        return corrupted;
+    }
+
+    private static int indexOf(byte[] haystack, byte[] needle) {
+        for (int i = 0; i <= haystack.length - needle.length; i++) {
+            boolean match = true;
+            for (int j = 0; j < needle.length && match; j++) {
+                match = haystack[i + j] == needle[j];
+            }
+            if (match) {
+                return i;
+            }
+        }
+        throw new AssertionError("needle not found");
+    }
+
+    /**
+     * Builds a receipt payload SET for {@link #signReceipt}: {@code
+     * receiptType} defaults to {@code ProductionSandbox}, and each entry of
+     * {@code inAppSets} (see {@link #inAppPurchase}) becomes an attr-17.
+     * Part of the public test-jar API.
+     */
+    public static byte[] receiptPayload(
             String bundleId,
             String appVersion,
             byte[] opaque,
@@ -694,8 +884,12 @@ final class TestPki {
         return attr(type, valueOctets);
     }
 
-    /** Builds one in-app purchase attribute SET (the value of an attr-17). */
-    static byte[] inAppPurchase(
+    /**
+     * Builds one in-app purchase attribute SET (the value of an attr-17),
+     * for {@link #receiptPayload}'s {@code inAppSets}. Part of the public
+     * test-jar API.
+     */
+    public static byte[] inAppPurchase(
             long quantity,
             String productId,
             String transactionId,

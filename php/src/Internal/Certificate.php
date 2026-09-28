@@ -67,6 +67,8 @@ final class Certificate
         public readonly bool $isCa,
         public readonly ?array $keyUsage,
         private readonly array $extensionOids,
+        /** @var array<string, bool> encoded-OID-bytes => present, critical extensions only */
+        private readonly array $criticalExtensionOids,
     ) {
     }
 
@@ -132,6 +134,16 @@ final class Certificate
         if ($top[2]->tag !== Der::TAG_BIT_STRING || strlen($top[2]->contents) < 2) {
             throw new ParseException('unexpected signatureValue layout');
         }
+        // Every X.509 signature (RSA and ECDSA alike are DER octet
+        // sequences) is a full byte string, so its BIT STRING must declare
+        // zero unused bits. OpenSSL's own certificate parser reads past a
+        // nonzero count here rather than refusing it, so without this check
+        // a certificate corrupted exactly there would still parse as
+        // "readable" with the wrong signature bytes read out of it, instead
+        // of being treated as the unreadable/unusable certificate it is.
+        if (ord($top[2]->contents[0]) !== 0) {
+            throw new ParseException('signatureValue BIT STRING declares unused bits');
+        }
 
         $extensions = null;
         foreach ($fields as $field) {
@@ -143,6 +155,8 @@ final class Certificate
         $byOid = [];
         /** @var array<string, bool> $extensionOids raw encoded OID contents => present */
         $extensionOids = [];
+        /** @var array<string, bool> $criticalExtensionOids raw encoded OID contents => present, critical only */
+        $criticalExtensionOids = [];
         foreach ($extensions === null ? [] : $extensions->children() as $extension) {
             $parts = $extension->children();
             $oidNode = $parts[0] ?? null;
@@ -151,6 +165,14 @@ final class Certificate
                 throw new ParseException('malformed certificate extension');
             }
             $extensionOids[$oidNode->contents] = true;
+            // Extension ::= SEQUENCE { extnID OID, critical BOOLEAN DEFAULT
+            // FALSE, extnValue OCTET STRING }: a middle field present when
+            // there are 3+ parts is the critical flag (RFC 5280 4.1, 4.2).
+            $criticalNode = count($parts) >= 3 ? $parts[1] : null;
+            if ($criticalNode?->tag === Der::TAG_BOOLEAN
+                && $criticalNode->contents !== '' && $criticalNode->contents[0] !== "\x00") {
+                $criticalExtensionOids[$oidNode->contents] = true;
+            }
             $oid = Der::decodeOid($oidNode->contents);
             // RFC 5280 4.2: a certificate MUST NOT include more than one
             // instance of a particular extension. Keeping the first copy and
@@ -195,6 +217,7 @@ final class Certificate
             isCa: $basicConstraintsCa && $certSignAllowed,
             keyUsage: $keyUsage,
             extensionOids: $extensionOids,
+            criticalExtensionOids: $criticalExtensionOids,
         );
     }
 
@@ -202,6 +225,31 @@ final class Certificate
     public function hasExtension(string $oid): bool
     {
         return isset($this->extensionOids[Der::encodeOidContents($oid)]);
+    }
+
+    /**
+     * Whether the certificate carries a critical extension outside
+     * `$recognizedOids` (dotted strings). RFC 5280 §4.2: a certificate-using
+     * application that does not recognise a critical extension MUST treat
+     * the certificate as unusable. Checked only on a certificate the chain
+     * actually depends on (docs/design/0.7-api.md, "Reading certificates and
+     * signed attributes").
+     *
+     * @param list<string> $recognizedOids
+     */
+    public function hasUnrecognizedCriticalExtension(array $recognizedOids): bool
+    {
+        if ($this->criticalExtensionOids === []) {
+            return false;
+        }
+        $recognizedEncoded = array_flip(array_map(Der::encodeOidContents(...), $recognizedOids));
+        foreach (array_keys($this->criticalExtensionOids) as $encodedOid) {
+            if (!isset($recognizedEncoded[$encodedOid])) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function isValidAt(int $atEpochMillis): bool
