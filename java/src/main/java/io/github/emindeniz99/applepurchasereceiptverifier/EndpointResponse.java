@@ -46,7 +46,10 @@ final class EndpointResponse {
         if (status != AppleStatus.OK || receipt == null) {
             return status(status);
         }
-        StringWriter out = new StringWriter(1024 + 1024 * receipt.inApp().size());
+        // A size hint only; clamped, so a cap-sized receipt does not reserve
+        // tens of megabytes up front or overflow the multiplication.
+        StringWriter out =
+                new StringWriter((int) Math.min(1024 + 1024L * receipt.inApp().size(), 1 << 20));
         try (JsonGenerator json = JSON.createGenerator(out)) {
             json.writeStartObject();
             json.writeNumberField("status", status);
