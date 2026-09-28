@@ -22,7 +22,50 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  # Pull requests run only the ports they touch; main runs everything.
+  # The filter is a per-job `if:` and not `on.paths`: a workflow that
+  # `on.paths` skips leaves its required checks pending forever, while a job
+  # an `if:` skips reports Success. .github/scripts/changed-areas.sh is an
+  # allowlist, so a path it does not know -- fixtures/, certs/, tools/, this
+  # file -- runs every port: a forgotten path may cost minutes, never
+  # coverage. Pushes to main are not filtered because release.yml's
+  # ci-passed gate needs a full run on the exact tagged SHA. conformance and
+  # zizmor are not filtered either: they guard shared files and take seconds.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      java: ${{ steps.areas.outputs.java }}
+      node: ${{ steps.areas.outputs.node }}
+      python: ${{ steps.areas.outputs.python }}
+      ruby: ${{ steps.areas.outputs.ruby }}
+      php: ${{ steps.areas.outputs.php }}
+      go: ${{ steps.areas.outputs.go }}
+      rust: ${{ steps.areas.outputs.rust }}
+      swift: ${{ steps.areas.outputs.swift }}
+      dotnet: ${{ steps.areas.outputs.dotnet }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # On pull_request the checkout is the PR's merge commit, so
+      # base..HEAD is exactly the change the PR would make.
+      - id: areas
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = pull_request ]; then
+            git fetch --no-tags --depth=1 origin "$BASE_SHA"
+            .github/scripts/changed-areas.sh "$BASE_SHA" HEAD >> "$GITHUB_OUTPUT"
+          else
+            .github/scripts/changed-areas.sh all >> "$GITHUB_OUTPUT"
+          fi
+
   java:
+    needs: changes
+    if: needs.changes.outputs.java == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -50,6 +93,8 @@ jobs:
   # Temurin 8 JVM via surefire's jvm override — the `java 8` claim in the
   # pom is verified, not asserted (the toolchain itself can't build on 8).
   java-runtime-8:
+    needs: changes
+    if: needs.changes.outputs.java == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -84,6 +129,8 @@ jobs:
   # name). HostPolicyProbe then shows the premise on the same JDK: under the
   # same policy the JDK's own PKIX refuses the chain the suite accepted.
   java-hardened-policy:
+    needs: changes
+    if: needs.changes.outputs.java == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -148,6 +195,8 @@ jobs:
   # java.class.path straight to `java -cp` -- dies with a
   # ClassNotFoundException on PlantedTrustStoreChild. Measured, not guessed.
   java-distroless:
+    needs: changes
+    if: needs.changes.outputs.java == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -270,6 +319,8 @@ jobs:
           IMAGE: ${{ matrix.image }}
 
   node:
+    needs: changes
+    if: needs.changes.outputs.node == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -306,6 +357,8 @@ jobs:
   # at the same time. fail-fast is off because "Bun passed and Deno did
   # not" is the useful answer, not the first failure.
   node-runtimes:
+    needs: changes
+    if: needs.changes.outputs.node == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -333,6 +386,8 @@ jobs:
   # regenerate it would ship stale trust anchors. Its own job now that the
   # runtime smoke is a matrix, so it runs once rather than six times.
   node-roots-generated:
+    needs: changes
+    if: needs.changes.outputs.node == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -354,6 +409,8 @@ jobs:
   # from npm at a pinned version; bump the pin in node/package.json's
   # test:runtimes:web.
   node-runtimes-web:
+    needs: changes
+    if: needs.changes.outputs.node == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -375,6 +432,8 @@ jobs:
   # binary, not an npm package, which is why this is its own job and why it
   # is slower than its siblings.
   node-runtimes-fastly:
+    needs: changes
+    if: needs.changes.outputs.node == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -398,6 +457,8 @@ jobs:
   # interop tests. Never part of the release: jvm-interop has no
   # release-please entry and no <module> anywhere.
   jvm-interop:
+    needs: changes
+    if: needs.changes.outputs.java == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -430,6 +491,8 @@ jobs:
   # Deliberately a separate Maven project, not a module of java/pom.xml,
   # so the BOM governs versions the way it does in a real application.
   java-spring-boot:
+    needs: changes
+    if: needs.changes.outputs.java == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -456,6 +519,8 @@ jobs:
           BOOT: ${{ matrix.boot }}
 
   python:
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -496,6 +561,8 @@ jobs:
   # once compiled on 6.3 locally and failed on the 6.1 container; one
   # compiler is not a matrix.
   swift:
+    needs: changes
+    if: needs.changes.outputs.swift == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -527,6 +594,8 @@ jobs:
       # test passed.
       - run: swift test -c release --force-resolved-versions
   swift-macos:
+    needs: changes
+    if: needs.changes.outputs.swift == 'true'
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -540,6 +609,8 @@ jobs:
   # nothing executes is a claim, not a fact — the analogue of the
   # java-runtime-8 job above.
   go:
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -570,6 +641,8 @@ jobs:
   # evaluation there, and this library must still never reach it. One Go
   # version each, not a cross product.
   go-platforms:
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -592,6 +665,8 @@ jobs:
   # -count=2 so a second run in the same process catches state left behind by
   # the first, which is what a cached buffer or a memoised location would be.
   go-race:
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -609,6 +684,8 @@ jobs:
   # pass. A crasher it finds is written under testdata/fuzz/ — commit that
   # file, it becomes a permanent regression case.
   go-fuzz:
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -636,6 +713,8 @@ jobs:
   # another module in place, so the binaries are built in go/tools and run
   # from go/.
   go-lint:
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -683,6 +762,8 @@ jobs:
   # pattern may not reach outside its module directory. A copy that drifts
   # ships stale trust anchors — the Go twin of node's roots-data.ts guard.
   go-generate-check:
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -697,6 +778,8 @@ jobs:
         working-directory: go
 
   ruby:
+    needs: changes
+    if: needs.changes.outputs.ruby == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -739,6 +822,8 @@ jobs:
   # trust anchor. APRV_PACKAGING=1 builds the gem, installs it into a GEM_HOME
   # outside the checkout and verifies a genuine receipt from a fresh process.
   ruby-gem:
+    needs: changes
+    if: needs.changes.outputs.ruby == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -761,6 +846,8 @@ jobs:
   # legacy chain plus OpenSSL::PKCS7's behaviour are exactly the kind of thing
   # that differs between them. One current-Ruby leg is enough.
   ruby-macos:
+    needs: changes
+    if: needs.changes.outputs.ruby == 'true'
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
@@ -781,6 +868,8 @@ jobs:
   # does, and a tool that cannot run on 3.1 must not be able to fail the 3.1
   # leg. Their gemfile is the only one in the port with dependencies.
   ruby-tools:
+    needs: changes
+    if: needs.changes.outputs.ruby == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -823,6 +912,8 @@ jobs:
   # pins no action beyond the checkout and caches nothing: a clean debug build
   # of the library and every test target is cheaper than restoring a cache.
   rust:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -855,6 +946,8 @@ jobs:
           cargo +${{ matrix.toolchain }} test --locked --no-default-features
 
   rust-lint:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -878,6 +971,8 @@ jobs:
   # cdylib/import-library dance is different on each. The Rust legs above
   # prove the algorithm; this one proves that a C toolchain can reach it.
   rust-ffi:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
     strategy:
@@ -985,6 +1080,8 @@ jobs:
   # above already proves the linker contract on three, and what this job
   # adds is the NIF boundary, which is the same on all of them.
   elixir-ffi:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -1040,6 +1137,8 @@ jobs:
   # mutation of a genuine receipt or JWS, not of noise. It needs a nightly
   # for the sanitizer flags, which is why it is not part of the `rust` matrix.
   rust-fuzz:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -1062,6 +1161,8 @@ jobs:
   # lives in node/fuzz's own package.json, which is why this job installs
   # twice and is not part of the `node` matrix.
   node-fuzz:
+    needs: changes
+    if: needs.changes.outputs.node == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -1093,6 +1194,8 @@ jobs:
   # the libFuzzer driver with clang, which the ubuntu runner image already
   # carries, and instruments only the library assembly.
   dotnet-fuzz:
+    needs: changes
+    if: needs.changes.outputs.dotnet == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -1127,6 +1230,8 @@ jobs:
   # timeout that turns an input the parsers loop forever on into a recorded
   # crash instead of a job that hangs until the runner's own limit.
   php-fuzz:
+    needs: changes
+    if: needs.changes.outputs.php == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -1166,6 +1271,8 @@ jobs:
   # own resource directory, so an unversioned `clang` that outruns the
   # installed runtime package fails the build with "Could not find asan".
   ruby-fuzz:
+    needs: changes
+    if: needs.changes.outputs.ruby == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -1217,6 +1324,8 @@ jobs:
   # sets -- run.sh installs it into an ephemeral uv environment and fuzzes the
   # source tree off PYTHONPATH, exactly as the `python` job tests it.
   python-fuzz:
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -1249,6 +1358,8 @@ jobs:
   # swift/Tests/ApplePurchaseReceiptVerifierTests, where it then runs on every
   # Swift line rather than only here.
   swift-fuzz:
+    needs: changes
+    if: needs.changes.outputs.swift == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     container: swift:6.3@sha256:56ef1be2c1ca36f4c52440357dc1fcdfdb5e113587134fcadeef57c225c71b54
@@ -1289,6 +1400,8 @@ jobs:
   # build already reaches, with the publisher's own checksum file to check the
   # pin against.
   java-fuzz:
+    needs: changes
+    if: needs.changes.outputs.java == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -1311,6 +1424,8 @@ jobs:
   # builds; an advisory against a version we do not use is not our problem,
   # and one against a version we do use cannot hide behind a fresh resolve.
   rust-supply-chain:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -1337,6 +1452,8 @@ jobs:
   # DER reader's depth bound is what stands between hostile input and a
   # crashed worker.
   php:
+    needs: changes
+    if: needs.changes.outputs.php == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -1372,6 +1489,8 @@ jobs:
   # from ranges, and deliberately: resolving is what it tests. The lockfile
   # would make it a copy of the `php` job's 8.2 leg.
   php-lowest:
+    needs: changes
+    if: needs.changes.outputs.php == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -1389,6 +1508,8 @@ jobs:
         working-directory: php
 
   php-static:
+    needs: changes
+    if: needs.changes.outputs.php == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -1441,6 +1562,8 @@ jobs:
   # because it is the slow one and because a failure here means something
   # different from a conformance failure.
   php-mutation:
+    needs: changes
+    if: needs.changes.outputs.php == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -1462,6 +1585,8 @@ jobs:
   # platform, and this port touches all three. The netstandard2.0 floor gets
   # its own jobs below.
   dotnet:
+    needs: changes
+    if: needs.changes.outputs.dotnet == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
     strategy:
@@ -1491,6 +1616,8 @@ jobs:
   # asset; this one loads it under Mono, the closest a hosted runner gets to
   # Unity's scripting backend.
   dotnet-mono:
+    needs: changes
+    if: needs.changes.outputs.dotnet == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -1532,6 +1659,8 @@ jobs:
   # change that forgets to regenerate would ship stale trust anchors — the
   # same rule node's roots-data.ts already follows.
   dotnet-roots:
+    needs: changes
+    if: needs.changes.outputs.dotnet == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -1550,6 +1679,8 @@ jobs:
   # sample verifies a receipt and asserts a foreign chain is still rejected,
   # so a trimmer that silently removed a check fails the job.
   dotnet-trim:
+    needs: changes
+    if: needs.changes.outputs.dotnet == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -1617,6 +1748,8 @@ jobs:
   # would. `npm test` deliberately does not call them (prettier --check
   # costs ~1.5s), which is why this job has to exist.
   node-lint:
+    needs: changes
+    if: needs.changes.outputs.node == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -1663,6 +1796,8 @@ jobs:
   # Installs the package rather than just the tools: mypy needs cryptography
   # and asn1crypto importable to resolve their types.
   python-tools:
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -1726,6 +1861,8 @@ jobs:
   # against the 6.1 container (no local daemon), which is the other reason
   # not to assert it here.
   swift-format:
+    needs: changes
+    if: needs.changes.outputs.swift == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     container: swift:6.3@sha256:56ef1be2c1ca36f4c52440357dc1fcdfdb5e113587134fcadeef57c225c71b54
@@ -1744,6 +1881,8 @@ jobs:
   # formatter that can corrupt a file is not one to run in apply mode over
   # this port; this job only ever verifies.
   dotnet-format:
+    needs: changes
+    if: needs.changes.outputs.dotnet == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -1767,6 +1906,8 @@ jobs:
   # palantir over google-java-format because google forces 2-space indent
   # on a 4-space codebase: 8690 changed lines against palantir's 1967.
   java-format:
+    needs: changes
+    if: needs.changes.outputs.java == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -1789,6 +1930,8 @@ jobs:
   # combination the resolver rejects outright, so the config could never
   # have run wherever it was invoked from.
   php-format:
+    needs: changes
+    if: needs.changes.outputs.php == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -1815,6 +1958,8 @@ jobs:
   # and runs the program unchanged. What only a registry can get wrong (a
   # version that never indexes, a slow sync) stays post-publish's job.
   smoke-npm:
+    needs: changes
+    if: needs.changes.outputs.node == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -1845,6 +1990,8 @@ jobs:
           node npm-smoke.mjs
 
   smoke-pypi:
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -1869,6 +2016,8 @@ jobs:
           venv/bin/python pypi-smoke.py
 
   smoke-maven:
+    needs: changes
+    if: needs.changes.outputs.java == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -1898,6 +2047,8 @@ jobs:
           java -cp ".:$(cat cp.txt)" Smoke
 
   smoke-swiftpm:
+    needs: changes
+    if: needs.changes.outputs.swift == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # The post-publish leg's image: the manifest's 6.1 floor.
@@ -1924,6 +2075,8 @@ jobs:
           swift run Smoke
 
   smoke-go:
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -1953,6 +2106,8 @@ jobs:
           go run .
 
   smoke-rubygems:
+    needs: changes
+    if: needs.changes.outputs.ruby == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -1980,6 +2135,8 @@ jobs:
           ruby rubygems-smoke.rb
 
   smoke-crates:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -2005,6 +2162,8 @@ jobs:
           cargo +stable run
 
   smoke-nuget:
+    needs: changes
+    if: needs.changes.outputs.dotnet == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
