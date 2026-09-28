@@ -1,7 +1,7 @@
 /// The status codes Apple documents for `verifyReceipt`, so callers do not
 /// write `21007` by hand.
 ///
-/// ``VerifyReceiptEndpoint`` returns ``ok``, ``malformedReceiptData``,
+/// ``Verifier/verifyReceiptEndpoint(environment:requestJson:)`` returns ``ok``, ``malformedReceiptData``,
 /// ``receiptNotAuthenticated``, ``sandboxReceiptOnProduction``,
 /// ``productionReceiptOnSandbox`` and ``internalDataAccessError``, and never
 /// the others. 21009 is deterministic for the same input: alert on it, do

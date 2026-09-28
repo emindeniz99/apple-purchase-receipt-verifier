@@ -13,7 +13,7 @@ Checked against the code on `feat/0.7-verifier-api`, 2026-09-27.
 | Feature | Java | Node | Python | Go | Ruby | PHP | .NET | Rust | Swift | C ABI |
 |---|---|---|---|---|---|---|---|---|---|---|
 | One `Verifier` with `verifyReceipt`, `verifySignedData` and `verifyReceiptEndpoint`, built from a `Config` (roots, clock) | ✅ | ✅ both builds | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ `aprv_verifier_new`, `aprv_verify_receipt`, `aprv_verify_signed_data`, `aprv_verify_receipt_endpoint` |
-| Result form | `VerificationResult` | result object | result object | `(payload, error)` | result object | result object | result object | `Result<Payload, Failure>` | `Result<Payload, Failure>` | JSON document |
+| Result form | `VerificationResult` | result object | result object | `(payload, error)` | result object | result object | result object | `Result<Payload, Failure>` | `VerificationResult` | JSON document |
 | Clock | `java.time.Clock` | `() => number` | callable | `func() int64` | proc | PSR-20 `ClockInterface` | `Func<long>` | closure returning epoch ms | closure | a fixed instant in ms, or `NULL` for the system clock |
 | No bundle id, environment, app Apple id or device id parameter | ✅ | ✅ both builds | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | JWS payload returned as the JSON Apple signed, read only for `signedDate` | ✅ | ✅ both builds | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ inherits Rust |
@@ -28,7 +28,7 @@ Checked against the code on `feat/0.7-verifier-api`, 2026-09-27.
 | JWS cap, 256 KiB | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ inherits Rust |
 | Fuzz target | ✅ `java-fuzz` | ✅ `node-fuzz`, default build | ✅ `python-fuzz` | ✅ `go-fuzz` | ✅ `ruby-fuzz` | ✅ `php-fuzz` | ✅ `dotnet-fuzz` | ✅ `rust-fuzz` | ✅ `swift-fuzz` | ❌ none of its own; `rust-fuzz` covers the parsers it calls, `cargo test` covers the ABI's edge cases |
 | Tests in an optimized build | n/a, JIT | n/a | n/a | n/a, one build mode | n/a | n/a | ✅ `dotnet test -c Release` | ❌ `cargo test` runs the debug profile; no release leg yet | ✅ `swift test -c release`, Linux and macOS | ❌ tests run on a debug build; only the Elixir job builds release |
-| Committed benchmark | ✅ `java-bench/` (JMH, on-demand workflow) | pending | pending | partial: `go/bench_test.go` has 5 benchmarks, no recorded baseline or workflow | pending | pending | pending | pending | pending | pending |
+| Committed benchmark, run on demand by `benchmark.yml` (BENCHMARKS.md) | ✅ `java-bench/` (JMH) | ✅ `node/bench/` | ✅ `python/bench/` | ✅ `go/crossport_bench_test.go` | ✅ `ruby/bench/` | ✅ `php/bench/` | ✅ `dotnet/bench/` | ✅ `rust/examples/bench.rs` | ✅ `swift/bench/` | ❌ none; the Rust benchmark covers the code it calls |
 | Conformance suite (`fixtures/cases.json`) | ✅ | ✅ both builds | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ C++17 and ctypes harnesses, except the `decodeBase64` groups: the ABI exposes no base64 decoder, so they are counted as not reachable |
 
 Notes:

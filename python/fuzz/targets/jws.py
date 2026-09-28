@@ -2,7 +2,7 @@
 JSON header and payload, the ``x5c`` certificates, the chain, the ES256
 signature.
 
-Same invariants as the Go port's ``FuzzVerifyTransaction``: nothing escapes
+Same invariants as the Go port's ``FuzzVerifySignedData``: nothing escapes
 as an exception at all (0.7's ``Verifier`` never raises), and a JWS that
 verifies under the fixture root must be refused under Apple's roots, or the
 anchors are not what decided it.

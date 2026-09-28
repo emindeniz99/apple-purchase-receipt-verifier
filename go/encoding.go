@@ -72,7 +72,7 @@ func isCanonicalBase64(text string) bool {
 // transaction/reject-signature-segment-* vectors in fixtures/cases.json
 // hold them to it: junk appended to the signature segment, "=" padding
 // on it, or flipped unused bits in its last character is
-// INVALID_JWS_FORMAT. Strictness here can only turn an accept into a
+// MALFORMED. Strictness here can only turn an accept into a
 // reject, never the reverse, and it means every byte of a JWS this port
 // accepts is a byte the signature covers.
 func decodeBase64URLStrict(segment string) ([]byte, error) {

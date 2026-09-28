@@ -197,12 +197,11 @@ the fixtures do under each target's own anchors, measured:
 | `jws` | 3 of 14 `fixtures/generated/*.jws` |
 | `endpoint-json` | a genuine body answers `{"status":0,…}` |
 
-`receipt-base64` read 0 of 16 until its verifier was bound to
-`Harness.RECEIPT_BUNDLE_ID`: the base64 corpus is a genuine public receipt for
-`dev.bonzer.weeka.app`, not the generated fixture for `com.example.app`, so
-every seed was refused for its bundle id before the anchor comparison could
-happen. Re-check these counts after touching the anchors, the bundle ids or the
-seed lists.
+On 0.6, `receipt-base64` read 0 of 16 until its verifier was given the bundle
+id of the genuine public receipt the base64 corpus holds: every seed was
+refused for its bundle id before the anchor comparison could happen. 0.7 takes
+no bundle id, so that failure mode is gone. Re-check these counts after
+touching the anchors or the seed lists.
 
 ## Corpus and findings
 

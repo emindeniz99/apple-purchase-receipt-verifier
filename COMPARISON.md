@@ -100,10 +100,10 @@ like `is_in_intro_offer_period`). Number-as-string and date-triplet
 formatting match Apple's (`"1"`, `"2024-08-06 12:00:00 Etc/GMT"`).
 
 `environment` is the one response field not read from the receipt: it echoes
-the environment this endpoint instance was configured to emulate. On a
+the `environment` argument of the `verifyReceiptEndpoint` call. On a
 status-0 response the two agree by construction — a receipt that disagrees
-with the configured environment is what 21007/21008 report instead, and
-those responses carry no `environment` at all.
+with that argument is what 21007/21008 report instead, and those responses
+carry no `environment` at all.
 
 ### Not produced — receipt attributes Apple documents in the response but that are absent, undocumented, or unavailable locally
 

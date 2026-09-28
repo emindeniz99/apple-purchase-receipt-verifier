@@ -254,7 +254,7 @@ rust/ffi/target/cppbuild/bin/aprv_example \
 ```
 
 ```
-apple-purchase-receipt-verifier 0.6.0
+apple-purchase-receipt-verifier <version>
 
 transaction: status 0
 {"bundleId":"com.example.app","environment":"Sandbox","signedDate":1722945600000, ...}

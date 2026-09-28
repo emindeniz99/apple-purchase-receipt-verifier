@@ -45,10 +45,6 @@ open: a multi-release jar with `module-info` for Java 9+ ("Java, after
   fast path were replaced on 2026-09-23 by the rule Apple's verifyReceipt
   was measured to apply, canonical standard base64 only (THREAT-MODEL.md
   §3.8).
-- **0.6.0 release notes must warn Swift users of 0.4.0 to 0.5.1**: release
-  builds of those versions crash on a genuine receipt on Linux x86_64
-  under Swift 6.3.3 (a miscompiled throw path, #126). Debug builds and
-  tests pass, so a consumer's CI does not show it. Tell them to upgrade.
 - **JWS cap, to be discussed**: it stays at 262,144 bytes. The request and
   receipt caps now match Apple's measured limit; nobody has checked whether
   Apple states a size limit for a JWS anywhere we could match.
@@ -57,8 +53,9 @@ open: a multi-release jar with `module-info` for Java 9+ ("Java, after
   about 21.5 MB on disk to every checkout. The git transfer stays small
   because git compresses the padding. Package.swift declares only `certs`
   as resources, so nothing ships in a built product.
-- **Cross-port benchmarks** (in progress): only `java-bench/` is committed.
-  `go/bench_test.go` has five benchmarks with no recorded baseline.
+- **Cross-port benchmarks: record a 0.7 run.** All nine ports carry a
+  benchmark and `benchmark.yml` runs them on demand, but the results in
+  BENCHMARKS.md are from `v0.6.0`, under the 0.6 names.
 - **A date round-trip conformance vector**: a date string parsed to an
   instant and rendered back as Apple's JSON must come out byte-identical in
   every port.
