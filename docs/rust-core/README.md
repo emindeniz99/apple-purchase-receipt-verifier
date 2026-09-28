@@ -1,97 +1,159 @@
 # One Rust core: the migration plan
 
-Status on 2026-09-26: **accepted plan.** Phase 0 (inventory and spikes) is
-done. The owner settled every owner call on 2026-09-25, rewrote R20 and
-added R21 (the OpenSSL substrate) on 2026-09-26, and split Java into two
-artifacts the same day (R18; table below).
-Implementation waits: the owner wants every open question settled before
-Phase 1 starts (2026-09-25).
+Status on 2026-09-28: **accepted plan, rewritten on the Wasm-first
+basis.** 0.7.0 shipped on 2026-09-28 (tag `v0.7.0`, merged into
+`plan/one-rust-core`) with nine hand-written implementations of one API.
+The Rust core lands in **0.8.0 under the same API and the same
+`fixtures/cases.json`**. Every package moves in that one release (R19).
+Breaking changes stay allowed before 1.0, and floors may rise (R30).
+Every owner question is settled (table below); Phase 1 can start.
 
 ## The idea
 
 Today nine implementations in nine languages repeat one security
 algorithm: ASN.1, X.509, CMS, JWS, chain policy, caps and Apple's rules.
-The plan keeps one of them, the Rust crate, and turns every published
-package into a thin binding over it:
+In 0.8.0:
 
-- UniFFI for Swift, Python and the Java 8 artifact (Kotlin over JNA);
-- one plain wasm module, `aprv.wasm`, for npm (with a hand-written JS
-  façade, no wasm-bindgen), for Go through wazero, and for the main Java
-  artifact (Java 11+), which Endive compiles to JVM bytecode at build
-  time;
-- the existing C ABI for everything else.
+- **One Rust core** on OpenSSL 4 (R21): OpenSSL parses the ASN.1, CMS and
+  X.509 and does the signature arithmetic; the Rust code keeps Apple's
+  policy.
+- **One canonical `aprv.wasm`**, built once per release for
+  `wasm32-wasip1` with wasi-sdk's libc and a link-time C file. It imports
+  exactly one function, `aprv.random_get`, and exposes ABI v1 (R23).
+- **Thin wrappers in nine languages** run that one file. Each host is a
+  Wasm runtime the language already has: Endive (Java 11+), native
+  WebAssembly (JS), wazero (Go), wasmtime-py (Python), WasmKit (Swift),
+  the wasmtime gem (Ruby), Wasmtime .NET. Java 8 and PHP reach the same
+  module through `aprv-server`, one Rust binary that runs it in a child
+  process (R22).
+- **One independent Java implementation**, the 0.7 BouncyCastle one,
+  kept and maintained side by side as the main Maven artifact and as the
+  live differential oracle for the core (R25, R33).
 
-The core itself sits on OpenSSL 4 (R21): OpenSSL parses the ASN.1, CMS and
-X.509 and does the signature arithmetic, and the Rust code keeps Apple's
-policy. The core's own ASN.1, X.509, CMS, chain and crypto modules are
-deleted.
-
-A security fix then lands once, in Rust, and ships to every registry in
-the next release.
+A security fix then lands in Rust, rebuilds one `aprv.wasm`, and reaches
+every Wasm-hosted package in the next release. No wrapper parses a
+receipt, checks a signature or decides trust. The Rust core never runs as
+native code inside a caller's process unless the caller builds the C ABI
+themselves (R32).
 
 ## Read in this order
 
-1. [INVENTORY.md](./INVENTORY.md): what ships today, where, and how big it
-   is (Phase 0).
-2. [../evidence/2026-09-25-rust-core-spikes.md](../evidence/2026-09-25-rust-core-spikes.md):
-   what the spikes measured, including Java 8, workerd, Go without cgo,
-   and timings against today's packages.
-3. [ARCHITECTURE.md](./ARCHITECTURE.md): the target design: crates, API,
-   time, panics, packaging per registry, invariants.
-4. [DECISIONS.md](./DECISIONS.md): R1-R21, each with options, evidence and
-   a recommendation.
-5. [MIGRATION.md](./MIGRATION.md): phases 1-7 with gates, CI and release
-   changes, acceptance tests, risks.
-6. [SURFACE.md](./SURFACE.md): the binding-neutral contract between the
-   core and every adapter, with its enforcement.
+1. [INVENTORY.md](./INVENTORY.md): what 0.7.0 ships, where, and how big.
+2. [SURFACE.md](./SURFACE.md): the 0.7 API is the surface; the fixture
+   file is the contract.
+3. [ARCHITECTURE.md](./ARCHITECTURE.md): crates, `aprv.wasm`, ABI v1,
+   the instance model, time, and one chapter per host.
+4. [THREAT-MODEL.md](./THREAT-MODEL.md): the isolation classes A to E,
+   per host, and what a guest compromise reaches.
+5. [SUPPORT-MATRIX.md](./SUPPORT-MATRIX.md): floors and platforms per
+   language in 0.8.0.
+6. [DECISIONS.md](./DECISIONS.md): R1 to R33 in their final state, and
+   one table of rejected alternatives.
+7. [MIGRATION.md](./MIGRATION.md): seven phases with gates, CI, release
+   artifacts, risks and the owner's actions.
+
+The evidence behind every number is under [../evidence/](../evidence/),
+dated 2026-09-25 to 2026-09-27.
 
 ## What the spikes settled
 
-- **Java 8 works** on the generated Kotlin, with one rule: no unsigned
-  integers in the API. On JDK 21 the Rust core beats today's Maven jar
-  (701 against 781 µs per receipt, 1,096 against 1,253 µs per JWS, after
-  10,000 warm-up calls).
-- **The core builds for wasm** with OpenSSL inside: a `wasm32-wasip1`
-  build with wasi-sdk's libc and a small link-time C file imports only
-  `aprv.clock_now_ms` and `aprv.random_get`. It gave the native answers on
-  all 1,179 corpus rows in Node, Bun, Deno, Chromium, Firefox, WebKitGTK,
-  workerd, wazero and Wasmtime
-  ([OpenSSL CMS everywhere](../evidence/2026-09-26-openssl-cms-everywhere.md)).
-  `wasm32-unknown-unknown` cannot build `openssl-sys`.
-- **Go can stay cgo-free** by running the same module through wazero.
-- **OpenSSL 4.0.2 with the CMS API can carry the core** (R21). It answers
-  as Java does on 1,028 of 1,048 rows, all 22 signature-algorithm inputs
-  included; none of the other 20 is a forgery. Coverage-guided fuzzing
-  with OpenSSL instrumented found nothing in any campaign
-  ([substrate bake-off](../evidence/2026-09-26-security-substrate-bakeoff.md),
-  [follow-up](../evidence/2026-09-26-substrate-followup.md),
-  [ASN.1 payload](../evidence/2026-09-26-openssl-asn1-payload.md)).
-- **Java 11+ can run `aprv.wasm` as JVM bytecode.** Endive 1.1.0
-  compiled the module at build time into an ordinary jar. A clean Maven
-  consumer answered all 1,179 corpus rows and 5,000 mutants the same as
-  native on JDK 11, 17, 21 and 25, with no native code loaded. Receipts
-  took 5.9 to 9.5 ms and JWS 20 to 29 ms on one core; an instance serves
-  one thread at a time
-  ([Endive build-time JVM](../evidence/2026-09-26-endive-build-time-jvm.md)).
-- **Python via UniFFI** gives typed exceptions, default arguments and
-  docstrings from Rust doc comments.
+**The core.**
+
+- **OpenSSL 4.0.2 with the CMS API carries the core** (R21). It answers
+  as the Java implementation does on 1,028 of 1,048 rows the C ABI can
+  express, all 22 signature-algorithm inputs included, and none of the
+  other 20 is a forgery. Coverage-guided fuzzing with OpenSSL instrumented
+  found nothing in any campaign ([ASN.1 payload][payload],
+  [follow-up][followup], [CMS everywhere][cms]).
+- **It builds for Wasm.** `wasm32-unknown-unknown` cannot build
+  `openssl-sys` (20 × E0432). A `wasm32-wasip1` build with wasi-sdk's libc
+  and a link-time C file gave the native answers on all 1,179 corpus rows
+  on nine hosts ([CMS everywhere §2, §3][cms]).
+- **One small ABI carries all of it.** ABI v1 kept every cryptographic
+  verdict and every endpoint answer on all 6,179 rows (the 1,179 corpus
+  rows plus 5,000 mutants), trapped on every misuse the 33 mandatory tests
+  try, and cost nothing measurable against the earlier bridge
+  ([ABI v1][abi]).
+
+**The hosts.** Every host below answered all 6,179 rows byte-identically
+to Node and passed the 37 ABI and facade tests (the 33 mandatory tests
+plus 4 of the facade's contract):
+
+| Host | g5 receipt | JWS | Note |
+|---|---:|---:|---|
+| Node (V8), one instance | 1,343 µs | 4,819 µs | [ABI v1][abi] |
+| Endive 1.1.0, JDK 21, `ByteArrayMemory`, 1 / 4 threads | 154.7 / 482.2 per s | 52.6 / 166.8 per s | [ABI v1][abi], [Endive][endive] |
+| wasmtime-py 49.0.0, plain `.wasm` | 1,783 µs | 5,198 µs | [Python wasmtime][pywt] |
+| WasmKit 0.4.0, Swift 6.3.3 | 13.3 ms | 54.7 ms | [Swift WasmKit][swift] |
+| wasmtime gem 48.0.1, `gvl: false` | 1,334 µs | 4,709 µs | [Ruby][ruby] |
+| Wasmtime .NET 48.0.2, .NET 10 | 1,310 µs | 4,541 µs | [.NET][dotnet] |
+| `aprv-server`, static musl, fresh instance, over HTTP | 218.6 per server CPU-s | 95.9 per server CPU-s | [static musl][musl] |
+
+Every row clears the owner's guideline of about 10 verifications per
+second per core (R4). WasmKit's JWS row is the thinnest margin, 1.7 to 1.9
+times the floor. wazero ran the same corpus identically
+([CMS everywhere §2][cms]); its ABI v1 speed is measured in Phase 4.
+
+**Java 8 without native code in the JVM.** A pure-Java client supervising
+`aprv-server` as a child passed 31 of 31 checks on Temurin 8: it survives
+a deliberate child abort, restarts the child, and leaves no orphan however
+the JVM ends. A g5 call costs 3.87 ms from Java 8
+([aprv-server §6][server]).
+
+**The server ships as one static binary per Linux architecture.** Static
+musl builds for x86_64 and aarch64 run from an empty chroot and on
+Alpine, 6 to 8% slower than glibc, 3.66 MB and 3.39 MB gzipped. A
+one-line change stops the one-shot CLI paying 55 ms of unwinder teardown
+([static musl][musl]).
+
+**Python compiles the plain module at start.** wasmtime-py spends about
+1 s on 4 CPUs and 3 s on one compiling `aprv.wasm` once per process
+(934 ms and 2,923 ms). Wasmtime's own cache brings a warm start to 95 ms.
+A precompiled `.cwasm` would start in 62 to 72 ms, and is rejected because
+it ties the wheel to one Wasmtime major (R27;
+[runtime options][pyopt], [execution modes][modes]).
+
+**What did not work,** each in the rejected table of DECISIONS.md with its
+measured reason: pywasm (0.006 JWS per second), Pulley (4.6 to 7.5 JWS per
+second), WAMR's interpreter (9.4) and JITs (cold starts of 0.45 s to
+153 s), Wasmi's generic C API (no fuel, no memory limiter), mimalloc (no
+gain, 11 to 17 MiB more RSS), Wasmi as the Python default
+([final Python round][pyfinal]).
 
 ## Owner calls (all settled)
 
-| # | Question | Recommendation |
+| # | Question | Decision |
 |---|---|---|
-| R21 (**accepted** 2026-09-26) | Security substrate? | OpenSSL 4 through rust-openssl, with the CMS API and our own chain policy. `asn1.rs`, `x509.rs`, `cms.rs`, `chain.rs` and `crypto.rs` are deleted; the payload is read with OpenSSL's ASN.1 templates. npm and Go share one `aprv.wasm`. |
-| R4 (**accepted**) | npm on Node: the OpenSSL wasm module took 1,395 µs per receipt and 4,550 µs per JWS against 683 and 732 µs for today's `node:crypto` build (informational). Accept it, or add a napi-rs native addon? | Ship the plain wasm module. Add napi-rs only if a user reports throughput trouble; the 2x speed trigger was dropped on 2026-09-26. |
-| R6 (**accepted**, plus an opt-in cgo fast path on demand) | Go: wazero (cgo-free; the OpenSSL module took 2,495 µs per receipt against 207 µs for today's Go port), cgo (native speed, loses `CGO_ENABLED=0`), keep the Go port, or retire it? | wazero, running the same `aprv.wasm` as npm |
-| R7 (**accepted**: 6.2 everywhere) | Swift on Linux needs Swift 6.2 (SE-0482) for a prebuilt Rust library. Raise the floor or drop Linux? | Raise the floor to 6.2 |
-| R18 (**accepted**, supersedes R13; two artifacts since 2026-09-26) | Java binding? | One thin hand-written Java façade API in two artifacts: `apple-purchase-receipt-verifier` (Java 11+, `aprv.wasm` compiled to bytecode by Endive, no natives) and `apple-purchase-receipt-verifier-java8` (UniFFI over JNA, 9 natives). One reactor, one Central deployment, equal versions; a classpath guard refuses both at once |
-| R16 (**accepted**) | Keep the surface free of any binding generator? | Yes: SURFACE.md |
-| R17 (**accepted**) | A local verifyReceipt server? | Yes, as a product and as a Java library mode |
-| R5, R9, R15 (**accepted**) | Drop Fastly/Akamai; delete Ruby/PHP/.NET after Phase 1; Python first | As recommended |
-| R19 (**accepted**) | Versions? | Every package moves to the Rust core in one 0.8.0 release, stays 0.x; crates.io waits until needed |
-| R12 (**accepted**, incl. Swift on Windows) | Which native targets? | Every target stable Rust builds that someone still runs: 26 C ABI archives, 19 wheels, 9 natives in the Java 8 jar with the other Java 8 platforms served from GitHub Releases; the Java 11+ jar needs no natives |
-| R20 (**accepted**, rewritten 2026-09-26) | Signature algorithm policy, and what a Java difference means? | Apple compatibility and failing closed; `fixtures/cases.json` is the contract and Java a reference. Accept any algorithm the pinned chain vouches for. Divergences are recorded; one that changes an Apple-signed input's verdict, or accepts something unsigned, is a bug. |
-| R8 (**accepted**, revised 2026-09-26) | After the migration, keep an independent implementation to catch Rust bugs? | Compare against the published 0.7.x Java jar, pinned by version and checksum, until 1.0; no Java verifier source stays in the repository |
+| R22 (2026-09-28) | The principle? | Wasm first everywhere: one `aprv.wasm`; a native parser never runs inside a caller's process by default |
+| Q49 (d), R23 (2026-09-28) | Instance model? | `Verifier.create(config)` owns a small pool; each instance gets INIT once; one call at a time per instance; a trapped instance is discarded; no handles, nothing to free. Node: one instance. `aprv-server`: fresh instance per request unless Phase 1 measures INIT above 10% of a call, then `--lifecycle pool` |
+| Q51 (b), R24 (2026-09-28) | What does the clock decide, and where is it read? | Once per call in the wrapper, passed as `now_ms`; used for the chain instant when the input carries no date and for `request_date` (the 0.7 rule). The module imports only `aprv.random_get` |
+| Per-call `now` (2026-09-28) | A public per-call time argument? | Dropped, as in 0.7. ABI v1 carries `now_ms` per call anyway, so an override later is additive |
+| Java artifacts, R25 (2026-09-28) | How many, and on which floor? | Two, both Java 8: the pure-Java BouncyCastle artifact, unchanged and maintained, and `apple-purchase-receipt-verifier-wasm` with the same package and class names; a classpath guard refuses both at once |
+| Engine / ServerSource, R25 (2026-09-28) | How does `-wasm` choose its engine? | Programmatically and explicitly, never through system properties or environment variables of ours: `Verifier.create(config)` picks by JVM version (Endive on 11+, the server on 8); `Engine.endive()`; `Engine.server(ServerSource...)` with `url`, `executable`, `maven`, `github`, `download`, in the user's order, default `[maven, github]` |
+| Q44, R26 (2026-09-28) | Server binaries on Maven Central? | Classifier jars of the static musl server for `linux-x86_64` and `linux-aarch64`; macOS and Windows binaries from GitHub Releases |
+| Q52 (a), R27 (2026-09-28) | Python runtime? | wasmtime-py, at or above the current major with no pin to one major |
+| Q45 / Q53 (a), R27 (2026-09-28) | Compiled code for Python? | The plain `.wasm`, compiled at start; Wasmtime's `Config.cache` on by default, silently off when the cache directory is read-only, path overridable by an environment variable; Lambda pays the compile per new container, documented |
+| Q54, R28 and R30 (2026-09-28) | Floors, and platforms without a wasmtime-py wheel? | Java 8, Python 3.10, Swift 6.3 with macOS 15 and iOS 18, Ruby 3.3, .NET netstandard2.0 (tested on net8+), Node 20, Go as today, PHP 8.2. Where wasmtime-py has no wheel, install fails with a message that points to `aprv-server` or the C ABI |
+| Q47 (a), R29 (2026-09-28) | PHP? | One-shot `aprv` CLI per call by default, an optional server URL, and an `aprv install` command that downloads the binary from GitHub Releases against a pinned SHA-256 |
+| R31 (2026-09-28) | Server build? | Wasmtime 49 runtime-only with an embedded baseline `.cwasm`; static musl on Linux; musl's own malloc; `cli-fast-exit`. Exotic CPUs stay open |
+| R33 (2026-09-28), supersedes R8 | What independent checking survives? | The maintained Java implementation, run against the core on all 311 cases in CI and on the corpus in the differential job |
+| R21 (2026-09-26) | Security substrate? | OpenSSL 4 through rust-openssl, CMS API, our own chain policy, ASN.1 templates for the payload |
+| R4, R5, R6, R19, R20 | npm, Fastly/Akamai, Go, versions, Apple compatibility | Plain Wasm for npm; drop Fastly and Akamai; wazero for Go; one 0.8.0 release; `fixtures/cases.json` is the contract and a divergence that changes an Apple-signed verdict is a bug |
 
-Everything else in DECISIONS.md is either the owner's brief (R1, R2, R9) or
-a technical recommendation that proceeds unless the owner objects.
+The mapping of the Q numbers to their subjects follows the grouping in the
+owner's brief of 2026-09-28.
+
+[payload]: ../evidence/2026-09-26-openssl-asn1-payload.md
+[followup]: ../evidence/2026-09-26-substrate-followup.md
+[cms]: ../evidence/2026-09-26-openssl-cms-everywhere.md
+[abi]: ../evidence/2026-09-26-wasm-abi-v1.md
+[endive]: ../evidence/2026-09-26-endive-build-time-jvm.md
+[pywt]: ../evidence/2026-09-26-python-wasmtime.md
+[swift]: ../evidence/2026-09-26-swift-wasmkit.md
+[ruby]: ../evidence/2026-09-26-ruby-wasmtime.md
+[dotnet]: ../evidence/2026-09-26-dotnet-wasmtime.md
+[musl]: ../evidence/2026-09-27-static-musl-server.md
+[server]: ../evidence/2026-09-26-aprv-server.md
+[pyopt]: ../evidence/2026-09-27-python-runtime-options.md
+[modes]: ../evidence/2026-09-27-wasm-execution-modes.md
+[pyfinal]: ../evidence/2026-09-27-python-runtime-final.md

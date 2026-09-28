@@ -486,10 +486,10 @@ Still worth filing as issues:
   design keeps room for this (docs/design/0.7-api.md).
 - **A per-certificate distrust list in `Config`**, for a leaked historical
   Apple leaf key (THREAT-MODEL.md §4). Not built until that day comes.
-- **A shared Rust core compiled to WebAssembly under every port.** A
-  future idea for its own branch. The 0.7 design keeps the door open: the
-  core would take `now_ms` as an argument instead of calling back into the
-  host for the time.
+- **A shared Rust core compiled to WebAssembly under every port.** Planned
+  for 0.8.0 under the 0.7 API: one `aprv.wasm` over OpenSSL 4 behind thin
+  wrappers, `aprv-server` for Java 8 and PHP, and the Java implementation
+  kept beside it. The plan is [docs/rust-core/README.md](./docs/rust-core/README.md).
 - Decide whether to support the ancient `transactionReceipt`
   (purchase-info) format at all (double-wrapped payloads are handled ✅).
 - **Dev-mode environments**: Apple's `SignedDataVerifier` deliberately

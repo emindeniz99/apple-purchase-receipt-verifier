@@ -229,7 +229,9 @@ recorded here.
   noise, not a weakness in how it is used here. **Superseded in 0.7**
   ([docs/design/0.7-api.md](./docs/design/0.7-api.md), "Removed in 0.7"):
   Java dropped `jackson-databind` and `jackson-annotations` and keeps only
-  `jackson-core`'s streaming parser and generator.
+  `jackson-core`'s streaming parser and generator. **To be superseded in
+  0.8.0 for the eight non-Java ports** by one Rust core over OpenSSL 4
+  ([docs/rust-core/README.md](./docs/rust-core/README.md)).
 
 ## 1. Existing solutions (research, 2026-08)
 

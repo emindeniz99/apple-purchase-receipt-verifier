@@ -422,3 +422,7 @@ Not defended against here, by decision rather than omission.
 - **SHA-1 is accepted for legacy receipts**, and the device-hash binding is
   SHA-1, because Apple signs them that way. Neither can be chosen differently
   and still verify genuine receipts.
+
+0.8.0 moves eight ports onto one Rust core run as WebAssembly or through
+`aprv-server`; that architecture's threat model, its isolation classes and
+per-host limits, lives in [docs/rust-core/THREAT-MODEL.md](./docs/rust-core/THREAT-MODEL.md).

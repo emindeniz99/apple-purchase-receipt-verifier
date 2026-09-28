@@ -5,6 +5,10 @@ Which features each implementation ships. The nine ports are one product
 not. [SUPPORT-MATRIX.md](./SUPPORT-MATRIX.md) covers a different question:
 which language versions CI runs.
 
+This table describes 0.7. In 0.8.0 the eight non-Java ports become thin
+wrappers over one Rust core, and the Java implementation stays beside it
+([docs/rust-core/README.md](./docs/rust-core/README.md)).
+
 The C ABI in [`rust/ffi/`](rust/ffi/) wraps the Rust port. It inherits every
 Rust verification decision; its column shows what the ABI exposes.
 

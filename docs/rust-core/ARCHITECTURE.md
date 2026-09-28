@@ -1,530 +1,700 @@
-# Target architecture: one Rust verifier, thin bindings
+# Target architecture: one Rust core, one aprv.wasm, thin hosts
 
-Status: **target design of the accepted plan.** The decisions it rests on
-are in [DECISIONS.md](./DECISIONS.md); R21 (2026-09-26) put the core on
-OpenSSL 4 and replaced wasm-bindgen with one plain wasm module; R18's
-addendum (2026-09-26) split Java into two artifacts.
+Status: **target design of the accepted plan, rewritten on 2026-09-28 on
+the Wasm-first basis** (R22). The decisions it rests on are in
+[DECISIONS.md](./DECISIONS.md), the public contract in
+[SURFACE.md](./SURFACE.md), and the isolation argument in
+[THREAT-MODEL.md](./THREAT-MODEL.md).
 
 ## 1. The shape
 
 ```text
-                 SECURITY REVIEW BOUNDARY (deep human review)
-┌──────────────────────────────────────────────────────────────────────┐
-│ rust/  crate apple-purchase-receipt-verifier  (the policy)           │
-│   Apple's rules: pinned roots, chain policy and historical time,     │
-│   JWS, receipt attributes, caps, base64 rules, JSON depth, Reason    │
-│   vocabulary, verifyReceipt endpoint.                                │
-│   #![forbid(unsafe_code)], no panics. No ASN.1, CMS or X.509 parser. │
-│        │ safe Rust calls                                             │
-│ ┌──────▼───────────────────────────────────────────────────────────┐ │
-│ │ rust/openssl/  crate aprv-openssl  (the adapter)                 │ │
-│ │   FFI to OpenSSL's CMS, X.509, EVP and ASN.1 template APIs;      │ │
-│ │   payload.c (14 lines of ASN1_SEQUENCE/ASN1_ITEM declarations);  │ │
-│ │   the wasm clock import. The only unsafe below the bindings.     │ │
-│ └──────┬───────────────────────────────────────────────────────────┘ │
-│        │ static link                                                 │
-│   OpenSSL 4.0.2, upstream C in the trusted base                      │
-└──────────────────────────────┬───────────────────────────────────────┘
-                               │ plain Rust API
-┌──────────────────────────────▼───────────────────────────────────────┐
-│ rust/bindings/surface/  crate aprv-surface  (unpublished)            │
-│   binding-neutral records and errors, checked conversions.           │
-│   #![forbid(unsafe_code)]. Mechanical review.                        │
-└─────┬─────────────────────────────┬──────────────────────────┬───────┘
-      │                             │                          │
-┌─────▼─────┐              ┌────────▼────────┐          ┌──────▼──────┐
-│ uniffi/   │              │ wasm/           │          │ rust/ffi/   │
-│ UniFFI    │              │ aprv.wasm: the  │◄─────────┤ C ABI       │
-│ cdylib +  │              │ C ABI built for │          │ cdylib +    │
-│ staticlib │              │ wasm32-wasip1,  │          │ staticlib + │
-│           │              │ imports 2 funcs │          │ cbindgen .h │
-└──┬──┬──┬──┘              └──────┬──────┬───┘          └──────┬──────┘
-   │  │  │                        │      │                     │
- Kotlin Swift Python      JS façade    Go via wazero;     C, C++, SWIG,
-   │                          │        Java 11+ as JVM    Elixir NIF,
- Java 8 (-java8)      one npm package  bytecode (Endive)  anything else
+                    SECURITY REVIEW BOUNDARY (deep human review)
+┌─────────────────────────────────────────────────────────────────────┐
+│ rust/          aprv-core: Apple's policy. Pinned roots, chain       │
+│                policy, historical time, JWS, receipt attributes,    │
+│                caps, base64 rules, JSON depth, Reason, endpoint.    │
+│                #![forbid(unsafe_code)]. No ASN.1, CMS, X.509 code.  │
+│   │ safe calls                                                      │
+│ rust/openssl/  aprv-openssl: FFI to OpenSSL's CMS, X.509, EVP and   │
+│                ASN.1 template APIs; payload.c. The only unsafe      │
+│                crate below the boundary crates.                     │
+│   │ static link                                                     │
+│ OpenSSL 4.0.2, upstream C in the trusted base                       │
+└───┬─────────────────────────────────────────────────────────────────┘
+    │ plain Rust API
+┌───▼──────────────────────────┐    ┌──────────────────────────────┐
+│ aprv-surface: the 0.7 model  │───►│ aprv-wire: the 0.7 canonical │
+│ (three operations, Reason,   │    │ JSON bytes, INIT config JSON │
+│ payloads, Failure). No       │    └──────────────┬───────────────┘
+│ generator, no serializer.    │                   │
+└───┬──────────────────────────┘                   │
+    ├──────────────────────────────┐               │
+┌───▼──────────────────────────┐ ┌─▼───────────────▼──────────────┐
+│ rust/ffi: the C ABI          │ │ aprv-abi → aprv.wasm           │
+│ escape hatch, source only,   │ │ wasm32-wasip1, ABI v1,         │
+│ class E (the user's choice)  │ │ imports only aprv.random_get   │
+└──────────────────────────────┘ └─┬──────────────────────────────┘
+                                   │ the same file, one SHA-256
+     ┌───────────┬──────────┬──────┼───────────┬───────────┬──────────────┐
+     ▼           ▼          ▼      ▼           ▼           ▼              ▼
+  Endive      V8 / JSC /  wazero  wasmtime-  WasmKit    wasmtime gem,  aprv-server
+  (build-     SpiderMonkey (Go)   py         (Swift)    Wasmtime .NET  (Wasmtime 49,
+  time, JVM   (npm)               (Python)              (Ruby, .NET)   own process)
+  bytecode)                                                            ├ Java 8 (-wasm)
+  Java 11+                                                             ├ PHP (CLI/URL)
+  (-wasm)                                                              └ HTTP, Docker
+
+  Java 8+ main artifact: the 0.7 pure-Java BouncyCastle implementation,
+  independent of all of the above, maintained, and the live oracle (R33).
 ```
 
-A fix in `rust/` reaches every package on the next release. No package
-carries a parser, a signature check or a trust decision of its own.
+A fix in `rust/` rebuilds one `aprv.wasm` and reaches every Wasm-hosted
+package in the next release. No wrapper carries a parser, a signature
+check or a trust decision. The Java implementation is the one deliberate
+exception, kept as a second, independent implementation (R25, R33).
 
 ## 2. Crates and folders
 
 ```text
-rust/                          core crate (the policy), unchanged name, published to crates.io
-rust/Cargo.toml                gains [workspace] members = ["openssl", "ffi", "bindings/*"]
-rust/openssl/                  aprv-openssl: the OpenSSL adapter, the one unsafe crate below the bindings
-rust/openssl/payload.c         the receipt payload grammar as OpenSSL ASN.1 templates (14 lines)
-rust/bindings/surface/         aprv-surface: the cross-language API model
-rust/bindings/uniffi/          aprv-uniffi: #[uniffi::export] over aprv-surface
-rust/bindings/uniffi/uniffi.toml   per-language names, packages, disable_java_cleaner
-rust/bindings/wasm/            aprv-wasm: the C ABI as aprv.wasm (wasm32-wasip1), plus alloc/dealloc exports
-rust/bindings/wasm/wasi-none.c link-time WASI definitions: the module imports only aprv.clock_now_ms, aprv.random_get
-rust/bindings/wire/            aprv-wire: the JSON view (C ABI, aprv.wasm), see SURFACE.md §4.2
-rust/ffi/                      existing C ABI, rebased on aprv-surface + aprv-wire
-rust/ffi/swig/                 apple_purchase_receipt_verifier.i and examples
-rust/fuzz/                     verify-receipt, verify-transaction, plus targets for the JSON view
-node/                          aprv.wasm's JS façade (about 100 lines) and index.d.ts, hand-written
-java/                          one Maven reactor, two modules: Endive (Java 11+) and -java8 (UniFFI)
-python/  swift/  go/           package builds, façades, binding tests
+rust/                         aprv-core; the package keeps its published name,
+                              apple-purchase-receipt-verifier (R19)
+rust/Cargo.toml               gains [workspace]; exclude gains bindings/** and server/**
+rust/openssl/                 aprv-openssl: the OpenSSL adapter (R21)
+rust/openssl/payload.c        the receipt payload grammar as ASN.1 templates
+rust/bindings/surface/        aprv-surface: the binding-neutral model of the 0.7 API
+rust/bindings/wire/           aprv-wire: the 0.7 canonical JSON bytes
+rust/bindings/abi/            aprv-abi: the ABI v1 exports, built as aprv.wasm
+rust/bindings/abi/wasi-none.c the link-time C file: WASI answered inside the module
+rust/server/                  aprv-server: the `aprv` binary (serve, CLI, precompile)
+rust/ffi/                     the C ABI, rebased on aprv-surface and aprv-wire
+rust/fuzz/                    verify-receipt, verify-transaction, the ABI entry
+java/                         one Maven reactor: the main artifact and -wasm (§7.8)
+node/ go/ python/ ruby/       thin wrappers over aprv.wasm
+dotnet/ php/                  thin wrappers (PHP over aprv-server)
+Package.swift, swift/         the Swift wrapper over WasmKit
 ```
 
-Gone from `rust/src/` (R21): `asn1.rs`, `x509.rs`, `cms.rs`, `chain.rs` and
-`crypto.rs`, with the public modules of the same names and
-`TrustAnchor::certificate()`. `rust/fuzz` loses `parse-der`,
-`parse-certificate` and `parse-cms`, which fuzzed those modules.
+- **aprv-core** is today's crate after R21: the OpenSSL adapter replaces
+  `asn1.rs`, `x509.rs`, `cms.rs`, `chain.rs` and `crypto.rs`. Its public
+  API is the Rust rendering of the 0.7 API that 0.7.0 already ships.
+- **aprv-surface** is the semantic model every boundary shares: the
+  three operations, the eight reasons, the payload records, the failure,
+  the configuration (a list of DER roots). It depends on the core only,
+  and never on a binding generator, a runtime or a wire format
+  (SURFACE.md §4).
+- **aprv-wire** turns surface values into the 0.7 canonical JSON bytes
+  and reads the INIT configuration JSON. The C ABI and `aprv.wasm` both
+  use it, so the two boundaries cannot drift apart.
+- **aprv-abi** is the ABI v1 export list (§4). It is `unsafe` at the
+  boundary only, like `rust/ffi`, and holds no security logic.
+- **aprv-server** depends on `wasmtime`, not on the core. It runs the
+  released `aprv.wasm` like any other host, so the server cannot
+  disagree with the other packages about a verdict.
+- One Cargo workspace replaces today's two lockfiles (`rust/` and
+  `rust/ffi/`). `rust/fuzz` stays outside it, because it needs nightly.
+  cargo-deny's bans for the core (no network, trust-store or generator
+  crate) stay per crate, so the server's HTTP stack does not leak into
+  the core's graph (§9).
 
-The core depends on `aprv-openssl`. A crates.io publish of the core (R19)
-therefore publishes the adapter crate first. The file names above are the
-plan's; the evidence calls the adapter `security-openssl` and the C file
-`c/wasi-none.c`.
+## 3. `aprv.wasm`
 
-One Cargo workspace replaces today's two independent lockfiles (`rust/` and
-`rust/ffi/`), so every adapter builds against the same resolved core.
-`rust/fuzz` stays outside the workspace because it needs nightly.
-`rust/Cargo.toml`'s `exclude` (today `ffi/**` and `fuzz/**`) gains
-`bindings/**`, or the crates.io tarball would ship the adapters.
+**Build.** `aprv-abi` for `wasm32-wasip1`, linked with wasi-sdk's libc,
+over OpenSSL 4.0.2 compiled by wasi-sdk with `no-asm` and passed through
+`OPENSSL_DIR` (`openssl-src` maps `wasm32-wasi` but not `wasm32-wasip1`).
+The two WASIp1 link fixes (`crt1-reactor.o`, wasi-libc's emulation
+libraries) come from the substrate and wasm bake-offs
+([wasm bake-off §6][wasmbake], [CMS everywhere §1][cms]). rustc, wasi-sdk
+and the OpenSSL tarball are pinned by version and SHA-256. The release
+builds the module **once**, with no cache, publishes its SHA-256 with the
+release, and every package that carries it checks its copy against that
+hash (§9).
 
-Why a separate `aprv-surface` crate:
+**Size.** The ABI v1 spike module was 2,952,613 bytes
+([ABI v1][abi]); the template-payload module it grew from was 2,973,532 B
+raw and 975,767 B stripped and gzipped ([ASN.1 payload §3][payload]).
+`wasm-opt` stays out: it saved 25% raw and 12% gzipped, changed no speed
+beyond noise, and adds a second optimiser whose output would need
+re-proving each release ([wasm speed §4][speed]).
 
-- The core's public API stays idiomatic Rust (builders, `SystemTime`,
-  `serde_json::Map`). crates.io users keep it.
-- Every adapter needs the same binding-friendly model: `i64` instead of
-  `u64`, `Vec<u8>` instead of `&[u8]`, records instead of `#[non_exhaustive]`
-  structs, epoch milliseconds or a timestamp instead of `Option<SystemTime>`
-  in JSON. Writing it once in `aprv-surface` stops four adapters from
-  converting four slightly different ways.
-- Neither the core nor the surface carries a binding annotation. The UniFFI
-  adapter annotates the surface types from outside with `#[uniffi::remote]`
-  (spike passed). The full contract, and why the surface also holds no
-  serializer, is [SURFACE.md](./SURFACE.md).
-- The C ABI's cross-port JSON view (today in `rust/ffi/src/lib.rs:391-534`)
-  moves to a separate `aprv-wire` crate, shared by the C ABI and
-  `aprv.wasm`, which is the C ABI built for wasm (SURFACE.md §4.2).
+**One import.** The module imports exactly `aprv.random_get(ptr, len)`.
+OpenSSL draws random bytes only for EC blinding inside ECDSA verification;
+the host fills them from its CSPRNG and bounds-checks the range before it
+writes guest memory. A failing `random_get` makes OpenSSL refuse ECDSA
+verification: 0 new acceptances over 1,179 rows
+([wasm bake-off §10][wasmbake]). The measured modules also imported
+`aprv.clock_now_ms`; ABI v1 as planned drops it (§6, R24).
 
-Why a separate adapter crate: the core keeps `#![forbid(unsafe_code)]`,
-and every line that crosses into C sits in one crate a reviewer can read
-end to end. The core calls it through safe functions only.
+**The link-time C file** (`wasi-none.c`, 74 code lines in the evidence)
+defines every WASI function wasi-libc would import, inside the module. In
+the shipped build every one of them **traps**, except two:
+`random_get`, which forwards to `aprv.random_get`, and `clock_time_get`,
+which answers from the `now_ms` of the call in progress (§6). An
+unexpected call to a file, directory, environment, argument or exit
+function stops the verification instead of taking a path nobody measured;
+on the evidence corpus no run called any of them
+([wasm bake-off §5][wasmbake]).
 
-## 3. The cross-language API
+**Features.** Core Wasm 2.0 (`lime1`) only: no SIMD, no threads, no
+Component Model ([CMS everywhere §2][cms]). Endive's build-time compiler
+has no SIMD support ([wasm speed §5][speed]), and one module serves every
+host.
 
-One API, named once in Rust, rendered idiomatically by each generator. The
-names below are the Kotlin/Java rendering; Python gets snake_case and Swift
-gets Swift conventions from the same definitions.
+## 4. ABI v1
+
+Measured as the four-operation spike of 2026-09-26 ([ABI v1][abi]); the
+plan adds INIT and `now_ms` (R23, R24).
 
 ```text
-JwsVerifier(bundleId: String,
-            environments: List<Environment>,
-            appAppleId: Long?,             // i64 in Rust: Java cannot call ULong
-            trustedRoots: List<byte[]>?)   // null = Apple's pinned roots
-  verifyTransaction(jws: String): TransactionPayload
-  verifyAppTransaction(jws: String): AppTransactionPayload
-  verifyRaw(jws: String): String           // every claim, as JSON text
-
-ReceiptVerifier(bundleId: String, trustedRoots: List<byte[]>?)
-  verify(receipt: byte[]): AppReceipt
-  verifyBase64(receipt: String): AppReceipt
-  verifyWithDeviceGuid(receipt: byte[], deviceGuid: byte[]): AppReceipt
-  verifyBase64WithDeviceGuid(receipt: String, deviceGuid: byte[]): AppReceipt
-
-VerifyReceiptEndpoint(environment: Environment, trustedRoots: List<byte[]>?)
-  verifyReceiptResult(requestBody: String): VerifyReceiptResult       // core: verify_receipt_result_from_json
-  verifyReceiptResultAt(requestBody: String, requestDateMillis: Long) // core: verify_receipt_result_from_json_at
-  verifyReceiptData(base64: String): VerifyReceiptResult              // core: verify_receipt_data
-  verifyReceiptDataAt(base64: String, requestDateMillis: Long)        // core: verify_receipt_data_at
-  verifyReceiptJson(requestBody: String): String                      // core: verify_receipt_json
-
-VerifyReceiptResult: status, verified, receipt?, failureReason?, failureCause?,
-                     requestDateMillis, toJson(),
-                     toJsonIn(Environment) throws ConfigurationException   // core: to_json_in -> Result<_, ConfigError>
-
-AppReceipt, InAppPurchase, TransactionPayload, AppTransactionPayload: records
-Environment, Reason: enums with the existing tokens
-VerificationException(reason: Reason, detail: String)   // checked in Java
-ConfigurationException(detail: String)
+_initialize()                                 WASI reactor start, once per instance
+aprv_abi_version() -> i32                     == 1
+aprv_alloc(len) -> ptr                        0 when impossible
+aprv_dealloc(ptr, len)
+aprv_call(abi_version, op, ptr, len) -> handle
+aprv_result_ptr(handle) -> ptr
+aprv_result_len(handle) -> len
+aprv_result_free(handle)
 ```
 
-Rules that came out of the spikes:
+**Operations.** Numbers are stable and never reused. 0 and every number
+not in the table trap.
 
-1. **No unsigned integers** anywhere on the surface. Kotlin turns `ULong`
-   parameters into methods that Java cannot call (measured, compile error).
-2. **`Vec<u8>` for byte input.** UniFFI 0.32 maps `&[u8]` to a direct
-   `ByteBuffer` in Kotlin.
-3. **No callbacks.** The endpoint takes `requestDateMillis` per call instead
-   of a clock object, mirroring the core's `verify_receipt_*_at` methods and
-   today's Java and Node `verifyReceiptResult(body, requestDate)`. (The C ABI
-   pins its clock per endpoint instead, through the `fixed_clock_unix_millis`
-   argument of `aprv_endpoint_new_with_roots_and_clock`.) A language façade that wants to accept
-   `java.time.Clock`, a Python callable or a Swift closure reads it and
-   passes the millis. The verifiers take no clock at all, as today
-   (THREAT-MODEL §3.5).
-4. **Receipt dates:** UniFFI's timestamp type renders as `java.time.Instant`,
-   Swift `Date` and Python `datetime`, which is what the Java, Swift and
-   Python ports return today. The JSON view and wasm carry ISO-8601 strings;
-   the npm façade turns them into `Date`, the Java 11+ façade into
-   `Instant`. **JWS dates stay epoch-ms
-   integers** in every language: that contract is in `jws.rs:104-111`.
-5. **Unknown attributes** become `List<UnknownAttribute(type: Long, values:
-   List<byte[]>)>`. The type is `i64` because a type above 2^31-1 is a
-   pinned divergence case.
-6. **Errors:** the spike's two-variant error enum rendered as
-   `VerifyException.Verification(reason, detail)` in Kotlin and
-   `VerifyError.Verification` in Python, and worked in both. The Phase 2
-   PoC picks the final naming, so Java keeps today's `VerificationException`
-   with its `reason()` accessor and the nested `VerificationException.Reason`
-   enum. `toJsonIn` throws `ConfigurationException` for an environment other
-   than Production or Sandbox, as `to_json_in` returns a `ConfigError`.
-   Today's ports spell it `toJson(environment)`; the façade keeps that name.
+| Op | Name | Input | Output (UTF-8 JSON, aprv-wire) |
+|---:|---|---|---|
+| 1 | VERIFY_RECEIPT | `now_ms`, then the `receipt-data` string (standard base64) | `{"verified":true,"payload":<ReceiptPayload JSON>}` or a failure |
+| 2 | VERIFY_SIGNED_DATA | `now_ms`, then the compact JWS | `{"verified":true,"payload":"<the signed payload JSON, exactly>"}` or a failure |
+| 3 | VERIFY_RECEIPT_ENDPOINT_PRODUCTION | `now_ms`, then the verifyReceipt request body | Apple's response JSON, byte for byte |
+| 4 | VERIFY_RECEIPT_ENDPOINT_SANDBOX | as 3 | as 3 |
+| 5 | INIT | `{"roots":["<base64 DER>", ...]}` | `{"ok":true}` or `{"ok":false,"message":"..."}` |
 
-Generated APIs cover roughly 90% of what users call today. A **façade** is
-allowed only for:
-- keeping a current signature (the npm options objects, a Java overload
-  that restores default arguments);
-- idiomatic time and clock types;
-- `AutoCloseable`/`with`-style lifetime helpers.
+A failure is `{"verified":false,"reason":"<0.7 Reason>","message":"..."}`.
+Ops 1 to 4 keep the spike's numbers; INIT is new.
 
-A façade holds no parsing, no crypto, no policy and no caps. CI enforces
-that per package (section 8).
+- **`now_ms`** is the first eight bytes of every verify op's input: epoch
+  milliseconds as a little-endian signed 64-bit integer, followed by the
+  UTF-8 text. A prefix keeps a 3 MiB receipt out of a JSON string that
+  would have to be escaped and copied again. This layout is the plan's;
+  Phase 1 fixes it with the ABI tests.
+- **INIT** parses the roots once per instance. An empty list means the
+  three Apple roots compiled into the module. A wrapper never sends an
+  empty list for a caller's own empty root set: 0.7's `Verifier.create`
+  refuses that before INIT (SURFACE.md §2). A root that does not parse is
+  `{"ok":false}`, which the wrapper turns into its language's
+  configuration error at `create`. A second INIT on one instance traps.
+- **A verify op before INIT** is a programmer error and traps. Wrappers
+  cannot reach it: they INIT every instance they create.
+- **Order of checks in `aprv_call`**: the ABI version first, before any
+  other argument is read and before any host import runs; then the
+  operation; then the input range. A mismatch branches straight to
+  `unreachable` ([ABI v1][abi]).
+- **No policy.** No bundle id, environment, app Apple id or device id
+  crosses the boundary. The environment in ops 3 and 4 is which of
+  Apple's two URLs the endpoint imitates, as in 0.7.
+- **Base64 only.** Receipts cross as the `receipt-data` string, decoded
+  in the module by the core's strict rule. The 3,145,728-byte cap applies
+  to that string, so the largest receipt ABI v1 takes is 2,359,296 bytes
+  of DER, as Apple's own endpoint takes base64 ([ABI v1][abi]).
 
-## 4. Time
+**Lifecycle of one call**, the same in every wrapper:
 
-The core reads the clock only in the chain-validity fallback (`jws.rs:455`,
-`receipt.rs:134`) and for the endpoint's `request_date`.
+1. `aprv_alloc(len)`;
+2. copy the input into guest memory;
+3. `aprv_call(1, op, ptr, len)`;
+4. check `aprv_result_ptr`/`aprv_result_len` against the memory size;
+5. copy the result out into host memory;
+6. `aprv_result_free(handle)`;
+7. `aprv_dealloc(ptr, len)`;
+8. decode the JSON.
 
-On wasm the core needs a clock it can reach without WASI. The spikes
-measured what happens without one: on `wasm32-unknown-unknown` the standard
-library's `SystemTime::now()` panics, and the 58 corpus rows that trapped
-there were exactly the rows that read the clock
-([wasm bake-off §4](../evidence/2026-09-26-wasm-architecture-bakeoff.md)).
-The fix keeps the core free of any JavaScript or WASI dependency (R10,
-SURFACE.md §4.1):
+No guest pointer leaves a public call. After a trap the wrapper runs
+nothing more in that instance and discards it. The spike's bridges did
+exactly this on Node and Endive, and linear memory stayed at 2,097,152
+bytes over 2,000 further calls ([ABI v1][abi]).
 
-- The core gets one crate-private `fn system_now() -> SystemTime`. The
-  three fallbacks (`receipt.rs:134`, `jws.rs:455`, `endpoint.rs:525`) and
-  `SystemClock::now` all go through it.
-- It uses `std::time::SystemTime::now()` on every native target.
-- In `aprv.wasm` it reads the import `aprv.clock_now_ms`, epoch
-  milliseconds from the host: `Date.now()` in the JS façade, the wall
-  clock in Go, `System.currentTimeMillis()` in the Java 11+ façade. The
-  adapter crate declares the import and hands the core a
-  safe function, so the core keeps `#![forbid(unsafe_code)]`.
-- A host answer that is not a finite instant after 1970 maps to 1970,
-  where no Apple chain is valid, so the failure is closed (the evidence
-  shim's rule, wasm bake-off §4).
-- OpenSSL's own `time()` calls, from its DRBG, resolve to the same import
-  through the link-time C file. No WASI clock import remains.
-- Callers still cannot move the validity instant. The host's clock replaces
-  the OS clock, which is the same trust level as `SystemTime::now()`.
-- Cloudflare Workers freezes `Date.now()` at the last I/O or at
-  request start. For a certificate-validity fallback that is harmless:
-  seconds of drift against a validity window measured in years.
+**Six outcomes, kept distinct.** A wrapper never folds one into another:
 
-## 5. Panics and traps
-
-| Binding | What happens on a Rust panic | Containment |
+| Outcome | Where it comes from | What the caller sees |
 |---|---|---|
-| UniFFI (Kotlin, Swift, Python) | UniFFI's scaffolding catches the unwind and raises its internal error type | Build with `panic = "unwind"` (the default). A binding test forces an `INTERNAL_ERROR` path and asserts a language exception, not a crash. |
-| C ABI | `guard`/`guard_ptr` wrap every export in `catch_unwind` (existing) | Keep. The source-scanning test that enforces it stays. |
-| `aprv.wasm` in JS (npm) | `panic = "abort"`: the instance **traps**, and its memory may be left inconsistent | The JS façade catches `WebAssembly.RuntimeError`, drops the instance, instantiates a fresh one on the next call, and throws `VerificationError(INTERNAL_ERROR)`. |
-| `aprv.wasm` in Go (wazero) | wazero returns an error from the call and the module is unusable | Same pattern in Go: the pool discards the instance and the call returns `INTERNAL_ERROR`. |
-| `aprv.wasm` as JVM bytecode (Endive, Java 11+) | The trap reaches Java as a `WasmRuntimeException`, `TrapException` or `WasmEngineException`; the JVM survives ([Endive build-time JVM §7](../evidence/2026-09-26-endive-build-time-jvm.md)) | The Java pool discards the instance, creates a new one on the next call (2 to 4 ms), and throws `VerificationException` with `INTERNAL_ERROR`. |
+| Verified | the module's result | the payload (0.7) |
+| Verification failure | the module's result | a result with the 0.7 `Reason` |
+| Caller misuse | the wrapper's own checks (a null `Config` or `Environment`, an empty root set, a root INIT refuses) | the language's programmer error at `create` or at the call, as in 0.7 |
+| ABI mismatch | `aprv_abi_version()` ≠ the wrapper's version, or a trap in `aprv_call` before anything ran | a hard failure at `create` naming both versions ("APRV Wasm ABI mismatch: module=1, caller=N"); never a verdict |
+| Trap or internal failure | a guest trap, a runtime error, an out-of-range result pointer, malformed result JSON | `INTERNAL_ERROR` (21009 at the endpoint); the instance is discarded; the cause names the trap |
+| Server process failure | `aprv-server` did not answer: start failed, the child died, the connection broke, HTTP 5xx | `INTERNAL_ERROR` (21009 at the endpoint) with a cause of its own type, so it is never mistaken for a trap |
 
-The endpoint's "never fails" promise rests on `catch_unwind` at
-`endpoint.rs:510`, which does nothing under `panic = "abort"`. On wasm the
-façade provides that promise instead.
+The 0.7 contract holds: the verify methods never throw for any input
+(0.7-api.md, Setup). Both failure rows answer `INTERNAL_ERROR` and keep
+their category in the cause.
 
-**Trap policy of `aprv.wasm`.** The link-time C file answers every WASI
-function wasi-libc would import. In the shipped build, every one of them
-other than the clock and random bytes **traps** instead of returning an
-error, so an unexpected call to a file, directory, environment, argument
-or exit function stops the verification rather than taking a code path
-nobody measured. On the evidence corpus no run called any of them (wasm
-bake-off §5). CI runs the full corpus on every change through a host whose
-import object also traps on anything unexpected, and fails on any trap or
-any row that differs from native. A failing `aprv.random_get` fails
-closed: OpenSSL then refuses ECDSA verification, with 0 new acceptances
-over 1,179 rows (wasm bake-off §10).
+## 5. The instance model (R23, owner Q49 d)
 
-The core's lint wall (`unwrap`, `expect`, indexing, `panic` all denied)
-remains the first line of defence. Every row above only covers the case
-where that wall fails.
+- `Verifier.create(config)` owns a small pool of instances of one
+  compiled module. Each instance is INITed once, when it is created, so
+  the roots are parsed once per instance.
+- One instance serves one call at a time. A shared Endive instance
+  livelocked inside OpenSSL's allocator in the spike, with no exception
+  ([Endive §8][endive]); the other runtimes' stores are single-threaded
+  too.
+- A trapped instance is discarded with everything in it. The next call
+  takes or creates another.
+- Instances die with the `Verifier`. There are no handles in the public
+  API and nothing for the caller to free or close.
+- **Node:** one instance. JavaScript runs one call at a time per isolate.
+- **aprv-server:** a fresh instance and INIT per request by default, so
+  nothing from one hostile input reaches the next request. Phase 1
+  measures INIT; if it costs more than 10% of a call, the default flips to
+  the existing `--lifecycle pool` flag (R31). The spike's fresh lifecycle
+  cost about 1.6 ms more per receipt than the pool, which it attributed to
+  the guest initialising OpenSSL and its roots on an instance's first call
+  ([aprv-server §3][server]); INIT separates that cost from the call.
 
-## 6. Packages
+What an instance costs to create, measured: Endive 335 to 380 ms for the
+first, 2 to 4 ms after ([Endive §9][endive]); wasmtime-py 0.4 to 0.6 ms
+after the compile ([Python wasmtime][pywt]); WasmKit about 3 ms
+([Swift][swift]); Wasmtime .NET 14 to 18 ms for the first and about
+0.7 ms after ([.NET][dotnet]); the wasmtime gem 0.1 ms after the compile
+([Ruby][ruby]).
 
-### 6.1 Maven Central (Java, Kotlin)
+## 6. Time (R24, owner Q51 b)
 
-Two artifacts publish one public API, the thin hand-written Java façade
-(R18, "Two Java artifacts"). Each has its own POM, dependency graph, Java
-baseline, sources and tests, and a consumer depends on exactly one.
-"Endive note" below means
-[Endive build-time JVM](../evidence/2026-09-26-endive-build-time-jvm.md).
+- The wrapper reads the `Config` clock **once per call**, before it looks
+  at the input, and passes the value as `now_ms`. The core uses it for
+  two things, the 0.7 rule: the chain-validity instant when the receipt
+  or JWS carries no usable date, and `request_date` in the endpoint
+  response.
+- A clock that throws is `INTERNAL_ERROR` (21009 at the endpoint), read
+  outside any guard that reports unexpected exceptions on unverified input
+  as `MALFORMED`, exactly as Java 0.7's `DefaultVerifier` does.
+- The module has **no clock import**. The measured modules imported
+  `aprv.clock_now_ms` and called it 463, 214, 68 and 527 times per corpus
+  ([Endive §5][endive]); passing `now_ms` in removes that callback and one
+  host capability.
+- OpenSSL's own `time()` calls come from its DRBG, not from certificate
+  checks: the core sets the check time explicitly to the signing instant
+  (R21). The link-time C file answers `clock_time_get` from the `now_ms`
+  of the call in progress, and with 0 during INIT. Whether OpenSSL's DRBG
+  reads the clock during INIT at all is unmeasured; Phase 1's gate is
+  that the module imports only `aprv.random_get` and answers the corpus
+  as before.
+- No public API takes a per-call time. 0.7 dropped it; ABI v1 carries
+  `now_ms` per call anyway, so a per-call override later is additive.
+- Callers still cannot move the validity instant of an input that
+  carries its own date, which is THREAT-MODEL §3.5 of the root threat
+  model.
 
-| | `io.github.emindeniz99:apple-purchase-receipt-verifier` (main, default) | `io.github.emindeniz99:apple-purchase-receipt-verifier-java8` |
-|---|---|---|
-| Java floor | 11 | 8 |
-| Engine | `aprv.wasm` compiled to JVM bytecode at build time by `run.endive:endive-compiler-maven-plugin` | UniFFI's generated Kotlin (`jvmTarget = 1.8`) over JNA |
-| Contents | the façade, Endive's generated classes and a stripped `.meta` module that keeps the data segments and no function bodies (Endive note §4) | the façade, the compiled Kotlin, and natives at JNA's resource paths for 9 platforms (R12) |
-| Runtime dependencies | `run.endive:runtime` and `run.endive:wasm` (0.17 and 0.21 MB, Apache-2.0) | `kotlin-stdlib` and `jna` 5.x, both Java 8 bytecode |
-| Natives | none; one jar for every platform | 9 in the jar; the other Java 8 platforms get a library on GitHub Releases (R12) |
+## 7. Hosts
 
-- **Coordinates and packages.** The main artifact keeps today's
-  coordinates; the Java 8 one adds `-java8`. Today's classes sit in three
-  packages: the root, `.jws` and `.receipt`. Both façades keep those
-  import paths. Each engine's generated code goes to
-  `...applepurchasereceiptverifier.internal`: UniFFI's `package_name` in
-  `-java8`, the Endive plugin's target package in the main artifact.
-- **Sizes.** Runtime dependencies change from Bouncy Castle and Jackson
-  (about 11.8 MB) to the two Endive jars for the main artifact and to
-  `kotlin-stdlib` plus `jna` for `-java8`. The spike's Endive library jar
-  was 1,762,214 B (Endive note §4). Each `-java8` native adds about 2 MB: the one
-  measured, Linux x86_64 with vendored OpenSSL, is 6,336,528 B raw and
-  1,966,051 B stripped and gzipped
-  ([OpenSSL CMS everywhere §2](../evidence/2026-09-26-openssl-cms-everywhere.md)),
-  so the nine add about 18 MB to a release. Maven Central counts size
-  against a monthly total (R12).
-- **The main artifact's engine.** The façade loads the compiled module
-  once and keeps a pool of instances. A call borrows one instance for
-  itself and returns it; no instance ever serves two threads at once,
-  because an instance is not thread-safe and a shared one livelocked in
-  the spike (Endive note §8). A trap discards the instance (section 5). The first
-  instance takes 335 to 380 ms, each later one 2 to 4 ms (Endive note §9). The façade
-  supplies exactly the module's two imports: `aprv.clock_now_ms` from
-  `System.currentTimeMillis()` and `aprv.random_get` from `SecureRandom`,
-  with the range checked before it writes guest memory (Endive note §5). It calls the
-  C ABI exports inside the instance and decodes their JSON view
-  (`aprv-wire`, SURFACE.md §4.2) into the façade's Java types.
-- **The `-java8` engine.** `uniffi.toml` sets `disable_java_cleaner =
-  true`, so the generated code compiles against JDK 8 APIs.
-- **Classpath guard.** The two artifacts expose the same classes. Each
-  ships a marker resource; at startup the façade fails fast with a clear
-  message when it finds both. The Gradle module metadata declares a
-  capability conflict between them, so Gradle refuses the pair, and the
-  README says to depend on exactly one.
-- **One deployment.** One multi-module Maven reactor builds both
-  artifacts and publishes them in one Central deployment, always at the
-  same version. Whether Central counts that as one release event or two
-  is open (R18).
-- **Docs.** Maven Central requires `-sources.jar` and `-javadoc.jar` for
-  each artifact. The main artifact has no generated Kotlin, so its
-  documented surface is the Java façade, compiled by `javac` and
-  documented by the standard `javadoc` tool. For `-java8`, the sources jar
-  could carry the generated Kotlin with its KDoc, and Dokka
-  (`dokka:javadoc`) builds pages from the same KDoc; the spike showed the
-  Rust text arriving, but under Kotlin type names (`ByteArray`, `Unit`).
-  Phase 3 decides by looking at both outputs.
-- Doc comments on the surface are written language-neutrally: "the trusted
-  roots", never `trusted_roots`, because every generator copies the text
-  verbatim.
-- **Native access (`-java8` only).** JDK 24+ warns once per process until
-  the application adds `--enable-native-access=ALL-UNNAMED`, or
-  `Enable-Native-Access: ALL-UNNAMED` in an executable jar's manifest. The
-  README says so on its first screen. The main artifact loads no native
-  code, so the warning never appears there (Endive note §6).
-- **musl (Alpine), `-java8` only.** JNA resolves `linux-<arch>` with no
-  libc split. The jar carries glibc builds there, plus musl builds under
-  `linux-musl-<arch>`. The façade selects the musl build by setting
-  `uniffi.component.<namespace>.libraryOverride` when it detects musl. A CI
-  leg on an Alpine image proves it, including JNA's own `jnidispatch`
-  (unconfirmed today, see MIGRATION.md risks). The main artifact carries
-  nothing libc-specific.
+Each host chapter names the runtime, how it holds the instance model,
+what it supplies for `aprv.random_get`, and what was measured. Every host
+ran the 6,179 rows byte-identically to Node and passed 37 of 37 ABI and
+facade tests unless a line says otherwise.
 
-### 6.2 PyPI (Python)
+### 7.1 Endive: Java 11+ in the `-wasm` artifact
 
-- The build is maturin with `bindings = "uniffi"`. The import name stays
-  `apple_purchase_receipt_verifier`. The generated module becomes a private
-  submodule, and a short `__init__.py` re-exports it and adds the
-  `py.typed` marker.
-- Wheels are tagged `py3-none-<platform>`: one wheel per platform covers
-  every CPython 3.x. Platforms:
-  - `manylinux_2_17` x86_64 and aarch64;
-  - `musllinux_1_2` x86_64 and aarch64;
-  - `macosx` x86_64 and arm64;
-  - `win_amd64` and `win_arm64`.
-- The sdist builds from source with a Rust toolchain. That is the fallback
-  for any other platform.
-- `cryptography` and `asn1crypto` drop out of the dependency list, and the
-  asn1crypto residual risk (THREAT-MODEL §5) closes.
+- Endive 1.1.0 (`run.endive`, Apache-2.0, the Bytecode Alliance fork of
+  Chicory) compiles `aprv.wasm` into JVM bytecode **at build time**
+  through `endive-compiler-maven-plugin`, with `interpreterFallback`
+  FAIL. The consumer's classpath holds our jar plus `run.endive:runtime`
+  (0.17 MB) and `run.endive:wasm` (0.21 MB); no compiler, no interpreter,
+  no native code: 0 native-loading calls across 229 classes
+  ([Endive §3, §4, §6][endive]).
+- The spike's library jar was 1,762,214 bytes. It keeps a stripped
+  `.meta` module with the data segments and every function body replaced
+  by `unreachable` ([Endive §4][endive]).
+- Memory: `ByteArrayMemory`, 24 to 42% faster than the default with
+  byte-identical output ([wasm speed][speed]).
+- `aprv.random_get` from `SecureRandom`, range-checked before it writes.
+- A trap reaches Java as `WasmRuntimeException`, `TrapException` or
+  `WasmEngineException`; the JVM survives ([Endive §7][endive]). The
+  wrapper discards the instance.
+- Speed through ABI v1 on JDK 21: 154.7, 323.0 and 482.2 g5 receipts and
+  52.6, 101.9 and 166.8 JWS per second at 1, 2 and 4 threads
+  ([ABI v1][abi]). The first instance takes 335 to 380 ms.
+- Endive's compiler does no post-compilation verification ([Endive
+  §10][endive]). The guard is CI: the corpus through the built jar, byte
+  for byte against native, on every change (§9).
+- JDK 17 and earlier run with Endive's workaround for a C2 miscompilation;
+  parity there was clean ([Endive §10, row 5][endive]).
 
-### 6.3 SwiftPM (Swift)
+### 7.2 wasmtime-py: Python
 
-- The generated Swift source is committed under
-  `swift/Sources/ApplePurchaseReceiptVerifier/`. SwiftPM compiles consumers
-  from git and has no build step, so the generated file must live in the
-  repository. CI regenerates it and fails on a diff.
-- A `binaryTarget` carries the Rust static library as an artifact bundle on
-  the GitHub Release:
-  - XCFramework slices for macOS arm64/x86_64 (plus iOS if the owner wants
-    it);
-  - SE-0482 static-library slices for `x86_64` and `aarch64-unknown-linux-gnu`.
-- The swift-tools version rises to 6.2 (R7).
-- Release sequencing: the artifact's URL and checksum must be in
-  `Package.swift` inside the tagged commit.
-  1. `release-please.yml` already commits lockfiles onto the release PR
-     branch.
-  2. It also builds the bundle and commits the checksum.
-  3. `release.yml` uploads that exact file, kept as a workflow artifact,
-     to the Release.
-- Symbol hygiene: a consumer that links two Rust static libraries can
-  collide on Rust's non-FFI globals (swift-tokenizers hit this). The build
-  localizes every non-`uniffi_`/`ffi_` symbol, OpenSSL's included, and a
-  CI check lists the exported symbols. A static archive that kept
-  OpenSSL's symbols global could collide with a consumer's own OpenSSL
-  (unmeasured).
+- wasmtime-py at or above the current major, with no pin to one major
+  (R27). 49.0.0 installed 32.2 MB ([final Python round][pyfinal]).
+- **The plain `.wasm`, compiled at start.** The first `Verifier` in a
+  process compiles the module with Cranelift: 934 ms on 4 CPUs and
+  2,923 ms on one ([runtime options][pyopt]); every later `Verifier` takes
+  0.4 to 0.6 ms ([Python wasmtime][pywt]).
+- **Wasmtime's `Config.cache` is on by default.** A warm start takes 95 ms
+  on 4 CPUs ([runtime options][pyopt]). The rules (THREAT-MODEL.md §8):
+  - the default directory is the user's own cache directory;
+  - an environment variable overrides the path (its name is fixed in
+    Phase 5);
+  - a directory that is read-only, or not the user's own, turns the cache
+    off silently, and the process compiles at start.
+- **AWS Lambda and other fresh containers** pay the compile on every new
+  container, about 3 s on one vCPU (2,923 ms, [runtime options][pyopt]).
+  The Python README says so on its first screen.
+- **Winch** halves the compile (468 ms on 4 CPUs, 834 ms on one) and halves
+  the speed; wasmtime-py 49 reaches it only through a private call. It is
+  a later improvement once wasmtime-py exposes it
+  ([runtime options][pyopt]).
+- The host functions are defined once, on a process-wide `Linker`. That
+  avoids the handle-table race of wasmtime-py 49.0.0, which returned
+  another function's value 2 times in 190 rounds when host functions were
+  created per store; upstream fixed it after 49.0.0 (wasmtime-py#344)
+  ([Python wasmtime][pywt]).
+- **Threads do not scale** past two in wasmtime-py: 583, 946 and 566 g5
+  per second at 1, 2 and 4 threads, against 595, 1,123 and 2,259 with
+  processes ([Python wasmtime][pywt]). Python deployments use worker
+  processes (gunicorn, uvicorn) with one `Verifier` each. The pool still
+  gives each thread its own instance.
+- `aprv.random_get` from `os.urandom`/`secrets`.
+- **Platforms without a wasmtime-py wheel** fail at install with a
+  message that points to `aprv-server` or the C ABI (R28). Today the
+  failure would come at import: pip picks wasmtime-py's `py3-none-any`
+  wheel, which holds only the Windows x86_64 DLL
+  ([Python wasmtime][pywt]). Phase 5 moves it to install time
+  (SUPPORT-MATRIX.md §3).
 
-### 6.4 npm (JavaScript, TypeScript)
+### 7.3 wazero: Go
 
-- There is one package, `apple-purchase-receipt-verifier`, still with zero
-  runtime `dependencies`. It carries `aprv.wasm` (R21), a hand-written JS
-  façade of about 100 lines and a hand-written `index.d.ts`. No
-  wasm-bindgen, no Emscripten glue, no jco output: the wasm bake-off's
-  Route C package had this shape and passed on Node, Bun, Deno,
-  Chromium, Firefox, WebKitGTK, a `node --permission` run and `wrangler dev
-  --local` ([wasm bake-off §14](../evidence/2026-09-26-wasm-architecture-bakeoff.md),
-  [OpenSSL CMS everywhere §2](../evidence/2026-09-26-openssl-cms-everywhere.md)).
-- What the façade does, and nothing more: instantiate the module with an
-  import object that holds exactly `aprv.clock_now_ms` (`Date.now()`) and
-  `aprv.random_get` (`crypto.getRandomValues` in 65,536-byte chunks, never
-  `Math.random`); call `_initialize` before `aprv_init`; copy bytes in
-  through `aprv_alloc`/`aprv_dealloc`; call the C ABI exports; decode the
-  JSON out. It decodes strings with `TextDecoder` and `ignoreBOM: true`,
-  because the default strips a UTF-8 BOM and changes what the core sees
-  (wasm bake-off §8).
-- `exports` conditions choose how the wasm gets loaded, because the
-  runtimes differ:
-
-```jsonc
-"exports": {
-  ".": {
-    "types":      "./dist/index.d.ts",
-    "workerd":    "./dist/static/index.js",  // imports the .wasm as a module (required)
-    "edge-light": "./dist/static/index.js",  // Vercel Edge: same rule
-    "deno":       "./dist/web/index.js",
-    "browser":    "./dist/web/index.js",
-    "node":       "./dist/node/index.js",    // reads the .wasm from disk, compiles it synchronously
-    "default":    "./dist/web/index.js"
-  },
-  "./web": "./dist/web/index.js"             // kept: 0.x users import it today
-}
-```
-
-- Sync or async: today's `.` build is **synchronous** (`node/src/jws.ts:62`,
-  `receipt.ts:284`, `verify-receipt-endpoint.ts:101`), and `/web` is
-  **async** (`web/jws.ts:58`, `web/receipt.ts:173`). Both contracts stay:
-  - `.` stays synchronous on every runtime. A wasm call is synchronous once
-    the module is loaded. Node compiles it synchronously and workerd
-    imports it as a module; browsers and Deno load it with top-level
-    `await` at import, so the calls after the import are synchronous. Deno
-    users of `.` today keep sync calls.
-  - `./web` keeps returning Promises. It is a thin async wrapper over the
-    same module, so no 0.x caller of `/web` changes a line.
-- The façade keeps the rest of today's API: the options objects, the
-  `Reason` const, `VerificationError extends Error` with `.reason`, `Date`
-  for receipt dates, and `bigint` ids. It also owns trap recovery
-  (section 5).
-- Runtimes kept and tested: Node 20/22/24/26, Bun, Deno, workerd (three
-  compatibility dates), Vercel Edge via `@edge-runtime/vm`, and Chromium,
-  Firefox and WebKit (new). Safari itself is expected, not tested: the
-  evidence ran WebKitGTK.
-- Runtimes dropped: Fastly Compute JS and Akamai EdgeWorkers. Neither can
-  run WebAssembly (R5).
-- Size: `aprv.wasm` over OpenSSL with the template payload reader is
-  2,973,532 B raw and 975,767 B stripped and gzipped
-  ([ASN.1 payload note §3](../evidence/2026-09-26-openssl-asn1-payload.md));
-  the spike tarball of the same shape was 1,001,740 B. `wasm-opt -Oz` saved
-  20 to 27% raw in the wasm bake-off and kept parity on Node. CI sets a budget at the
-  measured value plus 10% once the real build exists.
-- Memory: a hostile 3 MiB receipt of tiny attributes peaks at 145 MiB in
-  Node against 67 MiB for a tiny one (payload note §3). Phase 4 measures it
-  in workerd, whose isolate limit is 128 MB (R21).
-- Performance: see R4. Informational: the OpenSSL module took 1,395 µs per
-  receipt and 4,550 µs per JWS in Node 22 (wasm bake-off §13).
-
-### 6.5 Go (R6: wazero)
-
-- The module path and package `applereceipt` stay. The public Go API stays
-  as it is: the options structs, `Reason`, `errors.Is`, and
-  `VerifyReceiptResult`.
-- Inside, the module embeds the same `aprv.wasm` as npm (about 3 MB raw,
-  R21) with `//go:embed` and runs it with wazero. Go supplies the two
-  imports: `aprv.clock_now_ms` from the wall clock and `aprv.random_get`
-  from `crypto/rand`. JSON crosses the boundary and decodes into the
-  existing Go types. The Go module is published from a git tag, so the
-  `.wasm` is committed. CI rebuilds it with the pinned toolchain (wasi-sdk,
-  OpenSSL) and fails when the hash differs.
-- Concurrency: a wasm instance is single-threaded. The package compiles
-  the module once (`sync.Once`) and keeps a `sync.Pool` of instances.
-- Floor: wazero v1.9.x declares Go 1.22 and v1.12 declares Go 1.25. The
-  Go team supports only 1.26 and 1.27 today, so the plan raises the floor
-  to wazero's current requirement.
+- The module path and package stay. `aprv.wasm` is embedded with
+  `//go:embed`; the Go module is published from a git tag, so the file is
+  committed under `go/`, and CI rebuilds it and fails when its SHA-256
+  differs from the release build.
+- One compiled module per process (`sync.Once`), a `sync.Pool` of
+  instances, `aprv.random_get` from `crypto/rand`. Any other import is
+  refused at instantiation.
 - It stays cgo-free, so `CGO_ENABLED=0`, cross-compilation and `FROM
-  scratch` images keep working.
+  scratch` keep working. The CMS module answered 1,179 of 1,179 rows on
+  wazero 1.12.0 ([CMS everywhere §2][cms]); an OpenSSL module took
+  2,495 µs per receipt and 8,110 µs per JWS there on the PKCS7 path
+  ([substrate bake-off §13][substrate]). ABI v1 on wazero is measured in
+  Phase 4.
+- The floor stays as today (R30) if the wazero release we need builds on
+  it; wazero 1.12.0 fetched a Go 1.25 toolchain in the spikes
+  ([rust-core spikes, Method][spikes]). Phase 4 checks, and raises the
+  floor to wazero's requirement if it must.
+- An opt-in `-tags aprv_native` build over the C ABI stays possible on
+  request (R6). It is class E, the user's choice, and nothing is built for
+  it until someone asks.
 
-### 6.6 C ABI and everything else
+### 7.4 JavaScript: native WebAssembly
 
-- `rust/ffi` stays the universal escape hatch. The migration closes its
-  PORTS.md gaps:
-  - `verified` flag and re-render;
-  - `REQUEST_TOO_LARGE`;
-  - a base64 decode entry point for the `decodeBase64` cases;
-  - its own fuzz target.
-- Prebuilt archives go on each GitHub Release, one per target: `.so`,
-  `.dylib`, `.dll` + `.lib`, `.a`, the header, `SHA256SUMS`, build
-  provenance attestations, and OpenSSL's license and NOTICE text (R12).
-- OpenSSL 4.0.2 is linked statically into every library, so a consumer
-  needs no OpenSSL of its own. The evidence's Linux x86_64 library needed
-  only libgcc_s, libc and ld-linux, and exported only its 20 `aprv_*`
-  symbols ([substrate bake-off §9](../evidence/2026-09-26-security-substrate-bakeoff.md)).
-  Builds set `OPENSSL_CONFIG_DIR` to a path that does not exist, and the
-  adapter never loads a config file or a default trust path (R21).
-- cbindgen stays at its narrow job: it writes the header from the explicit
-  `extern "C"` declarations. rustc and cargo produce the libraries.
-- Examples for unpackaged languages use each language's own C FFI with
-  explicit `aprv_string_free` calls: the existing Python ctypes and C++
-  examples, plus C# P/Invoke and Ruby `ffi`. They are documented as
-  "possible through the C ABI", never as supported packages. A SWIG `.i`
-  ships as well, with the ownership typemaps from the spike
-  (`newfree` → `aprv_string_free`): without them SWIG leaks every result,
-  and with them the spike measured no growth over 3,000 calls.
+- One npm package, zero runtime `dependencies`. It carries `aprv.wasm`, a
+  hand-written façade and a hand-written `index.d.ts`: no wasm-bindgen,
+  no Emscripten glue, no jco output. The Route C package of this shape was
+  1,001,740 bytes and passed on Node, Bun, Deno, Chromium, Firefox,
+  WebKitGTK, a `node --permission` run and `wrangler dev --local`
+  ([CMS everywhere §2][cms]).
+- One instance per module load. The façade supplies `aprv.random_get`
+  from `crypto.getRandomValues` in 65,536-byte chunks, never
+  `Math.random`, and refuses any other import. It decodes strings with
+  `TextDecoder` and `ignoreBOM: true` ([wasm bake-off §8][wasmbake]).
+- A trap (`WebAssembly.RuntimeError`) drops the instance, the next call
+  instantiates a fresh one, and the call answers `INTERNAL_ERROR`.
+- `exports` conditions load the module the way each runtime needs:
+  workerd and Vercel Edge import the `.wasm` as a static module (workerd
+  refuses `WebAssembly.compile(bytes)`, [rust-core spikes][spikes] row 8);
+  Node reads it from disk and compiles it synchronously; browsers and Deno
+  load it with top-level `await`. The `.` export stays synchronous and
+  `./web` keeps returning Promises, as in 0.7.
+- 64-bit ids stay strings, as the 0.7 Node port has them.
+- Speed through ABI v1 on Node 22: 1,343 µs per g5 and 4,819 µs per JWS
+  ([ABI v1][abi]).
+- Memory: a hostile 3 MiB receipt of tiny attributes peaked at 145 MiB in
+  Node against 67 MiB for a tiny one ([ASN.1 payload §3][payload]).
+  Phase 4 measures it in workerd, whose isolate limit is 128 MB.
+- Runtimes kept: Node 20/22/24/26, Bun, Deno, workerd, Vercel Edge through
+  `@edge-runtime/vm`, Chromium, Firefox and WebKit. Fastly Compute JS and
+  Akamai EdgeWorkers are dropped: neither runs WebAssembly (R5).
 
-### 6.7 crates.io (Rust)
+### 7.5 WasmKit: Swift
 
-The core crate gets its first publish when something needs it (R19;
-BOOTSTRAP.md already has the steps). Rust users then get the reviewed
-implementation directly, with the same version as every package. The
-adapter crate `aprv-openssl` publishes first, because the core depends on
-it. Until `openssl-sys` accepts `openssl-src` 400.x, a crates.io user gets
-OpenSSL 3.x from the vendored feature or the system's OpenSSL, since our
-`[patch.crates-io]` applies only inside this workspace (R21 open item 3).
+- WasmKit 0.4.0, an interpreter with no JIT, lazy translation on first
+  call ([Swift][swift]). It declares `swift-tools-version:6.3` and
+  `platforms: [.macOS(.v15), .iOS(.v18)]`, which sets the Swift floors
+  (R30).
+- `Engine` and `Module` are `Sendable` and shared; stores and instances
+  are per thread. `aprv.random_get` from `SystemRandomNumberGenerator`.
+- **Every range is checked before memory is touched.** WasmKit's
+  `Memory.withUnsafe*BufferPointer` stops the whole process with a
+  precondition failure on an out-of-range access instead of throwing, so
+  the wrapper checks each pointer and length against `byteCount` first
+  ([Swift][swift]). A trap surfaces as a Swift `Trap` error.
+- Speed: 13.3 ms per g5 (75 per second) and 54.7 ms per JWS (18.3 per
+  second) on one thread; four threads reach 308 and 67 per second
+  ([Swift][swift]). The JWS is 1.7 to 1.9 times the floor per core, the
+  thinnest margin of any host.
+- `aprv.wasm` ships as a package resource. SwiftPM builds from git, so
+  the file is committed and CI checks its hash like Go's.
+- iOS: declared by WasmKit and expected to work without JIT entitlements;
+  not built. Linux and macOS are the tested targets.
 
-## 7. Documentation
+### 7.6 Ruby and .NET: Wasmtime bindings
 
-- Rust doc comments on `aprv-surface` are the API reference. UniFFI copies
-  them into KDoc, Swift doc comments and Python docstrings; the Python spike
-  showed the docstring arriving. The npm `index.d.ts` is hand-written
-  (R21), so its JSDoc is written by hand from the same text and reviewed
-  with the façade.
-- Each package README keeps install, a quick start, runtime notes and links
-  to THREAT-MODEL.md. The long per-language manuals shrink to the parts
-  that are about that ecosystem: native access, musl, JNA, workerd
-  imports, and for Java which of the two artifacts to pick.
+**Ruby** runs the `wasmtime` gem (48.0.1 in the evidence, prebuilt for
+Ruby ≥ 3.3 on Linux glibc and musl, macOS and Windows, x86_64 and
+aarch64).
 
-## 8. Invariants and how CI holds them
+- The facade gem was 977 KB, pure Ruby plus `aprv.wasm`; RubyGems picked
+  the prebuilt native gem, so no Rust toolchain was needed
+  ([Ruby][ruby]).
+- Every export is wrapped with `to_func(gvl: false)`, each thread using
+  its own store. With the GVL held, threads do not scale at all (716, 666
+  and 699 g5 per second at 1, 2 and 4 threads); released, 4 threads reach
+  2,358 g5 and 746 JWS per second ([Ruby][ruby]).
+- Instances are handed out through a pool or a thread-local, never
+  through a variable a closure can capture: the spike's first harness
+  shared one verifier across threads that way by accident.
+- Compile at start 1.22 to 1.35 s; later verifiers 0.1 ms.
+  `aprv.random_get` from `SecureRandom`.
+
+**.NET** runs the `Wasmtime` NuGet package (48.0.2 in the evidence).
+
+- The facade multi-targets netstandard2.0 and net8.0; it ran on .NET 8
+  and .NET 10. netstandard2.0 compiles; .NET Framework loading the native
+  library is untested ([.NET][dotnet]).
+- `Engine`, `Module` and a `Linker` holding the host function are
+  process-wide; `Store` and `Instance` are per thread. Four threads reach
+  2,475 g5 and 669 JWS per second.
+- The package ships no `linux-musl-*` library; on Alpine the `linux-x64`
+  library needs glibc and is expected to fail without `gcompat`
+  ([.NET][dotnet]). Alpine .NET users take `aprv-server`.
+- Compile at start 0.92 to 0.98 s. `aprv.random_get` from
+  `RandomNumberGenerator`.
+
+### 7.7 aprv-server
+
+One Rust binary, `aprv`, built on axum and tokio with Wasmtime 49
+**runtime-only**: Cranelift, Winch, the cache, the Component Model and
+every other optional feature are off. The release precompiles
+`aprv.wasm` to a Cranelift `.cwasm` for an **explicit baseline target**
+per platform and embeds it ([aprv-server §2][server]). The binary has no
+base64, CMS, JWS, certificate or policy code: a route or command picks
+the operation and passes the bytes through the ABI lifecycle (§4).
+
+- **Why a precompiled module here.** Runtime-only Wasmtime starts in
+  9.8 ms instead of 900 ms, idles at 20.7 MiB instead of 115.6 MiB, and
+  is 3.58 MB gzipped instead of 5.07 MB, at the same verification speed
+  ([aprv-server §2][server]). `Module::deserialize` runs native code
+  without validating it, so the binary deserializes only the bytes
+  embedded at build time; the runtime-only build refuses a `.wasm`
+  outright.
+- **Modes.**
+  - `aprv serve`: `POST /v1/receipt/verify`, `/v1/signed-data/verify`,
+    `/v1/verify-receipt/production`, `/v1/verify-receipt/sandbox`,
+    `GET /healthz`, `GET /readyz`. Every verification result is HTTP 200
+    with the module's JSON. A trap is 500 `WASM_TRAP`, an ABI fault 500
+    `ABI_ERROR`, a lost worker 500 `INTERNAL_ERROR`, a body over
+    3,145,728 bytes 413, a missing or wrong `X-Aprv-Token` 401 when a token
+    is configured.
+  - `aprv serve --managed`: the child of a JVM (§7.8). It binds
+    `127.0.0.1:0` whatever `APRV_LISTEN` says, reports its port as one
+    stdout line, reads a 256-bit token as its first stdin line, and exits
+    on stdin EOF ([aprv-server §6][server]).
+  - The one-shot CLI: `aprv verify-receipt`, `aprv verify-signed-data`,
+    `aprv verify-receipt-endpoint <production|sandbox>`. It reads stdin
+    (up to 3 MiB), runs one operation in one fresh instance, writes the
+    JSON and exits: 0 for any result, 3 for input too large, 70 for a
+    trap, ABI fault or load failure. About 12 ms per process
+    ([aprv-server §5][server]).
+- **Binding.** `127.0.0.1` unless `APRV_LISTEN` says otherwise, in and out
+  of Docker.
+- **Limits.** 256 MiB of linear memory and one instance per store
+  (`StoreLimits`, `trap_on_grow_failure`); a worker semaphore of N
+  concurrent verifications, N = CPU count; the 3 MiB body cap. A guest time
+  limit (epoch interruption) is open (THREAT-MODEL.md §5).
+- **Lifecycle.** A fresh store and instance, INITed, per request; `--lifecycle
+  pool` keeps instances and destroys one on any trap or ABI error, never
+  sharing one between two requests (§5).
+- **The configuration a host passes.** The `Config` of a Java or PHP
+  caller travels with the call: the per-call `now_ms` in a request header
+  or CLI argument, and the roots once, at start (the managed child reads
+  them after the token; a standalone server takes them from its own
+  configuration and serves their fingerprints so a client can refuse a
+  mismatch). The names are fixed in Phase 2.
+- **Linux: fully static musl** for x86_64 (static-pie) and aarch64, with
+  musl's own malloc. Neither has an INTERP header or a NEEDED entry; both
+  run from an empty chroot and inside Alpine. They are 1.3% larger
+  stripped than glibc and 6 to 8% slower per server CPU-second; the corpus
+  matches the glibc server row for row ([static musl][musl]).
+- **`cli-fast-exit`.** Wasmtime deregisters the module's unwind info one
+  FDE at a time under LLVM libunwind, which a static musl binary links,
+  and libunwind makes that quadratic in the 13,093 FDEs: 55 ms of teardown
+  after the verdict. Wrapping the runtime in `ManuallyDrop` in the
+  one-shot path brings the musl CLI's exit to 15.2 ms on 4 CPUs
+  ([static musl §3][musl]). macOS is expected to show the same delay.
+- **macOS and Windows** binaries ship on GitHub Releases for x86_64 and
+  arm64; they have not been built yet (MIGRATION.md, Phase 2).
+- **Docker.** A multi-stage build: the first stage checks the module's
+  SHA-256, precompiles and builds the binary; the second is a distroless,
+  non-root image pinned by digest, entrypoint `aprv serve`. Inside the
+  container the server listens on `127.0.0.1:8080` until `APRV_LISTEN` is
+  set, so a published port reaches nothing by accident. Published to GHCR
+  and, once the owner creates the namespace and token, Docker Hub. The
+  image has not been built yet ([aprv-server §8][server]).
+- **Exotic CPUs** where Wasmtime has no compiler (ppc64le, loongarch64,
+  32-bit): open. Pulley ran 4.6 JWS per second and Wasmi 2.0 12.5 on the
+  same machine ([execution modes][modes]); nothing is decided.
+
+### 7.8 Java: two artifacts
+
+**`io.github.emindeniz99:apple-purchase-receipt-verifier`** (main): the
+0.7 pure-Java implementation over BouncyCastle, Java 8+, unchanged in API
+and kept maintained. It is the independent implementation and the live
+oracle (R33). Its deprecation is decided later.
+
+**`io.github.emindeniz99:apple-purchase-receipt-verifier-wasm`**: Java 8+,
+the same package and class names as the main artifact, the same `Config`
+(exactly 0.7's), and two engines.
+
+```java
+Verifier v1 = Verifier.create(config);                    // Endive on Java 11+, the server on Java 8
+Verifier v2 = Verifier.create(config, Engine.endive());
+Verifier v3 = Verifier.create(config,
+        Engine.server(ServerSource.url(uri, token),
+                      ServerSource.maven(),
+                      ServerSource.github())
+              .cacheDirectory(path));
+```
+
+- **Engine choice is programmatic and explicit.** The artifact reads no
+  system property and no environment variable of ours. Java 11+ may choose
+  the server engine too. `Engine.endive()` on Java 8 fails at `create`.
+- **Class files.** The façade, the engine API and the server client are
+  Java 8 bytecode. Endive's generated classes and its runtime are Java 11
+  bytecode (major 55, [Endive §4][endive]) and load only when the Endive
+  engine is chosen.
+- **`ServerSource`**, tried in the order the user gives; the first that
+  works wins:
+
+| Source | What it does |
+|---|---|
+| `url(uri, token)` | an `aprv serve` the user runs (a sidecar, a Docker service); the JVM starts nothing and needs no writable or executable directory |
+| `executable(path)` | starts that binary as `aprv serve --managed` and supervises it; nothing is extracted |
+| `maven()` | the platform classifier jar on the classpath (R26); the expected SHA-256 is inside the `-wasm` jar |
+| `github()` | downloads our release asset for this platform over HTTPS; the SHA-256 is inside the jar |
+| `download(url, sha256)` | the user's mirror, checked against the given hash |
+
+  `Engine.server()` with no sources means `[maven, github]`. A binary
+  whose hash differs from the pin is never made executable; the source
+  fails and the next is tried. When none works, `create` throws with each
+  source's reason. Extracted and downloaded binaries live in the cache
+  directory: owner-only, written as a temporary file, hashed while it
+  streams, made executable and renamed to `aprv-<sha256>` only on a
+  match, and hashed again before every start, one download per machine
+  under a file lock ([aprv-server §6][server]). The default directory is
+  fixed in Phase 3.
+- **Managed mode**, tested on Temurin 8: loopback `127.0.0.1:0`, a fresh
+  256-bit `SecureRandom` token on the child's stdin (never argv or the
+  environment), supervision, restart after a crash (the next call pays
+  18.7 ms), no restart after 10 deaths within a minute, and no orphan:
+  `close()`, `System.exit` and `kill -9` of the JVM all end the child
+  ([aprv-server §6][server]). A host whose cache directory is mounted
+  `noexec` uses `url` or `executable`.
+- **The client** sends each request in one write with `TCP_NODELAY`;
+  `HttpURLConnection` costs about 1.5 ms extra per POST
+  ([rust-core spikes, Sidecar][spikes]). A g5 call from Java 8 took
+  3.87 ms mean and 3.71 ms p50; 258 per second on one thread, 719 on four
+  ([aprv-server §6][server]).
+- **Classpath guard.** Both artifacts ship a marker resource; each façade
+  fails fast at startup when it finds both. The Gradle module metadata
+  declares a capability conflict between them, and the READMEs say to
+  depend on exactly one.
+- **Maven Central** carries two classifier jars of the static musl
+  server, `linux-x86_64` and `linux-aarch64`, attached to the `-wasm`
+  artifact (R26). A classifier cannot replace the main jar: it shares the
+  artifact's POM and dependencies, which is why the two implementations
+  have two artifactIds. macOS and Windows binaries come from GitHub
+  Releases.
+- `Config.runtimeProbe` stays in the API. What the `-wasm` artifact probes
+  at `create` (the engine instantiating and INITing one instance) is fixed
+  in Phase 3.
+
+### 7.9 PHP
+
+- A PHP 8.2 façade (`verifyReceipt`, `verifySignedData`,
+  `verifyReceiptEndpoint`) over two transports: the one-shot `aprv` CLI
+  per call by default, through `proc_open` with an argv array and no
+  shell; or a server URL the user configures, over one keep-alive curl
+  handle ([aprv-server §7][server]).
+- Measured: 11.6 ms per g5 through the CLI and 3.56 ms over HTTP; a
+  200-row slice of the corpus matched Node on both.
+- **`aprv install`**, a command the Composer package ships, downloads the
+  binary for this platform from GitHub Releases, checks it against the
+  SHA-256 pinned in the package, and installs it where the façade looks.
+  Nothing downloads at request time.
+- Published from the root `composer.json` to Packagist once the owner
+  submits the repository (BOOTSTRAP.md).
+
+### 7.10 The C ABI
+
+`rust/ffi` stays: a `cdylib` and `staticlib` with a cbindgen header, now
+over `aprv-surface` and `aprv-wire`, so its JSON is the same bytes
+`aprv.wasm` returns. It is the escape hatch for a language with no host
+above: C, C++, Elixir, or a platform no Wasm runtime reaches. It runs
+OpenSSL and the core as native code in the caller's process (class E),
+which is the caller's choice. 0.8.0 ships it as source, as today;
+prebuilt archives stay ROADMAP's "C ABI phase 2" decision. OpenSSL is
+linked statically, `OPENSSL_CONFIG_DIR` points at a path that does not
+exist, and the adapter never loads a config file or a default trust path
+([substrate bake-off §7][substrate]).
+
+### 7.11 crates.io
+
+The core gets its first publish when something needs it (R19). The
+adapter crate publishes first. Until `openssl-sys` accepts `openssl-src`
+400.x, a crates.io user gets OpenSSL 3.x from the vendored feature or the
+system's OpenSSL, since our `[patch.crates-io]` applies only inside this
+workspace ([CMS everywhere §1][cms]).
+
+## 8. Documentation
+
+- Each package README keeps install, a quick start and the 0.7 checklist,
+  plus what is particular to its host: the Python compile and cache, the
+  Java engine choice and `noexec` directories, PHP's `aprv install`,
+  workerd's static import.
+- Doc comments on `aprv-surface` are the reference text; each wrapper's
+  API docs are written from it by hand and reviewed with the wrapper.
+
+## 9. Invariants and how CI holds them
 
 | Invariant | Enforced by |
 |---|---|
-| One implementation | A CI job greps the package folders for crypto and ASN.1 imports (`java.security.Signature`, `node:crypto`, `crypto.subtle`, `cryptography`, `Security`, `crypto/x509`, `CertificateFactory`, ...) and fails on any hit outside tests. |
-| No hand-written ASN.1, CMS or X.509 (R21) | `tools/check-layering.mjs` fails if `rust/src` gains a module named `asn1`, `x509`, `cms`, `chain` or `crypto`, if the core's graph gains an ASN.1, X.509 or signature crate (`der`, `rasn`, `bcder`, `asn1-rs`, `x509-*`, `cms`, `rsa`, `p256`, `p384`, ...), or if the adapter calls `ASN1_get_object`, which is hand TLV walking. The payload grammar lives only in `payload.c`'s templates. |
-| The adapter is the only `unsafe` crate below the bindings | `#![forbid(unsafe_code)]` in the core and the surface, checked by the layering script (SURFACE.md §7.1). The boundary crates (`rust/ffi`, `aprv-wasm`) keep the `unsafe` their ABIs need and hold no security logic. Every `unsafe` block carries a `// SAFETY:` comment (Clippy `undocumented_unsafe_blocks`). |
-| `aprv.wasm` imports exactly two functions | CI lists the module's imports (`wasm-tools`) and fails on anything other than `aprv.clock_now_ms` and `aprv.random_get`. |
-| `aprv.wasm` takes no unmeasured path | Every change runs the full corpus through a host that traps on any unexpected import call, with the shipped module's own WASI stubs trapping too (section 5); any trap or any row that differs from native fails the job. |
-| No ambient OpenSSL state | `OPENSSL_CONFIG_DIR` points at a path that does not exist; the adapter uses `OPENSSL_INIT_NO_LOAD_CONFIG` and no default trust paths. An isolation test plants a root in `SSL_CERT_FILE` and `SSL_CERT_DIR` and a hostile `OPENSSL_CONF`, and asserts they are ignored and never opened ([substrate bake-off §7](../evidence/2026-09-26-security-substrate-bakeoff.md)). |
-| Pinned roots only | Root `certs/` stays canonical (`apple-root-watch.yml` diffs it against apple.com). `rust/certs` is the one copy, compiled in with `include_bytes!`; `check-cert-copies.mjs` checks that single copy. No binding ships or reads roots of its own. Trust-isolation tests run per binding. |
-| No panic crosses a boundary | UniFFI scaffolding, C ABI `catch_unwind`, and wasm trap recovery in the JS façade, the Go pool and the Java 11+ pool (section 5), each with a forced-failure test. |
-| The Endive jar answers as native does (R18) | Every change runs the full corpus (1,179 rows plus 5,000 mutants) through the built Java 11+ jar on GitHub's Linux x64 and arm64, macOS arm64, Windows x64 and arm64 runners; s390x under QEMU (big-endian) runs before each release. Any row that is not byte-identical to the native build fails the build. Endive does no post-compilation verification, so this run is the guard against a miscompile. |
-| One Java artifact per classpath (R18) | Each artifact ships a marker resource and the façade fails fast at startup when it finds both. The Gradle module metadata declares a capability conflict between them. A test puts both jars on one classpath and asserts the failure. |
-| Caps in one place | The core owns `MAX_RECEIPT_BYTES`, `MAX_JWS_BYTES`, `MAX_REQUEST_BYTES`, the JSON depth and the certificate caps. The bindings add none. |
-| Generated code is reproducible | Pinned uniffi and cbindgen versions, and a pinned wasi-sdk and OpenSSL tarball, each checked by SHA-256. Committed outputs (Swift sources, the C header, Go `aprv.wasm`) are regenerated in CI with `git diff --exit-code`. |
-| Same verdicts everywhere | Every package runs all 186 `fixtures/cases.json` cases through its binding. |
-| Artifacts are what CI built | Publish jobs never cache. Every native and wasm artifact gets a SHA-256 and a build-provenance attestation. Post-publish smoke installs from the real registry. |
-| Licenses ship with the code | Every package that carries OpenSSL, natively or in `aprv.wasm`, ships OpenSSL's license and NOTICE text; `aprv.wasm` also ships wasi-libc's and Rust std's (R12). A package-content check in release fails when one is missing. |
-| Floors are tested | Java 8 on Temurin 8 (the `-java8` artifact), Java 11 (the main artifact), Node 20, Python 3.10, Swift 6.2 (Linux) and the Go floor all keep their CI legs, now against the binding. |
+| One Rust implementation under eight languages | A CI job greps the non-Java wrappers for crypto, X.509 and ASN.1 APIs (`node:crypto`, `crypto.subtle`, `cryptography`, `crypto/x509`, `System.Security.Cryptography.Pkcs`, `openssl_*`, `OpenSSL::`, swift-crypto, ...) and fails on a hit outside tests |
+| The Java implementation stays independent | The main artifact depends on no Rust artifact; the `-wasm` module shares its API, not its code (R33) |
+| No hand-written ASN.1, CMS or X.509 in the core (R21) | `tools/check-layering.mjs` fails on a module named `asn1`, `x509`, `cms`, `chain` or `crypto` in `rust/src`, an ASN.1, X.509 or signature crate in the core's graph, or a call to `ASN1_get_object` in the adapter |
+| `unsafe` only at the edges | `#![forbid(unsafe_code)]` in the core, the surface and the wire crate; `unsafe` only in `aprv-openssl`, `aprv-abi`, `rust/ffi` and `aprv-server` (for `Module::deserialize`), each block with a `// SAFETY:` comment |
+| `aprv.wasm` imports exactly `aprv.random_get` | CI lists the module's imports with `wasm-tools` and fails on anything else |
+| `aprv.wasm` takes no unmeasured path | Every change runs the corpus through a host whose import object traps on anything unexpected, with the module's own WASI stubs trapping; any trap or any row that differs from native fails |
+| One `aprv.wasm` everywhere | The release builds it once; every package's copy (npm, Go, Swift, PyPI, RubyGems, NuGet, the Endive input, the server's `.cwasm` input) is checked against its published SHA-256; the committed Go and Swift copies are rebuilt in CI and diffed |
+| ABI v1 holds | The 33 mandatory ABI tests plus each facade's own run on every host on every change |
+| Same verdicts everywhere | Every host runs all 311 `fixtures/cases.json` cases as one test each; the `-wasm` artifact runs them once per engine; the main Java artifact runs them too (SURFACE.md §6) |
+| Endive answers as native | The corpus (1,179 rows plus 5,000 mutants) through the built `-wasm` jar on every change, byte for byte against native, on Linux x64 and arm64, macOS arm64, Windows x64 and arm64; s390x under QEMU before each release |
+| One Java artifact per classpath | A test puts both jars on one classpath and asserts the guard's failure; a Gradle build that requests both fails at resolution |
+| No ambient OpenSSL state | The isolation test plants a root in `SSL_CERT_FILE` and `SSL_CERT_DIR` and a hostile `OPENSSL_CONF`, and asserts they are ignored ([substrate bake-off §7][substrate]) |
+| Pinned roots only | Root `certs/` stays canonical; `rust/certs` is the copy compiled into the core; the Java artifact keeps its constants. `check-cert-copies.mjs` checks what remains |
+| Caps in one place | The core owns every bound of the 0.7 table; wrappers add none. `aprv-server` adds only the HTTP body cap, equal to the receipt cap |
+| Precompiled code is only what we built | `aprv-server` deserializes only its embedded `.cwasm`; no host loads a `.cwasm` from anywhere else; wasmtime-py's cache follows THREAT-MODEL.md §8 |
+| Artifacts are what CI built | Publish jobs never cache. `aprv.wasm`, every server binary and every classifier jar get a SHA-256 and a build-provenance attestation. Post-publish smoke installs from the real registries |
+| Licences ship with the code | Every package that carries `aprv.wasm` or a server binary ships OpenSSL's licence and NOTICE, wasi-libc's and Rust std's texts; the server adds Wasmtime's |
+| Floors are tested | Each floor in SUPPORT-MATRIX.md keeps a CI leg, the Java 8 server engine on a real Java 8 JVM |
+
+[wasmbake]: ../evidence/2026-09-26-wasm-architecture-bakeoff.md
+[cms]: ../evidence/2026-09-26-openssl-cms-everywhere.md
+[abi]: ../evidence/2026-09-26-wasm-abi-v1.md
+[payload]: ../evidence/2026-09-26-openssl-asn1-payload.md
+[speed]: ../evidence/2026-09-26-wasm-speed.md
+[endive]: ../evidence/2026-09-26-endive-build-time-jvm.md
+[server]: ../evidence/2026-09-26-aprv-server.md
+[musl]: ../evidence/2026-09-27-static-musl-server.md
+[pywt]: ../evidence/2026-09-26-python-wasmtime.md
+[pyopt]: ../evidence/2026-09-27-python-runtime-options.md
+[pyfinal]: ../evidence/2026-09-27-python-runtime-final.md
+[modes]: ../evidence/2026-09-27-wasm-execution-modes.md
+[swift]: ../evidence/2026-09-26-swift-wasmkit.md
+[ruby]: ../evidence/2026-09-26-ruby-wasmtime.md
+[dotnet]: ../evidence/2026-09-26-dotnet-wasmtime.md
+[substrate]: ../evidence/2026-09-26-security-substrate-bakeoff.md
+[spikes]: ../evidence/2026-09-25-rust-core-spikes.md
