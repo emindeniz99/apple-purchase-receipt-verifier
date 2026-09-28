@@ -457,6 +457,8 @@ Still worth filing as issues:
   fails as `INVALID_CERTIFICATE`. Open policy question for the host: accept
   or reject when the CRL is stale because a download failed. The 0.7
   design keeps room for this (docs/design/0.7-api.md).
+- **A per-certificate distrust list in `Config`**, for a leaked historical
+  Apple leaf key (THREAT-MODEL.md §4). Not built until that day comes.
 - **A shared Rust core compiled to WebAssembly under every port.** A
   future idea for its own branch. The 0.7 design keeps the door open: the
   core would take `now_ms` as an argument instead of calling back into the
