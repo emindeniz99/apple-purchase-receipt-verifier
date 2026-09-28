@@ -364,8 +364,10 @@ sides.
   HTTP 413 there — check the body's length before the call to do the
   same).
 - **the compact JWS**: 262,144 UTF-8 bytes, `TooLarge`.
-- **JSON nesting depth 64, ASN.1 nesting depth 32.** A deeper request body, JWS or CMS
-  structure is `Malformed`.
+- **JSON nesting depth 64, ASN.1 nesting depth 32.** A deeper request
+  body, JWS header or CMS envelope is `Malformed`. A deeper JWS payload or
+  signed receipt content is judged after the signature: `UnreadablePayload`
+  if it verifies, `InvalidSignature` if not.
 
 `receipt-data` is decoded exactly as Apple's `verifyReceipt` accepts it:
 standard base64 with canonical `=` padding and nothing else — whitespace,
@@ -511,8 +513,8 @@ environments, no app Apple id, no device id. Methods return a
 | `WrongBundleId`, `WrongEnvironment`, `WrongAppAppleId`, `DeviceHashMismatch` | gone: the caller's own checks |
 
 The netstandard2.0 / net8.0 dual targeting, the compiled-in root
-certificates, and the `System.Formats.Asn1`-only dependency set are
-unchanged from 0.6.
+certificates, and the dependency set (`System.Security.Cryptography.Pkcs`
+and `System.Formats.Asn1`) are unchanged from 0.6.
 
 ## Testing
 
