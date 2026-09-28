@@ -47,7 +47,11 @@ final class ReceiptCore {
      */
     private static final int MAX_PATH_LENGTH = 6;
 
-    /** Apple's own limit on a verifyReceipt body, in UTF-8 bytes; checked before anything is decoded. */
+    /**
+     * The largest receipt accepted: the base64 text's length in UTF-8 bytes,
+     * checked before it is decoded. The figure is Apple's limit on a whole
+     * verifyReceipt body ({@link Endpoint#MAX_REQUEST_BYTES}).
+     */
     static final int MAX_RECEIPT_BYTES = 3145728;
 
     private ReceiptCore() {}

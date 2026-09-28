@@ -31,8 +31,11 @@ public interface Verifier {
      * @throws IllegalArgumentException if {@code config} has no roots, since
      *                                  such a verifier would reject everything
      * @throws IllegalStateException    if a dependency does not load: a
-     *                                  jackson-core below 2.16, or a
-     *                                  BouncyCastle that fails to initialise;
+     *                                  jackson-core below 2.16, a
+     *                                  BouncyCastle that fails to initialise,
+     *                                  or a time-zone database without
+     *                                  America/Los_Angeles (the endpoint
+     *                                  stand-in renders Pacific-time dates);
      *                                  or, unless
      *                                  {@link Config#runtimeProbe()} is off,
      *                                  if this runtime cannot verify Apple

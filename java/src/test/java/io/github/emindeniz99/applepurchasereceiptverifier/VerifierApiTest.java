@@ -542,6 +542,10 @@ class VerifierApiTest {
                 assertThrows(IllegalStateException.class, () -> DefaultVerifier.initialise(broken));
         assertTrue(first.getCause() instanceof ExceptionInInitializerError, String.valueOf(first.getCause()));
         assertTrue(first.getMessage().contains("jackson-core 2.16"), first.getMessage());
+        // The floors are a guess; the real error is named, since it may be
+        // something else, such as a JRE whose tzdb lacks the Pacific zone.
+        assertTrue(first.getMessage().contains(ExceptionInInitializerError.class.getName()), first.getMessage());
+        assertTrue(first.getMessage().contains("as a missing Jackson method would"), first.getMessage());
         // A second attempt meets the class already failed, which is a
         // NoClassDefFoundError: reported the same way.
         IllegalStateException second =
@@ -549,6 +553,38 @@ class VerifierApiTest {
         assertTrue(second.getCause() instanceof NoClassDefFoundError, String.valueOf(second.getCause()));
         // The real classes initialise.
         assertNotNull(Verifier.create(Config.defaults()));
+    }
+
+    /**
+     * The decoders catch only RuntimeException, so a BouncyCastle class they
+     * link against that is missing from an older jar (ASN1UTF8String and
+     * ASN1IA5String arrived in bcprov 1.70) would throw a LinkageError out of
+     * verifyReceipt, which must not throw. Verifier.create loads each of them
+     * first, so the old jar fails there instead.
+     */
+    @Test
+    void theStaticStateLoadsEveryBouncyCastleClassTheDecodersName() throws Exception {
+        String dir = "src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/";
+        String verifier =
+                new String(Files.readAllBytes(Paths.get(dir, "DefaultVerifier.java")), StandardCharsets.UTF_8);
+        Matcher body =
+                Pattern.compile("void buildStaticState\\(\\) \\{([^}]*)}").matcher(verifier);
+        assertTrue(body.find(), "no buildStaticState in DefaultVerifier.java");
+        Pattern bouncyCastleImport = Pattern.compile("(?m)^import (org\\.bouncycastle\\.[\\w.]*\\.(\\w+));$");
+        int scanned = 0;
+        for (String decoder : Arrays.asList("ReceiptDecoder.java", "JwsCore.java")) {
+            String code = new String(Files.readAllBytes(Paths.get(dir, decoder)), StandardCharsets.UTF_8);
+            Matcher imported = bouncyCastleImport.matcher(code);
+            while (imported.find()) {
+                scanned++;
+                assertTrue(
+                        verifier.contains("import " + imported.group(1) + ";")
+                                && body.group(1).contains("requireNonNull(" + imported.group(2) + ".class);"),
+                        decoder + " links against " + imported.group(1)
+                                + ", which buildStaticState does not load, so an old bcprov fails a verify call");
+            }
+        }
+        assertTrue(scanned > 0, "no BouncyCastle import was found, so the check above scanned nothing");
     }
 
     /**
@@ -562,7 +598,7 @@ class VerifierApiTest {
         for (X509Certificate root : AppleRootCerts.roots()) {
             root.verify(root.getPublicKey(), BouncyCastle.PROVIDER);
         }
-        DefaultVerifier.probeRuntime(BouncyCastle.PROVIDER);
+        DefaultVerifier.probeRuntime(BouncyCastle.PROVIDER, AppleRootCerts.roots());
         assertNotNull(Verifier.create(Config.defaults()));
     }
 
@@ -575,7 +611,8 @@ class VerifierApiTest {
         Provider empty = new Provider("Empty", 1.0, "offers no services") {
             private static final long serialVersionUID = 1L;
         };
-        IllegalStateException e = assertThrows(IllegalStateException.class, () -> DefaultVerifier.probeRuntime(empty));
+        IllegalStateException e = assertThrows(
+                IllegalStateException.class, () -> DefaultVerifier.probeRuntime(empty, AppleRootCerts.roots()));
         assertTrue(e.getMessage().startsWith("this runtime cannot verify Apple signatures"), e.getMessage());
         assertNotNull(e.getCause());
     }
@@ -596,8 +633,8 @@ class VerifierApiTest {
                 throw boom;
             }
         };
-        IllegalStateException e =
-                assertThrows(IllegalStateException.class, () -> DefaultVerifier.probeRuntime(throwing));
+        IllegalStateException e = assertThrows(
+                IllegalStateException.class, () -> DefaultVerifier.probeRuntime(throwing, AppleRootCerts.roots()));
         assertTrue(e.getMessage().startsWith("this runtime cannot verify Apple signatures"), e.getMessage());
         assertEquals(boom, e.getCause());
     }
