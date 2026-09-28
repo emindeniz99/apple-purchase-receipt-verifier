@@ -2,7 +2,7 @@
 
 //! The StoreKit 2 path: compact-JWS split, strict base64url, JSON header
 //! and payload, `x5c` certificates, chain, ES256 signature. Same invariants
-//! as the Go port's `FuzzVerifyTransaction`: nothing panics, and a JWS
+//! as the Go port's `FuzzVerifySignedData`: nothing panics, and a JWS
 //! `verify_signed_data` accepts under the fixture root must be refused under
 //! Apple's roots, or the anchors are not what decided it.
 
