@@ -39,28 +39,35 @@ language** (all inside this folder):
 | [`python/`](./python) | Python 3.10+ | ✅ done |
 | [`swift/`](./swift) | Swift 6+ | ✅ done |
 | [`go/`](./go) | Go 1.22+ | ✅ done |
-| [`ruby/`](./ruby) | Ruby 3.1+ | ✅ done |
+| [`ruby/`](./ruby) | Ruby 3.3+ | ✅ done |
 | [`rust/`](./rust) | Rust 1.85+ | ✅ done |
-| [`php/`](./php) | PHP 8.1+ | ✅ done |
+| [`php/`](./php) | PHP 8.2+ | ✅ done |
 | [`dotnet/`](./dotnet) | .NET (netstandard2.0, net8.0) | ✅ done |
 
-Each implementation provides the same two capabilities:
+Each implementation exposes one `Verifier` with three methods
+([docs/design/0.7-api.md](./docs/design/0.7-api.md)):
 
-1. **JWS verification** (`signedTransactionInfo`, `signedRenewalInfo`,
-   `AppTransaction`, notification payloads): parse the compact JWS, validate
-   the `x5c` certificate chain up to **one of the pinned Apple roots**, check
-   Apple's marker OIDs on the leaf and intermediate certificates, verify the
-   ES256 signature, then check `bundleId` / `environment` (and `appAppleId`
-   in production) against expected values.
-2. **Legacy PKCS#7 receipt verification**: verify the CMS/PKCS#7 signature
-   and its chain up to **one of the pinned Apple roots**, parse the ASN.1
-   payload (bundle id, app version, opaque value, SHA-1 hash, in-app purchase
-   attributes — [RECEIPT-FIELDS.md](./RECEIPT-FIELDS.md) is the per-attribute
-   reference), and optionally check the device-hash binding when the client
-   also sends its device GUID (the raw bytes of `identifierForVendor` on
-   iOS, iPadOS, tvOS and watchOS, including an iOS app running on an
-   Apple silicon Mac, or the primary network interface's MAC address
-   from `copy_mac_address` on macOS and Mac Catalyst).
+1. **JWS verification** (`verifySignedData`: `signedTransactionInfo`,
+   `signedRenewalInfo`, `AppTransaction`, notification payloads): parse the
+   compact JWS, validate the `x5c` certificate chain up to **one of the
+   pinned Apple roots**, check Apple's marker OIDs on the leaf and
+   intermediate certificates, verify the ES256 signature, and return the
+   payload JSON exactly as Apple signed it.
+2. **Legacy PKCS#7 receipt verification** (`verifyReceipt`): verify the
+   CMS/PKCS#7 signature and its chain up to **one of the pinned Apple
+   roots**, check the same marker OIDs, and parse the ASN.1 payload (bundle
+   id, app version, opaque value, SHA-1 hash, in-app purchase attributes —
+   [RECEIPT-FIELDS.md](./RECEIPT-FIELDS.md) is the per-attribute reference).
+3. **A local `verifyReceipt` endpoint** (`verifyReceiptEndpoint`): Apple's
+   request body in, Apple's response body out, verified offline
+   ([COMPARISON.md](./COMPARISON.md)).
+
+None of them takes a bundle id, an environment, an `appAppleId` or a device
+GUID. Comparing those fields, and the receipt's device hash (the raw bytes
+of `identifierForVendor` on iOS, iPadOS, tvOS and watchOS, including an iOS
+app running on an Apple silicon Mac, or the primary network interface's MAC
+address from `copy_mac_address` on macOS and Mac Catalyst), is the caller's
+job, done on the fields the verifier returns.
 
 Trust is **pinned to the Apple root certificates** stored in
 [`certs/`](./certs) (downloaded from [Apple PKI](https://www.apple.com/certificateauthority/)) —
@@ -81,6 +88,8 @@ Verifying the signature proves **authenticity and integrity**: the payload
 was produced by Apple and not modified. It does **not** by itself prove
 **entitlement**. Callers still must (outside this library):
 
+- **Check the payload is theirs**: `bundleId`, `environment`, product id
+  and, for a receipt, the device hash.
 - **Prevent replay**: track transaction IDs so one purchase can't unlock
   products on many accounts.
 - **Track refunds / current status**: use the transaction ID against the App
