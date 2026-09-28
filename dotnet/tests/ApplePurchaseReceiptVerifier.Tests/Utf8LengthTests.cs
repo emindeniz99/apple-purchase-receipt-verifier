@@ -1,7 +1,6 @@
 using System;
 using System.Text;
 using ApplePurchaseReceiptVerifier.Internal;
-using ApplePurchaseReceiptVerifier.Receipt;
 using Xunit;
 
 namespace ApplePurchaseReceiptVerifier.Tests;
@@ -17,7 +16,7 @@ namespace ApplePurchaseReceiptVerifier.Tests;
 /// </summary>
 public class Utf8LengthTests
 {
-    private const int Cap = VerifyReceiptEndpoint.MaxRequestBytes;
+    private const int Cap = EndpointCore.MaxRequestBytes;
     private const string EAcute = "é"; // 2 bytes, 1 unit
     private const string Euro = "€"; // 3 bytes, 1 unit
     private const string Emoji = "😀"; // 4 bytes, 2 units

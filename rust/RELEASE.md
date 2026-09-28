@@ -49,8 +49,9 @@ registry and `cargo run`. The manifest deliberately ships with an empty
 `[dependencies]` so it can never pin a stale version.
 
 `.github/smoke/crates-smoke/src/main.rs` asserts three bundled roots, verifies
-`fixtures/public-receipts/receipt-sandbox-g5.b64` and checks that a verifier
-configured for another bundle id rejects it with `Reason::WrongBundleId`. The
+`fixtures/public-receipts/receipt-sandbox-g5.b64` and checks that the same
+receipt with one DER byte flipped in its signature fails with
+`Reason::InvalidSignature`. The
 receipt comes from the checkout, not from the crate, which is the point of the
 paragraph above: `exclude` drops the fixtures, so this exercises the file set a
 consumer actually receives.

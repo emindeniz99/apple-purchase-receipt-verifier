@@ -22,7 +22,7 @@ namespace ApplePurchaseReceiptVerifier.Fuzz
     {
         private const string JsonExceptionName = "ApplePurchaseReceiptVerifier.Internal.JsonException";
 
-        private static readonly Assembly Library = typeof(VerificationException).Assembly;
+        private static readonly Assembly Library = typeof(IVerifier).Assembly;
 
         private static readonly Func<string, int, object?> JsonParseCore =
             Bind<Func<string, int, object?>>("Internal.Json", "Parse");
@@ -30,13 +30,10 @@ namespace ApplePurchaseReceiptVerifier.Fuzz
         private static readonly Func<object?, string> JsonWriteCore =
             Bind<Func<object?, string>>("Internal.Json", "Write");
 
-        private static readonly Func<byte[], int, int> CmsPreScanCore =
-            Bind<Func<byte[], int, int>>("Internal.CmsPreScan", "Scan");
-
         /// <summary>The default maximum JSON length the library compiles in.</summary>
         internal const int JsonMaxLength = 16 * 1024 * 1024;
 
-        /// <summary>The certificate bound the receipt path enforces.</summary>
+        /// <summary>The certificate bound the receipt path enforces (<c>Internal.Cms.MaxEmbeddedCertificates</c>).</summary>
         internal const int MaxEmbeddedCertificates = 10;
 
         /// <summary><c>Json.Parse</c>.</summary>
@@ -44,9 +41,6 @@ namespace ApplePurchaseReceiptVerifier.Fuzz
 
         /// <summary><c>Json.Write</c>.</summary>
         internal static string JsonWrite(object? value) => JsonWriteCore(value);
-
-        /// <summary><c>CmsPreScan.Scan</c>.</summary>
-        internal static int CmsPreScan(byte[] der, int limit) => CmsPreScanCore(der, limit);
 
         /// <summary>True when the exception is the reader's own typed failure.</summary>
         internal static bool IsJsonException(Exception e) =>

@@ -1,0 +1,259 @@
+package io.github.emindeniz99.applepurchasereceiptverifier;
+
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.json.JsonWriteFeature;
+import java.io.IOException;
+import java.io.StringWriter;
+import java.io.UncheckedIOException;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import org.jspecify.annotations.Nullable;
+
+/**
+ * The decoded payload of a verified legacy app receipt. Immutable.
+ *
+ * <p>Names are the keys of Apple's verifyReceipt response, so this class,
+ * {@link #toJson()} and Apple's documentation share one vocabulary. The
+ * comment on each getter names its receipt attribute type. {@code null} means
+ * the attribute was absent, or its value did not decode, in which case its
+ * octets are in {@link #unknownAttributes()}; the library invents no
+ * values. Dates are epoch milliseconds, UTC; receipts carry whole
+ * seconds, so they end in {@code 000}.</p>
+ *
+ * <p>Nothing in here has been checked against anything: the bundle id,
+ * environment and purchases are whatever Apple signed, and deciding whether
+ * to accept them is the caller's job. {@link Environment#fromReceiptType}
+ * reads {@link #receiptType()}; the device-hash check is
+ * {@code SHA-1(deviceId || opaqueValue() || bundleIdBytes())} compared with
+ * {@link #sha1Hash()}.</p>
+ *
+ * <p>Byte arrays and {@link #unknownAttributes()} are copied on the way in
+ * and on the way out.</p>
+ */
+public final class ReceiptPayload {
+
+    private final @Nullable String receiptType;
+    private final @Nullable Long appItemId;
+    private final @Nullable String bundleId;
+    private final byte @Nullable [] bundleIdBytes;
+    private final @Nullable String applicationVersion;
+    private final byte @Nullable [] opaqueValue;
+    private final byte @Nullable [] sha1Hash;
+    private final @Nullable Long receiptCreationDateMs;
+    private final @Nullable Long downloadId;
+    private final @Nullable Long versionExternalIdentifier;
+    private final List<InAppPurchase> inApp;
+    private final @Nullable Long originalPurchaseDateMs;
+    private final @Nullable String originalApplicationVersion;
+    private final @Nullable Long expirationDateMs;
+    private final Map<Integer, List<byte[]>> unknownAttributes;
+
+    /** Public so callers can build payloads by hand in their tests. */
+    public ReceiptPayload(
+            @Nullable String receiptType,
+            @Nullable Long appItemId,
+            @Nullable String bundleId,
+            byte @Nullable [] bundleIdBytes,
+            @Nullable String applicationVersion,
+            byte @Nullable [] opaqueValue,
+            byte @Nullable [] sha1Hash,
+            @Nullable Long receiptCreationDateMs,
+            @Nullable Long downloadId,
+            @Nullable Long versionExternalIdentifier,
+            List<InAppPurchase> inApp,
+            @Nullable Long originalPurchaseDateMs,
+            @Nullable String originalApplicationVersion,
+            @Nullable Long expirationDateMs,
+            Map<Integer, List<byte[]>> unknownAttributes) {
+        this.receiptType = receiptType;
+        this.appItemId = appItemId;
+        this.bundleId = bundleId;
+        this.bundleIdBytes = clone(bundleIdBytes);
+        this.applicationVersion = applicationVersion;
+        this.opaqueValue = clone(opaqueValue);
+        this.sha1Hash = clone(sha1Hash);
+        this.receiptCreationDateMs = receiptCreationDateMs;
+        this.downloadId = downloadId;
+        this.versionExternalIdentifier = versionExternalIdentifier;
+        List<InAppPurchase> purchases = new ArrayList<>(Objects.requireNonNull(inApp, "inApp"));
+        for (InAppPurchase purchase : purchases) {
+            Objects.requireNonNull(purchase, "in-app purchase");
+        }
+        this.inApp = Collections.unmodifiableList(purchases);
+        this.originalPurchaseDateMs = originalPurchaseDateMs;
+        this.originalApplicationVersion = originalApplicationVersion;
+        this.expirationDateMs = expirationDateMs;
+        this.unknownAttributes = RawAttributes.copy(Objects.requireNonNull(unknownAttributes, "unknownAttributes"));
+    }
+
+    /** Attribute 0, such as {@code Production} or {@code ProductionSandbox}. */
+    public @Nullable String receiptType() {
+        return receiptType;
+    }
+
+    /** Attribute 1, the app's App Store item id; zero in sandbox receipts. */
+    public @Nullable Long appItemId() {
+        return appItemId;
+    }
+
+    /** Attribute 2, decoded. */
+    public @Nullable String bundleId() {
+        return bundleId;
+    }
+
+    /** Attribute 2, the value octets exactly as they sit in the receipt: input to the device hash. */
+    public byte @Nullable [] bundleIdBytes() {
+        return clone(bundleIdBytes);
+    }
+
+    /** Attribute 3. */
+    public @Nullable String applicationVersion() {
+        return applicationVersion;
+    }
+
+    /** Attribute 4, the value octets: input to the device hash. */
+    public byte @Nullable [] opaqueValue() {
+        return clone(opaqueValue);
+    }
+
+    /** Attribute 5, the value octets: the device hash itself. */
+    public byte @Nullable [] sha1Hash() {
+        return clone(sha1Hash);
+    }
+
+    /** Attribute 12, when Apple created the receipt. */
+    public @Nullable Long receiptCreationDateMs() {
+        return receiptCreationDateMs;
+    }
+
+    /** Attribute 15. */
+    public @Nullable Long downloadId() {
+        return downloadId;
+    }
+
+    /** Attribute 16. */
+    public @Nullable Long versionExternalIdentifier() {
+        return versionExternalIdentifier;
+    }
+
+    /** Attribute 17, one entry per purchase, in receipt order; unmodifiable. */
+    public List<InAppPurchase> inApp() {
+        return inApp;
+    }
+
+    /** Attribute 18. */
+    public @Nullable Long originalPurchaseDateMs() {
+        return originalPurchaseDateMs;
+    }
+
+    /** Attribute 19, the version the user originally purchased. */
+    public @Nullable String originalApplicationVersion() {
+        return originalApplicationVersion;
+    }
+
+    /** Attribute 21, set only on receipts that expire (volume purchase). */
+    public @Nullable Long expirationDateMs() {
+        return expirationDateMs;
+    }
+
+    /**
+     * Raw value octets, by type, in receipt order, of the attribute types not
+     * modelled above, of a modelled attribute whose value did not decode, and
+     * of every copy of a modelled attribute after the first, so nothing Apple
+     * signed is lost. The attribute's
+     * {@code version} integer is not kept. A fresh copy on each call, arrays
+     * included.
+     */
+    public Map<Integer, List<byte[]>> unknownAttributes() {
+        return RawAttributes.copy(unknownAttributes);
+    }
+
+    // Every character outside ASCII is escaped, so the text is ASCII and
+    // therefore valid UTF-8, even for a lone surrogate in a hand-built payload.
+    static final JsonFactory JSON =
+            JsonFactory.builder().enable(JsonWriteFeature.ESCAPE_NON_ASCII).build();
+
+    /**
+     * This payload as JSON, for logging and storage (docs/design/0.7-api.md,
+     * "Our JSON"): snake_case names, dates as numbers with a {@code _ms}
+     * suffix, 64-bit ids ({@code app_item_id}, {@code download_id},
+     * {@code version_external_identifier}, {@code web_order_line_item_id}) as
+     * strings, bytes as padded standard base64 and {@code null} for a missing
+     * value.
+     */
+    public String toJson() {
+        StringWriter out = new StringWriter(512 + 512 * inApp.size());
+        try (JsonGenerator json = JSON.createGenerator(out)) {
+            json.writeStartObject();
+            json.writeObjectField("receipt_type", receiptType);
+            json.writeObjectField("app_item_id", appItemId == null ? null : appItemId.toString());
+            json.writeObjectField("bundle_id", bundleId);
+            json.writeObjectField("bundle_id_bytes", base64(bundleIdBytes));
+            json.writeObjectField("application_version", applicationVersion);
+            json.writeObjectField("opaque_value", base64(opaqueValue));
+            json.writeObjectField("sha1_hash", base64(sha1Hash));
+            json.writeObjectField("receipt_creation_date_ms", receiptCreationDateMs);
+            json.writeObjectField("download_id", downloadId == null ? null : downloadId.toString());
+            json.writeObjectField(
+                    "version_external_identifier",
+                    versionExternalIdentifier == null ? null : versionExternalIdentifier.toString());
+            json.writeArrayFieldStart("in_app");
+            for (InAppPurchase purchase : inApp) {
+                purchase.writeJson(json);
+            }
+            json.writeEndArray();
+            json.writeObjectField("original_purchase_date_ms", originalPurchaseDateMs);
+            json.writeObjectField("original_application_version", originalApplicationVersion);
+            json.writeObjectField("expiration_date_ms", expirationDateMs);
+            writeAttributes(json, unknownAttributes);
+            json.writeEndObject();
+        } catch (IOException e) {
+            // A StringWriter does not fail.
+            throw new UncheckedIOException(e);
+        }
+        return out.toString();
+    }
+
+    private static @Nullable String base64(byte @Nullable [] bytes) {
+        return bytes == null ? null : Base64.getEncoder().encodeToString(bytes);
+    }
+
+    /** {@code "unknown_attributes": {"13": ["<base64>", ...]}}, each type's values in receipt order. */
+    static void writeAttributes(JsonGenerator json, Map<Integer, List<byte[]>> attributes) throws IOException {
+        json.writeObjectFieldStart("unknown_attributes");
+        for (Map.Entry<Integer, List<byte[]>> entry : attributes.entrySet()) {
+            json.writeArrayFieldStart(entry.getKey().toString());
+            for (byte[] value : entry.getValue()) {
+                json.writeString(Base64.getEncoder().encodeToString(value));
+            }
+            json.writeEndArray();
+        }
+        json.writeEndObject();
+    }
+
+    /** Equal when {@link #toJson()} is. */
+    @Override
+    public boolean equals(@Nullable Object other) {
+        return other instanceof ReceiptPayload && toJson().equals(((ReceiptPayload) other).toJson());
+    }
+
+    @Override
+    public int hashCode() {
+        return toJson().hashCode();
+    }
+
+    /** {@link #toJson()}. */
+    @Override
+    public String toString() {
+        return toJson();
+    }
+
+    private static byte @Nullable [] clone(byte @Nullable [] bytes) {
+        return bytes == null ? null : bytes.clone();
+    }
+}

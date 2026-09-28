@@ -1,49 +1,68 @@
+import Crypto
 import Foundation
 import XCTest
 
 @testable import ApplePurchaseReceiptVerifier
 
-/// The README tells integrators to build one verifier of each kind and share
-/// it across every request. Swift 6 language mode already turns a data race
-/// on a shared value into a compile error, since every public type is
-/// `Sendable`; this is the runtime half of that claim.
+/// The README tells integrators to build one `Verifier` and share it across
+/// every request. `Verifier`, `Config`, `VerificationResult`, `ReceiptPayload`
+/// and `JsonPayload` are all `Sendable`, so Swift 6 language mode already
+/// turns a data race on a shared value into a compile error; this is the
+/// runtime half of that claim.
 ///
 /// Sixteen child tasks run fifty iterations each through every entry point a
-/// shared instance would serve, and every answer has to equal the answer a
+/// shared `Verifier` would serve, and every answer has to equal the answer a
 /// single sequential call gets. What this is written to catch is not a
 /// missing lock but state that is shared after all: a cached parser, a
-/// reused buffer, an `@unchecked Sendable` that is not, or a result that one
-/// task's verification writes into while another reads it.
+/// reused buffer, or a result that one task's verification writes into while
+/// another reads it.
 final class ConcurrencyTests: XCTestCase {
     static let tasks = 16
     static let iterations = 50
 
-    func testOneSharedInstanceOfEachVerifierServesManyTasksIdentically() async throws {
-        let receiptRoot = try VerifyReceiptResultTests.generated("receipt-root.der")
-        let receipts = try ReceiptVerifier(trustedRoots: [receiptRoot], bundleId: VerifierTests.bundle)
-        // A fixed clock so the response is comparable: request_date is "now"
-        // by design, and two calls a millisecond apart legitimately differ on
-        // it. Nothing else in the response moves with time.
-        let endpoint = try VerifyReceiptEndpoint(
-            trustedRoots: [receiptRoot], environment: .sandbox, clock: { VerifyReceiptResultTests.now })
-        let transactions = try JwsVerifier(
-            trustedRoots: [try VerifyReceiptResultTests.generated("jws-root.der")],
-            bundleId: VerifierTests.bundle, acceptedEnvironments: [.sandbox])
+    private static func fixtureURL(_ path: String) -> URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("fixtures")
+            .appendingPathComponent(path)
+    }
 
-        let receiptBase64 = try VerifyReceiptResultTests.base64("receipt.der")
-        let requestJSON = #"{"receipt-data":""# + receiptBase64 + #""}"#
-        let jws = String(decoding: try VerifyReceiptResultTests.generated("transaction.jws"), as: UTF8.self)
+    private static func der(_ path: String) throws -> [UInt8] {
+        [UInt8](try Data(contentsOf: fixtureURL(path)))
+    }
+
+    private static func trimmedText(_ path: String) throws -> String {
+        String(decoding: try Data(contentsOf: fixtureURL(path)), as: UTF8.self)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func testOneSharedVerifierServesManyTasksIdentically() async throws {
+        let receiptRoot = try Self.der("generated-0.7/receipt-root.der")
+        let jwsRoot = try Self.der("generated/jws-root.der")
+        // A fixed clock so the response is comparable: request_date is "now"
+        // by design, and two calls a millisecond apart legitimately differ
+        // on it. Nothing else in the response moves with time.
+        let fixedNow: Int64 = 1_735_689_600_000  // 2025-01-01T00:00:00Z
+        let receiptConfig = try Config.builder().roots([receiptRoot]).clock { fixedNow }.build()
+        let jwsConfig = try Config.builder().roots([jwsRoot]).clock { fixedNow }.build()
+        let receiptVerifier = Verifier(config: receiptConfig)
+        let endpointVerifier = Verifier(config: receiptConfig)
+        let jwsVerifier = Verifier(config: jwsConfig)
+
+        let receiptBase64 = standardBase64Encode(try Self.der("generated-0.7/receipt.der"))
+        let requestJSON = #"{"receipt-data":""# + receiptBase64 + #""}"#
+        let jws = try Self.trimmedText("generated/transaction.jws")
 
         // The sequential answers, taken first: the tasks are compared with
-        // what the library says when nothing is racing, not merely with each
-        // other.
-        let expectedReceipt = Self.describe(try await receipts.verify(base64Receipt: receiptBase64))
-        let expectedResponse = await endpoint.verifyReceiptResult(["receipt-data": receiptBase64]).json()
-        let expectedJSON = await endpoint.verifyReceiptJSON(requestJSON)
-        let expectedTransaction = try Self.describe(try await transactions.verifyTransaction(jws))
+        // what the library says when nothing is racing, not merely with
+        // each other.
+        let expectedReceipt = Self.describe(receiptVerifier.verifyReceipt(base64: receiptBase64))
+        let expectedResponse = endpointVerifier.verifyReceiptEndpoint(environment: .sandbox, requestJson: requestJSON)
+        let expectedTransaction = Self.describe(jwsVerifier.verifySignedData(jws: jws))
         XCTAssertTrue(expectedResponse.contains(#""status":0"#), "the sequential request did not verify")
-        XCTAssertEqual(expectedJSON, expectedResponse, "the JSON body and the dictionary are one request")
 
         let mismatches = try await withThrowingTaskGroup(of: [String].self) { group in
             for task in 0..<Self.tasks {
@@ -51,17 +70,16 @@ final class ConcurrencyTests: XCTestCase {
                     var found: [String] = []
                     for n in 0..<Self.iterations {
                         let at = "task \(task), iteration \(n)"
-                        if Self.describe(try await receipts.verify(base64Receipt: receiptBase64)) != expectedReceipt {
-                            found.append("\(at): verify(base64Receipt:)")
+                        if Self.describe(receiptVerifier.verifyReceipt(base64: receiptBase64)) != expectedReceipt {
+                            found.append("\(at): verifyReceipt")
                         }
-                        if await endpoint.verifyReceiptResult(["receipt-data": receiptBase64]).json() != expectedResponse {
-                            found.append("\(at): verifyReceiptResult(_: [String: Any])")
+                        if endpointVerifier.verifyReceiptEndpoint(environment: .sandbox, requestJson: requestJSON)
+                            != expectedResponse
+                        {
+                            found.append("\(at): verifyReceiptEndpoint")
                         }
-                        if await endpoint.verifyReceiptJSON(requestJSON) != expectedJSON {
-                            found.append("\(at): verifyReceiptJSON")
-                        }
-                        if try Self.describe(try await transactions.verifyTransaction(jws)) != expectedTransaction {
-                            found.append("\(at): verifyTransaction")
+                        if Self.describe(jwsVerifier.verifySignedData(jws: jws)) != expectedTransaction {
+                            found.append("\(at): verifySignedData")
                         }
                     }
                     return found
@@ -73,35 +91,14 @@ final class ConcurrencyTests: XCTestCase {
     }
 
     /// Enough of a verified receipt to notice a claim read from another
-    /// task's parse. Dictionary keys are sorted so the text does not depend
-    /// on hash order.
-    static func describe(_ receipt: AppReceipt) -> String {
-        // Built one typed statement at a time: Swift 6.1 and 6.2 time out
-        // type-checking this as a single array literal of `??` expressions.
-        let purchases: [String] = receipt.inAppPurchases.map { purchase -> String in
-            let productId: String = purchase.productId ?? "-"
-            let transactionId: String = purchase.transactionId ?? "-"
-            let purchased: Double = purchase.purchaseDate?.timeIntervalSince1970 ?? -1
-            return "\(productId)/\(transactionId)/\(purchased)"
-        }
-        let created: Double = receipt.creationDate?.timeIntervalSince1970 ?? -1
-        var parts: [String] = []
-        parts.append(receipt.bundleId ?? "-")
-        parts.append(receipt.receiptType ?? "-")
-        parts.append(receipt.appVersion ?? "-")
-        parts.append("\(created)")
-        parts.append(receipt.sha1Hash?.base64EncodedString() ?? "-")
-        parts.append(receipt.opaqueValue?.base64EncodedString() ?? "-")
-        parts.append(receipt.unknownAttributes.keys.sorted().map(String.init).joined(separator: ","))
-        parts.append(purchases.joined(separator: ","))
-        return parts.joined(separator: "|")
+    /// task's parse.
+    static func describe(_ result: VerificationResult<ReceiptPayload>) -> String {
+        guard let receipt = result.payload else { return "FAILED:\(result.failure?.reason.rawValue ?? "?")" }
+        return receipt.toJson()
     }
 
-    /// Every claim, encoded with sorted keys, so a field left unwritten by a
-    /// racing decode shows up.
-    static func describe(_ payload: TransactionPayload) throws -> String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        return String(decoding: try encoder.encode(payload), as: UTF8.self)
+    static func describe(_ result: VerificationResult<JsonPayload>) -> String {
+        guard let payload = result.payload else { return "FAILED:\(result.failure?.reason.rawValue ?? "?")" }
+        return payload.json
     }
 }

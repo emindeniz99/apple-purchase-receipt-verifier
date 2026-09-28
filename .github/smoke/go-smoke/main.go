@@ -3,20 +3,21 @@
 // the published version:
 //
 //	mkdir "$(mktemp -d)" && cd "$_" && go mod init smoke
-//	go get github.com/emindeniz99/apple-purchase-receipt-verifier/go@v0.4.0
+//	go get github.com/emindeniz99/apple-purchase-receipt-verifier/go@v0.7.0
 //	cp <repo>/.github/smoke/go-smoke/main.go <repo>/fixtures/public-receipts/receipt-sandbox-g5.b64 .
 //	go run .
 //
 // go:embed cannot reach outside a module, so go/roots/certs is a generated copy
 // of the repo-root certs/. If that copy ever falls out of the module zip the
 // library compiles and then has no trust anchors at all — the Go-shaped version
-// of the two empty npm releases. AppleReceiptRoots() below is what catches it.
+// of the two empty npm releases. The root count below is what catches it.
 //
 // This file is deliberately outside go/ so it never becomes part of the
 // published module.
 package main
 
 import (
+	"encoding/base64"
 	"fmt"
 	"os"
 	"strings"
@@ -31,48 +32,51 @@ func main() {
 	}
 	receiptB64 := strings.TrimSpace(string(raw))
 
-	roots := applereceipt.AppleReceiptRoots()
-	if len(roots) != 3 {
+	config := applereceipt.DefaultConfig()
+	if roots := config.Roots(); len(roots) != 3 {
 		fail("expected three embedded Apple roots, got %d", len(roots))
+	}
+	verifier, err := applereceipt.NewVerifier(config)
+	if err != nil {
+		fail("cannot build the verifier: %v", err)
 	}
 
 	// A real Apple-signed receipt against the real pinned root: exercises the
 	// embedded certs, the DER reader, the chain build and the signature check.
-	verifier, err := applereceipt.NewReceiptVerifier(applereceipt.ReceiptVerifierOptions{
-		TrustedRoots: roots,
-		BundleID:     "dev.bonzer.weeka.app",
-	})
-	if err != nil {
-		fail("cannot build the verifier: %v", err)
-	}
-	receipt, err := verifier.VerifyBase64(receiptB64)
+	receipt, err := verifier.VerifyReceipt(receiptB64)
 	if err != nil {
 		fail("verification failed: %v", err)
 	}
-	if receipt.ReceiptType != "ProductionSandbox" {
-		fail("receiptType was %q, expected ProductionSandbox", receipt.ReceiptType)
+	if receipt.ReceiptType == nil || *receipt.ReceiptType != "ProductionSandbox" {
+		fail("receiptType was %v, expected ProductionSandbox", deref(receipt.ReceiptType))
 	}
-	if receipt.BundleID != "dev.bonzer.weeka.app" {
-		fail("bundleId was %q", receipt.BundleID)
+	if receipt.BundleID == nil || *receipt.BundleID != "dev.bonzer.weeka.app" {
+		fail("bundleId was %v", deref(receipt.BundleID))
 	}
 
 	// And the negative direction, so a verifier that accepted everything would
-	// fail here too.
-	other, err := applereceipt.NewReceiptVerifier(applereceipt.ReceiptVerifierOptions{
-		TrustedRoots: roots,
-		BundleID:     "com.other.app",
-	})
+	// fail here too: the same receipt with one bit flipped in its signature,
+	// the byte 128 from the end of the DER (BENCHMARKS.md).
+	der, err := base64.StdEncoding.DecodeString(receiptB64)
 	if err != nil {
-		fail("cannot build the second verifier: %v", err)
+		fail("cannot decode the fixture: %v", err)
 	}
-	if _, err := other.VerifyBase64(receiptB64); err == nil {
-		fail("a receipt for another bundle id was not rejected")
-	} else if reason, ok := applereceipt.ReasonOf(err); !ok || reason != applereceipt.ReasonWrongBundleID {
-		fail("rejected for %v, expected WRONG_BUNDLE_ID", reason)
+	der[len(der)-128] ^= 0x01
+	if _, err := verifier.VerifyReceipt(base64.StdEncoding.EncodeToString(der)); err == nil {
+		fail("a tampered signature was not rejected")
+	} else if reason, ok := applereceipt.ReasonOf(err); !ok || reason != applereceipt.ReasonInvalidSignature {
+		fail("rejected for %v, expected INVALID_SIGNATURE", err)
 	}
 
 	fmt.Printf("go: published module verified a genuine Apple receipt (%s, %d purchases)"+
-		" and rejected a foreign bundle id\n", receipt.BundleID, len(receipt.InAppPurchases))
+		" and rejected a tampered signature\n", *receipt.BundleID, len(receipt.InApp))
+}
+
+func deref(s *string) any {
+	if s == nil {
+		return nil
+	}
+	return fmt.Sprintf("%q", *s)
 }
 
 func fail(format string, args ...any) {

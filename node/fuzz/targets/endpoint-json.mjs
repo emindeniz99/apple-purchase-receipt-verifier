@@ -1,36 +1,27 @@
 /**
- * `VerifyReceiptEndpoint.verifyReceiptJson`, the one entry point that takes a
- * request body rather than a receipt: JSON parse, `receipt-data` extraction,
- * the receipt-base64 rule, then the whole DER path.
+ * `Verifier.verifyReceiptEndpoint`, the one entry point that takes a request
+ * body rather than a receipt: JSON parse, `receipt-data` extraction, the
+ * receipt-base64 rule, then the whole DER path.
  *
- * Its documented contract is stronger than the other targets' — it never
- * throws at all — so that is what is asserted: any body, any bytes, gets a
- * JSON object with a numeric `status` back. The typed result behind that
- * body is checked too: exactly one of receipt and failureReason, the same
- * status, and never INTERNAL_ERROR. That reason means an unexpected error
- * inside the pipeline, or content a trusted signer signed that the library
- * cannot read; a fuzzer cannot forge a trusted signature, so for fuzz input
- * it can only be the first, and that is a bug.
+ * Its documented contract is that it never throws at all, so that is what is
+ * asserted: any body, any bytes, gets a JSON object with a numeric `status`
+ * back, and never 21009 (INTERNAL_ERROR/UNREADABLE_PAYLOAD) — a fuzzer
+ * cannot forge a trusted signature, so fuzz input can only reach 21009
+ * through an unexpected library error, and that is a bug.
  */
-import { VerifyReceiptEndpoint } from '../../dist/index.js';
-import { RECEIPT_ANCHORS, asUtf8 } from '../harness.mjs';
+import { Environment, createVerifier } from '../../dist/index.js';
+import { RECEIPT_CONFIG } from '../harness.mjs';
 
-const endpoint = new VerifyReceiptEndpoint({
-  trustedRoots: RECEIPT_ANCHORS,
-  environment: 'Sandbox',
-});
+const verifier = createVerifier(RECEIPT_CONFIG);
 
 export function fuzz(data) {
-  const body = asUtf8(data);
-  if (body === null) {
-    return;
-  }
+  const body = data.toString('utf8');
   let response;
   try {
-    response = endpoint.verifyReceiptJson(body);
+    response = verifier.verifyReceiptEndpoint(Environment.SANDBOX, body);
   } catch (error) {
     throw new Error(
-      `the endpoint threw ${error?.constructor?.name}: ${error?.message}, but it documents that it never throws`,
+      `verifyReceiptEndpoint threw ${error?.constructor?.name}: ${error?.message}, but it documents that it never throws`,
       { cause: error },
     );
   }
@@ -45,23 +36,7 @@ export function fuzz(data) {
   if (parsed === null || typeof parsed !== 'object' || typeof parsed.status !== 'number') {
     throw new Error(`the endpoint answered without a numeric status: ${response}`);
   }
-
-  let result;
-  try {
-    result = endpoint.verifyReceiptResult(body);
-  } catch (error) {
-    throw new Error(
-      `verifyReceiptResult threw ${error?.constructor?.name}: ${error?.message}, but it documents that it never throws`,
-      { cause: error },
-    );
-  }
-  if ((result.receipt === null) === (result.failureReason === null)) {
-    throw new Error('verifyReceiptResult broke its receipt/failureReason invariant');
-  }
-  if (result.failureReason === 'INTERNAL_ERROR') {
-    throw new Error('verifyReceiptResult hit an internal error', { cause: result.failureCause });
-  }
-  if (result.status !== parsed.status) {
-    throw new Error(`verifyReceiptResult status ${result.status} differs from ${response}`);
+  if (parsed.status === 21009) {
+    throw new Error(`the endpoint answered 21009 (INTERNAL_ERROR) for fuzz input: ${response}`);
   }
 }

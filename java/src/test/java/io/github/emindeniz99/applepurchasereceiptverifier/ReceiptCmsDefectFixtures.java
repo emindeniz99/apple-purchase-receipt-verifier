@@ -144,7 +144,7 @@ public final class ReceiptCmsDefectFixtures {
                 ROOT_NAME,
                 rootKey.getPrivate(),
                 true,
-                null,
+                "1.2.840.113635.100.6.2.1",
                 notBefore,
                 notAfter,
                 RSA);

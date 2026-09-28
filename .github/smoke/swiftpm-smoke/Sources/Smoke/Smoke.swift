@@ -2,20 +2,30 @@ import ApplePurchaseReceiptVerifier
 import Foundation
 
 /// Smoke-tests the library as resolved from the published tag. Everything it
-/// touches — the verifier, the error type, the bundled root certificates — comes
-/// from the dependency, so a tag missing its resources fails here rather than in
-/// a user's project.
+/// touches — the verifier, the failure type, the bundled root certificates —
+/// comes from the dependency, so a tag missing its resources fails here rather
+/// than in a user's project.
 @main
 struct Smoke {
-    static func main() async throws {
+    static func main() throws {
         let receiptB64 = try String(contentsOfFile: "receipt-sandbox-g5.b64", encoding: .ascii)
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
+        // `Config.defaults()` hands back an empty root set when the bundled
+        // roots do not load; `build()` throws instead, and the count catches a
+        // tag that lost one of them.
+        let config = try Config.builder().build()
+        guard config.roots.count == 3 else {
+            fatalError("expected three bundled Apple roots, got \(config.roots.count)")
+        }
+        let verifier = Verifier(config: config)
+
         // A real Apple-signed receipt against the real pinned root: exercises
         // the packaged certs, the DER reader, the chain build and the signature.
-        let verifier = try ReceiptVerifier(trustedRoots: appleReceiptRoots(),
-                                           bundleId: "dev.bonzer.weeka.app")
-        let receipt = try await verifier.verify(base64Receipt: receiptB64)
+        let result = verifier.verifyReceipt(base64: receiptB64)
+        guard let receipt = result.payload else {
+            fatalError("verification failed: \(String(describing: result.failure))")
+        }
         guard receipt.receiptType == "ProductionSandbox" else {
             fatalError("receiptType was \(String(describing: receipt.receiptType))")
         }
@@ -24,21 +34,20 @@ struct Smoke {
         }
 
         // And the negative direction, so a verifier that accepted everything
-        // would fail here too.
-        var rejected = false
-        do {
-            let other = try ReceiptVerifier(trustedRoots: appleReceiptRoots(),
-                                            bundleId: "com.other.app")
-            _ = try await other.verify(base64Receipt: receiptB64)
-        } catch let error as VerificationError {
-            rejected = error.reason == .wrongBundleId
+        // would fail here too: the same receipt with one bit flipped in its
+        // signature, the byte 128 from the end of the DER (BENCHMARKS.md).
+        guard var der = Data(base64Encoded: receiptB64) else {
+            fatalError("the fixture is not base64")
         }
-        guard rejected else {
-            fatalError("a receipt for another bundle id was not rejected")
+        der[der.endIndex - 128] ^= 0x01
+        let tampered = verifier.verifyReceipt(base64: der.base64EncodedString())
+        guard tampered.failure?.reason == .invalidSignature else {
+            fatalError("a tampered signature was not rejected as INVALID_SIGNATURE: "
+                + "\(String(describing: tampered.failure?.reason))")
         }
 
         print("swiftpm: published tag verified a genuine Apple receipt "
-            + "(\(receipt.bundleId ?? "?"), \(receipt.inAppPurchases.count) purchases) "
-            + "and rejected a foreign bundle id")
+            + "(\(receipt.bundleId ?? "?"), \(receipt.inApp.count) purchases) "
+            + "and rejected a tampered signature")
     }
 }

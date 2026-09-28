@@ -1,60 +1,65 @@
 # apple-purchase-receipt-verifier
 
-Verify Apple in-app purchases locally — no calls to Apple's servers.
+Verify Apple in-app purchases locally, with no calls to Apple's servers.
 
 Replaces the deprecated `verifyReceipt` endpoint by validating StoreKit 2
-signed JWS transactions and legacy PKCS#7 receipts against pinned Apple
-root certificates. Zero runtime dependencies.
+signed JWS payloads and legacy PKCS#7 app receipts against pinned Apple root
+certificates.
 
 ```bash
 npm install apple-purchase-receipt-verifier
 ```
 
 ```js
-import {
-  ReceiptVerifier, JwsVerifier, appleReceiptRoots, appleJwsRoots,
-} from 'apple-purchase-receipt-verifier';
+import { createConfig, createVerifier } from 'apple-purchase-receipt-verifier';
 
-// Legacy PKCS#7 app receipt
-const receipt = new ReceiptVerifier({
-  trustedRoots: appleReceiptRoots(),
-  bundleId: 'com.example.app',
-}).verify(receiptB64);
-console.log(receipt.receiptType, receipt.inAppPurchases.length);
+// Build once, share everywhere: the roots are parsed once, not per call.
+const verifier = createVerifier(createConfig());
 
-// StoreKit 2 signed transaction
-const txn = new JwsVerifier({
-  trustedRoots: appleJwsRoots(),
-  bundleId: 'com.example.app',
-}).verifyTransaction(jws);
-console.log(txn.productId, txn.expiresDate);
+// A legacy app receipt, as the base64 string the app sends.
+const receiptResult = verifier.verifyReceipt(receiptBase64);
+if (receiptResult.verified) {
+  console.log(receiptResult.payload.receiptType, receiptResult.payload.inApp.length);
+}
+
+// Any Apple-signed JWS: a transaction, renewal info, an app transaction or
+// a notification. The payload comes back as the JSON text Apple signed.
+const jwsResult = verifier.verifySignedData(jws);
+if (jwsResult.verified) {
+  console.log(jwsResult.payload.json);
+}
 ```
 
-ESM, Node 20+.
+ESM, Node 20+. No method throws for input the caller does not control: every
+verify call returns a result object, never a rejected promise or a thrown
+error, for anything short of a JS engine failure.
+
+The library answers one question: did Apple sign this? It checks the chain
+to a pinned root, Apple's marker OIDs and the signature, and hands back
+everything the payload says. Whether the payload is for your app, your
+environment, your user and still current is your decision, made on the
+fields it returns ([What to check after verification](#what-to-check-after-verification)).
 
 ## WebCrypto-only runtimes
 
 `apple-purchase-receipt-verifier/web` is a second entry point that verifies
 the same things using nothing but `crypto.subtle`, `TextDecoder` and
-`Uint8Array`. Same class names, same option names, same `VerificationError`
-reasons; every verify method returns a Promise, because `crypto.subtle` is
-async. Porting between the two is adding or removing `await`.
+`Uint8Array`. Same function names, same option names, same `Reason`
+vocabulary; every call that touches `crypto.subtle` returns a Promise, so
+`createConfig`, `defaultConfig` and every `Verifier` method are async there.
+Porting between the two is adding or removing `await` — nothing else
+differs: trust roots take the same `Uint8Array | string` inputs, and every
+byte-valued field on a verified payload (`opaqueValue`, `sha1Hash`,
+`bundleIdBytes`, the values in `unknownAttributes`) is a plain `Uint8Array`
+in both builds.
 
 ```js
-import {
-  ReceiptVerifier, JwsVerifier, appleReceiptRoots, appleJwsRoots,
-} from 'apple-purchase-receipt-verifier/web';
+import { createConfig, createVerifier } from 'apple-purchase-receipt-verifier/web';
 
-const receipt = await new ReceiptVerifier({
-  trustedRoots: appleReceiptRoots(),
-  bundleId: 'com.example.app',
-}).verify(receiptB64);
+const verifier = createVerifier(await createConfig());
 
-const txn = await new JwsVerifier({
-  trustedRoots: appleJwsRoots(),
-  bundleId: 'com.example.app',
-  acceptedEnvironments: ['Production'],
-}).verifyTransaction(jws);
+const receiptResult = await verifier.verifyReceipt(receiptBase64);
+const jwsResult = await verifier.verifySignedData(jws);
 ```
 
 Which entry point a runtime needs:
@@ -67,28 +72,15 @@ Which entry point a runtime needs:
 | Vercel Edge runtime, Next.js edge middleware | `/web` |
 | Fastly Compute, Akamai EdgeWorkers | `/web` |
 
-Two differences beyond `await`:
-
-- Byte-valued fields are `Uint8Array`, not `Buffer`: `opaqueValue`,
-  `sha1Hash`, `bundleIdBytes`, the values in `unknownAttributes`, and the
-  `deviceGuid` argument.
-- Trust roots go in as DER `Uint8Array` or PEM strings. There is no
-  `X509Certificate` to pass, and `appleReceiptRoots()` / `appleJwsRoots()`
-  return DER bytes here.
-
-`VerifyReceiptEndpoint` is in both entry points. On `/web` its three methods
-return Promises that never reject, and the response bytes are the same.
-
-Everything else is shared source, including the DER reader, the receipt
-attribute grammar, the JWS claim checks and the `Reason` vocabulary, so the
-two builds cannot drift apart on what a receipt says. The test suite runs
-every shared fixture, both genuine public receipts and a corpus of over a
-thousand mutated ones, through both builds and requires the same verdict.
+Everything else is shared source, including the DER reader, the CMS walk,
+the receipt attribute grammar and the `Reason` vocabulary, so the two builds
+cannot drift apart on what a receipt says. `npm test` runs every shared
+fixture through both builds and requires the same verdict.
 
 `npm run test:runtimes:web` runs the web build on Node, on the Vercel Edge
 runtime (`@edge-runtime/vm`) and on Cloudflare workerd configured with no
 compatibility flags at all. `npm run test:runtimes:fastly` adds Fastly
-Compute: `js-compute-runtime` builds the smoke to wasm and Fastly's own
+Compute: `js-compute-runtime` builds the smoke test to wasm and Fastly's own
 local runtime, viceroy, serves it. viceroy is a Rust binary rather than an
 npm package, so it is a separate script; install it with
 `cargo install viceroy --locked` and the runner says so if it is missing.
@@ -96,316 +88,394 @@ npm package, so it is a separate script; install it with
 Akamai EdgeWorkers is expected to work — it implements the same WebCrypto
 API — but is untested: it has no local runtime to run it in, so the claim
 for it rests on what the build asks of a runtime rather than on a passing
-run. That list is short:
-`crypto.subtle.digest` (SHA-1, SHA-256), `crypto.subtle.importKey` in
-`'jwk'` format, `crypto.subtle.verify` for RSASSA-PKCS1-v1_5 (SHA-1 and
-SHA-256) and for ECDSA (P-256 and P-384, SHA-256 and SHA-384), plus
-`TextDecoder`. **SHA-1 with RSASSA-PKCS1-v1_5 is not optional**: Apple's
-legacy receipt chain is signed `sha1WithRSAEncryption` from the leaf up, so
-a runtime that refuses SHA-1 even for verification cannot verify a legacy
-app receipt at all. Node, workerd and the Vercel Edge runtime all accept it;
-a test in `runtime-smoke/web-smoke.mjs` verifies a genuine 187-purchase
-legacy receipt on each of them, which is where that support gets proved.
+run. That list is short: `crypto.subtle.digest` (SHA-1, SHA-256),
+`crypto.subtle.importKey` in `'jwk'` format, `crypto.subtle.verify` for
+RSASSA-PKCS1-v1_5 (SHA-1 and SHA-256) and for ECDSA (P-256 and P-384,
+SHA-256 and SHA-384), plus `TextDecoder`. **SHA-1 with RSASSA-PKCS1-v1_5 is
+not optional**: Apple's legacy receipt chain is signed
+`sha1WithRSAEncryption` from the leaf up, so a runtime that refuses SHA-1
+even for verification cannot verify a legacy app receipt at all. Node,
+workerd and the Vercel Edge runtime all accept it; a test in
+`runtime-smoke/web-smoke.mjs` verifies a genuine 187-purchase legacy receipt
+on each of them, which is where that support gets proved.
 
 A test also reads the emitted module graph and fails if anything reachable
 from the web entry point imports a `node:` module, imports anything
 non-relative, or so much as mentions `Buffer` or `process`.
 
-## Integrating: from verified payload to entitlement
+## What it will never do
 
-The backend flow these calls sit inside is written out once in the
-[project README](https://github.com/emindeniz99/apple-purchase-receipt-verifier#integrating-from-verified-payload-to-entitlement):
-verify offline, deny on any failure, check the refund field, refresh a payload
-past the freshness window, guard against replay on the transaction id, then
-grant. That section also carries the policy table saying what each reason
-means and which ones are worth an alert. Here are its two branches in this
-port's API.
+These are the properties the library exists to hold, and each is asserted by
+a test rather than only documented.
 
-**Freshness is your call.** `JwsVerifier` rejects no payload for its age, as
-in Apple's own App Store Server Libraries: `signedDate` only decides the
-instant the chain is judged at. The right limit depends on the endpoint
-(Apple retries a server notification for days, and a device may present an
-old but genuine payload), so apply one yourself where it fits:
-`if (Date.now() - (payload.signedDate ?? 0) > 5 * 60 * 1000) { /* too old here */ }`.
-The `maxSignedAgeMillis` option is gone, and passing it throws a `TypeError`
-rather than being ignored.
+- **It never reads the operating system's trust store.** Anchors come from
+  the `roots` a caller passes to `createConfig`, or from `defaultConfig()`,
+  which holds Apple's three published roots bundled at build time, so they
+  work unchanged in a container with no filesystem access. There is no
+  `node:tls`, no `NODE_EXTRA_CA_CERTS`, and no code path to a system store —
+  a whole test file exists to prove a certificate authority this *process*
+  genuinely trusts still buys an attacker nothing.
+- **It never touches the network.** No OCSP, no CRL, no AIA fetch, no root
+  download. Revocation checking is disabled by design; an integrator who
+  needs it must layer it on top.
+- **It never uses a key no pinned root vouched for.** The chain is built
+  top-down, from the pinned roots, so a certificate carrying an attacker's
+  key (their choice of size and exponent) is never used to check anything
+  ([Stranger certificates](#stranger-certificates)).
+- **It never returns anything partial.** A failed result carries a
+  `failure` and no `payload`; a verified one carries a `payload` that
+  passed every check, and no `failure`.
+- **It never logs, meters or calls back into your code** except for the
+  clock you give it. `Reason` is the whole observability surface, and a
+  failure message never quotes the input.
 
-**Entitlement is your rule too.** There is no "is active" helper, as in
-Apple's own libraries; read the signed fields:
+## The API
 
-```js
-const entitled =
-  payload.revocationDate == null && (payload.expiresDate == null || payload.expiresDate > Date.now());
-```
-
-That is only what the payload said when it was signed. A billing grace
-period (it lives in the renewal info), an upgrade (`isUpgraded`) and a refund
-after signing are yours to handle; App Store Server Notifications V2 or the
-App Store Server API give the live status. The `isTransactionActiveAt`
-helper is gone.
-
-A StoreKit 2 signed transaction:
+### `createConfig` / `defaultConfig`: the roots and the clock
 
 ```js
-import {
-  JwsVerifier, VerificationError, appleJwsRoots,
-} from 'apple-purchase-receipt-verifier';
+import { createConfig, defaultConfig } from 'apple-purchase-receipt-verifier';
 
-const verifier = new JwsVerifier({
-  trustedRoots: appleJwsRoots(),
-  bundleId: 'com.example.app',
-  acceptedEnvironments: ['Production', 'Sandbox'],
+const config = defaultConfig(); // Apple's three roots, the system clock
+
+const pinned = createConfig({
+  roots: [rootDer],              // Uint8Array or PEM string; replaces the defaults
+  clock: () => 1_735_689_600_000, // epoch milliseconds; replaces Date.now
 });
-
-export function redeemTransaction(userId, jws) {
-  let payload;
-  try {
-    payload = verifier.verifyTransaction(jws);                    // step 2
-  } catch (error) {
-    if (!(error instanceof VerificationError)) throw error;
-    log.warn({ reason: error.reason }, 'purchase rejected');
-    return 'denied';
-  }
-
-  if (payload.revocationDate !== undefined) return 'denied';      // step 3
-
-  // step 4, your call: past the window, ask the client for a fresh
-  // jwsRepresentation, or fetch one from the App Store Server API and
-  // verifyTransaction that instead
-  if (Date.now() - (payload.signedDate ?? 0) > 5 * 60 * 1000) return 'refresh';
-
-  const id = payload.transactionId;                               // step 5
-  if (grants.exists(id)) return 'denied';
-  grants.record(id, payload.originalTransactionId, userId);
-
-  grant(userId, payload.productId);
-  return 'granted';
-}
 ```
 
-The legacy PKCS#7 app receipt is the same policy on the other input, the one
-StoreKit 1 apps and older SDKs still send:
+An empty `roots` array is a `TypeError` from `createVerifier`, never a
+verdict: a verifier with no roots would reject everything, and nobody would
+notice until production. `defaultConfig()` throws `Error` if the bundled
+roots do not match their published SHA-256 fingerprints — check for that at
+startup, since a call made with a config it fails to produce would never
+exist.
 
-```js
-import { ReceiptVerifier, appleReceiptRoots } from 'apple-purchase-receipt-verifier';
+### `createVerifier`: three methods
 
-const receipts = new ReceiptVerifier({
-  trustedRoots: appleReceiptRoots(),
-  bundleId: 'com.example.app',
-});
-
-// Same policy keyed on the receipt's own dates. `verify` takes the base64 the
-// client sends or the DER bytes; VerifyReceiptEndpoint is the alternative,
-// answering Apple's `verifyReceipt` JSON shape with a `status` instead.
-export function redeemReceipt(userId, receiptData, productId) {
-  const receipt = receipts.verify(receiptData);                     // step 2
-  const purchase = receipt.inAppPurchases.find((p) => p.productId === productId);
-  if (purchase === undefined) return 'denied';
-  if (purchase.cancellationDate !== null) return 'denied';          // step 3
-  if (purchase.expiresDate !== null && purchase.expiresDate <= new Date()) return 'denied';
-
-  // step 4: the same caller-side check, on the receipt's creation date. Past
-  // the window, ask the client to refresh its receipt, or call the App Store
-  // Server API by purchase.transactionId and verify the JWS it returns.
-  if (Date.now() - receipt.creationDate.getTime() > 5 * 60 * 1000) return 'refresh';
-
-  if (grants.exists(purchase.transactionId)) return 'denied';       // step 5
-  grants.record(purchase.transactionId, purchase.originalTransactionId, userId);
-  grant(userId, purchase.productId);
-  return 'granted';
-}
-```
-
-## The verifyReceipt-compatible endpoint
-
-`VerifyReceiptEndpoint` answers Apple's deprecated `verifyReceipt` request
-with Apple's response body, verified offline. Each call returns a
-`VerifyReceiptResult`; the body is rendered only when you ask for it.
-
-```js
-import { VerifyReceiptEndpoint, appleReceiptRoots } from 'apple-purchase-receipt-verifier';
-
-const endpoint = new VerifyReceiptEndpoint({
-  trustedRoots: appleReceiptRoots(),
-  environment: 'Production',
-});
-
-const result = endpoint.verifyReceiptResult(requestBody); // an object, or the raw JSON string
-result.toResponse();                                     // Apple's body as an object
-result.toJson();                                         // Apple's body as JSON text
-
-endpoint.verifyReceiptJson(rawBody);           // same as verifyReceiptResult(rawBody).toJson()
-endpoint.verifyReceiptData(receiptBase64);     // receipt-data alone, no envelope
-```
-
-No method throws. The statuses it can produce are `Status.OK` (0),
-`MALFORMED` (21002), `NOT_AUTHENTICATED` (21003),
-`SANDBOX_RECEIPT_ON_PRODUCTION` (21007), `PRODUCTION_RECEIPT_ON_SANDBOX`
-(21008) and `INTERNAL` (21009), and no others, because the rest describe
-conditions that only exist on Apple's servers. Routing fails closed: only
-receipt types `Production` and `ProductionVPP` count as production.
-
-A result is a union on `verified`:
-
-```js
-if (result.verified) {
-  result.receipt.bundleId;     // the verified AppReceipt; compare the bundle id yourself
-} else {
-  result.failureReason;        // a Reason, e.g. 'INVALID_CHAIN' or 'MALFORMED_REQUEST'
-  result.failureCause;         // what is behind INTERNAL_ERROR only; otherwise null
-}
-result.status;                 // the status for the endpoint's own environment
-result.requestDate;            // the instant rendered as request_date
-```
-
-`verified` is not `status === 0`. A receipt that verified but belongs to the
-other environment answers 21007 or 21008 and still carries its `receipt`.
-Exactly one of `receipt` and `failureReason` is set. The result is frozen,
-and only the endpoint creates one.
-
-Like Apple's endpoint, this does **not** check the bundle id: compare
-`result.receipt.bundleId` yourself before granting anything, or use
-`ReceiptVerifier`, which checks it for you.
-
-**Retrying in the other environment costs no second verification.**
-`toResponse(environment)` and `toJson(environment)` render what an endpoint
-of that environment would answer, recomputing the status from the receipt's
-own type:
-
-| receipt | on `'Production'` | on `'Sandbox'` |
+| Method | Input | Result |
 |---|---|---|
-| `Production`, `ProductionVPP` | 0 | 21008 |
-| any other type, or none | 21007 | 0 |
-| failed verification | its own status | its own status |
+| `verifyReceipt(base64)` | the base64 receipt an app sends | `VerificationResult<ReceiptPayload>` |
+| `verifySignedData(jws)` | any Apple-signed compact JWS | `VerificationResult<JsonPayload>`: `{ json }`, the signed JSON text |
+| `verifyReceiptEndpoint(environment, requestJson)` | a `verifyReceipt` request body | Apple's response body, as a JSON string, always |
+
+`VerificationResult<T>` is `{ verified: true, payload: T } | { verified:
+false, failure: Failure }` — check `result.verified` before touching either
+field. The endpoint never fails to answer: the Apple status code is a field
+of the body, for every input.
+
+### `ReceiptPayload`
+
+Every field is `null` when the attribute is absent or does not decode, so a
+test can build one by hand with `createReceiptPayload`. Dates are epoch
+milliseconds (`*Ms`, `number`); 64-bit ids (`appItemId`, `downloadId`,
+`versionExternalIdentifier`, an in-app purchase's `webOrderLineItemId`) are
+decimal **strings**, because a JavaScript `number` cannot hold an
+eighteen-digit id without rounding it:
 
 ```js
-const json = result.status === Status.SANDBOX_RECEIPT_ON_PRODUCTION
-  ? result.toJson('Sandbox')
-  : result.toJson();
+payload.receiptType;               // 'Production', 'ProductionSandbox', ...
+payload.bundleId;                  // decoded attribute 2
+payload.bundleIdBytes;             // its raw octets: the device-hash input
+payload.receiptCreationDateMs;
+payload.inApp[0].productId;
+payload.inApp[0].expiresDateMs;
+payload.unknownAttributes;         // Map<number, Uint8Array[]> in receipt order
+payload.toJson();                  // JSON with the same value in every port
 ```
 
-A sandbox receipt never renders as a production 0, whichever endpoint
-verified it. Any environment other than `'Production'` or `'Sandbox'` is a
-`TypeError`, as it is for the constructor.
+Decoding follows the rules every port shares: the first occurrence of an
+attribute wins; every attribute that does not end up in a typed field (a
+later copy, or a value that does not decode, whose field is then `null`) is
+kept raw in `unknownAttributes`, the in-app ones in that purchase's own; an
+empty date string means "not set" and is not kept raw. `toJson()` writes
+JSON whose parsed value is the same in every port; the bytes may differ.
 
-**Failure reasons:**
+### `Failure` and `Reason`
 
-| `failureReason` | status | when |
+`Failure` is `{ reason, message, cause? }`; `cause` is present only for
+`UNREADABLE_PAYLOAD` and `INTERNAL_ERROR` — behind any other reason it would
+be a parser exception about unverified input, whose message can quote raw
+certificate text. Match on `failure.reason`; never parse `failure.message`.
+
+| `Reason` | Raised when | Endpoint status |
 |---|---|---|
-| `REQUEST_TOO_LARGE` | 21002 | the raw body is over `MAX_REQUEST_BYTES` (3,145,728 UTF-8 bytes); Apple answers HTTP 413 here, see [Input limits](#input-limits) |
-| `MALFORMED_REQUEST` | 21002 | the request is not an object, the string is not a JSON object or nests past 64 levels, or `receipt-data` is missing, empty or not a string |
-| `INVALID_RECEIPT_FORMAT` | 21002 | `receipt-data` is over `MAX_RECEIPT_BYTES`, is not canonical standard base64 (whitespace, base64url and omitted or extra padding all count, as at Apple) or its CMS envelope does not parse |
-| `INVALID_CHAIN`, `INVALID_SIGNATURE`, other certificate reasons | 21003 | the receipt did not authenticate |
-| `INTERNAL_ERROR` | 21009 | not the client's fault: the receipt authenticated but its signed content cannot be read (`failureCause` is the parser's error), or an unexpected error inside the endpoint (`failureCause` holds it). Alert and retry or escalate; do not deny the user |
+| `MALFORMED` | the base64, ASN.1, CMS or JWS structure is broken, or a structural bound is exceeded | 21002 |
+| `TOO_LARGE` | the input is over its size cap and was not decoded | 21002 |
+| `INVALID_SIGNATURE` | the signature did not verify | 21003 |
+| `UNTRUSTED_CHAIN` | the chain does not reach a pinned root | 21003 |
+| `INVALID_CERTIFICATE` | a certificate does not decode, or is outside its validity window at the chain instant | 21003 |
+| `INVALID_CERTIFICATE_PURPOSE` | a certificate lacks Apple's marker OID for its place | 21003 |
+| `UNREADABLE_PAYLOAD` | the chain and signature passed, but the signed content does not parse | 21009 |
+| `INTERNAL_ERROR` | the library failed unexpectedly, or the configured clock threw; no input makes a correct library answer it | 21009 |
 
-`MALFORMED_REQUEST` and `REQUEST_TOO_LARGE` appear only on a result. No
-`VerificationError` is ever thrown with either. `INTERNAL_ERROR` is also
-thrown by `ReceiptVerifier` and `verifyReceiptCore`, with the parser's error
-as its `cause`.
+`UNREADABLE_PAYLOAD` and `INTERNAL_ERROR` are not the client's fault: alert,
+log the failure, and reconcile the purchase through the App Store Server API
+rather than deny the user.
 
-**Order of the receipt checks.** CMS parse → the creation date alone
-(attribute 12; nothing else in the payload is decoded yet) → chain at that
-date, or at the system clock when the date is missing, empty, unreadable or
-stated twice → receipt-signing marker OID → CMS signature → full payload
-parse → bundle id → device hash. Nothing is trusted before the chain and
-the signature, so reading the date never rejects. The chain comes first so
-the attacker's own key is never run before it is trusted. A payload that
-fails the full parse was signed by a trusted signer, so it is
-`INTERNAL_ERROR`, not `INVALID_RECEIPT_FORMAT`.
+## What to check after verification
 
-**`request_date`.** Every method takes an optional `Date` as its second
-argument, which becomes `request_date` in place of the endpoint's `clock`.
-Without one, the clock is read once, when the call is made. That instant
-reaches `request_date` and nothing else: receipt chain validity is judged at
-the receipt's own creation date.
+The library proves Apple signed the payload. Before granting anything, check
+what it says:
 
-`password` and `exclude-old-transactions` are accepted for wire
-compatibility and never read. See
-[COMPARISON.md](https://github.com/emindeniz99/apple-purchase-receipt-verifier/blob/main/COMPARISON.md)
-for the field-by-field account.
+```js
+const result = verifier.verifyReceipt(receiptBase64);
+if (!result.verified) {
+  return denied(result.failure.reason);
+}
+if (result.payload.bundleId !== 'com.example.app') {
+  return denied('OTHER_APP');
+}
+```
+
+For a JWS, read the claims off `JSON.parse(result.payload.json)`:
+`bundleId`, `environment`, `appAppleId` for a Production `AppTransaction`,
+`revocationDate`, `expiresDate`, and `signedDate` for freshness. Apple's own
+[`app-store-server-library`](https://github.com/apple/app-store-server-library-node)
+publishes typed decoder classes for the transaction, renewal and
+notification shapes, if you want them instead of reading the object by hand.
+No payload is rejected for its age, as in Apple's own libraries: the right
+limit depends on the endpoint (Apple retries a server notification for
+days), so apply one yourself:
+
+```js
+if (Date.now() - (payload.signedDate ?? 0) > 5 * 60 * 1000) { /* too old here */ }
+```
+
+**The device hash** is yours too, when you have the device's identifier:
+
+```js
+import { createHash } from 'node:crypto';
+
+const expected = createHash('sha1')
+  .update(deviceIdBytes)
+  .update(payload.opaqueValue)
+  .update(payload.bundleIdBytes)
+  .digest();
+const matches = timingSafeEqual(expected, payload.sha1Hash);
+```
+
+**Deduplicate on transaction ids, never on the receipt or JWS bytes.** A
+legacy receipt is BER, and one correctly signed receipt can be re-chunked
+into different byte strings that carry the same signed content.
+
+### App Store Server Notifications V2
+
+A notification nests more JWS inside its own payload. Apple POSTs
+`{"signedPayload": "<JWS>"}`; verify that, then verify whichever of
+`data.signedTransactionInfo` and `data.signedRenewalInfo` the notification
+payload carries — a `TEST` notification carries neither:
+
+```js
+function verifyNotification(signedPayload) {
+  const outer = verifier.verifySignedData(signedPayload);
+  if (!outer.verified) return denied(outer.failure.reason);
+  const notification = JSON.parse(outer.payload.json);
+
+  const data = notification.data ?? {};
+  const transaction = data.signedTransactionInfo && verifier.verifySignedData(data.signedTransactionInfo);
+  const renewal = data.signedRenewalInfo && verifier.verifySignedData(data.signedRenewalInfo);
+  if (transaction && !transaction.verified) return denied(transaction.failure.reason);
+  if (renewal && !renewal.verified) return denied(renewal.failure.reason);
+
+  return {
+    notificationType: notification.notificationType,
+    subtype: notification.subtype,
+    transaction: transaction && JSON.parse(transaction.payload.json),
+    renewalInfo: renewal && JSON.parse(renewal.payload.json),
+  };
+}
+```
+
+## The clock
+
+The clock is read at most once per call, and only when one of these needs
+it, after the input has passed every check that comes before:
+
+- **the certificate-validity instant, when the input states no usable date
+  of its own**: a receipt whose creation date (attribute 12) is missing or
+  does not parse, a JWS without a representable `signedDate`. Otherwise the
+  chain is judged at the date the input states.
+- **`request_date`** in the endpoint's response.
+
+A certificate outside its validity window at that instant is
+`INVALID_CERTIFICATE`. A clock that throws is contained as `INTERNAL_ERROR`
+(21009 at the endpoint), with a fixed message.
+
+## What the checks are, and in what order
+
+The order is observable and is part of the contract: an input that fails an
+early check reports that check's reason, not a later one.
+
+**JWS.** Size cap → three segments, each strict base64url → header JSON
+(strict UTF-8, no byte order mark, nothing but whitespace after the object),
+`alg` ES256 and exactly three `x5c` entries → the certificates decode → the
+chain at `signedDate` (or the clock), the intermediate checked against the
+pinned roots **before** the leaf is checked against the intermediate →
+**leaf marker OID** `1.2.840.113635.100.6.11.1` → **intermediate marker
+OID** `1.2.840.113635.100.6.2.1` → ES256 signature. As on the receipt path,
+a chain that does not reach a pinned root is `UNTRUSTED_CHAIN` whatever
+markers it carries; validity is part of the chain check, so an expired
+chain that lacks a marker, or has a broken signature, is
+`INVALID_CERTIFICATE` (owner, 2026-09-27). A key on a curve this library
+does not implement is `INVALID_CERTIFICATE`, judged only once it has been
+vouched for and is about to be used.
+
+**Receipt.** Size cap → strict base64 → CMS parse, including the syntax of
+every `SignerInfo`'s `signedAttrs`, whatever its position → at most four
+`SignerInfo`s and ten embedded certificates → the creation date alone
+(nothing else in the payload is read yet) → for each `SignerInfo`: the
+signer's certificate → the chain, top-down from the pinned roots, at the
+creation date or the clock → **signer marker OID** → **WWDR marker OID on
+the intermediate** → the signer's key on a curve this library implements →
+the CMS signature. One `SignerInfo` passing is enough; when none does, the
+first one's failure is the verdict. Then the full payload parse, where any
+failure is `UNREADABLE_PAYLOAD`.
+
+The receipt signer may use any algorithm `node:crypto` / `crypto.subtle`
+verify: RSA PKCS#1 v1.5, RSA-PSS or ECDSA on P-256 and P-384, over MD5,
+SHA-1 or the SHA-2 family. A signer that chains to a pinned root and carries
+Apple's marker is trusted whatever it signs with, so a change on Apple's
+side does not reject genuine receipts. The same goes for certificate
+signatures in the chain. A `signatureAlgorithm` that names a hash
+(`sha256WithRSAEncryption`, `ecdsa-with-SHA384`, the RSA-PSS parameters)
+must name the `SignerInfo`'s `digestAlgorithm`, or the signature is
+`INVALID_SIGNATURE`; `rsaEncryption` and `id-ecPublicKey` name none and
+take the digest.
+
+The bundled roots are checked against their published SHA-256 fingerprints
+when they load, all three or none; `defaultConfig()` throws if any do not
+match, so a call made with a config it fails to produce would never exist.
+
+`x5c[2]` is never compared to an anchor and never trusted, and neither is a
+receipt's embedded copy of its root: the chain terminates at an anchor the
+caller pinned. Trust anchors are trusted by fiat, so **an anchor's own
+expiry is not checked**, which is what lets a receipt signed years ago
+under a since-expired chain verify at its own creation date.
+
+A certificate on the path (not the anchor) that marks critical an extension
+a PKIX validator does not process makes the path `UNTRUSTED_CHAIN`, as it
+does for a PKIX validator. Processed are keyUsage, basicConstraints,
+certificatePolicies, policyMappings, policyConstraints, inhibitAnyPolicy,
+nameConstraints, subjectAltName, issuingDistributionPoint and
+deltaCRLIndicator, and on the leaf also cRLDistributionPoints and
+extKeyUsage. A certificate's `signatureValue` decodes only whole-byte
+aligned, as a DER signature always is. In `signedAttrs`, `contentType` or
+`messageDigest` twice, or a `contentType` that differs from the
+`eContentType`, is `INVALID_SIGNATURE`.
+
+An embedded certificate that does not decode is fatal, and the reason
+depends on which one it is: the **signer** is `INVALID_CERTIFICATE`, any
+other entry `MALFORMED`, because the certificate bag is unsigned.
+
+### Stranger certificates
+
+A receipt's certificate bag is not signed, so anyone can add to it. A
+certificate there that no pinned root vouches for, directly or through a
+certificate it vouched for, is ignored: it never reaches the path builder
+and its key is never used, so a genuine receipt padded with such
+certificates still verifies. The walk starts at the roots, so the cost of a
+stranger is a name comparison, however large or broken its key. The shared
+denial-of-service cases pin this with a `maxMillis` time budget.
 
 ## Input limits
 
-Base64 decoding, ASN.1 parsing and JSON parsing all allocate in proportion to
-their input, and all of them run before any signature is checked. So each
-input is measured first. The caps are static constants on the classes, the
-same in the default and the `/web` build and in every port of this library.
-They are not options.
+Base64 decoding, ASN.1 parsing and JSON parsing all allocate in proportion
+to their input, and all of them run before any signature is checked. So
+each input is measured first. The caps are fixed constants, the same in the
+default and the `/web` build and in every port of this library. They are
+not options.
 
 The receipt and request caps are Apple's own limit. Measured on 2026-09-23
 against both of Apple's verifyReceipt endpoints (production and sandbox), a
 request body of 3,145,728 bytes is answered normally and one of 3,145,729
-bytes gets HTTP 413. Apple counts UTF-8 bytes, not characters: 3,145,729
-bytes of `é`, only 1,572,874 characters, also got 413. `fixtures/cases.json`
-holds every port to these numbers from both sides.
+bytes gets HTTP 413. Apple counts UTF-8 bytes, not characters.
+`fixtures/cases.json` holds every port to these numbers from both sides.
 
-- **`VerifyReceiptEndpoint.MAX_REQUEST_BYTES` (3 MiB, 3145728).** Applied to
-  a raw JSON body, in UTF-8 bytes, before anything else looks at it. A larger
-  body answers 21002 with `REQUEST_TOO_LARGE`. A body passed as an object is
-  not measured.
-- **`ReceiptVerifier.MAX_RECEIPT_BYTES` (3 MiB, 3145728).** Applied to a
-  base64 receipt string, in UTF-8 bytes, before it is decoded (at
-  `ReceiptVerifier.verify` and at the endpoint's `receipt-data`), and to the
-  DER, in bytes, before it is parsed (at every entry point, `verifyReceiptCore`
-  included). No receipt Apple accepts can be larger than the request that
-  carries it. A larger receipt is `INVALID_RECEIPT_FORMAT`, 21002 at the
-  endpoint.
-- **JSON nesting depth 64.** `JSON.parse` has no depth option, so brackets
-  outside strings are counted before it runs. A deeper request body answers
-  21002 with `MALFORMED_REQUEST`; a deeper JWS header or payload is
-  `INVALID_JWS_FORMAT`. A verifyReceipt body is a flat object of strings.
-- **`JwsVerifier.MAX_JWS_BYTES` (256 KiB, 262144).** Applied to the compact
-  JWS, in characters, before it is split or decoded. A longer one is
-  `INVALID_JWS_FORMAT`. Apple's JWS payloads are a few kilobytes.
+- **the endpoint request body and the receipt base64 string**: 3,145,728
+  UTF-8 bytes (`MAX_REQUEST_BYTES`, `MAX_RECEIPT_BYTES`). Over it is
+  `TOO_LARGE`, 21002 at the endpoint (Apple answers HTTP 413 there — check
+  the body's length before the call to do the same).
+- **the compact JWS**: 262,144 UTF-8 bytes (`MAX_JWS_BYTES`), `TOO_LARGE`.
+- **JSON nesting depth 64.** Counted while parsing, since `JSON.parse` has
+  no depth option. A deeper request body or JWS is `MALFORMED`.
 
 A JavaScript string holds UTF-16 units, so strings are measured in UTF-8
-bytes without being encoded: more units than the cap is over it, three times
-the units within the cap is within it, and only a string between the two is
-walked, stopping at the first byte past the cap.
+bytes without being encoded: more units than the cap is over it, three
+times the units within the cap is within it, and only a string between the
+two is walked, stopping at the first byte past the cap.
 
-**Answering 413 like Apple.** `REQUEST_TOO_LARGE` exists so an HTTP layer can
-send the status Apple sends. The body is Apple's 21002 either way:
+`receipt-data` is decoded exactly as Apple's `verifyReceipt` accepts it:
+standard base64 with canonical `=` padding and nothing else — whitespace,
+base64url and omitted or extra padding are all refused, as at Apple. `x5c`
+entries are standard base64, JWS segments unpadded canonical base64url, so
+one signed payload has one accepted spelling.
+
+## Measured worst-case CPU
+
+Measured on 2026-09-27 with `node bench/bench.mjs --worst-case`, which
+times every shared case in `fixtures/cases.json` that carries a time
+budget: oversized untrusted keys, a cross-signed certificate mesh, and the
+encoding oddities inside certificates. Node.js 22.22.2, the built `dist/`,
+one JavaScript thread, on a shared 4-vCPU KVM guest (Intel Xeon Processor @
+2.10GHz); one second of warm-up, then ten samples of at least 100 ms each.
+
+| Call | Median | Slowest sample |
+|---|---:|---:|
+| Slowest hostile case: `receipt/verify-genuine-padded-with-oversized-strangers` (a valid receipt carrying oversized certificates it does not need) | 1.6 ms | 2.0 ms |
+| Next: `receipt/reject-untrusted-oversized-intermediates` | 1.6 ms | 2.0 ms |
+| Slowest hostile JWS: `signed-data/reject-untrusted-oversized-x5c` (a JWS near the 256 KiB cap) | 1.5 ms | 2.1 ms |
+| Every other budgeted case | under 0.51 ms | under 0.70 ms |
+| For scale: `verifyReceipt` on the genuine 187-purchase legacy receipt | 3.7 ms | 5.6 ms |
+| For scale: `verifyReceiptEndpoint` on the same receipt | 6.1 ms | 7.2 ms |
+
+No hostile input in the shared suite costs more than an ordinary large
+receipt: the cost of a call follows the size of the input, which the caps
+above bound, not the structure an attacker chooses. The machine was shared
+with other work, so treat these as an order of magnitude. Run
+`npm run build && node bench/bench.mjs --worst-case` for the hostile cases
+on your own hardware, and `node bench/bench.mjs` for the genuine receipts.
+
+## The endpoint
 
 ```js
-const result = endpoint.verifyReceiptResult(rawRequestBody);
-const httpStatus = result.failureReason === Reason.REQUEST_TOO_LARGE ? 413 : 200;
-res.status(httpStatus).type('application/json').send(result.toJson());
+import { Environment } from 'apple-purchase-receipt-verifier';
+
+const body = verifier.verifyReceiptEndpoint(Environment.PRODUCTION, rawRequestBody);
 ```
 
-A framework that caps request bodies itself (Express's `express.json()` and
-`express.text()` default to 100 KB) has to allow at least 3 MiB, or it
-refuses bodies Apple would answer.
+`rawRequestBody` must be the request's raw JSON text. A framework whose body
+parser defaults to `application/x-www-form-urlencoded` (or that only
+populates `req.body` after parsing it as one) will hand this method a
+stringified form object, not the JSON Apple's client actually sent, and
+`receipt-data` will read as missing. Read the body as `application/json`
+before calling this method, or parse it yourself and re-stringify it.
 
-## Receipt ids are bigints
+| Status | Meaning |
+|---|---|
+| `0` | verified, and the receipt matches the requested environment |
+| `21002` | `receipt-data` is missing, malformed, or over the size cap |
+| `21003` | the receipt did not authenticate |
+| `21007` | a Sandbox receipt was sent to `Environment.PRODUCTION` |
+| `21008` | a Production receipt was sent to `Environment.SANDBOX` |
+| `21009` | not the client's fault: alert and reconcile, do not deny |
 
-Three App Store ids come off a receipt as `bigint`: `appItemId` (attribute 1),
-`downloadId` (15) and `versionExternalIdentifier` (16). Apple's download ids
-are eighteen digits, so a JavaScript number would round the id it exists to
-identify a download by. In-app purchases carry `isTrialPeriod` (1713) as the
-integer it is, like `isInIntroOfferPeriod`.
-
-`VerifyReceiptEndpoint` echoes them under Apple's own keys — attribute 1 twice,
-as `adam_id` and `app_item_id`, because Apple does — as JSON numbers rather
-than the strings the in-app integers use, and 1713 as `is_trial_period`,
-`"true"` or `"false"`.
-
-```js
-const { receipt } = endpoint.verifyReceiptResult(body).toResponse();
-receipt.download_id;                  // 9223372036854775807n
-JSON.stringify(receipt);              // "download_id":9223372036854775808 — rounded
-endpoint.verifyReceiptJson(rawBody);  // "download_id":9223372036854775807 — every digit
-```
-
-`JSON.stringify` on the response does not throw on those bigints: the receipt
-renders itself with the ids as JSON numbers, which is what `JSON.parse` of
-Apple's own answer yields in JavaScript anyway. `verifyReceiptJson` is the one
-path that writes every digit, because it serializes the ids itself — Node 20,
-the floor this package supports, has no `JSON.rawJSON` to do it with. Read
-exact values off the object as bigints, or hand a consumer outside JavaScript
-the `verifyReceiptJson` text.
-
-An attribute the receipt does not carry reads `null` on the object, and its
-key is left out of the endpoint's answer rather than sent as JSON null.
+`AppleStatus` holds these (and the codes Apple's own servers can return,
+which this local stand-in never produces) as named constants. Local 21007 /
+21008 routing fails closed: only receipt types `Production` and
+`ProductionVPP` count as production. Like Apple's endpoint, this does
+**not** check the bundle id: compare `receipt.bundle_id` in the response
+before granting anything. `password` and `exclude-old-transactions` are
+accepted for wire compatibility and never read. Fields that exist only in
+Apple's server-side database (`latest_receipt_info`, `pending_renewal_info`,
+`latest_receipt`) are never produced. 64-bit ids
+(`adam_id`/`app_item_id`/`download_id`/`version_external_identifier`) are
+written as raw JSON numbers, exactly as Apple's own endpoint does, even
+though this library's own `ReceiptPayload` carries them as decimal strings;
+`*_ms` date fields are JSON strings. A field the receipt does not carry is
+left out of the response entirely, never sent as JSON `null`. See
+[COMPARISON.md](https://github.com/emindeniz99/apple-purchase-receipt-verifier/blob/main/COMPARISON.md)
+for the field-by-field fidelity account.
 
 ## Known issue: legacy receipts on RHEL 9's own Node.js
 
@@ -413,30 +483,90 @@ The legacy Apple receipt chain and its CMS signature are SHA-1. Node.js from
 nodejs.org, nvm or the official Docker images bundles its own OpenSSL and is
 not affected. RHEL's `nodejs` package (also on Alma and Rocky) is built
 against the system OpenSSL, which the DEFAULT crypto policy stops from
-verifying SHA-1 signatures, so with it a genuine legacy receipt is
-`INVALID_CHAIN`. Observed on AlmaLinux 9.8 on 2026-09-24. Newer receipts
+verifying SHA-1 signatures, so with it a genuine legacy receipt answers
+`UNTRUSTED_CHAIN`. Observed on AlmaLinux 9.8 on 2026-09-24. Newer receipts
 (SHA-256 chains) and every JWS are unaffected; FIPS mode is untested.
 
 Until the fix ships, use an upstream Node.js build, or run
-`update-crypto-policies --set DEFAULT:SHA1` on that host. The planned fix
-checks SHA-1 signatures on Apple's pinned legacy chain with
-`crypto.publicDecrypt` and an exact byte comparison, and adds an AlmaLinux 9
-CI job (ROADMAP.md).
+`update-crypto-policies --set DEFAULT:SHA1` on that host.
 
 ## Why offline
 
 Signature verification cannot fail because a vendor endpoint is down, so a
 purchase can be honoured immediately and reconciled against the App Store
-Server API afterwards. Refunds and revocations still need that reconciliation
-pass — a signature proves what Apple signed, not what happened since.
+Server API afterwards. Refunds and revocations still need that
+reconciliation pass — a signature proves what Apple signed, not what
+happened since.
 
 This is one of nine implementations (Java, Node, Python, Swift, Go, Ruby,
-Rust, PHP, .NET) that share a single fixture suite, including Apple's own official test fixtures, and are
-required to agree byte for byte. See the
+Rust, PHP, .NET) that share a single fixture suite, including Apple's own
+official test fixtures, and are required to agree byte for byte. See the
 [project README](https://github.com/emindeniz99/apple-purchase-receipt-verifier#readme)
 for the full picture and
 [COMPARISON.md](https://github.com/emindeniz99/apple-purchase-receipt-verifier/blob/main/COMPARISON.md)
 for how it differs from Apple's official libraries.
+
+## Upgrading from 0.6
+
+0.7 replaces the three classes with one `Verifier` built from a `Config`, and
+takes no policy: no bundle id, no accepted environments, no app Apple id, no
+device id. Methods return a result object instead of throwing, and no
+longer accept raw DER — only the base64 string an app actually sends.
+
+| 0.6 | 0.7 |
+|---|---|
+| `new ReceiptVerifier({ trustedRoots, bundleId }).verify(base64 \| der)` | `createVerifier(createConfig({ roots })).verifyReceipt(base64)`, then compare `payload.bundleId` |
+| `verifyReceiptCore(der, roots)` | base64-encode, then `verifyReceipt` |
+| device-hash checking on the verifier | compute the hash yourself from `opaqueValue` and `bundleIdBytes` (above) |
+| `new JwsVerifier({ trustedRoots, bundleId, acceptedEnvironments }).verifyTransaction/verifyAppTransaction/verifyRaw(jws)` | `verifier.verifySignedData(jws)`, then read the claims from `JSON.parse(payload.json)` |
+| `new VerifyReceiptEndpoint({ trustedRoots, environment }).verifyReceiptJson(body)` | `verifier.verifyReceiptEndpoint(environment, body)` |
+| `appleReceiptRoots()`, `appleJwsRoots()` | `defaultConfig().roots` (one set, shared by every method) |
+| a `Date` argument for `request_date` | `createConfig({ clock: () => epochMs })` |
+| `VerificationError` (thrown) | `result.failure` (`{ reason, message, cause? }`, never thrown for input) |
+| `AppReceipt` (`Date` fields, `bigint` ids) | `ReceiptPayload` (`*Ms` epoch milliseconds, ids as decimal strings) |
+
+| 0.6 `Reason` | 0.7 `Reason` |
+|---|---|
+| `INVALID_JWS_FORMAT`, `INVALID_RECEIPT_FORMAT`, `MALFORMED_REQUEST` | `MALFORMED` |
+| `REQUEST_TOO_LARGE` | `TOO_LARGE` |
+| `INVALID_CHAIN` | `UNTRUSTED_CHAIN`, or `INVALID_CERTIFICATE` for a certificate outside its validity window |
+| `INTERNAL_ERROR` for signed content that does not parse | `UNREADABLE_PAYLOAD` |
+| `WRONG_BUNDLE_ID`, `WRONG_ENVIRONMENT`, `WRONG_APP_APPLE_ID`, device-hash mismatch | gone: the caller's own checks |
+
+## Testing
+
+```bash
+npm test              # typecheck, then the whole node:test suite
+npm run lint           # oxlint
+npm run format:check   # prettier --check
+npm run test:runtimes  # Node, Bun, Deno, three workerd configurations
+npm run test:runtimes:web    # the web build on Node, the Vercel Edge runtime, workerd
+npm run test:runtimes:fastly # the web build on Fastly Compute (needs viceroy)
+```
+
+`test/conformance.test.js` runs `fixtures/cases.json`, the normative
+cross-language vector file every port of this library answers, as one named
+test per case **per build** (Node and `/web`), and fails unless every case
+ran on both. The adapter carries no case-specific knowledge: it builds a
+config from the case, dispatches on the operation and evaluates the expected
+JSON Pointers on the result. `decodeBase64` cases call the two base64
+decoders directly, and a case with a `maxMillis` budget is timed after a
+warm-up call.
+
+`test/trust-store-isolation.test.js` asserts the "no ambient trust" property
+from three directions: environmentally (a child process started with
+`NODE_EXTRA_CA_CERTS` naming a bundle that holds the fixture roots, proven
+live with a real TLS handshake, and the library still refuses), structurally
+(a source scan over `src/` for anything that could reach a trust store or
+the network, and a check that the web build imports nothing Node-specific),
+and positionally (a spy on the anchor array proves the chain builder sees
+exactly the caller's list, in order, nothing appended).
+
+`fuzz/` is a separate npm project (`fuzz/README.md`) so `npm ci` here never
+pulls the native fuzzing addon; `test/fuzz-targets.test.js` runs its six
+targets' seed corpora, plus a deterministic mutation sweep, as plain
+`node:test` cases, so their invariants are checked on every push even
+without the fuzzer installed.
 
 ## Changelog
 

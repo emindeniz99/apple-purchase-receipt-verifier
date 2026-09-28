@@ -15,28 +15,49 @@ import (
 var (
 	oidSignedData    = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 2}
 	oidMessageDigest = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 4}
+	oidContentType   = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 3}
 	oidSHA1          = asn1.ObjectIdentifier{1, 3, 14, 3, 2, 26}
 	oidSHA256        = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 1}
+	oidSHA384        = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 2}
+	oidSHA512        = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 3}
+	oidMD5           = asn1.ObjectIdentifier{1, 2, 840, 113549, 2, 5}
 )
 
+// cmsSignerInfo is one SignerInfo, parsed but not yet verified.
 type cmsSignerInfo struct {
 	issuerRaw      []byte
 	serialContents []byte
 	digestOID      asn1.ObjectIdentifier
 	signedAttrs    *der.Node // nil when the signature is over the content directly
-	signature      []byte
+	// sigAlgOID and sigAlgParams are the signatureAlgorithm field: either a
+	// bare key-type OID (rsaEncryption, id-ecPublicKey), whose signature
+	// scheme and digest come from the signer's key and digestOID, or an
+	// OID that names its own hash (sha256WithRSAEncryption,
+	// ecdsa-with-SHA384, id-RSASSA-PSS with explicit parameters), which
+	// must then agree with digestOID.
+	sigAlgOID    asn1.ObjectIdentifier
+	sigAlgParams *der.Node // nil when the field carries no parameters
+	signature    []byte
 }
 
 type parsedCMS struct {
-	content      []byte
+	content []byte
+	// eContentType is the raw OID contents of encapContentInfo's
+	// eContentType, compared against a SignerInfo's signed contentType
+	// attribute (RFC 5652 §11.1: they MUST match).
+	eContentType []byte
 	certificates [][]byte
-	signerInfo   cmsSignerInfo
+	// signerInfoNodes are the raw, unparsed SignerInfo SEQUENCEs, in
+	// receipt order. The caller checks the SignerInfo count against its
+	// cap before parsing any of them (maxSignerInfos), the same order the
+	// embedded-certificate cap is checked in relative to parsing them.
+	signerInfoNodes []*der.Node
 }
 
 var errMalformedCMS = errors.New("malformed CMS structure")
 
 // parseCMS walks ContentInfo -> SignedData and pulls out the encapsulated
-// content, the embedded certificates and the first SignerInfo.
+// content, the embedded certificates and the SignerInfos.
 //
 // der.Parse rejects trailing bytes after the outermost value, so a
 // receipt with an unverified tail appended is refused here rather than
@@ -63,9 +84,10 @@ func parseCMS(b []byte) (*parsedCMS, error) {
 
 	// encapContentInfo ::= SEQUENCE { eContentType OID, eContent [0] }
 	encap := der.Child(signedData, 2)
+	eContentTypeNode := der.Child(encap, 0)
 	eContent := der.Child(encap, 1)
-	if encap == nil || encap.Tag != der.TagSequence || eContent == nil ||
-		eContent.Tag != der.TagContext0 {
+	if encap == nil || encap.Tag != der.TagSequence || eContentTypeNode == nil ||
+		eContentTypeNode.Tag != der.TagOID || eContent == nil || eContent.Tag != der.TagContext0 {
 		return nil, errors.New("no encapsulated payload")
 	}
 	contentNode := der.Child(eContent, 0)
@@ -91,13 +113,28 @@ func parseCMS(b []byte) (*parsedCMS, error) {
 	if signerInfos.Tag != der.TagSet || len(signerInfos.Children) == 0 {
 		return nil, errors.New("no signer info")
 	}
-	signerInfo, err := parseSignerInfo(signerInfos.Children[0])
-	if err != nil {
-		return nil, err
-	}
-	return &parsedCMS{content: content, certificates: certificates, signerInfo: signerInfo}, nil
+	return &parsedCMS{
+		content:         content,
+		eContentType:    eContentTypeNode.Contents,
+		certificates:    certificates,
+		signerInfoNodes: signerInfos.Children,
+	}, nil
 }
 
+// parseSignerInfo reads one CMS SignerInfo:
+//
+//	SignerInfo ::= SEQUENCE {
+//	    version CMSVersion,
+//	    sid SignerIdentifier,               -- issuerAndSerialNumber only
+//	    digestAlgorithm DigestAlgorithmIdentifier,
+//	    signedAttrs [0] IMPLICIT SignedAttributes OPTIONAL,
+//	    signatureAlgorithm SignatureAlgorithmIdentifier,
+//	    signature SignatureValue,
+//	    unsignedAttrs [1] IMPLICIT UnsignedAttributes OPTIONAL }
+//
+// A trailing unsignedAttrs, present or not, is tolerated and ignored, as
+// fields after the third are tolerated elsewhere in this library's
+// grammars.
 func parseSignerInfo(node *der.Node) (cmsSignerInfo, error) {
 	var info cmsSignerInfo
 	if node == nil || node.Tag != der.TagSequence || len(node.Children) < 5 {
@@ -111,12 +148,12 @@ func parseSignerInfo(node *der.Node) (cmsSignerInfo, error) {
 		return info, errors.New("SignerInfo does not use issuerAndSerialNumber")
 	}
 	digestAlgorithm := der.Child(node, 2)
-	digestOID := der.Child(digestAlgorithm, 0)
+	digestOIDNode := der.Child(digestAlgorithm, 0)
 	if digestAlgorithm == nil || digestAlgorithm.Tag != der.TagSequence ||
-		digestOID == nil || digestOID.Tag != der.TagOID {
+		digestOIDNode == nil || digestOIDNode.Tag != der.TagOID {
 		return info, errors.New("malformed digestAlgorithm")
 	}
-	oid, err := decodeOID(digestOID.Contents)
+	digestOID, err := decodeOID(digestOIDNode.Contents)
 	if err != nil {
 		return info, err
 	}
@@ -124,10 +161,23 @@ func parseSignerInfo(node *der.Node) (cmsSignerInfo, error) {
 	index := 3
 	var signedAttrs *der.Node
 	if attrs := der.Child(node, index); attrs != nil && attrs.Tag == der.TagContext0 {
+		if err := validateSignedAttributesShape(attrs); err != nil {
+			return info, err
+		}
 		signedAttrs = attrs
 		index++
 	}
-	index++ // signatureAlgorithm: the digest algorithm drives the hash
+	sigAlg := der.Child(node, index)
+	sigAlgOIDNode := der.Child(sigAlg, 0)
+	if sigAlg == nil || sigAlg.Tag != der.TagSequence ||
+		sigAlgOIDNode == nil || sigAlgOIDNode.Tag != der.TagOID {
+		return info, errors.New("malformed signatureAlgorithm")
+	}
+	sigAlgOID, err := decodeOID(sigAlgOIDNode.Contents)
+	if err != nil {
+		return info, err
+	}
+	index++
 	signature := der.Child(node, index)
 	if !der.IsOctetString(signature) {
 		return info, errors.New("malformed SignerInfo signature")
@@ -135,29 +185,75 @@ func parseSignerInfo(node *der.Node) (cmsSignerInfo, error) {
 	return cmsSignerInfo{
 		issuerRaw:      issuer.Raw,
 		serialContents: serial.Contents,
-		digestOID:      oid,
+		digestOID:      digestOID,
 		signedAttrs:    signedAttrs,
+		sigAlgOID:      sigAlgOID,
+		sigAlgParams:   der.Child(sigAlg, 1),
 		signature:      der.OctetValue(signature),
 	}, nil
 }
 
-// findMessageDigestAttribute returns the messageDigest signed attribute's
-// value, or nil when the attribute is absent. A signed attribute of the
-// wrong shape is an error rather than "not the one we wanted".
-func findMessageDigestAttribute(signedAttrs *der.Node) ([]byte, error) {
+// validateSignedAttributesShape checks that every child of a SignerInfo's
+// signedAttrs is Attribute-shaped (SEQUENCE { type OID, values SET }),
+// before any cryptography and whichever SignerInfo (and whichever
+// position among several) it belongs to (owner, 2026-09-27): a SignerInfo
+// beside one that verifies does not get a pass on its own shape. Called
+// from parseSignerInfo, so a shape defect here fails the whole receipt as
+// ReasonMalformed the same way any other unparseable SignerInfo does,
+// rather than being deferred to the signer this SignerInfo happens to
+// name.
+func validateSignedAttributesShape(signedAttrs *der.Node) error {
 	for _, attr := range signedAttrs.Children {
 		attrType := der.Child(attr, 0)
 		values := der.Child(attr, 1)
-		value := der.Child(values, 0)
 		if attr.Tag != der.TagSequence || attrType == nil || attrType.Tag != der.TagOID ||
-			values == nil || value == nil {
-			return nil, errors.New("malformed signed attribute")
+			values == nil || values.Tag != der.TagSet || len(values.Children) == 0 {
+			return errors.New("malformed signed attribute")
 		}
-		if oidEqual(attrType.Contents, oidMessageDigest) {
-			return der.OctetValue(value), nil
+		// The tag alone is not an OID: a type whose contents are empty or
+		// end mid-arc makes the set malformed, as in Node and Java, rather
+		// than an unknown attribute the signature then vouches for. Only
+		// that is refused; decodeOID's length and arc bounds would also
+		// refuse long but well-formed attribute types.
+		if n := len(attrType.Contents); n == 0 || attrType.Contents[n-1]&0x80 != 0 {
+			return errors.New("malformed signed attribute: type is not a valid object identifier")
 		}
 	}
-	return nil, nil
+	return nil
+}
+
+// readSignedAttributes returns the messageDigest and contentType signed
+// attributes' values (contentType's raw OID contents), or an error when
+// either attribute type appears more than once (RFC 5652 §5.3, "MUST
+// NOT include multiple instances of any attribute"). Unlike a shape
+// defect (validateSignedAttributesShape), a genuine duplicate is a
+// property of the CONTENT the signature covers, so it is checked here,
+// per signer, as part of the cryptographic verdict (INVALID_SIGNATURE),
+// not as an early structural rejection.
+func readSignedAttributes(signedAttrs *der.Node) (messageDigest, contentType []byte, err error) {
+	seenMessageDigest := false
+	seenContentType := false
+	for _, attr := range signedAttrs.Children {
+		attrType := der.Child(attr, 0)
+		value := der.Child(der.Child(attr, 1), 0)
+		switch {
+		case oidEqual(attrType.Contents, oidMessageDigest):
+			if seenMessageDigest {
+				return nil, nil, errors.New("messageDigest attribute appears more than once")
+			}
+			seenMessageDigest = true
+			messageDigest = der.OctetValue(value)
+		case oidEqual(attrType.Contents, oidContentType):
+			if seenContentType {
+				return nil, nil, errors.New("content-type attribute appears more than once")
+			}
+			seenContentType = true
+			if value != nil && value.Tag == der.TagOID {
+				contentType = value.Contents
+			}
+		}
+	}
+	return messageDigest, contentType, nil
 }
 
 // signedAttrsSignedBytes is what the SignerInfo signature actually covers

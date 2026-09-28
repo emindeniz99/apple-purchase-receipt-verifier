@@ -1,17 +1,23 @@
-"""Offline verification of legacy PKCS#7 app receipts against the pinned
-Apple Inc. Root CA — the server-side port of Apple's "Validating receipts
-on the device" procedure (PLAN.md §2.2), mirroring the Java implementation.
+"""Offline verification of legacy PKCS#7 app receipts against pinned roots
+(docs/design/0.7-api.md §1): the server-side port of Apple's "Validating
+receipts on the device" procedure.
 
-CMS parsing uses ``asn1crypto`` (BER-capable — genuine Apple/Xcode receipts
+Algorithm, in order: strict base64, the CMS envelope, the chain to a pinned
+root walked top-down (hardening parity #161), certificate validity at the
+receipt's creation date, Apple's marker OIDs on both the leaf (receipt
+signing) and the WWDR intermediate, and last the signature. Several
+SignerInfos are tried in turn; when none passes, the first one's failure is
+reported.
+
+CMS parsing uses ``asn1crypto`` (BER-capable: genuine Apple/Xcode receipts
 use indefinite lengths); the receipt payload itself is parsed with a small
-strict DER reader below."""
+strict DER reader below.
+"""
 
 import hashlib
 import hmac
-import time
-from collections.abc import Iterable
-from datetime import datetime, timezone
-from typing import Any, ClassVar
+from collections.abc import Callable, Sequence
+from typing import Any
 
 from asn1crypto import cms as asn1cms
 from asn1crypto import core as asn1core
@@ -19,57 +25,43 @@ from asn1crypto import x509 as asn1x509
 from cryptography import x509
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from cryptography.hazmat.primitives.asymmetric import ec, padding, rsa
 
-from ._chain import as_utc, build_and_validate_path
+from . import _asn1_depth, _der
+from ._chain import build_path_top_down, valid_at_ms
+from ._errors import VerificationError
 from ._receipt_base64 import decode_receipt_base64
 from ._utf8 import utf8_exceeds
-from .exceptions import Reason, VerificationError
+from .jws import INTERMEDIATE_OID, LEAF_OID, _has_extension
+from .reason import Reason
+from .receipt_payload import InAppPurchase, ReceiptPayload
 
-# Apple marker OID on the receipt-signing leaf. The chain check alone does not
-# distinguish signer purpose: developer certs chain through the same WWDR
-# intermediate to the same pinned root, so this OID must be required too.
-_RECEIPT_SIGNER_OID = x509.ObjectIdentifier("1.2.840.113635.100.6.11.1")
+# Apple's receipt-signing marker, on the signer leaf; same OID the JWS path
+# checks (the marker is per purpose, not per format).
+_RECEIPT_SIGNER_OID = LEAF_OID
 
-# Every embedded certificate is loaded and offered to path building before
-# anything about the receipt has been verified, and each one whose subject
-# matches an issuer name in the chain costs a full RSA signature check there.
-# Genuine receipts carry 1 to 3 (fixtures/public-receipts: 1, 3, 3), and
-# _chain.py walks at most 6 of them, so 10 is well clear of any real receipt
-# while bounding the flood: 56 decoy certificates in 44 KB measured at 4.4 ms
-# and 224 in 163 KB at 21 ms, against 1.3 ms for the genuine receipt they were
-# spliced into. A caller-side size limit cannot bound this on its own — the
-# genuine legacy receipt under fixtures/public-receipts is 79,104 bytes, so any
-# cap that admits it admits ~90 decoys too.
-_MAX_EMBEDDED_CERTIFICATES = 10
+#: Ceiling on the base64 receipt string, in UTF-8 bytes.
+MAX_RECEIPT_BYTES = 3145728
+#: Ceiling on the certificates a receipt may embed.
+MAX_EMBEDDED_CERTIFICATES = 10
+#: Ceiling on the SignerInfos a receipt may carry.
+MAX_SIGNER_INFOS = 4
 
-# Only the digests Apple uses for receipts (SHA-1 / SHA-256), matching the
-# other three implementations; anything else is rejected.
-_DIGESTS = {
+#: The digests this library verifies a receipt signature under: the
+#: guaranteed minimum set (#160, docs/design/0.7-api.md).
+_DIGESTS: "dict[str, Any]" = {
+    "md5": hashes.MD5,
     "sha1": hashes.SHA1,
+    "sha224": hashes.SHA224,
     "sha256": hashes.SHA256,
+    "sha384": hashes.SHA384,
+    "sha512": hashes.SHA512,
 }
 
-# Receipt attribute types — Apple, "Validating receipts on the device",
-# plus two community-established ones (0: receipt type, 18: original
-# purchase date) needed for verifyReceipt response compatibility.
-#
-# Types 1, 15, 16 and 1713 are on none of Apple's documented pages either.
-# They were established by decoding a genuine production receipt and lining
-# its attributes up against the answer Apple's verifyReceipt endpoint gives
-# for the same receipt (measured 2026-09-21):
-#
-#   1     app item id                -> adam_id AND app_item_id
-#   15    download id                -> download_id
-#   16    version external id        -> version_external_identifier
-#   1713  is trial period (in-app)   -> is_trial_period
-#
-# All four are INTEGER attributes. Apple renders the three app-level ids as
-# JSON numbers and 1713 as the string "true"/"false", exactly as it renders
-# 1719.
+# Receipt attribute types (see the Java port's ReceiptDecoder for the full
+# provenance of the four community-established ones).
 _ATTR_RECEIPT_TYPE = 0
 _ATTR_APP_ITEM_ID = 1
-_ATTR_ORIGINAL_PURCHASE_DATE = 18
 _ATTR_BUNDLE_ID = 2
 _ATTR_APP_VERSION = 3
 _ATTR_OPAQUE_VALUE = 4
@@ -79,386 +71,445 @@ _ATTR_DOWNLOAD_ID = 15
 _ATTR_VERSION_EXTERNAL_IDENTIFIER = 16
 _ATTR_IN_APP = 17
 _ATTR_ORIGINAL_APP_VERSION = 19
+_ATTR_ORIGINAL_PURCHASE_DATE = 18
 _ATTR_EXPIRATION_DATE = 21
 
-_IAP_FIELDS = {
-    1701: ("quantity", "int"),
-    1702: ("product_id", "str"),
-    1703: ("transaction_id", "str"),
-    1704: ("purchase_date", "date"),
-    1705: ("original_transaction_id", "str"),
-    1706: ("original_purchase_date", "date"),
-    1708: ("expires_date", "date"),
-    1711: ("web_order_line_item_id", "int"),
-    1712: ("cancellation_date", "date"),
-    1713: ("is_trial_period", "int"),
-    1719: ("is_in_intro_offer_period", "int"),
-}
+_TOP_LEVEL_TYPES = {
+    _ATTR_RECEIPT_TYPE, _ATTR_APP_ITEM_ID, _ATTR_BUNDLE_ID, _ATTR_APP_VERSION,
+    _ATTR_OPAQUE_VALUE, _ATTR_SHA1_HASH, _ATTR_CREATION_DATE, _ATTR_DOWNLOAD_ID,
+    _ATTR_VERSION_EXTERNAL_IDENTIFIER, _ATTR_ORIGINAL_PURCHASE_DATE,
+    _ATTR_ORIGINAL_APP_VERSION, _ATTR_EXPIRATION_DATE,
+}  # fmt: skip
+
+_IAP_QUANTITY = 1701
+_IAP_PRODUCT_ID = 1702
+_IAP_TRANSACTION_ID = 1703
+_IAP_PURCHASE_DATE = 1704
+_IAP_ORIGINAL_TRANSACTION_ID = 1705
+_IAP_ORIGINAL_PURCHASE_DATE = 1706
+_IAP_EXPIRES_DATE = 1708
+_IAP_WEB_ORDER_LINE_ITEM_ID = 1711
+_IAP_CANCELLATION_DATE = 1712
+_IAP_IS_TRIAL_PERIOD = 1713
+_IAP_IS_IN_INTRO_OFFER_PERIOD = 1719
+
+_IN_APP_TYPES = {
+    _IAP_QUANTITY, _IAP_PRODUCT_ID, _IAP_TRANSACTION_ID, _IAP_PURCHASE_DATE,
+    _IAP_ORIGINAL_TRANSACTION_ID, _IAP_ORIGINAL_PURCHASE_DATE, _IAP_EXPIRES_DATE,
+    _IAP_WEB_ORDER_LINE_ITEM_ID, _IAP_CANCELLATION_DATE, _IAP_IS_TRIAL_PERIOD,
+    _IAP_IS_IN_INTRO_OFFER_PERIOD,
+}  # fmt: skip
 
 
-class InAppPurchase:
-    """One in-app purchase from the receipt (attribute 17)."""
+def verify_receipt(
+    base64_text: "str | None", roots: "Sequence[x509.Certificate]", clock: Callable[[], int]
+) -> ReceiptPayload:
+    """Verifies ``base64_text`` (the usual client transport form of a
+    receipt) and decodes it.
 
-    def __init__(self) -> None:
-        #: Raw unmodeled attributes by type — forward compatibility (PLAN D10).
-        self.unknown_attributes: dict[int, list[bytes]] = {}
-        self.quantity: int | None = None
-        self.product_id: str | None = None
-        self.transaction_id: str | None = None
-        self.original_transaction_id: str | None = None
-        self.purchase_date: datetime | None = None
-        self.original_purchase_date: datetime | None = None
-        self.expires_date: datetime | None = None
-        self.cancellation_date: datetime | None = None
-        self.web_order_line_item_id: int | None = None
-        self.is_trial_period: int | None = None
-        self.is_in_intro_offer_period: int | None = None
-
-
-class AppReceipt:
-    """A verified legacy app receipt. Only receipts returned by
-    :class:`ReceiptVerifier` should be trusted."""
-
-    def __init__(self) -> None:
-        #: Raw values of attribute types this library does not model, keyed
-        #: by type — forward compatibility for fields Apple may add (PLAN
-        #: D10). Values are raw octet-string contents, verified but undecoded.
-        self.unknown_attributes: dict[int, list[bytes]] = {}
-        self.receipt_type: str | None = None
-        self.original_purchase_date: datetime | None = None
-        self.bundle_id: str | None = None
-        self.bundle_id_bytes: bytes | None = None
-        self.app_version: str | None = None
-        self.opaque_value: bytes | None = None
-        self.sha1_hash: bytes | None = None
-        self.creation_date: datetime | None = None
-        self.original_app_version: str | None = None
-        self.expiration_date: datetime | None = None
-        self.app_item_id: int | None = None
-        self.download_id: int | None = None
-        self.version_external_identifier: int | None = None
-        self.in_app_purchases: list[InAppPurchase] = []
-
-
-class ReceiptVerifier:
-    """Thread-safe once constructed.
-
-    :param trusted_roots: pinned roots
-        (production: :func:`apple_purchase_receipt_verifier.apple_receipt_roots`)
-    :param bundle_id: the app's bundle id the receipt must carry
+    :raises VerificationError: never for a caught, understood defect; see
+        :mod:`.reason` for what each :class:`~.reason.Reason` means
     """
-
-    #: Ceiling on the receipt this library will look at, in bytes: the base64
-    #: string at :meth:`verify`, measured in UTF-8, and the DER at every entry
-    #: point that takes bytes, :func:`verify_receipt_core` included. Checked
-    #: before anything is decoded: base64 decoding allocates about three
-    #: quarters of the input again and the CMS parse allocates in proportion
-    #: to the DER, none of it behind a signature check. 3 MiB: Apple's
-    #: verifyReceipt refuses a request body over 3,145,728 bytes (measured
-    #: 2026-09-23), so no receipt it would accept is larger. The same fixed
-    #: constant in every port.
-    MAX_RECEIPT_BYTES: ClassVar[int] = 3145728
-
-    def __init__(self, trusted_roots: "Iterable[x509.Certificate]", bundle_id: str) -> None:
-        roots = list(trusted_roots)
-        if not roots:
-            raise ValueError("trusted_roots must not be empty")
-        if not bundle_id:
-            raise ValueError("bundle_id is required")
-        self._roots = roots
-        self._bundle_id = bundle_id
-
-    def verify(self, receipt: "bytes | str", device_guid: "bytes | None" = None) -> "AppReceipt":
-        """Verifies a receipt (DER ``bytes``, or its base64 string — the
-        usual client transport form). Passing ``device_guid`` additionally
-        enforces the device-hash binding: SHA1(guid ‖ opaqueValue ‖
-        bundleIdBytes) must equal attribute 5 (optional — PLAN.md D4)."""
-        if isinstance(receipt, str):
-            # Before the decode, which would otherwise allocate a stripped
-            # copy of the string and then the bytes it decodes to.
-            if utf8_exceeds(receipt, ReceiptVerifier.MAX_RECEIPT_BYTES):
-                raise VerificationError(
-                    Reason.INVALID_RECEIPT_FORMAT,
-                    "receipt exceeds the maximum accepted size of "
-                    f"{ReceiptVerifier.MAX_RECEIPT_BYTES} bytes",
-                )
-            der = decode_receipt_base64(receipt)
-        else:
-            der = receipt
-        fields = verify_receipt_core(der, self._roots)
-        if fields.bundle_id != self._bundle_id:
-            raise VerificationError(
-                Reason.WRONG_BUNDLE_ID,
-                f"expected {self._bundle_id} but receipt has {fields.bundle_id}",
-            )
-        if device_guid is not None:
-            _verify_device_hash(fields, device_guid)
-        return fields
-
-
-def verify_receipt_core(der: bytes, trusted_roots: "Iterable[x509.Certificate]") -> "AppReceipt":
-    """Chain + signature verification WITHOUT the bundle-id claim check —
-    the primitive under both :class:`ReceiptVerifier` and the
-    verifyReceipt-compat endpoint (which, like Apple's endpoint, accepts any
-    bundle). Callers that unlock products must check ``bundle_id``
-    themselves or use :class:`ReceiptVerifier`."""
-    roots = list(trusted_roots)
-    if not roots:
-        raise ValueError("trusted_roots must not be empty")
-    if not der:
-        raise VerificationError(Reason.INVALID_RECEIPT_FORMAT, "receipt is empty")
-    if len(der) > ReceiptVerifier.MAX_RECEIPT_BYTES:
+    if not base64_text:
+        raise VerificationError(Reason.MALFORMED, "receipt is empty")
+    # Before the decode, which would otherwise allocate the bytes it
+    # decodes to.
+    if utf8_exceeds(base64_text, MAX_RECEIPT_BYTES):
         raise VerificationError(
-            Reason.INVALID_RECEIPT_FORMAT,
-            "receipt exceeds the maximum accepted size of "
-            f"{ReceiptVerifier.MAX_RECEIPT_BYTES} bytes",
+            Reason.TOO_LARGE,
+            f"receipt exceeds the maximum accepted size of {MAX_RECEIPT_BYTES} bytes",
         )
+    der = decode_receipt_base64(base64_text)
+    return verify_receipt_der(der, roots, clock)
 
-    # asn1crypto and cryptography report malformed input with whatever the
-    # failing layer happens to raise, and which exceptions those are is neither
-    # documented nor stable, so hostile bytes are contained by category rather
-    # than by type. Guarding individual call sites was tried first and missed
-    # four of them: fuzzing a genuine receipt still leaked UnsupportedAlgorithm
-    # and ValueError out of chain building and signer parsing.
+
+def verify_receipt_der(
+    der: bytes, roots: "Sequence[x509.Certificate]", clock: Callable[[], int]
+) -> ReceiptPayload:
+    """:func:`verify_receipt` after the base64 step. Module-internal (not
+    re-exported from the package): the public API takes only the base64
+    string a client sends; this is what the fuzz suite (python/fuzz) uses
+    to exercise the DER path directly, without base64 diluting coverage."""
+    if not der:
+        raise VerificationError(Reason.MALFORMED, "receipt is empty")
+    if len(der) > MAX_RECEIPT_BYTES:
+        raise VerificationError(
+            Reason.TOO_LARGE,
+            f"receipt exceeds the maximum accepted size of {MAX_RECEIPT_BYTES} bytes",
+        )
     try:
-        return _verify_receipt_core_unguarded(der, roots)
+        payload = _verify_signature(der, roots, clock)
     except VerificationError:
         raise
     except Exception as e:
-        raise VerificationError(Reason.INVALID_RECEIPT_FORMAT, f"malformed receipt: {e}") from e
+        # MALFORMED, not INTERNAL_ERROR: everything that can throw here runs
+        # before a signature has verified, so it is attacker input
+        # (hardening parity change #4). Signed content that cannot be read
+        # is UNREADABLE_PAYLOAD, decided in _parse_signed_payload.
+        raise VerificationError(Reason.MALFORMED, f"unexpected {type(e).__name__}") from e
+    return _parse_signed_payload(payload)
 
 
-def _verify_receipt_core_unguarded(der: bytes, roots: "list[x509.Certificate]") -> "AppReceipt":
-    content, certificates, signer, unreadable = _parse_cms(der)
-
-    # Only the creation date is read before trust is established, because
-    # chain validity anchors at signing time; nothing else in the payload is
-    # decoded until the chain and the signature have passed. A date that is
-    # missing, empty, unreadable or stated twice cannot blame anyone yet, so
-    # it only moves the chain instant to "now" and never rejects by itself.
-    #
-    # No clock seam here, deliberately: this path has no verdict that moves
-    # with the current time. The chain window is anchored at the receipt
-    # creation date, and the system-clock fallback below only fires for a
-    # receipt whose creation date is not usable, a certificate-validity
-    # judgement which an injected clock must not be able to shift.
-    creation_date = _read_creation_date(content)
-    at = creation_date if creation_date is not None else as_utc(time.time() * 1000)
-
-    signer_cert = _find_signer_cert(certificates, signer, unreadable)
-    # Everything cryptography's loader lets past that the checks below
-    # assume, settled while the verdict is still "this is not a
-    # certificate": the extension block, which is decoded lazily so one
-    # malformed extension VALUE surfaces later as a chain failure, and the
-    # public key, whose curve this build may not implement. Both are the
-    # receipt-path twins of what the JWS path settles for an x5c entry.
-    try:
-        signer_cert.public_key()
-        _ = signer_cert.extensions
-    except Exception as e:
+def _verify_signature(
+    der: bytes, roots: "Sequence[x509.Certificate]", clock: Callable[[], int]
+) -> bytes:
+    if _asn1_depth.exceeded(der):
+        raise VerificationError(Reason.MALFORMED, "receipt nests ASN.1 too deeply")
+    content, econtent_type, embedded_raw, signer_infos = _parse_cms(der)
+    if len(embedded_raw) > MAX_EMBEDDED_CERTIFICATES:
         raise VerificationError(
-            Reason.INVALID_CERTIFICATE,
-            f"receipt signer certificate is not a valid certificate: {e}",
-        ) from e
-    build_and_validate_path(signer_cert, [c for _, c in certificates], roots, at)
-    try:
-        signer_cert.extensions.get_extension_for_oid(_RECEIPT_SIGNER_OID)
-    except x509.ExtensionNotFound as e:
+            Reason.MALFORMED,
+            f"receipt embeds {len(embedded_raw)} certificates, more than the "
+            f"maximum of {MAX_EMBEDDED_CERTIFICATES}",
+        )
+    if len(signer_infos) == 0:
+        raise VerificationError(Reason.MALFORMED, "no signer info")
+    if len(signer_infos) > MAX_SIGNER_INFOS:
+        raise VerificationError(
+            Reason.MALFORMED,
+            f"receipt carries {len(signer_infos)} SignerInfos, more than the "
+            f"maximum of {MAX_SIGNER_INFOS}",
+        )
+    # Every SignerInfo's signedAttrs syntax is judged before any key is
+    # used, regardless of position, so a malformed one is MALFORMED whether
+    # it is the first signer or the last.
+    for signer in signer_infos:
+        _require_attribute_set_syntax(signer)
+
+    readable, unreadable = _decode_embedded(embedded_raw)
+
+    creation_date_ms = _read_creation_date(content)
+    at_ms = creation_date_ms if creation_date_ms is not None else clock()
+
+    first_failure: VerificationError | None = None
+    for signer in signer_infos:
+        try:
+            signer_certs = _find_signer_certs(readable, unreadable, signer)
+            # Each certificate carrying the signer's identity is tried the
+            # way the SignerInfos are: one passing is enough, and only when
+            # none does is the first one's failure the verdict.
+            first_match_failure: VerificationError | None = None
+            for signer_cert in signer_certs:
+                try:
+                    _verify_with_signer_cert(
+                        content, econtent_type, signer, signer_cert, readable, roots, at_ms
+                    )
+                    return content
+                except VerificationError as e:
+                    if first_match_failure is None:
+                        first_match_failure = e
+            assert first_match_failure is not None
+            raise first_match_failure
+        except VerificationError as e:
+            # Every SignerInfo signs the same content, so another one
+            # passing proves the same bytes; only when none does is the
+            # first one's failure the verdict.
+            if first_failure is None:
+                first_failure = e
+    assert first_failure is not None
+    raise first_failure
+
+
+def _verify_with_signer_cert(
+    content: bytes,
+    econtent_type: str,
+    signer: Any,
+    signer_cert: x509.Certificate,
+    readable: "list[tuple[bytes, x509.Certificate]]",
+    roots: "Sequence[x509.Certificate]",
+    at_ms: int,
+) -> None:
+    path = build_path_top_down(signer_cert, [cert for _, cert in readable], roots)
+    for cert in path:
+        if not valid_at_ms(cert, at_ms):
+            raise VerificationError(
+                Reason.INVALID_CERTIFICATE,
+                "receipt certificate is not valid at the checked instant",
+            )
+    _require_markers(path)
+    # The chain, validity and markers are checked BEFORE the signature on
+    # purpose: checking the signature first would run the attacker's own
+    # key (their choice of RSA size and exponent) before anything about it
+    # is trusted.
+    _verify_cms_signature(content, econtent_type, signer, signer_cert)
+
+
+def _require_markers(path: "list[x509.Certificate]") -> None:
+    signer_cert = path[0]
+    if not _has_extension(signer_cert, _RECEIPT_SIGNER_OID):
         raise VerificationError(
             Reason.INVALID_CERTIFICATE_PURPOSE,
-            "receipt signer certificate lacks Apple receipt-signing marker OID "
+            f"receipt signer certificate lacks Apple receipt-signing marker OID "
             f"{_RECEIPT_SIGNER_OID.dotted_string}",
-        ) from e
-    # The chain is checked BEFORE the signature on purpose: checking the
-    # signature first would run the attacker's own key (their choice of RSA
-    # size and exponent) before anything about it is trusted.
-    _verify_cms_signature(content, signer, signer_cert)
-    return _parse_signed_payload(content)
+        )
+    if len(path) < 2 or not _has_extension(path[1], INTERMEDIATE_OID):
+        raise VerificationError(
+            Reason.INVALID_CERTIFICATE_PURPOSE,
+            f"receipt intermediate certificate lacks Apple WWDR marker OID "
+            f"{INTERMEDIATE_OID.dotted_string}",
+        )
 
 
-def _parse_cms(
-    der: bytes,
-) -> "tuple[bytes, list[tuple[bytes, x509.Certificate]], Any, list[tuple[bytes, Exception]]]":
+def _parse_cms(der: bytes) -> "tuple[bytes, str, list[bytes], list[Any]]":
     try:
-        info = asn1cms.ContentInfo.load(der, strict=True)  # rejects trailing bytes (PLAN 2.3)
+        info = asn1cms.ContentInfo.load(der, strict=True)  # rejects trailing bytes
         if info["content_type"].native != "signed_data":
             raise ValueError("not CMS SignedData")
         signed_data = info["content"]
+        econtent_type = signed_data["encap_content_info"]["content_type"].native
         content = signed_data["encap_content_info"]["content"].native
         if not isinstance(content, bytes):
             raise ValueError("no encapsulated payload")
-        embedded = signed_data["certificates"] or []
-        if len(embedded) > _MAX_EMBEDDED_CERTIFICATES:
-            raise VerificationError(
-                Reason.INVALID_CHAIN,
-                f"receipt embeds {len(embedded)} certificates, more than the "
-                f"{_MAX_EMBEDDED_CERTIFICATES} a chain can hold",
-            )
-        # An entry that will not load is held rather than raised, because
-        # WHICH entry it is changes the verdict: a stranger the receipt
-        # merely carries is a defect of the receipt, while the SIGNER being
-        # unreadable is a defect of a certificate and gets the verdict an
-        # unreadable x5c entry gets on the JWS path. Its bytes are held with
-        # it, because the identity an entry carries is the only thing that
-        # says whether the SignerInfo means it.
-        certificates = []
-        unreadable: list[tuple[bytes, Exception]] = []
-        for choice in embedded:
-            raw = choice.chosen.dump()
-            try:
-                certificates.append((raw, x509.load_der_x509_certificate(raw)))
-            except Exception as e:  # re-raised by _find_signer_cert
-                unreadable.append((raw, e))
-        signer_infos = signed_data["signer_infos"]
-        if len(signer_infos) == 0:
-            raise ValueError("no signer info")
-        return content, certificates, signer_infos[0], unreadable
+        embedded_raw = []
+        certificate_choices = signed_data["certificates"]
+        if certificate_choices:
+            for choice in certificate_choices:
+                embedded_raw.append(choice.chosen.dump())
+        signer_infos = list(signed_data["signer_infos"])
+        return content, econtent_type, embedded_raw, signer_infos
     except VerificationError:
         raise
     except Exception as e:  # asn1crypto raises broadly on malformed input
-        raise VerificationError(
-            Reason.INVALID_RECEIPT_FORMAT, f"not a parseable PKCS#7 receipt: {e}"
-        ) from e
+        raise VerificationError(Reason.MALFORMED, "not a parseable PKCS#7/CMS blob") from e
 
 
-def _find_signer_cert(
-    certificates: "list[tuple[bytes, x509.Certificate]]",
-    signer: Any,
-    unreadable: "list[tuple[bytes, Exception]] | None" = None,
-) -> x509.Certificate:
-    unreadable = unreadable or []
-    sid = signer["sid"].chosen
-    try:
-        wanted_serial = sid["serial_number"].native
-        wanted_issuer = sid["issuer"].dump()
-    except Exception as e:
-        raise VerificationError(Reason.INVALID_RECEIPT_FORMAT, "malformed signer id") from e
-    for raw, cert in certificates:
-        if cert.serial_number == wanted_serial:
-            asn1_cert = asn1x509.Certificate.load(raw)
-            if asn1_cert["tbs_certificate"]["issuer"].dump() == wanted_issuer:
-                if unreadable:
-                    raise VerificationError(
-                        Reason.INVALID_RECEIPT_FORMAT,
-                        f"not a parseable PKCS#7 receipt: {unreadable[0][1]}",
-                    ) from unreadable[0][1]
-                return cert
-    # Only an entry that NAMES the signer is a defect of a certificate.
-    # Asking instead whether anything at all failed to load answers a
-    # different question, and answers it wrongly whenever the receipt names a
-    # certificate it does not carry: an unrelated malformed stranger would
-    # take the blame for a signer that is simply absent.
-    for raw, error in unreadable:
-        if _names_the_signer(raw, wanted_issuer, wanted_serial):
-            raise VerificationError(
-                Reason.INVALID_CERTIFICATE,
-                f"receipt signer certificate is not a valid certificate: {error}",
-            ) from error
-    if unreadable:
-        raise VerificationError(
-            Reason.INVALID_RECEIPT_FORMAT,
-            f"not a parseable PKCS#7 receipt: {unreadable[0][1]}",
-        ) from unreadable[0][1]
-    raise VerificationError(Reason.INVALID_RECEIPT_FORMAT, "signer certificate not embedded")
+def _decode_embedded(
+    embedded_raw: "list[bytes]",
+) -> "tuple[list[tuple[bytes, x509.Certificate]], list[tuple[bytes, Exception]]]":
+    readable = []
+    unreadable = []
+    for raw in embedded_raw:
+        try:
+            if _asn1_depth.exceeded(raw):
+                raise ValueError("nests ASN.1 too deeply")
+            if not _der.certificate_signature_is_aligned(raw):
+                raise ValueError("signature BIT STRING is not byte-aligned")
+            cert = x509.load_der_x509_certificate(raw)
+            # Forces the whole extension block to decode now: a malformed
+            # extension anywhere makes this entry unreadable the same way a
+            # malformed certificate structure does, rather than surfacing
+            # later as a chain failure (see jws._decode_chain).
+            _ = cert.extensions
+            readable.append((raw, cert))
+        except Exception as e:
+            unreadable.append((raw, e))
+    return readable, unreadable
 
 
 def _names_the_signer(raw: bytes, wanted_issuer: bytes, wanted_serial: int) -> bool:
-    """Whether ``raw`` carries the issuer and serial the SignerInfo names.
-
-    The entries this is asked about are the ones cryptography refused, so the
-    identity is read as plain ASN.1: it is still legible in bytes that are not
-    a certificate all the way down, and it is what says which embedded entry a
-    defect belongs to. Node, Swift and Go resolve the signer the same way.
-    """
     try:
         tbs = asn1x509.Certificate.load(raw)["tbs_certificate"]
-        if tbs["serial_number"].native != wanted_serial:
-            return False
-        return bool(tbs["issuer"].dump() == wanted_issuer)
+        return bool(
+            tbs["serial_number"].native == wanted_serial and tbs["issuer"].dump() == wanted_issuer
+        )
     except Exception:
         return False
 
 
-def _verify_cms_signature(content: bytes, signer: Any, signer_cert: x509.Certificate) -> None:
+def _find_signer_certs(
+    readable: "list[tuple[bytes, x509.Certificate]]",
+    unreadable: "list[tuple[bytes, Exception]]",
+    signer: Any,
+) -> "list[x509.Certificate]":
+    """Every embedded certificate carrying the SignerInfo's issuer and
+    serial, in bag order. More than one can: the bag is unsigned, so a
+    stranger may copy the signer's identity, and it must not hide the
+    genuine certificate behind it."""
+    try:
+        sid = signer["sid"].chosen
+        wanted_serial = sid["serial_number"].native
+        wanted_issuer = sid["issuer"].dump()
+    except Exception as e:
+        raise VerificationError(Reason.MALFORMED, "malformed signer id") from e
+    # An unreadable entry naming the signer is a defect of a certificate; any
+    # other unreadable entry is a defect of the (unsigned) certificate bag
+    # itself, and a broken signer outranks a broken stranger.
+    for raw, error in unreadable:
+        if _names_the_signer(raw, wanted_issuer, wanted_serial):
+            raise VerificationError(
+                Reason.INVALID_CERTIFICATE, "receipt signer certificate is not a valid certificate"
+            ) from error
+    if unreadable:
+        raise VerificationError(
+            Reason.MALFORMED, "an embedded certificate is not a valid certificate"
+        ) from unreadable[0][1]
+    matches = []
+    for raw, cert in readable:
+        matches_issuer = (
+            asn1x509.Certificate.load(raw)["tbs_certificate"]["issuer"].dump() == wanted_issuer
+        )
+        if cert.serial_number == wanted_serial and matches_issuer:
+            matches.append(cert)
+    if not matches:
+        raise VerificationError(Reason.MALFORMED, "signer certificate not embedded")
+    return matches
+
+
+def _require_attribute_set_syntax(signer: Any) -> None:
+    """The syntax of one SignerInfo's signedAttrs, judged before any key is
+    used: ``SEQUENCE { OID, SET OF value }`` with at least one value.
+    A well-formed set lacking ``contentType`` or ``messageDigest`` is left
+    to the signature check, as ``INVALID_SIGNATURE`` for that signer."""
+    signed_attrs = signer["signed_attrs"]
+    if isinstance(signed_attrs, asn1core.Void):
+        return
+    try:
+        for attr in signed_attrs:
+            if len(attr["values"]) == 0:
+                raise ValueError("attribute carries no values")
+            # asn1crypto reads an empty OID as "" and drops an arc cut off
+            # mid-way, so the type is checked here: such a set is malformed,
+            # as in Node and Java, not an unknown attribute that the
+            # signature then vouches for.
+            oid = attr["type"].contents
+            if not oid or oid[-1] & 0x80:
+                raise VerificationError(
+                    Reason.MALFORMED,
+                    "malformed signedAttrs: attribute type is not a valid OBJECT IDENTIFIER",
+                )
+    except VerificationError:
+        raise
+    except Exception as e:
+        raise VerificationError(
+            Reason.MALFORMED, "malformed signedAttrs: not an attribute set"
+        ) from e
+
+
+def _verify_cms_signature(
+    content: bytes, econtent_type: str, signer: Any, signer_cert: x509.Certificate
+) -> None:
     try:
         digest_name = signer["digest_algorithm"]["algorithm"].native
         signature = signer["signature"].native
+        signature_algorithm = signer["signature_algorithm"]
     except Exception as e:  # attacker-chosen tags, decoded before the signature check
-        raise VerificationError(Reason.INVALID_RECEIPT_FORMAT, "malformed signer info") from e
+        raise VerificationError(Reason.MALFORMED, "malformed signer info") from e
     digest_cls = _DIGESTS.get(digest_name)
     if digest_cls is None:
         raise VerificationError(
-            Reason.INVALID_RECEIPT_FORMAT, f"unsupported digest algorithm {digest_name}"
+            Reason.INVALID_SIGNATURE, f"unsupported digest algorithm {digest_name}"
         )
-    public_key = signer_cert.public_key()
-    if not isinstance(public_key, rsa.RSAPublicKey):
-        raise VerificationError(Reason.INVALID_SIGNATURE, "signer key is not RSA")
-    signed_attrs = signer["signed_attrs"]
-    if isinstance(signed_attrs, asn1core.Void):
-        data = content
-    else:
-        data = _signed_attrs_to_sign(signed_attrs, digest_name, content)
     try:
-        public_key.verify(signature, data, padding.PKCS1v15(), digest_cls())
+        family = signature_algorithm.signature_algo
+    except Exception as e:
+        raise VerificationError(Reason.INVALID_SIGNATURE, "unsupported signature algorithm") from e
+    try:
+        named_hash = signature_algorithm.hash_algo
+    except ValueError:
+        named_hash = None
+    # A signatureAlgorithm that names a hash must name the one the
+    # SignerInfo digested with (a relabelled field is not one signature
+    # under two names); rsaEncryption / id-ecPublicKey name none and take
+    # digestAlgorithm. No algorithm or key-type allowlist otherwise
+    # (hardening parity change #3): the signer already chains to a pinned
+    # root and carries Apple's marker, so whatever algorithm Apple signs
+    # with is accepted.
+    if named_hash is not None and named_hash != digest_name:
+        raise VerificationError(
+            Reason.INVALID_SIGNATURE, "signatureAlgorithm names another hash than digestAlgorithm"
+        )
+    hash_algorithm = digest_cls()
+
+    signed_attrs = signer["signed_attrs"]
+    data = (
+        content
+        if isinstance(signed_attrs, asn1core.Void)
+        else _signed_attrs_to_sign(signed_attrs, digest_name, content, econtent_type)
+    )
+    try:
+        # Safe to decode now: the signer is already vouched by the top-down
+        # chain walk. A curve or key shape this build does not implement is
+        # then a verdict about the certificate, not about the chain.
+        public_key = signer_cert.public_key()
+    except Exception as e:
+        raise VerificationError(
+            Reason.INVALID_CERTIFICATE, "receipt signer certificate key does not decode"
+        ) from e
+    try:
+        if family == "rsassa_pkcs1v15":
+            if not isinstance(public_key, rsa.RSAPublicKey):
+                raise VerificationError(Reason.INVALID_SIGNATURE, "signer key is not RSA")
+            public_key.verify(signature, data, padding.PKCS1v15(), hash_algorithm)
+        elif family == "rsassa_pss":
+            if not isinstance(public_key, rsa.RSAPublicKey):
+                raise VerificationError(Reason.INVALID_SIGNATURE, "signer key is not RSA")
+            salt_length = _pss_salt_length(signature_algorithm, hash_algorithm)
+            public_key.verify(
+                signature,
+                data,
+                padding.PSS(mgf=padding.MGF1(hash_algorithm), salt_length=salt_length),
+                hash_algorithm,
+            )
+        elif family == "ecdsa":
+            if not isinstance(public_key, ec.EllipticCurvePublicKey):
+                raise VerificationError(Reason.INVALID_SIGNATURE, "signer key is not EC")
+            public_key.verify(signature, data, ec.ECDSA(hash_algorithm))
+        else:
+            raise VerificationError(
+                Reason.INVALID_SIGNATURE, f"unsupported signer algorithm {family}"
+            )
     except InvalidSignature as e:
         raise VerificationError(Reason.INVALID_SIGNATURE, "CMS signature check failed") from e
 
 
-def _signed_attrs_to_sign(signed_attrs: Any, digest_name: str, content: bytes) -> bytes:
-    """The bytes the signature must cover when signedAttrs are present. Their
-    OIDs, types and nesting are attacker-chosen and are decoded here, before
-    the signature check that would reject them, so every decoding failure has
-    to surface as a format error instead of escaping verify() raw."""
+def _pss_salt_length(signature_algorithm: Any, hash_algorithm: Any) -> int:
+    try:
+        params = signature_algorithm["parameters"]
+        if params.native is not None:
+            return int(params["salt_length"].native)
+    except Exception:
+        pass
+    return int(hash_algorithm.digest_size)
+
+
+def _signed_attrs_to_sign(
+    signed_attrs: Any, digest_name: str, content: bytes, econtent_type: str
+) -> bytes:
+    """The bytes the signature must cover when signedAttrs are present:
+    their OIDs, types and nesting are attacker-chosen and decoded here,
+    before the signature check that would reject them."""
     try:
         content_digest = hashlib.new(digest_name, content).digest()
     except ValueError as e:
-        # digest_name is a _DIGESTS key by now, so only a runtime that lacks
-        # the hash (a FIPS build without SHA-1) gets here, not an input.
-        raise VerificationError(Reason.INTERNAL_ERROR, f"{digest_name} unavailable") from e
+        raise VerificationError(Reason.INTERNAL_ERROR, f"{digest_name} is not available") from e
     try:
         message_digest = None
+        message_digest_seen = False
         for attr in signed_attrs:
-            if attr["type"].native == "message_digest":
-                values = attr["values"]
-                if len(values) != 1:  # RFC 5652 §5.3: exactly one value
+            attr_type = attr["type"].native
+            if attr_type == "message_digest":
+                if message_digest_seen:  # RFC 5652 5.3: at most one instance
                     raise VerificationError(
-                        Reason.INVALID_RECEIPT_FORMAT,
+                        Reason.INVALID_SIGNATURE,
+                        "messageDigest attribute is present more than once",
+                    )
+                message_digest_seen = True
+                values = attr["values"]
+                if len(values) != 1:  # RFC 5652 5.3: exactly one value
+                    raise VerificationError(
+                        Reason.INVALID_SIGNATURE,
                         "messageDigest attribute must carry exactly one value",
                     )
                 message_digest = values[0].native
+            elif attr_type == "content_type":
+                content_type = attr["values"][0].native
+                if content_type != econtent_type:
+                    raise VerificationError(
+                        Reason.INVALID_SIGNATURE,
+                        "contentType attribute does not match the encapsulated content type",
+                    )
         if message_digest is None or not hmac.compare_digest(message_digest, content_digest):
             raise VerificationError(
                 Reason.INVALID_SIGNATURE, "messageDigest attribute does not match content"
             )
         # Signature covers the signedAttrs re-encoded as an explicit SET
-        # (RFC 5652 §5.4): swap the IMPLICIT [0] tag for SET.
+        # (RFC 5652 5.4): swap the IMPLICIT [0] tag for SET.
         raw: bytes = signed_attrs.dump()
         return b"\x31" + raw[1:]
     except VerificationError:
         raise
     except Exception as e:  # asn1crypto raises broadly on malformed input
-        raise VerificationError(
-            Reason.INVALID_RECEIPT_FORMAT, f"unparseable signed attributes: {e}"
-        ) from e
-
-
-def _verify_device_hash(fields: AppReceipt, device_guid: bytes) -> None:
-    if fields.opaque_value is None or fields.sha1_hash is None or fields.bundle_id_bytes is None:
-        raise VerificationError(
-            Reason.DEVICE_HASH_MISMATCH,
-            "receipt lacks the attributes needed for the device-hash check",
-        )
-    try:
-        hasher = hashlib.new("sha1")
-    except ValueError as e:
-        # No input reaches this: only a runtime without SHA-1 (a FIPS build).
-        raise VerificationError(Reason.INTERNAL_ERROR, "SHA-1 is not available") from e
-    hasher.update(device_guid + fields.opaque_value + fields.bundle_id_bytes)
-    computed = hasher.digest()
-    if not hmac.compare_digest(computed, fields.sha1_hash):
-        raise VerificationError(
-            Reason.DEVICE_HASH_MISMATCH, "computed device hash does not match attribute 5"
-        )
+        raise VerificationError(Reason.INVALID_SIGNATURE, "unparseable signed attributes") from e
 
 
 # --- strict DER reader for the receipt payload ---------------------------
@@ -470,14 +521,20 @@ _TAG_IA5_STRING = 0x16
 _TAG_SEQUENCE = 0x30
 _TAG_SET = 0x31
 
+#: Attribute *types* are a 32-bit signed space; a wider type cannot be
+#: represented and is refused for the whole payload rather than narrowed,
+#: which would invent an attribute the receipt never carried.
+_MAX_ATTRIBUTE_TYPE = 2147483647
 
-def _fmt_error(message: str) -> VerificationError:
-    return VerificationError(Reason.INVALID_RECEIPT_FORMAT, message)
+
+class _PayloadFormatError(Exception):
+    """Internal: a defect of the signed payload bytes themselves (as
+    distinct from a per-attribute value that simply does not decode)."""
 
 
 def _read_tlv(data: bytes, offset: int) -> "tuple[int, bytes, int]":
     if offset + 2 > len(data):
-        raise _fmt_error("truncated ASN.1 value")
+        raise _PayloadFormatError("truncated ASN.1 value")
     tag = data[offset]
     pos = offset + 1
     length = data[pos]
@@ -485,12 +542,12 @@ def _read_tlv(data: bytes, offset: int) -> "tuple[int, bytes, int]":
     if length >= 0x80:
         count = length & 0x7F
         if count == 0 or count > 4 or pos + count > len(data):
-            raise _fmt_error("unsupported ASN.1 length")
+            raise _PayloadFormatError("unsupported ASN.1 length")
         length = int.from_bytes(data[pos : pos + count], "big")
         pos += count
     end = pos + length
     if end > len(data):
-        raise _fmt_error("ASN.1 length exceeds input")
+        raise _PayloadFormatError("ASN.1 length exceeds input")
     return tag, data[pos:end], end
 
 
@@ -503,174 +560,333 @@ def _children(contents: bytes) -> "list[tuple[int, bytes]]":
     return out
 
 
+def _der_signed_int(contents: bytes) -> int:
+    """The content octets of a DER INTEGER, as the signed two's-complement
+    value they encode. DER forbids padding: no redundant leading 0x00 (when
+    the next octet's high bit is already 0) and no redundant leading 0xFF
+    (when the next octet's high bit is already 1)."""
+    if len(contents) == 0:
+        raise _PayloadFormatError("attribute integer is empty")
+    if len(contents) >= 2 and (
+        (contents[0] == 0x00 and contents[1] < 0x80)
+        or (contents[0] == 0xFF and contents[1] >= 0x80)
+    ):
+        raise _PayloadFormatError("attribute integer is not minimally encoded")
+    return int.from_bytes(contents, "big", signed=True)
+
+
+def _attribute_type(contents: bytes) -> int:
+    # Attribute *types* are non-negative; real receipts carry no negative
+    # one, and 0.7 refuses one the same width every other integer gets
+    # (docs/design/0.7-api.md: "types 0..2^31-1, wider -> whole payload
+    # unreadable").
+    if len(contents) > 8:
+        raise _PayloadFormatError("attribute type out of range")
+    value = _der_signed_int(contents)
+    if value < 0 or value > _MAX_ATTRIBUTE_TYPE:
+        raise _PayloadFormatError(f"receipt attribute type {value} exceeds the 32-bit signed range")
+    return value
+
+
 def _parse_attribute_set(der: bytes, what: str) -> "list[tuple[int, bytes]]":
+    if _asn1_depth.exceeded(der):
+        raise _PayloadFormatError(f"{what} nests ASN.1 too deeply")
     tag, contents, end = _read_tlv(der, 0)
     if tag == _TAG_OCTET_STRING and end == len(der):
         # Xcode receipts double-wrap the payload in an extra OCTET STRING.
         der = contents
+        if _asn1_depth.exceeded(der):
+            raise _PayloadFormatError(f"{what} double-wrap nests ASN.1 too deeply")
         tag, contents, end = _read_tlv(der, 0)
     if tag != _TAG_SET or end != len(der):
-        raise _fmt_error(f"{what} is not an ASN.1 SET")
+        raise _PayloadFormatError(f"{what} is not an ASN.1 SET")
     attributes = []
     for child_tag, child_value in _children(contents):
         if child_tag != _TAG_SEQUENCE:
-            raise _fmt_error("malformed receipt attribute")
+            raise _PayloadFormatError("malformed receipt attribute")
         fields = _children(child_value)
+        # Fields beyond type, version and value are tolerated, so a field
+        # Apple appends later does not break parsing.
         if len(fields) < 3 or fields[0][0] != _TAG_INTEGER or fields[2][0] != _TAG_OCTET_STRING:
-            raise _fmt_error("malformed receipt attribute")
+            raise _PayloadFormatError("malformed receipt attribute")
         attributes.append((_attribute_type(fields[0][1]), fields[2][1]))
     return attributes
-
-
-# Attribute *types* are a 32-bit signed space: every type Apple has ever
-# issued is a small number, and a value above 2^31-1 cannot be represented by
-# ports whose attribute-type field is an int. Mapping such a type onto a
-# sentinel (-1) and filing it under unknown_attributes would let two ports
-# disagree about what the same receipt says, so an unrepresentable type is a
-# malformed receipt in every port. Attribute *values* keep the wider range
-# _int_value allows: web_order_line_item_id is genuinely a 7-byte integer.
-_MAX_ATTRIBUTE_TYPE = 2147483647
-
-
-def _attribute_type(contents: bytes) -> int:
-    value = _int_value(contents)
-    if value > _MAX_ATTRIBUTE_TYPE:
-        raise _fmt_error(f"receipt attribute type {value} exceeds the 32-bit signed range")
-    return value
-
-
-def _int_value(contents: bytes) -> int:
-    # 8-byte cap: real receipts carry 7-byte integers (web_order_line_item_id).
-    if len(contents) > 8:
-        raise _fmt_error("attribute integer out of range")
-    if contents and contents[0] >= 0x80:
-        raise _fmt_error("negative receipt integer")
-    return int.from_bytes(contents, "big")
 
 
 def _decode_string(der: bytes) -> str:
     tag, contents, end = _read_tlv(der, 0)
     if tag not in (_TAG_UTF8_STRING, _TAG_IA5_STRING) or end != len(der):
-        raise _fmt_error("attribute value is not an ASN.1 string")
+        raise _PayloadFormatError("attribute value is not an ASN.1 string")
+    if tag == _TAG_IA5_STRING:
+        # IA5 is seven-bit: a byte at or above 0x80 is no IA5 character, and
+        # is not read as Latin-1 either (owner, 2026-09-27).
+        for octet in contents:
+            if octet >= 0x80:
+                raise _PayloadFormatError("IA5String attribute value is not seven-bit")
+        return contents.decode("ascii")
     try:
         return contents.decode("utf-8")
     except UnicodeDecodeError as e:
-        raise _fmt_error("attribute string is not valid UTF-8") from e
+        raise _PayloadFormatError("attribute string is not valid UTF-8") from e
 
 
 def _decode_integer(der: bytes) -> int:
+    """An INTEGER that fits a signed 64-bit value, reported as it is,
+    negative values included: the decoder reports what the receipt
+    carries. Real receipts carry up to 7-byte integers; 8 bytes is the
+    signed 64-bit range's own width, so nothing narrower than that range
+    is ever refused here."""
     tag, contents, end = _read_tlv(der, 0)
     if tag != _TAG_INTEGER or end != len(der):
-        raise _fmt_error("attribute value is not an ASN.1 integer")
-    return _int_value(contents)
+        raise _PayloadFormatError("attribute value is not an ASN.1 integer")
+    if len(contents) > 8:
+        raise _PayloadFormatError("attribute integer out of range")
+    return _der_signed_int(contents)
 
 
-def _decode_date(der: bytes) -> datetime | None:
-    """RFC 3339 date in an IA5String; empty means absent (real receipts do this)."""
+def _digits(text: str, start: int, length: int) -> int:
+    segment = text[start : start + length]
+    if not segment.isdigit():
+        return -1
+    return int(segment)
+
+
+_DAYS_IN_MONTH = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+
+
+def _is_leap(year: int) -> bool:
+    return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
+
+
+def _epoch_day(year: int, month: int, day: int) -> int:
+    # Days since 1970-01-01, proleptic Gregorian; matches java.time.LocalDate.
+    days = 0
+    if year >= 1970:
+        for y in range(1970, year):
+            days += 366 if _is_leap(y) else 365
+    else:
+        for y in range(year, 1970):
+            days -= 366 if _is_leap(y) else 365
+    for m in range(1, month):
+        days += _DAYS_IN_MONTH[m - 1]
+        if m == 2 and _is_leap(year):
+            days += 1
+    return days + (day - 1)
+
+
+def _parse_receipt_date(text: str) -> "int | None":
+    """Exactly ``YYYY-MM-DDTHH:MM:SSZ``: a four-digit year 0000-9999,
+    uppercase ``T`` and ``Z``, a real calendar date, hours 00-23, minutes
+    and seconds 00-59, no fraction, no offset. ``None`` when ``text`` is not
+    in that form."""
+    if (
+        len(text) != 20
+        or text[4] != "-"
+        or text[7] != "-"
+        or text[10] != "T"
+        or text[13] != ":"
+        or text[16] != ":"
+        or text[19] != "Z"
+    ):
+        return None
+    year = _digits(text, 0, 4)
+    month = _digits(text, 5, 2)
+    day = _digits(text, 8, 2)
+    hour = _digits(text, 11, 2)
+    minute = _digits(text, 14, 2)
+    second = _digits(text, 17, 2)
+    if year < 0 or month < 1 or month > 12 or day < 1 or hour > 23 or minute > 59 or second > 59:
+        return None
+    days_in_month = _DAYS_IN_MONTH[month - 1] + (1 if month == 2 and _is_leap(year) else 0)
+    if day > days_in_month:
+        return None
+    days = _epoch_day(year, month, day)
+    return ((days * 24 + hour) * 60 + minute) * 60_000 + second * 1000
+
+
+def _date(der: bytes) -> "int | None":
+    """A date in an IA5String or UTF8String, as epoch milliseconds, or
+    ``None`` when empty (Apple writes an unset date that way). Anything else
+    that does not parse raises, and the caller keeps it raw."""
     text = _decode_string(der)
     if text == "":
         return None
+    millis = _parse_receipt_date(text)
+    if millis is None:
+        raise _PayloadFormatError("attribute value is not a YYYY-MM-DDTHH:MM:SSZ date")
+    return millis
+
+
+def _decode_date_or_none(der: bytes) -> "int | None":
     try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-        if parsed.tzinfo is None:
-            # Assuming a zone would read the date as the server's local time,
-            # so the same receipt would anchor chain validity up to 26 hours
-            # apart on two hosts. Apple always emits a designator, and the
-            # Java and Swift implementations reject a date without one.
-            raise ValueError("no timezone designator")
-        # astimezone() raises OverflowError — an ArithmeticError, not a
-        # ValueError — for offsets that push the value past datetime.min/max.
-        return parsed.astimezone(timezone.utc)
-    except (ValueError, OverflowError) as e:
-        raise _fmt_error(f"unparseable receipt date: {text}") from e
+        return _date(der)
+    except _PayloadFormatError:
+        return None
 
 
-def _read_creation_date(content: bytes) -> datetime | None:
+def _read_creation_date(content: bytes) -> "int | None":
     """The receipt creation date (attribute 12), read the only way anything
     in a payload is read before its signer is trusted: the top-level
-    attribute SET is walked shallowly, each entry's type is read, and only
-    the value of type 12 is decoded.
-
-    ``None`` means "judge the chain at now": no attribute 12, an empty one,
-    one that does not decode, more than one, or a walk that fails anywhere.
-    An entry the walk cannot read fails it as a whole rather than being
-    skipped, since that entry might have been a second attribute 12. Never
-    raises: nothing is trusted yet, so nothing here can blame anyone."""
+    attribute SET is walked shallowly, and only the value of the FIRST
+    occurrence of type 12 is decoded, the same "first wins" rule the full
+    parse applies to every known attribute (owner, 2026-09-27). ``None``
+    means "judge the chain at the clock": no attribute 12, or a first one
+    that is empty or does not decode. Never raises: nothing is trusted yet,
+    so nothing here can blame anyone."""
     try:
-        dates = [
-            value
-            for attr_type, value in _parse_attribute_set(content, "receipt payload")
-            if attr_type == _ATTR_CREATION_DATE
-        ]
-        return _decode_date(dates[0]) if len(dates) == 1 else None
+        for attr_type, value in _parse_attribute_set(content, "receipt payload"):
+            if attr_type == _ATTR_CREATION_DATE:
+                return _decode_date_or_none(value)
+        return None
     except Exception:
         return None
 
 
-def _parse_signed_payload(content: bytes) -> AppReceipt:
-    """The full payload parse, run only after the chain and the signature
-    have passed. A trusted signer signed these bytes, so anything that stops
-    the parse (this library's grammar, a bound, an unexpected exception) is
-    the library's failure or a format Apple added, not the client's:
-    INTERNAL_ERROR with the parser's exception as its ``__cause__``, never
-    INVALID_RECEIPT_FORMAT, which the endpoint answers as 21002 and an app
-    server reads as "deny"."""
+def _parse_signed_payload(content: bytes) -> ReceiptPayload:
+    """The full payload parse, run only after the chain and a signature
+    have passed. A trusted signer signed these bytes, so anything that
+    stops the parse is the library's failure or a format Apple added, not
+    the client's: UNREADABLE_PAYLOAD, never MALFORMED."""
     try:
         return _parse_payload(content)
     except Exception as e:
-        detail = e.args[0] if isinstance(e, VerificationError) else f"{type(e).__name__}: {e}"
         raise VerificationError(
-            Reason.INTERNAL_ERROR, f"signed receipt content could not be read: {detail}"
+            Reason.UNREADABLE_PAYLOAD,
+            f"signed receipt content could not be read: {type(e).__name__}",
         ) from e
 
 
-def _parse_payload(content: bytes) -> AppReceipt:
-    receipt = AppReceipt()
+def _parse_payload(content: bytes) -> ReceiptPayload:
+    receipt_type = None
+    app_item_id = None
+    bundle_id = None
+    bundle_id_bytes = None
+    app_version = None
+    opaque_value = None
+    sha1_hash = None
+    creation_date_ms = None
+    original_purchase_date_ms = None
+    original_app_version = None
+    expiration_date_ms = None
+    download_id = None
+    version_external_identifier = None
+    in_app: list[InAppPurchase] = []
+    unknown: dict[int, list[bytes]] = {}
+    seen: set[int] = set()
+
     for attr_type, value in _parse_attribute_set(content, "receipt payload"):
-        if attr_type == _ATTR_RECEIPT_TYPE:
-            receipt.receipt_type = _decode_string(value)
-        elif attr_type == _ATTR_APP_ITEM_ID:
-            receipt.app_item_id = _decode_integer(value)
-        elif attr_type == _ATTR_ORIGINAL_PURCHASE_DATE:
-            receipt.original_purchase_date = _decode_date(value)
-        elif attr_type == _ATTR_BUNDLE_ID:
-            receipt.bundle_id = _decode_string(value)
-            receipt.bundle_id_bytes = value
-        elif attr_type == _ATTR_APP_VERSION:
-            receipt.app_version = _decode_string(value)
-        elif attr_type == _ATTR_OPAQUE_VALUE:
-            receipt.opaque_value = value
-        elif attr_type == _ATTR_SHA1_HASH:
-            receipt.sha1_hash = value
-        elif attr_type == _ATTR_CREATION_DATE:
-            receipt.creation_date = _decode_date(value)
-        elif attr_type == _ATTR_DOWNLOAD_ID:
-            receipt.download_id = _decode_integer(value)
-        elif attr_type == _ATTR_VERSION_EXTERNAL_IDENTIFIER:
-            receipt.version_external_identifier = _decode_integer(value)
-        elif attr_type == _ATTR_IN_APP:
-            receipt.in_app_purchases.append(_parse_in_app(value))
-        elif attr_type == _ATTR_ORIGINAL_APP_VERSION:
-            receipt.original_app_version = _decode_string(value)
-        elif attr_type == _ATTR_EXPIRATION_DATE:
-            receipt.expiration_date = _decode_date(value)
-        else:
-            receipt.unknown_attributes.setdefault(attr_type, []).append(value)
-    return receipt
+        if attr_type in _TOP_LEVEL_TYPES and attr_type in seen:
+            unknown.setdefault(attr_type, []).append(value)
+            continue
+        seen.add(attr_type)
+        try:
+            if attr_type == _ATTR_RECEIPT_TYPE:
+                receipt_type = _decode_string(value)
+            elif attr_type == _ATTR_APP_ITEM_ID:
+                app_item_id = _decode_integer(value)
+            elif attr_type == _ATTR_ORIGINAL_PURCHASE_DATE:
+                original_purchase_date_ms = _date(value)
+            elif attr_type == _ATTR_BUNDLE_ID:
+                bundle_id_bytes = value
+                bundle_id = _decode_string(value)
+            elif attr_type == _ATTR_APP_VERSION:
+                app_version = _decode_string(value)
+            elif attr_type == _ATTR_OPAQUE_VALUE:
+                opaque_value = value
+            elif attr_type == _ATTR_SHA1_HASH:
+                sha1_hash = value
+            elif attr_type == _ATTR_CREATION_DATE:
+                creation_date_ms = _date(value)
+            elif attr_type == _ATTR_DOWNLOAD_ID:
+                download_id = _decode_integer(value)
+            elif attr_type == _ATTR_VERSION_EXTERNAL_IDENTIFIER:
+                version_external_identifier = _decode_integer(value)
+            elif attr_type == _ATTR_IN_APP:
+                in_app.append(_parse_in_app(value))
+            elif attr_type == _ATTR_ORIGINAL_APP_VERSION:
+                original_app_version = _decode_string(value)
+            elif attr_type == _ATTR_EXPIRATION_DATE:
+                expiration_date_ms = _date(value)
+            else:
+                unknown.setdefault(attr_type, []).append(value)
+        except _PayloadFormatError:
+            # A known attribute whose value does not decode: its typed
+            # field stays null and the value is kept raw, so nothing Apple
+            # signed is lost. Bundle id is the one exception: its octets
+            # are already kept in bundle_id_bytes (a typed field of its
+            # own, set above before the decode that failed), so the same
+            # bytes are not duplicated into unknown_attributes.
+            if attr_type == _ATTR_BUNDLE_ID:
+                bundle_id = None
+            else:
+                unknown.setdefault(attr_type, []).append(value)
+
+    return ReceiptPayload(
+        receipt_type=receipt_type,
+        app_item_id=app_item_id,
+        bundle_id=bundle_id,
+        bundle_id_bytes=bundle_id_bytes,
+        application_version=app_version,
+        opaque_value=opaque_value,
+        sha1_hash=sha1_hash,
+        receipt_creation_date_ms=creation_date_ms,
+        download_id=download_id,
+        version_external_identifier=version_external_identifier,
+        in_app=in_app,
+        original_purchase_date_ms=original_purchase_date_ms,
+        original_application_version=original_app_version,
+        expiration_date_ms=expiration_date_ms,
+        unknown_attributes=unknown,
+    )
+
+
+_IAP_FIELDS: "dict[int, tuple[str, str]]" = {
+    _IAP_QUANTITY: ("quantity", "int"),
+    _IAP_PRODUCT_ID: ("product_id", "str"),
+    _IAP_TRANSACTION_ID: ("transaction_id", "str"),
+    _IAP_PURCHASE_DATE: ("purchase_date_ms", "date"),
+    _IAP_ORIGINAL_TRANSACTION_ID: ("original_transaction_id", "str"),
+    _IAP_ORIGINAL_PURCHASE_DATE: ("original_purchase_date_ms", "date"),
+    _IAP_EXPIRES_DATE: ("expires_date_ms", "date"),
+    _IAP_WEB_ORDER_LINE_ITEM_ID: ("web_order_line_item_id", "int"),
+    _IAP_CANCELLATION_DATE: ("cancellation_date_ms", "date"),
+    _IAP_IS_TRIAL_PERIOD: ("is_trial_period", "flag"),
+    _IAP_IS_IN_INTRO_OFFER_PERIOD: ("is_in_intro_offer_period", "flag"),
+}
 
 
 def _parse_in_app(value: bytes) -> InAppPurchase:
-    purchase = InAppPurchase()
+    fields: dict[str, Any] = {}
+    unknown: dict[int, list[bytes]] = {}
+    seen: set[int] = set()
     for attr_type, attr_value in _parse_attribute_set(value, "in-app purchase attribute"):
+        if attr_type in _IN_APP_TYPES and attr_type in seen:
+            unknown.setdefault(attr_type, []).append(attr_value)
+            continue
+        seen.add(attr_type)
         spec = _IAP_FIELDS.get(attr_type)
         if spec is None:
-            purchase.unknown_attributes.setdefault(attr_type, []).append(attr_value)
+            unknown.setdefault(attr_type, []).append(attr_value)
             continue
         name, kind = spec
-        if kind == "str":
-            setattr(purchase, name, _decode_string(attr_value))
-        elif kind == "int":
-            setattr(purchase, name, _decode_integer(attr_value))
-        else:
-            setattr(purchase, name, _decode_date(attr_value))
-    return purchase
+        try:
+            if kind == "str":
+                fields[name] = _decode_string(attr_value)
+            elif kind == "int":
+                fields[name] = _decode_integer(attr_value)
+            elif kind == "flag":
+                fields[name] = _decode_integer(attr_value) != 0
+            else:
+                fields[name] = _date(attr_value)
+        except _PayloadFormatError:
+            unknown.setdefault(attr_type, []).append(attr_value)
+    return InAppPurchase(unknown_attributes=unknown, **fields)
+
+
+def device_hash(device_id: bytes, opaque_value: bytes, bundle_id_bytes: bytes) -> bytes:
+    """SHA-1(``device_id`` + ``opaque_value`` + ``bundle_id_bytes``), the
+    device-hash formula Apple's on-device check uses. Compare with
+    :attr:`~.receipt_payload.ReceiptPayload.sha1_hash`. Not called by
+    verification itself; the caller applies it (docs/design/0.7-api.md
+    drops the built-in device-hash check)."""
+    return hashlib.sha1(device_id + opaque_value + bundle_id_bytes).digest()

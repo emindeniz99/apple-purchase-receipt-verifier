@@ -27,9 +27,9 @@ Gem::Specification.new do |spec|
     "rubygems_mfa_required" => "true"
   }
 
-  # D2, enterprise-reality floors: 3.1 is Debian 12's system Ruby and is
-  # tested on every push, exactly as Python 3.10 and Java 8 are.
-  spec.required_ruby_version = ">= 3.1.0"
+  # 0.7 API floor (docs/design/0.7-api.md, per-port table): `Data.define`
+  # value classes need Ruby 3.2+; 3.3 is the tested floor, up from 0.6's 3.1.
+  spec.required_ruby_version = ">= 3.3.0"
 
   spec.files = Dir[
     "lib/**/*.rb",

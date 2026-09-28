@@ -50,13 +50,15 @@
          to be fixed, not current; bump it with a release when convenient. -->
     <project.build.outputTimestamp>2026-09-21T00:00:00Z</project.build.outputTimestamp>
     <bouncycastle.version>1.86</bouncycastle.version>
-    <!-- Floor: Jackson 2.16. JwsVerifier and VerifyReceiptEndpoint set
-         StreamReadConstraints through internal/BoundedJson rather than relying on
+    <!-- Floor: Jackson 2.16. JwsCore and Endpoint set
+         StreamReadConstraints through BoundedJson rather than relying on
          Jackson's defaults, because the JWS header is parsed before any
          signature check and a host BOM pinning an older Jackson 2 would
          otherwise link cleanly and silently lose the nesting guard.
-         StreamReadConstraints arrived in 2.15 and maxDocumentLength in
-         2.16, so below 2.16 the verifier fails at construction instead. -->
+         StreamReadConstraints arrived in 2.15, maxDocumentLength and
+         maxNameLength in 2.16, so below 2.16 Verifier.create throws
+         IllegalStateException (it initialises every class that builds a
+         reader) instead of the first call failing. -->
     <jackson.version>2.22.2</jackson.version>
     <!-- Annotations only, and only at compile time: see the <optional>
          dependency below. -->
@@ -70,9 +72,12 @@
       <artifactId>bcpkix-jdk18on</artifactId>
       <version>${bouncycastle.version}</version>
     </dependency>
+    <!-- jackson-core only: its streaming parser reads the JWS and the
+         endpoint request, and its generator writes the endpoint response
+         and ReceiptPayload.toJson(). No databind, no annotations. -->
     <dependency>
       <groupId>com.fasterxml.jackson.core</groupId>
-      <artifactId>jackson-databind</artifactId>
+      <artifactId>jackson-core</artifactId>
       <version>${jackson.version}</version>
     </dependency>
     <!-- JSpecify nullness annotations on the public API, so Kotlin sees
@@ -93,6 +98,15 @@
       <optional>true</optional>
     </dependency>
 
+    <!-- Test only: TestPki, the fixture generators and several tests build
+         and read JSON through databind; the library uses jackson-core
+         alone. -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>${jackson.version}</version>
+      <scope>test</scope>
+    </dependency>
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
@@ -161,6 +175,25 @@
             </manifestEntries>
           </archive>
         </configuration>
+        <executions>
+          <!-- The TestPki synthetic-PKI signer, published as a test-jar
+               classifier ("tests", maven-jar-plugin's default for this
+               goal) so callers can build synthetic receipts/JWS in their
+               own tests without vendoring TestPki.java. Restricted to
+               TestPki.class: the rest of src/test/java is this library's
+               own internal fixture machinery, not a supported surface. -->
+          <execution>
+            <id>test-jar</id>
+            <goals>
+              <goal>test-jar</goal>
+            </goals>
+            <configuration>
+              <includes>
+                <include>io/github/emindeniz99/applepurchasereceiptverifier/TestPki.class</include>
+              </includes>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
       <!-- Format/lint gate: not bound to any lifecycle phase, so `mvn test`
            (including the java-runtime-8 profile) never touches it. Invoked
@@ -253,8 +286,7 @@
           </plugin>
           <!-- CycloneDX SBOM, attached as <artifact>-<version>-cyclonedx.json
                so it is signed and uploaded with the jars: runtime scope only,
-               which is the three BouncyCastle and three Jackson jars the
-               README's dependency table describes. -->
+               which is the three BouncyCastle jars and jackson-core. -->
           <plugin>
             <groupId>org.cyclonedx</groupId>
             <artifactId>cyclonedx-maven-plugin</artifactId>

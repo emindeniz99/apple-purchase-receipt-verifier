@@ -3,7 +3,7 @@
 //! This is the first thing any attacker-supplied byte meets, so its bounds
 //! are tested directly rather than only through a verifier.
 
-use apple_purchase_receipt_verifier::asn1::{
+use apple_purchase_receipt_verifier::__internal::asn1::{
     decode_oid, encode_oid, parse_exact, tag, MAX_DEPTH, MAX_NODES,
 };
 
@@ -82,17 +82,32 @@ fn an_indefinite_length_on_a_primitive_value_is_refused() {
 
 #[test]
 fn the_depth_bound_is_exactly_where_it_says_it_is() {
-    let build = |levels: usize| {
-        let mut nested = vec![0x05u8, 0x00];
+    // `levels` SEQUENCEs around `inner`, with long-form lengths where they
+    // are needed so the depth is genuine.
+    let build = |levels: usize, inner: &[u8]| {
+        let mut nested = inner.to_vec();
         for _ in 0..levels {
-            let mut wrapped = vec![0x30, u8::try_from(nested.len()).unwrap()];
+            let length = nested.len();
+            let mut wrapped = vec![0x30];
+            if length < 0x80 {
+                wrapped.push(u8::try_from(length).unwrap());
+            } else {
+                wrapped.extend_from_slice(&[0x82, (length >> 8) as u8, length as u8]);
+            }
             wrapped.extend_from_slice(&nested);
             nested = wrapped;
         }
         nested
     };
-    assert!(parse_exact(&build(MAX_DEPTH - 1)).is_ok());
-    assert!(parse_exact(&build(MAX_DEPTH + 4)).is_err());
+    // Owner, 2026-09-27 (Q24): 32 constructed values, as BouncyCastle
+    // counts them, whatever is inside the innermost.
+    assert_eq!(MAX_DEPTH, 32);
+    assert!(parse_exact(&build(MAX_DEPTH, &[0x05, 0x00])).is_ok());
+    assert!(parse_exact(&build(MAX_DEPTH, &[])).is_ok());
+    assert!(parse_exact(&build(MAX_DEPTH + 1, &[0x05, 0x00])).is_err());
+    assert!(parse_exact(&build(MAX_DEPTH + 1, &[])).is_err());
+    assert!(parse_exact(&build(MAX_DEPTH - 1, &[0x31, 0x00])).is_ok());
+    assert!(parse_exact(&build(MAX_DEPTH, &[0x31, 0x00])).is_err());
 }
 
 #[test]

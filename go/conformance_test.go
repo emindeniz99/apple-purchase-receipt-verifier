@@ -1,16 +1,19 @@
 package applereceipt_test
 
-// Runs fixtures/cases.json — the normative cross-language conformance
-// vectors — against this implementation.
+// Runs every vector in fixtures/cases.json, the normative
+// cross-language conformance set for the 0.7 API, through the three
+// public Verifier methods and the two base64 decoders.
 //
-// The adapter below knows nothing about any individual case. It loads the
-// file, resolves fixture ids to bytes and checks their digests, builds a
-// verifier from the generic config, dispatches on "operation", normalizes
-// the result and reads the reason off a failure. There is no skip list,
-// no hardcoded case count and no per-case fixup: a case this adapter
-// cannot map is a hard harness failure. A vector that disagrees with the
-// library is a bug report against one of the two; it is never something
-// to special-case here.
+// This adapter knows nothing about any individual case. It loads the
+// file, resolves fixture ids to bytes and checks their recorded digest,
+// builds a Config from the case's trusted roots and clock, dispatches on
+// operation, and evaluates the expectation on the JSON the library
+// returns: ReceiptPayload.ToJSON(), JsonPayload.JSON() or the endpoint's
+// response body. The file's top-level comment defines the semantics
+// implemented here. There is no skip list, no case count in the source,
+// and no per-case fix-up: a vector that disagrees with the library is a
+// bug report against one of the two, never something to special-case
+// here.
 
 import (
 	"crypto/sha256"
@@ -18,39 +21,26 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
-	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	// The endpoint renders _pst dates, which needs the IANA database.
-	// Carrying it in the test binary rather than in the library keeps the
-	// ~450 KB off every consumer that never touches the endpoint, while
-	// making the suite runnable on an image with no /usr/share/zoneinfo.
-	_ "time/tzdata"
-
 	applereceipt "github.com/emindeniz99/apple-purchase-receipt-verifier/go"
+	"github.com/emindeniz99/apple-purchase-receipt-verifier/go/internal/chain"
 )
 
-// --- the vectors file ----------------------------------------------------
+const casesFileName = "cases.json"
 
-type casesFile struct {
-	Schema        string             `json:"$schema"`
-	Comment       string             `json:"comment"`
-	SchemaVersion int                `json:"schemaVersion"`
-	Fixtures      map[string]fixture `json:"fixtures"`
-	Cases         []conformanceCase  `json:"cases"`
-}
+// --- the vector file -------------------------------------------------------
 
-type fixture struct {
+type fixtureEntry struct {
 	Path          string `json:"path"`
 	Role          string `json:"role"`
 	Codec         string `json:"codec"`
@@ -59,919 +49,723 @@ type fixture struct {
 
 type trustedRootsSpec struct {
 	Source   string   `json:"source"`
-	Name     string   `json:"name"`
 	Fixtures []string `json:"fixtures"`
 }
 
-type caseConfig struct {
-	TrustedRoots         trustedRootsSpec           `json:"trustedRoots"`
-	BundleID             *string                    `json:"bundleId"`
-	AcceptedEnvironments []applereceipt.Environment `json:"acceptedEnvironments"`
-	AppAppleID           *int64                     `json:"appAppleId"`
-	DeviceGUIDHex        *string                    `json:"deviceGuidHex"`
-	Environment          applereceipt.Environment   `json:"environment"`
+type caseConfigSpec struct {
+	TrustedRoots trustedRootsSpec `json:"trustedRoots"`
+	Environment  string           `json:"environment"`
 }
 
-type expectation struct {
-	Status string              `json:"status"`
-	Reason applereceipt.Reason `json:"reason"`
-	Fields map[string]any      `json:"fields"`
-	// FailureReason is the endpoint result's reason token, asserted when
-	// present (verifyReceiptEndpoint only). It is not a wire field. A
-	// pointer, so an explicit null ("no failure") is told from absence.
-	FailureReason *json.RawMessage `json:"failureReason"`
-	// BytesHex is what every text of an ok decodeBase64 group decodes to.
-	BytesHex string `json:"bytesHex"`
+type clockSpec struct {
+	Now string `json:"now"`
+}
+
+type caseInputSpec struct {
+	Fixture     string   `json:"fixture"`
+	RequestBody string   `json:"requestBody"`
+	Texts       []string `json:"texts"`
+}
+
+type caseExpectedSpec struct {
+	Status                string         `json:"status"`
+	Reason                string         `json:"reason"`
+	MessageMustNotContain []int          `json:"messageMustNotContain"`
+	Fields                map[string]any `json:"fields"`
+	Lengths               map[string]any `json:"lengths"`
+	ToJSON                *string        `json:"toJson"`
+	BytesHex              string         `json:"bytesHex"`
+	// OneOf marks a port-defined case (owner, 2026-09-27): the outcome,
+	// "ok" or the reason, must be one of these, and the call must not
+	// crash. No field is pinned.
+	OneOf []string `json:"oneOf"`
 }
 
 type conformanceCase struct {
-	ID          string `json:"id"`
-	Description string `json:"description"`
-	Operation   string `json:"operation"`
-	Input       struct {
-		Fixture string `json:"fixture"`
-		// RequestBody names a text fixture holding a whole raw request
-		// body (verifyReceiptEndpoint only), handed to VerifyReceiptBody
-		// verbatim: not wrapped in an envelope, not trimmed.
-		RequestBody string `json:"requestBody"`
-		// Texts are the spellings of a decodeBase64 group.
-		Texts []string `json:"texts"`
-	} `json:"input"`
-	// Decoders names the decoders a decodeBase64 group runs through.
-	Decoders []string   `json:"decoders"`
-	Config   caseConfig `json:"config"`
-	Clock    *struct {
-		Now string `json:"now"`
-	} `json:"clock"`
-	Expected expectation `json:"expected"`
-	Fault    string      `json:"fault"`
-	Tags     []string    `json:"tags"`
+	ID          string           `json:"id"`
+	LegacyID    string           `json:"legacyId"`
+	Description string           `json:"description"`
+	Operation   string           `json:"operation"`
+	Decoders    []string         `json:"decoders"`
+	Input       caseInputSpec    `json:"input"`
+	Config      *caseConfigSpec  `json:"config"`
+	Clock       *clockSpec       `json:"clock"`
+	Expected    caseExpectedSpec `json:"expected"`
+	Fault       string           `json:"fault"`
+	MaxMillis   *int             `json:"maxMillis"`
+	Tags        []string         `json:"tags"`
 }
 
-// fixturesDir walks up from the working directory looking for
-// fixtures/cases.json, rather than hardcoding "../fixtures": the test
-// binary's working directory is the package directory today, and a
-// relative literal is exactly the thing that breaks when that changes or
-// when the suite is run from a different root.
-var fixturesDir = sync.OnceValues(func() (string, error) {
+type casesDocument struct {
+	Schema        string                  `json:"$schema"`
+	SchemaVersion int                     `json:"schemaVersion"`
+	Comment       string                  `json:"comment"`
+	Fixtures      map[string]fixtureEntry `json:"fixtures"`
+	Cases         []conformanceCase       `json:"cases"`
+}
+
+// --- locating and decoding fixtures ----------------------------------------
+
+// fixturesDir is APRV_FIXTURES_DIR when set; otherwise it walks up from
+// this test's working directory until a fixtures/ directory holding the
+// vectors appears, never a hard-coded "../../.." literal, so moving the
+// port does not silently point the suite at nothing.
+func fixturesDir(t testing.TB) string {
+	t.Helper()
+	if dir := os.Getenv("APRV_FIXTURES_DIR"); dir != "" {
+		return dir
+	}
 	dir, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	for {
-		candidate := filepath.Join(dir, "fixtures", "cases.json")
-		if _, err := os.Stat(candidate); err == nil {
-			return filepath.Join(dir, "fixtures"), nil
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", errors.New("no fixtures/cases.json found above the working directory")
-		}
-		dir = parent
-	}
-})
-
-var loadCases = sync.OnceValues(func() (*casesFile, error) {
-	dir, err := fixturesDir()
-	if err != nil {
-		return nil, err
-	}
-	raw, err := os.ReadFile(filepath.Join(dir, "cases.json"))
-	if err != nil {
-		return nil, err
-	}
-	var parsed casesFile
-	decoder := json.NewDecoder(strings.NewReader(string(raw)))
-	// Unknown members would mean the schema moved under us.
-	decoder.DisallowUnknownFields()
-	// Without this, a number decoded into the "fields" map[string]any
-	// (expectation.Fields) becomes a float64, and 9223372036854775807
-	// (2^63-1) rounds to 9223372036854775808 on the way in — silently, since
-	// the same rounding then happens to the actual int64 result when it is
-	// compared as a float64 in equalValue, so a mismatch at that magnitude
-	// would not be caught. json.Number keeps the literal's exact digits.
-	decoder.UseNumber()
-	if err := decoder.Decode(&parsed); err != nil {
-		return nil, err
-	}
-	return &parsed, nil
-})
-
-func mustCases(t testing.TB) *casesFile {
-	t.Helper()
-	parsed, err := loadCases()
-	if err != nil {
-		t.Fatalf("harness error: loading fixtures/cases.json: %v", err)
-	}
-	return parsed
-}
-
-// --- fixture bytes -------------------------------------------------------
-
-type fixtureCache struct {
-	mu    sync.Mutex
-	bytes map[string][]byte
-}
-
-var cache = fixtureCache{bytes: map[string][]byte{}}
-
-// fixtureBytes decodes a registered fixture to its logical bytes and
-// checks them against the digest the registry records.
-//
-// contentSha256 is not documentation. It is the only mechanical defence
-// against this whole suite going green while verifying edited fixture
-// bytes: a fixture that is regenerated, re-encoded or quietly changed
-// would silently alter what every pinned field means. The digest is over
-// the DECODED bytes — the same bytes handed to the library.
-func fixtureBytes(t testing.TB, id string) []byte {
-	t.Helper()
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-	if cached, ok := cache.bytes[id]; ok {
-		return cached
-	}
-	parsed := mustCases(t)
-	entry, ok := parsed.Fixtures[id]
-	if !ok {
-		t.Fatalf("harness error: cases.json registers no fixture %q", id)
-	}
-	dir, err := fixturesDir()
 	if err != nil {
 		t.Fatalf("harness error: %v", err)
 	}
-	raw, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(entry.Path)))
-	if err != nil {
-		t.Fatalf("harness error: reading fixture %q: %v", id, err)
+	for {
+		candidate := filepath.Join(dir, "fixtures")
+		if _, err := os.Stat(filepath.Join(candidate, casesFileName)); err == nil {
+			return candidate
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatalf("harness error: no fixtures/%s above the working directory", casesFileName)
+		}
+		dir = parent
 	}
-	var decoded []byte
-	switch entry.Codec {
-	case "raw", "text":
-		// text is raw's twin for string-taking entry points: the file
-		// bytes verbatim, untrimmed — whitespace, CRLF and a 0-byte file
-		// all pass through unchanged, because pinning what a port does
-		// with exactly what a client sent is the point of this codec.
-		decoded = raw
-	case "base64":
-		decoded = decodeBase64Strict(t, id, stripWhitespace(string(raw)))
-	case "utf8":
-		decoded = []byte(strings.TrimSpace(string(raw)))
-	default:
-		t.Fatalf("harness error: unknown fixture codec %q", entry.Codec)
-	}
-	if entry.ContentSHA256 == "" {
-		t.Fatalf("fixture %q (%s) records no contentSha256", id, entry.Path)
-	}
-	sum := sha256.Sum256(decoded)
-	if got := hex.EncodeToString(sum[:]); got != entry.ContentSHA256 {
-		t.Fatalf("fixture %q (%s, codec %s) has drifted: cases.json records contentSha256 %s, "+
-			"the decoded bytes hash to %s", id, entry.Path, entry.Codec, entry.ContentSHA256, got)
-	}
-	cache.bytes[id] = decoded
-	return decoded
 }
 
-// fixtureCodec reports a registered fixture's codec, so an operation
-// adapter can tell a text fixture (bytes handed to a string entry point
-// verbatim) from a raw or base64 one without re-deriving it from the
-// already-decoded bytes.
-func fixtureCodec(t *testing.T, id string) string {
+func loadCases(t testing.TB) (string, casesDocument) {
 	t.Helper()
-	parsed := mustCases(t)
-	entry, ok := parsed.Fixtures[id]
-	if !ok {
-		t.Fatalf("harness error: cases.json registers no fixture %q", id)
+	dir := fixturesDir(t)
+	data, err := os.ReadFile(filepath.Join(dir, casesFileName))
+	if err != nil {
+		t.Fatalf("harness error: cannot read %s: %v", casesFileName, err)
 	}
-	return entry.Codec
+	var parsed casesDocument
+	dec := json.NewDecoder(strings.NewReader(string(data)))
+	dec.UseNumber()
+	if err := dec.Decode(&parsed); err != nil {
+		t.Fatalf("harness error: cannot parse %s: %v", casesFileName, err)
+	}
+	if parsed.SchemaVersion != 2 {
+		t.Fatalf("harness error: %s is schemaVersion %d, this adapter implements 2",
+			casesFileName, parsed.SchemaVersion)
+	}
+	return dir, parsed
 }
 
 func stripWhitespace(text string) string {
-	return strings.Map(func(r rune) rune {
-		switch r {
-		case ' ', '\t', '\r', '\n':
-			return -1
+	var b strings.Builder
+	b.Grow(len(text))
+	for _, r := range text {
+		if r != ' ' && r != '\t' && r != '\n' && r != '\r' {
+			b.WriteRune(r)
 		}
-		return r
-	}, text)
+	}
+	return b.String()
 }
 
-func decodeBase64Strict(t testing.TB, id, text string) []byte {
+// fixtureBytes are the decoded logical bytes of a registered fixture,
+// checked against the digest the registry records for them, so fixture
+// bytes and the registry cannot drift apart unnoticed.
+func fixtureBytesIn(t testing.TB, dir string, fixtures map[string]fixtureEntry, id string) []byte {
 	t.Helper()
-	decoded, err := base64.StdEncoding.DecodeString(text)
+	entry, ok := fixtures[id]
+	if !ok {
+		t.Fatalf("harness error: %s registers no fixture %q", casesFileName, id)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, entry.Path))
 	if err != nil {
-		t.Fatalf("harness error: fixture %q is not base64: %v", id, err)
+		t.Fatalf("harness error: cannot read fixture %q (%s): %v", id, entry.Path, err)
 	}
-	return decoded
-}
-
-// Read before any case runs: a fixture no case happens to reference would
-// otherwise drift unnoticed, and the registry as a whole is what is being
-// guarded.
-func TestEveryRegisteredFixtureMatchesItsDigest(t *testing.T) {
-	parsed := mustCases(t)
-	if len(parsed.Fixtures) == 0 {
-		t.Fatal("cases.json must register fixtures")
-	}
-	for id := range parsed.Fixtures {
-		fixtureBytes(t, id)
-	}
-}
-
-func TestSchemaVersionIsTheOneThisAdapterUnderstands(t *testing.T) {
-	if got := mustCases(t).SchemaVersion; got != 1 {
-		t.Fatalf("cases.json schemaVersion is %d; this adapter was written against 1", got)
-	}
-}
-
-// Every reason a vector expects must be one of the eleven exported
-// constants, so a typo in the file surfaces here rather than as a
-// mysterious mismatch inside one case.
-func TestEveryExpectedReasonIsInTheVocabulary(t *testing.T) {
-	known := map[applereceipt.Reason]bool{}
-	for _, reason := range applereceipt.AllReasons() {
-		known[reason] = true
-	}
-	for _, kase := range mustCases(t).Cases {
-		if kase.Expected.Reason != "" && !known[kase.Expected.Reason] {
-			t.Errorf("%s expects reason %q, which is not in the exported vocabulary",
-				kase.ID, kase.Expected.Reason)
+	var bytes []byte
+	switch entry.Codec {
+	case "raw", "text":
+		bytes = raw
+	case "base64":
+		decoded, derr := base64.StdEncoding.DecodeString(stripWhitespace(string(raw)))
+		if derr != nil {
+			t.Fatalf("harness error: fixture %q is not valid base64: %v", id, derr)
 		}
+		bytes = decoded
+	case "utf8":
+		bytes = []byte(strings.TrimSpace(string(raw)))
+	default:
+		t.Fatalf("harness error: unknown fixture codec %q on %q", entry.Codec, id)
 	}
+	sum := sha256.Sum256(bytes)
+	if hex.EncodeToString(sum[:]) != entry.ContentSHA256 {
+		t.Fatalf("fixture %q (%s, codec %s) has drifted: %s records contentSha256 %s, "+
+			"the decoded bytes hash to %s",
+			id, entry.Path, entry.Codec, casesFileName, entry.ContentSHA256, hex.EncodeToString(sum[:]))
+	}
+	return bytes
 }
 
-// --- config -> API -------------------------------------------------------
-
-// verifyRaw enforces no claim, so its cases may omit bundleId and
-// acceptedEnvironments — but the constructor still demands both. These
-// substitutes match nothing any fixture carries, so a claim check that
-// leaked into VerifyRaw shows up as a failure rather than as a silent
-// pass. An empty string or "all four environments" would hide exactly
-// that bug.
-const unmatchableBundleID = "conformance.unset.bundle.id"
-
-var unmatchableEnvironments = []applereceipt.Environment{applereceipt.EnvironmentLocalTesting}
-
-func trustedRootsFor(t *testing.T, spec trustedRootsSpec) []*x509.Certificate {
+// checkWholeRegistry proves every registered fixture matches its
+// contentSha256, so a fixture no case happens to reference does not drift
+// unnoticed.
+func checkWholeRegistry(t testing.TB, dir string, fixtures map[string]fixtureEntry) {
 	t.Helper()
-	switch spec.Source {
-	case "builtin":
-		switch spec.Name {
-		case "apple-jws-roots":
-			return applereceipt.AppleJWSRoots()
-		case "apple-receipt-roots":
-			return applereceipt.AppleReceiptRoots()
-		default:
-			t.Fatalf("harness error: unknown builtin root set %q", spec.Name)
-		}
+	if len(fixtures) == 0 {
+		t.Fatalf("harness error: %s registers no fixtures", casesFileName)
+	}
+	for id := range fixtures {
+		fixtureBytesIn(t, dir, fixtures, id)
+	}
+}
+
+// receiptString is the string verifyReceipt gets, and the endpoint's
+// receipt-data: a text fixture verbatim, exactly as a client sent it; any
+// other fixture holds DER, encoded as canonical base64.
+func receiptString(t testing.TB, dir string, fixtures map[string]fixtureEntry, id string) string {
+	t.Helper()
+	bytes := fixtureBytesIn(t, dir, fixtures, id)
+	if fixtures[id].Codec == "text" {
+		return string(bytes)
+	}
+	return base64.StdEncoding.EncodeToString(bytes)
+}
+
+// --- config ------------------------------------------------------------
+
+func buildConfig(t testing.TB, dir string, fixtures map[string]fixtureEntry, spec *caseConfigSpec, clock *clockSpec) *applereceipt.Config {
+	t.Helper()
+	if spec == nil {
+		t.Fatalf("harness error: no config")
+	}
+	opts := applereceipt.ConfigOptions{}
+	switch spec.TrustedRoots.Source {
+	case "defaults":
 	case "fixtures":
-		roots := make([]*x509.Certificate, 0, len(spec.Fixtures))
-		for _, id := range spec.Fixtures {
-			cert, err := x509.ParseCertificate(fixtureBytes(t, id))
+		roots := make([]*x509.Certificate, 0, len(spec.TrustedRoots.Fixtures))
+		for _, id := range spec.TrustedRoots.Fixtures {
+			der := fixtureBytesIn(t, dir, fixtures, id)
+			cert, err := x509.ParseCertificate(der)
 			if err != nil {
-				t.Fatalf("harness error: fixture %q is not a certificate: %v", id, err)
+				t.Fatalf("harness error: root %q does not parse: %v", id, err)
 			}
 			roots = append(roots, cert)
 		}
-		return roots
+		opts.Roots = roots
 	default:
-		t.Fatalf("harness error: unknown trustedRoots source %q", spec.Source)
+		t.Fatalf("harness error: unknown trustedRoots source %q", spec.TrustedRoots.Source)
 	}
-	return nil
+	if clock != nil {
+		now := parseInstantMs(t, clock.Now)
+		opts.Clock = func() int64 { return now }
+	}
+	return applereceipt.NewConfig(opts)
 }
 
-func jwsVerifier(t *testing.T, config caseConfig, clock func() time.Time) *applereceipt.JWSVerifier {
+// parseInstantMs reads YYYY-MM-DDTHH:MM:SSZ to epoch milliseconds, the
+// only form the schema allows for clock.now.
+func parseInstantMs(t testing.TB, text string) int64 {
 	t.Helper()
-	if clock != nil {
-		t.Fatalf("harness error: JWSVerifier has no clock seam, but the case pins one")
+	if len(text) != 20 {
+		t.Fatalf("harness error: bad clock %q", text)
 	}
-	bundleID := unmatchableBundleID
-	if config.BundleID != nil {
-		bundleID = *config.BundleID
+	digit := func(from, n int) int64 {
+		v := int64(0)
+		for i := from; i < from+n; i++ {
+			v = v*10 + int64(text[i]-'0')
+		}
+		return v
 	}
-	environments := unmatchableEnvironments
-	if len(config.AcceptedEnvironments) > 0 {
-		environments = config.AcceptedEnvironments
+	year, month, day := digit(0, 4), digit(5, 2), digit(8, 2)
+	hour, minute, second := digit(11, 2), digit(14, 2), digit(17, 2)
+	// Howard Hinnant's days_from_civil.
+	y := year
+	if month <= 2 {
+		y--
 	}
-	verifier, err := applereceipt.NewJWSVerifier(applereceipt.JWSVerifierOptions{
-		TrustedRoots:         trustedRootsFor(t, config.TrustedRoots),
-		BundleID:             bundleID,
-		AcceptedEnvironments: environments,
-		AppAppleID:           config.AppAppleID,
-	})
+	era := y
+	if y < 0 {
+		era = y - 399
+	}
+	era /= 400
+	yoe := y - era*400
+	mp := (month + 9) % 12
+	doy := (153*mp+2)/5 + day - 1
+	doe := yoe*365 + yoe/4 - yoe/100 + doy
+	days := era*146_097 + doe - 719_468
+	return ((days*24+hour)*60+minute)*60_000 + second*1000
+}
+
+func buildVerifier(t testing.TB, config *applereceipt.Config) *applereceipt.Verifier {
+	t.Helper()
+	verifier, err := applereceipt.NewVerifier(config)
 	if err != nil {
-		t.Fatalf("harness error: building a JWSVerifier: %v", err)
+		t.Fatalf("harness error: config refused: %v", err)
 	}
 	return verifier
 }
 
-// operations dispatches on the case's "operation". Every operation takes
-// the case's clock (nil when it pins none) and hands it to the library's
-// clock seam; an operation with no seam rejects a case that pins one
-// instead of silently running on the system clock. codec is the input
-// fixture's codec — only verifyReceiptEndpoint needs it, to tell a text
-// fixture (receipt-data goes in verbatim) from a raw or base64 one
-// (re-encoded as canonical base64, as the schema documents on "input").
-var operations = map[string]func(t *testing.T, config caseConfig, input []byte, codec string, clock func() time.Time) (any, error){
-	"verifyTransaction": func(t *testing.T, config caseConfig, input []byte, codec string, clock func() time.Time) (any, error) {
-		return jwsVerifier(t, config, clock).VerifyTransaction(string(input))
-	},
-	"verifyAppTransaction": func(t *testing.T, config caseConfig, input []byte, codec string, clock func() time.Time) (any, error) {
-		return jwsVerifier(t, config, clock).VerifyAppTransaction(string(input))
-	},
-	"verifyRaw": func(t *testing.T, config caseConfig, input []byte, codec string, clock func() time.Time) (any, error) {
-		return jwsVerifier(t, config, clock).VerifyRaw(string(input))
-	},
-	"verifyReceipt": func(t *testing.T, config caseConfig, input []byte, codec string, clock func() time.Time) (any, error) {
-		if clock != nil {
-			t.Fatalf("harness error: verifyReceipt has no clock seam, but the case pins one")
-		}
-		if config.BundleID == nil {
-			t.Fatalf("harness error: a verifyReceipt case must configure a bundleId")
-		}
-		verifier, err := applereceipt.NewReceiptVerifier(applereceipt.ReceiptVerifierOptions{
-			TrustedRoots: trustedRootsFor(t, config.TrustedRoots),
-			BundleID:     *config.BundleID,
-		})
-		if err != nil {
-			t.Fatalf("harness error: building a ReceiptVerifier: %v", err)
-		}
-		if config.DeviceGUIDHex == nil {
-			return verifier.Verify(input)
-		}
-		guid, err := hex.DecodeString(*config.DeviceGUIDHex)
-		if err != nil {
-			t.Fatalf("harness error: deviceGuidHex is not hex: %v", err)
-		}
-		return verifier.VerifyWithDeviceGUID(input, guid)
-	},
-	// The string form of verifyReceipt: the input fixture is always text
-	// (the schema requires it), and fixtureBytes already hands back that
-	// text's bytes verbatim, so string(input) is exactly what a client
-	// sent — no re-encoding, which is the whole point of this operation.
-	"verifyReceiptBase64": func(t *testing.T, config caseConfig, input []byte, codec string, clock func() time.Time) (any, error) {
-		if clock != nil {
-			t.Fatalf("harness error: verifyReceiptBase64 has no clock seam, but the case pins one")
-		}
-		if codec != "text" {
-			t.Fatalf("harness error: a verifyReceiptBase64 case must name a text fixture, got codec %q", codec)
-		}
-		if config.BundleID == nil {
-			t.Fatalf("harness error: a verifyReceiptBase64 case must configure a bundleId")
-		}
-		verifier, err := applereceipt.NewReceiptVerifier(applereceipt.ReceiptVerifierOptions{
-			TrustedRoots: trustedRootsFor(t, config.TrustedRoots),
-			BundleID:     *config.BundleID,
-		})
-		if err != nil {
-			t.Fatalf("harness error: building a ReceiptVerifier: %v", err)
-		}
-		if config.DeviceGUIDHex == nil {
-			return verifier.VerifyBase64(string(input))
-		}
-		guid, err := hex.DecodeString(*config.DeviceGUIDHex)
-		if err != nil {
-			t.Fatalf("harness error: deviceGuidHex is not hex: %v", err)
-		}
-		return verifier.VerifyBase64WithDeviceGUID(string(input), guid)
-	},
-	"verifyReceiptEndpoint": func(t *testing.T, config caseConfig, input []byte, codec string, clock func() time.Time) (any, error) {
-		endpoint, err := applereceipt.NewVerifyReceiptEndpoint(applereceipt.VerifyReceiptEndpointOptions{
-			TrustedRoots: trustedRootsFor(t, config.TrustedRoots),
-			Environment:  config.Environment,
-			Now:          clock,
-		})
-		if err != nil {
-			t.Fatalf("harness error: building a VerifyReceiptEndpoint: %v", err)
-		}
-		// A text fixture's bytes go into receipt-data verbatim, exactly as
-		// a client would send them; a raw or base64 fixture is re-encoded
-		// as canonical base64, because fixtureBytes already decoded it and
-		// there is no "original string" left to pin.
-		receiptData := base64.StdEncoding.EncodeToString(input)
-		if codec == "text" {
-			receiptData = string(input)
-		}
-		return endpoint.VerifyReceipt(applereceipt.VerifyReceiptRequest{
-			ReceiptData: receiptData,
-		}), nil
-	},
-}
+// --- expectations ------------------------------------------------------
 
-// endpointFromBody runs a requestBody case: the fixture's bytes are the
-// whole raw request body, and they go to the raw-body entry point that
-// parses JSON, never to the structured one.
-func endpointFromBody(t *testing.T, config caseConfig, body []byte, clock func() time.Time) *applereceipt.VerifyReceiptResult {
-	endpoint, err := applereceipt.NewVerifyReceiptEndpoint(applereceipt.VerifyReceiptEndpointOptions{
-		TrustedRoots: trustedRootsFor(t, config.TrustedRoots),
-		Environment:  config.Environment,
-		Now:          clock,
-	})
-	if err != nil {
-		t.Fatalf("harness error: building a VerifyReceiptEndpoint: %v", err)
-	}
-	return endpoint.VerifyReceiptBody(body)
-}
-
-func caseClock(t *testing.T, kase conformanceCase) func() time.Time {
-	t.Helper()
-	if kase.Clock == nil {
-		return nil
-	}
-	at, err := time.Parse(time.RFC3339, kase.Clock.Now)
-	if err != nil {
-		t.Fatalf("harness error: unparseable clock %q: %v", kase.Clock.Now, err)
-	}
-	return func() time.Time { return at }
-}
-
-// --- one case ------------------------------------------------------------
-
-// base64Decoders are the two decoders a decodeBase64 group names, called
-// directly through export_test.go, each with the reason its refusal
-// carries. cases.json states INVALID_RECEIPT_FORMAT for an error group;
-// that is the receipt-data answer, and x5c answers INVALID_CERTIFICATE.
-var base64Decoders = map[string]struct {
-	decode  func(string) ([]byte, error)
-	refusal applereceipt.Reason
-}{
-	"receipt-data": {applereceipt.DecodeReceiptDataForTest, applereceipt.ReasonInvalidReceiptFormat},
-	"x5c":          {applereceipt.DecodeX5CEntryForTest, applereceipt.ReasonInvalidCertificate},
-}
-
-// runDecodeBase64 checks every text of the group through every named
-// decoder and reports each text that got the wrong answer, by case id,
-// decoder, index and quoted text, rather than stopping at the first.
-func runDecodeBase64(t *testing.T, kase conformanceCase) {
-	if len(kase.Input.Texts) == 0 || len(kase.Decoders) == 0 {
-		t.Fatalf("harness error: a decodeBase64 case needs input.texts and decoders")
-	}
-	want, err := hex.DecodeString(kase.Expected.BytesHex)
-	if err != nil {
-		t.Fatalf("harness error: expected.bytesHex is not hex: %v", err)
-	}
-	if kase.Expected.Status == "error" && kase.Expected.Reason != applereceipt.ReasonInvalidReceiptFormat {
-		t.Fatalf("harness error: a decodeBase64 error group must state INVALID_RECEIPT_FORMAT, got %s", kase.Expected.Reason)
-	}
-	for _, name := range kase.Decoders {
-		decoder, ok := base64Decoders[name]
-		if !ok {
-			t.Fatalf("harness error: no decoder %q", name)
-		}
-		for i, text := range kase.Input.Texts {
-			got, err := decoder.decode(text)
-			where := fmt.Sprintf("%s: %s texts[%d] %q", kase.ID, name, i, text)
-			var verr *applereceipt.VerificationError
-			switch {
-			case err != nil && !errors.As(err, &verr):
-				t.Errorf("%s: harness error: %T (%v) is not a *VerificationError", where, err, err)
-			case kase.Expected.Status == "ok" && err != nil:
-				t.Errorf("%s was refused (%s), want %s", where, verr.Reason, kase.Expected.BytesHex)
-			case kase.Expected.Status == "ok" && string(got) != string(want):
-				t.Errorf("%s decoded to %x, want %s", where, got, kase.Expected.BytesHex)
-			case kase.Expected.Status == "error" && err == nil:
-				t.Errorf("%s was accepted (decoded to %x)", where, got)
-			case kase.Expected.Status == "error" && verr.Reason != decoder.refusal:
-				t.Errorf("%s: reason %s, want %s", where, verr.Reason, decoder.refusal)
-			}
-		}
-	}
-}
-
-func runCase(t *testing.T, kase conformanceCase) {
-	if kase.Operation == "decodeBase64" {
-		runDecodeBase64(t, kase)
-		return
-	}
-	operation, ok := operations[kase.Operation]
+// resolvePointer is an RFC 6901 pointer with one extension: a token
+// [key=value] selects the single array element whose member key is the
+// JSON string value, and the case fails unless exactly one matches.
+func resolvePointer(root any, pointer string) (value any, present bool, err error) {
+	rest, ok := strings.CutPrefix(pointer, "/")
 	if !ok {
-		t.Fatalf("harness error: no adapter for operation %q", kase.Operation)
+		return nil, false, fmt.Errorf("harness error: %q is not a pointer", pointer)
 	}
-	var result any
-	var err error
-	if kase.Input.RequestBody != "" {
-		if kase.Operation != "verifyReceiptEndpoint" {
-			t.Fatalf("harness error: input.requestBody is only defined for verifyReceiptEndpoint")
-		}
-		if codec := fixtureCodec(t, kase.Input.RequestBody); codec != "text" {
-			t.Fatalf("harness error: a requestBody fixture must be text, got codec %q", codec)
-		}
-		result = endpointFromBody(t, kase.Config, fixtureBytes(t, kase.Input.RequestBody), caseClock(t, kase))
-	} else {
-		input := fixtureBytes(t, kase.Input.Fixture)
-		codec := fixtureCodec(t, kase.Input.Fixture)
-		result, err = operation(t, kase.Config, input, codec, caseClock(t, kase))
+	current := root
+	if rest == "" {
+		return current, true, nil
 	}
-	if endpointResult, ok := result.(*applereceipt.VerifyReceiptResult); ok {
-		if kase.Expected.FailureReason != nil {
-			var want *string
-			if err := json.Unmarshal(*kase.Expected.FailureReason, &want); err != nil {
-				t.Fatalf("harness error: expected.failureReason is not a string or null: %v", err)
+	for _, raw := range strings.Split(rest, "/") {
+		if strings.HasPrefix(raw, "[") && strings.HasSuffix(raw, "]") {
+			selector := raw[1 : len(raw)-1]
+			if key, wanted, ok := strings.Cut(selector, "="); ok {
+				items, ok := current.([]any)
+				if !ok {
+					return nil, false, fmt.Errorf("%s: %s needs an array", pointer, raw)
+				}
+				var matches []any
+				for _, item := range items {
+					obj, ok := item.(map[string]any)
+					if ok {
+						if s, ok := obj[key].(string); ok && s == wanted {
+							matches = append(matches, item)
+						}
+					}
+				}
+				if len(matches) != 1 {
+					return nil, false, fmt.Errorf("%s: %s must select exactly one element, selected %d",
+						pointer, raw, len(matches))
+				}
+				current = matches[0]
+				continue
 			}
-			got := string(endpointResult.Reason())
-			if want == nil && got != "" || want != nil && got != *want {
-				t.Fatalf("failureReason: got %q, want %s (%v)", got, *kase.Expected.FailureReason, endpointResult.Err())
+		}
+		token := strings.ReplaceAll(strings.ReplaceAll(raw, "~1", "/"), "~0", "~")
+		switch c := current.(type) {
+		case map[string]any:
+			next, ok := c[token]
+			if !ok {
+				return nil, false, nil
+			}
+			current = next
+		case []any:
+			index, ierr := strconv.Atoi(token)
+			if ierr != nil || index < 0 || index >= len(c) {
+				return nil, false, nil
+			}
+			current = c[index]
+		default:
+			return nil, false, nil
+		}
+	}
+	return current, true, nil
+}
+
+// jsonEqual compares a "want" value from the case file (json.Number for
+// every number, since the document is decoded with UseNumber) against a
+// "got" value from the library's own output, decoded the same way.
+// Numbers compare by value, integers exactly; everything else compares
+// structurally.
+func jsonEqual(want, got any) bool {
+	switch w := want.(type) {
+	case nil:
+		return got == nil
+	case json.Number:
+		g, ok := got.(json.Number)
+		if !ok {
+			return false
+		}
+		// Compared by value, not by spelling: 1722945600000 and
+		// 1722945600000.0 are the same claim. Exact int64 comparison only
+		// when BOTH sides parse as a literal integer, so a 19-digit id
+		// keeps its exact digits; otherwise (either side has a fraction or
+		// an exponent) fall back to float64, which is what "the same
+		// number" means once either spelling is not a bare integer.
+		wi, werr := w.Int64()
+		gi, gerr := g.Int64()
+		if werr == nil && gerr == nil {
+			return wi == gi
+		}
+		wf, wferr := w.Float64()
+		gf, gferr := g.Float64()
+		return wferr == nil && gferr == nil && wf == gf
+	case string:
+		g, ok := got.(string)
+		return ok && g == w
+	case bool:
+		g, ok := got.(bool)
+		return ok && g == w
+	case map[string]any:
+		g, ok := got.(map[string]any)
+		if !ok || len(g) != len(w) {
+			return false
+		}
+		for k, wv := range w {
+			gv, present := g[k]
+			if !present || !jsonEqual(wv, gv) {
+				return false
 			}
 		}
-		result = endpointResult.Response()
-	} else if kase.Expected.FailureReason != nil {
-		t.Fatalf("harness error: expected.failureReason is only defined for verifyReceiptEndpoint")
+		return true
+	case []any:
+		g, ok := got.([]any)
+		if !ok || len(g) != len(w) {
+			return false
+		}
+		for i := range w {
+			if !jsonEqual(w[i], g[i]) {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
 	}
+}
+
+func describe(value any, present bool) string {
+	if !present {
+		return "absent"
+	}
+	encoded, err := json.Marshal(value)
 	if err != nil {
-		// Only a *VerificationError carries a canonical Reason. Anything
-		// else is a defect in the library or in this harness and must
-		// never be read as one of the expected reasons.
-		var verr *applereceipt.VerificationError
-		if !errors.As(err, &verr) {
-			t.Fatalf("harness error: %s returned %T (%v), which is not a *VerificationError",
-				kase.Operation, err, err)
+		return fmt.Sprintf("%v", value)
+	}
+	return string(encoded)
+}
+
+// check evaluates every fields and lengths expectation against actual,
+// returning every mismatch rather than stopping at the first.
+func check(id string, expected caseExpectedSpec, actual any) []string {
+	var failures []string
+	for pointer, want := range expected.Fields {
+		got, present, err := resolvePointer(actual, pointer)
+		if err != nil {
+			failures = append(failures, fmt.Sprintf("%s %v", id, err))
+			continue
 		}
-		if kase.Expected.Status != "error" {
-			t.Fatalf("expected success but got %s: %v", verr.Reason, err)
+		ok := (want == nil && (!present || got == nil)) || (present && jsonEqual(want, got))
+		if !ok {
+			failures = append(failures, fmt.Sprintf("%s %s: expected %s but got %s",
+				id, pointer, describe(want, true), describe(got, present)))
 		}
-		if verr.Reason != kase.Expected.Reason {
-			t.Fatalf("reason: got %s, want %s (%v)", verr.Reason, kase.Expected.Reason, err)
+	}
+	for pointer, want := range expected.Lengths {
+		got, present, err := resolvePointer(actual, pointer)
+		if err != nil {
+			failures = append(failures, fmt.Sprintf("%s %v", id, err))
+			continue
 		}
+		arr, isArray := got.([]any)
+		wantNumber, isNumber := want.(json.Number)
+		wantLen, _ := wantNumber.Int64()
+		if !present || !isArray || !isNumber || int64(len(arr)) != wantLen {
+			failures = append(failures, fmt.Sprintf("%s %s: expected an array of %s but got %s",
+				id, pointer, describe(want, true), describe(got, present)))
+		}
+	}
+	return failures
+}
+
+func parseJSONAny(t testing.TB, id, text string) any {
+	t.Helper()
+	dec := json.NewDecoder(strings.NewReader(text))
+	dec.UseNumber()
+	var value any
+	if err := dec.Decode(&value); err != nil {
+		t.Fatalf("%s: the library returned JSON that does not parse (%v): %s", id, err, text)
+	}
+	return value
+}
+
+// --- decodeBase64 --------------------------------------------------------
+
+// runDecodeBase64 runs every text of the group through every decoder it
+// names and reports every text that got the wrong answer, by decoder,
+// index and escaped text, rather than stopping at the first.
+func runDecodeBase64(t testing.TB, c conformanceCase) {
+	if len(c.Input.Texts) == 0 {
+		t.Fatalf("harness error: decodeBase64 needs input.texts")
+	}
+	if len(c.Decoders) == 0 {
+		t.Fatalf("harness error: decodeBase64 needs decoders")
+	}
+	ok := c.Expected.Status == "ok"
+	var want string
+	if ok {
+		if c.Expected.BytesHex == "" {
+			t.Fatalf("harness error: an ok group with no bytesHex")
+		}
+		want = c.Expected.BytesHex
+	} else if c.Expected.Reason == "MALFORMED" {
+		want = ""
+	} else {
+		t.Fatalf("harness error: an error group states a reason other than MALFORMED")
+	}
+	for _, decoderName := range c.Decoders {
+		var decode func(string) ([]byte, error)
+		var refusal applereceipt.Reason
+		switch decoderName {
+		case "receipt-data":
+			decode, refusal = applereceipt.DecodeReceiptDataForTest, applereceipt.ReasonMalformed
+		case "x5c":
+			decode, refusal = applereceipt.DecodeX5CEntryForTest, applereceipt.ReasonInvalidCertificate
+		default:
+			t.Fatalf("harness error: no decoder %q", decoderName)
+		}
+		for index, text := range c.Input.Texts {
+			at := fmt.Sprintf("%s %s texts[%d] %q", c.ID, decoderName, index, text)
+			bytes, err := decode(text)
+			switch {
+			case err == nil && !ok:
+				t.Errorf("%s was accepted (decoded to %x)", at, bytes)
+			case err == nil && hex.EncodeToString(bytes) != want:
+				t.Errorf("%s decoded to %x, want %s", at, bytes, want)
+			case err != nil && ok:
+				t.Errorf("%s was refused (%v), want ok", at, err)
+			default:
+				if err != nil {
+					if reason, _ := applereceipt.ReasonOf(err); reason != refusal {
+						t.Errorf("%s: reason %s, want %s", at, reason, refusal)
+					}
+				}
+			}
+		}
+	}
+}
+
+// --- one case --------------------------------------------------------------
+
+// ran records which case ids actually ran, so the coverage check after
+// the run is a fact rather than a loop-shaped assumption.
+var (
+	ranMu sync.Mutex
+	ran   []string
+)
+
+func recordRan(id string) {
+	ranMu.Lock()
+	ran = append(ran, id)
+	ranMu.Unlock()
+}
+
+func runCase(t testing.TB, dir string, fixtures map[string]fixtureEntry, c conformanceCase) {
+	recordRan(c.ID)
+	if c.Operation == "decodeBase64" {
+		runDecodeBase64(t, c)
 		return
 	}
-	if kase.Expected.Status != "ok" {
-		t.Fatalf("expected %s but the call returned a value", kase.Expected.Reason)
-	}
-	actual := normalize(result)
-	for path, want := range kase.Expected.Fields {
-		got, found := resolvePath(t, actual, path)
-		if want == nil {
-			// null means "absent or unset".
-			if found && got != nil {
-				t.Errorf("%s: expected absent, got %#v", path, got)
+	verifier := buildVerifier(t, buildConfig(t, dir, fixtures, c.Config, c.Clock))
+	expected := c.Expected
+
+	var actual any
+	switch c.Operation {
+	case "verifyReceiptEndpoint":
+		var environment applereceipt.Environment
+		var envText string
+		if c.Config != nil {
+			envText = c.Config.Environment
+		}
+		switch envText {
+		case "PRODUCTION":
+			environment = applereceipt.EnvironmentProduction
+		case "SANDBOX":
+			environment = applereceipt.EnvironmentSandbox
+		default:
+			t.Fatalf("%s: harness error: environment %q", c.ID, envText)
+		}
+		var body string
+		switch {
+		case c.Input.RequestBody != "":
+			body = string(fixtureBytesIn(t, dir, fixtures, c.Input.RequestBody))
+		case c.Input.Fixture != "":
+			receiptData := receiptString(t, dir, fixtures, c.Input.Fixture)
+			encoded, err := json.Marshal(map[string]string{"receipt-data": receiptData})
+			if err != nil {
+				t.Fatalf("%s: harness error: %v", c.ID, err)
 			}
-			continue
+			body = string(encoded)
+		default:
+			t.Fatalf("%s: harness error: no input", c.ID)
 		}
-		if !found {
-			t.Errorf("%s: expected %#v, but the path resolved to nothing", path, want)
-			continue
+		if _, pinned := expected.Fields["/status"]; !pinned {
+			t.Fatalf("%s: harness error: /status not pinned", c.ID)
 		}
-		if !equalValue(got, want) {
-			t.Errorf("%s: got %#v, want %#v", path, got, want)
+		response := verifier.VerifyReceiptEndpoint(environment, body)
+		actual = parseJSONAny(t, c.ID, response)
+
+	case "verifyReceipt", "verifySignedData":
+		if c.Input.Fixture == "" {
+			t.Fatalf("%s: harness error: no fixture", c.ID)
 		}
+		var input string
+		if c.Operation == "verifyReceipt" {
+			input = receiptString(t, dir, fixtures, c.Input.Fixture)
+		} else {
+			input = string(fixtureBytesIn(t, dir, fixtures, c.Input.Fixture))
+		}
+		call := func() (string, error) {
+			if c.Operation == "verifyReceipt" {
+				payload, err := verifier.VerifyReceipt(input)
+				if err != nil {
+					return "", err
+				}
+				return payload.ToJSON(), nil
+			}
+			payload, err := verifier.VerifySignedData(input)
+			if err != nil {
+				return "", err
+			}
+			return payload.JSON(), nil
+		}
+
+		var jsonText string
+		var callErr error
+		if c.MaxMillis == nil {
+			jsonText, callErr = call()
+		} else {
+			_, _ = call() // warm-up
+			start := time.Now()
+			used := chain.KeysUsedDuring(func() {
+				jsonText, callErr = call()
+			})
+			elapsed := time.Since(start)
+			budget := time.Duration(*c.MaxMillis) * time.Millisecond
+			if elapsed > budget {
+				t.Fatalf("%s: took %v, over the %dms budget", c.ID, elapsed, *c.MaxMillis)
+			}
+			// The direct form of the budget: every stranger in these
+			// cases carries a key far over the 8192-bit cap, so an SPKI
+			// that large among the keys used means a stranger's key
+			// reached a signature check. An 8192-bit RSA SPKI is about
+			// 1,050 bytes.
+			for _, spki := range used {
+				if len(spki) > 1100 {
+					t.Fatalf("%s: a %d-byte stranger key checked a signature", c.ID, len(spki))
+				}
+			}
+		}
+
+		if expected.OneOf != nil {
+			outcome := "ok"
+			if callErr != nil {
+				failure, ok := callErr.(*applereceipt.Failure)
+				if !ok {
+					t.Fatalf("%s: escaped as %T, not a *Failure: %v", c.ID, callErr, callErr)
+				}
+				outcome = string(failure.Reason)
+			}
+			if !slices.Contains(expected.OneOf, outcome) {
+				t.Fatalf("%s: answered %s, want one of %v: %v", c.ID, outcome, expected.OneOf, callErr)
+			}
+			return
+		}
+
+		switch expected.Status {
+		case "error":
+			if callErr == nil {
+				t.Fatalf("%s: expected %s but the operation verified", c.ID, expected.Reason)
+			}
+			want := expected.Reason
+			if want == "" {
+				t.Fatalf("%s: harness error: no reason", c.ID)
+			}
+			reason, _ := applereceipt.ReasonOf(callErr)
+			if string(reason) != want {
+				t.Fatalf("%s: expected %s but got %v", c.ID, want, callErr)
+			}
+			if len(expected.MessageMustNotContain) > 0 {
+				failure, ok := callErr.(*applereceipt.Failure)
+				if !ok {
+					t.Fatalf("%s: harness error: %v is not a *Failure", c.ID, callErr)
+				}
+				for _, codePoint := range expected.MessageMustNotContain {
+					for _, r := range failure.Message {
+						if int(r) == codePoint {
+							t.Fatalf("%s: the failure message contains U+%04X: %q",
+								c.ID, codePoint, failure.Message)
+						}
+					}
+				}
+			}
+			return
+		case "ok":
+			if callErr != nil {
+				t.Fatalf("%s: expected ok but got %v", c.ID, callErr)
+			}
+			actual = parseJSONAny(t, c.ID, jsonText)
+			// Same value, not same bytes: whitespace, key order and
+			// escaping are free (docs/design/0.7-api.md "Our JSON").
+			if expected.ToJSON != nil && !reflect.DeepEqual(parseJSONAny(t, c.ID, *expected.ToJSON), actual) {
+				t.Fatalf("%s: toJson value\n  expected %s\n  but got  %s", c.ID, *expected.ToJSON, jsonText)
+			}
+		default:
+			t.Fatalf("%s: harness error: unknown status %q", c.ID, expected.Status)
+		}
+
+	default:
+		t.Fatalf("%s: harness error: unknown operation %q", c.ID, c.Operation)
+	}
+
+	for _, failure := range check(c.ID, expected, actual) {
+		t.Error(failure)
 	}
 }
 
-// ranCases records which case ids actually executed, so the coverage
-// self-check below is a fact rather than a loop-shaped assumption.
-var ranCases sync.Map
-
-// subtestFilter reports the -run pattern when it selects subtests (it
-// contains a "/"), and "" otherwise.
-func subtestFilter() string {
-	f := flag.Lookup("test.run")
-	if f == nil {
-		return ""
-	}
-	pattern := f.Value.String()
-	if strings.Contains(pattern, "/") {
-		return pattern
-	}
-	return ""
-}
+// --- the runner --------------------------------------------------------
 
 func TestConformance(t *testing.T) {
-	parsed := mustCases(t)
-	if len(parsed.Cases) == 0 {
-		t.Fatal("cases.json must contain cases")
-	}
-	for _, kase := range parsed.Cases {
-		kase := kase
-		t.Run(kase.ID, func(t *testing.T) {
-			ranCases.Store(kase.ID, true)
-			runCase(t, kase)
+	// Reset between runs in the same process (go test -count=2, or a
+	// caller running TestConformance more than once): ran is
+	// package-level state, and a stale coverage list would otherwise
+	// fail the self-check below with a mysterious mismatch.
+	ranMu.Lock()
+	ran = nil
+	ranMu.Unlock()
+
+	dir, file := loadCases(t)
+	checkWholeRegistry(t, dir, file.Fixtures)
+
+	for _, c := range file.Cases {
+		c := c
+		t.Run(c.ID, func(t *testing.T) {
+			runCase(t, dir, file.Fixtures, c)
 		})
 	}
 
-	// Coverage self-check: every case in the file ran, asserted against
-	// the parsed set and never against a literal count, so a silently
-	// dropped case or operation cannot hide. Skips are not tolerated —
-	// there is no code path in this adapter that produces one.
-	//
-	// The only thing that can legitimately leave cases unrun is an
-	// explicit subtest filter on the command line, so the check stands
-	// down for that and says so rather than reporting a false failure.
-	if filter := subtestFilter(); filter != "" {
-		t.Logf("-run %q filters subtests; the coverage self-check is only meaningful on a full run", filter)
-		return
+	if len(ran) != len(file.Cases) {
+		t.Fatalf("coverage self-check: %d cases ran, %d are in %s",
+			len(ran), len(file.Cases), casesFileName)
+	}
+	seen := make(map[string]bool, len(ran))
+	for _, id := range ran {
+		seen[id] = true
 	}
 	var missing []string
-	for _, kase := range parsed.Cases {
-		if _, ok := ranCases.Load(kase.ID); !ok {
-			missing = append(missing, kase.ID)
+	for _, c := range file.Cases {
+		if !seen[c.ID] {
+			missing = append(missing, c.ID)
 		}
 	}
 	if len(missing) > 0 {
-		t.Fatalf("%d of %d cases did not run: %s",
-			len(missing), len(parsed.Cases), strings.Join(missing, ", "))
+		t.Fatalf("coverage self-check: %d of %d cases did not run: %s",
+			len(missing), len(file.Cases), strings.Join(missing, ", "))
 	}
-
-	// Every operation the schema defines must have been exercised: an
-	// operation with no adapter would otherwise only surface if a case
-	// happened to use it.
-	seen := map[string]int{}
-	for _, kase := range parsed.Cases {
-		seen[kase.Operation]++
-	}
-	for _, operation := range []string{
-		"verifyTransaction", "verifyAppTransaction", "verifyRaw",
-		"verifyReceipt", "verifyReceiptBase64", "verifyReceiptEndpoint",
-		"decodeBase64",
-	} {
-		if seen[operation] == 0 {
-			t.Errorf("no case exercised operation %q", operation)
-		}
-		if _, ok := operations[operation]; !ok && operation != "decodeBase64" {
-			t.Errorf("this adapter has no dispatch entry for operation %q", operation)
-		}
-	}
-	t.Logf("ran %d conformance cases over %d fixtures (%v)",
-		len(parsed.Cases), len(parsed.Fixtures), seen)
+	t.Logf("%s: %d cases ran, %d fixtures registered, 0 skipped",
+		casesFileName, len(file.Cases), len(file.Fixtures))
 }
 
-// --- result normalization ------------------------------------------------
-
-var (
-	timeType       = reflect.TypeOf(time.Time{})
-	jsonNumberType = reflect.TypeOf(json.Number(""))
-)
-
-// normalize renders a returned value into the language-neutral shape the
-// field paths are written against: dates as ISO-8601 UTC, byte fields as
-// lowercase hex (also mirrored under "<name>Hex", the spelling cases.json
-// uses), maps as objects keyed by the stringified key, structs as objects
-// keyed by their json tag.
-func normalize(value any) any { return normalizeValue(reflect.ValueOf(value)) }
-
-func normalizeValue(rv reflect.Value) any {
-	if !rv.IsValid() {
-		return nil
+// Every reason a case expects must be one of the exported Reason values,
+// so a typo in the case file surfaces here, named, rather than as a
+// mysterious mismatch inside one case.
+func TestEveryExpectedReasonIsInTheVocabulary(t *testing.T) {
+	known := map[string]bool{}
+	for _, reason := range applereceipt.AllReasons() {
+		known[string(reason)] = true
 	}
-	switch rv.Kind() {
-	case reflect.Pointer, reflect.Interface:
-		if rv.IsNil() {
-			return nil
-		}
-		return normalizeValue(rv.Elem())
-	}
-	switch rv.Type() {
-	case timeType:
-		return isoUTC(rv.Interface().(time.Time))
-	case jsonNumberType:
-		number := rv.Interface().(json.Number)
-		if i, err := number.Int64(); err == nil {
-			return i
-		}
-		f, err := number.Float64()
-		if err != nil {
-			return number.String()
-		}
-		return f
-	}
-	switch rv.Kind() {
-	case reflect.Slice, reflect.Array:
-		if rv.Type().Elem().Kind() == reflect.Uint8 {
-			return hex.EncodeToString(byteSlice(rv))
-		}
-		if rv.Kind() == reflect.Slice && rv.IsNil() {
-			return nil
-		}
-		out := make([]any, rv.Len())
-		for i := 0; i < rv.Len(); i++ {
-			out[i] = normalizeValue(rv.Index(i))
-		}
-		return out
-	case reflect.Map:
-		if rv.IsNil() {
-			return nil
-		}
-		out := make(map[string]any, rv.Len())
-		for _, key := range rv.MapKeys() {
-			out[fmt.Sprint(key.Interface())] = normalizeValue(rv.MapIndex(key))
-		}
-		return out
-	case reflect.Struct:
-		return normalizeStruct(rv)
-	case reflect.String:
-		return rv.String()
-	case reflect.Bool:
-		return rv.Bool()
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return rv.Int()
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return int64(rv.Uint())
-	case reflect.Float32, reflect.Float64:
-		return rv.Float()
-	}
-	return rv.Interface()
-}
-
-func normalizeStruct(rv reflect.Value) map[string]any {
-	out := map[string]any{}
-	rt := rv.Type()
-	for i := 0; i < rt.NumField(); i++ {
-		field := rt.Field(i)
-		if !field.IsExported() {
-			continue
-		}
-		name, omitEmpty := jsonFieldName(field)
-		if name == "-" {
-			continue
-		}
-		value := rv.Field(i)
-		if omitEmpty && value.IsZero() {
-			continue
-		}
-		out[name] = normalizeValue(value)
-		// cases.json spells a byte field "<name>Hex"; mirror it so both
-		// spellings resolve to the same lowercase hex.
-		if value.Kind() == reflect.Slice && value.Type().Elem().Kind() == reflect.Uint8 {
-			out[name+"Hex"] = out[name]
+	_, file := sharedCases(t)
+	for _, c := range file.Cases {
+		if c.Expected.Reason != "" && !known[c.Expected.Reason] {
+			t.Errorf("%s expects reason %q, which is not in the exported vocabulary",
+				c.ID, c.Expected.Reason)
 		}
 	}
-	return out
-}
-
-func jsonFieldName(field reflect.StructField) (string, bool) {
-	tag, ok := field.Tag.Lookup("json")
-	if !ok || tag == "" {
-		return field.Name, false
-	}
-	parts := strings.Split(tag, ",")
-	name := parts[0]
-	if name == "" {
-		name = field.Name
-	}
-	for _, opt := range parts[1:] {
-		if opt == "omitempty" {
-			return name, true
-		}
-	}
-	return name, false
-}
-
-func byteSlice(rv reflect.Value) []byte {
-	if rv.Kind() == reflect.Slice {
-		return rv.Bytes()
-	}
-	out := make([]byte, rv.Len())
-	for i := range out {
-		out[i] = byte(rv.Index(i).Uint())
-	}
-	return out
-}
-
-// isoUTC renders an instant as ISO-8601 UTC, dropping a zero millisecond
-// component — the spelling cases.json uses.
-func isoUTC(at time.Time) string {
-	at = at.UTC()
-	if at.Nanosecond() == 0 {
-		return at.Format("2006-01-02T15:04:05Z")
-	}
-	return at.Format("2006-01-02T15:04:05.000Z")
-}
-
-// --- field paths ---------------------------------------------------------
-
-// A path step is either a name (bundleId, length) or a bracket ([9999],
-// [0], [productId=com.example.app.vip]). Bracket contents may hold dots,
-// so a plain strings.Split(".") is wrong.
-var pathStep = regexp.MustCompile(`^(?:\.?([^.\[\]]+)|\[([^\]]+)\])`)
-
-type step struct {
-	bracket bool
-	value   string
-}
-
-func pathSteps(t *testing.T, path string) []step {
-	t.Helper()
-	var steps []step
-	rest := path
-	for rest != "" {
-		match := pathStep.FindStringSubmatch(rest)
-		if match == nil {
-			t.Fatalf("harness error: unparseable field path %q", path)
-		}
-		if match[1] != "" {
-			steps = append(steps, step{value: match[1]})
-		} else {
-			steps = append(steps, step{bracket: true, value: match[2]})
-		}
-		rest = rest[len(match[0]):]
-	}
-	return steps
-}
-
-// resolvePath walks the documented grammar: a.b, x.length, [9999][0] and
-// list[key=value].field. It reports whether the path resolved at all, so
-// "absent" and "present but nil" stay distinguishable.
-func resolvePath(t *testing.T, root any, path string) (any, bool) {
-	t.Helper()
-	current := root
-	for _, s := range pathSteps(t, path) {
-		if current == nil {
-			return nil, false
-		}
-		if !s.bracket {
-			if s.value == "length" {
-				if list, ok := current.([]any); ok {
-					current = int64(len(list))
-					continue
-				}
-			}
-			object, ok := current.(map[string]any)
-			if !ok {
-				return nil, false
-			}
-			value, present := object[s.value]
-			if !present {
-				return nil, false
-			}
-			current = value
-			continue
-		}
-		if key, want, isSelector := strings.Cut(s.value, "="); isSelector && key != "" {
-			list, ok := current.([]any)
-			if !ok {
-				t.Fatalf("%s: [%s] does not select from a list", path, s.value)
-			}
-			var matches []any
-			for _, element := range list {
-				object, ok := element.(map[string]any)
-				if ok && fmt.Sprint(object[key]) == want {
-					matches = append(matches, element)
-				}
-			}
-			if len(matches) != 1 {
-				t.Fatalf("%s: [%s] must select exactly one element, selected %d",
-					path, s.value, len(matches))
-			}
-			current = matches[0]
-			continue
-		}
-		if list, ok := current.([]any); ok {
-			index, err := strconv.Atoi(s.value)
-			if err != nil || index < 0 || index >= len(list) {
-				return nil, false
-			}
-			current = list[index]
-			continue
-		}
-		object, ok := current.(map[string]any)
-		if !ok {
-			return nil, false
-		}
-		value, present := object[s.value]
-		if !present {
-			return nil, false
-		}
-		current = value
-	}
-	return current, true
-}
-
-// equalValue compares a normalized value against the JSON literal a case
-// pins. Numbers arrive from cases.json as json.Number (loadCases decodes
-// with UseNumber, so a literal like 9223372036854775807 keeps its exact
-// digits instead of rounding through float64) and from the library as
-// int64; the integer path compares exactly, and only a genuinely
-// fractional literal falls back to float64.
-func equalValue(got, want any) bool {
-	switch wanted := want.(type) {
-	case string:
-		text, ok := got.(string)
-		return ok && text == wanted
-	case bool:
-		value, ok := got.(bool)
-		return ok && value == wanted
-	case json.Number:
-		return equalNumber(got, wanted)
-	}
-	return reflect.DeepEqual(got, want)
-}
-
-func equalNumber(got any, wanted json.Number) bool {
-	if i, err := wanted.Int64(); err == nil {
-		switch value := got.(type) {
-		case int64:
-			return value == i
-		case float64:
-			return value == float64(i)
-		}
-		return false
-	}
-	f, err := wanted.Float64()
-	if err != nil {
-		return false
-	}
-	switch value := got.(type) {
-	case int64:
-		return float64(value) == f
-	case float64:
-		return value == f
-	}
-	return false
 }

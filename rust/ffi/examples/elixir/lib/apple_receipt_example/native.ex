@@ -25,71 +25,30 @@ defmodule AppleReceiptExample.Native do
   def version, do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
-  `aprv_verifier_new_jws`, or `aprv_verifier_new_jws_with_roots` when `roots`
-  is a non-empty list of DER certificates.
-
-  There is no clock argument because the ABI has none here: no payload is
-  rejected for its age.
+  `aprv_verifier_new`. `roots` is a list of DER certificates, or `[]` for the
+  three bundled Apple roots; `clock_unix_millis` pins the clock, and `nil`
+  reads the system clock.
   """
-  @spec jws_verifier_new(binary(), non_neg_integer(), non_neg_integer(), [binary()]) ::
+  @spec verifier_new([binary()], integer() | nil) ::
           {:ok, reference()} | {:error, :invalid_argument}
-  def jws_verifier_new(_bundle_id, _environments, _app_apple_id, _roots),
-    do: :erlang.nif_error(:nif_not_loaded)
+  def verifier_new(_roots, _clock_unix_millis), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc "`aprv_verify_receipt`: the base64 receipt an app sends."
+  @spec verify_receipt(reference(), binary()) ::
+          {:ok, binary()} | {:error, integer(), binary()}
+  def verify_receipt(_verifier, _receipt_base64), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc "`aprv_verify_signed_data`: any Apple-signed compact JWS."
+  @spec verify_signed_data(reference(), binary()) ::
+          {:ok, binary()} | {:error, integer(), binary()}
+  def verify_signed_data(_verifier, _jws), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
-  `aprv_verifier_new_receipt`, or the `_with_roots` variant.
-
-  There is no clock argument because the ABI has none here: an injected clock
-  must never be able to accept an expired chain.
+  `aprv_verify_receipt_endpoint`. The Apple verdict is a field of the body,
+  so `{:error, status}` here means the call itself was malformed.
   """
-  @spec receipt_verifier_new(binary(), [binary()]) ::
-          {:ok, reference()} | {:error, :invalid_argument}
-  def receipt_verifier_new(_bundle_id, _roots), do: :erlang.nif_error(:nif_not_loaded)
-
-  @doc """
-  `aprv_endpoint_new`, the `_with_roots` variant, or
-  `aprv_endpoint_new_with_roots_and_clock` when `clock_unix_millis` is an
-  integer. `nil` reads the system clock.
-  """
-  @spec endpoint_new(non_neg_integer(), [binary()], integer() | nil) ::
-          {:ok, reference()} | {:error, :invalid_argument}
-  def endpoint_new(_environment, _roots, _clock_unix_millis),
-    do: :erlang.nif_error(:nif_not_loaded)
-
-  @doc "`aprv_verify_transaction`."
-  @spec verify_transaction(reference(), binary()) ::
-          {:ok, binary()} | {:error, integer(), binary()}
-  def verify_transaction(_verifier, _jws), do: :erlang.nif_error(:nif_not_loaded)
-
-  @doc "`aprv_verify_app_transaction`."
-  @spec verify_app_transaction(reference(), binary()) ::
-          {:ok, binary()} | {:error, integer(), binary()}
-  def verify_app_transaction(_verifier, _jws), do: :erlang.nif_error(:nif_not_loaded)
-
-  @doc "`aprv_verify_raw`."
-  @spec verify_raw(reference(), binary()) :: {:ok, binary()} | {:error, integer(), binary()}
-  def verify_raw(_verifier, _jws), do: :erlang.nif_error(:nif_not_loaded)
-
-  @doc """
-  `aprv_verify_receipt_der`, or the `_with_device_guid` variant when `guid`
-  is not empty.
-  """
-  @spec verify_receipt_der(reference(), binary(), binary()) ::
-          {:ok, binary()} | {:error, integer(), binary()}
-  def verify_receipt_der(_verifier, _der, _guid), do: :erlang.nif_error(:nif_not_loaded)
-
-  @doc "`aprv_verify_receipt_base64`, or the `_with_device_guid` variant."
-  @spec verify_receipt_base64(reference(), binary(), binary()) ::
-          {:ok, binary()} | {:error, integer(), binary()}
-  def verify_receipt_base64(_verifier, _receipt_base64, _guid),
-    do: :erlang.nif_error(:nif_not_loaded)
-
-  @doc """
-  `aprv_verify_receipt_endpoint_json`. The Apple verdict is a field of the
-  body, so `{:error, status}` here means the call itself was malformed.
-  """
-  @spec verify_receipt_endpoint_json(reference(), binary()) ::
+  @spec verify_receipt_endpoint(reference(), non_neg_integer(), binary()) ::
           {:ok, binary()} | {:error, integer()}
-  def verify_receipt_endpoint_json(_endpoint, _request_json),
+  def verify_receipt_endpoint(_verifier, _environment, _request_json),
     do: :erlang.nif_error(:nif_not_loaded)
 end

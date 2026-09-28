@@ -12,7 +12,7 @@ namespace EminDeniz99\ApplePurchaseReceiptVerifier\Internal;
  * {@see decodeStrict()}: the three segments of a compact JWS, which RFC 7515
  * §2 defines as unpadded canonical base64url. `fixtures/cases.json` pins that
  * a byte outside the alphabet, a `=`, or a noncanonical final character in
- * any of the three makes the JWS `INVALID_JWS_FORMAT`.
+ * any of the three makes the JWS `MALFORMED`.
  *
  * {@see decodeCanonical()}: `receipt-data` and x5c entries, canonical
  * standard base64 and nothing else. It is the rule Apple's verifyReceipt
@@ -30,7 +30,7 @@ final class Base64
      * Strict base64url decode for one compact-JWS segment (RFC 7515 §2):
      * the unpadded base64url alphabet only, and the canonical encoding of
      * whatever bytes come out. Returns null — never throws — for anything
-     * else, so a caller attaches its own {@see \EminDeniz99\ApplePurchaseReceiptVerifier\VerificationException}
+     * else, so a caller attaches its own {@see \EminDeniz99\ApplePurchaseReceiptVerifier\Internal\VerificationException}
      * message.
      *
      * Rejected: any byte outside `A-Za-z0-9-_` (including `=`), a length

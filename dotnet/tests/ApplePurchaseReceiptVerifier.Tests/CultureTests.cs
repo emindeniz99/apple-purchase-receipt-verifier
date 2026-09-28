@@ -1,102 +1,100 @@
 using System;
-using System.Collections.Generic;
 using System.Globalization;
-using System.Security.Cryptography.X509Certificates;
 using System.Threading;
-using ApplePurchaseReceiptVerifier.Jws;
-using ApplePurchaseReceiptVerifier.Receipt;
+using System.Threading.Tasks;
+using ApplePurchaseReceiptVerifier.Internal;
 using Xunit;
 
 namespace ApplePurchaseReceiptVerifier.Tests;
 
 /// <summary>
-/// The single most likely .NET-only bug in this port: a hostile thread culture
+/// The single most likely .NET-only bug in this port: a hostile culture
 /// reaching a parse or a rendering. Turkish has a dotless <c>ı</c> that breaks
 /// case-insensitive ASCII comparison, Thai defaults to the Buddhist calendar
-/// (year 2567 for 2024), and German writes a comma for the decimal separator.
+/// (year 2567 for 2024), German writes a comma for the decimal separator, and
+/// Arabic (Saudi Arabia) defaults to the Hijri calendar.
 /// </summary>
+/// <remarks>
+/// The culture is set for the whole process — the current thread and the
+/// default for every new thread — not only for the test's own thread, so a
+/// rendering done on the thread pool sees it too. That is process-wide
+/// state, hence the non-parallel collection.
+/// </remarks>
+[Collection(ProcessWideCollection.Name)]
 public class CultureTests : IDisposable
 {
     private readonly CultureInfo _culture = CultureInfo.CurrentCulture;
     private readonly CultureInfo _uiCulture = CultureInfo.CurrentUICulture;
+    private readonly CultureInfo? _defaultCulture = CultureInfo.DefaultThreadCurrentCulture;
+    private readonly CultureInfo? _defaultUiCulture = CultureInfo.DefaultThreadCurrentUICulture;
 
     public static TheoryData<string> HostileCultures => new() { "tr-TR", "th-TH", "de-DE", "ar-SA" };
 
     public void Dispose()
     {
-        Thread.CurrentThread.CurrentCulture = _culture;
-        Thread.CurrentThread.CurrentUICulture = _uiCulture;
+        CultureInfo.CurrentCulture = _culture;
+        CultureInfo.CurrentUICulture = _uiCulture;
+        CultureInfo.DefaultThreadCurrentCulture = _defaultCulture;
+        CultureInfo.DefaultThreadCurrentUICulture = _defaultUiCulture;
         GC.SuppressFinalize(this);
     }
 
     [Theory]
     [MemberData(nameof(HostileCultures))]
-    public void ReceiptDatesParseIdenticallyUnderAnyThreadCulture(string culture)
+    public void ReceiptDatesAndToJsonAreIdenticalUnderAnyCulture(string culture)
     {
-        Use(culture);
-        using ReceiptVerifier verifier = new(
-            new[] { X509CertificateLoader.LoadCertificate(Fixtures.Bytes("receipt-root")) },
-            "com.example.app");
-        AppReceipt receipt = verifier.Verify(Fixtures.Bytes("receipt"));
+        string invariant = VerifyReceipt().ToJson();
 
-        Assert.Equal(
-            new DateTimeOffset(2024, 8, 6, 12, 0, 0, TimeSpan.Zero), receipt.CreationDate);
-        Assert.Equal(
-            new DateTimeOffset(2024, 1, 15, 12, 0, 0, TimeSpan.Zero),
-            receipt.InAppPurchases[0].PurchaseDate);
+        Use(culture);
+        ReceiptPayload receipt = VerifyReceipt();
+
+        Assert.Equal(1722945600000L, receipt.ReceiptCreationDateMs);
+        Assert.Contains(receipt.InApp, p => p.PurchaseDateMs == 1705320000000L);
+        Assert.Equal(invariant, receipt.ToJson());
+        Assert.Equal(invariant, Task.Run(() => VerifyReceipt().ToJson()).GetAwaiter().GetResult());
     }
 
     [Theory]
     [MemberData(nameof(HostileCultures))]
-    public void TheEndpointRendersIdenticallyUnderAnyThreadCulture(string culture)
+    public void TheEndpointRendersIdenticallyUnderAnyCulture(string culture)
     {
         Use(culture);
-        using VerifyReceiptEndpoint endpoint = new(
-            new[] { X509CertificateLoader.LoadCertificate(Fixtures.Bytes("receipt-root")) },
-            AppleEnvironment.Sandbox,
-            new FixedClock(new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero)));
+        OrderedMap receipt = (OrderedMap)Json.ParseObject(EndpointAnswer())["receipt"]!;
 
-        Dictionary<string, object?> body = new(StringComparer.Ordinal)
-        {
-            ["receipt-data"] = Convert.ToBase64String(Fixtures.Bytes("receipt")),
-        };
-        IReadOnlyDictionary<string, object?> receipt =
-            (IReadOnlyDictionary<string, object?>)endpoint.VerifyReceiptResult(body).ToResponse()["receipt"]!;
-
-        // A Buddhist-calendar culture would render 2567, and a comma-decimal
-        // culture would corrupt the millisecond strings.
+        // A Buddhist or Hijri calendar would render another year, and a
+        // comma-decimal culture would corrupt the millisecond strings.
         Assert.Equal("2024-08-06 12:00:00 Etc/GMT", receipt["receipt_creation_date"]);
+        Assert.Equal("2024-08-06 05:00:00 America/Los_Angeles", receipt["receipt_creation_date_pst"]);
         Assert.Equal("1722945600000", receipt["receipt_creation_date_ms"]);
         Assert.Equal("2025-01-01 00:00:00 Etc/GMT", receipt["request_date"]);
-        List<object?> inApp = (List<object?>)receipt["in_app"]!;
-        Assert.Equal("1", ((IReadOnlyDictionary<string, object?>)inApp[0]!)["quantity"]);
+        Assert.Equal("1735689600000", receipt["request_date_ms"]);
+        OrderedMap first = (OrderedMap)((System.Collections.Generic.List<object?>)receipt["in_app"]!)[0]!;
+        Assert.Equal("1", first["quantity"]);
+
+        Assert.Equal(EndpointAnswer(), Task.Run(EndpointAnswer).GetAwaiter().GetResult());
     }
 
     [Theory]
     [MemberData(nameof(HostileCultures))]
-    public void JwsClaimsAndReasonCodesAreCultureIndependent(string culture)
+    public void AJwsSignedDateIsReadIdenticallyUnderAnyCulture(string culture)
     {
         Use(culture);
-        using JwsVerifier verifier = new(
-            new[] { X509CertificateLoader.LoadCertificate(Fixtures.Bytes("jws-root")) },
-            "com.example.app",
-            new[] { AppleEnvironment.Sandbox });
 
-        TransactionPayload payload = verifier.VerifyTransaction(Fixtures.Text("transaction"));
-        Assert.Equal(1722945600000L, payload.SignedDate);
-        Assert.Equal("Sandbox", payload.Environment);
-
-        Assert.Equal(
-            "INVALID_CERTIFICATE_PURPOSE",
-            VerificationReasonCodes.ToCode(VerificationReason.InvalidCertificatePurpose));
-        Assert.True(VerificationReasonCodes.TryParse("INVALID_CHAIN", out _));
-        Assert.True(AppleEnvironments.TryParse("Production", out _));
+        // The decimal spelling is the one a comma-decimal culture would
+        // misread; misread, the signedDate would not parse, the clock (far
+        // past the chain) would stand in and the JWS would fail.
+        Assert.True(TestPki.FixtureVerifier("jws-root", 4070908800000L)
+            .VerifySignedData(Fixtures070.ForSignedData("transaction")).Verified);
+        Assert.True(TestPki.FixtureVerifier("hostile-jws-root", 4070908800000L)
+            .VerifySignedData(Fixtures070.ForSignedData("transaction-signed-date-decimal")).Verified);
     }
 
     /// <summary>
-    /// The Turkish-I trap specifically: an <c>ToLower</c> anywhere near the
-    /// vocabulary would turn <c>"INVALID_CHAIN"</c> into something
-    /// <c>TryParse</c> no longer recognises.
+    /// The Turkish-I trap specifically: a <c>ToLower</c> or a culture-aware
+    /// comparison anywhere near the vocabulary would turn
+    /// <c>"INVALID_SIGNATURE"</c> into something <c>TryParse</c> no longer
+    /// recognises, and <c>"Production"</c> into something the environment
+    /// mapping does not.
     /// </summary>
     [Fact]
     public void TheTurkishDotlessIDoesNotReachTheVocabulary()
@@ -108,12 +106,30 @@ public class CultureTests : IDisposable
             Assert.True(VerificationReasonCodes.TryParse(code, out VerificationReason parsed));
             Assert.Equal(reason, parsed);
         }
+
+        Assert.Equal(AppleEnvironment.Production, AppleEnvironments.FromReceiptType("ProductionVPP"));
+        Assert.Equal(AppleEnvironment.Sandbox, AppleEnvironments.FromJwsEnvironment("Sandbox"));
+        Assert.Equal("Production", AppleEnvironments.ToValue(AppleEnvironment.Production));
     }
+
+    private static ReceiptPayload VerifyReceipt()
+    {
+        VerificationResult<ReceiptPayload> result =
+            TestPki.FixtureVerifier("receipt-root").VerifyReceipt(Fixtures070.ForReceipt("receipt"));
+        Assert.True(result.Verified, result.Failure?.ToString());
+        return result.Payload;
+    }
+
+    private static string EndpointAnswer() =>
+        TestPki.FixtureVerifier("receipt-root", 1735689600000L).VerifyReceiptEndpoint(
+            AppleEnvironment.Sandbox, "{\"receipt-data\":\"" + Fixtures070.ForReceipt("receipt") + "\"}");
 
     private static void Use(string culture)
     {
         CultureInfo info = new(culture);
-        Thread.CurrentThread.CurrentCulture = info;
-        Thread.CurrentThread.CurrentUICulture = info;
+        CultureInfo.CurrentCulture = info;
+        CultureInfo.CurrentUICulture = info;
+        CultureInfo.DefaultThreadCurrentCulture = info;
+        CultureInfo.DefaultThreadCurrentUICulture = info;
     }
 }

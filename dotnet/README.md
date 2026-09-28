@@ -1,521 +1,547 @@
 # ApplePurchaseReceiptVerifier (.NET)
 
-Offline verification of Apple App Store purchase proofs:
+Verify Apple in-app purchases locally, with no calls to Apple's servers.
 
-- **StoreKit 2 / App Store Server JWS** — `signedTransactionInfo`,
-  `signedRenewalInfo`, `AppTransaction`, Server Notifications V2.
-- **Legacy PKCS#7 app receipts** — the blob apps used to POST to Apple's
-  deprecated `verifyReceipt` endpoint, including a local, wire-compatible
-  replacement for that endpoint.
-
-Nothing here talks to the network, and nothing here reads the operating
-system's trust store. Trust comes from the roots you pass in, or from the three
-Apple roots compiled into the package.
-
-This is the C# port of
-[apple-purchase-receipt-verifier](https://github.com/emindeniz99/apple-purchase-receipt-verifier);
-it answers the same `fixtures/cases.json` vectors as the Java, Node, Python and
-Swift ports, byte for byte.
-
-## Install
+Replaces the deprecated `verifyReceipt` endpoint by validating StoreKit 2
+signed JWS payloads and legacy PKCS#7 app receipts against pinned Apple root
+certificates.
 
 ```
 dotnet add package ApplePurchaseReceiptVerifier
 ```
 
+```csharp
+using ApplePurchaseReceiptVerifier;
+
+// Build once, share everywhere: the roots are parsed once, not per call.
+// Thread-safe, immutable, and — unlike the 0.6 verifiers — implements no
+// IDisposable: it copies the certificates you hand it, so you may dispose
+// your own X509Certificate2 instances right after Build().
+IVerifier verifier = Verifier.Create(Config.Defaults());
+
+// A legacy app receipt, as the base64 string the app sends.
+VerificationResult<ReceiptPayload> receiptResult = verifier.VerifyReceipt(receiptBase64);
+if (receiptResult.Verified)
+{
+    Console.WriteLine($"{receiptResult.Payload.ReceiptType} {receiptResult.Payload.InApp.Count}");
+}
+
+// Any Apple-signed JWS: a transaction, renewal info, an app transaction or
+// a notification. The payload comes back as the JSON text Apple signed.
+VerificationResult<JsonPayload> jwsResult = verifier.VerifySignedData(jws);
+if (jwsResult.Verified)
+{
+    Console.WriteLine(jwsResult.Payload.Json);
+}
+```
+
 Targets `netstandard2.0` and `net8.0`. The netstandard2.0 asset reaches .NET
 Framework 4.6.2+, Mono 6.x and every .NET Core / .NET 5–10 runtime from one
-binary; the net8.0 asset is trim- and AOT-annotated.
+binary; the net8.0 asset is trim- and AOT-annotated. No method throws for
+input the caller does not control: every verify call returns a
+`VerificationResult<T>`, never a thrown exception, for anything short of an
+`OutOfMemoryException`.
 
 Dependencies: `System.Security.Cryptography.Pkcs` and `System.Formats.Asn1`,
 both first-party. There is no JSON dependency — the package carries its own
-bounded reader, because `System.Text.Json` is a NuGet package below net8.0 and
-an assembly compiled against a newer one than the host ships will not load.
+bounded reader, because `System.Text.Json` is a NuGet package below net8.0
+and an assembly compiled against a newer one than the host ships will not
+load.
 
-## Verifying a StoreKit 2 transaction
+The library answers one question: did Apple sign this? It checks the chain
+to a pinned root, Apple's marker OIDs and the signature, and hands back
+everything the payload says. Whether the payload is for your app, your
+environment, your user and still current is your decision, made on the
+fields it returns ([What to check after verification](#what-to-check-after-verification)).
 
-```csharp
-using ApplePurchaseReceiptVerifier;
-using ApplePurchaseReceiptVerifier.Jws;
+## What it will never do
 
-var verifier = new JwsVerifier(
-    trustedRoots: AppleRootCertificates.JwsRoots(),
-    bundleId: "com.example.app",
-    acceptedEnvironments: new[] { AppleEnvironment.Production, AppleEnvironment.Sandbox },
-    appAppleId: 1234567890);
+These are the properties the library exists to hold.
 
-try
-{
-    TransactionPayload transaction = verifier.VerifyTransaction(jws);
-    // Entitlement is your rule, read off the signed fields. A billing grace
-    // period (it lives in the renewal info), an upgrade (isUpgraded) and a
-    // refund after signing are yours to handle; App Store Server
-    // Notifications V2 or the App Store Server API give the live status.
-    long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-    if (transaction.RevocationDate is null && (transaction.ExpiresDate is null || transaction.ExpiresDate > now))
-    {
-        Grant(transaction.ProductId!, transaction.TransactionId!);
-    }
-}
-catch (VerificationException e) when (e.Reason == VerificationReason.WrongEnvironment)
-{
-    // C# exception filters make the machine-readable reason a dispatch
-    // mechanism: no string matching, no re-throw dance.
-}
-catch (VerificationException e)
-{
-    telemetry.Increment("iap.reject", e.ReasonCode);   // "INVALID_CHAIN"
-}
-```
+- **It never reads the operating system's trust store.** `X509Chain` is
+  never constructed anywhere in this library, and a `BannedApiAnalyzers`
+  rule makes writing one a compile error. Its defaults are the operating
+  system's trust store plus online revocation and AIA fetching — and on a
+  developer's macOS or Windows machine, where the Apple roots are already
+  in the OS store, forgetting the pin fails *permissively*. Anchors come
+  from `Config.CreateBuilder().Roots(...)`, or from `Config.Defaults()`,
+  which holds Apple's three published roots compiled in as source
+  constants, so they work unchanged in a container with no filesystem
+  access.
+- **It never touches the network.** No OCSP, no CRL, no AIA fetch, no root
+  download. Revocation checking is disabled by design; an integrator who
+  needs it must layer it on top.
+- **It never uses a key no pinned root vouched for.** The chain is built
+  top-down, from the pinned roots, so a certificate carrying an attacker's
+  key (their choice of size and curve) is never used to check anything
+  ([Stranger certificates](#stranger-certificates)).
+- **It never returns anything partial.** A failed result carries a
+  `Failure` and a `null` `Payload`; a verified one carries a `Payload` that
+  passed every check, and a `null` `Failure`. `Verified` is annotated
+  `[MemberNotNullWhen]`, so `if (result.Verified)` gives the compiler a
+  non-null `result.Payload`.
+- **It never logs, meters or calls back into your code** except for the
+  clock you give it. `VerificationReason` is the whole observability
+  surface, and `Failure.Message` never quotes the input.
 
-Include `Sandbox` in the accepted set on any endpoint App Review can reach:
-App Review runs production builds against the sandbox, so a single-environment
-hard fail rejects purchases during review.
+## The API
 
-The other two entry points:
-
-```csharp
-AppTransactionPayload app = verifier.VerifyAppTransaction(jws);
-
-// Chain and signature only — no claim is enforced. Use it for payload types
-// without a dedicated model (renewal info, notification envelopes), and check
-// bundleId / environment / appAppleId in the returned claims yourself.
-IReadOnlyDictionary<string, object?> claims = verifier.VerifyRaw(jws);
-```
-
-Date claims are **epoch-millisecond integers**, exactly as Apple ships them —
-`SignedDate`, `PurchaseDate`, `ExpiresDate`, `RevocationDate`,
-`ReceiptCreationDate`. Converting them to `DateTimeOffset` would lose the raw
-claim and put this port out of step with the other eight. Receipt *attribute*
-dates are the opposite: those are `DateTimeOffset`.
-
-`ClaimsMap` on either payload carries every claim, including ones this library
-does not model.
-
-## Verifying a legacy app receipt
+### `Config`: the roots and the clock
 
 ```csharp
-using ApplePurchaseReceiptVerifier.Receipt;
+Config defaults = Config.Defaults(); // Apple's three roots, the system clock
 
-var verifier = new ReceiptVerifier(AppleRootCertificates.ReceiptRoots(), "com.example.app");
-
-AppReceipt receipt = verifier.Verify(receiptBase64);
-foreach (InAppPurchase purchase in receipt.InAppPurchases)
-{
-    Console.WriteLine($"{purchase.ProductId} {purchase.PurchaseDate:o}");
-}
+Config pinned = Config.CreateBuilder()
+    .Roots(new[] { rootCertificate })          // replaces the defaults
+    .Clock(() => 1_735_689_600_000L)           // epoch milliseconds; replaces DateTimeOffset.UtcNow
+    .Build();
 ```
 
-Every input form is reachable with and without the optional device binding:
+An empty `Roots` set is an `ArgumentException` from `Build()`, never a
+verdict: a verifier with no roots would reject everything, and nobody would
+notice until production. `Config.Defaults()` throws
+`InvalidOperationException` if the bundled roots are missing or unreadable —
+check for that at startup, since a call made with a config it fails to
+produce would never exist.
 
-```csharp
-verifier.Verify(receiptDer);
-verifier.Verify(receiptDer, deviceGuid);
-verifier.Verify(receiptBase64);
-verifier.Verify(receiptBase64, deviceGuid);
-```
+### `Verifier.Create`: three methods
 
-Passing `deviceGuid` (the client's device GUID — the raw bytes of
-`identifierForVendor` on iOS, iPadOS, tvOS and watchOS, including an iOS
-app running on an Apple silicon Mac, or the primary network interface's
-MAC address from `copy_mac_address` on macOS and Mac Catalyst) additionally
-enforces `SHA1(guid ‖ opaqueValue ‖ bundleIdBytes) == attribute 5`. It is
-optional because a server does not always hold those bytes; cross-device
-restore still works either way, since each device presents its own receipt.
-
-Attribute types this library does not model are not dropped:
-`receipt.UnknownAttributes[type]` hands back the verified-but-undecoded value
-bytes, so a field Apple adds next year is reachable without a release.
-
-`ReceiptVerifier` takes **no clock**, deliberately. See "Time" below.
-
-### The primitive under both
-
-```csharp
-AppReceipt receipt = ReceiptVerifier.VerifyReceiptCore(receiptDer, roots);
-```
-
-Chain and signature, **without** the bundle-id check. The receipt it returns is
-proved Apple-signed, but no claim in it has been checked — the bundle id in
-particular is whatever the receipt says. Compare it yourself, or use
-`Verify`.
-
-## The verifyReceipt-compatible endpoint
-
-A drop-in local replacement for Apple's deprecated endpoint: same request body,
-same response body, same status codes, verified against pinned roots instead of
-by calling Apple.
-
-```csharp
-var endpoint = new VerifyReceiptEndpoint(
-    AppleRootCertificates.ReceiptRoots(), AppleEnvironment.Production);
-
-VerifyReceiptResult result = endpoint.VerifyReceiptResult(body);   // a parsed body, or the raw JSON string
-IReadOnlyDictionary<string, object?> response = result.ToResponse(); // Apple's body as a map
-string json = result.ToJson();                                      // Apple's body as JSON
-
-string json2 = endpoint.VerifyReceiptJson(requestJson);          // same as VerifyReceiptResult(requestJson).ToJson()
-VerifyReceiptResult bare = endpoint.VerifyReceiptData(base64);   // receipt-data alone, no envelope
-```
-
-No endpoint method throws: the Apple status code is a field of the answer.
-
-| Condition | `Status` | `FailureReason` |
+| Method | Input | Result |
 |---|---|---|
-| the raw body is over `MaxRequestBytes` (3,145,728 UTF-8 bytes); Apple answers HTTP 413 here | `21002` | `RequestTooLarge` |
-| body is not a JSON object or nests deeper than 64, or `receipt-data` is missing, empty or not a string | `21002` | `MalformedRequest` |
-| `receipt-data` is not canonical standard base64 (whitespace, base64url and omitted or extra padding all count, as at Apple), is over `MaxReceiptBytes`, or its CMS envelope does not parse | `21002` | `InvalidReceiptFormat` |
-| the receipt could not be authenticated | `21003` | `InvalidChain`, `InvalidSignature`, other certificate reasons |
-| the receipt authenticated but its signed content cannot be read, or an unexpected exception (including a throwing `IClock` or request dictionary, or a disposed endpoint). Not the client's fault: alert and retry or escalate, do not deny the user | `21009` | `InternalError`, with the parser's error or the exception in `FailureCause` |
-| a Production endpoint, and `receiptType ∉ {Production, ProductionVPP}` | `21007` | none: `Receipt` is set |
-| a Sandbox endpoint, and `receiptType ∈ {Production, ProductionVPP}` | `21008` | none: `Receipt` is set |
-| otherwise | `0`, plus `environment` and `receipt` | none: `Receipt` is set |
+| `VerifyReceipt(string base64)` | the base64 receipt an app sends | `VerificationResult<ReceiptPayload>` |
+| `VerifySignedData(string jws)` | any Apple-signed compact JWS | `VerificationResult<JsonPayload>`: `{ Json }`, the signed JSON text |
+| `VerifyReceiptEndpoint(AppleEnvironment environment, string requestJson)` | a `verifyReceipt` request body | Apple's response body, as a JSON string, always |
 
-A `VerifyReceiptResult` is one verification. `Status` is the answer for the
-endpoint's own environment. `Receipt` is the verified `AppReceipt` whenever the
-receipt bytes verified, 21007 and 21008 included, and `FailureReason` says why
-there is no receipt; exactly one of the two is non-null. `IsVerified` is `true`
-exactly when `Receipt` is non-null, and the compiler knows it
-(`[MemberNotNullWhen]`), so `if (result.IsVerified)` gives a non-null
-`result.Receipt`. That makes `IsVerified` **not** the same check as
-`Status == 0`: `Status == 0` asks whether this endpoint's own environment
-accepts the receipt, `IsVerified` asks whether the receipt verified at all. The
-response is rendered only when `ToResponse()` or `ToJson()` is called, as a new
-map each time. The result is immutable and thread-safe, and only the endpoint
-can create one.
+`VerificationResult<T>` carries exactly one of `Payload` and `Failure` — check
+`result.Verified` before touching either. The endpoint never fails to
+answer: the Apple status code is a field of the body, for every input.
 
-**Retrying in the other environment costs no second verification.**
-`ToResponse(AppleEnvironment)` and `ToJson(AppleEnvironment)` render what an
-endpoint of that environment would answer, recomputing the status from the
-receipt's own type each time:
+### `ReceiptPayload`
 
-| receipt | on `Production` | on `Sandbox` |
-|---|---|---|
-| `Production`, `ProductionVPP` | 0 | 21008 |
-| any other type, or none | 21007 | 0 |
-| failed verification | its own status | its own status |
+Every field is `null` when the attribute is absent or does not decode, so a
+caller can build one by hand with the public constructor for its own tests.
+Dates are epoch milliseconds (`*Ms`, `long?`); 64-bit ids (`AppItemId`,
+`DownloadId`, `VersionExternalIdentifier`, an in-app purchase's
+`WebOrderLineItemId`) stay `long?` on this payload but render as decimal
+**strings** in `ToJson()`, the same JSON value every port writes.
 
 ```csharp
-VerifyReceiptResult result = production.VerifyReceiptResult(requestJson);
-string json = result.Status == VerifyReceiptEndpoint.StatusSandboxReceiptOnProduction
-    ? result.ToJson(AppleEnvironment.Sandbox)
-    : result.ToJson();
+payload.ReceiptType;               // "Production", "ProductionSandbox", ...
+payload.BundleId;                  // decoded attribute 2
+payload.BundleIdBytes;             // its raw octets: the device-hash input
+payload.ReceiptCreationDateMs;
+payload.InApp[0].ProductId;
+payload.InApp[0].ExpiresDateMs;
+payload.UnknownAttributes;         // IReadOnlyDictionary<int, IReadOnlyList<byte[]>> in receipt order
+payload.ToJson();                  // JSON with the same value in every port
 ```
 
-A sandbox receipt never renders as a production 0, whichever endpoint verified
-it. 21007 and 21008 bodies carry the status alone, as Apple's do. Any
-environment other than `Production` or `Sandbox` throws `ArgumentException`,
-the same refusal as the constructor's.
+Decoding follows the rules every port shares: the first occurrence of an
+attribute wins; every attribute that does not end up in a typed field (a
+later copy, or a value that does not decode, whose field is then `null`) is
+kept raw in `UnknownAttributes`, the in-app ones in that purchase's own; an
+empty date string means "not set" and is not kept raw. `ToJson()` writes
+JSON whose parsed value is the same in every port; the bytes may differ.
 
-**`request_date`.** Every method takes an optional `DateTimeOffset? now`,
-which becomes `request_date` in place of the endpoint's clock. Without one the
-clock is read once, when the call is made, and `RequestDate` returns that
-instant (in UTC). It reaches `request_date` and nothing else: certificate
-validity never sees it (see [Time](#time)).
+### `Failure` and `VerificationReason`
 
-`VerifyReceiptResult(null)` does not compile, because both the dictionary and
-the string overload match; cast the `null` to the one you mean.
+`Failure` is `{ Reason, Message, Cause }`; `Cause` is non-null only for
+`UnreadablePayload` and `InternalError` — behind any other reason it would
+be a parser exception about unverified input, whose message can quote raw
+certificate text. Switch on `Failure.Reason`; never parse `Failure.Message`.
+`VerificationReasonCodes.ToCode` gives the SCREAMING_SNAKE token every port
+reports (e.g. `"UNTRUSTED_CHAIN"`) for logging or telemetry.
 
-Environment routing fails closed: only `Production` and `ProductionVPP` count
-as production, so `ProductionVPPSandbox`, `Xcode` and a missing attribute all
-route as non-production. Like Apple's endpoint, this does not check the bundle
-id: compare `result.Receipt.BundleId` (or `receipt.bundle_id` in the body)
-yourself before granting anything, or use `ReceiptVerifier`, which checks it
-for you. `password` and `exclude-old-transactions` are accepted for wire
-compatibility and never read. Fields that only exist in Apple's server-side
-subscription database (`latest_receipt_info`, `pending_renewal_info`) are out
-of scope; see `COMPARISON.md` in the repository.
+To stand in for `IVerifier` in your own tests, build results by hand:
+`VerificationResult<ReceiptPayload>.Of(payload)`,
+`VerificationResult<ReceiptPayload>.Failed(new Failure(reason, message, cause))`.
 
-## Error vocabulary
-
-One exception type, `VerificationException`. Switch on `.Reason`; report
-`.ReasonCode`, which is the canonical token every port emits.
-
-| `VerificationReason` | `ReasonCode` | Raised when |
+| `VerificationReason` | Raised when | Endpoint status |
 |---|---|---|
-| `InvalidJwsFormat` | `INVALID_JWS_FORMAT` | not three dot-separated segments, `alg != ES256`, `x5c` absent or not exactly three, header or payload not base64url JSON |
-| `InvalidCertificate` | `INVALID_CERTIFICATE` | an `x5c` entry is not canonical standard base64, or not a parseable certificate |
-| `InvalidCertificatePurpose` | `INVALID_CERTIFICATE_PURPOSE` | a required Apple marker OID is missing |
-| `InvalidChain` | `INVALID_CHAIN` | the chain does not reach a pinned root at the signing time, an issuer is not a CA, the path is too long, or the receipt embeds more than ten certificates |
-| `InvalidSignature` | `INVALID_SIGNATURE` | the ES256 or CMS signature check failed, or the key is of the wrong type |
-| `WrongBundleId` | `WRONG_BUNDLE_ID` | the bundle id claim does not match |
-| `WrongEnvironment` | `WRONG_ENVIRONMENT` | the environment / `receiptType` is outside the accepted set |
-| `WrongAppAppleId` | `WRONG_APP_APPLE_ID` | a Production `AppTransaction` names a different app Apple id, or none is configured |
-| `InvalidReceiptFormat` | `INVALID_RECEIPT_FORMAT` | not parseable CMS, trailing bytes, no payload (a detached CMS), no `SignerInfo`, or an unsupported digest |
-| `DeviceHashMismatch` | `DEVICE_HASH_MISMATCH` | the SHA-1 device binding failed, or the attributes it needs are absent |
-| `InternalError` | `INTERNAL_ERROR` | the receipt's chain and signature verified, but its payload does not parse (`InnerException` is the parser's error); a verified JWS payload carries a claim `TransactionPayload` / `AppTransactionPayload` models with the wrong JSON type (a string that is not a string, an integer that is not a whole number in the property's range); or the host cannot run the device-hash check (SHA-1 unavailable). Not the client's fault: alert and retry or escalate, do not deny |
+| `Malformed` | the base64, ASN.1, CMS or JWS structure is broken, or a structural bound is exceeded | 21002 |
+| `TooLarge` | the input is over its size cap and was not decoded | 21002 |
+| `InvalidSignature` | the signature did not verify | 21003 |
+| `UntrustedChain` | the chain does not reach a pinned root | 21003 |
+| `InvalidCertificate` | a certificate does not decode, or is outside its validity window at the chain instant | 21003 |
+| `InvalidCertificatePurpose` | a certificate lacks Apple's marker OID for its place | 21003 |
+| `UnreadablePayload` | the chain and signature passed, but the signed content does not parse | 21009 |
+| `InternalError` | the library failed unexpectedly, or the configured clock threw; no input makes a correct library answer it | 21009 |
 
-**Order of the receipt checks.** CMS parse → the creation date alone
-(attribute 12; nothing else in the payload is decoded yet) → chain at that
-date, or at the system clock when the date is missing, empty, unreadable or
-stated twice → receipt-signing marker OID → CMS signature → full payload
-parse → bundle id → device hash. Nothing is trusted before the chain and
-the signature, so reading the date never rejects. The chain comes first so
-the attacker's own key is never run before it is trusted. A payload that
-fails the full parse was signed by a trusted signer, so it is
-`InternalError`, not `InvalidReceiptFormat`.
+`UnreadablePayload` and `InternalError` are not the client's fault: alert,
+log the failure, and reconcile the purchase through the App Store Server API
+rather than deny the user.
 
-The vocabulary is closed. Adding a twelfth reason is a change to every port
-and to the shared schema in one pull request. `VerificationReason` also
-carries `MalformedRequest` (`MALFORMED_REQUEST`) and `RequestTooLarge`
-(`REQUEST_TOO_LARGE`), but only as
-[`VerifyReceiptResult.FailureReason`](#the-verifyreceipt-compatible-endpoint)
-values: no `VerificationException` is ever thrown with either, so a `switch`
-over a caught exception's `Reason` never sees them. `InternalError` keeps the
-position it had when it was endpoint-only, so no member's value moved.
+## What to check after verification
 
-**Misconfiguration is not a verification verdict.** Empty trust anchors, an
-empty bundle id, an empty accepted-environment set, or an endpoint environment
-other than Production/Sandbox raise `ArgumentException` from the constructor.
-
-## Integrating: from verified payload to entitlement
-
-The backend flow these calls sit inside is written out once in the
-[project README](https://github.com/emindeniz99/apple-purchase-receipt-verifier#integrating-from-verified-payload-to-entitlement):
-verify offline, deny on any failure, check the refund field, refresh a payload
-past the freshness window, guard against replay on the transaction id, then
-grant. That section also carries the policy table saying what each reason
-means and which ones are worth an alert. Here are its two branches in this
-port's API.
-
-A StoreKit 2 signed transaction:
+The library proves Apple signed the payload. Before granting anything, check
+what it says:
 
 ```csharp
-using ApplePurchaseReceiptVerifier;
-using ApplePurchaseReceiptVerifier.Jws;
-
-public sealed class Redeem
+VerificationResult<ReceiptPayload> result = verifier.VerifyReceipt(receiptBase64);
+if (!result.Verified)
 {
-    private readonly JwsVerifier verifier = new(
-        trustedRoots: AppleRootCertificates.JwsRoots(),
-        bundleId: "com.example.app",
-        acceptedEnvironments: new[] { AppleEnvironment.Production, AppleEnvironment.Sandbox });
-
-    public string RedeemTransaction(string userId, string jws)
-    {
-        TransactionPayload payload;
-        try
-        {
-            payload = verifier.VerifyTransaction(jws);                  // step 2
-        }
-        catch (VerificationException e)
-        {
-            Log.Warning("purchase rejected: {Reason}", e.ReasonCode);
-            return "denied";
-        }
-
-        if (payload.RevocationDate is not null) return "denied";        // step 3
-
-        // step 4, your call: past the window, ask the client for a fresh
-        // jwsRepresentation, or fetch one from the App Store Server API and
-        // verify that instead
-        long nowMillis = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        if (nowMillis - (payload.SignedDate ?? 0) > 5 * 60 * 1000) return "refresh";
-
-        string id = payload.TransactionId!;                             // step 5
-        if (Grants.Exists(id)) return "denied";
-        Grants.Record(id, payload.OriginalTransactionId, userId);
-
-        Grant(userId, payload.ProductId!);
-        return "granted";
-    }
+    return Denied(result.Failure.Reason);
+}
+if (result.Payload.BundleId != "com.example.app")
+{
+    return Denied("other app");
 }
 ```
 
-The legacy PKCS#7 app receipt is the same policy on the other input, the one
-StoreKit 1 apps and older SDKs still send:
+For a JWS, deserialize `result.Payload.Json` into a struct your own code
+declares — this library ships no typed claim models, since .NET (like Go,
+Rust, Ruby and PHP among the other ports) has no
+[`app-store-server-library`](https://github.com/apple/app-store-server-library-dotnet)
+of its own to lean on here; if you already depend on one, that package's
+types are exactly what to deserialize into. Read `bundleId`, `environment`,
+`appAppleId` for a Production `AppTransaction`, `revocationDate`,
+`expiresDate`, and `signedDate` for freshness. No payload is rejected for
+its age, as in Apple's own libraries: the right limit depends on the
+endpoint (Apple retries a server notification for days), so apply one
+yourself:
 
 ```csharp
-using ApplePurchaseReceiptVerifier;
-using ApplePurchaseReceiptVerifier.Receipt;
+long signedDate = /* from the deserialized JSON */;
+bool tooOld = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - signedDate > 5 * 60 * 1000;
+```
 
-// Same policy keyed on the receipt's own dates. Verify takes the base64 the
-// client sends or the DER bytes; VerifyReceiptEndpoint is the alternative,
-// answering Apple's verifyReceipt JSON shape with a status instead.
-public sealed class RedeemReceipt
+**The device hash** is yours too, when you have the device's identifier —
+the raw bytes of `identifierForVendor` on iOS, iPadOS, tvOS and watchOS
+(including an iOS app running on an Apple silicon Mac), or the primary
+network interface's MAC address from `copy_mac_address` on macOS and Mac
+Catalyst:
+
+```csharp
+using System.Security.Cryptography;
+
+byte[] expected;
+using (SHA1 sha1 = SHA1.Create())
 {
-    private static readonly TimeSpan Window = TimeSpan.FromMinutes(5);
+    sha1.TransformBlock(deviceIdBytes, 0, deviceIdBytes.Length, null, 0);
+    sha1.TransformBlock(payload.OpaqueValue!, 0, payload.OpaqueValue!.Length, null, 0);
+    sha1.TransformFinalBlock(payload.BundleIdBytes!, 0, payload.BundleIdBytes!.Length);
+    expected = sha1.Hash!;
+}
+bool matches = CryptographicOperations.FixedTimeEquals(expected, payload.Sha1Hash);
+```
 
-    private readonly ReceiptVerifier receipts =
-        new(AppleRootCertificates.ReceiptRoots(), "com.example.app");
+**Deduplicate on transaction ids, never on the receipt or JWS bytes.** A
+legacy receipt is BER, and one correctly signed receipt can be re-chunked
+into different byte strings that carry the same signed content.
 
-    public string Redeem(string userId, string receiptData, string productId)
-    {
-        AppReceipt receipt = receipts.Verify(receiptData);              // step 2
-        DateTimeOffset now = DateTimeOffset.UtcNow;
+### App Store Server Notifications V2
 
-        foreach (InAppPurchase purchase in receipt.InAppPurchases)
-        {
-            if (purchase.ProductId != productId) continue;
-            if (purchase.CancellationDate is not null) return "denied"; // step 3
-            if (purchase.ExpiresDate is { } expires && expires <= now) return "denied";
+A notification nests more JWS inside its own payload. Apple POSTs
+`{"signedPayload": "<JWS>"}`; verify that, then verify whichever of
+`data.signedTransactionInfo` and `data.signedRenewalInfo` the notification
+payload carries — a `TEST` notification carries neither:
 
-            // step 4: the same caller-side check, on the creation date. Past
-            // the window, ask the client to refresh its receipt, or call the
-            // App Store Server API by TransactionId and verify the JWS back.
-            if (receipt.CreationDate is not { } created || now - created > Window)
-            {
-                return "refresh";
-            }
+```csharp
+VerificationResult<JsonPayload> outer = verifier.VerifySignedData(signedPayload);
+if (!outer.Verified) return Denied(outer.Failure!.Reason);
 
-            string id = purchase.TransactionId!;                        // step 5
-            if (Grants.Exists(id)) return "denied";
-            Grants.Record(id, purchase.OriginalTransactionId, userId);
+using JsonDocument notification = JsonDocument.Parse(outer.Payload!.Json);
+JsonElement data = notification.RootElement.TryGetProperty("data", out JsonElement d) ? d : default;
 
-            Grant(userId, purchase.ProductId!);
-            return "granted";
-        }
+if (data.ValueKind == JsonValueKind.Object && data.TryGetProperty("signedTransactionInfo", out JsonElement txJws))
+{
+    VerificationResult<JsonPayload> transaction = verifier.VerifySignedData(txJws.GetString()!);
+    if (!transaction.Verified) return Denied(transaction.Failure!.Reason);
+    // ... read the transaction's own claims from transaction.Payload.Json
+}
 
-        return "denied";
-    }
+if (data.ValueKind == JsonValueKind.Object && data.TryGetProperty("signedRenewalInfo", out JsonElement renewalJws))
+{
+    VerificationResult<JsonPayload> renewal = verifier.VerifySignedData(renewalJws.GetString()!);
+    if (!renewal.Verified) return Denied(renewal.Failure!.Reason);
 }
 ```
+
+## What the checks are, and in what order
+
+The order is observable and is part of the contract: an input that fails an
+early check reports that check's reason, not a later one.
+
+**JWS.** Size cap → three segments, each strict base64url → header JSON
+(strict UTF-8, no byte order mark, nothing but whitespace after the object),
+`alg` ES256 and exactly three `x5c` entries → the certificates decode and
+are structurally sound (X.509 version 1–3, no duplicate extension, no
+undecodable extension) → the chain at `signedDate` (or the clock), the
+intermediate checked against the pinned roots **before** the leaf is
+checked against the intermediate → **leaf marker OID**
+`1.2.840.113635.100.6.11.1` → **intermediate marker OID**
+`1.2.840.113635.100.6.2.1` → the leaf's key is buildable on this platform →
+ES256 signature. A chain that does not reach a pinned root is
+`UntrustedChain` whatever markers it carries; validity is part of the chain
+check, so an expired chain that lacks a marker, or has a broken signature,
+is `InvalidCertificate` (owner decision, 2026-09-27). A key on a curve this
+library cannot construct a key object from is `InvalidCertificate`, judged
+only once its certificate has been vouched for and is about to be used —
+this applies to the leaf and, separately, to the intermediate, since the
+intermediate's own key is what checks the leaf.
+
+**Receipt.** Size cap → strict base64 → CMS parse, including the syntax of
+every `SignerInfo`'s signed attributes, whatever its position → at most four
+`SignerInfo`s and ten embedded certificates → the creation date alone
+(nothing else in the payload is read yet) → for each `SignerInfo`, in bag
+order: the signer's certificate looked up among the embedded certificates by
+issuer and serial number → structurally sound → the chain, top-down from the
+pinned roots, at the creation date or the clock → **signer marker OID** →
+**WWDR marker OID on the intermediate** → the signer's key buildable on this
+platform → the CMS signature. One `SignerInfo` passing is enough; when none
+does, the first one's failure is the verdict. Then the full payload parse,
+where any failure is `UnreadablePayload`.
+
+The receipt signer may use any algorithm `System.Security.Cryptography`
+supports on this host: RSA PKCS#1 v1.5, RSA-PSS or ECDSA over MD5, SHA-1 or
+the SHA-2 family (SHA-224 excepted — .NET ships no SHA-224 implementation
+at all, on any target framework, so a receipt or certificate signed with it
+cannot be verified on this port; no fixture requires it). A signer that
+chains to a pinned root and carries Apple's marker is trusted whatever it
+signs with, so a change on Apple's side does not reject genuine receipts.
+The same goes for certificate signatures in the chain: this port accepts
+any algorithm, like the Java and Node ports, rather than allowlisting a
+fixed set (owner decision, 2026-09-27). A `signatureAlgorithm` that names a
+hash (`sha256WithRSAEncryption`, `ecdsa-with-SHA384`, the RSA-PSS
+parameters) must name the `SignerInfo`'s `digestAlgorithm`, or the signature
+is `InvalidSignature`; `rsaEncryption` and `id-ecPublicKey` name none and
+take the digest.
+
+The bundled roots are checked against their published SHA-256 fingerprints
+when they load, all three or none; `Config.Defaults()` throws if any do not
+match, so a call made with a config it fails to produce would never exist.
+
+`x5c[2]` is never compared to an anchor and never trusted, and neither is a
+receipt's embedded copy of its root: the chain terminates at an anchor the
+caller pinned. Trust anchors are trusted by fiat, so **an anchor's own
+expiry is not checked**, which is what lets a receipt signed years ago
+under a since-expired chain verify at its own creation date.
+
+A certificate on the path (not the anchor) that marks critical an extension
+a PKIX validator does not process makes the path `UntrustedChain`, as it
+does for a PKIX validator. Processed are keyUsage, basicConstraints,
+certificatePolicies, policyMappings, policyConstraints, inhibitAnyPolicy,
+nameConstraints, subjectAltName, issuingDistributionPoint and
+deltaCRLIndicator, and on the leaf also cRLDistributionPoints and
+extKeyUsage. In signed attributes, `contentType` or `messageDigest` twice,
+or a `contentType` that differs from the `eContentType`, is
+`InvalidSignature`.
+
+An embedded certificate that does not decode is fatal, and the reason
+depends on which one it is: the **signer** is `InvalidCertificate`, any
+other entry `Malformed`, because the certificate bag is unsigned. An issuer
+whose `keyUsage` extension is present but does not permit `keyCertSign`
+cannot issue anything, and one whose `keyUsage` is present but does not
+decode fails closed the same way; an issuer with no `keyUsage` extension at
+all is permitted, as PKIX allows.
+
+### Stranger certificates
+
+A receipt's certificate bag is not signed, so anyone can add to it. A
+certificate there that no pinned root vouches for, directly or through a
+certificate it vouched for, is ignored: it never reaches the path builder
+and its key is never used, so a genuine receipt padded with such
+certificates still verifies. The walk starts at the roots, so the cost of a
+stranger is a name comparison, however large or broken its key. The shared
+denial-of-service cases pin this with a `maxMillis` time budget.
+
+## Input limits
+
+Base64 decoding, ASN.1 parsing and JSON parsing all allocate in proportion
+to their input, and all of them run before any signature is checked. So
+each input is measured first. The caps are fixed constants, the same in
+every port of this library. They are not options.
+
+The receipt and request caps are Apple's own limit. Measured on 2026-09-23
+against both of Apple's verifyReceipt endpoints (production and sandbox), a
+request body of 3,145,728 bytes is answered normally and one of 3,145,729
+bytes gets HTTP 413. Apple counts UTF-8 bytes, not characters.
+`fixtures/cases.json` holds every port to these numbers from both
+sides.
+
+- **the endpoint request body and the receipt base64 string**: 3,145,728
+  UTF-8 bytes. Over it is `TooLarge`, 21002 at the endpoint (Apple answers
+  HTTP 413 there — check the body's length before the call to do the
+  same).
+- **the compact JWS**: 262,144 UTF-8 bytes, `TooLarge`.
+- **JSON nesting depth 64, ASN.1 nesting depth 32.** A deeper request body, JWS or CMS
+  structure is `Malformed`.
+
+`receipt-data` is decoded exactly as Apple's `verifyReceipt` accepts it:
+standard base64 with canonical `=` padding and nothing else — whitespace,
+base64url and omitted or extra padding are all refused, as at Apple. `x5c`
+entries are standard base64, JWS segments unpadded canonical base64url, so
+one signed payload has one accepted spelling.
+
+## Measured worst-case CPU
+
+Measured on 2026-09-27 with `bench --worst-case`, which times every shared
+case in `fixtures/cases.json` that carries a time budget: oversized
+untrusted keys, a cross-signed certificate mesh, and the encoding oddities
+inside certificates. .NET 10.0.11 (SDK 10.0.400), Release build of the
+`net8.0` library, one calling thread, on a shared 4-vCPU KVM guest (Intel
+Xeon Processor @ 2.10GHz); one second of warm-up, then ten samples of at
+least 100 ms each.
+
+| Call | Median | Slowest sample |
+|---|---:|---:|
+| Slowest hostile case: `receipt/verify-genuine-padded-with-oversized-strangers` (a valid receipt carrying oversized certificates it does not need) | 4.8 ms | 6.4 ms |
+| Next: `receipt/reject-untrusted-oversized-intermediates` | 3.0 ms | 3.9 ms |
+| Slowest hostile JWS: `signed-data/reject-untrusted-oversized-x5c` (a JWS near the 256 KiB cap) | 1.5 ms | 2.0 ms |
+| Every other budgeted case | under 1.3 ms | under 1.8 ms |
+| For scale: `VerifyReceipt` on the genuine 187-purchase legacy receipt | 2.7 ms | 3.0 ms |
+| For scale: `VerifyReceiptEndpoint` on the same receipt | 4.0 ms | 4.7 ms |
+
+The slowest hostile case costs about what the endpoint spends on the
+largest genuine receipt, and under twice what `VerifyReceipt` spends on it
+(a repeat run gave the same order: 4.6 ms against 2.7 ms and 4.4 ms). The
+cost of a call follows the size of the input, which the caps above bound,
+not the structure an attacker chooses. The machine was shared with other
+work, so treat these as an order of magnitude. Run
+`dotnet run -c Release --project dotnet/bench -- --worst-case` for the
+hostile cases on your own hardware, and the same command without
+`-- --worst-case` for the genuine receipts.
+
+## The endpoint
+
+```csharp
+string body = verifier.VerifyReceiptEndpoint(AppleEnvironment.Production, rawRequestBody);
+```
+
+`rawRequestBody` must be the request's raw JSON text. A framework whose
+model binder defaults to `application/x-www-form-urlencoded` (or that only
+populates a parsed body after reading it that way) will hand this method a
+stringified form object, not the JSON Apple's client actually sent, and
+`receipt-data` will read as missing. Read the body as `application/json`
+before calling this method — `await new StreamReader(Request.Body).ReadToEndAsync()`
+in ASP.NET Core, not a model-bound form object — or parse it yourself and
+re-stringify it.
+
+| Status | Meaning |
+|---|---|
+| `0` | verified, and the receipt matches the requested environment |
+| `21002` | `receipt-data` is missing, malformed, or over the size cap |
+| `21003` | the receipt did not authenticate |
+| `21007` | a Sandbox receipt was sent to `AppleEnvironment.Production` |
+| `21008` | a Production receipt was sent to `AppleEnvironment.Sandbox` |
+| `21009` | not the client's fault: alert and reconcile, do not deny |
+
+`AppleStatus` holds these (and the codes Apple's own servers can return,
+which this local stand-in never produces) as named `int` constants. Local
+21007 / 21008 routing fails closed: only receipt types `Production` and
+`ProductionVPP` count as production (`AppleEnvironments.FromReceiptType`).
+Like Apple's endpoint, this does **not** check the bundle id: compare
+`receipt.bundle_id` in the response before granting anything. `password`
+and `exclude-old-transactions` are accepted for wire compatibility and
+never read. Fields that exist only in Apple's server-side database
+(`latest_receipt_info`, `pending_renewal_info`, `latest_receipt`) are never
+produced. 64-bit ids (`adam_id`/`app_item_id`/`download_id`/
+`version_external_identifier`) are written as raw JSON numbers, exactly as
+Apple's own endpoint does, even though `ReceiptPayload.ToJson()` renders
+them as decimal strings; `*_ms` date fields are JSON strings. A field the
+receipt does not carry is left out of the response entirely, never sent as
+JSON `null`. See
+[COMPARISON.md](https://github.com/emindeniz99/apple-purchase-receipt-verifier/blob/main/COMPARISON.md)
+for the field-by-field fidelity account.
+
+`*_pst` fields are rendered in `America/Los_Angeles`. Before 1883-11-18
+the offset is tzdb's local mean time, -07:52:58, fixed in code on every
+platform. From that date on the system time zone data answers. Linux and
+macOS read tzdb. Windows uses its own zone data, whose rules before 1987
+can differ from tzdb's, so a `_pst` value from 1883 to 1986 can differ
+there. Genuine receipts carry no dates that old, so only hand-made input
+reaches this.
 
 ## Known issue: legacy receipts on RHEL 9
 
 The legacy Apple receipt chain and its CMS signature are SHA-1. On Linux,
-`System.Security.Cryptography` uses the system OpenSSL, and RHEL 9's DEFAULT
-crypto policy (also Alma and Rocky) makes that OpenSSL refuse SHA-1
-signatures, so a genuine legacy receipt is `InvalidChain` there however .NET
-was installed. Observed on AlmaLinux 9.8 with the distro .NET 8 on
-2026-09-24. Windows and macOS use the OS crypto and are not affected by this
-policy. Newer receipts (SHA-256 chains) and every JWS are unaffected; FIPS
-mode is untested.
+`System.Security.Cryptography` uses the system OpenSSL, and RHEL 9's
+DEFAULT crypto policy (also Alma and Rocky) makes that OpenSSL refuse SHA-1
+signatures, so a genuine legacy receipt answers `UntrustedChain` there
+however .NET was installed. Observed on AlmaLinux 9.8 with the distro .NET
+8 on 2026-09-24. Windows and macOS use the OS crypto and are not affected
+by this policy. Newer receipts (SHA-256 chains) and every JWS are
+unaffected; FIPS mode is untested.
 
-Until the fix ships, run `update-crypto-policies --set DEFAULT:SHA1` on that
-host. The planned fix checks SHA-1 signatures on Apple's pinned legacy chain
-through BouncyCastle, as the Java port does, and adds an AlmaLinux 9 CI job
-(ROADMAP.md).
+Until the fix ships, run `update-crypto-policies --set DEFAULT:SHA1` on
+that host.
 
-## Security posture
+## Why offline
 
-- **Pinned anchors only.** `X509Chain` is never constructed anywhere in this
-  library, and a `BannedApiAnalyzers` rule makes writing one a compile error.
-  Its defaults are the operating system's trust store plus online revocation
-  and AIA fetching — and on a developer's macOS or Windows machine, where the
-  Apple roots are already in the OS store, forgetting the pin fails
-  *permissively*. A test asserts the shipped IL contains no reference to it.
-- **No network.** No OCSP, no CRL, no AIA, no root download. Revocation is
-  disabled by design; that is the accepted trade-off for offline verification,
-  and it is what Apple's own libraries do in offline mode.
-- **Apple marker OIDs are mandatory.** The JWS leaf must carry
-  `1.2.840.113635.100.6.11.1` and the intermediate `1.2.840.113635.100.6.2.1`
-  with `CA:true`; the receipt signer must carry `1.2.840.113635.100.6.11.1`.
-  Without the last of these, any developer certificate chaining through the
-  same WWDR intermediate could sign a forged receipt.
-- **Validity is judged at signing time**, from the payload's `signedDate` /
-  `receiptCreationDate` or the receipt's attribute-12 creation date, so a
-  historical purchase signed with a since-rotated certificate keeps verifying.
-  Every chain function takes that instant as a required parameter; there is no
-  overload that defaults to "now". A payload stating a signing time no instant
-  can represent is an `INVALID_CHAIN`, not a payload that states none: falling
-  back to "now" there would move the validity verdict.
-- **Reject rather than repair.** An attribute type outside the 32-bit signed
-  range, an integer wider than 64 bits, a date without a timezone designator, a
-  value with trailing data, trailing bytes after the CMS blob or after the
-  attribute set — each fails the receipt. Nothing is renamed or clamped onto a
-  sentinel.
-- **Bounded parsing.** At most ten embedded certificates, counted by a
-  structural pre-scan before any certificate is decoded; at most six chain
-  hops; JSON nested at most 64 arrays and objects deep; the payload
-  double-unwrap is bounded at one, and a nested in-app attribute is recorded
-  rather than recursed into.
-- **Input size caps, checked before anything is decoded.** The request and
-  receipt caps are Apple's, fixed constants in every port of this library.
-  Measured on 2026-09-23 against both of Apple's verifyReceipt endpoints
-  (production and sandbox), a request body of 3,145,728 bytes is answered and
-  one of 3,145,729 bytes gets HTTP 413. Apple counts UTF-8 bytes, not
-  characters: 3,145,729 bytes of `é`, only 1,572,874 characters, also got 413.
-  A raw request body passed to `VerifyReceiptEndpoint` may be at most
-  `VerifyReceiptEndpoint.MaxRequestBytes` (3 MiB, 3,145,728 bytes); a larger
-  one is 21002 with `REQUEST_TOO_LARGE`, decided before any parsing. One
-  nested more than 64 levels deep is 21002 with `MALFORMED_REQUEST`. A receipt
-  may be at most `ReceiptVerifier.MaxReceiptBytes` (3 MiB, 3,145,728 bytes),
-  for the base64 string and for the DER; a larger one is
-  `INVALID_RECEIPT_FORMAT`, and status 21002 at the endpoint. A compact JWS
-  may be at most `JwsVerifier.MaxJwsBytes` (256 KiB, 262,144 characters); a
-  longer one is `INVALID_JWS_FORMAT`. Decoding and parsing allocate in
-  proportion to the input before any signature is checked, so without these a
-  large enough input exhausts memory. Strings are measured in UTF-8 bytes
-  without being encoded: more UTF-16 units than the limit is over it, three
-  times the units within the limit is within it, and only a string between
-  the two is walked, stopping at the first byte past the limit. A lone
-  surrogate counts three bytes, as `Encoding.UTF8` counts it.
-- **Answering 413 like Apple.** `RequestTooLarge` exists so an HTTP layer can
-  send the status Apple sends. The body is Apple's 21002 either way:
+Signature verification cannot fail because a vendor endpoint is down, so a
+purchase can be honoured immediately and reconciled against the App Store
+Server API afterwards. Refunds and revocations still need that
+reconciliation pass — a signature proves what Apple signed, not what
+happened since.
 
-  ```csharp
-  VerifyReceiptResult result = endpoint.VerifyReceiptResult(rawRequestBody);
-  int httpStatus = result.FailureReason == VerificationReason.RequestTooLarge ? 413 : 200;
-  return Results.Content(result.ToJson(), "application/json", statusCode: httpStatus);
-  ```
+This is one of nine implementations (Java, Node, Python, Swift, Go, Ruby,
+Rust, PHP, .NET) that share a single fixture suite, including Apple's own
+official test fixtures, and are required to agree byte for byte. See the
+[project README](https://github.com/emindeniz99/apple-purchase-receipt-verifier#readme)
+for the full picture and
+[COMPARISON.md](https://github.com/emindeniz99/apple-purchase-receipt-verifier/blob/main/COMPARISON.md)
+for how it differs from Apple's official libraries.
 
-  A framework or proxy that caps request bodies itself has to allow at least
-  3 MiB, or it refuses bodies Apple would answer.
-- **Only this library's own exception escapes.** Containment is categorical,
-  not a list of types: `AsnContentException` derives from `Exception` and not
-  from `CryptographicException`, so a type-by-type catch leaks.
-- **No logging, no metrics, no callbacks.** The reason code is the whole
-  observability surface, and detail strings never carry receipt bytes, claims
-  or key material.
+## Upgrading from 0.6
 
-## Time
+0.7 replaces the three constructed verifiers with one `IVerifier` built
+from a `Config`, and takes no policy: no bundle id, no accepted
+environments, no app Apple id, no device id. Methods return a
+`VerificationResult<T>` instead of throwing, and no longer accept raw DER
+— only the base64 string an app actually sends.
 
-There is one clock seam, `IClock`, and it is read in exactly one place: the
-`request_date` triple in `VerifyReceiptEndpoint`.
+| 0.6 | 0.7 |
+|---|---|
+| `new ReceiptVerifier(roots, bundleId).Verify(base64 \| der)` | `Verifier.Create(Config.CreateBuilder().Roots(roots).Build()).VerifyReceipt(base64)`, then compare `payload.BundleId` |
+| `ReceiptVerifier.VerifyReceiptCore(der, roots)` | base64-encode, then `VerifyReceipt` |
+| `Verify(base64, deviceGuid)` (device-hash checking on the verifier) | compute the hash yourself from `OpaqueValue` and `BundleIdBytes` (above) |
+| `new JwsVerifier(roots, bundleId, acceptedEnvironments).VerifyTransaction/VerifyAppTransaction/VerifyRaw(jws)` | `verifier.VerifySignedData(jws)`, then deserialize `payload.Json` yourself |
+| `new VerifyReceiptEndpoint(roots, environment).VerifyReceiptJson(body)` | `verifier.VerifyReceiptEndpoint(environment, body)` |
+| `AppleRootCertificates.JwsRoots()`, `AppleRootCertificates.ReceiptRoots()` | `AppleRootCertificates.Bundled()` (one set, shared by every method) |
+| a `DateTimeOffset` argument for `request_date` | `Config.CreateBuilder().Clock(() => epochMs)` |
+| `VerificationException` (thrown) | `result.Failure` (`{ Reason, Message, Cause }`, never thrown for input) |
+| `AppReceipt` (`DateTimeOffset` fields) | `ReceiptPayload` (`*Ms` epoch milliseconds) |
 
-It never reaches a certificate-validity judgement. Where an input states no
-signing time of its own, the validity instant falls back to the **system**
-clock, so a caller injecting a clock, to pin a test or to work around skew,
-cannot thereby accept a chain that is expired in real time. That is why
-`JwsVerifier` and `ReceiptVerifier` take no clock at all: they would have no
-legitimate consumer, and an option with no consumer is an invitation to wire
-it into the one place it must not reach.
+| 0.6 `VerificationReason` | 0.7 `VerificationReason` |
+|---|---|
+| `InvalidJwsFormat`, `InvalidReceiptFormat`, `MalformedRequest` | `Malformed` |
+| `RequestTooLarge` | `TooLarge` |
+| `InvalidChain` | `UntrustedChain`, or `InvalidCertificate` for a certificate outside its validity window |
+| `InternalError` for signed content that does not parse | `UnreadablePayload` |
+| `WrongBundleId`, `WrongEnvironment`, `WrongAppAppleId`, `DeviceHashMismatch` | gone: the caller's own checks |
 
-```csharp
-var endpoint = new VerifyReceiptEndpoint(roots, AppleEnvironment.Sandbox,
-    new FixedClock(DateTimeOffset.Parse("2025-01-01T00:00:00Z")));
+The netstandard2.0 / net8.0 dual targeting, the compiled-in root
+certificates, and the `System.Formats.Asn1`-only dependency set are
+unchanged from 0.6.
+
+## Testing
+
+```bash
+dotnet test dotnet/tests/ApplePurchaseReceiptVerifier.Tests           # the whole suite
+dotnet test dotnet/tests/ApplePurchaseReceiptVerifier.Tests.Floor     # the netstandard2.0 asset, loaded into net8.0/9.0/10.0
 ```
 
-**Freshness is your call.** No payload is rejected for its age, as in Apple's
-own App Store Server Libraries: `signedDate` only decides the instant the
-chain is judged at. The right limit depends on the endpoint (Apple retries a
-server notification for days, and a device may present an old but genuine
-payload), so apply one yourself where it fits:
-`bool tooOld = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - (transaction.SignedDate ?? 0) > 300_000;`
+`Conformance070.cs` runs every case in `fixtures/cases.json`, the
+normative cross-language vector file every port of this library answers,
+as one named test per case, and fails unless every case in the file ran.
+The adapter carries no case-specific knowledge: it builds a `Config` from
+the case, dispatches on the operation and evaluates the expected JSON
+Pointers on the result. A case with a `maxMillis` budget is timed after a
+warm-up call. `Tests.Floor` re-runs a representative slice of the same
+fixtures with the library loaded as its netstandard2.0 asset, across
+net8.0, net9.0 and net10.0 — proving the floor binary, not just the modern
+one, decodes RSA-PSS and ECDSA correctly.
 
-## Lifetime
+This environment is Linux-only: the Windows and macOS legs of the test
+matrix (RHEL crypto-policy behaviour aside, which is Linux-specific by
+definition) were not exercised here and need CI or a local run on those
+platforms to confirm.
 
-The verifiers copy the anchors you pass in, so you may dispose yours. They are
-immutable and thread-safe once constructed — register one as a singleton. They
-implement `IDisposable` to release the copies' handles; that matters only if
-you build one per request.
+## Changelog
 
-## What this cannot tell you
-
-A signature proves what Apple signed, and nothing about what happened
-afterwards. Refunds, revocations after the fact and replayed receipts are not
-detectable from the bytes. Track transaction ids server-side, and use Apple's
-server API for current subscription state.
-
-Verifying receipts inside a client is an anti-pattern whatever the language:
-the attacker owns the client. This package is meant for a server.
-
-## Support and testing
-
-Conformance: every case in `fixtures/cases.json`, with no skips.
-
-Beyond that the suite covers the anti-forgery matrix against a generated fake
-Apple PKI, a mutation sweep over the genuine receipt and JWS fixtures, the
-resource bounds, the .NET-specific hazards (a hostile thread culture, the
-ECDSA DER-versus-P1363 trap, thread safety, disposal), and the whole public
-surface re-run against the netstandard2.0 asset.
-
-Unity is **not** a supported target yet. The netstandard2.0 asset is built to
-be IL2CPP-friendly — no reflection-based serialization, roots as compiled-in
-source constants rather than resources, no `System.Text.Json` — but nobody has
-run this suite inside a real Unity IL2CPP player, so the claim stays off the
-list until someone does.
+One version across every language —
+[CHANGELOG.md](https://github.com/emindeniz99/apple-purchase-receipt-verifier/blob/main/CHANGELOG.md)
+/ [releases](https://github.com/emindeniz99/apple-purchase-receipt-verifier/releases).
 
 ## License
 

@@ -1,90 +1,43 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
+import org.jspecify.annotations.Nullable;
+
 /**
- * Thrown when a signed payload fails verification. {@link #reason()} is the
- * machine-readable cause; the message carries human-readable detail. A payload
- * that throws must be treated as fully untrusted — there is no partial success.
+ * How the implementation reports a failed check internally. Never reaches a
+ * caller: {@link DefaultVerifier} turns it into a {@link Failure}, keeping the
+ * cause only for {@link Reason#UNREADABLE_PAYLOAD} and
+ * {@link Reason#INTERNAL_ERROR}.
+ *
+ * <p>The message never quotes the input, so it is safe to log as is.</p>
  */
-public class VerificationException extends Exception {
+final class VerificationException extends Exception {
 
     private static final long serialVersionUID = 1L;
 
-    /**
-     * Why verification failed. Ordinals are not stable across 0.x releases:
-     * switch on the constant or persist its {@link #name()}, never its
-     * {@link #ordinal()}.
-     */
-    public enum Reason {
-        /** Not a parseable compact JWS, wrong alg, or malformed x5c header. */
-        INVALID_JWS_FORMAT,
-        /** A certificate in the chain could not be decoded. */
-        INVALID_CERTIFICATE,
-        /** Leaf/intermediate is missing the required Apple marker OID. */
-        INVALID_CERTIFICATE_PURPOSE,
-        /** Certificate chain does not validate to a pinned Apple root. */
-        INVALID_CHAIN,
-        /** Cryptographic signature check failed. */
-        INVALID_SIGNATURE,
-        /** Payload's bundle id does not match the expected one. */
-        WRONG_BUNDLE_ID,
-        /** Payload's environment does not match the expected one. */
-        WRONG_ENVIRONMENT,
-        /** Payload's app Apple id does not match (production only). */
-        WRONG_APP_APPLE_ID,
-        /**
-         * The receipt is not usable PKCS#7/CMS: not canonical base64, over the
-         * size cap, not well-formed, or carrying bytes after it. Signed content
-         * that cannot be read is {@link #INTERNAL_ERROR} instead.
-         */
-        INVALID_RECEIPT_FORMAT,
-        /** SHA-1 device-hash binding check failed. */
-        DEVICE_HASH_MISMATCH,
-        /**
-         * The verifyReceipt request envelope is unusable: the body is not a
-         * JSON object or nests deeper than 64, or {@code receipt-data} is
-         * missing, empty or not a string. Reported only by
-         * {@code VerifyReceiptResult.failureReason()}; never thrown.
-         */
-        MALFORMED_REQUEST,
-        /**
-         * Not the client's fault, status 21009 at the endpoint. Thrown when a
-         * trusted signer signed receipt content or a JWS claim this library
-         * cannot read (found only after the chain and the signature passed;
-         * the parser's exception is the {@link #getCause() cause}), when the
-         * runtime lacks an algorithm the check needs, and reported by the
-         * endpoint for an unexpected runtime exception inside it.
-         *
-         * <p>Deterministic for the same input and library version, so do
-         * not hot-retry it. Do not deny the user on it, and do not grant
-         * access on it either: alert, log the failure cause together with
-         * the library version, and reconcile the purchase through the App
-         * Store Server API by transaction id.</p>
-         */
-        INTERNAL_ERROR,
-        /**
-         * The raw verifyReceipt request body is over
-         * {@code VerifyReceiptEndpoint.MAX_REQUEST_BYTES} (3,145,728 UTF-8
-         * bytes), the size at which Apple's endpoint answers HTTP 413. Status
-         * 21002 in the response body; an HTTP layer can map it to 413 as
-         * Apple does. Reported only by
-         * {@code VerifyReceiptResult.failureReason()}; never thrown.
-         */
-        REQUEST_TOO_LARGE
-    }
-
     private final Reason reason;
 
-    public VerificationException(Reason reason, String message) {
-        super(reason + ": " + message);
+    VerificationException(Reason reason, String message) {
+        super(message);
         this.reason = reason;
     }
 
-    public VerificationException(Reason reason, String message, Throwable cause) {
-        super(reason + ": " + message, cause);
+    VerificationException(Reason reason, String message, @Nullable Throwable cause) {
+        super(message, cause);
         this.reason = reason;
     }
 
-    public Reason reason() {
+    Reason reason() {
         return reason;
+    }
+
+    /**
+     * The public view. The cause is kept only where it explains
+     * Apple-signed content or a library fault: behind any other reason it is
+     * a parser or provider exception about unverified input, whose message
+     * can quote raw certificate text that a logged stack trace would print.
+     */
+    Failure toFailure() {
+        boolean keepCause = reason == Reason.UNREADABLE_PAYLOAD || reason == Reason.INTERNAL_ERROR;
+        return new Failure(reason, String.valueOf(getMessage()), keepCause ? getCause() : null);
     }
 }

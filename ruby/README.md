@@ -17,6 +17,13 @@ shape.
 
 Zero runtime dependencies: `openssl` and `json` are default gems.
 
+**This is 0.7.** It is a verifier, not business logic: no bundle id,
+environment, product id or device-binding parameter exists anywhere in this
+API. Every verify call returns Apple's own signed data and nothing tells you
+whether to trust it beyond the fact that it verified. See
+[Post-verification checklist](#post-verification-checklist) for what to do
+with that. Upgrading from 0.6: see [Upgrading from 0.6](#upgrading-from-06).
+
 ## Install
 
 ```ruby
@@ -28,373 +35,150 @@ require "apple_purchase_receipt_verifier"   # canonical
 require "apple-purchase-receipt-verifier"   # the gem name also works
 ```
 
-Ruby **3.1 or newer**. That floor is enterprise reality rather than upstream
-support: 3.1 is Debian 12's system Ruby and is exercised by the whole test
-suite on every push, exactly as this project does for Java 8, Node 20 and
-Python 3.10.
+Ruby **3.3 or newer**. The floor moved from 3.1 in 0.6 because the 0.7 data
+types are built on `Data.define`, a Ruby 3.2 feature that needs 3.3 for
+keyword-only construction with defaults to behave the way this library
+depends on.
 
-## Verifying a StoreKit 2 transaction
+## Quick start
+
+Three methods on one `Verifier`, immutable and thread-safe once created:
 
 ```ruby
 APRV = ApplePurchaseReceiptVerifier
 
-verifier = APRV::JwsVerifier.new(
-  trusted_roots: APRV.apple_jws_roots,
-  bundle_id: "com.example.app",
-  accepted_environments: [APRV::Environment::PRODUCTION, APRV::Environment::SANDBOX],
-  app_apple_id: 123_456_789
-)
+verifier = APRV::Verifier.create(APRV::Config.defaults)
 
-transaction = verifier.verify_transaction(jws)
-transaction.product_id          # => "com.example.app.pro"
-transaction.transaction_id      # => "2000000000000001"
-transaction.signed_date         # => 1722945600000  (epoch milliseconds)
-transaction.claims              # every claim, as Apple sent it
+# 1. A legacy PKCS#7 app receipt, the base64 string a client sends.
+result = verifier.verify_receipt(receipt_data)
+
+# 2. Any Apple-signed compact JWS: a StoreKit 2 transaction, renewal info,
+#    an app transaction, or an App Store Server Notifications V2 envelope.
+result = verifier.verify_signed_data(jws)
+
+# 3. A local stand-in for Apple's deprecated verifyReceipt endpoint: same
+#    request body, same response body, same status codes.
+response_json = verifier.verify_receipt_endpoint(APRV::Environment::SANDBOX, request_body)
 ```
 
-**Entitlement is your rule.** There is no "is active" helper, as in Apple's
-own libraries; read the signed fields:
+`verify_receipt` and `verify_signed_data` never raise for any input. Every
+outcome is a `VerificationResult`:
 
 ```ruby
-now_millis = (Time.now.to_r * 1000).to_i
-expires = transaction.expires_date
-entitled = transaction.revocation_date.nil? && (expires.nil? || expires > now_millis)
-```
-
-That is only what the payload said when it was signed. A billing grace
-period (it lives in the renewal info), an upgrade (`isUpgraded`) and a refund
-after signing are yours to handle; App Store Server Notifications V2 or the
-App Store Server API give the live status. `active_at?` is gone.
-
-Three operations:
-
-| Method | What it enforces |
-|---|---|
-| `verify_transaction(jws)` | chain, signature, `bundleId`, `environment` |
-| `verify_app_transaction(jws)` | the above, plus `appAppleId` in Production |
-| `verify_raw(jws)` | chain and signature only — every claim is returned and none is checked |
-
-`verify_raw` is for payload types this library does not model (renewal info,
-notification envelopes). **It enforces no claim**: check `bundleId` and
-`environment` yourself.
-
-Include `Sandbox` in `accepted_environments` on any endpoint App Review can
-reach — App Review runs production builds against sandbox, and a
-single-environment hard fail rejects real purchases during review.
-
-**Freshness is your call.** No payload is rejected for its age, as in Apple's
-own App Store Server Libraries: `signed_date` only decides the instant the
-chain is judged at. The right limit depends on the endpoint (Apple retries a
-server notification for days, and a device may present an old but genuine
-payload), so apply one yourself where it fits:
-`too_old = (Time.now.to_f * 1000) - transaction.signed_date.to_i > 300_000`.
-
-## Verifying a legacy app receipt
-
-```ruby
-verifier = APRV::ReceiptVerifier.new(
-  trusted_roots: APRV.apple_receipt_roots,
-  bundle_id: "com.example.app"
-)
-
-receipt = verifier.verify_base64(params[:receipt_data])
-receipt.bundle_id                  # => "com.example.app"
-receipt.creation_date              # => 2024-08-06 12:00:00 UTC (a Time)
-receipt.in_app_purchases.first.product_id
-receipt.unknown_attributes         # => { 9999 => ["\x01\x02\x03"] }
-```
-
-Every input form is reachable with and without the device GUID:
-
-```ruby
-verifier.verify_der(bytes)
-verifier.verify_base64(text)
-verifier.verify(either)                              # 0x30 means DER, else base64
-verifier.verify_der(bytes, device_guid: guid_bytes)  # adds the device-hash check
-verifier.verify_base64(text, device_guid: guid_bytes)
-```
-
-The device-hash check (`SHA1(guid + opaqueValue + bundleIdBytes)` equals
-attribute 5) is optional, because servers do not always have the device's
-GUID — the raw bytes of `identifierForVendor` on iOS, iPadOS, tvOS and
-watchOS, including an iOS app running on an Apple silicon Mac, or the
-primary network interface's MAC address from `copy_mac_address` on macOS
-and Mac Catalyst. Supplying it binds the receipt to one device.
-
-`ReceiptVerifier` takes **no clock**, and must never grow one: no receipt
-verdict depends on the current time. See "Time" below.
-
-### The chain-and-signature primitive
-
-```ruby
-receipt = ApplePurchaseReceiptVerifier.verify_receipt_core(der, trusted_roots: roots)
-```
-
-This is what both `ReceiptVerifier` and the endpoint are built on. It **skips
-the bundle-id check** — if you unlock products from its result, compare
-`receipt.bundle_id` yourself, or use `ReceiptVerifier`, which does it for you.
-
-## The verifyReceipt-compatible endpoint
-
-Same request body, same response body, same status codes as Apple's deprecated
-endpoint, answered locally.
-
-```ruby
-ENDPOINT = APRV::VerifyReceiptEndpoint.new(
-  trusted_roots: APRV.apple_receipt_roots,
-  environment: APRV::Environment::PRODUCTION   # drives 21007/21008 routing
-)
-
-# Rails
-def create
-  render json: ENDPOINT.verify_receipt_result(params.permit!.to_h).to_response
-end
-
-# Or pipe the raw body straight through
-ENDPOINT.verify_receipt_json(request.body.read)   # String in, String out
-```
-
-Every entry point returns a `VerifyReceiptResult`, except `verify_receipt_json`,
-which returns its JSON:
-
-| Method | Takes |
-|---|---|
-| `verify_receipt_result(request, now: nil)` | a request Hash, or its raw JSON text |
-| `verify_receipt_data(receipt_data, now: nil)` | the bare base64 `receipt-data` value, no envelope |
-| `verify_receipt_json(body)` | raw JSON text; the same as `verify_receipt_result(body).to_json` |
-
-```ruby
-result = ENDPOINT.verify_receipt_data(receipt_data)
-
-result.status          # 0, 21002, 21003, 21007, 21008 or 21009, for this endpoint's environment
-result.verified?       # true when the receipt verified, 21007 and 21008 included
-result.receipt         # the AppReceipt when verified?, else nil
-result.failure_reason  # a Reason Symbol when not verified?, else nil
-result.failure_cause   # what is behind INTERNAL_ERROR, else nil
-result.request_date    # the Time rendered as request_date, read once per call
-
-result.to_response     # the response body as a new Hash
-result.to_json         # the same, as JSON text
-
-# A 21007 keeps the receipt, so the sandbox answer needs no second verification.
-result.to_json(APRV::Environment::SANDBOX) if result.status == 21_007
-```
-
-`verified?` is not `status.zero?`. A 21007 or 21008 means the receipt verified
-and belongs to the other environment. `to_response(environment)` and
-`to_json(environment)` answer what an endpoint of that environment would, with
-the status recomputed from the receipt's own `receipt_type`: a production
-receipt answers 0 on Production and 21008 on Sandbox, any other receipt 21007
-on Production and 0 on Sandbox, and a failed result keeps its status on both.
-An environment other than Production or Sandbox raises `ArgumentError`.
-
-`now:` takes a `Time` and renders it as `request_date` in place of the clock.
-It reaches `request_date` and nothing else; certificate validity never sees it.
-Anything other than `nil` or a `Time` raises `ArgumentError`.
-
-A result is frozen, and `VerifyReceiptResult.new` is private: only the endpoint
-creates one, so no caller can build a status 0. Passing a result to
-`JSON.generate` or to Rails' `render json:` embeds its own response.
-
-No request input makes the endpoint raise: failures come back as a result with
-a status, exactly as the real endpoint reports them. Two reasons exist only on
-a result, never on a `VerificationError`, and `INTERNAL_ERROR` has a second
-source there:
-
-| Reason | Status | When |
-|---|---|---|
-| `REQUEST_TOO_LARGE` | 21002 | the raw body is over `MAX_REQUEST_BYTES` (3,145,728 bytes); Apple answers HTTP 413 here, see [Input limits](#input-limits) |
-| `MALFORMED_REQUEST` | 21002 | the body is not a JSON object or nests past 64 levels, or `receipt-data` is missing, empty or not a String |
-| `INTERNAL_ERROR` | 21009 | not the client's fault: the receipt authenticated but its signed content cannot be read (`failure_cause` is the parser's error), or an unexpected error inside the endpoint, including a clock that raises or returns something other than a `Time` (`failure_cause` holds it). Alert and retry or escalate; do not deny the user |
-
-Like the real endpoint, it does **not** check the bundle id. Compare
-`result.receipt.bundle_id` yourself before granting anything, or use
-`ReceiptVerifier`, which checks it for you.
-
-Status codes it can produce: `0`, `21002`, `21003`, `21007`, `21008`, `21009`.
-Everything else in Apple's list depends on Apple's subscription database and is
-out of scope; `COMPARISON.md` at the repository root has the field-by-field
-fidelity table, including what `latest_receipt_info` and `pending_renewal_info`
-would need.
-
-### Migrating from `verify_receipt`
-
-`verify_receipt(body)` is gone. `verify_receipt_result(body).to_response`
-returns the same Hash.
-
-## Input limits
-
-Base64 decoding, the CMS parse and JSON parsing all allocate in proportion to
-their input before any signature is checked, so the input is measured first.
-The two size limits are Apple's, fixed constants in every port of this
-library, not constructor options. Measured on 2026-09-23 against both of
-Apple's verifyReceipt endpoints (production and sandbox), a request body of
-3,145,728 bytes is answered normally and one of 3,145,729 bytes gets HTTP 413.
-Apple counts UTF-8 bytes, not characters: 3,145,729 bytes of `é`, only
-1,572,874 characters, also got 413. `fixtures/cases.json` holds every port to
-these numbers from both sides.
-
-- **`VerifyReceiptEndpoint::MAX_REQUEST_BYTES` (3 MiB, 3,145,728 bytes).**
-  Applied to a raw JSON body before it is parsed. A larger body answers
-  21002 with `REQUEST_TOO_LARGE`. A request already decoded to a Hash is not
-  measured; its `receipt-data` still is.
-- **`ReceiptVerifier::MAX_RECEIPT_BYTES` (3 MiB, 3,145,728 bytes).** Applied
-  to base64 text before decoding: at `ReceiptVerifier#verify`,
-  `#verify_base64` and the endpoint's `receipt-data`. Applied to DER before
-  parsing: at `#verify_der` and `verify_receipt_core`. No receipt Apple
-  accepts can be larger than the request that carries it. A larger receipt is
-  `INVALID_RECEIPT_FORMAT` (21002 at the endpoint).
-- **JSON nesting depth 64.** Applies to the request body and to the JWS
-  header and payload. A deeper body answers 21002 with `MALFORMED_REQUEST`; a
-  deeper JWS segment is `INVALID_JWS_FORMAT`. The depth is enforced by the
-  parser's `max_nesting` and then counted over the result, because newer json
-  gems do not count an empty innermost array or object.
-- **`JwsVerifier::MAX_JWS_BYTES` (256 KiB).** Applied to the compact JWS in
-  characters, before it is split or decoded. A longer one is
-  `INVALID_JWS_FORMAT`. Every JWS in the shared corpus is under 2.5 KB.
-
-The request and receipt limits measure with `String#bytesize`, which counts
-bytes without copying. For a UTF-8 String that is its UTF-8 length. A body in another
-encoding, such as the `ASCII-8BIT` String Rack hands over, is measured in its
-own bytes, which are the bytes that arrived on the wire.
-
-**Answering 413 like Apple.** `REQUEST_TOO_LARGE` exists so an HTTP layer can
-send the status Apple sends. The body is Apple's 21002 either way:
-
-```ruby
-result = ENDPOINT.verify_receipt_result(request.body.read)
-status = result.failure_reason == APRV::Reason::REQUEST_TOO_LARGE ? 413 : 200
-[status, { "content-type" => "application/json" }, [result.to_json]]
-```
-
-A framework or proxy that caps request bodies itself has to allow at least
-3 MiB, or it refuses bodies Apple would answer.
-
-## Errors
-
-One exception class carrying one machine-readable Symbol:
-
-```ruby
-begin
-  transaction = verifier.verify_transaction(jws)
-rescue ApplePurchaseReceiptVerifier::VerificationError => e
-  case e.reason
-  when APRV::Reason::WRONG_ENVIRONMENT then retry_against_sandbox
-  else                                      reject_and_alert(e.reason)
-  end
+if result.verified?
+  result.payload          # ReceiptPayload or JsonPayload
+else
+  result.failure.reason    # a Reason Symbol, e.g. :UNTRUSTED_CHAIN
+  result.failure.message   # safe to log, not meant to be parsed
+  result.failure.cause     # the inner exception behind UNREADABLE_PAYLOAD/INTERNAL_ERROR, else nil
 end
 ```
 
-`e.reason.to_s` is the canonical cross-language token, with no mapping table
-anywhere. The vocabulary is closed by the cross-port contract: eleven reasons
-in `Reason::ALL`, and a twelfth would be a change to every implementation
-in one pull request. (The endpoint's `MALFORMED_REQUEST` and
-`REQUEST_TOO_LARGE` are outside it; no verifier raises them.)
+`verify_receipt_endpoint` never returns a failure either: every verdict,
+including a rejected receipt, comes back as the `status` field inside the
+JSON body, exactly as Apple's endpoint reports it. See
+[The verifyReceipt-compatible endpoint](#the-verifyreceipt-compatible-endpoint).
 
-| Reason | Raised when |
-|---|---|
-| `INVALID_JWS_FORMAT` | over `MAX_JWS_BYTES`, not three segments, not base64url, not JSON (or nested past 64 levels), `alg` is not ES256, `x5c` is not three certificates |
-| `INVALID_CERTIFICATE` | an `x5c` entry does not decode as a certificate |
-| `INVALID_CERTIFICATE_PURPOSE` | a certificate lacks its Apple marker OID |
-| `INVALID_CHAIN` | the chain does not reach a pinned anchor, or was not valid at signing time |
-| `INVALID_SIGNATURE` | the signature does not check out, or the key is the wrong type |
-| `WRONG_BUNDLE_ID` | the payload names a different app |
-| `WRONG_ENVIRONMENT` | the environment is outside the accepted set |
-| `WRONG_APP_APPLE_ID` | a Production AppTransaction names a different app Apple id |
-| `INVALID_RECEIPT_FORMAT` | the receipt is over `MAX_RECEIPT_BYTES`, its base64 is not canonical standard base64 (whitespace, base64url and omitted or extra padding all count, as at Apple), or it is not a well-formed CMS blob |
-| `DEVICE_HASH_MISMATCH` | the receipt is not bound to the device GUID supplied |
-| `INTERNAL_ERROR` | the receipt's chain and signature verified, but its attribute set does not parse (the parser's error is the raised error's `cause`). Not the client's fault: alert and retry or escalate, do not deny |
+Custom roots or a custom clock:
 
-**Order of the receipt checks.** CMS parse → the creation date alone
-(attribute 12; nothing else in the payload is decoded yet) → chain at that
-date, or at the system clock when the date is missing, empty, unreadable or
-stated twice → receipt-signing marker OID → CMS signature → full payload
-parse → bundle id → device hash. Nothing is trusted before the chain and
-the signature, so reading the date never rejects. The chain comes first so
-the attacker's own key is never run before it is trusted. A payload that
-fails the full parse was signed by a trusted signer, so it is
-`INTERNAL_ERROR`, not `INVALID_RECEIPT_FORMAT`.
+```ruby
+config = APRV::Config.new(
+  roots: [my_pem_or_der_string],           # defaults to Apple's three pinned roots
+  clock: -> { (Time.now.to_r * 1000).to_i } # defaults to the system clock, epoch milliseconds
+)
+verifier = APRV::Verifier.create(config)
+```
 
-**Misconfiguration is not a verification verdict.** An empty `trusted_roots`,
-a nil `bundle_id`, an empty accepted-environment set, an endpoint environment
-that is not Production or Sandbox — all raise `ArgumentError`. You cannot
-catch a typo as though a receipt were forged.
+`Config.builder.roots(...).clock(...).build` is the same thing spelled as a
+builder, if you prefer setting parts one at a time.
 
-Nothing else escapes an entry point. Containment is categorical, and it
-explicitly covers `SystemStackError`, which is not a `StandardError` and would
-otherwise walk through your `rescue` and take the request with it. A foreign
-error before trust is `INVALID_RECEIPT_FORMAT`; one in the full payload parse,
-after the chain and the signature passed, is `INTERNAL_ERROR`.
+## Post-verification checklist
 
-## Integrating: from verified payload to entitlement
+Verification answers one question: did Apple sign this, under a pinned Apple
+root? Everything else is your decision, on the data the payload carries:
 
-The backend flow these calls sit inside is written out once in the
-[project README](https://github.com/emindeniz99/apple-purchase-receipt-verifier#integrating-from-verified-payload-to-entitlement):
-verify offline, deny on any failure, check the refund field, refresh a payload
-past the freshness window, guard against replay on the transaction id, then
-grant. That section also carries the policy table saying what each reason
-means and which ones are worth an alert. Here are its two branches in this
-port's API.
+- **Bundle id.** `result.payload.bundle_id` for a receipt;
+  `JSON.parse(result.payload.json)["bundleId"]` for a JWS. Compare it against
+  the app you expect — the library checks nothing here.
+- **Environment.** `APRV::Environment.from_receipt_type(result.payload.receipt_type)`
+  for a receipt; `APRV::Environment.from_jws_environment(claims["environment"])`
+  for a JWS. Both map Apple's string to `PRODUCTION`, `SANDBOX` or `nil` and
+  decide nothing themselves — reject or route on the result yourself. Accept
+  `SANDBOX` on any endpoint App Review can reach: App Review runs production
+  builds against sandbox, and a single-environment hard fail rejects real
+  purchases during review.
+- **Product id / app Apple id.** Read `product_id` (receipt) or `productId` /
+  `appAppleId` (JWS claims) and match against what you sold.
+- **Idempotency.** Key off `transaction_id` (receipt) or `transactionId`
+  (JWS): a purchase notification, an App Store Server Notification retry and
+  a client resending the same receipt must not grant twice.
+- **Freshness is your call.** No payload is rejected for its age. The right
+  limit depends on the endpoint (Apple retries a server notification for
+  days; a device may present an old but genuine receipt), so apply one
+  yourself, e.g. `(Time.now.to_f * 1000) - transaction["signedDate"] > 300_000`.
+- **Refunds and revocation.** Check `revocationDate` (JWS) or
+  `cancellation_date_ms` (in-app purchase) before granting anything.
+
+The [project README](https://github.com/emindeniz99/apple-purchase-receipt-verifier#integrating-from-verified-payload-to-entitlement)
+writes this flow out once, with the policy table saying what each `Reason`
+means and which ones are worth an alert. Below are its two branches in this
+port's 0.7 API.
 
 A StoreKit 2 signed transaction:
 
 ```ruby
 APRV = ApplePurchaseReceiptVerifier
-
-VERIFIER = APRV::JwsVerifier.new(
-  trusted_roots: APRV.apple_jws_roots,
-  bundle_id: "com.example.app",
-  accepted_environments: [APRV::Environment::PRODUCTION, APRV::Environment::SANDBOX]
-)
+VERIFIER = APRV::Verifier.create(APRV::Config.defaults)
 
 def redeem_transaction(user_id, jws)
-  begin
-    payload = VERIFIER.verify_transaction(jws) # step 2
-  rescue APRV::VerificationError => e
-    logger.warn("purchase rejected: #{e.reason}")
+  result = VERIFIER.verify_signed_data(jws) # step 2
+  unless result.verified?
+    logger.warn("purchase rejected: #{result.failure.reason}")
     return :denied
   end
 
-  return :denied if payload.revocation_date # step 3
+  claims = JSON.parse(result.payload.json)
+  return :denied if claims["bundleId"] != "com.example.app"
+  return :denied unless [APRV::Environment::PRODUCTION, APRV::Environment::SANDBOX]
+                         .include?(APRV::Environment.from_jws_environment(claims["environment"]))
+  return :denied if claims["revocationDate"] # step 3
 
   # step 4, your call: past the window, ask the client for a fresh
   # jwsRepresentation, or fetch one from the App Store Server API and verify
   # that instead
-  return :refresh if (Time.now.to_f * 1000) - payload.signed_date.to_i > 300_000
+  return :refresh if (Time.now.to_f * 1000) - claims["signedDate"].to_i > 300_000
 
-  transaction_id = payload.transaction_id # step 5
+  transaction_id = claims["transactionId"] # step 5
   return :denied if Grants.exists?(transaction_id)
 
-  Grants.record(transaction_id, payload.original_transaction_id, user_id)
-  grant(user_id, payload.product_id)
+  Grants.record(transaction_id, claims["originalTransactionId"], user_id)
+  grant(user_id, claims["productId"])
   :granted
 end
 ```
 
-The legacy PKCS#7 app receipt is the same policy on the other input, the one
-StoreKit 1 apps and older SDKs still send:
+The legacy PKCS#7 app receipt is the same policy on the other input:
 
 ```ruby
-RECEIPTS = APRV::ReceiptVerifier.new(
-  trusted_roots: APRV.apple_receipt_roots,
-  bundle_id: "com.example.app"
-)
+RECEIPTS = APRV::Verifier.create(APRV::Config.defaults)
 
-# Same policy keyed on the receipt's own dates. `verify` takes the base64 the
-# client sends or the DER bytes; VerifyReceiptEndpoint is the alternative,
-# answering Apple's `verifyReceipt` JSON shape with a `status` instead.
 def redeem_receipt(user_id, receipt_data, product_id)
-  receipt = RECEIPTS.verify_base64(receipt_data) # step 2
-  now = Time.now.utc
-  purchase = receipt.in_app_purchases.find { |p| p.product_id == product_id }
+  result = RECEIPTS.verify_receipt(receipt_data) # step 2
+  return :denied unless result.verified?
 
-  return :denied if purchase.nil? || purchase.cancellation_date # step 3
-  return :denied if purchase.expires_date && purchase.expires_date <= now
+  receipt = result.payload
+  return :denied if receipt.bundle_id != "com.example.app"
+
+  now = Time.now.utc
+  purchase = receipt.in_app.find { |p| p.product_id == product_id }
+  return :denied if purchase.nil? || purchase.cancellation_date_ms # step 3
+  return :denied if purchase.expires_date_ms && purchase.expires_date_ms <= now.to_i * 1000
 
   # step 4: the same caller-side check, on the creation date. Past
   # the window, ask the client to refresh its receipt, or call the App Store
-  # Server API by transaction_id and verify the JWS it returns.
-  return :refresh if receipt.creation_date.nil? || now - receipt.creation_date > 300
+  # Server API by transaction id and verify the JWS it returns.
+  created = receipt.receipt_creation_date_ms
+  return :refresh if created.nil? || (now.to_i * 1000) - created > 300_000
 
   return :denied if Grants.exists?(purchase.transaction_id) # step 5
 
@@ -404,80 +188,361 @@ def redeem_receipt(user_id, receipt_data, product_id)
 end
 ```
 
+## Device hash
+
+There is no `device_guid` parameter anywhere in 0.7. A verified legacy
+receipt carries the three raw attribute values Apple's device-hash formula
+hashes together — `opaque_value`, `sha1_hash` and `bundle_id_bytes` — so
+compute and compare it yourself:
+
+```ruby
+require "digest"
+
+# device_id_bytes: the raw bytes of identifierForVendor on iOS, iPadOS,
+# tvOS and watchOS (including an iOS app on an Apple silicon Mac), or the
+# primary network interface's MAC address from copy_mac_address on macOS
+# and Mac Catalyst.
+def device_hash_matches?(receipt, device_id_bytes)
+  return false if receipt.opaque_value.nil? || receipt.bundle_id_bytes.nil? || receipt.sha1_hash.nil?
+
+  Digest::SHA1.digest(device_id_bytes + receipt.opaque_value + receipt.bundle_id_bytes) == receipt.sha1_hash
+end
+```
+
+Binding to one device is optional, because a server does not always have the
+device's GUID; only do this check when your endpoint has one.
+
+## Verifying a legacy app receipt
+
+```ruby
+result = verifier.verify_receipt(params[:receipt_data])
+raise "rejected: #{result.failure.reason}" unless result.verified?
+
+receipt = result.payload
+receipt.bundle_id                  # => "com.example.app"
+receipt.receipt_creation_date_ms   # => 1722945600000  (epoch milliseconds)
+receipt.in_app.first.product_id
+receipt.unknown_attributes         # => { 9999 => ["\x01\x02\x03"] }
+```
+
+`verify_receipt` takes only base64 text — the string a client actually sends.
+There is no separate DER entry point in 0.7; a caller holding raw DER bytes
+encodes them first: `verifier.verify_receipt([der].pack("m0"))`.
+
+### Decode rules
+
+- Field names are Apple's own words from the verifyReceipt response
+  (`application_version`, `in_app`), each spelled in Ruby's `snake_case`.
+- A missing attribute decodes to `nil`. The library invents no values.
+- Dates are epoch milliseconds, UTC, with an `_ms` suffix. Receipt dates carry
+  whole seconds, so the last three digits are always `000`.
+- The trial and intro flags (`is_trial_period`, `is_in_intro_offer_period`)
+  are booleans: `0` is `false`, any other value is `true`.
+- `bundle_id_bytes`, `opaque_value` and `sha1_hash` are the attribute value
+  octets exactly as they sit in the receipt — see [Device hash](#device-hash).
+- A known attribute repeated: the first occurrence in receipt order wins, for
+  the typed field and for the chain date. Holds for top-level and in-app
+  attributes alike.
+- Nothing Apple signed is lost. Every attribute that does not end up in a
+  typed field goes raw into `unknown_attributes`: an attribute type the
+  library does not model, the second and later copies of a known attribute,
+  and a known attribute whose value does not parse (whose typed field is then
+  `nil`).
+- A date attribute parses only in the exact form `YYYY-MM-DDTHH:MM:SSZ` — a
+  real calendar date, no fraction, no offset. An empty date string means "not
+  set" (the field is `nil`, nothing kept raw); any other non-empty string
+  that does not parse is `nil` and kept raw in `unknown_attributes`. A
+  creation-date attribute that does not parse leaves the chain instant to the
+  clock.
+- `receipt.to_json` renders, with `JSON.generate`, the JSON value every port
+  produces (the bytes may differ): 64-bit ids (`app_item_id`, `download_id`,
+  `version_external_identifier`, `web_order_line_item_id`) as JSON strings
+  since genuine receipts carry 18-digit values above `2**53`; every other
+  field as its natural JSON type; `unknown_attributes` keyed by the decimal
+  attribute type.
+
+**Several SignerInfos.** A receipt verifies when at least one of its (up to
+four) CMS signers verifies under a pinned chain, since all signers sign the
+same content. A fifth SignerInfo fails as `MALFORMED` before any signature is
+checked.
+
+## Verifying a StoreKit 2 transaction
+
+```ruby
+result = verifier.verify_signed_data(jws)
+raise "rejected: #{result.failure.reason}" unless result.verified?
+
+claims = JSON.parse(result.payload.json)
+claims["productId"]      # => "com.example.app.pro"
+claims["transactionId"]  # => "2000000000000001"
+claims["signedDate"]     # => 1722945600000  (epoch milliseconds)
+```
+
+**Entitlement is your rule.** There is no "is active" helper, as in Apple's
+own libraries:
+
+```ruby
+now_millis = (Time.now.to_r * 1000).to_i
+expires = claims["expiresDate"]
+entitled = claims["revocationDate"].nil? && (expires.nil? || expires > now_millis)
+```
+
+That is only what the payload said when it was signed. A billing grace
+period (it lives in the renewal info), an upgrade (`isUpgraded`) and a refund
+after signing are yours to handle; App Store Server Notifications V2 or the
+App Store Server API give the live status.
+
+`verify_signed_data` covers every Apple JWS: transactions, renewal info, app
+transactions and App Store Server Notifications V2 — one method, unlike 0.6's
+three. It enforces **no claim**: check `bundleId`, `environment` and
+`appAppleId` yourself, exactly as shown in
+[Post-verification checklist](#post-verification-checklist). The library
+ships no typed JWS models and no parse helper; declare a struct for the
+claims you use, or, following Apple's own `app-store-server-library`
+conventions, deserialize `claims` into your own value objects.
+
+### App Store Server Notifications V2
+
+A notification nests more JWS inside its payload: verify the outer envelope,
+then each nested `signedTransactionInfo` and `signedRenewalInfo` the same way.
+
+```ruby
+def handle_notification(verifier, signed_payload)
+  outer = verifier.verify_signed_data(signed_payload)
+  return :denied unless outer.verified?
+
+  envelope = JSON.parse(outer.payload.json)
+  data = envelope["data"] || {}
+
+  [data["signedTransactionInfo"], data["signedRenewalInfo"]].compact.each do |nested_jws|
+    inner = verifier.verify_signed_data(nested_jws)
+    return :denied unless inner.verified?
+
+    process(envelope["notificationType"], JSON.parse(inner.payload.json))
+  end
+
+  :ok
+end
+```
+
+A `TEST` notification carries neither `signedTransactionInfo` nor
+`signedRenewalInfo`, so the loop above naturally does nothing for one beyond
+verifying the envelope.
+
+## The verifyReceipt-compatible endpoint
+
+Same request body, same response body, same status codes as Apple's deprecated
+endpoint, answered locally.
+
+```ruby
+VERIFIER = APRV::Verifier.create(APRV::Config.defaults)
+
+# Rails
+def create
+  render json: VERIFIER.verify_receipt_endpoint(APRV::Environment::PRODUCTION, request.body.read)
+end
+```
+
+**A raw request body is form-encoded, not JSON, on the wire clients actually
+use.** Apple's own client libraries POST
+`application/x-www-form-urlencoded` bodies to some integrations; if yours
+does, extract the JSON payload (or build `{"receipt-data": "..."}` yourself)
+before calling `verify_receipt_endpoint` — passing the raw form body through
+unchanged answers `21002` (`MALFORMED_RECEIPT_DATA`), not a verified receipt.
+
+One method takes the whole request and returns the whole response, both as
+JSON text — unlike 0.6's `VerifyReceiptResult`, there is no typed result
+object and no separate `receipt-data`-only entry point:
+
+```ruby
+response_json = VERIFIER.verify_receipt_endpoint(APRV::Environment::SANDBOX, request_json)
+response = JSON.parse(response_json)
+response["status"]   # 0, 21002, 21003, 21007, 21008 or 21009
+response["receipt"]  # present only when status is 0
+```
+
+A 21007 keeps nothing to reuse: call again with `Environment::SANDBOX`, as
+Apple's own client does — the second call is offline, since it only re-walks
+the same trusted chain.
+
+Status codes it can produce:
+
+| Verification outcome | Status |
+|---|---|
+| verified, environment matches | 0 |
+| verified, sandbox receipt on `PRODUCTION` | 21007 |
+| verified, production receipt on `SANDBOX` | 21008 |
+| `MALFORMED`, `TOO_LARGE` | 21002 |
+| `INVALID_SIGNATURE`, `UNTRUSTED_CHAIN`, `INVALID_CERTIFICATE`, `INVALID_CERTIFICATE_PURPOSE` | 21003 |
+| `UNREADABLE_PAYLOAD`, `INTERNAL_ERROR` | 21009 |
+
+Both 21009 cases are deterministic for the same input: alert and escalate,
+never retry. Apple's 21005 and 21100-21199 mean Apple's own servers failed
+and invite a retry; this local endpoint never returns them, since it never
+calls Apple. `APRV::AppleStatus` names every status Apple documents, so a
+caller matching on the response does not write `21007` by hand.
+
+Like the real endpoint, it does **not** check the bundle id — read
+`response["receipt"]["bundle_id"]` yourself before granting anything.
+
+Status codes outside the table above depend on Apple's subscription database
+and are out of scope; `COMPARISON.md` at the repository root has the
+field-by-field fidelity table, including what `latest_receipt_info` and
+`pending_renewal_info` would need.
+
 ## Time
 
 Certificate validity is judged at the instant Apple signed, not now — so a
-payload signed with a since-rotated certificate keeps verifying. The instant is
-the payload's `signedDate`, else its `receiptCreationDate`, else the receipt's
-creation-date attribute, and failing all of those, the **system** clock.
+payload signed with a since-rotated certificate keeps verifying. The instant
+is the receipt's creation-date attribute (legacy path) or the JWS
+`signedDate` claim, and, when that is missing or is not a representable
+instant (such as `1e300`), the **configured clock** stands in.
 
-`clock:` is available on `VerifyReceiptEndpoint` only, and is read in exactly
-one place: the endpoint's `request_date` / `_ms` / `_pst` triple, once per
-call, and not at all when the call passes `now:`.
+`clock:` on `Config` is read in exactly two places: the chain-validity
+fallback described above, and the endpoint's `request_date` / `_ms` / `_pst`
+triple, once per `verify_receipt_endpoint` call. It never otherwise decides
+whether a payload verifies: injecting a clock to control `request_date`, or
+to work around skew, must not let you authenticate an expired chain, and
+cannot. No payload is rejected for its age — how old one may be is your
+decision, per [Post-verification checklist](#post-verification-checklist).
 
-It never reaches a certificate-validity decision. Injecting a clock to pin
-`request_date`, or to work around skew, must not let you authenticate an
-expired chain, and cannot. That is also why `JwsVerifier` and
-`ReceiptVerifier` have no `clock:` at all, and no payload is rejected for its
-age: how old a payload may be is your decision.
-
-Anything that responds to `#call` and returns a `Time` works:
+Anything responding to `#call` and returning an Integer epoch-millisecond
+value works:
 
 ```ruby
-APRV::VerifyReceiptEndpoint.new(..., clock: -> { Time.now.utc })
+APRV::Config.new(clock: -> { (Time.now.to_r * 1000).to_i })
 ```
 
 Do not reach for `Timecop` or `ActiveSupport::Testing::TimeHelpers` to test
-this library's behaviour: hand the endpoint a clock instead.
+this library's behaviour: hand `Config.new` a clock instead.
 
-Receipt dates are RFC 3339 with a mandatory timezone designator — a naive date
-would be read as the server's local time, and the same receipt would then
-verify on one host and fail on another. The offset must be a real one
-(`±00:00` … `±23:59`) and a leap second is refused, because both feed the
-instant the chain is judged at. Fractional seconds are kept to the nanosecond;
-further digits are dropped, which is the finest precision any port in this
-family represents.
+Receipt dates parse only in the exact form `YYYY-MM-DDTHH:MM:SSZ` — see
+[Decode rules](#decode-rules). JWS `signedDate` and other epoch-millisecond
+claims are read as sent, JSON number and all: a fractional one still drives
+the chain instant. `claims` is the payload's own JSON, unmodelled, so a claim
+of the wrong type is exactly what Apple signed — nothing here substitutes or
+rejects it.
 
-JWS signing dates (`signedDate`, `receiptCreationDate`) are read as sent, JSON
-number and all: a fractional one drives the chain instant exactly like an
-integer. The payload readers still model Apple's wire
-contract, where those claims are integer epoch milliseconds: a whole number
-spelled `1.0` reads as `1`, and `verify_transaction` / `verify_app_transaction`
-refuse a modelled claim of the wrong JSON type (a string, a fractional number,
-an object) with `INTERNAL_ERROR` once the chain and signature have passed.
-`verify_raw` has no model and returns every claim as signed;
-`payload["signedDate"]` always has the raw claim.
+## Input limits
+
+Base64 decoding, the CMS parse and JSON parsing all allocate in proportion to
+their input before any signature is checked, so the input is measured first.
+The size limits are Apple's, fixed constants in every port of this library,
+not `Config` options.
+
+| Bound | Value | Failure |
+|---|---|---|
+| Receipt base64, UTF-8 bytes | 3,145,728 | `TOO_LARGE` |
+| Endpoint request body, UTF-8 bytes | 3,145,728 | `TOO_LARGE` (status 21002) |
+| JWS, UTF-8 bytes | 262,144 | `TOO_LARGE` |
+| JSON nesting depth | 64 | `MALFORMED` |
+| ASN.1 nesting depth | 32 | `MALFORMED` in the envelope, `UNREADABLE_PAYLOAD` in signed content |
+| Certificates embedded in a receipt | 10 | `MALFORMED` |
+| Chain length below the anchor | 6 certificates | `UNTRUSTED_CHAIN` |
+| SignerInfos in a receipt | 4 | `MALFORMED` |
+
+Measured against both of Apple's verifyReceipt endpoints, a request body of
+3,145,728 bytes is answered normally and one of 3,145,729 bytes gets HTTP
+413; Apple counts UTF-8 bytes, not characters. `verify_receipt_endpoint`
+answers status 21002 in place of the 413 an HTTP layer would send — route it
+yourself if you need Apple's exact status code:
+
+```ruby
+response = JSON.parse(VERIFIER.verify_receipt_endpoint(env, request.body.read))
+status = response["status"] == 21_002 && request.body.read.bytesize > 3_145_728 ? 413 : 200
+```
+
+A framework or proxy that caps request bodies itself has to allow at least
+3 MiB, or it refuses bodies Apple would answer.
+
+## Reasons
+
+One outcome type carrying one machine-readable Symbol:
+
+```ruby
+case result.failure.reason
+when APRV::Reason::UNTRUSTED_CHAIN then reject_and_alert(result.failure.reason)
+else                                    reject(result.failure.reason)
+end
+```
+
+`reason.to_s` is the canonical cross-language token, with no mapping table
+anywhere. The vocabulary is closed by the cross-port contract: eight reasons
+in `Reason::ALL`, and a ninth would be a change to every implementation in
+one pull request.
+
+| Reason | When |
+|---|---|
+| `MALFORMED` | base64, ASN.1, CMS or JWS structure is broken, or input is over a size bound |
+| `TOO_LARGE` | input is over a fixed cap — see [Input limits](#input-limits) |
+| `INVALID_SIGNATURE` | the signature does not match the content |
+| `UNTRUSTED_CHAIN` | the chain does not reach a pinned root |
+| `INVALID_CERTIFICATE` | an `x5c`/embedded certificate does not decode, or a certificate on the chain is outside its validity window at the signing instant |
+| `INVALID_CERTIFICATE_PURPOSE` | a certificate on the chain is missing its Apple marker OID |
+| `UNREADABLE_PAYLOAD` | the chain and signature verified, but the signed content does not parse (`failure.cause` is the parser's error) |
+| `INTERNAL_ERROR` | the library failed before it could decide — not the client's fault: alert and escalate, never retry |
+
+**Order of the checks**, the same for both paths: base64/JWS structure →
+the creation date or `signedDate` alone, to pick the chain instant → the
+chain, walked top-down to a pinned root, with certificate validity judged at
+that instant → Apple's marker OIDs on both the leaf and the intermediate →
+the signature → the full payload parse. Nothing is trusted before the chain
+and the signature, so reading the date never rejects; validity is part of
+the chain check, so an expired chain that also lacks a marker, or has a
+broken signature, is `INVALID_CERTIFICATE`. A payload that fails the full
+parse was signed by a trusted signer, so it is `UNREADABLE_PAYLOAD`, not
+`MALFORMED`.
+
+**Misconfiguration is not a verification verdict.** `Verifier.create` raises
+`ArgumentError` for an empty root set; `Config.new` raises it for a `clock:`
+that does not respond to `#call` or a `roots:` entry that is neither a
+certificate nor a DER/PEM String; `verify_receipt_endpoint` raises it for an
+`environment` that is not `Environment::PRODUCTION` or `Environment::SANDBOX`.
+You cannot catch a typo as though a receipt were forged.
+
+Nothing else escapes `verify_receipt` or `verify_signed_data`. Containment is
+categorical and explicitly covers `SystemStackError`, which is not a
+`StandardError` and would otherwise walk through your `rescue` and take the
+request with it.
 
 ## Security model
 
-- **Pinned anchors only.** Trust anchors come from the argument you pass, or
-  from the three bundled Apple roots. The operating system's trust store is
-  never consulted on any code path — there is no `OpenSSL::X509::Store` holding
-  certificates anywhere in the gem, `set_default_paths` appears nowhere, and a
-  test proves that a chain the platform's own default store accepts is still
-  rejected.
+- **Pinned anchors only.** Trust anchors come from `Config#roots`, or from
+  the three bundled Apple roots. The operating system's trust store is never
+  consulted on any code path — there is no `OpenSSL::X509::Store` holding
+  certificates anywhere in the gem, `set_default_paths` appears nowhere, and
+  a test proves that a chain the platform's own default store accepts is
+  still rejected.
 - **No network.** No OCSP, no CRL, no AIA fetch, no root download. Revocation
-  is disabled by design, the same trade-off Apple's official libraries make in
-  offline mode.
+  is disabled by design, the same trade-off Apple's official libraries make
+  in offline mode.
+- **Top-down chain walk.** Each certificate's signature is checked only with
+  a key already vouched for by a pinned anchor, so an attacker's own key is
+  never asked to validate anything before it is trusted.
 - **Marker OIDs are mandatory.** The JWS leaf must carry
   `1.2.840.113635.100.6.11.1` and the intermediate `1.2.840.113635.100.6.2.1`;
-  the receipt signer must carry `1.2.840.113635.100.6.11.1`. Without the last
-  one, any Apple developer's own distribution certificate — which chains
-  through the same intermediate to the same root — could sign a forged receipt.
-- **Reject rather than repair.** An input the grammar cannot represent fails;
-  it is never substituted with a sentinel.
+  the receipt signer must carry `1.2.840.113635.100.6.11.1` and its
+  intermediate the same `1.2.840.113635.100.6.2.1`. Without the intermediate
+  check, any Apple developer's own distribution certificate — which chains
+  through the same intermediate to the same root — could sign a forged
+  receipt.
+- **Unknown critical extensions reject the chain** (RFC 5280): a certificate
+  on the path marking an extension critical that this library does not
+  process makes that path `UNTRUSTED_CHAIN`.
+- **Signed-attribute integrity** (RFC 5652 §5.3): a CMS SignerInfo whose
+  signed attributes carry `messageDigest` twice, or whose `contentType`
+  differs from the content's own type, is `INVALID_SIGNATURE`.
+- **Reject rather than repair.** An input the grammar cannot represent
+  fails; it is never substituted with a sentinel.
 - **Bounded parsing.** Attacker-supplied bytes go through an iterative,
-  explicit-stack scanner before anything else sees them: full consumption
-  (trailing bytes are refused), depth ≤ 32, a node budget, no multi-byte tags,
-  length fields of at most four octets, and at most ten embedded certificates —
-  bounded before any certificate is decoded. The budgets count structural
-  elements, so the cost *inside* one element is bounded separately where it can
-  grow: a date's fractional seconds are read to the nanosecond and no further.
-  The CMS structure and the creation date are read before any cryptographic
-  check in every port, because the creation date is what the chain's validity
-  is judged at, so these ceilings are what an unsigned blob can spend; the
-  rest of the payload is parsed only after the signature.
-- **No logging, no metrics, no callbacks.** The reason code is the entire
+  explicit-stack scanner before anything else sees them — see
+  [Input limits](#input-limits). The budgets count structural elements, so
+  the cost *inside* one element is bounded separately where it can grow. The
+  CMS structure and the creation date are read before any cryptographic
+  check, because the creation date is what the chain's validity is judged
+  at, so these ceilings are what an unsigned blob can spend; the rest of the
+  payload is parsed only after the signature.
+- **No logging, no metrics, no callbacks.** `failure.reason` is the entire
   observability surface, and messages carry no receipt bytes, claims or key
   material.
 
@@ -487,9 +552,9 @@ an object) with `INTERNAL_ERROR` once the chain and signature have passed.
 receipt chain and its CMS signature are SHA-1, and RHEL 9's DEFAULT crypto
 policy (also Alma, Rocky, and Fedora with `rh-allow-sha1-signatures = no`)
 makes the system OpenSSL refuse SHA-1 signatures. This port uses the system
-OpenSSL, so every genuine legacy receipt there is `INVALID_CHAIN`. Observed on
-AlmaLinux 9.8 on 2026-09-24. Newer receipts (SHA-256 chains) and every JWS are
-unaffected. FIPS mode is untested.
+OpenSSL, so every genuine legacy receipt there is `UNTRUSTED_CHAIN`. Observed
+on AlmaLinux 9.8 on 2026-09-24. Newer receipts (SHA-256 chains) and every JWS
+are unaffected. FIPS mode is untested.
 
 Until the fix ships, allow SHA-1 signatures on that host with
 `update-crypto-policies --set DEFAULT:SHA1`. The planned fix checks SHA-1
@@ -499,18 +564,58 @@ signatures on Apple's pinned legacy chain only, with OpenSSL's RSA
 
 ## Trust anchors
 
-`ApplePurchaseReceiptVerifier.apple_jws_roots` and `.apple_receipt_roots` both
-return all three published Apple roots — Apple Inc. Root, Apple Root CA - G2
-and Apple Root CA - G3 — as fresh objects each call. Apple deliberately
-documents the JWS chain as ending in "an Apple root certificate" rather than a
-specific one, so narrowing either set would fail closed, silently, the day
-Apple re-anchored a path.
+`APRV::Config.defaults.roots` returns all three published Apple roots — Apple
+Inc. Root, Apple Root CA - G2 and Apple Root CA - G3 — used for both the
+legacy receipt path and the JWS path; Apple deliberately documents the JWS
+chain as ending in "an Apple root certificate" rather than a specific one, so
+narrowing either set would fail closed, silently, the day Apple re-anchored a
+path.
 
-The bytes are compiled into the gem rather than read from disk when a verifier
+The bytes are compiled into the gem rather than read from disk when a config
 is built, so it works from a read-only or bundled deployment.
 
-To pin your own anchors, pass them: `trusted_roots:` accepts
+To pin your own anchors, pass them: `Config.new(roots:)` accepts
 `OpenSSL::X509::Certificate` objects or DER/PEM strings.
+
+## Performance
+
+Measured with `bench/bench.rb` (`ruby -Ilib bench/bench.rb`) on this host,
+under load shared with other work, so treat these as an order of magnitude
+rather than a guarantee: a synthetic 2-in-app-purchase receipt verifies
+(`verify_receipt`) at a median of ~2.1 ms; a genuine 187-in-app-purchase
+receipt — the largest fixture in the shared corpus, and the port's practical
+worst case — at a median of ~27 ms and up to ~28 ms across ten samples.
+Rendering that same large receipt through `verify_receipt_endpoint` costs
+more (median ~65 ms, up to ~71 ms), since it also walks and JSON-encodes
+every in-app purchase into Apple's response shape. Memory, not CPU, is
+usually the limit for a server handling many concurrent calls; do not rely on
+CPU headroom alone.
+
+## Upgrading from 0.6
+
+0.7 removes the 0.6 API outright — there is no deprecation period, and no
+bundle id, environment, app Apple id or device GUID parameter survives
+anywhere in this library. Read every reason through
+[Post-verification checklist](#post-verification-checklist) before upgrading.
+
+| 0.6 | 0.7 |
+|---|---|
+| `ApplePurchaseReceiptVerifier.apple_jws_roots` / `.apple_receipt_roots` | `Config.defaults.roots` (one shared set for both paths) |
+| `ReceiptVerifier.new(trusted_roots:, bundle_id:)` | `Verifier.create(Config.new(roots:))`; compare `result.payload.bundle_id` yourself |
+| `verifier.verify_der(bytes)` / `#verify_base64(text)` / `#verify(either)` | `verifier.verify_receipt(base64)`; DER callers encode first: `[der].pack("m0")` |
+| `verifier.verify_base64(text, device_guid:)` | `verifier.verify_receipt(base64)`, then compare the device hash yourself — see [Device hash](#device-hash) |
+| `ApplePurchaseReceiptVerifier.verify_receipt_core(der, trusted_roots:)` | `verifier.verify_receipt(base64)` — no separate "core"/DER entry point |
+| `JwsVerifier.new(trusted_roots:, bundle_id:, accepted_environments:, app_apple_id:)` | `Verifier.create(Config.new(roots:))` |
+| `verifier.verify_transaction(jws)` / `#verify_app_transaction(jws)` / `#verify_raw(jws)` | `verifier.verify_signed_data(jws)` — one method; parse `result.payload.json` and check `bundleId`/`environment`/`appAppleId` yourself |
+| `VerifyReceiptEndpoint.new(trusted_roots:, environment:)` | `Verifier.create(Config.new(roots:))`; pass `environment` per call to `verify_receipt_endpoint` |
+| `endpoint.verify_receipt_result(request)` / `#verify_receipt_data(receipt_data)` / `#verify_receipt_json(body)` | `verifier.verify_receipt_endpoint(environment, request_json)` — one method, JSON text in, JSON text out; no `VerifyReceiptResult` object |
+| `result.to_response(other_environment)` / `#to_json(other_environment)` | call `verify_receipt_endpoint` again with the other `Environment` value — the second call is offline |
+| raises `ApplePurchaseReceiptVerifier::VerificationError` | returns a `VerificationResult`; `verify_receipt`/`verify_signed_data` no longer raise for input |
+| `Reason::INVALID_CHAIN` | `Reason::UNTRUSTED_CHAIN`, or `INVALID_CERTIFICATE` when the chain is outside its validity window |
+| `Reason::INVALID_RECEIPT_FORMAT` / `INVALID_JWS_FORMAT` / `MALFORMED_REQUEST` | `Reason::MALFORMED` |
+| `Reason::REQUEST_TOO_LARGE` | `Reason::TOO_LARGE` |
+| `Reason::WRONG_BUNDLE_ID` / `WRONG_ENVIRONMENT` / `WRONG_APP_APPLE_ID` / `DEVICE_HASH_MISMATCH` | gone — the payload verifies and you read the field yourself |
+| `active_at?` | gone — read `expiresDate`/`revocationDate` yourself, as in [Verifying a StoreKit 2 transaction](#verifying-a-storekit-2-transaction) |
 
 ## Development
 
@@ -541,7 +646,7 @@ run by CI for a fixed budget on every push. `fuzz/README.md` lists them and
 the invariant each asserts beyond "nothing escapes". Its one dependency lives
 in `gemfiles/fuzz.gemfile`, out of the gemspec and out of the test Gemfile:
 ruzzy needs clang and a libFuzzer runtime, and a tool the library does not
-need must not be able to fail the Ruby 3.1 leg.
+need must not be able to fail the Ruby 3.3 leg.
 
 ## License
 

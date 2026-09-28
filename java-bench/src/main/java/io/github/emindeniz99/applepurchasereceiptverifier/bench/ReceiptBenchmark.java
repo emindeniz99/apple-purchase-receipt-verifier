@@ -1,12 +1,12 @@
 package io.github.emindeniz99.applepurchasereceiptverifier.bench;
 
-import io.github.emindeniz99.applepurchasereceiptverifier.AppleRootCerts;
+import io.github.emindeniz99.applepurchasereceiptverifier.Config;
 import io.github.emindeniz99.applepurchasereceiptverifier.Environment;
-import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException;
-import io.github.emindeniz99.applepurchasereceiptverifier.receipt.AppReceipt;
-import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifier;
-import io.github.emindeniz99.applepurchasereceiptverifier.receipt.VerifyReceiptEndpoint;
-import io.github.emindeniz99.applepurchasereceiptverifier.receipt.VerifyReceiptResult;
+import io.github.emindeniz99.applepurchasereceiptverifier.Failure;
+import io.github.emindeniz99.applepurchasereceiptverifier.Reason;
+import io.github.emindeniz99.applepurchasereceiptverifier.ReceiptPayload;
+import io.github.emindeniz99.applepurchasereceiptverifier.VerificationResult;
+import io.github.emindeniz99.applepurchasereceiptverifier.Verifier;
 import java.io.File;
 import java.io.IOException;
 import java.lang.invoke.MethodHandle;
@@ -15,17 +15,12 @@ import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.MessageDigest;
-import java.security.cert.X509Certificate;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import org.bouncycastle.cms.CMSException;
 import org.bouncycastle.cms.CMSSignedData;
@@ -41,7 +36,6 @@ import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
-import org.openjdk.jmh.infra.Blackhole;
 
 /**
  * Cost of verifying a genuine Apple-signed receipt through each public entry
@@ -77,15 +71,11 @@ public class ReceiptBenchmark {
      */
     private static final MethodHandle DECODE = decodeHandle();
 
-    private Set<X509Certificate> roots;
     private byte[] der;
-    private byte[] tamperedDer;
     private String base64;
-    private Map<String, Object> request;
+    private String tamperedBase64;
     private String requestJson;
-    private ReceiptVerifier verifier;
-    private VerifyReceiptEndpoint sandboxEndpoint;
-    private VerifyReceiptEndpoint productionEndpoint;
+    private Verifier verifier;
 
     @Setup
     public void setUp() throws Throwable {
@@ -113,54 +103,32 @@ public class ReceiptBenchmark {
             throw new IllegalStateException(fixture + " does not match its contentSha256 in cases.json");
         }
         base64 = Base64.getEncoder().encodeToString(der);
-        request = Collections.<String, Object>singletonMap("receipt-data", base64);
         requestJson = "{\"receipt-data\":\"" + base64 + "\"}";
-        tamperedDer = flipSignatureByte(der);
+        tamperedBase64 = Base64.getEncoder().encodeToString(flipSignatureByte(der));
 
-        roots = AppleRootCerts.receiptRoots();
-        verifier = new ReceiptVerifier(roots, bundleId);
-        sandboxEndpoint = new VerifyReceiptEndpoint(roots, Environment.SANDBOX, CLOCK);
-        productionEndpoint = new VerifyReceiptEndpoint(roots, Environment.PRODUCTION, CLOCK);
+        // The built-in Apple roots; the fixed clock only reaches request_date.
+        verifier = Verifier.create(
+                Config.builder().roots(Config.defaults().roots()).clock(CLOCK).build());
 
         if (!Arrays.equals(decodeBase64(), der)) {
             throw new IllegalStateException("decodeBase64 did not return the fixture's DER");
         }
-        checkReceipt(ReceiptVerifier.verifyReceiptCore(der, roots), bundleId, inAppCount);
-        checkReceipt(verifier.verify(base64), bundleId, inAppCount);
-        Map<String, Object> ok = sandboxEndpoint.verifyReceiptResult(request).toResponse();
-        if (!Integer.valueOf(0).equals(ok.get("status"))) {
-            throw new IllegalStateException("endpointMap answered " + ok);
+        checkReceipt(verifyReceipt(), bundleId, inAppCount);
+        String ok = endpointJson();
+        if (!ok.startsWith("{\"status\":0,\"environment\":\"Sandbox\",")) {
+            throw new IllegalStateException("endpointJson did not answer status 0 for Sandbox");
         }
-        List<?> inApp = (List<?>) ((Map<?, ?>) ok.get("receipt")).get("in_app");
-        if (inApp.size() != inAppCount) {
-            throw new IllegalStateException("endpointMap rendered " + inApp.size() + " in_app entries");
+        int rendered = count(ok, "\"transaction_id\":");
+        if (rendered != inAppCount) {
+            throw new IllegalStateException("endpointJson rendered " + rendered + " in_app entries");
         }
-        if (!sandboxEndpoint.verifyReceiptJson(requestJson).startsWith("{\"status\":0,")) {
-            throw new IllegalStateException("endpointJson did not answer status 0");
-        }
-        Object wrongEnv =
-                productionEndpoint.verifyReceiptResult(request).toResponse().get("status");
-        if (!Integer.valueOf(VerifyReceiptEndpoint.STATUS_SANDBOX_RECEIPT_ON_PRODUCTION)
-                .equals(wrongEnv)) {
+        String wrongEnv = endpointWrongEnv();
+        if (!wrongEnv.equals("{\"status\":21007}")) {
             throw new IllegalStateException("endpointWrongEnv answered " + wrongEnv);
         }
-        VerifyReceiptResult result = sandboxEndpoint.verifyReceiptResult(request);
-        if (result.status() != 0 || result.receipt() == null) {
-            throw new IllegalStateException("resultOnly answered " + result.status());
-        }
-        if (!productionEndpoint
-                .verifyReceiptResult(request)
-                .toJson(Environment.SANDBOX)
-                .startsWith("{\"status\":0,\"environment\":\"Sandbox\",")) {
-            throw new IllegalStateException("retryViaResult did not answer status 0 for Sandbox");
-        }
-        try {
-            ReceiptVerifier.verifyReceiptCore(tamperedDer, roots);
-            throw new IllegalStateException("tampered " + fixture + " verified");
-        } catch (VerificationException e) {
-            if (e.reason() != VerificationException.Reason.INVALID_SIGNATURE) {
-                throw new IllegalStateException("tampered " + fixture + " rejected with " + e.reason(), e);
-            }
+        Failure failure = rejectTamperedSignature().failure();
+        if (failure == null || failure.reason() != Reason.INVALID_SIGNATURE) {
+            throw new IllegalStateException("tampered " + fixture + " answered " + failure);
         }
     }
 
@@ -170,54 +138,42 @@ public class ReceiptBenchmark {
     }
 
     @Benchmark
-    public AppReceipt core() throws VerificationException {
-        return ReceiptVerifier.verifyReceiptCore(der, roots);
-    }
-
-    @Benchmark
-    public AppReceipt verifierBase64() throws VerificationException {
-        return verifier.verify(base64);
-    }
-
-    @Benchmark
-    public Map<String, Object> endpointMap() {
-        return sandboxEndpoint.verifyReceiptResult(request).toResponse();
+    public VerificationResult<ReceiptPayload> verifyReceipt() {
+        return verifier.verifyReceipt(base64);
     }
 
     @Benchmark
     public String endpointJson() {
-        return sandboxEndpoint.verifyReceiptJson(requestJson);
+        return verifier.verifyReceiptEndpoint(Environment.SANDBOX, requestJson);
     }
 
     @Benchmark
-    public Map<String, Object> endpointWrongEnv() {
-        return productionEndpoint.verifyReceiptResult(request).toResponse();
+    public String endpointWrongEnv() {
+        return verifier.verifyReceiptEndpoint(Environment.PRODUCTION, requestJson);
     }
 
     @Benchmark
-    public VerifyReceiptResult resultOnly() {
-        return sandboxEndpoint.verifyReceiptResult(request);
+    public VerificationResult<ReceiptPayload> rejectTamperedSignature() {
+        return verifier.verifyReceipt(tamperedBase64);
     }
 
-    @Benchmark
-    public String retryViaResult() {
-        return productionEndpoint.verifyReceiptResult(request).toJson(Environment.SANDBOX);
-    }
-
-    @Benchmark
-    public void rejectTamperedSignature(Blackhole bh) {
-        try {
-            bh.consume(ReceiptVerifier.verifyReceiptCore(tamperedDer, roots));
-        } catch (VerificationException e) {
-            bh.consume(e);
+    private static void checkReceipt(VerificationResult<ReceiptPayload> result, String bundleId, int inAppCount) {
+        ReceiptPayload receipt = result.payload();
+        if (receipt == null) {
+            throw new IllegalStateException("receipt did not verify: " + result.failure());
         }
-    }
-
-    private static void checkReceipt(AppReceipt receipt, String bundleId, int inAppCount) {
-        if (!bundleId.equals(receipt.bundleId()) || receipt.inAppPurchases().size() != inAppCount) {
+        if (!bundleId.equals(receipt.bundleId()) || receipt.inApp().size() != inAppCount) {
             throw new IllegalStateException("unexpected receipt " + receipt.bundleId() + " with "
-                    + receipt.inAppPurchases().size() + " in-app purchases");
+                    + receipt.inApp().size() + " in-app purchases");
         }
+    }
+
+    private static int count(String haystack, String needle) {
+        int n = 0;
+        for (int i = haystack.indexOf(needle); i >= 0; i = haystack.indexOf(needle, i + needle.length())) {
+            n++;
+        }
+        return n;
     }
 
     /**
@@ -256,7 +212,7 @@ public class ReceiptBenchmark {
 
     private static MethodHandle decodeHandle() {
         try {
-            Method decode = Class.forName("io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptBase64")
+            Method decode = Class.forName("io.github.emindeniz99.applepurchasereceiptverifier.ReceiptBase64")
                     .getDeclaredMethod("decode", String.class);
             decode.setAccessible(true);
             return MethodHandles.lookup().unreflect(decode);
@@ -266,7 +222,7 @@ public class ReceiptBenchmark {
     }
 
     /** Walks up from the working directory to the repository's fixtures/. */
-    private static File fixturesDir() throws IOException {
+    static File fixturesDir() throws IOException {
         for (File dir = new File("").getAbsoluteFile(); dir != null; dir = dir.getParentFile()) {
             File candidate = new File(dir, "fixtures/cases.json");
             if (candidate.isFile()) {

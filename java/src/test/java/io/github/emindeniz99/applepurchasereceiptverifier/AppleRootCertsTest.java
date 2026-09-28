@@ -1,65 +1,44 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNotSame;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
-import io.github.emindeniz99.applepurchasereceiptverifier.jws.JwsVerifier;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.net.URL;
-import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.cert.X509Certificate;
 import java.util.Arrays;
 import java.util.Base64;
-import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
-import org.bouncycastle.util.encoders.Hex;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 class AppleRootCertsTest {
-
-    /** Where the roots live inside the jar: this class's package, never the jar root. */
-    private static final String RESOURCE_DIR = "io/github/emindeniz99/applepurchasereceiptverifier/certs";
 
     private static final List<String> ROOT_FILES =
             Arrays.asList("AppleIncRootCertificate.cer", "AppleRootCA-G2.cer", "AppleRootCA-G3.cer");
 
     /**
-     * Apple's published SHA-256 root fingerprints, spelled out here as well as
-     * in {@code AppleRootCerts} so that the two have to be changed together: a
-     * single copy of a pinned digest is a digest that can be updated to match
-     * whatever bytes happen to be in the tree.
+     * Apple's published SHA-256 root fingerprints, kept apart from the
+     * base64 in {@code AppleRootCerts} so that the two have to be changed
+     * together: a digest stored next to the bytes it pins can be updated to
+     * match whatever bytes happen to be there.
      */
     private static final Set<String> ROOT_FINGERPRINTS = new HashSet<String>(Arrays.asList(
             "b0b1730ecbc7ff4505142c49f1295e6eda6bcaed7e2c68c5be91b5a11001f024",
             "c2b9b042dd57830e7d117dac55ac8ae19407d38e41d88f3215bc3a890444a050",
             "63343abfb89a6a03ebb57e9b3f5fa7be7c4f5c756f3017b3a8c488c3653e9179"));
 
-    // Both sets carry all three published Apple roots (PLAN D15): Apple only
-    // commits to "an Apple root certificate", so a single-root anchor would
-    // break silently if Apple re-anchored a path.
+    // One set carries all three published Apple roots (PLAN D15) for JWS and
+    // receipts alike: Apple only commits to "an Apple root certificate", so a
+    // single-root anchor would break silently if Apple re-anchored a path.
     @Test
-    void bundledJwsRootsAreAllThreePublishedAppleRoots() {
-        assertAllThreeRoots(AppleRootCerts.jwsRoots());
-    }
-
-    @Test
-    void bundledReceiptRootsAreAllThreePublishedAppleRoots() {
-        assertAllThreeRoots(AppleRootCerts.receiptRoots());
+    void defaultRootsAreAllThreePublishedAppleRoots() {
+        assertAllThreeRoots(Config.defaults().roots());
     }
 
     /**
@@ -71,99 +50,47 @@ class AppleRootCertsTest {
     @Test
     void bundledRootsMatchTheirPinnedFingerprints() throws Exception {
         Set<String> loaded = new HashSet<String>();
-        for (X509Certificate root : AppleRootCerts.jwsRoots()) {
+        for (X509Certificate root : Config.defaults().roots()) {
             loaded.add(sha256Hex(root.getEncoded()));
         }
         assertEquals(ROOT_FINGERPRINTS, loaded);
     }
 
     /**
-     * The roots are parsed once, but a caller still owns the set it gets:
-     * emptying one must not reach the next caller, or one careless caller
-     * would strip every later verifier of its anchors.
+     * The roots are parsed once and shared, so no caller may change them:
+     * emptying the set would otherwise strip every later verifier of its
+     * anchors.
      */
     @Test
-    void eachCallReturnsItsOwnSetOfTheSameCachedCertificates() {
-        Set<X509Certificate> first = AppleRootCerts.jwsRoots();
-        Set<X509Certificate> second = AppleRootCerts.receiptRoots();
-        assertNotSame(first, second);
+    void theDefaultRootsAreParsedOnceAndCannotBeChanged() {
+        Set<X509Certificate> first = Config.defaults().roots();
+        Set<X509Certificate> second = Config.defaults().roots();
         for (X509Certificate root : first) {
             assertTrue(second.stream().anyMatch(c -> c == root), "certificate was parsed again");
         }
-        first.clear();
-        assertAllThreeRoots(AppleRootCerts.jwsRoots());
+        assertThrows(UnsupportedOperationException.class, first::clear);
+        assertThrows(UnsupportedOperationException.class, AppleRootCerts.roots()::clear);
+        assertAllThreeRoots(Config.defaults().roots());
     }
 
     /**
-     * Where the resources sit is the finding, not a detail. A jar-root
-     * {@code /certs/} lookup is first-match across the whole classpath, so any
-     * earlier jar, or a shaded uber-jar that merged its own {@code certs/}
-     * tree, supplies the trust anchors instead, silently.
+     * The compiled-in roots are byte for byte the repository's
+     * {@code certs/}, which apple-root-watch diffs against Apple's published
+     * files every week. {@code tools/check-cert-copies.mjs} finds only
+     * {@code .cer} copies, so this is the link that covers Java's inlined one.
      */
     @Test
-    void rootsAreLoadedFromThisPackageAndNotFromTheJarRoot() {
+    void bundledRootsAreTheRepositorysCertsDirectory() throws Exception {
+        Path certs = TestFixtures.root().toAbsolutePath().normalize().resolveSibling("certs");
+        Set<String> expected = new HashSet<String>();
         for (String name : ROOT_FILES) {
-            assertNotNull(
-                    AppleRootCerts.class.getResourceAsStream("certs/" + name),
-                    name + " is not next to AppleRootCerts, so the package-relative load cannot find it");
-            assertNull(
-                    AppleRootCerts.class.getResourceAsStream("/certs/" + name),
-                    name + " is still at the classpath root, where any earlier jar can shadow it");
+            expected.add(Base64.getEncoder().encodeToString(Files.readAllBytes(certs.resolve(name))));
         }
-    }
-
-    /**
-     * The demonstration the finding was raised on, run in reverse: a directory
-     * carrying three files with the right names at the right package-relative
-     * path, ahead of {@code target/classes} on a class loader. The premise is
-     * established first, so that the shadow really is what the loader
-     * resolves, and then the library refuses to hand back anchors at all rather than handing
-     * back the planted ones.
-     */
-    @Test
-    void classpathShadowingCannotSubstituteTheAnchors(@TempDir Path tmp) throws Exception {
-        Path certs = tmp.resolve(RESOURCE_DIR);
-        Files.createDirectories(certs);
-        // Real X.509 certificates from the generated test PKI, so the planted
-        // files parse cleanly and the fingerprint check is the only thing that
-        // can refuse them. Bytes that merely failed to parse would prove less.
-        Path fixtures = TestFixtures.generated();
-        Files.copy(fixtures.resolve("receipt-root.der"), certs.resolve("AppleIncRootCertificate.cer"));
-        Files.copy(fixtures.resolve("jws-root.der"), certs.resolve("AppleRootCA-G2.cer"));
-        Files.copy(fixtures.resolve("receipt-root.der"), certs.resolve("AppleRootCA-G3.cer"));
-
-        URL library = AppleRootCerts.class.getProtectionDomain().getCodeSource().getLocation();
-        // The library's own runtime dependency, which the fingerprint check
-        // uses for its hex rendering.
-        URL bouncyCastle = Hex.class.getProtectionDomain().getCodeSource().getLocation();
-        URLClassLoader shadowed = new URLClassLoader(
-                new URL[] {tmp.toUri().toURL(), library, bouncyCastle},
-                ClassLoader.getSystemClassLoader().getParent());
-        try {
-            // The premise: on this loader the planted directory really does
-            // win. Without it the refusal below could be a refusal for any
-            // reason at all.
-            URL resolved = shadowed.getResource(RESOURCE_DIR + "/AppleIncRootCertificate.cer");
-            assertNotNull(resolved, "the planted directory is not on the shadowing loader");
-            assertEquals(
-                    certs.resolve("AppleIncRootCertificate.cer").toAbsolutePath(),
-                    Paths.get(resolved.toURI()).toAbsolutePath(),
-                    "the shadowing loader resolved " + resolved + " rather than the planted copy");
-
-            Class<?> shadowedRoots = Class.forName(AppleRootCerts.class.getName(), true, shadowed);
-            Method jwsRoots = shadowedRoots.getMethod("jwsRoots");
-            InvocationTargetException thrown =
-                    assertThrows(InvocationTargetException.class, () -> jwsRoots.invoke(null));
-            assertTrue(
-                    thrown.getCause() instanceof IllegalStateException,
-                    "expected the anchor load to fail closed, got " + thrown.getCause());
-            assertTrue(
-                    thrown.getCause().getMessage().contains("SHA-256"),
-                    "the failure does not name the fingerprint check: "
-                            + thrown.getCause().getMessage());
-        } finally {
-            shadowed.close();
+        Set<String> bundled = new HashSet<String>();
+        for (X509Certificate root : AppleRootCerts.roots()) {
+            bundled.add(Base64.getEncoder().encodeToString(root.getEncoded()));
         }
+        assertEquals(expected, bundled);
     }
 
     private static void assertAllThreeRoots(Set<X509Certificate> roots) {
@@ -251,7 +178,7 @@ class AppleRootCertsTest {
      * it, so the JWS carries the real x5c and a zero signature: the verifier
      * checks the marker OIDs and the chain before the signature, so reaching
      * INVALID_SIGNATURE (and not INVALID_CERTIFICATE_PURPOSE or
-     * INVALID_CHAIN) is the proof that both passed on the library's real code
+     * UNTRUSTED_CHAIN) is the proof that both passed on the library's real code
      * path. If this fails, the bundled roots or the OID checks no longer
      * accept what Apple actually ships.
      */
@@ -261,14 +188,15 @@ class AppleRootCertsTest {
                 ROOT_FINGERPRINTS.contains(sha256Hex(der(REAL_APPLE_ROOT))),
                 "Apple's Root CA - G3 from Apple's test suite is not among the bundled JWS roots");
         VerificationException e = assertThrows(
-                VerificationException.class, () -> productionVerifier().verifyRaw(realChainJws(EFFECTIVE_DATE_MILLIS)));
+                VerificationException.class,
+                () -> Checks.signedData(productionVerifier(), realChainJws(EFFECTIVE_DATE_MILLIS)));
         assertEquals(Reason.INVALID_SIGNATURE, e.reason(), e.getMessage());
     }
 
     /**
      * The same chain judged at an instant outside the leaf's validity
-     * (2025-09-19 to 2027-10-13) fails the chain check: a genuine chain is
-     * not a pass at any date.
+     * (2025-09-19 to 2027-10-13) fails as INVALID_CERTIFICATE: a genuine
+     * chain is not a pass at any date.
      */
     @Test
     void rejectsApplesRealProductionChainOutsideItsValidity() throws Exception {
@@ -276,13 +204,13 @@ class AppleRootCertsTest {
         long afterLeaf = 1823472000000L; // 2027-10-14T00:00:00Z
         for (long at : new long[] {beforeLeaf, afterLeaf}) {
             VerificationException e = assertThrows(
-                    VerificationException.class, () -> productionVerifier().verifyRaw(realChainJws(at)));
-            assertEquals(Reason.INVALID_CHAIN, e.reason(), "signedDate " + at + ": " + e.getMessage());
+                    VerificationException.class, () -> Checks.signedData(productionVerifier(), realChainJws(at)));
+            assertEquals(Reason.INVALID_CERTIFICATE, e.reason(), "signedDate " + at + ": " + e.getMessage());
         }
     }
 
-    private static JwsVerifier productionVerifier() {
-        return new JwsVerifier(AppleRootCerts.jwsRoots(), "com.example", EnumSet.of(Environment.PRODUCTION));
+    private static Verifier productionVerifier() {
+        return Verifier.create(Config.defaults());
     }
 
     /** A JWS over the real x5c whose signedDate is {@code signedAtMillis}; its signature is 64 zero bytes. */

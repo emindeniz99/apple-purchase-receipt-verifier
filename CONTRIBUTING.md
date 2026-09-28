@@ -29,8 +29,8 @@ node tools/lint-cases.mjs   # the shared conformance vectors, see below
 ```
 
 CI runs these on every supported runtime line (Java 8–25, Node 20–26,
-Python 3.10–3.14, Swift 6, Go 1.22–1.27, Ruby 3.1–4.0, Rust 1.85 through beta,
-PHP 8.1–8.5, .NET on Linux, Windows and macOS). The floors are claims we test,
+Python 3.10–3.14, Swift 6, Go 1.22–1.27, Ruby 3.3–4.0, Rust 1.85 through beta,
+PHP 8.2–8.5, .NET on Linux, Windows and macOS). The floors are claims we test,
 not decoration: `@types/node` stays on 20 and JUnit stays on 5.x on purpose —
 see the rationale comments in `.github/dependabot.yml` before "upgrading"
 them.
@@ -61,14 +61,14 @@ you change a manifest:
 | rust | `rust/Cargo.lock`, `rust/ffi/Cargo.lock` | `CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback cargo +stable generate-lockfile` in each; a plain `cargo update` ignores `rust-version` and can lock crates the declared floor cannot build |
 | rust | `rust/fuzz/Cargo.lock` | `cargo generate-lockfile` in `rust/fuzz` |
 | python | `python/uv.lock` | `uv lock` |
-| php | `php/composer.lock` | `composer update` (resolves at the 8.1 floor, see below) |
+| php | `php/composer.lock` | `composer update` (resolves at the 8.2 floor, see below) |
 | ruby | `ruby/Gemfile.lock`, `ruby/gemfiles/*.lock` | `bundle lock` with the matching `BUNDLE_GEMFILE` |
 | dotnet | `dotnet/**/packages.lock.json` | `dotnet restore --force-evaluate` under the newest SDK line `ci.yml` installs (10.0.x); an older band asks for a different implicit ILLink version and fails locked mode |
 | swift | `Package.resolved`, `swift/fuzz/Package.resolved` | `swift package update` |
 | go | `go/tools/go.sum` | `go get` then `go mod tidy` in `go/tools` |
 
-`php/composer.json` sets `config.platform.php` to 8.1.0, so a `composer
-update` on any machine resolves the graph the PHP 8.1 leg has to install.
+`php/composer.json` sets `config.platform.php` to 8.2.0, so a `composer
+update` on any machine resolves the graph the PHP 8.2 leg has to install.
 The Java port pins exact versions in `java/pom.xml` and Maven has no lockfile
 format; the go library module has no dependencies at all.
 
@@ -76,36 +76,32 @@ format; the go library module has no dependencies at all.
 
 `fixtures/cases.json` is the normative contract between the nine
 implementations: one language-neutral case per semantic fact, each naming a
-registered fixture, the verifier config to build from it, and either the
-payload fields the call must return or the canonical reason it must raise.
+registered fixture, the `Config` to build the verifier from, and either the
+payload fields the call must return or the reason it must fail with.
 Each language reads the file through a thin adapter that knows nothing about
 any individual case — `java/src/test/.../ConformanceCasesTest.java`,
 `node/test/conformance.test.js`, `python/tests/test_conformance.py`,
 `swift/Tests/.../ConformanceCasesTests.swift`, `go/conformance_test.go`,
 `ruby/test/conformance_test.rb`, `rust/tests/conformance.rs`,
 `php/tests/ConformanceCasesTest.php` and
-`dotnet/tests/ApplePurchaseReceiptVerifier.Tests/Conformance.cs`.
+`dotnet/tests/ApplePurchaseReceiptVerifier.Tests/Conformance070.cs`.
 
 **A behavior change means editing `cases.json` in the same commit.** The file
 records what was decided, not what an implementation happened to do, so a
 vector that disagrees with an implementation is a bug report against that
 implementation until a human rules otherwise. Changing a returned field or a
-raised reason without updating the vector leaves every suite disagreeing
+failure reason without updating the vector leaves every suite disagreeing
 with the contract.
 
-One decision the vectors cannot hold: `verifyReceiptCore`
-(`verify_receipt_core` in Python, Ruby and Rust, `verifyCore` in Swift and
-.NET) is public in every port, so the endpoint calls it directly instead of
-building a `ReceiptVerifier` with a wildcard bundle id. Both spellings answer
-identically, so no case can tell them apart — the native suites pin that one,
-and Swift's `PublicApiTests` imports the module without `@testable` so the
-visibility is checked at compile time.
+The `comment` at the top of `cases.json` is the runner contract: how each
+operation hands its input over, how `expected` is evaluated, and the rules
+behind the expectations. Read it before adding a case.
 
 ### Adding a case
 
 1. Register the fixture in the `fixtures` map if it is not there yet: `path`
    relative to `fixtures/`, `role` (`input`, `trust-anchor` or `support`),
-   `codec` (`raw`, `base64` or `utf8`), and the file's `contentSha256` — the
+   `codec` (`raw`, `base64`, `utf8` or `text`), and the file's `contentSha256` — the
    SHA-256 of the DECODED bytes, the ones the library is handed, not of the
    file as stored. That digest is enforced, not recorded: `lint-cases.mjs`
    re-hashes every registered fixture, and so does every adapter, over the
@@ -113,16 +109,18 @@ visibility is checked at compile time.
    loads. Regenerating or re-encoding a fixture without updating the digest
    fails every suite.
 2. Append the case: a unique `id` shaped `<area>/<what-it-pins>`, a
-   `description` of the fact it pins, the `operation` (`verifyTransaction`,
-   `verifyAppTransaction`, `verifyRaw`, `verifyReceipt`,
-   `verifyReceiptBase64` or `verifyReceiptEndpoint`), `input.fixture`, the
-   `config`, and `expected`. A base64 spelling is a `decodeBase64` group
-   instead; see "Adding a base64 spelling" below.
-   A positive case carries `status: "ok"` plus the `fields` it pins; a field
-   it does not list is not pinned. A negative case carries `status: "error"`
-   plus a `reason` from the canonical vocabulary, and a `fault` naming its
-   single intentional defect. Add a `clock` if — and only if — the answer
-   depends on the current time; see below.
+   `description` of the fact it pins, the `operation` (`verifyReceipt`,
+   `verifySignedData` or `verifyReceiptEndpoint`), `input.fixture` (or
+   `input.requestBody` for a whole endpoint body), the `config`, and
+   `expected`. A base64 spelling is a `decodeBase64` group instead; see
+   "Adding a base64 spelling" below.
+   A positive case carries `status: "ok"` plus the `fields` it pins, as JSON
+   Pointers into the payload's JSON; a field it does not list is not pinned.
+   A negative case carries `status: "error"` plus one of the eight reasons
+   (never `INTERNAL_ERROR`), and a `fault` naming its single intentional
+   defect. Where the outcome is port-defined, `expected: {"oneOf": [...]}`
+   lists every outcome a port may give. Add a `clock` if — and only if — the
+   answer depends on the current time; see below.
 3. Run `node tools/lint-cases.mjs`. It validates the file against
    `fixtures/cases.schema.json`, re-hashes every registered fixture, and
    fails on a fixture file no case registers or an `input` fixture no case
@@ -145,12 +143,12 @@ new group:
   characters are allowed. A string appears in one group only.
 - An accepting group has `expected: {"status": "ok", "bytesHex": "<hex>"}`,
   the bytes every text decodes to. A refusing group has
-  `expected: {"status": "error", "reason": "INVALID_RECEIPT_FORMAT"}`.
+  `expected: {"status": "error", "reason": "MALFORMED"}`.
 - `decoders` names the decoders the group runs through, normally
   `["receipt-data", "x5c"]`. Each runner calls the port's decoders
-  directly. A refusal is `INVALID_RECEIPT_FORMAT` from the receipt-data
-  decoder and `INVALID_CERTIFICATE` from the x5c decoder; the runner maps
-  the reason, so a case never repeats it.
+  directly. A refusal is `MALFORMED` from the receipt-data decoder and
+  `INVALID_CERTIFICATE` from the x5c decoder; the runner maps the reason, so
+  a case never repeats it.
 - The `description` says why, citing the Apple measurement in
   `docs/evidence/2026-09-23-verifyreceipt-base64.md` where there is one.
 
@@ -158,19 +156,23 @@ new group:
 refuses a string listed twice. When a text fails, the runner names the case
 id, the index and the escaped text.
 
-Field paths in `expected.fields` are language-neutral: the shared camelCase
-API names for the library operations, the literal Apple wire keys for
-`verifyReceiptEndpoint`, `x.length` for a collection size,
-`list[key=value].field` to select one element, and `null` for "absent or
-unset". The `comment` at the top of `cases.json` carries the full grammar and
-the sources every expectation was derived from.
+Field paths in `expected.fields` are JSON Pointers (RFC 6901) into the
+payload as JSON: `ReceiptPayload.toJson()` for a receipt, the signed JSON
+for a JWS, Apple's response body for the endpoint. One extension, a token
+written `[key=value]`, selects the single array element whose member `key`
+equals `value`; `expected.lengths` pins an array's length; `null` means
+"absent or JSON null". The `comment` at the top of `cases.json` carries the
+full grammar.
 
 ### Generating a fixture
 
-Fixtures under `fixtures/generated/` are signed by a fake Apple PKI built in
-`java/src/test/.../TestPki.java`, so no real Apple key material is needed.
-Twelve generators write them, all at fixed epoch instants so nothing depends
-on generation time:
+Fixtures under `fixtures/generated/` and `fixtures/generated-0.7/` are
+signed by a fake Apple PKI built in `java/src/test/.../TestPki.java`, so no
+real Apple key material is needed. The receipts under `generated-0.7/` were
+re-minted with the WWDR marker on their intermediate, which 0.7 checks; the
+`comment` in `cases.json` lists every generator that writes there and the
+order to run them in. The original twelve generators write the 0.6 set, all
+at fixed epoch instants so nothing depends on generation time:
 
 - `FixtureGeneratorTest` — the original set. Gated behind
   `mvn test -Dtest=FixtureGeneratorTest -Dfixtures.generate=true`.
@@ -233,39 +235,23 @@ is why each generator emits its own roots beside its inputs.
 
 ### The clock
 
-A `verifyReceiptEndpoint` case may carry a `clock`: one ISO-8601 UTC
-instant, the `now` the call is answered at. Every library's
-`VerifyReceiptEndpoint` takes an optional clock (`java.time.Clock`, a
-`() => Date` supplier, a callable returning epoch seconds, a
-`@Sendable () -> Date`, a `Clock` trait, a PSR-20 `ClockInterface`, an
-`IClock`), and each adapter hands the case's instant to the endpoint it
-builds. No runner fakes time and no runner skips a case for want of a seam.
-A case without a `clock` gets no clock argument, so the library reads the
-system clock exactly as a caller who never sets one does.
+A case may carry `clock: {"now": "<ISO-8601 UTC instant>"}`, and the runner
+builds its `Config` with a clock fixed at that instant; without one the
+default clock runs. Each port's `Config` takes a clock in its own idiom
+(`java.time.Clock`, a `() => number`, a callable, a closure, a PSR-20
+`ClockInterface`, a `Func<long>`), so no runner fakes time and no runner
+skips a case for want of a seam.
 
-Pin a clock where the answer genuinely moves with time: the `request_date`
-triple of `verifyReceiptEndpoint`. Certificate validity is not such a place:
-it is judged at the payload's `signedDate` or the receipt's creation date,
-and where the input states neither, at the system clock (PLAN.md 2.1 step 4,
-2.2 step 2). The expired-chain cases are deterministic and no injected clock
-may move their verdict.
-
-Pin a clock, too, to prove an answer does *not* move with it. Two endpoint
-cases run a receipt carrying no creation date (`receipt-no-creation-date`,
-`receipt-expired-no-creation-date`) under a clock planted inside an expired
-certificate's window, or far past a live one's, and must reach the verdict
-real time gives. That is where the "else current time" fallback is held to
-the system clock: a caller who injects a clock to pin `request_date`, or to
-work around skew, must not thereby accept a chain that has expired.
-
-No other operation can pin one: the case shapes in `cases.schema.json` for
-`verifyTransaction`, `verifyAppTransaction`, `verifyRaw`, `verifyReceipt`
-and `verifyReceiptBase64` have no `clock`, so the linter rejects it. No port
-gives `JwsVerifier` or `ReceiptVerifier` a clock parameter: no verdict on
-those paths moves with the current time, and their one "now" is a
-certificate-validity instant an injected clock must not be able to shift.
-How old a signed payload may be is the caller's decision, so no case pins
-one.
+0.7 reads the clock in two places: the certificate-validity instant when the
+input states no usable date (a receipt whose first attribute 12 is missing
+or does not parse, a JWS whose `signedDate` is missing or not a
+representable instant), and `request_date` at the endpoint. Pin a clock on
+any case whose verdict or asserted fields could move with it: the dateless
+and unreadable-date cases pin 2025-01-01 unless the case is about the clock
+itself, and two endpoint cases pin that the clock does move the verdict of
+a dateless receipt. A payload that states its own date is judged at that
+date, so the expired-chain cases need no clock. How old a signed payload
+may be is the caller's decision, so no case pins one.
 
 ## Spikes and evidence
 

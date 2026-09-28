@@ -1,10 +1,10 @@
 """Why the receipt-data decoder checks the shape itself.
 
-The spellings ``decode_receipt_base64`` must accept and refuse are the
-decodeBase64 groups of fixtures/cases.json, which test_conformance.py runs
-against both the receipt-data and the x5c decoder. What stays here is the one
-thing a shared vector cannot say: that ``b64decode(validate=True)`` alone is
-not the rule on the Pythons this package supports.
+The spellings the receipt-data and x5c decoders must accept and refuse are
+the decodeBase64 groups of fixtures/cases.json, which test_conformance.py
+runs against both. What stays here is the one thing a shared vector cannot
+say: that ``b64decode(validate=True)`` alone is not the rule on the Pythons
+this package supports.
 """
 
 import base64

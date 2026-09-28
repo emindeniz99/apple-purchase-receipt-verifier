@@ -23,10 +23,10 @@ MAKE="make --environment-overrides V=1" \
 |---|---|---|
 | `parse_der` | `Asn1.scan!`, then `Asn1.parse` on bytes it passed | only `Asn1::Error` escapes |
 | `parse_cms` | `Cms.parse` and every accessor on what it returns | after a scan that passed, only `VerificationError` escapes |
-| `verify_receipt` | `verify_receipt_core`: CMS, payload, chain, signature | an accepted receipt fails against an unrelated anchor set |
-| `verify_receipt_base64` | `ReceiptVerifier#verify_base64` and `#verify`, the string a client sends | only `VerificationError` escapes |
-| `verify_transaction` | the three `JwsVerifier` entry points | a JWS `verify_raw` accepts under the fixture root fails under Apple's roots |
-| `endpoint_json` | `VerifyReceiptEndpoint#verify_receipt_json` and `#verify_receipt_result` on a request body | neither raises, the answer is always JSON with a numeric `status`, and the result has the same status, exactly one of receipt and failure reason, and never `INTERNAL_ERROR` |
+| `verify_receipt` | `Receipt.verify`: CMS, payload, chain, signature, on base64-encoded fuzz bytes | an accepted receipt fails against an unrelated anchor set |
+| `verify_receipt_base64` | `Verifier#verify_receipt`, the string a client sends | never raises; the verdict comes back as a `VerificationResult` |
+| `verify_transaction` | `Verifier#verify_signed_data`, the one JWS entry point | a JWS that verifies under the fixture root fails under Apple's roots |
+| `endpoint_json` | `Verifier#verify_receipt_endpoint` on a request body | never raises, the answer is always JSON with a numeric `status`, and it is never `21009`/`INTERNAL_ERROR` on unauthenticated fuzz input |
 
 The names are the Rust port's, in snake_case because they are Ruby file
 names; `rust/fuzz/` additionally carries `parse-certificate`, which here
@@ -35,7 +35,7 @@ would only fuzz OpenSSL.
 The anchor-set invariant is the one that lets a fuzzer find "accepts what it
 should not" rather than only crashes: without it an input that verifies tells
 you nothing about *why*. `verify_receipt` pins the Apple receipt roots plus
-`fixtures/generated/receipt-root.der`, so both the generated fixtures and the
+`fixtures/generated-0.7/receipt-root.der`, so both the generated fixtures and the
 two public Apple receipts get past the chain check and the fuzzer can explore
 what lies beyond it; the unrelated set it must then fail against is the
 fixture *JWS* root. `verify_transaction` is the mirror image: the fixture JWS
@@ -118,5 +118,5 @@ of process against the harness in this directory, and neither ruzzy nor
 anything under `ruby/fuzz/` is distributed with the gem — the gemspec ships
 `lib/`, `sig/`, `certs/`, `README.md` and `LICENSE` and nothing else. Its
 dependency lives in `../gemfiles/fuzz.gemfile`, out of both the gemspec and
-the test Gemfile, so a tool that needs clang can never fail the Ruby 3.1
+the test Gemfile, so a tool that needs clang can never fail the Ruby 3.3
 matrix leg.

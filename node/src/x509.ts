@@ -71,6 +71,8 @@ export interface ParsedCertificate {
   authorityCertSerial: Uint8Array | null;
   /** Extension OIDs present, for the Apple marker checks. */
   hasExtension(oid: string): boolean;
+  /** Dotted OIDs of the extensions this certificate marks critical. */
+  criticalExtensionOids: readonly string[];
 }
 
 function children(node: ASN1Node): ASN1Node[] {
@@ -222,7 +224,14 @@ export function parseCertificate(der: Uint8Array): ParsedCertificate {
   ) {
     throw new ParseError('signatureAlgorithm disagrees with tbsCertificate.signature');
   }
-  if (top[2]!.tag !== Tags.BIT_STRING || top[2]!.contents.length < 2) {
+  if (
+    top[2]!.tag !== Tags.BIT_STRING ||
+    top[2]!.contents.length < 2 ||
+    // A signature is a whole-byte DER structure (RSA, DSA or ECDSA), never
+    // a bit string with unused trailing bits; a nonzero count here is not
+    // a certificate this library can read.
+    top[2]!.contents[0] !== 0x00
+  ) {
     throw new ParseError('unexpected signatureValue layout');
   }
 
@@ -233,6 +242,7 @@ export function parseCertificate(der: Uint8Array): ParsedCertificate {
     }
   }
   const byOid = new Map<string, Uint8Array>();
+  const criticalExtensionOids: string[] = [];
   for (const extension of extensions ? children(extensions) : []) {
     const parts = children(extension);
     const oidNode = parts[0];
@@ -251,6 +261,12 @@ export function parseCertificate(der: Uint8Array): ParsedCertificate {
       throw new ParseError('duplicate X.509 extension');
     }
     byOid.set(oid, octetStringValue(valueNode));
+    // extension ::= SEQUENCE { OID, critical BOOLEAN DEFAULT FALSE, value }.
+    // Three children means the optional critical flag is present.
+    const criticalNode = parts.length === 3 ? parts[1] : undefined;
+    if (criticalNode?.tag === Tags.BOOLEAN && criticalNode.contents[0] !== 0x00) {
+      criticalExtensionOids.push(oid);
+    }
   }
 
   const keyUsageExtension = byOid.get(OID_KEY_USAGE);
@@ -311,5 +327,6 @@ export function parseCertificate(der: Uint8Array): ParsedCertificate {
       }
       return false;
     },
+    criticalExtensionOids,
   };
 }

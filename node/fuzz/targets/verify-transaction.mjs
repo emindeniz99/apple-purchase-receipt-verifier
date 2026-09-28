@@ -1,58 +1,41 @@
 /**
- * The StoreKit 2 path: compact-JWS split, strict base64url, JSON header and
- * payload, `x5c` certificates, chain, ES256 signature, then the three public
- * entry points' claim checks.
+ * The StoreKit 2 / App Store Server JWS path: compact-JWS split, strict
+ * base64url, JSON header and payload, `x5c` certificates, chain, ES256
+ * signature. 0.7 has one method for every Apple JWS (`verifySignedData`) —
+ * no separate `verifyTransaction`/`verifyAppTransaction`/`verifyRaw`, and no
+ * bundle id or environment claim, since the library returns the payload
+ * rather than judging it.
  *
- * Same invariants as the Go port's `FuzzVerifyTransaction`: nothing escapes
- * but a `VerificationError`, and a JWS that `verifyRaw` accepts under the
- * fixture root must be refused under Apple's roots, or the anchors are not
- * what decided it.
+ * Two invariants: `verifySignedData` never throws and never answers
+ * `INTERNAL_ERROR` for fuzz input; and a JWS that verifies under the
+ * fixture root must be refused under Apple's production roots, or the
+ * anchors are not what decided it.
  */
-import { Environment, JwsVerifier } from '../../dist/index.js';
-import { APPLE_JWS_ANCHORS, JWS_ANCHORS, asUtf8, requireTypedError } from '../harness.mjs';
+import { Reason, createVerifier } from '../../dist/index.js';
+import { APPLE_CONFIG, JWS_CONFIG, asUtf8 } from '../harness.mjs';
 
-const options = {
-  bundleId: 'com.example.app',
-  acceptedEnvironments: [Environment.SANDBOX],
-};
-const verifier = new JwsVerifier({ ...options, trustedRoots: JWS_ANCHORS });
-const unrelated = new JwsVerifier({ ...options, trustedRoots: APPLE_JWS_ANCHORS });
-
-const CALLS = [
-  ['verifyTransaction', (jws) => verifier.verifyTransaction(jws)],
-  ['verifyAppTransaction', (jws) => verifier.verifyAppTransaction(jws)],
-  ['verifyRaw', (jws) => verifier.verifyRaw(jws)],
-];
+const verifier = createVerifier(JWS_CONFIG);
+const unrelated = createVerifier(APPLE_CONFIG);
 
 export function fuzz(data) {
   const jws = asUtf8(data);
   if (jws === null) {
     return;
   }
-  let acceptedByFixtureRoot = false;
-  for (const [name, call] of CALLS) {
-    try {
-      call(jws);
-      if (name === 'verifyRaw') {
-        acceptedByFixtureRoot = true;
-      }
-    } catch (error) {
-      requireTypedError(error, name);
+  const result = verifier.verifySignedData(jws);
+  if (!result.verified) {
+    if (result.failure.reason === Reason.INTERNAL_ERROR) {
+      throw new Error(
+        `verifySignedData answered INTERNAL_ERROR for fuzz input: ${result.failure.message}`,
+        { cause: result.failure.cause },
+      );
     }
-  }
-  if (!acceptedByFixtureRoot) {
     return;
   }
-  let acceptedByApple = false;
-  try {
-    unrelated.verifyRaw(jws);
-    acceptedByApple = true;
-  } catch (error) {
-    requireTypedError(error, 'verifyRaw against Apple roots');
-  }
+  const acceptedByApple = unrelated.verifySignedData(jws).verified;
   if (acceptedByApple) {
     throw new Error(
-      "this input verifies against Apple's roots too, so the anchors are not being enforced",
+      "this input verifies against Apple's production roots too, so the anchors are not being enforced",
     );
   }
 }

@@ -17,36 +17,24 @@ Delete a line in the commit that ships it.
    NuGet and the Go proxy, and submit the repository to Packagist
    (the root manifest is landed; see BOOTSTRAP.md).
 
-## 0.7: the API redesign (owner, 2026-09-27)
+## 0.7: the API redesign — done (owner, 2026-09-27)
 
-The design lives in [docs/design/0.7-api.md](./docs/design/0.7-api.md):
-one `Verifier` with three methods (`verifyReceipt`, `verifySignedData`,
-`verifyReceiptEndpoint`), a `Config` of roots and clock, no policy
-parameters, results that never throw, epoch-millisecond dates, and our own
-`snake_case` JSON for receipts. Java is built first; all nine ports ship
-together as 0.7. The 0.6 API is removed without a deprecation period.
-
-Two floors move with it, per SUPPORT-MATRIX.md rule 2 and 4: Ruby 3.1 to
-3.3 (for `Data`; 3.1 and 3.2 are past EOL) and PHP 8.1 to 8.2 (for
-`readonly class`; 8.1 is past EOL). Each lands with its port and updates
-the matrix. A multi-release jar with `module-info` for Java 9+ is not in
-0.7: the single-package layout already hides the implementation, and a
-`module-info` would only add hiding for modular consumers at the cost of
-a second compile pass. It stays under "Java 0.7" below as a later item.
-
-Where the sections below disagree with the design, the design wins. In
-particular it drops: the endpoint bundle id helper, `isAccepted()`, an
-accepted-environments set on `ReceiptVerifier`, typed `verifyNotification`
-and `verifyRenewalInfo`, the typed JWS models and their new claims, the
-`deviceGuid` parameter, `decodeUnverified()`, and the Java speed fix
-(moved to "Later / hardening" below).
+Shipped on `feat/0.7-verifier-api` for all nine ports, as designed in
+[docs/design/0.7-api.md](./docs/design/0.7-api.md): one `Verifier` with
+`verifyReceipt`, `verifySignedData` and `verifyReceiptEndpoint`, a `Config`
+of roots and clock, no policy parameters, results that never throw, the
+eight reasons, and the 311 shared cases in `fixtures/cases.json`. Ruby's
+floor moved to 3.3 and PHP's to 8.2 (SUPPORT-MATRIX.md). The items it
+settled have been removed from the sections below. Two follow-ups stay
+open: a multi-release jar with `module-info` for Java 9+ ("Java, after
+0.7" below), and RHEL 9 and Codecov, which the owner scheduled after 0.7
+(below and in "Later / hardening").
 
 ## Next
 
 - **Endpoint result API, base64 fast path and input caps: done ✅**
-  (2026-09-22, #114 to #133). Every port's endpoint returns a
-  `VerifyReceiptResult` with a verified flag and re-renders for the other
-  environment without verifying again; every port decodes canonical base64
+  (2026-09-22, #114 to #133; the 0.6 endpoint result object this added is
+  gone in 0.7, which returns the response JSON). Every port decodes canonical base64
   on a fast path held to the tolerant decoder by a differential test; every
   port caps the receipt and the request body at Apple's 3,145,728 UTF-8
   bytes (measured 2026-09-23, COMPARISON.md), JSON depth at 64 and the JWS
@@ -57,10 +45,6 @@ and `verifyRenewalInfo`, the typed JWS models and their new claims, the
   fast path were replaced on 2026-09-23 by the rule Apple's verifyReceipt
   was measured to apply, canonical standard base64 only (THREAT-MODEL.md
   §3.8).
-- **0.6.0 release notes must warn Swift users of 0.4.0 to 0.5.1**: release
-  builds of those versions crash on a genuine receipt on Linux x86_64
-  under Swift 6.3.3 (a miscompiled throw path, #126). Debug builds and
-  tests pass, so a consumer's CI does not show it. Tell them to upgrade.
 - **JWS cap, to be discussed**: it stays at 262,144 bytes. The request and
   receipt caps now match Apple's measured limit; nobody has checked whether
   Apple states a size limit for a JWS anywhere we could match.
@@ -69,8 +53,9 @@ and `verifyRenewalInfo`, the typed JWS models and their new claims, the
   about 21.5 MB on disk to every checkout. The git transfer stays small
   because git compresses the padding. Package.swift declares only `certs`
   as resources, so nothing ships in a built product.
-- **Cross-port benchmarks** (in progress): only `java-bench/` is committed.
-  `go/bench_test.go` has five benchmarks with no recorded baseline.
+- **Cross-port benchmarks: record a 0.7 run.** All nine ports carry a
+  benchmark and `benchmark.yml` runs them on demand, but the results in
+  BENCHMARKS.md are from `v0.6.0`, under the 0.6 names.
 - **A date round-trip conformance vector**: a date string parsed to an
   instant and rendered back as Apple's JSON must come out byte-identical in
   every port.
@@ -80,10 +65,11 @@ and `verifyRenewalInfo`, the typed JWS models and their new claims, the
   `appAccountToken`, and one holding a non-consumable and a non-renewing
   subscription.
 - **Matrix additions due** (one line each in `ci.yml`; policy and snapshot
-  in `SUPPORT-MATRIX.md`): Java 27 on 2026-09-15, replacing 26 as the
-  feature-release leg; Python 3.15 in October 2026; .NET 11 and PHP 8.6 in
-  November 2026 (.NET 11 also joins the test projects' `TargetFrameworks`);
-  Ruby 4.1 in December 2026; Go 1.28 in February 2027. Floors stay when a
+  in `SUPPORT-MATRIX.md`): Python 3.15 in October 2026; .NET 11 and PHP 8.6
+  in November 2026 (.NET 11 also joins the test projects' `TargetFrameworks`);
+  Ruby 4.1 in December 2026; Go 1.28 in February 2027; Java 28 in March 2027,
+  replacing 27 as the feature-release leg. Java 27 replaced 26 in the `java`
+  job on 2026-09-28 (done ✅; 26 reached EOL on 2026-09-18). Floors stay when a
   vendor line ends, so Java 17 (Oracle, 2026-09-30), Python 3.10
   (2026-10-31), .NET 8 and 9 (2026-11-10) and PHP 8.2 (2026-12-31) change
   nothing.
@@ -133,10 +119,11 @@ and `verifyRenewalInfo`, the typed JWS models and their new claims, the
   RubyGems, whose pending publisher is meant to create the gem — and the
   `smoke` job runs on the registries that did publish.)
 - **Legacy receipts fail on RHEL 9 in five ports (known issue, owner
-  decision 2026-09-24: fix after 0.6.0).** RHEL 9's DEFAULT crypto policy
+  decision 2026-09-24: fix after 0.6.0; 2026-09-27: not in 0.7, after
+  it).** RHEL 9's DEFAULT crypto policy
   makes the system OpenSSL refuse SHA-1 signatures. Apple's legacy chain
   (leaf and WWDR intermediate) and the legacy CMS signature are SHA-1, so a
-  genuine legacy receipt is `INVALID_CHAIN`, the same verdict as a forgery.
+  genuine legacy receipt fails the chain check, the same verdict as a forgery.
   Modern (g5) receipts and every JWS are unaffected. Observed in an
   AlmaLinux 9.8 container (OpenSSL 3.5.5, `update-crypto-policies` DEFAULT),
   after checking that the container really refused SHA-1:
@@ -174,14 +161,6 @@ and `verifyRenewalInfo`, the typed JWS models and their new claims, the
   `almalinux:9` container (pulled from quay.io; Docker Hub rate-limits) with
   the DEFAULT policy. It is the only check that catches this coming back,
   and it gives Swift its first real run on RHEL.
-- **The other eight ports have not had the Java review's error-mapping
-  pass.** Java (#153) now maps an unexpected error before the signature is
-  verified to the format reason (21002 for a receipt, `INVALID_JWS_FORMAT`
-  for a JWS), never to `INTERNAL_ERROR`: before the signature passes,
-  everything is attacker input, and 21009 means "not the client's fault".
-  Check each port for the same rule on both paths. The certificate-verdict
-  rule (unreadable signer `INVALID_CERTIFICATE`, any other unreadable
-  certificate `INVALID_RECEIPT_FORMAT`) is already held by the shared suite.
 - **Map Apple's own tests to ours, one by one.** Apple's Java library has
   30 verification tests; `fixtures/apple-official` already imports its test
   data. A name-level match on 2026-09-24 found the missing ones all belong
@@ -204,19 +183,6 @@ and `verifyRenewalInfo`, the typed JWS models and their new claims, the
 - **`asn1crypto` is kept by owner decision (PLAN.md D16)**: last release
   1.5.1 in 2022, about 155M downloads a month. Pin the tested range; the
   python fuzz target runs through it.
-- **`jackson-databind` is kept by owner decision (PLAN.md D16)**: the
-  heaviest dependency in the project and the one consumer scanners will
-  flag, but maintained and widely deployed, and the payloads here are
-  small and flat. The 2026-09-06 Java review measured the price: 14.4 MB
-  of runtime jars behind a 46 KB library, of which `bcprov` is 10.1 MB
-  and `jackson-databind` 1.7 MB (re-measured 2026-09-21 at BouncyCastle
-  1.86: 11.2 MiB total, `bcprov` 7.2 MB; java/README.md has the table). `JwsVerifier` needs BouncyCastle for
-  exactly one thing, the ES256 check over the raw `r || s` signature
-  (`SHA256withPLAIN-ECDSA`; the JDK's own `SHA256withECDSAinP1363Format`
-  is Java 9+, so on Java 8 dropping BouncyCastle means DER-encoding the
-  signature by hand, about twenty lines), and binds
-  two flat POJOs plus one `Map`, which `jackson-core` alone could do. A
-  JWS-only consumer could then drop 12 MB. Revisit if a consumer asks.
 - **The `cryptography>=40` floor is never installed.** Every python CI leg
   resolves the latest, so the floor is a claim.
 - **Real receipt fixtures** (PLAN D6): owner to supply real production +
@@ -299,136 +265,57 @@ and `verifyRenewalInfo`, the typed JWS models and their new claims, the
   used" (an owner action in the Security tab) and re-check when a Fastly
   release drops `weval` or `weval` drops `decompress`.
 
-## Java 0.7 (from the 2026-09-24 reviews)
+## Java, after 0.7 (from the 2026-09-24 reviews)
 
 Found by the pre-0.6.0 vendor, readability and production reviews of the
 Java port and deferred by the owner. None lets a forged receipt or JWS
 through.
 
-- **The other eight ports: check the unauthenticated-key cost.** Java
-  decoded every embedded key before the chain was checked, and
-  BouncyCastle's primality test on a 16384-bit RSA modulus made one small
-  receipt cost about 14 seconds of CPU. Java now decodes a key only after a
-  pinned root vouches for its certificate. Measure each port with the same
-  input and port the fix where it applies.
-- **Hide the `internal` package.** It is public because Java 8 has no
-  modules, so any code on the classpath can reach the shared BouncyCastle
-  provider. A multi-release jar with a `module-info` would close it.
-- **Typed `verifyNotification` and `verifyRenewalInfo`.** Today they go
-  through `verifyRaw`, and the caller must check `bundleId`, `environment`
-  and `appAppleId` by hand.
-- **A concurrency stress test for the shared `JcaSignerInfoVerifierBuilder`**,
+- **A multi-release jar with a `module-info`** for Java 9 and later. 0.7
+  already made the implementation package-private in one package; a
+  `module-info` would only add hiding for modular consumers, at the cost of
+  a second compile pass.
+- **A concurrency stress test for the shared CMS signer verifier**,
   whose thread safety rests on BouncyCastle internals checked at 1.86.
-- **Shorter Javadoc.** Several comments are essays, for example the 22
-  lines on `MAX_PATH_LENGTH`.
 - **Test code a vendor can read:** remove the references to other ports
   and to `tools/lint-cases.mjs`, replace the hand-written tokenizer in
   `TrustStoreIsolationTest` with ArchUnit rules and split the file, turn
   `ConformanceCasesTest` into a `@ParameterizedTest` without reflection,
   and put tests in the package of the class they test.
 - **Smaller items:** ES256 accepts high-s signatures (malleable, not a
-  forgery); `deviceGuid` length is not validated; two strict base64
-  decoders; the three-argument `JwsVerifier` rejects every PRODUCTION
-  payload, which its Javadoc should say louder.
+  forgery); two strict base64 decoders.
 
 ## After 0.6.0 (open items from the 2026-09-24 session)
 
 Agreed with the owner during the 0.6.0 run-up and not yet written down
 elsewhere in this file.
 
-- **Java API redesign in 0.7.** Breaking changes are fine before 1.0;
-  collect the API complaints above into one release.
-- **Shared-suite security cases for legacy receipts**, to match what the
-  JWS side already pins: a twin of an Apple certificate, a genuine receipt
-  with one content byte changed, a receipt with no signer, a signature by
-  a stranger's key, chain length and certificate count caps, BER-encoded
-  content, deep nesting, detached content, several SignerInfos, and an
-  intermediate without Apple's marker OID.
-- **Refuse a receipt with more than one SignerInfo.** Java checks only
-  the first one today, and a test pins that behaviour until this lands.
-- **Align the other eight ports with Java on the receipt signer
-  algorithm.** Java accepts any algorithm under the pinned chain since
-  0.6.0; the others still allow only RSA with SHA-1 or SHA-256.
-- **`failureCause` for `INTERNAL_ERROR` (21009)** should carry the inner
-  parser exception, so an operator can see why Apple-signed content did
-  not parse.
+- **Shared-suite security cases for legacy receipts** still missing after
+  the 0.7 cases: BER-encoded content and detached content.
 - **Trailing JSON tokens** after the request object are accepted. Measure
   what Apple's endpoint does with them, then match it.
-- **README wording in node, swift and php** still suggests retrying on
-  `INTERNAL_ERROR`, which is deterministic; say "alert and escalate"
-  instead, as the Java README does.
-- **From the final blind Java reviews (2026-09-24), for the 0.7 API work:**
-  - `ReceiptVerifier` accepts sandbox and TestFlight receipts, and the
-    caller must check `receiptType()`. Both reviewers' top money risk:
-    take an accepted-environments set, as `JwsVerifier` does.
-  - `VerifyReceiptResult.isVerified()` is true for 21007 and 21008, so a
-    caller granting on it would grant a sandbox receipt in production.
-    Add an `isAccepted()` meaning `status() == 0`.
-  - ~~An optional expected bundle id on `VerifyReceiptEndpoint`.~~
-    Declined by the owner on 2026-09-25: the endpoint stays Apple's. See
-    "Second integration feedback" below for the result helper instead.
-  - `TransactionPayload` lacks newer claims (`revocationType`,
-    `revocationPercentage`, `appTransactionId`, `offerDiscountType`,
-    `offerPeriod`, `storefrontId`, `isUpgraded`), and `StrictClaims` has no
-    strict boolean reader.
-  - The top-down chain walk exists twice, in `ReceiptVerifier` and
-    `JwsVerifier`; share one implementation, and catch the same exception
-    types in both.
+- **A result accessor that cannot be misread**: a `payloadOrThrow()`-style
+  method, or a Verified/Failed pair of result types. Today callers write
+  `verified()` and then read a nullable `payload()`. Decision deferred by
+  the owner; if it comes, it lands in every port at once after 0.7.0 so
+  the ports stay in parity.
+- **JWS `crit` and `typ` headers**: every port ignores header members it
+  does not know, while RFC 7515 §4.1.11 says a `crit` naming a parameter
+  the recipient does not understand must be rejected. Apple's signed data
+  carries only `alg` and `x5c`. No code before 0.7.0; if added, it is a
+  cross-port change with a shared case in `fixtures/cases.json`.
+- **From the final blind Java reviews (2026-09-24):**
   - Build the CMS signer verifier per call instead of sharing it, if the
     benchmark allows.
-  - Pin deep ASN.1 nesting with a test. Checked by hand on 2026-09-24:
-    500,000 levels of indefinite-length and 20,000 of definite-length
-    nesting both return `INVALID_RECEIPT_FORMAT` with no stack overflow.
   - Comment reflow damage and dated facts ("measured on", "checked in
     BouncyCastle 1.86") that will go stale.
-  - JWS `crit` header handling (RFC 7515), and an explanation of why x5c
-    entries skip the canonical re-encode check the other segments get.
+  - An explanation of why x5c entries skip the canonical re-encode check
+    the other segments get. (`crit` handling is the cross-port item above.)
 
-## Decided for 0.7 (owner, 2026-09-24, after 0.6.0 shipped)
+## Decided for 0.7, still open (owner, 2026-09-24)
 
-Decisions taken after the 0.6.0 release, from a user's integration
-feedback and a local check against Apple. All are for 0.7; nothing here
-is a security issue.
+Everything else decided for 0.7 in this session shipped with it.
 
-- **Omit `web_order_line_item_id` when attribute 1711 is 0, in all nine
-  ports.** This reverses the 2026-09-21 choice above. Apple's
-  verifyReceipt omitted the field for every consumable checked (seven
-  entries, production and sandbox), and Apple's response reference gives
-  no presence rule for it, as for `expires_date`, which is also absent for
-  consumables. Nonzero values (subscriptions) are still written. Update
-  the shared vectors, COMPARISON.md and the README shadow-mode list.
-- **Expose the receipt's own environment.** Add
-  `VerifyReceiptResult.receiptEnvironment()` (PRODUCTION, SANDBOX, or null
-  when not verified), `Environment.fromReceiptType(String)` and a render
-  for the receipt's own environment, so callers stop copying the private
-  Production/ProductionVPP rule. `Environment.fromValue("ProductionSandbox")`
-  returns null today because it maps JWS values; document that. Java
-  first, then the other ports.
-- **`status()` as an enum** (with the numeric code on it for the JSON),
-  as part of the 0.7 API work. The library produces every status itself,
-  so a closed set is safe.
-- **A version constant** (`Version.CURRENT`), since the `INTERNAL_ERROR`
-  guidance says to log the library version.
-- **Startup guidance:** a README note to construct the verifier and the
-  endpoint at startup, because a static field turns a deployment defect
-  into `NoClassDefFoundError` on every request.
-- **Remove the unreachable `catch (GeneralSecurityException)`** in
-  `ReceiptVerifier.validateChain` that javac reports.
-- **Depend on `jackson-core` only.** Drop `jackson-databind` and
-  `jackson-annotations`: read with the streaming parser already in use and
-  write the response with `jackson-core`'s `JsonGenerator`. No JSON code of
-  our own: Jackson also parses untrusted input (JWS payloads, the request
-  body, `BoundedJson`'s depth and size limits), and a hand-written parser
-  for untrusted input is the wrong trade in a security library (owner,
-  2026-09-25). Jackson 3 reuses the Jackson 2
-  annotations package, so the databind dependency clashes with Spring
-  Boot 4 users; `jackson-core` 2 and Jackson 3's core live in different
-  packages. The dependency drops from about 2.3 MB to 580 KB. Shading only
-  `jackson-core` stays an option if an old pinned version still clashes.
-- **A `-testing` artifact with a fake PKI** (`FakeAppleReceipts`) that
-  signs receipts with chosen attributes, plus the matching root set, so
-  users test their own logic through the real verification path instead
-  of committing real receipts. It must never ship in the main jar.
 - **Smarter CI.** Run each port's jobs only when its files, `fixtures/`
   or `.github/` change; skip tests for Markdown-only changes, except
   under `fixtures/`, whose README digest is pinned in `cases.json`; move
@@ -444,72 +331,30 @@ threads.
 
 ## Second integration feedback and the Java slowdown (2026-09-25)
 
-A second team integrating 0.6.0 on the legacy path sent nine requests.
-Five are already decided above: omit a zero `web_order_line_item_id`, the
-receipt's own environment, `jackson-core` only, the test signer and
-`Version.CURRENT`. What the feedback adds:
+A second team integrating 0.6.0 on the legacy path sent nine requests; 0.7
+answered them. What stays open:
 
-- **Release plan (owner):** no 0.6.1. Nothing here is a correctness or
-  security bug, so everything goes into 0.7. Documentation that describes
-  0.6.0 correctly is fixed now: COMPARISON.md lists the zero
-  `web_order_line_item_id` difference, and the Java README has a "Which
-  method to call" table, the environment rule for the rendered JSON and
-  the startup note.
-- **Receipt environment, refined:** keep `toJson()` rendering the
-  endpoint's environment. It is what Apple's production URL answers for a
-  sandbox receipt (21007), so changing it would break callers that mirror
-  Apple. Add a separate render for the receipt's own environment, using
-  `Environment.fromReceiptType(String)` as decided above.
-- **Bundle id stays out of the endpoint (owner).** The feedback asks for
-  an expected bundle id on the endpoint constructor. Declined: the
-  endpoint mirrors Apple's verifyReceipt, which checks no bundle id, and
-  the caller checks it after `isVerified()`. To discuss in 0.7: a small
-  helper on the result, for example
-  `result.matchesBundleId(expected)`, so the check is one obvious call
-  instead of reading `receipt().bundleId()` by hand. The endpoint's
-  answer stays Apple's either way.
-- **Test signer fields:** the `-testing` artifact must be able to set
+- **Test signer fields:** the `TestPki` test-jar must be able to set
   bundle id, product id, transaction id, purchase date, cancellation date
   and expiration date. This is enough to replace committed real receipts
   in grant and freshness tests.
-- **Root loading is already consistent.** The feedback reports
-  `ExceptionInInitializerError` and then `NoClassDefFoundError`.
-  `AppleRootCerts` already throws the same `IllegalStateException` on every
-  call. The error comes from a static field in the caller's code, or from
-  the library's own static BouncyCastle initializers when that jar is
-  missing or incompatible. The README startup note now covers it; 0.7
-  should check whether those two static initializers can fail lazily too.
-- **Javadoc per endpoint method:** say which input each method takes and
-  which environment its JSON uses, as the new README table does.
 - **Interruption: not added (owner).** The JDK's `Signature`,
   BouncyCastle, Nimbus and Apple's own library do not check the interrupt
   flag inside CPU-bound work, and since #161 no call runs longer than
-  milliseconds. Instead, measure the worst-case CPU of one call and
-  document it, and advise a worker pool instead of a single thread.
+  milliseconds. Advise a worker pool instead of a single thread.
 - **Java speed: deferred (owner, 2026-09-27).** 0.6.0 is 2.2 times
   slower on typical receipts (345 to 755 µs; BENCHMARKS.md has the
   bisect). The two candidate fixes, a signature cache and a single
   signature check per certificate, are in "Later / hardening" with the
-  reasons; neither is 0.7 work.
-- **0.7 changes dependencies.** Dropping `jackson-databind` breaks callers
-  that deserialize the library's model classes with their own Jackson.
-  The 0.7 CHANGELOG needs an "Upgrading from 0.6" section.
+  reasons.
 
 ## Smaller Java review findings, not yet scheduled (2026-09-24)
 
 From the six pre- and post-0.6.0 Java reviews; none lets a forged receipt
 or JWS through. Kept here so they are not lost with the review reports.
 
-- **Log safety:** `SafeText` neutralises C0/C1 and U+2028/U+2029 but not
-  the bidi controls U+202A to U+202E and U+2066 to U+2069, so a claim can
-  visually reorder a log line; truncation can also split a surrogate pair.
-- **JVM-dependent date parsing:** `ReceiptPayload` uses `Instant.parse`,
-  whose `ISO_INSTANT` accepts offsets such as `+01:00` from JDK 12 on, but not on
-  JDK 8, so one receipt date can parse differently per runtime. Add a
-  conformance vector with a non-`Z` offset.
-- **THREAT-MODEL.md corrections:** lines 75-76 say marker OIDs are checked
-  after the chain, which holds for receipts but not for JWS; the fuzzing
-  paragraph omits `java/fuzz` (five Jazzer targets); and "the host cannot
+- **THREAT-MODEL.md corrections:** the fuzzing paragraph omits `java/fuzz`
+  (five Jazzer targets); and "the host cannot
   change a verdict" is overstated, because BouncyCastle still reads JVM-wide
   `org.bouncycastle.*` properties (`rsa.max_size`, `rsa.max_mr_tests`,
   `x509.max_cert_path_build_nodes`).
@@ -519,25 +364,11 @@ or JWS through. Kept here so they are not lost with the review reports.
 - **Performance leftovers:** the receipt payload is parsed twice; each chain
   signature is verified twice (top-down walk, then PKIX); JCA factories are
   looked up per call.
-- **API polish for 0.7:** `MAX_JWS_BYTES` counts characters, so rename it;
-  models lack `equals`/`hashCode` and a redacted `toString`;
-  `isTrialPeriod()`/`isInIntroOfferPeriod()` return `Long` instead of
-  `Boolean`; `VerificationException` could be final with a closed `Reason`
-  set; `AppleRootCerts.jwsRoots()` and `receiptRoots()` are identical; the
-  reason is baked into `getMessage()` and stripped again by string surgery
-  in two places; the receipt path does not check the WWDR intermediate's
-  marker OID as the JWS path does.
 - **Small code hygiene:** `catch (Exception e)` where the types are known;
   a `@Nullable ASN1Set` dereferenced without a guard (safe today because the
   count is checked first); a redundant `unmodifiableMap` wrap in the models.
 - **Owner decision (2026-09-24): all nine ports reach Java's quality.** No
   port is frozen or reduced to security fixes only.
-- **More evidence for omitting a zero `web_order_line_item_id`:** a genuine
-  production consumable receipt from April 2024, answered by Apple's
-  verifyReceipt at the time, also omitted the field while this library
-  writes "0". The same receipt still verifies on 0.6.0, although its
-  signing certificate expired in October 2024, because the chain is judged
-  at the receipt's creation date.
 - **README additions:**
   - For a 21009 on a consumable, reconcile with the App Store Server API's
     Get Transaction Info by transaction id: Get Transaction History does
@@ -601,6 +432,14 @@ Still worth filing as issues:
 
 ## Later / hardening
 
+- **Coverage reports with Codecov (owner, 2026-09-27).** Upload each
+  port's coverage from CI so a pull request shows which lines its tests
+  miss, across all nine ports in one place. The free Developer plan
+  allows unlimited uploads for a public repository
+  (<https://about.codecov.io/pricing/>, checked 2026-09-27). Needs a
+  coverage report per port in a format Codecov reads, an upload step
+  pinned by commit SHA with `contents: read` only, and a decision on
+  whether a coverage drop fails the check or only comments.
 - **Java signature checks, deferred (owner, 2026-09-27).** Java verifies
   each chain signature twice: once in the top-down walk that fixed the
   unauthenticated-key DoS (#161), once inside BouncyCastle's PKIX
@@ -697,13 +536,6 @@ Still worth filing as issues:
   fingerprints of roots Apple has announced, and the helper accepts a
   downloaded root only if it matches one of them. The owner leans towards
   allowing downloads; decide before building the CRL helper above.
-- **Typed renewal-info and notification APIs** (StoreKit 2 JWS only; legacy
-  receipts have neither). Apple's library has `verifyAndDecodeRenewalInfo`
-  and `verifyAndDecodeNotification`, which check bundle id, app Apple id
-  and environment for the caller; ours offer only `verifyRaw`, which leaves
-  those checks to the caller and is easy to get wrong. Add typed methods in
-  all nine ports, the notification one also verifying the nested
-  `signedTransactionInfo` and `signedRenewalInfo`, with conformance cases.
 - **A verified-chain cache, measured first.** Apple's library caches a
   verified chain for 15 minutes, but only with online checks on, because
   only then is the validation date always "now". Offline, the date is each

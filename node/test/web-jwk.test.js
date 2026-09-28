@@ -2,7 +2,7 @@
 // level. A conversion that is subtly wrong — a sign byte left on the RSA
 // modulus, X and Y split at the wrong offset — does not throw. It produces a
 // key that imports fine and then verifies nothing, and the only symptom is an
-// INVALID_CHAIN raised somewhere far away from the cause. So each key is
+// UNTRUSTED_CHAIN raised somewhere far away from the cause. So each key is
 // checked three ways: against the JWK a runtime that DOES implement "spki"
 // derives from the same bytes, by importing as "jwk" and verifying a real
 // signature through the web build, and by confirming the Node build accepts

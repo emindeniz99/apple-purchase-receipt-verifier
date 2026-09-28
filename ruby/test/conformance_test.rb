@@ -2,47 +2,35 @@
 
 require_relative "helper"
 
-# Runs fixtures/cases.json — the normative cross-language conformance vectors —
-# against this implementation.
+# Runs fixtures/cases.json — the normative cross-language conformance
+# vectors for the 0.7 API (docs/design/0.7-api.md) — against this
+# implementation.
 #
-# The adapter below knows nothing about any individual case. It loads the file,
-# resolves fixture ids to bytes and checks their recorded digest, builds a
-# verifier from the generic config, dispatches on "operation", normalizes the
-# result and reads the reason off a failure. There is no skip list, no case id
-# anywhere, and no per-case fixup: a vector that disagrees with the library is
-# a bug report against one of the two, never something to special-case here.
+# The adapter below knows nothing about any individual case. It loads the
+# file, resolves fixture ids to bytes and checks their recorded digest,
+# builds a {Verifier} from the generic config, dispatches on "operation",
+# evaluates the JSON the verified payload (or the endpoint response) prints,
+# and reads the reason off a failure. There is no skip list, no case id
+# anywhere, and no per-case fixup: a vector that disagrees with the library
+# is a bug report against one of the two, never something to special-case
+# here.
 class ConformanceTest < Minitest::Test
   APRV = ApplePurchaseReceiptVerifier
   CASES = TestSupport.cases
+  BRACKET_TOKEN = /\A\[(.+)=(.*)\]\z/
 
-  # verifyRaw enforces no claim, so its cases may omit bundleId and
-  # acceptedEnvironments — but JwsVerifier still demands both. These
-  # placeholders match nothing any fixture carries, so a claim check that
-  # leaked into verify_raw surfaces as a failure rather than as a silent pass.
-  # An empty string, a wildcard or "all four environments" would hide it.
-  UNMATCHABLE_BUNDLE_ID = "conformance.unset.bundle.id"
-  UNMATCHABLE_ENVIRONMENTS = [ApplePurchaseReceiptVerifier::Environment::LOCAL_TESTING].freeze
+  # A key comes back either as this pointer form's own key, or as its
+  # snake_case Ruby reader name — `unknown_attributes` values are objects
+  # keyed by attribute TYPE, so a bare-digit key is never snake_cased.
+  def snake_case(name)
+    name.gsub(/([a-z\d])([A-Z])/, '\1_\2').downcase
+  end
 
-  BUILTIN_ROOTS = {
-    "apple-jws-roots" => -> { APRV.apple_jws_roots },
-    "apple-receipt-roots" => -> { APRV.apple_receipt_roots }
-  }.freeze
-
-  # The decoders a decodeBase64 group can name, called directly, each with the
-  # reason its refusal carries. An error group states INVALID_RECEIPT_FORMAT,
-  # the receipt-data answer; x5c answers INVALID_CERTIFICATE. The x5c decoder
-  # answers nil, which Jws#certificates reports as INVALID_CERTIFICATE, so that
-  # translation happens here.
-  BASE64_DECODERS = {
-    "receipt-data" => [->(text) { APRV::Receipt.decode_base64(text) }, "INVALID_RECEIPT_FORMAT"],
-    "x5c" => [
-      lambda do |text|
-        APRV::Receipt.decode_canonical_base64(text) ||
-          raise(APRV::VerificationError.new(APRV::Reason::INVALID_CERTIFICATE, "x5c entry is not base64"))
-      end,
-      "INVALID_CERTIFICATE"
-    ]
-  }.freeze
+  # The RSA modulus / EC field-size ceiling this build accepts (Chain).
+  # Nothing in this suite pins the exact number; it exists only so the DoS
+  # assertion below has a concrete "too large to be a genuine chain
+  # certificate" line to check every recorded key against.
+  OVERSIZED_KEY_BITS = 8192
 
   # Mutable on purpose: the coverage self-check below records what actually
   # ran, which is the point.
@@ -85,290 +73,248 @@ class ConformanceTest < Minitest::Test
     end
   end
 
-  # A step is either a name (`bundleId`, `length`) or a bracket (`[9999]`,
-  # `[0]`, `[productId=com.example.app.vip]`). Bracket contents hold dots, so
-  # a plain split on "." is wrong.
-  PATH_STEP = /\.?([^.\[\]]+)|\[([^\]]+)\]/
-
   private
 
-  def trusted_roots(spec)
-    if spec["source"] == "builtin"
-      builder = BUILTIN_ROOTS[spec["name"]]
-      raise "harness error: unknown builtin root set #{spec["name"].inspect}" if builder.nil?
+  # --- fixtures and roots ---------------------------------------------------
 
-      return builder.call
-    end
+  def fixture_entry(id)
+    CASES["fixtures"].fetch(id) { raise "harness error: cases.json registers no fixture #{id.inspect}" }
+  end
+
+  # verifyReceipt / the endpoint's receipt-data: a text fixture is handed
+  # over verbatim; a raw or base64 fixture holds DER, encoded as canonical
+  # standard base64 with padding.
+  def receipt_data_string(fixture_id)
+    bytes = TestSupport.fixture_bytes(fixture_id)
+    fixture_entry(fixture_id)["codec"] == "text" ? bytes : [bytes].pack("m0")
+  end
+
+  # verifySignedData: the fixture's logical bytes as a String.
+  def jws_string(fixture_id)
+    TestSupport.fixture_bytes(fixture_id).dup.force_encoding(Encoding::UTF_8)
+  end
+
+  def trusted_roots(spec)
+    return nil if spec["source"] == "defaults"
+
     spec["fixtures"].map { |id| TestSupport.fixture_certificate(id) }
   end
 
-  # The case's pinned instant, handed to the library's clock option. No global
-  # time is faked: a case carrying a clock that runs against the system clock
-  # is not running the case.
-  def case_clock(kase)
-    pinned = kase["clock"]
-    return nil if pinned.nil?
-
-    instant = Time.iso8601(pinned["now"]).utc
-    -> { instant }
+  def build_verifier(config_spec, clock_spec)
+    clock = clock_spec.nil? ? nil : -> { (Time.iso8601(clock_spec["now"]).to_r * 1000).to_i }
+    config = APRV::Config.new(roots: trusted_roots(config_spec["trustedRoots"]), clock: clock)
+    APRV::Verifier.create(config)
   end
 
-  def jws_verifier(config, clock)
-    require_no_clock(clock, "JwsVerifier")
-    APRV::JwsVerifier.new(
-      trusted_roots: trusted_roots(config["trustedRoots"]),
-      bundle_id: config["bundleId"] || UNMATCHABLE_BUNDLE_ID,
-      accepted_environments: config["acceptedEnvironments"] || UNMATCHABLE_ENVIRONMENTS,
-      app_apple_id: config["appAppleId"]
-    )
-  end
+  # --- dispatch --------------------------------------------------------------
 
-  def require_no_clock(clock, operation)
-    return if clock.nil?
-
-    raise "harness error: #{operation} has no clock seam, but the case pins one"
-  end
-
-  def dispatch(kase, input, clock)
-    config = kase["config"]
+  def dispatch(kase)
     case kase["operation"]
-    when "verifyTransaction"
-      jws_verifier(config, clock).verify_transaction(input.force_encoding(Encoding::UTF_8))
-    when "verifyAppTransaction"
-      jws_verifier(config, clock).verify_app_transaction(input.force_encoding(Encoding::UTF_8))
-    when "verifyRaw"
-      jws_verifier(config, clock).verify_raw(input.force_encoding(Encoding::UTF_8))
     when "verifyReceipt"
-      require_no_clock(clock, "verifyReceipt")
-      verifier = APRV::ReceiptVerifier.new(
-        trusted_roots: trusted_roots(config["trustedRoots"]), bundle_id: config["bundleId"]
-      )
-      guid = config["deviceGuidHex"] && [config["deviceGuidHex"]].pack("H*")
-      verifier.verify_der(input, device_guid: guid)
-    when "verifyReceiptBase64"
-      require_no_clock(clock, "verifyReceiptBase64")
-      verifier = APRV::ReceiptVerifier.new(
-        trusted_roots: trusted_roots(config["trustedRoots"]), bundle_id: config["bundleId"]
-      )
-      guid = config["deviceGuidHex"] && [config["deviceGuidHex"]].pack("H*")
-      verifier.verify_base64(input, device_guid: guid)
-    when "verifyReceiptEndpoint"
-      endpoint = APRV::VerifyReceiptEndpoint.new(
-        trusted_roots: trusted_roots(config["trustedRoots"]),
-        environment: config["environment"], clock: clock
-      )
-      # A requestBody fixture is the whole raw body, verbatim: it goes to the
-      # raw-body entry point, never wrapped in an envelope or trimmed.
-      if kase["input"].key?("requestBody")
-        return endpoint.verify_receipt_result(input.force_encoding(Encoding::UTF_8))
-      end
-
-      fixture = kase["input"]["fixture"]
-      # A text fixture is what a client would put in receipt-data as-is; a
-      # raw or base64 fixture is decoded bytes this harness re-encodes, since
-      # nothing recorded what a client would have sent for those.
-      receipt_data =
-        if CASES["fixtures"][fixture]["codec"] == "text"
-          input
-        else
-          [input].pack("m0")
-        end
-      endpoint.verify_receipt_result({ "receipt-data" => receipt_data })
+      verifier = build_verifier(kase["config"], kase["clock"])
+      verifier.verify_receipt(receipt_data_string(kase["input"]["fixture"]))
+    when "verifySignedData"
+      verifier = build_verifier(kase["config"], kase["clock"])
+      verifier.verify_signed_data(jws_string(kase["input"]["fixture"]))
     else
       raise "harness error: no adapter for operation #{kase["operation"].inspect}"
     end
   end
 
-  # Runs every text of the group through every decoder it names and reports
-  # every text that got the wrong answer, by case id, decoder, index and the
-  # inspected text, rather than stopping at the first.
-  def run_decode_base64(kase)
-    expected = kase["expected"]
-    texts = kase["input"]["texts"]
-    raise "harness error: #{kase["id"]}: no texts or no decoders" if texts.empty? || kase["decoders"].empty?
-    if expected["status"] == "error" && expected["reason"] != "INVALID_RECEIPT_FORMAT"
-      raise "harness error: #{kase["id"]}: an error group states INVALID_RECEIPT_FORMAT"
+  def endpoint_request_body(kase)
+    input = kase["input"]
+    if input.key?("requestBody")
+      return TestSupport.fixture_bytes(input["requestBody"]).dup.force_encoding(Encoding::UTF_8)
     end
 
-    failures = kase["decoders"].flat_map do |name|
-      decode, refusal = BASE64_DECODERS.fetch(name)
-      texts.each_with_index.filter_map do |text, index|
-        where = "#{kase["id"]}: #{name} texts[#{index}] #{text.inspect}"
-        decode_base64_failure(expected, where, refusal) { decode.call(text) }
-      end
-    end
-    assert_empty failures, failures.join("\n")
+    JSON.generate({ "receipt-data" => receipt_data_string(input["fixture"]) })
   end
 
-  # The failure message for one text, or nil when it got the group's answer.
-  def decode_base64_failure(expected, where, refusal)
-    decoded = yield.unpack1("H*")
-    return "#{where} was accepted (decoded to #{decoded})" if expected["status"] == "error"
-
-    "#{where} decoded to #{decoded}, want #{expected["bytesHex"]}" unless decoded == expected["bytesHex"]
-  rescue APRV::VerificationError => e
-    return "#{where} was refused (#{e.reason}), want #{expected["bytesHex"]}" if expected["status"] == "ok"
-
-    "#{where}: reason #{e.reason}, want #{refusal}" unless e.reason.to_s == refusal
-  rescue StandardError => e
-    "#{where}: harness error: raised #{e.class} (#{e.message})"
+  def run_endpoint_case(kase)
+    verifier = build_verifier(kase["config"], kase["clock"])
+    body = endpoint_request_body(kase)
+    response = measured(kase) { verifier.verify_receipt_endpoint(kase["config"]["environment"], body) }
+    actual = JSON.parse(response, allow_duplicate_key: true)
+    assert_fields(kase["expected"], actual, kase["id"])
   end
+
+  # --- running one case --------------------------------------------------
 
   def run_case(kase)
     return run_decode_base64(kase) if kase["operation"] == "decodeBase64"
+    return run_endpoint_case(kase) if kase["operation"] == "verifyReceiptEndpoint"
 
-    input_spec = kase["input"]
-    input = TestSupport.fixture_bytes(input_spec["requestBody"] || input_spec["fixture"]).dup
     expected = kase["expected"]
-    begin
-      result = dispatch(kase, input, case_clock(kase))
-    rescue APRV::VerificationError => e
-      # Only a VerificationError carries a canonical Reason. Anything else is a
-      # defect in the library or in this harness and is reported as such — it
-      # is never read as one of the expected reasons.
-      assert_equal "error", expected["status"],
-                   "expected success but raised #{e.reason}"
-      assert_equal expected["reason"], e.reason.to_s, "reason"
+    result = measured(kase) { dispatch(kase) }
+
+    if expected["oneOf"]
+      outcome = result.verified? ? "ok" : result.failure.reason.to_s
+      assert_includes expected["oneOf"], outcome, "#{kase["id"]}: answered #{outcome}"
       return
-    rescue StandardError, SystemStackError => e
-      raise "harness error: #{kase["operation"]} raised #{e.class} (#{e.message}), " \
-            "which is not a VerificationError"
     end
 
-    assert_equal "ok", expected["status"],
-                 "expected #{expected["reason"]} but the call returned a value"
-    if result.is_a?(APRV::VerifyReceiptResult)
-      # Not a wire field, so asserted beside the fields rather than among them.
-      if expected.key?("failureReason")
-        want = expected["failureReason"]
-        got = result.failure_reason&.to_s
-        want.nil? ? assert_nil(got, "failureReason") : assert_equal(want, got, "failureReason")
-      end
-      result = result.to_response
+    if expected["status"] == "error"
+      refute_predicate result, :verified?, "#{kase["id"]}: expected #{expected["reason"]} but it verified"
+      assert_equal expected["reason"], result.failure.reason.to_s, "#{kase["id"]}: reason"
+      assert_message_excludes(expected["messageMustNotContain"], result.failure.message, kase["id"])
+      return
     end
-    actual = normalize(result)
-    expected["fields"].each do |path, want|
-      got = resolve_path(actual, path)
+
+    assert_predicate result, :verified?,
+                     "#{kase["id"]}: expected ok but got #{result.failure&.reason} " \
+                     "(#{result.failure&.message})"
+    actual = JSON.parse(result.payload.respond_to?(:json) ? result.payload.json : result.payload.to_json,
+                        allow_duplicate_key: true)
+    assert_fields(expected, actual, kase["id"])
+
+    return unless expected.key?("toJson")
+
+    # Same value, not same bytes (docs/design/0.7-api.md, "Our JSON").
+    assert_equal JSON.parse(expected["toJson"]), actual, "#{kase["id"]}: toJson value"
+  end
+
+  # Runs the case's operation, measuring the SECOND call (after one
+  # warm-up) against `maxMillis` when the case carries one, and — on every
+  # case tagged "dos" — asserting directly that no verification this call
+  # made used a key too large to be a genuine chain certificate (the
+  # top-down walk, #161): the timing budget alone is a
+  # coarse backstop, never the only proof.
+  def measured(kase, &block)
+    return yield unless kase["maxMillis"] || (kase["tags"] || []).include?("dos")
+
+    yield # warm-up, not measured
+    result = nil
+    keys_used = []
+    elapsed = Benchmark.realtime do
+      result, keys_used = APRV::Chain.keys_used_during(&block)
+    end
+    assert_no_oversized_key_used(keys_used, kase["id"])
+    if kase["maxMillis"]
+      millis = elapsed * 1000
+      assert_operator millis, :<=, kase["maxMillis"],
+                      "#{kase["id"]}: took #{millis.round(1)}ms, budget #{kase["maxMillis"]}ms"
+    end
+    result
+  end
+
+  def assert_no_oversized_key_used(keys_used_ders, case_id)
+    keys_used_ders.each do |der|
+      key = OpenSSL::X509::Certificate.new(der).public_key
+      bits =
+        case key
+        when OpenSSL::PKey::RSA then key.n.num_bits
+        when OpenSSL::PKey::EC then key.group.degree
+        else 0
+        end
+      assert_operator bits, :<=, OVERSIZED_KEY_BITS,
+                      "#{case_id}: a verification used a #{bits}-bit key — the untrusted stranger's key"
+    end
+  end
+
+  def assert_message_excludes(codepoints, message, case_id)
+    return if codepoints.nil?
+
+    present = message.codepoints & codepoints
+    assert_empty present,
+                 "#{case_id}: message #{message.inspect} contains forbidden code points #{present.inspect}"
+  end
+
+  def assert_fields(expected, actual, case_id)
+    (expected["fields"] || {}).each do |pointer, want|
+      got = resolve_pointer(actual, pointer)
       if want.nil?
-        assert_nil got, "#{path}: expected absent, got #{got.inspect}"
+        assert_nil got, "#{case_id}: #{pointer}: expected absent, got #{got.inspect}"
       else
-        assert_equal want, got, path
+        assert_equal want, got, "#{case_id}: #{pointer}"
+      end
+    end
+    (expected["lengths"] || {}).each do |pointer, want|
+      got = resolve_pointer(actual, pointer)
+      assert_kind_of Array, got, "#{case_id}: #{pointer}: not an array"
+      assert_equal want, got.length, "#{case_id}: #{pointer} length"
+    end
+  end
+
+  # --- decodeBase64 -----------------------------------------------------
+
+  # Both named decoders (`receipt-data`, `x5c`) are, in this port, the same
+  # canonical-base64 rule (Receipt.decode_canonical_base64): the schema's
+  # per-group reason (MALFORMED for receipt-data, mapped to
+  # INVALID_CERTIFICATE for x5c) is a property of where the failure surfaces
+  # through the PUBLIC API, not of the decoder itself, so calling the
+  # decoder directly only proves accept/refuse.
+  def run_decode_base64(kase)
+    texts = kase["input"]["texts"]
+    raise "harness error: #{kase["id"]}: no texts or no decoders" if texts.empty? || kase["decoders"].empty?
+
+    expected = kase["expected"]
+    kase["decoders"].each do |name|
+      texts.each_with_index do |text, index|
+        where = "#{kase["id"]}: #{name} texts[#{index}] #{text.inspect}"
+        decoded = APRV::Receipt.decode_canonical_base64(text)
+        if expected["status"] == "ok"
+          refute_nil decoded, "#{where}: refused, want #{expected["bytesHex"]}"
+          assert_equal expected["bytesHex"], decoded.unpack1("H*"), where
+        else
+          assert_nil decoded, "#{where}: accepted (decoded to #{decoded&.unpack1("H*")})"
+        end
       end
     end
   end
 
-  # --- result normalization ------------------------------------------------
+  # --- JSON Pointer, with the [key=value] extension -----------------------
 
-  # Renders a returned value into the language-neutral shape the field paths
-  # are written against: Time as ISO-8601 UTC, binary Strings as lowercase hex
-  # (mirrored under "<name>_hex", the spelling cases.json reaches through
-  # `opaqueValueHex`), Hash keys stringified, value objects through #to_h.
-  def normalize(value)
-    case value
-    when nil then nil
-    when Time then iso_utc(value)
-    when Array then value.map { |element| normalize(element) }
-    when Hash then normalize_hash(value)
-    when String then value.encoding == Encoding::BINARY ? value.unpack1("H*") : value
-    when Integer, Float, TrueClass, FalseClass then value
+  def resolve_pointer(root, pointer)
+    return root if pointer.empty?
+
+    tokens = pointer.split("/", -1)[1..].map { |t| t.gsub("~1", "/").gsub("~0", "~") }
+    tokens.reduce(root) { |current, token| resolve_token(current, token, pointer) }
+  end
+
+  def resolve_token(current, token, pointer)
+    return nil if current.nil?
+
+    match = BRACKET_TOKEN.match(token)
+    return resolve_bracket(current, match[1], match[2], pointer) if match
+
+    if current.is_a?(Array)
+      index = Integer(token, exception: false)
+      return nil if index.nil?
+
+      current[index]
+    elsif current.is_a?(Hash)
+      return current[token] if current.key?(token)
+
+      snake = snake_case(token)
+      current.key?(snake) ? current[snake] : nil
     else
-      raise "harness error: cannot normalize #{value.class}" unless value.respond_to?(:to_h)
-
-      normalize_hash(value.to_h)
+      raise "harness error: #{pointer}: .#{token} does not select from an object"
     end
   end
 
-  def normalize_hash(hash)
-    out = {}
-    hash.each do |key, value|
-      name = key.to_s
-      out[name] = normalize(value)
-      out["#{name}_hex"] = out[name] if value.is_a?(String) && value.encoding == Encoding::BINARY
-    end
-    out
-  end
-
-  def iso_utc(time)
-    utc = time.utc? ? time : time.getutc
-    utc.nsec.zero? ? utc.strftime("%Y-%m-%dT%H:%M:%SZ") : utc.iso8601(3)
-  end
-
-  # --- field paths ---------------------------------------------------------
-
-  def path_steps(path)
-    steps = []
-    consumed = 0
-    path.scan(PATH_STEP) do
-      match = Regexp.last_match
-      raise "harness error: unparseable field path #{path.inspect}" if match.begin(0) != consumed
-
-      consumed += match[0].length
-      steps << (match[1].nil? ? [:bracket, match[2]] : [:name, match[1]])
-    end
-    raise "harness error: unparseable field path #{path.inspect}" if consumed != path.length
-
-    steps
-  end
-
-  def resolve_path(root, path)
-    current = root
-    path_steps(path).each do |kind, value|
-      return nil if current.nil?
-
-      current = kind == :name ? resolve_name(current, value, path) : resolve_bracket(current, value, path)
-    end
-    current
-  end
-
-  # Names arrive in the vectors' language-neutral camelCase. Apple's own claim
-  # maps are keyed that way already; this port's value objects use Ruby's
-  # snake_case. One generic fallback covers both — no per-case knowledge.
-  def resolve_name(current, name, path)
-    return current.length if name == "length" && current.is_a?(Array)
-    raise "harness error: #{path}: .#{name} does not select from an object" unless current.is_a?(Hash)
-    return current[name] if current.key?(name)
-
-    snake = snake_case(name)
-    current.key?(snake) ? current[snake] : nil
-  end
-
-  def snake_case(name)
-    name.gsub(/([a-z\d])([A-Z])/, '\1_\2').downcase
-  end
-
-  def resolve_bracket(current, value, path)
-    separator = value.index("=")
-    if separator&.positive?
-      key = value[0...separator]
-      wanted = value[(separator + 1)..]
-      raise "harness error: #{path}: [#{value}] does not select from a list" unless current.is_a?(Array)
-
-      matches = current.select do |element|
-        element.is_a?(Hash) && (element[key] || element[snake_case(key)]) == wanted
-      end
-      unless matches.size == 1
-        raise "harness error: #{path}: [#{value}] must select exactly one element, " \
-              "selected #{matches.size}"
-      end
-
-      return matches.first
+  def resolve_bracket(current, key, wanted, pointer)
+    unless current.is_a?(Array)
+      raise "harness error: #{pointer}: [#{key}=#{wanted}] does not select from an array"
     end
 
-    return current[value.to_i] if current.is_a?(Array)
-    raise "harness error: #{path}: [#{value}] does not select from a map" unless current.is_a?(Hash)
+    matches = current.select do |element|
+      element.is_a?(Hash) && (element[key] || element[snake_case(key)]) == wanted
+    end
+    unless matches.size == 1
+      raise "harness error: #{pointer}: [#{key}=#{wanted}] must select exactly one element, " \
+            "selected #{matches.size}"
+    end
 
-    current[value]
+    matches.first
   end
 
   CASES["cases"].each { |kase| define_case(kase) }
 end
 
-# The coverage self-check a defined-but-never-run case could still evade: every
-# case in the file must actually have executed. Asserted against the parsed
-# length, never a literal, so a silently dropped operation cannot hide.
-#
-# A deliberately filtered run (`-n`, `--name`) is not a coverage claim, so it is
-# exempt — and only that spelling is exempt, not an empty result.
+# The coverage self-check a defined-but-never-run case could still evade:
+# every case in the file must actually have executed. Asserted against the
+# parsed length, never a literal, so a silently dropped operation cannot
+# hide behind a hardcoded count.
 CONFORMANCE_RUN_WAS_FILTERED = ARGV.any? { |argument| argument.match?(/\A(-n|--name|--seed=)/) }
 
 Minitest.after_run do
