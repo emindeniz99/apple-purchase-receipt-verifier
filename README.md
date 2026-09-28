@@ -80,7 +80,7 @@ endpoint, the Java 8 floor and the zero-dependency Node build.
 
 ## Installing
 
-Four of the nine implementations are published today, all as
+Five of the nine implementations are published today, all as
 **`apple-purchase-receipt-verifier`**, in lockstep versions cut from this
 repository's tags.
 
@@ -94,6 +94,7 @@ period. Read the CHANGELOG before you bump the minor version, and pin it.
 | [npm](https://www.npmjs.com/package/apple-purchase-receipt-verifier) | `npm install apple-purchase-receipt-verifier` | `import { createConfig, createVerifier } from 'apple-purchase-receipt-verifier';` |
 | [PyPI](https://pypi.org/project/apple-purchase-receipt-verifier/) | `pip install apple-purchase-receipt-verifier` | `from apple_purchase_receipt_verifier import Config, Verifier` |
 | [SwiftPM](https://swiftpackageindex.com/emindeniz99/apple-purchase-receipt-verifier) | `.package(url: "https://github.com/emindeniz99/apple-purchase-receipt-verifier.git", from: "0.7.0")` | `import ApplePurchaseReceiptVerifier` |
+| [Go module proxy](https://pkg.go.dev/github.com/emindeniz99/apple-purchase-receipt-verifier/go) | `go get github.com/emindeniz99/apple-purchase-receipt-verifier/go` | `import applereceipt "github.com/emindeniz99/apple-purchase-receipt-verifier/go"` |
 
 **C and C++ have no registry entry and are not meant to.** The C ABI in
 [`rust/ffi/`](rust/ffi/) is built from source against the Rust port: a
@@ -110,14 +111,15 @@ The import namespace is the registry name in each ecosystem's casing
 convention (`applepurchasereceiptverifier` / `apple_purchase_receipt_verifier` /
 `ApplePurchaseReceiptVerifier`) — one name everywhere.
 
-**The five newer ports are not installable from a registry yet.** Go, Ruby,
-Rust and .NET are wired into `release.yml` and are waiting on one owner action
+**Four newer ports are not installable from a registry yet.** Ruby, Rust
+and .NET are wired into `release.yml` and are waiting on one owner action
 each: a pending trusted publisher for RubyGems, a first manual publish for
-crates.io and NuGet, a public repository for the Go module proxy. Those
-actions, per registry and in order, are in [BOOTSTRAP.md](./BOOTSTRAP.md); the
-rows above gain entries once the first release goes out.
+crates.io and NuGet. Those actions, per registry and in order, are in
+[BOOTSTRAP.md](./BOOTSTRAP.md); the rows above gain entries once the first
+release goes out. Go, the fifth newer port, needed no such action:
+`proxy.golang.org` has served it since `go/v0.4.0`.
 
-PHP is the fifth, and its install path is:
+PHP is the fourth, and its install path is:
 
 ```bash
 composer require emindeniz99/apple-purchase-receipt-verifier
