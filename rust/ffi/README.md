@@ -50,8 +50,11 @@ Building from source is the only supported path today; see `ROADMAP.md`.
 
 ## The surface
 
-Seven symbols: one opaque handle, three verification calls, one result
-struct, one free function. They mirror the Rust 0.7 API one to one.
+Seven symbols, all functions: the version string, a constructor and a
+destructor for the opaque `AprvVerifier` handle, three verification calls
+(two fill an `AprvResult` struct, the endpoint call returns a string), and
+one function that frees that string. They mirror the Rust 0.7 API one to
+one.
 
 ```c
 const char *aprv_version(void);
