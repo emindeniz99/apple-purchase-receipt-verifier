@@ -41,9 +41,6 @@ final class JwsCore {
 
     static final JsonFactory JSON = BoundedJson.factory(MAX_JWS_BYTES);
 
-    // Shared: BouncyCastle's validator keeps no per-call state; see java/README.md.
-    private static final CertPathValidator PKIX = pkixValidator();
-
     // Raw r || s (RFC 7515), as PLAIN-ECDSA takes it; the JDK's P1363 name is Java 9+.
     private static final String ES256_ALGORITHM = "SHA256withPLAIN-ECDSA";
 
@@ -335,12 +332,13 @@ final class JwsCore {
             X509Certificate leaf, X509Certificate intermediate, Date at, Set<TrustAnchor> trustAnchors)
             throws VerificationException {
         CertificateFactory cf = x509Factory();
+        CertPathValidator validator = pkixValidator("PKIX");
         try {
             CertPath path = cf.generateCertPath(Arrays.asList(leaf, intermediate));
             PKIXParameters params = new PKIXParameters(trustAnchors);
             params.setRevocationEnabled(false);
             params.setDate(at);
-            PKIX.validate(path, params);
+            validator.validate(path, params);
         } catch (CertPathValidatorException e) {
             throw AppleTrust.chainFailure(e, "x5c", "certificate chain", at);
         } catch (InvalidAlgorithmParameterException e) {
@@ -370,11 +368,16 @@ final class JwsCore {
         }
     }
 
-    private static CertPathValidator pkixValidator() {
+    /**
+     * Per call, so no BouncyCastle object is shared between threads; built
+     * outside the validate block for the reason {@link #x509Factory} is. Takes
+     * the engine name so a test can stand in for a runtime that lacks it.
+     */
+    static CertPathValidator pkixValidator(String algorithm) throws VerificationException {
         try {
-            return CertPathValidator.getInstance("PKIX", BouncyCastle.PROVIDER);
+            return CertPathValidator.getInstance(algorithm, BouncyCastle.PROVIDER);
         } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("BouncyCastle PKIX validator unavailable", e);
+            throw new VerificationException(Reason.INTERNAL_ERROR, "chain validator could not be constructed", e);
         }
     }
 

@@ -25,6 +25,7 @@ import org.bouncycastle.cms.CMSTypedData;
 import org.bouncycastle.cms.SignerInformation;
 import org.bouncycastle.cms.SignerInformationVerifier;
 import org.bouncycastle.cms.jcajce.JcaSignerInfoVerifierBuilder;
+import org.bouncycastle.operator.DigestCalculatorProvider;
 import org.bouncycastle.operator.OperatorCreationException;
 import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
 import org.jspecify.annotations.Nullable;
@@ -48,9 +49,6 @@ final class ReceiptCore {
 
     /** Apple's own limit on a verifyReceipt body, in UTF-8 bytes; checked before anything is decoded. */
     static final int MAX_RECEIPT_BYTES = 3145728;
-
-    // Shared by every thread; see java/README.md, "What to re-check on a BouncyCastle upgrade".
-    static final JcaSignerInfoVerifierBuilder SIGNER_VERIFIERS = signerVerifiers();
 
     private ReceiptCore() {}
 
@@ -291,19 +289,28 @@ final class ReceiptCore {
         }
     }
 
-    /** The CMS verifier for {@code signerCert}, from the shared builder so its tables are built once. */
-    static SignerInformationVerifier signerVerifier(X509Certificate signerCert) throws OperatorCreationException {
-        return SIGNER_VERIFIERS.build(signerCert);
+    /**
+     * The CMS verifier for {@code signerCert}, from a builder made per call
+     * so no BouncyCastle object is shared between threads.
+     */
+    static SignerInformationVerifier signerVerifier(X509Certificate signerCert)
+            throws VerificationException, OperatorCreationException {
+        return signerVerifiers().build(signerCert);
     }
 
-    private static JcaSignerInfoVerifierBuilder signerVerifiers() {
+    /**
+     * Apart from {@link #signerVerifier}'s build, so a runtime that cannot
+     * make the digest provider is INTERNAL_ERROR, not a signature verdict.
+     */
+    private static JcaSignerInfoVerifierBuilder signerVerifiers() throws VerificationException {
+        DigestCalculatorProvider digests;
         try {
-            return new JcaSignerInfoVerifierBuilder(new JcaDigestCalculatorProviderBuilder()
-                            .setProvider(BouncyCastle.PROVIDER)
-                            .build())
-                    .setProvider(BouncyCastle.PROVIDER);
+            digests = new JcaDigestCalculatorProviderBuilder()
+                    .setProvider(BouncyCastle.PROVIDER)
+                    .build();
         } catch (OperatorCreationException e) {
-            throw new IllegalStateException("BouncyCastle digest provider unavailable", e);
+            throw new VerificationException(Reason.INTERNAL_ERROR, "CMS verifier could not be constructed", e);
         }
+        return new JcaSignerInfoVerifierBuilder(digests).setProvider(BouncyCastle.PROVIDER);
     }
 }

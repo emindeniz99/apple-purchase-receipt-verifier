@@ -4,6 +4,7 @@ import java.security.cert.TrustAnchor;
 import java.time.Clock;
 import java.util.Objects;
 import java.util.Set;
+import org.bouncycastle.cms.jcajce.JcaSignerInfoVerifierBuilder;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -45,11 +46,16 @@ final class DefaultVerifier implements Verifier {
         }
     }
 
-    /** Reading these fields runs the static initialisers that build them. */
+    /**
+     * Reading these fields runs the static initialisers that build them. The
+     * BouncyCastle helpers are built per call, so the provider and a bcpkix
+     * class are touched here to load both jars before the first verify.
+     */
     private static void buildStaticState() {
         Objects.requireNonNull(JwsCore.JSON);
         Objects.requireNonNull(Endpoint.JSON);
-        Objects.requireNonNull(ReceiptCore.SIGNER_VERIFIERS);
+        Objects.requireNonNull(BouncyCastle.PROVIDER);
+        Objects.requireNonNull(JcaSignerInfoVerifierBuilder.class);
     }
 
     @Override

@@ -275,8 +275,6 @@ through.
   already made the implementation package-private in one package; a
   `module-info` would only add hiding for modular consumers, at the cost of
   a second compile pass.
-- **A concurrency stress test for the shared CMS signer verifier**,
-  whose thread safety rests on BouncyCastle internals checked at 1.86.
 - **Test code a vendor can read:** remove the references to other ports
   and to `tools/lint-cases.mjs`, replace the hand-written tokenizer in
   `TrustStoreIsolationTest` with ArchUnit rules and split the file, turn

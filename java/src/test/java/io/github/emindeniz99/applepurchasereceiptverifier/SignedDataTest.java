@@ -141,6 +141,17 @@ class SignedDataTest {
     }
 
     @Test
+    void aValidatorTheRuntimeCannotBuildIsAnInternalErrorNotAChainVerdict() {
+        // The same host fault for the PKIX validator, which is built per
+        // call: UNTRUSTED_CHAIN would refuse a genuine transaction for it.
+        // Simulated by naming an engine no provider has.
+        VerificationException e =
+                assertThrows(VerificationException.class, () -> JwsCore.pkixValidator("NO-SUCH-PKIX"));
+        assertEquals(Reason.INTERNAL_ERROR, e.reason());
+        assertEquals("chain validator could not be constructed", e.getMessage());
+    }
+
+    @Test
     void rejectsNonEs256Algorithm() throws Exception {
         Map<String, Object> header = new LinkedHashMap<String, Object>();
         header.put("alg", "RS256");
