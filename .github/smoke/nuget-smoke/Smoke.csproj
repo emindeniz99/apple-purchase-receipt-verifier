@@ -9,6 +9,13 @@
   than in a user's build. net8.0 selects the package's lib/net8.0 asset; the
   netstandard2.0 asset needs a net4x consumer on a Windows runner and is still
   untested (dotnet/RELEASE.md).
+
+  The PackageReference is conditional because tools restore this project
+  without SmokeVersion: GitHub's dependency submission restores every csproj
+  in the repository, and "[]" is not a valid version range, so an
+  unconditional reference failed that restore outright. Without the property
+  the project restores with no packages, and `dotnet run` then stops at
+  CS0246 on the missing ApplePurchaseReceiptVerifier namespace.
 -->
 <Project Sdk="Microsoft.NET.Sdk">
 
@@ -19,7 +26,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(SmokeVersion)' != ''">
     <PackageReference Include="ApplePurchaseReceiptVerifier" Version="[$(SmokeVersion)]" />
   </ItemGroup>
 
