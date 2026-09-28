@@ -28,7 +28,7 @@ public func fuzz(_ start: UnsafePointer<UInt8>?, _ count: Int) -> CInt
 then *is* a libFuzzer binary and takes libFuzzer's corpus directories and
 flags directly, which is why `run.sh` is close to a copy of
 `rust/fuzz/run.sh`. The flag is passed to every target in the graph, not only
-to the five that define an entry point: coverage instrumentation has to reach
+to the six that define an entry point: coverage instrumentation has to reach
 swift-asn1 and swift-certificates for the fuzzer to steer into them.
 `-enable-testing` goes with it, so `Sources/FuzzSupport` can
 `@testable import` the library and drive its internal readers.
