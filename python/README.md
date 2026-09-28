@@ -66,8 +66,9 @@ lays out the full flow once, with a reason-to-next-step table; here are its
 two branches in this port's 0.7 API.
 
 Both branches now follow the same shape: verify, deny on any failure, then
-run the post-verification checklist above yourself: 0.7 has no
-constructor-supplied bundle id or environment allowlist to do it for you.
+run the [post-verification checklist](#post-verification-checklist) below
+yourself: 0.7 has no constructor-supplied bundle id or environment allowlist
+to do it for you.
 
 ```python
 # Branch A: StoreKit 2 signed transaction
@@ -77,7 +78,7 @@ if not result.verified:
     return
 payload = json.loads(result.payload.json)
 if payload.get("bundleId") != "com.example.app":
-    return  # step 1 of the checklist above
+    return  # step 1 of the checklist below
 environment = Environment.from_jws_environment(payload.get("environment"))
 if payload.get("revocationDate") is not None:
     return  # refunded or revoked as of signing time
