@@ -13,7 +13,7 @@ Checked against the code on `feat/0.7-verifier-api`, 2026-09-27.
 | Feature | Java | Node | Python | Go | Ruby | PHP | .NET | Rust | Swift | C ABI |
 |---|---|---|---|---|---|---|---|---|---|---|
 | One `Verifier` with `verifyReceipt`, `verifySignedData` and `verifyReceiptEndpoint`, built from a `Config` (roots, clock) | ✅ | ✅ both builds | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ `aprv_verifier_new`, `aprv_verify_receipt`, `aprv_verify_signed_data`, `aprv_verify_receipt_endpoint` |
-| Result form | `VerificationResult` | result object | result object | `(payload, error)` | result object | result object | result object | `Result<Payload, Failure>` | `Result<Payload, Failure>` | JSON document |
+| Result form | `VerificationResult` | result object | result object | `(payload, error)` | result object | result object | result object | `Result<Payload, Failure>` | `VerificationResult` | JSON document |
 | Clock | `java.time.Clock` | `() => number` | callable | `func() int64` | proc | PSR-20 `ClockInterface` | `Func<long>` | closure returning epoch ms | closure | a fixed instant in ms, or `NULL` for the system clock |
 | No bundle id, environment, app Apple id or device id parameter | ✅ | ✅ both builds | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | JWS payload returned as the JSON Apple signed, read only for `signedDate` | ✅ | ✅ both builds | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ inherits Rust |
