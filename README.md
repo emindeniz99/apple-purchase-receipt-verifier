@@ -201,79 +201,9 @@ and why replay and refund bookkeeping are the caller's job, is in
 
 ## How to run the test suites
 
-```bash
-# Java (library targets Java 8; build with any modern JDK + Maven)
-cd java && mvn test
-
-# Node (strict TypeScript, zero runtime deps; Node >= 20)
-cd node && npm install && npm test    # both entry points, every shared fixture
-cd node && npm run test:runtimes       # default build on Bun, Deno and Cloudflare workerd
-cd node && npm run test:runtimes:web   # /web build on Vercel Edge and flagless workerd
-
-# Python (>= 3.10; uv installs the locked dependencies)
-cd python && uv sync && uv run python -m unittest discover -s tests
-
-# Swift (Swift 6.1+; Linux or macOS 13+; manifest lives at the repo root)
-swift test
-
-# Go (>= 1.22; no dependencies)
-cd go && go test ./...
-
-# Ruby (>= 3.3; no runtime dependencies, minitest through rake)
-cd ruby && rake test
-
-# Rust (>= 1.85)
-cd rust && cargo test
-
-# PHP (>= 8.2; installs php/composer.lock)
-cd php && composer install && vendor/bin/phpunit
-
-# .NET (SDK 8.0+; runs the net8.0 suite and the netstandard2.0 floor suite)
-cd dotnet && dotnet test -c Release
-```
-
-All nine suites verify the same three shared fixture tiers:
-
-1. `fixtures/generated/` and `fixtures/generated-0.7/` — deterministic
-   cross-language fixtures (fake Apple PKI) written by the Java
-   `FixtureGeneratorTest` and the `*Fixtures` generators beside it; the
-   receipts in `generated-0.7/` carry the WWDR marker 0.7 checks.
-   Regenerate only deliberately, then re-run **every** suite.
-2. `fixtures/apple-official/` — Apple's own library test fixtures
-   (vendored, MIT): their test-CA-signed JWS mocks verify, their negative
-   cases fail with our exact reason codes, and their genuine Xcode
-   receipts/payloads are **rejected** against the real pinned Apple roots
-   (anchor-pinning proof).
-3. `fixtures/public-receipts/` — **genuine Apple-signed**
-   sandbox and legacy receipts (vendored, MIT) that must verify against
-   the real pinned Apple root, plus an Xcode receipt that must be rejected
-   — the strongest tier (real Apple bytes).
-
-The vectors those suites run the fixtures under live in
-[`fixtures/cases.json`](./fixtures/cases.json): one language-neutral case per
-semantic fact, giving the fixture bytes, the verifier config, and either the
-payload fields the call must return or the reason it must fail with.
-Each language reads it through a thin adapter, so the file is the contract and
-a behavior change means editing it. `node tools/lint-cases.mjs` validates it
-against `fixtures/cases.schema.json` and re-hashes every registered fixture;
-CI runs the same check. See [CONTRIBUTING.md](./CONTRIBUTING.md) for how to
-add a case.
-
-Five ports additionally generate a throwaway "Apple" PKI per run for inputs
-the shared fixtures cannot express: `java/.../TestPki.java`,
-`go/testpki_test.go`, `ruby/test/test_pki.rb`, `php/tests/Support/TestPki.php`
-and `dotnet/tests/.../TestPki.cs`. Those are native suites, not a shared tier.
-
-Every port also has coverage-guided fuzz targets, run for a fixed budget by
-its own CI job (`go-fuzz`, `rust-fuzz`, `node-fuzz`, `ruby-fuzz`, `php-fuzz`,
-`dotnet-fuzz`, `python-fuzz`, `swift-fuzz`, `java-fuzz`) and seeded from
-`fixtures/`, so a crasher is a mutation of a genuine receipt or JWS. The
-targets share three invariants: nothing panics or traps, every failure is the
-port's typed verification error, and an input one anchor set accepts must be
-refused by an unrelated one — the last is what lets a fuzzer find a wrong
-acceptance, not only a crash. Each `<port>/fuzz/README.md` lists its targets;
-[THREAT-MODEL.md](./THREAT-MODEL.md) says what they are for and PLAN.md D16
-why the parsers they cover are hand-written.
+The command for each port, the three shared fixture tiers, the
+`fixtures/cases.json` vectors and the fuzz targets are described in
+[CONTRIBUTING.md](./CONTRIBUTING.md#running-the-tests).
 
 Cross-port benchmarks (same operations, same fixtures): [BENCHMARKS.md](./BENCHMARKS.md).
 
