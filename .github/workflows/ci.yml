@@ -413,6 +413,12 @@ jobs:
         working-directory: java
       - run: mvn -B test
         working-directory: jvm-interop
+      # java-bench/ is another consumer of that installed coordinate, and
+      # otherwise only benchmark.yml builds it, by hand. compile runs JMH's
+      # annotation processor over it, so an API change that breaks a
+      # benchmark fails here; compile stops short of packaging the JMH jar,
+      # and nothing is measured. version.txt as in benchmark.yml.
+      - run: mvn -B -f java-bench/pom.xml -Dlibrary.version="$(cat version.txt)" compile
 
   # A consumer on Spring Boot 4 imports the Boot BOM, which overrides the
   # library's Jackson 2 pin with its own and adds Jackson 3 (tools.jackson)
@@ -805,6 +811,13 @@ jobs:
       # not API and exists for this step.
       - run: bundle exec steep check
         working-directory: ruby
+      # bench/bench.rb otherwise runs only in benchmark.yml, by hand. Loading
+      # it requires the library and defines the benchmark module, but main
+      # runs only when the file is the program itself, so nothing is timed.
+      # A moved require or a renamed module-level constant fails here; calls
+      # inside its methods are only checked by running it.
+      - run: ruby -Ilib -e 'load "bench/bench.rb"'
+        working-directory: ruby
 
   # The toolchains come from the rustup already on the runner, so this port
   # pins no action beyond the checkout and caches nothing: a clean debug build
@@ -1089,6 +1102,10 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: '10.0.x'
+      # dotnet/bench sits outside the .sln for the same reason fuzz does, so
+      # nothing else on push builds it; benchmark.yml runs it only by hand.
+      # A build, as benchmark.yml does it, and no run.
+      - run: dotnet build -c Release dotnet/bench
       - run: ./run.sh all 60
         working-directory: dotnet/fuzz
 
@@ -1239,6 +1256,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # swift/bench is a package of its own on the same path dependency, so
+      # neither the `swift` matrix nor this job's fuzz build compiles it;
+      # benchmark.yml builds it only by hand. A debug build: the point is that
+      # it still compiles against the library, not how fast it runs.
+      - run: swift build --package-path swift/bench --force-resolved-versions
       - run: ./run.sh all 60
         working-directory: swift/fuzz
 
@@ -1396,6 +1418,10 @@ jobs:
       # php/composer.json is only the development one. Both get validated.
       - run: composer validate --strict --no-check-lock composer.json
       - run: vendor/bin/phpstan analyse --no-progress
+        working-directory: php
+      # bench/bench.php otherwise runs only in benchmark.yml, by hand. This is
+      # a syntax check and nothing more: PHPStan's paths are src and tests.
+      - run: php -l bench/bench.php
         working-directory: php
       # php/certs/ is a copy of the repository-root certs/, and
       # src/Internal/RootsData.php is generated from that copy. A roots change
@@ -1603,6 +1629,30 @@ jobs:
           package-manager-cache: false
       - run: npm ci --ignore-scripts && npm run lint && npm run format:check
         working-directory: node
+      # bench/bench.mjs otherwise runs only in benchmark.yml, by hand. oxlint
+      # above already parses it; this links it against the built dist, so an
+      # export it imports that was renamed or removed fails here. Linking
+      # resolves every import without evaluating the benchmark itself, so
+      # nothing is timed.
+      - run: npm run build
+        working-directory: node
+      - name: link bench/bench.mjs against dist without running it
+        working-directory: node
+        run: |
+          node --no-warnings --experimental-vm-modules --input-type=module -e '
+            import vm from "node:vm";
+            import { readFileSync } from "node:fs";
+            import { pathToFileURL } from "node:url";
+            const url = pathToFileURL("bench/bench.mjs");
+            const bench = new vm.SourceTextModule(readFileSync(url, "utf8"), { identifier: url.href });
+            await bench.link(async (specifier) => {
+              const ns = await import(new URL(specifier, url).href);
+              const names = Object.keys(ns);
+              return new vm.SyntheticModule(names, function () {
+                for (const name of names) this.setExport(name, ns[name]);
+              });
+            });
+          '
 
   # ruff and mypy for the Python port. One job, not a matrix: ruff pins the
   # language level with target-version = "py310" and mypy is told
@@ -1637,6 +1687,13 @@ jobs:
       - run: uv run --locked --extra dev ruff format --check .
         working-directory: python
       - run: uv run --locked --extra dev mypy
+        working-directory: python
+      # bench/bench.py otherwise runs only in benchmark.yml, by hand. Run as a
+      # module that is not __main__, it resolves every import (the package's
+      # private helpers included) without calling main(), so nothing is
+      # timed. mypy stays off it: pyproject limits mypy to the package and
+      # the tests, and under strict it reports three errors in the bench.
+      - run: uv run --locked --extra dev python -c "import runpy; runpy.run_path('bench/bench.py')"
         working-directory: python
       # ty, Astral's type checker, is ADVISORY and must stay that way for
       # now: it is 0.0.x preview software, and mypy above remains the gate.
