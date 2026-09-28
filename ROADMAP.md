@@ -110,16 +110,14 @@ open: a multi-release jar with `module-info` for Java 9+ ("Java, after
   their own JVM and java.security and again under a SHA-1-free
   `jdk.certpath.disabledAlgorithms`. Move deployments to `java17-debian13`
   or `java21-debian13`.
-- **README.md's registry table still says the five newer ports are not
-  installable.** The Go module is on `proxy.golang.org` as of `go/v0.4.0`,
-  so its row and the sentence naming "a public repository for the Go module
-  proxy" as a pending owner action are both stale. The RubyGems, crates.io
-  and NuGet halves are still true. (The release itself no longer breaks on
-  an unbootstrapped registry: `release.yml` asks each of those three whether
-  the package exists and skips the publish with a `::notice::` when it does
-  not — before OIDC for crates.io and NuGet, and after a failed OIDC for
-  RubyGems, whose pending publisher is meant to create the gem — and the
-  `smoke` job runs on the registries that did publish.)
+- **RubyGems, crates.io and NuGet are still unbootstrapped** (BOOTSTRAP.md
+  has the owner actions). The release itself no longer breaks on them:
+  `release.yml` asks each of the three whether the package exists and skips
+  the publish with a `::notice::` when it does not — before OIDC for
+  crates.io and NuGet, and after a failed OIDC for RubyGems, whose pending
+  publisher is meant to create the gem — and the `smoke` job runs on the
+  registries that did publish. The Go module has been on `proxy.golang.org`
+  since `go/v0.4.0`; README.md and BOOTSTRAP.md say so as of 2026-09-28.
 - **Legacy receipts fail on RHEL 9 in five ports (known issue, owner
   decision 2026-09-24: fix after 0.6.0; 2026-09-27: not in 0.7, after
   it).** RHEL 9's DEFAULT crypto policy
