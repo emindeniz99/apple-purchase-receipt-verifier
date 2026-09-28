@@ -16,19 +16,21 @@ import java.util.Map;
  * said what happens when a segment is empty, or decodes to a JSON array or a
  * bare scalar — and an empty header is not a header a port can read {@code alg}
  * out of, which Java's fuzzing walked out of the library as a
- * NullPointerException rather than a verdict. All six are
- * {@code INVALID_JWS_FORMAT}: the input is not a compact JWS this library can
- * read, decided before any certificate is decoded and long before any
- * signature is checked.</p>
+ * NullPointerException rather than a verdict. The four with the defect in
+ * the header are {@code MALFORMED}: the input is not a compact JWS this
+ * library can read, decided before any certificate is decoded and long
+ * before any signature is checked.</p>
  *
  * <p>Four of the six need no signing at all, since the defect is in the header
  * and the header is read first. The two that put the defect in the PAYLOAD do
  * need a genuine header, or a port would answer about the certificates in a
  * fake one instead — so they carry the real header and signature of a real
  * JWS over this generator's own PKI, and only the payload segment is replaced.
- * The signature is then stale, which is exactly the point: every port parses
- * the payload as JSON before it checks the signature, because the payload
- * states the instant the chain is judged at.</p>
+ * The signature is then stale, which is exactly the point: a payload that
+ * does not parse is carried past the chain, judged at the clock, to the
+ * signature, which covers the original payload and fails, so both are
+ * {@code INVALID_SIGNATURE}. Genuinely signed, the same shapes are
+ * {@code UNREADABLE_PAYLOAD}.</p>
  *
  * <p>A {@code main} rather than a {@code @Test} for the same reason as the
  * other generators: a generation-gated test is a permanently skipped test.

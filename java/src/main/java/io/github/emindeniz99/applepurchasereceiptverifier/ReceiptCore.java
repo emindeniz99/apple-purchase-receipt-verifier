@@ -1,7 +1,8 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import java.io.IOException;
-import java.security.GeneralSecurityException;
+import java.security.InvalidAlgorithmParameterException;
+import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertPathBuilder;
 import java.security.cert.CertPathBuilderException;
 import java.security.cert.CertPathBuilderResult;
@@ -225,8 +226,12 @@ final class ReceiptCore {
             return path;
         } catch (CertPathBuilderException e) {
             throw AppleTrust.chainFailure(e, "receipt", "signer chain", at);
-        } catch (GeneralSecurityException e) {
-            throw new VerificationException(Reason.UNTRUSTED_CHAIN, "embedded certificate could not be used", e);
+        } catch (NoSuchAlgorithmException | InvalidAlgorithmParameterException e) {
+            // Raised for the pinned anchors, the parameters or a missing
+            // PKIX/Collection implementation, never for a certificate: the
+            // runtime cannot build the validator, which says nothing about
+            // the receipt.
+            throw new VerificationException(Reason.INTERNAL_ERROR, "chain validator could not be constructed", e);
         } catch (RuntimeException e) {
             // BouncyCastle's unchecked exceptions for malformed certificate content.
             throw new VerificationException(
@@ -265,10 +270,13 @@ final class ReceiptCore {
 
     private static void verifyCmsSignature(SignerInformation signer, X509Certificate signerCert)
             throws VerificationException {
-        // No algorithm allowlist: the signer is pinned to an Apple root and
-        // carries Apple's marker, so an algorithm change on Apple's side
-        // cannot reject genuine receipts. An RSA signature binds its hash in
-        // the DigestInfo, so the signatureAlgorithm label is not trusted.
+        // No algorithm allowlist of our own: the signer is pinned to an
+        // Apple root and carries Apple's marker, so any algorithm
+        // BouncyCastle can verify is accepted. One it has no verifier for is
+        // refused below as INVALID_SIGNATURE, so a genuine receipt signed
+        // with such an algorithm is rejected until BouncyCastle supports it.
+        // An RSA signature binds its hash in the DigestInfo, so the
+        // signatureAlgorithm label is not trusted.
         try {
             boolean valid = signer.verify(signerVerifier(signerCert));
             if (!valid) {

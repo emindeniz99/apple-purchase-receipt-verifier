@@ -85,9 +85,9 @@ human-facing version; where they overlap, they agree.
 ## Release budget
 
 - Registries that still need a one-time owner action before their publish job
-  can succeed are listed per registry in `BOOTSTRAP.md`. PHP is not publishable
-  from this repository at all until the manifest-layout question there is
-  settled.
+  can succeed are listed per registry in `BOOTSTRAP.md`. PHP publishes from
+  the root `composer.json` (layout A) once the owner submits the repository to
+  Packagist and installs its GitHub App; see the Packagist section there.
 - Maven Central's Usage Center caps `io.github.emindeniz99` at **7 releases
   per calendar month** (also 80 MB/release, 1,000 files). Every
   release-please PR merge spends one — `release.yml` publishes to Central on

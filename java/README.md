@@ -425,10 +425,10 @@ if (!result.verified()) {
 }
 ```
 
-`Failure.message()` is safe to log as is (control and bidi characters in
-anything quoted from the input are neutralised) but is not meant to be
-parsed; match on `reason()`, never on the message text, and store a reason
-by `name()`, never by `ordinal()`.
+`Failure.message()` is safe to log as is (it never quotes the input, so
+there is nothing in it to neutralise) but is not meant to be parsed; match
+on `reason()`, never on the message text, and store a reason by `name()`,
+never by `ordinal()`.
 
 | `Reason` | Meaning |
 |---|---|

@@ -188,8 +188,8 @@ public final class HostileReceiptFixtures {
         // which breaks the DER of everything containing it — harmless in a
         // JWS header, where the certificate is a base64 string of its own,
         // but inside a CMS it would break the receipt's DER and every port
-        // that walks the whole blob would answer INVALID_RECEIPT_FORMAT about
-        // the receipt instead of INVALID_CERTIFICATE about the certificate.
+        // that walks the whole blob would answer MALFORMED about the receipt
+        // instead of INVALID_CERTIFICATE about the certificate.
         // So the corruption goes INSIDE the OCTET STRING, where a generic
         // reader sees an opaque primitive of the length it declares: the
         // BasicConstraints SEQUENCE it holds is left claiming 127 content
