@@ -68,7 +68,7 @@ final class JsonFields {
                     .newDecoder()
                     .decode(ByteBuffer.wrap(bytes))
                     .toString();
-            return text.startsWith("﻿") ? null : text;
+            return text.startsWith("\uFEFF") ? null : text;
         } catch (CharacterCodingException e) {
             return null;
         }
