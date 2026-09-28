@@ -21,7 +21,7 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * The pieces of {@see Verifier}'s receipt path that are specific to it and
- * not already pinned by the 310-case shared conformance suite or by
+ * not already pinned by the 311-case shared conformance suite or by
  * {@see MutationTest} / {@see HostileInputTest} / {@see ResourceBoundsTest}:
  * marker-OID/chain check ordering, signature algorithm coverage, the
  * signedAttrs branch of RFC 5652 §5.4, attribute-type boundary width, and

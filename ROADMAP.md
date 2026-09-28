@@ -23,7 +23,7 @@ Shipped on `feat/0.7-verifier-api` for all nine ports, as designed in
 [docs/design/0.7-api.md](./docs/design/0.7-api.md): one `Verifier` with
 `verifyReceipt`, `verifySignedData` and `verifyReceiptEndpoint`, a `Config`
 of roots and clock, no policy parameters, results that never throw, the
-eight reasons, and the 310 shared cases in `fixtures/cases.json`. Ruby's
+eight reasons, and the 311 shared cases in `fixtures/cases.json`. Ruby's
 floor moved to 3.3 and PHP's to 8.2 (SUPPORT-MATRIX.md). The items it
 settled have been removed from the sections below. Two follow-ups stay
 open: a multi-release jar with `module-info` for Java 9+ ("Java, after
