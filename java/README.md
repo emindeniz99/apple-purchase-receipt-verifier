@@ -21,6 +21,29 @@ product id, device binding, refunds, idempotency, is yours; see
 Java **8** is the compiled target (`maven.compiler.release=8`), built and
 tested with any modern JDK.
 
+**On Spring Boot**, Boot's BOM decides your Jackson version, not this
+library. The floor is jackson-core 2.16 (see
+[Dependency floors](#vendoring)). Spring Boot 3.0 to 3.2 manage an older
+jackson-core, 2.14 or 2.15, and there `Verifier.create` throws
+`IllegalStateException`. On Boot 3.x, set Boot's `jackson-bom.version`
+property to 2.16.2 or newer. It moves every Jackson artifact together.
+Maven:
+
+```xml
+<properties>
+  <jackson-bom.version>2.16.2</jackson-bom.version>
+</properties>
+```
+
+Gradle:
+
+```groovy
+ext['jackson-bom.version'] = '2.16.2'
+```
+
+Every Boot line in open-source support, 4.0 and 4.1, already manages a
+newer Jackson 2 and needs nothing.
+
 Coming from 0.6? Read [Upgrading from 0.6](#upgrading-from-06): the API is
 smaller and every method name has changed.
 
@@ -370,6 +393,9 @@ Output is the response JSON Apple's endpoint for that environment would
 return, as a `String`, for every input, never a thrown exception. Apple's
 own `password` and `exclude-old-transactions` fields are read and ignored,
 as in 0.6.
+Duplicate member names are last-wins: where this request body repeats
+`receipt-data`, a JWS header repeats `alg` or `x5c`, or a JWS payload
+repeats `signedDate`, the last occurrence is the value used.
 
 `environment` picks which of Apple's two URLs this call imitates and drives
 the 21007/21008 routing below; `request_date` in the response comes from the
