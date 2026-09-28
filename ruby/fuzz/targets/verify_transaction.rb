@@ -1,13 +1,12 @@
 # frozen_string_literal: true
 
 # The StoreKit 2 path: compact-JWS split, strict base64url, JSON header and
-# payload, x5c certificates, chain, ES256 signature, then the claim checks of
-# the three public entry points.
+# payload, x5c certificates, chain and ES256 signature, through
+# Verifier#verify_signed_data.
 #
-# Same invariants as the Go port's FuzzVerifyTransaction: nothing escapes but
-# a VerificationError, and a JWS that verify_raw accepts under the fixture
-# root must be refused under Apple's roots, or the anchors are not what
-# decided it.
+# Same invariants as the Go port's FuzzVerifySignedData: nothing escapes,
+# and a JWS that verify_signed_data accepts under the fixture root must be
+# refused under Apple's roots, or the anchors are not what decided it.
 
 require "ruzzy"
 require_relative "../support"
