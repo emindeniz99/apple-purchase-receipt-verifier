@@ -120,8 +120,9 @@ not parse, and `Verifier.create`
 throws `IllegalArgumentException` for an empty root set, since a verifier
 with no roots would answer `UNTRUSTED_CHAIN` to everything and nobody would
 notice until production. `Verifier.create` also builds the bounded Jackson
-readers and touches the BouncyCastle provider and a bcpkix class, so a
-jackson-core below 2.16 or a missing BouncyCastle jar throws
+readers, touches the BouncyCastle provider and a bcpkix class, and probes
+the crypto runtime (see [Running in production](#running-in-production)),
+so a jackson-core below 2.16 or a missing BouncyCastle jar throws
 `IllegalStateException` there rather than on the first call.
 
 ## Which method to call
@@ -573,6 +574,20 @@ input (`MALFORMED` before the signature, `UNREADABLE_PAYLOAD` after it). That
 is by design, so hostile input cannot page you. It also means a broken host
 and an attack wave look alike in the counters. A known-good input that must
 verify is what tells them apart.
+
+**Let `Verifier.create` fail a broken runtime at deployment.** By default
+`Verifier.create` asks the library's BouncyCastle provider for the SHA-256
+digest, the ES256 signature, the X.509 certificate factory and the PKIX path
+validator and builder, and checks the signature of each of the three bundled
+Apple roots, the SHA-1 one included. It needs no receipt or JWS. If any
+step fails, as on a stripped JRE, a
+FIPS-mode JDK that refuses the provider or a corrupt jar, it throws
+`IllegalStateException`, so the deploy fails instead of the first request
+answering `INTERNAL_ERROR`. `Config.builder().runtimeProbe(false)` turns the
+probe off. The only use we can name is a test setup that stands in a double
+for the crypto provider; with the probe off, a broken runtime shows up as
+`INTERNAL_ERROR` on the first call instead. The probe does not replace the
+self-test above: it proves the engines exist, not that a real receipt parses.
 
 **Bound body size and concurrency at the edge.** Reject bodies above
 3 MiB (3,145,728 bytes, the library's cap; see
