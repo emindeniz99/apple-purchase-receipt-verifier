@@ -21,8 +21,10 @@ import org.jspecify.annotations.Nullable;
  * {@link #toJson()} and Apple's documentation share one vocabulary. The
  * comment on each getter names its receipt attribute type. {@code null} means
  * the attribute was absent, or its value did not decode, in which case its
- * octets are in {@link #unknownAttributes()}; the library invents no
- * values. Dates are epoch milliseconds, UTC; receipts carry whole
+ * octets are in {@link #unknownAttributes()} (for attribute 2, in
+ * {@link #bundleIdBytes()} instead). A date Apple wrote as an empty string,
+ * its "not set", is also {@code null}, and its octets are not kept. The
+ * library invents no values. Dates are epoch milliseconds, UTC; receipts carry whole
  * seconds, so they end in {@code 000}.</p>
  *
  * <p>Nothing in here has been checked against anything: the bundle id,
@@ -101,7 +103,7 @@ public final class ReceiptPayload {
         return appItemId;
     }
 
-    /** Attribute 2, decoded. */
+    /** Attribute 2, decoded; {@code null} when it does not decode, its octets then only in {@link #bundleIdBytes()}. */
     public @Nullable String bundleId() {
         return bundleId;
     }
@@ -163,10 +165,11 @@ public final class ReceiptPayload {
 
     /**
      * Raw value octets, by type, in receipt order, of the attribute types not
-     * modelled above, of a modelled attribute whose value did not decode, and
-     * of every copy of a modelled attribute after the first, so nothing Apple
-     * signed is lost. The attribute's
-     * {@code version} integer is not kept. A fresh copy on each call, arrays
+     * modelled above, of a modelled attribute whose value did not decode
+     * (other than attribute 2, whose octets are {@link #bundleIdBytes()}), and
+     * of every copy of a modelled attribute after the first. The attribute's
+     * {@code version} integer is not kept, nor are the octets of a date
+     * written as an empty string. A fresh copy on each call, arrays
      * included.
      */
     public Map<Integer, List<byte[]>> unknownAttributes() {
