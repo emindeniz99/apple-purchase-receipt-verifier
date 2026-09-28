@@ -291,6 +291,24 @@ through.
   and put tests in the package of the class they test.
 - **Smaller items:** ES256 accepts high-s signatures (malleable, not a
   forgery); two strict base64 decoders.
+- **From the last-look security and quality reviews (2026-09-28)**, both
+  SHIP; nits left for after the tag:
+  - Split `ReceiptCore.verifySignature` (68 lines), and consider an
+    `AuthenticatedCertificates` wrapper type so the compiler holds the
+    trust boundary.
+  - The 15-argument positional `ReceiptPayload` constructor.
+  - `equals`/`hashCode` render JSON; owner decision: keep.
+  - JWS x5c entries tolerate trailing bytes and PEM wrapping through
+    BouncyCastle's `CertificateFactory`, while the receipt path refuses
+    trailing bytes; check parity across the nine ports before changing.
+  - `Endpoint`'s `default:` branch maps any future `Reason` to 21009.
+  - `pom.xml` has no plugin pins for resources, install, deploy and
+    clean, and sets `doclint none`.
+  - Error-message consistency: the empty endpoint body wording, and the
+    chain-length bound message omits its number.
+  - CI: PR wall time is dominated by 62 queued jobs and fixed-budget fuzz
+    jobs, not installs; consider fuzzing on `main` and nightly with a
+    1-minute PR smoke budget.
 
 ## After 0.6.0 (open items from the 2026-09-24 session)
 
