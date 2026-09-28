@@ -805,16 +805,12 @@ BouncyCastle `bcprov` and `bcpkix` 1.86, the version the code was checked
 against.
 
 **What to re-check on a BouncyCastle upgrade.** The code relies on a few
-BouncyCastle behaviours that are not API contracts:
+BouncyCastle behaviours that are not API contracts. Thread safety is not
+one of them: apart from the provider instance, every BouncyCastle object is
+built per call, including the CMS verifier builder, the PKIX validator and
+path builder (it keeps per-build counters), the `CertificateFactory` (it
+keeps stream state between calls) and every `Signature`.
 
-- One `JcaSignerInfoVerifierBuilder` is shared by every thread
-  (`ReceiptCore.signerVerifier`). That is safe only because its `build`
-  writes no state and makes a new content-verifier provider per
-  certificate; read `build` again after an upgrade.
-- One PKIX `CertPathValidator` is shared too (`JwsCore.PKIX`): its SPI holds
-  only final fields. The `CertificateFactory` (it keeps stream state between
-  calls), the `CertPathBuilder` (it keeps per-build counters) and every
-  `Signature` stay per call.
 - BouncyCastle's own ASN.1 depth bound (`org.bouncycastle.asn1.max_cons_depth`)
   applies to indefinite lengths only, which is why `Asn1Depth` exists; if
   that changes, the explicit check still stays, because its bound (32) is

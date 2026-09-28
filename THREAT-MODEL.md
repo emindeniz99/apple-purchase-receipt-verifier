@@ -336,6 +336,15 @@ Not defended against here, by decision rather than omission.
 - **Certificate revocation.** No OCSP, no CRL. Offline verification is the
   point, and Apple handles compromised signing certs by rotating them
   (PLAN.md §2.3).
+
+  What that leaves open: the chain is judged valid at the payload's own
+  date (`signedDate`, or the receipt's creation date), so if a historical
+  Apple leaf key ever leaked, a payload back-dated into that certificate's
+  validity window would verify, in every port. Apple's own library does the
+  same with its online checks off. A consumer's defence today is the weekly
+  `apple-root-watch` workflow and owning the root set in `Config`. If that
+  day comes, the answer is a per-certificate distrust list in `Config`;
+  it is deliberately not built (ROADMAP.md, "Later / hardening").
 - **Observability.** No logging, metrics or callbacks: machine-readable reason
   codes and nothing else, with alert policy left to the integrator
   (PLAN.md D11).

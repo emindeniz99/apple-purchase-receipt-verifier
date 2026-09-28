@@ -275,8 +275,6 @@ through.
   already made the implementation package-private in one package; a
   `module-info` would only add hiding for modular consumers, at the cost of
   a second compile pass.
-- **A concurrency stress test for the shared CMS signer verifier**,
-  whose thread safety rests on BouncyCastle internals checked at 1.86.
 - **Test code a vendor can read:** remove the references to other ports
   and to `tools/lint-cases.mjs`, replace the hand-written tokenizer in
   `TrustStoreIsolationTest` with ArchUnit rules and split the file, turn
@@ -459,6 +457,8 @@ Still worth filing as issues:
   fails as `INVALID_CERTIFICATE`. Open policy question for the host: accept
   or reject when the CRL is stale because a download failed. The 0.7
   design keeps room for this (docs/design/0.7-api.md).
+- **A per-certificate distrust list in `Config`**, for a leaked historical
+  Apple leaf key (THREAT-MODEL.md §4). Not built until that day comes.
 - **A shared Rust core compiled to WebAssembly under every port.** A
   future idea for its own branch. The 0.7 design keeps the door open: the
   core would take `now_ms` as an argument instead of calling back into the
