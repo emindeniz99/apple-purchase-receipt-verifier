@@ -27,13 +27,13 @@ jobs:
     timeout-minutes: 20
     strategy:
       matrix:
-        # Every Temurin line still in support, LTS or not: 26 is the
-        # current feature release and was missing until an audit against
-        # api.adoptium.net found it. The build itself needs javac 9+ for
-        # --release 8; the artifact is Java 8 bytecode (major version 52),
-        # and the java-runtime-8 job below runs the suite on a real
+        # Every Temurin line still in support, LTS or not: 27 is the
+        # current feature release (GA 2026-09-15) and replaced 26, which
+        # reached end of life on 2026-09-18. The build itself needs javac 9+
+        # for --release 8; the artifact is Java 8 bytecode (major version
+        # 52), and the java-runtime-8 job below runs the suite on a real
         # Temurin 8 JVM.
-        jdk: ["11", "17", "21", "25", "26"]
+        jdk: ["11", "17", "21", "25", "27"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

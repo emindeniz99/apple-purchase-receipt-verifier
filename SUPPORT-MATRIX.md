@@ -1,7 +1,7 @@
 # Support matrix
 
 Which language versions this repository tests, which of them the vendor still
-supports, and the rule that decides both. Snapshot taken 2026-09-06 from
+supports, and the rule that decides both. Snapshot taken 2026-09-28 from
 [endoflife.date](https://endoflife.date); refresh it with
 `node tools/support-matrix.mjs` and compare the output with the matrices in
 `.github/workflows/ci.yml`.
@@ -24,7 +24,7 @@ supports, and the rule that decides both. Snapshot taken 2026-09-06 from
 4. **Dependabot bumps the tool pins, not the matrices.** Adding or dropping a
    matrix line is a deliberate change with a line in ROADMAP.md.
 
-## Snapshot, 2026-09-06
+## Snapshot, 2026-09-28
 
 Status is the vendor's: *active* means bug fixes still land, *security* means
 security fixes only, *EOL* means nothing lands. Every line below is a CI leg;
@@ -34,9 +34,9 @@ the last column names the job.
 
 | Line | Type | Status | Ends | CI |
 |---|---|---|---|---|
-| 8.0 | LTS | active | 2026-11-10 | `dotnet` (ubuntu, windows, macOS), `dotnet-trim`, `dotnet-fuzz` |
-| 9.0 | STS | active | 2026-11-10 | `dotnet` |
-| 10.0 | LTS | active | 2028-11-14 | `dotnet` |
+| 8.0 | LTS | active | 2026-11-10 | `dotnet` (ubuntu, windows, macOS) |
+| 9.0 | STS | active | 2026-11-10 | `dotnet`, `dotnet-trim` |
+| 10.0 | LTS | active | 2028-11-14 | `dotnet`, `dotnet-fuzz` |
 | netstandard2.0 | floor | n/a | while the library ships it | `dotnet-mono` |
 
 .NET 11 ships in November 2026, the same day 8 and 9 end.
@@ -45,9 +45,9 @@ the last column names the job.
 
 | Line | Type | Status | Ends | CI |
 |---|---|---|---|---|
-| 20 | floor | EOL 2026-04-30 | kept | `node`, `node-runtimes` (workerd-floor) |
-| 22 | LTS | security | 2027-04-30 | `node` |
-| 24 | LTS | active | 2028-04-30 | `node`, `node-runtimes` (node, bun, deno, workerd), `node-runtimes-fastly`, `node-fuzz` |
+| 20 | floor | EOL 2026-04-30 | kept | `node` |
+| 22 | LTS | security | 2027-04-30 | `node`, `node-runtimes` (node, bun, deno, workerd), `node-runtimes-fastly`, `node-fuzz` |
+| 24 | LTS | active | 2028-04-30 | `node` |
 | 26 | LTS | active | 2029-04-30 | `node` |
 
 ### Python
@@ -55,9 +55,9 @@ the last column names the job.
 | Line | Status | Ends | CI |
 |---|---|---|---|
 | 3.10 | floor, security | 2026-10-31 | `python` |
-| 3.11 | security | 2027-10-31 | `python`, `python-tools` |
+| 3.11 | security | 2027-10-31 | `python` |
 | 3.12 | security | 2028-10-31 | `python` |
-| 3.13 | active | 2029-10-31 | `python`, `python-fuzz` |
+| 3.13 | active | 2029-10-31 | `python`, `python-tools`, `python-fuzz` |
 | 3.14 | active | 2030-10-31 | `python` |
 
 Python 3.15 ships in October 2026.
@@ -74,9 +74,9 @@ support for longer; the floor stays regardless.
 | 17 | LTS | active | 2026-09-30 | `java` |
 | 21 | LTS | active | 2028-09-30 | `java`, `java-fuzz`, `jvm-interop` |
 | 25 | LTS | active | 2030-09-30 | `java` |
-| 26 | feature | active | 2026-09-18 | `java` |
+| 27 | feature | active | 2027-03-31 | `java` |
 
-Java 27 ships 2026-09-15 and replaces 26 as the feature-release leg.
+Java 28 ships 2027-03-17 and replaces 27 as the feature-release leg.
 
 #### Spring Boot (consumer smoke)
 
@@ -122,8 +122,8 @@ Ruby 4.1 ships in December 2026. 0.7 raised the floor from 3.1 to 3.3 for
 | Line | Status | Ends | CI |
 |---|---|---|---|
 | 8.2 | floor, security | 2026-12-31 | `php`, `php-lowest` |
-| 8.3 | security | 2027-12-31 | `php`, `php-static`, `php-mutation`, `php-fuzz` |
-| 8.4 | active | 2028-12-31 | `php` |
+| 8.3 | security | 2027-12-31 | `php` |
+| 8.4 | active | 2028-12-31 | `php`, `php-static`, `php-mutation`, `php-fuzz` |
 | 8.5 | active | 2029-12-31 | `php` |
 
 PHP 8.6 ships in November 2026. 0.7 raised the floor from 8.1 to 8.2 for
@@ -170,12 +170,12 @@ release. The floor is the oldest toolchain that builds the package.
 
 | When | Change | Where |
 |---|---|---|
-| 2026-09-15 | Java 27 replaces 26 in `jdk:` | ci.yml `java` job |
 | October 2026 | Python 3.15 joins `python:` | ci.yml `python` job |
 | November 2026 | .NET 11 joins `dotnet-version:` and the test projects' `TargetFrameworks` | ci.yml `dotnet` jobs, `dotnet/tests/*/*.csproj` |
 | November 2026 | PHP 8.6 joins `php:` | ci.yml `php` job |
 | December 2026 | Ruby 4.1 joins `ruby:` | ci.yml `ruby` job |
 | February 2027 | Go 1.28 joins `go:` | ci.yml `go` job |
+| March 2027 | Java 28 replaces 27 in `jdk:` | ci.yml `java` job |
 
 Vendor ends that change nothing here, because floors stay: Java 17 at Oracle
 on 2026-09-30, Python 3.10 on 2026-10-31, .NET 8 and 9 on 2026-11-10, PHP 8.2

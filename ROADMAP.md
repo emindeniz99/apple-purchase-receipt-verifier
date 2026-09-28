@@ -68,10 +68,11 @@ open: a multi-release jar with `module-info` for Java 9+ ("Java, after
   `appAccountToken`, and one holding a non-consumable and a non-renewing
   subscription.
 - **Matrix additions due** (one line each in `ci.yml`; policy and snapshot
-  in `SUPPORT-MATRIX.md`): Java 27 on 2026-09-15, replacing 26 as the
-  feature-release leg; Python 3.15 in October 2026; .NET 11 and PHP 8.6 in
-  November 2026 (.NET 11 also joins the test projects' `TargetFrameworks`);
-  Ruby 4.1 in December 2026; Go 1.28 in February 2027. Floors stay when a
+  in `SUPPORT-MATRIX.md`): Python 3.15 in October 2026; .NET 11 and PHP 8.6
+  in November 2026 (.NET 11 also joins the test projects' `TargetFrameworks`);
+  Ruby 4.1 in December 2026; Go 1.28 in February 2027; Java 28 in March 2027,
+  replacing 27 as the feature-release leg. Java 27 replaced 26 in the `java`
+  job on 2026-09-28 (done ✅; 26 reached EOL on 2026-09-18). Floors stay when a
   vendor line ends, so Java 17 (Oracle, 2026-09-30), Python 3.10
   (2026-10-31), .NET 8 and 9 (2026-11-10) and PHP 8.2 (2026-12-31) change
   nothing.
