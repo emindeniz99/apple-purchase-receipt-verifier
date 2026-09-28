@@ -40,7 +40,7 @@ final class JwsCore {
     static final JsonFactory JSON = BoundedJson.factory(MAX_JWS_BYTES);
 
     // Raw r || s (RFC 7515), as PLAIN-ECDSA takes it; the JDK's P1363 name is Java 9+.
-    private static final String ES256_ALGORITHM = "SHA256withPLAIN-ECDSA";
+    static final String ES256_ALGORITHM = "SHA256withPLAIN-ECDSA";
 
     private JwsCore() {}
 

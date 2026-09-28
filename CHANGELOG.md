@@ -1,5 +1,107 @@
 # Changelog
 
+## [0.7.0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.6.0...v0.7.0) (2026-09-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **repo:** the 0.6 ReceiptVerifier, JwsVerifier, VerifyReceiptEndpoint, VerifyReceiptResult and typed JWS models are removed, together with the bundle id, environment and deviceGuid parameters. See the "Coming from 0.6?" section of each port's README.
+* **php:** 0.6 verified receipts whose CMS SignerInfo used RSASSA-PSS. They now fail as INVALID_SIGNATURE. No Apple receipt is affected.
+* **swift:** ReceiptVerifier, JwsVerifier, VerifyReceiptEndpoint, VerifyReceiptResult, TransactionPayload, AppTransactionPayload and VerificationError are removed. Verifier(config:) with three methods replaces them; see swift/README.md's "Upgrading from 0.6" table.
+* **dotnet:** every public type in the 0.6 API is gone or renamed. ReceiptVerifier, JwsVerifier and VerifyReceiptEndpoint are replaced by Verifier.Create(Config). No method takes a bundle id, accepted environments, an app Apple id or a device id, and no method throws VerificationException for input; callers switch on VerificationResult<T>.Verified / .Failure.Reason instead. See the "Upgrading from 0.6" table in dotnet/README.md.
+* **php:** JwsVerifier, ReceiptVerifier, VerifyReceiptEndpoint, VerifyReceiptResult and every typed JWS payload class (TransactionPayload, AppTransactionPayload) are removed, along with VerificationException as a thrown public exception. Replace `new ReceiptVerifier(roots, bundleId)->verify(b64)` with `Verifier::create(Config::builder()->roots(roots)->build())->verifyReceipt(b64)`, then compare `result->payload->bundleId` yourself; replace `new JwsVerifier(roots, bundleId, environments)->verifyTransaction(jws)` with `->verifySignedData(jws)`, then read `json_decode(result->payload->json, true)` for the claims. Reason::InvalidReceiptFormat/InvalidJwsFormat merge into Reason::Malformed; Reason::RequestTooLarge becomes Reason::TooLarge; Reason::InvalidChain becomes Reason::UntrustedChain. Floor moves from PHP 8.1 to PHP 8.2. See php/README.md, "Upgrading from 0.6".
+* **ruby:** The entire 0.6 public API is removed. ReceiptVerifier, JwsVerifier, VerifyReceiptEndpoint and VerifyReceiptResult no longer exist, and verify_receipt/verify_signed_data no longer raise VerificationError for input; they return a VerificationResult. Callers build a Config, call Verifier.create, and use Verifier#verify_receipt, Verifier#verify_signed_data or Verifier#verify_receipt_endpoint instead. See ruby/README.md's Upgrading from 0.6 section.
+* **go:** The entire 0.6 public API is removed. VerifyReceipt, VerifyTransaction and VerifyReceiptResult no longer exist. Callers build a Config, call NewVerifier, and use Verifier.VerifyReceipt, Verifier.VerifySignedData or Verifier.VerifyReceiptEndpoint instead. See go/README.md's Upgrading from 0.6 section.
+* **node:** The 0.6 classes and appleReceiptRoots()/appleJwsRoots() are gone. See the node/README.md "Upgrading from 0.6" table for the per-symbol replacement.
+* **python:** JwsVerifier and ReceiptVerifier are removed. Construct a Verifier from Config.create(roots=..., clock=...) (or Config.defaults()) and call verify_receipt/verify_signed_data/verify_receipt_endpoint; each returns a VerificationResult (or, for the endpoint, a response JSON string) instead of raising VerificationError. apple_receipt_roots()/apple_jws_roots() are replaced by one default_roots(). Reason gained MALFORMED, TOO_LARGE, UNTRUSTED_CHAIN and INVALID_CERTIFICATE_PURPOSE in place of the 0.6 names. See python/README.md's "Upgrading from 0.6" table for the full mapping.
+* **rust:** one AprvVerifier with three calls replaces the jws, receipt and endpoint handles; reason codes 1, 4 and 6 to 11 are retired and 13 to 16 added.
+* **rust:** ReceiptVerifier, JwsVerifier and VerifyReceiptEndpoint are replaced by Verifier::new(Config); results are ReceiptPayload and JsonPayload, errors are Failure with the 0.7 Reason set, and the endpoint feature and its serde_json dependency are removed.
+* **java:** ReceiptVerifier, JwsVerifier, AppReceipt, VerifyReceiptEndpoint, VerifyReceiptResult, TransactionPayload, AppTransactionPayload and the receipt, jws and internal packages are removed. Build a Verifier with Verifier.create(Config.defaults()) and call verifyReceipt, verifySignedData or verifyReceiptEndpoint; each returns a result instead of throwing. Read JWS claims from JsonPayload.json() with your own JSON library.
+
+### Features
+
+* **dotnet:** let callers build results and failures to mock IVerifier ([e8e4943](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/e8e49439a8a5e361ed616232c83e2e50008a96b6))
+* **dotnet:** replace public API with the 0.7 verifier surface ([3c2c7c8](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/3c2c7c8786a958d76c90a30ef9c42b217a2a39bc))
+* **go:** port to the 0.7 verifier API ([a1f0ebc](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/a1f0ebcb00fef3d3078e973e0601045720d0376a))
+* **java:** apply the owner's 0.7 decode and validity rules ([723ad96](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/723ad960eb97e4fece03252b8c78fe6ac8dfd669))
+* **java:** probe the crypto runtime at Verifier.create ([446dab6](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/446dab646bfc691e66724f0148f387b94769ced4))
+* **java:** replace the verifier classes with the 0.7 Verifier API ([d4e07c2](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/d4e07c260bdac0abef4c71a474aabcca446ab80c))
+* **java:** ship TestPki as a test-jar for callers' own tests ([a9057b0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/a9057b0c015762e9e457e07d06bd1320c534e3fa))
+* **node:** replace the 0.6 API with the 0.7 verifier API ([2753a31](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/2753a3160124386a6f6921a76fe99e1d1775549f))
+* **php:** refuse RSA-PSS receipt signers rather than verify by hand ([03a553b](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/03a553bec92972cf7113880ae0bffe2e5e66a89f))
+* **php:** replace public API with the 0.7 Verifier/Config surface ([1b18dc0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/1b18dc030c7d973f9b49ec137070d7955e7e2630))
+* **python:** replace public API with the 0.7 result-object API ([6741388](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/6741388f0b1ae01c50c197c69b2bf469bc2b5e64))
+* **repo:** 0.7 verifier API in all nine ports ([#170](https://github.com/emindeniz99/apple-purchase-receipt-verifier/issues/170)) ([4ebd761](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/4ebd761b54962b1832b69b660beefe80da6aa2da))
+* **ruby:** port to the 0.7 verifier API ([2738aae](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/2738aaebefb8e4b24dfd995979628ce57a17ec86))
+* **rust:** move the C ABI to the 0.7 Verifier ([6872e1d](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/6872e1d544b2317c747bf0757ed9719b0266c91c))
+* **rust:** replace the verifiers with the 0.7 Verifier API ([0af232a](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/0af232adeeb0cbcf447f3f0585b39119ff2d4316))
+* **swift:** replace the public API with the 0.7 Verifier surface ([43f816a](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/43f816acfccf5c018e25838facf1bbc4c5ec2a76))
+
+
+### Bug Fixes
+
+* **ci:** let the NuGet smoke project restore without SmokeVersion ([bc10655](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/bc10655ffb053c3962a1a4d122474eee60e51004))
+* **dotnet:** copy what callers hand to the payload constructors ([6808b4e](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/6808b4e2ee0975d368e78baf38eedc3edbe3bba4))
+* **dotnet:** drop the failure cause for reasons about unvouched input ([3254da5](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/3254da545ad0d433eda6109feb064564f4be5aa6))
+* **dotnet:** give an unbuildable vouched key one verdict on every host ([da35114](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/da35114b01a68499b7ae41da6f4be7c6ab482d6f))
+* **dotnet:** hand out copies from Config.Roots, not the live anchors ([7532de1](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/7532de167eb5e539abed21a316c57caa63cf84de))
+* **dotnet:** hand out copies from the payload getters ([af485c1](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/af485c127c7bdf0278e520b59aff42d6a45e1a94))
+* **dotnet:** judge a JWS at a signedDate of long.MaxValue or MinValue ([e855f30](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/e855f30b411156348bdbc650e2ca0eebaf219752))
+* **dotnet:** keep JSON numbers too large for a double as text ([203971d](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/203971dd2b5647efae7c0ce0807df521c3df6af1))
+* **dotnet:** let a condemned signer outrank an unreadable stranger ([bef5a61](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/bef5a618f26354cba6e3024fd09328cf08af2d7b))
+* **dotnet:** lower the ASN.1 nesting bound from 64 to 32 ([720b317](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/720b317caa3d596b3c362fbab1c52cdd0ae7ee5f))
+* **dotnet:** render pre-1883 Pacific time as tzdb LMT on every platform ([c21e9f7](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/c21e9f707edf88edf1366ea859db8bd0d8916b07))
+* **dotnet:** render receipt dates before year 1 at the endpoint ([0ba0fe2](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/0ba0fe2bc8c3016b1c08ad7da7134b970fe51741))
+* **dotnet:** report a failing config clock as an internal error ([ef11bb9](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/ef11bb961e615fa3651d171f0acdcc79c1f0ea5a))
+* **go:** lower the ASN.1 nesting bound from 64 to 32 ([d50bb44](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/d50bb441eaf8d319b1e69df52fbc04747130eb15))
+* **go:** refuse a nil trust anchor when building a Verifier ([9a61467](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/9a61467a8122459adbadbdd54fe6328c97b6090a))
+* **go:** refuse signedAttrs whose attribute type OID does not decode ([0c7b2c8](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/0c7b2c8079934c209dbe6f88aca739a431540536))
+* **java-bench:** reflect on StrictBase64, the class ReceiptBase64 became ([060b8e2](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/060b8e2ccac4d0382726996286559cb0d86401a6))
+* **java/fuzz:** keep the tests jar off the harness classpath ([2cdf319](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/2cdf319044a6a68bfdaf678416142d986917f7d7))
+* **java:** answer INTERNAL_ERROR for a missing JWS crypto engine ([880e53d](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/880e53db13b870bf82da76fb8aeae1b03a9b86c8))
+* **java:** apply the Java/Rust cross-review fixes ([0ca559c](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/0ca559c6250363991d2cb3c5c3e20c2875a29051))
+* **java:** apply the owner's rules on dates, IA5, depth and JWS order ([f4d7f64](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/f4d7f641d556e40697a1612b6d58a8ee8c3590de))
+* **java:** build static state in Verifier.create, not on the first call ([14419d8](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/14419d8209cebfacb6c5804f588704b17c4372c4))
+* **java:** hold receipt attribute values to the ASN.1 depth bound ([e311c6e](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/e311c6e2d1353e381b0256f27a576c989ccd5c4a))
+* **java:** keep an undecodable in-app SET raw, not fail the receipt ([5991da9](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/5991da93162727c7978ed965424ecff09cbb89c7))
+* **java:** keep Version.CURRENT out of consumers' class files ([711df46](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/711df462785bf51dac46772e359861d7e8e74fb5))
+* **java:** lower the ASN.1 nesting bound from 64 to 32 ([0d28abc](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/0d28abc05e5fa66be3b3239edfa949375db01e9e))
+* **java:** make the runtime probe throw only IllegalStateException ([3621f87](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/3621f878442a73ac31afe70aeb5892443b16d70e))
+* **java:** treat a broken security runtime as INTERNAL_ERROR on receipts ([af405b8](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/af405b846fca88a3fead8e369c1785468ef37e53))
+* **java:** try every embedded certificate that carries the signer identity ([a5836d0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/a5836d0c7823df7e90e740d1b051360f069c130f))
+* **node:** lower the ASN.1 nesting bound from 64 to 32 ([ac5364f](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/ac5364faa1687b38a95913922d49460f63bce71b))
+* **node:** refuse signedAttrs whose attribute type OID does not decode ([d7ac07b](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/d7ac07bd384da43ca17a031d77cf781789b4c331))
+* **node:** try every embedded certificate that carries the signer identity ([4825b0f](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/4825b0f40ea06390cc9442cfa3896ce486f31be3))
+* **php:** lower the ASN.1 nesting bound from 64 to 32 ([7bdf776](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/7bdf7768b054eae762ab33dd72663fd7282e2f28))
+* **php:** make src types honest so PHPStan level max passes ([62dd744](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/62dd744fd50bdf6e68ee303718fdf0a7d196e26d))
+* **php:** refuse signedAttrs whose attribute type OID does not decode ([49101ae](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/49101aeaaa930ae1fff6c4ad385d64fa334b01cd))
+* **php:** require PHP 8.2 in the Packagist manifest ([1474a70](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/1474a7064ccde25d948ef5e9f0f21771c1ee2996))
+* **php:** tell JSON arrays from objects in the JWS header and payload ([713e886](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/713e886e58627a109e5a8c0ab944d67134b473ed))
+* **php:** write slashes unescaped in JSON output ([d254b14](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/d254b147f73cbceff815da3a520526253fd04910))
+* **python:** check certificate validity before the marker OIDs ([b0f5e27](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b0f5e2715f04bae2ccf99992242e9c4683fd3b3f))
+* **python:** lower the ASN.1 nesting bound from 64 to 32 ([7c1a9d9](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/7c1a9d93dc9a0c22c44db8036f4cea1ad21a6526))
+* **python:** read the clock once per call and contain its failures ([edd0a82](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/edd0a82fb7cf216201a6346f961b7a067b1c8e60))
+* **python:** refuse signedAttrs whose attribute type OID does not decode ([ef1735e](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/ef1735ec9f71d9d614e38fe7053fbae4941bcb67))
+* **python:** reject unknown critical extensions and duplicate signed attrs ([7caac1b](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/7caac1baba184d7db49dd2d5fb5ec77d2b4e2d2e))
+* **python:** try every embedded certificate that carries the signer identity ([39da9ef](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/39da9efdaf3161fb659643ae4c0513fc37587063))
+* **ruby:** lower the ASN.1 nesting bound from 64 to 32 ([672112d](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/672112d5a4c8a99acd210d20543fde8399a68956))
+* **rust/ffi:** keep the last repeated JSON member in the Elixir example ([148f9b8](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/148f9b82f12ab9a649ad8581021b89b6be3fa112))
+* **rust:** apply the Java/Rust cross-review fixes ([8b5a92d](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/8b5a92d88b922239b50a2f2c89f0da0841ba9f96))
+* **rust:** apply the owner's rules on dates, IA5, depth and JWS order ([e1c2f47](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/e1c2f4757304abc3701aa241ad86dfd054907266))
+* **rust:** lower the ASN.1 nesting bound from 64 to 32 ([aec3357](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/aec3357f3a197c40ca153b6076129f2d90e1d4e2))
+* **rust:** refuse duplicated or mismatched contentType and messageDigest ([725a964](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/725a96449a5f9f957d1872dfeabf205d0dc9ede5))
+* **rust:** refuse signedAttrs whose attribute type OID does not decode ([cc62946](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/cc629469005044e49342e0bfc0cd28073bf373b0))
+* **rust:** refuse unknown critical extensions and malformed certificate shapes ([e195b81](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/e195b81895c84249df27c62bc402656ad15176a5))
+* **rust:** try every embedded certificate that carries the signer identity ([b7fe94e](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b7fe94e7ee9114d68e4b3853223a38043dca598b))
+* **swift:** bound ASN.1 nesting at 32 before swift-asn1 parses ([8151bb8](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/8151bb8dd07c7d66fe6422cb8e30150e186110f7))
+* **swift:** check x5c signatures before building the certificates ([2ae174f](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/2ae174fb194345f6b2521d9f449c572edb833e30))
+* **swift:** read signed payload fields last-wins in conformance harness ([90f993b](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/90f993bdc2aa6f63dccaec0a1b3e912ee5a291af))
+
+
+### Reverts
+
+* **docs:** remove the 0.7 port brief ([bd99617](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/bd99617b95c1eed05a634749b7021caf7beed0cc))
+
 ## [0.6.0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.5.1...v0.6.0) (2026-09-24)
 
 ### Read first

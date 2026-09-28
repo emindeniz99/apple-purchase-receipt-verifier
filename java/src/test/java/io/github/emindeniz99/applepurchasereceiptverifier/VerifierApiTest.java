@@ -14,6 +14,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.security.Provider;
+import java.security.ProviderException;
 import java.security.cert.X509Certificate;
 import java.time.Clock;
 import java.util.ArrayList;
@@ -547,6 +549,67 @@ class VerifierApiTest {
         assertTrue(second.getCause() instanceof NoClassDefFoundError, String.valueOf(second.getCause()));
         // The real classes initialise.
         assertNotNull(Verifier.create(Config.defaults()));
+    }
+
+    /**
+     * The probe checks each bundled root's own signature, so a healthy JVM
+     * must verify all three on the BouncyCastle provider, the SHA-1 RSA root
+     * included, or every deployment would fail at create.
+     */
+    @Test
+    void eachBundledRootVerifiesItsOwnSignatureOnBouncyCastle() throws Exception {
+        assertEquals(3, AppleRootCerts.roots().size());
+        for (X509Certificate root : AppleRootCerts.roots()) {
+            root.verify(root.getPublicKey(), BouncyCastle.PROVIDER);
+        }
+        DefaultVerifier.probeRuntime(BouncyCastle.PROVIDER);
+        assertNotNull(Verifier.create(Config.defaults()));
+    }
+
+    /**
+     * A runtime that cannot verify must fail at create, where a deployment
+     * sees it, and not answer INTERNAL_ERROR on the first request.
+     */
+    @Test
+    void aProviderWithoutTheEnginesFailsTheProbe() {
+        Provider empty = new Provider("Empty", 1.0, "offers no services") {
+            private static final long serialVersionUID = 1L;
+        };
+        IllegalStateException e = assertThrows(IllegalStateException.class, () -> DefaultVerifier.probeRuntime(empty));
+        assertTrue(e.getMessage().startsWith("this runtime cannot verify Apple signatures"), e.getMessage());
+        assertNotNull(e.getCause());
+    }
+
+    /**
+     * A FIPS or stripped provider can throw ProviderException, which is
+     * unchecked. Verifier.create promises IllegalStateException for a runtime
+     * that cannot verify, so the probe must not let it escape as it is.
+     */
+    @Test
+    void aProviderThatThrowsUncheckedFailsTheProbeAsIllegalState() {
+        ProviderException boom = new ProviderException("boom");
+        Provider throwing = new Provider("Throwing", 1.0, "throws on every lookup") {
+            private static final long serialVersionUID = 1L;
+
+            @Override
+            public synchronized Service getService(String type, String algorithm) {
+                throw boom;
+            }
+        };
+        IllegalStateException e =
+                assertThrows(IllegalStateException.class, () -> DefaultVerifier.probeRuntime(throwing));
+        assertTrue(e.getMessage().startsWith("this runtime cannot verify Apple signatures"), e.getMessage());
+        assertEquals(boom, e.getCause());
+    }
+
+    /** The probe is on unless turned off, and turning it off still builds a verifier. */
+    @Test
+    void theRuntimeProbeIsOnByDefaultAndCanBeTurnedOff() {
+        assertTrue(Config.defaults().runtimeProbe());
+        assertTrue(Config.builder().build().runtimeProbe());
+        Config off = Config.builder().runtimeProbe(false).build();
+        assertFalse(off.runtimeProbe());
+        assertNotNull(Verifier.create(off));
     }
 
     /** Stands in for a class whose static initialiser meets a dependency below its floor. */

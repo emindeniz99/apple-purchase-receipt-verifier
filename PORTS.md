@@ -26,6 +26,7 @@ Checked against the code on `feat/0.7-verifier-api`, 2026-09-27.
 | Chain walked top-down from the pinned roots; a stranger certificate is ignored (#161) | ✅ | ✅ both builds | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ inherits Rust |
 | JSON depth 64 (request body and JWS header/payload) | ✅ Jackson limit | ✅ | ✅ | ✅ | ✅ | ✅ `json_decode` depth | ✅ | ✅ | ✅ | ✅ inherits Rust |
 | JWS cap, 256 KiB | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ inherits Rust |
+| Startup runtime probe at `Verifier` creation (crypto engines and the bundled roots' own signatures), with an opt-out in `Config` | ✅ `Config.runtimeProbe` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Fuzz target | ✅ `java-fuzz` | ✅ `node-fuzz`, default build | ✅ `python-fuzz` | ✅ `go-fuzz` | ✅ `ruby-fuzz` | ✅ `php-fuzz` | ✅ `dotnet-fuzz` | ✅ `rust-fuzz` | ✅ `swift-fuzz` | ❌ none of its own; `rust-fuzz` covers the parsers it calls, `cargo test` covers the ABI's edge cases |
 | Tests in an optimized build | n/a, JIT | n/a | n/a | n/a, one build mode | n/a | n/a | ✅ `dotnet test -c Release` | ❌ `cargo test` runs the debug profile; no release leg yet | ✅ `swift test -c release`, Linux and macOS | ❌ tests run on a debug build; only the Elixir job builds release |
 | Committed benchmark, run on demand by `benchmark.yml` (BENCHMARKS.md) | ✅ `java-bench/` (JMH) | ✅ `node/bench/` | ✅ `python/bench/` | ✅ `go/crossport_bench_test.go` | ✅ `ruby/bench/` | ✅ `php/bench/` | ✅ `dotnet/bench/` | ✅ `rust/examples/bench.rs` | ✅ `swift/bench/` | ❌ none; the Rust benchmark covers the code it calls |

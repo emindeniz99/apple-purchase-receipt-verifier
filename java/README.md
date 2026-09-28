@@ -14,7 +14,7 @@ product id, device binding, refunds, idempotency, is yours; see
 <dependency>
   <groupId>io.github.emindeniz99</groupId>
   <artifactId>apple-purchase-receipt-verifier</artifactId>
-  <version>0.6.0</version> <!-- x-release-please-version -->
+  <version>0.7.0</version> <!-- x-release-please-version -->
 </dependency>
 ```
 
@@ -119,9 +119,10 @@ decides whether a certificate is expired when the input states a date; see
 not parse, and `Verifier.create`
 throws `IllegalArgumentException` for an empty root set, since a verifier
 with no roots would answer `UNTRUSTED_CHAIN` to everything and nobody would
-notice until production. `Verifier.create` also builds the library's static state (the
-bounded Jackson readers, the shared BouncyCastle signature verifier), so a
-jackson-core below 2.16 or a BouncyCastle that does not load throws
+notice until production. `Verifier.create` also builds the bounded Jackson
+readers, touches the BouncyCastle provider and a bcpkix class, and probes
+the crypto runtime (see [Running in production](#running-in-production)),
+so a jackson-core below 2.16 or a missing BouncyCastle jar throws
 `IllegalStateException` there rather than on the first call.
 
 ## Which method to call
@@ -451,8 +452,9 @@ if (!result.verified()) {
 }
 ```
 
-`Failure.message()` is safe to log as is (it never quotes the input, so
-there is nothing in it to neutralise) but is not meant to be parsed; match
+`Failure.message()` is safe to log as is (it never quotes the input's bytes,
+so there is nothing in it to neutralise; a message may state a date or a
+count the input declared) but is not meant to be parsed; match
 on `reason()`, never on the message text, and store a reason by `name()`,
 never by `ordinal()`.
 
@@ -574,6 +576,23 @@ is by design, so hostile input cannot page you. It also means a broken host
 and an attack wave look alike in the counters. A known-good input that must
 verify is what tells them apart.
 
+**Let `Verifier.create` fail a broken runtime at deployment.** By default
+`Verifier.create` asks the library's BouncyCastle provider for the SHA-256
+digest, the ES256 signature, the X.509 certificate factory, the PKIX path
+validator and builder and the Collection cert store, and checks the signature
+of each of the three bundled Apple roots, the SHA-1 one included. It needs no
+receipt or JWS. It checks the bundled roots, not the roots in your `Config`,
+so a deployment with custom roots whose runtime lacks their signature
+algorithm still answers `INTERNAL_ERROR` on the first call. If any
+step fails, as on a stripped JRE, a
+FIPS-mode JDK that refuses the provider or a corrupt jar, it throws
+`IllegalStateException`, so the deploy fails instead of the first request
+answering `INTERNAL_ERROR`. `Config.builder().runtimeProbe(false)` turns the
+probe off. The only use we can name is a test setup that stands in a double
+for the crypto provider; with the probe off, a broken runtime shows up as
+`INTERNAL_ERROR` on the first call instead. The probe does not replace the
+self-test above: it proves the engines exist, not that a real receipt parses.
+
 **Bound body size and concurrency at the edge.** Reject bodies above
 3 MiB (3,145,728 bytes, the library's cap; see
 [Resource bounds](#resource-bounds)), or lower if your product never sees
@@ -677,7 +696,7 @@ at test scope to build and sign certificates with:
 <dependency>
   <groupId>io.github.emindeniz99</groupId>
   <artifactId>apple-purchase-receipt-verifier</artifactId>
-  <version>0.6.0</version> <!-- x-release-please-version -->
+  <version>0.7.0</version> <!-- x-release-please-version -->
   <classifier>tests</classifier>
   <type>test-jar</type>
   <scope>test</scope>
@@ -811,10 +830,13 @@ built per call, including the CMS verifier builder, the PKIX validator and
 path builder (it keeps per-build counters), the `CertificateFactory` (it
 keeps stream state between calls) and every `Signature`.
 
-- BouncyCastle's own ASN.1 depth bound (`org.bouncycastle.asn1.max_cons_depth`)
-  applies to indefinite lengths only, which is why `Asn1Depth` exists; if
-  that changes, the explicit check still stays, because its bound (32) is
-  stricter than BouncyCastle's default (64).
+- BouncyCastle bounds the nesting of every constructed value, definite or
+  indefinite length, at 64 by default (`org.bouncycastle.asn1.max_cons_depth`).
+  `Asn1Depth` is stricter (32) and is applied to the envelope, the payload
+  and each x5c entry before BouncyCastle parses them. Nesting inside a
+  primitive value that BouncyCastle decodes eagerly (an extension value
+  inside a certificate, for example) is guarded by BouncyCastle's bound
+  alone, which is why that bound must still exist after an upgrade.
 - The signature BIT STRING of a certificate is decoded lazily, so the
   decoders read it once on purpose (`JwsCore.decodeChain`,
   `ReceiptCertificates.decode`).

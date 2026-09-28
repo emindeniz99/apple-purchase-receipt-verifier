@@ -32,7 +32,11 @@ public interface Verifier {
      *                                  such a verifier would reject everything
      * @throws IllegalStateException    if a dependency does not load: a
      *                                  jackson-core below 2.16, or a
-     *                                  BouncyCastle that fails to initialise
+     *                                  BouncyCastle that fails to initialise;
+     *                                  or, unless
+     *                                  {@link Config#runtimeProbe()} is off,
+     *                                  if this runtime cannot verify Apple
+     *                                  signatures
      */
     static Verifier create(Config config) {
         return new DefaultVerifier(config);
