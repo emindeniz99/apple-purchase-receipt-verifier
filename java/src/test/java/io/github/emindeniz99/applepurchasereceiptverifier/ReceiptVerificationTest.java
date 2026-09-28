@@ -12,15 +12,19 @@ import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.MessageDigest;
+import java.security.cert.TrustAnchor;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.util.AbstractSet;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.Date;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.DERBMPString;
@@ -227,6 +231,41 @@ class ReceiptVerificationTest {
         byte[] forged = foreign.signReceipt(payload(BUNDLE, creationDate.toString()));
         VerificationException e = assertThrows(VerificationException.class, () -> verify(pki, forged));
         assertEquals(Reason.UNTRUSTED_CHAIN, e.reason());
+    }
+
+    @Test
+    void aValidatorTheRuntimeCannotBuildIsAnInternalErrorNotAChainVerdict() {
+        // UNTRUSTED_CHAIN tells the caller the receipt is forged; a runtime
+        // that cannot even construct the PKIX builder has judged nothing, so
+        // answering UNTRUSTED_CHAIN would turn a host fault into a refusal of
+        // a genuine receipt. The JWS path already answers INTERNAL_ERROR for
+        // the same fault. The fault is simulated with an anchor set that
+        // iterates the genuine root, so the top-down walk vouches for the
+        // signer, but reports itself empty, so PKIXBuilderParameters raises
+        // InvalidAlgorithmParameterException before any path is built.
+        Set<TrustAnchor> broken = new AbstractSet<TrustAnchor>() {
+            private final Set<TrustAnchor> real = Collections.singleton(new TrustAnchor(pki.root, null));
+
+            @Override
+            public Iterator<TrustAnchor> iterator() {
+                return real.iterator();
+            }
+
+            @Override
+            public int size() {
+                return real.size();
+            }
+
+            @Override
+            public boolean isEmpty() {
+                return true;
+            }
+        };
+        VerificationException e = assertThrows(
+                VerificationException.class,
+                () -> ReceiptCore.verifyDer(receiptDer, broken, System.currentTimeMillis()));
+        assertEquals(Reason.INTERNAL_ERROR, e.reason());
+        assertEquals("chain validator could not be constructed", e.getMessage());
     }
 
     @Test
