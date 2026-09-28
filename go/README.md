@@ -424,10 +424,11 @@ the returned payload.
 ## Vendoring
 
 To build the module from a copy rather than `go get`, copy the `go/`
-directory whole: `certs/` (the repository's canonical root certificates)
-and `roots/certs/` (`go generate`'s copy of them, embedded with
-`go:embed`). An embed pattern cannot reach outside its module directory,
-so the copy exists precisely so `go build` needs nothing outside `go/`.
+directory whole, including `roots/certs/`: `go generate`'s copy of the
+repository's canonical root certificates in the root `certs/`, embedded
+with `go:embed`. An embed pattern cannot reach outside its module
+directory, so the copy exists precisely so `go build` needs nothing
+outside `go/`.
 
 **Rotating or adding a root** touches, together:
 
