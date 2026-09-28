@@ -28,7 +28,7 @@ Checked against the code on `feat/0.7-verifier-api`, 2026-09-27.
 | JWS cap, 256 KiB | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ inherits Rust |
 | Fuzz target | ✅ `java-fuzz` | ✅ `node-fuzz`, default build | ✅ `python-fuzz` | ✅ `go-fuzz` | ✅ `ruby-fuzz` | ✅ `php-fuzz` | ✅ `dotnet-fuzz` | ✅ `rust-fuzz` | ✅ `swift-fuzz` | ❌ none of its own; `rust-fuzz` covers the parsers it calls, `cargo test` covers the ABI's edge cases |
 | Tests in an optimized build | n/a, JIT | n/a | n/a | n/a, one build mode | n/a | n/a | ✅ `dotnet test -c Release` | ❌ `cargo test` runs the debug profile; no release leg yet | ✅ `swift test -c release`, Linux and macOS | ❌ tests run on a debug build; only the Elixir job builds release |
-| Committed benchmark | ✅ `java-bench/` (JMH, on-demand workflow) | pending | pending | partial: `go/bench_test.go` has 5 benchmarks, no recorded baseline or workflow | pending | pending | pending | pending | pending | pending |
+| Committed benchmark, run on demand by `benchmark.yml` (BENCHMARKS.md) | ✅ `java-bench/` (JMH) | ✅ `node/bench/` | ✅ `python/bench/` | ✅ `go/crossport_bench_test.go` | ✅ `ruby/bench/` | ✅ `php/bench/` | ✅ `dotnet/bench/` | ✅ `rust/examples/bench.rs` | ✅ `swift/bench/` | ❌ none; the Rust benchmark covers the code it calls |
 | Conformance suite (`fixtures/cases.json`) | ✅ | ✅ both builds | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ C++17 and ctypes harnesses, except the `decodeBase64` groups: the ABI exposes no base64 decoder, so they are counted as not reachable |
 
 Notes:
