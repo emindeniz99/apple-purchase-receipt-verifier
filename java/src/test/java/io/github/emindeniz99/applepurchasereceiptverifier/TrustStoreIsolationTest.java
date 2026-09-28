@@ -497,14 +497,21 @@ class TrustStoreIsolationTest {
         Pattern builder = Pattern.compile("new\\s+Jca\\w+\\s*\\(");
         int lookups = 0;
         int builders = 0;
+        boolean probeGetsTheLibrarysProvider = false;
         for (Path source : mainSources()) {
             String code = codeStrippedOfComments(new String(Files.readAllBytes(source), StandardCharsets.UTF_8));
+            // The startup probe takes its provider as a parameter so a test
+            // can hand it an empty one; its only caller must pass PROVIDER.
+            boolean probe = source.getFileName().toString().equals("DefaultVerifier.java");
+            if (probe) {
+                probeGetsTheLibrarysProvider = code.contains("probeRuntime(BouncyCastle.PROVIDER)");
+            }
             Matcher matcher = lookup.matcher(code);
             while (matcher.find()) {
                 lookups++;
                 String arguments = balancedArguments(code, matcher.end());
                 assertTrue(
-                        arguments.contains("BouncyCastle.PROVIDER"),
+                        arguments.contains("BouncyCastle.PROVIDER") || (probe && arguments.endsWith(", provider")),
                         source.getFileName() + " looks up " + matcher.group(1) + "(" + arguments
                                 + ") through the JVM's provider list");
             }
@@ -523,6 +530,7 @@ class TrustStoreIsolationTest {
         // Certificate factory, path builder, cert store, path validator,
         // ES256 signature and the root-pinning digest; the certificate
         // converter and the CMS verifier builders.
+        assertTrue(probeGetsTheLibrarysProvider, "Verifier.create no longer probes BouncyCastle.PROVIDER");
         assertTrue(lookups >= 6, "only " + lookups + " JCA lookups were found, so the scan is not reading the code");
         assertTrue(builders >= 3, "only " + builders + " JCA builders were found, so the scan is not reading the code");
     }

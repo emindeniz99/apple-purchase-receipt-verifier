@@ -21,15 +21,20 @@ import org.jspecify.annotations.Nullable;
  * chain-validity instant when a receipt or JWS states no signing date, and
  * {@code request_date} in the endpoint response. It must be safe to
  * call from several threads.</p>
+ *
+ * <p><strong>The runtime probe</strong>, on by default, runs at
+ * {@link Verifier#create}; see {@link Builder#runtimeProbe(boolean)}.</p>
  */
 public final class Config {
 
     private final Set<X509Certificate> roots;
     private final Clock clock;
+    private final boolean runtimeProbe;
 
-    private Config(Set<X509Certificate> roots, Clock clock) {
+    private Config(Set<X509Certificate> roots, Clock clock, boolean runtimeProbe) {
         this.roots = roots;
         this.clock = clock;
+        this.runtimeProbe = runtimeProbe;
     }
 
     /**
@@ -56,11 +61,20 @@ public final class Config {
         return clock;
     }
 
+    /**
+     * Whether {@link Verifier#create} probes the runtime; see
+     * {@link Builder#runtimeProbe(boolean)}.
+     */
+    public boolean runtimeProbe() {
+        return runtimeProbe;
+    }
+
     /** Builds a {@link Config}; unset values take the {@link #defaults()}. */
     public static final class Builder {
 
         private @Nullable Set<X509Certificate> roots;
         private Clock clock = Clock.systemUTC();
+        private boolean runtimeProbe = true;
 
         private Builder() {}
 
@@ -88,12 +102,27 @@ public final class Config {
         }
 
         /**
+         * Turns the runtime probe on or off. When on, {@link Verifier#create}
+         * asks the BouncyCastle provider for the digest, ES256, X.509 and PKIX
+         * engines and checks each bundled Apple root's own signature, and
+         * throws {@link IllegalStateException} if any of that fails. Turned
+         * off, a runtime that cannot verify shows up as
+         * {@link Reason#INTERNAL_ERROR} on the first call instead. Leaving it
+         * unset means on.
+         */
+        public Builder runtimeProbe(boolean runtimeProbe) {
+            this.runtimeProbe = runtimeProbe;
+            return this;
+        }
+
+        /**
          * @throws IllegalStateException if no roots were set and the bundled
          *                               Apple roots fail to load
          */
         public Config build() {
             // roots(...) already copied, and never touches a set it handed on.
-            return new Config(roots != null ? Collections.unmodifiableSet(roots) : AppleRootCerts.roots(), clock);
+            return new Config(
+                    roots != null ? Collections.unmodifiableSet(roots) : AppleRootCerts.roots(), clock, runtimeProbe);
         }
     }
 }
