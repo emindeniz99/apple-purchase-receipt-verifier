@@ -198,6 +198,15 @@ final class Cms
                 || $parts[1]->childCount() < 1) {
                 throw new ParseException('malformed signedAttrs: not an attribute set');
             }
+            // The tag alone is not an OID: a type whose contents do not
+            // decode (empty, or ending mid-arc) makes the set malformed too,
+            // as it is in Node and Java, rather than an unknown attribute
+            // the signature then vouches for.
+            try {
+                Der::decodeOid($parts[0]->contents);
+            } catch (ParseException) {
+                throw new ParseException('malformed signedAttrs: attribute type is not a valid OBJECT IDENTIFIER');
+            }
         }
     }
 

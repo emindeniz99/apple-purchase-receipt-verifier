@@ -266,9 +266,15 @@ pub fn signed_attribute_values(signed_attrs: &[u8]) -> Result<(Vec<u8>, Vec<u8>)
     let mut duplicate = false;
     for attribute in node.children() {
         let children = attribute.children();
+        // The tag alone is not an OID: a type whose contents are empty or
+        // end mid-arc makes the set malformed, as in Node and Java, rather
+        // than an unknown attribute the signature then vouches for.
         let attribute_type = children
             .first()
-            .filter(|node| node.tag == tag::OID)
+            .filter(|node| {
+                node.tag == tag::OID
+                    && matches!(node.contents.last(), Some(last) if last & 0x80 == 0)
+            })
             .ok_or(Asn1Error("malformed signed attribute"))?;
         let value = children
             .get(1)

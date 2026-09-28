@@ -17,7 +17,7 @@ use ReflectionMethod;
 
 /**
  * The pieces of {@see Verifier}'s JWS path that are specific to it and not
- * already pinned by the 310-case shared conformance suite or by
+ * already pinned by the 311-case shared conformance suite or by
  * {@see MutationTest} / {@see HostileInputTest}: trust in `x5c[2]` (or
  * rather the deliberate absence of it), the EC-only key gate, reuse across
  * calls, and the raw-integer edge cases of the P1363-to-DER signature

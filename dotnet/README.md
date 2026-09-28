@@ -444,6 +444,14 @@ JSON `null`. See
 [COMPARISON.md](https://github.com/emindeniz99/apple-purchase-receipt-verifier/blob/main/COMPARISON.md)
 for the field-by-field fidelity account.
 
+`*_pst` fields are rendered in `America/Los_Angeles`. Before 1883-11-18
+the offset is tzdb's local mean time, -07:52:58, fixed in code on every
+platform. From that date on the system time zone data answers. Linux and
+macOS read tzdb. Windows uses its own zone data, whose rules before 1987
+can differ from tzdb's, so a `_pst` value from 1883 to 1986 can differ
+there. Genuine receipts carry no dates that old, so only hand-made input
+reaches this.
+
 ## Known issue: legacy receipts on RHEL 9
 
 The legacy Apple receipt chain and its CMS signature are SHA-1. On Linux,

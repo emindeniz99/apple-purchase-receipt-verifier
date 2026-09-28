@@ -210,6 +210,14 @@ func validateSignedAttributesShape(signedAttrs *der.Node) error {
 			values == nil || values.Tag != der.TagSet || len(values.Children) == 0 {
 			return errors.New("malformed signed attribute")
 		}
+		// The tag alone is not an OID: a type whose contents are empty or
+		// end mid-arc makes the set malformed, as in Node and Java, rather
+		// than an unknown attribute the signature then vouches for. Only
+		// that is refused; decodeOID's length and arc bounds would also
+		// refuse long but well-formed attribute types.
+		if n := len(attrType.Contents); n == 0 || attrType.Contents[n-1]&0x80 != 0 {
+			return errors.New("malformed signed attribute: type is not a valid object identifier")
+		}
 	}
 	return nil
 }

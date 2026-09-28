@@ -344,25 +344,25 @@ public final class CertificateDerFixtures {
 
     // --- byte-level DER --------------------------------------------------------
 
-    private static byte[] der(byte[] ber) throws Exception {
+    static byte[] der(byte[] ber) throws Exception {
         return ASN1Primitive.fromByteArray(ber).getEncoded(ASN1Encoding.DER);
     }
 
     /** The raw TLVs inside the SignedData of a definite-length ContentInfo. */
-    private static List<byte[]> signedDataFields(byte[] contentInfo) {
+    static List<byte[]> signedDataFields(byte[] contentInfo) {
         List<byte[]> outer = children(contentInfo);
         byte[] explicit = outer.get(1);
         byte[] signedData = children(explicit).get(0);
         return children(signedData);
     }
 
-    private static byte[] contentInfo(List<byte[]> signedDataFields) throws Exception {
+    static byte[] contentInfo(List<byte[]> signedDataFields) throws Exception {
         byte[] signedData = tlv(0x30, concat(signedDataFields));
         return tlv(0x30, concat(Arrays.asList(CMSObjectIdentifiers.signedData.getEncoded(), tlv(0xa0, signedData))));
     }
 
     /** The child TLVs of a definite-length constructed TLV. */
-    private static List<byte[]> children(byte[] tlv) {
+    static List<byte[]> children(byte[] tlv) {
         int[] header = header(tlv, 0);
         List<byte[]> out = new ArrayList<byte[]>();
         int at = header[0];
@@ -390,7 +390,7 @@ public final class CertificateDerFixtures {
         return new int[] {at + 2 + count, length};
     }
 
-    private static byte[] tlv(int tag, byte[] contents) {
+    static byte[] tlv(int tag, byte[] contents) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         out.write(tag);
         int length = contents.length;
@@ -448,7 +448,7 @@ public final class CertificateDerFixtures {
         return tlv(0x30, concat(Arrays.asList(contents(certificate), element)));
     }
 
-    private static byte[] concat(List<byte[]> parts) {
+    static byte[] concat(List<byte[]> parts) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         for (byte[] part : parts) {
             out.write(part, 0, part.length);
