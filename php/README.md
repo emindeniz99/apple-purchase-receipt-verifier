@@ -258,7 +258,7 @@ Apple's own endpoint, it checks no bundle id: compare
 | 21003 | The receipt failed to authenticate (bad signature, untrusted chain, expired or wrong-purpose certificate). |
 | 21007 | A sandbox receipt was sent to `Environment::Production`. |
 | 21008 | A production receipt was sent to `Environment::Sandbox`. |
-| 21009 | Internal data access error (the library's own code faulted); alert, don't retry. |
+| 21009 | Internal data access error: the receipt authenticated but its signed content does not parse, or the library itself failed. Deterministic; alert, don't retry. |
 
 No other `verifyReceipt` status (21000, 21001, 21004, 21005, 21006, 21010,
 21100-21199) is ever returned: those describe HTTP-method, shared-secret and
@@ -289,22 +289,25 @@ every port:
 
 - **First occurrence wins.** If Apple's payload repeats an attribute type
   (it shouldn't, but the parser doesn't assume that), the first occurrence
-  decides the field; later ones are ignored. This applies to the receipt
-  creation date too, since it anchors the certificate-validity check.
+  decides the field; later copies are kept raw in `unknownAttributes`. This
+  applies to the receipt creation date too, since it anchors the
+  certificate-validity check.
 - **Dates** are `YYYY-MM-DDTHH:MM:SSZ` exactly (RFC 3339, UTC, no fractional
   seconds, no offset); anything else leaves the field `null` rather than
-  failing the receipt. Decoded dates are epoch milliseconds (always ending
-  in `000`, since receipts carry whole seconds).
+  failing the receipt, and a non-empty string that does not parse is kept
+  raw. An empty date string means "not set". Decoded dates are epoch
+  milliseconds (always ending in `000`, since receipts carry whole seconds).
 - **Strings** are `UTF8String` or `IA5String` only; `IA5String` bytes ≥ 0x80
   fail to decode (7-bit ASCII, by definition). A string that fails to decode
   leaves the field `null` (or, for `bundleId`, only `bundleIdBytes` is set,
   see below) rather than failing the receipt.
-- **`unknownAttributes`** holds the raw value octets of every attribute type
-  the payload doesn't model as a named field, keyed by attribute type, in
-  receipt order, so a field Apple adds later is never silently dropped.
-  `bundleId` (attribute 2) is the one exception: a decode failure there does
-  not also appear in `unknownAttributes`, because `bundleIdBytes` already
-  carries the raw value unconditionally.
+- **`unknownAttributes`** holds the raw value octets of every attribute that
+  does not end up in a named field, keyed by attribute type, in receipt
+  order: a type the payload doesn't model, a later copy of a known one, and
+  a known one whose value does not parse. A field Apple adds later is never
+  silently dropped. `bundleId` (attribute 2) is the one exception: a decode
+  failure there does not also appear in `unknownAttributes`, because
+  `bundleIdBytes` already carries the raw value unconditionally.
 - **64-bit ids** (`appItemId`, `downloadId`, `versionExternalIdentifier`,
   `webOrderLineItemId`) are plain PHP `int`; `ReceiptPayload::toJson()`
   renders them as JSON strings (JSON numbers lose precision above 2^53) and
@@ -390,9 +393,10 @@ thrown `VerificationException`.
   break silently if Apple ever re-anchored a path.
 - **Reject rather than repair.** A parser that cannot represent an input
   fails it; it never substitutes a sentinel. An attribute type outside
-  `[0, 2^31-1]`, a negative integer, trailing bytes after the CMS blob: all
-  rejected. A date or a known attribute's value that does not decode is kept
-  raw and the receipt still verifies — decode failures are not trust
+  `[0, 2^31-1]`, trailing bytes after the CMS blob: both rejected. A
+  negative INTEGER value is reported as the signed number it encodes. A
+  date or a known attribute's value that does not decode is kept raw and
+  the receipt still verifies — decode failures are not trust
   failures — but the top-level attribute SET itself must be well formed.
 - **Only a `VerificationResult` failure escapes** a public entry point.
   Containment is categorical, not a list of expected types.
@@ -443,10 +447,14 @@ options.
   to 1,000 characters: checked before any JSON is parsed — by a manual byte
   scan, not `json_decode()`'s own depth parameter, which bounds nesting only
   — in the request body, the JWS header and the JWS payload alike. Outside
-  any of those is `Reason::Malformed`.
+  any of those is `Reason::Malformed` for the request body and the JWS
+  header. A JWS payload is carried to the signature check: it is
+  `Reason::UnreadablePayload` if the signature verifies,
+  `Reason::InvalidSignature` if not.
 - **ASN.1 nesting depth 32**, 20,000 nodes and 48 MiB of retained parser
   state per parse: checked before any certificate is decoded. Outside any of
-  those is `Reason::Malformed`.
+  those is `Reason::Malformed` in the CMS envelope and
+  `Reason::UnreadablePayload` in the signed receipt content.
 - **10 embedded certificates, 4 SignerInfos**, enforced before any
   certificate is decoded or any signature is checked.
 

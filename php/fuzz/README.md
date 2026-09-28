@@ -24,8 +24,8 @@ gitignored.
 
 The anchor-set invariant is the one that lets a fuzzer find "accepts what it
 should not" rather than only crashes: without it, an input that verifies tells
-you nothing about *why* it verified. `verify-receipt` runs against the pinned
-Apple receipt roots plus `fixtures/generated/receipt-root.der` — six generated
+you nothing about *why* it verified. `verify-receipt` runs against Apple's three
+bundled roots plus `fixtures/generated/receipt-root.der` — six generated
 receipts and both public Apple receipts get past the chain check with that set,
 so the branch behind it is reached on nearly every iteration rather than being
 decoration — and re-runs anything accepted against `jws-root.der`.
@@ -57,7 +57,8 @@ the call return. `TypeError`, `ValueError` and `ArgumentCountError` are
 
 The one failure mode a `catch` cannot see is a `memory_limit` fatal, which is
 not a `Throwable` at all — the reason `Der` has a retained-byte budget on top
-of its node and depth budgets (see the port's README, "Defensive bounds").
+of its node and depth budgets (see the port's README, "Why PHP needs its own
+headroom").
 `run.sh` therefore runs with a finite `memory_limit=512M`: php-fuzzer's
 shutdown handler saves the input that caused a fatal error, so an allocation
 bomb is a recorded, reducible finding instead of an OOM-killed container.
@@ -96,7 +97,7 @@ by construction: the phar is a build-time tool that no consumer ever installs,
 every target is a plain PHP file whose target closure would survive a switch to
 another engine, and the crashers it finds land in `../tests/` as ordinary
 PHPUnit tests. If it stops working, the regression tests it produced keep
-running on all five PHP matrix legs.
+running on every PHP matrix leg.
 
 ## Seeding, and why the corpus is copied
 
