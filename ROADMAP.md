@@ -373,6 +373,60 @@ answered them. What stays open:
   signature check per certificate, are in "Later / hardening" with the
   reasons.
 
+## Integration feedback on 0.7.0, to evaluate (2026-09-28)
+
+A team running 0.7.0 on a legacy purchase path sent a backlog. Nothing in
+it is urgent: no item changes a verdict or a security property, and each
+has a working workaround in their code. Each claim below was checked
+against the source. Nothing is decided yet.
+
+Their call pattern today: build `{"receipt-data": ...}` around the
+base64, call `verifyReceiptEndpoint(PRODUCTION, ...)`, call it again with
+`SANDBOX` on 21007 to get the receipt body, and call `verifyReceipt` on
+any non-zero status to get the `Failure`. A TestFlight receipt costs two
+full verifications and a failing one costs two; they measured p50 0.43 ms
+for a production receipt and 0.78 to 0.87 ms for a sandbox one.
+
+| # | Ask | Checked | Size | Suggested |
+|---|---|---|---|---|
+| 1 | One verification that yields the status, Apple's JSON for the receipt's own environment, and the `Failure` with its cause | True. On an internal error `Endpoint.respond` answers 21009 and drops the exception, so a caller's log has no stack trace | See below; all nine ports | Do, as a renderer, not a fourth verify method |
+| 2 | Take the raw base64, not a request body the library parses back | True | Covered by 1 | Folded into 1 |
+| 3 | Declare the real dependency floors: jackson-core 2.16 (the pom says 2.22.2, which a BOM managing 2.21 turns into a `RequireUpperBoundDeps` failure) and the real BouncyCastle floor | True for Jackson. The BouncyCastle floor is untested; the decoder uses classes from 1.70 on | Small for Jackson, plus a CI leg on the floor and a Dependabot rule so bumps do not undo it | Jackson: do. BouncyCastle: measure in CI before declaring anything below 1.86 |
+| 4 | A public `TestPki` builder: set the receipt type (the public `receiptPayload` always writes `ProductionSandbox`), omit `web_order_line_item_id` (always 42 today), set cancellation date (1712) and receipt expiration (21), no forced unknown attribute 9999 | True | About 150 lines, test-jar only, plus a sources jar for it | Do. Closes "Test signer fields" above |
+| 5 | `AppleStatus.isAppleRetryable(status, isRetryable)`: 21005, Apple's 21009 and 21100 to 21199, unless `is_retryable` is false | The class doc already says this in prose | About 20 lines | Do; decide whether other ports get it |
+| 6 | Say that `ReceiptPayload.toJson()` is not a verifyReceipt body | True. The class doc's "one vocabulary" line misled them into a wrong diff | One sentence | Do |
+| 7 | Make `Environment.value()` public, to log `Production` or `Sandbox` | True, package-private today | One keyword | Do |
+| 8 | Check the interrupt flag between decode, chain and signature | Repeat of the 0.6 ask | Small | Keep "not added" (above). Their own worst case is 3.7 ms |
+
+They asked to leave `Endpoint.MAX_REQUEST_BYTES` and the `Reason` to
+status map package-private.
+
+**Item 1, the shape to prefer.** Their proposal is a fourth method,
+`verifyReceiptEndpointResult(base64)`, returning a new record of status,
+receipt environment, JSON and failure. A smaller shape gives the same
+result without a fourth verify method or a new type: `verifyReceipt`
+already returns the `Failure` with its cause, so what is missing is only
+the rendering. One helper on `Verifier`,
+`endpointJson(Environment, VerificationResult<ReceiptPayload>)`, renders
+Apple's body from a result the caller already has: the status-0 body for
+the receipt's own environment, `{"status":21007}` or `21008` when asked
+for the other one, and `{"status":N}` for a failure. `verifyReceiptEndpoint`
+then becomes "parse the body, verify, render", so the two paths cannot
+drift. Java is about 15 lines because the renderer and both status maps
+exist already; each other port has the same internals. The endpoint JSON
+on failure stays `{"status":N}` and never gains a reason field, so it
+stays comparable with Apple's own answer.
+
+**Packaging, if accepted.** Items 3 (Jackson), 4, 5, 6 and 7 are small
+Java pull requests with no library risk. Item 1 needs a short design note
+first, then Java, then the other eight ports and a row in PORTS.md. All
+of them are `feat`, so the pending 0.7.1 becomes 0.8.0.
+
+Already fixed in 0.7.0, from their earlier list: `web_order_line_item_id`
+omitted when 0, `Environment.fromReceiptType`, the runtime probe in
+`Verifier.create`, jackson-databind test-only, `Version.CURRENT`, the
+`TestPki` test-jar and the `AppleStatus` constants.
+
 ## Smaller Java review findings, not yet scheduled (2026-09-24)
 
 From the six pre- and post-0.6.0 Java reviews; none lets a forged receipt
