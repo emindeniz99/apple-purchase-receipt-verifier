@@ -49,12 +49,23 @@ field-by-field fidelity account and the gaps only Apple's servers can fill.
 
 ## Quick start
 
-Java: build the verifier once, verify a StoreKit 2 JWS, then check the bundle
-id yourself.
+Java: build the verifier once, verify a legacy app receipt or a StoreKit 2
+JWS, then check the bundle id yourself.
 
 ```java
 Verifier verifier = Verifier.create(Config.defaults());   // once, at startup; share it
 
+// A legacy PKCS#7 app receipt, as the base64 string the app sends.
+VerificationResult<ReceiptPayload> receiptResult = verifier.verifyReceipt(receiptBase64);
+if (!receiptResult.verified()) {
+    deny(receiptResult.failure().reason());               // see "What to do per reason"
+    return;
+}
+ReceiptPayload receipt = receiptResult.payload();
+if (!"com.example.app".equals(receipt.bundleId())) deny("OTHER_APP");
+// receipt.inApp() lists every purchase; pick yours by product id and expiry
+
+// A StoreKit 2 signed transaction, renewal info, app transaction or notification.
 VerificationResult<JsonPayload> result = verifier.verifySignedData(jws);
 if (!result.verified()) {
     switch (result.failure().reason()) {
@@ -75,9 +86,20 @@ import { createConfig, createVerifier } from 'apple-purchase-receipt-verifier';
 
 const verifier = createVerifier(createConfig()); // build once, share everywhere
 
+// A legacy app receipt, as the base64 string the app sends.
+const receiptResult = verifier.verifyReceipt(receiptBase64);
+if (!receiptResult.verified) {
+  return denied(receiptResult.failure.reason); // see "What to do per reason"
+}
+if (receiptResult.payload.bundleId !== 'com.example.app') {
+  return denied('OTHER_APP');
+}
+// receiptResult.payload.inApp lists every purchase
+
+// A StoreKit 2 signed transaction, renewal info, app transaction or notification.
 const result = verifier.verifySignedData(jws);
 if (!result.verified) {
-  return denied(result.failure.reason); // see "What to do per reason"
+  return denied(result.failure.reason);
 }
 const transaction = JSON.parse(result.payload.json);
 if (transaction.bundleId !== 'com.example.app') {
