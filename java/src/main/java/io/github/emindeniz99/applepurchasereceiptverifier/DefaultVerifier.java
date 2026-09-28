@@ -6,10 +6,13 @@ import java.security.Provider;
 import java.security.Signature;
 import java.security.cert.CertPathBuilder;
 import java.security.cert.CertPathValidator;
+import java.security.cert.CertStore;
 import java.security.cert.CertificateFactory;
+import java.security.cert.CollectionCertStoreParameters;
 import java.security.cert.TrustAnchor;
 import java.security.cert.X509Certificate;
 import java.time.Clock;
+import java.util.Collections;
 import java.util.Objects;
 import java.util.Set;
 import org.bouncycastle.cms.jcajce.JcaSignerInfoVerifierBuilder;
@@ -33,10 +36,11 @@ final class DefaultVerifier implements Verifier {
     DefaultVerifier(Config config) {
         Objects.requireNonNull(config, "config");
         initialise(DefaultVerifier::buildStaticState);
+        // A bad config (an empty root set) fails before the probe's cost.
+        this.trustAnchors = AppleTrust.anchors(config.roots());
         if (config.runtimeProbe()) {
             probeRuntime(BouncyCastle.PROVIDER);
         }
-        this.trustAnchors = AppleTrust.anchors(config.roots());
         this.clock = config.clock();
     }
 
@@ -61,24 +65,32 @@ final class DefaultVerifier implements Verifier {
      * Reading these fields runs the static initialisers that build them. The
      * BouncyCastle helpers are built per call, so the provider and a bcpkix
      * class are touched here to load both jars before the first verify.
+     * EndpointResponse's initialiser loads the Pacific time zone, which a JRE
+     * with a truncated tzdb would fail on the first endpoint call otherwise.
      */
     private static void buildStaticState() {
         Objects.requireNonNull(JwsCore.JSON);
         Objects.requireNonNull(Endpoint.JSON);
+        Objects.requireNonNull(EndpointResponse.JSON);
         Objects.requireNonNull(BouncyCastle.PROVIDER);
         Objects.requireNonNull(JcaSignerInfoVerifierBuilder.class);
     }
 
     /**
-     * Asks {@code provider} for every engine a verify call uses and checks
-     * each bundled Apple root's own signature with it, so a runtime that
+     * Asks {@code provider} for the SHA-256 digest, the ES256 signature, the
+     * X.509 certificate factory, the PKIX validator and builder and the
+     * Collection cert store, and checks each bundled Apple root's own
+     * signature with it, so a runtime that
      * cannot verify (a stripped JRE, a FIPS-mode JDK that refuses the
      * provider) fails {@link Verifier#create} instead of answering
      * {@link Reason#INTERNAL_ERROR} on the first call. It needs no receipt or
      * JWS fixture. The SHA-1 RSA root stays in: BouncyCastle ignores the
      * JDK's disabled-algorithm lists, and the receipt path needs SHA-1 RSA.
+     * The RSA engines behind the CMS signer verifier are not asked for by
+     * name; the roots' signatures exercise RSA only as far as they reach.
      *
-     * @throws IllegalStateException if an engine is missing or a root does not verify
+     * @throws IllegalStateException if an engine is missing, the provider
+     *     throws, or a root does not verify
      */
     static void probeRuntime(Provider provider) {
         try {
@@ -87,10 +99,13 @@ final class DefaultVerifier implements Verifier {
             CertificateFactory.getInstance("X.509", provider);
             CertPathValidator.getInstance("PKIX", provider);
             CertPathBuilder.getInstance("PKIX", provider);
+            CertStore.getInstance("Collection", new CollectionCertStoreParameters(Collections.emptyList()), provider);
             for (X509Certificate root : AppleRootCerts.roots()) {
                 root.verify(root.getPublicKey(), provider);
             }
-        } catch (GeneralSecurityException e) {
+        } catch (GeneralSecurityException | RuntimeException e) {
+            // A FIPS or stripped provider can throw ProviderException, a
+            // RuntimeException, where a missing engine would be checked.
             throw new IllegalStateException("this runtime cannot verify Apple signatures: " + e.getMessage(), e);
         }
     }
