@@ -32,8 +32,11 @@ import org.bouncycastle.cert.X509CertificateHolder;
  * a JWS header. Four ports answered them from checks that sit on the JWS path
  * only (node, python, ruby, dotnet), so the same four mutations on the
  * certificate a legacy PKCS#7 receipt is signed by were unanswered. These are
- * those, and the reason is the one the JWS twins pinned:
- * {@code INVALID_CERTIFICATE}.</p>
+ * those. The shared cases pin {@code INVALID_CERTIFICATE} for the
+ * unimplemented curve and accept {@code INVALID_CERTIFICATE} or
+ * {@code MALFORMED} for the other three, since a port that decodes the
+ * certificate bag as a whole refuses those as a malformed bag before it
+ * reaches the signer.</p>
  *
  * <p>Each receipt is genuine in every other respect — real chain, real CMS
  * signature, real bundle id and creation date, a signer re-signed by the
